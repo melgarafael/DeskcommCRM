@@ -3228,6 +3228,55 @@ export type Database = {
           },
         ];
       };
+      calendar_appointment_team_guests: {
+        Row: {
+          appointment_id: string;
+          created_at: string;
+          id: string;
+          organization_id: string;
+          removed_at: string | null;
+          user_id: string;
+        };
+        Insert: {
+          appointment_id: string;
+          created_at?: string;
+          id?: string;
+          organization_id: string;
+          removed_at?: string | null;
+          user_id: string;
+        };
+        Update: {
+          appointment_id?: string;
+          created_at?: string;
+          id?: string;
+          organization_id?: string;
+          removed_at?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "calendar_appointment_team_guests_compromisso_fkey";
+            columns: ["organization_id", "appointment_id"];
+            isOneToOne: false;
+            referencedRelation: "calendar_appointments";
+            referencedColumns: ["organization_id", "id"];
+          },
+          {
+            foreignKeyName: "calendar_appointment_team_guests_membro_fkey";
+            columns: ["user_id", "organization_id"];
+            isOneToOne: false;
+            referencedRelation: "user_organizations";
+            referencedColumns: ["user_id", "organization_id"];
+          },
+          {
+            foreignKeyName: "calendar_appointment_team_guests_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       calendar_availability_exceptions: {
         Row: {
           created_at: string;
@@ -3449,6 +3498,7 @@ export type Database = {
           buffer_after_minutes: number;
           buffer_before_minutes: number;
           category: string;
+          convidados_padrao: string[];
           created_at: string;
           default_owner_user_id: string | null;
           default_price_cents: number | null;
@@ -3457,6 +3507,7 @@ export type Database = {
           duration_minutes: number;
           id: string;
           is_active: boolean;
+          levar_dados_do_negocio: boolean;
           location_details: string | null;
           location_kind: string;
           minimum_notice_minutes: number;
@@ -3483,6 +3534,8 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          convidados_padrao?: string[];
+          levar_dados_do_negocio?: boolean;
           booking_mode?: string;
           booking_window_days?: number;
           buffer_after_minutes?: number;
@@ -3521,6 +3574,8 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          convidados_padrao?: string[];
+          levar_dados_do_negocio?: boolean;
           booking_mode?: string;
           booking_window_days?: number;
           buffer_after_minutes?: number;

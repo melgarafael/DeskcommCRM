@@ -13548,6 +13548,11 @@ export const DICIONARIO: Traducoes = {
 
   // Convidado do compromisso (agenda)
   "E-mail do convidado": { es: "Correo del invitado" },
+  "Convidados da equipe": { es: "Invitados del equipo" },
+  "Cada pessoa escolhida recebe o convite na conta Google dela e vê o compromisso na própria agenda. O responsável continua sendo quem responde pelo atendimento.": {
+    es: "Cada persona elegida recibe la invitación en su cuenta de Google y ve el compromiso en su propia agenda. El responsable sigue siendo quien responde por la atención.",
+  },
+  "Nenhuma pessoa disponível na sua equipe.": { es: "Ninguna persona disponible en su equipo." },
   "opcional": { es: "opcional" },
   "cliente@empresa.com": { es: "cliente@empresa.com" },
   "Endereço inválido — confira antes de marcar.":

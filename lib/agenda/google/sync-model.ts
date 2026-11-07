@@ -100,6 +100,26 @@ export const sameShared = (a: Shared, b: Shared) =>
     (Date.parse(a.starts_at) === Date.parse(b.starts_at) &&
       Date.parse(a.ends_at) === Date.parse(b.ends_at) &&
       a.time_zone === b.time_zone));
+/**
+ * O hash do grupo `guest`: TODOS os e-mails gerenciados por nós, ordenados.
+ *
+ * O grupo tem mais de um dono desde o #4006 — o e-mail da ficha, o "e-mail do
+ * convidado" e cada pessoa da equipe. Ordenar antes de juntar é o que faz
+ * "A, B" e "B, A" serem o MESMO estado; sem isso, reordenar a lista na tela
+ * viraria um PATCH `sendUpdates=all` para o cliente.
+ *
+ * Para um e-mail só o resultado é idêntico ao de antes (`hash(email)`): o
+ * `guest_email` já era normalizado antes de entrar no hash.
+ */
+export const hashDosConvidados = (emails: readonly (string | null | undefined)[]) =>
+  hash(
+    emails
+      .map((e) => e?.trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join(","),
+);
+
 export function localProjection(
   a: AgendamentoParaGoogle & { guest_email?: string | null },
 ): Projection {
@@ -115,7 +135,9 @@ export function localProjection(
       title: hash(body.summary),
       description: hash(body.description),
       location: hash(body.location),
-      guest: hash(a.guest_email?.toLowerCase()),
+      // #4006: os convidados da equipe entram no MESMO grupo do convidado
+      // digitado. É por aqui que "convidar mais alguém na tela" vira publish.
+      guest: hashDosConvidados([a.guest_email, ...(a.convidados_da_equipe ?? [])]),
     },
   };
 }
@@ -123,15 +145,31 @@ export function remoteProjection(
   e: EventoDoGoogle,
   local: Projection,
   base: Base | null,
+  /**
+   * Os e-mails que NÓS gerenciamos neste compromisso (#4006): ficha, convidado
+   * digitado e convidados da equipe. Quando vem, o filtro é por e-mail — é a
+   * única forma de reconhecer VÁRIOS convidados, porque `base` guarda hash do
+   * conjunto, não a lista. O hash resultante tem de ser o mesmo de
+   * `hashDosConvidados` sobre esses e-mails.
+   *
+   * Sem o parâmetro o comportamento é o de sempre (hash a hash) — é o que
+   * mantém os testes e os compromissos de um convidado idênticos.
+   */
+  gerenciados?: readonly (string | null | undefined)[],
 ): Projection {
   const read = doEventoDoGoogle(e, { fusoDoCalendario: local.shared.time_zone });
   if (read.tipo === "recusado") throw new Error(read.motivo);
+  const porEmail = new Set(
+    (gerenciados ?? []).map((x) => x?.trim().toLowerCase()).filter(Boolean) as string[],
+  );
   const managed = new Set(
     [local.outbound.guest, base?.remote.guest, base?.local.guest].filter(Boolean),
   );
-  const guests = (e.attendees ?? []).filter(
-    (p) => !p.organizer && managed.has(hash(p.email?.toLowerCase())),
-  );
+  const guests = (e.attendees ?? []).filter((p) => {
+    const email = p.email?.trim().toLowerCase();
+    if (!email || p.organizer) return false;
+    return porEmail.size > 0 ? porEmail.has(email) : managed.has(hash(email));
+  });
   return {
     shared:
       read.tipo === "cancelado"
@@ -146,12 +184,7 @@ export function remoteProjection(
       title: hash(e.summary),
       description: hash(e.description),
       location: hash(e.location),
-      guest: hash(
-        guests
-          .map((p) => p.email?.trim().toLowerCase())
-          .sort()
-          .join(","),
-      ),
+      guest: hashDosConvidados(guests.map((p) => p.email)),
     },
   };
 }
@@ -239,6 +272,8 @@ export function delta(
     guest_email?: string | null;
     contact_email?: string | null;
     contact_nome?: string | null;
+    /** Todos os e-mails gerenciados, inclusive os que saíram do convite (#4006). */
+    convidados_conhecidos?: readonly string[];
   },
   e: EventoDoGoogle,
   base: Base | null,
@@ -256,35 +291,79 @@ export function delta(
     if (g === "description") patch.description = body.description ?? "";
     if (g === "location") patch.location = body.location ?? "";
     if (g === "guest") {
-      const wantedGuest = a.guest_email?.trim().toLowerCase();
-      const wantedContact = a.contact_email?.trim().toLowerCase();
-      const existing = e.attendees ?? [];
-      const kept = existing.filter(
-        (p) =>
-          p.organizer ||
-          hash(p.email?.toLowerCase()) !== base?.remote.guest ||
-          p.email?.toLowerCase() === wantedGuest,
+      /**
+       * O conjunto desejado — ficha, convidado digitado e EQUIPE (#4006), na
+       * ordem em que a tela os mostra. Um e-mail repetido entra uma vez só: o
+       * Google recusa o evento INTEIRO, não só o convidado.
+       */
+      const queridos: { email: string; nome?: string | null }[] = [];
+      const juntar = (email: string | null | undefined, nome?: string | null) => {
+        const limpo = email?.trim();
+        if (!limpo) return;
+        if (queridos.some((q) => q.email.toLowerCase() === limpo.toLowerCase())) return;
+        queridos.push({ email: limpo, nome: nome ?? null });
+      };
+      juntar(a.guest_email);
+      juntar(a.contact_email, a.contact_nome);
+      for (const email of a.convidados_da_equipe ?? []) juntar(email);
+
+      const quer = new Set(queridos.map((q) => q.email.toLowerCase()));
+      // Os e-mails que JÁ gerenciamos, inclusive os que saíram do convite
+      // (`removed_at`): são eles que podem ser REMOVIDOS do `attendees`. Sem
+      // esta lista, tirar alguém na tela deixaria o convite vivo no Google.
+      const conhecidos = new Set(
+        (a.convidados_conhecidos ?? [])
+          .map((x) => x?.trim().toLowerCase())
+          .filter(Boolean) as string[],
       );
-      if (wantedGuest && !kept.some((p) => p.email?.toLowerCase() === wantedGuest))
-        kept.push({ email: wantedGuest, responseStatus: "needsAction" });
+      const existing = e.attendees ?? [];
+      const kept = existing.filter((p) => {
+        if (p.organizer) return true;
+        const email = p.email?.trim().toLowerCase() ?? "";
+        if (!email) return true;
+        if (quer.has(email)) return true;
+        if (conhecidos.has(email)) return false;
+        // Comportamento de sempre: o convidado digitado que saiu é removido.
+        return hash(email) !== base?.remote.guest;
+      });
       // O e-mail da ficha não entra no hash `guest` (stamp SQL só vê
-      // `guest_email`). Sem esta linha, um compromisso já publicado nunca
+      // `guest_email`). Sem este passo, um compromisso já publicado nunca
       // ganharia o lead como convidado. ponytail: troca de e-mail na ficha
       // depois da primeira ida não dispara push sozinha — o teto é o stamp;
       // upgrade é incluir o e-mail do contato em `fn_google_projection_stamp`.
-      if (
-        wantedContact &&
-        !kept.some((p) => p.email?.toLowerCase() === wantedContact)
-      ) {
-        const convidado: { email: string; responseStatus: "needsAction"; displayName?: string } = {
-          email: wantedContact,
+      for (const convidado of queridos) {
+        if (kept.some((p) => p.email?.trim().toLowerCase() === convidado.email.toLowerCase())) continue;
+        const entrada: { email: string; responseStatus: "needsAction"; displayName?: string } = {
+          email: convidado.email,
           responseStatus: "needsAction",
         };
-        if (a.contact_nome?.trim()) convidado.displayName = a.contact_nome.trim();
-        kept.push(convidado);
+        if (convidado.nome?.trim()) entrada.displayName = convidado.nome.trim();
+        kept.push(entrada);
       }
       patch.attendees = kept;
     }
   }
   return patch;
+}
+
+/**
+ * Quem o Google avisa por e-mail nesta escrita (#4006).
+ *
+ * `all` é o padrão do produto e continua sendo: convidar, remarcar, cancelar e
+ * tirar convidado SÃO notícia para todo mundo. A exceção é o ajuste que só mexe
+ * na DESCRIÇÃO — o bloco do negócio muda quando a etapa do funil muda, e um
+ * `sendUpdates=all` ali mandaria e-mail a todo cliente com compromisso futuro
+ * cada vez que alguém arrastasse um card.
+ *
+ * `none` só é seguro quando a mudança é SÓ a descrição: com `shared` (horário)
+ * ou qualquer outro grupo no mesmo PATCH, o silêncio esconderia a mudança real.
+ */
+export function sendUpdatesDaEscrita(
+  method: PendingWrite["method"],
+  changed: readonly Group[],
+  shared: boolean,
+): "all" | "none" {
+  if (method === "DELETE" || shared) return "all";
+  if (changed.length > 0 && changed.every((g) => g === "description")) return "none";
+  return "all";
 }

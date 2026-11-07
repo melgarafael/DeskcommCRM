@@ -118,11 +118,19 @@ export function googleTransport(accessToken: string, transport: GoogleFetch = fe
       method: "POST" | "PATCH" | "DELETE",
       body: Record<string, unknown> | undefined,
       etag: string | null,
+      /**
+       * Quem o Google avisa por e-mail (#4006). `all` é o padrão e o
+       * comportamento de sempre; `none` só quando a escrita mexe SÓ na
+       * descrição — sem isso, cada mudança do bloco do negócio mandaria e-mail
+       * a todo cliente com compromisso futuro. A decisão mora em
+       * `sendUpdatesDaEscrita` (`sync-model.ts`), não aqui.
+       */
+      sendUpdates: "all" | "none" = "all",
     ): Promise<EventoDoGoogle | null> {
       if (method !== "POST" && !etag) throw new Error("Escrita sem versão remota recusada.");
       try {
         const result = await request(
-          `${path(calendar, method === "POST" ? undefined : event)}?sendUpdates=all${method === "DELETE" ? "" : "&conferenceDataVersion=1"}`,
+          `${path(calendar, method === "POST" ? undefined : event)}?sendUpdates=${sendUpdates}${method === "DELETE" ? "" : "&conferenceDataVersion=1"}`,
           method,
           method === "POST" ? { ...body, id: event } : body,
           etag,

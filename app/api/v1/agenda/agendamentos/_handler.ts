@@ -53,6 +53,7 @@ import {
   NOME_GENERICO_DO_TIPO,
   VINCULO_DE_AGENDAMENTO,
 } from "@/lib/agenda/tipos";
+import { normalizarIdsDeConvidados } from "@/lib/agenda/convidados-da-equipe";
 import { ApiError } from "@/lib/api/types";
 import { comIdempotencia, hashDoCorpo } from "@/lib/api/idempotency";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
@@ -106,6 +107,16 @@ export interface MarcarInput {
    * é o worker de push.
    */
   guest_email?: string;
+  /**
+   * Pessoas da EQUIPE convidadas (#4006) — ids de `user_organizations`.
+   *
+   * Elas NÃO viram dono: carteira, distribuição e métricas continuam do
+   * responsável. Quem valida o vínculo e grava as linhas é
+   * `pessoasValidasParaConvidar`/`gravarConvidadosDaEquipe`, abaixo. Ausente
+   * num agendamento automático (IA/automação/MCP) = os convidados PADRÃO do
+   * tipo; a IA nunca escolhe gente.
+   */
+  convidados_da_equipe?: string[];
   participant_name?: string;
   participants?: string[];
   /**
@@ -135,6 +146,8 @@ export interface AlterarInput {
   notes?: string;
   /** Igual ao de `MarcarInput`: `""` desconvida, ausente não mexe. */
   guest_email?: string;
+  /** Lista COMPLETA de convidados da equipe (#4006). Ausente não mexe. */
+  convidados_da_equipe?: string[];
   /**
    * O texto do bloco na grade (#3776). Ausente não mexe; vazio é RECUSA — a
    * régua da edição, e o porquê, estão em `tituloDoCompromisso` na rota.
@@ -282,6 +295,109 @@ const ENDPOINT_IDEMPOTENCIA_AGENDA = "/api/v1/agenda/agendamentos";
  * muda a cada reclaim e boundary delimita autorização, por isso nenhum dos dois
  * identifica a operação.
  */
+/**
+ * #4006 — QUEM DA EQUIPE PODE SER CONVIDADO.
+ *
+ * A permissão é a da própria agenda: a rota exige `agent` nos três verbos, e a
+ * lista de pessoas da agenda usa o mesmo piso (`PAPEL_MINIMO_DA_LISTA`). Aqui a
+ * única pergunta a mais é de VÍNCULO: id que não é membro ativo desta
+ * organização é recusado com 422 — quem saiu da empresa não recebe convite, e
+ * id de outra empresa nem chega ao banco (a FK composta também recusaria).
+ */
+async function pessoasValidasParaConvidar(
+  supabase: SB,
+  ctx: HandlerCtx,
+  ids: readonly string[] | null | undefined,
+): Promise<string[]> {
+  const desejados = normalizarIdsDeConvidados(ids, null);
+  if (desejados.length === 0) return [];
+  const { data, error } = await supabase
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", ctx.organization_id)
+    .is("revoked_at", null)
+    .in("user_id", desejados);
+  if (error) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  const ativos = new Set((data ?? []).map((r) => (r as { user_id: string }).user_id));
+  const fora = desejados.find((id) => !ativos.has(id));
+  if (fora) {
+    throw new ApiError(
+      422,
+      "agenda_convidado_invalido",
+      undefined,
+      ctx.requestId,
+      "Uma das pessoas escolhidas não é da sua equipe (ou saiu da empresa). Atualize a lista e escolha de novo.",
+    );
+  }
+  return desejados;
+}
+
+/** Os convidados ATIVOS de um compromisso (o que a tela mostra hoje). */
+async function idsConvidadosAtivos(
+  supabase: SB,
+  ctx: HandlerCtx,
+  appointmentId: string,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("calendar_appointment_team_guests")
+    .select("user_id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("appointment_id", appointmentId)
+    .is("removed_at", null);
+  if (error) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  return (data ?? []).map((r) => (r as { user_id: string }).user_id);
+}
+
+/**
+ * Grava a lista desejada.
+ *
+ * Não apaga linha: quem sai ganha `removed_at` e continua "conhecido" pelo
+ * sync, que é o que permite REMOVER o e-mail dele do evento no Google. Quem
+ * volta tem `removed_at` zerado na MESMA linha (unique por par).
+ */
+async function sincronizarConvidadosDaEquipe(
+  supabase: SB,
+  ctx: HandlerCtx,
+  appointmentId: string,
+  desejados: readonly string[],
+): Promise<void> {
+  const atuais = new Set(await idsConvidadosAtivos(supabase, ctx, appointmentId));
+  const querem = new Set(desejados);
+  const saíram = [...atuais].filter((id) => !querem.has(id));
+
+  if (saíram.length > 0) {
+    const { error } = await supabase
+      .from("calendar_appointment_team_guests")
+      .update({ removed_at: new Date().toISOString() })
+      .eq("organization_id", ctx.organization_id)
+      .eq("appointment_id", appointmentId)
+      .in("user_id", saíram);
+    if (error) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+    }
+  }
+
+  const entraram = desejados.filter((id) => !atuais.has(id));
+  if (entraram.length > 0) {
+    const { error } = await supabase.from("calendar_appointment_team_guests").upsert(
+      entraram.map((user_id) => ({
+        organization_id: ctx.organization_id,
+        appointment_id: appointmentId,
+        user_id,
+        removed_at: null,
+      })),
+      { onConflict: "appointment_id,user_id" },
+    );
+    if (error) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+    }
+  }
+}
+
 export async function marcarAgendamentoHandler(
   supabase: SB,
   ctx: HandlerCtx,
@@ -358,7 +474,7 @@ async function executarCriacaoDeAgendamento(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled",
+      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled, convidados_padrao",
     )
     .eq("organization_id", ctx.organization_id)
     .eq("id", input.event_type_id)
@@ -540,6 +656,26 @@ async function executarCriacaoDeAgendamento(
     .single();
   if (erroInsert) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, erroInsert.message);
+  }
+
+  /**
+   * #4006 — convidados da equipe.
+   *
+   * Lista AUSENTE é "quem marcou não falou de convidados": entram os PADRÃO do
+   * tipo. Isso vale para a tela (que só manda a lista quando a pessoa mexe) e
+   * para o caminho AUTOMÁTICO (IA, automação, MCP) — e é o que garante que a
+   * IA nunca escolha pessoas: ela não tem como mandar ids.
+   *
+   * Lista VAZIA é escolha explícita ("tirei todo mundo") e não é reescrita
+   * pelos padrão.
+   */
+  const convidadosPedidos =
+    input.convidados_da_equipe ??
+    (tipo as { convidados_padrao?: string[] }).convidados_padrao ??
+    [];
+  const convidados = await pessoasValidasParaConvidar(supabase, ctx, convidadosPedidos);
+  if (convidados.length > 0) {
+    await sincronizarConvidadosDaEquipe(supabase, ctx, criado.id as string, convidados);
   }
 
   const transicao: Transicao = criado.status === "pending" ? "pending" : "confirmed";
@@ -751,9 +887,39 @@ export async function alterarAgendamentoHandler(
     transicao = transicao ?? input.status;
   }
 
-  if (Object.keys(mudanca).length === 0) return { id: atual.id, inalterado: true };
+  /**
+   * #4006 — a lista COMPLETA de convidados da equipe. Ausente não mexe; lista
+   * vazia tira todo mundo (é assim que a tela desconvida o último).
+   *
+   * Trocar SÓ os convidados não é remarcação nem mudança de situação — não
+   * produz `transicao` e não grava `mudanca`. Quem leva ao Google é a revisão
+   * publicável, que o gatilho da tabela sobe.
+   */
+  let convidadosDesejados: string[] | null = null;
+  let mudouConvidados = false;
+  if (input.convidados_da_equipe !== undefined) {
+    convidadosDesejados = await pessoasValidasParaConvidar(
+      supabase,
+      ctx,
+      input.convidados_da_equipe,
+    );
+    const atuais = await idsConvidadosAtivos(supabase, ctx, String(atual.id));
+    mudouConvidados =
+      atuais.length !== convidadosDesejados.length ||
+      convidadosDesejados.some((id) => !atuais.includes(id));
+  }
 
-  const salvo = await alteraComRevisao(supabase,ctx,input.id,input.revision ?? Number(atual.revision),mudanca);
+  if (Object.keys(mudanca).length === 0 && !mudouConvidados) {
+    return { id: atual.id, inalterado: true };
+  }
+
+  if (mudouConvidados && convidadosDesejados) {
+    await sincronizarConvidadosDaEquipe(supabase, ctx, String(atual.id), convidadosDesejados);
+  }
+
+  const salvo = Object.keys(mudanca).length === 0
+    ? (atual as unknown as Record<string, unknown>)
+    : await alteraComRevisao(supabase,ctx,input.id,input.revision ?? Number(atual.revision),mudanca);
 
   if (transicao) {
     await fecharOLaco(supabase, ctx, {

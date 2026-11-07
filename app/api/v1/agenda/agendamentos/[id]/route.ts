@@ -10,6 +10,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { googleRpc } from "@/lib/agenda/google/sync-store";
+import { rotulosDosResponsaveisDaAgenda } from "@/lib/agenda/rotulos-dos-responsaveis";
 
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
@@ -32,6 +33,32 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     return fail("internal_error", "Não foi possível carregar o compromisso.", 500, { requestId });
   if (!data)
     return fail("not_found", "Este compromisso está indisponível para você.", 404, { requestId });
+  /**
+   * #4006 — quem da equipe está convidado.
+   *
+   * Aqui, e não na consulta da grade: o detalhe é a única tela que EDITA a
+   * lista, e é ela que precisa dos ids. O rótulo vem da mesma régua da barra
+   * de pessoas (`display_label`), nunca do id.
+   */
+  const convidados = await db
+    .from("calendar_appointment_team_guests")
+    .select("user_id")
+    .eq("organization_id", org)
+    .eq("appointment_id", id)
+    .is("removed_at", null);
+  if (convidados.error)
+    return fail("internal_error", "Não foi possível carregar os convidados do compromisso.", 500, {
+      requestId,
+    });
+  const identidades = await rotulosDosResponsaveisDaAgenda(
+    (convidados.data ?? []).map((r) => r.user_id),
+    (texto) => traduzir(texto, auth.user.idioma),
+  );
+  const convidadosDaEquipe = (convidados.data ?? []).map((r) => ({
+    user_id: r.user_id,
+    display_label: identidades.get(r.user_id)?.display_label ?? r.user_id,
+  }));
+
   // Só depois de provar a entidade pela sessão. Recibo privado não é listável.
   const recovery = await createAdminClient()
     .from("appointment_recovery_receipts")
@@ -85,6 +112,6 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   const conflict = conflictSchema.safeParse(google_conflict);
   const canResolve = await googleRpc(db, "fn_calendar_service_can_resolve", { p_org: org, p_id: id }).catch(() => false);
   const configured = !(data.service_occurrence_id || data.service_block) || data.service_publication_mode !== "none";
-  return ok({ ...detail, meeting, google_sync: { revision: google_domain_revision, local_revision: String(google_local_revision), etag: google_etag, synced_at: google_synced_at, error: google_sync_error,
+  return ok({ ...detail, meeting, convidados_da_equipe: convidadosDaEquipe, google_sync: { revision: google_domain_revision, local_revision: String(google_local_revision), etag: google_etag, synced_at: google_synced_at, error: google_sync_error,
     configured, pending: configured && BigInt(google_local_revision) > BigInt(google_synced_local_revision), conflict: conflict.success ? conflict.data : null, can_resolve: canResolve === true }, recovery: recovery.data ? {...recovery.data,enrollment_status:enrollment.data?.status??null,cancel_reason:enrollment.data?.cancel_reason??null} : null, evidence_messages: messages.data }, { requestId });
 }
