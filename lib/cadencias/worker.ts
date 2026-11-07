@@ -24,7 +24,7 @@
  * (lê `crm_leads.status`). `respondeu`/`bounce` exigem infra que não existe
  * (webhook de resposta / de bounce do provedor) — mesmo motivo do ramo acima.
  *
- * ═══ Teto diário de envio (migration 9238) ═══
+ * ═══ Teto diário de envio (migration 9245) ═══
  * O transporte de e-mail é ÚNICO por instalação (`lib/email/roteador.ts`) —
  * a MESMA caixa/conta leva o volume de TODAS as organizações do clone, e
  * provedor de e-mail trava/bane quem manda volume alto de uma vez. Antes de

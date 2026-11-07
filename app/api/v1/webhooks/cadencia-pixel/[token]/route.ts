@@ -12,7 +12,7 @@
  * clientes e delata ao remetente que algo é dinâmico. O efeito (ou a ausência
  * dele) só é observável no banco, nunca na resposta HTTP.
  *
- * Contagem, não booleano: `fn_cadencia_registrar_abertura` (migration 9238)
+ * Contagem, não booleano: `fn_cadencia_registrar_abertura` (migration 9245)
  * soma `aberturas` numa instrução atômica — é essa coluna que alimenta a tela
  * de leads quentes e a condição de ramo "abriu N vezes".
  */
