@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "next dev",
     "dev:webpack": "next dev",
-    "build": "next build",
-    "build:webpack": "next build",
+    "build": "next build && node scripts/completar-standalone-sentry.mjs",
+    "build:webpack": "next build && node scripts/completar-standalone-sentry.mjs",
     "start": "next start",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx,md,json,css}\"",
