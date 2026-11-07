@@ -8487,6 +8487,10 @@ export const DICIONARIO: Traducoes = {
   "Sem uma conta Resend conectada, o envio continua saindo pelo servidor de e-mail do sistema — o endereço do remetente (o domínio) não muda. Os e-mails do sistema (convites, recuperação de senha, LGPD) seguem pelo remetente do sistema mesmo com a conta conectada.": {
     es: "Sin una cuenta Resend conectada, el envío sigue saliendo por el servidor de correo del sistema — la dirección del remitente (el dominio) no cambia. Los correos del sistema (invitaciones, recuperación de contraseña, LGPD) siguen por el remitente del sistema incluso con la cuenta conectada.",
   },
+  "Conta de e-mail da empresa": { es: "Cuenta de correo de la empresa" },
+  "Os e-mails das automações saem pela conta Resend da empresa, com o endereço dela. Convites, recuperação de senha e LGPD continuam no envio do sistema.": {
+    es: "Los correos de las automatizaciones salen por la cuenta Resend de la empresa, con su dirección. Las invitaciones, la recuperación de contraseña y LGPD siguen en el envío del sistema.",
+  },
   "Conta Resend da sua empresa (opcional)": {
     es: "Cuenta Resend de tu empresa (opcional)",
   },
