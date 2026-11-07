@@ -8,8 +8,8 @@ import { diaDe } from "@/lib/kanban/calendario-do-funil";
  *
  * Um espelho de LEITURA das datas que já moram em `crm_leads.custom_fields`: o
  * negócio aparece no dia do campo escolhido — e, quando há um segundo campo
- * coerente, também no dia dele. A pergunta que ela responde é a da agência de
- * viagens: "quem embarca hoje, quem volta amanhã".
+ * coerente, também no dia dele. A pergunta que ela responde é a de quem trabalha
+ * com data: o que acontece neste dia, com o nome que o próprio funil dá à data.
  *
  * ─── O que ela NÃO faz, e por que é módulo puro ─────────────────────────────
  *
@@ -26,10 +26,11 @@ import { diaDe } from "@/lib/kanban/calendario-do-funil";
  * em `America/Sao_Paulo` veria 09/03. Duas réguas de data no mesmo produto
  * divergem no dia em que uma delas for corrigida.
  *
- * ─── Decisões que NÃO são desta entrega ─────────────────────────────────────
+ * ─── O que esta primeira fatia decidiu ──────────────────────────────────────
  *
- * As três foram perguntadas na issue e estão registradas no PR; o default de
- * cada uma está marcado com "PADRÃO CONSERVADOR" no ponto exato em que morde:
+ * Decisão de produto de 29/10. A configuração pelo administrador e os dias do
+ * meio do intervalo seguem na #3221. O ponto em que cada escolha morde está
+ * marcado com "PADRÃO CONSERVADOR":
  *
  *  (a) quais campos entram por padrão — nenhum: a camada nasce desligada, e não
  *      escolhe campo por heurística de nome;
@@ -151,11 +152,10 @@ export { diaDe as diaDoCampo };
  *     errado, e andar para trás marcaria um "retorno" que ainda não aconteceu.
  *  4. **PADRÃO CONSERVADOR (b):** início e fim no MESMO dia viram UM item, com
  *     os dois rótulos ("Embarque · Retorno"). Dois chips idênticos no mesmo dia
- *     para o mesmo negócio leem como duplicata, e se são duas ocorrências de
- *     verdade é decisão do mantenedor — está aberta na issue.
+ *     para o mesmo negócio leem como duplicata.
  *  5. **Os dias do MEIO do intervalo não entram.** A camada marca as DATAS que
- *     o funil declara; "em viagem hoje" é outra pergunta (a issue a lista como
- *     opcional) e exigiria um terceiro rótulo que ninguém pediu.
+ *     o funil declara; o que está em andamento no dia é outra pergunta, e segue
+ *     na #3221.
  */
 export function itensDaCamada(
   negocios: readonly NegocioComDatas[],
@@ -183,7 +183,7 @@ export function itensDaCamada(
         negocio: semCampos,
         dia: inicio,
         // PADRÃO CONSERVADOR (b): o dia que é início E fim leva os dois rótulos,
-        // início primeiro — é a ordem em que a viagem acontece.
+        // início primeiro — é a ordem em que as datas acontecem.
         rotulos: mesmoDia ? [escolha.rotulo, rotuloFim] : [escolha.rotulo],
       });
     }

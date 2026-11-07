@@ -33,10 +33,11 @@ import { cn } from "@/lib/utils";
  *
  * ─── Desligada por padrão, e por que isso é o desenho ──────────────────────
  *
- * A decisão (a) da issue — quais campos entram por padrão — é do mantenedor e
- * está aberta. Enquanto ela não volta, o default conservador é NENHUM: a
- * camada nasce desligada, e ligada não escolhe campo por heurística de nome
- * (`data_inicio`, `data_fim`) — pede a escolha na tela. Quem não quer a camada
+ * Quais campos entram por padrão: NENHUM, decisão de produto de 29/10 para esta
+ * primeira fatia. A camada nasce desligada, e ligada não escolhe campo por
+ * heurística de nome (`data_inicio`, `data_fim`) — pede a escolha na tela. A
+ * escolha vale nesta tela e não é gravada; a configuração pelo administrador
+ * segue na #3221. Quem não quer a camada
  * não paga por ela: desligada, o componente não busca nada e não desenha item
  * nenhum, só o próprio interruptor.
  *
@@ -273,6 +274,8 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
                 setFunilEscolhido(valor);
                 setCampoEscolhido(null);
                 setCampoFimEscolhido(null);
+                // O aviso fala do funil anterior: neste, nenhum campo sumiu.
+                setEscolhaEsquecida(null);
               }}
             >
               <SelectTrigger
