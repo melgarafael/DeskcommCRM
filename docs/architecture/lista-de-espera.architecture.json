@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Lista de espera da agenda",
+    "subtitle": "Módulo opcional: a vaga que abre vai para uma pessoa por vez",
+    "output": "lista-de-espera.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Tela"
+    },
+    {
+      "id": "core",
+      "label": "Regra"
+    },
+    {
+      "id": "data",
+      "label": "Banco"
+    },
+    {
+      "id": "canal",
+      "label": "Saída"
+    }
+  ],
+  "mainPath": [
+    "vaga",
+    "gancho",
+    "ofertar",
+    "aviso",
+    "resposta"
+  ],
+  "nodes": [
+    {
+      "id": "tela",
+      "lane": "ui",
+      "col": 1,
+      "type": "service",
+      "label": "/app/agenda/lista-de-espera: prazos, inscrição e resposta"
+    },
+    {
+      "id": "vaga",
+      "lane": "core",
+      "col": 1,
+      "type": "service",
+      "label": "Horário abre: cancelar, pendente expirado, Google"
+    },
+    {
+      "id": "gancho",
+      "lane": "core",
+      "col": 2,
+      "type": "service",
+      "label": "aposVagaLiberada: chave do módulo, prazos da organização, fila"
+    },
+    {
+      "id": "provisao",
+      "lane": "data",
+      "col": 1,
+      "type": "service",
+      "label": "fn_lista_de_espera_provisionar: calendar_waitlist só com o módulo"
+    },
+    {
+      "id": "ofertar",
+      "lane": "data",
+      "col": 2,
+      "type": "service",
+      "label": "fn_lista_de_espera_ofertar: segura a vaga e marca a inscrição"
+    },
+    {
+      "id": "aviso",
+      "lane": "canal",
+      "col": 3,
+      "type": "service",
+      "label": "sendMessageHandler com escolhaNoEnvio enviar"
+    },
+    {
+      "id": "resposta",
+      "lane": "core",
+      "col": 3,
+      "type": "service",
+      "label": "Aceite pela agenda, recusa e vencimento chamam o próximo"
+    },
+    {
+      "id": "lgpd",
+      "lane": "data",
+      "col": 3,
+      "type": "service",
+      "label": "modulo_secoes_lgpd e export parcial pela ausência da tabela"
+    }
+  ],
+  "edges": [
+    {
+      "id": "0",
+      "from": "vaga",
+      "to": "gancho",
+      "label": "id do compromisso"
+    },
+    {
+      "id": "1",
+      "from": "gancho",
+      "to": "ofertar",
+      "label": "quem cabe e pode ser avisado"
+    },
+    {
+      "id": "2",
+      "from": "provisao",
+      "to": "ofertar",
+      "label": "a tabela existe só onde foi instalado"
+    },
+    {
+      "id": "3",
+      "from": "ofertar",
+      "to": "aviso",
+      "label": "texto da oferta"
+    },
+    {
+      "id": "4",
+      "from": "aviso",
+      "to": "resposta",
+      "label": "se não sair, solta e segue a fila"
+    },
+    {
+      "id": "5",
+      "from": "tela",
+      "to": "resposta",
+      "label": "aceitou, recusou, tirar da fila"
+    },
+    {
+      "id": "6",
+      "from": "resposta",
+      "to": "gancho",
+      "label": "a vaga passa adiante com o buraco original"
+    },
+    {
+      "id": "7",
+      "from": "provisao",
+      "to": "lgpd",
+      "label": "anonimizar tira da fila e apaga a observação"
+    }
+  ]
+}
