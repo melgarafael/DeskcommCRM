@@ -64,6 +64,7 @@
 import type pg from "pg";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { CANAIS_QUE_RESPONDEM_ANTES } from "@/lib/channels/capabilities";
 import { logger } from "@/lib/logger";
 
 /** Os recursos cujo cron pode ficar ocioso sem que a organização perca nada. */
@@ -140,7 +141,14 @@ const TETO_DA_LEITURA_MS = 2_000;
  * - os seis do #3694 são a condição EXATA da consulta que cada rota faz, ou um
  *   superconjunto dela: `webhook_events_log` sem o corte de espera de 2 min (a
  *   linha recém-arquivada nunca fica invisível) e sem o filtro de provider (o
- *   nome dele não sai de lib/channels/; mais largo é o lado seguro); `followup_enrollments` com o
+ *   nome dele não sai de lib/channels/; mais largo é o lado seguro) — nas DUAS
+ *   filas do replay: a transitória do canal por QR e a entrada aceita que
+ *   respondeu antes de processar (`received` com `valid_signature`, na janela de
+ *   6 h de `reprocessar-entradas-aceitas.ts`, sem o corte de 5 min). Esta segunda
+ *   filtra o provider, pelo parâmetro `$1` (`CANAIS_QUE_RESPONDEM_ANTES`, sem
+ *   escrever o nome): a captação por webhook e a loja também gravam `received`
+ *   com assinatura válida e nunca fecham a linha, e sem o filtro o replay
+ *   rodaria a cada minuto por 6 h depois de cada lead; `followup_enrollments` com o
  *   mesmo filtro da CTE de `fn_claim_due_followup_enrollments` (status vivo,
  *   vencido, sem lease, organização `active` — o teste do portão compara os
  *   dois); pointer `active` (o que `runSilenceSweep` varre); `followup_turn`
@@ -220,9 +228,16 @@ select
         or (google_event_id is not null and google_conflict is null)
         or google_conflict -> 'resolution' is not null
   ) as agenda_google_push,
-  exists (
-    select 1 from webhook_events_log
-     where status = 'error' and error_message like 'transitoria:%'
+  (
+    exists (
+      select 1 from webhook_events_log
+       where status = 'error' and error_message like 'transitoria:%'
+    )
+    or exists (
+      select 1 from webhook_events_log
+       where status = 'received' and valid_signature
+         and provider = any($1::text[])
+    )
   ) as webhook_replay,
   exists (
     select 1 from followup_enrollments e
@@ -346,7 +361,7 @@ async function lerRetrato(db?: BancoDoPortao): Promise<Record<RecursoDoCron, boo
   try {
     const banco = db ?? getRequestPool();
     const { rows } = await comTeto(
-      Promise.resolve(banco.query(SQL_DO_RETRATO)) as Promise<{ rows: unknown[] }>,
+      Promise.resolve(banco.query(SQL_DO_RETRATO, [[...CANAIS_QUE_RESPONDEM_ANTES]])) as Promise<{ rows: unknown[] }>,
       TETO_DA_LEITURA_MS,
     );
     return retratoCompleto(rows[0] as Record<string, unknown> | undefined);

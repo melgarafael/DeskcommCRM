@@ -33,6 +33,7 @@ import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { atribuirConversaDoCadastroAoCriador } from "@/lib/contacts/conversa-do-criador";
 import type {
   ContactCreate,
   ContactPatch,
@@ -717,13 +718,29 @@ export async function createContactHandler(
   // Criar pelo negócio é a MESMA ficha manual, uma por vez: a regra de abrir
   // conversa é a da porta `manual` (`lib/contacts/conversa-ao-criar.ts`), e o
   // `contact.created` sai igual ao das outras portas que criam contato.
-  await abrirConversaDoContatoNovo(supabase, {
+  const conversa = await abrirConversaDoContatoNovo(supabase, {
     porta: "manual",
     organizationId: ctx.organization_id,
     contactId: contact.id,
     phoneNumber: contact.phone_number,
     requestId: ctx.requestId,
   });
+
+  // ── QUEM CRIOU O CONTATO ATENDE O CONTATO (#3479) ─────────────────────────
+  //
+  // No "Só os seus" a conversa sem dono é invisível ao Atendente (0035), e a
+  // que o cadastro acabou de abrir nascia de ninguém. Aqui ela nasce dele —
+  // pelo MESMO claim do botão Assumir, com CAS de "só se estiver livre". A
+  // decisão e o efeito moram em `lib/contacts/conversa-do-criador.ts`; esta
+  // chamada é best-effort e não lança (o contato já está gravado).
+  if (conversa.aberta) {
+    await atribuirConversaDoCadastroAoCriador(supabase, {
+      organizationId: ctx.organization_id,
+      conversationId: conversa.conversationId,
+      actor: ctx.actor,
+      requestId: ctx.requestId,
+    });
+  }
 
   await supabase
     .rpc("emit_event", {

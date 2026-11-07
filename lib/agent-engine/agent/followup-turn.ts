@@ -1317,7 +1317,7 @@ async function sendFixedOutbound(
   const { tenantId, leadId, channelSessionId, conversationId } = target;
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
 
-  if (await isLeadInHandoff(pool, tenantId, leadId)) {
+  if (await isLeadInHandoff(pool, tenantId, leadId, { conversationId })) {
     // #3974 — A OPÇÃO POR FLUXO "enviar mesmo com a conversa atribuída".
     //
     // O dono da conversa (assumir/atribuir) grava `bot_silenced_until =
