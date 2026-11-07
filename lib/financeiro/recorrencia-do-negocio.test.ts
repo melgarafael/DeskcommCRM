@@ -172,7 +172,8 @@ describe("recorrenciaDoNegocio", () => {
       diaDoMes: 5,
     });
     expect(falso.escritas).toHaveLength(1);
-    expect(falso.escritas[0]).toMatchObject({
+    const [escrita] = falso.escritas;
+    expect(escrita).toMatchObject({
       tabela: "recurring_entries",
       dados: {
         organization_id: ORG,
@@ -187,7 +188,7 @@ describe("recorrenciaDoNegocio", () => {
     });
     // A descrição vem do FUNIL: o título do negócio costuma ser nome ou
     // telefone do contato e ficaria fora da cascata de redact da LGPD.
-    expect((falso.escritas[0].dados as { name: string }).name).toBe("Recorrência · Vendas");
+    expect((escrita?.dados as { name?: string } | undefined)?.name).toBe("Recorrência · Vendas");
   });
 
   it("ganho de novo NÃO duplica: o molde existente é devolvido e nada é escrito", async () => {
@@ -260,7 +261,8 @@ describe("desativaRecorrenciaDoNegocio", () => {
 
     expect(desfecho).toEqual({ estado: "desativado", recorrenciaId: MOLDE });
     expect(falso.atualizacoes).toHaveLength(1);
-    expect(falso.atualizacoes[0]).toMatchObject({
+    const [atualizacao] = falso.atualizacoes;
+    expect(atualizacao).toMatchObject({
       tabela: "recurring_entries",
       dados: { is_active: false },
       filtros: { organization_id: ORG, crm_lead_id: LEAD, is_active: true },

@@ -227,7 +227,7 @@ export async function desativaRecorrenciaDoNegocio(
     .select("id");
 
   if (error) return { estado: "falhou", erro: `molde: ${error.message}` };
-  const linhas = (desativados ?? []) as Array<{ id: string }>;
-  if (linhas.length === 0) return { estado: "nada_a_desativar" };
-  return { estado: "desativado", recorrenciaId: String(linhas[0].id) };
+  const [primeira] = (desativados ?? []) as Array<{ id: string }>;
+  if (!primeira) return { estado: "nada_a_desativar" };
+  return { estado: "desativado", recorrenciaId: String(primeira.id) };
 }
