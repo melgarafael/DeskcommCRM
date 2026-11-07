@@ -36,10 +36,12 @@ import { CatalogProductAiPresentation } from "./_apresentacao-ia";
 export function EdicaoDoProduto({
   produto,
   urlsDasFotos,
+  apresentacaoLigada = false,
   aoFechar,
 }: {
   produto: Produto;
   urlsDasFotos: Record<string, string>;
+  apresentacaoLigada?: boolean;
   aoFechar: () => void;
 }) {
   const t = useT();
@@ -184,7 +186,7 @@ export function EdicaoDoProduto({
         </label>
       ) : null}
 
-      <CatalogProductAiPresentation product={produto} photoUrls={urlsDasFotos} />
+      {apresentacaoLigada ? <CatalogProductAiPresentation product={produto} photoUrls={urlsDasFotos} /> : null}
 
       <div className="mt-4 flex items-center gap-2">
         {somenteLeitura ? null : (

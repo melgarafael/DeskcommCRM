@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  cliente: vi.fn(), upload: vi.fn(), remover: vi.fn(), assinar: vi.fn(), audit: vi.fn(),
+  cliente: vi.fn(), upload: vi.fn(), remover: vi.fn(), assinar: vi.fn(), audit: vi.fn(), ligada: vi.fn(), transcodificar: vi.fn(),
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn(async () => ({
   ok: true, org: { orgId: "a0647000-0000-4000-8000-000000000001", role: "manager" },
@@ -17,9 +17,8 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock("@/lib/i18n/dicionario", () => ({ traduzir: (s: string) => s }));
-vi.mock("@/lib/messaging/media/voice-transcode", () => ({
-  transcodificarNotaDeVoz: vi.fn(() => { throw new Error("transcode real não autorizado neste teste de CAS"); }),
-}));
+vi.mock("@/lib/messaging/media/voice-transcode", () => ({ transcodificarNotaDeVoz: mocks.transcodificar }));
+vi.mock("@/lib/catalogo/apresentacao-ligada", () => ({ apresentacaoDoCatalogoLigada: mocks.ligada }));
 
 import { GET, PATCH } from "@/app/api/v1/products/[id]/ai-presentation/route";
 import { POST, DELETE } from "@/app/api/v1/products/[id]/ai-presentation/audio/route";
@@ -101,10 +100,29 @@ beforeEach(() => {
   mocks.remover.mockResolvedValue({ error: null });
   mocks.assinar.mockResolvedValue({ data: { signedUrl: "https://test-placeholder.invalid/audio" }, error: null });
   mocks.audit.mockResolvedValue(undefined);
+  mocks.ligada.mockResolvedValue(true);
+  mocks.transcodificar.mockImplementation(() => { throw new Error("transcode real não autorizado neste teste de CAS"); });
   vi.stubGlobal("File", NodeFile);
   vi.stubGlobal("fetch", vi.fn(() => { throw new Error("rede real proibida neste teste isolado"); }));
 });
 afterEach(() => { vi.unstubAllGlobals(); });
+
+describe("capacidade desligada: as duas rotas recusam e nada é gravado", () => {
+  it.each([
+    ["GET", () => GET(jsonRequest(null), ctx())],
+    ["PATCH", () => PATCH(jsonRequest(dados(null)), ctx())],
+    ["POST de áudio", () => POST(audioRequest(null), ctx())],
+    ["DELETE de áudio", () => DELETE(jsonRequest({ expected_updated_at: null }), ctx())],
+  ])("%s devolve module_disabled", async (_nome, chamar) => {
+    mocks.ligada.mockResolvedValue(false);
+    const resposta = await chamar();
+    expect(resposta.status).toBe(422);
+    expect((await resposta.json()).error.code).toBe("module_disabled");
+    expect(escritas).toEqual([]);
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+});
 
 describe("apresentação nova usa a revisão null e edições continuam condicionais", () => {
   it("GET ausente devolve o null que a tela usará, sem criar uma linha escondida", async () => {

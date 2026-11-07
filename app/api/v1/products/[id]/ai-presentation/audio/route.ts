@@ -15,6 +15,7 @@ import {
   type CatalogProductPresentationRow,
 } from "@/lib/catalogo/apresentacao";
 import { removeCatalogPresentationAudio } from "@/lib/catalogo/apresentacao-no-bucket";
+import { apresentacaoDoCatalogoLigada } from "@/lib/catalogo/apresentacao-ligada";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
@@ -80,6 +81,9 @@ export async function POST(
   });
   if (!authz.ok) return authz.response;
   const t = (text: string) => traduzir(text, authz.user.idioma);
+  if (!(await apresentacaoDoCatalogoLigada(createAdminClient(), authz.org.orgId))) {
+    return fail("module_disabled", t("A apresentação do catálogo está desligada nesta empresa."), 422, { requestId });
+  }
   const parsedParams = paramsSchema.safeParse(await params);
   if (!parsedParams.success) {
     return fail("validation_failed", t("Produto inválido."), 422, { requestId });
@@ -219,6 +223,9 @@ export async function DELETE(
   });
   if (!authz.ok) return authz.response;
   const t = (text: string) => traduzir(text, authz.user.idioma);
+  if (!(await apresentacaoDoCatalogoLigada(createAdminClient(), authz.org.orgId))) {
+    return fail("module_disabled", t("A apresentação do catálogo está desligada nesta empresa."), 422, { requestId });
+  }
   const parsedParams = paramsSchema.safeParse(await params);
   const parsedBody = catalogProductPresentationAudioMutationSchema.safeParse(
     await request.json().catch(() => null),

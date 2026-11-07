@@ -12,6 +12,7 @@ import {
   type CatalogProductPresentationRow,
   publicCatalogProductPresentation,
 } from "@/lib/catalogo/apresentacao";
+import { apresentacaoDoCatalogoLigada } from "@/lib/catalogo/apresentacao-ligada";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -89,6 +90,9 @@ export async function GET(
   });
   if (!authz.ok) return authz.response;
   const t = (text: string) => traduzir(text, authz.user.idioma);
+  if (!(await apresentacaoDoCatalogoLigada(createAdminClient(), authz.org.orgId))) {
+    return fail("module_disabled", t("A apresentação do catálogo está desligada nesta empresa."), 422, { requestId });
+  }
   const parsedParams = await parseProductId(params);
   if (!parsedParams.success) {
     return fail("validation_failed", t("Produto inválido."), 422, { requestId });
@@ -121,6 +125,9 @@ export async function PATCH(
   });
   if (!authz.ok) return authz.response;
   const t = (text: string) => traduzir(text, authz.user.idioma);
+  if (!(await apresentacaoDoCatalogoLigada(createAdminClient(), authz.org.orgId))) {
+    return fail("module_disabled", t("A apresentação do catálogo está desligada nesta empresa."), 422, { requestId });
+  }
   const parsedParams = await parseProductId(params);
   if (!parsedParams.success) {
     return fail("validation_failed", t("Produto inválido."), 422, { requestId });

@@ -223,6 +223,7 @@ export function ProdutosClient({
   buscaInicial,
   urlsDasFotos,
   podeEditar,
+  apresentacaoLigada = false,
   textos,
 }: {
   /** A página atual, já filtrada no servidor (ver `lib/catalogo/busca-da-tela.ts`). */
@@ -234,6 +235,7 @@ export function ProdutosClient({
   buscaInicial: string;
   urlsDasFotos: Record<string, string>;
   podeEditar: boolean;
+  apresentacaoLigada?: boolean;
   textos: Textos;
 }) {
   const t = useT();
@@ -653,6 +655,7 @@ export function ProdutosClient({
                 key={p.id}
                 produto={p}
                 urlsDasFotos={urlsDasFotos}
+                apresentacaoLigada={apresentacaoLigada}
                 aoFechar={() => setEditando(null)}
               />
             ) : null}

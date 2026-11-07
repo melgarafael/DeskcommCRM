@@ -28,7 +28,7 @@ import * as zlib from "node:zlib";
 
 import { test, expect, type Locator, type Page, type TestInfo } from "./helpers/test";
 
-import { lerCreds } from "./helpers/login-admin";
+import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
 const creds = lerCreds();
 const ESPERA = 30_000;
@@ -229,6 +229,31 @@ for (const papel of ["viewer", "agent"] as const) {
     await evidencia(page, info, `05-${papel}`);
   });
 }
+
+// A apresentação nasce desligada na empresa: sem a seção e com as rotas recusando.
+test("apresentação desligada não aparece para o gerente, e a rota recusa", async ({ page }) => {
+  await entrar(page, "manager");
+  await page.goto("/app/products");
+  await expect(linha(page)).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId(`editar-${CODIGO}`).click();
+  await expect(page.getByTestId("salvar-edicao")).toBeVisible();
+  await expect(linha(page).getByTestId("abrir-apresentacao-ia")).toHaveCount(0);
+  expect(produtoId).toBeTruthy();
+  const recusa = await page.request.get(`/api/v1/products/${produtoId}/ai-presentation`);
+  expect(recusa.status()).toBe(422);
+  expect((await recusa.json()).error.code).toBe("module_disabled");
+});
+
+test("admin liga a apresentação do catálogo em Configurações", async ({ page }) => {
+  await loginComoAdmin(page, creds);
+  await page.goto("/app/settings/tenant");
+  await page.getByTestId("catalogo-apresentacao-ligada").check();
+  const salvo = page.waitForResponse(r => r.request().method() === "PATCH" && r.url().endsWith("/api/v1/settings/catalogo"));
+  await page.getByTestId("catalogo-salvar").click();
+  expect((await salvo).status()).toBe(200);
+  await page.reload();
+  await expect(page.getByTestId("catalogo-apresentacao-ligada")).toBeChecked();
+});
 
 // A apresentação começa SEM linha: prova o primeiro save pela tela e o CAS
 // contra null antigo no servidor real. Áudio/entrega sequencial não são provados aqui.

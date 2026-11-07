@@ -104,6 +104,7 @@ import {
   type FotoParaEnvio,
 } from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
+import { apresentacaoOferecidaNoTurno } from '@/lib/catalogo/apresentacao-ligada';
 import { resumePersistedCatalogPresentation } from '@/lib/catalogo/retomada-de-apresentacao';
 import { resolveAndSnapshotCatalogPresentation } from '@/lib/catalogo/snapshot-de-apresentacao';
 import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
@@ -5844,7 +5845,8 @@ async function executarTurnoDoAgente(
     if (
       !preview && liveJob().kind === 'inbound_turn' &&
       rawTools.crm_search_products && rawTools.send_message && agentConfig &&
-      !agentConfig.pausedAt && agentConfig.operationMode !== 'assisted'
+      !agentConfig.pausedAt && agentConfig.operationMode !== 'assisted' &&
+      await apresentacaoOferecidaNoTurno(deps.crmCfg.supabase, pool, tenantId, runLog)
     ) {
       rawTools.present_catalog_items = tool({
         description:

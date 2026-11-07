@@ -9270,6 +9270,28 @@ export const DICIONARIO: Traducoes = {
   "O limite físico estimado de mensagens foi excedido.": {
     es: "Se superó el límite físico estimado de mensajes.",
   },
+  "Usar a apresentação de produtos pela IA": {
+    es: "Usar la presentación de productos por la IA",
+  },
+  "Cada produto pode ter uma apresentação própria, em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência. Desligar esconde a seção, mas não apaga o que já foi cadastrado.": {
+    es: "Cada producto puede tener una presentación propia, en texto o audio, con fotos y precio, que el agente de IA envía en secuencia. Desactivarla oculta la sección, pero no borra lo que ya se registró.",
+  },
+  "Catálogo salvo.": { es: "Catálogo guardado." },
+  "Aplicar ajustes do catálogo": { es: "Aplicar ajustes del catálogo" },
+  "Falha ao salvar.": { es: "Error al guardar." },
+  "A configuração mudou. Recarregue a página e tente novamente.": {
+    es: "La configuración cambió. Recarga la página e inténtalo de nuevo.",
+  },
+  "A apresentação do catálogo está desligada nesta empresa.": {
+    es: "La presentación del catálogo está desactivada en esta empresa.",
+  },
+  "O áudio precisa ser OGG/Opus, WebM/Opus ou M4A válido.": {
+    es: "El audio debe ser OGG/Opus, WebM/Opus o M4A válido.",
+  },
+  "Apresentação do catálogo pela IA": { es: "Presentación del catálogo por la IA" },
+  "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": {
+    es: "Cada producto puede tener una presentación en texto o audio, con fotos y precio, que el agente de IA envía en secuencia cuando el cliente la pide.",
+  },
   "Apresentação salva": { es: "Presentación guardada" },
   "Não consegui enviar o áudio.": { es: "No pude enviar el audio." },
   "Áudio salvo": { es: "Audio guardado" },

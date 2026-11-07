@@ -381,6 +381,7 @@ export const AUDIT_ACTIONS = [
   "attendant.availability_changed",
   "routing.config_changed",
   "proposals.config_changed",
+  "catalogo.apresentacao_changed",
   // Mudar a régua do abandono (spec 16 §5.2) muda como TODO período passa a ser
   // lido — é mutação relevante, não preferência de exibição.
   "metrics.atrito_regua_changed",

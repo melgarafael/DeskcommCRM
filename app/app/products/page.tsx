@@ -12,6 +12,7 @@ import {
   queryDaTela,
   ultimaPagina,
 } from "@/lib/catalogo/busca-da-tela";
+import { apresentacaoDoCatalogoLigada } from "@/lib/catalogo/apresentacao-ligada";
 import { BUCKET_DAS_FOTOS, fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { COLUNAS_DO_PRODUTO, type Produto } from "@/lib/schemas/produtos";
@@ -122,6 +123,7 @@ export default async function ProdutosPage({
       buscaInicial={busca}
       urlsDasFotos={urlsDasFotos}
       podeEditar={podeEditar}
+      apresentacaoLigada={await apresentacaoDoCatalogoLigada(createAdminClient(), activeOrg.orgId)}
       textos={{
         titulo: t("Produtos"),
         subtitulo: t(
