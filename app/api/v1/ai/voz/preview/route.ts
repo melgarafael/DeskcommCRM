@@ -28,7 +28,8 @@ import {
 } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { registrarCustoDeVoz } from "@/lib/agent-engine/edge/crm/send-voice";
 import { chaveDeOrcamentoDaInstalacao } from "@/lib/instalacao/comportamento";
-import { sintetizarVoz, ErroDoProvedorDeVoz } from "@/lib/ai/voz/sintetizar";
+import { sintetizarVoz } from "@/lib/ai/voz/sintetizar";
+import { ErroDoProvedorDeVoz } from "@/lib/ai/voz/erro-do-provedor";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";

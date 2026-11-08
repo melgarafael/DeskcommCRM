@@ -58,15 +58,12 @@ const DEFAULT_MODEL = "eleven_multilingual_v2";
  * provedor dizer o contrário — e quando disser, a pessoa precisa saber por quê,
  * não só "não foi possível").
  */
-export class ErroDoProvedorDeVoz extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly mensagemDoProvedor: string | null,
-  ) {
-    super(`synthesis_${status}`);
-    this.name = "ErroDoProvedorDeVoz";
-  }
-}
+// A classe mora em arquivo próprio: quem a consome na ROTA não pode depender
+// do módulo que fala com o provedor — teste que troca `sintetizar` por dublê
+// deixaria a classe indefinida e o `instanceof` explodiria.
+import { ErroDoProvedorDeVoz } from "./erro-do-provedor";
+
+export { ErroDoProvedorDeVoz };
 
 /** O `detail` do ElevenLabs é `{status, message}` — mas texto puro também aparece. */
 function motivoDaRecusa(corpo: string): string | null {
