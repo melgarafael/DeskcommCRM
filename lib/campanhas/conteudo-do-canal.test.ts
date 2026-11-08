@@ -6,7 +6,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
-import { decidirConteudo, decidirVelocidade, fraseDaRecusa } from "./conteudo-do-canal";
+import {
+  camposDeGravacao,
+  decidirConteudo,
+  decidirVelocidade,
+  fraseDaRecusa,
+  lerModoDoCanal,
+} from "./conteudo-do-canal";
+import { LIMITE_DO_ASSUNTO_DO_EMAIL, LIMITE_DO_CORPO_DO_EMAIL } from "./conteudo-de-email";
 
 const SEM_BANCO = new Proxy({} as SupabaseClient, {
   get() {
@@ -27,6 +34,7 @@ describe("decidirConteudo", () => {
         provider_template_name: null,
         provider_template_language: null,
         provider_template_variables: {},
+        email_subject: null,
       },
     });
   });
@@ -67,6 +75,177 @@ describe("decidirConteudo", () => {
   it("canal que não faz campanha (rede social)", async () => {
     const r = await decidirConteudo(SEM_BANCO, { ...base, modoDoCanal: null, pedido: {} });
     expect(r).toMatchObject({ ok: false, codigo: "campanha_canal_indisponivel" });
+  });
+});
+
+/**
+ * O banco da CONTA RESEND: só a tabela `organization_resend_accounts` responde.
+ * Qualquer outra leitura estoura — um caso de e-mail que fosse procurar número
+ * estaria medindo o caminho errado.
+ */
+const CONTA_CONECTADA = { from_email: "contato@empresa.test", api_key_last4: "abcd" };
+
+function bancoDaContaResend(resposta: "conectada" | "sem_conta" | "indisponivel"): SupabaseClient {
+  const cadeia = {
+    select: () => cadeia,
+    eq: () => cadeia,
+    maybeSingle: async () => {
+      if (resposta === "indisponivel") return { data: null, error: { message: "leitura falhou" } };
+      return { data: resposta === "conectada" ? CONTA_CONECTADA : null, error: null };
+    },
+  };
+  return new Proxy({} as SupabaseClient, {
+    get(_alvo, prop) {
+      if (prop === "from") {
+        return (tabela: string) => {
+          if (tabela !== "organization_resend_accounts") {
+            throw new Error(`e-mail não deveria ler ${tabela}`);
+          }
+          return cadeia;
+        };
+      }
+      if (prop === "then") return undefined;
+      throw new Error(`leitura inesperada do banco: ${String(prop)}`);
+    },
+  });
+}
+
+const EMAIL = { email_subject: "Novidades de outubro", message_body: "Olá! Passando para contar." };
+
+describe("decidirConteudo — campanha de E-MAIL (#3441)", () => {
+  it("o canal de e-mail sai da capability, e não de uma escolha da requisição", async () => {
+    await expect(lerModoDoCanal(SEM_BANCO, "org", null)).resolves.toEqual({
+      existe: true,
+      modo: "email",
+      transmissao: false,
+    });
+  });
+
+  it("(a) aceita assunto + corpo: o modo, as colunas e o texto aparado", async () => {
+    const canal = await lerModoDoCanal(SEM_BANCO, "org", null);
+    const r = await decidirConteudo(bancoDaContaResend("conectada"), {
+      organizationId: "org",
+      channelSessionId: null,
+      extras: [],
+      modoDoCanal: canal.existe ? canal.modo : null,
+      pedido: { ...EMAIL, message_body: "  Olá! Passando para contar.  " },
+    });
+    expect(r).toEqual({
+      ok: true,
+      modo: "email",
+      colunas: {
+        message_mode: "email",
+        provider_template_name: null,
+        provider_template_language: null,
+        provider_template_variables: {},
+        email_subject: "Novidades de outubro",
+      },
+      conteudoDeEmail: { assunto: "Novidades de outubro", corpo: "Olá! Passando para contar." },
+    });
+  });
+
+  it("(a) recusa assunto vazio, corpo vazio e os dois estouros — com motivo próprio", async () => {
+    const canal = await lerModoDoCanal(SEM_BANCO, "org", null);
+    const decidir = (pedido: Record<string, string | null>) =>
+      decidirConteudo(bancoDaContaResend("conectada"), {
+        organizationId: "org",
+        channelSessionId: null,
+        extras: [],
+        modoDoCanal: canal.existe ? canal.modo : null,
+        pedido,
+      });
+
+    await expect(decidir({ email_subject: "   ", message_body: "corpo" })).resolves.toMatchObject({
+      ok: false,
+      codigo: "campanha_email_assunto_vazio",
+      status: 422,
+    });
+    await expect(decidir({ email_subject: "assunto", message_body: "  " })).resolves.toMatchObject({
+      ok: false,
+      codigo: "campanha_email_corpo_vazio",
+    });
+    await expect(
+      decidir({ email_subject: "a".repeat(LIMITE_DO_ASSUNTO_DO_EMAIL + 1), message_body: "corpo" }),
+    ).resolves.toMatchObject({ ok: false, codigo: "campanha_email_assunto_longo" });
+    await expect(
+      decidir({ email_subject: "assunto", message_body: "b".repeat(LIMITE_DO_CORPO_DO_EMAIL + 1) }),
+    ).resolves.toMatchObject({ ok: false, codigo: "campanha_email_corpo_longo" });
+  });
+
+  it("(d) organização SEM conta Resend recebe recusa com motivo — nunca texto livre", async () => {
+    const canal = await lerModoDoCanal(SEM_BANCO, "org", null);
+    const r = await decidirConteudo(bancoDaContaResend("sem_conta"), {
+      organizationId: "org",
+      channelSessionId: null,
+      extras: [],
+      modoDoCanal: canal.existe ? canal.modo : null,
+      pedido: EMAIL,
+    });
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_email_sem_conta", status: 409 });
+  });
+
+  it("(d) conta que não pôde ser LIDA não é tratada como ausente", async () => {
+    const canal = await lerModoDoCanal(SEM_BANCO, "org", null);
+    const r = await decidirConteudo(bancoDaContaResend("indisponivel"), {
+      organizationId: "org",
+      channelSessionId: null,
+      extras: [],
+      modoDoCanal: canal.existe ? canal.modo : null,
+      pedido: EMAIL,
+    });
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_email_conta_indisponivel", status: 503 });
+  });
+
+  it("(b) WhatsApp continua recusando assunto — não regride", async () => {
+    const r = await decidirConteudo(SEM_BANCO, {
+      ...base,
+      modoDoCanal: "text",
+      pedido: { message_body: "Oi", email_subject: "assunto de e-mail" },
+    });
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_modo_do_canal", status: 422 });
+  });
+
+  it("(e) a gravação recebe o conteúdo novo: modo email, assunto e corpo aparado", async () => {
+    const canal = await lerModoDoCanal(SEM_BANCO, "org", null);
+    const decisao = await decidirConteudo(bancoDaContaResend("conectada"), {
+      organizationId: "org",
+      channelSessionId: null,
+      extras: [],
+      modoDoCanal: canal.existe ? canal.modo : null,
+      pedido: { ...EMAIL, message_body: "  Olá! Passando para contar.  " },
+    });
+    if (!decisao.ok) throw new Error("deveria ter passado");
+    expect(camposDeGravacao(decisao, "  Olá! Passando para contar.  ")).toEqual({
+      message_body: "Olá! Passando para contar.",
+      message_mode: "email",
+      provider_template_name: null,
+      provider_template_language: null,
+      provider_template_variables: {},
+      email_subject: "Novidades de outubro",
+    });
+  });
+
+  it("e-mail não usa modelo nem rodízio de números", async () => {
+    const canal = await lerModoDoCanal(SEM_BANCO, "org", null);
+    const modoDoCanal = canal.existe ? canal.modo : null;
+    await expect(
+      decidirConteudo(bancoDaContaResend("conectada"), {
+        organizationId: "org",
+        channelSessionId: null,
+        extras: ["outro-numero"],
+        modoDoCanal,
+        pedido: EMAIL,
+      }),
+    ).resolves.toMatchObject({ ok: false, codigo: "campanha_modo_do_canal" });
+    await expect(
+      decidirConteudo(bancoDaContaResend("conectada"), {
+        organizationId: "org",
+        channelSessionId: null,
+        extras: [],
+        modoDoCanal,
+        pedido: { ...EMAIL, provider_template_name: "oferta" },
+      }),
+    ).resolves.toMatchObject({ ok: false, codigo: "campanha_modo_do_canal" });
   });
 });
 

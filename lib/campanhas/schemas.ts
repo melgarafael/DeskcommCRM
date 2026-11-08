@@ -6,8 +6,20 @@
 import { z } from "zod";
 
 import { filtroDeAudienciaSchema } from "./audiencia";
+import { LIMITE_DO_ASSUNTO_DO_EMAIL, LIMITE_DO_CORPO_DO_EMAIL } from "./conteudo-de-email";
 import { variaveisDaCampanhaSchema } from "./modelo";
 import { MODOS_DA_MENSAGEM, VELOCIDADES_DA_CAMPANHA } from "./tipos";
+
+/** O teto do corpo de TEXTO no WhatsApp — o que já era, e o que o envio comporta. */
+export const LIMITE_DO_TEXTO_DO_WHATSAPP = 4096;
+
+/**
+ * Os canais de CAMPANHA (#3441). `whatsapp` é o que sempre existiu — um
+ * `channel_sessions` na coluna `channel_session_id`; `email` não tem número
+ * nenhum e a conta de envio é a Resend da organização.
+ */
+export const CANAIS_DA_CAMPANHA = ["whatsapp", "email"] as const;
+export type CanalDaCampanha = (typeof CANAIS_DA_CAMPANHA)[number];
 
 /**
  * O ritmo próprio. Todos opcionais e anuláveis: `null` devolve a decisão ao
@@ -38,8 +50,25 @@ export const ritmoSchema = z.object({
 const baseDaCampanha = {
   name: z.string().trim().min(1).max(160),
   description: z.string().trim().max(4000).nullable().optional(),
-  channel_session_id: z.string().uuid(),
-  message_body: z.string().trim().max(4096).nullable().optional(),
+  /**
+   * O canal da campanha. Ausente = `whatsapp`, que é toda campanha anterior ao
+   * e-mail. Em `email` não há número: `channel_session_id` fica de fora.
+   */
+  canal: z.enum(CANAIS_DA_CAMPANHA).optional(),
+  /** Obrigatório no WhatsApp; proibido no e-mail (lá não há número). */
+  channel_session_id: z.string().uuid().optional(),
+  /**
+   * O corpo é UM só (`message_body`), com o teto do MAIOR canal: o e-mail aceita
+   * 20.000. O teto do WhatsApp (4.096) continua cobrado, e por canal — ver
+   * `corpoDoWhatsappCabe`.
+   */
+  message_body: z.string().trim().max(LIMITE_DO_CORPO_DO_EMAIL).nullable().optional(),
+  /**
+   * Migration 9252 (#3441). Assunto do e-mail; ausente nos demais canais. O
+   * limite aqui é o mesmo da conferência (`conferirConteudoDeEmail`), para o
+   * erro de tamanho chegar antes do banco.
+   */
+  email_subject: z.string().trim().max(LIMITE_DO_ASSUNTO_DO_EMAIL).nullable().optional(),
   /**
    * Migration 0710 (#1330, fatia 4). Ausente = `text`, que é o que toda campanha
    * anterior é. A rota confere contra o número: o modo é o que o canal aceita
@@ -67,9 +96,43 @@ const baseDaCampanha = {
   agent_id: z.string().uuid().nullable().optional(),
 };
 
+/**
+ * O canal pedido é e-mail? `message_mode: "email"` também responde sim: a tela
+ * pode mandar o modo sem repetir o canal.
+ */
+function ehCampanhaDeEmail(c: { canal?: CanalDaCampanha; message_mode?: string }): boolean {
+  return c.canal === "email" || c.message_mode === "email";
+}
+
+/** O corpo do WhatsApp não cabe acima de 4.096 — o teto é do envio, não do schema. */
+function corpoDoWhatsappCabe(c: {
+  canal?: CanalDaCampanha;
+  message_mode?: string;
+  message_body?: string | null;
+}): boolean {
+  if (ehCampanhaDeEmail(c)) return true;
+  return (c.message_body ?? "").length <= LIMITE_DO_TEXTO_DO_WHATSAPP;
+}
+
 export const criarCampanhaSchema = z
   .object({ ...baseDaCampanha })
   .merge(ritmoSchema)
+  .refine((c) => ehCampanhaDeEmail(c) || c.channel_session_id !== undefined, {
+    message: "Escolha o número que envia a campanha de WhatsApp.",
+    path: ["channel_session_id"],
+  })
+  .refine((c) => !ehCampanhaDeEmail(c) || c.channel_session_id === undefined, {
+    message: "Campanha de e-mail não usa número: a conta de envio é a Resend da organização.",
+    path: ["channel_session_id"],
+  })
+  .refine((c) => !ehCampanhaDeEmail(c) || (c.channel_session_ids ?? []).length === 0, {
+    message: "Campanha de e-mail não usa rodízio de números.",
+    path: ["channel_session_ids"],
+  })
+  .refine(corpoDoWhatsappCabe, {
+    message: `O texto do WhatsApp passa de ${LIMITE_DO_TEXTO_DO_WHATSAPP} caracteres.`,
+    path: ["message_body"],
+  })
   .refine(
     (c) => c.base_legal !== "legitimate_interest" || (c.lia_ref ?? "").trim() !== "",
     {
@@ -96,8 +159,9 @@ export const editarCampanhaSchema = z
   .object({
     name: baseDaCampanha.name.optional(),
     description: baseDaCampanha.description,
-    channel_session_id: baseDaCampanha.channel_session_id.optional(),
+    channel_session_id: baseDaCampanha.channel_session_id,
     message_body: baseDaCampanha.message_body,
+    email_subject: baseDaCampanha.email_subject,
     message_mode: baseDaCampanha.message_mode,
     provider_template_name: baseDaCampanha.provider_template_name,
     provider_template_language: baseDaCampanha.provider_template_language,
@@ -114,7 +178,17 @@ export const editarCampanhaSchema = z
 
 export const previaSchema = z.object({
   audience_filter: filtroDeAudienciaSchema,
-  message_body: z.string().max(4096).default(""),
+  /**
+   * O mesmo teto do corpo de campanha (#3441): a prévia de um e-mail renderiza
+   * um texto que o salvar aceitaria, e recusar aqui um corpo de 5.000
+   * caracteres faria a tela mentir sobre o que o canal comporta.
+   */
+  message_body: z.string().max(LIMITE_DO_CORPO_DO_EMAIL).default(""),
+  /**
+   * Por onde a prévia conta o público. Ausente = WhatsApp, que é o que toda
+   * prévia anterior era; `email` exige `contacts.email` no lugar do telefone.
+   */
+  canal: z.enum(CANAIS_DA_CAMPANHA).optional(),
   campaign_id: z.string().uuid().optional(),
   /**
    * Com modelo, quem sai por `variavel_ausente` é decidido pelo MAPA de
