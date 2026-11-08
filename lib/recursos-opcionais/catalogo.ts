@@ -525,6 +525,16 @@ const DA_EMPRESA: RecursoOpcional[] = [
     ler: peloSettings((s) => s.colegas_podem_mexer_na_agenda !== false),
   },
   {
+    id: "conta_de_email_da_empresa",
+    nome: "Conta de e-mail da empresa",
+    oQueFaz:
+      "Os e-mails das automações saem pela conta Resend da empresa, com o endereço dela. Convites, recuperação de senha e LGPD continuam no envio do sistema.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/marca",
+  },
+  {
     id: "aviso_no_whatsapp",
     nome: "Receber avisos no WhatsApp",
     oQueFaz: "Os avisos da Central chegam num número de WhatsApp da equipe.",

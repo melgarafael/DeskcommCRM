@@ -1485,6 +1485,14 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  // A CONTA Resend da organização (#3287): conectar e desconectar. Códigos
+  // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
+  // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
+  // domínio os e-mails saem e onde caem os registros de entrega. A chave em si
+  // NUNCA entra no metadata; nem o endereço: só nomes dos campos e o fato da
+  // verificação, pois a trilha append-only não é lugar para identidade pessoal.
+  "org.resend_account_connected",
+  "org.resend_account_disconnected",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
