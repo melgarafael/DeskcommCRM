@@ -121,8 +121,13 @@ export function fail(
  * redirect é sempre vazio.)
  */
 export function comIdDaRequisicao<T extends Response>(res: T, reqOuId: Request | string | null | undefined): T {
+  // `reqOuId` pode ser um dublê de requisição sem `headers` (os testes de rota
+  // montam `{ headers: undefined }`): ler `.headers.get` às cegas derrubava a
+  // resposta inteira com TypeError. Sem cabeçalho, cai no id gerado abaixo.
+  const cabecalhos =
+    typeof reqOuId === "object" && reqOuId !== null ? reqOuId.headers : undefined;
   const doHeader =
-    typeof reqOuId === "string" ? reqOuId : reqOuId?.headers.get("x-request-id");
+    typeof reqOuId === "string" ? reqOuId : cabecalhos?.get?.("x-request-id");
   const requestId = doHeader && doHeader.length > 0 ? doHeader : randomUUID();
 
   // Quem já carimbou o PRÓPRIO id (o export de tenant, o `/api/mcp`) manda: ali
