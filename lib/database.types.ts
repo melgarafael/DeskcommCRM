@@ -4611,6 +4611,73 @@ export type Database = {
           },
         ];
       };
+      catalog_product_presentations: {
+        Row: {
+          audio_mime: string | null;
+          audio_size_bytes: number | null;
+          audio_storage_path: string | null;
+          catalog_product_id: string;
+          created_at: string;
+          enabled: boolean;
+          id: string;
+          kind: string;
+          organization_id: string;
+          show_price: boolean;
+          text_content: string | null;
+          title: string | null;
+          updated_at: string;
+          use_catalog_photos: boolean;
+        };
+        ComputedFields: never;
+        Insert: {
+          audio_mime?: string | null;
+          audio_size_bytes?: number | null;
+          audio_storage_path?: string | null;
+          catalog_product_id: string;
+          created_at?: string;
+          enabled?: boolean;
+          id?: string;
+          kind?: string;
+          organization_id: string;
+          show_price?: boolean;
+          text_content?: string | null;
+          title?: string | null;
+          updated_at?: string;
+          use_catalog_photos?: boolean;
+        };
+        Update: {
+          audio_mime?: string | null;
+          audio_size_bytes?: number | null;
+          audio_storage_path?: string | null;
+          catalog_product_id?: string;
+          created_at?: string;
+          enabled?: boolean;
+          id?: string;
+          kind?: string;
+          organization_id?: string;
+          show_price?: boolean;
+          text_content?: string | null;
+          title?: string | null;
+          updated_at?: string;
+          use_catalog_photos?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "catalog_product_presentations_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "catalog_product_presentations_product_org_fk";
+            columns: ["organization_id", "catalog_product_id"];
+            isOneToOne: false;
+            referencedRelation: "catalog_products";
+            referencedColumns: ["organization_id", "id"];
+          },
+        ];
+      };
       catalog_products: {
         Row: {
           ativo: boolean;
@@ -11757,6 +11824,48 @@ export type Database = {
             foreignKeyName: "organization_extensions_organization_id_fkey";
             columns: ["organization_id"];
             isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      organization_resend_accounts: {
+        Row: {
+          api_key_ciphertext: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at: string;
+          from_email: string;
+          organization_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          api_key_ciphertext: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at?: string;
+          from_email: string;
+          organization_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          api_key_ciphertext?: string;
+          api_key_iv?: string;
+          api_key_last4?: string;
+          api_key_tag?: string;
+          created_at?: string;
+          from_email?: string;
+          organization_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_resend_accounts_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
             referencedRelation: "organizations";
             referencedColumns: ["id"];
           },

@@ -22,8 +22,13 @@ import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
  * menu de todo mundo e levava a uma tela vazia para quem nunca ligou o módulo.
  * Ela é uma capacidade da ORGANIZAÇÃO, com o mesmo desenho de `propostas` — não
  * uma segunda régua: o menu lê `capacidades_ligadas` e mais nada.
+ *
+ * `apresentacao_do_catalogo` (#3525): a sequência de texto, áudio e fotos que o
+ * agente envia por produto. A seção da edição, as rotas e a ferramenta do agente
+ * perguntam aqui. Desligar não apaga o que foi guardado, e o job que já gravou o
+ * snapshot termina. A chave mora em `settings.catalogo.apresentacao`.
  */
-export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia", "cadencias"] as const;
+export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia", "cadencias", "apresentacao_do_catalogo"] as const;
 export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number];
 
 /**
@@ -41,6 +46,7 @@ const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional | nul
   propostas: "propostas",
   telefonia: null,
   cadencias: "cadencias",
+  apresentacao_do_catalogo: null,
 };
 
 function objeto(v: unknown): Record<string, unknown> | null {
@@ -79,6 +85,7 @@ export function capacidadesLigadas(
   if (cadencias?.enabled === true && moduloDeCadencias && modulos.includes(moduloDeCadencias)) {
     daEmpresa.push("cadencias");
   }
+  if (objeto(objeto(settings)?.catalogo)?.apresentacao === true) daEmpresa.push("apresentacao_do_catalogo");
   return daEmpresa;
 }
 

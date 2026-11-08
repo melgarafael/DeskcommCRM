@@ -525,6 +525,16 @@ const DA_EMPRESA: RecursoOpcional[] = [
     ler: peloSettings((s) => s.colegas_podem_mexer_na_agenda !== false),
   },
   {
+    id: "conta_de_email_da_empresa",
+    nome: "Conta de e-mail da empresa",
+    oQueFaz:
+      "Os e-mails das automações saem pela conta Resend da empresa, com o endereço dela. Convites, recuperação de senha e LGPD continuam no envio do sistema.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/marca",
+  },
+  {
     id: "aviso_no_whatsapp",
     nome: "Receber avisos no WhatsApp",
     oQueFaz: "Os avisos da Central chegam num número de WhatsApp da equipe.",
@@ -671,6 +681,18 @@ const DA_EMPRESA: RecursoOpcional[] = [
     href: "/app/settings/voip-trunk",
     capacidade: "telefonia",
     ler: (f) => (f.telefonia === null ? "nao_lido" : f.telefonia ? "ligado" : "desligado"),
+  },
+  {
+    id: "apresentacao_do_catalogo",
+    nome: "Apresentação do catálogo pela IA",
+    oQueFaz:
+      "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/tenant",
+    capacidade: "apresentacao_do_catalogo",
+    ler: peloSettings((s) => capacidadesLigadas(s, []).includes("apresentacao_do_catalogo")),
   },
   {
     id: "propostas_da_empresa",
