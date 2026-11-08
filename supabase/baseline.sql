@@ -72317,7 +72317,7 @@ end $function$;
 revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
 grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
 
--- ---- Cadências opcionais (migration 9247) ----
+-- ---- Cadências opcionais (migration 9249) ----
 -- manifest: Cadências de e-mail do PR1738 entram como módulo opcional oficial (doc75B, ADR0002), desligadas até instalação e escolha da empresa; tabelas nascem só na provisionadora fixa, com RLS/grants e LGPD, abertura com consentimento e descadastro sem sessão. Crédito: Marcelo (@lmarceloc).
 -- A migration entrega funções, não tabelas para toda instalação. Não modifica MANIFEST histórico.
 create or replace function public.fn_cadencias_provisionar()
