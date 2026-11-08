@@ -8,7 +8,8 @@
  * decide é `sincronizar`, que relê na API. Duplicado `processed` → 200 sem
  * reemitir; linha que ficou `received`/`error` → segue de novo (reemitir é
  * inofensivo: o consumidor relê). Cliente desconhecido → `error` e 200: a
- * reconciliação cura. Falha no emit → 503, e o provedor reentrega.
+ * reconciliação cura. Falha no emit → 503, e o provedor reentrega. Falha ao
+ * identificar a empresa → o ponteiro fica `received`, com o motivo, antes do 500.
  */
 import { randomUUID } from "node:crypto";
 
@@ -71,7 +72,8 @@ export async function POST(req: NextRequest, { params }: Rota) {
     if (!taxa.allowed) {
       return fail("rate_limited", "Muitos avisos recusados seguidos.", 429, { requestId, headers: { "Retry-After": "60" } });
     }
-    logger.warn("cobranca.webhook_recusado", { provedor, motivo: "assinatura_invalida" });
+    const motivo = motivoDaRecusa(corpo);
+    logger.warn("cobranca.webhook_recusado", { provedor, motivo });
     // Recusa de segurança deixa rastro que o dono VÊ: a Visão geral conta estas
     // linhas (Task 38). Um segredo trocado à mão faria todo aviso voltar 401 em
     // silêncio, e a Stripe desativaria o endpoint em 3 dias. Sem org, sem id e
@@ -86,7 +88,7 @@ export async function POST(req: NextRequest, { params }: Rota) {
       valid_signature: false,
       external_id: null,
       status: "error",
-      error_message: "assinatura_invalida",
+      error_message: motivo,
     });
     return fail("unauthorized", "Assinatura inválida.", 401, { requestId });
   }
@@ -100,19 +102,27 @@ export async function POST(req: NextRequest, { params }: Rota) {
         .eq("provedor_cliente_id", sinal.clienteRef)
         .maybeSingle()
     : { data: null, error: null };
-  if (erroDaDona) return fail("internal_error", "Não foi possível identificar a empresa.", 500, { requestId });
   const org = (dona as { organization_id: string } | null)?.organization_id ?? null;
   if (!org && provedor === "asaas") {
     // O token do Asaas é estático: vazado, ele assina avisos de clientes que não
     // existem, e cada um viraria uma linha nova. Acima do balde, 200 SEM gravar:
     // 429 faria o Asaas interromper a fila, e com ela os avisos verdadeiros; o
-    // que for de verdade, a reconciliação cura. Cliente conhecido nunca entra aqui.
+    // que for de verdade, a reconciliação cura. Cliente conhecido só entra aqui se a
+    // leitura da empresa falhou: sem saber a dona, o aviso também vira linha nova.
     // Chave GLOBAL por provedor, não por IP: o IP é o primeiro salto do
     // x-forwarded-for, que quem tem o token controla — um IP por aviso daria um
     // balde novo a cada um. O custo: o atacante pode empurrar para fora outros
     // avisos de cliente DESCONHECIDO, e esses a reconciliação cura.
     const taxa = await checkRateLimit(`cobranca-webhook-desconhecido:${provedor}`, DESCONHECIDOS_POR_MINUTO, 60);
     if (!taxa.allowed) return ok({ ignorado: "limite_de_desconhecidos" }, { requestId });
+  }
+  if (erroDaDona) {
+    // Sem a linha, este 500 não deixaria rastro. Fica `received`, e não `error`: com
+    // assinatura válida, a Visão geral lê `error` como "aviso sem empresa, pode
+    // ignorar", e aqui a empresa pode existir. A reentrega fecha a mesma linha.
+    logger.error("cobranca.empresa_nao_identificada", { provedor, codigo: erroDaDona.code ?? null });
+    await gravarPonteiro(admin, provedor, sinal, assinatura, "falha_ao_identificar_empresa");
+    return fail("internal_error", "Não foi possível identificar a empresa.", 500, { requestId });
   }
 
   const linha = await gravarPonteiro(admin, provedor, sinal, assinatura);
@@ -141,10 +151,24 @@ export async function POST(req: NextRequest, { params }: Rota) {
   }
   await admin
     .from("webhook_events_log")
-    .update({ status: "processed", processed_at: agora })
+    .update({ status: "processed", processed_at: agora, error_message: null })
     .eq("id", linha.id)
     .is("organization_id", null);
   return ok({ recebido: true }, { requestId });
+}
+
+/**
+ * O motivo que a linha de recusa pode afirmar, de um vocabulário fechado: o corpo
+ * recusado não é guardado (§2.4), então é só isto que sobra dele para o diagnóstico.
+ */
+function motivoDaRecusa(corpo: string): "corpo_vazio" | "corpo_malformado" | "assinatura_invalida" {
+  if (corpo.trim() === "") return "corpo_vazio";
+  try {
+    JSON.parse(corpo);
+  } catch {
+    return "corpo_malformado";
+  }
+  return "assinatura_invalida";
 }
 
 /** Grava o ponteiro, ou devolve a linha que já existia (o 23505 do índice de cobrança). */
@@ -153,6 +177,7 @@ async function gravarPonteiro(
   provedor: ProvedorDeCobranca,
   sinal: SinalDoWebhook,
   assinatura: string | null,
+  falha?: string,
 ): Promise<{ id: string; status: string } | "erro"> {
   const { data, error } = await admin
     .from("webhook_events_log")
@@ -166,6 +191,7 @@ async function gravarPonteiro(
       external_id: sinal.eventoId,
       event_type: sinal.tipo,
       status: "received",
+      ...(falha ? { error_message: falha } : {}),
     })
     .select("id, status")
     .single();

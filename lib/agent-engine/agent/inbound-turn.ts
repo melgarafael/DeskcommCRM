@@ -136,6 +136,13 @@ import { snapshotDoCaso } from "./conversa-do-caso/contexto";
 import { lerRemetenteDeGrupo, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
+import { buildKnowledgeIndexBlock, ORCAMENTO_PADRAO_DO_INDICE } from './indice-de-conhecimento';
+import { lerDocumentoDoMaterial } from './ler-documento';
+import {
+  MODO_DE_CONHECIMENTO_PADRAO,
+  aplicarGateDasFerramentasDeConhecimento,
+  planejarConhecimentoDoTurno,
+} from './modo-de-conhecimento';
 import { buildOrigemBlock } from './abertura/origem-do-contato';
 import { agendaNoFechamento } from './abertura/agenda-no-fechamento';
 import { applyScheduleFollowup, type FollowupWindowKnobs } from './schedule-followup';
@@ -216,6 +223,7 @@ import { buildMcpTurnTools, idsDoCatalogoQueContamParaAProjecao } from '../edge/
 import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import {
+  gatilhoDaAtivacao,
   latestInboundSignal,
   recentInboundSignal,
   loadSkills,
@@ -506,6 +514,20 @@ export const AGENT_TOOL_DEFS = {
     inputSchema: z
       .object({
         query: z.string().min(2).describe('a pergunta ou termos a buscar, no idioma da conversa com o lead'),
+      })
+      .passthrough(),
+  },
+  ler_documento: {
+    description:
+      'Lê o CONTEÚDO INTEIRO de UM material da base de conhecimento da empresa pelo id (o id ' +
+      'aparece no índice de documentos, entre colchetes, como [id]). Use quando a linha do índice ' +
+      'não bastar e você precisar do texto completo (política, horários, formas de pagamento, ' +
+      'especificação). Responda com base no texto lido e não invente o que não estiver nele.',
+    inputSchema: z
+      .object({
+        source_id: z
+          .string()
+          .describe('id do material (como aparece no índice de documentos, entre colchetes)'),
       })
       .passthrough(),
   },
@@ -1505,6 +1527,13 @@ export interface InboundTurnKnobs {
   historyFormat?: FormatoDoHistorico;
   /** orçamento fixo do índice de notas do lead injetado no sufixo (LEAD_NOTES_INDEX_MAX_TOKENS) */
   notesIndexMaxTokens: number;
+  /**
+   * Orçamento do ÍNDICE da base de conhecimento no sufixo, usado só no modo
+   * `leitura_direta` (#4133). Opcional porque nasce depois das fixtures que
+   * montam este tipo à mão (mesmo precedente de `maxSendsPerTurn`); ausente =
+   * `KNOWLEDGE_INDEX_MAX_TOKENS` do `env`.
+   */
+  knowledgeIndexMaxTokens?: number;
   /** teto de steps do loop de tools por run (AGENT_MAX_STEPS) — circuit breaker fino é F2-15 */
   maxSteps: number;
   /**
@@ -2522,7 +2551,7 @@ async function executarTurnoDoAgente(
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
-  if (!preview && (await isLeadInHandoff(pool, tenantId, leadId))) {
+  if (!preview && (await isLeadInHandoff(pool, tenantId, leadId, { conversationId: input.conversationId }))) {
     runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: liveJob().kind });
     return;
   }
@@ -3692,21 +3721,40 @@ async function executarTurnoDoAgente(
   const notasDaPrevia = preview
     ? blocoDeNotasDaPrevia(preview.notes ?? [], deps.knobs.notesIndexMaxTokens)
     : null;
-  const [notesIndexBlock, compromissosBlock, origemBlock, noteIdRows] = await Promise.all([
-    notasDaPrevia
-      ? notasDaPrevia.bloco
-      : buildNotesIndexBlock(pool, tenantId, leadId, deps.knobs.notesIndexMaxTokens),
-    preview?.kind === 'sandbox' ? '' : buildCompromissosBlock(pool, tenantId, leadId, new Date()),
-    preview ? '' : buildOrigemBlock(pool, tenantId, leadId, new Date()),
-    preview
-      ? null
-      : pool
-          .query<{ id: string }>(
-            'select id from lead_notes where organization_id = $1 and contact_id = $2 order by created_at',
-            [tenantId, leadId],
+  // O plano de conhecimento do turno (#4133) — UMA decisão, usada três vezes:
+  // o índice abaixo, a montagem da tool `ler_documento` e o gate que remove as
+  // tools de conhecimento que este turno não deve ter.
+  const planoDeConhecimento = planejarConhecimentoDoTurno({
+    modo: agentConfig?.knowledgeMode ?? MODO_DE_CONHECIMENTO_PADRAO,
+    knowledgeSourceIds: agentConfig?.knowledgeSourceIds ?? [],
+    activeKbVersionId: agentConfig?.activeKbVersionId ?? null,
+  });
+  const [notesIndexBlock, compromissosBlock, origemBlock, noteIdRows, indiceDeConhecimentoBlock] =
+    await Promise.all([
+      notasDaPrevia
+        ? notasDaPrevia.bloco
+        : buildNotesIndexBlock(pool, tenantId, leadId, deps.knobs.notesIndexMaxTokens),
+      preview?.kind === 'sandbox' ? '' : buildCompromissosBlock(pool, tenantId, leadId, new Date()),
+      preview ? '' : buildOrigemBlock(pool, tenantId, leadId, new Date()),
+      preview
+        ? null
+        : pool
+            .query<{ id: string }>(
+              'select id from lead_notes where organization_id = $1 and contact_id = $2 order by created_at',
+              [tenantId, leadId],
+            )
+            .then((r) => r.rows),
+      // Índice da base de conhecimento no contexto (#4133, item 1) — SÓ no modo
+      // `leitura_direta`; no `busca` o turno é o de hoje, byte a byte.
+      planoDeConhecimento.injetaIndice
+        ? buildKnowledgeIndexBlock(
+            pool,
+            tenantId,
+            agentConfig?.knowledgeSourceIds ?? [],
+            deps.knobs.knowledgeIndexMaxTokens ?? ORCAMENTO_PADRAO_DO_INDICE,
           )
-          .then((r) => r.rows),
-  ]);
+        : Promise.resolve(''),
+    ]);
   // Observabilidade da memória (Fase 2A): SÓ ids/contagens no log — headline/corpo
   // são PII e nunca saem do prompt. Prova auditável de que a memória durável do
   // lead entrou no contexto DESTE turno.
@@ -4135,8 +4183,14 @@ async function executarTurnoDoAgente(
   if (!preview) {
     try {
       const rows: Array<[string, string | null, string]> = [
+        // Entrou pela ETIQUETA → `tag`; pela palavra → `hard`, como sempre (spec 27, fatia 4).
         ...skillMatch.matched.map(
-          (s) => [s.name, s.versionId, 'hard'] as [string, string | null, string],
+          (s) =>
+            [s.name, s.versionId, gatilhoDaAtivacao(skillMatch.motivos.get(s))] as [
+              string,
+              string | null,
+              string,
+            ],
         ),
         ...skillMatch.missCandidates.map(
           (m) => [m.skill, null, 'probe'] as [string, string | null, string],
@@ -4393,6 +4447,25 @@ async function executarTurnoDoAgente(
         // (nenhuma ferramenta os aceita como argumento). UUID cru na resposta ao
         // cliente foi MEDIDO nesta base; esta era uma fonte silenciosa dele.
         return turnoProjeta(mcpToolIdsDoTurno) ? projetarRetornoDeTool(out) : out;
+      },
+    }),
+    // #4133 (item 2): leitura do material INTEIRO pelo id, no modo
+    // `leitura_direta`. READ-ONLY e sem provedor: não chama embedding nem
+    // modelo — devolve TEXTO ao modelo que já está no turno. Escopada por
+    // `tenantId` do closure; id de outra organização é MISS, nunca vazamento.
+    ler_documento: tool({
+      ...AGENT_TOOL_DEFS.ler_documento,
+      execute: async ({ source_id }) => {
+        const out = await lerDocumentoDoMaterial(
+          pool,
+          { organizationId: tenantId, sourceId: source_id },
+          {
+            aviso: (mensagem, dados) => runLog.warn(mensagem, dados),
+          },
+        );
+        // Desfechos (`documento_nao_encontrado`, `documento_vazio`,
+        // `internal_error`) são ENSINO — nunca exceção, que mataria o turno.
+        return out;
       },
     }),
     send_message: tool({
@@ -5554,17 +5627,20 @@ async function executarTurnoDoAgente(
     });
   }
 
-  // A tool de conhecimento só entra quando o agente publicado tem material para
-  // consultar. Desde a 0181 isso é a lista de materiais escolhida na tela; o
-  // ponteiro legado (`activeKbVersionId`) segue valendo para o clone que ainda
-  // não aplicou a migration. Ferramenta que só sabe responder "não tenho base"
-  // não é neutra: gasta contexto e degrada a escolha do modelo.
-  if (
-    (agentConfig?.knowledgeSourceIds?.length ?? 0) === 0 &&
-    agentConfig?.activeKbVersionId == null
-  ) {
-    delete rawTools.search_knowledge;
-  }
+  // As tools de conhecimento só entram quando o agente publicado tem material
+  // para consultar, e a ESCOLHA entre elas é o modo do agente (#4133). A régua
+  // mora em `modo-de-conhecimento.ts` — um lugar só, testável:
+  //   - `busca` (default): `search_knowledge`, removida exatamente nos casos de
+  //     antes (sem lista de materiais E sem o ponteiro legado);
+  //   - `leitura_direta`: `ler_documento` no lugar da busca (que chamaria
+  //     embedding — o ponto do modo é não precisar dele).
+  // Ferramenta que só sabe responder "não tenho base" não é neutra: gasta
+  // contexto e degrada a escolha do modelo.
+  aplicarGateDasFerramentasDeConhecimento(rawTools, {
+    modo: agentConfig?.knowledgeMode ?? MODO_DE_CONHECIMENTO_PADRAO,
+    knowledgeSourceIds: agentConfig?.knowledgeSourceIds ?? [],
+    activeKbVersionId: agentConfig?.activeKbVersionId ?? null,
+  });
 
   // A ferramenta de template só entra em canal que EXIGE template fora da janela.
   // Num canal que fala livre a qualquer hora ela nunca teria uso — e tool inútil no
@@ -6056,6 +6132,10 @@ async function executarTurnoDoAgente(
       stageHintBlock,
       splitHint,
       caseAwaitingLeadBlock,
+      // #4133: índice da base de conhecimento (só no modo `leitura_direta`).
+      // No SUFIXO por-lead: ele muda quando o acervo muda, e um bloco volátil no
+      // prefixo estável derrubaria o cache de prompt de todo mundo.
+      indiceDeConhecimentoBlock,
       roteiro?.bloco ?? '',
       preview?.feedback ? '## Revisão humana deste atendimento\n' + preview.feedback : '',
     ].filter((b) => b !== '');
@@ -7141,7 +7221,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
     // ponytail: o caminho automático refaz as duas em `runAgentTurn` (que
     // também serve follow-up e caso) — duas consultas a mais por turno, contra
     // a IA de sempre e o Jev que elas poupam numa conversa calada.
-    if (await isLeadInHandoff(pool, job.organization_id, job.contact_id)) {
+    if (await isLeadInHandoff(pool, job.organization_id, job.contact_id, { conversationId: payload.conversation_id })) {
       deps.log.info('turno pulado — lead em handoff humano (bot silenciado)', {
         job_id: job.id,
         conversation_id: payload.conversation_id,

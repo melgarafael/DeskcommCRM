@@ -3,12 +3,14 @@
  *
  * A detecção é PURA (`lib/contacts/duplicados.ts`) e roda aqui, no servidor,
  * sobre a página de contatos vivos que a RLS deixa o usuário ver. Não é um
- * `select` esperto: os três índices únicos parciais de `contacts` já impedem
- * duas linhas ativas com a MESMA string, então o que sobra para o produto é a
- * grafia diferente do mesmo número (o nono dígito) e o telefone que a ingestão
- * do WhatsApp parkou em `source_metadata.telefone_em_conflito`. Nenhum dos dois
- * é comparação de igualdade, e é por isso que a regra vive em TypeScript
- * testável em vez de virar SQL que ninguém relê.
+ * `select` esperto: os índices únicos parciais de `contacts` — telefone, e-mail
+ * normalizado e hash de CPF — já impedem duas linhas ativas com a MESMA string,
+ * então o que sobra para o produto é a grafia diferente do mesmo número (o nono
+ * dígito), o telefone que a ingestão do WhatsApp parkou em
+ * `source_metadata.telefone_em_conflito` e a duplicata exata de CPF no clone em
+ * que o índice não nasceu (`if not exists` num `update.sh` sem `ON_ERROR_STOP`).
+ * Nenhuma dessas é comparação que o índice garante, e é por isso que a regra vive
+ * em TypeScript testável em vez de virar SQL que ninguém relê.
  *
  * Há um segundo motivo, que NÃO é igualdade: `nome_parecido` (Spec 31). Ele vem
  * DEPOIS dos fortes, com o mesmo formato, e é sugestão para conferir — o nome
@@ -16,10 +18,19 @@
  * empresa") saem da lista para todo papel, porque a leitura da dispensa usa o
  * cliente administrador, filtrado pela organização da sessão.
  *
+ * ─── O que sai daqui e o que não sai ─────────────────────────────────────────
+ * `cpf_hash` é lido pelo SERVIDOR (a comparação precisa dele), só para as fichas
+ * que a sessão já viu, e NÃO é devolvido: é PII derivada, e a tela de conferência
+ * mostra pessoa, telefone e e-mail — não hash de documento. O mapeamento do
+ * `ok(...)` abaixo é a lista fechada do que o cliente recebe; campo novo em
+ * `contacts` não vaza por acidente.
+ *
  * `viewer` pode LISTAR (é leitura de contato, que ele já enxerga na tabela);
  * quem funde é `manager`, e esse gate está na rota de POST /contacts/merge.
  */
 import { randomUUID } from "node:crypto";
+
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
@@ -64,6 +75,29 @@ const TAMANHO_DA_PAGINA = 1000;
 const COLUNAS_DO_CONTATO =
   "id, name, display_name, address_book_name, email, email_normalized, phone_number, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
 
+/** Cada id custa ~37 caracteres na URL do PostgREST; 100 ficam abaixo do limite comum de 8 KB de um proxy. */
+const LOTE_DE_IDS = 100;
+
+/** O CPF de cada ficha, para comparar. A leitura é do servidor, filtrada pela organização da sessão. */
+async function comHashDeCpf(
+  admin: SupabaseClient,
+  orgId: string,
+  linhas: Omit<ContatoParaDeduplicar, "cpf_hash">[],
+): Promise<ContatoParaDeduplicar[]> {
+  const hashPorId = new Map<string, string>();
+  for (let inicio = 0; inicio < linhas.length; inicio += LOTE_DE_IDS) {
+    const { data, error } = await admin
+      .from("contacts")
+      .select("id, cpf_hash")
+      .eq("organization_id", orgId)
+      .in("id", linhas.slice(inicio, inicio + LOTE_DE_IDS).map((c) => c.id))
+      .not("cpf_hash", "is", null);
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as { id: string; cpf_hash: string }[]) hashPorId.set(r.id, r.cpf_hash);
+  }
+  return linhas.map((c) => ({ ...c, cpf_hash: hashPorId.get(c.id) ?? null }));
+}
+
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
 
@@ -86,7 +120,7 @@ export async function GET(): Promise<Response> {
   // fim — numa instalação com `max_rows` menor que a página, ela vem curta sem
   // ser o fim. O `+1` além do teto é o que prova que existia mais do que a
   // varredura alcança.
-  const linhas: ContatoParaDeduplicar[] = [];
+  const linhas: Omit<ContatoParaDeduplicar, "cpf_hash">[] = [];
   let totalDeVivos: number | null = null;
   let acabou = false;
   for (let pagina = 0; linhas.length <= TETO_DE_VARREDURA && !acabou; pagina++) {
@@ -105,25 +139,28 @@ export async function GET(): Promise<Response> {
       return fail("internal_error", error.message, 500, { requestId });
     }
     if (pagina === 0) totalDeVivos = count;
-    const lote = (data ?? []) as unknown as ContatoParaDeduplicar[];
+    const lote = (data ?? []) as unknown as Omit<ContatoParaDeduplicar, "cpf_hash">[];
     linhas.push(...lote);
     acabou = lote.length === 0 || (totalDeVivos !== null && linhas.length >= totalDeVivos);
   }
 
   const varreuTudo =
     totalDeVivos !== null ? totalDeVivos <= TETO_DE_VARREDURA : linhas.length <= TETO_DE_VARREDURA;
-  const varridos = linhas.slice(0, TETO_DE_VARREDURA);
 
-  // As dispensas são lidas com o cliente administrador, filtrado pela organização da
-  // SESSÃO (nunca do pedido): a policy de `merge_queue` só deixa gestor ler, e o par
-  // dispensado tem de sumir para todo papel que vê esta lista. Se a leitura falhar,
-  // a rota falha — mostrar a lista sem as dispensas faria um par tirado voltar calado.
+  // As dispensas e o CPF são lidos com o cliente administrador, filtrado pela
+  // organização da SESSÃO (nunca do pedido): a policy de `merge_queue` só deixa gestor
+  // ler, e o par dispensado tem de sumir para todo papel que vê esta lista. Se a leitura
+  // falhar, a rota falha — mostrar a lista sem as dispensas faria um par tirado voltar
+  // calado, e sem o CPF faria o par de mesmo documento sumir sem aviso.
   let dispensados: Set<string>;
+  let varridos: ContatoParaDeduplicar[];
   try {
-    dispensados = await lerParesDispensados(createAdminClient(), org.orgId);
+    const admin = createAdminClient();
+    dispensados = await lerParesDispensados(admin, org.orgId);
+    varridos = await comHashDeCpf(admin, org.orgId, linhas.slice(0, TETO_DE_VARREDURA));
   } catch {
     // Sem o detalhe do erro na resposta: a mensagem do banco não é para quem opera a tela.
-    return fail("internal_error", "Não foi possível ler as dispensas de duplicados.", 500, {
+    return fail("internal_error", "Não foi possível ler os dados de duplicados.", 500, {
       requestId,
     });
   }

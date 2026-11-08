@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationHeader } from "./ConversationHeader";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
+import type { EnderecoDaResposta } from "@/hooks/inbox/useEnderecoDaResposta";
 
 /**
  * "Fechar" e "Arquivar" usavam `window.confirm()` — mesmo defeito documentado
@@ -17,6 +18,7 @@ const closeMutate = vi.hoisted(() => vi.fn());
 const arquivarMutate = vi.hoisted(() => vi.fn());
 const startCall = vi.hoisted(() => vi.fn());
 const claimMutate = vi.hoisted(() => vi.fn());
+const resposta = vi.hoisted(() => ({ endereco: undefined as EnderecoDaResposta | undefined }));
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
@@ -49,6 +51,13 @@ vi.mock("@/hooks/ai/useAutomaticoAtivo", () => ({
   useAutomaticoAtivo: () => ({ data: false }),
 }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
+// O número da resposta (Spec 31, B2) lê react-query; este arquivo não monta
+// `QueryClientProvider`. Sem resposta, o aviso "a resposta sai por" não aparece.
+vi.mock("@/hooks/inbox/useEnderecoDaResposta", () => ({
+  useEnderecoDaResposta: () => ({
+    data: resposta.endereco ? { data: resposta.endereco } : undefined,
+  }),
+}));
 // A faixa da carteira (#2591) lê a carteira com react-query; este arquivo mede
 // a barra de ações, não a carteira (que tem arquivo próprio).
 vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));
@@ -119,6 +128,7 @@ beforeEach(() => {
   arquivarMutate.mockReset();
   startCall.mockReset();
   claimMutate.mockReset();
+  resposta.endereco = undefined;
 });
 
 /**
@@ -384,5 +394,50 @@ describe("ConversationHeader — fechar conversa de contato com a equipe (#3313)
       conversation_id: "conv-1",
       expected_revision: 3,
     });
+  });
+});
+
+/**
+ * A linha só existe com as três condições juntas: a ficha tem telefone extra, o
+ * canal responde pela última mensagem recebida e a rota devolveu um número.
+ * Fora disso a resposta sai pelo principal, que o cabeçalho já mostra.
+ */
+describe("ConversationHeader — por qual número a resposta sai (Spec 31, B2)", () => {
+  function comTelefone(): ConversationWithContact {
+    const atual = conversa("open");
+    atual.contacts = {
+      id: "contato-1",
+      display_name: "Raphael",
+      name: "Raphael",
+      phone_number: "+5511999990001",
+      tags: [],
+    } as unknown as ConversationWithContact["contacts"];
+    return atual;
+  }
+  const doExtra: EnderecoDaResposta = {
+    phone_number: "+5511999990002",
+    via: "ultima_recebida",
+    has_extras: true,
+    follows_last_inbound: true,
+  };
+
+  it("com extra, no canal que segue a última recebida: mostra o número do extra", () => {
+    resposta.endereco = doExtra;
+    render(<ConversationHeader conversation={comTelefone()} />);
+
+    expect(screen.getByTestId("resposta-sai-por")).toHaveTextContent(
+      "A resposta sai por: +5511999990002",
+    );
+  });
+
+  it.each<[string, Partial<EnderecoDaResposta>]>([
+    ["a ficha não tem extra", { has_extras: false }],
+    ["o canal responde pelo principal", { follows_last_inbound: false }],
+    ["a rota não devolveu número", { phone_number: null }],
+  ])("sem linha quando %s", (_, diferenca) => {
+    resposta.endereco = { ...doExtra, ...diferenca };
+    render(<ConversationHeader conversation={comTelefone()} />);
+
+    expect(screen.queryByTestId("resposta-sai-por")).toBeNull();
   });
 });
