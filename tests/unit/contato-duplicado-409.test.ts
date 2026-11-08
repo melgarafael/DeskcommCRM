@@ -31,6 +31,11 @@ vi.mock("@/lib/audit", () => ({
 // acompanhamento. O handler e o `fail()` que monta o corpo são os de verdade.
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+// A conversa do contato novo abre pelo cliente de serviço; sem canal nenhum
+// aqui, ela não abre e o cadastro segue — sem rede de verdade no teste.
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({ from: (tabela: string) => cadeiaQualquer(tabela) }),
+}));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 
 const ORG = "c05e7a00-0000-4000-8000-000000000001";

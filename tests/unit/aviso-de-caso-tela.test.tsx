@@ -329,6 +329,7 @@ describe("a lista de entregas", () => {
           {
             id: "e1",
             case_id: "c1",
+            update_event_id: null,
             destino_mascarado: "••••6398",
             status: "falhou",
             erro_codigo: "teto_diario_do_numero",
@@ -336,22 +337,36 @@ describe("a lista de entregas", () => {
             enviado_em: null,
             created_at: "2026-09-17T10:00:00.000Z",
           },
+          {
+            id: "e2",
+            case_id: "c1",
+            update_event_id: "u1",
+            destino_mascarado: "••••6398",
+            status: "enviado",
+            erro_codigo: null,
+            tentativas: 1,
+            enviado_em: "2026-09-17T11:00:00.000Z",
+            created_at: "2026-09-17T11:00:00.000Z",
+          },
         ],
       }),
     );
     const lista = screen.getByTestId("lista-de-entregas");
     expect(lista.textContent).toContain("••••6398");
     expect(lista.textContent).toContain("limite diário do período de aquecimento");
+    expect(lista.querySelectorAll("li")[0]?.textContent).toContain("Abertura");
+    expect(lista.querySelectorAll("li")[1]?.textContent).toContain("Resposta do cliente");
     // O número inteiro nunca entra nesta lista: quem a lê pode ser `manager`.
     expect(lista.textContent).not.toContain("998966398");
   });
 });
 
 describe("o que a tela diz sem ninguém perguntar", () => {
-  it("distingue o caso que não repete do novo episódio de transferência", () => {
+  it("diz quando o aviso de caso sai de novo, quando não sai, e separa do episódio de transferência", () => {
     montar(estado());
-    expect(screen.getByText(/o aviso não se repete/i).textContent)
-      .toContain("Quando o cliente responde e o caso volta a esperar você");
+    const avisoDeCaso = screen.getByText(/sai de novo quando ele registra a resposta do cliente/i);
+    expect(avisoDeCaso.textContent).toContain("esse segundo aviso não sai");
+    expect(avisoDeCaso.textContent).toContain("a cobrança segue pela Central de alertas");
     const transferencia = screen.getByText(/nas transferências para atendimento humano/i);
     expect(transferencia.textContent).toContain("uma tentativa de aviso por episódio");
     expect(transferencia.textContent).toContain("sem resumo da conversa");
