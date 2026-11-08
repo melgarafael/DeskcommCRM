@@ -32,7 +32,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { expect, test, type Browser } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test, type Browser } from "./helpers/test";
 
 import { lerCreds, loginComoDono } from "./helpers/login-admin";
 import { afirmarDonoDoServidor } from "./utils/precondicao";
@@ -65,6 +65,7 @@ const URL_DO_ARQUIVO =
 /** O `href` do ÚNICO `<link rel=icon>` do `/login`, visto por quem não entrou. */
 async function iconeDoLoginDeslogado(browser: Browser, nome: string): Promise<string> {
   const contexto = await browser.newContext();
+  contexto.on("page", esperarARevelacaoNasCargas);
   try {
     const pagina = await contexto.newPage();
     await pagina.goto("/login");

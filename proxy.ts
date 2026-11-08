@@ -46,6 +46,13 @@ export async function proxy(request: NextRequest) {
   }
 
   const { pathname, search } = request.nextUrl;
+  // Sob `/api/`, o `X-Request-Id` da RESPOSTA é de `ok()`/`fail()`: é o id que a
+  // rota grava no log e no audit. Cabeçalho posto aqui VENCE o da rota — o Next
+  // só acrescenta o da rota quando o do middleware não existe — e o `ID:` que a
+  // tela mostra deixava de existir no log. Fora de `/api/`, ninguém mais o põe.
+  if (!pathname.startsWith("/api/")) {
+    response.headers.set("x-request-id", requestId);
+  }
   // Recupera retornos de OAuth social já emitidos antes da landing pública existir.
   // Apenas a navegação é tratada: o vínculo de conta segue protegido pelos guards canônicos.
   // Passa adiante só o SINAL `connected=1` — nunca o `connect_token` nem o valor recebido.

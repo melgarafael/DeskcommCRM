@@ -1,65 +1,81 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * O `proxy.ts` cunha (ou aceita) o id da requisição e o entrega à rota pelo
- * cabeçalho da REQUISIÇÃO. A RESPOSTA, sob `/api/`, ele não carimba — e isso é
- * o conserto: o Next aplica os cabeçalhos do middleware por cima dos da
- * resposta, então o carimbo daqui sobrescrevia o `X-Request-Id` que a rota tinha
- * gravado no registro. A resposta saía com um id que não existia em log nenhum.
+ * #3971 — o `ID:` que a tela mostra tem de existir no log.
+ *
+ * Medido no app real (next build/start, 500 em /api/v1/contacts): a tela mostrava
+ * o `X-Request-Id` da resposta, e ele aparecia em ZERO linhas do log; a linha de
+ * erro do `fail()` tinha outro id. O `proxy.ts` gravava o próprio id na resposta,
+ * e o Next só acrescenta o cabeçalho da rota quando o do middleware NÃO existe
+ * (`next/dist/server/send-response.js`). Testar `fail()` sozinho não via isso:
+ * aqui o proxy e a rota rodam juntos, e a resposta final é montada pela mesma
+ * regra do Next.
  */
-vi.mock("@supabase/ssr", () => ({
-  createServerClient: () => ({
-    auth: { getUser: async () => ({ data: { user: { id: "u-1" } }, error: null }) },
-  }),
+vi.mock("@/lib/env", () => ({
+  env: {
+    NEXT_PUBLIC_SUPABASE_URL: "https://supabase.exemplo",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-de-teste",
+  },
 }));
 
-import { cabecalhosQueOProxyEntrega } from "./helpers/cabecalhos-do-proxy";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const ID_DO_CLIENTE = "11111111-1111-4111-8111-111111111111";
-
-async function respostaDoProxy(url: string, headers: Record<string, string> = {}) {
+async function passarPeloProxy(caminho: string, cabecalhos?: Record<string, string>) {
   const { proxy } = await import("@/proxy");
   const { NextRequest } = await import("next/server");
-  return proxy(new NextRequest(url, { headers }));
+  const resposta = await proxy(new NextRequest(`https://crm.exemplo${caminho}`, { headers: cabecalhos }));
+  return {
+    // o que a rota lê em `req.headers.get("x-request-id")`
+    idNaRequisicao: resposta.headers.get("x-middleware-request-x-request-id"),
+    idNaResposta: resposta.headers.get("x-request-id"),
+  };
 }
 
-describe("proxy: o id da requisição tem UM formato e UM dono", () => {
-  it("o UUID mandado pelo cliente chega à rota", async () => {
-    const h = await cabecalhosQueOProxyEntrega("https://crm.exemplo.com.br/api/v1/health", {
-      "x-request-id": ID_DO_CLIENTE,
-    });
+/** A rota responde 500 por `fail()`; devolve o cabeçalho FINAL e os ids logados. */
+async function rotaQueFalha(idDoProxyNaResposta: string | null, idDaRota: string) {
+  const { fail } = await import("@/lib/api/wrappers");
+  const linhas: string[] = [];
+  vi.spyOn(console, "error").mockImplementation((linha: unknown) => {
+    linhas.push(String(linha));
+  });
+  const resposta = fail("internal_error", "falhou", 500, { requestId: idDaRota });
+  const idsNoLog = linhas.map((l) => (JSON.parse(l) as { requestId?: string }).requestId);
+  // Regra do Next: o cabeçalho do middleware vence; o da rota só entra se faltar.
+  const final = idDoProxyNaResposta ?? resposta.headers.get("X-Request-Id");
+  return { final, idsNoLog };
+}
 
-    expect(h.get("x-request-id")).toBe(ID_DO_CLIENTE);
+afterEach(() => vi.restoreAllMocks());
+
+describe("o X-Request-Id que a tela vê é o que está no log (#3971)", () => {
+  it("rota que gera o próprio id: a resposta final carrega o id que o fail() logou", async () => {
+    const { idNaResposta } = await passarPeloProxy("/api/v1/health", { "x-request-id": randomUUID() });
+    const { final, idsNoLog } = await rotaQueFalha(idNaResposta, randomUUID());
+    expect(idsNoLog).toHaveLength(1);
+    expect(final).toBe(idsNoLog[0]);
   });
 
-  it("valor fora do formato não chega: o proxy cunha outro", async () => {
-    const h = await cabecalhosQueOProxyEntrega("https://crm.exemplo.com.br/api/v1/health", {
-      "x-request-id": "nao-e-uuid-inventado-pelo-cliente",
-    });
-
-    const entregue = h.get("x-request-id") ?? "";
-    expect(entregue).not.toContain("level=fatal");
-    expect(entregue).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  it("rota que lê o id da requisição: recebe o do proxy, e a resposta final é ele", async () => {
+    const { idNaRequisicao, idNaResposta } = await passarPeloProxy("/api/v1/health");
+    expect(idNaRequisicao).toMatch(UUID);
+    const { final, idsNoLog } = await rotaQueFalha(idNaResposta, idNaRequisicao!);
+    expect(final).toBe(idNaRequisicao);
+    expect(idsNoLog).toEqual([idNaRequisicao]);
   });
 
-  it("sem cabeçalho, a rota recebe um id cunhado", async () => {
-    const h = await cabecalhosQueOProxyEntrega("https://crm.exemplo.com.br/api/v1/health");
-
-    expect(h.get("x-request-id")).toBeTruthy();
+  it("fora de /api/ a resposta ainda leva o X-Request-Id, igual ao da requisição", async () => {
+    const { idNaRequisicao, idNaResposta } = await passarPeloProxy("/login");
+    expect(idNaResposta).toMatch(UUID);
+    expect(idNaResposta).toBe(idNaRequisicao);
   });
 
-  it("sob /api/ o proxy NÃO carimba a resposta — quem carimba é a rota", async () => {
-    const res = await respostaDoProxy("https://crm.exemplo.com.br/api/v1/health");
-
-    expect(res.headers.get("x-request-id")).toBeNull();
-  });
-
-  it("fora de /api/ a resposta continua carimbada pelo proxy", async () => {
-    const res = await respostaDoProxy("https://crm.exemplo.com.br/app/inbox", {
-      "x-request-id": ID_DO_CLIENTE,
-    });
-
-    expect(res.headers.get("x-request-id")).toBe(ID_DO_CLIENTE);
+  it("aceita o UUID que o navegador mandou e troca o que não é UUID", async () => {
+    const doNavegador = randomUUID();
+    expect((await passarPeloProxy("/login", { "x-request-id": doNavegador })).idNaRequisicao).toBe(doNavegador);
+    const forjado = (await passarPeloProxy("/login", { "x-request-id": "nao-e-uuid" })).idNaRequisicao;
+    expect(forjado).toMatch(UUID);
   });
 });
