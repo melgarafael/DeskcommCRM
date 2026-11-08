@@ -10,6 +10,7 @@ import {
   planCatalogPresentation,
   type ResolvedCatalogPresentation,
 } from "@/lib/catalogo/plano-de-apresentacao";
+import { prepareCatalogPresentationPayloads } from "@/lib/catalogo/preparo-de-apresentacao";
 import type { CatalogPresentationSnapshotResult } from "@/lib/catalogo/snapshot-de-apresentacao";
 
 const ORG = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -370,7 +371,7 @@ describe("materialização de mídia do snapshot de apresentação", () => {
     ["foto", [productWithPhotos()], ["FOTO"], `catalog-photos\u0000${FOTO_JPG}`],
     ["áudio", [productWithAudio()], ["AUDIO"], `catalog-presentation-media\u0000${AUDIO}`],
   ] as const)(
-    "falha fechado se a origem de %s sumiu apesar do destino existente",
+    "usa a cópia da conversa, sem copiar de novo, se a origem de %s sumiu",
     async (_kind, products, codes, sourceKey) => {
       const f = storageFixture();
       const snapshot = persisted([...products], [...codes]);
@@ -381,15 +382,60 @@ describe("materialização de mídia do snapshot de apresentação", () => {
 
       const replay = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
 
-      expect(replay).toMatchObject({ ok: false, error: { code: "source_unavailable" } });
-      expect(f.copies).toHaveLength(copiesAfterFirstRun);
-      expect(f.downloads.filter(([bucket]) => bucket === BUCKET_DA_MIDIA_DA_CONVERSA)).toHaveLength(
-        0,
+      expect(replay.ok).toBe(true);
+      if (!first.ok || !replay.ok) throw new Error("materialização falhou");
+      expect(replay.materialized.payloads.map((p) => p.materialized_media?.storage_path)).toEqual(
+        first.materialized.payloads.map((p) => p.materialized_media?.storage_path),
       );
+      const sourcePath = sourceKey.split("\u0000")[1];
+      expect(f.copies.slice(copiesAfterFirstRun).map((c) => c.source_path)).not.toContain(sourcePath);
     },
   );
 
-  it("não aceita destino com bytes diferentes mesmo que MIME e assinatura sejam válidos", async () => {
+  it.each([
+    ["foto", [productWithPhotos()], ["FOTO"], `catalog-photos\u0000${FOTO_JPG}`],
+    ["áudio", [productWithAudio()], ["AUDIO"], `catalog-presentation-media\u0000${AUDIO}`],
+  ] as const)(
+    "falha fechado se a origem de %s sumiu e a cópia da conversa também",
+    async (_kind, products, codes, sourceKey) => {
+      const f = storageFixture();
+      const snapshot = persisted([...products], [...codes]);
+      const first = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+      expect(first.ok).toBe(true);
+      f.objects.delete(sourceKey);
+      for (const key of [...f.objects.keys()]) {
+        if (key.startsWith(BUCKET_DA_MIDIA_DA_CONVERSA)) f.objects.delete(key);
+      }
+
+      const replay = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
+
+      expect(replay).toMatchObject({ ok: false, error: { code: "source_unavailable" } });
+    },
+  );
+
+  it("mídia já entregue não precisa de origem nem de cópia", async () => {
+    const f = storageFixture();
+    const snapshot = persisted([productWithAudio()], ["AUDIO"]);
+    f.objects.delete(`catalog-presentation-media\u0000${AUDIO}`);
+
+    const prepared = prepareCatalogPresentationPayloads(snapshot.snapshot.plan);
+    if (!prepared.ok) throw new Error(prepared.error.code);
+    const sent = new Set(prepared.prepared.payloads.map((p) => `${p.item_index}:${p.step_index}`));
+
+    const replay = await materializeCatalogPresentationSnapshotMedia(
+      snapshot,
+      { ...input, alreadySent: sent },
+      f.storage,
+    );
+
+    expect(replay).toMatchObject({ ok: true });
+    if (!replay.ok) throw new Error("materialização falhou");
+    expect(replay.materialized.payloads.some((p) => p.payload.kind === "audio")).toBe(true);
+    expect(replay.materialized.payloads.every((p) => p.materialized_media === undefined)).toBe(true);
+    expect(f.downloads).toEqual([]);
+  });
+
+  it("não aceita no lugar da origem uma cópia com assinatura inválida", async () => {
     const f = storageFixture();
     const snapshot = persisted([productWithPhotos()], ["FOTO"]);
     const first = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
@@ -398,14 +444,14 @@ describe("materialização de mídia do snapshot de apresentação", () => {
     f.objects.delete(`catalog-photos\u0000${FOTO_JPG}`);
     f.objects.set(
       `${BUCKET_DA_MIDIA_DA_CONVERSA}\u0000${destination}`,
-      blob(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7]), "image/jpeg"),
+      blob(new Uint8Array([1, 2, 3, 4]), "image/jpeg"),
     );
 
     const replay = await materializeCatalogPresentationSnapshotMedia(snapshot, input, f.storage);
 
     expect(replay).toMatchObject({
       ok: false,
-      error: { code: "source_unavailable" },
+      error: { code: "source_content_mismatch", reason: "signature" },
     });
     expect(f.copies).toHaveLength(2);
   });

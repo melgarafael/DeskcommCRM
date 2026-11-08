@@ -105,7 +105,10 @@ import {
 } from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import { apresentacaoOferecidaNoTurno } from '@/lib/catalogo/apresentacao-ligada';
-import { resumePersistedCatalogPresentation } from '@/lib/catalogo/retomada-de-apresentacao';
+import {
+  respostaAoVetoDaApresentacao,
+  resumePersistedCatalogPresentation,
+} from '@/lib/catalogo/retomada-de-apresentacao';
 import { readCatalogPresentationSnapshot, resolveAndSnapshotCatalogPresentation } from '@/lib/catalogo/snapshot-de-apresentacao';
 import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
 import { catalogPresentationSelectionSchema } from '@/lib/catalogo/plano-de-apresentacao';
@@ -5857,14 +5860,7 @@ async function executarTurnoDoAgente(
     let apresentacaoAcionada = false;
     // Vetada uma vez, a sequência fixa não volta neste turno: a resposta é do modelo.
     let apresentacaoVetada = input.apresentacaoVetada !== undefined;
-    const respostaAoVeto = (enviadas: number) => ({
-      ok: false,
-      code: 'catalog_presentation_vetoed',
-      message:
-        enviadas === 0
-          ? 'A apresentação não foi enviada: a proteção contra mensagens repetidas a barrou. Responda normalmente ao cliente usando send_message, com suas palavras.'
-          : `A apresentação parou depois de ${enviadas} mensagem(ns) que o cliente já recebeu: a proteção contra mensagens repetidas barrou a seguinte. Complete a resposta normalmente usando send_message, com suas palavras, sem repetir o que já foi enviado.`,
-    });
+    let vetoDaApresentacao = { code: 'catalog_presentation_vetoed', message: 'a apresentação já foi barrada neste turno.' };
     let disposicaoDaApresentacao: 'completed' | 'interrupted' | 'settled' | null = null;
     // A apresentação já dispôs da mensagem ou do próprio job. Nenhuma correção
     // de turno mudo, pergunta de roteiro ou nova chamada de modelo pode enviar.
@@ -5889,7 +5885,7 @@ async function executarTurnoDoAgente(
           'Apresenta os produtos do catálogo pelos códigos na ordem escolhida. Se retornar ok: true, esta é a última ação do turno; não chame outra ferramenta nem escreva resposta depois. Se retornar ok: false, responda normalmente ao cliente usando send_message.',
         inputSchema: catalogPresentationSelectionSchema,
         execute: async ({ product_codes }) => {
-          if (apresentacaoVetada) return respostaAoVeto(0);
+          if (apresentacaoVetada) return respostaAoVetoDaApresentacao(0, vetoDaApresentacao);
           const current = liveJob();
           const claim = claimOfJob(current);
           if (!claim) throw new Error('catalog_presentation_claim_missing');
@@ -5939,8 +5935,9 @@ async function executarTurnoDoAgente(
           if (resumed.disposition === 'vetoed') {
             // O snapshot já saiu do job; o envio do modelo começa na seq vetada.
             apresentacaoVetada = true;
+            vetoDaApresentacao = { code: resumed.code, message: resumed.message };
             seq = Math.max(seq, resumed.nextSeq - 1);
-            return respostaAoVeto(resumed.sent);
+            return respostaAoVetoDaApresentacao(resumed.sent, vetoDaApresentacao);
           }
           disposicaoDaApresentacao = resumed.disposition;
           return { ok: true, disposition: resumed.disposition };

@@ -140,6 +140,11 @@ export async function POST(
       details: { content_type_declarado: file.type || null },
     });
   }
+  // A conversão pode crescer o arquivo (m4a longo vira Opus maior): o teto que
+  // o bucket e a CHECK impõem vale para o que vai ser guardado, não para a entrada.
+  if (normalized.buffer.length > TAMANHO_MAXIMO_DO_AUDIO) {
+    return fail("payload_too_large", t("O áudio precisa ter até 16 MB."), 413, { requestId });
+  }
 
   const path = `${organizationId}/${productId}/${randomUUID()}.ogg`;
   const admin = createAdminClient();

@@ -33,7 +33,8 @@ describe("present_catalog_items no turno", () => {
     expect(disposicao).toBeGreaterThan(veto);
     const ramo = turno.slice(veto, disposicao);
     expect(ramo).toContain("seq = Math.max(seq, resumed.nextSeq - 1);");
-    expect(ramo).toContain("return respostaAoVeto(resumed.sent);");
+    expect(ramo).toContain("vetoDaApresentacao = { code: resumed.code, message: resumed.message };");
+    expect(ramo).toContain("return respostaAoVetoDaApresentacao(resumed.sent, vetoDaApresentacao);");
     expect(ramo).not.toContain("throw");
   });
 

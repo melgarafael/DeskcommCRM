@@ -153,6 +153,17 @@ describe("áudio do iPhone na apresentação", () => {
     expect((await resposta.json()).error.message).toContain("M4A");
     expect(mocks.upload).not.toHaveBeenCalled();
   });
+
+  it("m4a pequeno que converte para Opus acima de 16 MB recebe 413, sem subir nada", async () => {
+    const grande = Buffer.alloc(16 * 1024 * 1024 + 1);
+    grande.write("OggS", 0); grande.write("OpusHead", 28);
+    mocks.transcodificar.mockResolvedValue({ buffer: grande, mime: "audio/ogg;codecs=opus", convertido: true });
+    const resposta = await POST(requestDeArquivo(Buffer.from("ftypM4A sintético"), "voz.m4a", "audio/x-m4a"), ctx());
+    expect(resposta.status).toBe(413);
+    expect((await resposta.json()).error).toMatchObject({ code: "payload_too_large", message: "O áudio precisa ter até 16 MB." });
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(escritas).toEqual([]);
+  });
 });
 
 describe("apresentação nova usa a revisão null e edições continuam condicionais", () => {

@@ -108,6 +108,8 @@ interface ValidatedMedia {
   location: MediaLocation;
   bytes: Uint8Array;
   destinationPath: string;
+  /** A origem sumiu e a cópia já materializada na conversa foi conferida no lugar dela. */
+  fromExistingCopy: boolean;
 }
 
 function canonicalMime(mime: string): string {
@@ -238,20 +240,33 @@ async function validateSource(
   | { ok: false; error: CatalogPresentationMaterializationFailure }
 > {
   const location = mediaLocation(payload);
-  const downloaded = await storage.download(payload.media.bucket, payload.media.storage_path);
-  if (downloaded.error || !downloaded.data) {
-    return {
-      ok: false,
-      error: {
-        code: "source_unavailable",
-        detail: downloaded.error?.message.slice(0, 160) ?? "storage_returned_no_data",
-        ...location,
-      },
-    };
+  const destinationPath = destinationFor(organizationId, conversationId, payload);
+  const source = await storage.download(payload.media.bucket, payload.media.storage_path);
+  let data = source.data;
+  // A origem some quando o dono troca ou apaga a mídia do produto com a
+  // apresentação adiada (pausa, fila, janela). A cópia determinística da
+  // conversa é a mesma mídia: o caminho de origem nasce aleatório a cada upload,
+  // então o destino derivado dele nunca guardou outro conteúdo. Ela passa pelas
+  // mesmas conferências de MIME e assinatura e não é copiada de novo.
+  let fromExistingCopy = false;
+  if (source.error || !data) {
+    const copy = await storage.download(BUCKET_DA_MIDIA_DA_CONVERSA, destinationPath);
+    if (copy.error || !copy.data) {
+      return {
+        ok: false,
+        error: {
+          code: "source_unavailable",
+          detail: source.error?.message.slice(0, 160) ?? "storage_returned_no_data",
+          ...location,
+        },
+      };
+    }
+    data = copy.data;
+    fromExistingCopy = true;
   }
 
   const expectedMime = canonicalMime(payload.media.mime);
-  const actualMime = downloaded.data.type ? canonicalMime(downloaded.data.type) : null;
+  const actualMime = data.type ? canonicalMime(data.type) : null;
   if (actualMime !== expectedMime) {
     return {
       ok: false,
@@ -265,7 +280,7 @@ async function validateSource(
     };
   }
 
-  const bytes = await blobBytes(downloaded.data);
+  const bytes = await blobBytes(data);
   const signatureMatches =
     payload.kind === "audio" ? isOggOpus(bytes) : farejarTipo(bytes) === payload.media.mime;
   if (!signatureMatches) {
@@ -283,12 +298,7 @@ async function validateSource(
 
   return {
     ok: true,
-    media: {
-      payload,
-      location,
-      bytes,
-      destinationPath: destinationFor(organizationId, conversationId, payload),
-    },
+    media: { payload, location, bytes, destinationPath, fromExistingCopy },
   };
 }
 
@@ -296,6 +306,7 @@ async function copyValidated(
   storage: CatalogPresentationStorage,
   media: ValidatedMedia,
 ): Promise<CatalogPresentationMaterializationFailure | null> {
+  if (media.fromExistingCopy) return null;
   const copied = await storage.copy({
     source_bucket: media.payload.media.bucket,
     source_path: media.payload.media.storage_path,
@@ -336,7 +347,7 @@ async function copyValidated(
  * Materializa a mídia de um snapshot que já voltou do commit do job.
  *
  * Toda a estrutura, o teto, ownership, bucket, MIME e bytes de TODAS as fontes
- * são conferidos antes da primeira cópia. Depois disso, as cópias seguem a ordem
+ * ainda não entregues são conferidos antes da primeira cópia. Depois disso, as cópias seguem a ordem
  * dos payloads do snapshot. Uma falha pode deixar prefixos já copiados, mas o
  * destino determinístico torna o retry seguro e a comparação de bytes prova o
  * único conflito que pode ser tratado como sucesso.
@@ -348,6 +359,11 @@ export async function materializeCatalogPresentationSnapshotMedia(
     conversationId: string;
     sendsAlreadyCounted: number;
     maxSendsPerTurn: number;
+    /**
+     * `item_index:step_index` das mídias que o cliente já recebeu (send_ledger
+     * aceito). A retomada nunca as reenvia, então não precisa da origem delas.
+     */
+    alreadySent?: ReadonlySet<string>;
   },
   storage: CatalogPresentationStorage = productionStorage(),
 ): Promise<CatalogPresentationMaterializationResult> {
@@ -391,8 +407,10 @@ export async function materializeCatalogPresentationSnapshotMedia(
     if (invalid) return { ok: false, error: invalid };
   }
 
+  const sentKey = (payload: MediaPayload) => `${payload.item_index}:${payload.step_index}`;
+  const pendingMedia = mediaPayloads.filter((payload) => !input.alreadySent?.has(sentKey(payload)));
   const validatedByIdentity = new Map<string, ValidatedMedia>();
-  for (const payload of mediaPayloads) {
+  for (const payload of pendingMedia) {
     const key = `${payload.media.bucket}\u0000${payload.media.storage_path}`;
     if (validatedByIdentity.has(key)) continue;
     const validated = await validateSource(
@@ -417,7 +435,8 @@ export async function materializeCatalogPresentationSnapshotMedia(
       payloads: preparation.prepared.payloads.map((payload) => {
         if (payload.kind !== "audio" && payload.kind !== "image") return { payload };
         const key = `${payload.media.bucket}\u0000${payload.media.storage_path}`;
-        const media = validatedByIdentity.get(key)!;
+        const media = validatedByIdentity.get(key);
+        if (!media) return { payload };
         return {
           payload,
           materialized_media: {

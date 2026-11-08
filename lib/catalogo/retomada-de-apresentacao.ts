@@ -5,7 +5,8 @@ import { requireCurrentAutonomousTurn, setExecutionAgentOperation } from "@/lib/
 
 import type { ChannelAdapter } from "@/lib/agent-engine/channel-adapter";
 import { applySendOutcome } from "@/lib/agent-engine/edge/crm/send-message";
-import type { reconcileAcceptedSend } from "@/lib/agent-engine/edge/crm/send-ledger";
+import { reconcileAcceptedSend } from "@/lib/agent-engine/edge/crm/send-ledger";
+import { insertInboxItem } from "@/lib/agent-engine/db/repository";
 import type { runBeforeSend } from "@/lib/agent-engine/guardrails/before-send";
 import { deriveLgpdFromContact } from "@/lib/agent-engine/guardrails/lgpd/legal-basis";
 import { isLeadInHandoff } from "@/lib/agent-engine/agent/human-handoff";
@@ -22,6 +23,7 @@ import {
   materializeCatalogPresentationSnapshotMedia,
   type MaterializedCatalogPresentation,
 } from "@/lib/catalogo/materializacao-de-apresentacao";
+import { prepareCatalogPresentationPayloads } from "@/lib/catalogo/preparo-de-apresentacao";
 import {
   readCatalogPresentationSnapshot,
 } from "@/lib/catalogo/snapshot-de-apresentacao";
@@ -65,9 +67,34 @@ export type CatalogPresentationResumeResult =
        */
       disposition: "vetoed";
       code: string;
+      /** O motivo instrutivo do gate (ou da retomada), para o modelo seguir. */
+      message: string;
       sent: number;
       nextSeq: number;
     };
+
+/** A mídia do produto foi trocada ou apagada e a cópia da conversa também não existe. */
+export const CODIGO_MIDIA_DA_APRESENTACAO_INDISPONIVEL = "catalog_presentation_media_unavailable";
+
+/**
+ * O que a ferramenta devolve ao modelo quando a apresentação é vetada. O motivo
+ * é o do veto real (o mesmo erro instrutivo que o send_message devolveria),
+ * nunca um texto fixo: cada código pede uma resposta diferente.
+ */
+export function respostaAoVetoDaApresentacao(
+  enviadas: number,
+  veto: { code: string; message: string },
+): { ok: false; code: "catalog_presentation_vetoed"; message: string } {
+  const motivo = `Motivo (${veto.code}): ${veto.message}`;
+  return {
+    ok: false,
+    code: "catalog_presentation_vetoed",
+    message:
+      enviadas === 0
+        ? `A apresentação não foi enviada. ${motivo} Siga esse motivo e responda ao cliente usando send_message, com suas palavras.`
+        : `A apresentação parou depois de ${enviadas} mensagem(ns) que o cliente já recebeu. ${motivo} Siga esse motivo e complete a resposta usando send_message, com suas palavras, sem repetir o que já foi enviado.`,
+  };
+}
 
 export class CatalogPresentationResumeError extends Error {
   constructor(code: string) {
@@ -184,6 +211,23 @@ export async function resumePersistedCatalogPresentation(
       deps.respostaObsoletaTetoMs,
     );
   };
+  // Sob o lease: quem perdeu o job não limpa o snapshot de quem o tem agora.
+  const clearSnapshot = async (): Promise<void> => {
+    const cleared = await pool.query(
+      `update job_queue
+          set catalog_presentation_snapshot = null
+        where id = $1
+          and organization_id = $2
+          and status = 'running'
+          and locked_by = $3
+          and locked_at = $4::timestamptz
+      returning id`,
+      [job.id, job.organization_id, claim.worker_id, claim.acquired_at],
+    );
+    if (cleared.rowCount !== 1) {
+      throw new CatalogPresentationResumeError("catalog_presentation_job_lease_lost");
+    }
+  };
   if (
     (await pauseBeforeNextItem()) ||
     (deps.contracts?.interruptedBeforeFirstItem
@@ -204,16 +248,74 @@ export async function resumePersistedCatalogPresentation(
   if (!contactRow) throw new CatalogPresentationResumeError("catalog_presentation_contact_missing");
 
   const materialize = deps.contracts?.materialize ?? materializeCatalogPresentationSnapshotMedia;
+  const reconcile = deps.contracts?.reconcileAcceptedSend ?? reconcileAcceptedSend;
   await assertAgentOperationPg(pool, operation);
-  const materialized = await materialize(
-    { ok: true, snapshot, reused: true },
-    {
-      organizationId: job.organization_id,
-      conversationId: input.conversationId,
-      sendsAlreadyCounted: snapshot.sends_already_counted,
-      maxSendsPerTurn: deps.maxSendsPerTurn,
-    },
-  );
+  const materializeWith = (alreadySent?: ReadonlySet<string>) =>
+    materialize(
+      { ok: true, snapshot, reused: true },
+      {
+        organizationId: job.organization_id,
+        conversationId: input.conversationId,
+        sendsAlreadyCounted: snapshot.sends_already_counted,
+        maxSendsPerTurn: deps.maxSendsPerTurn,
+        ...(alreadySent !== undefined ? { alreadySent } : {}),
+      },
+    );
+  let materialized = await materializeWith();
+  let sentBefore = 0;
+  if (!materialized.ok && materialized.error.code === "source_unavailable") {
+    // A origem sumiu (mídia trocada ou apagada com a apresentação adiada) e a
+    // cópia da conversa também. Só então se mede o prefixo que o cliente já
+    // recebeu, pela mesma regra de seq do executor: mídia entregue não é
+    // reenviada, então não depende da origem.
+    const prepared = prepareCatalogPresentationPayloads(snapshot.plan);
+    const alreadySent = new Set<string>();
+    if (prepared.ok) {
+      for (const [index, payload] of prepared.prepared.payloads.entries()) {
+        const seq = snapshot.sends_already_counted + 1 + index;
+        if (!(await reconcile(pool, { tenantId: job.organization_id, jobId: job.id, seq }))) break;
+        alreadySent.add(mediaKey(payload.item_index, payload.step_index));
+        sentBefore += 1;
+      }
+    }
+    if (alreadySent.size > 0) materialized = await materializeWith(alreadySent);
+  }
+  if (!materialized.ok && materialized.error.code === "source_unavailable") {
+    // Repetir não traz a mídia de volta: sem encerrar, cada tentativa falhava
+    // igual até o job morrer com o cliente sem resposta. Encerra como o veto.
+    const nextSeq = snapshot.sends_already_counted + 1 + sentBefore;
+    await clearSnapshot();
+    await insertInboxItem(
+      pool,
+      job.organization_id,
+      {
+        kind: "other",
+        title: "Apresentação do catálogo interrompida: a mídia do produto mudou",
+        body:
+          `A foto ou o áudio do produto ${materialized.error.product_code} foi trocado ou removido ` +
+          `enquanto a apresentação esperava para continuar. O cliente já tinha recebido ${sentBefore} ` +
+          "mensagem(ns); o agente responde o restante com as próprias palavras.",
+        refKind: "conversation",
+        refId: input.conversationId,
+      },
+      "kind_ref_e_titulo",
+    );
+    deps.log.warn("apresentacao do catalogo sem a midia do produto; o modelo responde no lugar", {
+      job_id: job.id,
+      product_code: materialized.error.product_code,
+      media_kind: materialized.error.media_kind,
+      sent: sentBefore,
+    });
+    return {
+      handled: true,
+      disposition: "vetoed",
+      code: CODIGO_MIDIA_DA_APRESENTACAO_INDISPONIVEL,
+      message:
+        "a foto ou o áudio de um dos produtos foi trocado ou removido no catálogo e não pode mais ser enviado.",
+      sent: sentBefore,
+      nextSeq,
+    };
+  }
   if (!materialized.ok) {
     throw new CatalogPresentationResumeError(
       `catalog_presentation_materialization_${materialized.error.code}`,
@@ -356,20 +458,7 @@ export async function resumePersistedCatalogPresentation(
     // Repetir a mesma sequência não muda o veredito do gate, então 5
     // tentativas só calavam o cliente até o job morrer. Sem isentar o gate:
     // o snapshot é limpo sob o lease e a resposta passa a ser do modelo.
-    const cleared = await pool.query(
-      `update job_queue
-          set catalog_presentation_snapshot = null
-        where id = $1
-          and organization_id = $2
-          and status = 'running'
-          and locked_by = $3
-          and locked_at = $4::timestamptz
-      returning id`,
-      [job.id, job.organization_id, claim.worker_id, claim.acquired_at],
-    );
-    if (cleared.rowCount !== 1) {
-      throw new CatalogPresentationResumeError("catalog_presentation_job_lease_lost");
-    }
+    await clearSnapshot();
     deps.log.warn("apresentacao do catalogo vetada; o modelo responde no lugar", {
       job_id: job.id,
       gate: result.gate,
@@ -380,6 +469,7 @@ export async function resumePersistedCatalogPresentation(
       handled: true,
       disposition: "vetoed",
       code: result.code,
+      message: result.message,
       sent: result.steps.length,
       nextSeq: result.next_seq,
     };

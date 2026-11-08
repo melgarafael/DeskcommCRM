@@ -167,6 +167,7 @@ describe("replay de apresentacao persistida antes da classificacao", () => {
       handled: true,
       disposition: "vetoed",
       code: "mass_identical",
+      message: "copy repetida",
       sent: 0,
       nextSeq: 1,
     });

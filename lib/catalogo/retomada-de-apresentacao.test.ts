@@ -9,7 +9,14 @@ import type { JobRow } from "@/lib/agent-engine/queue/queue";
 import { planCatalogPresentation } from "@/lib/catalogo/plano-de-apresentacao";
 import { prepareCatalogPresentationPayloads } from "@/lib/catalogo/preparo-de-apresentacao";
 import {
+  BUCKET_DA_MIDIA_DA_CONVERSA,
+  materializeCatalogPresentationSnapshotMedia,
+  type CatalogPresentationStorage,
+} from "@/lib/catalogo/materializacao-de-apresentacao";
+import {
   CatalogPresentationResumeError,
+  CODIGO_MIDIA_DA_APRESENTACAO_INDISPONIVEL,
+  respostaAoVetoDaApresentacao,
   resumePersistedCatalogPresentation,
 } from "@/lib/catalogo/retomada-de-apresentacao";
 
@@ -89,6 +96,7 @@ function fixture(
           rowCount: 1,
         };
       }
+      if (text.includes("insert into agent_inbox_items")) return { rows: [{ id: "inbox-1" }], rowCount: 1 };
       if (text.includes("update job_queue")) {
         return options.dispositionFound === false
           ? { rows: [], rowCount: 0 }
@@ -296,6 +304,7 @@ describe("retomada da apresentacao persistida pelo worker", () => {
         handled: true,
         disposition: "vetoed",
         code: "mass_identical",
+        message: "copy repetida",
         sent: 0,
         nextSeq: 1,
       });
@@ -321,6 +330,7 @@ describe("retomada da apresentacao persistida pelo worker", () => {
         handled: true,
         disposition: "vetoed",
         code: "mass_identical",
+        message: "copy repetida",
         sent: 1,
         nextSeq: 4,
       });
@@ -470,5 +480,181 @@ describe("retomada da apresentacao persistida pelo worker", () => {
     expect(handler.indexOf("resumePersistedCatalogPresentation(")).toBeLessThan(
       handler.indexOf("runAgentTurn("),
     );
+  });
+});
+
+describe("mídia do produto trocada ou apagada com a apresentação adiada (materialização real)", () => {
+  const LOG = { info() {}, warn() {}, error() {}, debug() {} } as never;
+  const PRODUTO_TEXTO = "ffffffff-0000-4000-8000-000000000011";
+  const PRODUTO_AUDIO = "ffffffff-0000-4000-8000-000000000012";
+  const AUDIO = `${ORG}/${PRODUTO_AUDIO}/99999999-aaaa-4bbb-8ccc-dddddddddddd.ogg`;
+  const ORIGEM = `catalog-presentation-media\u0000${AUDIO}`;
+  const OGG_OPUS = (() => {
+    const bytes = new Uint8Array(48);
+    bytes.set([0x4f, 0x67, 0x67, 0x53], 0);
+    bytes.set(Array.from("OpusHead", (c) => c.charCodeAt(0)), 12);
+    return bytes;
+  })();
+
+  function storage() {
+    const objects = new Map<string, Blob>([[ORIGEM, new Blob([OGG_OPUS.slice().buffer as ArrayBuffer], { type: "audio/ogg" })]]);
+    const api: CatalogPresentationStorage = {
+      async download(bucket, path) {
+        const data = objects.get(`${bucket}\u0000${path}`) ?? null;
+        return data ? { data, error: null } : { data: null, error: { message: "not found", statusCode: 404 } };
+      },
+      async copy(input) {
+        const destino = `${input.destination_bucket}\u0000${input.destination_path}`;
+        if (objects.has(destino)) return { error: { message: "already exists", statusCode: "409" } };
+        const origem = objects.get(`${input.source_bucket}\u0000${input.source_path}`);
+        if (!origem) return { error: { message: "source missing", statusCode: "404" } };
+        objects.set(destino, origem);
+        return { error: null };
+      },
+    };
+    return { objects, api };
+  }
+
+  function jobComMidia(ordem: ("TEXTO" | "AUDIO")[]): JobRow {
+    const produtos = {
+      TEXTO: {
+        product_id: PRODUTO_TEXTO, product_code: "TEXTO", product_name: "Produto texto",
+        price_cents: 1000, currency: "BRL", photo_storage_paths: [],
+        presentation: { enabled: true, kind: "text" as const, title: null, text_content: "Descrição",
+          use_catalog_photos: false, show_price: false, audio_storage_path: null, audio_mime: null },
+      },
+      AUDIO: {
+        product_id: PRODUTO_AUDIO, product_code: "AUDIO", product_name: "Produto áudio",
+        price_cents: 2000, currency: "BRL", photo_storage_paths: [],
+        presentation: { enabled: true, kind: "audio" as const, title: null, text_content: null,
+          use_catalog_photos: false, show_price: false, audio_storage_path: AUDIO,
+          audio_mime: "audio/ogg;codecs=opus" },
+      },
+    };
+    const planned = planCatalogPresentation({ ordered_product_codes: ordem, resolved_items: ordem.map((c) => produtos[c]) });
+    if (!planned.ok) throw new Error(planned.error.code);
+    return {
+      ...job(),
+      catalog_presentation_snapshot: {
+        schema_version: 1, sends_already_counted: 0, ordered_product_codes: ordem,
+        plan: planned.plan, agent_operation: OPERATION,
+      },
+    };
+  }
+
+  /** Quantas mensagens físicas o primeiro produto ocupa: o adiamento cai logo depois dele. */
+  function mensagensDoPrimeiro(persisted: JobRow): number {
+    const prepared = prepareCatalogPresentationPayloads(
+      (persisted.catalog_presentation_snapshot as ReturnType<typeof snapshot>).plan,
+    );
+    if (!prepared.ok) throw new Error(prepared.error.code);
+    return prepared.prepared.payloads.filter((p) => p.item_index === 0).length;
+  }
+
+  type Adiamento = "pausa" | "queued" | "veto com next_allowed_at";
+  const ADIAMENTOS: Adiamento[] = ["pausa", "queued", "veto com next_allowed_at"];
+
+  /** 1ª execução adiada logo depois do primeiro produto; devolve o que a 2ª precisa. */
+  async function adiaDepoisDoPrimeiro(adiamento: Adiamento, ordem: ("TEXTO" | "AUDIO")[]) {
+    const persisted = jobComMidia(ordem);
+    const n = mensagensDoPrimeiro(persisted);
+    const reconciled: number[] = [];
+    const f = fixture({ reconciled, outcomes: adiamento === "queued" ? [...Array(n).fill("sent"), "queued"] : [] });
+    const st = storage();
+    let paused = false;
+    let primeira = true;
+    if (adiamento === "pausa") {
+      const send = f.channel.send.bind(f.channel);
+      f.channel.send = async (input) => {
+        const outcome = await send(input);
+        if (primeira && f.sent.length >= n) paused = true;
+        return outcome;
+      };
+    }
+    if (adiamento === "veto com next_allowed_at") {
+      let chamadas = 0;
+      f.beforeSend = vi.fn(async (args: Parameters<typeof runBeforeSend>[0]) => {
+        if (chamadas++ === n) {
+          return { status: "vetoed" as const, gate: "window", code: "outside_window", message: "fora da janela",
+            nextAllowedAt: new Date("2026-10-16T07:00:00.000Z"), trace: [] };
+        }
+        return { status: "sent" as const, outcome: await args.send(args.body), trace: [] };
+      }) as unknown as typeof runBeforeSend;
+    }
+    const resumeDeps = {
+      ...deps(f, async () => false, async () => paused),
+      log: LOG,
+      clock: () => new Date("2026-10-15T22:30:00.000Z"),
+    };
+    resumeDeps.contracts.materialize = ((persistedSnapshot: never, input: never) =>
+      materializeCatalogPresentationSnapshotMedia(persistedSnapshot, input, st.api)) as never;
+    const run = () =>
+      resumePersistedCatalogPresentation(
+        f.pool, persisted, { workerId: "worker-a" },
+        { conversationId: CONVERSATION, channelSessionId: SESSION }, resumeDeps,
+      );
+
+    expect(await run()).toEqual({ handled: true, disposition: "settled" });
+    expect(persisted.catalog_presentation_snapshot).not.toBeNull();
+    for (let seq = 1; seq <= n; seq++) reconciled.push(seq);
+    primeira = false;
+    paused = false;
+    const enviadasNaPrimeira = f.sent.length;
+    return { f, st, n, run, enviadasNaPrimeira };
+  }
+
+  const copiasDaConversa = (objects: Map<string, Blob>) =>
+    [...objects.keys()].filter((k) => k.startsWith(`${BUCKET_DA_MIDIA_DA_CONVERSA}\u0000`));
+
+  it.each(ADIAMENTOS)("%s: áudio ainda não enviado sai da cópia da conversa e a apresentação termina", async (adiamento) => {
+    const { f, st, run, enviadasNaPrimeira } = await adiaDepoisDoPrimeiro(adiamento, ["TEXTO", "AUDIO"]);
+    const [copia] = copiasDaConversa(st.objects);
+    expect(copia).toBeDefined();
+    st.objects.delete(ORIGEM);
+
+    expect(await run()).toEqual({ handled: true, disposition: "completed" });
+    const daSegunda = f.sent.slice(enviadasNaPrimeira);
+    const audio = daSegunda.find((input) => input.media?.kind === "audio");
+    expect(audio?.media?.storagePath).toBe(copia!.split("\u0000")[1]);
+  });
+
+  it.each(ADIAMENTOS)("%s: sem origem e sem cópia, encerra como o veto e devolve o turno ao modelo", async (adiamento) => {
+    const { f, st, n, run, enviadasNaPrimeira } = await adiaDepoisDoPrimeiro(adiamento, ["TEXTO", "AUDIO"]);
+    st.objects.delete(ORIGEM);
+    for (const k of copiasDaConversa(st.objects)) st.objects.delete(k);
+
+    const result = await run();
+
+    expect(result).toMatchObject({
+      handled: true, disposition: "vetoed", code: CODIGO_MIDIA_DA_APRESENTACAO_INDISPONIVEL, sent: n, nextSeq: n + 1,
+    });
+    expect(f.sent).toHaveLength(enviadasNaPrimeira);
+    expect(f.sql.some((t) => t.includes("set catalog_presentation_snapshot = null"))).toBe(true);
+    expect(f.sql.some((t) => t.includes("insert into agent_inbox_items"))).toBe(true);
+  });
+
+  it.each(ADIAMENTOS)("%s: áudio já enviado não precisa da origem nem da cópia, e o resto sai", async (adiamento) => {
+    const { f, st, run, enviadasNaPrimeira } = await adiaDepoisDoPrimeiro(adiamento, ["AUDIO", "TEXTO"]);
+    st.objects.delete(ORIGEM);
+    for (const k of copiasDaConversa(st.objects)) st.objects.delete(k);
+
+    expect(await run()).toEqual({ handled: true, disposition: "completed" });
+    expect(f.sent.slice(enviadasNaPrimeira).map((input) => input.body)).toContain("Produto texto\n\nDescrição");
+  });
+});
+
+describe("motivo do veto devolvido ao modelo", () => {
+  it("cita o código e a mensagem do veto real, não um texto fixo", () => {
+    const comercial = respostaAoVetoDaApresentacao(0, {
+      code: "commercial_requires_human",
+      message: "valores exigem um atendente.",
+    });
+    const repetida = respostaAoVetoDaApresentacao(2, { code: "mass_identical", message: "copy repetida." });
+
+    expect(comercial.message).toContain("commercial_requires_human");
+    expect(comercial.message).toContain("valores exigem um atendente.");
+    expect(comercial.message).not.toContain("mensagens repetidas");
+    expect(repetida.message).toContain("2 mensagem(ns)");
+    expect(repetida.message).toContain("mass_identical");
   });
 });
