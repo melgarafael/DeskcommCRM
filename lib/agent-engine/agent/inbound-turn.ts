@@ -50,7 +50,7 @@ import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
 import { etiquetasParaOMatcher } from './etiquetas-do-matcher';
-import { criarFilaDeEnvio } from './fila-de-envio';
+import { emOrdemDeEscrita } from './fila-de-envio';
 import {
   criarColetorDeFerramentas,
   envolverFerramentasComTraco,
@@ -3972,9 +3972,6 @@ async function executarTurnoDoAgente(
   // turno com dois vetos ficaria mudo por mais de 20 segundos: o conserto do
   // "rápido demais" viraria o defeito simétrico, mais caro que o original.
   let jaEsperouComoHumano = false;
-  // Chamadas de `send_message` do mesmo passo rodam em paralelo; esta fila faz o
-  // envio seguir a ordem em que o modelo as escreveu (`fila-de-envio.ts`).
-  const emOrdemDeEscrita = criarFilaDeEnvio();
   // Knobs de atraso humano por conexão (0499) — lidos UMA vez por turno para a
   // pausa antes da 1ª bolha (`esperarComoHumano`) e para o jitter entre bolhas
   // (`throttle_ms + jitter_max_ms`). Sem linha em channel_knobs caem nos defaults
@@ -4494,9 +4491,7 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      // A vez na fila é pega ao entrar, antes de qualquer `await`: chamadas paralelas
-      // do mesmo passo enviam na ordem em que o modelo as escreveu (`fila-de-envio.ts`).
-      execute: (entrada) => emOrdemDeEscrita(entrada, async ({ body: corpoDoModelo, produto_codigo }, vez) => {
+      execute: async ({ body: corpoDoModelo, produto_codigo }) => {
         tentativasDeEnvio += 1;
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
@@ -4867,11 +4862,6 @@ async function executarTurnoDoAgente(
             // prependado pelo gate F4-05 não entra na conta da espera (antes entrava,
             // porque o gancho recebia `finalBody`).
             esperaForaDoLock: async (): Promise<void> => {
-              // A chamada anterior do passo envia primeiro. Esperar AQUI, e não na
-              // entrada do `execute`, mantém a cadeia de cada chamada em paralelo:
-              // só o lock (e o envio) segue a ordem do modelo. Quem vem depois chega
-              // com a pausa humana já paga pela anterior — o flag abaixo segue valendo.
-              await vez.anterior;
               // Uma vez por TURNO — o flag impede que um re-run do fail-safe (veto de
               // promessa/vocabulário) cobre a espera de novo do mesmo cliente.
               if (jaEsperouComoHumano) return;
@@ -5239,7 +5229,7 @@ async function executarTurnoDoAgente(
           // legítimas.
           dupTrava.liberar(body);
         }
-      }),
+      },
     }),
     update_lead_state: tool({
       ...AGENT_TOOL_DEFS.update_lead_state,
@@ -6038,11 +6028,15 @@ async function executarTurnoDoAgente(
           apresentacaoEncerraTurno,
         )
       : breakerTools;
-    const tools = envolverFerramentasComTraco(
-      presentationTools,
-      // O traço continua por fora: registra tanto o veto do breaker quanto o
-      // descarte de ferramentas após a apresentação terminal.
-      input.tracoDoTurno?.coletor,
+    // A fila fica por fora de tudo (prévia inclusive): chamadas paralelas do mesmo
+    // passo falam com o cliente na ordem em que o modelo as escreveu (`fila-de-envio.ts`).
+    const tools = emOrdemDeEscrita(
+      envolverFerramentasComTraco(
+        presentationTools,
+        // O traço continua por fora: registra tanto o veto do breaker quanto o
+        // descarte de ferramentas após a apresentação terminal.
+        input.tracoDoTurno?.coletor,
+      ),
     );
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
