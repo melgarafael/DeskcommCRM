@@ -110,30 +110,48 @@ async function lerQuadro() {
 }
 
 describe("GET /board — o payload do card (fatia 1 do #3945)", () => {
-  it("⭐ entrega ao card o valor, a última mensagem com hora, o responsável e o tempo na etapa", async () => {
+  /**
+   * UM campo por caso, de propósito: a sabotagem do PR remove um campo do
+   * payload de cada vez, e o vermelho tem de nomear QUAL pergunta ficou sem
+   * resposta. Um caso só, com quatro asserções, pararia na primeira e esconderia
+   * as outras três.
+   */
+  it("⭐ QUANTO VALE — o valor único, a mensalidade e a moeda chegam ao card", async () => {
     montar();
 
     const [lead] = await lerQuadro();
-    expect(lead).toBeTruthy();
-
-    // 1. QUANTO VALE — o valor único, a mensalidade e a moeda. Sem os três, o
-    // card escreve "—" no negócio que tem valor (que é o defeito do print).
+    // Sem os três, o card escreve "—" no negócio que tem valor: é o defeito do
+    // print da issue.
     expect(lead!.value_cents).toBe(250_000);
     expect(lead!.recurring_value_cents).toBe(50_000);
     expect(lead!.currency).toBe("BRL");
+  });
 
-    // 2. O QUE DISSE — a prévia E o quando. A prévia sozinha é a mesma frase
-    // hoje e há três semanas.
+  it("⭐ O QUE ELE DISSE — a prévia E o quando da última mensagem", async () => {
+    montar();
+
+    const [lead] = await lerQuadro();
     const conversa = lead!.conversa as { id: string; preview: string; last_message_at: string };
+    // A prévia sozinha é a mesma frase hoje e há três semanas: o card precisa
+    // dos dois para dizer "o que" e "quando".
     expect(conversa.preview).toBe("Quero saber o preço do plano anual");
     expect(conversa.last_message_at).toBe(CONVERSA.last_message_at);
+  });
 
-    // 3. QUEM TOCA — o dono humano (id + tipo) e, no outro caso abaixo, o agente.
+  it("⭐ QUEM TOCA — o dono humano chega com tipo e id (o nome é resolvido pela tela)", async () => {
+    montar();
+
+    const [lead] = await lerQuadro();
     expect(lead!.owner_kind).toBe("user");
     expect(lead!.owner_user_id).toBe("u-marcos");
+  });
 
-    // 4. HÁ QUANTO TEMPO NA ETAPA — o carimbo de ENTRADA na etapa, não a última
-    // atividade: é o `stage_changed_at` que o `buildCardInput` converte em "30h".
+  it("⭐ HÁ QUANTO TEMPO NA ETAPA — o carimbo de ENTRADA, não a última atividade", async () => {
+    montar();
+
+    const [lead] = await lerQuadro();
+    // `stage_changed_at` é o que o `buildCardInput` converte em "30h em …".
+    // `last_activity_at` zeraria o número a cada nota escrita na conversa.
     expect(lead!.stage_changed_at).toBe(DENTRO_DA_ETAPA);
   });
 

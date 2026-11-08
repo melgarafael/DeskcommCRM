@@ -306,7 +306,7 @@ async function withConversas(
     porContato.set(row.contact_id, {
       id: row.id,
       preview: row.last_message_preview,
-      last_message_at: row.last_message_at,
+      last_message_at: null,
       unread: row.unread_count_for_assignee ?? 0,
     });
   }
