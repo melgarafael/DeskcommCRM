@@ -52,7 +52,7 @@
  *    `blindarValores` para a segunda passada.
  */
 import { valorComRotulo } from "@/lib/automation/campos-do-render";
-import { resolveField } from "@/lib/automation/conditions";
+import { COLUNAS_DE_CPF_DO_CONTATO, resolveField } from "@/lib/automation/conditions";
 import { horaNoFuso } from "@/lib/campanhas/relogio";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
 import { RESERVA_DA_VARIAVEL } from "@/lib/texto/reserva-da-variavel";
@@ -163,7 +163,11 @@ const ALIASES: Readonly<Record<string, string>> = {
  * pedidos pelo caminho (`{{contact.address_book_name}}`) — decisão do
  * mantenedor no PR #2439. A guarda mora aqui porque todo texto passa por aqui.
  */
-const SO_DA_EQUIPE: ReadonlySet<string> = new Set(["contact.address_book_name"]);
+const SO_DA_EQUIPE: ReadonlySet<string> = new Set([
+  "contact.address_book_name",
+  // Colunas de CPF: mensagem nenhuma tem por que levá-las (main, #— CPF só no servidor).
+  ...COLUNAS_DE_CPF_DO_CONTATO,
+]);
 
 /** Propriedades do protótipo nunca são campo: um jsonb malformado não abre caminho. */
 const CHAVES_DE_PROTOTIPO: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
