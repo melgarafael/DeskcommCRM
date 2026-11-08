@@ -23,6 +23,7 @@
  * produto e é do ambiente.
  */
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "./helpers/test";
@@ -33,19 +34,33 @@ const EVIDENCIA = path.join(process.cwd(), "evidence", "ia-360-w1");
 
 let creds: CredsE2E = lerCreds();
 
-test.use({ locale: "pt-BR" });
+test.describe("agente novo e uso de IA", () => {
+  const sessaoAdmin = path.join(os.tmpdir(), `e2e-sessao-admin-agente-novo-${process.pid}.json`);
+  test.use({ locale: "pt-BR", storageState: sessaoAdmin });
 
-// 240s e não 120s: o orçamento inclui UMA re-semeadura de credenciais, que o
-// login dispara sozinho quando outra sessão rotaciona o fator TOTP deste banco
-// compartilhado. Medido: o primeiro caso da bateria estourava 120s só nisso.
-test.describe.configure({ timeout: 240_000 });
+  // 240s e não 120s: o orçamento inclui UMA re-semeadura de credenciais, que o
+  // login dispara sozinho quando outra sessão rotaciona o fator TOTP deste banco
+  // compartilhado. Medido: o primeiro caso da bateria estourava 120s só nisso.
+  test.describe.configure({ timeout: 240_000 });
 
-test.beforeEach(async ({ page }) => {
-  fs.mkdirSync(EVIDENCIA, { recursive: true });
-  creds = await loginComoAdmin(page, creds);
-});
+  test.beforeAll(async ({ browser }, testInfo) => {
+    test.setTimeout(90_000);
+    const contexto = await browser.newContext({
+      baseURL: testInfo.project.use.baseURL,
+      locale: "pt-BR",
+      storageState: undefined,
+    });
+    const page = await contexto.newPage();
+    creds = await loginComoAdmin(page, creds);
+    await contexto.storageState({ path: sessaoAdmin });
+    await contexto.close();
+  });
 
-test.describe("Criar um agente pela tela", () => {
+  test.beforeEach(async () => {
+    fs.mkdirSync(EVIDENCIA, { recursive: true });
+  });
+
+  test.describe("Criar um agente pela tela", () => {
   test("o formulário abre e diz o que falta antes de deixar criar", async ({ page }) => {
     await page.goto("/app/ai/agents/new");
     await expect(page.getByRole("heading", { name: /novo agent/i })).toBeVisible();
@@ -231,4 +246,5 @@ test.describe("Olhar o consumo de IA", () => {
       fullPage: true,
     });
   });
+});
 });

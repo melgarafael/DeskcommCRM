@@ -9,6 +9,7 @@
  * Pré-requisito: `.e2e-creds.json` (gerado por scripts/seed-e2e-credentials.ts).
  */
 import { mkdirSync } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "./helpers/test";
@@ -45,8 +46,10 @@ async function login(page: Page, email: string): Promise<void> {
   await page.waitForURL(/\/app\//);
 }
 
-async function loginAdmin(page: Page): Promise<void> {
-  creds = await loginComoAdmin(page, creds);
+/** Com `storageState`, a página nasce em branco — entrar em `/app` como após o login. */
+async function entrarComoAdmin(page: Page): Promise<void> {
+  await page.goto("/app");
+  await page.waitForURL(/\/app\//);
 }
 
 const sidebar = (page: Page) => page.getByRole("navigation", { name: "Navegação principal" });
@@ -84,8 +87,27 @@ async function expectSemOverflowHorizontal(page: Page, contexto: string): Promis
 test.describe.configure({ timeout: 120_000 });
 
 test.describe("navegação agrupada", () => {
-  test("o sidebar tem hierarquia: grupos na ordem de uso", async ({ page }) => {
-    await loginAdmin(page);
+  test.describe("como admin de tenant", () => {
+    // Um login por arquivo: o TOTP não reusa código — repetir o MFA em cada
+    // caso custava até ~30 s de espera × 12 (molde de
+    // `painel-de-configuracao-da-instalacao.spec.ts`).
+    const sessaoAdmin = path.join(os.tmpdir(), `e2e-sessao-admin-navegacao-${process.pid}.json`);
+    test.use({ storageState: sessaoAdmin });
+
+    test.beforeAll(async ({ browser }, testInfo) => {
+      test.setTimeout(90_000);
+      const contexto = await browser.newContext({
+        baseURL: testInfo.project.use.baseURL,
+        storageState: undefined,
+      });
+      const page = await contexto.newPage();
+      creds = await loginComoAdmin(page, creds);
+      await contexto.storageState({ path: sessaoAdmin });
+      await contexto.close();
+    });
+
+    test("o sidebar tem hierarquia: grupos na ordem de uso", async ({ page }) => {
+      await entrarComoAdmin(page);
 
     // Organização não aparece como título aqui: seu hub (Configurações) vive no
     // rodapé fixo — ver o teste de dobra abaixo.
@@ -105,7 +127,7 @@ test.describe("navegação agrupada", () => {
   });
 
   test("chega nas Etapas do funil pelo CRM, sem passar por Configurações", async ({ page }) => {
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
 
     // O caso que originou tudo: o usuário não sabia que esta tela existia.
     //
@@ -137,7 +159,7 @@ test.describe("navegação agrupada", () => {
     // Tirar do sidebar não pode virar tela órfã: DoD 14 cobra porta, e a porta
     // passou a ser o hub. Sem este caso, o item "some do menu" ficaria provado
     // e o "continua alcançável" ficaria só escrito no comentário.
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
 
     await expect(sidebar(page).getByRole("link", { name: "Produtos" })).toHaveCount(0);
 
@@ -148,14 +170,14 @@ test.describe("navegação agrupada", () => {
   });
 
   test("e a lista de funis é o item vizinho, com nome próprio", async ({ page }) => {
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
     await sidebar(page).getByRole("link", { name: "Funis", exact: true }).click();
     await page.waitForURL(/\/app\/kanban/);
     await expect(page.getByRole("heading", { name: "Funis", level: 1 })).toBeVisible();
   });
 
   test("chega em Conhecimento, que só existia atrás das abas de IA", async ({ page }) => {
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
 
     await sidebar(page).getByRole("link", { name: "Ver tudo em IA" }).click();
     await page.waitForURL(/\/app\/ai$/);
@@ -177,7 +199,7 @@ test.describe("navegação agrupada", () => {
    * e não mais como um card perdido em Configurações.
    */
   test("chega ao canal oficial pelo grupo Canais, não por Configurações", async ({ page }) => {
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
 
     await sidebar(page).getByRole("link", { name: "Conexões" }).click();
     await page.waitForURL(/\/app\/connections/);
@@ -185,7 +207,7 @@ test.describe("navegação agrupada", () => {
   });
 
   test("o ⌘K acha o canal oficial por nome, mesmo sem tela própria", async ({ page }) => {
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
 
     // Ninguém procura por "Conexões" quando quer o número oficial da Meta —
     // procura por "oficial". A busca varre a descrição além do rótulo.
@@ -195,7 +217,7 @@ test.describe("navegação agrupada", () => {
   });
 
   test("⌘K abre, filtra e navega", async ({ page }) => {
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
 
     await page.keyboard.press("ControlOrMeta+k");
     const busca = page.getByRole("combobox");
@@ -221,7 +243,7 @@ test.describe("navegação agrupada", () => {
    */
   test("nenhum grupo fica fora da dobra, e em 900px o menu não rola", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
 
     const m = await page.evaluate(() => {
       const nav = document.querySelector('nav[aria-label="Navegação principal"]')!;
@@ -242,7 +264,7 @@ test.describe("navegação agrupada", () => {
     test.use({ viewport: { width: 390, height: 844 } });
 
     test("em 390px, o sidebar vira gaveta e não cria overflow horizontal", async ({ page }) => {
-      await loginAdmin(page);
+      await entrarComoAdmin(page);
 
       await expect(sidebar(page), "o sidebar desktop fica fora da árvore acessível no mobile").toHaveCount(0);
       await expectSemOverflowHorizontal(page, "shell mobile após login");
@@ -269,7 +291,7 @@ test.describe("navegação agrupada", () => {
 
   test("Configurações fica fixo no rodapé, fora da área que rola", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 768 });
-    await loginAdmin(page);
+    await entrarComoAdmin(page);
 
     const config = page.getByRole("link", { name: "Configurações" });
     await expect(config).toBeVisible();
@@ -282,6 +304,7 @@ test.describe("navegação agrupada", () => {
       return nav.contains(link!);
     });
     expect(dentroDaNav, "Configurações não pode depender de scroll para aparecer").toBe(false);
+  });
   });
 
   test("um agent não vê o cabeçalho de um grupo que a permissão esvaziou", async ({ page }) => {

@@ -18,6 +18,7 @@
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { test, expect, type Page } from "./helpers/test";
@@ -119,18 +120,6 @@ async function login(page: Page, email: string): Promise<void> {
   await page.waitForURL(/\/app(\/|$)/);
 }
 
-/**
- * Configurar exige ADMIN, não manager: `page.tsx` passa `readOnly` quando
- * `role < admin`, e o formulário inteiro (inclusive os switches de pacote)
- * nasce desabilitado. Isso é RBAC pré-existente do repo — foi a prova em tela
- * que mostrou, com o switch resolvendo para `<button disabled>`.
- * E admin tem MFA obrigatório (doutrina do repo), daí o TOTP — cuja fragilidade
- * em banco compartilhado está tratada no helper.
- */
-async function entrarComoAdmin(page: Page): Promise<void> {
-  creds = (await loginComoAdmin(page, creds)) as typeof creds;
-}
-
 async function abrirConfiguracao(page: Page): Promise<void> {
   await page.goto(`/app/ai/agents/${AGENTE}`);
   // A primeira renderização desta rota em `next start` leva dezenas de
@@ -171,8 +160,19 @@ test.describe("Configurar o que o agente pode fazer", () => {
   // compartilhado. Medido: o primeiro caso da bateria estourava 120s só nisso.
   test.describe.configure({ timeout: 240_000 });
 
-  test.beforeEach(async ({ page }) => {
-    await entrarComoAdmin(page);
+  const sessaoAdmin = path.join(os.tmpdir(), `e2e-sessao-admin-capacidades-${process.pid}.json`);
+  test.use({ storageState: sessaoAdmin });
+
+  test.beforeAll(async ({ browser }, testInfo) => {
+    test.setTimeout(90_000);
+    const contexto = await browser.newContext({
+      baseURL: testInfo.project.use.baseURL,
+      storageState: undefined,
+    });
+    const page = await contexto.newPage();
+    creds = (await loginComoAdmin(page, creds)) as typeof creds;
+    await contexto.storageState({ path: sessaoAdmin });
+    await contexto.close();
   });
 
   test("as jornadas aparecem em português, com explicação e contagem", async ({ page }) => {

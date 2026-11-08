@@ -1,21 +1,41 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
+import * as os from "node:os";
+import * as path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import { expect, test } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
-// O segundo login pode aguardar uma janela TOTP inteira antes de testar a tela.
-test.describe.configure({ timeout: 60_000 });
-
 const { url, serviceRole } = credenciaisSupabaseDeTeste();
 const admin = createClient<Database>(url, serviceRole, { auth: { persistSession: false } });
 
-test("conversões: instalação sem credenciais explica a ausência e permite reprocessar uma pendência", async ({
-  page,
-}, testInfo) => {
-  const creds = await loginComoAdmin(page, lerCreds());
+const credsE2E = lerCreds();
+
+test.describe("conversões e reprocessamento", () => {
+  const sessaoAdmin = path.join(os.tmpdir(), `e2e-sessao-admin-conversoes-${process.pid}.json`);
+  test.use({ storageState: sessaoAdmin });
+  test.describe.configure({ timeout: 60_000 });
+
+  test.beforeAll(async ({ browser }, testInfo) => {
+    test.setTimeout(90_000);
+    const contexto = await browser.newContext({
+      baseURL: testInfo.project.use.baseURL,
+      storageState: undefined,
+    });
+    const page = await contexto.newPage();
+    await loginComoAdmin(page, credsE2E);
+    await contexto.storageState({ path: sessaoAdmin });
+    await contexto.close();
+  });
+
+  test("conversões: instalação sem credenciais explica a ausência e permite reprocessar uma pendência", async ({
+    page,
+  }, testInfo) => {
+    await page.goto("/app");
+    await page.waitForURL(/\/app\//);
+    const creds = credsE2E;
   const { data: users, error: usersError } = await admin.auth.admin.listUsers();
   if (usersError) throw usersError;
   const user = users.users.find((u) => u.email === creds.users.admin!.email);
@@ -109,7 +129,9 @@ test("conversões: instalação sem credenciais explica a ausência e permite re
 test("regras de etapa da Meta: sem conexão direta, aparecem quando a venda sai pelo canal da conversa", async ({
   page,
 }) => {
-  const creds = await loginComoAdmin(page, lerCreds());
+  await page.goto("/app");
+  await page.waitForURL(/\/app\//);
+  const creds = credsE2E;
   const { data: users, error: usersError } = await admin.auth.admin.listUsers();
   if (usersError) throw usersError;
   const user = users.users.find((u) => u.email === creds.users.admin!.email);
@@ -197,7 +219,9 @@ test("regras de etapa da Meta: sem conexão direta, aparecem quando a venda sai 
 test("captura Google: configure pela tela, recarregue e leve wbraid ao link do WhatsApp", async ({
   page,
 }, testInfo) => {
-  const creds = await loginComoAdmin(page, lerCreds());
+  await page.goto("/app");
+  await page.waitForURL(/\/app\//);
+  const creds = credsE2E;
   const { data: users, error: usersError } = await admin.auth.admin.listUsers();
   if (usersError) throw usersError;
   const user = users.users.find((u) => u.email === creds.users.admin!.email);
@@ -319,7 +343,9 @@ test("captura Google: configure pela tela, recarregue e leve wbraid ao link do W
 test("links nomeados: cadastro pela tela, captura pública e desativação", async ({
   page,
 }, testInfo) => {
-  const creds = await loginComoAdmin(page, lerCreds());
+  await page.goto("/app");
+  await page.waitForURL(/\/app\//);
+  const creds = credsE2E;
   const { data: users, error: ue } = await admin.auth.admin.listUsers();
   if (ue) throw ue;
   const user = users.users.find((u) => u.email === creds.users.admin!.email);
@@ -382,4 +408,5 @@ test("links nomeados: cadastro pela tela, captura pública e desativação", asy
       await admin.from("ad_tracking_links").delete().eq("organization_id", org).eq("id", id);
     }
   }
+});
 });
