@@ -31207,8 +31207,9 @@ alter table public.entregas_de_aviso_de_caso
 -- retry e três processos diferentes drenam a mesma fila: sem esta unique, a
 -- equipe receberia o mesmo aviso uma vez por tentativa. O `23505` dela é o
 -- sinal que o handler lê para REIVINDICAR a entrega antes de tocar a rede.
-create unique index if not exists entregas_de_aviso_de_caso_unica
-  on public.entregas_de_aviso_de_caso (organization_id, case_id, destino);
+alter table public.entregas_de_aviso_de_caso add column if not exists update_event_id uuid;
+create unique index if not exists entregas_de_aviso_abertura_unica
+  on public.entregas_de_aviso_de_caso (organization_id, case_id, destino) where update_event_id is null;
 
 -- O leitor declarado: a lista "os últimos avisos" da tela de configuração, que
 -- é a fonte da verdade sobre "o aviso está saindo?" (a Central pode ter tido o
@@ -66103,6 +66104,139 @@ create trigger trg_contato_anonimizado_esquece_o_endereco
   execute function public.fn_contato_anonimizado_esquece_o_endereco();
 
 notify pgrst, 'reload schema';
+-- ---- importar blueprint: conferir e gravar numa transação só (migration 9091, issue #1995) ----
+-- Espelho exato da migration 20261102120000_9091_importar_blueprint_uma_vez_por_organizacao.sql.
+-- Não cria tabela: só a função que a rota chama por RPC (trava por organização).
+-- manifest: **Importar blueprint de respostas rápidas: conferir e gravar numa transação só (#1995).** A função `fn_importar_blueprint_de_respostas_rapidas(p_org, p_itens)` toma `pg_advisory_xact_lock` por ORGANIZAÇÃO, conta as respostas compartilhadas dela e — só se não houver nenhuma — grava o lote inteiro, tudo na MESMA transação. A rota deixa de fazer contagem e insert em duas requisições ao PostgREST: dois POST simultâneos do mesmo arquivo passavam os dois pela conferência e duplicavam as respostas; agora o segundo espera a trava, vê a organização ocupada e recebe `aplicado: false` (o 409 da rota). `security invoker`, sem `security definer`: a RLS `message_templates_write` (manager+) continua sendo a autoridade, e `anon` não executa. O item sem texto (recurso de áudio, cujo arquivo não viaja no blueprint) também não entra aqui. Aditiva e idempotente; apêndice igual no `baseline.sql`.
+-- ============================================================================
+-- 9091 — IMPORTAR BLUEPRINT: CONFERIR E GRAVAR NUMA TRANSAÇÃO SÓ (#1995)
+--
+-- ─── O defeito que isto fecha ───────────────────────────────────────────────
+--
+-- A rota fazia `select count(*)` e, se a organização estivesse vazia,
+-- `insert` — duas requisições HTTP ao PostgREST, sem transação e sem trava.
+-- Dois POST simultâneos do mesmo arquivo chegavam os dois ao insert antes de
+-- qualquer escrita aparecer na tabela: a organização terminava com 2× as
+-- respostas. Não há índice único em `message_templates` que barre repetição
+-- (o conteúdo não é chave: título e corpo iguais são legítimos), então o
+-- remédio não é constraint — é a conferência e a escrita serem UMA operação.
+--
+-- ─── Por que uma FUNÇÃO, e não "um insert condicional" ──────────────────────
+--
+-- `insert ... where not exists` não existe em SQL, e o PostgREST não encadeia
+-- duas instruções na mesma transação. Uma função chamada por RPC é a única
+-- forma de ter, no mesmo commit: a trava, a conferência e a escrita. A trava
+-- é `pg_advisory_xact_lock` (e não `session`): ela solta no fim da transação
+-- da RPC, inclusive quando a função levanta exceção.
+--
+-- ─── Por que a trava é da ORGANIZAÇÃO, e por que com sal ────────────────────
+--
+-- O recurso disputado é "esta organização ainda não tem respostas rápidas
+-- compartilhadas" — não o ator, não o arquivo. Duas pessoas diferentes
+-- importando ao mesmo tempo disputam exatamente esse recurso, então a chave é
+-- `p_org`. O sufixo `:blueprint` (e o sal fixo 1995, o número da issue) separa
+-- este espaço de nomes dos outros advisory locks do produto: colidir com a
+-- trava de um contato ou de um canal só faria as duas operações esperarem uma
+-- à outra sem motivo.
+--
+-- ─── Por que `security invoker` ─────────────────────────────────────────────
+--
+-- Quem chama é a rota, com o cliente do USUÁRIO: a RLS de `message_templates`
+-- já exige `manager+` para linha compartilhada e organização do próprio
+-- membro. Com `security definer` a função viraria uma porta dos fundos que
+-- aceita qualquer `p_org` de qualquer chamador — inclusive do navegador, que
+-- pode chamar a RPC direto. Invoker mantém a mesma autoridade de antes: o que
+-- mudou é o número de transações, não quem pode gravar.
+-- ============================================================================
+
+create or replace function public.fn_importar_blueprint_de_respostas_rapidas(
+  p_org uuid,
+  p_itens jsonb
+) returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_existentes integer;
+  v_gravadas integer;
+begin
+  if p_org is null then
+    raise exception 'organizacao_obrigatoria' using errcode = '22004';
+  end if;
+  if p_itens is null or jsonb_typeof(p_itens) <> 'array' then
+    raise exception 'itens_invalidos' using errcode = '22023';
+  end if;
+
+  -- A TRAVA, antes da leitura: quem chega depois espera a transação do
+  -- primeiro terminar — e portanto enxerga o que ele gravou.
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text || ':blueprint', 1995));
+
+  -- A CONFERÊNCIA. Mesmo filtro do guarda da rota: só linhas COMPARTILHADAS
+  -- (`owner_user_id is null`) contam. Resposta pessoal de alguém não impede a
+  -- organização de receber o blueprint.
+  select count(*) into v_existentes
+    from public.message_templates
+   where organization_id = p_org
+     and owner_user_id is null;
+
+  if v_existentes > 0 then
+    -- Sem exceção: "já tem" é desfecho PREVISTO, e a rota o traduz no 409.
+    return jsonb_build_object('aplicado', false, 'importadas', 0);
+  end if;
+
+  -- A ESCRITA, na mesma transação da conferência. `ordem` é a posição no
+  -- array (a fração da origem não significa nada aqui). `midias` nasce vazia:
+  -- o caminho no bucket é de OUTRA organização.
+  insert into public.message_templates (
+    organization_id,
+    owner_user_id,
+    title,
+    body,
+    shortcut,
+    mostrar_na_barra,
+    ordem,
+    midias,
+    created_by_user_id
+  )
+  select
+    p_org,
+    null,
+    item ->> 'titulo',
+    coalesce(item ->> 'corpo', ''),
+    nullif(item ->> 'atalho', ''),
+    coalesce((item ->> 'mostrar_na_barra')::boolean, true),
+    (ordinalidade - 1)::numeric,
+    '[]'::jsonb,
+    -- Quem importou é o autor das linhas, como no `POST` da rota de criação:
+    -- sem isto o rastro da resposta fica nulo e ninguém sabe de onde ela veio.
+    auth.uid()
+  from jsonb_array_elements(p_itens) with ordinality as t(item, ordinalidade)
+  -- O ITEM SEM TEXTO NÃO ENTRA. `body` vazio é legal na CRIAÇÃO (#2833: a
+  -- linha de áudio ganha o arquivo por `POST /:id/midias`), mas o blueprint
+  -- não leva mídia — importá-lo criaria uma resposta sem texto e sem arquivo.
+  -- A rota já filtra e CONTA o que ficou de fora; aqui é a mesma regra, para
+  -- que nenhum caminho (nem uma chamada direta à RPC) crie a linha vazia.
+  where coalesce(btrim(item ->> 'corpo'), '') <> '';
+
+  get diagnostics v_gravadas = row_count;
+
+  return jsonb_build_object('aplicado', true, 'importadas', v_gravadas);
+end;
+$$;
+
+comment on function public.fn_importar_blueprint_de_respostas_rapidas(uuid, jsonb) is
+  'Aplica um blueprint de respostas rápidas (#1995) sob trava por organização: conferência e gravação na mesma transação, para que dois imports simultâneos não dupliquem. Devolve { aplicado, importadas }; item sem texto não é gravado.';
+
+-- Quem executa é quem já poderia escrever pela RLS: `authenticated` (a rota usa
+-- o cliente do usuário) e `service_role`. `anon` não tem o que fazer aqui.
+revoke all on function public.fn_importar_blueprint_de_respostas_rapidas(uuid, jsonb)
+  from public, anon;
+grant execute on function public.fn_importar_blueprint_de_respostas_rapidas(uuid, jsonb)
+  to authenticated, service_role;
+
+-- Assinatura nova no schema exposto: sem isto a RPC só aparece no próximo reload.
+notify pgrst, 'reload schema';
+
 -- ---- juntar fichas não herda o nome da absorvida (migration 9049, issue #3721) ----
 -- manifest: **Ao juntar duas fichas, a que FICA não herda mais o nome da absorvida (#3721).** `fn_mesclar_contatos` fazia `name = coalesce(name, v_nome)` com o `name` dos perdedores, e `name` é o TÍTULO da ficha (`nomeDoContato`, lib/contacts/rotulo-do-contato.ts:105 — `name`, depois `display_name`, depois o número) e o que o `{{nome}}` das automações e das campanhas lê (lib/contacts/nome-da-agenda.ts:92-99). Medido na tela: A "Ana Cliente WhatsApp" (só `display_name`, veio da ingestão do WhatsApp) fica, B "Bruno Escritório Fixo" é absorvida, e o título de A vira "Bruno". Agora `name` não é herdado em caso nenhum — a identidade é de quem o operador escolheu para ficar — e o nome do perdedor vira histórico em `source_metadata.nomes_absorvidos` (`[{contato_id, name}]`, em `created_at, id`) e no jsonb de retorno da função, que a rota `/api/v1/contacts/merge` devolve na resposta (a auditoria `contact.merged` grava os ids, não o nome); o `name` original continua também na lápide. `display_name` (o rótulo do canal, não o nome digitado) segue herdado SÓ quando o vencedor já tem `name`: com `name` nulo o rótulo herdado viraria o título e o defeito voltaria pela outra porta. É a régua que a 0407 já aplicava a CPF e `consent` (:279-283) — campo que IDENTIFICA a pessoa não se herda. `social_identity`, `waha_lid`, `email`, `phone_number`, `birthdate`, `tags`, `custom_fields` e o telefone extra por absorvida (9043) ficam como estão; assinatura, `search_path`, `security definer` e grants INALTERADOS (`create or replace` preserva a ACL). Idempotente; espelho idêntico no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116). Prova em `tests/invariants/juntar-fichas-nao-herda-o-nome.test.ts`.
 -- 9049 — ao juntar fichas, o nome do PERDEDOR não vira o título da que fica
@@ -71837,6 +71971,351 @@ $$;
 
 revoke execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) from public, anon;
 grant execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) to authenticated, service_role;
+
+-- ---- o cliente respondeu: a equipe é avisada no mesmo caso (migration 9240) ----
+-- ACIMA da VARREDURA anon porque cria função, e depois da última definição de
+-- `emit_event` e de `fn_responder_caso_por_whatsapp`: abaixo delas ele valeria,
+-- acima seria sobrescrito.
+-- manifest: A resposta solicitada ao cliente gera aviso recuperável no mesmo Caso, com identidade por atualização e comando humano vinculado ao ciclo.
+-- DIRC: somente o ponteiro do fato persistido; texto continua em agent_case_events.
+-- Legado/abertura preservados como update_event_id NULL; não há replay/backfill.
+alter table public.entregas_de_aviso_de_caso add column if not exists update_event_id uuid;
+create unique index if not exists agent_case_events_notice_ref
+  on public.agent_case_events(organization_id,case_id,id);
+do $$ begin
+ if not exists(select 1 from pg_constraint where conrelid='public.entregas_de_aviso_de_caso'::regclass and conname='entrega_atualizacao_do_mesmo_caso') then
+  alter table public.entregas_de_aviso_de_caso add constraint entrega_atualizacao_do_mesmo_caso
+   foreign key(organization_id,case_id,update_event_id)
+   references public.agent_case_events(organization_id,case_id,id) on delete cascade;
+ end if;
+end $$;
+-- Primeiro instala as novas chaves, depois remove a antiga; reaplicar é seguro.
+create unique index if not exists entregas_de_aviso_abertura_unica
+ on public.entregas_de_aviso_de_caso(organization_id,case_id,destino) where update_event_id is null;
+create unique index if not exists entregas_de_aviso_atualizacao_unica
+ on public.entregas_de_aviso_de_caso(organization_id,case_id,destino,update_event_id) where update_event_id is not null;
+drop index if exists public.entregas_de_aviso_de_caso_unica;
+
+-- A fronteira do atendimento decide o aviso, o comando e o que o modelo lê, nunca
+-- se a resposta do cliente fica registrada. Quem chega com a fronteira vencida
+-- (conversa reaberta, próximo passo da demanda mudou, caso de grupo) ainda grava
+-- `lead_provided` e volta a `awaiting_human`, como antes, com o evento marcado em
+-- `metadata.fora_da_fronteira`; nesse ciclo não nasce entrega de atualização, o
+-- comando da abertura também é recusado, porque não é o da última informação, e o
+-- pedido antigo não vai ao modelo. A equipe responde pela tela do caso. Caso legado
+-- sem `service_boundary` não tem fronteira a conferir. A regra é uma só, aqui, para
+-- a marca na tela e o aviso não divergirem.
+create or replace function public.fn_caso_na_fronteira_atual(p_org uuid,p_case uuid)
+returns boolean language sql stable security definer set search_path=public,pg_temp as $$
+ select coalesce((
+  select not c.is_group and (ac.context_snapshot->'service_boundary' is null or public.fn_meet_boundary_current((ac.context_snapshot->'service_boundary') ||
+   case when ac.context_snapshot->'service_boundary'->>'demanda_id' is null
+    then jsonb_build_object('demanda_id',c.current_demanda_id,'demanda_revision',d.revision)
+    else '{}'::jsonb end))
+  from public.agent_cases ac
+  join public.conversations c on c.organization_id=ac.organization_id and c.id=ac.conversation_id
+  left join public.demandas d on d.organization_id=c.organization_id and d.contact_id=c.contact_id and d.id=c.current_demanda_id
+  where ac.organization_id=p_org and ac.id=p_case),false)
+$$;
+revoke all on function public.fn_caso_na_fronteira_atual(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_caso_na_fronteira_atual(uuid,uuid) to service_role;
+
+-- Leitura server-only: nenhum conteúdo vem da carga do event_log ou do comando.
+create or replace function public.fn_ler_retorno_de_caso(
+ p_org uuid,p_case uuid,p_event uuid,p_config_revision text
+) returns jsonb language sql stable security definer set search_path=public,pg_temp as $$
+ select jsonb_build_object('info',e.body,'ask',pedido.body,'contactId',c.contact_id,'conversationId',c.id)
+ from public.agent_case_events e
+ join public.agent_cases ac on ac.organization_id=e.organization_id and ac.id=e.case_id
+ join public.conversations c on c.organization_id=ac.organization_id and c.id=ac.conversation_id
+ join public.config_aviso_de_caso cfg on cfg.organization_id=ac.organization_id
+ join public.agent_case_events pedido on pedido.organization_id=e.organization_id
+  and pedido.case_id=e.case_id and pedido.id::text=e.metadata->>'request_event_id'
+ where e.organization_id=p_org and e.case_id=p_case and e.id=p_event
+  and e.kind='lead_provided' and e.actor_kind='lead' and e.body is not null
+  and ac.status='awaiting_human'
+  and cfg.ligado and cfg.channel_session_id is not null and cfg.updated_at::text=p_config_revision
+  and pedido.kind='human_replied' and pedido.human_action='need_lead_info'
+  and pedido.id=(select n.id from public.agent_case_events n where n.organization_id=p_org
+   and n.case_id=p_case and n.kind='human_replied' order by n.created_at desc,n.id desc limit 1)
+  and public.fn_caso_na_fronteira_atual(p_org,p_case)
+$$;
+revoke all on function public.fn_ler_retorno_de_caso(uuid,uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_ler_retorno_de_caso(uuid,uuid,uuid,text) to service_role;
+
+create or replace function public.fn_responder_caso_por_whatsapp(
+  p_org uuid,
+  p_case uuid,
+  p_session uuid,
+  p_phone_variants text[],
+  p_action text,
+  p_body text,
+  p_message_key text,
+  p_update_event uuid
+)
+returns text
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_contact_id uuid;
+  v_delivery_id uuid;
+  v_role text := coalesce(
+    nullif(current_setting('request.jwt.claim.role', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'role'
+  );
+begin
+  if coalesce(v_role, '') <> 'service_role' then
+    raise exception 'service_role_required' using errcode = '42501';
+  end if;
+  if p_action is null or p_action not in ('resolved', 'need_lead_info') then
+    raise exception 'invalid_case_reply_action' using errcode = '22023';
+  end if;
+  if p_body is null or char_length(btrim(p_body)) not between 1 and 4000 then
+    raise exception 'invalid_case_reply_body' using errcode = '22023';
+  end if;
+  if p_message_key is null or char_length(p_message_key) not between 1 and 300 then
+    raise exception 'invalid_case_reply_message_key' using errcode = '22023';
+  end if;
+
+  -- Serializa a reentrega do mesmo webhook. Se o mesmo id chegar depois que o
+  -- caso for reaberto para uma pergunta nova, continua sendo a mesma resposta.
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text || ':' || p_message_key, 0));
+  if exists (
+    select 1 from public.agent_case_events e
+     where e.organization_id = p_org
+       and e.kind = 'human_replied'
+       and e.metadata->>'whatsapp_message_key' = p_message_key
+  ) then
+    return 'duplicate';
+  end if;
+
+  -- O telefone e o canal precisam continuar sendo os configurados agora, e o
+  -- caso precisa ter sido efetivamente avisado por essa mesma conexão e destino.
+  -- A entrega enviada é a prova que a pessoa recebeu autorização para responder.
+  if not exists (
+    select 1
+      from public.config_aviso_de_caso cfg
+     where cfg.organization_id = p_org
+       and cfg.ligado = true
+       and cfg.resposta_whatsapp_habilitada = true
+       and cfg.channel_session_id = p_session
+       and cfg.telefone_destino = any(p_phone_variants)
+     for update
+  ) then
+    return 'unauthorized';
+  end if;
+
+  select conv.contact_id, entrega.id
+    into v_contact_id, v_delivery_id
+    from public.agent_cases caso
+    join public.conversations conv
+      on conv.organization_id = caso.organization_id
+     and conv.id = caso.conversation_id
+    join public.entregas_de_aviso_de_caso entrega
+      on entrega.organization_id = caso.organization_id
+     and entrega.case_id = caso.id
+   where caso.organization_id = p_org
+     and caso.id = p_case
+     and caso.status = 'awaiting_human'
+     and entrega.status = 'enviado'
+     and entrega.channel_session_id = p_session
+     and entrega.destino = any(p_phone_variants)
+     and entrega.update_event_id is not distinct from p_update_event
+     and p_update_event is not distinct from (
+       select e.id from public.agent_case_events e where e.organization_id=p_org
+        and e.case_id=p_case and e.kind='lead_provided' order by e.created_at desc,e.id desc limit 1)
+     and (p_update_event is null or public.fn_ler_retorno_de_caso(p_org,p_case,p_update_event,
+       (select cfg.updated_at::text from public.config_aviso_de_caso cfg where cfg.organization_id=p_org)) is not null)
+   order by entrega.enviado_em desc,entrega.id desc limit 1
+   for update of caso;
+
+  if v_delivery_id is null or v_contact_id is null then
+    return 'case_unavailable';
+  end if;
+
+  if p_action = 'resolved' then
+    update public.agent_cases
+       set status = 'resolved', closed_at = now(), updated_at = now()
+     where organization_id = p_org and id = p_case and status = 'awaiting_human';
+    if not found then return 'case_unavailable'; end if;
+
+    insert into public.agent_case_events
+      (organization_id, case_id, kind, actor_kind, human_action, body, metadata)
+    values
+      (p_org, p_case, 'human_replied', 'human', 'resolved', p_body,
+       jsonb_build_object('source', 'whatsapp', 'whatsapp_message_key', p_message_key,
+                          'channel_session_id', p_session, 'delivery_id', v_delivery_id, 'update_event_id', p_update_event)),
+      (p_org, p_case, 'resolved', 'human', null, null,
+       jsonb_build_object('source', 'whatsapp', 'channel_session_id', p_session));
+  else
+    update public.agent_cases
+       set status = 'awaiting_lead', updated_at = now()
+     where organization_id = p_org and id = p_case and status = 'awaiting_human';
+    if not found then return 'case_unavailable'; end if;
+
+    insert into public.agent_case_events
+      (organization_id, case_id, kind, actor_kind, human_action, body, metadata)
+    values
+      (p_org, p_case, 'human_replied', 'human', 'need_lead_info', p_body,
+       jsonb_build_object('source', 'whatsapp', 'whatsapp_message_key', p_message_key,
+                          'channel_session_id', p_session, 'delivery_id', v_delivery_id, 'update_event_id', p_update_event)),
+      (p_org, p_case, 'lead_asked', 'human', null, null,
+       jsonb_build_object('source', 'whatsapp', 'channel_session_id', p_session));
+  end if;
+
+  -- A transição, os eventos e a retomada entram no mesmo commit. Se a fila não
+  -- aceitar o job, o webhook pode ser reentregue e nenhum caso fica sem retomada.
+  insert into public.job_queue (organization_id, contact_id, kind, payload)
+  values (
+    p_org,
+    v_contact_id,
+    'case_reply_turn',
+    jsonb_build_object('case_id', p_case, 'action', p_action, 'body', p_body)
+  );
+
+  return 'accepted';
+end;
+$$;
+
+revoke all on function public.fn_responder_caso_por_whatsapp(uuid, uuid, uuid, text[], text, text, text, uuid) from public,anon,authenticated;
+grant execute on function public.fn_responder_caso_por_whatsapp(uuid, uuid, uuid, text[], text, text, text, uuid) to service_role;
+
+create or replace function public.fn_responder_caso_por_whatsapp(
+ p_org uuid,p_case uuid,p_session uuid,p_phone_variants text[],p_action text,p_body text,p_message_key text
+) returns text language sql security invoker set search_path=public,pg_temp as $$
+ select public.fn_responder_caso_por_whatsapp(p_org,p_case,p_session,p_phone_variants,p_action,p_body,p_message_key,null::uuid)
+$$;
+revoke all on function public.fn_responder_caso_por_whatsapp(uuid,uuid,uuid,text[],text,text,text) from public,anon,authenticated;
+grant execute on function public.fn_responder_caso_por_whatsapp(uuid,uuid,uuid,text[],text,text,text) to service_role;
+
+CREATE OR REPLACE FUNCTION public.emit_event(p_event_type text, p_entity_kind text, p_entity_id uuid, p_payload jsonb DEFAULT '{}'::jsonb, p_metadata jsonb DEFAULT '{}'::jsonb, p_organization_id uuid DEFAULT NULL::uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_org_id uuid;
+  v_event_id uuid;
+  v_contact uuid;
+  v_origin jsonb;
+begin
+  -- message.received nasce somente do INSERT inbound interno. Um chamador
+  -- público não pode reapresentar uma mensagem existente como evento novo.
+  -- `ai.case_opened`/`ai.case_closed` entram pela mesma razão (0279): o caso é
+  -- do motor, e um evento de caso forjado por login move o funil e acorda o
+  -- agente em nome de uma decisão que ninguém tomou.
+  -- `contact.birthday` entra pela 0551: só o cron (`contact-birthdays`, sem
+  -- sessão) o emite, e a partir desta migration ele alcança a origem e manda
+  -- WhatsApp de verdade — forjado por login, seria envio em nome de um
+  -- aniversário que ninguém fez.
+  -- `contact.phone_added` entra pela 0670, pela mesma razão do aniversário:
+  -- quem o emite é o servidor (o PATCH de contatos, com a chave de serviço,
+  -- depois de gravar o número), e ele alcança a origem e manda WhatsApp.
+  -- `lead.date_field_due` entra pela 0743, como o aniversário: quem o emite é
+  -- só o cron `lead-date-field-due` (sem sessão), e a partir dela ele alcança a
+  -- origem e manda WhatsApp.
+  -- `lead.stage_stale` entra pela 9206, pela mesma razão do gatilho de data do
+  -- funil: quem o emite é só a varredura `lead-time-triggers` (sem sessão), e
+  -- a partir dela ele alcança a origem e manda WhatsApp — forjado por login,
+  -- seria envio em nome de uma etapa que ninguém parou.
+  -- Revogação do turno é fato da tomada nativa, nunca um pedido do login.
+  -- `conversation.closed` entra pela 9212: quem o emite é o gatilho do
+  -- encerramento (o servidor), e a partir dele uma automação reage ao
+  -- atendimento encerrado e manda mensagem ao cliente — forjado por login,
+  -- seria mensagem em nome de um encerramento que ninguém fez.
+  -- `ai.case_updated` entra pela 9240: quem o emite é o servidor, na mesma
+  -- transação da resposta do cliente, e ele manda WhatsApp à equipe com um
+  -- comando preso àquela atualização — forjado por login, seria um ciclo de
+  -- atendimento que ninguém abriu.
+  if auth.uid() is not null and p_event_type in (
+    'message.received','appointment.outcome_confirmed',
+    'ai.case_opened','ai.case_closed','ai.case_updated','contact.birthday','contact.phone_added',
+    'lead.date_field_due','lead.stage_stale','conversation.autonomous_turn_revoked',
+    'conversation.closed'
+  ) then
+    raise exception 'reserved_message_received' using errcode='42501';
+  end if;
+  -- Desfecho e responsável do negócio só nascem do gatilho de `crm_leads`
+  -- (`fn_emit_event_on_lead_change`), quando a linha muda de fato. Nenhum
+  -- emissor do app os pede por RPC; os consumidores produzem efeito real
+  -- (push, webhook de saída, conversão de anúncio).
+  if auth.uid() is not null
+     and p_event_type in ('lead.won','lead.lost','lead.reopened','lead.assigned')
+     and coalesce(current_setting('deskcomm.desfecho_pelo_negocio', true), '') <> 'on' then
+    raise exception 'reserved_message_received' using errcode='42501';
+  end if;
+  -- Estes campos autorizam efeitos operacionais; não são payload público.
+  if auth.uid() is not null and (
+    coalesce(p_payload,'{}'::jsonb) ?| array['service_origin','service_boundary']
+    or coalesce(p_metadata,'{}'::jsonb) ?| array['service_origin','service_boundary']
+  ) then raise exception 'reserved_service_origin' using errcode='42501'; end if;
+  v_org_id := coalesce(p_organization_id, (public.fn_support_context()->>'organization_id')::uuid);
+  if v_org_id is null then
+    select organization_id into v_org_id
+      from public.user_organizations
+      where user_id = auth.uid() and revoked_at is null
+      limit 1;
+  end if;
+  if v_org_id is null then
+    raise exception 'emit_event: organization_id obrigatorio';
+  end if;
+
+  if auth.uid() is not null
+     and not public.fn_role_at_least(v_org_id, 'viewer') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'emit_event: caller must be an active member of the organization';
+  end if;
+
+  if not public.fn_support_write_allowed(v_org_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+
+  -- A ORIGEM E RESERVADA AO SERVIDOR — ENTAO O SERVIDOR TEM DE ESCREVE-LA.
+  --
+  -- O bloco acima recusa `service_origin` vindo de chamador autenticado (42501,
+  -- e com razao: e o campo que AUTORIZA efeito operacional, nao payload
+  -- publico). So que ninguem o escrevia no lugar dele. Efeito medido: quem move
+  -- o negocio pela IA carimba a origem no servidor (`agent-stage-sync`,
+  -- `appointment-stage-move`, `handoff-stage-move`) e o follow-up nasce; quem
+  -- move PELO QUADRO — o operador, pela rota HTTP autenticada — emitia um
+  -- evento SEM origem, `fn_service_event_origin` caia no `service_stale` final
+  -- (40001), `serviceForEvent` engolia como `stale_origin` e o follow-up nunca
+  -- nascia. Sem erro em lugar nenhum: o gatilho de etapa era inalcancavel pelo
+  -- caminho que o produto oferece na tela.
+  --
+  -- O retrato e tirado AQUI, no instante da emissao, que e exatamente a
+  -- semantica de procedencia que a 0223 quer: "quando este evento nasceu, o
+  -- atendimento estava assim". A resolucao do contato vem da mesma tabela de
+  -- `fn_service_event_contact` — se ela nao souber resolver o tipo, nao ha o que
+  -- carimbar e o evento segue sem origem, como antes.
+  if not (coalesce(p_payload,'{}'::jsonb) ? 'service_origin')
+     and not (coalesce(p_metadata,'{}'::jsonb) ? 'service_origin') then
+    select f.contact_id into v_contact
+      from public.fn_service_event_contact(v_org_id, p_event_type, p_entity_kind, p_entity_id) f;
+    if v_contact is not null
+       and exists(select 1 from public.contacts
+                   where organization_id=v_org_id and id=v_contact
+                     and not is_anonymized and is_merged_into is null) then
+      v_origin := jsonb_build_object('kind','command',
+        'observed', public.fn_service_observe_command(v_org_id, v_contact));
+    end if;
+  end if;
+
+  insert into public.event_log
+    (organization_id, event_type, entity_kind, entity_id, payload, metadata)
+  values
+    (v_org_id, p_event_type, p_entity_kind, p_entity_id,
+     coalesce(p_payload, '{}'::jsonb)
+       || case when v_origin is null then '{}'::jsonb else jsonb_build_object('service_origin', v_origin) end,
+     coalesce(p_metadata, '{}'::jsonb)
+       || jsonb_build_object('emitted_at', extract(epoch from now())))
+  returning id into v_event_id;
+
+  return v_event_id;
+end $function$;
+revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
+grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
 
 -- Contato criado pelo negócio (9112)
 -- manifest: Cria e vincula contato ao negócio atomicamente pela RLS do chamador, sem limitar a uma empresa.

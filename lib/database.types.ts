@@ -8067,6 +8067,7 @@ export type Database = {
           organization_id: string;
           status: string;
           tentativas: number;
+          update_event_id: string | null;
           updated_at: string;
         };
         ComputedFields: never;
@@ -8084,6 +8085,7 @@ export type Database = {
           organization_id: string;
           status?: string;
           tentativas?: number;
+          update_event_id?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -8100,6 +8102,7 @@ export type Database = {
           organization_id?: string;
           status?: string;
           tentativas?: number;
+          update_event_id?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -15176,6 +15179,10 @@ export type Database = {
         Args: { p_assigned_to: string; p_created_by: string; p_org: string };
         Returns: boolean;
       };
+      fn_caso_na_fronteira_atual: {
+        Args: { p_case: string; p_org: string };
+        Returns: boolean;
+      };
       fn_casos_parados_para_lembrar: {
         Args: { p_limite?: number };
         Returns: {
@@ -15776,6 +15783,15 @@ export type Database = {
         Args: { p_campos: Json; p_lead: string; p_org: string };
         Returns: Json;
       };
+      fn_ler_retorno_de_caso: {
+        Args: {
+          p_case: string;
+          p_config_revision: string;
+          p_event: string;
+          p_org: string;
+        };
+        Returns: Json;
+      };
       fn_lgpd_anonymize_contact: {
         Args: { p_contact_id: string; p_organization_id: string };
         Returns: Json;
@@ -16121,6 +16137,7 @@ export type Database = {
           p_org: string;
           p_phone_variants: string[];
           p_session: string;
+          p_update_event?: string | null;
         };
         Returns: string;
       };

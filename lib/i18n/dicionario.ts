@@ -4277,6 +4277,29 @@ export const DICIONARIO: Traducoes = {
   "Os casos aparecem aqui quando um agente publicado, com \"Deixar o agente pedir uma tarefa a alguém e seguir conversando\" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.": {
     es: "Los casos aparecen aquí cuando un agente publicado, con \"Dejar que el agente pida una tarea a alguien y siga conversando\" activado, te pide algo. La conversación transferida a una persona va al Inbox.",
   },
+  "Nenhum agente está liberado para abrir casos": { es: "Ningún agente está habilitado para abrir casos" },
+  "Esta tela fica vazia porque a opção “Deixar o agente pedir uma tarefa a alguém e seguir conversando”, no cartão “Pedir ajuda sem sair da conversa” do agente, está desligada — ela vem desligada de fábrica. Ligue a opção e publique a versão.":
+    {
+      es: "Esta pantalla está vacía porque la opción “Dejar que el agente pida una tarea a alguien y siga conversando”, en la tarjeta “Pedir ayuda sin salir de la conversación” del agente, está desactivada — viene desactivada de fábrica. Activa la opción y publica la versión.",
+    },
+  "A opção de abrir casos está ligada, mas o agente não foi publicado": {
+    es: "La opción de abrir casos está activada, pero el agente no se publicó",
+  },
+  "Ligar a opção no rascunho não basta: é a versão publicada que atende. Abra o agente e publique a versão para que a IA comece a pedir ajuda por aqui.":
+    {
+      es: "Activar la opción en el borrador no basta: la que atiende es la versión publicada. Abre el agente y publica la versión para que la IA empiece a pedir ayuda por aquí.",
+    },
+  "Nenhum agente configurado ainda": { es: "Todavía no hay ningún agente configurado" },
+  "Casos são pedidos internos que o agente de IA abre quando esbarra em algo que só uma pessoa resolve. Configure um agente para que ele possa pedir ajuda por aqui.":
+    {
+      es: "Los casos son pedidos internos que el agente de IA abre cuando se topa con algo que solo una persona puede resolver. Configura un agente para que pueda pedir ayuda por aquí.",
+    },
+  "Abrir o agente": { es: "Abrir el agente" },
+  "Ver o agente": { es: "Ver el agente" },
+  "Ver os agentes": { es: "Ver los agentes" },
+  "Só um administrador da organização pode ligar esta opção.": {
+    es: "Solo un administrador de la organización puede activar esta opción.",
+  },
   "Casos concluídos, cancelados ou repassados ficam aqui.": {
     es: "Los casos concluidos, cancelados o transferidos quedan aquí.",
   },
@@ -4339,6 +4362,7 @@ export const DICIONARIO: Traducoes = {
   "Você respondeu": { es: "Respondiste" },
   "A IA perguntou ao cliente": { es: "La IA le preguntó al cliente" },
   "O cliente respondeu": { es: "El cliente respondió" },
+  "O cliente respondeu fora do atendimento atual (sem aviso no WhatsApp)": { es: "El cliente respondió fuera de la atención actual (sin aviso por WhatsApp)" },
   "O cliente não respondeu a tempo": { es: "El cliente no respondió a tiempo" },
   "Você concluiu o caso": { es: "Concluiste el caso" },
   "A equipe respondeu pelo WhatsApp": { es: "El equipo respondió por WhatsApp" },
@@ -11696,6 +11720,19 @@ export const DICIONARIO: Traducoes = {
   "em risco": { es: "en riesgo" },
   "em voo": { es: "en seguimiento" },
   "Radar de risco": { es: "Radar de riesgo" },
+  "Painel de atendimento": { es: "Panel de atención" },
+  "Uma tela com três colunas, por número: quem espera resposta, quem está em atendimento e quem foi atendido hoje.": { es: "Una pantalla con tres columnas, por número: quién espera respuesta, quién está en atención y quién fue atendido hoy." },
+  "Ligado, cada empresa ganha em Análise a tela Painel de atendimento: quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número, com o que cada pessoa já vê no Inbox. Desligado, a tela e o menu somem, e nenhuma conversa muda.": { es: "Al activarlo, cada empresa obtiene en Análisis la pantalla Panel de atención: quién espera respuesta, quién está en atención y quién fue atendido hoy, por número, con lo que cada persona ya ve en el Inbox. Al desactivarlo, la pantalla y el menú desaparecen, y ninguna conversación cambia." },
+  "Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número.": { es: "Quién espera respuesta, quién está en atención y quién fue atendido hoy, por número." },
+  "Casos da IA": { es: "Casos de la IA" },
+  "Não deu para carregar as conversas agora.": { es: "No se pudieron cargar las conversaciones ahora." },
+  "Aguardando atendimento": { es: "Esperando atención" },
+  "Ninguém esperando.": { es: "Nadie esperando." },
+  "esperando há {tempo}": { es: "esperando hace {tempo}" },
+  "Nenhuma conversa em andamento.": { es: "Ninguna conversación en curso." },
+  "Atendidos hoje": { es: "Atendidos hoy" },
+  "Nada encerrado hoje ainda.": { es: "Nada cerrado hoy todavía." },
+  "Há mais de 100 conversas em alguma lista. Quem espera sem dono são as 100 com mais tempo de espera; as demais são as 100 com a mensagem mais recente.": { es: "Hay más de 100 conversaciones en alguna lista. Quienes esperan sin responsable son las 100 con más tiempo de espera; las demás son las 100 con el mensaje más reciente." },
   "Demandas abertas que esfriaram e precisam de você. Se o assistente já agendou um retorno, aparece como “em voo”; sem próximo passo, é risco de perder o cliente.": { es: "Casos abiertos que se enfriaron y necesitan tu atención. Si el asistente ya programó un seguimiento, aparecen como “En seguimiento”. Los que no tienen un siguiente paso corren el riesgo de perder al cliente." },
   "Scripts salvos para responder mais rápido no atendimento.": { es: "Plantillas guardadas para responder más rápido durante la atención." },
   "Saudação inicial": { es: "Saludo inicial" },
@@ -15555,6 +15592,9 @@ export const DICIONARIO: Traducoes = {
   // FIXAS do aviso; o que o modelo escreveu (título, resumo, bloqueio) nunca é
   // traduzido, porque traduzir o relato de um cliente é reescrevê-lo.
   "novo caso esperando você": { es: "nuevo caso esperando por ti" },
+  "Resposta do cliente": { es: "Respuesta del cliente" },
+  "atualização do caso esperando você": { es: "actualización del caso esperando por ti" },
+  "Nova informação do cliente": { es: "Nueva información del cliente" },
   Assunto: { es: "Asunto" },
   Abrir: { es: "Abrir" },
   "A IA prometeu algo e travou": { es: "La IA prometió algo y se trabó" },
@@ -15778,8 +15818,8 @@ export const DICIONARIO: Traducoes = {
     { es: "¿El aviso acelera la atención?" },
   "O aviso sai na hora, inclusive fora do horário comercial — sua equipe não é cliente.":
     { es: "El aviso sale al instante, incluso fuera del horario comercial: tu equipo no es cliente." },
-  "O aviso sai quando o assistente abre o caso. Quando o cliente responde e o caso volta a esperar você, o aviso não se repete — acompanhe pela Central de alertas.":
-    { es: "El aviso sale cuando el asistente abre el caso. Si el cliente responde y el caso vuelve a esperarte, el aviso no se repite. Dale seguimiento desde la Central de alertas." },
+  "O aviso sai quando o assistente abre o caso e sai de novo quando ele registra a resposta do cliente ao que a equipe perguntou. Se a conversa foi reaberta ou o próximo passo mudou nesse meio-tempo, esse segundo aviso não sai: o caso volta a esperar você e a cobrança segue pela Central de alertas.":
+    { es: "El aviso sale cuando el asistente abre el caso y vuelve a salir cuando registra la respuesta del cliente a lo que preguntó el equipo. Si la conversación se reabrió o el siguiente paso cambió en ese intervalo, este segundo aviso no sale: el caso vuelve a esperarte y el seguimiento continúa en la Central de alertas." },
   "O endereço público do sistema ainda não foi configurado, então o link do aviso não abriria nada. Peça a quem instalou para definir o endereço do seu domínio.":
     { es: "Aún no se configuró la dirección pública del sistema, así que el enlace del aviso no abriría nada. Pide a quien lo instaló que defina la dirección de tu dominio." },
   "O que saiu, o que não saiu e por quê. Esta lista é o registro do sistema — ela não some quando alguém resolve um alerta.":
@@ -16529,6 +16569,11 @@ export const DICIONARIO: Traducoes = {
   "colunas": { es: "columnas" },
   "campos": { es: "campos" },
   "respostas rápidas": { es: "respuestas rápidas" },
+  // Recusa do import de blueprint (#1995): a marca entra por `.replace("{marca}")`
+  // DEPOIS desta tradução — por isso o marcador é `{marca}` e não o nome do produto.
+  "Este arquivo não é um blueprint do {marca}.": {
+    es: "Este archivo no es un blueprint de {marca}.",
+  },
   "tipos de compromisso": { es: "tipos de cita" },
   "cadências em rascunho": { es: "cadencias en borrador" },
   "criada agora": { es: "creada ahora" },
@@ -19640,6 +19685,34 @@ export const DICIONARIO: Traducoes = {
   "O agente do servidor ainda não confirmou suporte para refazer a atualização pela tela.": {
     es: "El agente del servidor aún no ha confirmado soporte para repetir la actualización desde esta pantalla.",
   },
+  // Blueprint de respostas rápidas (#1995): arquivo só com itens de áudio, que
+  // não entram porque o blueprint não leva o arquivo de mídia.
+  "Este arquivo só tem respostas de áudio, e o blueprint não leva o arquivo de mídia. Nada foi aplicado.":
+    {
+      es: "Este archivo solo tiene respuestas de audio, y el blueprint no lleva el archivo de multimedia. No se aplicó nada.",
+    },
+  // Blueprint de respostas rápidas (#1995): as recusas das rotas de export e
+  // import e a porta em /app/templates (botões Exportar e Importar).
+  "Erro ao aplicar o blueprint.": { es: "Error al aplicar el blueprint." },
+  "Esta organização já tem respostas rápidas compartilhadas. O blueprint só é aplicado onde não há nenhuma — substituir ou mesclar ainda não é uma decisão tomada.": { es: "Esta organización ya tiene respuestas rápidas compartidas. El blueprint solo se aplica donde no hay ninguna — reemplazar o combinar aún no es una decisión tomada." },
+  "Este blueprint não é de respostas rápidas.": { es: "Este blueprint no es de respuestas rápidas." },
+  "Este blueprint é de outra versão do formato — esta instalação lê a versão 1.": { es: "Este blueprint es de otra versión del formato — esta instalación lee la versión 1." },
+  "Falha ao ler o arquivo enviado.": { es: "No se pudo leer el archivo enviado." },
+  "O arquivo não é um JSON válido.": { es: "El archivo no es un JSON válido." },
+  "O arquivo passa de 2 MB.": { es: "El archivo supera los 2 MB." },
+  "O arquivo tem itens inválidos: confira a quantidade (de 1 a 200), o título (até 80), o corpo (até 4096) e o atalho (até 40).": { es: "El archivo tiene elementos inválidos: revisa la cantidad (de 1 a 200), el título (hasta 80), el cuerpo (hasta 4096) y el atajo (hasta 40)." },
+  "Erro ao exportar respostas rápidas.": { es: "Error al exportar respuestas rápidas." },
+  "Não há respostas rápidas compartilhadas para exportar.": { es: "No hay respuestas rápidas compartidas para exportar." },
+  "O blueprint leva até 200 respostas rápidas compartilhadas, e esta organização tem mais do que isso. Nada foi exportado.": { es: "El blueprint lleva hasta 200 respuestas rápidas compartidas, y esta organización tiene más que eso. No se exportó nada." },
+  "Respostas rápidas exportadas.": { es: "Respuestas rápidas exportadas." },
+  "Mídias que ficaram de fora, porque o arquivo leva só o texto: {n}.": { es: "Archivos multimedia que quedaron fuera, porque el archivo lleva solo el texto: {n}." },
+  "Importar respostas rápidas": { es: "Importar respuestas rápidas" },
+  "Use o arquivo baixado em «Exportar», desta ou de outra organização. Ele só é aplicado numa organização que ainda não tem respostas compartilhadas, e nunca substitui nada.": { es: "Usa el archivo descargado en «Exportar», de esta o de otra organización. Solo se aplica en una organización que aún no tiene respuestas compartidas, y nunca reemplaza nada." },
+  "Respostas importadas como compartilhadas: {n}.": { es: "Respuestas importadas como compartidas: {n}." },
+  "Respostas só de áudio que ficaram de fora, porque o arquivo não leva a mídia: {n}.": { es: "Respuestas solo de audio que quedaron fuera, porque el archivo no lleva el multimedia: {n}." },
+  "Arquivo de respostas rápidas (.json)": { es: "Archivo de respuestas rápidas (.json)" },
+  "As respostas chegam sem grupo, numa lista só, e sem imagem nem áudio: o arquivo leva o texto, o atalho e a ordem.": { es: "Las respuestas llegan sin grupo, en una sola lista, y sin imagen ni audio: el archivo lleva el texto, el atajo y el orden." },
+
   // ATALHOS DO CARD (issue #3487) — o cadastro em Configurações › Funis e a
   // faixa de botões do dossiê e do painel do Inbox. As frases de recusa são as
   // do editor; o motivo vem do domínio como CÓDIGO e é traduzido aqui, porque

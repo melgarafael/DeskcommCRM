@@ -126,7 +126,7 @@ beforeAll(async () => {
       `insert into public.entregas_de_aviso_de_caso
          (organization_id, case_id, destino, channel_session_id, status, enviado_em)
        values ($1, $2, $3, $4, 'enviado', now())
-       on conflict (organization_id, case_id, destino) do update
+       on conflict (organization_id, case_id, destino) where update_event_id is null do update
          set channel_session_id = excluded.channel_session_id,
              status = 'enviado', enviado_em = now()`,
       [ORG, caseId, PHONE, SESSION],
