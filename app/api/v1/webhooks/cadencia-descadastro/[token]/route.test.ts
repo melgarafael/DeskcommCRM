@@ -86,7 +86,7 @@ describe("descadastro: auditoria", () => {
     mocks.rpc.mockResolvedValue({ data: 2, error: null });
     await POST(req, ctx(signCadenciaLink(inscricao, "descadastro")));
     expect(mocks.audit).toHaveBeenCalledTimes(1);
-    const linha = mocks.audit.mock.calls[0][0];
+    const linha = mocks.audit.mock.calls[0]?.[0];
     expect(linha).toEqual({
       action: "lgpd.consent_changed",
       organizationId: inscricao.organization_id,
