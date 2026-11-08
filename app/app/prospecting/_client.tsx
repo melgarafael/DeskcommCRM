@@ -15,6 +15,8 @@ import { useT } from "@/hooks/i18n/useT";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
+  OFERTAS_DA_CAMPANHA,
+  ROTULOS_DAS_OFERTAS,
   campaignConfigSchema,
   etiquetasDoNicho,
   problemaNasEtiquetas,
@@ -1657,12 +1659,8 @@ export function ProspectingClient() {
                                     "A auditoria do site escolhe o melhor argumento por empresa, nesta ordem.",
                                   )}
                                 </p>
-                                {(
-                                  [
-                                    ["site", t("Site profissional")],
-                                    ["automacao_crm", t("Automação do atendimento (CRM)")],
-                                    ["automacao_n8n", t("Automações e integrações (N8N)")],
-                                  ] as const
+                                {OFERTAS_DA_CAMPANHA.map(
+                                  (valor) => [valor, t(ROTULOS_DAS_OFERTAS[valor])] as const,
                                 ).map(([valor, rotulo]) => (
                                   <label key={valor} className="flex items-start gap-2 text-sm">
                                     <input

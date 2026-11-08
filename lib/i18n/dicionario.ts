@@ -44,6 +44,7 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 export const DICIONARIO: Traducoes = {
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
+  "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },
@@ -4279,6 +4280,29 @@ export const DICIONARIO: Traducoes = {
   "Nenhum caso concluído": { es: "Ningún caso concluido" },
   "Os casos aparecem aqui quando um agente publicado, com \"Deixar o agente pedir uma tarefa a alguém e seguir conversando\" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.": {
     es: "Los casos aparecen aquí cuando un agente publicado, con \"Dejar que el agente pida una tarea a alguien y siga conversando\" activado, te pide algo. La conversación transferida a una persona va al Inbox.",
+  },
+  "Nenhum agente está liberado para abrir casos": { es: "Ningún agente está habilitado para abrir casos" },
+  "Esta tela fica vazia porque a opção “Deixar o agente pedir uma tarefa a alguém e seguir conversando”, no cartão “Pedir ajuda sem sair da conversa” do agente, está desligada — ela vem desligada de fábrica. Ligue a opção e publique a versão.":
+    {
+      es: "Esta pantalla está vacía porque la opción “Dejar que el agente pida una tarea a alguien y siga conversando”, en la tarjeta “Pedir ayuda sin salir de la conversación” del agente, está desactivada — viene desactivada de fábrica. Activa la opción y publica la versión.",
+    },
+  "A opção de abrir casos está ligada, mas o agente não foi publicado": {
+    es: "La opción de abrir casos está activada, pero el agente no se publicó",
+  },
+  "Ligar a opção no rascunho não basta: é a versão publicada que atende. Abra o agente e publique a versão para que a IA comece a pedir ajuda por aqui.":
+    {
+      es: "Activar la opción en el borrador no basta: la que atiende es la versión publicada. Abre el agente y publica la versión para que la IA empiece a pedir ayuda por aquí.",
+    },
+  "Nenhum agente configurado ainda": { es: "Todavía no hay ningún agente configurado" },
+  "Casos são pedidos internos que o agente de IA abre quando esbarra em algo que só uma pessoa resolve. Configure um agente para que ele possa pedir ajuda por aqui.":
+    {
+      es: "Los casos son pedidos internos que el agente de IA abre cuando se topa con algo que solo una persona puede resolver. Configura un agente para que pueda pedir ayuda por aquí.",
+    },
+  "Abrir o agente": { es: "Abrir el agente" },
+  "Ver o agente": { es: "Ver el agente" },
+  "Ver os agentes": { es: "Ver los agentes" },
+  "Só um administrador da organização pode ligar esta opção.": {
+    es: "Solo un administrador de la organización puede activar esta opción.",
   },
   "Casos concluídos, cancelados ou repassados ficam aqui.": {
     es: "Los casos concluidos, cancelados o transferidos quedan aquí.",
@@ -13029,6 +13053,45 @@ export const DICIONARIO: Traducoes = {
   // "Los agendamientos" — entrada que NÃO é deste bloco e por isso fica como
   // está; trocá-la é decisão de quem a escreveu, e vai anotada no PR.
   "Novo agendamento": { es: "Nueva cita" },
+  // ─── Camada "Datas dos negócios" na Agenda (#3221) ───────────────────────
+  // O rótulo diz DE QUE DATA se trata, e vem do campo do funil; estas chaves são
+  // só a moldura (interruptor, seletores, estados vazios). "Fecha" nunca aparece
+  // como "data do negócio".
+  "Datas dos negócios": { es: "Fechas de los negocios" },
+  "Só leitura: para mudar a data, abra o negócio.": {
+    es: "Solo lectura: para cambiar la fecha, abre el negocio.",
+  },
+  "Funil das datas": { es: "Embudo de las fechas" },
+  "Campo de data do negócio": { es: "Campo de fecha del negocio" },
+  "Escolha o campo de data": { es: "Elige el campo de fecha" },
+  "Segundo campo de data": { es: "Segundo campo de fecha" },
+  "Sem segundo campo": { es: "Sin segundo campo" },
+  "Este campo de data não existe mais neste funil.": {
+    es: "Este campo de fecha ya no existe en este embudo.",
+  },
+  "Não foi possível carregar as datas dos negócios.": {
+    es: "No se pudieron cargar las fechas de los negocios.",
+  },
+  "Escolha o campo de data para ver os negócios na agenda.": {
+    es: "Elige el campo de fecha para ver los negocios en la agenda.",
+  },
+  "Nenhum negócio com esse campo de data neste período.": {
+    es: "Ningún negocio con ese campo de fecha en este período.",
+  },
+  "Há mais negócios do que cabe aqui. Estreite o período ou o funil.": {
+    es: "Hay más negocios de los que caben aquí. Acota el período o el embudo.",
+  },
+  "Informe o funil e o campo de data.": {
+    es: "Indica el embudo y el campo de fecha.",
+  },
+  "Período inválido.": { es: "Período inválido." },
+  // A data que NÃO EXISTE no calendário (2026-02-31) é recusa própria: o dia
+  // tem a forma certa e mesmo assim não é dia nenhum. A frase existe para a
+  // camada dizer o motivo em vez de mostrar grade vazia (#3221).
+  "Data de calendário inválida.": { es: "Fecha de calendario inválida." },
+  "A data do período não existe no calendário.": {
+    es: "La fecha del período no existe en el calendario.",
+  },
   "Remarcar agendamento": { es: "Reagendar cita" },
   "Cancelar agendamento": { es: "Cancelar cita" },
   "Este agendamento não está mais na lista.": { es: "Esta cita ya no está en la lista." },
@@ -18573,7 +18636,6 @@ export const DICIONARIO: Traducoes = {
   "Este funil não tem campo de data do negócio. Crie um nas configurações do funil para usar esta ação.": {
     es: "Este embudo no tiene campo de fecha del negocio. Crea uno en la configuración del embudo para usar esta acción.",
   },
-  "Escolha o campo de data": { es: "Elige el campo de fecha" },
 
   // ─── Seletor de canal ao iniciar conversa nova (#2382) ───
   "Escolha o canal para iniciar a conversa": { es: "Elige el canal para iniciar la conversación" },
@@ -19322,6 +19384,12 @@ export const DICIONARIO: Traducoes = {
   "A verificação do site foi inconclusiva (instabilidade de rede, não defeito comprovado). Sem gancho até a reverificação confirmar — abordar citando queda seria mentir com dados.": { es: "La verificación del sitio no fue concluyente (inestabilidad de red, no un defecto comprobado). Sin gancho hasta que la nueva verificación lo confirme — contactar citando una caída sería mentir con datos." },
   "Aguardar a reverificação automática; se congelar como fora do ar, a estratégia de cortesia assume.": { es: "Esperar la nueva verificación automática; si queda confirmado como caído, entra la estrategia de cortesía." },
   "Site ok, demanda alta": { es: "Sitio bien, demanda alta" },
+  "Além do site, o atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.": { es: "Además del sitio, la atención automatizada responde a quien escribe fuera de horario y las automatizaciones quitan el trabajo repetitivo, sin reemplazar a nadie del equipo." },
+  "Além do site, o atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.": { es: "Además del sitio, la atención automatizada responde a quien escribe fuera de horario, sin reemplazar a nadie del equipo." },
+  "Além do site, as automações tiram o trabalho repetido, sem trocar ninguém da equipe.": { es: "Además del sitio, las automatizaciones quitan el trabajo repetitivo, sin reemplazar a nadie del equipo." },
+  "O atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.": { es: "La atención automatizada responde a quien escribe fuera de horario y las automatizaciones quitan el trabajo repetitivo, sin reemplazar a nadie del equipo." },
+  "O atendimento automatizado responde quem chama fora de hora, sem trocar ninguém da equipe.": { es: "La atención automatizada responde a quien escribe fuera de horario, sin reemplazar a nadie del equipo." },
+  "As automações tiram o trabalho repetido, sem trocar ninguém da equipe.": { es: "Las automatizaciones quitan el trabajo repetitivo, sin reemplazar a nadie del equipo." },
   "Site em ordem e movimento alto: a dor não é vitrine, é atendimento — mensagens sem resposta e {vocabulario} perdido no volume. O ângulo é automação (fila, resposta imediata, follow-up automático), não site.": { es: "Sitio en orden y mucho movimiento: el dolor no es la vitrina, es la atención — mensajes sin respuesta y {vocabulario} perdido en el volumen. El ángulo es automatización (cola, respuesta inmediata, seguimiento automático), no sitio." },
   "Volume alto + site ok: pergunte quantas mensagens ficam sem resposta por dia — a conta se vende sozinha.": { es: "Volumen alto + sitio bien: pregunta cuántos mensajes quedan sin respuesta por día — la cuenta se vende sola." },
   "Site ok": { es: "Sitio bien" },

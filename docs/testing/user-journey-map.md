@@ -4334,3 +4334,26 @@ funções copiáveis com `credential_id` nulo — regra única em `lib/ai/molde-
 
 Não provado: que a primeira chamada de IA da empresa nova sai com a chave da instalação (o
 painel mostra modelo e origem, não faz chamada paga).
+
+
+## Ofertas da campanha no atendimento — resgate #3503 (medido em 2026-11-07)
+
+A seção final de `prospeccao-auditoria-do-site.spec.ts` mantém o caso anterior de
+score/KPI/ordenação e seu teto de 120s. Fixtures próprias cobrem três ofertas com
+agente válido, site-only e duas automações sem site, pela configuração recarregada e
+pelo modal real, em build de produção sobre banco novo do baseline. O caso inteiro
+levou 14,1s. A frase nova cabe no modal em 1280px e 375px.
+
+O helper de inbound e tool direta usa a mesma conversa e o mesmo texto cru. Modelo e
+canal controlados medem encadeamento; não provam semântica de modelo, resposta
+persistida na Inbox ou entrega. O invariante A/B usa SQL real e mede filtros
+explícitos, sem alegar RLS/PostgREST pelo adapter postgres. O lado do modelo real
+está NAO_ALCANCAVEL: nenhuma sessão lê chave de provedor.
+
+Entrada: `prospecting_campaigns.config.ofertas`; consumidores: contexto do inbound,
+`crm_get_prospecting_site_audit` e estratégia no modal de Prospecção. A consulta
+aparece no registro de ferramentas do agente; falha de leitura mantém o resultado
+explícito de indisponibilidade. Laço: comparar as ofertas persistidas, tool direta
+e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nativa`.
+[Registro da prova](ofertas-da-campanha.md). CNPJ já foi
+entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.
