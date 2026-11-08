@@ -1,4 +1,4 @@
-import { resolveField } from "@/lib/automation/conditions";
+import { COLUNAS_DE_CPF_DO_CONTATO, resolveField } from "@/lib/automation/conditions";
 import { valorComRotulo } from "@/lib/automation/campos-do-render";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
 import { RESERVA_DA_VARIAVEL } from "@/lib/texto/reserva-da-variavel";
@@ -65,11 +65,7 @@ function campoPersonalizadoDoLead(context: Record<string, unknown>, nome: string
  * apelido interno (decisão do mantenedor no PR #2439). As colunas de CPF também
  * ficam de fora: mensagem nenhuma tem por que levá-las.
  */
-const SO_DA_EQUIPE = new Set([
-  "contact.address_book_name",
-  "contact.cpf_hash",
-  "contact.cpf_encrypted",
-]);
+const SO_DA_EQUIPE = new Set(["contact.address_book_name", ...COLUNAS_DE_CPF_DO_CONTATO]);
 
 /**
  * A chave do campo personalizado que `path` está pedindo — ou `null` quando a

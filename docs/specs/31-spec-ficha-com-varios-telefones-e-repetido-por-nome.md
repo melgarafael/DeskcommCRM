@@ -192,7 +192,8 @@ fusão (item B5).
      `fromMe`) daquela conversa. O endereço já está gravado na própria mensagem: o
      `external_id` do recebido traz o chat (`chatIdFromWaMessageId`, usado hoje por
      `enderecoDaMensagem` em `lib/channels/adapters/waha.ts`). Nada novo é guardado. Sem mensagem
-     recebida na conversa → a regra de hoje (`wa_lid`, depois principal).
+     recebida na conversa, ou com o número dela fora da ficha → a regra de hoje (`wa_lid`, depois
+     principal). `@lid` não traz número para comparar e segue valendo.
    - Precisam seguir essa regra, **todos iguais**: `lib/waha/send.ts` (`resolveWahaChatId`),
      `lib/ai/runtime/agent.ts`, `app/api/v1/messages/_handler.ts`, `app/api/v1/messages/[id]/route.ts`,
      `lib/messaging/presenca.ts` e o reenvio de `lib/agent-engine/edge/crm/session-reconciler.ts`
