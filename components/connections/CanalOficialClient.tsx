@@ -98,6 +98,15 @@ export function CanalOficialClient() {
             <Badge variant={estado.hasToken ? "outline" : "destructive"}>
               {estado.hasToken ? t("credencial guardada") : t("sem credencial")}
             </Badge>
+            {/* De onde a conexão nasceu (#4074) — token colado à mão vs Embedded
+                Signup. `inferida` é dito na tela: procedência anterior à coluna
+                não foi registrada por ninguém, e afirmá-la seria mentir. */}
+            {estado.origem ? (
+              <Badge variant="outline" data-testid="origem-da-conexao">
+                {t("conectado por")} {t(estado.origem.rotulo)}
+                {estado.origem.inferida ? ` ${t("(anterior ao registro)")}` : ""}
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             WABA <span className="font-mono">{estado.wabaId}</span> · {t("número")}{" "}

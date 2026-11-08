@@ -351,7 +351,10 @@ describe("POST /api/v1/channels/official — reconectar é ressuscitar", () => {
     const { POST } = await import("@/app/api/v1/channels/official/route");
     await POST(reqOficial());
 
-    expect(db.escritas.map((e) => e.tipo)).toEqual(["update"]);
+    // DUAS escritas na MESMA linha: a conexão e, depois, a PROCEDÊNCIA (#4074).
+    // A segunda não cria linha nem mexe em credencial — é só `meta_connection_origin`.
+    expect(db.escritas.map((e) => e.tipo)).toEqual(["update", "update"]);
+    expect(patchDe(db, 1)).toEqual({ meta_connection_origin: "token_manual" });
     expect(db.linhas).toHaveLength(1);
   });
 
@@ -375,7 +378,9 @@ describe("POST /api/v1/channels/official — reconectar é ressuscitar", () => {
     const res = await POST(reqOficial());
 
     expect(res.status).toBe(200);
-    expect(db.escritas.map((e) => e.tipo)).toEqual(["insert"]);
+    // insert da conexão + update da procedência na linha que o insert criou (#4074).
+    expect(db.escritas.map((e) => e.tipo)).toEqual(["insert", "update"]);
+    expect(patchDe(db, 1)).toEqual({ meta_connection_origin: "token_manual" });
   });
 
   /**
@@ -393,7 +398,10 @@ describe("POST /api/v1/channels/official — reconectar é ressuscitar", () => {
     const res = await POST(reqOficial());
 
     expect(res.status).toBe(200);
-    expect(db.escritas.map((e) => e.recusada)).toEqual([true, false]);
+    // [sem a coluna, com a coluna, procedência] — a 3ª é a origem (#4074), que
+    // também não existe neste clone e por isso é tentada e não derruba nada.
+    expect(db.escritas.map((e) => e.recusada)).toEqual([true, false, false]);
+    expect(patchDe(db, 2)).toEqual({ meta_connection_origin: "token_manual" });
     expect(patchDe(db, 0)).toHaveProperty("archived_at", null);
     expect(patchDe(db, 1)).not.toHaveProperty("archived_at");
     expect(db.linhas[0]?.status).toBe("WORKING");
