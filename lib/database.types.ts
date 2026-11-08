@@ -2969,6 +2969,7 @@ export type Database = {
           starts_at: string;
           starts_at_marked_at: string | null;
           status: string;
+          team_guest_user_ids: string[];
           time_zone: string;
           title: string;
           updated_at: string;
@@ -3053,6 +3054,7 @@ export type Database = {
           starts_at: string;
           starts_at_marked_at?: string | null;
           status?: string;
+          team_guest_user_ids?: string[];
           time_zone?: string;
           title: string;
           updated_at?: string;
@@ -3134,6 +3136,7 @@ export type Database = {
           starts_at?: string;
           starts_at_marked_at?: string | null;
           status?: string;
+          team_guest_user_ids?: string[];
           time_zone?: string;
           title?: string;
           updated_at?: string;
@@ -3462,6 +3465,7 @@ export type Database = {
           id: string;
           is_active: boolean;
           location_details: string | null;
+          levar_dados_do_negocio: boolean;
           location_kind: string;
           minimum_notice_minutes: number;
           name: string;
@@ -3501,6 +3505,7 @@ export type Database = {
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
+          levar_dados_do_negocio?: boolean;
           location_kind?: string;
           minimum_notice_minutes?: number;
           name: string;
@@ -3539,6 +3544,7 @@ export type Database = {
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
+          levar_dados_do_negocio?: boolean;
           location_kind?: string;
           minimum_notice_minutes?: number;
           name?: string;
@@ -11756,6 +11762,48 @@ export type Database = {
           },
         ];
       };
+      organization_resend_accounts: {
+        Row: {
+          api_key_ciphertext: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at: string;
+          from_email: string;
+          organization_id: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          api_key_ciphertext: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at?: string;
+          from_email: string;
+          organization_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          api_key_ciphertext?: string;
+          api_key_iv?: string;
+          api_key_last4?: string;
+          api_key_tag?: string;
+          created_at?: string;
+          from_email?: string;
+          organization_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_resend_accounts_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       organizations: {
         Row: {
           cnpj: string | null;
@@ -14887,6 +14935,11 @@ export type Database = {
       };
     };
     Functions: {
+      fn_create_contact_for_lead: {
+        Args: { p_organization_id: string; p_lead_id: string; p_contact: Json };
+        Returns: Json;
+      };
+
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;

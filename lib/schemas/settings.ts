@@ -165,12 +165,24 @@ export const notificationPrefsSchema = z.object({
 });
 export type NotificationPrefsInput = z.infer<typeof notificationPrefsSchema>;
 
+/**
+ * A CHAVE de um campo personalizado do funil — a mesma régua da ESCRITA
+ * (`customFieldSchema.key`) e a mesma que qualquer leitura por chave precisa.
+ *
+ * Exportada (issue #3221) porque a rota `GET /api/v1/agenda/datas-dos-negocios`
+ * recebe a chave na querystring e a interpola num caminho jsonb do PostgREST
+ * (`custom_fields->>campo`): sem a régua, um `campo` com vírgula ou ponto vira
+ * SINTAXE de filtro, e não nome de campo. Duas cópias da regex divergiriam no
+ * dia em que uma delas mudasse — por isso é a mesma constante.
+ */
+export const chaveDeCampoDoFunilSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore");
+
 export const customFieldSchema = z.object({
-  key: z
-    .string()
-    .min(1)
-    .max(40)
-    .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore"),
+  key: chaveDeCampoDoFunilSchema,
   label: z.string().min(1).max(80),
   type: z.enum([
     "text",
@@ -646,6 +658,32 @@ export const marcaDaOrganizacaoSchema = z.object({
     .nullable(),
 });
 export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;
+
+/**
+ * A CONTA Resend da organização (#3287, fatia da conta própria) — o que a
+ * server action `conectarContaResendDaOrganizacao` aceita.
+ *
+ * `api_key` é a chave CRUA que a pessoa colou do painel da Resend. Ela NUNCA é
+ * gravada em claro nem devolvida: a action cifra antes de gravar
+ * (`organization_resend_accounts`) e a tela só vê os 4 últimos. O `.min(10)` é
+ * o mesmo piso do `criarCliente` da Resend — uma chave mais curta não é chave.
+ *
+ * `from_email` é o endereço de remetente no DOMÍNIO da organização. A forma é
+ * validada aqui; o domínio ser VERIFICADO na conta é conferido pela API da
+ * Resend na própria action (`verificarDominioNaResend`) — o critério (E): a
+ * recusa de domínio não verificado é mensagem própria, não erro cru da API.
+ */
+export const contaResendDaOrganizacaoSchema = z.object({
+  api_key: z.string().trim().min(10, "Cole a chave da sua conta Resend.").max(200),
+  from_email: z
+    .string()
+    .trim()
+    .max(254)
+    .refine((valor) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valor), {
+      message: "Use um endereço de e-mail como contato@suaempresa.com",
+    }),
+});
+export type ContaResendDaOrganizacaoInput = z.infer<typeof contaResendDaOrganizacaoSchema>;
 
 /** Prazos por organização. Leitura legada degrada; escrita usa schema estrito. */
 export const agendaSettingsWriteSchema = z.strictObject({
