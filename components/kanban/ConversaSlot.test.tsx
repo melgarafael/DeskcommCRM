@@ -129,3 +129,44 @@ describe("Abrir conversa no card do funil (#1993)", () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+/**
+ * A HORA da última mensagem (fatia 1 do #3945).
+ *
+ * O `last_message_at` chegava no payload do quadro e o card não o desenhava: a
+ * prévia dizia O QUE a pessoa falou e não QUANDO. Estes casos prendem a hora no
+ * card; a régua em si (hoje = hora, semana = distância, resto = data) é medida
+ * em `lib/i18n/hora-curta.test.ts`, para o card não ter um segundo relógio.
+ */
+describe("a hora da última mensagem no card (#3945)", () => {
+  it("mostra o quando ao lado da prévia, com a data completa no title", () => {
+    const { container } = render(<ConversaSlot conversa={conversa} contactId="contato-1" />);
+
+    const hora = container.querySelector("[data-hora-da-mensagem]");
+    expect(hora).toBeTruthy();
+    // 01/10 porque a conversa de exemplo tem mais de uma semana: o rótulo curto
+    // vira DATA. O caso não depende do relógio da máquina para isso.
+    expect(hora).toHaveTextContent("01/10");
+    // O curto omite o dia de propósito; o `title` guarda o detalhe.
+    expect(hora).toHaveAttribute("title", expect.stringMatching(/01\/10\/2026/));
+    // E a prévia continua ali: a hora ACRESCENTA, não substitui.
+    expect(screen.getByText("Quero saber o preço")).toBeInTheDocument();
+  });
+
+  it("sem `last_message_at`, nenhuma hora é inventada", () => {
+    const { container } = render(
+      <ConversaSlot conversa={{ ...conversa, last_message_at: null }} contactId="contato-1" />,
+    );
+    expect(container.querySelector("[data-hora-da-mensagem]")).toBeNull();
+    expect(screen.getByText("Quero saber o preço")).toBeInTheDocument();
+  });
+
+  it("hora e contador de não lidas convivem na mesma linha", () => {
+    const { container } = render(
+      <ConversaSlot conversa={{ ...conversa, unread: 3 }} contactId="contato-1" />,
+    );
+    expect(container.querySelector("[data-hora-da-mensagem]")).toHaveTextContent("01/10");
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByLabelText(/3 sem ler/)).toBeInTheDocument();
+  });
+});
