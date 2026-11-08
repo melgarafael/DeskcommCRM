@@ -1,7 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +25,7 @@ import { DotsThree, PencilSimple, Copy, Pause, Play, Archive } from "@/lib/ui/ic
 import { useT } from "@/hooks/i18n/useT";
 import { deriveAgentStatus } from "./AgentStatusBadge";
 import type { AgentRow } from "@/hooks/ai/useAgent";
+import { useRecarregarListaDeAgentes } from "@/hooks/ai/useAgents";
 import {
   archiveAgentAction,
   duplicateAgentAction,
@@ -40,7 +40,7 @@ interface Props {
 
 export function AgentRowMenu({ agent }: Props) {
   const t = useT();
-  const router = useRouter();
+  const recarregarLista = useRecarregarListaDeAgentes();
   const [isPending, startTransition] = useTransition();
   const [renameOpen, setRenameOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -56,7 +56,7 @@ export function AgentRowMenu({ agent }: Props) {
         const res = await action();
         if (res.ok) {
           toast.success(label);
-          router.refresh();
+          await recarregarLista();
         } else {
           const message =
             res.error === "cannot_archive_default"
