@@ -1,5 +1,7 @@
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+
+import { localeDeData } from "@/lib/i18n/datas";
+import type { Idioma } from "@/lib/i18n/idiomas";
 
 export interface DadosConfirmacao {
   client_name: string;
@@ -10,8 +12,13 @@ export interface DadosConfirmacao {
   vehicle_model?: string | null;
 }
 
-export function montarTextoConfirmacaoWhatsApp(dados: DadosConfirmacao): string {
-  const quando = format(new Date(dados.scheduled_at), "EEEE, dd/MM 'às' HH:mm", { locale: ptBR });
+export function montarTextoConfirmacaoWhatsApp(
+  dados: DadosConfirmacao,
+  idioma: Idioma = "pt-BR",
+): string {
+  const quando = format(new Date(dados.scheduled_at), "EEEE, dd/MM 'às' HH:mm", {
+    locale: localeDeData(idioma),
+  });
   const veiculo = [dados.vehicle_brand, dados.vehicle_model, dados.vehicle_plate]
     .filter(Boolean)
     .join(" — ");

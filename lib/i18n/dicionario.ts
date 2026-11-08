@@ -14933,6 +14933,30 @@ export const DICIONARIO: Traducoes = {
   "Agendamentos de avaliação veicular com unidades, consultores e status na rota Agenda.": {
     es: "Citas de evaluación de vehículos con unidades, asesores y estado en la ruta Agenda.",
   },
+  "Agendamentos de avaliação — horários, unidades, consultores e status da operação.": {
+    es: "Citas de evaluación — horarios, unidades, asesores y estado de la operación.",
+  },
+  "Horários, unidades e status da operação veicular.": {
+    es: "Horarios, unidades y estado de la operación vehicular.",
+  },
+  "Próxima semana": { es: "Próxima semana" },
+  "Todos": { es: "Todos" },
+  "Todas": { es: "Todas" },
+  "Horário": { es: "Horario" },
+  "Nenhum": { es: "Ninguno" },
+  "Veículo": { es: "Vehículo" },
+  "Observações": { es: "Observaciones" },
+  "Iniciar avaliação": { es: "Iniciar evaluación" },
+  "O assistente de avaliação completo chegará em uma próxima entrega. Agora o status passa para \"Em avaliação\" e o vínculo com o agendamento": {
+    es: "El asistente de evaluación completo llegará en una próxima entrega. Ahora el estado pasa a \"En evaluación\" y el vínculo con la cita",
+  },
+  "fica registrado.": { es: "queda registrado." },
+  "Ações": { es: "Acciones" },
+  "Copiar confirmação": { es: "Copiar confirmación" },
+  "Reverter para agendado": { es: "Revertir a programado" },
+  "Esta ação é irreversível. O agendamento será removido permanentemente.": {
+    es: "Esta acción es irreversible. La cita se eliminará permanentemente.",
+  },
   // #1907 item 4 — a linha do módulo `financeiro` em `MODULOS_OPCIONAIS`
   // (`lib/recursos-opcionais/catalogo.ts:124`). Enquanto faltava, o módulo
   // entrava na lista nova pelo TEXTO_DO_MODULO sem nenhuma linha aqui.

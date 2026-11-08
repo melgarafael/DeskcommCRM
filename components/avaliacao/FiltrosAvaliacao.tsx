@@ -1,9 +1,10 @@
 "use client";
 
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 import { Button } from "@/components/ui/button";
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
+import { useT } from "@/hooks/i18n/useT";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -36,8 +37,10 @@ export function FiltrosAvaliacao({
   onHoje: () => void;
   onChange: (patch: Partial<FiltrosAvaliacaoState>) => void;
 }) {
-  const deLocal = format(new Date(filtros.de), "dd/MM/yyyy", { locale: ptBR });
-  const ateLocal = format(new Date(filtros.ate), "dd/MM/yyyy", { locale: ptBR });
+  const t = useT();
+  const localeDaData = useLocaleDeData();
+  const deLocal = format(new Date(filtros.de), "dd/MM/yyyy", { locale: localeDaData });
+  const ateLocal = format(new Date(filtros.ate), "dd/MM/yyyy", { locale: localeDaData });
 
   return (
     <div className="flex flex-col gap-4">
@@ -45,7 +48,13 @@ export function FiltrosAvaliacao({
         <Button type="button" variant="outline" size="icon" onClick={onAnterior} aria-label="Semana anterior">
           <CaretLeft className="h-4 w-4" />
         </Button>
-        <Button type="button" variant="outline" size="icon" onClick={onProxima} aria-label="Próxima semana">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={onProxima}
+          aria-label={t("Próxima semana")}
+        >
           <CaretRight className="h-4 w-4" />
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onHoje}>
@@ -67,10 +76,10 @@ export function FiltrosAvaliacao({
             }
           >
             <SelectTrigger>
-              <SelectValue placeholder="Todos" />
+              <SelectValue placeholder={t("Todos")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="todos">{t("Todos")}</SelectItem>
               {STATUS_AVALIACAO.map((s) => (
                 <SelectItem key={s} value={s}>
                   {ROTULO_STATUS[s]}
@@ -87,10 +96,10 @@ export function FiltrosAvaliacao({
             onValueChange={(v) => onChange({ unit_id: v === "todas" ? undefined : v })}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Todas" />
+              <SelectValue placeholder={t("Todas")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todas">Todas</SelectItem>
+              <SelectItem value="todas">{t("Todas")}</SelectItem>
               {unidades
                 .filter((u) => u.is_active)
                 .map((u) => (

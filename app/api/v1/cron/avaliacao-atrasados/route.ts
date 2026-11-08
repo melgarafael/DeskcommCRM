@@ -32,10 +32,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     void audit({
       action: "avaliacao.atrasados_atualizados",
       resourceType: "cron",
-      resourceId: "avaliacao-atrasados",
+      resourceId: null,
       organizationId: null,
       actorUserId: null,
-      metadata: { atualizados },
+      metadata: { job: "avaliacao-atrasados", atualizados },
     });
   }
 

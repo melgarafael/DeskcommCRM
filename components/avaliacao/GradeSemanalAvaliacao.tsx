@@ -1,9 +1,10 @@
 "use client";
 
 import { addDays, format, isSameDay, startOfWeek } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 import { Badge } from "@/components/ui/badge";
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
+import { useT } from "@/hooks/i18n/useT";
 import { cn } from "@/lib/utils";
 import { partesNoFuso } from "@/lib/agenda/fuso";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
@@ -46,6 +47,8 @@ export function GradeSemanalAvaliacao({
   fuso: string | null;
   onSelecionar: (id: string) => void;
 }) {
+  const t = useT();
+  const localeDaData = useLocaleDeData();
   const fusoGrade = fusoUtilizavel(fuso);
   const inicioSemana = startOfWeek(ancoraSemana, { weekStartsOn: 1 });
   const dias = Array.from({ length: 7 }, (_, i) => addDays(inicioSemana, i));
@@ -69,14 +72,14 @@ export function GradeSemanalAvaliacao({
         style={{ gridTemplateColumns: `4.5rem repeat(7, minmax(6rem, 1fr))` }}
       >
         <div className="sticky top-0 z-10 border-b bg-muted/80 p-2 text-xs font-medium backdrop-blur">
-          Horário
+          {t("Horário")}
         </div>
         {dias.map((dia) => (
           <div
             key={dia.toISOString()}
             className="sticky top-0 z-10 border-b border-l bg-muted/80 p-2 text-center text-xs font-medium backdrop-blur"
           >
-            {format(dia, "EEE dd/MM", { locale: ptBR })}
+            {format(dia, "EEE dd/MM", { locale: localeDaData })}
           </div>
         ))}
 

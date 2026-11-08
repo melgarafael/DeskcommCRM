@@ -20,6 +20,7 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { useContatoPorTelefone } from "@/hooks/avaliacao/useContatoPorTelefone";
 import type { UnidadeAvaliacao } from "@/hooks/avaliacao/useUnidadesAvaliacao";
+import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { apiClient } from "@/lib/api/client";
 import { MARCAS_VEICULOS } from "@/lib/avaliacao/marcas-veiculos";
@@ -49,6 +50,7 @@ export function FormularioAgendamento({
   unidades: UnidadeAvaliacao[];
   aoSalvar?: () => void;
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const membros = useAssignableMembers(aberto);
 
@@ -197,7 +199,7 @@ export function FormularioAgendamento({
                 <Input id="av-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="av-hora">Horário</Label>
+                <Label htmlFor="av-hora">{t("Horário")}</Label>
                 <Input id="av-hora" type="time" value={hora} onChange={(e) => setHora(e.target.value)} />
               </div>
             </div>
@@ -230,10 +232,10 @@ export function FormularioAgendamento({
               <Label>Atendente (opcional)</Label>
               <Select value={attendantId || "_none"} onValueChange={(v) => setAttendantId(v === "_none" ? "" : v)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Nenhum" />
+                  <SelectValue placeholder={t("Nenhum")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="_none">Nenhum</SelectItem>
+                  <SelectItem value="_none">{t("Nenhum")}</SelectItem>
                   {membros.data?.map((m) => (
                     <SelectItem key={m.user_id} value={m.user_id}>
                         {m.full_name ?? m.user_id.slice(0, 8)}
@@ -245,7 +247,7 @@ export function FormularioAgendamento({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-medium">Veículo</h3>
+            <h3 className="text-sm font-medium">{t("Veículo")}</h3>
             <div className="space-y-2">
               <Label>Marca</Label>
               <Select value={marca || "_none"} onValueChange={(v) => setMarca(v === "_none" ? "" : v)}>
@@ -273,7 +275,7 @@ export function FormularioAgendamento({
           </section>
 
           <section className="space-y-2">
-            <Label htmlFor="av-notas">Observações</Label>
+            <Label htmlFor="av-notas">{t("Observações")}</Label>
             <Textarea id="av-notas" value={notas} onChange={(e) => setNotas(e.target.value)} rows={3} />
           </section>
         </div>

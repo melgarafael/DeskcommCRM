@@ -12,6 +12,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { useT } from "@/hooks/i18n/useT";
 
 export function IniciarAvaliacaoDialog({
   agendamentoId,
@@ -20,18 +21,21 @@ export function IniciarAvaliacaoDialog({
   agendamentoId: string;
   onConfirm: () => void;
 }) {
+  const t = useT();
+
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>Iniciar avaliação</DropdownMenuItem>
+        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>{t("Iniciar avaliação")}</DropdownMenuItem>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Iniciar avaliação</AlertDialogTitle>
+          <AlertDialogTitle>{t("Iniciar avaliação")}</AlertDialogTitle>
           <AlertDialogDescription>
-            O assistente de avaliação completo chegará em uma próxima entrega. Agora o status passa para
-            &quot;Em avaliação&quot; e o vínculo com o agendamento {agendamentoId.slice(0, 8)} fica
-            registrado.
+            {t(
+              'O assistente de avaliação completo chegará em uma próxima entrega. Agora o status passa para "Em avaliação" e o vínculo com o agendamento',
+            )}{" "}
+            {agendamentoId.slice(0, 8)} {t("fica registrado.")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

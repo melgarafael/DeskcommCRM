@@ -61,19 +61,22 @@ begin
   alter table public.avaliacao_unidades enable row level security;
   drop policy if exists tenant_isolation_avaliacao_unidades_all on public.avaliacao_unidades;
   drop policy if exists avaliacao_unidades_select on public.avaliacao_unidades;
-  create policy avaliacao_unidades_select on public.avaliacao_unidades
+  create policy avaliacao_unidades_select
+    on public.avaliacao_unidades
     for select using (
       organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()
     );
   drop policy if exists avaliacao_unidades_insert on public.avaliacao_unidades;
-  create policy avaliacao_unidades_insert on public.avaliacao_unidades
+  create policy avaliacao_unidades_insert
+    on public.avaliacao_unidades
     for insert with check (
       public.fn_is_platform_admin()
       or (organization_id in (select public.fn_user_org_ids())
           and public.fn_role_at_least(organization_id, 'manager'))
     );
   drop policy if exists avaliacao_unidades_update on public.avaliacao_unidades;
-  create policy avaliacao_unidades_update on public.avaliacao_unidades
+  create policy avaliacao_unidades_update
+    on public.avaliacao_unidades
     for update using (
       public.fn_is_platform_admin()
       or (organization_id in (select public.fn_user_org_ids())
@@ -84,7 +87,8 @@ begin
           and public.fn_role_at_least(organization_id, 'manager'))
     );
   drop policy if exists avaliacao_unidades_delete on public.avaliacao_unidades;
-  create policy avaliacao_unidades_delete on public.avaliacao_unidades
+  create policy avaliacao_unidades_delete
+    on public.avaliacao_unidades
     for delete using (
       public.fn_is_platform_admin()
       or (organization_id in (select public.fn_user_org_ids())
@@ -95,19 +99,22 @@ begin
   alter table public.avaliacao_agendamentos enable row level security;
   drop policy if exists tenant_isolation_avaliacao_agendamentos_all on public.avaliacao_agendamentos;
   drop policy if exists avaliacao_agendamentos_select on public.avaliacao_agendamentos;
-  create policy avaliacao_agendamentos_select on public.avaliacao_agendamentos
+  create policy avaliacao_agendamentos_select
+    on public.avaliacao_agendamentos
     for select using (
       organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin()
     );
   drop policy if exists avaliacao_agendamentos_insert on public.avaliacao_agendamentos;
-  create policy avaliacao_agendamentos_insert on public.avaliacao_agendamentos
+  create policy avaliacao_agendamentos_insert
+    on public.avaliacao_agendamentos
     for insert with check (
       public.fn_is_platform_admin()
       or (organization_id in (select public.fn_user_org_ids())
           and public.fn_role_at_least(organization_id, 'agent'))
     );
   drop policy if exists avaliacao_agendamentos_update on public.avaliacao_agendamentos;
-  create policy avaliacao_agendamentos_update on public.avaliacao_agendamentos
+  create policy avaliacao_agendamentos_update
+    on public.avaliacao_agendamentos
     for update using (
       public.fn_is_platform_admin()
       or (organization_id in (select public.fn_user_org_ids())
@@ -118,7 +125,8 @@ begin
           and public.fn_role_at_least(organization_id, 'agent'))
     );
   drop policy if exists avaliacao_agendamentos_delete on public.avaliacao_agendamentos;
-  create policy avaliacao_agendamentos_delete on public.avaliacao_agendamentos
+  create policy avaliacao_agendamentos_delete
+    on public.avaliacao_agendamentos
     for delete using (
       public.fn_is_platform_admin()
       or (organization_id in (select public.fn_user_org_ids())
@@ -293,6 +301,7 @@ begin
            updated_at = now()
      where status = 'agendado'
        and scheduled_at < now()
+            and public.fn_org_operante(organization_id)
      returning 1
   )
   select count(*)::integer into v_count from atualizados;

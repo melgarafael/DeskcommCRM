@@ -1,9 +1,9 @@
 "use client";
 
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 import { Badge } from "@/components/ui/badge";
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROTULO_STATUS } from "@/lib/avaliacao/status";
 import { cn } from "@/lib/utils";
@@ -32,9 +32,10 @@ export function CartaoAgendamento({
   item: AgendamentoAvaliacao;
   onEditar: () => void;
 }) {
+  const localeDaData = useLocaleDeData();
   const contato = embed(item.contacts);
   const unidade = embed(item.avaliacao_unidades);
-  const quando = format(new Date(item.scheduled_at), "EEE, dd/MM · HH:mm", { locale: ptBR });
+  const quando = format(new Date(item.scheduled_at), "EEE, dd/MM · HH:mm", { locale: localeDaData });
 
   return (
     <Card className="overflow-hidden">

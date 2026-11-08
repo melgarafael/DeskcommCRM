@@ -192,7 +192,7 @@ export const NAV_CATALOG = [
     icon: "CalendarBlank",
     group: "crm",
     section: "O dia a dia da venda",
-    sidebar: true,
+    // Só no hub (mesma régua das Comandas): módulo opcional, não ocupa linha no menu diário.
     minRole: "viewer",
     modulo: "avaliacao",
   },

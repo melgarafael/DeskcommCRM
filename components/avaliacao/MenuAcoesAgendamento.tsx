@@ -22,6 +22,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useMutacaoAgendamento } from "@/hooks/avaliacao/useMutacaoAgendamento";
+import { useT } from "@/hooks/i18n/useT";
+import { copyToClipboard } from "@/lib/clipboard";
 import type { StatusAvaliacao } from "@/lib/avaliacao/status";
 import { DotsThree } from "@/lib/ui/icons";
 
@@ -35,6 +37,7 @@ export function MenuAcoesAgendamento({
   agendamento: AgendamentoAvaliacao;
   onEditar: () => void;
 }) {
+  const t = useT();
   const { acao, excluir, copiarConfirmacao } = useMutacaoAgendamento();
   const status = agendamento.status as StatusAvaliacao;
 
@@ -47,7 +50,7 @@ export function MenuAcoesAgendamento({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Ações">
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={t("Ações")}>
           <DotsThree className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -55,11 +58,11 @@ export function MenuAcoesAgendamento({
         <DropdownMenuItem
           onClick={async () => {
             const texto = await copiarConfirmacao.mutateAsync(agendamento.id);
-            await navigator.clipboard.writeText(texto);
+            await copyToClipboard(texto);
             toast.success("Confirmação copiada para a área de transferência.");
           }}
         >
-          Copiar confirmação
+          {t("Copiar confirmação")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onEditar}>Editar</DropdownMenuItem>
         {podeCancelar && (
@@ -79,7 +82,7 @@ export function MenuAcoesAgendamento({
         )}
         {podeReverter && (
           <DropdownMenuItem onClick={() => acao.mutate({ id: agendamento.id, acao: "reverter" })}>
-            Reverter para agendado
+            {t("Reverter para agendado")}
           </DropdownMenuItem>
         )}
         {podeIniciar && (
@@ -102,7 +105,7 @@ export function MenuAcoesAgendamento({
             <AlertDialogHeader>
               <AlertDialogTitle>Excluir agendamento?</AlertDialogTitle>
               <AlertDialogDescription>
-                Esta ação é irreversível. O agendamento será removido permanentemente.
+                {t("Esta ação é irreversível. O agendamento será removido permanentemente.")}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

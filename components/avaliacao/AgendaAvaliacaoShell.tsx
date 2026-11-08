@@ -1,10 +1,11 @@
 "use client";
 
 import { addWeeks, endOfWeek, format, startOfWeek } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
+import { useT } from "@/hooks/i18n/useT";
 import { useAgendamentosAvaliacao } from "@/hooks/avaliacao/useAgendamentosAvaliacao";
 import { useUnidadesAvaliacao } from "@/hooks/avaliacao/useUnidadesAvaliacao";
 import { CalendarPlus } from "@/lib/ui/icons";
@@ -23,6 +24,8 @@ function intervaloSemana(ancora: Date): FiltrosAvaliacaoState {
 }
 
 export function AgendaAvaliacaoShell({ timezone }: { timezone: string | null }) {
+  const t = useT();
+  const localeDaData = useLocaleDeData();
   const [ancora, setAncora] = useState(() => new Date());
   const [visao, setVisao] = useState<VisaoAvaliacao>("lista");
   const [filtrosBase, setFiltrosBase] = useState<FiltrosAvaliacaoState>(() => intervaloSemana(new Date()));
@@ -41,7 +44,9 @@ export function AgendaAvaliacaoShell({ timezone }: { timezone: string | null }) 
   const lista = useAgendamentosAvaliacao(filtros);
   const unidades = useUnidadesAvaliacao();
 
-  const semanaLabel = format(startOfWeek(ancora, { weekStartsOn: 1 }), "MMMM yyyy", { locale: ptBR });
+  const semanaLabel = format(startOfWeek(ancora, { weekStartsOn: 1 }), "MMMM yyyy", {
+    locale: localeDaData,
+  });
   const edicao = lista.data?.find((a) => a.id === editandoId) ?? null;
 
   const abrirNovo = () => {
@@ -58,8 +63,10 @@ export function AgendaAvaliacaoShell({ timezone }: { timezone: string | null }) 
     <div data-testid="tela-agenda-avaliacao" className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Agenda de avaliação</h1>
-          <p className="text-sm text-muted-foreground">Horários, unidades e status da operação veicular.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("Agenda de avaliação")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t("Horários, unidades e status da operação veicular.")}
+          </p>
         </div>
         <Button type="button" onClick={abrirNovo}>
           <CalendarPlus className="mr-2 h-4 w-4" />
