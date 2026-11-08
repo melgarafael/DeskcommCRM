@@ -35,7 +35,7 @@ async function organizacao() {
 
 async function item(org: string, preco: number) {
   const id = randomUUID();
-  await q("insert into catalog_products(id,organization_id,codigo,nome,preco_cents) values($1,$2,$1::text,'Item fictício',$3)", [id, org, preco]);
+  await q("insert into catalog_products(id,organization_id,codigo,nome,preco_cents) values($1,$2,$3,'Item fictício',$4)", [id, org, id, preco]);
   return id;
 }
 
