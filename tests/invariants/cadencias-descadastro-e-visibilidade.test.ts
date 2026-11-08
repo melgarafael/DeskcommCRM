@@ -236,3 +236,70 @@ describe("descadastro vale pelo endereço e pelo contato, e o link resolve pelo 
     expect(n(`select count(*) from public.email_cadence_suppressions where contact_id='${ID("1003")}'`), "o contato de controle do P1 segue inscrito, sem supressão").toBe(0);
   });
 });
+
+describe("o endereço atual do contato suprimido ganha hash: o ponteiro some quando o contato é apagado", () => {
+  it("R7: descadastra com a, o operador troca para b e apaga o contato — b em contato novo é recusado; controle: outro endereço inscreve", () => {
+    contato(ID("7001"), "r7-a@synthetic.test"); negocio(ID("7101"), ID("7001"));
+    expect(descadastrar(reservar(inscrever(ID("7101"))))).toBe("true");
+    sql(`update public.contacts set email='r7-b@synthetic.test' where id='${ID("7001")}';`);
+    expect(suprimidoPeloEndereco("r7-b@synthetic.test"), "a troca grava o hash do endereço novo").toBe(1);
+    negocio(ID("7102"), ID("7001"));
+    expect(tentarInscrever(ID("7102")), "o mesmo contato, com b").toContain("cadencia_descadastrado");
+
+    sql(`select public.fn_apagar_contato_com_historico('${ID("7001")}','${GOV_ORG}');`);
+    expect(n(`select count(*) from public.contacts where id='${ID("7001")}'`), "o contato saiu").toBe(0);
+    contato(ID("7002"), "R7-B@synthetic.test"); negocio(ID("7103"), ID("7002"));
+    expect(tentarInscrever(ID("7103"))).toContain("cadencia_descadastrado");
+
+    contato(ID("7003"), "r7-c@synthetic.test"); negocio(ID("7104"), ID("7003"));
+    expect(tentarInscrever(ID("7104")).length).toBe(36);
+  });
+
+  it("R8: troca de a para b ANTES do clique, contato apagado — b e a em contato novo são recusados; controle: a troca de contato sem descadastro não grava nada", async () => {
+    contato(ID("8001"), "r8-a@synthetic.test"); negocio(ID("8101"), ID("8001"));
+    const destinatario = reservar(inscrever(ID("8101")));
+    sql(`update public.contacts set email='r8-b@synthetic.test' where id='${ID("8001")}';`);
+    expect(suprimidoPeloEndereco("r8-b@synthetic.test"), "sem descadastro, a troca não suprime").toBe(0);
+
+    const resposta = await clicar(destinatario);
+    expect(resposta.status).toBe(200);
+    expect(suprimidoPeloEndereco("r8-a@synthetic.test"), "o endereço que recebeu").toBe(1);
+    expect(suprimidoPeloEndereco("r8-b@synthetic.test"), "o endereço atual").toBe(1);
+    expect(n(`select count(*) from public.email_cadence_suppressions where contact_id='${ID("8001")}'`)).toBe(2);
+    expect(descadastrar(destinatario), "clique repetido não grava de novo").toBe("false");
+
+    sql(`select public.fn_apagar_contato_com_historico('${ID("8001")}','${GOV_ORG}');`);
+    contato(ID("8002"), "r8-b@synthetic.test"); negocio(ID("8102"), ID("8002"));
+    expect(tentarInscrever(ID("8102"))).toContain("cadencia_descadastrado");
+    contato(ID("8003"), "r8-a@synthetic.test"); negocio(ID("8103"), ID("8003"));
+    expect(tentarInscrever(ID("8103"))).toContain("cadencia_descadastrado");
+
+    contato(ID("8004"), "r8-c@synthetic.test"); negocio(ID("8104"), ID("8004"));
+    expect(tentarInscrever(ID("8104")).length).toBe(36);
+  });
+
+  it("apagar: supressão só pelo ponteiro (a forma sem hash que o esquema admite) — apagar o contato grava o hash do endereço corrente; controle: antes de apagar, o endereço não tinha hash", () => {
+    contato(ID("9001"), "r9@synthetic.test");
+    sql(`insert into public.email_cadence_suppressions(organization_id,contact_id,origem) values('${GOV_ORG}','${ID("9001")}','link');`);
+    expect(suprimidoPeloEndereco("r9@synthetic.test")).toBe(0);
+
+    sql(`delete from public.contacts where id='${ID("9001")}';`);
+    expect(sql(`select count(*)||':'||count(contact_id)||':'||min(origem) from public.email_cadence_suppressions where organization_id='${GOV_ORG}'
+      and email_hash=public.fn_cadencia_hash_do_email('${GOV_ORG}','r9@synthetic.test')`)).toBe("1:0:link");
+    contato(ID("9003"), "r9@synthetic.test"); negocio(ID("9103"), ID("9003"));
+    expect(tentarInscrever(ID("9103"))).toContain("cadencia_descadastrado");
+
+    contato(ID("9004"), "r9-outro@synthetic.test"); negocio(ID("9104"), ID("9004"));
+    expect(tentarInscrever(ID("9104")).length).toBe(36);
+  });
+
+  it("controle: apagar a organização com contato suprimido apaga tudo em cascata, sem o gatilho gravar órfão", () => {
+    const outra = ID("9e01"), pessoa = ID("9e02");
+    sql(`insert into public.organizations(id,slug,legal_name,display_name) values('${outra}','cadencias-r9e','Outra R9','Outra R9');
+      insert into public.contacts(id,organization_id,display_name,email) values('${pessoa}','${outra}','Pessoa','r9e@synthetic.test');
+      insert into public.email_cadence_suppressions(organization_id,email_hash,contact_id,origem)
+        values('${outra}',public.fn_cadencia_hash_do_email('${outra}','r9e-antigo@synthetic.test'),'${pessoa}','link');
+      delete from public.organizations where id='${outra}';`);
+    expect(n(`select count(*) from public.email_cadence_suppressions where organization_id='${outra}'`)).toBe(0);
+  });
+});

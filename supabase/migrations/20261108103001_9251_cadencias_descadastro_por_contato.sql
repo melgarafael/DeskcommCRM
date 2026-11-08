@@ -362,29 +362,38 @@ grant execute on function public.fn_cadencia_reservar_destinatario(uuid,uuid,uui
 drop function if exists public.fn_cadencia_reservar_envio(uuid,uuid,uuid,text);
 
 -- Grava a supressão do endereço do destinatário (e do contato, se ainda
--- existe) e interrompe as inscrições ativas desse contato. Resolve tudo pelo
+-- existe, com o hash do e-mail ATUAL dele quando difere do que recebeu o
+-- envio: o ponteiro some quando o contato é apagado, o hash fica) e
+-- interrompe as inscrições ativas desse contato. Resolve tudo pelo
 -- destinatário do envio, que sobrevive ao negócio e à inscrição apagados.
 -- Devolve null quando o destinatário não existe (organização apagada, módulo
 -- sem tabelas): a rota responde erro, nunca sucesso sem supressão gravada.
 -- Clique repetido não cria evento nem supressão extra (suprimido_agora=false).
 create or replace function public.fn_cadencia_descadastrar(p_destinatario_id uuid)
 returns jsonb language plpgsql set search_path=public,pg_temp as $descadastro$
-declare v_dest record; v_nova boolean := false; v_linha record; v_total integer := 0;
+declare v_dest record; v_nova boolean := false; v_linha record; v_total integer := 0; v_email_atual text; v_hash text;
 begin
   if to_regclass('public.email_cadence_recipients') is null then return null; end if;
   select * into v_dest from public.email_cadence_recipients where id=p_destinatario_id;
   if not found then return null; end if;
   -- Mesma trava da inscrição, e da anonimização canônica do contato.
   if v_dest.contact_id is not null then
-    perform 1 from public.contacts where organization_id=v_dest.organization_id and id=v_dest.contact_id for update;
+    select email into v_email_atual from public.contacts where organization_id=v_dest.organization_id and id=v_dest.contact_id for update;
   end if;
-  perform pg_advisory_xact_lock(hashtextextended(v_dest.organization_id::text||':'||v_dest.email_hash, 0));
-  if not exists(select 1 from public.email_cadence_suppressions where organization_id=v_dest.organization_id
-    and email_hash=v_dest.email_hash and contact_id is not distinct from v_dest.contact_id) then
-    insert into public.email_cadence_suppressions(organization_id,email_hash,contact_id,origem)
-      values(v_dest.organization_id,v_dest.email_hash,v_dest.contact_id,'link');
-    v_nova := true;
-  end if;
+  -- As travas de endereço em ordem fixa: outro descadastro com os dois
+  -- endereços trocados não cruza com este.
+  for v_hash in
+    select distinct h from unnest(array[v_dest.email_hash, public.fn_cadencia_hash_do_email(v_dest.organization_id, v_email_atual)]) h
+     where h is not null order by h
+  loop
+    perform pg_advisory_xact_lock(hashtextextended(v_dest.organization_id::text||':'||v_hash, 0));
+    if not exists(select 1 from public.email_cadence_suppressions where organization_id=v_dest.organization_id
+      and email_hash=v_hash and contact_id is not distinct from v_dest.contact_id) then
+      insert into public.email_cadence_suppressions(organization_id,email_hash,contact_id,origem)
+        values(v_dest.organization_id,v_hash,v_dest.contact_id,'link');
+      v_nova := true;
+    end if;
+  end loop;
   for v_linha in
     update public.email_cadence_enrollments set status='parada',motivo_parada='descadastro',
       rastreio_consentido=false,processando_ate=null,processamento_id=null,parada_em=now(),updated_at=now()
@@ -403,6 +412,37 @@ revoke execute on function public.fn_cadencia_descadastrar(uuid) from public,ano
 grant execute on function public.fn_cadencia_descadastrar(uuid) to service_role;
 -- A forma anterior resolvia pela inscrição, que cai em cascata com o negócio.
 drop function if exists public.fn_cadencia_descadastrar(uuid,uuid);
+
+-- O ponteiro do contato cobre a troca de e-mail só enquanto o contato existe.
+-- Quando o contato suprimido troca de e-mail, o endereço novo ganha hash; antes
+-- de o contato ser apagado, o endereço corrente também. Sem HTTP: só grava a
+-- supressão, com a mesma trava de endereço das funções acima. Apagar a
+-- organização apaga os contatos em cascata: aí não há o que guardar.
+create or replace function public.fn_cadencias_suprimir_email_do_contato()
+returns trigger language plpgsql security definer set search_path='' as $suprimir$
+declare v_contato public.contacts := case when tg_op='DELETE' then old else new end; v_hash text;
+begin
+  -- Conferências em comandos separados: sem o módulo a tabela não existe, e uma
+  -- expressão só seria planejada inteira. O bcrypt só roda para contato suprimido.
+  if to_regclass('public.email_cadence_suppressions') is null then return v_contato; end if;
+  if not exists(select 1 from public.email_cadence_suppressions where contact_id=v_contato.id)
+    or not exists(select 1 from public.organizations where id=v_contato.organization_id) then return v_contato; end if;
+  v_hash := public.fn_cadencia_hash_do_email(v_contato.organization_id, v_contato.email);
+  if v_hash is null then return v_contato; end if;
+  perform pg_advisory_xact_lock(hashtextextended(v_contato.organization_id::text||':'||v_hash, 0));
+  insert into public.email_cadence_suppressions(organization_id,email_hash,contact_id,origem)
+    select s.organization_id, v_hash, case when tg_op='DELETE' then null else v_contato.id end, s.origem
+      from public.email_cadence_suppressions s
+     where s.organization_id=v_contato.organization_id and s.contact_id=v_contato.id
+       and not exists(select 1 from public.email_cadence_suppressions x
+                       where x.organization_id=v_contato.organization_id and x.email_hash=v_hash)
+     order by s.created_at limit 1;
+  return v_contato;
+end $suprimir$;
+revoke execute on function public.fn_cadencias_suprimir_email_do_contato() from public,anon,authenticated,service_role;
+drop trigger if exists trg_cadencias_suprimir_email_do_contato on public.contacts;
+create trigger trg_cadencias_suprimir_email_do_contato before update of email or delete on public.contacts
+for each row execute function public.fn_cadencias_suprimir_email_do_contato();
 
 do $reaplicar$ begin
   if exists(select 1 from public.modulos_instalados where modulo='cadencias') then
