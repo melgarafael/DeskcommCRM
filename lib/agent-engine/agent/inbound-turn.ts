@@ -3215,7 +3215,13 @@ async function executarTurnoDoAgente(
   // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
   const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
   if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
-  const system = blocosNoIdioma(blocosResidentes, idiomaDaOrg).join('\n\n');
+  // #4260, item 1: a passada de idioma vem DEPOIS da montagem — a ordem dos
+  // blocos e o `join` daqui continuam os de antes, e em `pt-BR` cada bloco volta
+  // igual. Mutação local, na mesma lista: o turno não guarda os blocos.
+  blocosNoIdioma(blocosResidentes, idiomaDaOrg).forEach((bloco, indice) => {
+    blocosResidentes[indice] = bloco;
+  });
+  const system = blocosResidentes.join('\n\n');
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
