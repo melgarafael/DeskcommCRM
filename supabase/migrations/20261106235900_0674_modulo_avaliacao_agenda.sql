@@ -150,6 +150,7 @@ grant execute on function public.fn_avaliacao_provisionar() to service_role;
 create or replace function public.trg_avaliacao_status_guard()
 returns trigger
 language plpgsql
+set search_path = public, pg_temp
 as $g$
 begin
   if tg_op = 'UPDATE' and new.status is distinct from old.status then
@@ -171,6 +172,12 @@ as $f$
 declare
   v_consultor uuid;
 begin
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_org, 'viewer') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'fn_avaliacao_resolver_consultor: caller must be an active member of the organization';
+  end if;
+
   if to_regclass('public.avaliacao_agendamentos') is null then
     raise exception 'avaliacao_modulo_nao_instalado' using errcode = '42P01';
   end if;

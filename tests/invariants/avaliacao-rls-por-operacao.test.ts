@@ -33,7 +33,7 @@ beforeAll(() => {
       on conflict (id) do nothing;
 
     insert into public.contacts (id, organization_id, name, phone_number, source) values
-      ('${CONTACT_B}', '${ORG_B}', 'Contato B', '5511999990001', 'manual')
+      ('${CONTACT_B}', '${ORG_B}', 'Contato B', '+5511999990001', 'manual')
       on conflict (id) do nothing;
 
     insert into public.avaliacao_unidades (id, organization_id, name) values
