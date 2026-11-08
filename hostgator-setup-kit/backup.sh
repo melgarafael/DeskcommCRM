@@ -19,23 +19,72 @@ umask 077
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR" 2>/dev/null \
   || c_ylw "⚠ não consegui fechar a pasta $BACKUP_DIR (chmod 700): os arquivos deste backup saem legíveis só pelo dono, mas a pasta ficou como estava."
+# ── Exclusão mútua entre execuções ───────────────────────────────────────────
+# Dois caminhos chamam este script no MESMO host: o cron diário (topo deste
+# arquivo) e o backup de segurança do update.sh (passo "Backup de segurança",
+# update.sh:303-305). No mesmo segundo os dois abriam o MESMO `.parcial`; como o
+# `mv` preserva o inode, o arquivo já publicado continuava sendo escrito pelo
+# perdedor da corrida — um dump que podia deixar de passar no `gzip -t` DEPOIS
+# de aprovado. O `flock` abaixo serializa as duas execuções.
+#
+# POLÍTICA: ESPERAR CURTO (BACKUP_LOCK_WAIT, 300 s por padrão) e, se o outro não
+# terminar nesse prazo, RECUSAR com mensagem — rc≠0 e nada tocado. O cron cede a
+# vez ao update.sh e vice-versa; um backup travado não vira fila infinita
+# segurando a atualização. Quem espera vê "⏳ outro backup está rodando"; quem
+# desiste vê "✖ outro backup ainda está rodando".
+#
+# O lock fica FORA da pasta de dumps (não entra na retenção dos 14 nem na
+# listagem de quem vai restaurar): em $TMPDIR, com uid e hash do destino no
+# nome — duas instalações no mesmo host não se bloqueiam. O descritor 9 fica
+# aberto até o processo sair, então o kernel solta a trava em QUALQUER saída
+# (inclusive SIGKILL): lock preso não existe; o trap abaixo só fecha o fd.
+lock_dir="${TMPDIR:-/tmp}"
+lock_key="$(printf '%s' "$BACKUP_DIR" | cksum | cut -d' ' -f1)"
+LOCK_FILE="${BACKUP_LOCK_FILE:-$lock_dir/deskcomm-backup-$(id -u)-$lock_key.lock}"
+exec 9>>"$LOCK_FILE"
+if ! flock -n 9; then
+  c_ylw "⏳ outro backup está rodando nesta pasta ($LOCK_FILE) — esperando até ${BACKUP_LOCK_WAIT:-300}s por ele."
+  if ! flock -w "${BACKUP_LOCK_WAIT:-300}" 9; then
+    die "outro backup ainda está rodando ($LOCK_FILE): este saiu sem tocar em nenhum arquivo. Rode de novo quando o primeiro terminar."
+  fi
+fi
+
 # Timestamp vem do host (não do script) pra manter determinismo do kit.
 ts="$(date +%Y%m%d-%H%M%S)"
+
+# O temporário é ÚNICO por execução: `mktemp` na PRÓPRIA pasta de destino, para
+# o `mv` continuar atômico (mesmo sistema de arquivos). Nome fixo — o `.parcial`
+# de antes — era justamente o que deixava as duas execuções escreverem no mesmo
+# inode. O trap apaga o temporário em qualquer saída: falha no meio não deixa
+# lixo e o dump anterior NÃO é tocado — ele só perde o nome no `mv` final,
+# depois de passar no `gzip -t`.
+parcial_db=""
+parcial=""
+parcial_st=""
+limpar_temporarios() {
+  local f
+  for f in "$parcial_db" "$parcial" "$parcial_st"; do
+    [ -n "$f" ] && rm -f "$f"
+  done
+  return 0
+}
+trap 'limpar_temporarios; exec 9>&-' EXIT
 
 step "Dump do banco → $BACKUP_DIR/db-$ts.sql.gz"
 # Pela conexão de SCHEMA (url_do_schema), não pela do app: `pg_dump` só despeja
 # o que a role enxerga, e com uma role menor — a que recomendamos no `.env` de
 # quem usa Supabase próprio — o backup sai PARCIAL e sai verde. Falha silenciosa
 # de backup é a pior das falhas: só aparece na hora de restaurar.
-# O dump só recebe o nome definitivo depois de conferido — o mesmo padrão
-# `.parcial` + `mv` do snapshot do WhatsApp logo abaixo. Duas guardas, dois casos:
+# O dump só recebe o nome definitivo depois de conferido — temporário único por
+# execução + `mv` atômico (o snapshot do WhatsApp logo abaixo segue o mesmo
+# padrão). Duas guardas, dois casos:
 #   1. uma etapa do pipe falha (`gzip` morre com disco cheio, `pg_dump` sai ≠0):
 #      o `if !` pega o exit e apaga o arquivo cortado — sem ele, o `set -e`
 #      abortava ali mesmo e o `db-*.sql.gz` cortado ficava na pasta, dentro da
 #      retenção e ao alcance do restore;
 #   2. o pipe sai com zero mas o arquivo não se lê: `gzip -t` percorre o arquivo
 #      inteiro e confere o CRC. BACKUP QUE NINGUÉM CONSEGUE LER NÃO É BACKUP.
-parcial_db="$BACKUP_DIR/.db-$ts.sql.gz.parcial"
+parcial_db="$(mktemp "$BACKUP_DIR/.db-$ts.sql.gz.XXXXXX")"
 if ! pg_container postgres:17-alpine pg_dump "$(url_do_schema)" --no-owner --no-privileges \
      | gzip > "$parcial_db"; then
   rm -f "$parcial_db"
@@ -55,7 +104,7 @@ vol="$(volume_waha_data)"
 # o passo virava "✓ sessões WhatsApp salvas", o arquivo sem valor entrava na
 # retenção dos 14 e o pareamento do WhatsApp — o que este snapshot existe para
 # poupar — só se dava por perdido no dia do restore.
-parcial="$BACKUP_DIR/.waha-$ts.tgz.parcial"
+parcial="$(mktemp "$BACKUP_DIR/.waha-$ts.tgz.XXXXXX")"
 if ! docker run --rm -v "${vol}:/data:ro" alpine:3.20 tar czf - -C /data . 2>/dev/null > "$parcial"; then
   rm -f "$parcial"
   c_ylw "⚠ não consegui ler o volume das sessões ('$vol'): o backup do banco está feito, mas o pareamento do WhatsApp NÃO entrou nele."
@@ -73,7 +122,7 @@ fi
 # restauração devolvia anexos quebrados. Por isso aqui falha é FALHA.
 if [ "${SINGLE_SERVER:-0}" = "1" ]; then
   step "Arquivos anexados (Storage) → $BACKUP_DIR/storage-$ts.tgz"
-  parcial_st="$BACKUP_DIR/.storage-$ts.tgz.parcial"
+  parcial_st="$(mktemp "$BACKUP_DIR/.storage-$ts.tgz.XXXXXX")"
   if ! docker run --rm -v "$(dir_do_supabase)/volumes/storage:/data:ro" alpine:3.20 \
        tar czf - -C /data . > "$parcial_st"; then
     rm -f "$parcial_st"
