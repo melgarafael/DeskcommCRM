@@ -203,6 +203,13 @@ export interface DbOpts {
   /** `ai_agent_versions` — o `followup` da versão publicada diz quais fluxos o agente arma. */
   agentVersions?: Array<Record<string, unknown>>;
   /**
+   * `conversations` — o quadro lê duas coisas dela: a conversa mais recente do
+   * CONTATO (#1993, `withConversas`) e a cópia `assigned_to_user_name` por DONO
+   * (#3945, `lib/kanban/nome-do-dono.ts`). Duas consultas diferentes sobre a
+   * mesma tabela; o teste de contagem de consultas é quem separa as duas.
+   */
+  conversations?: Array<Record<string, unknown>>;
+  /**
    * O `max_rows` do PostgREST (1000 em `supabase/config.toml`): corta TODA
    * leitura nesse tamanho, sem erro, por maior que seja o `.limit`/`.range`.
    * Ausente = sem corte, que é o que os testes que não falam de volume querem.
@@ -260,6 +267,7 @@ export interface Registro {
     followup_flow_pointers: Linha[];
     followup_flow_versions: Linha[];
     ai_agent_versions: Linha[];
+    conversations: Linha[];
   };
 }
 
@@ -325,6 +333,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
       followup_flow_pointers: (opts.pointers ?? []) as Linha[],
       followup_flow_versions: (opts.flowVersions ?? []) as Linha[],
       ai_agent_versions: (opts.agentVersions ?? []) as Linha[],
+      conversations: (opts.conversations ?? []) as Linha[],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
@@ -342,6 +351,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
     const intervalos: Array<{ coluna: string; op: "gte" | "lte"; valor: string }> = [];
     const pertinencias: Array<[string, unknown[]]> = [];
     const negacoes: Array<[string, unknown]> = [];
+    /** `.not(col, "is", null)` — "só as linhas com valor nesta coluna". */
+    const naoNulos: string[] = [];
     const disjuncoes: Clausula[][] = [];
     let patch: Record<string, unknown> | null = null;
     let nova: Record<string, unknown> | Record<string, unknown>[] | null = null;
@@ -371,6 +382,10 @@ export function makeDb(opts: DbOpts = {}): Registro {
         // `neq` em SQL exclui NULL (`NULL <> v` nao e verdadeiro) — o duble
         // segue o banco, nao o JavaScript.
         .filter((r) => negacoes.every(([c, v]) => r[c] !== null && r[c] !== undefined && r[c] !== v))
+        // `.not(col, "is", null)` = `IS NOT NULL`, que é o que a leitura do nome
+        // do dono precisa (#3945): sem ele viriam todas as conversas do dono
+        // para descartar as sem cópia.
+        .filter((r) => naoNulos.every((c) => r[c] !== null && r[c] !== undefined))
         // `.or()` é OU entre as cláusulas da MESMA chamada e E com os outros
         // filtros — a mesma combinação do PostgREST.
         .filter((r) =>
@@ -551,6 +566,18 @@ export function makeDb(opts: DbOpts = {}): Registro {
        */
       neq: (c: string, v: unknown) => {
         negacoes.push([c, v]);
+        return b;
+      },
+      /**
+       * `.not(col, "is", null)` — o único uso real no repo é "só as linhas com
+       * nome" (#3945). Qualquer outra forma LANÇA: um dublê que engolisse o
+       * filtro devolveria as linhas nulas e o teste mediria o dublê.
+       */
+      not: (c: string, op: string, v: unknown) => {
+        if (op !== "is" || v !== null) {
+          throw new Error(`dublê: .not("${c}", "${op}", ${String(v)}) não é suportado`);
+        }
+        naoNulos.push(c);
         return b;
       },
       limit: (n: number) => {
