@@ -30,9 +30,14 @@ legítimo grava o snapshot por UPDATE do job running, sob o lease original;
 esta migration não muda essa aquisição nem autoriza dados pelo nome de uma role
 ou por um campo do JSON. A allowlist do estado inclui só o plano já existente e
 os quatro campos canônicos de AgentOperation (`organizationId`, `agentId`,
-`versionId`, `revision`), sem copiar o contexto inteiro. A leitura valida plano, escopo e identidade originais. Antes de cada envio,
+`versionId`, `revision`), sem copiar o contexto inteiro, mais a impressão da
+operação sem `paused_at` (md5 das colunas que `trg_reply_agent_revision` conta).
+A leitura valida plano, escopo e identidade originais. Antes de cada envio,
 BeforeSend e sendTurnMessage reconferem essa mesma operação; não escolhem a
-publicação mais recente para reautorizar o plano.
+publicação mais recente para reautorizar o plano. A única troca é a da
+`revision` depois de pausar e despausar (que soma 2 sem mudar a operação): a
+retomada aceita a revisão vigente só com o agente despausado, a impressão igual
+e a capacidade ligada (`operacaoDepoisDaPausa`, em `lib/ai/agents/operation.ts`).
 
 A virada de `contacts.is_anonymized` limpa a coluna na própria org/contato por
 trigger restrito. Excluir o contato continua usando a FK com ON DELETE CASCADE.
