@@ -243,7 +243,8 @@ describe("três clientes seguidos pedem o mesmo produto",()=>{
     const result=await withServiceJob(pool,job,()=>resumePersistedCatalogPresentation(pool,job,{workerId:"catalog-origin"},{conversationId:terceiro.conversation,channelSessionId:terceiro.channel},{
       channel:{send:naoEnvia} as never,log,maxSendsPerTurn:10,queuedRetryDelayMs:1000,respostaObsoletaTetoMs:0,
     }));
-    expect(result).toEqual({handled:true,disposition:"vetoed",code:"mass_identical",sent:0,nextSeq:1});
+    // O motivo é o erro instrutivo do gate real, que o modelo recebe no lugar do texto fixo.
+    expect(result).toEqual({handled:true,disposition:"vetoed",code:"mass_identical",message:expect.stringContaining("copy repetida em massa"),sent:0,nextSeq:1});
     const depois=await persisted(terceiro);
     expect(depois.catalog_presentation_snapshot).toBeNull();
     expect(depois).toMatchObject({status:"running",attempts:1,locked_by:"catalog-origin"});
