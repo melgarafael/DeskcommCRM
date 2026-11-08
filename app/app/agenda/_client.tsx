@@ -23,6 +23,7 @@ import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { MAXIMO_DE_CONVIDADOS_DA_EQUIPE, estaNaAgendaDe } from "@/lib/agenda/convidados-da-equipe";
 import { duracaoEscolhidaValida } from "@/lib/agenda/duracao-escolhida";
 import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
@@ -212,6 +213,22 @@ export function AgendaClient({
   // do Google quando existe. Este campo é a outra pessoa (acompanhante).
   // Vazio = só o cliente (se tiver e-mail) ou só a agenda do atendente.
   const [emailConvidado, setEmailConvidado] = React.useState("");
+  /**
+   * OS CONVIDADOS DA EQUIPE (#4006).
+   *
+   * Ids de pessoas DESTA organização, além do responsável e do e-mail digitado.
+   * É o que resolve o caso da issue: a SDR marca, o closer é o responsável, e o
+   * gestor (ou um especialista) também precisa entrar — hoje ele não vê o
+   * compromisso em lugar nenhum.
+   *
+   * A lista sai de `usePessoasDaAgenda`, a MESMA fonte da barra de pessoas: não
+   * há uma segunda lista de "quem existe nesta organização" para divergir.
+   */
+  const [convidadosDaEquipe, setConvidadosDaEquipe] = React.useState<string[]>([]);
+  const alternarConvidadoDaEquipe = (id: string) =>
+    setConvidadosDaEquipe((antes) =>
+      antes.includes(id) ? antes.filter((x) => x !== id) : [...antes, id],
+    );
   const emailConvidadoLimpo = emailConvidado.trim();
   // A MESMA pergunta que a rota faz, feita aqui só para não gastar um 422 com
   // uma letra faltando no domínio. A rota continua sendo a dona da recusa — esta
@@ -446,7 +463,7 @@ export function AgendaClient({
     agendamentosVivos ?? (naJanelaDoServidor ? agendamentosIniciais : []);
 
   const agendamentos = React.useMemo(
-    () => (isolada === null ? todos : todos.filter((a) => a.responsavelId === isolada)),
+    () => (isolada === null ? todos : todos.filter((a) => estaNaAgendaDe(a, isolada))),
     [isolada, todos],
   );
 
@@ -1000,6 +1017,61 @@ export function AgendaClient({
                     )}
               </p>
             </div>
+            {/*
+              A EQUIPE (#4006) — o seletor mínimo, logo abaixo do e-mail digitado
+              e pela mesma razão: quem participa se decide ANTES do horário.
+
+              Só na CRIAÇÃO. O painel de remarcação não carrega a lista atual do
+              compromisso (ela não vem na grade), e mandar `[]` no PATCH
+              desconvidaria todo mundo a cada remarcação — o oposto do que o
+              campo ausente significa. Editar a equipe de um compromisso que já
+              existe é assunto de outro incremento.
+
+              Nem num SERVIÇO: a reserva não grava a equipe e a rota recusa
+              `agenda_equipe_no_servico`.
+            */}
+            {!remarcandoId && !tipo?.servico ? (
+              <fieldset>
+                <legend className="block">
+                  {t("Equipe no compromisso")}{" "}
+                  <span className="font-normal opacity-70">({t("opcional")})</span>
+                </legend>
+                <p className="mt-1 text-xs text-text-muted">
+                  {t(
+                    "O responsável já recebe o convite. Marque quem mais precisa participar: cada pessoa vê o compromisso na própria agenda.",
+                  )}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2" data-testid="convidados-da-equipe">
+                  {pessoas.map((pessoa) => {
+                    const marcada = convidadosDaEquipe.includes(pessoa.id);
+                    const cheio =
+                      !marcada && convidadosDaEquipe.length >= MAXIMO_DE_CONVIDADOS_DA_EQUIPE;
+                    return (
+                      <label
+                        key={pessoa.id}
+                        className={cn(
+                          "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3 py-1 text-xs lg:min-h-0",
+                          marcada
+                            ? "border-border-strong bg-surface-elevated"
+                            : "border-border bg-surface",
+                          cheio && "cursor-not-allowed opacity-50",
+                        )}
+                        title={cheio ? t("O convite cabe em até 20 pessoas da equipe.") : undefined}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={marcada}
+                          disabled={cheio}
+                          onChange={() => alternarConvidadoDaEquipe(pessoa.id)}
+                        />
+                        {pessoa.nome}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ) : null}
             {!remarcandoId ? (
               <>
                 <EnderecoDaMarcacao value={endereco} onChange={setEnderecoEditado} />
@@ -1146,6 +1218,15 @@ export function AgendaClient({
                       // publicada e a rota recusa qualquer duration_minutes ali.
                       duration_minutes: tipo.servico ? undefined : duracaoDoAtendimento,
                       guest_email: convidado,
+                      // `undefined` (e não `[]`) quando ninguém foi marcado: é o
+                      // que mantém o caminho de sempre idêntico, sem depender de
+                      // a coluna ter default no banco. Num serviço também não
+                      // vai: quem marcou e depois trocou para um serviço não vê
+                      // mais os botões, e a rota recusaria a lista.
+                      team_guest_user_ids:
+                        convidadosDaEquipe.length && !tipo.servico
+                          ? convidadosDaEquipe
+                          : undefined,
                       location_details: endereco.trim(),
                       description: observacao.trim() || undefined,
                       // TÍTULO LIVRE (#3766): digitado, é ele o `title` da
@@ -1157,6 +1238,7 @@ export function AgendaClient({
                     })
                     .then((r) => {
                       setEmailConvidado("");
+                      setConvidadosDaEquipe([]);
                       setEnderecoEditado(null);
                       setObservacao("");
                       setTituloLivre("");
