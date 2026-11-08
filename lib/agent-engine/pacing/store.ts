@@ -220,6 +220,10 @@ export async function loadPacingState(
  * Os envios de uma TRANSMISSÃO (migration 0712) no mesmo livro: a lista sai
  * pelo provedor de uma vez, e o número precisa contar cada mensagem para o ritmo
  * do agente e das outras campanhas — uma linha por mensagem, como `recordSend`.
+ *
+ * Idempotente por `lote`: o id de cada linha deriva dele e da posição, então
+ * repetir não soma, e repetir com mais só completa. O envio e o livro não são a
+ * mesma transação, e quem repete é quem acompanha a transmissão.
  */
 export async function recordSends(
   db: Queryable,
@@ -227,12 +231,15 @@ export async function recordSends(
   channelSessionId: string,
   sentAt: Date,
   quantas: number,
+  lote: string,
 ): Promise<void> {
   if (quantas <= 0) return;
   await db.query(
-    `insert into pacing_ledger (organization_id, channel_session_id, sent_at)
-     select $1, $2, $3 from generate_series(1, $4)`,
-    [tenantId, channelSessionId, sentAt, quantas],
+    `insert into pacing_ledger (id, organization_id, channel_session_id, sent_at)
+     select md5($5::text || ':' || n)::uuid, $1::uuid, $2::uuid, $3::timestamptz
+       from generate_series(1, $4::int) n
+     on conflict (id) do nothing`,
+    [tenantId, channelSessionId, sentAt, quantas, lote],
   );
 }
 
