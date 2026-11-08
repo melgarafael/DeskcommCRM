@@ -75,7 +75,10 @@ export function textoDoWhatsappDoTelefone(
 function mensagemDeErro(err: unknown, t: (texto: string) => string): string {
   if (err instanceof ApiError) {
     const doServidor = err.message?.trim();
-    if (doServidor && doServidor !== err.code) return t(doServidor);
+    // Sem `t()`: a frase já veio no idioma de quem opera (o servidor traduz com
+    // `user.idioma`) e pode citar o exemplo E.164 do país — traduzir de novo por
+    // chave não acharia entrada nenhuma. Ela é exibida como veio.
+    if (doServidor && doServidor !== err.code) return doServidor;
     if (err.code === "phone_in_use") return t("Este número já está em outra ficha.");
     if (err.code === "primary_phone_has_extras")
       return t("Torne outro número principal antes de remover este.");
