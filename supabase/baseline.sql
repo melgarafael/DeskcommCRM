@@ -71838,7 +71838,7 @@ $$;
 revoke execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) from public, anon;
 grant execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) to authenticated, service_role;
 
--- ---- a origem da conexão oficial é dado do servidor (migration 9242) ----
+-- ---- a origem da conexão oficial é dado do servidor (migration 9248) ----
 -- manifest: **A conexão oficial passa a registrar DE ONDE nasceu (#4074).** `channel_sessions` ganha `meta_connection_origin` (`embedded_signup` | `token_manual`), nula nas linhas anteriores a esta migration — que, por construção, vieram do formulário de token colado à mão. A coluna entra no gatilho `fn_channel_sessions_ligacao_ao_provedor_e_do_servidor` (9093/9104): `anon`/`authenticated` não declaram procedência; quem grava é a rota do servidor, pelo service role. Aditiva e idempotente, sem backfill e sem mudar nenhum caminho existente.
 --
 -- A #4074 abre uma SEGUNDA porta para o número oficial (Embedded Signup com o
@@ -71878,7 +71878,7 @@ begin
 end $bloco$;
 
 comment on column public.channel_sessions.meta_connection_origin is
-  'De onde nasceu a conexão oficial (#4074): embedded_signup | token_manual. Nulo = linha anterior à 9242, que só podia ter vindo do formulário.';
+  'De onde nasceu a conexão oficial (#4074): embedded_signup | token_manual. Nulo = linha anterior à 9248, que só podia ter vindo do formulário.';
 
 create or replace function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor()
 returns trigger language plpgsql set search_path = public, pg_temp as $fn$
@@ -71902,7 +71902,7 @@ begin
        or new.meta_token_encrypted is not null
        or new.meta_phone_number_id is not null
        or new.meta_waba_id is not null
-       -- 9242: e a PROCEDÊNCIA da conexão também.
+       -- 9248: e a PROCEDÊNCIA da conexão também.
        or new.meta_connection_origin is not null then
       raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
     end if;
