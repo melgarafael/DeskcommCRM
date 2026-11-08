@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Robot, Plus } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 import { useAgentsList } from "@/hooks/ai/useAgents";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentCard } from "./AgentCard";
 import { AgentsListFilters, type StatusFilter } from "./AgentsListFilters";
@@ -27,12 +28,14 @@ export function AgentsList({ initialData, canWrite }: Props) {
   const agents = data ?? [];
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    // A busca ignora caixa E acento (#4165): `pos-venda` acha "Pós-venda".
+    // A régua é a do Inbox (`termoSemAcento`), e ela já baixa a caixa.
+    const q = termoSemAcento(query.trim());
     return agents.filter((a) => {
       const s = deriveAgentStatus(a);
       if (!showArchived && s === "archived") return false;
       if (status !== "all" && s !== status) return false;
-      if (q && !a.name.toLowerCase().includes(q)) return false;
+      if (q && !termoSemAcento(a.name).includes(q)) return false;
       return true;
     });
   }, [agents, status, query, showArchived]);

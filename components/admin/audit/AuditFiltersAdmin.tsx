@@ -17,6 +17,7 @@ import type { AdminAuditFilters } from "@/hooks/useAdminAuditLog";
 // mantém este import de cliente barato. Ver o cabeçalho de lá.
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
 import { useT } from "@/hooks/i18n/useT";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,9 +56,9 @@ function MultiSelectPopover({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const filtered = options.filter((o) =>
-    o.label.toLowerCase().includes(search.toLowerCase()),
-  );
+  // A busca ignora caixa E acento (#4168): `clinica acao` acha "Clínica Ação".
+  const termo = termoSemAcento(search);
+  const filtered = options.filter((o) => termoSemAcento(o.label).includes(termo));
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -22,6 +22,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useTeamMembers } from "@/hooks/team/useTeamMembers";
 import { useVoiceSessionStatus } from "@/hooks/voice/useVoiceSessionStatus";
 import { apiClient } from "@/lib/api/client";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { copyToClipboard } from "@/lib/clipboard";
 import { ROLE_RANK } from "@/lib/auth/types";
 import {
@@ -339,10 +340,14 @@ function Fila({
 
   const visiveis = useMemo(() => {
     const base = etapa === "fila" ? fila : etapa === "todos" ? leads : leads.filter((l) => l.etapa === etapa);
-    const termo = busca.trim().toLowerCase();
+    // A busca ignora caixa E acento (#4167): `sao joao` acha "São João".
+    // O telefone passa pela mesma régua e continua igual — dígito não tem acento.
+    const termo = termoSemAcento(busca.trim());
     return base.filter(
       (l) =>
-        (!termo || l.titulo.toLowerCase().includes(termo) || (l.telefone ?? "").includes(termo)) &&
+        (!termo ||
+          termoSemAcento(l.titulo).includes(termo) ||
+          (l.telefone ?? "").includes(termo)) &&
         (!titular || l.responsavel_id === titular),
     );
   }, [busca, etapa, fila, leads, titular]);

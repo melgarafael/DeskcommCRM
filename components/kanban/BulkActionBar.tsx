@@ -30,6 +30,7 @@ import { resolveVocabulary } from "@/lib/kanban/vocabulary";
 import type { PipelineVocabulary, Stage } from "@/lib/kanban/types";
 import { LoseLeadDialog } from "./LoseLeadDialog";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 
 interface BulkActionBarProps {
   selectedIds: string[];
@@ -326,7 +327,11 @@ export function BulkActionBar({
               </Button>
             </div>
             {tagsExistentes
-              .filter((tag) => tag.toLowerCase().includes(tagInput.trim().toLowerCase()))
+              // A busca ignora caixa E acento (#4166): `promocao` acha
+              // "Promoção" — sem isso a pessoa cria a etiqueta duplicada.
+              .filter((tag) =>
+                termoSemAcento(tag).includes(termoSemAcento(tagInput.trim())),
+              )
               .slice(0, 10)
               .map((tag) => (
                 <DropdownMenuItem key={tag} onClick={() => runTagAdd(tag)}>
