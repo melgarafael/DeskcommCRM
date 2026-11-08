@@ -1,4 +1,4 @@
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { format, formatDistanceStrict } from "date-fns";
 import type { Locale } from "date-fns";
 
 /**
@@ -36,7 +36,11 @@ export function horaCurta(
   if (Number.isNaN(quando.getTime())) return "";
   if (quando.toDateString() === agora.toDateString()) return format(quando, "HH:mm");
   const dias = (agora.getTime() - quando.getTime()) / 86_400_000;
-  if (dias < 7) return formatDistanceToNowStrict(quando, { addSuffix: false, locale });
+  // A distância é medida contra o `agora` recebido, e não contra `Date.now()`:
+  // uma régua que lê o relógio por dentro não se testa (foi o que aconteceu na
+  // primeira versão desta função: o caso dizia "3 dias" e a função, rodando à
+  // meia-noite, respondia "4 dias").
+  if (dias < 7) return formatDistanceStrict(quando, agora, { locale });
   return format(quando, "dd/MM");
 }
 
