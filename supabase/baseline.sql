@@ -76544,6 +76544,13 @@ alter table public.followup_flow_pointers
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
+-- ---- índice da mensagem que espera em `queued` (migration 9242) ----
+-- #3907: o portão do piso ocioso e a varredura da espera esquecida leem outbound
+-- `queued` por idade, e nenhum índice de `messages` cobria esse status.
+create index if not exists idx_messages_outbound_queued_created
+  on public.messages (created_at)
+  where direction = 'outbound' and status = 'queued';
+
 notify pgrst, 'reload schema';
 
 -- ---- campanha por transmissão do provedor (migration 0712) ----
