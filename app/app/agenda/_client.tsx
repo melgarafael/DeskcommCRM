@@ -13,6 +13,7 @@ import { addDays, format, startOfDay, startOfMonth, startOfWeek } from "date-fns
 import * as React from "react";
 
 import { AvisoDaConexaoGoogle } from "./_components/AvisoDaConexaoGoogle";
+import { CamadaDatasDosNegocios } from "./_components/CamadaDatasDosNegocios";
 import { CartaoDaConexaoGoogle } from "./_components/CartaoDaConexaoGoogle";
 
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
@@ -28,7 +29,7 @@ import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
-import { recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
+import { diasDoRecorte, recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
 import { useVinculoDaMarcacao } from "@/lib/agenda/vinculo-da-marcacao";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import {
 } from "@/hooks/agenda/useRemarcarAgendamento";
 import { usePessoasDaAgenda } from "@/hooks/agenda/usePessoasDaAgenda";
 import { CalendarPlus, CaretLeft, CaretRight } from "@/lib/ui/icons";
+import type { FunilComDatas } from "@/lib/agenda/datas-dos-negocios";
 import { cn } from "@/lib/utils";
 
 const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
@@ -92,6 +94,7 @@ export function AgendaClient({
   tiposIniciais,
   agendamentosIniciais,
   podeMarcar,
+  funisComDatas,
 }: {
   tituloDaAgenda?: string | null;
   /**
@@ -144,6 +147,15 @@ export function AgendaClient({
    * fechar. Esconder aqui é cortesia: quem decide segue sendo a rota.
    */
   podeMarcar: boolean;
+  /**
+   * Os funis que declaram campo de data do negócio — a matéria-prima da camada
+   * "Datas dos negócios" (#3221), resolvida no servidor.
+   *
+   * Opcional e não obrigatória de propósito: instalação que não usa campo de
+   * data não tem o que oferecer, e a ausência da prop é o mesmo que a lista
+   * vazia — a camada não aparece e a tela fica idêntica à de antes.
+   */
+  funisComDatas?: FunilComDatas[];
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -421,6 +433,12 @@ export function AgendaClient({
     const { de, ate } = recorteDaGradeDe(visao, ancora);
     return { de: de.toISOString(), ate: ate.toISOString() };
   }, [visao, ancora]);
+
+  // A JANELA DA CAMADA "Datas dos negócios" (#3221): os dias que a grade
+  // desenha, na mesma leitura das colunas dela. A âncora já é o dia da
+  // organização; converter de novo deslocaria um dia para quem abre a Agenda de
+  // outro fuso.
+  const janelaDaCamada = React.useMemo(() => diasDoRecorte(visao, ancora), [visao, ancora]);
 
   // A janela que o SERVIDOR pintou. Sem esta comparação, navegar para outra
   // semana mostraria os compromissos DESTA por um instante — o fallback estaria
@@ -752,6 +770,33 @@ export function AgendaClient({
           </div>
         </div>
       </div>
+
+      {/*
+        A CAMADA "DATAS DOS NEGÓCIOS" (#3221) — acima da grade, e não dentro
+        dela.
+
+        ─── Por que acima, e não dentro das células ──────────────────────────
+
+        A grade é uma tabela de HORAS × PESSOAS: cada célula é um instante, e o
+        que mora nela é compromisso com começo e fim. Um embarque não tem hora —
+        ele é um DIA —, e enfiá-lo numa célula de hora obrigaria a escolher uma
+        hora que ninguém marcou (09:00? a primeira livre?) e a fazê-lo parecer
+        um compromisso, que é justamente o que a camada promete NÃO ser: ela não
+        ocupa horário livre, não entra em `crm_find_free_slots` e não manda
+        lembrete.
+
+        ─── O que ela NÃO muda no resto da tela ──────────────────────────────
+
+        Desligada (o padrão), ela é um interruptor sem corpo: `agendamentos` da
+        grade continua sendo exatamente a mesma lista, nenhuma busca sai, e
+        nenhum item é desenhado. É o que o teste de controle mede comparando a
+        região da grade com e sem a camada.
+
+        Sem funil com campo de data a prop vem vazia e o componente devolve
+        `null` — nesse caso a tela não muda um byte em relação à de antes desta
+        entrega.
+      */}
+      <CamadaDatasDosNegocios funis={funisComDatas ?? []} janela={janelaDaCamada} />
 
       {/*
         O HISTÓRICO na tela do produto, e não só na vitrine. Ele aparece mesmo

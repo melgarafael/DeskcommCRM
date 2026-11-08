@@ -38,7 +38,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
+import { decidePacing } from "@/lib/agent-engine/pacing/engine";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { canalTemRiscoDeBanimento } from "@/lib/channels/capabilities";
@@ -53,6 +53,7 @@ import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida }
 
 import { baloesDaCampanha, enviarEmBaloes, pausaEntreBaloes } from "./baloes";
 import { motivoParaExcluir, recusouMarketing, statusDaSaida } from "./elegibilidade";
+import { estadoDeEnvio } from "./estado-de-envio";
 import { hashDoEndereco } from "./exclusoes";
 import type { ConteudoDoEnvio } from "./modelo";
 import { renderizar } from "./renderizador";
@@ -886,33 +887,6 @@ async function numeroDoHistorico(
     .limit(1);
   const linha = (data ?? [])[0] as { channel_session_id: string } | undefined;
   return linha?.channel_session_id ?? null;
-}
-
-/** Quantas saíram hoje e na última hora, mais o último envio — o estado do ritmo. */
-export async function estadoDeEnvio(
-  admin: SupabaseClient,
-  campanhaId: string,
-  agora: Date,
-  fuso: string,
-): Promise<{ ultimoEnvio: Date | null; enviadasHoje: number; enviadasNaUltimaHora: number }> {
-  // O dia do teto diário é o dia DO CLIENTE, como o resto do ritmo. Ver a nota
-  // no chamador: `setUTCHours` fazia o dia virar 21h em `America/Sao_Paulo`.
-  const inicioDoDia = dayStartInTz(agora, fuso);
-  const { data } = await admin
-    .from("campaign_recipients")
-    .select("sent_at")
-    .eq("campaign_id", campanhaId)
-    .not("sent_at", "is", null)
-    .gte("sent_at", inicioDoDia.toISOString())
-    .order("sent_at", { ascending: false });
-
-  const enviados = (data ?? []).map((r) => new Date((r as { sent_at: string }).sent_at));
-  const umaHoraAtras = agora.getTime() - 3_600_000;
-  return {
-    ultimoEnvio: enviados[0] ?? null,
-    enviadasHoje: enviados.length,
-    enviadasNaUltimaHora: enviados.filter((d) => d.getTime() >= umaHoraAtras).length,
-  };
 }
 
 /** Exportado só para a tela e o teste lerem a mesma frase do motivo. */

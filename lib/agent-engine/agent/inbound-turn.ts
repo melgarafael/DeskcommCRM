@@ -213,6 +213,7 @@ import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-j
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
 import {
   hasOpenCaseForContact,
+  blocoDoCasoAguardandoCliente,
   getCaseAwaitingLead,
   openCase,
   provideCaseUpdate,
@@ -223,6 +224,7 @@ import { buildMcpTurnTools, idsDoCatalogoQueContamParaAProjecao } from '../edge/
 import { definicaoNaConexao } from '@/lib/channels/linha-do-espelho';
 import { cancelPendingCronsForLead } from '../cron/scheduler';
 import {
+  gatilhoDaAtivacao,
   latestInboundSignal,
   recentInboundSignal,
   loadSkills,
@@ -4182,8 +4184,14 @@ async function executarTurnoDoAgente(
   if (!preview) {
     try {
       const rows: Array<[string, string | null, string]> = [
+        // Entrou pela ETIQUETA → `tag`; pela palavra → `hard`, como sempre (spec 27, fatia 4).
         ...skillMatch.matched.map(
-          (s) => [s.name, s.versionId, 'hard'] as [string, string | null, string],
+          (s) =>
+            [s.name, s.versionId, gatilhoDaAtivacao(skillMatch.motivos.get(s))] as [
+              string,
+              string | null,
+              string,
+            ],
         ),
         ...skillMatch.missCandidates.map(
           (m) => [m.skill, null, 'probe'] as [string, string | null, string],
@@ -5534,6 +5542,8 @@ async function executarTurnoDoAgente(
   const buildCaseContextSnapshot = (): Record<string, unknown> =>
     snapshotDoCaso(effectiveContext.contact.name, effectiveContext.messages);
 
+  let caseAwaitingLead: Awaited<ReturnType<typeof getCaseAwaitingLead>> = null;
+
   // Spec 15 (Wave 3a): tools de caso humano (open_human_case/provide_case_update) só
   // entram quando a tela habilita (cases_enabled) — mesmo padrão do handoff acima.
   // Ids do closure (row do job), nunca do payload; payload inválido é erro de ENSINO
@@ -5596,15 +5606,20 @@ async function executarTurnoDoAgente(
           };
         }
         try {
+          if (liveJob().kind !== "inbound_turn" || !input.inboundMessageId || !caseAwaitingLead || caseAwaitingLead.id !== parsed.data.case_id) {
+            return { ok: false, error: { code: 'invalid_case_state', message: 'este turno não recebeu uma pergunta pendente deste caso.' } };
+          }
           const res = await provideCaseUpdate(
             pool,
             { tenantId, conversationId: input.conversationId },
-            { caseId: parsed.data.case_id, info: parsed.data.info },
+            { caseId: parsed.data.case_id, info: parsed.data.info, requestEventId: caseAwaitingLead.eventId, clientMessageId: input.inboundMessageId, sourceJobId: liveJob().id },
           );
           if (!res.ok) return res;
           return {
             ok: true,
-            message: 'informação enviada ao responsável; aguarde o retorno pelo caso.',
+            message: res.foraDaFronteira
+              ? 'informação registrada no caso para a equipe; nenhum aviso sai agora e a equipe vê pela tela do caso. NÃO diga ao cliente que alguém foi acionado.'
+              : 'informação registrada no caso para a equipe; o aviso segue pela fila de entrega.',
           };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -6077,17 +6092,11 @@ async function executarTurnoDoAgente(
     // isso o modelo nunca consegue chamar provide_case_update quando o lead simplesmente
     // responde (o caminho comum; case_reply_turn só cobre a AÇÃO do humano). Sufixo
     // por-lead (volátil) — nunca no prefixo cacheável (o case_id muda a cada caso).
-    const caseAwaitingLead =
+    caseAwaitingLead =
       preview?.kind !== 'sandbox' && agentConfig !== null && agentConfig.casesEnabled
         ? await getCaseAwaitingLead(pool, tenantId, input.conversationId)
         : null;
-    const caseAwaitingLeadBlock =
-      caseAwaitingLead !== null
-        ? `## Caso aguardando resposta deste cliente\n` +
-          `Há um caso aberto (case_id: ${caseAwaitingLead.id}) esperando uma informação dele: "${caseAwaitingLead.ask}". ` +
-          `Se a mensagem dele responde a isso, chame provide_case_update com este case_id e a informação recebida — ` +
-          `NÃO diga que já repassou/avisou o responsável sem chamar a tool.`
-        : '';
+    const caseAwaitingLeadBlock = blocoDoCasoAguardandoCliente(caseAwaitingLead);
     // ── O RELÓGIO DO TURNO ────────────────────────────────────────────────────
     //
     // Entra AQUI, e o lugar é a metade do conserto.

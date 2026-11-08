@@ -47,6 +47,13 @@ export async function requireCurrentServiceBoundary(
       : null,
   );
 }
+/**
+ * Roda `acao` fora do turno em curso, para um efeito que pertence a OUTRO contato:
+ * o agente cancela o compromisso de um cliente e a vaga é oferecida a outro.
+ */
+export function foraDaFronteira<T>(acao: () => Promise<T>): Promise<T> {
+  return execution.exit(acao);
+}
 export function currentExecutionBoundary(): ServiceBoundary | null {
   return execution.getStore()?.boundary ?? null;
 }

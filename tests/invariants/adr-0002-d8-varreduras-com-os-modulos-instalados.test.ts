@@ -169,6 +169,13 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "imutabilidade da parcela paga (status e financial_entry_id não mudam sem o caixa) e a " +
       "recusa de FK cross-org. A leitura cross-org por contagem é medida neste arquivo.",
   },
+  calendar_waitlist: {
+    arquivo: "tests/invariants/lista-de-espera-encaixe.test.ts",
+    razao:
+      "JWT real: a organização lê só a própria fila, a sessão não grava (42501) e o gatilho de " +
+      "vínculos recusa contato, tipo, profissional e compromisso de outra organização mesmo " +
+      "na escrita do servidor.",
+  },
   // #1907 — as cinco tabelas da comanda, que nascem em `fn_financeiro_provisionar()`
   // (ADR-0002 D2/D3). A prova comportamental é a MESMA da lista de leitura
   // org-scoped de `rls-isolation.test.ts`: linha REAL semeada por organização e

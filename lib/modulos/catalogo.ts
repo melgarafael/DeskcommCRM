@@ -35,6 +35,13 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "continua no sistema mesmo sem este módulo. Toda instalação anterior a esta versão " +
       "continua com Comandas ligada.",
   },
+  {
+    slug: "lista_de_espera",
+    nome: "Lista de espera da agenda",
+    descricao:
+      "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser " +
+      "avisado. Cada empresa escolhe os prazos da oferta antes de ligar.",
+  },
 ];
 
 export function moduloDoCatalogo(slug: string): ModuloCatalogo | undefined {

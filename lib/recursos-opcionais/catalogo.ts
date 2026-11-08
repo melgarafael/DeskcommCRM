@@ -132,6 +132,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Comandas",
     oQueFaz: "A comanda do atendimento: itens, forma de pagamento, comissões e fidelidade.",
   },
+  lista_de_espera: {
+    nome: "Lista de espera da agenda",
+    oQueFaz: "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.",
+  },
   cobranca: {
     nome: "Cobrança dos seus clientes",
     oQueFaz: "Você cria planos e cobra as empresas desta instalação, com teste grátis e suspensão de quem não paga.",
@@ -161,6 +165,14 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   cold_call: {
     nome: "Cold Call (fila de ligações)",
     oQueFaz: "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.",
+  },
+  painel_atendimento: {
+    nome: "Painel de atendimento",
+    oQueFaz: "Uma tela com três colunas, por número: quem espera resposta, quem está em atendimento e quem foi atendido hoje.",
+  },
+  reservas_de_lugar: {
+    nome: "Reservas de lugar",
+    oQueFaz: "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.",
   },
 };
 
