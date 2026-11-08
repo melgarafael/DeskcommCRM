@@ -618,11 +618,15 @@ jobs:
         timeout-minutes: 5
 
       - name: RLS isolation + governance invariants (pg${{ matrix.pg }})
-        # O token é só para `gh release view`: o test:db confere o update.sh da
-        # última release publicada (issue #1909), e a API anônima tem teto de 60
-        # consultas/hora por IP — o executor próprio é um IP só.
+        # A conferência do update.sh precisa do `update.sh` da última release
+        # PUBLICADA (issue #1909). O runner nem sempre tem `gh`; o `origin` do job
+        # é este repositório (fork sem release → 404, não “API fora”). A URL fixa
+        # abaixo consulta `/releases/latest` com token (rate limit) via
+        # `ultima_release_estavel` — mesma fonte que a VPS do produto oficial.
         env:
           GH_TOKEN: ${{ github.token }}
+          DESKCOMM_RELEASES_LATEST_URL: https://api.github.com/repos/melgarafael/DeskcommCRM/releases/latest
+          DESKCOMM_RELEASES_REPO: melgarafael/DeskcommCRM
         run: pnpm test:db
 
       # O `update.sh` do cliente roda sobre um banco COM DADOS, e nenhum gate

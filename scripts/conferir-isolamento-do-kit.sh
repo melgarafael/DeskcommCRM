@@ -50,30 +50,63 @@
 # ## Qual é a última release
 #
 # `CONFERENCIA_KIT_RELEASE=vX.Y.Z` escolhe à mão (é o botão para provar contra uma
-# release anterior). Sem ele: `gh release view` quando há `GH_TOKEN` (o CI — a API
-# anônima tem teto de 60 consultas/hora por IP, e o executor próprio é um IP só);
-# senão `ultima_release_estavel` do próprio kit (`/releases/latest`). Nunca a maior
-# tag: tag não é release publicada (ver o cabeçalho dessa função em _common.sh).
-# Sem resposta, REPROVA — gate que pula em silêncio não é gate.
+# release anterior). Sem ele, nesta ordem:
+#
+#   1. `DESKCOMM_RELEASES_LATEST_URL` → `ultima_release_estavel` (o CI usa isto:
+#      URL fixa de `/releases/latest`, determinística e sem depender do `origin`);
+#   2. `DESKCOMM_RELEASES_REPO=owner/repo` → mesma API, montando a URL;
+#   3. `gh release view` quando há `gh` + token (opcional; o runner nem sempre traz `gh`);
+#   4. `ultima_release_estavel` pelo `origin` do checkout (fork COM release publicada);
+#   5. último recurso, só com token/rede: produto upstream `melgarafael/DeskcommCRM`
+#      — fork sem release (404 em `/releases/latest`) não é "sem release no mundo".
+#
+# Nunca a maior tag local: tag não é release publicada (_common.sh). Sem resposta
+# válida, REPROVA — gate que pula em silêncio não é gate.
 set -euo pipefail
 
 CONTAINER="${1:?uso: $0 <container> <banco>}"
 BANCO="${2:?uso: $0 <container> <banco>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KIT="$ROOT/hostgator-setup-kit"
+ULTIMA_DO_KIT() {
+  cd "$ROOT" && bash -c 'source "$1/_common.sh" >/dev/null 2>&1; ultima_release_estavel' _ "$KIT" || true
+}
 
 release="${CONFERENCIA_KIT_RELEASE:-}"
-if [ -z "$release" ] && [ -n "${GH_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
-  release="$(cd "$ROOT" && gh release view --json tagName -q .tagName 2>/dev/null || true)"
+if [ -z "$release" ] && [ -n "${DESKCOMM_RELEASES_LATEST_URL:-}" ]; then
+  release="$(ULTIMA_DO_KIT)"
+fi
+if [ -z "$release" ] && [ -n "${DESKCOMM_RELEASES_REPO:-}" ]; then
+  DESKCOMM_RELEASES_LATEST_URL="https://api.github.com/repos/${DESKCOMM_RELEASES_REPO}/releases/latest"
+  export DESKCOMM_RELEASES_LATEST_URL
+  release="$(ULTIMA_DO_KIT)"
+fi
+if [ -z "$release" ] && [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ] && command -v gh >/dev/null 2>&1; then
+  if [ -n "${DESKCOMM_RELEASES_REPO:-}" ]; then
+    release="$(cd "$ROOT" && gh release view -R "${DESKCOMM_RELEASES_REPO}" --json tagName -q .tagName 2>/dev/null || true)"
+  else
+    release="$(cd "$ROOT" && gh release view --json tagName -q .tagName 2>/dev/null || true)"
+  fi
 fi
 if [ -z "$release" ]; then
-  release="$(cd "$ROOT" && bash -c 'source "$1/_common.sh" >/dev/null 2>&1; ultima_release_estavel' _ "$KIT" || true)"
+  release="$(ULTIMA_DO_KIT)"
+fi
+if [ -z "$release" ] && [ "${DESKCOMM_RELEASES_FALLBACK_UPSTREAM:-1}" != "0" ]; then
+  DESKCOMM_RELEASES_LATEST_URL="https://api.github.com/repos/melgarafael/DeskcommCRM/releases/latest"
+  export DESKCOMM_RELEASES_LATEST_URL
+  release="$(ULTIMA_DO_KIT)"
 fi
 case "$release" in
   v[0-9]*) ;;
-  *) echo "FATAL: não consegui saber qual é a última release publicada (sem rede? API fora?)." >&2
-     echo "       Diga qual com CONFERENCIA_KIT_RELEASE=vX.Y.Z e rode de novo." >&2
-     exit 1 ;;
+  *)
+    origem="$(git -C "$ROOT" config --get remote.origin.url 2>/dev/null || true)"
+    echo "FATAL: não consegui saber qual é a última release publicada." >&2
+    echo "       Origin: ${origem:-(nenhum)}." >&2
+    echo "       Fork sem release no GitHub devolve 404 em /releases/latest — não é API fora." >&2
+    echo "       No CI: DESKCOMM_RELEASES_LATEST_URL ou DESKCOMM_RELEASES_REPO." >&2
+    echo "       Local: CONFERENCIA_KIT_RELEASE=vX.Y.Z." >&2
+    exit 1
+    ;;
 esac
 
 # O arquivo de cada release. No CI o checkout é raso e sem tags: busca só a tag,
@@ -83,13 +116,30 @@ ANTES_DO_FILTRO="v1.63.0"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/deskcomm-update-sh.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 update_sh_da() {  # update_sh_da <tag> — caminho de uma cópia do update.sh da tag
-  if ! git -C "$ROOT" rev-parse -q --verify "refs/tags/$1^{commit}" >/dev/null; then
+  local tag="$1"
+  if ! git -C "$ROOT" rev-parse -q --verify "refs/tags/${tag}^{commit}" >/dev/null; then
     local profundidade=""
     [ "$(git -C "$ROOT" rev-parse --is-shallow-repository)" = true ] && profundidade="--depth=1"
-    git -C "$ROOT" fetch -q --no-tags $profundidade origin "+refs/tags/$1:refs/tags/$1"
+    git -C "$ROOT" fetch -q --no-tags $profundidade origin "+refs/tags/${tag}:refs/tags/${tag}" 2>/dev/null || true
   fi
-  git -C "$ROOT" show "$1:hostgator-setup-kit/update.sh" > "$TMP/$1"
-  printf '%s' "$TMP/$1"
+  # A release conferida pode ser do produto upstream enquanto o `origin` é fork
+  # sem tags espelhadas — buscar a tag no mesmo repo de `/releases/latest`.
+  if ! git -C "$ROOT" rev-parse -q --verify "refs/tags/${tag}^{commit}" >/dev/null; then
+    local repo="${DESKCOMM_RELEASES_REPO:-melgarafael/DeskcommCRM}"
+    case "$repo" in
+      */*) ;;
+      *) repo="melgarafael/DeskcommCRM" ;;
+    esac
+    local profundidade=""
+    [ "$(git -C "$ROOT" rev-parse --is-shallow-repository)" = true ] && profundidade="--depth=1"
+    if ! git -C "$ROOT" fetch -q --no-tags $profundidade \
+      "https://github.com/${repo}.git" "+refs/tags/${tag}:refs/tags/${tag}"; then
+      echo "FATAL: não achei a tag ${tag} (origin nem ${repo}) — não dá para conferir o update.sh da release." >&2
+      return 1
+    fi
+  fi
+  git -C "$ROOT" show "${tag}:hostgator-setup-kit/update.sh" > "$TMP/${tag}"
+  printf '%s' "$TMP/${tag}"
 }
 
 # conferir <rótulo> <update.sh> — 0 se nenhuma regra falta, 1 se falta.

@@ -2670,7 +2670,15 @@ ultima_release_estavel() {
 
   # `-f` faz o curl falhar em 404 (repo sem release nenhuma) em vez de devolver
   # o corpo de erro, que o sed abaixo interpretaria como ausência de tag_name.
-  tag="$(curl -fsSL --max-time 20 -H 'Accept: application/vnd.github+json' "$url" 2>/dev/null \
+  # Com token quando existe (CI, `gh auth`): sobe o teto de rate limit e não
+  # confunde 403 por anonimato com "não há release".
+  local curl_auth=()
+  if [ -n "${GH_TOKEN:-}" ]; then
+    curl_auth=(-H "Authorization: Bearer ${GH_TOKEN}")
+  elif [ -n "${GITHUB_TOKEN:-}" ]; then
+    curl_auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  fi
+  tag="$(curl -fsSL --max-time 20 "${curl_auth[@]}" -H 'Accept: application/vnd.github+json' "$url" 2>/dev/null \
     | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
 
   # Sem jq de propósito: o kit não pode exigir jq numa VPS de cliente. O
