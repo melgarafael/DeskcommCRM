@@ -135,6 +135,7 @@ import {
   checkpointContentSchema,
   fecharOTurno,
   insertCheckpoint,
+  instrucaoDeFechamento,
   parseCheckpointText,
   tirarLinkDaReuniao,
   type CheckpointContent,
@@ -319,8 +320,9 @@ import {
 } from '@/lib/ai/decisao/manipulacao';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
-import { fusoDaOrganizacao } from './fuso-da-org';
+import { fatosDaOrganizacao, fusoDaOrganizacao } from './fuso-da-org';
 import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
+import { diretivaDeIdioma, falaDoMotor, ferramentasNoIdioma, type Idioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -1396,8 +1398,8 @@ const BLOCO_PREVIA: Record<TurnPreview['kind'], string> = {
 };
 
 /** O bloco do modo de prévia que entra no `system` — decisão num lugar só, testável. */
-export function blocoDoModoDePrevia(kind: TurnPreview['kind']): string {
-  return BLOCO_PREVIA[kind];
+export function blocoDoModoDePrevia(kind: TurnPreview['kind'], idioma: Idioma = 'pt-BR'): string {
+  return falaDoMotor(BLOCO_PREVIA[kind], idioma);
 }
 
 /**
@@ -1405,8 +1407,17 @@ export function blocoDoModoDePrevia(kind: TurnPreview['kind']): string {
  *
  * A régua é o que o agente TEM: os dois blocos de ensino nomeiam ferramentas, e
  * nomear uma ferramenta ausente faz o modelo tentar chamá-la.
+ *
+ * ⚠️ O bloco `agendaSystemBlock` (quem MARCA horário) segue em português por
+ * exceção declarada em `idioma-do-turno.ts`: ele é composto ramo a ramo por
+ * `tem(ferramenta)`, e traduzir exige um segundo texto por ramo — trabalho que
+ * não cabe nesta fatia e que o bloco da cadeia (este sim traduzido) cobre no
+ * caminho do turno.
  */
-export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
+export function blocosDeAgendaResidentes(
+  toolIds: readonly string[],
+  idioma: Idioma = 'pt-BR',
+): string[] {
   const blocos: string[] = [];
   // A regua de "quem marca" e a da main (#831): `temFerramentaDeMarcacao` conta
   // tambem `crm_find_and_book_appointment`, e o texto do bloco nomeia so as
@@ -1416,14 +1427,43 @@ export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
     blocos.push(agendaSystemBlock(toolIds));
   } else if (toolIds.includes('crm_find_free_slots')) {
     // Só consulta: o bloco de cima nomeia uma ferramenta que ele não tem.
-    blocos.push(AGENDA_CONSULTA_SYSTEM_BLOCK);
+    blocos.push(falaDoMotor(AGENDA_CONSULTA_SYSTEM_BLOCK, idioma));
   }
   if (
     toolIds.includes('crm_list_event_types') &&
     toolIds.includes('crm_find_free_slots')
   ) {
-    blocos.push(AGENDA_CADEIA_SYSTEM_BLOCK);
+    blocos.push(falaDoMotor(AGENDA_CADEIA_SYSTEM_BLOCK, idioma));
   }
+  return blocos;
+}
+
+/**
+ * O `system` residente do turno — a montagem num lugar só, para o teste do
+ * idioma poder afirmar sobre o PROMPT e não sobre cada função isolada.
+ *
+ * Ordem: playbook + memória + índice de skills (já compostos em
+ * `systemWithMemory`), os dois guardrails sem feature, o de casos quando a tela
+ * habilita, os de agenda que o agente tem, o da prévia e, por último, a
+ * diretiva de idioma (#4260, item 1) — que é o único bloco NOVO em `pt-BR`,
+ * onde todo o resto continua byte a byte o texto de antes.
+ */
+export function blocosResidentesDoTurno(input: {
+  systemWithMemory: string;
+  casesEnabled: boolean;
+  toolIds: readonly string[];
+  previewKind: TurnPreview['kind'] | null;
+  idioma: Idioma;
+}): string[] {
+  const blocos = [
+    input.systemWithMemory,
+    falaDoMotor(TRANSPARENCIA_SYSTEM_BLOCK, input.idioma),
+    falaDoMotor(AUTORIA_SYSTEM_BLOCK, input.idioma),
+  ];
+  if (input.casesEnabled) blocos.push(falaDoMotor(CASES_SYSTEM_BLOCK, input.idioma));
+  blocos.push(...blocosDeAgendaResidentes(input.toolIds, input.idioma));
+  if (input.previewKind !== null) blocos.push(blocoDoModoDePrevia(input.previewKind, input.idioma));
+  blocos.push(diretivaDeIdioma(input.idioma));
   return blocos;
 }
 
@@ -2566,8 +2606,9 @@ async function executarTurnoDoAgente(
   // da abertura. Lido aqui pela mesma razão da linha acima: uma query por turno,
   // longe do ponto de uso, para não virar duas respostas para a mesma pergunta.
   // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
-  const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
-
+  // O fuso E o idioma da organização, numa query só (#4260, item 1): o idioma
+  // do turno sai daqui e chega à montagem do system sem consulta nova.
+  const { fuso: fusoDaOrg, idioma: idiomaDaOrg } = await fatosDaOrganizacao(pool, tenantId, runLog);
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
@@ -3138,21 +3179,13 @@ async function executarTurnoDoAgente(
   // Agenda segue o mesmo padrão, condicionado a `crm_book_appointment` estar entre as
   // tools publicadas — ver comentário de `agendaSystemBlock`. `TRANSPARENCIA_SYSTEM_BLOCK`
   // e `AUTORIA_SYSTEM_BLOCK` não dependem de nenhuma feature — todo agente publicado os recebe.
-  const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK, AUTORIA_SYSTEM_BLOCK];
-  if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
-  // Spec 15 §5.2 / doutrina da Agenda: a régua é o que o agente TEM — ver
-  // `blocosDeAgendaResidentes`, que decidiu isto num lugar só para poder ser
-  // testada (o bloco da cadeia nomeia `crm_list_event_types`, e nomear
-  // ferramenta ausente faz o modelo tentar chamá-la).
-  if (agentConfig !== null) blocosResidentes.push(...blocosDeAgendaResidentes(agentConfig.toolIds));
-  // #3757: o bloco da prévia diz de QUEM é a voz. São duas prévias com donos
-  // diferentes — o "Testar" (sandbox) é do agente falando como agente, mas o
-  // "Sugerir resposta" (assisted) escreve o rascunho que o ATENDENTE humano vai
-  // revisar e enviar. Com um bloco só, o prompt de atendimento automático (que
-  // ensina a passar a vez a uma pessoa) vazava para a caixa do atendente e o
-  // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
-  // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
-  if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
+  const blocosResidentes = blocosResidentesDoTurno({
+    systemWithMemory,
+    casesEnabled: agentConfig !== null && agentConfig.casesEnabled,
+    toolIds: agentConfig?.toolIds ?? [],
+    previewKind: preview?.kind ?? null,
+    idioma: idiomaDaOrg,
+  });
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -6028,7 +6061,10 @@ async function executarTurnoDoAgente(
         )
       : breakerTools;
     const tools = envolverFerramentasComTraco(
-      presentationTools,
+      // Descrição no idioma do turno (#4260, item 1). Nome, schema e `execute`
+      // passam intactos: só a prosa muda, e ferramenta sem tradução no
+      // dicionário volta igual (as exceções declaradas em `idioma-do-turno.ts`).
+      ferramentasNoIdioma(presentationTools, idiomaDaOrg),
       // O traço continua por fora: registra tanto o veto do breaker quanto o
       // descarte de ferramentas após a apresentação terminal.
       input.tracoDoTurno?.coletor,
@@ -6883,7 +6919,7 @@ async function executarTurnoDoAgente(
             ...openingTextOnly,
             ...responseMessages,
             ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
-            { role: 'user', content: CHECKPOINT_INSTRUCTION },
+            { role: 'user', content: instrucaoDeFechamento(idiomaDaOrg) },
             ...correcao,
           ],
         },
