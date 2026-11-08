@@ -19941,6 +19941,16 @@ export const DICIONARIO: Traducoes = {
   "Erro ao exportar respostas rápidas.": { es: "Error al exportar respuestas rápidas." },
   "Não há respostas rápidas compartilhadas para exportar.": { es: "No hay respuestas rápidas compartidas para exportar." },
   "O blueprint leva até 200 respostas rápidas compartilhadas, e esta organização tem mais do que isso. Nada foi exportado.": { es: "El blueprint lleva hasta 200 respuestas rápidas compartidas, y esta organización tiene más que eso. No se exportó nada." },
+  // Blueprint de FUNIS (#1995, fatia 2): o segundo tipo do mesmo envelope —
+  // export com as etapas e import que cria funil novo, nunca sobrescreve.
+  "Erro ao exportar funis.": { es: "Error al exportar embudos." },
+  "Não há funis para exportar.": { es: "No hay embudos para exportar." },
+  "O blueprint leva até 200 funis, e esta organização tem mais do que isso. Nada foi exportado.": { es: "El blueprint lleva hasta 200 embudos, y esta organización tiene más que eso. No se exportó nada." },
+  "O blueprint leva até 200 etapas por funil, e esta organização tem um funil com mais do que isso. Nada foi exportado.": { es: "El blueprint lleva hasta 200 etapas por embudo, y esta organización tiene un embudo con más que eso. No se exportó nada." },
+  "Há um funil sem etapas ativas nesta organização, e o blueprint de funis não cria quadro sem coluna. Nada foi exportado.": { es: "Hay un embudo sin etapas activas en esta organización, y el blueprint de embudos no crea un tablero sin columnas. No se exportó nada." },
+  "Este blueprint não é de funis.": { es: "Este blueprint no es de embudos." },
+  "O arquivo tem funis inválidos: confira a quantidade (de 1 a 200), o nome do funil (até 80), a descrição (até 280) e as etapas (de 1 a 200 por funil, com nome de até 80).": { es: "El archivo tiene embudos inválidos: revisa la cantidad (de 1 a 200), el nombre del embudo (hasta 80), la descripción (hasta 280) y las etapas (de 1 a 200 por embudo, con nombre de hasta 80)." },
+  "Não consegui importar o blueprint de funis. Nada foi aplicado.": { es: "No pude importar el blueprint de embudos. No se aplicó nada." },
   "Respostas rápidas exportadas.": { es: "Respuestas rápidas exportadas." },
   "Mídias que ficaram de fora, porque o arquivo leva só o texto: {n}.": { es: "Archivos multimedia que quedaron fuera, porque el archivo lleva solo el texto: {n}." },
   "Importar respostas rápidas": { es: "Importar respuestas rápidas" },

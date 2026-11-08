@@ -1498,6 +1498,12 @@ export const AUDIT_ACTIONS = [
   // verificação, pois a trilha append-only não é lugar para identidade pessoal.
   "org.resend_account_connected",
   "org.resend_account_disconnected",
+  // Blueprint de FUNIS (#1995, fatia 2): o arquivo de configuração que sai e o
+  // que entra. Códigos próprios (não `pipeline.created` repetido N vezes) porque
+  // a pergunta depois é "de onde veio esse quadro?" — e a resposta tem de caber
+  // numa linha do audit, com contagem de funis e etapas, nunca com os nomes.
+  "pipeline.exported",
+  "pipeline.imported",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
