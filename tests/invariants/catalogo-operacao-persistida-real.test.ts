@@ -15,6 +15,7 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { COLUNAS_DA_OPERACAO_SEM_PAUSA } from "@/lib/ai/agents/operation";
 import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { ehVistoAzul } from "../support/waha-visto-azul";
+import { withServiceJob } from "@/lib/atendimento/fronteira-server";
 
 const pool=new pg.Pool({connectionString:`postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT??54329}/postgres`,max:4});
 const ownedOrgs:string[]=[];
@@ -203,6 +204,51 @@ describe("pausar e despausar no meio da sequência",()=>{
     await despausar(f);
     const r=await replayInNewProcess(f);
     expect(r.child.code).toBe(2);expect(r.result.error).toBe("service_boundary_stale");expect(r.posts).toHaveLength(0);
+  });
+});
+
+describe("três clientes seguidos pedem o mesmo produto",()=>{
+  // Mesmo número, mesmo texto fixo: o gate de spinning (repetitionThreshold 2
+  // em SPINNING_DEFAULTS) veta a 3ª cópia. O gate segue armado; o que muda é a
+  // disposição: terminal na hora, snapshot limpo, job vivo para o modelo
+  // responder, em vez de 5 tentativas até job_dead sem nada sair.
+  async function outroCliente(f:Fixture,telefone:string):Promise<Fixture>{
+    const contact=randomUUID();
+    await pool.query("insert into contacts(id,organization_id,name,display_name,phone_number,source) values($1,$2,'Titular sintético','Titular sintético',$3,'whatsapp')",[contact,f.org,telefone]);
+    const conversation=(await criarOrigemDeFollowup(pool,f.org,contact)).conversation_id;
+    expect((await pool.query("select channel_session_id from conversations where id=$1",[conversation])).rows[0].channel_session_id).toBe(f.channel);
+    await pool.query("update conversations set active_ai_agent_id=$1 where id=$2",[f.agent,conversation]);
+    const inbound=randomUUID();
+    await pool.query("insert into messages(id,organization_id,conversation_id,channel_session_id,contact_id,type,direction,body) values($1,$2,$3,$4,$5,'text','inbound','Quero o Item Azul')",[inbound,f.org,conversation,f.channel,contact]);
+    const payload={conversation_id:conversation,contact_id:contact,channel_session_id:f.channel,inbound_message_id:inbound,crm_event_id:randomUUID()};
+    const job=(await pool.query<JobRow>("insert into job_queue(organization_id,contact_id,kind,status,locked_by,locked_at,payload,attempts) values($1,$2,'inbound_turn','running','catalog-origin',clock_timestamp(),$3,1) returning *,locked_at::text claim_acquired_at",[f.org,contact,payload])).rows[0]!;
+    return{...f,contact,conversation,job};
+  }
+  const soOItemAzul=(f:Fixture)=>({...input(f),orderedProductCodes:["A"]});
+  it("o 3º é vetado sem retry: snapshot limpo, job vivo, nada enviado, nenhuma seq ocupada",async()=>{
+    const primeiro=await fixture();
+    for(const[i,cliente]of[primeiro,await outroCliente(primeiro,"+5531999990002")].entries()){
+      await resolveAndSnapshotCatalogPresentation(pool,soOItemAzul(cliente));
+      const r=await replayInNewProcess(cliente);
+      expect(r.child.code,`cliente ${i+1}: `+JSON.stringify(r.result)+"\n"+r.child.stderr).toBe(0);
+      expect(r.posts).toHaveLength(1);
+    }
+    expect(Number((await pool.query("select count(*) n from outbound_copies where organization_id=$1 and channel_session_id=$2",[primeiro.org,primeiro.channel])).rows[0].n)).toBe(2);
+
+    const terceiro=await outroCliente(primeiro,"+5531999990003");
+    await resolveAndSnapshotCatalogPresentation(pool,soOItemAzul(terceiro));
+    const job=await persisted(terceiro);
+    const log={info(){},warn(){},error(){},debug(){}} as never;
+    const naoEnvia=()=>{throw Error("o 3º não pode chegar ao canal");};
+    const result=await withServiceJob(pool,job,()=>resumePersistedCatalogPresentation(pool,job,{workerId:"catalog-origin"},{conversationId:terceiro.conversation,channelSessionId:terceiro.channel},{
+      channel:{send:naoEnvia} as never,log,maxSendsPerTurn:10,queuedRetryDelayMs:1000,respostaObsoletaTetoMs:0,
+    }));
+    expect(result).toEqual({handled:true,disposition:"vetoed",code:"mass_identical",sent:0,nextSeq:1});
+    const depois=await persisted(terceiro);
+    expect(depois.catalog_presentation_snapshot).toBeNull();
+    expect(depois).toMatchObject({status:"running",attempts:1,locked_by:"catalog-origin"});
+    expect((await pool.query("select vetoed_gate,vetoed_code from before_send_traces where job_id=$1 and vetoed_code is not null",[job.id])).rows).toEqual([{vetoed_gate:"spinning",vetoed_code:"mass_identical"}]);
+    expect((await pool.query("select seq from send_ledger where job_id=$1",[job.id])).rows).toEqual([]);
   });
 });
 

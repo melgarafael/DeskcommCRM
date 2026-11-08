@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { tool } from "ai";
 
-import { terminalizarApresentacaoNoTurno } from "./terminalidade-de-apresentacao";
+import {
+  apresentacaoEncerraTurno,
+  terminalizarApresentacaoNoTurno,
+} from "./terminalidade-de-apresentacao";
 
 function executar(tools: ReturnType<typeof terminalizarApresentacaoNoTurno>, name: string) {
   const execute = tools[name]?.execute;
@@ -11,6 +14,25 @@ function executar(tools: ReturnType<typeof terminalizarApresentacaoNoTurno>, nam
 }
 
 describe("terminalidade da apresentação no passo do modelo", () => {
+  it("veto do gate devolve o turno ao modelo: o send_message seguinte sai", async () => {
+    const vetada = { ok: false, code: "catalog_presentation_vetoed", message: "responda normalmente" };
+    const enviar = vi.fn(async () => "enviado");
+    const ativada = vi.fn();
+    const tools = terminalizarApresentacaoNoTurno(
+      {
+        present_catalog_items: tool({ inputSchema: z.object({}), execute: async () => vetada }),
+        send_message: tool({ inputSchema: z.object({}), execute: enviar }),
+      },
+      "present_catalog_items",
+      ativada,
+      apresentacaoEncerraTurno,
+    );
+
+    expect(await executar(tools, "present_catalog_items")).toEqual(vetada);
+    expect(await executar(tools, "send_message")).toBe("enviado");
+    expect(ativada).not.toHaveBeenCalled();
+  });
+
   it("aguarda uma tool anterior, ativa a apresentação e barra envios irmãos", async () => {
     let liberar!: () => void;
     const anterior = vi.fn(

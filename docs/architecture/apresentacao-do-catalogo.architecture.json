@@ -34,6 +34,7 @@
     { "from": "snapshot", "to": "executor", "label": "itens na ordem" },
     { "from": "snapshot", "to": "retomada", "label": "job interrompido" },
     { "from": "retomada", "to": "executor", "label": "sem nova chamada ao modelo" },
-    { "from": "executor", "to": "canal", "label": "ledger evita envio em dobro" }
+    { "from": "executor", "to": "canal", "label": "ledger evita envio em dobro" },
+    { "from": "executor", "to": "ferramenta", "label": "veto do gate de envio: snapshot limpo na hora, o modelo responde com as próprias palavras" }
   ]
 }

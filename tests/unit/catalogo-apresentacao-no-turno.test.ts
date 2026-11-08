@@ -26,6 +26,17 @@ describe("present_catalog_items no turno", () => {
     expect(turno.slice(correcao, medida)).toContain("if (apresentacaoEncerrouOTurno()) return;");
   });
 
+  it("veto do gate não lança: devolve ao modelo, e o envio dele começa na seq vetada", () => {
+    const veto = turno.indexOf("if (resumed.disposition === 'vetoed') {");
+    const disposicao = turno.indexOf("disposicaoDaApresentacao = resumed.disposition;");
+    expect(veto).toBeGreaterThan(-1);
+    expect(disposicao).toBeGreaterThan(veto);
+    const ramo = turno.slice(veto, disposicao);
+    expect(ramo).toContain("seq = Math.max(seq, resumed.nextSeq - 1);");
+    expect(ramo).toContain("return respostaAoVeto(resumed.sent);");
+    expect(ramo).not.toContain("throw");
+  });
+
   it("a chamada principal e a correção usam a mesma parada, composta com o envio final", () => {
     expect(turno.split("...paradaDoLaco,").length - 1).toBe(2);
     expect(turno).toContain("apresentacaoAcionada || (paradaAposEnvio?.(estado) ?? false)");

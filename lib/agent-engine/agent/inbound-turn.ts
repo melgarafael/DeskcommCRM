@@ -1839,6 +1839,12 @@ export interface AgentTurnInput {
   /** Id da mensagem que criou o job inbound; não é usado por follow-ups. */
   inboundMessageId?: string;
   /**
+   * A apresentação do catálogo retomada no início do job foi vetada por um gate
+   * de envio: o turno segue pelo modelo, sem a ferramenta, e as mensagens dela
+   * que já saíram ocupam as seqs até `proximaSeq - 1` no send_ledger.
+   */
+  apresentacaoVetada?: { proximaSeq: number };
+  /**
    * Traço do turno (issue #2869): o coletor de ferramentas e o desfecho que a
    * execução preenche enquanto roda. OPCIONAL de propósito — quem chama o turno
    * sem traço (a prévia antiga, caminhos internos) não paga nada, e quem
@@ -3789,7 +3795,7 @@ async function executarTurnoDoAgente(
   }
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
-  let seq = 0;
+  let seq = input.apresentacaoVetada ? input.apresentacaoVetada.proximaSeq - 1 : 0;
   // O que o modelo de fato mandou neste turno (depois da cadeia). A trava "a
   // pergunta saiu?" do roteiro de atendimento lê daqui.
   const corposEnviados: string[] = [];
@@ -5849,6 +5855,16 @@ async function executarTurnoDoAgente(
     // Exigir a busca realmente montada evita oferecer uma capacidade de catálogo
     // que a versão publicada ou a ponte MCP não autorizou neste turno.
     let apresentacaoAcionada = false;
+    // Vetada uma vez, a sequência fixa não volta neste turno: a resposta é do modelo.
+    let apresentacaoVetada = input.apresentacaoVetada !== undefined;
+    const respostaAoVeto = (enviadas: number) => ({
+      ok: false,
+      code: 'catalog_presentation_vetoed',
+      message:
+        enviadas === 0
+          ? 'A apresentação não foi enviada: a proteção contra mensagens repetidas a barrou. Responda normalmente ao cliente usando send_message, com suas palavras.'
+          : `A apresentação parou depois de ${enviadas} mensagem(ns) que o cliente já recebeu: a proteção contra mensagens repetidas barrou a seguinte. Complete a resposta normalmente usando send_message, com suas palavras, sem repetir o que já foi enviado.`,
+    });
     let disposicaoDaApresentacao: 'completed' | 'interrupted' | 'settled' | null = null;
     // A apresentação já dispôs da mensagem ou do próprio job. Nenhuma correção
     // de turno mudo, pergunta de roteiro ou nova chamada de modelo pode enviar.
@@ -5865,7 +5881,7 @@ async function executarTurnoDoAgente(
     if (
       !preview && liveJob().kind === 'inbound_turn' &&
       rawTools.crm_search_products && rawTools.send_message && agentConfig &&
-      !agentConfig.pausedAt && agentConfig.operationMode !== 'assisted' &&
+      !agentConfig.pausedAt && agentConfig.operationMode !== 'assisted' && !apresentacaoVetada &&
       await apresentacaoOferecidaNoTurno(deps.crmCfg.supabase, pool, tenantId, runLog)
     ) {
       rawTools.present_catalog_items = tool({
@@ -5873,6 +5889,7 @@ async function executarTurnoDoAgente(
           'Apresenta os produtos do catálogo pelos códigos na ordem escolhida. Se retornar ok: true, esta é a última ação do turno; não chame outra ferramenta nem escreva resposta depois. Se retornar ok: false, responda normalmente ao cliente usando send_message.',
         inputSchema: catalogPresentationSelectionSchema,
         execute: async ({ product_codes }) => {
+          if (apresentacaoVetada) return respostaAoVeto(0);
           const current = liveJob();
           const claim = claimOfJob(current);
           if (!claim) throw new Error('catalog_presentation_claim_missing');
@@ -5919,6 +5936,12 @@ async function executarTurnoDoAgente(
             },
           );
           if (!resumed.handled) throw new Error('catalog_presentation_snapshot_missing');
+          if (resumed.disposition === 'vetoed') {
+            // O snapshot já saiu do job; o envio do modelo começa na seq vetada.
+            apresentacaoVetada = true;
+            seq = Math.max(seq, resumed.nextSeq - 1);
+            return respostaAoVeto(resumed.sent);
+          }
           disposicaoDaApresentacao = resumed.disposition;
           return { ok: true, disposition: resumed.disposition };
         },
@@ -7373,6 +7396,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
 
     // A coluna interna conserva plano e operação originais; não é uma nova
     // escolha de agente. O payload legado nunca autoriza nem controla replay.
+    let apresentacaoVetada: { proximaSeq: number } | undefined;
     if (job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
       // O envio retomado credita o agente do turno que gravou o snapshot, como o
       // envio original; sem isto ele sairia com o ator de fallback.
@@ -7408,7 +7432,9 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         if (resumedPresentation.disposition === 'settled') {
           throw new JobSettledError('apresentacao do catalogo retomada e job reagendado/cancelado');
         }
-        return;
+        if (resumedPresentation.disposition !== 'vetoed') return;
+        // Vetada na retomada: o cliente recebe a resposta do modelo neste job.
+        apresentacaoVetada = { proximaSeq: resumedPresentation.nextSeq };
       }
     }
     const resolvedAgent = await resolveConversationTurn(pool, deps.llmCfg, {
@@ -7482,6 +7508,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       channelSessionId: payload.channel_session_id,
       conversationId: payload.conversation_id,
       inboundMessageId: payload.inbound_message_id,
+      ...(apresentacaoVetada !== undefined ? { apresentacaoVetada } : {}),
       buildOpening: ({
         previous,
         leadState,

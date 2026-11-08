@@ -162,6 +162,21 @@ describe("replay de apresentacao persistida antes da classificacao", () => {
     expect(mocks.runModel).not.toHaveBeenCalled();
   });
 
+  it("veto do gate na retomada segue para o turno normal, que responde pelo modelo", async () => {
+    mocks.resume.mockResolvedValue({
+      handled: true,
+      disposition: "vetoed",
+      code: "mass_identical",
+      sent: 0,
+      nextSeq: 1,
+    });
+
+    await expect(run()).rejects.toThrow("classifier_must_not_run");
+
+    expect(mocks.resume).toHaveBeenCalledOnce();
+    expect(mocks.resolveConversation).toHaveBeenCalledOnce();
+  });
+
   it("modo assistido bloqueia o replay antes de qualquer classificacao", async () => {
     mocks.loadConversationAgent.mockResolvedValue(agent({ operationMode: "assisted" }));
 

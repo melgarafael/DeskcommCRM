@@ -262,6 +262,87 @@ describe("retomada da apresentacao persistida pelo worker", () => {
     expect(f.sql.some((text) => text.includes("status = 'failed'"))).toBe(true);
   });
 
+  describe("veto do gate de spinning (o mesmo texto ja foi a outros clientes)", () => {
+    const LOG = { info() {}, warn() {}, error() {}, debug() {} } as never;
+    function vetaNoEnvio(f: ReturnType<typeof fixture>, aPartirDe: number) {
+      let chamadas = 0;
+      f.beforeSend = vi.fn(async (args: Parameters<typeof runBeforeSend>[0]) => {
+        if (chamadas++ < aPartirDe) {
+          return { status: "sent" as const, outcome: await args.send(args.body), trace: [] };
+        }
+        return {
+          status: "vetoed" as const,
+          gate: "spinning",
+          code: "mass_identical",
+          message: "copy repetida",
+          trace: [],
+        };
+      }) as unknown as typeof runBeforeSend;
+    }
+
+    it("na primeira mensagem: disposicao terminal na hora, snapshot limpo, nada enviado", async () => {
+      const f = fixture();
+      vetaNoEnvio(f, 0);
+
+      const result = await resumePersistedCatalogPresentation(
+        f.pool,
+        job(),
+        { workerId: "worker-a" },
+        { conversationId: CONVERSATION, channelSessionId: SESSION },
+        { ...deps(f), log: LOG },
+      );
+
+      expect(result).toEqual({
+        handled: true,
+        disposition: "vetoed",
+        code: "mass_identical",
+        sent: 0,
+        nextSeq: 1,
+      });
+      expect(f.sent).toEqual([]);
+      const limpeza = f.sql.find((text) => text.includes("set catalog_presentation_snapshot = null"));
+      expect(limpeza).toContain("locked_by = $3");
+      expect(f.sql.some((text) => text.includes("status = 'failed'"))).toBe(false);
+    });
+
+    it("no meio: devolve quantas ja sairam e a seq vetada, que fica livre para o modelo", async () => {
+      const f = fixture();
+      vetaNoEnvio(f, 1);
+
+      const result = await resumePersistedCatalogPresentation(
+        f.pool,
+        job(2),
+        { workerId: "worker-a" },
+        { conversationId: CONVERSATION, channelSessionId: SESSION },
+        { ...deps(f), log: LOG },
+      );
+
+      expect(result).toEqual({
+        handled: true,
+        disposition: "vetoed",
+        code: "mass_identical",
+        sent: 1,
+        nextSeq: 4,
+      });
+      expect(f.sent.map((input) => input.seq)).toEqual([3]);
+    });
+
+    it("lease perdido ao limpar o snapshot nao vira disposicao", async () => {
+      const f = fixture({ dispositionFound: false });
+      vetaNoEnvio(f, 0);
+
+      await expect(
+        resumePersistedCatalogPresentation(
+          f.pool,
+          job(),
+          { workerId: "worker-a" },
+          { conversationId: CONVERSATION, channelSessionId: SESSION },
+          { ...deps(f), log: LOG },
+        ),
+      ).rejects.toThrow("catalog_presentation_job_lease_lost");
+    });
+  });
+
   it("interrompe apenas entre itens e nao inicia o seguinte", async () => {
     const f = fixture();
 

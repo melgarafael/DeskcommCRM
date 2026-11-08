@@ -52,7 +52,22 @@ export interface CatalogPresentationResumeDeps {
 }
 
 export type CatalogPresentationResumeResult =
-  { handled: false } | { handled: true; disposition: "completed" | "interrupted" | "settled" };
+  | { handled: false }
+  | { handled: true; disposition: "completed" | "interrupted" | "settled" }
+  | {
+      handled: true;
+      /**
+       * Um gate de envio barrou a sequência fixa sem dar hora para tentar de
+       * novo (ex.: `mass_identical`, o mesmo texto já foi a outros clientes).
+       * O snapshot sai do job e o turno volta ao modelo, que responde com as
+       * próprias palavras pelo mesmo gate. `nextSeq` é a seq vetada, ainda livre
+       * no send_ledger; as `sent` anteriores já saíram.
+       */
+      disposition: "vetoed";
+      code: string;
+      sent: number;
+      nextSeq: number;
+    };
 
 export class CatalogPresentationResumeError extends Error {
   constructor(code: string) {
@@ -228,6 +243,8 @@ export async function resumePersistedCatalogPresentation(
     pausedBeforeSend: pauseBeforeNextItem,
     beforeSend: {
       agentOperation: operation,
+      // O veto vira atividade na timeline em nome do agente, não como 'system'.
+      agentId: operation.agentId,
       pool,
       log: deps.log,
       tenantId: job.organization_id,
@@ -336,6 +353,36 @@ export async function resumePersistedCatalogPresentation(
       }
       return { handled: true, disposition: "settled" };
     }
+    // Repetir a mesma sequência não muda o veredito do gate, então 5
+    // tentativas só calavam o cliente até o job morrer. Sem isentar o gate:
+    // o snapshot é limpo sob o lease e a resposta passa a ser do modelo.
+    const cleared = await pool.query(
+      `update job_queue
+          set catalog_presentation_snapshot = null
+        where id = $1
+          and organization_id = $2
+          and status = 'running'
+          and locked_by = $3
+          and locked_at = $4::timestamptz
+      returning id`,
+      [job.id, job.organization_id, claim.worker_id, claim.acquired_at],
+    );
+    if (cleared.rowCount !== 1) {
+      throw new CatalogPresentationResumeError("catalog_presentation_job_lease_lost");
+    }
+    deps.log.warn("apresentacao do catalogo vetada; o modelo responde no lugar", {
+      job_id: job.id,
+      gate: result.gate,
+      code: result.code,
+      sent: result.steps.length,
+    });
+    return {
+      handled: true,
+      disposition: "vetoed",
+      code: result.code,
+      sent: result.steps.length,
+      nextSeq: result.next_seq,
+    };
   }
 
   throw new CatalogPresentationResumeError(failureCode(result));
