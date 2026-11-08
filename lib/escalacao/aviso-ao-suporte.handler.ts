@@ -27,6 +27,7 @@ import { origemDoDreno } from "@/lib/event-log/origem-do-dreno";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   EVENTO_CASO_ABERTO,
+  EVENTO_CASO_ATUALIZADO,
   EVENTO_CASO_FECHADO,
   type TransporteDoAviso,
   aplicaAvisoDeCaso,
@@ -38,7 +39,7 @@ export const AVISO_DE_CASO_HANDLER_KEY = "escalacao-aviso-ao-suporte.v1";
 export const avisoDeCasoAoSuporteHandler: EventHandler = {
   key: AVISO_DE_CASO_HANDLER_KEY,
   naOrgParada: "pula",
-  events: [EVENTO_CASO_ABERTO, EVENTO_CASO_FECHADO],
+  events: [EVENTO_CASO_ABERTO, EVENTO_CASO_ATUALIZADO, EVENTO_CASO_FECHADO],
   async handle(row): Promise<HandlerResult> {
     try {
       const admin = createAdminClient();

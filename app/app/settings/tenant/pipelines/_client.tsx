@@ -65,6 +65,7 @@ import {
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
+import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
 
@@ -450,7 +451,7 @@ export function PipelinesClient({
   const [funilAberto, setFunilAberto] = useState<string | null>(() =>
     pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
   );
-  const [chegada, setChegada] = useState<Chegada | null>(null);
+  const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
   /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
    *
@@ -511,59 +512,28 @@ export function PipelinesClient({
           }}
         />
       ))}
-      {chegada && <RolagemDeChegada {...chegada} aoTerminar={() => setChegada(null)} />}
+      {chegada && <RolagemDoFunil {...chegada} aoTerminar={() => setChegada(null)} />}
     </div>
   );
 }
 
-type Chegada = { pipelineId: string; ancora: string; scrollY: number };
+type ChegadaAoFunil = Chegada & { pipelineId: string };
 
 /**
- * LEVA ATÉ A SEÇÃO DA ÂNCORA, QUANDO ELA PASSA A EXISTIR E PARA DE ANDAR (#4083).
+ * A CHEGADA PELA ÂNCORA DE UM FUNIL (#4083) — o mecanismo é `RolagemDeChegada`.
  *
  * As duas seções só põem o `id` no DOM depois da leitura do funil, e o mapeamento
- * ainda um render depois dela (o rascunho nasce num efeito). O navegador procura o
- * alvo do hash antes disso, não acha, e a pessoa fica no topo com o funil certo
- * aberto lá embaixo. Por isso o gatilho é o próprio elemento aparecer, e não a
- * leitura terminar: esperar a leitura rolava para um alvo que ainda não existia.
- *
- * A taxa de cada etapa vem em outra leitura e empurra o mapeamento para baixo:
- * medido, 309 px em 1440 com cinco etapas. Rolar antes dela deixa a seção longe do
- * topo, em parte das rodadas. ⚠️ Espere com um observador da MESMA leitura, e não
- * com `useIsFetching`: ele escuta a cache inteira, então a resposta de OUTRO funil o
- * acorda quando o número já caiu, antes de as linhas da taxa entrarem na tela.
- *
- * Roda uma vez por chegada: ao levar, sai de cena, e revalidar a lista ou reler as
- * taxas com o hash velho na URL não a traz de volta. `scrollY` diferente do da
- * chegada é alguém rolando enquanto carregava, por qualquer meio: esse lugar é dele.
+ * ainda um render depois dela (o rascunho nasce num efeito). A taxa de cada etapa
+ * vem em outra leitura e empurra o mapeamento para baixo: medido, 309 px em 1440
+ * com cinco etapas. Rolar antes dela deixa a seção longe do topo, em parte das
+ * rodadas — por isso a espera é a leitura das taxas DESTE funil.
  */
-function RolagemDeChegada({
+function RolagemDoFunil({
   pipelineId,
-  ancora,
-  scrollY,
-  aoTerminar,
-}: Chegada & { aoTerminar: () => void }) {
+  ...chegada
+}: ChegadaAoFunil & { aoTerminar: () => void }) {
   const taxasChegando = useTaxasDasEtapas(pipelineId).isFetching;
-  useEffect(() => {
-    if (taxasChegando) return;
-    const levar = () => {
-      const secao = document.getElementById(ancora);
-      if (!secao) return false;
-      aoTerminar();
-      if (window.scrollY === scrollY) {
-        const reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        secao.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "start" });
-      }
-      return true;
-    };
-    if (levar()) return;
-    const observador = new MutationObserver(() => {
-      if (levar()) observador.disconnect();
-    });
-    observador.observe(document.body, { childList: true, subtree: true });
-    return () => observador.disconnect();
-  }, [ancora, scrollY, taxasChegando, aoTerminar]);
-  return null;
+  return <RolagemDeChegada {...chegada} esperando={taxasChegando} />;
 }
 
 /**

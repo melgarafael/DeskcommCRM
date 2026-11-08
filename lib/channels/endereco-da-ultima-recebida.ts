@@ -18,7 +18,7 @@ export function respondePelaUltimaRecebida(provider: string | null | undefined):
  * chama não precisa saber qual canal é qual (`pnpm lint:channels`).
  *
  * Devolve `null` — e quem chama segue a regra de sempre — para grupo, para outro
- * canal e para ficha sem extra.
+ * canal, para ficha sem extra e para número que saiu da ficha.
  */
 export async function enderecoDaUltimaRecebida(
   client: SupabaseClient,
