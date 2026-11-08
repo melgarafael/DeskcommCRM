@@ -13753,6 +13753,8 @@ export const DICIONARIO: Traducoes = {
   "opcional": { es: "opcional" },
   // Convidados da equipe no compromisso (#4006).
   "Equipe no compromisso": { es: "Equipo en el compromiso" },
+  "Com a equipe:": { es: "Con el equipo:" },
+  "com a equipe": { es: "con el equipo" },
   "O responsável já recebe o convite. Marque quem mais precisa participar: cada pessoa vê o compromisso na própria agenda.": {
     es: "El responsable ya recibe la invitación. Marca a quién más debe participar: cada persona ve el compromiso en su propia agenda.",
   },

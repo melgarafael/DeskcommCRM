@@ -65,6 +65,31 @@ export function separarConvidadosDaEquipe(
 }
 
 /**
+ * A lista que VAI no corpo do PATCH: `undefined` quando não houve edição.
+ *
+ * A rota distingue campo AUSENTE (não mexe) de `[]` (tira todo mundo) — e a
+ * tela de remarcação manda `starts_at`/`guest_email` em todo salvamento. Se a
+ * equipe fosse junto por omissão, remarcar desconvidaria a equipe inteira, com
+ * um PATCH 200 e nenhum aviso: exatamente o defeito mudo que a #4006 descreve
+ * ("quem participa e não é o responsável não vê o compromisso").
+ *
+ * Compara como CONJUNTO: a ordem dos chips na tela não é informação, e trocar
+ * dois convidados de lugar não é edição.
+ */
+export function equipeParaSalvar(
+  anteriores: readonly string[] | null | undefined,
+  escolhidos: readonly string[] | null | undefined,
+): string[] | undefined {
+  const antes = normalizarConvidadosDaEquipe(anteriores);
+  const depois = normalizarConvidadosDaEquipe(escolhidos);
+  if (antes.length === depois.length) {
+    const conjunto = new Set(antes);
+    if (depois.every((id) => conjunto.has(id))) return undefined;
+  }
+  return depois;
+}
+
+/**
  * A agenda de uma pessoa é o que ela atende E aquilo a que foi chamada: a mesma
  * regra do recorte `?owner_user_id=` em `lib/agenda/consulta.ts`, para a tela e a
  * rota não discordarem de quem aparece.
