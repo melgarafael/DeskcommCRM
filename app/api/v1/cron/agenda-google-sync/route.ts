@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { refreshCatalog, syncCalendar } from "@/lib/agenda/google/calendar-executor";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 import { janelaDaRodada, LOTE_DE_CONEXOES } from "@/lib/agenda/google/rodizio-de-conexoes";
-import { ok } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -45,10 +45,10 @@ void PASSOS_DEPOIS_DO_PORTAO;
 
 async function executar(req: NextRequest) {
   if (!autorizaCron(req))
-    return NextResponse.json(
+    return comIdDaRequisicao(NextResponse.json(
       { error: { code: "unauthenticated", message: "cron secret inválido" } },
       { status: 401 },
-    );
+    ), req);
   // O PISO OCIOSO (#3731): instalação sem conexão Google saudável não tem
   // calendário a sincronizar, e a rodada de todo minuto ia ao banco (contagem +
   // leitura das conexões) só para descobrir isso. A saída vem antes das duas,
@@ -90,10 +90,10 @@ async function executar(req: NextRequest) {
     ? await conexoesElegiveis().range(janela.inicio, janela.fim)
     : await conexoesElegiveis().limit(LOTE_DE_CONEXOES);
   if (error)
-    return NextResponse.json(
+    return comIdDaRequisicao(NextResponse.json(
       { error: { code: "internal_error", message: "Não foi possível ler as conexões Google." } },
       { status: 500 },
-    );
+    ), req);
   const connections = await apenasDeMembrosAtivos(db, raw ?? []);
   const effects = new Map<string, number>();
   let remainingCalendars = 25;
@@ -231,7 +231,7 @@ async function executar(req: NextRequest) {
         metadata: { direcao: "volta", calendarios: quantidade },
       });
   }
-  return NextResponse.json({ data: { conexoes: connections.length, organizacoes: effects.size } });
+  return comIdDaRequisicao(NextResponse.json({ data: { conexoes: connections.length, organizacoes: effects.size } }), req);
 }
 export const GET = executar;
 export const POST = executar;
