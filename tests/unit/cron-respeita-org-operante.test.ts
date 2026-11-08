@@ -47,7 +47,6 @@ const PROFUNDIDADE_MAXIMA = 4;
 const NAO_E_FILTRO = new Set([join(RAIZ, "app", "api", "v1", "messages", "_handler.ts")]);
 
 const SEM_FILTRO: Record<string, string> = {
-  "agenda-expira-pendentes": "só libera o horário de pedido pendente vencido; escrita interna, sem custo nem saída",
   "agenda-google-push": "sincronia com o Google Agenda: deliberadamente não gatilhada (spec §4)",
   "agenda-google-refresh": "renova token do Google Agenda: deliberadamente não gatilhado (spec §4)",
   "agenda-google-sync": "sincronia com o Google Agenda: deliberadamente não gatilhada (spec §4)",
