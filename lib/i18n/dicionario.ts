@@ -4260,6 +4260,22 @@ export const DICIONARIO: Traducoes = {
   "Voice ID": { es: "Voice ID" },
   "Ouvir prévia": { es: "Escuchar vista previa" },
   "Salvar voz": { es: "Guardar voz" },
+  "Escolher da lista": { es: "Elegir de la lista" },
+  "escolha da lista": { es: "elija de la lista" },
+  "Informe um Voice ID.": { es: "Indique un Voice ID." },
+  "Voice ID inválido: use só letras, números, hífen e sublinhado (8 a 64 caracteres).":
+    {
+      es: "Voice ID inválido: use solo letras, números, guion y guion bajo (8 a 64 caracteres).",
+    },
+  "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.":
+    {
+      es: "Elija de la lista o pegue el ID de cualquier voz de su cuenta, incluso una que no aparezca aquí.",
+    },
+  "Não consegui listar as vozes no ElevenLabs agora. A lista abaixo é a da última validação da credencial — e colar um Voice ID continua funcionando.":
+    {
+      es: "No pude listar las voces en ElevenLabs ahora. La lista de abajo es la de la última validación de la credencial — y pegar un Voice ID sigue funcionando.",
+    },
+  "O provedor recusou esta voz:": { es: "El proveedor rechazó esta voz:" },
   "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.":
     {
       es: "Para que el agente escuche el audio que el cliente envía con más precisión (incluso diferenciando quién habla) y para responder hablando, en nota de voz, cuando tenga sentido.",

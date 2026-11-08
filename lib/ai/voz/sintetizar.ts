@@ -49,6 +49,43 @@ export interface SintetizarVozResultado {
 
 const DEFAULT_MODEL = "eleven_multilingual_v2";
 
+/**
+ * A recusa do provedor, com o motivo que ELE deu.
+ *
+ * `message` continua `synthesis_<status>` porque é o que chamadores e testes já
+ * leem; o texto do provedor vai em `mensagemDoProvedor` para a rota de prévia
+ * levar até a tela (#4260: um `voice_id` fora do catálogo é válido até o
+ * provedor dizer o contrário — e quando disser, a pessoa precisa saber por quê,
+ * não só "não foi possível").
+ */
+export class ErroDoProvedorDeVoz extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly mensagemDoProvedor: string | null,
+  ) {
+    super(`synthesis_${status}`);
+    this.name = "ErroDoProvedorDeVoz";
+  }
+}
+
+/** O `detail` do ElevenLabs é `{status, message}` — mas texto puro também aparece. */
+function motivoDaRecusa(corpo: string): string | null {
+  const texto = corpo.trim();
+  if (texto === "") return null;
+  try {
+    const json = JSON.parse(texto) as { detail?: unknown };
+    const detalhe = json.detail;
+    if (typeof detalhe === "string" && detalhe.trim() !== "") return detalhe.trim().slice(0, 300);
+    if (detalhe && typeof detalhe === "object") {
+      const mensagem = (detalhe as { message?: unknown }).message;
+      if (typeof mensagem === "string" && mensagem.trim() !== "") return mensagem.trim().slice(0, 300);
+    }
+  } catch {
+    // Corpo não-JSON: o texto cru já é a melhor mensagem disponível.
+  }
+  return texto.slice(0, 300);
+}
+
 export async function sintetizarVoz(
   input: SintetizarVozInput,
   fetchImpl: typeof fetch = fetch,
@@ -80,7 +117,12 @@ export async function sintetizarVoz(
       }),
     },
   );
-  if (!res.ok) throw new Error(`synthesis_${res.status}`);
+  if (!res.ok) {
+    // Só LÊ o corpo depois de saber que a chamada falhou: no caminho feliz o
+    // corpo é o áudio, e consumi-lo como texto o destruiria.
+    const corpo = await res.text().catch(() => "");
+    throw new ErroDoProvedorDeVoz(res.status, motivoDaRecusa(corpo));
+  }
   const audio = Buffer.from(await res.arrayBuffer());
   if (opus) {
     // Conferido no BYTE, não no cabeçalho: um opus cru (sem contêiner) ou um mp3

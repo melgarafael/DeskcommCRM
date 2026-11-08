@@ -28,7 +28,7 @@ import {
 } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { registrarCustoDeVoz } from "@/lib/agent-engine/edge/crm/send-voice";
 import { chaveDeOrcamentoDaInstalacao } from "@/lib/instalacao/comportamento";
-import { sintetizarVoz } from "@/lib/ai/voz/sintetizar";
+import { sintetizarVoz, ErroDoProvedorDeVoz } from "@/lib/ai/voz/sintetizar";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -138,6 +138,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    // A recusa do provedor sobre a VOZ (id que não existe na conta, voz
+    // removida, chave sem acesso a ela) chega à tela com o motivo dele: é a
+    // única forma de quem colou um `voice_id` à mão entender o que corrigir.
+    // O status e o código seguem os de antes — o contrato não muda.
+    if (err instanceof ErroDoProvedorDeVoz && err.mensagemDoProvedor) {
+      return fail(
+        "synthesis_failed",
+        `${t("O provedor recusou esta voz:")} ${err.mensagemDoProvedor}`,
+        502,
+        {
+          requestId,
+          details: { error: msg.slice(0, 200), statusDoProvedor: err.status, erroDoProvedor: err.mensagemDoProvedor },
+        },
+      );
+    }
     // `synthesis_401` = chave/voz inválida; qualquer outro = provedor fora —
     // nos dois casos a tela mostra "não consegui gerar a prévia", nunca um
     // áudio quebrado.
