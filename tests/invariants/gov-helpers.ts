@@ -68,9 +68,9 @@ export function countAs(userId: string, countQuery: string): number {
 /**
  * Runs a DML (no trailing `;`, no RETURNING — the helper appends `returning 1`)
  * as the `authenticated` role with the user's claims; returns affected rows.
- * An RLS denial (42501 / with-check violation) counts as 0 rows — the write
- * was blocked, which is exactly what the invariant measures. Any other error
- * rethrows.
+ * Um bloqueio de escrita (42501) conta como 0 linhas — RLS, WITH CHECK, ou
+ * trigger que recusa o UPDATE na sessão (`avaliacao_status_somente_por_rpc`).
+ * O efeito medido é o mesmo: nada foi gravado. Outro erro re-lança.
  */
 export function writeCountAs(userId: string, dml: string): number {
   try {
@@ -84,7 +84,12 @@ export function writeCountAs(userId: string, dml: string): number {
     return Number(last);
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr ?? "";
-    if (stderr.includes("row-level security")) return 0;
+    if (
+      stderr.includes("row-level security") ||
+      stderr.includes("avaliacao_status_somente_por_rpc")
+    ) {
+      return 0;
+    }
     throw err;
   }
 }
