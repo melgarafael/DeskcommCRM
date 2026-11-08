@@ -20,6 +20,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { inscreverLeadSchema } from "@/lib/cadencias/schemas";
+import { negocioVisivel } from "@/lib/cadencias/visibilidade";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -85,6 +86,12 @@ export async function POST(
     return fail("validation_failed", t("Dados inválidos."), 422, { requestId, details: parsed.error.flatten() });
   }
   const { lead_id, rastreio_consentido } = parsed.data;
+
+  // A RPC roda como service_role; quem pede só inscreve o negócio que a SESSÃO
+  // enxerga (RLS de crm_leads, fn_can_view_lead) — a régua das rotas de negócio.
+  const visivel = await negocioVisivel(org.orgId, lead_id);
+  if (visivel === "erro") return fail("internal_error", t("Não foi possível inscrever o negócio."), 500, { requestId });
+  if (!visivel) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
 
   const supabase = createAdminClient();
   const { data, error } = await supabase.rpc("fn_cadencia_inscrever", {

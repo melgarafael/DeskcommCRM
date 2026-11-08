@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { countAs, GOV_ORG, GOV_CONTACT_1, GOV_CONTACT_2, GOV_LEAD, GOV_AGENT_A, lastLine, seedGov, sql } from "./gov-helpers";
+import { sqlDestinatarioDaInscricao } from "../support/cadencias-pg";
 const CAD = "ca173800-0000-4000-8000-000000000001";
 const INS = "ca173800-0000-4000-8000-000000000002";
 const USER_B = "ca173800-0000-4000-8000-000000000004";
@@ -51,8 +52,11 @@ describe("abertura autorizada no banco, sem sessão de destinatário", () => {
   });
   it("descadastro de inscrição concluída cria supressão mesmo com empresa desligada e é idempotente", () => {
     preparar(); sql(`update public.email_cadence_enrollments set status='concluida' where id='${INS}'; update public.organizations set settings='{}'::jsonb where id='${GOV_ORG}';`);
-    expect(sql(`select public.fn_cadencia_descadastrar('${INS}','${GOV_ORG}')`)).toBe("1");
-    expect(sql(`select public.fn_cadencia_descadastrar('${INS}','${GOV_ORG}')`)).toBe("0");
+    sql(`update public.contacts set email='consentimento@synthetic.test' where id='${GOV_CONTACT_1}';`);
+    const destinatario = sql(sqlDestinatarioDaInscricao(INS));
+    expect(sql(`select public.fn_cadencia_descadastrar('${destinatario}')->>'inscricoes_paradas'`)).toBe("1");
+    expect(sql(`select public.fn_cadencia_descadastrar('${destinatario}')->>'inscricoes_paradas'`)).toBe("0");
+    expect(sql(`select count(*) from public.email_cadence_suppressions where organization_id='${GOV_ORG}' and contact_id='${GOV_CONTACT_1}'`)).toBe("1");
     expect(sql(`select count(*) from public.email_cadence_events where enrollment_id='${INS}' and tipo='descadastrou'`)).toBe("1");
     expect(sql(`select motivo_parada from public.email_cadence_enrollments where id='${INS}'`)).toBe("descadastro");
   });

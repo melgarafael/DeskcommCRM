@@ -7,10 +7,11 @@ import { POST } from "@/app/api/v1/cadencias/[id]/inscricoes/route";
 import { PATCH } from "@/app/api/v1/cadencias/[id]/route";
 import { configuracaoPadrao } from "@/lib/cadencias/exemplos";
 import { GOV_ORG, GOV_CONTACT_1, GOV_LEAD, GOV_MANAGER, seedGov, sql } from "./gov-helpers";
-import { adminEmConexao, ateCondicao, barreira, esperarBarreira, novaConexaoDeCadencias } from "../support/cadencias-pg";
+import { adminEmConexao, ateCondicao, barreira, esperarBarreira, novaConexaoDeCadencias, sessaoEmConexao, sqlDestinatarioDaInscricao } from "../support/cadencias-pg";
 
-const estado = vi.hoisted(() => ({ admin: null as unknown, receiver: "" }));
+const estado = vi.hoisted(() => ({ admin: null as unknown, sessao: null as unknown, receiver: "" }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => estado.admin }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => estado.sessao }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: async () => ({ ok: true, user: { id: "cccccccc-1111-4000-8000-000000000004", idioma: "pt-BR" }, org: { orgId: "cccccccc-0000-4000-8000-000000000001", role: "manager" } }) }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => true }));
@@ -28,7 +29,7 @@ const CADB = "ca173801-0000-4000-8000-000000000002";
 const INS = "ca173801-0000-4000-8000-000000000003";
 const ORG_OFF = "ca173801-0000-4000-8000-000000000004";
 const OFF_CAD = "ca173801-0000-4000-8000-000000000005";
-const a = novaConexaoDeCadencias(); const b = novaConexaoDeCadencias();
+const a = novaConexaoDeCadencias(); const b = novaConexaoDeCadencias(); const s = novaConexaoDeCadencias();
 const assuntos: string[] = [];
 const receiver = createServer(async (req, res) => { let corpo = ""; for await (const chunk of req) corpo += chunk; assuntos.push((JSON.parse(corpo) as { assunto: string }).assunto); res.end("aceito-sintetico"); });
 const config = { ...configuracaoPadrao(), janela: { inicio: "00:00", fim: "23:59", dias: ["seg", "ter", "qua", "qui", "sex", "sab", "dom"] }, fuso: "UTC" };
@@ -41,15 +42,17 @@ const params = () => ({ params: Promise.resolve({ id: CAD }) });
 beforeAll(async () => {
   vi.stubEnv("INTERNAL_SECRET", "segredo-sintetico-da-bancada-de-corridas");
   seedGov(); sql("select public.fn_cadencias_provisionar(); insert into public.modulos_instalados(modulo,estado) values('cadencias','ativo') on conflict(modulo) do update set estado='ativo';");
-  await a.connect(); await b.connect();
+  await a.connect(); await b.connect(); await s.connect();
+  estado.sessao = sessaoEmConexao(s, () => GOV_MANAGER);
   expect((await a.query("select pg_backend_pid() id")).rows[0]!.id).not.toBe((await b.query("select pg_backend_pid() id")).rows[0]!.id);
   await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
   estado.receiver = `http://127.0.0.1:${(receiver.address() as AddressInfo).port}`;
 });
-afterAll(async () => { receiver.closeAllConnections(); await new Promise<void>((resolve) => receiver.close(() => resolve())); await a.end(); await b.end(); vi.unstubAllEnvs(); });
+afterAll(async () => { receiver.closeAllConnections(); await new Promise<void>((resolve) => receiver.close(() => resolve())); await a.end(); await b.end(); await s.end(); vi.unstubAllEnvs(); });
 beforeEach(async () => {
   assuntos.length = 0;
   await a.query("delete from public.email_cadences");
+  await a.query("delete from public.email_cadence_suppressions"); // sobrevive à cadência apagada, de propósito
   await a.query(`update public.organizations set settings='{"cadencias":{"enabled":true}}' where id=$1`, [GOV_ORG]);
   await a.query("update public.contacts set name='Pessoa Sintética',email='pessoa@synthetic.test',is_anonymized=false,is_blocked=false,is_personal=false where id=$1", [GOV_CONTACT_1]);
   await a.query("update public.crm_leads set contact_id=$1,owner_user_id=null,status='open' where id=$2", [GOV_CONTACT_1, GOV_LEAD]);
@@ -93,12 +96,13 @@ describe("corridas reais: duas conexões, worker/handlers reais e receiver HTTP"
 
   it("inscrição atrasada não nasce após descadastro confirmado", async () => {
     await inserir(); const pronto = barreira(); const liberar = barreira(); let usado = false;
+    const destinatario = (await a.query(sqlDestinatarioDaInscricao(INS))).rows[0]!.id;
     estado.admin = adminEmConexao(b, {
       antes: async (q) => { if (!usado && q.includes('"fn_cadencia_inscrever"')) { usado = true; pronto.liberar(); await liberar.promessa; } },
       depois: async (q, v) => { if (!usado && q.startsWith("select") && q.includes('email_cadence_enrollments') && v.includes("descadastro")) { usado = true; pronto.liberar(); await liberar.promessa; } },
     });
     const resposta = POST(pedido({ lead_id: GOV_LEAD }, "POST"), { params: Promise.resolve({ id: CADB }) }).then((r) => { pronto.liberar(); return r; });
-    try { await esperarBarreira(pronto); expect(usado).toBe(true); await a.query("select public.fn_cadencia_descadastrar($1,$2)", [INS, GOV_ORG]); }
+    try { await esperarBarreira(pronto); expect(usado).toBe(true); await a.query("select public.fn_cadencia_descadastrar($1)", [destinatario]); }
     finally { liberar.liberar(); }
     expect((await resposta).status).toBe(409);
     expect(Number((await a.query("select count(*) n from public.email_cadence_enrollments where organization_id=$1 and contact_id=$2 and status='ativa'", [GOV_ORG, GOV_CONTACT_1])).rows[0]!.n)).toBe(0);
@@ -106,11 +110,12 @@ describe("corridas reais: duas conexões, worker/handlers reais e receiver HTTP"
 
   it("RPC de inscrição realmente espera a mesma trava do contato e revalida supressão", async () => {
     await inserir(); const pidA = (await a.query("select pg_backend_pid() id")).rows[0]!.id; const pidB = (await b.query("select pg_backend_pid() id")).rows[0]!.id;
+    const destinatario = (await a.query(sqlDestinatarioDaInscricao(INS))).rows[0]!.id;
     await a.query("begin"); await a.query("select id from public.contacts where organization_id=$1 and id=$2 for update", [GOV_ORG, GOV_CONTACT_1]);
     const inscricao = b.query("select public.fn_cadencia_inscrever($1,$2,$3,$4,false)", [GOV_ORG, CADB, GOV_LEAD, GOV_MANAGER]).then(() => "inseriu", (e: Error) => e.message);
     try {
       await ateCondicao(async () => (await a.query("select $1::int=any(pg_blocking_pids($2)) bloqueada", [pidA, pidB])).rows[0]!.bloqueada === true, "inscrição não esperou a trava do contato");
-      await a.query("select public.fn_cadencia_descadastrar($1,$2)", [INS, GOV_ORG]); await a.query("commit");
+      await a.query("select public.fn_cadencia_descadastrar($1)", [destinatario]); await a.query("commit");
     } finally { await a.query("rollback"); }
     expect(await inscricao).toContain("cadencia_descadastrado");
   });
@@ -136,6 +141,7 @@ describe("corridas reais: duas conexões, worker/handlers reais e receiver HTTP"
     await inserir();
     await a.query("update public.email_cadence_enrollments set status='parada',motivo_parada='descadastro' where id=$1", [INS]);
     await inserir("ca173801-0000-4000-8000-000000000021", CADB); // simula linha legada antes da correção
+    await a.query("select public.fn_cadencias_provisionar()"); // o backfill a converte em supressão do contato
     await processarCadencias(adminEmConexao(a), agora(), "supressao-legada");
     expect(assuntos).toEqual([]);
   });

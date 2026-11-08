@@ -18,6 +18,7 @@ vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: 
 const agora = new Date("2026-10-26T15:00:00Z");
 const email: Passo = { id: "email-1", tipo: "email", assunto: "Olá {{primeiro_nome}}", corpo: "Uma mensagem sintética", mesmaConversa: false };
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const DESTINATARIO = id(90);
 
 /** Fake só da borda Supabase; exercita o motor, inclusive a ordem dos efeitos. */
 function bancada(opcoes: { consentimento?: boolean; pendente?: string; falhaAoAvancar?: boolean; passos?: Passo[] } = {}) {
@@ -66,10 +67,10 @@ function bancada(opcoes: { consentimento?: boolean; pendente?: string; falhaAoAv
       inscricao.processamento_id = token;
       return { data: [{ ...inscricao }], error: null };
     }
-    if (nome === "fn_cadencia_reservar_envio") {
+    if (nome === "fn_cadencia_reservar_destinatario") {
       if (inscricao.status !== "ativa" || inscricao.processamento_id !== args.p_processamento_id || inscricao.envio_pendente_passo_id !== null) return { data: null, error: { message: "cadencia_claim_lost" } };
       inscricao.envio_pendente_passo_id = args.p_passo_id;
-      return { data: true, error: null };
+      return { data: { destinatario_id: DESTINATARIO, email: "reservado@synthetic.test" }, error: null };
     }
     if (nome === "fn_cadencia_criar_tarefa") {
       const anterior = eventos.find((e) => e.tipo === "tarefa_criada" && e.passo_id === args.p_passo_id);
@@ -109,13 +110,14 @@ describe("efeitos do worker de cadências", () => {
     expect(args.html).toContain("cadencia-descadastro/"); expect(args.html).not.toContain("<img");
     expect(b.inscricao.emails_enviados).toBe(1); expect(b.inscricao.status).toBe("concluida"); expect(b.inscricao.envio_pendente_passo_id).toBeNull();
   });
-  it("e-mail leva descadastro de um clique (RFC 8058) com o token da própria inscrição", async () => {
+  it("e-mail leva descadastro de um clique (RFC 8058) com o destinatário reservado, e sai para o endereço da reserva", async () => {
     const b = bancada(); await processarCadencias(b.admin, agora, "request-sintetico");
     const { headers } = mocks.enviar.mock.calls[0]![0] as { headers: Record<string, string> };
     expect(headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
     const url = headers["List-Unsubscribe"]!.match(/^<(https:\/\/cadencias\.test\/api\/v1\/webhooks\/cadencia-descadastro\/([^>]+))>$/);
     expect(url).not.toBeNull();
-    expect(verifyCadenciaLink(url![2]!, "descadastro")?.enrollment_id).toBe(b.inscricao.id);
+    expect(verifyCadenciaLink(url![2]!, "descadastro")).toEqual({ destinatario_id: DESTINATARIO });
+    expect(mocks.enviar.mock.calls[0]![0].to).toBe("reservado@synthetic.test");
   });
   it("com autorização inclui pixel e dois tokens distintos", async () => {
     const b = bancada({ consentimento: true }); await processarCadencias(b.admin, agora, "request-sintetico");
