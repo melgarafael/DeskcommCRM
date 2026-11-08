@@ -1616,6 +1616,13 @@ export const DICIONARIO: Traducoes = {
   "Salvar lista de teste": { es: "Guardar lista de prueba" },
   "Ativar modo de teste": { es: "Activar modo de prueba" },
   "Liberar atendimento ao público": { es: "Habilitar atención al público" },
+  // #4170 — a pausa da Prospecção quando o canal está em modo de teste. A
+  // chave é a frase que `lib/prospecting/motivo-da-pausa.ts` grava em
+  // `prospecting_campaigns.error`; o cartão da campanha a mostra por `t()`.
+  "Este número está em modo de teste: a IA só fala com os números da lista de teste. Para liberar o atendimento ao público, abra Conexões, toque em \"Configurar acesso da IA\" no cartão do número e escolha \"Liberar atendimento ao público\".":
+    {
+      es: "Este número está en modo de prueba: la IA solo habla con los números de la lista de prueba. Para habilitar la atención al público, abre Conexiones, toca \"Configurar acceso de la IA\" en la tarjeta del número y elige \"Habilitar atención al público\".",
+    },
   "Liberar a IA para o público?": { es: "¿Habilitar la IA para el público?" },
   "A lista de teste deixará de limitar as respostas. A IA poderá atender qualquer pessoa que enviar mensagem neste canal, respeitando os demais bloqueios.": { es: "La lista de prueba dejará de limitar las respuestas. La IA podrá atender a cualquier persona que envíe mensajes en este canal, respetando los demás bloqueos." },
   "Continuar em teste": { es: "Continuar en prueba" },
