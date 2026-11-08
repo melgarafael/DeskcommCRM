@@ -51,10 +51,7 @@ import {
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
-import {
-  desativaRecorrenciaDoNegocio,
-  recorrenciaDoNegocio,
-} from "@/lib/financeiro/recorrencia-do-negocio";
+import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
@@ -1569,74 +1566,32 @@ export async function moveLeadHandler(
   // gera as contas a receber nunca ficava sabendo dela, e quem vendia "setup +
   // mensalidade" continuava lançando a mensalidade à mão — até esquecer.
   //
-  // ── Por que AQUI, e não na rota do quadro ─────────────────────────────────
+  // ── Por que AQUI, e não só na rota do quadro ──────────────────────────────
   //
   // Este handler é o escritor de etapa de tudo que NÃO é o arrasto (MCP
-  // `crm_move_lead_stage`, ações de automação, lote, IA). O arrasto e o botão
-  // Ganhar têm rota própria e convergem no mesmo `status = 'won'`; a fatia do
-  // molde nasce aqui, e o arrasto fica de fora desta onda, declarado no PR
-  // (é a próxima fatia, junto com a flag por funil).
-  //
-  // ── Por que admin client ──────────────────────────────────────────────────
-  //
-  // `recurring_entries` é tabela do módulo financeiro e a policy de escrita
-  // exige `manager` na organização: um agente de IA que move o card não tem
-  // esse papel, mas TEM o direito de fechar o negócio. Mesmo desenho do
-  // consumidor de `lead.won` (`comanda-do-ganho.handler.ts`). O isolamento por
-  // empresa não vem do RLS aqui: vem do `organization_id` do PRÓPRIO negócio,
-  // gravado assim nas duas funções (e provado em
-  // `tests/invariants/recorrencia-do-negocio.test.ts`).
+  // `crm_move_lead_stage`, ações de automação, IA). O arrasto, o botão
+  // Ganhar/Perder e o lote entram pela MESMA função do cerco
+  // (`lib/financeiro/recorrencia-do-fecho`), que guarda o "nunca derrubar o
+  // movimento" numa cópia só — fatia 5 da #3602.
   //
   // ── Falha BAIXA ───────────────────────────────────────────────────────────
   //
   // O card já moveu. Um financeiro que não nasceu vira log e um molde que
   // alguém cria à mão; derrubar o fecho do negócio por causa dele seria pior.
-  // Não é silêncio: cada desfecho de erro sai no `console.error` com o request.
+  // O `moveARecorrenciaNoFecho` não lança e loga cada desfecho de erro.
   if (!mesmaEtapa && (stage.is_won || stage.is_lost)) {
-    const financeiro = createAdminClient();
-    try {
-      if (stage.is_won) {
-        const valorRecorrente =
-          (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null;
-        // Sem valor declarado não há receita mensal: nem chega ao banco (o
-        // caminho comum é o ganho de valor único).
-        if (valorRecorrente !== null) {
-          const desfecho = await recorrenciaDoNegocio(financeiro, {
-            organizationId: lead.organization_id,
-            leadId,
-            pipelineId: lead.pipeline_id,
-            valorCents: valorRecorrente,
-            criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
-            userId: ctx.actor.type === "user" ? ctx.actor.id : null,
-          });
-          if (desfecho.estado === "falhou") {
-            console.error("[lead.move] recorrência do negócio falhou", {
-              request_id: ctx.requestId,
-              lead_id: leadId,
-              erro: desfecho.erro,
-            });
-          }
-        }
-      } else {
-        const desfecho = await desativaRecorrenciaDoNegocio(financeiro, {
-          organizationId: lead.organization_id,
-          leadId,
-        });
-        if (desfecho.estado === "falhou") {
-          console.error("[lead.move] desativação da recorrência falhou", {
-            request_id: ctx.requestId,
-            lead_id: leadId,
-            erro: desfecho.erro,
-          });
-        }
-      }
-    } catch (erro) {
-      console.error("[lead.move] financeiro do fecho lançou", {
-        request_id: ctx.requestId,
-        lead_id: leadId,
-        erro: erro instanceof Error ? erro.message : String(erro),
-      });
-    }
+    await moveARecorrenciaNoFecho({
+      organizationId: lead.organization_id,
+      leadId,
+      pipelineId: lead.pipeline_id,
+      etapa: { is_won: stage.is_won === true, is_lost: stage.is_lost === true },
+      valorRecorrente:
+        (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null,
+      criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+      userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+      origem: "leads/_handler.moveLeadHandler",
+      requestId: ctx.requestId,
+    });
   }
 
   const a = actorAuditPayload(ctx.actor);
