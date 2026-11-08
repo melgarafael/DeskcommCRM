@@ -1,7 +1,7 @@
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildCardInput } from "@/lib/kanban/card-state";
 import type { Lead } from "@/lib/types/leads";
@@ -122,6 +122,18 @@ function montar(lead: Lead = LEAD) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // O RELÓGIO DA RÉGUA É O DO SISTEMA, e `.test.tsx` não recebe `agora` por
+  // parâmetro: `ConversaSlot` chama `horaCurta(iso, locale)` e a função toma
+  // `new Date()`. Sem congelar aqui, este arquivo mede o dia em que a suíte
+  // roda — a fixture diz "30 minutos atrás" e a régua, depois da meia-noite
+  // (UTC no CI, -03 aqui), responde "14 horas". Congelar em AGORA mantém a
+  // leitura de contrato: "hoje" é o mesmo DIA CIVIL (`hora-curta.ts`, faixa
+  // `hoje`), e ULTIMA_MENSAGEM está dentro dele.
+  vi.useFakeTimers({ now: AGORA.getTime(), shouldAdvanceTime: true });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("o card do funil mostra o que importa (#3945, fatia 1)", () => {
