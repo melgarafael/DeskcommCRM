@@ -64,6 +64,7 @@ import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { requireRole } from "@/lib/auth/require-role";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -131,22 +132,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
-  // O tamanho DECLARADO é conferido antes de ler: `req.text()` materializa o
-  // corpo inteiro, e um teto conferido só depois dele viraria decoração. É o
-  // mesmo desenho das rotas irmãs de import. A conferência do texto lido logo
-  // abaixo continua, para o corpo que chega sem `content-length` (chunked).
-  const declarado = Number(req.headers.get("content-length") ?? "0");
-  if (declarado > TAMANHO_MAXIMO) {
-    return fail("payload_too_large", t("O arquivo passa de 2 MB."), 413, { requestId });
-  }
-
-  const texto = await req.text().catch(() => null);
-  if (texto === null) {
-    return fail("invalid_request", t("Falha ao ler o arquivo enviado."), 400, { requestId });
-  }
-  if (texto.length > TAMANHO_MAXIMO) {
-    return fail("payload_too_large", t("O arquivo passa de 2 MB."), 413, { requestId });
-  }
+  // O teto vale sobre os BYTES lidos, com ou sem `content-length`: um teto
+  // conferido só depois da leitura inteira viraria decoração.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("O arquivo passa de 2 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const texto = await corpo.corpo.text();
 
   let bruto: unknown;
   try {

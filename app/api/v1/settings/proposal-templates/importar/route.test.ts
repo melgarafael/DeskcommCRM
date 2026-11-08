@@ -5,6 +5,7 @@
 // `formData().get() instanceof File` vale; no jsdom há dois realms de File
 // e a rota devolveria 400 "Nenhum arquivo foi enviado".)
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mocks: Record<string, any> = vi.hoisted(() => ({
@@ -67,7 +68,7 @@ function arquivo(nome: string, tipo: string, conteudo: string) {
   const file = new File([conteudo], nome, { type: tipo });
   const form = new FormData();
   form.append("file", file);
-  return new Request("http://x", { method: "POST", body: form });
+  return pedidoComTamanho("http://x", { method: "POST", body: form });
 }
 
 const TEXTO_LONGO = "texto ".repeat(20);
@@ -87,20 +88,20 @@ describe("POST /api/v1/settings/proposal-templates/importar", () => {
   });
 
   it(".docx → 415 com Salvar como", async () => {
-    const res = await POST(arquivo("proposta.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "x") as never);
+    const res = await POST(await arquivo("proposta.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "x") as never);
     expect(res.status).toBe(415);
     expect(await res.text()).toContain("Salvar como");
     expect(mocks.gerarModeloDoTexto).not.toHaveBeenCalled();
   });
 
   it(".csv → 415", async () => {
-    const res = await POST(arquivo("planilha.csv", "text/csv", "a,b,c") as never);
+    const res = await POST(await arquivo("planilha.csv", "text/csv", "a,b,c") as never);
     expect(res.status).toBe(415);
     expect(mocks.gerarModeloDoTexto).not.toHaveBeenCalled();
   });
 
   it("arquivo de 6 MB → 413", async () => {
-    const res = await POST(arquivo("proposta.txt", "text/plain", "x".repeat(6 * 1024 * 1024)) as never);
+    const res = await POST(await arquivo("proposta.txt", "text/plain", "x".repeat(6 * 1024 * 1024)) as never);
     expect(res.status).toBe(413);
     expect(mocks.gerarModeloDoTexto).not.toHaveBeenCalled();
   });
@@ -108,13 +109,13 @@ describe("POST /api/v1/settings/proposal-templates/importar", () => {
   it("PDF cujo extractPdfText lança PdfExtractError → 422 com PDF escaneado", async () => {
     const { PdfExtractError } = await import("@/lib/ai/rag/extractors/pdf");
     mocks.extractPdfText.mockRejectedValueOnce(new PdfExtractError("sem texto"));
-    const res = await POST(arquivo("proposta.pdf", "application/pdf", "%PDF sem texto") as never);
+    const res = await POST(await arquivo("proposta.pdf", "application/pdf", "%PDF sem texto") as never);
     expect(res.status).toBe(422);
     expect(await res.text()).toContain("PDF escaneado");
   });
 
   it(".txt válido → 200 com modelo e erros: [], audit sem o texto no metadata", async () => {
-    const res = await POST(arquivo("proposta.txt", "text/plain", TEXTO_LONGO) as never);
+    const res = await POST(await arquivo("proposta.txt", "text/plain", TEXTO_LONGO) as never);
     expect(res.status).toBe(200);
     const json = (await res.json()) as { data: { modelo: unknown; erros: unknown[] } };
     expect(json.data.modelo).toBeTruthy();
@@ -127,7 +128,7 @@ describe("POST /api/v1/settings/proposal-templates/importar", () => {
 
   it("gerarModeloDoTexto lança LlmBudgetExceededError → 200 com disponivel: false", async () => {
     mocks.gerarModeloDoTexto.mockRejectedValueOnce(new LlmBudgetExceededError());
-    const res = await POST(arquivo("proposta.txt", "text/plain", TEXTO_LONGO) as never);
+    const res = await POST(await arquivo("proposta.txt", "text/plain", TEXTO_LONGO) as never);
     expect(res.status).toBe(200);
     const json = (await res.json()) as { data: { disponivel: boolean } };
     expect(json.data.disponivel).toBe(false);
@@ -135,7 +136,7 @@ describe("POST /api/v1/settings/proposal-templates/importar", () => {
 
   it("agent → 403 e gerarModeloDoTexto não chamado", async () => {
     montarMundo("agent");
-    const res = await POST(arquivo("proposta.txt", "text/plain", TEXTO_LONGO) as never);
+    const res = await POST(await arquivo("proposta.txt", "text/plain", TEXTO_LONGO) as never);
     expect(res.status).toBe(403);
     expect(mocks.gerarModeloDoTexto).not.toHaveBeenCalled();
   });

@@ -242,6 +242,9 @@ export const ApiErrorCodes = {
   // não suportado". A razão da recusa está em lib/branding/logo-arquivo.ts.
   logo_svg_recusado: "logo_svg_recusado",
 
+  // 411 — upload sem tamanho declarado (lib/api/corpo-com-teto.ts)
+  length_required: "length_required",
+
   // 413
   payload_too_large: "payload_too_large",
 

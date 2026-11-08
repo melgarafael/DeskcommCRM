@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   BUCKET_DA_APRESENTACAO,
@@ -94,11 +95,13 @@ export async function POST(
     return fail("not_found", t("Produto não encontrado."), 404, { requestId });
   }
 
-  const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > TAMANHO_MAXIMO_DO_AUDIO + 1_048_576) {
-    return fail("payload_too_large", t("O áudio precisa ter até 16 MB."), 413, { requestId });
-  }
-  const form = await request.formData().catch(() => null);
+  const corpo = await lerCorpoComTeto(request, TAMANHO_MAXIMO_DO_AUDIO + 1_048_576, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("O áudio precisa ter até 16 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const file = form?.get("file");
   const mutation = catalogProductPresentationAudioMutationSchema.safeParse({
     expected_updated_at: expectedFromForm(form?.get("expected_updated_at") ?? null),

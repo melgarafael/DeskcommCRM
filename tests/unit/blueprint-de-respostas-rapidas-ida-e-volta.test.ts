@@ -20,6 +20,7 @@
  * fingir que atravessou.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 const h = vi.hoisted(() => ({
@@ -151,8 +152,8 @@ function pedidoDeExport(): NextRequest {
   return new NextRequest("http://localhost/api/v1/message-templates/exportar");
 }
 
-function pedidoDeImport(corpo: unknown): NextRequest {
-  return new NextRequest("http://localhost/api/v1/message-templates/importar", {
+function pedidoDeImport(corpo: unknown): Promise<NextRequest> {
+  return pedidoComTamanho("http://localhost/api/v1/message-templates/importar", {
     method: "POST",
     body: JSON.stringify(corpo),
     headers: { "Content-Type": "application/json" },
@@ -245,7 +246,7 @@ describe("blueprint de respostas rápidas: ida e volta", () => {
 
     // ── VOLTA: o destino é outra organização, e está vazia ───────────────────
     orgAtiva = DESTINO;
-    const respostaDoImport = await importar(pedidoDeImport(arquivo));
+    const respostaDoImport = await importar(await pedidoDeImport(arquivo));
     expect(respostaDoImport.status).toBe(201);
     expect((await respostaDoImport.json()).data.importadas).toBe(3);
 
@@ -294,7 +295,7 @@ describe("blueprint de respostas rápidas: ida e volta", () => {
     const primeiro = await (await exportar(pedidoDeExport())).json();
 
     orgAtiva = DESTINO;
-    await importar(pedidoDeImport(primeiro));
+    await importar(await pedidoDeImport(primeiro));
 
     const segundo = await (await exportar(pedidoDeExport())).json();
 

@@ -35,6 +35,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 const h = vi.hoisted(() => ({
@@ -189,8 +190,8 @@ function blueprint(itens: Linha[], cabecalho: Linha = {}) {
   };
 }
 
-function pedido(corpo: unknown): NextRequest {
-  return new NextRequest("http://localhost/api/v1/message-templates/importar", {
+function pedido(corpo: unknown): Promise<NextRequest> {
+  return pedidoComTamanho("http://localhost/api/v1/message-templates/importar", {
     method: "POST",
     body: typeof corpo === "string" ? corpo : JSON.stringify(corpo),
     headers: { "Content-Type": "application/json" },
@@ -217,7 +218,7 @@ describe("POST /message-templates/importar", () => {
     const db = banco();
 
     const res = await POST(
-      pedido(
+      await pedido(
         blueprint([
           { titulo: "Boas-vindas", corpo: "Olá!", atalho: "bv", mostrar_na_barra: true },
           // `ordem` forjada no arquivo é ignorada: quem manda é a posição.
@@ -267,7 +268,7 @@ describe("POST /message-templates/importar", () => {
       { organization_id: ORG, owner_user_id: null, title: "Já existe", body: "", shortcut: null },
     ]);
 
-    const res = await POST(pedido(blueprint([{ titulo: "Nova", corpo: "x" }])));
+    const res = await POST(await pedido(blueprint([{ titulo: "Nova", corpo: "x" }])));
 
     expect(res.status).toBe(409);
     expect((await res.json()).error.code).toBe("state_conflict");
@@ -282,8 +283,8 @@ describe("POST /message-templates/importar", () => {
       { titulo: "Duas", corpo: "b" },
     ]);
 
-    const primeira = await POST(pedido(arquivo));
-    const segunda = await POST(pedido(arquivo));
+    const primeira = await POST(await pedido(arquivo));
+    const segunda = await POST(await pedido(arquivo));
 
     expect(primeira.status).toBe(201);
     expect(segunda.status).toBe(409);
@@ -302,7 +303,7 @@ describe("POST /message-templates/importar", () => {
 
     // Sem `await` entre os dois: é a corrida de verdade. Sem a operação única,
     // os dois passam pela conferência antes de qualquer escrita aparecer.
-    const [a, b] = await Promise.all([POST(pedido(arquivo)), POST(pedido(arquivo))]);
+    const [a, b] = await Promise.all([POST(await pedido(arquivo)), POST(await pedido(arquivo))]);
 
     // A MEDIÇÃO primeiro: é o número que o defeito move (6 linhas em vez de 3
     // quando os dois POST passam). Três linhas, UM insert.
@@ -326,7 +327,7 @@ describe("POST /message-templates/importar", () => {
     const db = banco();
 
     const res = await POST(
-      pedido(
+      await pedido(
         blueprint([
           { titulo: "Uma", corpo: "a" },
           { titulo: "Duas", corpo: "b" },
@@ -363,7 +364,7 @@ describe("POST /message-templates/importar", () => {
     const db = banco();
 
     const res = await POST(
-      pedido(
+      await pedido(
         blueprint([
           { titulo: "Áudio 1", corpo: "" },
           { titulo: "Áudio 2", corpo: "   " },
@@ -384,7 +385,7 @@ describe("POST /message-templates/importar", () => {
   it("arquivo de outra versão diz a versão, e não 'item inválido'", async () => {
     const db = banco();
 
-    const res = await POST(pedido(blueprint([{ titulo: "x", corpo: "y" }], { versao: 2 })));
+    const res = await POST(await pedido(blueprint([{ titulo: "x", corpo: "y" }], { versao: 2 })));
 
     expect(res.status).toBe(422);
     const corpo = await res.json();
@@ -396,7 +397,7 @@ describe("POST /message-templates/importar", () => {
   it("arquivo que não é blueprint e blueprint de outro tipo são recusados", async () => {
     const db = banco();
 
-    const naoEhBlueprint = await POST(pedido({ itens: [{ titulo: "x" }] }));
+    const naoEhBlueprint = await POST(await pedido({ itens: [{ titulo: "x" }] }));
     expect(naoEhBlueprint.status).toBe(422);
     const recusa = await naoEhBlueprint.json();
     expect(recusa.error.message).toMatch(/não é um blueprint/);
@@ -405,7 +406,7 @@ describe("POST /message-templates/importar", () => {
     expect(recusa.error.message).toContain("Acme CRM");
     expect(h.marca).toHaveBeenCalledWith(ORG);
 
-    const outroTipo = await POST(pedido(blueprint([{ titulo: "x" }], { tipo: "funis_e_etapas" })));
+    const outroTipo = await POST(await pedido(blueprint([{ titulo: "x" }], { tipo: "funis_e_etapas" })));
     expect(outroTipo.status).toBe(422);
     expect((await outroTipo.json()).error.message).toMatch(/não é de respostas rápidas/);
     // Só a recusa de formato paga a leitura da marca.
@@ -417,7 +418,7 @@ describe("POST /message-templates/importar", () => {
   it("item fora dos limites do POST é recusado sem inserir nada", async () => {
     const db = banco();
 
-    const res = await POST(pedido(blueprint([{ titulo: "t".repeat(81), corpo: "x" }])));
+    const res = await POST(await pedido(blueprint([{ titulo: "t".repeat(81), corpo: "x" }])));
 
     expect(res.status).toBe(422);
     expect(db.inserts).toHaveLength(0);
@@ -430,7 +431,7 @@ describe("POST /message-templates/importar", () => {
       corpo: "x",
     }));
 
-    const res = await POST(pedido(blueprint(itens)));
+    const res = await POST(await pedido(blueprint(itens)));
 
     expect(res.status).toBe(422);
     // A frase leva o número do teto: quem tem 201 respostas lê a causa certa.
@@ -442,7 +443,7 @@ describe("POST /message-templates/importar", () => {
   it("lista vazia não é blueprint: nada a aplicar", async () => {
     const db = banco();
 
-    const res = await POST(pedido(blueprint([])));
+    const res = await POST(await pedido(blueprint([])));
 
     expect(res.status).toBe(422);
     expect(db.inserts).toHaveLength(0);
@@ -451,11 +452,11 @@ describe("POST /message-templates/importar", () => {
   it("corpo que não é JSON é 400 e arquivo grande é 413", async () => {
     const db = banco();
 
-    const invalido = await POST(pedido("isto não é json"));
+    const invalido = await POST(await pedido("isto não é json"));
     expect(invalido.status).toBe(400);
     expect((await invalido.json()).error.code).toBe("invalid_request");
 
-    const grande = await POST(pedido(" ".repeat(2 * 1024 * 1024 + 1)));
+    const grande = await POST(await pedido(" ".repeat(2 * 1024 * 1024 + 1)));
     expect(grande.status).toBe(413);
     expect((await grande.json()).error.code).toBe("payload_too_large");
 
@@ -487,7 +488,7 @@ describe("POST /message-templates/importar", () => {
       new Response(JSON.stringify({ error: { code: "forbidden_scope" } }), { status: 403 }),
     );
 
-    const res = await POST(pedido(blueprint([{ titulo: "x" }])));
+    const res = await POST(await pedido(blueprint([{ titulo: "x" }])));
 
     expect(res.status).toBe(403);
     expect(h.rpc).not.toHaveBeenCalled();
@@ -497,7 +498,7 @@ describe("POST /message-templates/importar", () => {
     banco();
 
     await POST(
-      pedido(
+      await pedido(
         blueprint([
           { titulo: "Script interno", corpo: "texto sensível" },
           { titulo: "Áudio", corpo: "" },

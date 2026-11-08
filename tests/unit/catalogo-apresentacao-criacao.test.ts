@@ -1,6 +1,8 @@
+// @vitest-environment node
 import { File as NodeFile } from "node:buffer";
 import type { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 
 const mocks = vi.hoisted(() => ({
   cliente: vi.fn(), upload: vi.fn(), remover: vi.fn(), assinar: vi.fn(), audit: vi.fn(), ligada: vi.fn(), transcodificar: vi.fn(),
@@ -82,14 +84,12 @@ const ctx = () => ({ params: Promise.resolve({ id: PROD }) });
 const dados = (expected_updated_at: string | null) => ({ enabled: false, kind: "text", title: "Título",
   text_content: "Apresentação sintética", use_catalog_photos: false, show_price: false, expected_updated_at });
 const jsonRequest = (value: unknown) => ({ json: async () => value }) as NextRequest;
-function audioRequest(expected: string | null): NextRequest {
+function audioRequest(expected: string | null): Promise<NextRequest> {
   // Cabeçalho sintético para isolar criação/CAS. Não é prova de decodificação,
   // conversão WebM ou reprodução; a fronteira do Storage é dublada.
   const bytes = Buffer.alloc(64);
   bytes.write("OggS", 0); bytes.write("OpusHead", 28);
-  const arquivo = new NodeFile([bytes], "voz-sintetica.ogg", { type: "audio/ogg;codecs=opus" });
-  const values = new Map<string, unknown>([["file", arquivo], ["expected_updated_at", expected ?? "null"]]);
-  return { headers: new Headers(), formData: async () => ({ get: (k: string) => values.get(k) ?? null }) } as unknown as NextRequest;
+  return requestDeArquivo(bytes, "voz-sintetica.ogg", "audio/ogg;codecs=opus", expected ?? "null");
 }
 
 beforeEach(() => {
@@ -107,10 +107,11 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); });
 
-function requestDeArquivo(bytes: Buffer, nome: string, tipo: string): NextRequest {
-  const arquivo = new NodeFile([bytes], nome, { type: tipo });
-  const values = new Map<string, unknown>([["file", arquivo], ["expected_updated_at", "null"]]);
-  return { headers: new Headers(), formData: async () => ({ get: (k: string) => values.get(k) ?? null }) } as unknown as NextRequest;
+function requestDeArquivo(bytes: Buffer, nome: string, tipo: string, expected = "null"): Promise<NextRequest> {
+  const form = new FormData();
+  form.set("file", new File([new Uint8Array(bytes)], nome, { type: tipo }));
+  form.set("expected_updated_at", expected);
+  return pedidoComTamanho(`http://localhost/api/v1/products/${PROD}/ai-presentation/audio`, { method: "POST", body: form });
 }
 const OGG_CONVERTIDO = (() => {
   const bytes = Buffer.alloc(64);
@@ -122,7 +123,7 @@ describe("capacidade desligada: as duas rotas recusam e nada é gravado", () => 
   it.each([
     ["GET", () => GET(jsonRequest(null), ctx())],
     ["PATCH", () => PATCH(jsonRequest(dados(null)), ctx())],
-    ["POST de áudio", () => POST(audioRequest(null), ctx())],
+    ["POST de áudio", async () => POST(await audioRequest(null), ctx())],
     ["DELETE de áudio", () => DELETE(jsonRequest({ expected_updated_at: null }), ctx())],
   ])("%s devolve module_disabled", async (_nome, chamar) => {
     mocks.ligada.mockResolvedValue(false);
@@ -139,7 +140,7 @@ describe("áudio do iPhone na apresentação", () => {
   it("m4a vai para a conversão marcado como nota de voz e é guardado em ogg", async () => {
     mocks.transcodificar.mockResolvedValue({ buffer: OGG_CONVERTIDO, mime: "audio/ogg;codecs=opus", convertido: true });
     const m4a = Buffer.from("ftypM4A sintético");
-    const resposta = await POST(requestDeArquivo(m4a, "voz.m4a", "audio/x-m4a"), ctx());
+    const resposta = await POST(await requestDeArquivo(m4a, "voz.m4a", "audio/x-m4a"), ctx());
     expect(resposta.status).toBe(201);
     expect(mocks.transcodificar).toHaveBeenCalledWith(expect.objectContaining({ mime: "audio/x-m4a", notaDeVoz: true }));
     expect(mocks.upload).toHaveBeenCalledOnce();
@@ -148,7 +149,7 @@ describe("áudio do iPhone na apresentação", () => {
   it("o que não converte recebe 415 com o motivo, sem subir nada", async () => {
     const mp3 = Buffer.from("ID3 sintético");
     mocks.transcodificar.mockResolvedValue({ buffer: mp3, mime: "audio/mpeg", convertido: false });
-    const resposta = await POST(requestDeArquivo(mp3, "voz.mp3", "audio/mpeg"), ctx());
+    const resposta = await POST(await requestDeArquivo(mp3, "voz.mp3", "audio/mpeg"), ctx());
     expect(resposta.status).toBe(415);
     expect((await resposta.json()).error.message).toContain("M4A");
     expect(mocks.upload).not.toHaveBeenCalled();
@@ -158,7 +159,7 @@ describe("áudio do iPhone na apresentação", () => {
     const grande = Buffer.alloc(16 * 1024 * 1024 + 1);
     grande.write("OggS", 0); grande.write("OpusHead", 28);
     mocks.transcodificar.mockResolvedValue({ buffer: grande, mime: "audio/ogg;codecs=opus", convertido: true });
-    const resposta = await POST(requestDeArquivo(Buffer.from("ftypM4A sintético"), "voz.m4a", "audio/x-m4a"), ctx());
+    const resposta = await POST(await requestDeArquivo(Buffer.from("ftypM4A sintético"), "voz.m4a", "audio/x-m4a"), ctx());
     expect(resposta.status).toBe(413);
     expect((await resposta.json()).error).toMatchObject({ code: "payload_too_large", message: "O áudio precisa ter até 16 MB." });
     expect(mocks.upload).not.toHaveBeenCalled();
@@ -184,7 +185,7 @@ describe("apresentação nova usa a revisão null e edições continuam condicio
   });
 
   it("POST inicial com expected null cria o áudio no namespace do produto", async () => {
-    const resposta = await POST(audioRequest(null), ctx());
+    const resposta = await POST(await audioRequest(null), ctx());
     expect(resposta.status).toBe(201);
     expect(apresentacao).toMatchObject({ organization_id: ORG, catalog_product_id: PROD, kind: "audio", audio_mime: "audio/ogg;codecs=opus" });
     expect(mocks.upload).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^${ORG}/${PROD}/[0-9a-f-]{36}\\.ogg$`)), expect.any(Buffer), expect.objectContaining({ upsert: false }));
@@ -218,7 +219,7 @@ describe("apresentação nova usa a revisão null e edições continuam condicio
   it("upload que perde CAS remove só seu arquivo novo, preservando o áudio vencedor", async () => {
     apresentacao = linha({ kind: "audio", audio_storage_path: AUDIO_ANTERIOR, audio_mime: "audio/ogg;codecs=opus", audio_size_bytes: 64 });
     antesDeAtualizar = () => { Object.assign(apresentacao!, { updated_at: T1 }); };
-    const resposta = await POST(audioRequest(T0), ctx());
+    const resposta = await POST(await audioRequest(T0), ctx());
     expect(resposta.status).toBe(409);
     const novoCaminho = mocks.upload.mock.calls[0]![0] as string;
     expect(novoCaminho).not.toBe(AUDIO_ANTERIOR);
