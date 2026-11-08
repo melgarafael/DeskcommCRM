@@ -28,7 +28,7 @@ import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
  * perguntam aqui. Desligar não apaga o que foi guardado, e o job que já gravou o
  * snapshot termina. A chave mora em `settings.catalogo.apresentacao`.
  */
-export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia", "apresentacao_do_catalogo"] as const;
+export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia", "cadencias", "apresentacao_do_catalogo"] as const;
 export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number];
 
 /**
@@ -45,6 +45,7 @@ export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number
 const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional | null> = {
   propostas: "propostas",
   telefonia: null,
+  cadencias: "cadencias",
   apresentacao_do_catalogo: null,
 };
 
@@ -79,6 +80,11 @@ export function capacidadesLigadas(
   // também não funciona — mas esse estado o app não enxerga, e fingir que
   // enxerga seria pior que o defeito.
   if (telefoniaEmUsoDaOrganizacao) daEmpresa.push("telefonia");
+  const cadencias = objeto(objeto(settings)?.cadencias);
+  const moduloDeCadencias = MODULO_DA_CAPACIDADE.cadencias;
+  if (cadencias?.enabled === true && moduloDeCadencias && modulos.includes(moduloDeCadencias)) {
+    daEmpresa.push("cadencias");
+  }
   if (objeto(objeto(settings)?.catalogo)?.apresentacao === true) daEmpresa.push("apresentacao_do_catalogo");
   return daEmpresa;
 }

@@ -40,6 +40,7 @@ interface SendArgs {
   text?: string;
   replyTo?: string;
   tags?: { name: string; value: string }[];
+  headers?: Record<string, string>;
   /**
    * Nome de exibição do remetente — a marca resolvida (`marcaDaSaida().nome`).
    * Ausente usa o endereço puro: quem não passa marca não ganha a nossa.
@@ -140,6 +141,7 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
       text: args.text,
       replyTo: args.replyTo,
       tags: args.tags,
+      headers: args.headers,
     });
 
     if (error) {
