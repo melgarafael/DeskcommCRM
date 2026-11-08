@@ -32,7 +32,7 @@ function inscrever(lead: string): string {
   return sql(`select public.fn_cadencia_inscrever('${GOV_ORG}','${CAD}','${lead}','${GOV_MANAGER}',false)->>'id';`);
 }
 function tentarInscrever(lead: string): string {
-  try { inscrever(lead); return "inseriu"; } catch (erro) { return String((erro as { stderr?: string }).stderr ?? erro); }
+  try { return inscrever(lead); } catch (erro) { return String((erro as { stderr?: string }).stderr ?? erro); }
 }
 function pedido(corpo: unknown) {
   return new Request("http://synthetic.test/api", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) }) as NextRequest;
