@@ -1,0 +1,40 @@
+{
+  // RECORTE para medir tipos quando o `pnpm typecheck` do repo estoura a memoria
+  // desta VPS (exit 134, node OOM). Herda o MESMO tsconfig.json — strict, paths
+  // e plugins iguais — e muda SO o `include`: nenhuma flag e afrouxada.
+  //
+  // Nao e o gate principal (o gate e `pnpm typecheck`). Existe para a fatia do
+  // card do funil (#3945) provar os proprios tipos sem fingir que provou a
+  // arvore inteira.
+  //
+  // uso: pnpm exec tsc --noEmit -p tsconfig.typecheck-recorte.json
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "types/public-env.d.ts",
+    "tests/setup/vitest.setup.ts",
+    "lib/i18n/hora-curta.ts",
+    "lib/i18n/hora-curta.test.ts",
+    "lib/i18n/datas.ts",
+    "lib/i18n/IdiomaProvider.tsx",
+    "components/kanban/ConversaSlot.tsx",
+    "components/kanban/ConversaSlot.test.tsx",
+    "components/kanban/card-do-funil-mostra-o-que-importa.test.tsx",
+    "components/kanban/KanbanCard.tsx",
+    "components/kanban/OwnerBadge.tsx",
+    "components/kanban/AbrirConversaDoLead.tsx",
+    "components/inbox/ConversationListItem.tsx",
+    "lib/kanban/card-state.ts",
+    "lib/kanban/owner.ts",
+    "lib/types/leads.ts",
+    "app/api/v1/pipelines/[id]/board/route.ts",
+    "app/api/v1/pipelines/[id]/board/route.payload.test.ts",
+    "tests/helpers/stages-db-double.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "dist",
+    "scripts/**"
+  ]
+}
