@@ -46,7 +46,6 @@ import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conv
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
-import { ExportarConversa } from "@/components/inbox/ExportarConversa";
 import { DialogoMoverParaFila, ItemMoverParaFila } from "@/components/inbox/MoverParaFila";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
@@ -655,18 +654,17 @@ export function ConversationHeader({
                 {t("Convidar")}
               </DropdownMenuItem>
             )}
-            {/* ─── A FILA E O HISTÓRICO (#3876, #1982) ───────────────────────
-                Duas ações que a conversa já tinha e a tela não oferecia: o
-                `PUT /conversations/[id]/sector` (9062) sem consumidor e o
-                export em PDF (#1982) sem botão. Ficam no ⋯ porque nenhuma das
-                duas é do dia a dia: classificar é correção de rota, exportar é
-                arquivamento. `ItemMoverParaFila` devolve `null` quando a rota
-                recusaria (viewer, módulo desligado, conversa encerrada);
-                `ExportarConversa` fica desabilitado, porque o papel que não
-                baixa o arquivo continua lendo a conversa na tela. */}
+            {/* ─── A FILA (#3876) ──────────────────────────────────────────
+                Uma ação que a conversa já tinha e a tela não oferecia: o
+                `PUT /conversations/[id]/sector` (9062) estava sem consumidor.
+                Fica no ⋯ porque classificar é correção de rota, não é do dia a
+                dia. `ItemMoverParaFila` devolve `null` quando a rota recusaria
+                (viewer, módulo desligado, conversa encerrada).
+                O export em PDF (#1982) NÃO entra aqui: o PR #4207, aberto
+                antes, é quem entrega essa tela — duas entregas da mesma fatia
+                viram dois itens no menu. */}
             <DropdownMenuSeparator />
             <ItemMoverParaFila encerrada={encerrada} onAbrir={() => setFilaAberta(true)} />
-            <ExportarConversa conversationId={conversation.id} como="menu" />
             <DropdownMenuSeparator />
             {podePausar && (
               <DropdownMenuItem

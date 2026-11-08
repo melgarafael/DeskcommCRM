@@ -20000,21 +20000,9 @@ export const DICIONARIO: Traducoes = {
   "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
   "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
 
-  // ─── o botão de exportar a conversa (#1982) ────────────────────────────────
-  // A rota e o PDF existiam; faltava a porta. O rótulo é o gesto, e a guia diz
-  // o FORMATO — "exportar" sozinho promete CSV, planilha, o que a pessoa
-  // imaginar.
-  "Exportar conversa": { es: "Exportar conversación" },
-  "Gerando PDF…": { es: "Generando PDF…" },
-  "Baixa o histórico desta conversa em PDF, para guardar ou anexar ao caso.": {
-    es: "Descarga el historial de esta conversación en PDF, para guardarlo o adjuntarlo al caso.",
-  },
-  "Seu perfil não permite exportar o histórico desta conversa.": {
-    es: "Tu perfil no permite exportar el historial de esta conversación.",
-  },
-  "Não foi possível exportar a conversa agora.": {
-    es: "No se pudo exportar la conversación ahora.",
-  },
+  // o botão de exportar a conversa (#1982) NÃO mora aqui: o PR #4207, aberto
+  // antes, é quem entrega essa tela — duas entregas da mesma fatia viram dois
+  // itens no menu.
 
   // ─── filas visíveis e transferíveis (#3876) ────────────────────────────────
   "Filtrar por fila": { es: "Filtrar por fila" },
