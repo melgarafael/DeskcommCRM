@@ -12,6 +12,7 @@ import { rescheduleJob, type JobRow } from "@/lib/agent-engine/queue/queue";
 import { CatalogPresentationLeaseLostError, resolveAndSnapshotCatalogPresentation } from "@/lib/catalogo/snapshot-de-apresentacao";
 import { resumePersistedCatalogPresentation } from "@/lib/catalogo/retomada-de-apresentacao";
 import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import { COLUNAS_DA_OPERACAO_SEM_PAUSA } from "@/lib/ai/agents/operation";
 import { criarOrigemDeFollowup } from "./followup-service-origin";
 import { ehVistoAzul } from "../support/waha-visto-azul";
 
@@ -63,7 +64,8 @@ async function directAnonymize(client:pg.PoolClient,f:Fixture){
 
 async function replayInNewProcess(f:Fixture,mode="normal"){
   const stored=await persisted(f);
-  expect(await rescheduleJob(pool,stored.id,"catalog-origin",{acquiredAt:stored.claim_acquired_at!,delayMs:0,reason:"restart sintético"})).not.toBeNull();
+  // Job já devolvido à fila (a pausa o reagenda) não tem lease a soltar.
+  if(stored.status==="running")expect(await rescheduleJob(pool,stored.id,"catalog-origin",{acquiredAt:stored.claim_acquired_at!,delayMs:0,reason:"restart sintético"})).not.toBeNull();
   await pool.query("update job_queue set priority=-32768,run_after='1900-01-01' where id=$1",[stored.id]);
   const posts:Array<{path:string;text:unknown}>=[];
   let receiverError:unknown;
@@ -157,6 +159,50 @@ describe("estado original de catálogo no banco real",()=>{
     if(["revision","mode","lease"].includes(mode))expect(r.result.error).toBe("service_boundary_stale");
     if(mode==="pause")expect((await persisted(f)).status).toBe("pending");
     if(mode==="lgpd")expect((await persisted(f)).catalog_presentation_snapshot).toBeNull();
+  });
+});
+
+describe("pausar e despausar no meio da sequência",()=>{
+  // Despausar soma 1 a operation_revision (trg_reply_agent_revision). A retomada
+  // aceita a revisão nova SÓ quando nada além de paused_at mudou e a capacidade
+  // segue ligada; qualquer outra mudança de operação continua invalidando.
+  async function pausadoNoMeio(f:Fixture,apresentacaoLigada=true){
+    if(apresentacaoLigada)await pool.query("update organizations set settings=coalesce(settings,'{}'::jsonb)||'{\"catalogo\":{\"apresentacao\":true}}'::jsonb where id=$1",[f.org]);
+    await resolveAndSnapshotCatalogPresentation(pool,input(f));
+    const r=await replayInNewProcess(f,"pause");
+    expect(r.posts,JSON.stringify(r.result)).toHaveLength(1);
+    expect((await persisted(f)).status).toBe("pending");
+  }
+  const despausar=(f:Fixture)=>pool.query("update ai_agents set paused_at=null where id=$1",[f.agent]);
+  it("a impressão da operação cobre as colunas do trigger, menos paused_at",async()=>{
+    const src=String((await pool.query("select prosrc from pg_proc where proname='fn_reply_agent_revision'")).rows[0]?.prosrc);
+    const colunas=[...(/row\(([^)]*)\)/i.exec(src)?.[1]??"").matchAll(/new\.(\w+)/g)].map(m=>m[1]);
+    expect(colunas).toContain("paused_at");
+    expect(colunas.filter(c=>c!=="paused_at")).toEqual([...COLUNAS_DA_OPERACAO_SEM_PAUSA]);
+  });
+  it("despausar retoma do item seguinte, sem duplicar o que já saiu",async()=>{
+    const f=await fixture();await pausadoNoMeio(f);await despausar(f);
+    const r=await replayInNewProcess(f);
+    expect(r.child.code,JSON.stringify(r.result)+"\n"+r.child.stderr).toBe(0);
+    expect(r.posts).toHaveLength(1);
+    expect((await pool.query("select seq,status from send_ledger where job_id=$1 order by seq",[f.job.id])).rows).toEqual([{seq:1,status:"accepted"},{seq:2,status:"accepted"}]);
+  });
+  it.each([
+    ["prompt/ferramentas (config)","update ai_agents set config=config||'{\"mudou_na_pausa\":true}'::jsonb where id=$1"],
+    ["modo assistido","update ai_agents set operation_mode='assisted' where id=$1"],
+  ])("%s mudado durante a pausa continua invalidando",async(_nome,sql)=>{
+    const f=await fixture();await pausadoNoMeio(f);
+    await pool.query(sql,[f.agent]);
+    await despausar(f);
+    const r=await replayInNewProcess(f);
+    expect(r.child.code).toBe(2);expect(r.result.error).toBe("service_boundary_stale");expect(r.posts).toHaveLength(0);
+  });
+  it("f2: capacidade desligada durante a pausa continua cancelando",async()=>{
+    const f=await fixture();await pausadoNoMeio(f);
+    await pool.query("update organizations set settings=settings||'{\"catalogo\":{\"apresentacao\":false}}'::jsonb where id=$1",[f.org]);
+    await despausar(f);
+    const r=await replayInNewProcess(f);
+    expect(r.child.code).toBe(2);expect(r.result.error).toBe("service_boundary_stale");expect(r.posts).toHaveLength(0);
   });
 });
 

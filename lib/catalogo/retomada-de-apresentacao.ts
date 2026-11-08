@@ -1,5 +1,6 @@
 import type { Pool, QueryResultRow } from "pg";
-import { assertAgentOperationPg } from "@/lib/ai/agents/operation";
+import { assertAgentOperationPg, operacaoDepoisDaPausa } from "@/lib/ai/agents/operation";
+import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 import { requireCurrentAutonomousTurn, setExecutionAgentOperation } from "@/lib/atendimento/fronteira-server";
 
 import type { ChannelAdapter } from "@/lib/agent-engine/channel-adapter";
@@ -79,6 +80,14 @@ function materializedMediaByStep(
   return result;
 }
 
+async function apresentacaoLigadaPg(pool: Pool, organizationId: string): Promise<boolean> {
+  const { rows } = await pool.query<{ settings: unknown }>(
+    "select settings from organizations where id = $1",
+    [organizationId],
+  );
+  return capacidadesLigadas(rows[0]?.settings, []).includes("apresentacao_do_catalogo");
+}
+
 function failureCode(result: CatalogPresentationExecutionResult): string {
   if (result.status === "not_started") return `catalog_presentation_${result.reason}`;
   if (result.status === "stopped") return `catalog_presentation_${result.reason}`;
@@ -108,8 +117,18 @@ export async function resumePersistedCatalogPresentation(
   if (!claim) throw new CatalogPresentationResumeError("catalog_presentation_claim_missing");
   await requireCurrentAutonomousTurn(pool, job);
   // Recoloca no escopo interno somente a identidade original protegida.
-  // A operação vigente é CONFERIDA, nunca usada para substituir a original.
-  setExecutionAgentOperation(snapshot.agent_operation);
+  // A operação vigente é CONFERIDA, nunca usada para substituir a original —
+  // salvo a revisão, quando o único passo desde o snapshot foi pausar e
+  // despausar e a capacidade segue ligada (despausar soma operation_revision).
+  let operation = await operacaoDepoisDaPausa(
+    pool,
+    snapshot.agent_operation,
+    snapshot.agent_operation_fingerprint,
+  );
+  if (operation !== snapshot.agent_operation && !(await apresentacaoLigadaPg(pool, job.organization_id))) {
+    operation = snapshot.agent_operation;
+  }
+  setExecutionAgentOperation(operation);
 
   let paused = false;
   const pauseBeforeNextItem = async (): Promise<boolean> => {
@@ -170,7 +189,7 @@ export async function resumePersistedCatalogPresentation(
   if (!contactRow) throw new CatalogPresentationResumeError("catalog_presentation_contact_missing");
 
   const materialize = deps.contracts?.materialize ?? materializeCatalogPresentationSnapshotMedia;
-  await assertAgentOperationPg(pool, snapshot.agent_operation);
+  await assertAgentOperationPg(pool, operation);
   const materialized = await materialize(
     { ok: true, snapshot, reused: true },
     {
@@ -208,7 +227,7 @@ export async function resumePersistedCatalogPresentation(
     },
     pausedBeforeSend: pauseBeforeNextItem,
     beforeSend: {
-      agentOperation: snapshot.agent_operation,
+      agentOperation: operation,
       pool,
       log: deps.log,
       tenantId: job.organization_id,

@@ -2,7 +2,7 @@ import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { z } from "zod";
 
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
-import { assertAgentOperationPg, mesmaOperacao, type AgentOperationContext } from "@/lib/ai/agents/operation";
+import { assertAgentOperationComImpressaoPg, mesmaOperacao, type AgentOperationContext } from "@/lib/ai/agents/operation";
 import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { audioPertenceAoProduto, presentationKindSchema } from "@/lib/catalogo/apresentacao";
 import { fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
@@ -70,6 +70,8 @@ export const catalogPresentationSnapshotSchema = z
     ordered_product_codes: z.array(z.string().min(1)).min(1),
     plan: catalogPresentationPlanSchema,
     agent_operation: snapshotOperationSchema,
+    // Impressão da operação sem paused_at: deixa a retomada aceitar o despausar.
+    agent_operation_fingerprint: z.string().regex(/^[0-9a-f]{32}$/).optional(),
   })
   .strict();
 
@@ -335,7 +337,7 @@ export async function resolveAndSnapshotCatalogPresentation(
   try {
     await client.query("begin");
     await client.query("select public.fn_service_lock($1,$2)", [input.organizationId, input.contactId]);
-    await assertAgentOperationPg(client, operation);
+    const fingerprint = await assertAgentOperationComImpressaoPg(client, operation);
     const locked = await client.query<LockedJobRow>(LOCK_JOB_SQL, [
       input.jobId,
       input.organizationId,
@@ -405,6 +407,7 @@ export async function resolveAndSnapshotCatalogPresentation(
       ordered_product_codes: selection.productCodes,
       plan: planned.plan,
       agent_operation: operation,
+      agent_operation_fingerprint: fingerprint,
     };
     const written = await client.query(
       `update public.job_queue
