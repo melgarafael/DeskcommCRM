@@ -175,6 +175,13 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "do tenant e zero por JWT da organização vizinha, incluindo a tabela de atividade que " +
       "guarda metadata. Não é apenas conferência do nome da policy no catálogo.",
   },
+  email_cadence_suppressions: {
+    arquivo: "tests/invariants/cadencias-descadastro-e-visibilidade.test.ts",
+    razao:
+      "Tabela só do servidor: o teste confere RLS ligada e nenhum privilégio de anon nem de " +
+      "authenticated, e prova pela função real que a supressão sobrevive ao negócio e à " +
+      "cadência apagados, recusando a reinscrição do mesmo contato.",
+  },
   honorarios_contratos: {
     arquivo: "tests/invariants/honorarios-rls-por-operacao.test.ts",
     razao:

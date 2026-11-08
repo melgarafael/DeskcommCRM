@@ -32,3 +32,20 @@ export async function esperarBarreira(b: ReturnType<typeof barreira>) {
   try { await Promise.race([b.promessa, new Promise<never>((_, rejeitar) => { timer = setTimeout(() => rejeitar(new Error("barreira_de_concorrencia_nao_alcancada")), 5000); })]); }
   finally { if (timer) clearTimeout(timer); }
 }
+
+/** Client da SESSÃO de um usuário: cada consulta roda como `authenticated` com o
+ * JWT dele, então a RLS decide como no PostgREST. Use uma conexão só para isto:
+ * a transação por consulta não pode se intercalar com outra no mesmo client. */
+export function sessaoEmConexao(client: pg.Client, userId: () => string) {
+  const transporte = { query: async (sql: string, valores: unknown[] = []) => {
+    await client.query("begin");
+    try {
+      await client.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: userId(), role: "authenticated" })]);
+      await client.query("set local role authenticated");
+      const result = await client.query(sql, valores);
+      await client.query("commit");
+      return result;
+    } catch (erro) { await client.query("rollback"); throw erro; }
+  } };
+  return pgComoSupabase(transporte as unknown as pg.Pool);
+}

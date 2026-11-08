@@ -48,7 +48,7 @@
       "lane": "instalacao",
       "col": 1,
       "type": "service",
-      "label": "fn_cadencias_provisionar: três tabelas, só após instalar"
+      "label": "fn_cadencias_provisionar: quatro tabelas, só após instalar"
     },
     {
       "id": "ligar",
@@ -111,7 +111,7 @@
       "lane": "privacidade",
       "col": 2,
       "type": "service",
-      "label": "HMAC descadastro → supressão por contato, mesmo concluído/desligado"
+      "label": "HMAC descadastro → email_cadence_suppressions por contato, sobrevive ao negócio"
     },
     {
       "id": "lgpd",
