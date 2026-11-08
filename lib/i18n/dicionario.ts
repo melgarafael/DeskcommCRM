@@ -923,6 +923,17 @@ export const DICIONARIO: Traducoes = {
   "Sem WhatsApp": { es: "Sin WhatsApp" },
   "WhatsApp: não sabemos": { es: "WhatsApp: no sabemos" },
   "Veio da junção de fichas": { es: "Vino de la unión de fichas" },
+  // Spec 31 (B2): a tela de editar os telefones da ficha e a linha da resposta.
+  "Adicionar telefone": { es: "Agregar teléfono" },
+  "Digite o número do telefone.": { es: "Escriba el número de teléfono." },
+  "Este número já está em outra ficha.": { es: "Este número ya está en otra ficha." },
+  "Torne outro número principal antes de remover este.": {
+    es: "Haga principal otro número antes de quitar este.",
+  },
+  "Número inválido. Confira o DDD e tente de novo.": {
+    es: "Número no válido. Revise el código de área e inténtelo de nuevo.",
+  },
+  "A resposta sai por:": { es: "La respuesta sale por:" },
   "Pontuação": { es: "Puntuación" },
   // #2642 — formulário da ação notify_team, depois do recorte: o destino é o
   // número de Avisos e não há mais escolha de pessoa nem de canal.
@@ -1230,6 +1241,14 @@ export const DICIONARIO: Traducoes = {
   "O que a IA deve oferecer e como iniciar": { es: "Qué debe ofrecer la IA y cómo iniciar" },
   "Descreva sua oferta e o objetivo da primeira conversa.": { es: "Describe tu oferta y el objetivo de la primera conversación." },
   "Quando considerar o cliente qualificado": { es: "Cuándo considerar al cliente calificado" },
+  "Etiquetas do contato": { es: "Etiquetas del contacto" },
+  "Etiquetas da conversa (simulação)": { es: "Etiquetas de la conversación (simulación)" },
+  "Ex.: estetica, vip": { es: "Ej.: estetica, vip" },
+  "Separe por vírgula. As skills com estas etiquetas entram neste teste, como entrariam numa conversa com elas.": { es: "Sepáralas con coma. Las skills con estas etiquetas entran en esta prueba, como entrarían en una conversación con ellas." },
+  "Ex.: estetica, clinicas": { es: "Ej.: estetica, clinicas" },
+  "São no máximo 5 etiquetas. Apague as que sobraram para iniciar.": { es: "Son como máximo 5 etiquetas. Borra las que sobran para iniciar." },
+  "Cada etiqueta tem até 40 caracteres. Encurte a mais longa para iniciar.": { es: "Cada etiqueta tiene hasta 40 caracteres. Acorta la más larga para iniciar." },
+  "As skills com estas etiquetas entram desde a primeira resposta. Separe por vírgula, até 5. Vem preenchida com o nicho da busca quando ele cabe; pode trocar.": { es: "Las skills con estas etiquetas se activan desde la primera respuesta. Sepáralas con coma, hasta 5. Viene completada con el nicho de la búsqueda cuando cabe; puedes cambiarla." },
   "Ex.: confirmou a necessidade, participa da decisão e deseja conversar sobre a solução.": { es: "Ej.: confirmó la necesidad, participa en la decisión y desea conversar sobre la solución." },
   "Máximo em 24 horas": { es: "Máximo en 24 horas" },
   "Intervalo mínimo (minutos)": { es: "Intervalo mínimo (minutos)" },
@@ -15230,8 +15249,8 @@ export const DICIONARIO: Traducoes = {
   "lead(s) e": { es: "lead(s) y" },
   "conversa(s).": { es: "conversación(es)." },
   "Atenção:": { es: "Atención:" },
-  "regra(s) de agente continuam escrevendo esta etiqueta. Excluir aqui não apaga a regra — o agente vai recriar a etiqueta no próximo atendimento.": {
-    es: "regla(s) de agente siguen escribiendo esta etiqueta. Eliminarla aquí no borra la regla: el agente volverá a crear la etiqueta en la próxima atención.",
+  "regra(s) de agente continuam citando esta etiqueta. Excluir aqui não apaga a regra — a que põe a etiqueta vai recriá-la no próximo atendimento.": {
+    es: "regla(s) de agente siguen citando esta etiqueta. Eliminarla aquí no borra la regla: la que pone la etiqueta volverá a crearla en la próxima atención.",
   },
   "Etiqueta removida de": { es: "Etiqueta eliminada de" },
   "Etiqueta atualizada em": { es: "Etiqueta actualizada en" },
@@ -16961,7 +16980,8 @@ export const DICIONARIO: Traducoes = {
   "No broadcast vale a janela de horário, e a lista inteira tem de caber no teto diário do número (Conexões › Proteção de envio): ponha nele o nível de mensagens que a plataforma deu ao número. Se a lista não couber, a campanha pausa antes de mandar — o broadcast não manda em partes.": { es: "En el broadcast vale la franja horaria, y la lista entera tiene que caber en el tope diario del número (Conexiones › Protección de envío): pon en él el nivel de mensajes que la plataforma le dio al número. Si la lista no cabe, la campaña se pausa antes de enviar — el broadcast no envía por partes." },
   "Quem pedir para parar enquanto o provedor entrega a lista sai das próximas campanhas, mas o provedor não tira uma pessoa do broadcast: para parar o envio, só cancelando a campanha inteira.": { es: "Quien pida que paren mientras el proveedor entrega la lista sale de las próximas campañas, pero el proveedor no saca a una persona del broadcast: para detener el envío, solo cancelando la campaña entera." },
   "A lista inteira não cabe no teto diário deste número (Conexões › Proteção de envio). O broadcast não manda em partes: ponha no teto o nível de mensagens que a plataforma deu ao número, ou troque a velocidade para Rápido, e retome a campanha.": { es: "La lista entera no cabe en el tope diario de este número (Conexiones › Protección de envío). El broadcast no envía por partes: pon en el tope el nivel de mensajes que la plataforma le dio al número, o cambia la velocidad a Rápido, y reanuda la campaña." },
-  "A lista inteira passa do máximo por dia ou por hora desta campanha, e o broadcast não manda em partes. Em «Ritmo desta campanha», salve com Broadcast para limpar o máximo ou troque a velocidade para Rápido, e retome a campanha.": { es: "La lista entera supera el máximo por día o por hora de esta campaña, y el broadcast no envía por partes. En «Ritmo de esta campaña», guarda con Broadcast para limpiar el máximo o cambia la velocidad a Rápido, y reanuda la campaña." },
+  "A lista inteira, somada ao que esta campanha já mandou hoje e na última hora, passa do máximo por dia ou por hora dela, e o broadcast não manda em partes. Em «Ritmo desta campanha», salve com Broadcast para limpar o máximo ou troque a velocidade para Rápido, e retome a campanha.": { es: "La lista entera, sumada a lo que esta campaña ya envió hoy y en la última hora, supera su máximo por día o por hora, y el broadcast no envía por partes. En «Ritmo de esta campaña», guarda con Broadcast para limpiar el máximo o cambia la velocidad a Rápido, y reanuda la campaña." },
+  "Ainda há mensagens saindo pela velocidade anterior desta campanha, e o broadcast mandaria de novo a essas pessoas. Aguarde um minuto e retome a campanha. Se o aviso voltar, troque a velocidade para Rápido e retome.": { es: "Todavía hay mensajes saliendo por la velocidad anterior de esta campaña, y el broadcast les enviaría de nuevo a esas personas. Espera un minuto y reanuda la campaña. Si el aviso vuelve, cambia la velocidad a Rápido y reanuda." },
   "O CRM não conseguiu guardar o broadcast criado no provedor e o descartou, para a lista não sair duas vezes. Retome a campanha para tentar de novo.": { es: "El CRM no pudo guardar el broadcast creado en el proveedor y lo descartó, para que la lista no salga dos veces. Reanuda la campaña para intentarlo de nuevo." },
   "A plataforma recusou o broadcast para todos os destinatários. Veja o motivo de cada pessoa na lista e confira o modelo e a qualidade do número antes de tentar de novo.": { es: "La plataforma rechazó el broadcast para todos los destinatarios. Mira el motivo de cada persona en la lista y revisa la plantilla y la calidad del número antes de intentarlo de nuevo." },
   "Cancelada no CRM, mas o provedor recusou o cancelamento do broadcast, e o envio pode continuar. Confira no painel de broadcasts dele se o envio parou e apague o rascunho, se ele ainda estiver lá.": { es: "Cancelada en el CRM, pero el proveedor rechazó la cancelación del broadcast, y el envío puede continuar. Revisa en su panel de broadcasts si el envío se detuvo y borra el borrador, si todavía está allí." },
@@ -17288,6 +17308,28 @@ export const DICIONARIO: Traducoes = {
     es: "Módulos opcionales con tabla propia, creados cuando los instalas — quien no instala no carga sus tablas. Instalar aquí vale para todas las organizaciones de esta instalación.",
   },
   "Honorários": { es: "Honorarios" },
+  "Lista de espera": { es: "Lista de espera" },
+  "Lista de espera da agenda": { es: "Lista de espera de la agenda" },
+  "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, na ordem da fila.": { es: "Cuando se abre un horario, la plaza se ofrece a una persona a la vez, en el orden de la fila." },
+  "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.": { es: "Cuando se abre un horario, la plaza se ofrece a una persona a la vez, entre quienes aceptaron recibir el aviso." },
+  "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado. Cada empresa escolhe os prazos da oferta antes de ligar.": { es: "Cuando se abre un horario, la plaza se ofrece a una persona a la vez, entre quienes aceptaron recibir el aviso. Cada empresa elige los plazos de la oferta antes de activarla." },
+  "Quem aceitou ser avisado quando abrir um horário, na ordem da fila.": { es: "Quienes aceptaron recibir el aviso cuando se abra un horario, en el orden de la fila." },
+  "Prazo máximo da oferta (minutos)": { es: "Plazo máximo de la oferta (minutos)" },
+  "Folga antes do horário (minutos)": { es: "Margen antes del horario (minutos)" },
+  "Prazo mínimo para oferecer (minutos)": { es: "Plazo mínimo para ofrecer (minutos)" },
+  "Prazos desta organização": { es: "Plazos de esta organización" },
+  "Não há valor padrão. A lista de espera só liga depois de você escolher os três.": { es: "No hay valor predeterminado. La lista de espera solo se activa después de que elijas los tres." },
+  "Ligar a lista de espera nesta organização": { es: "Activar la lista de espera en esta organización" },
+  "Inscrever na lista": { es: "Inscribir en la lista" },
+  "Nome ou telefone": { es: "Nombre o teléfono" },
+  "Escolha o contato": { es: "Elige el contacto" },
+  "Escolha o atendimento": { es: "Elige la atención" },
+  "A pessoa aceitou ser avisada quando abrir uma vaga": { es: "La persona aceptó recibir el aviso cuando se abra una plaza" },
+  "Inscrever": { es: "Inscribir" },
+  "Ninguém na fila.": { es: "Nadie en la fila." },
+  "Oferta até": { es: "Oferta hasta" },
+  "Aceitou": { es: "Aceptó" },
+  "Recusou": { es: "Rechazó" },
   "O modelo de cobrança de cada caso e o calendário de parcelas.": {
     es: "El modelo de cobro de cada caso y el calendario de cuotas.",
   },
@@ -18649,6 +18691,18 @@ export const DICIONARIO: Traducoes = {
   "Sem contato vinculado, a etiqueta não é aplicada.": {
     es: "Sin contacto vinculado, la etiqueta no se aplica.",
   },
+  // Ação remove_tag (Tirar tag), no editor de automações.
+  "Tirar tag": { es: "Quitar etiqueta" },
+  "Tags para tirar (separadas por vírgula)": { es: "Etiquetas para quitar (separadas por coma)" },
+  "De onde tirar": { es: "De dónde quitar" },
+  "Do card": { es: "Del card" },
+  "Do contato do lead": { es: "Del contacto del lead" },
+  "Sem contato vinculado, nenhuma etiqueta é tirada.": {
+    es: "Sin contacto vinculado, no se quita ninguna etiqueta.",
+  },
+  "Nenhuma das etiquetas pedidas estava lá, então não havia nada a tirar.": {
+    es: "Ninguna de las etiquetas pedidas estaba allí, así que no había nada que quitar.",
+  },
   // #2744 — compositor: template escolhido sem nome para interpolar.
   "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.": {
     es: "Contacto sin nombre en el CRM: {{nome}}/{{primeiro_nome}} quedaron como texto literal en el mensaje. Edítalo antes de enviar.",
@@ -19547,6 +19601,11 @@ export const DICIONARIO: Traducoes = {
   "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.": { es: "El administrador de la empresa escribe un aviso y este llega como notificación a los dispositivos del equipo." },
   "Ligado, o administrador de cada empresa pode escrever um aviso com título e texto, e ele chega como notificação nos aparelhos da equipe que ativaram as notificações. Desligado, ninguém envia avisos; os já enviados ficam guardados.": { es: "Activado, el administrador de cada empresa puede escribir un aviso con título y texto, y este llega como notificación a los dispositivos del equipo que activaron las notificaciones. Desactivado, nadie envía avisos; los ya enviados quedan guardados." },
   "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.": { es: "No crea entrada en el menú del CRM: por ahora el aviso se envía por la API, en /api/v1/avisos." },
+  // O módulo opcional das reservas de lugar (#4029, doc 283) em /admin/sistema e em Recursos opcionais.
+  "Reservas de lugar": { es: "Reserva de lugares" },
+  "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.": { es: "La agenda reserva un lugar, como mesa, palco o cancha, con capacidad en personas." },
+  "Ligado, cada empresa pode cadastrar na agenda um lugar, como mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.": { es: "Activado, cada empresa puede registrar en la agenda un lugar, como mesa, palco o cancha, con capacidad en personas, y la reserva pasa a elegir el lugar e indicar cuántas personas vienen. Desactivado, nadie crea un lugar nuevo; los lugares y las reservas que ya existen quedan guardados." },
+  "Não cria porta no menu do CRM: por enquanto o lugar é cadastrado e reservado pela API, em /api/v1/agenda/servicos.": { es: "No crea entrada en el menú del CRM: por ahora el lugar se registra y se reserva por la API, en /api/v1/agenda/servicos." },
   // O módulo opcional dos servidores MCP por agente (#3857, doc 252) em /admin/sistema e em Recursos opcionais.
   "Ferramentas externas por agente": { es: "Herramientas externas por agente" },
   "Cada agente conecta os próprios servidores de ferramentas externas, e o cliente pode autorizar, pela conversa, o acesso à conta dele num sistema de terceiro.": { es: "Cada agente conecta sus propios servidores de herramientas externas, y el cliente puede autorizar, por la conversación, el acceso a su cuenta en un sistema de terceros." },

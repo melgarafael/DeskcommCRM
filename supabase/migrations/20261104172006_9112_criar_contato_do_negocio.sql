@@ -40,7 +40,8 @@ begin
   update public.crm_leads set contact_id = v_contact.id
     where id = p_lead_id and organization_id = p_organization_id;
   if not found then raise exception 'forbidden' using errcode = '42501'; end if;
-  -- Não devolve o documento cifrado ao navegador.
+  -- A ficha da API (#4225): nem o documento cifrado nem o hash saem daqui,
+  -- só o sinal de que há CPF.
   return jsonb_build_object(
     'id', v_contact.id,
     'organization_id', v_contact.organization_id,
@@ -57,7 +58,7 @@ begin
     'email', v_contact.email,
     'email_normalized', v_contact.email_normalized,
     'phone_number', v_contact.phone_number,
-    'cpf_hash', v_contact.cpf_hash,
+    'cpf_available', v_contact.cpf_encrypted is not null,
     'birthdate', v_contact.birthdate,
     'is_blocked', v_contact.is_blocked,
     'blocked_reason', v_contact.blocked_reason,

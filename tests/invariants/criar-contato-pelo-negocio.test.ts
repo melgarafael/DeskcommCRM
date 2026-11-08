@@ -101,11 +101,14 @@ describe("fn_create_contact_for_lead", () => {
         source: "manual",
         custom_fields: { preferencia: "Manha" },
       }),
-    ) as { id: string; organization_id: string };
+    ) as { id: string; organization_id: string; cpf_available: boolean };
 
     expect(saida.id).not.toBe(CONTATO_FORJADO);
     expect(saida.organization_id).toBe(ORG_A);
+    // A ficha da API (#4225): só o sinal de CPF, nenhuma coluna de CPF.
     expect(saida).not.toHaveProperty("cpf_encrypted");
+    expect(saida).not.toHaveProperty("cpf_hash");
+    expect(saida.cpf_available).toBe(false);
     expect(vinculoDo(NEGOCIO_NOVO)).toBe(saida.id);
     expect(
       valor(`select concat_ws('|', organization_id, zip_code, street, number, city, state,
