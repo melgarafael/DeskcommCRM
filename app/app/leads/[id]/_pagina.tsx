@@ -72,7 +72,7 @@ async function lerONegocio(leadId: string): Promise<Lead | null> {
 
 export function PaginaDoNegocio({
   lead,
-  pipeline,
+  pipeline: funil,
   etapas,
   voltarHref,
 }: {
@@ -96,10 +96,10 @@ export function PaginaDoNegocio({
    * `fieldDefs` pronto e nunca decide sozinho quais campos são do negócio.
    */
   const fieldDefs = useMemo(
-    () => camposPorEscopo(camposDoFunil(pipeline.settings ?? null), "negocio"),
-    [pipeline.settings],
+    () => camposPorEscopo(camposDoFunil(funil.settings ?? null), "negocio"),
+    [funil.settings],
   );
-  const atalhos = useMemo(() => atalhosDoFunil(pipeline.settings ?? null), [pipeline.settings]);
+  const atalhos = useMemo(() => atalhosDoFunil(funil.settings ?? null), [funil.settings]);
 
   const [recusa, setRecusa] = useState<RecusaDeCampos | null>(null);
   const [retomada, setRetomada] = useState<RetomadaPendente | null>(null);
@@ -111,7 +111,7 @@ export function PaginaDoNegocio({
    * Sem esta fiação, "mudar a etapa" na página teria um caminho mais pobre que
    * o do card — e a página existe para trabalhar o negócio, não para vê-lo.
    */
-  const moveCard = useMoveCard(pipeline.id, {
+  const moveCard = useMoveCard(funil.id, {
     onCamposFaltando: setRecusa,
     onRetomada: setRetomada,
   });
@@ -156,7 +156,7 @@ export function PaginaDoNegocio({
         variante="pagina"
         voltarHref={voltarHref}
         lead={negocio}
-        pipelineId={pipeline.id}
+        pipelineId={funil.id}
         fieldDefs={fieldDefs}
         stageName={etapas.find((e) => e.id === negocio.stage_id)?.name ?? "—"}
         ownerNames={ownerNames}
@@ -197,7 +197,7 @@ export function PaginaDoNegocio({
         onOpenChange={(aberto) => {
           if (!aberto) setPerda(null);
         }}
-        pipelineId={pipeline.id}
+        pipelineId={funil.id}
         submitting={moveCard.isPending}
         onConfirm={(lostReason) => {
           if (!perda) return;
@@ -221,7 +221,7 @@ export function PaginaDoNegocio({
           onOpenChange={(v: boolean) => !v && setRetomada(null)}
           leadId={retomada.leadId}
           stageId={retomada.stageId}
-          pipelineId={pipeline.id}
+          pipelineId={funil.id}
         />
       )}
     </>
