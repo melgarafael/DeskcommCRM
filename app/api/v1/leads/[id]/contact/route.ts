@@ -52,7 +52,10 @@ export async function POST(
       supabase,
       {
         organization_id: activeOrg.orgId,
-        actor: { type: "user", id: user.id },
+        // O PAPEL vem da SESSÃO (nunca do corpo), como na rota de contatos: no
+        // "Só os seus" é ele que dá ao Atendente a conversa do contato novo
+        // (#3479). Sem ele, a conversa nascia sem dono e sumia da Inbox.
+        actor: { type: "user", id: user.id, role: activeOrg.role },
         requestId,
         idioma: user.idioma,
       },
