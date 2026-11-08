@@ -197,15 +197,15 @@ export function PaginaDoNegocio({
         onOpenChange={(aberto) => {
           if (!aberto) setPerda(null);
         }}
-        leadId={negocio.id}
         pipelineId={pipeline.id}
         submitting={moveCard.isPending}
         onConfirm={(lostReason) => {
           if (!perda) return;
           const args = perda;
           setPerda(null);
-          // `leadId` porque o modo CARD da janela perde UM negócio pela rota
-          // individual; o move reenvia com o motivo na MESMA escrita.
+          // `onConfirm` (e não `leadId`): a escrita é UMA só — o move com o
+          // motivo dentro, como no quadro. Pela rota `lose` seriam dois
+          // pedidos, e o segundo com a etapa já mudada.
           moveCard.mutate(
             { ...args, lostReason },
             {
