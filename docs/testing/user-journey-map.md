@@ -4071,6 +4071,26 @@ iniciais com nome completo, um nome e fallback pelo e-mail: 8 vermelhos antes,
 8 verdes depois. **Não medido:** reconhecimento de voz em aparelho real e o
 fluxo inteiro em espanhol (a cobertura em espanhol aqui é do componente).
 
+
+## Cadências de e-mail opcionais (PR1738 / decisão75B) `[P1]`
+
+Estado: **PASS pela tela e SMTP real** (rodada r7, head `2d44615877`, vps-teste, banco fresco do `baseline.sql`, build de produção, Mailpit) em tudo o que a tabela marca assim. O descadastro e o item cosmético de 375 px mudaram depois dessa rodada, e estão **PENDENTES de refazer pela tela** no head do PR.
+
+| Gesto | Resultado exigido | Evidência |
+|---|---|---|
+| Clonar/aplicar baseline sem instalar | Nenhuma das três tabelas de cadências existe; menu/rotas/worker sem efeito | **PASS** r7: 0 tabelas, API 404, worker sem efeito, menu 0; invariante `cadencias-provisionadora` |
+| Dono instala em /admin/modulos; admin da empresa liga | Tabelas protegidas e porta no menu; outra empresa segue desligada | **PASS** r7 |
+| Gerente cria e ativa sequência; inscreve negócio sem autorização de rastreio | E-mail real no transporte de teste, link de descadastro e nenhum pixel | **PASS** r7 |
+| Inscreve outro contato com autorização | Pixel soma somente com consentimento e empresa ligados; evento aparece na atividade | **PASS** r7 |
+| Pausa/desliga com fila vencida | Nenhum novo envio; dados preservados | **PASS** r7 |
+| Destinatário concluiu sequência e clica descadastro com empresa desligada | Supressão persistente; reinscrição recusada; repetição idempotente | **PASS** r7 pelo GET antigo; **PENDENTE** refazer com o botão de confirmar |
+| Filtro de e-mail abre o link (GET e HEAD, sem sessão) | Inscrição segue ativa; a página só pede a confirmação | r7 reprovou: os dois paravam a inscrição, sem volta. Conserto com `route.test.ts`; **PENDENTE** refazer pela tela |
+| Provedor de e-mail faz o POST de um clique, sem cookie | E-mail traz `List-Unsubscribe` e `List-Unsubscribe-Post`; o POST descadastra | `lib/email/cabecalhos-do-envio.test.ts` e `worker-envio.test.ts`; **PENDENTE** conferir os cabeçalhos no Mailpit |
+| Abre o construtor a 375 px | Nome da cadência ativa sem cortar; botão de inserir passo com 44x44 | r7 mediu 51 px de largura e 24x24; **PENDENTE** medir de novo |
+| Exporta e anonimiza o titular | Inscrições/eventos exportados; fila encerrada; pixel revogado; vizinho preservado | **PASS** r7: coletor e cascata reais; invariante LGPD |
+| Transporte aceita mas avanço falha | Fila não reenvia; inscrição mostra resultado incerto para revisão | **PASS** r7 |
+| Empresa B abre a tela e a API da empresa A | Nada de A aparece; 404 ou lista vazia | **PASS** r7 |
+
 ## Atendimento e follow-ups — integração #3475 (2026-10-26)
 
 **Medido em bancada sintética real:** build de produção `20f335eae` /
@@ -4314,3 +4334,51 @@ funções copiáveis com `credential_id` nulo — regra única em `lib/ai/molde-
 
 Não provado: que a primeira chamada de IA da empresa nova sai com a chave da instalação (o
 painel mostra modelo e origem, não faz chamada paga).
+
+
+## E-mail da organização — conta e domínio (#3443 + #3464)
+
+**Estado:** spec `conta-resend-da-organizacao.spec.ts` verde no CI em `d531c6ebe` (27/10,
+53,2 s, parte 2); prova pela tela em instalação limpa na vps-teste **verde** no head
+`8e8871611` (08/11, 41 de 42 marcas; a que sobra é observação: Desconectar sai num
+clique, sem confirmação — decisão do mantenedor). O
+receiver recebe requisições reais da SDK com credenciais e destinatários artificiais; isso
+não prova entrega pela Resend nem chegada à caixa de entrada.
+
+| Jornada | Aceite | Estado |
+|---|---|---|
+| Admin encontra Configurações › Marca › Como seus e-mails saem | conecta uma conta com From válido e domínio habilitado na Resend; chave não volta após recarregar | spec no CI; action/SDK unitários |
+| Chave só de envio, domínio pendente, envio desabilitado ou falha de rede | causa nomeada; sem escrita nem segredo em payload/log | unitários; spec no CI |
+| Conta ausente versus conta ilegível | ausência mantém transporte da instalação; cifra/consulta falhando recusa, sem enviar pela outra conta | unitários; invariantes e spec no CI |
+| Duas organizações com contas diferentes | automação entrega ao receiver com a chave e From da sua organização; convite/LGPD seguem pela plataforma | SDK→HTTP real para duas contas; spec no CI |
+| Conferir domínio com Reply-To de outro domínio | usa From da conta e registros oficiais; campos do browser não escolhem tenant/domínio | unitários; spec no CI |
+| Return-Path personalizado/CNAME, null MX, SPF divergente e timeout | consulta nomes oficiais; mostra divergência/indisponibilidade separadamente do estado da Resend; sem selo de garantia de entrega | unitários; spec no CI |
+| Desconectar pela tela | remove só a conta da organização ativa e restaura o transporte da instalação | action unitária; spec no CI |
+
+Fontes: `lib/email/resend-da-organizacao*.test.ts`, `lib/email/dominio-de-envio*.test.ts`,
+`tests/unit/conferir-dominio-de-envio.test.ts` e
+`tests/unit/conectar-conta-resend-da-organizacao.test.ts`. As provas do resgate
+permanecem associadas ao checkout e ao head nos recibos operacionais; nenhum PASS
+unitário é contado como captura de UX.
+
+## Ofertas da campanha no atendimento — resgate #3503 (medido em 2026-11-07)
+
+A seção final de `prospeccao-auditoria-do-site.spec.ts` mantém o caso anterior de
+score/KPI/ordenação e seu teto de 120s. Fixtures próprias cobrem três ofertas com
+agente válido, site-only e duas automações sem site, pela configuração recarregada e
+pelo modal real, em build de produção sobre banco novo do baseline. O caso inteiro
+levou 14,1s. A frase nova cabe no modal em 1280px e 375px.
+
+O helper de inbound e tool direta usa a mesma conversa e o mesmo texto cru. Modelo e
+canal controlados medem encadeamento; não provam semântica de modelo, resposta
+persistida na Inbox ou entrega. O invariante A/B usa SQL real e mede filtros
+explícitos, sem alegar RLS/PostgREST pelo adapter postgres. O lado do modelo real
+está NAO_ALCANCAVEL: nenhuma sessão lê chave de provedor.
+
+Entrada: `prospecting_campaigns.config.ofertas`; consumidores: contexto do inbound,
+`crm_get_prospecting_site_audit` e estratégia no modal de Prospecção. A consulta
+aparece no registro de ferramentas do agente; falha de leitura mantém o resultado
+explícito de indisponibilidade. Laço: comparar as ofertas persistidas, tool direta
+e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nativa`.
+[Registro da prova](ofertas-da-campanha.md). CNPJ já foi
+entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.

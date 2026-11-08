@@ -104,6 +104,15 @@ import {
   type FotoParaEnvio,
 } from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
+import { apresentacaoOferecidaNoTurno } from '@/lib/catalogo/apresentacao-ligada';
+import {
+  respostaAoVetoDaApresentacao,
+  resumePersistedCatalogPresentation,
+} from '@/lib/catalogo/retomada-de-apresentacao';
+import { readCatalogPresentationSnapshot, resolveAndSnapshotCatalogPresentation } from '@/lib/catalogo/snapshot-de-apresentacao';
+import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
+import { catalogPresentationSelectionSchema } from '@/lib/catalogo/plano-de-apresentacao';
+import { apresentacaoEncerraTurno, terminalizarApresentacaoNoTurno } from '@/lib/catalogo/terminalidade-de-apresentacao';
 import {
   intervaloEfetivo,
   runAfterComIntervalo,
@@ -197,7 +206,11 @@ import {
   catalogoEntregueAoOperador,
 } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, memoriaEscritaPorPessoas, renderOrgMemory } from './org-memory';
-import { matchesHandoffKeyword, type PublishedAgentConfig } from './agent-config';
+import {
+  loadConversationAgentConfig,
+  matchesHandoffKeyword,
+  type PublishedAgentConfig,
+} from './agent-config';
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
@@ -213,6 +226,7 @@ import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-j
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
 import {
   hasOpenCaseForContact,
+  blocoDoCasoAguardandoCliente,
   getCaseAwaitingLead,
   openCase,
   provideCaseUpdate,
@@ -1827,6 +1841,12 @@ export interface AgentTurnInput {
   conversationId: string;
   /** Id da mensagem que criou o job inbound; não é usado por follow-ups. */
   inboundMessageId?: string;
+  /**
+   * A apresentação do catálogo retomada no início do job foi vetada por um gate
+   * de envio: o turno segue pelo modelo, sem a ferramenta, e as mensagens dela
+   * que já saíram ocupam as seqs até `proximaSeq - 1` no send_ledger.
+   */
+  apresentacaoVetada?: { proximaSeq: number };
   /**
    * Traço do turno (issue #2869): o coletor de ferramentas e o desfecho que a
    * execução preenche enquanto roda. OPCIONAL de propósito — quem chama o turno
@@ -3778,7 +3798,7 @@ async function executarTurnoDoAgente(
   }
 
   // Estado do RUN — vive só neste closure (isolamento por construção, acc 3).
-  let seq = 0;
+  let seq = input.apresentacaoVetada ? input.apresentacaoVetada.proximaSeq - 1 : 0;
   // O que o modelo de fato mandou neste turno (depois da cadeia). A trava "a
   // pergunta saiu?" do roteiro de atendimento lê daqui.
   const corposEnviados: string[] = [];
@@ -5541,6 +5561,8 @@ async function executarTurnoDoAgente(
   const buildCaseContextSnapshot = (): Record<string, unknown> =>
     snapshotDoCaso(effectiveContext.contact.name, effectiveContext.messages);
 
+  let caseAwaitingLead: Awaited<ReturnType<typeof getCaseAwaitingLead>> = null;
+
   // Spec 15 (Wave 3a): tools de caso humano (open_human_case/provide_case_update) só
   // entram quando a tela habilita (cases_enabled) — mesmo padrão do handoff acima.
   // Ids do closure (row do job), nunca do payload; payload inválido é erro de ENSINO
@@ -5603,15 +5625,20 @@ async function executarTurnoDoAgente(
           };
         }
         try {
+          if (liveJob().kind !== "inbound_turn" || !input.inboundMessageId || !caseAwaitingLead || caseAwaitingLead.id !== parsed.data.case_id) {
+            return { ok: false, error: { code: 'invalid_case_state', message: 'este turno não recebeu uma pergunta pendente deste caso.' } };
+          }
           const res = await provideCaseUpdate(
             pool,
             { tenantId, conversationId: input.conversationId },
-            { caseId: parsed.data.case_id, info: parsed.data.info },
+            { caseId: parsed.data.case_id, info: parsed.data.info, requestEventId: caseAwaitingLead.eventId, clientMessageId: input.inboundMessageId, sourceJobId: liveJob().id },
           );
           if (!res.ok) return res;
           return {
             ok: true,
-            message: 'informação enviada ao responsável; aguarde o retorno pelo caso.',
+            message: res.foraDaFronteira
+              ? 'informação registrada no caso para a equipe; nenhum aviso sai agora e a equipe vê pela tela do caso. NÃO diga ao cliente que alguém foi acionado.'
+              : 'informação registrada no caso para a equipe; o aviso segue pela fila de entrega.',
           };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -5827,6 +5854,97 @@ async function executarTurnoDoAgente(
       });
     }
 
+    // Só o inbound automático tem a porta de replay anterior ao classificador.
+    // Exigir a busca realmente montada evita oferecer uma capacidade de catálogo
+    // que a versão publicada ou a ponte MCP não autorizou neste turno.
+    let apresentacaoAcionada = false;
+    // Vetada uma vez, a sequência fixa não volta neste turno: a resposta é do modelo.
+    let apresentacaoVetada = input.apresentacaoVetada !== undefined;
+    let vetoDaApresentacao = { code: 'catalog_presentation_vetoed', message: 'a apresentação já foi barrada neste turno.' };
+    let disposicaoDaApresentacao: 'completed' | 'interrupted' | 'settled' | null = null;
+    // A apresentação já dispôs da mensagem ou do próprio job. Nenhuma correção
+    // de turno mudo, pergunta de roteiro ou nova chamada de modelo pode enviar.
+    const apresentacaoEncerrouOTurno = (): boolean => {
+      if (!apresentacaoAcionada) return false;
+      if (disposicaoDaApresentacao === 'settled') {
+        throw new JobSettledError('apresentacao do catalogo reagendada ou cancelada');
+      }
+      if (disposicaoDaApresentacao === null) {
+        throw new Error('catalog_presentation_without_disposition');
+      }
+      return true;
+    };
+    if (
+      !preview && liveJob().kind === 'inbound_turn' &&
+      rawTools.crm_search_products && rawTools.send_message && agentConfig &&
+      !agentConfig.pausedAt && agentConfig.operationMode !== 'assisted' && !apresentacaoVetada &&
+      await apresentacaoOferecidaNoTurno(deps.crmCfg.supabase, pool, tenantId, runLog)
+    ) {
+      rawTools.present_catalog_items = tool({
+        description:
+          'Apresenta os produtos do catálogo pelos códigos na ordem escolhida. Se retornar ok: true, esta é a última ação do turno; não chame outra ferramenta nem escreva resposta depois. Se retornar ok: false, responda normalmente ao cliente usando send_message.',
+        inputSchema: catalogPresentationSelectionSchema,
+        execute: async ({ product_codes }) => {
+          if (apresentacaoVetada) return respostaAoVetoDaApresentacao(0, vetoDaApresentacao);
+          const current = liveJob();
+          const claim = claimOfJob(current);
+          if (!claim) throw new Error('catalog_presentation_claim_missing');
+          if (!current.contact_id || !agentOperation) throw new StaleServiceBoundaryError();
+          const currentAgent = await loadConversationAgentConfig(
+            pool, tenantId, input.conversationId, input.channelSessionId,
+          );
+          if (!currentAgent || currentAgent.pausedAt || currentAgent.operationMode === 'assisted') {
+            disposicaoDaApresentacao = 'interrupted';
+            return { ok: false, code: 'catalog_presentation_agent_paused' };
+          }
+          const snapshot = await resolveAndSnapshotCatalogPresentation(pool, {
+            organizationId: tenantId,
+            contactId: current.contact_id,
+            jobId: current.id,
+            agentOperation,
+            claim,
+            sendsAlreadyCounted: seq,
+            maxSendsPerTurn,
+            orderedProductCodes: product_codes,
+          });
+          if (!snapshot.ok) {
+            return {
+              ok: false,
+              code: `catalog_presentation_${snapshot.error.code}`,
+              message: 'A apresentação não pôde ser iniciada. Responda normalmente ao cliente.',
+            };
+          }
+          const resumed = await resumePersistedCatalogPresentation(
+            pool,
+            { ...current, catalog_presentation_snapshot: snapshot.snapshot },
+            ctx,
+            { conversationId: input.conversationId, channelSessionId: input.channelSessionId },
+            {
+              channel: liveChannel(),
+              log: runLog,
+              maxSendsPerTurn,
+              queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,
+              respostaObsoletaTetoMs: deps.knobs.respostaObsoletaTetoMs ?? 0,
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode } : {}),
+              ...(deps.clock !== undefined ? { clock: deps.clock } : {}),
+              ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+            },
+          );
+          if (!resumed.handled) throw new Error('catalog_presentation_snapshot_missing');
+          if (resumed.disposition === 'vetoed') {
+            // O snapshot já saiu do job; o envio do modelo começa na seq vetada.
+            apresentacaoVetada = true;
+            vetoDaApresentacao = { code: resumed.code, message: resumed.message };
+            seq = Math.max(seq, resumed.nextSeq - 1);
+            return respostaAoVetoDaApresentacao(resumed.sent, vetoDaApresentacao);
+          }
+          disposicaoDaApresentacao = resumed.disposition;
+          return { ok: true, disposition: resumed.disposition };
+        },
+      });
+    }
+
     // Circuit breaker de tools (F2-15): estado no closure DESTA invocação — zera
     // entre runs por construção (mesma garantia de isolamento do resto do run).
     if (preview && rawTools.get_lead_note)
@@ -5896,15 +6014,23 @@ async function executarTurnoDoAgente(
             conferirAfirmacoes,
           )
         : rawTools;
+    const breakerTools = wrapToolsWithBreaker(previewTools, {
+      thresholds: deps.knobs.breaker,
+      readOnlyTools: READ_ONLY_TOOLS,
+      log: runLog, // os warns dos gates do breaker saem carimbados com o run
+    });
+    const presentationTools = rawTools.present_catalog_items
+      ? terminalizarApresentacaoNoTurno(
+          breakerTools,
+          'present_catalog_items',
+          () => { apresentacaoAcionada = true; },
+          apresentacaoEncerraTurno,
+        )
+      : breakerTools;
     const tools = envolverFerramentasComTraco(
-      wrapToolsWithBreaker(previewTools, {
-        thresholds: deps.knobs.breaker,
-        readOnlyTools: READ_ONLY_TOOLS,
-        log: runLog, // os warns dos gates do breaker saem carimbados com o run
-      }),
-      // O envoltório do traço fica POR FORA do breaker: assim a chamada que o
-      // breaker bloqueou também aparece na linha, marcada como `bloqueada` — é
-      // justamente a que mais falta faz numa investigação (#2869).
+      presentationTools,
+      // O traço continua por fora: registra tanto o veto do breaker quanto o
+      // descarte de ferramentas após a apresentação terminal.
       input.tracoDoTurno?.coletor,
     );
 
@@ -6084,17 +6210,11 @@ async function executarTurnoDoAgente(
     // isso o modelo nunca consegue chamar provide_case_update quando o lead simplesmente
     // responde (o caminho comum; case_reply_turn só cobre a AÇÃO do humano). Sufixo
     // por-lead (volátil) — nunca no prefixo cacheável (o case_id muda a cada caso).
-    const caseAwaitingLead =
+    caseAwaitingLead =
       preview?.kind !== 'sandbox' && agentConfig !== null && agentConfig.casesEnabled
         ? await getCaseAwaitingLead(pool, tenantId, input.conversationId)
         : null;
-    const caseAwaitingLeadBlock =
-      caseAwaitingLead !== null
-        ? `## Caso aguardando resposta deste cliente\n` +
-          `Há um caso aberto (case_id: ${caseAwaitingLead.id}) esperando uma informação dele: "${caseAwaitingLead.ask}". ` +
-          `Se a mensagem dele responde a isso, chame provide_case_update com este case_id e a informação recebida — ` +
-          `NÃO diga que já repassou/avisou o responsável sem chamar a tool.`
-        : '';
+    const caseAwaitingLeadBlock = blocoDoCasoAguardandoCliente(caseAwaitingLead);
     // ── O RELÓGIO DO TURNO ────────────────────────────────────────────────────
     //
     // Entra AQUI, e o lugar é a metade do conserto.
@@ -6221,18 +6341,26 @@ async function executarTurnoDoAgente(
     // Turno de resposta com o knob em 'on': para depois do envio final declarado,
     // se nenhum corpo anunciar ação que ainda falta. A MESMA regra vale na
     // correção do turno mudo, logo abaixo.
+    const paradaAposEnvio =
+      modoDaParada === 'on' && paradaElegivel
+        ? criarParadaAposEnvioFinal({
+            handoffKeywords: agentConfig?.handoffKeywords ?? [],
+            casoAbertoNesteTurno: () => openedCaseThisTurn,
+            retornoAgendadoNesteTurno: () => followupAgendadoNesteTurno,
+          })
+        : null;
+    // A apresentação do catálogo é terminal: ela soma à parada do envio final, não a troca.
     const paradaDoLaco =
       preview?.kind === 'assisted'
         ? { pararQuando: () => preview.result.candidates.length > 0 }
-        : modoDaParada === 'on' && paradaElegivel
+        : rawTools.present_catalog_items
           ? {
-              pararQuando: criarParadaAposEnvioFinal({
-                handoffKeywords: agentConfig?.handoffKeywords ?? [],
-                casoAbertoNesteTurno: () => openedCaseThisTurn,
-                retornoAgendadoNesteTurno: () => followupAgendadoNesteTurno,
-              }),
+              pararQuando: (estado: Parameters<NonNullable<typeof paradaAposEnvio>>[0]) =>
+                apresentacaoAcionada || (paradaAposEnvio?.(estado) ?? false),
             }
-          : {};
+          : paradaAposEnvio
+            ? { pararQuando: paradaAposEnvio }
+            : {};
 
     // O modelo decide tools livremente dentro do teto de steps (knob AGENT_MAX_STEPS).
     //
@@ -6274,6 +6402,8 @@ async function executarTurnoDoAgente(
       },
       { registry: deps.registry, log: runLog },
     );
+
+    if (apresentacaoEncerrouOTurno()) return;
 
     // SAÍDA TRUNCADA (finish_reason = 'length'): o modelo bateu no
     // teto de tokens de saída e o que produziu veio cortado. A detecção mora aqui,
@@ -6449,6 +6579,9 @@ async function executarTurnoDoAgente(
         },
         { registry: deps.registry, log: runLog },
       );
+      // A correção tem as mesmas ferramentas: se ela apresentou, o turno acabou
+      // aqui, e o desfecho de turno mudo logo abaixo não vale para ele.
+      if (apresentacaoEncerrouOTurno()) return;
       // Sinal de FALHA da correção: terminou no teto de tokens. Silêncio com
       // finishReason normal (stop/tool-calls) é resposta escolhida, não defeito.
       correcaoTruncou = correcao.result.finishReason === 'length';
@@ -7258,6 +7391,49 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       channelSessionId: payload.channel_session_id,
     })) return;
 
+    // A coluna interna conserva plano e operação originais; não é uma nova
+    // escolha de agente. O payload legado nunca autoriza nem controla replay.
+    let apresentacaoVetada: { proximaSeq: number } | undefined;
+    if (job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
+      // O envio retomado credita o agente do turno que gravou o snapshot, como o
+      // envio original; sem isto ele sairia com o ator de fallback.
+      const agenteDoSnapshot = readCatalogPresentationSnapshot(
+        job.catalog_presentation_snapshot,
+        job.organization_id,
+      )?.agent_operation.agentId;
+      const crmCfgDaRetomada = agenteDoSnapshot
+        ? { ...deps.crmCfg, agentActorId: agenteDoSnapshot }
+        : deps.crmCfg;
+      const resumedPresentation = await resumePersistedCatalogPresentation(
+        pool,
+        job,
+        ctx,
+        {
+          conversationId: payload.conversation_id,
+          channelSessionId: payload.channel_session_id,
+        },
+        {
+          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, crmCfgDaRetomada)))(pool),
+          log: deps.log,
+          maxSendsPerTurn: deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN,
+          queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,
+          respostaObsoletaTetoMs: deps.knobs.respostaObsoletaTetoMs ?? 0,
+          ...(deps.knobs.disclosureMode !== undefined
+            ? { disclosureMode: deps.knobs.disclosureMode }
+            : {}),
+          ...(deps.clock !== undefined ? { clock: deps.clock } : {}),
+          ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+        },
+      );
+      if (resumedPresentation.handled) {
+        if (resumedPresentation.disposition === 'settled') {
+          throw new JobSettledError('apresentacao do catalogo retomada e job reagendado/cancelado');
+        }
+        if (resumedPresentation.disposition !== 'vetoed') return;
+        // Vetada na retomada: o cliente recebe a resposta do modelo neste job.
+        apresentacaoVetada = { proximaSeq: resumedPresentation.nextSeq };
+      }
+    }
     const resolvedAgent = await resolveConversationTurn(pool, deps.llmCfg, {
       tenantId: job.organization_id,
       leadId: job.contact_id,
@@ -7329,6 +7505,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       channelSessionId: payload.channel_session_id,
       conversationId: payload.conversation_id,
       inboundMessageId: payload.inbound_message_id,
+      ...(apresentacaoVetada !== undefined ? { apresentacaoVetada } : {}),
       buildOpening: ({
         previous,
         leadState,
