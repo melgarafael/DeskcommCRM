@@ -45,6 +45,13 @@ interface KanbanBoardProps {
   /** Lead a abrir já na montagem (deep link `?lead=` — ver o dossiê abaixo). */
   leadInicial?: string | null;
   /**
+   * O ENDEREÇO DA PÁGINA INTEIRA (#4151) — montado pela página do funil, que é
+   * quem tem `pathname`/`searchParams` na mão e sabe qual filtro está na URL.
+   * Presente, o dossiê ganha o botão "Expandir"; ausente (lista, calendário,
+   * quadro embutido), continua só o painel.
+   */
+  hrefDoNegocio?: (leadId: string) => string;
+  /**
    * `manager`+ pode renomear a etapa direto no cabeçalho da coluna — mesmo
    * corte de papel da rota (`PATCH .../stages/:stageId`, `requireRole("manager")`).
    * `viewer`/`agent` também abrem este board (ele não é rota manager-only),
@@ -105,6 +112,7 @@ export function KanbanBoard({
   pulses: pulsesProp,
   onSelectionChange,
   leadInicial,
+  hrefDoNegocio,
   podeRenomearEtapa = false,
   denso = false,
   somenteLeitura = false,
@@ -416,6 +424,7 @@ export function KanbanBoard({
           onOpenChange={(v: boolean) => !v && setDossieId(null)}
           lead={leadDoDossie}
           pipelineId={pipelineId}
+          expandirHref={hrefDoNegocio?.(leadDoDossie.id)}
           fieldDefs={camposPorEscopo(camposDoFunil(data.pipeline.settings ?? null), "negocio")}
           stageName={
             data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
