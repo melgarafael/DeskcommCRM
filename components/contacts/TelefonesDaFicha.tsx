@@ -59,17 +59,29 @@ export function textoDoWhatsappDoTelefone(
 }
 
 /**
- * A mensagem que a API manda, na tela. Os códigos que a tela conhece ganham frase
- * LITERAL (para o guardião de espanhol enxergar); o resto passa pelo `t()` como
- * a tela inteira já faz com o texto de `fail()`.
+ * A mensagem que a API manda, na tela — e ela vem PRIMEIRO (#4242).
+ *
+ * O servidor é a única fonte que conhece o país da organização: numa ficha de
+ * Portugal a frase `Telefone deve estar em formato E.164 (+351...)` é o que
+ * ensina o formato certo, e a tela trocava isso por um texto local que falava
+ * em DDD — palavra que Portugal não tem. Por isso: mensagem do servidor quando
+ * existe; o texto local só como recurso, quando a resposta não traz nada (ou
+ * traz só o código, que é o que `ApiError` guarda sem mensagem).
+ *
+ * Os textos locais também não contradizem o E.164: o do `invalid_phone` fala em
+ * formato internacional, sem DDD, porque a tela não sabe o país de quem está
+ * olhando — quem sabe é o servidor, e é ele quem fala primeiro.
  */
 function mensagemDeErro(err: unknown, t: (texto: string) => string): string {
   if (err instanceof ApiError) {
+    const doServidor = err.message?.trim();
+    if (doServidor && doServidor !== err.code) return t(doServidor);
     if (err.code === "phone_in_use") return t("Este número já está em outra ficha.");
     if (err.code === "primary_phone_has_extras")
       return t("Torne outro número principal antes de remover este.");
-    if (err.code === "invalid_phone") return t("Número inválido. Confira o DDD e tente de novo.");
-    return t(err.message);
+    if (err.code === "invalid_phone")
+      return t("Número inválido. Informe o telefone no formato E.164, com o código do país.");
+    return t("Erro inesperado. Tente novamente.");
   }
   return t("Erro inesperado. Tente novamente.");
 }
@@ -160,6 +172,16 @@ export function TelefonesDaFicha({
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [rascunho, setRascunho] = useState<Rascunho>(RASCUNHO_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
+  /**
+   * O aviso antes de "Tornar principal" num extra COM rótulo (#4242).
+   *
+   * O telefone principal da ficha não tem onde guardar o rótulo: `contacts` só
+   * leva número, tipo e WhatsApp, e a função que troca os dois
+   * (`fn_tornar_telefone_principal`) não copia `rotulo`. Preservar exigiria
+   * coluna nova — migration, que esta entrega não faz. Então a tela avisa antes
+   * do clique, em vez de descartar a informação em silêncio.
+   */
+  const [confirmacao, setConfirmacao] = useState<{ id: string; rotulo: string } | null>(null);
 
   const ocupado =
     adicionar.isPending ||
@@ -247,11 +269,25 @@ export function TelefonesDaFicha({
 
   async function tornarPrincipalDoExtra(id: string) {
     setErro(null);
+    setConfirmacao(null);
     try {
       await tornarPrincipal.mutateAsync(id);
     } catch (err) {
       setErro(mensagemDeErro(err, t));
     }
+  }
+
+  /**
+   * "Tornar principal" de um extra: sem rótulo, troca direto (é o caminho de
+   * sempre); com rótulo, abre o aviso — o rótulo se perde na troca (#4242).
+   */
+  function pedirTrocaDoPrincipal(extra: TelefoneExtraDaFicha) {
+    setErro(null);
+    if (!extra.label) {
+      void tornarPrincipalDoExtra(extra.id);
+      return;
+    }
+    setConfirmacao({ id: extra.id, rotulo: extra.label });
   }
 
   function formulario(modo: Edicao["modo"]) {
@@ -378,13 +414,39 @@ export function TelefonesDaFicha({
                   <Button type="button" size="sm" variant="ghost" onClick={() => abrirEdicaoDoExtra(extra)} disabled={ocupado}>
                     {t("Editar")}
                   </Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => tornarPrincipalDoExtra(extra.id)} disabled={ocupado}>
+                  <Button type="button" size="sm" variant="outline" onClick={() => pedirTrocaDoPrincipal(extra)} disabled={ocupado}>
                     {t("Tornar principal")}
                   </Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => remover(extra.id)} disabled={ocupado}>
                     {t("Remover")}
                   </Button>
                 </>
+              )}
+              {confirmacao?.id === extra.id && (
+                <div role="alert" className="w-full rounded-md border border-destructive/40 bg-destructive/5 p-3">
+                  <p className="text-sm">
+                    {t(
+                      "Este número vai virar o principal e o rótulo será descartado: o telefone principal da ficha não guarda rótulo.",
+                    )}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    <span>{t("Rótulo que será descartado:")}</span> <span>{confirmacao.rotulo}</span>
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button type="button" size="sm" onClick={() => tornarPrincipalDoExtra(extra.id)} disabled={ocupado}>
+                      {t("Continuar")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setConfirmacao(null)}
+                      disabled={ocupado}
+                    >
+                      {t("Cancelar")}
+                    </Button>
+                  </div>
+                </div>
               )}
               {edicao?.modo === "extra" && edicao.id === extra.id && formulario("extra")}
             </li>
