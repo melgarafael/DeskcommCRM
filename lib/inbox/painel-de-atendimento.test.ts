@@ -268,7 +268,9 @@ describe("painel de atendimento", () => {
       expect(url).not.toContain("assigned_to");
       expect(parametros(url).comando).toEqual(["aguardando"]);
       expect(ehAFila(parametros(url))).toBe(true);
-      expect(parametros(consultas(false).fila).comando).toEqual(["aguardando", "automatico"]);
+      // Sem automático no ar, o banco carimba `ninguem` nessas conversas (9252):
+      // a Fila pede o valor que o campo calculado emite.
+      expect(parametros(consultas(false).fila).comando).toEqual(["aguardando", "ninguem"]);
       expect(parametros(consultas(true).fila).comando).toEqual(["aguardando"]);
 
       const chamadas = await chamadasAoBanco(url);

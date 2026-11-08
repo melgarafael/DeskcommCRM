@@ -198,6 +198,19 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
         values ('${ORG}', 'espelho-comando', 'Espelho LTDA', 'Espelho');
       insert into channel_sessions (id, organization_id, webhook_secret_encrypted, waha_session_name)
         values ('${ORG}', '${ORG}', '\\x00', 'espelho-sess');
+      -- #4012: o fato org-wide faz parte da regra desde a 9252. Um agente
+      -- publicado é o que autoriza o banco a dizer 'automatico'; o bloco lê o
+      -- fato do BANCO logo abaixo (em vez de afirmá-lo à mão), para os dois
+      -- lados continuarem medindo a MESMA pergunta.
+      insert into ai_agents (id, organization_id, name, system_prompt)
+        values ('aaaaaaaa-0000-4000-8000-00000000a001', '${ORG}', 'Espelho no ar', 'system');
+      insert into ai_agent_versions
+        (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status)
+        values ('aaaaaaaa-0000-4000-8000-00000000a002', '${ORG}',
+                'aaaaaaaa-0000-4000-8000-00000000a001', 1, 'system', 'anthropic',
+                'claude-sonnet-4-6', '${ORG}', 'published');
+      update ai_agents set published_version_id = 'aaaaaaaa-0000-4000-8000-00000000a002'
+       where id = 'aaaaaaaa-0000-4000-8000-00000000a001';
       ${linhas
         .map(
           (l) => `
@@ -227,6 +240,19 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
     );
     expect(doBanco.size).toBe(linhas.length);
 
+    // O fato org-wide vem do BANCO, como o wrapper o lê: se o agente publicado
+    // sumisse da fixture, os dois lados teriam de mudar juntos — e um bloco que
+    // afirmasse `true` à mão ficaria verde mentindo sobre a regra.
+    const automaticoDaOrg =
+      sql(
+        `select exists (
+           select 1 from ai_agents a
+            where a.organization_id = '${ORG}'
+              and a.archived_at is null
+              and a.paused_at is null
+              and a.published_version_id is not null)`,
+      ).trim() === "t";
+
     for (const l of linhas) {
       const ts = comandoDaConversa(
         {
@@ -236,7 +262,7 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
           force_human: l.fh,
           is_blocked: l.ib,
           is_group: l.grupo === true,
-          automaticoDaOrg: true,
+          automaticoDaOrg,
         },
         // O wrapper usa `now()` do banco; estas linhas não ficam na fronteira do
         // relógio de propósito (só `infinity`/`null`), então a comparação é estável.

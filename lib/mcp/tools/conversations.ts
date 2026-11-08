@@ -34,11 +34,11 @@ function isInQueue(c: { comando_da_conversa?: string | null }): boolean {
   // Ele decide UMA coisa: vale a pena buscar as posições de fila para esta
   // página? Por isso é liberal de propósito — pergunta "não tem dono e não
   // acabou", que cobre tanto a org COM automático (só `aguardando` está na fila)
-  // quanto a SEM (`automatico` também está, ver `comandosDaFila`). Errar para o
+  // quanto a SEM (`ninguem`, desde a 9252, ver `comandosDaFila`). Errar para o
   // lado do sim custa uma consulta; errar para o não some com a posição que a IA
   // devolve ao cliente.
   const q = c.comando_da_conversa;
-  return q === "aguardando" || q === "automatico";
+  return q === "aguardando" || q === "automatico" || q === "ninguem";
 }
 
 const listInputShape = {

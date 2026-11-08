@@ -203,8 +203,10 @@ describe("a lista do inbox consulta UMA vez quando o filtro efetivo muda (#2365)
     await entregar(AUTOMATICO, { data: { ativo: false } });
 
     // UMA requisição, com o filtro DEFINITIVO da Fila de uma org sem automático.
+    // `ninguem` desde a 9252: é o valor que o campo calculado emite quando a
+    // organização não tem agente publicado (#4012).
     await waitFor(() => expect(listas()).toHaveLength(1));
-    expect(comando(unicaLista().url)).toBe("aguardando,automatico");
+    expect(comando(unicaLista().url)).toBe("aguardando,ninguem");
 
     // E nenhuma segunda chave depois: nada de GET em série.
     await assentar();

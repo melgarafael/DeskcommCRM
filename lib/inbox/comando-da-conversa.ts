@@ -328,19 +328,20 @@ export const ROTULO_DO_MOTIVO: Record<MotivoDoSilencio, string> = {
 };
 
 /**
- * O VOCABULÁRIO QUE O BANCO FALA — quatro, não cinco.
+ * O VOCABULÁRIO QUE O BANCO FALA — cinco desde a 9252 (#4012).
  *
- * `fn_comando_da_conversa` (migration 0202) devolve estes quatro. `ninguem` fica
- * de fora de propósito: ele não é um estado diferente, é o mesmo balde do
- * `automatico` renomeado quando a ORG não tem nenhum agente no ar — e "a org tem
- * automático?" é um fato org-wide que o SQL só saberia reproduzindo
- * `agenteAtende` inteiro dentro do banco. Seria a regra duplicada de novo, agora
- * numa terceira encarnação.
+ * Eram quatro, e `ninguem` ficava de fora de propósito: "a organização não tem
+ * automático" é um fato org-wide que o SQL não sabia responder, então o servidor
+ * é que o aplicava, escolhendo o CONJUNTO de comandos da aba (`comandosDaFila`).
  *
- * Quem sabe o fato da org é o servidor, e ele o aplica escolhendo o CONJUNTO de
- * comandos que a aba pede — ver `comandosDaFila`.
+ * A migration 9252 fez o banco perguntar o mesmo: `fn_comando_da_conversa`
+ * recebe a organização e lê `ai_agents` (`agenteAtende`), e a conversa sem dono
+ * e sem trava de uma org sem agente publicado passa a ser `ninguem` — o MESMO
+ * valor que esta função devolve com `automaticoDaOrg === false`. O quinto valor
+ * deixou de ser renomeação de tela e virou vocabulário do banco; mantê-lo fora
+ * daqui faria a Fila pedir um valor que o campo calculado não emite mais.
  */
-export const COMANDOS_DO_BANCO = ["humano", "automatico", "aguardando", "encerrada"] as const;
+export const COMANDOS_DO_BANCO = ["humano", "automatico", "aguardando", "encerrada", "ninguem"] as const;
 export type ComandoDoBanco = (typeof COMANDOS_DO_BANCO)[number];
 
 /**
@@ -352,13 +353,17 @@ export type ComandoDoBanco = (typeof COMANDOS_DO_BANCO)[number];
  * fora faria a Fila de uma instalação recém-instalada nascer VAZIA com dezenas de
  * clientes sem resposta, que é o pior estado possível na primeira impressão.
  *
- * `undefined` ("não sei", leitura em andamento ou que falhou) segue a mesma
- * convenção do resto do arquivo: assume que HÁ automático. Errar para o lado de
- * mostrar menos na fila é recuperável em ~200ms; errar para o outro pinta 83
+ * Desde a 9252 quem carimba `ninguem` nessas conversas é o BANCO; por isso a
+ * Fila pede `ninguem`, e não mais `automatico`. É o mesmo conjunto de antes com
+ * o nome que o campo calculado passou a emitir.
+ *
+ * `undefined` (não sei) segue a convenção do resto do arquivo: assume que HÁ
+ * automático. Errar para o lado de mostrar menos na fila é recuperável em ~200ms
+ * — a resposta do fato reexecuta a consulta —; errar para o outro pinta 83
  * linhas de trabalho humano que não existe.
  */
 export function comandosDaFila(automaticoDaOrg?: boolean): ComandoDoBanco[] {
-  return automaticoDaOrg === false ? ["aguardando", "automatico"] : ["aguardando"];
+  return automaticoDaOrg === false ? ["aguardando", "ninguem"] : ["aguardando"];
 }
 
 /**

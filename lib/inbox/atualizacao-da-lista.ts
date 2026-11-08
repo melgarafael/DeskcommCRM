@@ -197,9 +197,13 @@ export function julgarAtualizacao(
 
   if (filtros.comando && filtros.comando.length > 0) {
     // `comandoDaConversa` é a régua única de "quem manda" (a linha da lista usa a
-    // MESMA). O fato org-wide vai `undefined` = "não sei", que a função trata
-    // assumindo que há automático — a Fila pede `aguardando` e `automatico`
-    // juntos (`comandosDaFila`), então a ambiguidade não muda a resposta.
+    // MESMA). O fato org-wide NÃO vem nesta chamada — a função então assume que há
+    // automático e responde `automatico` para a conversa livre. Desde a 9252 o
+    // banco responde `ninguem` na MESMA conversa quando a organização não tem
+    // agente publicado, e a Fila pede os dois valores juntos (`comandosDaFila`).
+    // Sem esta equivalência, o evento de tempo real tiraria da Fila justamente a
+    // conversa que o servidor acabou de incluir. `ninguem` e `automatico` são o
+    // mesmo balde de "sem dono, sem trava": os dois nomes descrevem a mesma linha.
     const { comando } = comandoDaConversa({
       status: String(atual.status),
       assigned_to_user_id: atual.assigned_to_user_id ?? null,
@@ -211,10 +215,11 @@ export function julgarAtualizacao(
       is_blocked: atual.contacts?.is_blocked ?? null,
       is_group: atual.is_group ?? false,
     });
-    // `ninguem` é o mesmo balde do `automatico` no vocabulário do banco.
-    const noVocabularioDoBanco: ComandoDoBanco =
-      comando.quem === "ninguem" ? "automatico" : comando.quem;
-    if (!filtros.comando.includes(noVocabularioDoBanco)) return "sai";
+    const equivalente: readonly ComandoDoBanco[] =
+      comando.quem === "automatico" || comando.quem === "ninguem"
+        ? ["automatico", "ninguem"]
+        : [comando.quem];
+    if (!equivalente.some((c) => filtros.comando!.includes(c))) return "sai";
   }
 
   return "fica";

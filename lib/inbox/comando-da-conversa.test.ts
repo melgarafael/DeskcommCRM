@@ -348,18 +348,28 @@ describe("o que entrou quando o banco passou a calcular o mesmo comando", () => 
     expect(r.motivo).toBe("contato_travado");
   });
 
-  it("a fila pede 'aguardando' — e 'automatico' também quando a org não tem robô", () => {
+  it("a fila pede 'aguardando' — e 'ninguem' também quando a org não tem robô", () => {
     expect(comandosDaFila(true)).toEqual(["aguardando"]);
     expect(comandosDaFila(undefined)).toEqual(["aguardando"]);
-    // Sem automático de pé, `automatico` não descreve ninguém: essas conversas
-    // estão esperando gente, e deixá-las fora faria a Fila de uma instalação
-    // nova nascer vazia com clientes sem resposta.
-    expect(comandosDaFila(false)).toEqual(["aguardando", "automatico"]);
+    // Sem automático de pé, o BANCO carimba `ninguem` desde a 9252: é o mesmo
+    // conjunto de antes — essas conversas estão esperando gente — com o valor que
+    // o campo calculado passou a emitir. Deixá-las fora faria a Fila de uma
+    // instalação nova nascer vazia com clientes sem resposta.
+    expect(comandosDaFila(false)).toEqual(["aguardando", "ninguem"]);
   });
 
-  it("o vocabulário do banco tem QUATRO — 'ninguem' é renomeação de TS, não estado", () => {
-    expect([...COMANDOS_DO_BANCO]).toEqual(["humano", "automatico", "aguardando", "encerrada"]);
-    expect(COMANDOS_DO_BANCO as readonly string[]).not.toContain("ninguem");
+  it("o vocabulário do banco tem CINCO desde a 9252 — 'ninguem' virou estado", () => {
+    // Até a 9252 `ninguem` era só renomeação de TELA, e o banco falava quatro.
+    // Com `fn_comando_da_conversa` perguntando a organização (a mesma régua de
+    // `comandoDaConversa`), o campo calculado passou a emitir `ninguem` — e o
+    // conjunto que a Fila pede (`comandosDaFila`) acompanha.
+    expect([...COMANDOS_DO_BANCO]).toEqual([
+      "humano",
+      "automatico",
+      "aguardando",
+      "encerrada",
+      "ninguem",
+    ]);
   });
 });
 

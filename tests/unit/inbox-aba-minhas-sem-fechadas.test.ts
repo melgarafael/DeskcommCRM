@@ -52,9 +52,11 @@ describe("tabToFilter — o que cada aba significa", () => {
   it("numa org SEM automático, a Fila também traz o que ninguém está atendendo", () => {
     // O controle do caso acima. Sem ele, a Fila de uma instalação recém-instalada
     // — que ainda não publicou agente — nasceria VAZIA com clientes esperando,
-    // que é o pior estado possível na primeira impressão.
+    // que é o pior estado possível na primeira impressão. O valor é `ninguem`
+    // porque é ele que o campo calculado emite nas organizações sem agente
+    // publicado desde a migration 9252 (#4012).
     expect(tabToFilter("unassigned", false)).toEqual({
-      comando: ["aguardando", "automatico"],
+      comando: ["aguardando", "ninguem"],
     });
   });
 
