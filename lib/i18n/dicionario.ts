@@ -13049,6 +13049,45 @@ export const DICIONARIO: Traducoes = {
   // "Los agendamientos" — entrada que NÃO é deste bloco e por isso fica como
   // está; trocá-la é decisão de quem a escreveu, e vai anotada no PR.
   "Novo agendamento": { es: "Nueva cita" },
+  // ─── Camada "Datas dos negócios" na Agenda (#3221) ───────────────────────
+  // O rótulo diz DE QUE DATA se trata, e vem do campo do funil; estas chaves são
+  // só a moldura (interruptor, seletores, estados vazios). "Fecha" nunca aparece
+  // como "data do negócio".
+  "Datas dos negócios": { es: "Fechas de los negocios" },
+  "Só leitura: para mudar a data, abra o negócio.": {
+    es: "Solo lectura: para cambiar la fecha, abre el negocio.",
+  },
+  "Funil das datas": { es: "Embudo de las fechas" },
+  "Campo de data do negócio": { es: "Campo de fecha del negocio" },
+  "Escolha o campo de data": { es: "Elige el campo de fecha" },
+  "Segundo campo de data": { es: "Segundo campo de fecha" },
+  "Sem segundo campo": { es: "Sin segundo campo" },
+  "Este campo de data não existe mais neste funil.": {
+    es: "Este campo de fecha ya no existe en este embudo.",
+  },
+  "Não foi possível carregar as datas dos negócios.": {
+    es: "No se pudieron cargar las fechas de los negocios.",
+  },
+  "Escolha o campo de data para ver os negócios na agenda.": {
+    es: "Elige el campo de fecha para ver los negocios en la agenda.",
+  },
+  "Nenhum negócio com esse campo de data neste período.": {
+    es: "Ningún negocio con ese campo de fecha en este período.",
+  },
+  "Há mais negócios do que cabe aqui. Estreite o período ou o funil.": {
+    es: "Hay más negocios de los que caben aquí. Acota el período o el embudo.",
+  },
+  "Informe o funil e o campo de data.": {
+    es: "Indica el embudo y el campo de fecha.",
+  },
+  "Período inválido.": { es: "Período inválido." },
+  // A data que NÃO EXISTE no calendário (2026-02-31) é recusa própria: o dia
+  // tem a forma certa e mesmo assim não é dia nenhum. A frase existe para a
+  // camada dizer o motivo em vez de mostrar grade vazia (#3221).
+  "Data de calendário inválida.": { es: "Fecha de calendario inválida." },
+  "A data do período não existe no calendário.": {
+    es: "La fecha del período no existe en el calendario.",
+  },
   "Remarcar agendamento": { es: "Reagendar cita" },
   "Cancelar agendamento": { es: "Cancelar cita" },
   "Este agendamento não está mais na lista.": { es: "Esta cita ya no está en la lista." },
@@ -18593,7 +18632,6 @@ export const DICIONARIO: Traducoes = {
   "Este funil não tem campo de data do negócio. Crie um nas configurações do funil para usar esta ação.": {
     es: "Este embudo no tiene campo de fecha del negocio. Crea uno en la configuración del embudo para usar esta acción.",
   },
-  "Escolha o campo de data": { es: "Elige el campo de fecha" },
 
   // ─── Seletor de canal ao iniciar conversa nova (#2382) ───
   "Escolha o canal para iniciar a conversa": { es: "Elige el canal para iniciar la conversación" },
