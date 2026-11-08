@@ -52,7 +52,41 @@ import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+  "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_encrypted, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+
+/**
+ * A linha como o banco devolve. `cpf_encrypted` é interno a este módulo e só diz
+ * se há CPF: `contacts_cpf_consistency` obriga as duas colunas de CPF a serem
+ * nulas juntas, e a cifra só se abre em `decrypt_cpf`. Comparar por CPF é do
+ * servidor (`idsDeContatosPorCpf`, `erroDeConflitoUnico`).
+ */
+type LinhaDeContato = Omit<Contact, "cpf_available"> & { cpf_encrypted: unknown };
+
+/**
+ * A ficha que sai deste módulo: o sinal de que há CPF, nunca a coluna. Toda
+ * saída de `SELECT_COLS` passa aqui — os handlers servem à REST e ao MCP.
+ */
+function fichaDaResposta({ cpf_encrypted, ...ficha }: LinhaDeContato): Contact {
+  return { ...ficha, cpf_available: !!cpf_encrypted };
+}
+
+/**
+ * As fichas vivas desta organização com o CPF de `digits`. Sem `limit`: o índice
+ * único de CPF nasce com `if not exists`, e a ficha repetida num clone sem ele
+ * também tem de aparecer na busca.
+ */
+async function idsDeContatosPorCpf(ctx: HandlerCtx, digits: string): Promise<string[]> {
+  const { data, error } = await createAdminClient()
+    .from("contacts")
+    .select("id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("cpf_hash", hashCpf(digits))
+    .is("is_merged_into", null);
+  if (error) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  return ((data ?? []) as { id: string }[]).map((r) => r.id);
+}
 
 interface CursorPayload {
   sort: string | null;
@@ -283,7 +317,8 @@ export async function listContactsHandler(
       }
     }
     if (digits.length === 11) {
-      orParts.push(`cpf_hash.eq.${hashCpf(digits)}`);
+      const idsPorCpf = await idsDeContatosPorCpf(ctx, digits);
+      if (idsPorCpf.length > 0) orParts.push(`id.in.(${idsPorCpf.join(",")})`);
     }
     query = query.or(orParts.join(","));
   }
@@ -343,7 +378,7 @@ export async function listContactsHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
   }
 
-  const rows = (data ?? []) as Contact[];
+  const rows = ((data ?? []) as LinhaDeContato[]).map(fichaDaResposta);
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
   const last = page[page.length - 1];
@@ -419,7 +454,6 @@ export interface GetContactInput {
 }
 
 export interface GetContactResult extends Contact {
-  cpf_available: boolean;
   cpf_decrypted: string | null;
   cpf_decrypt_denied?: boolean;
 }
@@ -448,12 +482,12 @@ export async function getContactHandler(
       traduzir("Contato não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
-  const contact = data as Contact;
+  const contact = fichaDaResposta(data as LinhaDeContato);
 
   let cpfDecrypted: string | null = null;
   let cpfDecryptDenied = false;
 
-  if (input.decryptPurpose && contact.cpf_hash && ctx.actor.type === "user") {
+  if (input.decryptPurpose && contact.cpf_available && ctx.actor.type === "user") {
     const { data: membership } = await supabase
       .from("user_organizations")
       .select("role")
@@ -501,7 +535,6 @@ export async function getContactHandler(
 
   return {
     ...contactWithConversa,
-    cpf_available: !!contact.cpf_hash,
     cpf_decrypted: cpfDecrypted,
     cpf_decrypt_denied: cpfDecryptDenied || undefined,
   };
@@ -551,7 +584,7 @@ async function erroDeConflitoUnico(
   if (indice === INDICE_CPF) {
     const hash = typeof campos.cpf_hash === "string" ? campos.cpf_hash : null;
     if (hash) {
-      const existente = await encontrarContatoPorCpfHash(supabase, ctx.organization_id, hash);
+      const existente = await encontrarContatoPorCpfHash(createAdminClient(), ctx.organization_id, hash);
       if (existente) {
         return new ApiError(
           409,
@@ -690,7 +723,7 @@ export async function createContactHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
-  const contact = created as Contact;
+  const contact = fichaDaResposta(created as LinhaDeContato);
   // ── A CONVERSA DO CONTATO NOVO (#3718) ────────────────────────────────────
   //
   // A regra — esta porta abre, a importação por CSV não — mora num lugar só:
@@ -699,7 +732,12 @@ export async function createContactHandler(
   // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
   // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
   // porta.
-  const conversa = await abrirConversaDoContatoNovo(supabase, {
+  //
+  // Cliente de SERVIÇO, não o recebido: `fn_service_begin` só é concedido a
+  // `service_role`, e com o cliente do cookie a RPC voltava 42501 — o contato
+  // gravava e a conversa nunca abria. A organização já veio de fonte confiável
+  // (sessão ou token) em `ctx`, e a escolha da sessão e a RPC filtram por ela.
+  const conversa = await abrirConversaDoContatoNovo(createAdminClient(), {
     porta: "manual",
     organizationId: ctx.organization_id,
     contactId: contact.id,
@@ -732,7 +770,7 @@ export async function createContactHandler(
         source: contact.source,
         has_email: !!contact.email,
         has_phone: !!contact.phone_number,
-        has_cpf: !!contact.cpf_hash,
+        has_cpf: contact.cpf_available,
       },
       p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
       p_organization_id: contact.organization_id,
@@ -762,7 +800,9 @@ export async function patchContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
   contactId: string,
-  input: ContactPatch,
+  // `null` em `phone_number` é o pedido de apagar o principal (Spec 31, B2);
+  // o schema da rota é o único que o deixa passar (`contactPatchSchemaDoPais`).
+  input: Omit<ContactPatch, "phone_number"> & { phone_number?: string | null },
 ): Promise<Contact> {
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
@@ -848,6 +888,10 @@ export async function patchContactHandler(
   if (input.phone_number !== undefined) {
     patch.phone_number = input.phone_number ? canonicalPhoneBR(input.phone_number) : input.phone_number;
   }
+  // Tipo e WhatsApp do principal (Spec 31, B2). Ausentes não entram no patch: o
+  // gatilho do banco recalcula só o que a pessoa não fixou (ver a migration 9043).
+  if (input.phone_type !== undefined) patch.phone_type = input.phone_type;
+  if (input.phone_whatsapp !== undefined) patch.phone_whatsapp = input.phone_whatsapp;
   if (input.birthdate !== undefined) patch.birthdate = input.birthdate;
   // O TIPO DO CONTATO (issue 3005): o PATCH troca cliente ↔ fornecedor. Ausente
   // NÃO entra no patch — quem não fala de tipo não reescreve a coluna, e é por
@@ -896,6 +940,30 @@ export async function patchContactHandler(
     );
   }
 
+  // Apagar o principal com telefone extra deixaria os extras sem número de
+  // resposta ("Tornar principal" é o caminho). Recusa ANTES do UPDATE: nada é
+  // gravado (Spec 31, B2, item 6). Leitura pela sessão, com o filtro de organização.
+  if (input.phone_number === null && (existing as { phone_number?: string | null }).phone_number) {
+    const { data: extras, error: errExtras } = await supabase
+      .from("contact_phones")
+      .select("id")
+      .eq("organization_id", ctx.organization_id)
+      .eq("contact_id", contactId)
+      .limit(1);
+    if (errExtras) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, errExtras.message);
+    }
+    if (extras && extras.length > 0) {
+      throw new ApiError(
+        409,
+        "primary_phone_has_extras",
+        undefined,
+        ctx.requestId,
+        traduzir("Torne outro número principal antes de remover este.", ctx.idioma ?? "pt-BR"),
+      );
+    }
+  }
+
   const tagServiceOrigin = input.tags !== undefined
     ? await observeServiceOrigin(createAdminClient(), ctx.organization_id, contactId)
     : null;
@@ -928,7 +996,7 @@ export async function patchContactHandler(
     );
   }
 
-  const contact = updated as Contact;
+  const contact = fichaDaResposta(updated as LinhaDeContato);
   const a = actorAuditPayload(ctx.actor);
   const fields = Object.keys(patch).filter((k) => k !== "updated_at");
 

@@ -78,7 +78,9 @@ export type ResultadoDaGuarda =
  * lido antes de saber que há contato). Devolve o contato tipado e estreito
  * (só o que o chamador precisa) quando passa; a razão do bloqueio quando não.
  */
-export function checarGuardasDeContato(ctx: ActionCtx): ResultadoDaGuarda {
+export function checarGuardasDeContato(
+  ctx: Pick<ActionCtx, "context"> & Partial<ActionCtx>,
+): ResultadoDaGuarda {
   const contact = ctx.context.contact as ContatoDoContexto | undefined;
   if (!contact) return { ok: false, reason: "no_contact" };
   if (contact.is_blocked) return { ok: false, reason: "contact_blocked" };

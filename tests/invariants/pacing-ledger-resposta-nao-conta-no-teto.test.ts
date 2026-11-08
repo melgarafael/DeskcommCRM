@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { decidePacing } from "@/lib/agent-engine/pacing/engine";
 import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
-import { loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
+import { loadPacingState, recordSend, recordSends } from "@/lib/agent-engine/pacing/store";
 
 /**
  * RESPOSTA NÃO GASTA O TETO DO DIA (migration 9061).
@@ -86,5 +86,33 @@ describe("a contagem do dia no schema real", () => {
     expect(decidePacing({ ...base, resposta: true }).allow).toBe(true);
     // prospecção prevalece sobre a resposta: abordagem fria nunca abre o teto
     expect(decidePacing({ ...base, resposta: true, prospeccao: true }).allow).toBe(false);
+  });
+});
+
+describe("o volume do broadcast no schema real (`recordSends`)", () => {
+  const numero = randomUUID();
+  const DEZ_MIN_ATRAS = new Date(AGORA.getTime() - 10 * 60_000);
+  const hoje = async () =>
+    (await loadPacingState(pool, org, numero, { now: AGORA, timezone: TZ, numberActivatedAt: null })).sentToday;
+
+  beforeAll(async () => {
+    await pool.query(
+      `insert into channel_sessions(id,organization_id,provider,waha_session_name,status,webhook_secret_encrypted)
+       values($1,$2,'waha','ledger-lote','WORKING','\\x00'::bytea)`,
+      [numero, org],
+    );
+  });
+
+  it("repetir o lote não soma; um relatório maior só completa; outro lote soma", async () => {
+    await recordSends(pool, org, numero, DEZ_MIN_ATRAS, 3, "c1:b1");
+    expect(await hoje()).toBe(3);
+    await recordSends(pool, org, numero, AGORA, 3, "c1:b1");
+    expect(await hoje()).toBe(3);
+    await recordSends(pool, org, numero, AGORA, 5, "c1:b1");
+    expect(await hoje()).toBe(5);
+    await recordSends(pool, org, numero, AGORA, 2, "c1:b1");
+    expect(await hoje()).toBe(5);
+    await recordSends(pool, org, numero, AGORA, 2, "c2:b2");
+    expect(await hoje()).toBe(7);
   });
 });
