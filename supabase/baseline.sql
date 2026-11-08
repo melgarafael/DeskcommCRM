@@ -72708,7 +72708,9 @@ create index if not exists idx_email_cadence_events_inscricao
 -- ═══ RLS ═══
 -- Policy e ON em linhas distintas: compatibilidade real com update.sh<=v1.63.0
 -- (mesmo contrato da provisionadora0619, issue1906); RLS será provada instalada.
--- SELECT aberto ao tenant; escrita só pelo servidor (service_role), que filtra
+-- SELECT aberto ao tenant (inscrições e eventos: pela visibilidade do negócio,
+-- já na forma final da 9251, para o update não reabrir a leitura no meio);
+-- escrita só pelo servidor (service_role), que filtra
 -- `organization_id` manualmente a partir de `requireRole()`.
 alter table public.email_cadences enable row level security;
 alter table public.email_cadence_enrollments enable row level security;
@@ -72725,14 +72727,26 @@ drop policy if exists email_cadence_enrollments_select on public.email_cadence_e
 create policy email_cadence_enrollments_select
   on public.email_cadence_enrollments
   for select to authenticated using (
-    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+    ((organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin())
+    and exists (
+      select 1 from public.crm_leads l
+       where l.id = email_cadence_enrollments.lead_id
+         and l.organization_id = email_cadence_enrollments.organization_id
+         and public.fn_can_view_lead(l.organization_id, l.owner_user_id)
+    )
   );
 
 drop policy if exists email_cadence_events_select on public.email_cadence_events;
 create policy email_cadence_events_select
   on public.email_cadence_events
   for select to authenticated using (
-    (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
+    ((organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin())
+    and exists (
+      select 1 from public.crm_leads l
+       where l.id = email_cadence_events.lead_id
+         and l.organization_id = email_cadence_events.organization_id
+         and public.fn_can_view_lead(l.organization_id, l.owner_user_id)
+    )
   );
 
 revoke all on public.email_cadences from anon, authenticated;
