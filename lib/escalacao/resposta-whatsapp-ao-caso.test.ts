@@ -30,3 +30,10 @@ describe("parseComandoDeRespostaDoSuporte", () => {
     expect(parseComandoDeRespostaDoSuporte(texto)).toBeNull();
   });
 });
+
+
+it("correlaciona o comando atualizado sem incorporar seu marcador na decisão humana", () => {
+  const caseId="11111111-1111-4111-8111-111111111111", updateEventId="22222222-2222-4222-8222-222222222222";
+  expect(parseComandoDeRespostaDoSuporte(`RESPONDER ${caseId} ATUALIZACAO ${updateEventId} Autorizado neste pedido`)).toEqual({caseId,action:"resolved",body:"Autorizado neste pedido",updateEventId});
+  expect(parseComandoDeRespostaDoSuporte(`PERGUNTAR ${caseId} ATUALIZACAO inválido Qual opção?`)).toBeNull();
+});

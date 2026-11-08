@@ -403,7 +403,7 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
                         <a
                           data-testid={`camada-datas-item-${item.negocio.id}`}
                           href={`/app/pipelines/${item.negocio.funilId}?lead=${item.negocio.id}`}
-                          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-1.5 py-1 text-xs hover:bg-surface-elevated"
+                          className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-1.5 py-1 text-xs hover:bg-surface-elevated lg:min-h-0"
                         >
                           <span className="font-medium">{item.negocio.titulo}</span>
                           <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">

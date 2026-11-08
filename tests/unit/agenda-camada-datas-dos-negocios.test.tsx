@@ -176,6 +176,11 @@ describe("Camada 'Datas dos negócios' na Agenda", () => {
     const item = await screen.findByTestId("camada-datas-item-lead-1");
     expect(item.tagName).toBe("A");
     expect(item.getAttribute("href")).toBe("/app/pipelines/p-viagens?lead=lead-1");
+    // O item é o alvo de toque que abre o negócio: 44 px abaixo de lg (medido
+    // 25,3 px a 375 sem isto), desenho de antes de lg para cima. Catraca de
+    // classe; a geometria é da prova de tela.
+    expect(item.className).toMatch(/(^|\s)min-h-11(\s|$)/);
+    expect(item.className).toMatch(/(^|\s)lg:min-h-0(\s|$)/);
 
     // Nenhuma porta de escrita dentro da camada: nem formulário, nem botão que
     // não seja o interruptor.
