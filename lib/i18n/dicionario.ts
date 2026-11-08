@@ -9401,7 +9401,6 @@ export const DICIONARIO: Traducoes = {
   "Fotos cadastradas": { es: "Fotos registradas" },
   "não serão usadas": { es: "no se usarán" },
   "não será exibido": { es: "no se mostrará" },
-  Bloqueios: { es: "Bloqueos" },
   "Não consegui acessar o microfone. Verifique a permissão do navegador.": {
     es: "No pude acceder al micrófono. Verifica el permiso del navegador.",
   },

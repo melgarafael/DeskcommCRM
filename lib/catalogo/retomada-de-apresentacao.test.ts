@@ -26,6 +26,7 @@ const JOB = "cccccccc-0000-4000-8000-000000000001";
 const CONVERSATION = "dddddddd-0000-4000-8000-000000000001";
 const OPERATION = { organizationId: ORG, agentId:"99999999-0000-4000-8000-000000000001",versionId:"99999999-0000-4000-8000-000000000002",revision:"3" };
 const SESSION = "eeeeeeee-0000-4000-8000-000000000001";
+type MidiaDoStorage = Extract<NonNullable<ChannelSendInput["media"]>, { storagePath: string }>;
 
 function snapshot(offset = 0) {
   const planned = planCatalogPresentation({
@@ -614,8 +615,10 @@ describe("mídia do produto trocada ou apagada com a apresentação adiada (mate
 
     expect(await run()).toEqual({ handled: true, disposition: "completed" });
     const daSegunda = f.sent.slice(enviadasNaPrimeira);
-    const audio = daSegunda.find((input) => input.media?.kind === "audio");
-    expect(audio?.media?.storagePath).toBe(copia!.split("\u0000")[1]);
+    const audio = daSegunda
+      .map((input) => input.media)
+      .find((media): media is MidiaDoStorage => media !== undefined && "storagePath" in media && media.kind === "audio");
+    expect(audio?.storagePath).toBe(copia!.split("\u0000")[1]);
   });
 
   it.each(ADIAMENTOS)("%s: sem origem e sem cópia, encerra como o veto e devolve o turno ao modelo", async (adiamento) => {
