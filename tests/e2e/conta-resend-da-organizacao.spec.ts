@@ -136,13 +136,19 @@ test("admin conecta e recarrega sem segredo, confere DNS, envia por duas contas 
   const shots: { name: string; bytes: Buffer }[] = [];
   let evidence: Record<string, unknown> | null = null;
   let lastCipher = "";
-  page.on("response", (response) => {
-    if (new URL(response.url()).pathname === "/app/settings/marca") {
+  // `requestfinished`, não `response`: o `router.refresh()` do Conectar ainda
+  // está no ar quando o teste recarrega, e o reload o abandona sem `finished`
+  // nem `failed`. O `text()` dessa resposta nunca resolve, e o `Promise.all`
+  // do `noSecret` esperava até o teto do caso (CI de efee98916, 105 s parado).
+  // Só corpo que chegou inteiro ao navegador entra na varredura.
+  page.on("requestfinished", (request) => {
+    if (new URL(request.url()).pathname === "/app/settings/marca") {
       responses.push(
-        response
-          .text()
+        request
+          .response()
+          .then((response) => response?.text())
           .then((body) => {
-            bodies.push(body);
+            if (body !== undefined) bodies.push(body);
           })
           .catch(() => undefined),
       );
