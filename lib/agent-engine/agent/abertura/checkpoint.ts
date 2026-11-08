@@ -126,6 +126,28 @@ export function instrucaoDeFechamento(idioma: Idioma = 'pt-BR'): string {
   return falaDoMotor(CHECKPOINT_BASE, idioma) + instrucaoDeDeclaracao(idioma) + falaDoMotor(FECHO_SEM_TEXTO_FORA, idioma);
 }
 
+/**
+ * As mensagens do fechamento com a PRIMEIRA pergunta no idioma da organização.
+ *
+ * O turno empilha a instrução canônica (`CHECKPOINT_INSTRUCTION`) na ordem de
+ * sempre — abertura, resposta, agenda, instrução, correção — e só DEPOIS passa
+ * por aqui. A posição e a identidade da instrução continuam as de antes (é o que
+ * `tests/unit/fechamento-do-turno-corrige-antes-de-repetir` prende lendo o
+ * fonte); o idioma entra como passada, e em `pt-BR` a lista volta como está.
+ */
+export function instrucaoDeFechamentoNoIdioma<T extends object>(
+  mensagens: readonly T[],
+  idioma: Idioma,
+): T[] {
+  if (idioma === 'pt-BR') return [...mensagens];
+  const traduzida = instrucaoDeFechamento(idioma);
+  return mensagens.map((mensagem) =>
+    (mensagem as { content?: unknown }).content === CHECKPOINT_INSTRUCTION
+      ? ({ ...mensagem, content: traduzida } as T)
+      : mensagem,
+  );
+}
+
 export async function insertCheckpoint(
   db: Queryable,
   input: { tenantId: string; leadId: string; jobId: string; content: CheckpointContent },

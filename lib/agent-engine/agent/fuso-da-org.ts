@@ -1,6 +1,12 @@
 /**
  * O FUSO DA ORGANIZAÇÃO — de onde o turno tira "que horas são aqui".
  *
+ * O fuso e o idioma são lidos JUNTOS numa query só, em `fatos-da-organizacao.ts`
+ * — módulo próprio, porque testes de terceiros substituem ESTE arquivo por um
+ * duble inteiro. Aqui ficam só `fusoDaOrganizacao` (a porta de quem quer apenas
+ * o fuso) e o reexport de compatibilidade de quem já importava
+ * `fatosDaOrganizacao` deste caminho.
+ *
  * ⚠️ A FONTE É `organizations.timezone`, E NÃO `channel_knobs.timezone`.
  *
  * As duas colunas guardam um IANA e hoje guardam o MESMO texto
@@ -28,68 +34,17 @@
  * (`tenantSchema` e o schema do onboarding são `z.string().max(64)` sem
  * `refine`, e a coluna não tem CHECK). Nos dois casos o turno segue com o
  * padrão do produto: derrubar o atendimento de um cliente por causa de um
- * acento no campo de configuração seria pior que uma hora de diferença.
+ * acento no campo de configuração seria pior que uma hora de diferença. A
+ * leitura e a degradação moram em `fatos-da-organizacao.ts`, onde o motivo
+ * está documentado por inteiro.
  */
 
-import { IDIOMA_PADRAO, type Idioma } from '@/lib/i18n/idiomas';
-import { FUSO_PADRAO, fusoValido } from '@/lib/tempo/fusos';
+import { fatosDaOrganizacao } from './fatos-da-organizacao';
 
 import type { Queryable } from '../queue/queue';
 import type { Logger } from '../obs/logger';
-import { idiomaDoMotor } from './idioma-do-turno';
 
-/** O que o turno precisa saber da linha da organização, lido de UMA vez. */
-export interface FatosDaOrganizacao {
-  /** Fuso IANA, sempre utilizável. */
-  fuso: string;
-  /** Idioma do atendimento; `pt-BR` quando o campo está vazio ou é desconhecido. */
-  idioma: Idioma;
-}
-
-/**
- * Fuso e idioma da organização, numa query só.
- *
- * O idioma entrou aqui na #4260 (item 1) porque o turno JÁ lia esta linha para
- * o fuso: uma segunda consulta por turno só para saber a língua seria pagar
- * duas idas ao banco pela mesma linha. Quem só quer o fuso continua chamando
- * `fusoDaOrganizacao`, que delega.
- *
- * Falha ABERTA, como o fuso: um clone com schema atrás do código, ou um
- * `locale` que o produto não serve, não pode derrubar o atendimento — a prosa
- * sai em português, que é o comportamento de antes da #4260.
- */
-export async function fatosDaOrganizacao(
-  db: Queryable,
-  organizationId: string,
-  log?: Logger,
-): Promise<FatosDaOrganizacao> {
-  let bruto: { timezone: string | null; locale: string | null } | null = null;
-  try {
-    const { rows } = await db.query<{ timezone: string | null; locale: string | null }>(
-      'select timezone, locale from organizations where id = $1',
-      [organizationId],
-    );
-    bruto = rows[0] ?? null;
-  } catch (err) {
-    log?.warn('não consegui ler o fuso e o idioma da organização — o turno segue no padrão', {
-      fuso_padrao: FUSO_PADRAO,
-      idioma_padrao: IDIOMA_PADRAO,
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-    });
-    return { fuso: FUSO_PADRAO, idioma: IDIOMA_PADRAO };
-  }
-
-  const tz = bruto?.timezone?.trim() ?? '';
-  if (tz !== '' && fusoValido(tz)) return { fuso: tz, idioma: idiomaDoMotor(bruto?.locale ?? null) };
-
-  log?.warn('fuso da organização inutilizável — o turno segue no padrão', {
-    // O valor recusado vai ao log porque é ele que diz o que corrigir na tela.
-    // Não é PII: é um código IANA de configuração, não dado de pessoa.
-    fuso_recusado: tz,
-    fuso_padrao: FUSO_PADRAO,
-  });
-  return { fuso: FUSO_PADRAO, idioma: idiomaDoMotor(bruto?.locale ?? null) };
-}
+export { fatosDaOrganizacao, type FatosDaOrganizacao } from './fatos-da-organizacao';
 
 /**
  * O fuso IANA da organização, sempre utilizável.

@@ -135,7 +135,7 @@ import {
   checkpointContentSchema,
   fecharOTurno,
   insertCheckpoint,
-  instrucaoDeFechamento,
+  instrucaoDeFechamentoNoIdioma,
   parseCheckpointText,
   tirarLinkDaReuniao,
   type CheckpointContent,
@@ -320,9 +320,10 @@ import {
 } from '@/lib/ai/decisao/manipulacao';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
-import { fatosDaOrganizacao, fusoDaOrganizacao } from './fuso-da-org';
+import { fatosDaOrganizacao } from './fatos-da-organizacao';
+import { fusoDaOrganizacao } from './fuso-da-org';
 import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
-import { diretivaDeIdioma, falaDoMotor, ferramentasNoIdioma, type Idioma } from './idioma-do-turno';
+import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -1398,8 +1399,8 @@ const BLOCO_PREVIA: Record<TurnPreview['kind'], string> = {
 };
 
 /** O bloco do modo de prévia que entra no `system` — decisão num lugar só, testável. */
-export function blocoDoModoDePrevia(kind: TurnPreview['kind'], idioma: Idioma = 'pt-BR'): string {
-  return falaDoMotor(BLOCO_PREVIA[kind], idioma);
+export function blocoDoModoDePrevia(kind: TurnPreview['kind']): string {
+  return BLOCO_PREVIA[kind];
 }
 
 /**
@@ -1414,10 +1415,7 @@ export function blocoDoModoDePrevia(kind: TurnPreview['kind'], idioma: Idioma = 
  * não cabe nesta fatia e que o bloco da cadeia (este sim traduzido) cobre no
  * caminho do turno.
  */
-export function blocosDeAgendaResidentes(
-  toolIds: readonly string[],
-  idioma: Idioma = 'pt-BR',
-): string[] {
+export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
   const blocos: string[] = [];
   // A regua de "quem marca" e a da main (#831): `temFerramentaDeMarcacao` conta
   // tambem `crm_find_and_book_appointment`, e o texto do bloco nomeia so as
@@ -1427,43 +1425,14 @@ export function blocosDeAgendaResidentes(
     blocos.push(agendaSystemBlock(toolIds));
   } else if (toolIds.includes('crm_find_free_slots')) {
     // Só consulta: o bloco de cima nomeia uma ferramenta que ele não tem.
-    blocos.push(falaDoMotor(AGENDA_CONSULTA_SYSTEM_BLOCK, idioma));
+    blocos.push(AGENDA_CONSULTA_SYSTEM_BLOCK);
   }
   if (
     toolIds.includes('crm_list_event_types') &&
     toolIds.includes('crm_find_free_slots')
   ) {
-    blocos.push(falaDoMotor(AGENDA_CADEIA_SYSTEM_BLOCK, idioma));
+    blocos.push(AGENDA_CADEIA_SYSTEM_BLOCK);
   }
-  return blocos;
-}
-
-/**
- * O `system` residente do turno — a montagem num lugar só, para o teste do
- * idioma poder afirmar sobre o PROMPT e não sobre cada função isolada.
- *
- * Ordem: playbook + memória + índice de skills (já compostos em
- * `systemWithMemory`), os dois guardrails sem feature, o de casos quando a tela
- * habilita, os de agenda que o agente tem, o da prévia e, por último, a
- * diretiva de idioma (#4260, item 1) — que é o único bloco NOVO em `pt-BR`,
- * onde todo o resto continua byte a byte o texto de antes.
- */
-export function blocosResidentesDoTurno(input: {
-  systemWithMemory: string;
-  casesEnabled: boolean;
-  toolIds: readonly string[];
-  previewKind: TurnPreview['kind'] | null;
-  idioma: Idioma;
-}): string[] {
-  const blocos = [
-    input.systemWithMemory,
-    falaDoMotor(TRANSPARENCIA_SYSTEM_BLOCK, input.idioma),
-    falaDoMotor(AUTORIA_SYSTEM_BLOCK, input.idioma),
-  ];
-  if (input.casesEnabled) blocos.push(falaDoMotor(CASES_SYSTEM_BLOCK, input.idioma));
-  blocos.push(...blocosDeAgendaResidentes(input.toolIds, input.idioma));
-  if (input.previewKind !== null) blocos.push(blocoDoModoDePrevia(input.previewKind, input.idioma));
-  blocos.push(diretivaDeIdioma(input.idioma));
   return blocos;
 }
 
@@ -3179,13 +3148,26 @@ async function executarTurnoDoAgente(
   // Agenda segue o mesmo padrão, condicionado a `crm_book_appointment` estar entre as
   // tools publicadas — ver comentário de `agendaSystemBlock`. `TRANSPARENCIA_SYSTEM_BLOCK`
   // e `AUTORIA_SYSTEM_BLOCK` não dependem de nenhuma feature — todo agente publicado os recebe.
-  const blocosResidentes = blocosResidentesDoTurno({
-    systemWithMemory,
-    casesEnabled: agentConfig !== null && agentConfig.casesEnabled,
-    toolIds: agentConfig?.toolIds ?? [],
-    previewKind: preview?.kind ?? null,
-    idioma: idiomaDaOrg,
-  });
+  const blocosResidentes = [systemWithMemory, TRANSPARENCIA_SYSTEM_BLOCK, AUTORIA_SYSTEM_BLOCK];
+  if (agentConfig !== null && agentConfig.casesEnabled) blocosResidentes.push(CASES_SYSTEM_BLOCK);
+  // Spec 15 §5.2 / doutrina da Agenda: a régua é o que o agente TEM — ver
+  // `blocosDeAgendaResidentes`, que decidiu isto num lugar só para poder ser
+  // testada (o bloco da cadeia nomeia `crm_list_event_types`, e nomear
+  // ferramenta ausente faz o modelo tentar chamá-la).
+  if (agentConfig !== null) blocosResidentes.push(...blocosDeAgendaResidentes(agentConfig.toolIds));
+  // #3757: o bloco da prévia diz de QUEM é a voz. São duas prévias com donos
+  // diferentes — o "Testar" (sandbox) é do agente falando como agente, mas o
+  // "Sugerir resposta" (assisted) escreve o rascunho que o ATENDENTE humano vai
+  // revisar e enviar. Com um bloco só, o prompt de atendimento automático (que
+  // ensina a passar a vez a uma pessoa) vazava para a caixa do atendente e o
+  // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
+  // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
+  if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
+  // #4260, item 1: o único bloco NOVO é a diretiva de idioma, e ela entra por
+  // último para não deslocar nenhum dos de cima (o prefixo cacheável continua
+  // igual em `pt-BR`). A tradução dos blocos acima acontece DEPOIS da montagem,
+  // numa passada só — ver `blocosNoIdioma`.
+  blocosResidentes.push(diretivaDeIdioma(idiomaDaOrg));
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -3233,7 +3215,7 @@ async function executarTurnoDoAgente(
   // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
   const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
   if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
-  const system = blocosResidentes.join('\n\n');
+  const system = blocosNoIdioma(blocosResidentes, idiomaDaOrg).join('\n\n');
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
@@ -6913,15 +6895,22 @@ async function executarTurnoDoAgente(
             : {}),
           ...(reservaDeFormato ? { reservaDeFormato } : {}),
           system,
-          messages: [
-            // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-            // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-            ...openingTextOnly,
-            ...responseMessages,
-            ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
-            { role: 'user', content: instrucaoDeFechamento(idiomaDaOrg) },
-            ...correcao,
-          ],
+          messages: instrucaoDeFechamentoNoIdioma(
+            [
+              // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
+              // fez seu trabalho na 1ª chamada e não precisa ir de novo.
+              ...openingTextOnly,
+              ...responseMessages,
+              ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
+              { role: 'user', content: CHECKPOINT_INSTRUCTION },
+              ...correcao,
+            ],
+            // #4260, item 1: a instrução de fechamento é a última coisa que o
+            // modelo lê no turno e passou a falar o idioma da organização. A
+            // passada vem depois da montagem para a ordem e a identidade da
+            // mensagem não mudarem.
+            idiomaDaOrg,
+          ),
         },
         { registry: deps.registry, log: runLog },
       );

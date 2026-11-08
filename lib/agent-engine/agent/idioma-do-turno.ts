@@ -114,6 +114,20 @@ export function ferramentasNoIdioma<T extends object>(
   return saida;
 }
 
+/**
+ * A passada de idioma dos blocos residentes do `system` — UMA, depois da
+ * montagem.
+ *
+ * A ordem dos blocos é a de antes da #4260 e continua escrita no call site
+ * (`inbound-turn.ts`), onde dá para ler; traduzir bloco a bloco no momento do
+ * `push` espalharia a decisão de idioma por seis linhas e obrigaria cada
+ * construtor a receber `idioma`. Aqui o bloco em português é a chave: bloco sem
+ * tradução volta igual, e `pt-BR` devolve a lista como está.
+ */
+export function blocosNoIdioma(blocos: readonly string[], idioma: Idioma): string[] {
+  return blocos.map((bloco) => falaDoMotor(bloco, idioma));
+}
+
 /** O bloco do prompt que nomeia a língua do atendimento — em português, a chave. */
 export const DIRETIVA_DE_IDIOMA_PT =
   '## Idioma da conversa\n' +

@@ -45,7 +45,7 @@ import { declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } fr
 import { loadPublishedAgentConfigById } from './agent-config';
 import { isLeadInHandoff } from './human-handoff';
 import { resolveActiveLeadForContact, type LeadCandidate } from '@/lib/leads/active-lead';
-import { fatosDaOrganizacao } from './fuso-da-org';
+import { fatosDaOrganizacao } from './fatos-da-organizacao';
 import { falaDoMotor } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { insertInboxItem } from '../db/repository';

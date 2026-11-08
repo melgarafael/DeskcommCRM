@@ -55,7 +55,7 @@ import {
   resolverPersona,
   type PersonaDaConversa,
 } from "@/lib/agent-engine/agent/conversa-do-caso/persona";
-import { fatosDaOrganizacao } from "@/lib/agent-engine/agent/fuso-da-org";
+import { fatosDaOrganizacao } from "@/lib/agent-engine/agent/fatos-da-organizacao";
 import { loadOrgMemory, renderOrgMemory } from "@/lib/agent-engine/agent/org-memory";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import {
