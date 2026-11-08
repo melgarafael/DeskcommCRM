@@ -8,7 +8,17 @@ export const TRES_OFERTAS: OfertaDaCampanha[] = ["site", "automacao_crm", "autom
 export const COMPLEMENTO_TRES = "Além do site, o atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.";
 export const COMPLEMENTO_SEM_SITE = "O atendimento automatizado responde quem chama fora de hora e as automações tiram o trabalho repetido, sem trocar ninguém da equipe.";
 
-/** Recursos exclusivos desta prova; não muda o agente/canal padrão do seed. */
+/**
+ * Recursos exclusivos desta prova; não muda o agente/canal padrão do seed.
+ *
+ * A credencial também é da prova, fixada na versão. Sem ela o resolvedor pega a
+ * `anthropic` validada mais recente da org — e a org do seed é dividida com a
+ * suíte: as specs j20-elegibilidade-* deixam lá uma com bytes de enfeite, e o
+ * turno morria no CI com "Invalid authentication tag length: 1" (run
+ * 42422904244), enquanto a spec sozinha passava. Aqui ela nasce com enfeite
+ * também; quem roda o turno (`tests/e2e/helpers/ofertas-no-turno.ts`) a cifra
+ * com a chave da suíte antes do turno.
+ */
 export async function criarFixtureDeOfertas(
   pool: pg.Pool,
   org: string,
@@ -18,6 +28,7 @@ export async function criarFixtureDeOfertas(
     org, agent: randomUUID(), version: randomUUID(), channel: randomUUID(),
     contact: randomUUID(), pipeline: randomUUID(), stage: randomUUID(),
     qualifiedStage: randomUUID(), campaign: randomUUID(), candidate: randomUUID(), historicalMessage: randomUUID(),
+    credential: randomUUID(),
   };
   const nome = `Ofertas QA ${ids.campaign.slice(0, 8)}`;
   const client = await pool.connect();
@@ -48,9 +59,14 @@ export async function criarFixtureDeOfertas(
       [ids.agent, org, nome, criador],
     );
     await client.query(
-      `insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,tool_ids,pipeline_ids,created_by)
-       values($1,$2,$3,1,'Responda usando as informações confirmadas da conversa.','anthropic','test-model',$4,'published',$5,$6,$7)`,
-      [ids.version, org, ids.agent, ids.channel, ["crm_get_prospecting_site_audit"], [ids.pipeline], criador],
+      `insert into ai_provider_credentials(id,organization_id,provider,label,api_key_encrypted,api_key_iv,api_key_tag,api_key_last4,validated_at)
+       values($1,$2,'anthropic',$3,decode('00','hex'),decode('00','hex'),decode('00','hex'),'qa00',now())`,
+      [ids.credential, org, nome],
+    );
+    await client.query(
+      `insert into ai_agent_versions(id,organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,tool_ids,pipeline_ids,created_by,credential_id)
+       values($1,$2,$3,1,'Responda usando as informações confirmadas da conversa.','anthropic','test-model',$4,'published',$5,$6,$7,$8)`,
+      [ids.version, org, ids.agent, ids.channel, ["crm_get_prospecting_site_audit"], [ids.pipeline], criador, ids.credential],
     );
     await client.query("update ai_agents set published_version_id=$1 where organization_id=$2 and id=$3", [ids.version, org, ids.agent]);
     const telefone = `+55119${String(parseInt(ids.contact.slice(0, 8), 16)).padStart(8, "0").slice(-8)}`;
@@ -141,6 +157,7 @@ export async function limparFixtureDeOfertas(pool: pg.Pool, f: FixtureDeOfertas)
     await executar("delete from contacts where organization_id=$1 and id=$2", [f.org, f.contact]);
     await executar("update ai_agents set published_version_id=null where organization_id=$1 and id=$2", [f.org, f.agent]);
     await executar("delete from ai_agents where organization_id=$1 and id=$2", [f.org, f.agent]);
+    await executar("delete from ai_provider_credentials where organization_id=$1 and id=$2", [f.org, f.credential]);
     await executar("delete from channel_sessions where organization_id=$1 and id=$2", [f.org, f.channel]);
     await executar("delete from crm_pipelines where organization_id=$1 and id=$2", [f.org, f.pipeline]);
   } finally {

@@ -45,6 +45,19 @@ export async function medirOfertasNoTurno(pool: pg.Pool, bruto: Entrada) {
     import("../../../lib/prospecting/context"),
     import("../../../lib/agent-engine/queue/queue"),
   ]);
+  // A credencial fixada na versão é da fixture e nasce com enfeite; cifrá-la com
+  // a chave da suíte é o que torna o turno independente das credenciais que
+  // outras specs deixam na org dividida (ver criarFixtureDeOfertas).
+  const { encryptKey } = await import("../../../lib/crypto/aes_gcm");
+  const envelope = encryptKey("provedor-controlado-da-prova");
+  const { rowCount: cifradas } = await pool.query(
+    `update ai_provider_credentials k set api_key_encrypted=$3,api_key_iv=$4,api_key_tag=$5,api_key_last4=$6
+       from ai_agent_versions v
+      where k.organization_id=$1 and v.organization_id=$1 and v.agent_id=$2 and v.status='published'
+        and k.id=v.credential_id and k.label like 'Ofertas QA %'`,
+    [input.org, input.agent, envelope.ciphertext, envelope.iv, envelope.tag, envelope.last4],
+  );
+  if (cifradas !== 1) throw new Error("A versão do agente não tem a credencial própria da fixture.");
   const deps: InboundTurnDeps = requestTurnDeps();
   // Nenhuma autorização é criada aqui: o handler relê o agente e sua revisão a cada efeito.
   const ctx: McpContext = {
