@@ -18,6 +18,7 @@ import type pg from 'pg';
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
+import { lerModoDeConhecimento } from './modo-de-conhecimento';
 import {
   avaliarPublico,
   carregarFatosDoContato,
@@ -92,6 +93,13 @@ export interface PublishedAgentConfig {
    * `knowledge_source_ids` e `voz_*`. O `?? null` do mapeamento é só tipagem.
    */
   skillNames: string[] | null;
+  /**
+   * Como o agente lê a base de conhecimento (#4133), de `ai_agents.config`:
+   * `busca` (default, o caminho de sempre: `search_knowledge` + embedding) ou
+   * `leitura_direta` (índice no contexto + `ler_documento`, sem provedor de
+   * embedding). Ausente/torto = `busca`; ver `lerModoDeConhecimento`.
+   */
+  knowledgeMode?: 'busca' | 'leitura_direta';
   /**
    * LEGADO: a KB ativa do agente (`ai_agents.active_kb_version_id`).
    *
@@ -304,6 +312,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro
     // legado abaixo em vez de ficar sem material nenhum.
     knowledgeSourceIds: r.knowledge_source_ids ?? [],
+    // `?? 'busca'` (dentro de `lerModoDeConhecimento`): o modo novo (#4133) não
+    // se liga por acidente — config ausente/torta mantém o caminho de sempre.
+    knowledgeMode: lerModoDeConhecimento(r.config),
     skillNames: r.skill_names ?? null,
     activeKbVersionId: r.active_kb_version_id,
     ragTopK,

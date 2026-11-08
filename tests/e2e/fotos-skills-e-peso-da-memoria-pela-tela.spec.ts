@@ -31,7 +31,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, esperarARevelacao, type Locator, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, esperarARevelacao, type Locator, type Page } from "./helpers/test";
 
 import { loginComoAdmin, lerCreds, type CredsE2E } from "./helpers/login-admin";
 
@@ -290,6 +290,7 @@ test.describe("Limite do aviso de peso da Memória da IA", () => {
 
       // O gerente: vê o limite em vigor, não vê o campo.
       const ctx = await browser.newContext({ baseURL: testInfo.project.use.baseURL, locale: "pt-BR" });
+      ctx.on("page", esperarARevelacaoNasCargas);
       try {
         const gerente = await ctx.newPage();
         await gerente.goto("/login");

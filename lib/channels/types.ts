@@ -8,6 +8,7 @@ import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type { OutboundMedia } from "@/lib/waha/media-send";
 import type { TemplateContract } from "@/lib/channels/meta/template-contract";
 import type { ContatoDoAparelho } from "@/lib/waha/client";
+import type { DefeitoDoNumero } from "./defeito-do-numero";
 
 // O tipo do contato do aparelho ATRAVESSA o seam como tipo só (o import some na
 // compilação), do mesmo jeito do `OutboundMedia` acima: quem fora daqui precisa
@@ -64,6 +65,13 @@ export interface ChannelCapabilities {
   alteraMensagemEnviada: boolean;
   /** O adapter deste canal aceita reagir a mensagens. */
   podeReagir: boolean;
+  /**
+   * O PROVEDOR faz a transmissão: recebe a lista inteira e um modelo, e manda a
+   * todos de uma vez, com o relatório por destinatário (migration 0712). É o que
+   * liga a terceira velocidade da campanha. Os valores do modelo são os mesmos
+   * para todos — o provedor não recebe valor por destinatário.
+   */
+  transmissao: boolean;
   /**
    * O canal deixa LER, em bloco e paginado, a AGENDA DE CONTATOS do aparelho
    * pareado — o que o número da empresa salvou no celular?
@@ -201,7 +209,7 @@ export interface OutboundEnvelope extends ChannelTenantScope {
  * Uma conversão no vocabulário neutro que o canal traduz — ver
  * `ChannelAdapter.reportConversion`. A venda (`Purchase`) e os eventos de ETAPA
  * da Meta que o canal sabe repassar (`InitiateCheckout`, `LeadSubmitted`,
- * `AddToCart`), que saem sem valor.
+ * `AddToCart`, `QualifiedLead`, `ViewContent`), que saem sem valor.
  */
 export interface ChannelConversionInput extends ChannelTenantScope {
   sessionRef: string;
@@ -209,7 +217,7 @@ export interface ChannelConversionInput extends ChannelTenantScope {
   providerConversationId: string | null;
   /** Só dígitos (E.164 sem `+`). Reforço de casamento, nunca o único. */
   phone: string | null;
-  event: "Purchase" | "InitiateCheckout" | "LeadSubmitted" | "AddToCart";
+  event: "Purchase" | "InitiateCheckout" | "LeadSubmitted" | "AddToCart" | "QualifiedLead" | "ViewContent";
   /** Chave de deduplicação na plataforma: o mesmo id nunca conta duas vezes. */
   eventId: string;
   occurredAt: Date;
@@ -249,7 +257,20 @@ export interface ChannelAdapter {
    * porque carregam nome de provider, e o lint da Task 7 proíbe esse nome fora
    * de `lib/channels/`. Quem chama escreve o que o adapter disser.
    */
-  readonly codes: { notConfigured: string; sendFailed: string; unknownError: string };
+  readonly codes: {
+    notConfigured: string;
+    sendFailed: string;
+    unknownError: string;
+    /**
+     * O canal pediu para DESACELERAR — não é falha da mensagem: muitas para a
+     * mesma pessoa (~10 por minuto, 131056 da plataforma) ou a conta limitada
+     * (429 com `Retry-After`). O handler de envio trata como `queued` e pede a
+     * nova tentativa (`lib/messaging/reenvio-desacelerado.ts`) para a mensagem
+     * sem outro dono; falhar uma mensagem que sairia daqui a um minuto é perder
+     * venda por pressa. Opcional: canal que não distingue segue `failed`.
+     */
+    throttled?: string;
+  };
 
   /**
    * URL da foto de perfil do contato, ou null quando não há (sem foto,
@@ -586,6 +607,11 @@ export interface ChannelHealth {
   status: string | null;
   /** Detalhe do erro, para o corpo do aviso. Nunca credencial. */
   detail: string | null;
+  /**
+   * Defeitos do número de pé que esta sonda não mediu (campo ausente ou `null`):
+   * não abrem aviso, e também não fecham o que está aberto.
+   */
+  defeitosSemMedida?: DefeitoDoNumero["tipo"][];
 }
 
 /** Definição aprovada, na forma NEUTRA — sem o vocabulário de nenhum provider. */

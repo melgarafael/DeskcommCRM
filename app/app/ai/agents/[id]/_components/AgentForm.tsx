@@ -50,7 +50,8 @@ import {
   NOME_DE_AGENTE_EM_USO,
   RASCUNHO_SALVO_NOME_NAO_MUDOU,
 } from "@/lib/ai/agents/nome-repetido";
-import { ToolPicker } from "./ToolPicker";
+import { ToolPicker, useCatalogoDeFerramentas } from "./ToolPicker";
+import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
 import { LimiarDeSentimento } from "./LimiarDeSentimento";
@@ -488,6 +489,20 @@ export function AgentForm(props: Props) {
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  /**
+   * A chegada pelo link «Abrir o agente» da tela de Casos (`#cases_enabled`, #3975).
+   * O catálogo de capacidades carrega depois e empurra o interruptor para baixo
+   * de onde o navegador rolou: medido, fora da tela em 1280. SÓ NA MONTAGEM, como
+   * a chegada ao funil: o hash fica na URL depois de salvar.
+   */
+  const [chegada, setChegada] = React.useState<Chegada | null>(null);
+  React.useEffect(() => {
+    if (window.location.hash === "#cases_enabled") {
+      setChegada({ ancora: "cases_enabled", scrollY: window.scrollY });
+    }
+  }, []);
+  const terminarChegada = React.useCallback(() => setChegada(null), []);
+  const catalogoChegando = useCatalogoDeFerramentas().isFetching;
   /**
    * Qual papel está aberto. Estado LOCAL e não rota: trocar de papel não é
    * navegação — o rascunho é um só, e uma URL por papel faria o usuário achar
@@ -1662,6 +1677,7 @@ export function AgentForm(props: Props) {
             <div className="flex items-center gap-2">
               <Switch
                 id="cases_enabled"
+                className="scroll-mt-28"
                 checked={form.cases_enabled}
                 onCheckedChange={(v) => patch({ cases_enabled: v })}
                 disabled={disabled}
@@ -1794,6 +1810,10 @@ export function AgentForm(props: Props) {
           )}
         </div>
       </div>
+
+      {chegada && (
+        <RolagemDeChegada {...chegada} esperando={catalogoChegando} aoTerminar={terminarChegada} />
+      )}
 
       {/* Publish dialog */}
       {isEdit && props.draft ? (

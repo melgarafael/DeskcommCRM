@@ -692,8 +692,10 @@ describe("os dois canais usam o mesmo passo", () => {
     // A ingestão resolve a conversa por dois caminhos — thread conhecida e
     // âncora — e o primeiro é o mais comum. Chamar só no segundo deixaria a
     // maioria das mensagens sem nenhum dos três efeitos.
+    // A terceira chamada é a retomada do reprocessamento, provada em
+    // `channel-ingest-zernio.test.ts`.
     const chamadas = [...ZERNIO.matchAll(/await efeitosDaEntrada\(/g)];
-    expect(chamadas.length, "faltou o passo em um dos caminhos").toBe(2);
+    expect(chamadas.length, "faltou o passo em um dos caminhos").toBe(3);
   });
 
   it("o canal intermediado só aplica os efeitos na ENTRADA", () => {

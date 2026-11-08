@@ -67,7 +67,6 @@ test.describe.configure({ mode: "serial" });
 let pagina: Page;
 
 test.beforeAll(async ({ browser }: { browser: Browser }) => {
-  const contexto = await browser.newContext({ locale: "pt-BR" });
   /**
    * Contexto PRÓPRIO escapa das fixtures de `helpers/test.ts` — elas embrulham
    * a navegação das páginas que ELAS criam, e o `contexto` daqui não é o delas.
@@ -82,6 +81,7 @@ test.beforeAll(async ({ browser }: { browser: Browser }) => {
    * registrado neste contexto porque é ELE que cria a página usada pela bateria.
    * O conserto irmão, em `acervo-de-conhecimento.spec.ts`, é esta mesma linha.
    */
+  const contexto = await browser.newContext({ locale: "pt-BR" });
   contexto.on("page", esperarARevelacaoNasCargas);
   pagina = await contexto.newPage();
   creds = await loginComoAdmin(pagina, creds);

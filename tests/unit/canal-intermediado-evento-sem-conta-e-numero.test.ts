@@ -1,5 +1,7 @@
 import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as NextServer from "next/server";
+import type * as EntradaAceita from "@/lib/channels/entrada-aceita";
 
 import type * as Credenciais from "@/lib/channels/zernio/credentials";
 import type * as Saude from "@/lib/channels/health";
@@ -98,6 +100,21 @@ vi.mock("@/lib/channels/health", async (orig) => ({
     return "aberto";
   }),
 }));
+// A mensagem nova responde antes de processar (`_entrada-do-canal.ts`): a
+// marca de aceita no arquivo é dublada, e o que a rota agenda no `after()` é
+// guardado aqui e rodado por `entregar` — o que se mede é a guarda de conta,
+// não o momento da ingestão (esse tem o seu arquivo).
+const depois = vi.hoisted(() => ({ tarefas: [] as Array<() => Promise<unknown>> }));
+vi.mock("next/server", async (orig) => ({
+  ...(await orig<typeof NextServer>()),
+  after: (tarefa: () => Promise<unknown>) => {
+    depois.tarefas.push(tarefa);
+  },
+}));
+vi.mock("@/lib/channels/entrada-aceita", async (orig) => ({
+  ...(await orig<typeof EntradaAceita>()),
+  aceitarEntrada: async () => true,
+}));
 
 import { POST } from "@/app/api/v1/webhooks/channel/[token]/route";
 
@@ -136,6 +153,7 @@ const eventoDeNumero = (number: Record<string, unknown>) => ({
 
 async function entregar(corpo: unknown) {
   const res = await POST(pedido(corpo) as never, { params: Promise.resolve({ token: "token-de-teste" }) } as never);
+  for (const tarefa of depois.tarefas.splice(0)) await tarefa();
   const fechado = ops.find((o) => o.tabela === "webhook_events_log")?.payload as { erro?: string | null; status?: string };
   return {
     status: res.status,
