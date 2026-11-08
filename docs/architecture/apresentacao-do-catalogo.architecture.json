@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Apresentação do catálogo pela IA",
+    "subtitle": "Opcional por empresa, entregue em sequência sem nova chamada ao modelo",
+    "output": "apresentacao-do-catalogo.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "config", "label": "Configuração" },
+    { "id": "turno", "label": "Turno do agente" },
+    { "id": "saida", "label": "Saída" }
+  ],
+  "mainPath": ["chave", "secao", "tabela", "ferramenta", "snapshot", "executor", "canal"],
+  "nodes": [
+    { "id": "chave", "label": "Chave settings.catalogo.apresentacao (Configurações › Organização)", "lane": "config" },
+    { "id": "recursos", "label": "Recursos opcionais", "lane": "config" },
+    { "id": "secao", "label": "Seção na edição do produto + rotas ai-presentation", "lane": "config" },
+    { "id": "tabela", "label": "catalog_product_presentations + bucket catalog-presentation-media", "lane": "config" },
+    { "id": "ferramenta", "label": "present_catalog_items, só com apresentação ativa", "lane": "turno" },
+    { "id": "snapshot", "label": "Snapshot em job_queue", "lane": "turno" },
+    { "id": "retomada", "label": "Retomada antes do classificador", "lane": "turno" },
+    { "id": "executor", "label": "Executor serial com before-send", "lane": "saida" },
+    { "id": "canal", "label": "Envio pelo canal e registro na conversa", "lane": "saida" }
+  ],
+  "edges": [
+    { "from": "chave", "to": "recursos", "label": "aparece na lista" },
+    { "from": "chave", "to": "secao", "label": "desligada: sem seção, rota recusa" },
+    { "from": "secao", "to": "tabela", "label": "CAS por updated_at e audit" },
+    { "from": "chave", "to": "ferramenta", "label": "capacidade lida no turno" },
+    { "from": "tabela", "to": "ferramenta", "label": "existe ativa na organização" },
+    { "from": "ferramenta", "to": "snapshot", "label": "plano congelado" },
+    { "from": "snapshot", "to": "executor", "label": "itens na ordem" },
+    { "from": "snapshot", "to": "retomada", "label": "job interrompido" },
+    { "from": "retomada", "to": "executor", "label": "sem nova chamada ao modelo" },
+    { "from": "executor", "to": "canal", "label": "ledger evita envio em dobro" },
+    { "from": "executor", "to": "ferramenta", "label": "veto do gate de envio: snapshot limpo na hora, o modelo responde com as próprias palavras" }
+  ]
+}

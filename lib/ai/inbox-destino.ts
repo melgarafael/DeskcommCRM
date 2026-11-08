@@ -201,7 +201,13 @@ export const POLITICAS_DE_AVISO = {
   // Credenciais. O botão diz o que fazer ("Reconectar"), não "revisar", porque
   // nada há para inspecionar: a conta precisa ser conectada de novo.
   assinatura_desconectada: { refs: [], orientacao: "A conta que paga a assinatura recusou o login. Reconecte em IA › Credenciais; este aviso se resolve sozinho quando o login voltar.", geral: { papel: "admin", href: "/app/ai/credentials", rotulo: "Reconectar a assinatura" } },
-  other: { refs: ["agenda_reminder_sender", "lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
+  // `conversation`: a apresentação do catálogo interrompida
+  // (`lib/catalogo/retomada-de-apresentacao.ts`) nasce `other` apontando para a
+  // conversa. Nenhum kind de conversa existente diz o que ela diz, e o
+  // `message_send_stuck` cala o aviso de automação aberto na mesma janela. A porta
+  // passa pela MESMA conferência dos outros kinds: RLS de `conversations` no
+  // client da request, papel `agent` da entrada `conversation`.
+  other: { refs: ["agenda_reminder_sender", "lead", "conversation", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
 /**

@@ -683,6 +683,18 @@ const DA_EMPRESA: RecursoOpcional[] = [
     ler: (f) => (f.telefonia === null ? "nao_lido" : f.telefonia ? "ligado" : "desligado"),
   },
   {
+    id: "apresentacao_do_catalogo",
+    nome: "Apresentação do catálogo pela IA",
+    oQueFaz:
+      "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/tenant",
+    capacidade: "apresentacao_do_catalogo",
+    ler: peloSettings((s) => capacidadesLigadas(s, []).includes("apresentacao_do_catalogo")),
+  },
+  {
     id: "propostas_da_empresa",
     nome: "Proposta comercial da empresa",
     oQueFaz: "Com o módulo do servidor ligado, a empresa liga as propostas para si.",

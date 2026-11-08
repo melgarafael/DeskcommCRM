@@ -9346,6 +9346,61 @@ export const DICIONARIO: Traducoes = {
   "Gravar áudio": { es: "Grabar audio" },
   "Cancelar gravação": { es: "Cancelar grabación" },
   "Enviar áudio": { es: "Enviar audio" },
+  "Configuração incompleta: escreva o texto de apresentação.": {
+    es: "Configuración incompleta: escribe el texto de la presentación.",
+  },
+  "Áudio ausente: envie um arquivo antes de ativar.": {
+    es: "Falta el audio: envía un archivo antes de activar.",
+  },
+  "Fotos ausentes: cadastre fotos ou desative o uso das fotos.": {
+    es: "Faltan fotos: añade fotos o desactiva su uso.",
+  },
+  "O limite físico estimado de mensagens foi excedido.": {
+    es: "Se superó el límite físico estimado de mensajes.",
+  },
+  "Usar a apresentação de produtos pela IA": {
+    es: "Usar la presentación de productos por la IA",
+  },
+  "Cada produto pode ter uma apresentação própria, em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência. Desligar esconde a seção, mas não apaga o que já foi cadastrado.": {
+    es: "Cada producto puede tener una presentación propia, en texto o audio, con fotos y precio, que el agente de IA envía en secuencia. Desactivarla oculta la sección, pero no borra lo que ya se registró.",
+  },
+  "Catálogo salvo.": { es: "Catálogo guardado." },
+  "Aplicar ajustes do catálogo": { es: "Aplicar ajustes del catálogo" },
+  "Falha ao salvar.": { es: "Error al guardar." },
+  "A configuração mudou. Recarregue a página e tente novamente.": {
+    es: "La configuración cambió. Recarga la página e inténtalo de nuevo.",
+  },
+  "A apresentação do catálogo está desligada nesta empresa.": {
+    es: "La presentación del catálogo está desactivada en esta empresa.",
+  },
+  "O áudio precisa ser OGG/Opus, WebM/Opus ou M4A válido.": {
+    es: "El audio debe ser OGG/Opus, WebM/Opus o M4A válido.",
+  },
+  "Apresentação do catálogo pela IA": { es: "Presentación del catálogo por la IA" },
+  "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": {
+    es: "Cada producto puede tener una presentación en texto o audio, con fotos y precio, que el agente de IA envía en secuencia cuando el cliente la pide.",
+  },
+  "Apresentação salva": { es: "Presentación guardada" },
+  "Não consegui enviar o áudio.": { es: "No pude enviar el audio." },
+  "Áudio salvo": { es: "Audio guardado" },
+  "Áudio removido": { es: "Audio eliminado" },
+  "Apresentação pela IA": { es: "Presentación por IA" },
+  "Texto de apresentação": { es: "Texto de la presentación" },
+  "Nenhum áudio enviado.": { es: "No se ha enviado ningún audio." },
+  "Remover áudio": { es: "Eliminar audio" },
+  "OGG/Opus, WebM/Opus ou M4A, até 16 MB. O arquivo é guardado como OGG/Opus.": {
+    es: "OGG/Opus, WebM/Opus o M4A, hasta 16 MB. El archivo se guarda como OGG/Opus.",
+  },
+  "Usar fotos cadastradas": { es: "Usar fotos registradas" },
+  "Exibir preço": { es: "Mostrar precio" },
+  "Ordem de envio": { es: "Orden de envío" },
+  "mensagens físicas estimadas": { es: "mensajes físicos estimados" },
+  "Texto ainda não configurado": { es: "Texto aún no configurado" },
+  "Áudio OGG/Opus": { es: "Audio OGG/Opus" },
+  "Áudio ainda não configurado": { es: "Audio aún no configurado" },
+  "Fotos cadastradas": { es: "Fotos registradas" },
+  "não serão usadas": { es: "no se usarán" },
+  "não será exibido": { es: "no se mostrará" },
   "Não consegui acessar o microfone. Verifique a permissão do navegador.": {
     es: "No pude acceder al micrófono. Verifica el permiso del navegador.",
   },
@@ -12187,7 +12242,6 @@ export const DICIONARIO: Traducoes = {
     es: "audio pendiente; tú decides cuándo enviar",
   },
   "Remover áudio pendente": { es: "Quitar audio pendiente" },
-  "Remover áudio": { es: "Quitar audio" },
   "Desfazer remoção do áudio": { es: "Deshacer la eliminación del audio" },
   "O áudio será removido ao salvar.": { es: "El audio se eliminará al guardar." },
   "Não foi possível preparar o áudio do recurso.": {

@@ -381,6 +381,7 @@ export const AUDIT_ACTIONS = [
   "attendant.availability_changed",
   "routing.config_changed",
   "proposals.config_changed",
+  "catalogo.apresentacao_changed",
   // Mudar a régua do abandono (spec 16 §5.2) muda como TODO período passa a ser
   // lido — é mutação relevante, não preferência de exibição.
   "metrics.atrito_regua_changed",
@@ -846,6 +847,10 @@ export const AUDIT_ACTIONS = [
   // As fotos do produto (migration 0390): subir uma, e reordenar/remover.
   "catalog_product.photo_added",
   "catalog_product.photos_updated",
+  // A apresentação usada pela IA: configuração e mídia privada permanente.
+  "catalog_product.ai_presentation_updated",
+  "catalog_product.ai_presentation_audio_uploaded",
+  "catalog_product.ai_presentation_audio_removed",
 
   // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
   // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é
