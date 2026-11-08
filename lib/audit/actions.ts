@@ -1428,6 +1428,8 @@ export const AUDIT_ACTIONS = [
   // cala a cobrança da organização inteira, e "quem desligou, e quando" só tem
   // resposta na trilha — a coluna guarda só o valor de agora.
   "ai.lembrete_de_caso_configurado",
+  "cadencia.created", "cadencia.updated", "cadencia.deleted", "cadencia.activated", "cadencia.paused",
+  "cadencia.lead_inscrito", "cadencia.lead_retirado", "cadencia.settings_updated", "cron.cadencia_worker",
   // Setores de atendimento (migration 0801): cadastro e vínculo atendente →
   // setor, feitos por manager+ na Equipe › Setores. O vínculo não guarda
   // histórico — "quem estava no setor que foi apagado" só a trilha responde.

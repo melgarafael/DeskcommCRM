@@ -4071,6 +4071,26 @@ iniciais com nome completo, um nome e fallback pelo e-mail: 8 vermelhos antes,
 8 verdes depois. **Não medido:** reconhecimento de voz em aparelho real e o
 fluxo inteiro em espanhol (a cobertura em espanhol aqui é do componente).
 
+
+## Cadências de e-mail opcionais (PR1738 / decisão75B) `[P1]`
+
+Estado: **PASS pela tela e SMTP real** (rodada r7, head `2d44615877`, vps-teste, banco fresco do `baseline.sql`, build de produção, Mailpit) em tudo o que a tabela marca assim. O descadastro e o item cosmético de 375 px mudaram depois dessa rodada, e estão **PENDENTES de refazer pela tela** no head do PR.
+
+| Gesto | Resultado exigido | Evidência |
+|---|---|---|
+| Clonar/aplicar baseline sem instalar | Nenhuma das três tabelas de cadências existe; menu/rotas/worker sem efeito | **PASS** r7: 0 tabelas, API 404, worker sem efeito, menu 0; invariante `cadencias-provisionadora` |
+| Dono instala em /admin/modulos; admin da empresa liga | Tabelas protegidas e porta no menu; outra empresa segue desligada | **PASS** r7 |
+| Gerente cria e ativa sequência; inscreve negócio sem autorização de rastreio | E-mail real no transporte de teste, link de descadastro e nenhum pixel | **PASS** r7 |
+| Inscreve outro contato com autorização | Pixel soma somente com consentimento e empresa ligados; evento aparece na atividade | **PASS** r7 |
+| Pausa/desliga com fila vencida | Nenhum novo envio; dados preservados | **PASS** r7 |
+| Destinatário concluiu sequência e clica descadastro com empresa desligada | Supressão persistente; reinscrição recusada; repetição idempotente | **PASS** r7 pelo GET antigo; **PENDENTE** refazer com o botão de confirmar |
+| Filtro de e-mail abre o link (GET e HEAD, sem sessão) | Inscrição segue ativa; a página só pede a confirmação | r7 reprovou: os dois paravam a inscrição, sem volta. Conserto com `route.test.ts`; **PENDENTE** refazer pela tela |
+| Provedor de e-mail faz o POST de um clique, sem cookie | E-mail traz `List-Unsubscribe` e `List-Unsubscribe-Post`; o POST descadastra | `lib/email/cabecalhos-do-envio.test.ts` e `worker-envio.test.ts`; **PENDENTE** conferir os cabeçalhos no Mailpit |
+| Abre o construtor a 375 px | Nome da cadência ativa sem cortar; botão de inserir passo com 44x44 | r7 mediu 51 px de largura e 24x24; **PENDENTE** medir de novo |
+| Exporta e anonimiza o titular | Inscrições/eventos exportados; fila encerrada; pixel revogado; vizinho preservado | **PASS** r7: coletor e cascata reais; invariante LGPD |
+| Transporte aceita mas avanço falha | Fila não reenvia; inscrição mostra resultado incerto para revisão | **PASS** r7 |
+| Empresa B abre a tela e a API da empresa A | Nada de A aparece; 404 ou lista vazia | **PASS** r7 |
+
 ## Atendimento e follow-ups — integração #3475 (2026-10-26)
 
 **Medido em bancada sintética real:** build de produção `20f335eae` /

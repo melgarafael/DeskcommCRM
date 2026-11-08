@@ -31,6 +31,8 @@
  * chave crua nem para erro. Uma tradução incompleta não pode deixar a tela pior
  * do que estava.
  */
+import { TEXTOS_CADENCIAS } from "./cadencias";
+import { TEXTOS_CADENCIAS_ORIGINAIS } from "./cadencias-originais";
 import { entradaDoCatalogo } from "./catalogos";
 import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
@@ -40,6 +42,8 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...TEXTOS_CADENCIAS_ORIGINAIS,
+  ...TEXTOS_CADENCIAS,
   "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
