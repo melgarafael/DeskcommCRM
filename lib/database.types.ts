@@ -14929,6 +14929,11 @@ export type Database = {
       };
     };
     Functions: {
+      fn_create_contact_for_lead: {
+        Args: { p_organization_id: string; p_lead_id: string; p_contact: Json };
+        Returns: Json;
+      };
+
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;

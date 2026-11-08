@@ -4319,7 +4319,9 @@ painel mostra modelo e origem, não faz chamada paga).
 ## E-mail da organização — conta e domínio (#3443 + #3464)
 
 **Estado:** spec `conta-resend-da-organizacao.spec.ts` verde no CI em `d531c6ebe` (27/10,
-53,2 s, parte 2); a prova em instalação limpa, pela vps-teste, ainda **não foi feita**. O
+53,2 s, parte 2); prova pela tela em instalação limpa na vps-teste **verde** no head
+`8e8871611` (08/11, 41 de 42 marcas; a que sobra é observação: Desconectar sai num
+clique, sem confirmação — decisão do mantenedor). O
 receiver recebe requisições reais da SDK com credenciais e destinatários artificiais; isso
 não prova entrega pela Resend nem chegada à caixa de entrada.
 
@@ -4338,3 +4340,25 @@ Fontes: `lib/email/resend-da-organizacao*.test.ts`, `lib/email/dominio-de-envio*
 `tests/unit/conectar-conta-resend-da-organizacao.test.ts`. As provas do resgate
 permanecem associadas ao checkout e ao head nos recibos operacionais; nenhum PASS
 unitário é contado como captura de UX.
+
+## Ofertas da campanha no atendimento — resgate #3503 (medido em 2026-11-07)
+
+A seção final de `prospeccao-auditoria-do-site.spec.ts` mantém o caso anterior de
+score/KPI/ordenação e seu teto de 120s. Fixtures próprias cobrem três ofertas com
+agente válido, site-only e duas automações sem site, pela configuração recarregada e
+pelo modal real, em build de produção sobre banco novo do baseline. O caso inteiro
+levou 14,1s. A frase nova cabe no modal em 1280px e 375px.
+
+O helper de inbound e tool direta usa a mesma conversa e o mesmo texto cru. Modelo e
+canal controlados medem encadeamento; não provam semântica de modelo, resposta
+persistida na Inbox ou entrega. O invariante A/B usa SQL real e mede filtros
+explícitos, sem alegar RLS/PostgREST pelo adapter postgres. O lado do modelo real
+está NAO_ALCANCAVEL: nenhuma sessão lê chave de provedor.
+
+Entrada: `prospecting_campaigns.config.ofertas`; consumidores: contexto do inbound,
+`crm_get_prospecting_site_audit` e estratégia no modal de Prospecção. A consulta
+aparece no registro de ferramentas do agente; falha de leitura mantém o resultado
+explícito de indisponibilidade. Laço: comparar as ofertas persistidas, tool direta
+e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nativa`.
+[Registro da prova](ofertas-da-campanha.md). CNPJ já foi
+entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.

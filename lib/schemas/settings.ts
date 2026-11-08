@@ -165,12 +165,24 @@ export const notificationPrefsSchema = z.object({
 });
 export type NotificationPrefsInput = z.infer<typeof notificationPrefsSchema>;
 
+/**
+ * A CHAVE de um campo personalizado do funil — a mesma régua da ESCRITA
+ * (`customFieldSchema.key`) e a mesma que qualquer leitura por chave precisa.
+ *
+ * Exportada (issue #3221) porque a rota `GET /api/v1/agenda/datas-dos-negocios`
+ * recebe a chave na querystring e a interpola num caminho jsonb do PostgREST
+ * (`custom_fields->>campo`): sem a régua, um `campo` com vírgula ou ponto vira
+ * SINTAXE de filtro, e não nome de campo. Duas cópias da regex divergiriam no
+ * dia em que uma delas mudasse — por isso é a mesma constante.
+ */
+export const chaveDeCampoDoFunilSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore");
+
 export const customFieldSchema = z.object({
-  key: z
-    .string()
-    .min(1)
-    .max(40)
-    .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore"),
+  key: chaveDeCampoDoFunilSchema,
   label: z.string().min(1).max(80),
   type: z.enum([
     "text",
