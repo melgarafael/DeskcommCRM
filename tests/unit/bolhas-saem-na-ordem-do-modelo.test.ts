@@ -184,6 +184,51 @@ describe('as mensagens de um passo saem na ordem em que o modelo as escreveu', (
     expect(enviadas).toEqual(['segue']);
   });
 
+  it('texto, catálogo, modelo e passagem para humano dividem a mesma fila', async () => {
+    const saida: string[] = [];
+    const ferramenta = (nome: string, ms: number) => ({
+      inputSchema: {} as never,
+      execute: async () => {
+        await dormir(ms);
+        saida.push(nome);
+        return { ok: true };
+      },
+    });
+    const tools = emOrdemDeEscrita({
+      send_message: ferramenta('send_message', 30),
+      present_catalog_items: ferramenta('present_catalog_items', 0),
+      send_template: ferramenta('send_template', 20),
+      request_human_handoff: ferramenta('request_human_handoff', 0),
+    } as unknown as ToolSet);
+    await Promise.all(
+      ['send_message', 'present_catalog_items', 'send_template', 'request_human_handoff'].map(
+        (nome) => tools[nome]!.execute!({}, {} as never),
+      ),
+    );
+    expect(saida).toEqual(['send_message', 'present_catalog_items', 'send_template', 'request_human_handoff']);
+  });
+
+  it('a guarda do atendimento que recusa uma chamada não trava a seguinte', async () => {
+    const { tools, enviadas } = turno();
+    let consulta = 0;
+    const db = {
+      query: async () => {
+        consulta += 1;
+        await dormir(consulta === 2 ? 20 : 0);
+        // A 2ª consulta (guarda da 1ª chamada) vê o atendimento noutra revisão.
+        return { rows: [consulta === 2 ? { ...fronteira, service_revision: 2 } : fronteira] };
+      },
+    } as unknown as Queryable;
+    // A recusa só acontece se o store do atendimento chegou à guarda encadeada.
+    const r = await withServiceBoundary(db, fronteira, () => {
+      const execute = guardServiceTools(emOrdemDeEscrita(tools))!.send_message!.execute!;
+      return Promise.allSettled(['velha', 'nova'].map((body) => execute({ body }, {} as never)));
+    });
+    expect(r[0]).toMatchObject({ status: 'rejected' });
+    expect(r[1]).toMatchObject({ status: 'fulfilled' });
+    expect(enviadas).toEqual(['nova']);
+  });
+
   it('ferramenta que não fala com o cliente fica fora da fila', () => {
     const lerContexto = { inputSchema: {} as never, execute: async () => ({}) };
     const tools = emOrdemDeEscrita({ get_lead_context: lerContexto } as unknown as ToolSet);

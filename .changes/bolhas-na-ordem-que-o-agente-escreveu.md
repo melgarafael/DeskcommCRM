@@ -10,7 +10,8 @@ exemplo, "Boa pergunta! Pelo nome, acho que você quis dizer Enterprise") era
 justamente a que esperava a pausa que imita alguém digitando, e as outras
 passavam na frente.
 
-Agora cada mensagem espera a anterior sair antes de ser enviada, e a conversa
-chega na ordem em que o agente escreveu. As conferências feitas antes do envio
-continuam rodando ao mesmo tempo, então a resposta não fica mais lenta. Nada a
-configurar. Crédito: @maclevison.
+Agora cada mensagem espera a anterior terminar antes de ser conferida e
+enviada, e a conversa chega na ordem em que o agente escreveu. Vale também para
+modelos de mensagem, catálogo e o aviso de passagem para humano, e para o botão
+Testar. Quando a resposta tem várias mensagens, a segunda em diante pode sair
+um pouco depois do que saía antes. Nada a configurar. Crédito: @maclevison.
