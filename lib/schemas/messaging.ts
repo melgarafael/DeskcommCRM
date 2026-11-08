@@ -423,6 +423,24 @@ export const listConversationsQuerySchema = z.object({
    */
   is_group: z.enum(["true", "false"]).optional(),
   /**
+   * A aba "Pessoal" (spec 33). `"true"`/`"false"` como STRING, pelo MESMO motivo
+   * de `is_group` logo acima: `z.coerce.boolean()` transformaria `"false"` em
+   * `true` e a aba mostraria o oposto do pedido, sem erro nenhum. O molde é o
+   * de `?pessoais=` na lista de Contatos (`lib/schemas/contacts.ts`), que já
+   * resolveu esta mesma pegadinha — e aceita boolean de verdade porque as tools
+   * MCP chamam o schema direto, sem URL no meio.
+   *
+   * Ausente = o padrão de SEMPRE (pessoal fora da lista). Presente e `true` =
+   * SÓ o pessoal de quem chama, e a exclusão da spec 21 é invertida.
+   *
+   * SEM `.transform()` de propósito: transform troca o TIPO DE SAÍDA para
+   * `boolean` obrigatório, e a tool MCP que monta os filtros a partir de
+   * `z.infer` passaria a exigir `pessoais` em toda chamada (o `pnpm typecheck`
+   * acusou exatamente isso em `lib/mcp/tools/conversations.ts`). Quem normaliza
+   * é o handler, com `querPessoal` — uma vez, não em cada uso.
+   */
+  pessoais: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
+  /**
    * Só as que têm mensagem não lida para o dono.
    *
    * NASCEU FORA DO CONTRATO E POR ISSO FORA DE TODO MECANISMO. Era `onlyUnread`,

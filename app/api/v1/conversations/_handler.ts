@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { roleAtLeast } from "@/lib/auth/types";
 import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
@@ -94,7 +95,7 @@ const SELECT_COLS = `
   bot_silenced_until, last_handoff_at, last_handoff_reason,
   comando_da_conversa,
   usable_for_rag,
-  contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, contact_type, avatar_storage_path, force_human),
+  contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, personal_owner_user_id, contact_type, avatar_storage_path, force_human),
   channel_sessions:channel_session_id (phone_number, display_name, provider, social_platform:metadata->>social_platform)
 `;
 
@@ -123,6 +124,72 @@ export async function idsDeContatosPessoais(
     .eq("is_personal", true)
     .limit(500);
   return idsQueCabemNaURL((data ?? []).map((c) => (c as { id: string }).id));
+}
+
+/**
+ * Os ids dos contatos pessoais que ESTA pessoa pode ver (spec 33 — a aba
+ * "Pessoal").
+ *
+ * ─── Por que existe ────────────────────────────────────────────────────────
+ *
+ * A spec 21 escondeu o pessoal da operação e, no mesmo gesto, o tornou
+ * inalcançável. A doutrina revisada separa as duas coisas: esconder da operação
+ * continua valendo (funil, IA, campanha, busca da equipe, contagens), mas
+ * "inutilizar o contato" não é decisão interna — quem fecha o canal é o titular
+ * (`is_blocked`). Sem esta função, a aba Pessoal só existiria listando o
+ * pessoal de TODO MUNDO, publicando a conversa de família de um gerente para os
+ * outros — exatamente o vazamento que a spec 21 existia para impedir.
+ *
+ * ─── A régua ───────────────────────────────────────────────────────────────
+ *
+ * - papel `admin`: vê todos os pessoais da organização. É a garantia de que
+ *   nenhum contato fica sem ninguém que possa responder (férias, desligamento,
+ *   troca de dono) — a doutrina nova proíbe contato inalcançável.
+ * - demais papéis: só o pessoal de que é DONO (`personal_owner_user_id`). Quem
+ *   marcou é o dono; contato marcado antes da 9238 tem dono nulo e aparece só
+ *   para `admin`, até alguém assumir.
+ *
+ * O ator que não é pessoa (`api_token`/`ai_agent`) nunca casa o dono: o MCP
+ * continua sem ler pessoal, de propósito (spec 21 §6.1, mantido).
+ */
+export async function idsDeContatosPessoaisVisiveis(
+  supabase: SB,
+  organizationId: string,
+  quem: { userId: string | null; verTodos: boolean },
+): Promise<string[]> {
+  let query = supabase
+    .from("contacts")
+    // Service role bypassa RLS: o filtro de organização é manual e obrigatório.
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("is_personal", true)
+    .limit(500);
+  if (!quem.verTodos) {
+    // Sem dono não há o que listar — e `undefined` no `.eq` viraria filtro
+    // ausente, que devolveria o pessoal de todos. Falha fechada.
+    if (!quem.userId) return [];
+    query = query.eq("personal_owner_user_id", quem.userId);
+  }
+  const { data } = await query;
+  return idsQueCabemNaURL((data ?? []).map((c) => (c as { id: string }).id));
+}
+
+/**
+ * Este ator pode ver/responder o pessoal deste contato? (spec 33)
+ *
+ * `admin` vê tudo; qualquer outro papel vê o que é seu, e só pessoa (`user`)
+ * tem "seu". As duas perguntas ficam num lugar só porque aparecem em três
+ * caminhos (lista, ficha da conversa e envio) — e três cópias divergem na
+ * primeira vez que alguém acrescentar uma condição.
+ */
+export function podeVerPessoal(
+  actor: Actor,
+  contato: { is_personal?: boolean | null; personal_owner_user_id?: string | null } | null | undefined,
+): boolean {
+  if (contato?.is_personal !== true) return true;
+  if (actor.type !== "user") return false;
+  if (roleAtLeast(actor.role, "admin")) return true;
+  return contato.personal_owner_user_id === actor.id;
 }
 
 interface CursorPayload {
@@ -209,12 +276,34 @@ export async function listConversationsHandler(
     .order("id", { ascending: asc })
     .limit(q.limit + 1);
 
-  // Contato pessoal some da lista (spec 21, etapa 7 — critério 1): conversa cujo
-  // contato é pessoal não aparece em nenhuma visão. ANTES de todo filtro
-  // opcional, para que cursor e `has_more` descrevam o conjunto já escondido.
-  const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
-  if (pessoais.length > 0) {
-    query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+  // ── CONTATO PESSOAL: escondido da operação, alcançável na aba dele ──────
+  //
+  // Spec 21 (etapa 7): conversa de contato pessoal não aparece em NENHUMA visão
+  // — some da lista, da busca e das contagens, ANTES de todo filtro opcional,
+  // para que cursor e `has_more` descrevam o conjunto já escondido.
+  //
+  // Spec 33 (a aba "Pessoal"): a mesma régua, com o sinal invertido quando a
+  // aba pede `?pessoais=true`. Aí a lista mostra SÓ o pessoal que este ator
+  // pode ver — o próprio, ou todos se for `admin` — e NADA mais. A exclusão
+  // continua sendo aplicada em todas as outras visões, inclusive as do MCP:
+  // `podeVerPessoal` recusa ator que não é pessoa, então um token nunca lista
+  // pessoal nem pedindo o filtro.
+  const querPessoal = q.pessoais === true || q.pessoais === "true";
+  if (querPessoal) {
+    const visiveis = await idsDeContatosPessoaisVisiveis(supabase, ctx.organization_id, {
+      userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+      verTodos: ctx.actor.type === "user" && roleAtLeast(ctx.actor.role, "admin"),
+    });
+    // Lista vazia não pode virar `in ()` — o PostgREST devolve erro de sintaxe
+    // e a aba Pessoal responderia 500 justamente para quem nunca marcou ninguém.
+    // Conjunto vazio é resposta: nenhum pessoal visível.
+    if (visiveis.length === 0) return { conversations: [], cursor: null, has_more: false };
+    query = query.in("contact_id", visiveis);
+  } else {
+    const pessoais = await idsDeContatosPessoais(supabase, ctx.organization_id);
+    if (pessoais.length > 0) {
+      query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+    }
   }
 
   // `.in` e não `.eq`: o filtro agora chega como LISTA (um valor vira lista de um,
@@ -453,7 +542,7 @@ export async function listConversationsHandler(
       .eq("is_anonymized", false)
       // Pessoal não é achado pela busca (spec 21, etapa 7 — critério 2): nem por
       // nome, nem por telefone. A prévia segue pelo `.not` da query principal.
-      .eq("is_personal", false)
+      .eq("is_personal", querPessoal)
       .or(camposDoContato)
       // Teto obrigatório: a lista de ids viaja na URL do PostgREST, e uma busca
       // por "a" sem limite estoura a requisição.
@@ -487,7 +576,7 @@ export async function listConversationsHandler(
         .eq("organization_id", ctx.organization_id)
         .eq("contacts.organization_id", ctx.organization_id)
         .eq("contacts.is_anonymized", false)
-        .eq("contacts.is_personal", false)
+        .eq("contacts.is_personal", querPessoal)
         .is("contacts.is_merged_into", null)
         .ilike("phone_number", `*${somenteDigitos}*`)
         .limit(TETO_DE_CONTATOS_NA_BUSCA);
@@ -578,10 +667,16 @@ export async function getConversationHandler(
   }
   // Pessoal some até por link direto (spec 21, D10 — critério 1): a conversa de
   // contato pessoal responde 404, com a mesma mensagem de "não existe", para
-  // não revelar que ela está lá. O desmarcar acontece pela ficha de Contatos.
-  const pessoal = (data as unknown as { contacts?: { is_personal?: boolean } | null }).contacts
-    ?.is_personal;
-  if (pessoal === true) {
+  // não revelar que ela está lá.
+  //
+  // Spec 33: o 404 passa a ser de QUEM NÃO É DONO. O dono (quem marcou) e o
+  // papel `admin` abrem a conversa normalmente — é o que a aba Pessoal mostra.
+  // Ator que não é pessoa (token MCP) continua recebendo 404 em todo caso, de
+  // propósito: `podeVerPessoal` só reconhece `user`.
+  const contato = (data as unknown as {
+    contacts?: { is_personal?: boolean; personal_owner_user_id?: string | null } | null;
+  }).contacts;
+  if (!podeVerPessoal(ctx.actor, contato)) {
     throw new ApiError(
       404,
       "not_found",

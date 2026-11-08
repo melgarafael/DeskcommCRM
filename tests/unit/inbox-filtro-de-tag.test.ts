@@ -38,7 +38,11 @@ const listConversationsHandler = vi.fn(async () => ({
   has_more: false,
 }));
 
-vi.mock("@/app/api/v1/conversations/_handler", () => ({ listConversationsHandler }));
+vi.mock("@/app/api/v1/conversations/_handler", () => ({
+  listConversationsHandler,
+  // A contagem da aba Pessoal (spec 33) lê o MESMO helper que a lista.
+  idsDeContatosPessoaisVisiveis: async () => [],
+}));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: "u-1" } }, error: null }) },

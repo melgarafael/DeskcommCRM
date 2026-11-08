@@ -73,7 +73,11 @@ vi.mock("@/lib/auth/require-role", () => ({
 }));
 vi.mock("@/lib/channels/desativado", () => ({ idsDosCanaisDesativados: async () => [] }));
 vi.mock("@/lib/ai/agents/org-tem-automatico", () => ({ orgTemAutomatico: async () => false }));
-vi.mock("@/app/api/v1/conversations/_handler", () => ({ idsDeContatosPessoais: async () => [] }));
+vi.mock("@/app/api/v1/conversations/_handler", () => ({
+  idsDeContatosPessoais: async () => [],
+  // A contagem da aba Pessoal (spec 33) lê o MESMO helper que a lista.
+  idsDeContatosPessoaisVisiveis: async () => [],
+}));
 
 const { GET } = await import("@/app/api/v1/conversations/counts/route");
 
