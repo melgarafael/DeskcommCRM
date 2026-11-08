@@ -12,25 +12,29 @@
  * credencial, por isso não há sessão nem CSRF aqui, e o corpo é ignorado.
  *
  * LGPD: o pedido de saída é IRREVERSÍVEL por esta rota (não há "desfazer" —
- * reinscrição comum não remove a supressão). Para
- * cada cadência ATIVA em que este CONTATO esteja inscrito, para a inscrição
- * com `motivo_parada='descadastro'`. Suprime por CONTATO, não só pela
- * cadência que originou o clique: quem pediu para sair não quer receber de
- * NENHUMA outra sequência desta organização — `POST .../inscricoes` (a rota
- * de inscrição) recusa reinscrever um contato com descadastro registrado
- * (ver o comentário lá).
+ * reinscrição comum não remove a supressão). O token carrega só o id do
+ * DESTINATÁRIO daquele envio (`email_cadence_recipients`), e a RPC resolve
+ * por ele a organização, o endereço (hash) e o contato — mesmo que o negócio
+ * e a inscrição já tenham sido apagados. Suprime o ENDEREÇO e o contato para
+ * toda a organização, e para as inscrições ativas desse contato com
+ * `motivo_parada='descadastro'`: quem pediu para sair não quer receber de
+ * NENHUMA outra sequência desta organização — `POST .../inscricoes` recusa
+ * reinscrever (ver o comentário lá).
  *
- * POST repetido (duas abas, ou o provedor e o botão) é IDEMPOTENTE: só conta
- * a PRIMEIRA vez — o filtro `motivo_parada is distinct from descadastro` na
- * RPC garante que a segunda passada não encontra linha para mudar.
+ * Sucesso só com supressão gravada: se o destinatário não existe mais
+ * (organização apagada), a RPC devolve null e a página diz que não deu.
  *
- * Auditoria: a primeira passada grava UMA linha `lgpd.consent_changed` em
- * `api_audit_log`, com a organização do TOKEN assinado (nunca do corpo, que é
- * ignorado) e só ids e a contagem — sem e-mail, IP ou user-agent de quem
- * clicou. A repetida não grava: a RPC devolve 0, nada mudou, e não há
- * mutação a auditar.
+ * POST repetido (duas abas, ou o provedor e o botão) é IDEMPOTENTE: a
+ * segunda passada não cria supressão nem para inscrição de novo.
+ *
+ * Auditoria: a passada que muda algo grava UMA linha `lgpd.consent_changed`
+ * em `api_audit_log`, com a organização resolvida do destinatário (nunca do
+ * corpo, que é ignorado) e só ids e a contagem — sem e-mail, IP ou user-agent
+ * de quem clicou. A repetida não grava: nada mudou, e não há mutação a
+ * auditar.
  */
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { registrarFalhaDeToken, tokenFailureLimited } from "@/lib/auth/rate-limit";
@@ -42,6 +46,14 @@ export const dynamic = "force-dynamic";
 
 const CABECALHOS = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 const TENTE_DEPOIS = "Não foi possível processar agora. Tente de novo em alguns minutos.";
+const SEM_REGISTRO = "Não foi possível registrar o descadastro por este link. Se continuar recebendo estes e-mails, responda a um deles pedindo para sair.";
+
+/** O que `fn_cadencia_descadastrar` devolve quando gravou a supressão; null quando não achou o destinatário. */
+const descadastroGravadoSchema = z.object({
+  organization_id: z.string().uuid(),
+  suprimido_agora: z.boolean(),
+  inscricoes_paradas: z.number().int().min(0),
+});
 
 function pagina(corpo: string, status = 200): Response {
   const html = `<!doctype html>
@@ -91,23 +103,28 @@ export async function POST(
 
   const admin = createAdminClient();
   try {
-    const { data: paradas, error } = await admin.rpc("fn_cadencia_descadastrar", {
-      p_enrollment_id: payload.enrollment_id,
-      p_organization_id: payload.organization_id,
+    const { data, error } = await admin.rpc("fn_cadencia_descadastrar", {
+      p_destinatario_id: payload.destinatario_id,
     });
     if (error) {
       logger.error("[cadencia-descadastro] update falhou", { codigo: "cadencia_unsubscribe_write_failed" });
       return pagina(`<p>${TENTE_DEPOIS}</p>`, 503);
     }
+    const gravado = descadastroGravadoSchema.safeParse(data);
+    if (!gravado.success) {
+      logger.warn("[cadencia-descadastro] destinatário não encontrado", { codigo: "cadencia_unsubscribe_recipient_missing" });
+      return pagina(`<p>${SEM_REGISTRO}</p>`, 404);
+    }
 
-    if (typeof paradas === "number" && paradas > 0) {
+    const { organization_id, suprimido_agora, inscricoes_paradas } = gravado.data;
+    if (suprimido_agora || inscricoes_paradas > 0) {
       await audit({
         action: "lgpd.consent_changed",
-        organizationId: payload.organization_id,
-        resourceType: "email_cadence_enrollment",
-        resourceId: payload.enrollment_id,
+        organizationId: organization_id,
+        resourceType: "email_cadence_recipient",
+        resourceId: payload.destinatario_id,
         bypassedRls: true,
-        metadata: { canal: "email_cadencia", consentimento: "revogado", origem: "link_descadastro", inscricoes_paradas: paradas },
+        metadata: { canal: "email_cadencia", consentimento: "revogado", origem: "link_descadastro", inscricoes_paradas },
       });
     }
 

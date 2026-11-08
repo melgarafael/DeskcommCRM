@@ -179,8 +179,15 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
     arquivo: "tests/invariants/cadencias-descadastro-e-visibilidade.test.ts",
     razao:
       "Tabela só do servidor: o teste confere RLS ligada e nenhum privilégio de anon nem de " +
-      "authenticated, e prova pela função real que a supressão sobrevive ao negócio e à " +
-      "cadência apagados, recusando a reinscrição do mesmo contato.",
+      "authenticated, e prova pela função real que a supressão sobrevive ao negócio, à " +
+      "cadência e ao contato apagados, à troca de e-mail e à fusão, recusando a reinscrição.",
+  },
+  email_cadence_recipients: {
+    arquivo: "tests/invariants/cadencias-descadastro-e-visibilidade.test.ts",
+    razao:
+      "Tabela só do servidor: o teste confere RLS ligada e nenhum privilégio de anon nem de " +
+      "authenticated, e prova pela reserva real que o destinatário sobrevive ao negócio apagado " +
+      "e que o link resolve por ele.",
   },
   honorarios_contratos: {
     arquivo: "tests/invariants/honorarios-rls-por-operacao.test.ts",

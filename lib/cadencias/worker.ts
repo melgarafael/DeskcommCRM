@@ -52,8 +52,12 @@ import { cadenciasLigadas } from "@/lib/cadencias/modulo";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { z } from "zod";
 
 type Admin = ReturnType<typeof createAdminClient>;
+
+/** O que `fn_cadencia_reservar_destinatario` devolve: o id que vai no link e o endereço conferido sob a trava. */
+const destinatarioReservadoSchema = z.object({ destinatario_id: z.string().uuid(), email: z.string().min(1) });
 
 
 /**
@@ -125,7 +129,7 @@ async function executarPassoEmail(
   ctx: {
     inscricao: InscricaoRow;
     cadencia: NonNullable<Awaited<ReturnType<typeof carregarCadencia>>>;
-    contato: { email: string; name: string | null };
+    contato: { name: string | null };
     nomeDoVendedor: string | null;
     emailDoVendedor: string | null;
     requestId: string;
@@ -155,13 +159,23 @@ async function executarPassoEmail(
     lead_id: inscricao.lead_id,
     passo_id: passo.id,
   }, "abertura");
-  const linkDescadastro = signCadenciaLink({
-    enrollment_id: inscricao.id,
-    organization_id: inscricao.organization_id,
-    cadence_id: inscricao.cadence_id,
-    lead_id: inscricao.lead_id,
-    passo_id: passo.id,
-  }, "descadastro");
+
+  if (!(await cadenciasLigadas(admin, inscricao.organization_id))) return { ok: false, erro: "cadencia_desligada" };
+  // Persistir ANTES do efeito: um timeout pode significar que o provedor aceitou.
+  // Outra rodada nunca repete um envio cuja confirmação local ficou incerta.
+  // O pixel já foi assinado acima: sem segredo, o envio para antes da reserva,
+  // e a assinatura do descadastro, logo abaixo, usa o mesmo segredo.
+  const { data: reserva, error: erroReserva } = await admin.rpc("fn_cadencia_reservar_destinatario", {
+    p_organization_id: inscricao.organization_id, p_enrollment_id: inscricao.id,
+    p_processamento_id: inscricao.processamento_id, p_passo_id: passo.id,
+  });
+  if (erroReserva?.message === "cadencia_claim_lost") throw new Error("cadencia_claim_lost");
+  if (erroReserva?.message === "cadencia_modulo_indisponivel") return { ok: false, erro: "cadencia_desligada" };
+  if (erroReserva?.message === "cadencia_descadastrado" || erroReserva?.message === "cadencia_contato_restrito") return { ok: false, erro: "cadencia_contact_restricted" };
+  const destinatario = destinatarioReservadoSchema.safeParse(reserva);
+  if (erroReserva || !destinatario.success) return { ok: false, erro: "cadencia_send_not_reserved" };
+
+  const linkDescadastro = signCadenciaLink({ destinatario_id: destinatario.data.destinatario_id }, "descadastro");
   const base = env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
   const urlPixel = `${base}/api/v1/webhooks/cadencia-pixel/${linkPixel}`;
   const urlDescadastro = `${base}/api/v1/webhooks/cadencia-descadastro/${linkDescadastro}`;
@@ -174,19 +188,8 @@ async function executarPassoEmail(
       ? `<p>Você autorizou a contagem de abertura deste e-mail. Ela pode ser revogada com o descadastro.</p><img src="${urlPixel}" width="1" height="1" alt="" style="display:none" />`
       : "");
 
-  if (!(await cadenciasLigadas(admin, inscricao.organization_id))) return { ok: false, erro: "cadencia_desligada" };
-  // Persistir ANTES do efeito: um timeout pode significar que o provedor aceitou.
-  // Outra rodada nunca repete um envio cuja confirmação local ficou incerta.
-  const { data: reserva, error: erroReserva } = await admin.rpc("fn_cadencia_reservar_envio", {
-    p_organization_id: inscricao.organization_id, p_enrollment_id: inscricao.id,
-    p_processamento_id: inscricao.processamento_id, p_passo_id: passo.id,
-  });
-  if (erroReserva?.message === "cadencia_claim_lost") throw new Error("cadencia_claim_lost");
-  if (erroReserva?.message === "cadencia_modulo_indisponivel") return { ok: false, erro: "cadencia_desligada" };
-  if (erroReserva?.message === "cadencia_descadastrado" || erroReserva?.message === "cadencia_contato_restrito") return { ok: false, erro: "cadencia_contact_restricted" };
-  if (erroReserva || reserva !== true) return { ok: false, erro: "cadencia_send_not_reserved" };
   const resultado = await sendEmail({
-    to: contato.email,
+    to: destinatario.data.email,
     subject: assunto || "(sem assunto)",
     html,
     text: `${corpoRenderizado}\n\n---\nNão quer mais receber estes e-mails? ${urlDescadastro}`,
@@ -354,7 +357,7 @@ async function processarInscricao(admin: Admin, inscricao: InscricaoRow, agora: 
     const envio = await executarPassoEmail(admin, passo, {
       inscricao,
       cadencia,
-      contato: { email: contato.email, name: nomeDoContato(contato) },
+      contato: { name: nomeDoContato(contato) },
       nomeDoVendedor,
       emailDoVendedor,
       requestId,

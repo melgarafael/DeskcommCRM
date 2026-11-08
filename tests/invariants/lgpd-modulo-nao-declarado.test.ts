@@ -92,10 +92,14 @@ const ALLOWLIST: Record<string, string> = {
     "de um titular. Inscrições e eventos permanecem declarados na LGPD; anonimizar " +
     "um contato não deve apagar todas as sequências da organização.",
   "cadencias.email_cadence_suppressions":
-    "Registro de que o contato pediu para não receber cadências: só organização, contato, " +
-    "origem e data, sem conteúdo da pessoa. Fica FORA da anonimização de propósito — apagá-lo " +
-    "devolveria o titular à fila de e-mail, o oposto do pedido; o contato anonimizado já é " +
-    "recusado pelas funções, e a linha só some com o próprio contato (on delete cascade).",
+    "Registro de que o endereço e o contato pediram para não receber cadências: organização, " +
+    "hash do e-mail (sem o endereço em claro), ponteiro para o contato, origem e data. Fica FORA " +
+    "da anonimização de propósito — apagá-lo devolveria o titular à fila de e-mail, o oposto do " +
+    "pedido; o contato anonimizado já é recusado pelas funções, e apagar o contato só zera o ponteiro.",
+  "cadencias.email_cadence_recipients":
+    "Destinatário de cada envio: organização, hash do e-mail (sem o endereço em claro), ponteiro " +
+    "para o contato e para a inscrição. Fica FORA da anonimização de propósito: é o que o link de " +
+    "descadastro de um e-mail já entregue resolve, e o titular anonimizado ainda pode clicar nele.",
   "financeiro.commission_rules":
     "commission_rules não tem ligação nenhuma com a pessoa: guarda a regra de " +
     "comissão (tipo, evento, percentual, atendente/serviço) e a coluna `name` é o " +

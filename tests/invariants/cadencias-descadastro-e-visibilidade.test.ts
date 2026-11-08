@@ -1,6 +1,8 @@
 /**
- * Cadências (migration 9251): o descadastro vale por CONTATO e sobrevive ao
- * negócio e à cadência apagados; as rotas de inscrição e retirada só alcançam o
+ * Cadências (migration 9251): o descadastro vale pelo ENDEREÇO (hash por
+ * organização) e pelo contato, e sobrevive ao negócio, à cadência e ao contato
+ * apagados, à troca de e-mail e à fusão; o link resolve pelo destinatário do
+ * envio; as rotas de inscrição e retirada só alcançam o
  * negócio que a sessão enxerga; e a leitura das inscrições e dos eventos segue
  * a visibilidade do negócio. Postgres real: as rotas rodam de verdade, com o
  * client da sessão como `authenticated` + JWT (a RLS decide) e o admin como
@@ -10,7 +12,9 @@ import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/v1/cadencias/[id]/inscricoes/route";
 import { DELETE } from "@/app/api/v1/cadencias/[id]/inscricoes/[inscricaoId]/route";
-import { countAs, GOV_AGENT_A, GOV_AGENT_B, GOV_CONTACT_2, GOV_CONTACT_3, GOV_MANAGER, GOV_ORG, GOV_PIPELINE, GOV_STAGE, seedGov, sql } from "./gov-helpers";
+import { POST as DESCADASTRAR } from "@/app/api/v1/webhooks/cadencia-descadastro/[token]/route";
+import { signCadenciaLink } from "@/lib/cadencias/token";
+import { countAs, GOV_AGENT_A, GOV_AGENT_B, GOV_CONTACT_2, GOV_CONTACT_3, GOV_MANAGER, GOV_ORG, GOV_PIPELINE, GOV_STAGE, lastLine, seedGov, sql } from "./gov-helpers";
 import { adminEmConexao, novaConexaoDeCadencias, sessaoEmConexao } from "../support/cadencias-pg";
 
 const estado = vi.hoisted(() => ({ admin: null as unknown, sessao: null as unknown, usuario: "" }));
@@ -21,6 +25,7 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => n
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => true }));
 vi.mock("@/lib/audit", () => ({ audit: async () => undefined }));
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+vi.mock("@/lib/auth/rate-limit", () => ({ tokenFailureLimited: async () => false, registrarFalhaDeToken: async () => undefined }));
 
 const CAD = "ca173802-0000-4000-8000-000000000001";
 const LEAD_A = "ca173802-0000-4000-8000-0000000000a1"; // de GOV_AGENT_A
@@ -39,6 +44,7 @@ function pedido(corpo: unknown) {
 }
 
 beforeAll(async () => {
+  vi.stubEnv("INTERNAL_SECRET", "segredo-sintetico-do-descadastro");
   seedGov();
   sql(`select public.fn_cadencias_provisionar();
     insert into public.modulos_instalados(modulo,estado) values('cadencias','ativo') on conflict(modulo) do update set estado='ativo';
@@ -52,7 +58,32 @@ beforeAll(async () => {
   estado.admin = adminEmConexao(admin);
   estado.sessao = sessaoEmConexao(sessao, () => estado.usuario);
 });
-afterAll(async () => { await admin.end(); await sessao.end(); });
+afterAll(async () => { await admin.end(); await sessao.end(); vi.unstubAllEnvs(); });
+
+const ID = (sufixo: string) => `ca173802-0000-4000-8000-${sufixo.padStart(12, "0")}`;
+function contato(id: string, email: string) {
+  sql(`insert into public.contacts(id,organization_id,display_name,email) values('${id}','${GOV_ORG}','Pessoa sintética','${email}');`);
+}
+function negocio(id: string, dono: string) {
+  sql(`insert into public.crm_leads(id,organization_id,pipeline_id,stage_id,contact_id,title) values('${id}','${GOV_ORG}','${GOV_PIPELINE}','${GOV_STAGE}','${dono}','Negócio sintético');`);
+}
+/** A reserva de produção: o destinatário nasce como nasce antes de um envio real. */
+function reservar(inscricao: string): string {
+  return lastLine(sql(`update public.email_cadence_enrollments set processamento_id=gen_random_uuid(),envio_pendente_passo_id=null where id='${inscricao}';
+    select public.fn_cadencia_reservar_destinatario('${GOV_ORG}','${inscricao}',(select processamento_id from public.email_cadence_enrollments where id='${inscricao}'),'email-1')->>'destinatario_id';`));
+}
+function tentarReservar(inscricao: string): string {
+  try { return reservar(inscricao); } catch (erro) { return String((erro as { stderr?: string }).stderr ?? erro); }
+}
+function descadastrar(destinatario: string): string {
+  return sql(`select public.fn_cadencia_descadastrar('${destinatario}')->>'suprimido_agora'`);
+}
+const suprimidoPeloEndereco = (email: string) =>
+  n(`select count(*) from public.email_cadence_suppressions where organization_id='${GOV_ORG}' and email_hash=public.fn_cadencia_hash_do_email('${GOV_ORG}','${email}')`);
+async function clicar(destinatario: string) {
+  const token = signCadenciaLink({ destinatario_id: destinatario }, "descadastro");
+  return DESCADASTRAR(new Request("http://synthetic.test/api", { method: "POST" }) as NextRequest, { params: Promise.resolve({ token }) });
+}
 
 describe("rotas de inscrição conferem se a sessão enxerga o negócio (agent, modo 'own')", () => {
   it("inscrever negócio de colega: 404 e nada gravado; o próprio negócio: 201", async () => {
@@ -96,42 +127,112 @@ describe("leitura das inscrições e dos eventos segue a visibilidade do negóci
     }
   });
 
-  it("a supressão é só do servidor: RLS ligada e nenhum privilégio de sessão", () => {
-    expect(sql(`select relrowsecurity::text from pg_class where oid='public.email_cadence_suppressions'::regclass`)).toBe("true");
-    for (const papel of ["anon", "authenticated"]) {
-      expect(sql(`select has_table_privilege('${papel}','public.email_cadence_suppressions','select,insert,update,delete')::text`)).toBe("false");
+  it("a supressão e o destinatário são só do servidor: RLS ligada e nenhum privilégio de sessão", () => {
+    for (const tabela of ["email_cadence_suppressions", "email_cadence_recipients"]) {
+      expect(sql(`select relrowsecurity::text from pg_class where oid='public.${tabela}'::regclass`)).toBe("true");
+      for (const papel of ["anon", "authenticated"]) {
+        expect(sql(`select has_table_privilege('${papel}','public.${tabela}','select,insert,update,delete')::text`), `${tabela}/${papel}`).toBe("false");
+      }
     }
   });
 });
 
-describe("descadastro vale por contato e sobrevive ao negócio e à cadência apagados", () => {
-  it("descadastrar, apagar o negócio, tentar reinscrever: recusa", () => {
+describe("descadastro vale pelo endereço e pelo contato, e o link resolve pelo destinatário do envio", () => {
+  it("P6: negócio apagado antes do clique — o link grava a supressão e a reinscrição é recusada; controle: destinatário inexistente não afirma sucesso", async () => {
     const ins = sql(`select id from public.email_cadence_enrollments where lead_id='${LEAD_B}'`);
-    expect(sql(`select public.fn_cadencia_descadastrar('${ins}','${GOV_ORG}')`)).toBe("1");
-    expect(sql(`select origem from public.email_cadence_suppressions where organization_id='${GOV_ORG}' and contact_id='${GOV_CONTACT_3}'`)).toBe("link");
-
+    const destinatario = reservar(ins);
     sql(`delete from public.crm_leads where id='${LEAD_B}';`);
     expect(n(`select count(*) from public.email_cadence_enrollments where contact_id='${GOV_CONTACT_3}'`), "a inscrição caiu com o negócio").toBe(0);
 
-    const novo = "ca173802-0000-4000-8000-0000000000b2";
-    sql(`insert into public.crm_leads(id,organization_id,pipeline_id,stage_id,contact_id,title) values('${novo}','${GOV_ORG}','${GOV_PIPELINE}','${GOV_STAGE}','${GOV_CONTACT_3}','Mesmo contato, negócio novo');`);
-    expect(tentarInscrever(novo)).toContain("cadencia_descadastrado");
+    const resposta = await clicar(destinatario);
+    expect(resposta.status).toBe(200);
+    expect(await resposta.text()).toContain("não vai mais receber");
+    expect(sql(`select count(*)||':'||min(origem) from public.email_cadence_suppressions where organization_id='${GOV_ORG}' and contact_id='${GOV_CONTACT_3}'
+      and email_hash=public.fn_cadencia_hash_do_email('${GOV_ORG}',(select email from public.contacts where id='${GOV_CONTACT_3}'))`)).toBe("1:link");
 
+    const novo = ID("b2");
+    negocio(novo, GOV_CONTACT_3);
+    expect(tentarInscrever(novo)).toContain("cadencia_descadastrado");
     // E a cadência apagada também não leva a supressão.
     sql(`delete from public.email_cadences where id='${CAD}';
       insert into public.email_cadences(id,organization_id,name,status) values('${CAD}','${GOV_ORG}','Sequência sintética','ativa');`);
     expect(tentarInscrever(novo)).toContain("cadencia_descadastrado");
     expect(n(`select count(*) from public.email_cadence_enrollments where contact_id='${GOV_CONTACT_3}'`)).toBe(0);
+
+    const antes = n(`select count(*) from public.email_cadence_suppressions`);
+    const inexistente = await clicar(ID("ff"));
+    expect(inexistente.status).toBe(404);
+    expect(await inexistente.text()).not.toContain("não vai mais receber");
+    expect(n(`select count(*) from public.email_cadence_suppressions`)).toBe(antes);
   });
 
   it("controle: contato sem descadastro inscreve normalmente", () => {
     expect(tentarInscrever(LEAD_A).length).toBe(36);
   });
 
-  it("backfill: descadastro legado na inscrição vira supressão do contato, uma vez só", () => {
+  it("P1: contato apagado pela rota não leva a supressão — o mesmo endereço em contato novo é recusado; controle: outro endereço inscreve", () => {
+    contato(ID("1001"), "p1@synthetic.test"); negocio(ID("1101"), ID("1001"));
+    expect(descadastrar(reservar(inscrever(ID("1101"))))).toBe("true");
+    sql(`select public.fn_apagar_contato_com_historico('${ID("1001")}','${GOV_ORG}');`);
+    expect(n(`select count(*) from public.contacts where id='${ID("1001")}'`), "o contato saiu").toBe(0);
+    expect(n(`select count(*) from public.email_cadence_suppressions where organization_id='${GOV_ORG}' and contact_id is null
+      and email_hash=public.fn_cadencia_hash_do_email('${GOV_ORG}','p1@synthetic.test')`)).toBe(1);
+
+    contato(ID("1002"), "P1@Synthetic.TEST"); negocio(ID("1102"), ID("1002"));
+    expect(tentarInscrever(ID("1102"))).toContain("cadencia_descadastrado");
+
+    contato(ID("1003"), "p1-outro@synthetic.test"); negocio(ID("1103"), ID("1003"));
+    expect(tentarInscrever(ID("1103")).length).toBe(36);
+  });
+
+  it("P2: fusão — o endereço do absorvido fica só na lápide e segue suprimido; controle: outro endereço inscreve", () => {
+    contato(ID("2001"), "p2@synthetic.test"); negocio(ID("2101"), ID("2001"));
+    contato(ID("2002"), "p2-principal@synthetic.test");
+    expect(descadastrar(reservar(inscrever(ID("2101"))))).toBe("true");
+    sql(`select public.fn_mesclar_contatos('${GOV_ORG}','${ID("2002")}',array['${ID("2001")}']::uuid[]);`);
+    expect(sql(`select email||':'||(is_merged_into is not null)::text from public.contacts where id='${ID("2001")}'`), "o endereço ficou na lápide").toBe("p2@synthetic.test:true");
+    expect(sql(`select email from public.contacts where id='${ID("2002")}'`), "o principal manteve o próprio endereço").toBe("p2-principal@synthetic.test");
+
+    contato(ID("2003"), "p2@synthetic.test"); negocio(ID("2103"), ID("2003"));
+    expect(tentarInscrever(ID("2103"))).toContain("cadencia_descadastrado");
+
+    contato(ID("2004"), "p2-outro@synthetic.test"); negocio(ID("2104"), ID("2004"));
+    expect(tentarInscrever(ID("2104")).length).toBe(36);
+  });
+
+  it("P3: troca de e-mail — o contato segue recusado pelo ponteiro, o endereço antigo pelo hash, na inscrição e na reserva; controle: endereço limpo inscreve e reserva", () => {
+    contato(ID("3001"), "p3@synthetic.test"); negocio(ID("3101"), ID("3001"));
+    contato(ID("3002"), "p3-e@synthetic.test"); negocio(ID("3102"), ID("3002"));
+    const ativaDeE = inscrever(ID("3102"));
+    expect(descadastrar(reservar(inscrever(ID("3101"))))).toBe("true");
+
+    sql(`update public.contacts set email='p3-novo@synthetic.test' where id='${ID("3001")}';`);
+    negocio(ID("3103"), ID("3001"));
+    expect(tentarInscrever(ID("3103")), "o mesmo contato, com e-mail novo").toContain("cadencia_descadastrado");
+    // Inscrição ativa do mesmo contato que não passou pela inscrição (linha legada): a reserva recusa.
+    sql(`insert into public.email_cadence_enrollments(organization_id,cadence_id,lead_id,contact_id) values('${GOV_ORG}','${CAD}','${ID("3103")}','${ID("3001")}');`);
+    expect(tentarReservar(sql(`select id from public.email_cadence_enrollments where lead_id='${ID("3103")}'`))).toContain("cadencia_descadastrado");
+
+    // Outro contato assume o endereço antigo: a reserva da inscrição que ele já tinha recusa pelo hash.
+    sql(`update public.contacts set email='p3@synthetic.test' where id='${ID("3002")}';`);
+    expect(tentarReservar(ativaDeE)).toContain("cadencia_descadastrado");
+    negocio(ID("3104"), ID("3002"));
+    expect(tentarInscrever(ID("3104"))).toContain("cadencia_descadastrado");
+
+    contato(ID("3003"), "p3-f@synthetic.test"); negocio(ID("3105"), ID("3003"));
+    expect(tentarReservar(inscrever(ID("3105"))).length).toBe(36);
+  });
+
+  it("backfill: descadastro legado na inscrição vira supressão com o hash do e-mail, a supressão sem hash ganha o hash, uma vez só; controle: inscrição sem descadastro não vira supressão", () => {
+    contato(ID("4001"), "backfill-sem-hash@synthetic.test");
     sql(`delete from public.email_cadence_suppressions where contact_id='${GOV_CONTACT_2}';
+      insert into public.email_cadence_suppressions(organization_id,contact_id,origem) values('${GOV_ORG}','${ID("4001")}','link');
       update public.email_cadence_enrollments set status='parada',motivo_parada='descadastro' where lead_id='${LEAD_A}';
       select public.fn_cadencias_provisionar(); select public.fn_cadencias_provisionar();`);
-    expect(sql(`select count(*)||':'||min(origem) from public.email_cadence_suppressions where organization_id='${GOV_ORG}' and contact_id='${GOV_CONTACT_2}'`)).toBe("1:backfill");
+    expect(sql(`select count(*)||':'||min(origem) from public.email_cadence_suppressions where organization_id='${GOV_ORG}' and contact_id='${GOV_CONTACT_2}'
+      and email_hash=public.fn_cadencia_hash_do_email('${GOV_ORG}',(select email from public.contacts where id='${GOV_CONTACT_2}'))`)).toBe("1:backfill");
+    expect(sql(`select count(*)||':'||count(email_hash) from public.email_cadence_suppressions where contact_id='${ID("4001")}'`)).toBe("1:1");
+    expect(suprimidoPeloEndereco("backfill-sem-hash@synthetic.test")).toBe(1);
+    expect(n(`select count(*) from public.email_cadence_suppressions where contact_id='${ID("1003")}'`), "o contato de controle do P1 segue inscrito, sem supressão").toBe(0);
   });
 });

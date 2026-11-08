@@ -7,7 +7,7 @@ import { POST } from "@/app/api/v1/cadencias/[id]/inscricoes/route";
 import { PATCH } from "@/app/api/v1/cadencias/[id]/route";
 import { configuracaoPadrao } from "@/lib/cadencias/exemplos";
 import { GOV_ORG, GOV_CONTACT_1, GOV_LEAD, GOV_MANAGER, seedGov, sql } from "./gov-helpers";
-import { adminEmConexao, ateCondicao, barreira, esperarBarreira, novaConexaoDeCadencias, sessaoEmConexao } from "../support/cadencias-pg";
+import { adminEmConexao, ateCondicao, barreira, esperarBarreira, novaConexaoDeCadencias, sessaoEmConexao, sqlDestinatarioDaInscricao } from "../support/cadencias-pg";
 
 const estado = vi.hoisted(() => ({ admin: null as unknown, sessao: null as unknown, receiver: "" }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => estado.admin }));
@@ -96,12 +96,13 @@ describe("corridas reais: duas conexões, worker/handlers reais e receiver HTTP"
 
   it("inscrição atrasada não nasce após descadastro confirmado", async () => {
     await inserir(); const pronto = barreira(); const liberar = barreira(); let usado = false;
+    const destinatario = (await a.query(sqlDestinatarioDaInscricao(INS))).rows[0]!.id;
     estado.admin = adminEmConexao(b, {
       antes: async (q) => { if (!usado && q.includes('"fn_cadencia_inscrever"')) { usado = true; pronto.liberar(); await liberar.promessa; } },
       depois: async (q, v) => { if (!usado && q.startsWith("select") && q.includes('email_cadence_enrollments') && v.includes("descadastro")) { usado = true; pronto.liberar(); await liberar.promessa; } },
     });
     const resposta = POST(pedido({ lead_id: GOV_LEAD }, "POST"), { params: Promise.resolve({ id: CADB }) }).then((r) => { pronto.liberar(); return r; });
-    try { await esperarBarreira(pronto); expect(usado).toBe(true); await a.query("select public.fn_cadencia_descadastrar($1,$2)", [INS, GOV_ORG]); }
+    try { await esperarBarreira(pronto); expect(usado).toBe(true); await a.query("select public.fn_cadencia_descadastrar($1)", [destinatario]); }
     finally { liberar.liberar(); }
     expect((await resposta).status).toBe(409);
     expect(Number((await a.query("select count(*) n from public.email_cadence_enrollments where organization_id=$1 and contact_id=$2 and status='ativa'", [GOV_ORG, GOV_CONTACT_1])).rows[0]!.n)).toBe(0);
@@ -109,11 +110,12 @@ describe("corridas reais: duas conexões, worker/handlers reais e receiver HTTP"
 
   it("RPC de inscrição realmente espera a mesma trava do contato e revalida supressão", async () => {
     await inserir(); const pidA = (await a.query("select pg_backend_pid() id")).rows[0]!.id; const pidB = (await b.query("select pg_backend_pid() id")).rows[0]!.id;
+    const destinatario = (await a.query(sqlDestinatarioDaInscricao(INS))).rows[0]!.id;
     await a.query("begin"); await a.query("select id from public.contacts where organization_id=$1 and id=$2 for update", [GOV_ORG, GOV_CONTACT_1]);
     const inscricao = b.query("select public.fn_cadencia_inscrever($1,$2,$3,$4,false)", [GOV_ORG, CADB, GOV_LEAD, GOV_MANAGER]).then(() => "inseriu", (e: Error) => e.message);
     try {
       await ateCondicao(async () => (await a.query("select $1::int=any(pg_blocking_pids($2)) bloqueada", [pidA, pidB])).rows[0]!.bloqueada === true, "inscrição não esperou a trava do contato");
-      await a.query("select public.fn_cadencia_descadastrar($1,$2)", [INS, GOV_ORG]); await a.query("commit");
+      await a.query("select public.fn_cadencia_descadastrar($1)", [destinatario]); await a.query("commit");
     } finally { await a.query("rollback"); }
     expect(await inscricao).toContain("cadencia_descadastrado");
   });

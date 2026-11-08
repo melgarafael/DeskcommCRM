@@ -49,3 +49,13 @@ export function sessaoEmConexao(client: pg.Client, userId: () => string) {
   } };
   return pgComoSupabase(transporte as unknown as pg.Pool);
 }
+
+/** Destinatário de um envio da inscrição, na forma que a reserva grava; devolve o
+ * id, que é o que o link de descadastro carrega. Para quando o caso não passa
+ * pela reserva (inscrição já concluída, empresa desligada). */
+export function sqlDestinatarioDaInscricao(inscricao: string): string {
+  return `with d as (insert into public.email_cadence_recipients(organization_id,email_hash,contact_id,enrollment_id)
+    select e.organization_id, public.fn_cadencia_hash_do_email(e.organization_id, c.email), e.contact_id, e.id
+      from public.email_cadence_enrollments e join public.contacts c on c.id=e.contact_id and c.organization_id=e.organization_id
+     where e.id='${inscricao}' returning id) select id from d;`;
+}
