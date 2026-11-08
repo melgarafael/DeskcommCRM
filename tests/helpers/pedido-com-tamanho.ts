@@ -2,10 +2,10 @@
  * Upload de teste COM `content-length`, como o navegador manda.
  *
  * O `Request` do undici não põe o cabeçalho para corpo FormData ou string (o
- * tamanho só é calculado no envio), e as rotas de upload recusam envio sem
- * tamanho declarado (`lib/api/corpo-com-teto.ts`). Aqui o corpo é serializado
- * uma vez e reenviado como bytes, com o `content-type` (boundary inclusive) e o
- * tamanho que ele tem de verdade.
+ * tamanho só é calculado no envio), e é pelo cabeçalho que as rotas de upload
+ * recusam com 413 antes de ler (`lib/api/corpo-com-teto.ts`). Aqui o corpo é
+ * serializado uma vez e reenviado como bytes, com o `content-type` (boundary
+ * inclusive) e o tamanho que ele tem de verdade.
  */
 import { NextRequest } from "next/server";
 

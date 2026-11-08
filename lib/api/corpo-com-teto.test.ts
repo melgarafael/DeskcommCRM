@@ -31,19 +31,33 @@ async function codigo(res: Response): Promise<string> {
 }
 
 describe("lerCorpoComTeto", () => {
-  it("sem content-length → 411, mesmo com corpo pequeno", async () => {
-    const r = await lerCorpoComTeto(pedido(emPartes("oi"), {}), 100, { requestId: "r" });
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.response.status).toBe(411);
-    expect(await codigo(r.response)).toBe("length_required");
+  it("sem content-length e corpo pequeno → aceita (envio em partes, HTTP/2)", async () => {
+    const r = await lerCorpoComTeto(pedido(emPartes("o", "i"), {}), 100, { requestId: "r" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(await r.corpo.text()).toBe("oi");
   });
 
-  it.each(["abc", "-1", "1.5", "1e3", ""])("content-length inválido (%j) → 411", async (valor) => {
+  it("sem content-length e corpo acima do teto → 413 pela contagem", async () => {
+    const r = await lerCorpoComTeto(
+      pedido(emPartes("a".repeat(60), "b".repeat(60)), {}),
+      100,
+      { requestId: "r" },
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.response.status).toBe(413);
+    expect(await codigo(r.response)).toBe("payload_too_large");
+  });
+
+  it.each(["abc", "-1", "1.5", "1e3", ""])("content-length inválido (%j) → 400", async (valor) => {
     const r = await lerCorpoComTeto(pedido("x", { "content-length": valor }), 100, {
       requestId: "r",
     });
-    expect(r.ok ? 200 : r.response.status).toBe(411);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.response.status).toBe(400);
+    expect(await codigo(r.response)).toBe("invalid_request");
   });
 
   it("declarado acima do teto → 413 sem ler o corpo", async () => {
@@ -115,9 +129,12 @@ describe("lerCorpoComTeto", () => {
   });
 
   it("a recusa sai no idioma de quem envia", async () => {
-    const r = await lerCorpoComTeto(pedido("x", {}), 100, { requestId: "r", idioma: "es" });
+    const r = await lerCorpoComTeto(pedido("x", { "content-length": "abc" }), 100, {
+      requestId: "r",
+      idioma: "es",
+    });
     if (r.ok) throw new Error("devia recusar");
     const body = (await r.response.json()) as { error: { message: string } };
-    expect(body.error.message).toBe("El envío debe declarar el tamaño (encabezado Content-Length).");
+    expect(body.error.message).toBe("El tamaño declarado del envío no es válido.");
   });
 });
