@@ -67,6 +67,13 @@ export const MODULOS_OPCIONAIS = [
   "conferir_whatsapp",
   "mcp_por_agente",
   "cold_call",
+  // RIVAIB ERP injection: contabilidad formal (plan de cuentas, libro diario,
+  // reportes fiscales Bolivia, conciliación bancaria) — independiente del
+  // "financeiro" existente del ARM, que cubre comandas/faturamento.
+  "contabilidad",
+  // RIVAIB ERP injection: POS extendido (multi-caja, gastos, devoluciones,
+  // tickets) — extiende las comandas existentes del ARM.
+  "pos_extendido",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -93,6 +100,8 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "conferir_whatsapp",
   "mcp_por_agente",
   "cold_call",
+  "contabilidad",
+  "pos_extendido",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -143,6 +152,12 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // (régua do núcleo enxuto): quem não prospecta por telefone não carrega a tela
   // nem as rotas. Desligado, a porta some, a tela e as rotas respondem 404.
   cold_call: "MODULO_COLD_CALL",
+  // RIVAIB: contabilidad formal — plan de cuentas, libro diario, reportes
+  // fiscales, conciliación bancaria. Desligado por padrão.
+  contabilidad: "MODULO_CONTABILIDAD",
+  // RIVAIB: POS extendido — multi-caja, gastos, devoluciones, tickets.
+  // Desligado por padrão.
+  pos_extendido: "MODULO_POS_EXTENDIDO",
 };
 
 const LIGADO = "ligado";

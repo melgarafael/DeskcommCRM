@@ -162,6 +162,14 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Cold Call (fila de ligações)",
     oQueFaz: "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.",
   },
+  contabilidad: {
+    nome: "Contabilidad",
+    oQueFaz: "Plan de cuentas, libro diario, reportes fiscales Bolivia y conciliación bancaria.",
+  },
+  pos_extendido: {
+    nome: "Punto de venta extendido",
+    oQueFaz: "Multi-caja, gastos operativos, devoluciones y tickets impresos sobre las comandas existentes.",
+  },
 };
 
 /**

@@ -880,6 +880,34 @@ export const NAV_CATALOG = [
     modulo: "honorarios",
   },
   {
+    // RIVAIB ERP injection: contabilidad formal — plan de cuentas, libro
+    // diario, reportes fiscales Bolivia, conciliación bancaria. Módulo
+    // independiente del "financeiro" del ARM (comandas/faturamento). Fica no
+    // hub de Análise › Dinheiro, sem sidebar: é consulta periódica do
+    // contador, não uso diário do atendente.
+    href: "/app/contabilidad",
+    label: "Contabilidad",
+    description: "Plan de cuentas, libro diario, reportes fiscales y conciliación bancaria.",
+    icon: "ChartBar",
+    group: "analise",
+    section: "Dinheiro",
+    minRole: "manager",
+    modulo: "contabilidad",
+  },
+  {
+    // RIVAIB ERP injection: POS extendido — multi-caja, gastos, devoluciones,
+    // tickets. Extiende las comandas existentes del ARM. Fica no hub de
+    // Análise › Dinheiro, sem sidebar: é consulta periódica.
+    href: "/app/pos",
+    label: "Punto de venta",
+    description: "Multi-caja, gastos operativos, devoluciones y tickets impresos.",
+    icon: "Receipt",
+    group: "analise",
+    section: "Dinheiro",
+    minRole: "viewer",
+    modulo: "pos_extendido",
+  },
+  {
     href: "/app/metrics",
     label: "Desempenho",
     description: "Funil e performance por atendente nos últimos 30 dias.",
