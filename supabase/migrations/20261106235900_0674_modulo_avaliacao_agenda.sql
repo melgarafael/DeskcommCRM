@@ -139,6 +139,7 @@ begin
     before update on public.avaliacao_agendamentos
     for each row execute function public.trg_avaliacao_status_guard();
 
+  perform public.fn_avaliacao_declarar_secoes_lgpd();
   perform public.fn_proteger_modulo_provisionado();
 end;
 $f$;
@@ -312,3 +313,40 @@ $f$;
 
 revoke execute on function public.fn_avaliacao_marcar_atrasados() from public, anon, authenticated;
 grant execute on function public.fn_avaliacao_marcar_atrasados() to service_role;
+
+create or replace function public.fn_avaliacao_declarar_secoes_lgpd()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+begin
+  if to_regclass('public.avaliacao_agendamentos') is null then
+    return;
+  end if;
+
+  insert into public.modulo_secoes_lgpd
+      (modulo, tabela, ligacao, colunas, colunas_rotulo, colunas_redigidas, colunas_agora)
+    values (
+      'avaliacao',
+      'avaliacao_agendamentos',
+      'organization_id = $1 and contact_id = $2',
+      array['notes', 'client_email', 'vehicle_plate', 'vehicle_brand', 'vehicle_model'],
+      '{}'::text[],
+      '{}'::text[],
+      array['updated_at']
+    )
+    on conflict (modulo, tabela) do update
+      set ligacao = excluded.ligacao,
+          colunas = excluded.colunas,
+          colunas_rotulo = excluded.colunas_rotulo,
+          colunas_redigidas = excluded.colunas_redigidas,
+          colunas_agora = excluded.colunas_agora;
+end;
+$f$;
+
+revoke execute on function public.fn_avaliacao_declarar_secoes_lgpd() from public, anon, authenticated;
+grant execute on function public.fn_avaliacao_declarar_secoes_lgpd() to service_role;
+
+comment on function public.fn_avaliacao_declarar_secoes_lgpd() is
+  'Declara a seção de LGPD dos agendamentos de avaliação em modulo_secoes_lgpd (D8, 0485). Chamada pela provisionadora.';

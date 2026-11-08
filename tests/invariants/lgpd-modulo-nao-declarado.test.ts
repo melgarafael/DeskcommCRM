@@ -100,6 +100,11 @@ const ALLOWLIST: Record<string, string> = {
     "quantidade, reason em vocabulário do programa e idempotency_key são dado " +
     "do programa de fidelidade, e a pessoa por trás já está anônima na cascata " +
     "(contact_id vira contato anonimizado, não contato legível).",
+  "avaliacao.avaliacao_unidades":
+    "avaliacao_unidades.name é o rótulo operacional da filial (unidade física), " +
+    "não dado de contato: a coluna `name` cai na régua por regex mas não guarda " +
+    "pessoa. A tabela não tem FK para contacts; anonimizar contato não pode apagar " +
+    "o cadastro de unidades que a operação continua usando.",
 };
 
 /**

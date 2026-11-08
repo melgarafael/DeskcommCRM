@@ -102,6 +102,23 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "fn_role_at_least(p_org, 'manager'), mesmo papel da RLS de honorarios_parcelas.",
   },
   {
+    fn: "fn_avaliacao_transicao_status(uuid,uuid,text)",
+    razao:
+      "POST app/api/v1/avaliacao/agendamentos/[id]/acoes/[acao]/route.ts chama por rpc " +
+      "com createClient da sessão. Definer porque grava status sob o trigger que bloqueia " +
+      "UPDATE direto na sessão; a função seta avaliacao.alterando_status, revalida " +
+      "fn_role_at_least(p_org, 'agent'), fn_support_write_allowed e organização do id. " +
+      "tests/invariants/avaliacao-rls-por-operacao.test.ts prova transição inválida recusada.",
+  },
+  {
+    fn: "fn_avaliacao_resolver_consultor(uuid,uuid)",
+    razao:
+      "POST app/api/v1/avaliacao/agendamentos/route.ts chama por rpc com createClient da " +
+      "sessão ao distribuir consultor na criação. Definer estável: lê user_organizations e " +
+      "conta agendamentos do dia por unidade sem expor escrita cross-tenant; o handler " +
+      "já passou organization_id resolvido da sessão.",
+  },
+  {
     fn: "fn_finalizar_comanda(uuid,uuid,uuid,integer)",
     razao:
       "POST app/api/v1/financeiro/comandas/[id]/finalizar/route.ts e " +

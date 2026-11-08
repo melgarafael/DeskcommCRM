@@ -540,9 +540,15 @@ describe("D8 — as varreduras de RLS, security definer e cascata de LGPD com os
       catalogadas.some((p) => p.nome === "fn_honorarios_provisionar"),
       "fn_honorarios_provisionar sumiu do catálogo",
     ).toBe(true);
+    expect(
+      catalogadas.some((p) => p.nome === "fn_avaliacao_provisionar"),
+      "fn_avaliacao_provisionar sumiu do catálogo",
+    ).toBe(true);
 
     expect(TABELAS_DE_MODULO).toContain("honorarios_contratos");
     expect(TABELAS_DE_MODULO).toContain("honorarios_parcelas");
+    expect(TABELAS_DE_MODULO).toContain("avaliacao_unidades");
+    expect(TABELAS_DE_MODULO).toContain("avaliacao_agendamentos");
 
     // Os três inventários leem o banco de verdade — guardas de vacuidade do irmão.
     expect(inventarioRls().length, "inventário de RLS vazio").toBeGreaterThanOrEqual(90);
@@ -758,22 +764,27 @@ describe("D8 — as varreduras de RLS, security definer e cascata de LGPD com os
 
       // Nenhum módulo real cai no escopo SEM decisão — e é pela RÉGUA (FK × coluna de dado
       // pessoal), não por cegueira: a sonda do caso seguinte mostra que o escopo enxerga
-      // tabela de módulo. A única entrada real é `sales` (#1907): FK para `contacts` E
-      // `notes`, alcançada pela SEÇÃO declarada `financeiro/sales` (D8/0485) — a asserção
-      // seguinte cobra a cobertura de cada entrada; aqui se cobra que a comanda seja a ÚNICA
-      // e que a seção dela exista de fato no banco, para a exceção não virar esconderijo.
-      const escopoDeModulo = tabelasComDadoDePessoa().filter((t) => TABELAS_DE_MODULO.includes(t));
+      // tabela de módulo. O conjunto real hoje: `sales` (financeiro) e
+      // `avaliacao_agendamentos` (avaliação, migration 0674) — cada um com seção em
+      // `modulo_secoes_lgpd`. Se outra tabela entrar, a decisão dela precisa ser reavaliada.
+      const escopoDeModulo = tabelasComDadoDePessoa()
+        .filter((t) => TABELAS_DE_MODULO.includes(t))
+        .sort();
       expect(
         escopoDeModulo,
-        "tabela de módulo com dado de pessoa no escopo da cascata — a comanda (`sales`) é a " +
-          "única decisão escrita deste PR (#1907, seção declarada `financeiro/sales`); se outra " +
-          "entrou, a régua mudou e a decisão dela precisa ser reavaliada",
-      ).toEqual(["sales"]);
+        "tabela de módulo com dado de pessoa no escopo da cascata sem decisão escrita " +
+          "(seção em modulo_secoes_lgpd ou allowlist com motivo)",
+      ).toEqual(["avaliacao_agendamentos", "sales"]);
       expect(
         declarada("financeiro", "sales"),
         "`sales` está no escopo do irmão mas a seção `financeiro/sales` não está declarada em " +
           "`modulo_secoes_lgpd` — a D8 manda a cobertura ser SQL dinâmico declarado, não passo " +
           "nomeado no corpo da cascata",
+      ).toBe(true);
+      expect(
+        declarada("avaliacao", "avaliacao_agendamentos"),
+        "`avaliacao_agendamentos` está no escopo mas a seção `avaliacao/avaliacao_agendamentos` " +
+          "não está declarada em modulo_secoes_lgpd",
       ).toBe(true);
 
       const violacoes = PROVISIONAMENTOS.flatMap((p) => violacoesLgpd(p));
