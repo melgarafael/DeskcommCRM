@@ -12,9 +12,16 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Os dois dublês são tipados com a UNIÃO real de desfecho: sem isso o `mock`
+// infere `{ estado: string }` e o caso de falha (`estado: "falhou", erro`) não
+// compila — foi assim que o `verify-parte` pegou o TS2353 (#3602, fatia 5).
 const financeiro = vi.hoisted(() => ({
-  recorrenciaDoNegocio: vi.fn(async () => ({ estado: "criado" })),
-  desativaRecorrenciaDoNegocio: vi.fn(async () => ({ estado: "desativado" })),
+  recorrenciaDoNegocio: vi.fn(
+    async (): Promise<{ estado: string; erro?: string }> => ({ estado: "criado" }),
+  ),
+  desativaRecorrenciaDoNegocio: vi.fn(
+    async (): Promise<{ estado: string; erro?: string }> => ({ estado: "desativado" }),
+  ),
 }));
 vi.mock("@/lib/financeiro/recorrencia-do-negocio", () => financeiro);
 
