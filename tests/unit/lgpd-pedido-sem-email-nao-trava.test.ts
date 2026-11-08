@@ -121,7 +121,19 @@ import { GET as detalhe } from "@/app/api/v1/lgpd/requests/[id]/route";
 
 const ORG = ORG_DA_SESSAO;
 const PEDIDO = "22222222-2222-4222-8222-222222222222";
-const evento = { id: 1, organization_id: ORG, entity_id: PEDIDO, payload: { request_id: PEDIDO } } as unknown as EventRow;
+const ADMIN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+/** Payload do evento pós-aprovação — o worker só exporta com `manually_approved` (doc 134). */
+const evento = {
+  id: 1,
+  organization_id: ORG,
+  entity_id: PEDIDO,
+  payload: {
+    request_id: PEDIDO,
+    manually_approved: true,
+    approved_by: ADMIN,
+    approved_reason: "conferido com o titular",
+  },
+} as unknown as EventRow;
 
 const auditouExportado = () =>
   vi.mocked(audit).mock.calls.some(([e]) => (e as { action: string }).action === "lgpd.export_generated");

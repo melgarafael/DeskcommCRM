@@ -185,16 +185,17 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // Entra em "atendimento", e não em "organizacao", porque a Agenda é onde o
+    // dia acontece e não onde ele se configura: quem atende abre isto de manhã
+    // junto com o Inbox. Com o módulo `avaliacao` ligado, a mesma rota
+    // `/app/agenda` mostra a agenda de avaliação veicular; desligado, continua
+    // a agenda de compromissos e Google Calendar (ver `app/app/agenda/page.tsx`).
     href: "/app/agenda",
     label: "Agenda",
-    description:
-      "Agendamentos de avaliação — horários, unidades, consultores e status da operação.",
+    description: "O que está marcado, com quem, e quem atende — seu e da equipe.",
     icon: "CalendarBlank",
-    group: "crm",
-    section: "O dia a dia da venda",
-    // Só no hub (mesma régua das Comandas): módulo opcional, não ocupa linha no menu diário.
-    minRole: "viewer",
-    modulo: "avaliacao",
+    group: "atendimento",
+    sidebar: true,
   },
   {
     // Renomeado de "Templates": estes são scripts do atendente, consumidos pelo
