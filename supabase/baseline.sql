@@ -77073,10 +77073,10 @@ comment on column public.campaigns.provider_broadcast_id is
 notify pgrst, 'reload schema';
 
 
--- ---- apresentação estruturada do item do catálogo (migration 9245) ----
+-- ---- apresentação estruturada do item do catálogo (migration 9250) ----
 -- manifest: Apresentação por texto ou áudio fica num agregado 1:1 do item, com RLS e mídia privada permanentes.
 -- ============================================================================
--- 9245 — APRESENTAÇÃO DO ITEM DO CATÁLOGO PELA IA
+-- 9250 — APRESENTAÇÃO DO ITEM DO CATÁLOGO PELA IA
 --
 -- A configuração é enriquecimento local do catálogo: não pertence ao
 -- sincronizador que trouxe o produto e não polui a linha comercial com campos

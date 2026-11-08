@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { countAs, sql, writeCountAs } from "./gov-helpers";
 
-// Prova da 9245 em arquivo novo: rls-isolation.test.ts permanece byte a byte
+// Prova da 9250 em arquivo novo: rls-isolation.test.ts permanece byte a byte
 // como a main. Todos os identificadores pertencem somente a esta fixture.
 const ORG_A = "c0647000-0000-4000-8000-000000000001";
 const ORG_B = "c0647000-0000-4000-8000-000000000002";
