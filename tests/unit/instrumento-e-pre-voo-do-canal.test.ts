@@ -173,8 +173,14 @@ describe("a rota chama o arquivo nos dois lados", () => {
     // saíam sem arquivo nenhum: assinatura inválida e evento de outra conta.
     // A propriedade que este caso quer ficou MAIS satisfeita; o que envelheceu
     // foi o número guardado aqui.
+    //
+    // E 6 desde a entrada que responde antes de processar: o 503 de quando a
+    // linha não se deixa marcar como aceita fecha a linha também. A saída que
+    // responde 200 antes não fecha aqui — entrega a linha a quem fecha depois
+    // (`processarDepoisDaResposta` e o cron), vigiado em
+    // `assinatura-recusada-deixa-rastro.test.ts`.
     const fechamentos = [...ROTA.matchAll(/await fecharArquivoDoWebhook\(/g)];
-    expect(fechamentos.length, "algum desfecho deixa a linha eternamente 'received'").toBe(5);
+    expect(fechamentos.length, "algum desfecho deixa a linha eternamente 'received'").toBe(6);
   });
 });
 

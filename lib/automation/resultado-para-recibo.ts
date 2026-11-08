@@ -60,6 +60,7 @@ const CODIGOS_DAS_ACOES = new Set([
   "missing_input",
   "missing_url",
   "modulo_desligado",
+  "nada_a_tirar",
   "ninguem_disponivel",
   "no_contact",
   "no_email",

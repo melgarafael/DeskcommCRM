@@ -129,6 +129,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "save_lead_note": { tokens: 229, motivo: BASE },
   "get_lead_note": { tokens: 99, motivo: BASE },
   "search_knowledge": { tokens: 131, motivo: BASE },
+  // #4133: nasceu com o modo `leitura_direta` (índice no contexto + leitura do
+  // documento pelo id). Entra no lugar da busca quando o agente escolhe o modo;
+  // o teto é o da primeira medição, sem gordura.
+  "ler_documento": { tokens: 142, motivo: "ferramenta nova do modo leitura_direta (#4133), medida na criação (2026-11-06)" },
   "request_human_handoff": { tokens: 510, motivo: BASE },
   "read_skill_reference": { tokens: 154, motivo: BASE },
   "open_human_case": { tokens: 384, motivo: BASE },
@@ -137,7 +141,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
 };
 
-const TETO_TOTAL = 29989;
+// 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
+// modo `leitura_direta` — nunca junto de `search_knowledge`; +37 na descrição de
+// `crm_get_conversation_history`, que passou a dizer o AUTOR da mensagem (#4077).
+const TETO_TOTAL = 30131;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
