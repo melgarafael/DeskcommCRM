@@ -191,3 +191,37 @@ export async function afirmarDonoDoServidor(email: string): Promise<void> {
     );
   }
 }
+
+/**
+ * `/app/agenda` bifurca no servidor: com `avaliacao` ativo na instalação a rota
+ * monta a UI veicular; desligado, a agenda de compromissos. As specs da agenda
+ * legada (`agenda-tela-do-produto` e irmãs) medem o segundo caso — e o banco do
+ * CI não reseta entre arquivos, então uma instalação manual do módulo
+ * contamina a partição inteira.
+ */
+export async function garantirAgendaDeCompromissosNoE2e(): Promise<void> {
+  const svc = servico();
+  const { data, error } = await svc
+    .from("modulos_instalados")
+    .select("estado")
+    .eq("modulo", "avaliacao")
+    .maybeSingle();
+  if (error) {
+    throw new Error(`precondição: leitura de modulos_instalados falhou (${error.message})`);
+  }
+  if (!data || data.estado !== "ativo") return;
+
+  const { error: erroUpdate } = await svc
+    .from("modulos_instalados")
+    .update({
+      estado: "suspenso",
+      motivo_suspensao:
+        "e2e: agenda de compromissos — módulo avaliacao suspenso para specs legadas compartilharem o banco",
+    })
+    .eq("modulo", "avaliacao");
+  if (erroUpdate) {
+    throw new Error(
+      `precondição: não suspendeu o módulo avaliacao para a agenda legada (${erroUpdate.message})`,
+    );
+  }
+}

@@ -1,6 +1,8 @@
-import { expect, test, type Page } from "./helpers/test";
+import { expect, test, type Page, esperarARevelacao } from "./helpers/test";
+import { embrulharANavegacao } from "./helpers/revelacao-nas-cargas";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
+import { garantirAgendaDeCompromissosNoE2e } from "./utils/precondicao";
 import { partesNoFuso } from "../../lib/agenda/fuso";
 
 /**
@@ -26,12 +28,35 @@ const ESPERA = 60_000;
 const FUSO_DA_ORG = "America/Sao_Paulo";
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 
+const navPrincipal = (page: Page) => page.getByRole("navigation", { name: "Navegação principal" });
+
+async function garantirGrupoAtendimentoAberto(page: Page): Promise<void> {
+  const toggle = navPrincipal(page).getByRole("button", { name: "Atendimento" });
+  if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+}
+
+/** Clica na porta do menu — sem `goto`, sem contornar o menu. */
+async function entrarNaAgendaPeloMenu(page: Page): Promise<void> {
+  await page.goto("/app");
+  await page.waitForURL(/\/app\//, { timeout: ESPERA });
+  await garantirGrupoAtendimentoAberto(page);
+  const item = navPrincipal(page).getByRole("link", { name: "Agenda", exact: true });
+  await expect(item, "a porta Agenda tem de existir no menu de Atendimento").toBeVisible({
+    timeout: ESPERA,
+  });
+  await item.click();
+  await expect(page).toHaveURL(/\/app\/agenda/, { timeout: ESPERA });
+  await esperarARevelacao(page);
+}
+
 test.describe("a Agenda como o dono do produto a usa", () => {
   let page: Page;
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(240_000);
+    await garantirAgendaDeCompromissosNoE2e();
     page = await browser.newPage();
+    embrulharANavegacao(page, () => esperarARevelacao(page));
     await loginComoAdmin(page, lerCreds());
   });
 
@@ -40,17 +65,8 @@ test.describe("a Agenda como o dono do produto a usa", () => {
   });
 
   test("chego na Agenda CLICANDO no menu, não digitando a URL", async () => {
-    await page.goto("/app");
-    // Com o módulo `avaliacao` desligado o link some do menu (só aparece com o
-    // módulo instalado). A rota `/app/agenda` segue válida para a agenda legada.
-    const item = page.getByRole("link", { name: "Agenda", exact: true }).first();
-    if (await item.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await item.click();
-    } else {
-      await page.goto("/app/agenda");
-    }
+    await entrarNaAgendaPeloMenu(page);
 
-    await expect(page).toHaveURL(/\/app\/agenda/, { timeout: ESPERA });
     await expect(page.getByTestId("tela-agenda")).toBeVisible();
     // `exact` NÃO é adorno aqui, e a linha do link acima já sabia disso. Sem ele
     // o nome casa por substring e o estado VAZIO da agenda ("Sua agenda está
