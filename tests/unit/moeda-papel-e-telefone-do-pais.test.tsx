@@ -155,14 +155,9 @@ describe("1. o campo de moeda segue a moeda da organização", () => {
       vocabulary: {},
       settings: { fields: [{ key: "orcamento", label: "Orçamento", type: "currency" }] },
     } as unknown as PipelineRow;
-    // Dois « abrir » desde a #4083: o card do funil nasce RECOLHIDO, e o botão do
-    // editor só entra na árvore acessível com o card aberto — o mesmo caminho de
-    // quem configura (abre o funil, depois o editor). O comportamento medido
-    // abaixo não muda: o tipo do campo continua sendo o da moeda da organização.
-    const abrirEditor = () => {
-      fireEvent.click(screen.getByTestId(`funil-${funil.id}-botao`));
+    // O editor do funil monta sob demanda (#3176): abre-se pelo botão, como quem configura.
+    const abrirEditor = () =>
       fireEvent.click(screen.getByRole("button", { name: "Editar vocabulário e campos deste funil" }));
-    };
     const { unmount } = render(<PipelinesClient pipelines={[funil]} podeEditarConfig />);
     abrirEditor();
     expect(screen.getAllByText("Moeda (EUR)").length).toBeGreaterThan(0);

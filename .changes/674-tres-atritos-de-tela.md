@@ -1,11 +1,11 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: Prospecção, agenda do celular e Etapas do funil param de mandar a pessoa ao lugar errado
+titulo: Prospecção e agenda do celular param de mandar a pessoa ao lugar errado
 ---
 
-Três atritos de tela da comunidade, a mesma raiz em dois deles: a frase da
-recusa dizia uma causa que não era a medida.
+Dois atritos de tela da comunidade, com a mesma raiz: a frase da recusa dizia
+uma causa que não era a medida.
 
 **Prospecção (#4118).** A recusa da ativação usava UMA frase para duas
 condições — `crm_move_lead_stage` fora das capacidades publicadas e o funil da
@@ -27,12 +27,4 @@ Conexões; os outros status continuam na frase da conexão, com o código cru no
 log. O comentário do cliente do WAHA que supunha `[]` foi corrigido para o
 comportamento medido.
 
-**Etapas do funil (#4083).** Cada funil abria com a tabela de etapas e o
-mapeamento do agente inteiros; com dez funis a página virava rolagem às cegas.
-Os cards agora usam o `components/ui/accordion.tsx` do repositório: nascem
-recolhidos, um aberto por vez, e o corpo continua **montado** ao recolher
-(`keepMounted`) para não apagar etapa editada e não salva. As âncoras
-`#etapas-<id>` e `#mapeamento-<id>` abrem o card certo, inclusive depois de
-recarregar a página.
-
-Crédito: @webtecnica (#4118, #4102 e #4083, relatos da comunidade no Circle).
+Crédito: @webtecnica (#4118 e #4102, relatos da comunidade no Circle).

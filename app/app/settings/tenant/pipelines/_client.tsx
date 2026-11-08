@@ -1,14 +1,14 @@
 "use client";
 
 import { useT } from "@/hooks/i18n/useT";
+import { useTaxasDasEtapas } from "@/hooks/pipelines/useWinRates";
 import Link from "next/link";
-import { useSyncExternalStore, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Accordion, AccordionItem } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -65,7 +65,6 @@ import {
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
-import { funilDaAncora } from "@/lib/leads/ancora-do-funil";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
 
@@ -410,41 +409,6 @@ function readWonReasons(settings: Record<string, unknown> | null): string[] {
   const r = (settings as { won_reasons?: unknown } | null)?.won_reasons;
   return Array.isArray(r) ? r.filter((v): v is string => typeof v === "string") : [];
 }
-
-/**
- * A ÂNCORA DA URL COMO EXTERNAL STORE (#4083) — ver o comentário de `abertoValido`
- * em `PipelinesClient` para o porquê de não ser `useState`.
- *
- * `getServerSnapshot` devolve o hash vazio, que é o que o servidor renderiza
- * (todos os funis recolhidos) e o que o cliente usa na PRIMEIRA renderização,
- * antes de qualquer inscrição: a comparação da hidratação vê "" dos dois lados e
- * o hash real só entra depois do commit. Guardar o hash real num inicializador
- * de `useState` era justamente a divergência servidor × cliente que
- * `tests/unit/hidratacao-useState-nao-le-o-navegador.test.ts` reprova.
- */
-const ouvintesDoHash = new Set<() => void>();
-
-function avisarOsOuvintesDoHash(): void {
-  ouvintesDoHash.forEach((ouvinte) => ouvinte());
-}
-function lerHashDaUrl(): string {
-  return window.location.hash;
-}
-function hashDoServidor(): string {
-  return "";
-}
-function ouvirHash(ouvinte: () => void): () => void {
-  // UM listener nativo para N componentes inscritos: o fan-out é deste módulo.
-  if (ouvintesDoHash.size === 0 && typeof window !== "undefined") {
-    window.addEventListener("hashchange", avisarOsOuvintesDoHash);
-  }
-  ouvintesDoHash.add(ouvinte);
-  return () => {
-    ouvintesDoHash.delete(ouvinte);
-    if (ouvintesDoHash.size === 0) window.removeEventListener("hashchange", avisarOsOuvintesDoHash);
-  };
-}
-
 export function PipelinesClient({
   pipelines,
   etapas = {},
@@ -469,34 +433,47 @@ export function PipelinesClient({
 }) {
   const t = useT();
   /**
-   * QUAL FUNIL ESTÁ ABERTO (#4083) — `null` é "todos recolhidos", que é como a
-   * tela abre.
+   * ⚠️ UM FUNIL ABERTO POR VEZ (#4083) — o estado mora na LISTA, não no card.
    *
-   * 🌐 A ÂNCORA VEM DE FORA, ENTÃO É UM EXTERNAL STORE. O funil aberto nasce da
-   * âncora (`#etapas-<id>` / `#mapeamento-<id>`, ver `funilDaAncora`): quem chega
-   * de um link direto — ou recarrega com o `#` na barra — cai no funil certo. Ler
-   * `window.location.hash` dentro de um inicializador de `useState` era o defeito
-   * medido pela guarda de hidratação: o inicializador roda OUTRA VEZ na
-   * hidratação, com `window` de verdade, e o cliente divergia do HTML que o
-   * servidor mandou (servidor: tudo recolhido; cliente: um card aberto). O padrão
-   * deste repositório para essa classe é `useSyncExternalStore` com
-   * `getServerSnapshot` determinístico — ver `lib/theme.tsx` e `ouvirHash` acima.
+   * Com ~10 funis a tela virava um rolo: cada card traz todas as etapas editáveis
+   * e o mapeamento do assistente abertos ao mesmo tempo. O pedido veio da
+   * comunidade, e o modelo citado é o próprio botão desta tela («Editar
+   * vocabulário e campos deste funil»), que já abre e fecha.
    *
-   * 🖱️ O CLIQUE mora em `useState` (nasce `null`, sem ler navegador nada), e vale
-   * ENQUANTO o hash não mudar: hash novo manda a âncora, clique novo com o hash
-   * parado manda o clique. Sem isso, fechar um card que a âncora abriu seria
-   * impossível — o painel reabriria no render seguinte. É `null` e não `false`
-   * porque o estado é "o que a pessoa pediu", e a ausência de pedido é a âncora.
+   * Aberto-por-vez é um invariante da LISTA, e é por isso que `abertoId` não
+   * pode viver dentro do card: dois `useState` independentes não se recolhem.
+   *
+   * COM UM SÓ FUNIL ele nasce aberto: não há com o que competir, e a tela fica
+   * exatamente como era antes desta mudança. Quem quiser recolher, recolhe — o
+   * clique no cabeçalho continua fechando.
    */
-  const idsDosFunis = pipelines.map((p) => p.id);
-  const hashDaUrl = useSyncExternalStore(ouvirHash, lerHashDaUrl, hashDoServidor);
-  const funilDaUrl = funilDaAncora(hashDaUrl, idsDosFunis);
-  const [escolha, setEscolha] = useState<{ hash: string; valor: string | null } | null>(null);
-  const pedido = escolha && escolha.hash === hashDaUrl ? escolha.valor : funilDaUrl;
-  // Um funil arquivado entre dois renders não pode deixar o acordeão preso num
-  // `value` que não existe: sem painel correspondente, tudo fecha.
-  const abertoValido = pedido && idsDosFunis.includes(pedido) ? pedido : null;
-
+  const [funilAberto, setFunilAberto] = useState<string | null>(() =>
+    pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
+  );
+  const [chegada, setChegada] = useState<Chegada | null>(null);
+  /**
+   * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
+   *
+   * `#etapas-<id>` e `#mapeamento-<id>` são os destinos do «Mudar isso» da etapa
+   * e do mapeamento, e o hash sobrevive a recarregar a página. Recolhido, o alvo
+   * existe no DOM mas está `hidden` — o navegador não rola até ele e a pessoa cai
+   * no topo, sem entender por que o link não levou a lugar nenhum.
+   *
+   * ⚠️ SÓ NA MONTAGEM. O hash fica na URL depois do clique, e salvar o funil
+   * revalida a rota e entrega `pipelines` novo: com a lista nas dependências, o
+   * funil que a pessoa abriu depois recolhia sozinho e o do hash velho voltava.
+   */
+  useEffect(() => {
+    const alvo = pipelines.find(
+      (p) =>
+        window.location.hash === `#${ancoraDasEtapas(p.id)}` ||
+        window.location.hash === `#${ancoraDoMapeamento(p.id)}`,
+    );
+    if (!alvo) return;
+    setFunilAberto(alvo.id);
+    setChegada({ pipelineId: alvo.id, ancora: window.location.hash.slice(1), scrollY: window.scrollY });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ver ⚠️ acima: é leitura de chegada.
+  }, []);
   if (pipelines.length === 0) {
     // ⚠️ NÃO PROMETA UM CAMINHO QUE NÃO EXISTE — nem NEGUE um que existe. Este
     // texto dizia que criar funil "é feito por quem instalou o sistema, direto
@@ -517,44 +494,80 @@ export function PipelinesClient({
     );
   }
   return (
-    <Accordion
-      value={abertoValido}
-      onValueChange={(valor) => setEscolha({ hash: hashDaUrl, valor })}
-      className="gap-4"
-    >
+    <div className="flex flex-col gap-4">
       {pipelines.map((p) => (
-        <AccordionItem
+        <CardDoFunil
           key={p.id}
-          value={p.id}
-          testId={`funil-${p.id}`}
-          // O CORPO FICA MONTADO: recolher esconde, não desmonta. Etapa editada
-          // e não salva sobrevive ao recolher (mesmo cuidado do editor, #3176).
-          keepMounted
-          className="bg-card"
-          contentClassName="gap-6 p-6"
-          summary={
-            <>
-              <span className="text-base font-semibold">{p.name}</span>
-              <span className="text-xs text-muted-foreground">/{p.slug}</span>
-            </>
-          }
-        >
-          <CardDoFunil
-            pipeline={p}
-            etapas={etapas[p.id] ?? []}
-            podeEditarConfig={podeEditarConfig}
-            comandaDisponivel={comandaDisponivel}
-            ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
-          />
-        </AccordionItem>
+          pipeline={p}
+          etapas={etapas[p.id] ?? []}
+          podeEditarConfig={podeEditarConfig}
+          comandaDisponivel={comandaDisponivel}
+          ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
+          aberto={funilAberto === p.id}
+          aoAlternar={() => {
+            // Quem mexeu no acordeão assumiu a tela: a chegada não rola mais.
+            setChegada(null);
+            setFunilAberto((aberto) => (aberto === p.id ? null : p.id));
+          }}
+        />
       ))}
-    </Accordion>
+      {chegada && <RolagemDeChegada {...chegada} aoTerminar={() => setChegada(null)} />}
+    </div>
   );
 }
 
+type Chegada = { pipelineId: string; ancora: string; scrollY: number };
+
 /**
- * O CORPO DE UM FUNIL — etapas, mapeamento e o editor, que só monta quando
- * expandido (issue #3176).
+ * LEVA ATÉ A SEÇÃO DA ÂNCORA, QUANDO ELA PASSA A EXISTIR E PARA DE ANDAR (#4083).
+ *
+ * As duas seções só põem o `id` no DOM depois da leitura do funil, e o mapeamento
+ * ainda um render depois dela (o rascunho nasce num efeito). O navegador procura o
+ * alvo do hash antes disso, não acha, e a pessoa fica no topo com o funil certo
+ * aberto lá embaixo. Por isso o gatilho é o próprio elemento aparecer, e não a
+ * leitura terminar: esperar a leitura rolava para um alvo que ainda não existia.
+ *
+ * A taxa de cada etapa vem em outra leitura e empurra o mapeamento para baixo:
+ * medido, 309 px em 1440 com cinco etapas. Rolar antes dela deixa a seção longe do
+ * topo, em parte das rodadas. ⚠️ Espere com um observador da MESMA leitura, e não
+ * com `useIsFetching`: ele escuta a cache inteira, então a resposta de OUTRO funil o
+ * acorda quando o número já caiu, antes de as linhas da taxa entrarem na tela.
+ *
+ * Roda uma vez por chegada: ao levar, sai de cena, e revalidar a lista ou reler as
+ * taxas com o hash velho na URL não a traz de volta. `scrollY` diferente do da
+ * chegada é alguém rolando enquanto carregava, por qualquer meio: esse lugar é dele.
+ */
+function RolagemDeChegada({
+  pipelineId,
+  ancora,
+  scrollY,
+  aoTerminar,
+}: Chegada & { aoTerminar: () => void }) {
+  const taxasChegando = useTaxasDasEtapas(pipelineId).isFetching;
+  useEffect(() => {
+    if (taxasChegando) return;
+    const levar = () => {
+      const secao = document.getElementById(ancora);
+      if (!secao) return false;
+      aoTerminar();
+      if (window.scrollY === scrollY) {
+        const reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        secao.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "start" });
+      }
+      return true;
+    };
+    if (levar()) return;
+    const observador = new MutationObserver(() => {
+      if (levar()) observador.disconnect();
+    });
+    observador.observe(document.body, { childList: true, subtree: true });
+    return () => observador.disconnect();
+  }, [ancora, scrollY, taxasChegando, aoTerminar]);
+  return null;
+}
+
+/**
+ * O CARD DE UM FUNIL — e o editor dele SÓ MONTA QUANDO EXPANDIDO (issue #3176).
  *
  * ─── O defeito, medido ────────────────────────────────────────────────────
  *
@@ -564,10 +577,11 @@ export function PipelinesClient({
  * autor da issue mediu o `Runtime.evaluate` da página passando de 45 s sem
  * resposta, logo depois de carregar.
  *
- * O que muda aqui: o editor do funil — que é onde as listas longas moram —
- * continua montando sob demanda, um funil por vez. O corpo (etapas e
- * mapeamento) agora é o painel do acordeão da tela (#4083): fica montado e
- * escondido quando o funil está recolhido, para não perder edição não salva.
+ * O que muda aqui: o corpo do card (etapas e mapeamento, que o gestor abre a
+ * tela para ver) continua visível, e o EDITOR do funil — que é onde as listas
+ * longas moram — passa a montar sob demanda, um funil por vez. A contagem de
+ * nós do DOM da tela inteira, com o caso de controle da issue, está na
+ * evidência do PR: recolhido × expandido.
  */
 function CardDoFunil({
   pipeline,
@@ -575,28 +589,76 @@ function CardDoFunil({
   podeEditarConfig,
   comandaDisponivel,
   ehFunilPadrao,
+  aberto,
+  aoAlternar,
 }: {
   pipeline: PipelineRow;
   etapas: EtapaDoFunil[];
   podeEditarConfig: boolean;
   comandaDisponivel: boolean;
   ehFunilPadrao: boolean;
+  /** Recolhido ou aberto — o estado é da LISTA (`PipelinesClient`), um por vez. */
+  aberto: boolean;
+  aoAlternar: () => void;
 }) {
   const t = useT();
   const [editorAberto, setEditorAberto] = useState(false);
   // Monta na primeira vez que abre e fica montado: recolher só ESCONDE. Desmontar
   // apagaria em silêncio o que foi editado e ainda não salvo.
   const [editorMontado, setEditorMontado] = useState(false);
+  const idDoCorpo = `corpo-do-funil-${pipeline.id}`;
   return (
-    <div className="space-y-6">
-      {/* As ETAPAS vêm primeiro, e a ordem é a do raciocínio de quem
-          configura: primeiro o quadro existe do jeito da sua operação,
-          depois se decide o que o assistente faz com ele. Invertido, a
-          primeira coisa que o dono da clínica vê é um mapeamento sobre
-          colunas de e-commerce que ele nem sabia que dava para trocar. */}
-      <StagesSection pipelineId={pipeline.id} ancoraMapeamento={ancoraDoMapeamento(pipeline.id)} />
-      <div className="border-t border-border pt-6">
-        <AgentMappingSection pipelineId={pipeline.id} ancoraEtapas={ancoraDasEtapas(pipeline.id)} />
+    <Card className="space-y-6 p-6">
+      {/* ─── O FUNIL RECOLHIDO, E O NOME É O BOTÃO (#4083) ──────────────────
+          O pedido da comunidade foi literal: com ~10 funis a tela vira um rolo
+          e cada um deveria vir FECHADO, abrindo um por vez. O modelo citado é o
+          botão «Editar vocabulário e campos deste funil» logo abaixo — mesmo
+          idioma de abrir/fechar desta tela: `aria-expanded` no controle,
+          `CaretDown` girando e o corpo escondido com `hidden` (não desmontado:
+          recolher não pode apagar rascunho de etapa em edição).
+
+          O `<button>` fica DENTRO do `<h2>` (não o contrário): o título
+          continua sendo título para o leitor de tela, o clique pega a faixa
+          inteira do nome, e o nome acessível do botão é o próprio nome do funil
+          — sem string nova para traduzir. Enter e Espaço vêm do elemento nativo.
+
+          `hidden` no atributo, num wrapper SEM classe de display: `display:flex`
+          de uma classe Tailwind venceria o `[hidden]` e o corpo continuaria à
+          vista. O respiro entre etapas e mapeamento fica no `gap` do filho. */}
+      <header className="flex flex-col gap-1">
+        <h2 className="text-base font-semibold">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-auto justify-start gap-2 whitespace-normal px-0 text-left text-base font-semibold hover:bg-transparent"
+            aria-expanded={aberto}
+            aria-controls={idDoCorpo}
+            data-testid={`abrir-funil-${pipeline.id}`}
+            onClick={aoAlternar}
+          >
+            {pipeline.name}
+            <CaretDown
+              size={14}
+              aria-hidden
+              className={aberto ? "rotate-180 transition-transform" : "transition-transform"}
+            />
+          </Button>
+        </h2>
+        <p className="text-xs text-muted-foreground">/{pipeline.slug}</p>
+      </header>
+      <div id={idDoCorpo} hidden={!aberto} data-testid={idDoCorpo}>
+        <div className="flex flex-col gap-6">
+          {/* As ETAPAS vêm primeiro, e a ordem é a do raciocínio de quem
+              configura: primeiro o quadro existe do jeito da sua operação,
+              depois se decide o que o assistente faz com ele. Invertido, a
+              primeira coisa que o dono da clínica vê é um mapeamento sobre
+              colunas de e-commerce que ele nem sabia que dava para trocar. */}
+          <StagesSection pipelineId={pipeline.id} ancoraMapeamento={ancoraDoMapeamento(pipeline.id)} />
+          <div className="border-t border-border pt-6">
+            <AgentMappingSection pipelineId={pipeline.id} ancoraEtapas={ancoraDasEtapas(pipeline.id)} />
+          </div>
+        </div>
       </div>
       {podeEditarConfig && (
         <div className="space-y-4 border-t border-border pt-6">
@@ -632,7 +694,7 @@ function CardDoFunil({
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 

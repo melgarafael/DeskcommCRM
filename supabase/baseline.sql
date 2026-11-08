@@ -69872,6 +69872,1972 @@ end $function$;
 revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
 grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
 
+-- ---- a marca de apagamento cobre todos os telefones do contato (migration 9241) ----
+-- manifest: **A marca de apagamento cobre todos os telefones do contato.** `fn_lgpd_guardar_marca_de_apagamento` passa a gravar em `lgpd_marcas_de_apagamento` uma linha por telefone da ficha, o principal e os extras de `contact_phones`, cada uma com sal próprio, o HMAC dos dígitos e o `lid` daquele número; mesma tabela, mesma normalização, nada em claro, e `fn_titular_apagado_a_pedido` segue igual. Corpo novo, assinatura, `search_path`, `security definer`, gatilho e grants inalterados. Vale para as anonimizações feitas a partir desta versão. Idempotente; espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116). Prova em `tests/invariants/lgpd-marca-de-apagamento.test.ts`.
+--
+-- O gatilho roda no `update` do passo 1 da cascata, antes de o passo 1b apagar
+-- `contact_phones`: é por isso que os extras ainda estão aqui para serem lidos,
+-- como em `fn_redigir_conversas_ao_anonimizar`. A virada de `is_anonymized`
+-- acontece uma vez só, então a segunda anonimização não grava nada de novo.
+create or replace function public.fn_lgpd_guardar_marca_de_apagamento()
+returns trigger language plpgsql security definer
+set search_path = public, extensions, pg_temp as $$
+declare
+  v_alvo record;
+  v_sal bytea;
+begin
+  for v_alvo in
+    select distinct nullif(regexp_replace(coalesce(a.telefone, ''), '\D', '', 'g'), '') as telefone, a.lid
+      from (
+        select old.phone_number as telefone, old.wa_lid as lid
+        union all
+        select t.phone_number, t.wa_lid
+          from public.contact_phones t
+         where t.organization_id = new.organization_id and t.contact_id = new.id
+      ) as a
+  loop
+    continue when v_alvo.telefone is null and v_alvo.lid is null;
+    v_sal := gen_random_bytes(32);
+    insert into public.lgpd_marcas_de_apagamento (organization_id, sal, marca_telefone, marca_lid)
+    values (
+      new.organization_id,
+      v_sal,
+      case when v_alvo.telefone is null then null else hmac(convert_to(v_alvo.telefone, 'UTF8'), v_sal, 'sha256') end,
+      case when v_alvo.lid is null then null else hmac(convert_to(v_alvo.lid, 'UTF8'), v_sal, 'sha256') end
+    );
+  end loop;
+  return null;
+end $$;
+revoke execute on function public.fn_lgpd_guardar_marca_de_apagamento() from public, anon, authenticated, service_role;
+
+-- ---- Lugar com capacidade por período (migration 9224) ----
+-- Espelho idempotente da 9224. É este apêndice que chega a todo clone que
+-- INSTALA do zero; a cadeia de migrations é o caminho de quem ATUALIZA.
+--
+-- ⚠️ ENTRA ANTES DO BLOCO DA VARREDURA anon: recria funções (check, preview,
+-- occurrence, book, guard, read, resource). Depois dela, nenhuma função nasce.
+--
+-- O que o bloco faz, em uma frase: recurso 'space' (mesa, camarote, quadra) é
+-- ESCOLHIDO pela reserva e tem capacidade em PESSOAS por período, contada no
+-- mesmo fn_calendar_service_check que já contava a capacidade do serviço.
+-- Recurso 'resource' continua sendo exigência com unidades. Nada muda para
+-- quem não marcar nenhum recurso como espaço: reserva antiga nasce com
+-- service_party_size=1, então a contagem em pessoas é a contagem em linhas.
+--
+-- As assinaturas antigas de check/preview são derrubadas de propósito: duas
+-- versões da mesma régua seriam duas fontes de verdade (o caminho da cadeia
+-- passaria a ter as duas). Depois deste bloco existe uma só de cada.
+
+alter table public.calendar_resources
+  add column if not exists kind text not null default 'resource',
+  add column if not exists sector text;
+
+alter table public.calendar_resources drop constraint if exists calendar_resources_kind_valid;
+alter table public.calendar_resources add constraint calendar_resources_kind_valid
+  check (kind in ('resource','space'));
+alter table public.calendar_resources drop constraint if exists calendar_resources_sector_valid;
+alter table public.calendar_resources add constraint calendar_resources_sector_valid
+  check (sector is null or length(btrim(sector)) between 1 and 40);
+
+alter table public.calendar_appointments
+  add column if not exists service_space_id uuid,
+  add column if not exists service_party_size integer not null default 1;
+
+alter table public.calendar_appointments drop constraint if exists calendar_appointments_service_space_fk;
+alter table public.calendar_appointments add constraint calendar_appointments_service_space_fk
+  foreign key (organization_id,service_space_id) references public.calendar_resources(organization_id,id) on delete restrict;
+alter table public.calendar_appointments drop constraint if exists calendar_appointments_service_party_valid;
+alter table public.calendar_appointments add constraint calendar_appointments_service_party_valid
+  check (service_party_size between 1 and 100000);
+
+comment on column public.calendar_resources.kind is
+  'resource = exigência (unidades consumidas por reserva); space = lugar reservável (capacidade em pessoas).';
+comment on column public.calendar_appointments.service_party_size is
+  'Pessoas desta reserva; a capacidade (do serviço e do lugar) é contada em pessoas desde a 9224.';
+
+create or replace function public.fn_calendar_service_read(p_org uuid,p_type uuid)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare t public.calendar_event_types; result jsonb;
+begin
+  if auth.uid() is not null and not public.fn_role_at_least(p_org,'viewer') then raise exception 'service_forbidden' using errcode='42501';end if;
+  if auth.uid() is null and current_setting('role',true)='authenticated' then raise exception 'service_forbidden' using errcode='42501';end if;
+  select * into t from public.calendar_event_types where organization_id=p_org and id=p_type;
+  if not found then return null;end if;
+  result:=jsonb_build_object('event_type_id',t.id,'name',t.name,'slug',t.slug,'is_active',t.is_active,
+    'service_enabled',t.service_enabled,'booking_mode',t.booking_mode,'service_capacity',t.service_capacity,'service_timezone',t.service_timezone,
+    'duration_minutes',t.duration_minutes,'slot_interval_minutes',t.slot_interval_minutes,'minimum_notice_minutes',t.minimum_notice_minutes,
+    'booking_window_days',t.booking_window_days,'buffer_before_minutes',t.buffer_before_minutes,'buffer_after_minutes',t.buffer_after_minutes,
+    'requires_confirmation',t.requires_confirmation,'destination_calendar_id',t.destination_calendar_id,'service_revision',t.service_revision,'service_publication_mode',t.service_publication_mode,
+    'schedule',coalesce((select jsonb_agg(jsonb_build_object('id',s.id,'weekday',s.weekday,'on_date',s.on_date,'timing_kind',s.timing_kind,
+      'start_minute',s.start_minute,'end_minute',s.end_minute,'duration_minutes',s.duration_minutes,'capacity_rule',s.capacity_rule,'capacity_limit',s.capacity_limit)
+      order by s.on_date,s.weekday,s.start_minute) from public.calendar_service_schedule s where s.organization_id=p_org and s.event_type_id=p_type),'[]'::jsonb),
+    'professionals',coalesce((select jsonb_agg(s.user_id order by s.user_id) from public.calendar_service_professionals s where s.organization_id=p_org and s.event_type_id=p_type),'[]'::jsonb),
+    -- O recurso vai com o tipo e a área: é o que a tela precisa para separar exigência de lugar reservável.
+    'resources',coalesce((select jsonb_agg(jsonb_build_object('resource_id',s.resource_id,'units',s.units,
+      'kind',r.kind,'name',r.name,'capacity',r.capacity,'sector',r.sector) order by s.resource_id)
+      from public.calendar_service_resources s join public.calendar_resources r on r.organization_id=s.organization_id and r.id=s.resource_id
+      where s.organization_id=p_org and s.event_type_id=p_type),'[]'::jsonb),
+    'calendar_sources',coalesce((select jsonb_agg(s.calendar_id order by s.calendar_id) from public.calendar_service_calendar_sources s where s.organization_id=p_org and s.event_type_id=p_type),'[]'::jsonb));
+  return result;
+end $$;
+revoke all on function public.fn_calendar_service_read(uuid,uuid) from public,anon;
+grant execute on function public.fn_calendar_service_read(uuid,uuid) to authenticated,service_role;
+
+create or replace function public.fn_calendar_service_resource(p_org uuid,p_actor jsonb,p_config jsonb)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare r public.calendar_resources;resource uuid:=coalesce((p_config->>'id')::uuid,gen_random_uuid());
+  v_kind text:=nullif(btrim(p_config->>'kind'),'');
+begin
+ perform public.fn_calendar_service_assert_actor(p_org,p_actor,'manager');
+ perform public.fn_calendar_service_lock(p_org);
+ if coalesce(length(trim(p_config->>'name')),0) not between 2 and 100 or coalesce((p_config->>'capacity')::integer,0) not between 1 and 100000
+   or (v_kind is not null and v_kind not in ('resource','space')) or coalesce(length(btrim(p_config->>'sector')),0)>40
+  then raise exception 'service_resource_invalid' using errcode='22023';end if;
+ select * into r from public.calendar_resources where organization_id=p_org and id=resource for update;
+ if found then
+  if r.revision is distinct from (p_config->>'expected_revision')::bigint then raise exception 'service_stale' using errcode='PT409';end if;
+  -- Omitir o tipo mantém o que já era: editar o nome de uma mesa não a rebaixa a exigência.
+  v_kind:=coalesce(v_kind,r.kind);
+  -- Trocar o tipo de um recurso já comprometido reescreveria a regra de reservas que existem.
+  if v_kind is distinct from r.kind and (exists(select 1 from public.calendar_service_resources s where s.organization_id=p_org and s.resource_id=r.id)
+    or exists(select 1 from public.calendar_appointments a where a.organization_id=p_org and a.service_space_id=r.id and a.status in ('pending','confirmed')))
+    then raise exception 'service_resource_in_use' using errcode='22023';end if;
+  update public.calendar_resources set name=trim(p_config->>'name'),capacity=(p_config->>'capacity')::integer,kind=v_kind,
+    sector=case when p_config?'sector' then nullif(btrim(p_config->>'sector'),'') else sector end,
+    is_active=coalesce((p_config->>'is_active')::boolean,true),revision=revision+1 where organization_id=p_org and id=resource returning * into r;
+ else
+  if p_config?'id' then raise exception 'service_resource_not_found' using errcode='P0002';end if;
+  insert into public.calendar_resources(id,organization_id,name,capacity,kind,sector)
+    values(resource,p_org,trim(p_config->>'name'),(p_config->>'capacity')::integer,coalesce(v_kind,'resource'),nullif(btrim(p_config->>'sector'),'')) returning * into r;
+ end if;
+ return to_jsonb(r);
+end $$;
+revoke all on function public.fn_calendar_service_resource(uuid,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_calendar_service_resource(uuid,jsonb,jsonb) to service_role;
+
+-- A assinatura antiga sai: duas versões com contagem diferente seriam duas fontes de verdade.
+drop function if exists public.fn_calendar_service_check(uuid,uuid,timestamptz,uuid,uuid,timestamptz);
+create or replace function public.fn_calendar_service_check(p_org uuid,p_type uuid,p_start timestamptz,p_owner uuid default null,p_ignore uuid default null,p_now timestamptz default now(),p_space uuid default null,p_party integer default null)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare t public.calendar_event_types;s public.calendar_service_schedule;local_start timestamp;minute integer;priority_date boolean;priority_fixed boolean;
+  rule_count integer;duration integer;end_at timestamptz;start_inflated timestamptz;end_inflated timestamptz;limit_value integer;occupied integer;
+  person record;resource record;google jsonb;selected_owner uuid;available_owners uuid[]:='{}';own_occ uuid;held integer;consumed integer;coverage_failed boolean:=false;destination uuid;
+  party integer;chosen_space uuid;row_space uuid;row_party integer;space_count integer;space_name text;space_sector text;space_capacity integer;space_occupied integer:=0;
+begin
+  select * into t from public.calendar_event_types where organization_id=p_org and id=p_type;
+  if not found then return jsonb_build_object('available',false,'reason','service_not_found');end if;
+  if not t.is_active or not t.service_enabled then return jsonb_build_object('available',false,'reason','service_inactive');end if;
+  -- Remarcação revalida a MESMA reserva: o lugar e as pessoas dela vêm da linha apagada do cálculo.
+  party:=coalesce(p_party,1);chosen_space:=p_space;
+  if p_ignore is not null and (p_space is null or p_party is null) then
+    select a.service_space_id,a.service_party_size into row_space,row_party
+      from public.calendar_appointments a where a.organization_id=p_org and a.id=p_ignore;
+    -- Sem linha (ainda inserindo), mantém o que veio: SELECT INTO vazio não zera o pedido.
+    if found then
+      chosen_space:=coalesce(chosen_space,row_space);
+      if p_party is null then party:=coalesce(row_party,1);end if;
+    end if;
+  end if;
+  if party not between 1 and 100000 then return jsonb_build_object('available',false,'reason','party_invalid');end if;
+  if t.destination_calendar_id is not null and not exists(select 1 from public.calendar_connection_calendars k
+    join public.calendar_connections c on c.organization_id=k.organization_id and c.id=k.connection_id
+    join public.user_organizations m on m.organization_id=c.organization_id and m.user_id=c.user_id and m.revoked_at is null
+    where k.organization_id=p_org and k.id=t.destination_calendar_id and k.available and c.status='healthy' and k.access_role in ('owner','writer'))
+    then return jsonb_build_object('available',false,'reason','publication_unavailable');end if;
+  local_start:=p_start at time zone t.service_timezone;minute:=extract(hour from local_start)::int*60+extract(minute from local_start)::int;
+  if extract(second from local_start)<>0 then return jsonb_build_object('available',false,'reason','outside_schedule');end if;
+  select exists(select 1 from public.calendar_service_schedule where organization_id=p_org and event_type_id=p_type and on_date=local_start::date
+    and ((timing_kind='fixed' and start_minute=minute) or (timing_kind='window' and start_minute<=minute and end_minute>minute))) into priority_date;
+  select exists(select 1 from public.calendar_service_schedule where organization_id=p_org and event_type_id=p_type
+    and case when priority_date then on_date=local_start::date else on_date is null and weekday=extract(dow from local_start)::int end
+    and timing_kind='fixed' and start_minute=minute) into priority_fixed;
+  select count(*) into rule_count from public.calendar_service_schedule where organization_id=p_org and event_type_id=p_type
+    and case when priority_date then on_date=local_start::date else on_date is null and weekday=extract(dow from local_start)::int end
+    and case when priority_fixed then timing_kind='fixed' and start_minute=minute else timing_kind='window' and start_minute<=minute and end_minute>minute end;
+  if rule_count<>1 then return jsonb_build_object('available',false,'reason',case when rule_count=0 then 'outside_schedule' else 'schedule_ambiguous' end);end if;
+  select * into s from public.calendar_service_schedule where organization_id=p_org and event_type_id=p_type
+    and case when priority_date then on_date=local_start::date else on_date is null and weekday=extract(dow from local_start)::int end
+    and case when priority_fixed then timing_kind='fixed' and start_minute=minute else timing_kind='window' and start_minute<=minute and end_minute>minute end;
+  duration:=coalesce(s.duration_minutes,t.duration_minutes);end_at:=p_start+make_interval(mins=>duration);
+  if s.timing_kind='window' and (minute+duration>s.end_minute or (minute-s.start_minute)%coalesce(t.slot_interval_minutes,duration)<>0)
+    then return jsonb_build_object('available',false,'reason','outside_schedule');end if;
+  if p_start<p_now+make_interval(mins=>t.minimum_notice_minutes) or p_start>p_now+make_interval(days=>t.booking_window_days)
+    then return jsonb_build_object('available',false,'reason','outside_booking_window');end if;
+  start_inflated:=p_start-make_interval(mins=>t.buffer_before_minutes);end_inflated:=end_at+make_interval(mins=>t.buffer_after_minutes);
+  google:=public.fn_calendar_service_google_state(p_org,p_type,null,start_inflated,end_inflated);
+  if not (google->>'coverage_verified')::boolean then return jsonb_build_object('available',false,'reason','availability_unverified');end if;
+  if (google->>'busy')::boolean or exists(select 1 from public.calendar_service_blocks where organization_id=p_org and scope_kind='service'
+    and event_type_id=p_type and archived_at is null and starts_at<end_inflated and ends_at>start_inflated)
+    then return jsonb_build_object('available',false,'reason','blocked');end if;
+  if p_owner is not null and not exists(select 1 from public.calendar_service_professionals where organization_id=p_org and event_type_id=p_type and user_id=p_owner)
+    then return jsonb_build_object('available',false,'reason','professional_not_eligible');end if;
+  for person in select user_id from public.calendar_service_professionals where organization_id=p_org and event_type_id=p_type
+    and (p_owner is null or user_id=p_owner) order by user_id loop
+    google:=public.fn_calendar_service_google_state(p_org,p_type,person.user_id,start_inflated,end_inflated);
+    if not (google->>'coverage_verified')::boolean then coverage_failed:=true;continue;end if;
+    if not (google->>'busy')::boolean and public.fn_calendar_service_person_available(p_org,person.user_id,start_inflated,end_inflated,p_ignore,case when t.booking_mode<>'individual' then p_type else null end)
+      then available_owners:=array_append(available_owners,person.user_id);end if;
+  end loop;
+  if (t.booking_mode='individual' or exists(select 1 from public.calendar_service_professionals where organization_id=p_org and event_type_id=p_type))
+    and cardinality(available_owners)=0 then return jsonb_build_object('available',false,'reason',case when coverage_failed then 'availability_unverified' else 'professional_unavailable' end);end if;
+  selected_owner:=available_owners[1];
+  destination:=case when t.service_publication_mode='service' then t.destination_calendar_id else null end;
+  if t.service_publication_mode='professional' then
+    select k.id into destination from public.calendar_connection_calendars k join public.calendar_connections c on c.organization_id=k.organization_id and c.id=k.connection_id
+      where k.organization_id=p_org and c.user_id=selected_owner and k.is_destination and k.available and c.status='healthy' and k.access_role in ('owner','writer');
+    if destination is null then return jsonb_build_object('available',false,'reason','publication_unavailable');end if;
+  end if;
+  -- O lugar é escolhido, não exigido: um recurso 'space' do serviço hospeda UMA reserva por período.
+  select count(*) into space_count from public.calendar_service_resources sr
+    join public.calendar_resources r on r.organization_id=sr.organization_id and r.id=sr.resource_id
+    where sr.organization_id=p_org and sr.event_type_id=p_type and r.kind='space';
+  if space_count>0 then
+    if chosen_space is null then return jsonb_build_object('available',false,'reason','space_required');end if;
+    select r.name,r.sector,r.capacity into space_name,space_sector,space_capacity from public.calendar_resources r
+      where r.organization_id=p_org and r.id=chosen_space and r.kind='space' and r.is_active
+        and exists(select 1 from public.calendar_service_resources sr where sr.organization_id=p_org and sr.event_type_id=p_type and sr.resource_id=r.id);
+    if not found then return jsonb_build_object('available',false,'reason','space_not_eligible','space_id',chosen_space);end if;
+    if exists(select 1 from public.calendar_service_blocks b where b.organization_id=p_org and b.scope_kind='resource' and b.resource_id=chosen_space
+      and b.archived_at is null and b.starts_at<end_inflated and b.ends_at>start_inflated)
+      then return jsonb_build_object('available',false,'reason','space_unavailable','space_id',chosen_space,'space_name',space_name);end if;
+    if party>space_capacity then
+      return jsonb_build_object('available',false,'reason','party_exceeds_space_capacity','space_id',chosen_space,'space_name',space_name,
+        'capacity_limit',space_capacity,'party_size',party);
+    end if;
+    -- A mesa é uma só: conta reservas de qualquer serviço que ofereça o mesmo lugar, pelo MÁXIMO simultâneo
+    -- (a mesma régua da capacidade do serviço, abaixo): reservas em pontas opostas do período não se somam.
+    with intervals as (
+      select greatest(a.starts_at,p_start) s,least(a.ends_at,end_at) e,a.service_party_size n from public.calendar_appointments a
+        where a.organization_id=p_org and a.service_space_id=chosen_space and a.id is distinct from p_ignore
+          and not a.service_block and a.status in ('pending','confirmed') and a.starts_at<end_at and a.ends_at>p_start
+    ),changes as (select i.s at,i.n delta from intervals i union all select i.e at,-i.n delta from intervals i),totals as (select at,sum(delta) delta from changes group by at),running as (
+      select sum(delta) over(order by at rows unbounded preceding) count from totals)
+    select coalesce(max(count),0)::integer into space_occupied from running;
+    if space_occupied+party>space_capacity then
+      return jsonb_build_object('available',false,'reason','space_capacity_reached','space_id',chosen_space,'space_name',space_name,
+        'occupied',space_occupied,'capacity_limit',space_capacity,'party_size',party);
+    end if;
+  elsif chosen_space is not null then
+    return jsonb_build_object('available',false,'reason','space_not_eligible','space_id',chosen_space);
+  end if;
+  -- O máximo simultâneo mede toda a duração, em PESSOAS; consultas disjuntas não se somam como se fossem simultâneas.
+  with intervals as (
+    select greatest(starts_at,p_start) s,least(ends_at,end_at) e,coalesce(service_party_size,1) n from public.calendar_appointments
+      where organization_id=p_org and event_type_id=p_type and id is distinct from p_ignore and not service_block and status in ('pending','confirmed') and starts_at<end_at and ends_at>p_start
+  ),changes as (select i.s at,i.n delta from intervals i union all select i.e at,-i.n delta from intervals i),totals as (select at,sum(delta) delta from changes group by at),running as (
+    select sum(delta) over(order by at rows unbounded preceding) count from totals)
+  select coalesce(max(count),0)::integer into occupied from running;
+  limit_value:=case when t.booking_mode='individual' then null when s.capacity_rule='unlimited' then null when s.capacity_rule='limited' then s.capacity_limit
+    when t.booking_mode='collective_limited' then t.service_capacity else null end;
+  if limit_value is not null and occupied+party>limit_value then return jsonb_build_object('available',false,'reason','capacity_reached','occupied',occupied,'capacity_limit',limit_value,'party_size',party);end if;
+  select id into own_occ from public.calendar_service_occurrences where organization_id=p_org and event_type_id=p_type and starts_at=p_start and ends_at=end_at
+    and allocation_key=case when t.booking_mode='individual' then selected_owner else '00000000-0000-0000-0000-000000000000'::uuid end;
+  -- Só recurso de EXIGÊNCIA consome unidades; lugar é contado em pessoas, acima.
+  for resource in select r.id,r.capacity,r.is_active,sr.units from public.calendar_service_resources sr join public.calendar_resources r on r.organization_id=sr.organization_id and r.id=sr.resource_id
+    where sr.organization_id=p_org and sr.event_type_id=p_type and r.kind='resource' order by r.id loop
+    if not resource.is_active or exists(select 1 from public.calendar_service_blocks where organization_id=p_org and scope_kind='resource' and resource_id=resource.id
+      and archived_at is null and starts_at<end_inflated and ends_at>start_inflated) then return jsonb_build_object('available',false,'reason','resource_unavailable');end if;
+    select coalesce(max(units),0) into held from public.calendar_service_occurrence_resources where organization_id=p_org and occurrence_id=own_occ and resource_id=resource.id;
+    with intervals as (
+      select greatest(o.starts_at,start_inflated) s,least(o.ends_at,end_inflated) e,rr.units from public.calendar_service_occurrence_resources rr
+        join public.calendar_service_occurrences o on o.organization_id=rr.organization_id and o.id=rr.occurrence_id
+        where rr.organization_id=p_org and rr.resource_id=resource.id and rr.occurrence_id is distinct from own_occ
+          and o.starts_at<end_inflated and o.ends_at>start_inflated
+          and exists(select 1 from public.calendar_appointments a where a.organization_id=p_org and a.service_occurrence_id=o.id and a.id is distinct from p_ignore and a.status in ('pending','confirmed'))
+    ),changes as(select i.s at,i.units delta from intervals i union all select i.e,-i.units from intervals i),totals as(select at,sum(delta) delta from changes group by at),running as(
+      select sum(delta) over(order by at rows unbounded preceding) count from totals)
+    select coalesce(max(count),0)::integer into consumed from running;
+    if consumed+greatest(held,resource.units)>resource.capacity then return jsonb_build_object('available',false,'reason','resource_unavailable');end if;
+  end loop;
+  return jsonb_build_object('available',true,'reason',null,'starts_at',p_start,'ends_at',end_at,'duration_minutes',duration,'time_zone',t.service_timezone,
+    'owner_user_id',selected_owner,'available_professionals',cardinality(available_owners),'booking_mode',t.booking_mode,'capacity_rule',s.capacity_rule,
+    'capacity_limit',limit_value,'occupied',occupied,'remaining_capacity',case when cardinality(available_owners)>0 then
+      case when limit_value is null then cardinality(available_owners) else least(limit_value-occupied,cardinality(available_owners)) end
+      when limit_value is null then null else limit_value-occupied end,
+    'party_size',party,'space_id',chosen_space,'space_name',space_name,'space_sector',space_sector,'space_capacity',space_capacity,
+    'space_occupied',space_occupied,'space_remaining_capacity',case when chosen_space is null then null else space_capacity-space_occupied end,
+    'service_revision',t.service_revision,'coverage_verified',true,'destination_calendar_id',destination,'service_publication_mode',t.service_publication_mode,'requires_confirmation',t.requires_confirmation);
+end $$;
+revoke all on function public.fn_calendar_service_check(uuid,uuid,timestamptz,uuid,uuid,timestamptz,uuid,integer) from public,anon,authenticated;
+grant execute on function public.fn_calendar_service_check(uuid,uuid,timestamptz,uuid,uuid,timestamptz,uuid,integer) to service_role;
+
+drop function if exists public.fn_calendar_service_preview(uuid,uuid,jsonb,uuid,timestamptz);
+create or replace function public.fn_calendar_service_preview(p_org uuid,p_type uuid,p_starts jsonb,p_owner uuid default null,p_now timestamptz default now(),p_space uuid default null,p_party integer default null)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare item jsonb;result jsonb:='[]';
+begin
+  if auth.uid() is not null and not public.fn_role_at_least(p_org,'viewer') then raise exception 'service_forbidden' using errcode='42501';end if;
+  if auth.uid() is null and current_setting('role',true)='authenticated' then raise exception 'service_forbidden' using errcode='42501';end if;
+  if jsonb_typeof(p_starts)<>'array' or jsonb_array_length(p_starts)>500 then raise exception 'service_preview_invalid' using errcode='22023';end if;
+  for item in select value from jsonb_array_elements(p_starts) loop
+    result:=result||jsonb_build_array(public.fn_calendar_service_check(p_org,p_type,(item#>>'{}')::timestamptz,p_owner,null,p_now,p_space,p_party)||jsonb_build_object('starts_at',item#>>'{}'));
+  end loop;
+  return result;
+end $$;
+revoke all on function public.fn_calendar_service_preview(uuid,uuid,jsonb,uuid,timestamptz,uuid,integer) from public,anon;
+grant execute on function public.fn_calendar_service_preview(uuid,uuid,jsonb,uuid,timestamptz,uuid,integer) to authenticated,service_role;
+
+create or replace function public.fn_calendar_service_occurrence(p_org uuid,p_type uuid,p_check jsonb)
+returns uuid language plpgsql security definer set search_path=public as $$
+declare result uuid;assignment uuid;item record;
+begin
+  assignment:=case when p_check->>'booking_mode'='individual' then (p_check->>'owner_user_id')::uuid else '00000000-0000-0000-0000-000000000000'::uuid end;
+  insert into public.calendar_service_occurrences(organization_id,event_type_id,starts_at,ends_at,booking_mode,allocation_key)
+    values(p_org,p_type,(p_check->>'starts_at')::timestamptz,(p_check->>'ends_at')::timestamptz,p_check->>'booking_mode',assignment)
+    on conflict(organization_id,event_type_id,starts_at,ends_at,allocation_key) do update set allocation_key=excluded.allocation_key returning id into result;
+  -- Lugar não entra em ocorrência: a ocupação dele é por reserva (pessoas), não por unidades da turma.
+  for item in select sr.resource_id,sr.units from public.calendar_service_resources sr
+    join public.calendar_resources r on r.organization_id=sr.organization_id and r.id=sr.resource_id
+    where sr.organization_id=p_org and sr.event_type_id=p_type and r.kind='resource' order by sr.resource_id loop
+    insert into public.calendar_service_occurrence_resources(organization_id,occurrence_id,resource_id,units) values(p_org,result,item.resource_id,item.units)
+      on conflict(organization_id,occurrence_id,resource_id) do update set units=greatest(calendar_service_occurrence_resources.units,excluded.units);
+  end loop;
+  return result;
+end $$;
+revoke all on function public.fn_calendar_service_occurrence(uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_calendar_service_occurrence(uuid,uuid,jsonb) to service_role;
+
+create or replace function public.fn_calendar_service_book(p_org uuid,p_actor jsonb,p_input jsonb,p_execution jsonb default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare t public.calendar_event_types;a public.calendar_appointments;fact jsonb;occurrence uuid;contact uuid:=(p_input->>'contact_id')::uuid;
+  type_id uuid:=(p_input->>'event_type_id')::uuid;start_at timestamptz:=(p_input->>'starts_at')::timestamptz;
+  participant text;participant_name text:=nullif(trim(p_input->>'participant_name'),'');command_key text:=p_input->>'operation_key';
+begin
+  perform public.fn_calendar_service_assert_actor(p_org,p_actor,'agent');
+  if contact is null or command_key is null or length(command_key)>500 or not exists(select 1 from public.contacts where organization_id=p_org and id=contact and not is_anonymized)
+    then raise exception 'service_contact_not_found' using errcode='P0002';end if;
+  perform public.fn_service_lock(p_org,contact);
+  perform public.fn_calendar_service_lock(p_org);
+  -- Anonimização pode ter aguardado a mesma trava enquanto o pedido esperava.
+  if not exists(select 1 from public.contacts where organization_id=p_org and id=contact and not is_anonymized)
+    then raise exception 'service_contact_not_found' using errcode='P0002';end if;
+  if p_input->>'conversation_id' is not null and not exists(select 1 from public.conversations where organization_id=p_org
+    and id=(p_input->>'conversation_id')::uuid and contact_id=contact and not is_group)
+    then raise exception 'service_conversation_not_found' using errcode='P0002';end if;
+  if p_actor->>'type'='ai_agent' and (p_actor->>'api_token_id' is null or p_actor->>'native_job' is not null or p_execution is not null)
+    and (not public.fn_calendar_service_execution_current(p_org,contact,p_execution)
+      or (p_actor->>'native_job' is not null and p_execution->'job'->>'id' is distinct from p_actor->>'native_job'))
+    then raise exception 'service_execution_stale' using errcode='42501';end if;
+  participant:=contact::text||':'||coalesce(lower(regexp_replace(participant_name,'\s+',' ','g')),'primary');
+  -- Retry de comando também confere o conteúdo; não devolve uma operação alheia.
+  select * into a from public.calendar_appointments where organization_id=p_org and service_operation_key=command_key;
+  if found then
+    if a.service_operation_request is distinct from jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',(p_input->>'space_id')::uuid,'party_size',nullif(coalesce((p_input->>'party_size')::integer,1),1)))
+      then raise exception 'service_idempotency_conflict' using errcode='PT409';end if;
+    return to_jsonb(a)||jsonb_build_object('deduplicated',true);
+  end if;
+  select * into t from public.calendar_event_types where organization_id=p_org and id=type_id;
+  if not found then raise exception 'service_not_found' using errcode='P0002';end if;
+  -- A pessoa já reservada é encontrada antes de consumir vaga ou exigir outro profissional.
+  select * into a from public.calendar_appointments where organization_id=p_org and event_type_id=type_id and starts_at=start_at
+    and participant_key=participant and status in ('pending','confirmed');
+  if found then return to_jsonb(a)||jsonb_build_object('deduplicated',true);end if;
+  if p_input?'expected_revision' and t.service_revision is distinct from (p_input->>'expected_revision')::bigint then raise exception 'service_stale' using errcode='PT409';end if;
+  fact:=public.fn_calendar_service_check(p_org,type_id,start_at,(p_input->>'owner_user_id')::uuid,null,now(),
+    (p_input->>'space_id')::uuid,(p_input->>'party_size')::integer);
+  if not coalesce((fact->>'available')::boolean,false) then raise exception '%',fact->>'reason' using errcode='PT409';end if;
+  if p_actor->>'type'='user' and fact->>'owner_user_id' is not null and fact->>'owner_user_id' is distinct from p_actor->>'id'
+    and not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=(p_actor->>'id')::uuid
+      and revoked_at is null and role in ('manager','admin')) and not public.fn_colegas_podem_mexer_na_agenda(p_org)
+    then raise exception 'appointment_do_colega' using errcode='42501';end if;
+  occurrence:=public.fn_calendar_service_occurrence(p_org,type_id,fact);
+  insert into public.calendar_appointments(organization_id,event_type_id,title,starts_at,ends_at,time_zone,status,owner_user_id,contact_id,conversation_id,
+    description,notes,location_kind,location_details,guest_email,meeting_delivery,created_by_kind,created_by_user_id,source,service_occurrence_id,participant_key,participant_name,
+    service_booking_mode,service_capacity_rule,service_capacity_limit,service_rule_revision,service_destination_calendar_id,service_publication_mode,service_requires_confirmation,service_operation_key,service_operation_request,
+    service_space_id,service_party_size)
+    values(p_org,type_id,coalesce(nullif(p_input->>'title',''),t.name||case when participant_name is null then '' else ' · '||participant_name end),start_at,(fact->>'ends_at')::timestamptz,t.service_timezone,
+      case when t.requires_confirmation then 'pending' else 'confirmed' end,(fact->>'owner_user_id')::uuid,contact,(p_input->>'conversation_id')::uuid,
+      nullif(trim(p_input->>'description'),''),nullif(p_input->>'notes',''),t.location_kind,
+      case when p_input?'location_details' then nullif(trim(p_input->>'location_details'),'') else t.location_details end,
+      nullif(trim(p_input->>'guest_email'),''),coalesce(p_input->'meeting_delivery',jsonb_build_object('state','none')),
+      case when p_actor->>'type'='user' then 'user' when p_actor->>'type'='ai_agent' then 'ai' else 'system' end,
+      case when p_actor->>'type'='user' then (p_actor->>'id')::uuid else null end,
+      case when p_actor->>'type'='user' then 'ui' else 'mcp' end,occurrence,participant,participant_name,
+      t.booking_mode,fact->>'capacity_rule',(fact->>'capacity_limit')::integer,t.service_revision,(fact->>'destination_calendar_id')::uuid,t.service_publication_mode,t.requires_confirmation,command_key,
+      jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',(p_input->>'space_id')::uuid,'party_size',nullif(coalesce((p_input->>'party_size')::integer,1),1))),
+      (fact->>'space_id')::uuid,coalesce((fact->>'party_size')::integer,1))
+    returning * into a;
+  return to_jsonb(a)||jsonb_build_object('deduplicated',false,'service_facts',fact);
+end $$;
+revoke all on function public.fn_calendar_service_book(uuid,jsonb,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_calendar_service_book(uuid,jsonb,jsonb,jsonb) to service_role;
+
+create or replace function public.fn_calendar_service_book_group(p_org uuid,p_actor jsonb,p_input jsonb,p_execution jsonb default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare item jsonb;result jsonb:='[]';names text[]:='{}';canonical text;one jsonb;
+begin
+  if jsonb_typeof(p_input->'participants')<>'array' or jsonb_array_length(p_input->'participants') not between 1 and 20
+    then raise exception 'service_participants_invalid' using errcode='22023';end if;
+  for item in select value from jsonb_array_elements(p_input->'participants') loop
+    canonical:=lower(regexp_replace(trim(item#>>'{}'),'\s+',' ','g'));
+    if coalesce(length(canonical),0) not between 1 and 120 or canonical=any(names) then raise exception 'service_participants_invalid' using errcode='22023';end if;
+    names:=array_append(names,canonical);
+    -- Cada participante é UMA pessoa no lugar; o tamanho do grupo é a contagem deles.
+    one:=public.fn_calendar_service_book(p_org,p_actor,(p_input-'participants'-'party_size')||jsonb_build_object('participant_name',item#>>'{}',
+      'operation_key',(p_input->>'operation_key')||':'||md5(canonical)),p_execution);
+    result:=result||jsonb_build_array(one);
+  end loop;
+  return result;
+end $$;
+revoke all on function public.fn_calendar_service_book_group(uuid,jsonb,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_calendar_service_book_group(uuid,jsonb,jsonb,jsonb) to service_role;
+
+-- O gatilho revalida lugar e pessoas junto com horário/ocupação: escrita direta não vira segunda régua.
+create or replace function public.fn_calendar_service_appointment_guard()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare fact jsonb;checked boolean;type_row public.calendar_event_types;
+begin
+  if tg_op='DELETE' then return old;end if;
+  if tg_op='INSERT' and new.service_occurrence_id is null and not new.service_block
+    and exists(select 1 from public.calendar_event_types where organization_id=new.organization_id and id=new.event_type_id and service_enabled)
+    then raise exception 'service_writer_required' using errcode='42501';end if;
+  if tg_op='INSERT' and auth.uid() is not null and (new.service_block or (new.service_occurrence_id is null and (new.service_destination_calendar_id is not null or new.service_publication_mode is not null)))
+    then raise exception 'service_writer_required' using errcode='42501';end if;
+  if tg_op='UPDATE' and auth.uid() is not null and row(new.participant_key,new.participant_name,new.service_destination_calendar_id,new.service_publication_mode,new.service_requires_confirmation,new.service_operation_key,new.service_operation_request,new.service_block,new.service_space_id,new.service_party_size)
+    is distinct from row(old.participant_key,old.participant_name,old.service_destination_calendar_id,old.service_publication_mode,old.service_requires_confirmation,old.service_operation_key,old.service_operation_request,old.service_block,old.service_space_id,old.service_party_size)
+    then raise exception 'service_writer_required' using errcode='42501';end if;
+  if tg_op='UPDATE' and auth.uid() is not null and ((old.service_occurrence_id is null and new.service_occurrence_id is not null)
+    or (old.service_occurrence_id is not null and row(new.contact_id,new.event_type_id) is distinct from row(old.contact_id,old.event_type_id))
+    or (row(new.starts_at,new.ends_at,new.owner_user_id,new.service_occurrence_id) is not distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.service_occurrence_id)
+      and row(new.service_booking_mode,new.service_capacity_rule,new.service_capacity_limit,new.service_rule_revision) is distinct from row(old.service_booking_mode,old.service_capacity_rule,old.service_capacity_limit,old.service_rule_revision)))
+    then raise exception 'service_writer_required' using errcode='42501';end if;
+  if tg_op='UPDATE' and row(new.starts_at,new.ends_at,new.owner_user_id,new.status,new.service_occurrence_id,new.contact_id,new.event_type_id,new.service_destination_calendar_id,new.service_space_id,new.service_party_size)
+    is not distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.status,old.service_occurrence_id,old.contact_id,old.event_type_id,old.service_destination_calendar_id,old.service_space_id,old.service_party_size) then return new;end if;
+  if tg_op='INSERT' and new.service_occurrence_id is not null and new.contact_id is not null then perform public.fn_service_lock(new.organization_id,new.contact_id);end if;
+  perform public.fn_calendar_service_lock(new.organization_id);
+  if tg_op='INSERT' and new.service_occurrence_id is not null then
+    if new.contact_id is null or new.service_operation_key is null or not exists(select 1 from public.contacts where organization_id=new.organization_id and id=new.contact_id and not is_anonymized)
+      or new.status not in ('pending','confirmed') then raise exception 'service_creation_invalid' using errcode='22023';end if;
+    if auth.uid() is not null then
+      perform public.fn_calendar_service_assert_actor(new.organization_id,jsonb_build_object('type','user','id',auth.uid()),'agent');
+      new.created_by_kind:='user';new.created_by_user_id:=auth.uid();new.source:='ui';
+      new.meeting_delivery:=jsonb_build_object('state','none');
+    end if;
+    if new.conversation_id is not null and not exists(select 1 from public.conversations where organization_id=new.organization_id and id=new.conversation_id and contact_id=new.contact_id and not is_group)
+      then raise exception 'service_conversation_not_found' using errcode='P0002';end if;
+    new.participant_key:=new.contact_id::text||':'||coalesce(lower(regexp_replace(nullif(trim(new.participant_name),''),'\s+',' ','g')),'primary');
+    -- O lugar e as pessoas entram no pedido: a mesma chave com outra mesa é conflito, não a reserva antiga devolvida.
+    new.service_operation_request:=jsonb_build_object('event_type_id',new.event_type_id,'contact_id',new.contact_id,'starts_at',new.starts_at,'participant_key',new.participant_key)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',new.service_space_id,'party_size',nullif(new.service_party_size,1)));
+  end if;
+  if new.status not in ('pending','confirmed') or new.service_block then return new;end if;
+  checked:=new.service_occurrence_id is not null;
+  if checked then
+    if not exists(select 1 from public.calendar_service_occurrences o where o.organization_id=new.organization_id and o.id=new.service_occurrence_id
+      and o.event_type_id=new.event_type_id and o.starts_at=new.starts_at and o.ends_at=new.ends_at)
+      then raise exception 'service_occurrence_mismatch' using errcode='23503';end if;
+    -- Confirmação não reabre uma reserva já ocupante; mudança de horário, de lugar, de pessoas ou reativação revalida.
+    if tg_op='INSERT' or row(new.starts_at,new.ends_at,new.owner_user_id,new.service_occurrence_id) is distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.service_occurrence_id)
+      or row(new.service_space_id,new.service_party_size) is distinct from row(old.service_space_id,old.service_party_size)
+      or old.status not in ('pending','confirmed') then
+      fact:=public.fn_calendar_service_check(new.organization_id,new.event_type_id,new.starts_at,new.owner_user_id,new.id,now(),new.service_space_id,new.service_party_size);
+      if not coalesce((fact->>'available')::boolean,false) then raise exception '%',fact->>'reason' using errcode='PT409';end if;
+      if (fact->>'ends_at')::timestamptz is distinct from new.ends_at then raise exception 'service_duration_mismatch' using errcode='PT409';end if;
+      new.service_booking_mode:=fact->>'booking_mode';new.service_capacity_rule:=fact->>'capacity_rule';
+      new.service_capacity_limit:=(fact->>'capacity_limit')::integer;new.service_rule_revision:=(fact->>'service_revision')::bigint;
+      new.service_space_id:=(fact->>'space_id')::uuid;new.service_party_size:=coalesce((fact->>'party_size')::integer,1);
+      new.service_occurrence_id:=public.fn_calendar_service_occurrence(new.organization_id,new.event_type_id,fact);
+      if tg_op='INSERT' then
+        select * into type_row from public.calendar_event_types where organization_id=new.organization_id and id=new.event_type_id;
+        new.service_destination_calendar_id:=(fact->>'destination_calendar_id')::uuid;
+        new.service_publication_mode:=type_row.service_publication_mode;new.service_requires_confirmation:=type_row.requires_confirmation;
+        new.status:=case when type_row.requires_confirmation then 'pending' else 'confirmed' end;
+      end if;
+    end if;
+  end if;
+  if new.owner_user_id is not null and exists(select 1 from public.calendar_appointments a where a.organization_id=new.organization_id and a.id<>new.id
+    and a.owner_user_id=new.owner_user_id and a.status in ('pending','confirmed') and a.starts_at<new.ends_at and a.ends_at>new.starts_at
+    and not (new.service_occurrence_id is not null and a.service_occurrence_id=new.service_occurrence_id
+      and new.service_booking_mode in ('collective_limited','collective_unlimited'))
+    and (checked or a.service_occurrence_id is not null)) then raise exception 'professional_unavailable' using errcode='PT409';end if;
+  return new;
+end $$;
+revoke all on function public.fn_calendar_service_appointment_guard() from public,anon,authenticated;
+drop trigger if exists trg_calendar_service_appointment_guard on public.calendar_appointments;
+create trigger trg_calendar_service_appointment_guard before insert or update on public.calendar_appointments for each row execute function public.fn_calendar_service_appointment_guard();
+
+notify pgrst,'reload schema';
+
+-- ---- remove_tag atômico: tirar etiqueta no UPDATE (migration 9234) ----
+-- manifest: **Ação de automação `remove_tag`: tirar etiqueta do negócio ou do contato, atômico no banco.** Funções `fn_lead_remover_etiquetas` e `fn_contato_remover_etiquetas`, irmãs das `fn_*_adicionar_etiquetas` da 0682: a lista é refeita DENTRO do `UPDATE` (`with ordinality`, preserva a ordem das que ficam), então dois eventos concorrentes do mesmo negócio ou contato — um em cada dreno do `event_log` — não devolvem a etiqueta que o outro tirou nem apagam a que o outro pôs. A comparação é pela chave canônica (`lower(btrim(...))`), a mesma do `excluir` do vocabulário (0264/0673): tirar "VIP" tira "vip". `security definer`, `EXECUTE` só para `service_role`, `revoke` de `public`, `anon` e `authenticated`; linha de outra organização devolve nulo e não é tocada.
+
+-- ---- o remove_tag tira no UPDATE, sob a trava da linha (migration 9234) ----
+-- A irmã da 0682 no sentido contrário: a ação `remove_tag` das automações.
+--
+-- ─── Por que uma função, e por que dentro do UPDATE ────────────────────────
+--
+-- Mesma corrida da 0682: o `event_log` tem dois drenos concorrentes (o laço do
+-- worker e o cron `event-log-drain`) e o claim é por LINHA, não por negócio.
+-- Tirar a etiqueta lendo a lista no app e gravando a lista menos as pedidas
+-- seria repetir o defeito da #2888 do outro lado: a gravação de um dreno
+-- devolveria a etiqueta que o outro acabou de tirar, ou apagaria a que o outro
+-- acabou de pôr. Numa única instrução `UPDATE`, em READ COMMITTED, quem chega
+-- depois espera o commit da linha e recalcula sobre a versão vigente.
+--
+-- O PostgREST não sabe dizer `tags = tags menos estas`: só manda um valor
+-- pronto. Daí a função, como a 0682 e a 0502.
+--
+-- ─── A comparação é pela chave canônica ───────────────────────────────────
+--
+-- `lower(btrim(etiqueta))`, a mesma do `excluir` do vocabulário (0264/0673).
+-- A etiqueta do contato é guardada normalizada (#1224) e a do card pode estar em
+-- caixa mista; quem configura "VIP" quer tirar "vip". Tirar nunca cria variante,
+-- então casar pela chave não tem o risco que casar teria no `add_tag`.
+--
+-- Elemento nulo ou só espaço no pedido é descartado ANTES: `x = any(array['a',
+-- null])` dá nulo para quem não casa, e o `not (...)` descartaria a etiqueta.
+--
+-- ─── A leitura sob a TRAVA ────────────────────────────────────────────────
+--
+-- Como na 0682, o `select ... for update` não é o que conserta a corrida (quem
+-- conserta é o `UPDATE`); ele responde QUAIS etiquetas esta chamada tirou
+-- (`removidas`), que é o que a ação grava no detalhe da execução. Nada a tirar =
+-- nada gravado, e `updated_at` não muda.
+--
+-- ─── O que estas funções NÃO fazem ─────────────────────────────────────────
+--
+-- Não decidem papel nem organização (é de quem chama: a ação roda no dreno, com
+-- o client de serviço, e `p_org` vem do evento); o filtro por `organization_id`
+-- é defesa em profundidade e faz linha de outra organização devolver nulo. Não
+-- emitem evento: não existe gatilho `*.tag_removed`, e evento sem consumidor é
+-- o anti-pattern 3 do CLAUDE.md.
+--
+-- Idempotente: `create or replace`, `revoke`/`grant` reaplicáveis. Sem tabela,
+-- coluna, policy ou dado a corrigir.
+
+create or replace function public.fn_lead_remover_etiquetas(
+  p_org uuid,
+  p_lead uuid,
+  p_etiquetas text[]
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_chaves    text[];
+  v_antes     text[];
+  v_removidas text[];
+  v_depois    text[];
+begin
+  v_chaves := array(
+    select distinct lower(btrim(x))
+      from unnest(coalesce(p_etiquetas, '{}'::text[])) as x
+     where x is not null and btrim(x) <> ''
+  );
+  if cardinality(v_chaves) = 0 then
+    raise exception 'etiquetas_vazio' using errcode = '22023';
+  end if;
+
+  -- A PRÉ-IMAGEM SOB A TRAVA (é o relatório, não a remoção). Sem linha — lead
+  -- inexistente OU de outra organização — devolve nulo.
+  select coalesce(tags, '{}'::text[])
+    into v_antes
+    from public.crm_leads
+   where organization_id = p_org and id = p_lead
+     for update;
+  if not found then
+    return null;
+  end if;
+
+  v_removidas := array(
+    select t.etiqueta
+      from unnest(v_antes) with ordinality as t(etiqueta, ordem)
+     where lower(btrim(t.etiqueta)) = any (v_chaves)
+     order by t.ordem
+  );
+
+  if cardinality(v_removidas) = 0 then
+    return jsonb_build_object('tags', to_jsonb(v_antes), 'removidas', '[]'::jsonb);
+  end if;
+
+  -- UMA instrução: a lista é refeita sobre a linha vigente.
+  update public.crm_leads
+     set tags = array(
+           select t.etiqueta
+             from unnest(coalesce(tags, '{}'::text[])) with ordinality as t(etiqueta, ordem)
+            where t.etiqueta is null or not (lower(btrim(t.etiqueta)) = any (v_chaves))
+            order by t.ordem
+         ),
+         updated_at = now()
+   where organization_id = p_org and id = p_lead
+   returning tags into v_depois;
+
+  return jsonb_build_object(
+    'tags', to_jsonb(coalesce(v_depois, '{}'::text[])),
+    'removidas', to_jsonb(v_removidas)
+  );
+end
+$fn$;
+
+create or replace function public.fn_contato_remover_etiquetas(
+  p_org uuid,
+  p_contato uuid,
+  p_etiquetas text[]
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $fn$
+declare
+  v_chaves    text[];
+  v_antes     text[];
+  v_removidas text[];
+  v_depois    text[];
+begin
+  -- Irmã da de cima, na tabela do CONTATO (destino `contato`). Corpo idêntico
+  -- trocando a tabela e o nome do parâmetro.
+  v_chaves := array(
+    select distinct lower(btrim(x))
+      from unnest(coalesce(p_etiquetas, '{}'::text[])) as x
+     where x is not null and btrim(x) <> ''
+  );
+  if cardinality(v_chaves) = 0 then
+    raise exception 'etiquetas_vazio' using errcode = '22023';
+  end if;
+
+  select coalesce(tags, '{}'::text[])
+    into v_antes
+    from public.contacts
+   where organization_id = p_org and id = p_contato
+     for update;
+  if not found then
+    return null;
+  end if;
+
+  v_removidas := array(
+    select t.etiqueta
+      from unnest(v_antes) with ordinality as t(etiqueta, ordem)
+     where lower(btrim(t.etiqueta)) = any (v_chaves)
+     order by t.ordem
+  );
+
+  if cardinality(v_removidas) = 0 then
+    return jsonb_build_object('tags', to_jsonb(v_antes), 'removidas', '[]'::jsonb);
+  end if;
+
+  update public.contacts
+     set tags = array(
+           select t.etiqueta
+             from unnest(coalesce(tags, '{}'::text[])) with ordinality as t(etiqueta, ordem)
+            where t.etiqueta is null or not (lower(btrim(t.etiqueta)) = any (v_chaves))
+            order by t.ordem
+         ),
+         updated_at = now()
+   where organization_id = p_org and id = p_contato
+   returning tags into v_depois;
+
+  return jsonb_build_object(
+    'tags', to_jsonb(coalesce(v_depois, '{}'::text[])),
+    'removidas', to_jsonb(v_removidas)
+  );
+end
+$fn$;
+
+-- As DUAS origens de EXECUTE (o grant a PUBLIC da criação e o `ALTER DEFAULT
+-- PRIVILEGES` do baseline) — mesma razão da 0682: estas funções ESCREVEM.
+revoke execute on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) from public, anon, authenticated;
+revoke execute on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) from public, anon, authenticated;
+grant execute on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) to service_role;
+grant execute on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) to service_role;
+
+comment on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) is
+  'Tira etiquetas do negócio DENTRO do UPDATE, numa única instrução atômica, casando pela chave canônica, e devolve as etiquetas gravadas e as removidas. '
+  'Irmã de fn_lead_adicionar_etiquetas (0682). Não decide papel nem organização — isso é de quem chama.';
+comment on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) is
+  'Tira etiquetas do contato DENTRO do UPDATE, numa única instrução atômica. '
+  'Mesmo desenho de fn_lead_remover_etiquetas, no destino `contato` da remove_tag.';
+
+-- ---- o vocabulário de etiquetas enxerga a remove_tag (migration 9234) ----
+-- Renomear ou juntar uma etiqueta reescrevia só as regras `add_tag`: a regra
+-- que TIRA a etiqueta ficava com o nome velho e, em silêncio, parava de achar o
+-- que devia tirar. As três funções partem da ÚLTIMA definição de cada uma; o que
+-- muda é `= 'add_tag'` virar `in ('add_tag', 'remove_tag')`, nos dois lados: a
+-- escrita (`_operar`) e as contagens (`_operar` na exclusão, `_pagina` e a
+-- antiga `fn_vocabulario_de_tags`). A exclusão continua sem apagar regra nenhuma.
+create or replace function public.fn_vocabulario_de_tags(p_org uuid)
+returns table (
+  tag text,
+  uso_em_contatos bigint,
+  uso_em_leads bigint,
+  uso_em_conversas bigint,
+  em_regras bigint,
+  cor text,
+  descricao text,
+  no_vocabulario boolean
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  with vocabulario as (
+    -- A organização pode guardar o vocabulário de dois jeitos, e os dois contam:
+    -- `tags` (a lista com cor e descrição, vinda da tela) e
+    -- `canonical_conversation_tags` (as sementes, que a 0244 já usava).
+    select
+      nullif(btrim(coalesce(entrada.valor ->> 'tag', entrada.valor #>> '{}')), '') as tag,
+      nullif(btrim(coalesce(entrada.valor ->> 'cor', '')), '') as cor,
+      nullif(btrim(coalesce(entrada.valor ->> 'descricao', '')), '') as descricao
+    from public.organizations o
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(o.settings -> 'tags') = 'array'
+           then o.settings -> 'tags' else '[]'::jsonb end
+    ) as entrada(valor)
+    where o.id = p_org
+    union all
+    select nullif(btrim(coalesce(semente #>> '{}', '')), ''), null, null
+    from public.organizations o
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(o.settings -> 'canonical_conversation_tags') = 'array'
+           then o.settings -> 'canonical_conversation_tags' else '[]'::jsonb end
+    ) as semente(valor)
+    where o.id = p_org
+  ),
+  vocabulario_limpo as (
+    -- Uma linha por nome canônico. Se a lista curada tem cor/descrição, ela vence
+    -- a semente crua.
+    select distinct on (lower(v.tag))
+           v.tag, v.cor, v.descricao
+    from vocabulario v
+    where v.tag is not null
+    order by lower(v.tag), (v.cor is not null or v.descricao is not null) desc
+  ),
+  uso as (
+    select nullif(btrim(t.valor), '') as tag, 'contatos' as origem
+    from public.contacts c, unnest(coalesce(c.tags, '{}'::text[])) as t(valor)
+    where c.organization_id = p_org
+    union all
+    select nullif(btrim(t.valor), ''), 'leads'
+    from public.crm_leads l, unnest(coalesce(l.tags, '{}'::text[])) as t(valor)
+    where l.organization_id = p_org
+    union all
+    select nullif(btrim(t.valor), ''), 'conversas'
+    from public.conversations v, unnest(coalesce(v.tags, '{}'::text[])) as t(valor)
+    where v.organization_id = p_org
+  ),
+  uso_limpo as (
+    select u.tag, u.origem from uso u where u.tag is not null and u.tag <> ''
+  ),
+  regras as (
+    -- As ações `add_tag` e `remove_tag` dos agentes. É o que o operador NÃO via: a etiqueta
+    -- podia ter zero conversas e ainda estar sendo escrita amanhã pela regra.
+    -- `r.id` junto: a coluna "Regras de agente" da tela conta REGRAS, e a
+    -- exclusão (mais abaixo) conta `distinct r.id`. Sem o id aqui, uma regra com
+    -- duas ações `add_tag` da mesma etiqueta aparecia como "2" na lista e como
+    -- "1" no resultado da operação — o mesmo rótulo contando coisas diferentes.
+    select r.id as regra_id, nullif(btrim(etiqueta.valor #>> '{}'), '') as tag
+    from public.automation_rules r
+    cross join lateral jsonb_array_elements(coalesce(r.actions, '[]'::jsonb)) as acao(valor)
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(acao.valor -> 'config' -> 'tags') = 'array'
+           then acao.valor -> 'config' -> 'tags' else '[]'::jsonb end
+    ) as etiqueta(valor)
+    where r.organization_id = p_org
+      and acao.valor ->> 'type' in ('add_tag', 'remove_tag')
+  ),
+  regras_limpo as (
+    select r.regra_id, r.tag from regras r where r.tag is not null and r.tag <> ''
+  ),
+  bruto as (
+    select tag from vocabulario_limpo
+    union all select tag from uso_limpo
+    union all select tag from regras_limpo
+  ),
+  todas as (
+    select min(b.tag) as tag, lower(b.tag) as chave
+    from bruto b
+    where b.tag is not null
+    group by lower(b.tag)
+  )
+  select
+    coalesce(v.tag, t.tag) as tag,
+    (select count(*) from uso_limpo u
+      where lower(u.tag) = t.chave and u.origem = 'contatos') as uso_em_contatos,
+    (select count(*) from uso_limpo u
+      where lower(u.tag) = t.chave and u.origem = 'leads')    as uso_em_leads,
+    (select count(*) from uso_limpo u
+      where lower(u.tag) = t.chave and u.origem = 'conversas') as uso_em_conversas,
+    (select count(distinct r.regra_id) from regras_limpo r
+      where lower(r.tag) = t.chave)                           as em_regras,
+    v.cor,
+    v.descricao,
+    (v.tag is not null)                                       as no_vocabulario
+  from todas t
+  left join vocabulario_limpo v on lower(v.tag) = t.chave
+  order by t.chave
+  -- Teto, como na 0244: numa organização bagunçada a união cresce sem limite e
+  -- isto vai para uma tela.
+  limit 500;
+$$;
+
+revoke execute on function public.fn_vocabulario_de_tags(uuid) from public, anon;
+grant  execute on function public.fn_vocabulario_de_tags(uuid) to authenticated, service_role;
+
+create or replace function public.fn_vocabulario_de_tags_operar(
+  p_org uuid,
+  p_acao text,
+  p_tag text,
+  p_destino text,
+  p_cor text default null
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_tag     text := btrim(coalesce(p_tag, ''));
+  v_destino text := btrim(coalesce(p_destino, ''));
+  -- A cor entra normalizada (minúscula, sem espaço). A rota valida com Zod antes;
+  -- esta linha defende o caminho que NÃO passa por ela — RPC direta, psql, um
+  -- cliente futuro. Sem isso, `#FFF` gravaria e a comparação por igualdade da
+  -- tela (que compara o que o servidor devolveu) passaria a mentir.
+  v_cor     text := lower(btrim(coalesce(p_cor, '')));
+  -- ── A RÉGUA DO MARCADOR, DERIVADA UMA VEZ (issue #3507) ────────────────────
+  --
+  -- `contacts.tags` e `conversations.tags` guardam a etiqueta em minúscula:
+  -- `normalizarTag` (`lib/contacts/tag-normalizada.ts`, issue #1224, migrations
+  -- 0324/0335) e `conversationTagSchema` (`.trim().toLowerCase()`,
+  -- `lib/schemas/messaging.ts`), e é nessa forma que o filtro `?tag=` consulta.
+  -- `v_destino` é o NOME DE EXIBIÇÃO e vai como foi digitado para o
+  -- vocabulário, para as sementes de conversa, para as regras dos agentes e
+  -- para `crm_leads.tags` (caixa mista aceita) — esta é a forma das DUAS
+  -- colunas que são minúscula POR CONTRATO, e ela é `lower(btrim(...))`: a
+  -- MESMA expressão com que `fn_tags_normalizar` compara o valor de origem e
+  -- com que a 0335 normalizou o marcador já gravado.
+  --
+  -- ⚠️ Não vai para `fn_tags_normalizar`: aquela função também atende
+  -- `crm_leads.tags`, que aceita caixa mista. A caixa é decisão de quem escreve
+  -- na coluna que a exige, e são duas.
+  --
+  -- ⚠️ O TETO DE 40 DA RÉGUA NÃO ENTRA AQUI de propósito: `tagSchema` aceita 60
+  -- (`TAG_MAX`) para o nome de exibição, e cortar o destino às escuras trocaria
+  -- a caixa por um nome TRUNCADO — outra classe de defeito, com perda de dado.
+  -- A divergência de teto entre a coluna (40, `TAMANHO_MAXIMO_DA_TAG`) e o
+  -- vocabulário (60) fica declarada, não resolvida por um renomear.
+  v_destino_minusculo text := lower(btrim(coalesce(p_destino, '')));
+  v_remover boolean;
+  v_so_cor  boolean;
+  v_contatos integer := 0;
+  v_leads integer := 0;
+  v_conversas integer := 0;
+  v_regras integer := 0;
+  v_id uuid;
+  v_ids uuid[];
+  v_settings jsonb;
+  v_antes jsonb;
+  v_depois jsonb;
+  v_definido boolean := false;
+  -- (e0) 'duas entradas do vocabulário viraram uma' — issue #2801.
+  v_juntou boolean := false;
+begin
+  -- Portão de papel ANTES de qualquer escrita. Definer com p_org vindo da rota:
+  -- é esta linha que separa o tenant de quem chama.
+  if p_org is null or not public.fn_role_at_least(p_org, 'manager') then
+    raise exception using errcode = '42501', message = 'insufficient_role';
+  end if;
+
+  if p_acao is null or p_acao not in ('renomear', 'juntar', 'excluir', 'definir_cor') then
+    raise exception using errcode = '22023', message = 'acao_invalida';
+  end if;
+  if v_tag = '' then
+    raise exception using errcode = '22023', message = 'tag_obrigatoria';
+  end if;
+  v_remover := (p_acao = 'excluir');
+  v_so_cor  := (p_acao = 'definir_cor');
+  if not v_remover and not v_so_cor and v_destino = '' then
+    raise exception using errcode = '22023', message = 'destino_obrigatorio';
+  end if;
+  -- `v_cor` vazio é pedido legítimo ("sem cor"): limpa. O que não passa é cor
+  -- malformada — gravar `#12` e devolver `#12` para a tela pintar deixaria o
+  -- chip sem cor sem ninguém saber por quê.
+  if v_so_cor and v_cor <> '' and v_cor !~ '^#[0-9a-f]{6}$' then
+    raise exception using errcode = '22023', message = 'cor_invalida';
+  end if;
+
+  -- ── POR QUE NÃO SAI EVENTO DAQUI ──────────────────────────────────────────
+  --
+  -- Os laços abaixo CONTAM as linhas alteradas e não emitem nada em `event_log`.
+  -- A primeira versão emitia `contact.tags_changed` / `lead.tags_changed` /
+  -- `conversation.tags_changed` POR LINHA, e nenhum desses tipos tem consumidor:
+  -- `lib/event-log/register-handlers.ts` registra 13 handlers e nenhum os
+  -- declara; o motor de automação ouve `lead.tag_added`/`contact.tag_added`, que
+  -- é outro tipo (e disparar automação num renomear em lote seria pior que não
+  -- disparar). Evento sem consumidor é o anti-pattern 3 do CLAUDE.md, e aqui
+  -- custava milhares de linhas dentro de UMA transação, num log que nada drena e
+  -- nada expurga.
+  --
+  -- Quem registra a operação é o AUDIT LOG, na borda: `tag_vocabulary.changed`
+  -- em `app/api/v1/tags/vocabulario/route.ts`, com os contadores que este corpo
+  -- devolve. E a tela aberta se atualiza pelo Realtime das próprias tabelas.
+
+  -- ── (z) A COR SAI ANTES DOS LAÇOS, E NÃO É OTIMIZAÇÃO ─────────────────────
+  --
+  -- Cor é atributo do VOCABULÁRIO, não das linhas: `contacts.tags`,
+  -- `crm_leads.tags` e `conversations.tags` continuam `text[]` de nomes, porque
+  -- automação, webhook (`lead.tag_added`) e MCP (`*.tags_changed`) falam em
+  -- string há versões (contrato da fatia S4). Então a ação `definir_cor` não tem
+  -- o que reescrever em contatos, leads nem conversas — e os laços abaixo, se
+  -- rodassem, custariam uma varredura das três tabelas para devolver zero.
+  --
+  -- O bloco de `canonical_conversation_tags` (mais abaixo) é pior que inútil
+  -- aqui: ele troca o nome da semente por `v_destino` e descarta o que sobra
+  -- vazio — com `destino` nulo nesta ação, a semente seria APAGADA. Daí o
+  -- `return` cedo: nesta ação, só o vocabulário curado muda.
+  if v_so_cor then
+    select coalesce(o.settings, '{}'::jsonb) into v_settings
+    from public.organizations o where o.id = p_org;
+    if v_settings is null then
+      v_settings := '{}'::jsonb;
+    end if;
+
+    -- (a) tolera `settings.tags` torto (escalar/objeto): a leitura já tolera com
+    -- `jsonb_typeof`, e sem esta guarda o `jsonb_array_elements` levantava
+    -- `cannot extract elements from a scalar` e derrubava a tela inteira numa
+    -- organização com o dado malformado. Lista que não é lista é lista vazia.
+    v_antes := case
+      when jsonb_typeof(v_settings -> 'tags') = 'array' then v_settings -> 'tags'
+      else '[]'::jsonb
+    end;
+    v_depois := coalesce(
+      (
+        select jsonb_agg(entrada.valor order by entrada.ord)
+        from (
+          -- Uma entrada por chave canônica, agora acrescentando a cor na que
+          -- casar. A entrada que era string vira objeto — a mesma forma que o
+          -- rename já grava (mais abaixo, `jsonb_build_object('tag', …)`) — e
+          -- `descricao` que já existia é PRESERVADA: esta ação fala de cor.
+          --
+          -- ⚠️ O desempate é o MESMO da função de leitura
+          -- (`fn_vocabulario_de_tags`, `order by … (cor is not null or descricao
+          -- is not null) desc`), e de propósito: onde a lista curada já tiver a
+          -- mesma etiqueta duas vezes (uma como string, outra como objeto com
+          -- cor), quem sobrevive é a entrada que carrega o metadado. Ordenar só
+          -- por `ord` apagaria a cor na primeira vez que a ação rodasse sobre um
+          -- vocabulário nesse estado, e a tela mostraria "sem cor" logo depois de
+          -- alguém ter escolhido uma.
+          select distinct on (lower(x.chave)) x.valor, x.ord
+          from (
+            select btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}')) as chave,
+                   case
+                     when lower(btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))) = lower(v_tag)
+                     then case
+                            when nullif(v_cor, '') is null
+                            then (case when jsonb_typeof(e.valor) = 'string'
+                                       then jsonb_build_object('tag', e.valor #>> '{}')
+                                       else e.valor end) - 'cor'
+                            else jsonb_set(
+                                   case when jsonb_typeof(e.valor) = 'string'
+                                        then jsonb_build_object('tag', e.valor #>> '{}')
+                                        else e.valor end,
+                                   '{cor}', to_jsonb(v_cor))
+                          end
+                     else case when jsonb_typeof(e.valor) = 'string'
+                               then jsonb_build_object('tag', e.valor #>> '{}')
+                               else e.valor end
+                   end as valor,
+                   e.ord
+            from jsonb_array_elements(v_antes) with ordinality as e(valor, ord)
+            where btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}')) <> ''
+          ) x
+          where x.valor is not null
+          order by lower(x.chave),
+                   ((x.valor ->> 'cor') is not null or (x.valor ->> 'descricao') is not null) desc,
+                   x.ord
+        ) as entrada
+      ),
+      '[]'::jsonb
+    );
+
+    -- A etiqueta que ainda não tinha entrada no vocabulário curado — semente, ou
+    -- nome que só existe em uso (`no_vocabulario = false` na leitura) — GANHA
+    -- uma. É deliberado: dar cor é curar. Sem isto, a tela ofereceria cor para
+    -- uma etiqueta que continuaria marcada como "em uso, fora do vocabulário", e
+    -- a leitura devolveria a cor de uma linha que não está na lista curada.
+    if nullif(v_cor, '') is not null and not exists (
+      select 1 from jsonb_array_elements(v_depois) as e(valor)
+      where lower(btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))) = lower(v_tag)
+    ) then
+      v_depois := v_depois || jsonb_build_array(jsonb_build_object('tag', v_tag, 'cor', v_cor));
+    end if;
+
+    if v_depois <> v_antes then
+      v_settings := jsonb_set(v_settings, '{tags}', v_depois);
+      update public.organizations o
+         set settings = v_settings,
+             updated_at = now()
+       where o.id = p_org;
+      v_definido := true;
+    end if;
+
+    return jsonb_build_object(
+      'acao', p_acao,
+      'tag', v_tag,
+      'destino', null,
+      'cor', nullif(v_cor, ''),
+      'contatos', 0,
+      'leads', 0,
+      'conversas', 0,
+      'regras', 0,
+      'alterou', v_definido
+    );
+  end if;
+
+  -- (a) contatos
+  for v_id in
+    with alvo as (
+      select c.id, public.fn_tags_normalizar(c.tags, v_tag, v_destino_minusculo, v_remover) as novas
+      from public.contacts c
+      where c.organization_id = p_org
+        and exists (
+          select 1 from unnest(coalesce(c.tags, '{}'::text[])) as x(valor)
+          where lower(btrim(x.valor)) = lower(v_tag)
+        )
+    ), mudou as (
+      update public.contacts c
+         set tags = a.novas
+        from alvo a
+       where c.id = a.id
+         and c.tags is distinct from a.novas
+      returning c.id
+    )
+    select id from mudou
+  loop
+    v_contatos := v_contatos + 1;
+  end loop;
+
+  -- (b) leads
+  for v_id in
+    with alvo as (
+      select l.id, public.fn_tags_normalizar(l.tags, v_tag, v_destino, v_remover) as novas
+      from public.crm_leads l
+      where l.organization_id = p_org
+        and exists (
+          select 1 from unnest(coalesce(l.tags, '{}'::text[])) as x(valor)
+          where lower(btrim(x.valor)) = lower(v_tag)
+        )
+    ), mudou as (
+      update public.crm_leads l
+         set tags = a.novas
+        from alvo a
+       where l.id = a.id
+         and l.tags is distinct from a.novas
+      returning l.id
+    )
+    select id from mudou
+  loop
+    v_leads := v_leads + 1;
+  end loop;
+
+  -- (c) conversas
+  for v_id in
+    with alvo as (
+      select v.id, public.fn_tags_normalizar(v.tags, v_tag, v_destino_minusculo, v_remover) as novas
+      from public.conversations v
+      where v.organization_id = p_org
+        and exists (
+          select 1 from unnest(coalesce(v.tags, '{}'::text[])) as x(valor)
+          where lower(btrim(x.valor)) = lower(v_tag)
+        )
+    ), mudou as (
+      update public.conversations v
+         set tags = a.novas
+        from alvo a
+       where v.id = a.id
+         and v.tags is distinct from a.novas
+      returning v.id
+    )
+    select id from mudou
+  loop
+    v_conversas := v_conversas + 1;
+  end loop;
+
+  -- (d) as regras dos agentes — o ponto da issue.
+  --
+  -- `excluir` NÃO apaga a regra: quem exclui a etiqueta é avisado de quantas
+  -- regras a citam (o número volta no jsonb e a tela pede confirmação), mas
+  -- apagar `add_tag` de um agente em produção é decisão de outra tela. Aqui a
+  -- lista da regra só é reescrita quando o nome muda ou quando ele sai.
+  select coalesce(o.settings, '{}'::jsonb) into v_settings
+  from public.organizations o where o.id = p_org;
+
+  if v_settings is null then
+    v_settings := '{}'::jsonb;
+  end if;
+
+  if not v_remover then
+    with alvo as (
+      select r.id,
+             jsonb_agg(
+               case
+                 when a.valor ->> 'type' in ('add_tag', 'remove_tag')
+                  and jsonb_typeof(a.valor -> 'config' -> 'tags') = 'array'
+                 then jsonb_set(
+                        a.valor,
+                        '{config,tags}',
+                        to_jsonb(public.fn_tags_normalizar(
+                          array(select jsonb_array_elements_text(a.valor -> 'config' -> 'tags')),
+                          v_tag, v_destino, false
+                        ))
+                      )
+                 else a.valor
+               end
+               order by a.ord
+             ) as novas
+      from public.automation_rules r
+      cross join lateral jsonb_array_elements(coalesce(r.actions, '[]'::jsonb))
+        with ordinality as a(valor, ord)
+      where r.organization_id = p_org
+      -- ⚠️ `group by r.id` E SÓ. Agrupar também pelo TIPO da ação devolvia uma
+      -- linha por (regra, tipo), cada uma com `novas` = só o subconjunto daquele
+      -- tipo; o `update ... from alvo` casava as duas linhas, o Postgres usava
+      -- UMA arbitrária, e `is distinct from` é sempre verdadeiro num subconjunto
+      -- — então a regra com ações de dois tipos era TRUNCADA a um tipo só, em
+      -- toda organização, mesmo que ela nunca tenha citado a etiqueta renomeada.
+      -- Medido num Postgres real: regra com `add_tag` + `assign_owner` ficava com
+      -- uma ação, e a tela dizia "atualizada em 1 regra(s) de agente".
+      group by r.id
+    ), mudou as (
+      update public.automation_rules r
+         set actions = alvo.novas,
+             updated_at = now()
+        from alvo
+       where r.id = alvo.id
+         and r.actions is distinct from alvo.novas
+      returning r.id
+    )
+    select count(*) into v_regras from mudou;
+  else
+    -- Exclusão: conta as regras que ainda citam a etiqueta, sem tocar nelas.
+    select count(distinct r.id) into v_regras
+    from public.automation_rules r
+    cross join lateral jsonb_array_elements(coalesce(r.actions, '[]'::jsonb)) as a(valor)
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(a.valor -> 'config' -> 'tags') = 'array'
+           then a.valor -> 'config' -> 'tags' else '[]'::jsonb end
+    ) as e(valor)
+    where r.organization_id = p_org
+      and a.valor ->> 'type' in ('add_tag', 'remove_tag')
+      and lower(btrim(e.valor #>> '{}')) = lower(v_tag);
+  end if;
+
+  -- (e) o vocabulário da organização, nos dois lugares onde ele mora.
+  -- Mesma guarda do ramo de renomear: `settings.tags` malformado não pode
+  -- derrubar a cor (a leitura tolera; a escrita agora também).
+  v_antes := case
+    when jsonb_typeof(v_settings -> 'tags') = 'array' then v_settings -> 'tags'
+    else '[]'::jsonb
+  end;
+
+  -- ── (e0) O AVISO DE JUNÇÃO — renomear NÃO é renome simples quando o nome
+  -- já existe (issue #2801) ────────────────────────────────────────────────
+  --
+  -- Renomear para um nome que JÁ ESTÁ no vocabulário junta as duas entradas
+  -- numa só, e a operação respondia `alterou: true` idêntico a um renome
+  -- simples: a tela dizia "Etiqueta atualizada" enquanto duas etiquetas
+  -- viravam uma. O marcador é medido AQUI, no vocabulário curado, e não na
+  -- tela — a tela só tem a lista que ela mesma acabou de ler, e o caso
+  -- justamente interessante é o que já vinha como DUAS linhas.
+  --
+  -- O alcance é declarado: `juntou` diz "duas ENTRADAS do vocabulário curado
+  -- colapsaram". `juntar` um nome que só existia em uso (fora do vocabulário)
+  -- não colapsa entrada nenhuma ali, e o marcador fica `false` — o que
+  -- normalizou os nomes nesse caso foi `fn_tags_normalizar`, outro desenho.
+  if not v_remover then
+    select exists (
+      select 1
+      from jsonb_array_elements(v_antes) with ordinality as e(valor, ord)
+      where btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}')) <> ''
+      group by lower(
+                case when lower(btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))) = lower(v_tag)
+                     then v_destino
+                     else btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))
+                end
+              )
+      having count(*) > 1
+    ) into v_juntou;
+  end if;
+
+  v_depois := coalesce(
+    (
+      select jsonb_agg(entrada.valor order by entrada.ord)
+      from (
+        -- Dedupe pela chave DEPOIS da substituição (mesma razão de
+        -- `fn_tags_normalizar`): juntar duas entradas de chaves diferentes num
+        -- nome só deixava as duas no vocabulário, agora com o mesmo `tag`.
+        --
+        -- ⚠️ `cor` e `descricao` da entrada sobrevivem ao rename: o `jsonb_set`
+        -- mexe só em `{tag}`. Renomear não é perder a cor que alguém escolheu.
+        select distinct on (lower(x.chave)) x.valor, x.ord
+        from (
+          select case
+                   when v_remover and lower(btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))) = lower(v_tag) then null
+                   when lower(btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))) = lower(v_tag)
+                     then v_destino
+                   else btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))
+                 end as chave,
+                 case
+                   when v_remover and lower(btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))) = lower(v_tag) then null
+                   when lower(btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}'))) = lower(v_tag)
+                     then jsonb_set(
+                            case when jsonb_typeof(e.valor) = 'string' then jsonb_build_object('tag', e.valor #>> '{}')
+                                 else e.valor end,
+                            '{tag}', to_jsonb(v_destino))
+                   else case when jsonb_typeof(e.valor) = 'string' then jsonb_build_object('tag', e.valor #>> '{}')
+                             else e.valor end
+                 end as valor,
+                 e.ord
+          from jsonb_array_elements(v_antes) with ordinality as e(valor, ord)
+          where btrim(coalesce(e.valor ->> 'tag', e.valor #>> '{}')) <> ''
+        ) x
+        where x.valor is not null and coalesce(x.chave, '') <> ''
+        -- ⚠️ O DESEMPATE É PELO METADADO, ANTES DA ORDEM (issue #2801).
+        --
+        -- Com `order by lower(x.chave), x.ord` a primeira entrada pela posição
+        -- ficava, COM OU SEM cor/descrição: renomear "a" (que tinha cor) para
+        -- "b" (que existia antes, sem cor) PERDIA a cor que o operador havia
+        -- escolhido — a entrada vazia de metadado vinha primeiro na lista.
+        -- Este é o MESMO desempate da função de leitura
+        -- (`fn_vocabulario_de_tags`) e do ramo `definir_cor`: onde a lista tem
+        -- a mesma etiqueta duas vezes, sobrevive a que carrega metadado.
+        --
+        -- Quando as DUAS já têm metadado, o metadado não decide mais nada e o
+        -- desempate volta a ser a ORDEM: fica a que já ocupava a posição no
+        -- vocabulário — isto é, o destino. Cor contra cor tem de perder uma, e
+        -- a regra escolhida preserva a identidade (nome + posição + cor) de
+        -- quem já estava lá, em vez de deixar a posição da lista decidir
+        -- qualquer coisa depois de virar empate técnico.
+        order by lower(x.chave),
+                 ((x.valor ->> 'cor') is not null or (x.valor ->> 'descricao') is not null) desc,
+                 x.ord
+      ) as entrada
+      where entrada.valor is not null
+    ),
+    '[]'::jsonb
+  );
+  if v_depois <> v_antes then
+    v_settings := jsonb_set(v_settings, '{tags}', v_depois);
+    v_definido := true;
+  end if;
+
+  v_antes := coalesce(v_settings -> 'canonical_conversation_tags', '[]'::jsonb);
+  v_depois := coalesce(
+    (
+      select jsonb_agg(semente.valor order by semente.ord)
+      from (
+        -- Dedupe pela chave DEPOIS da substituição, como acima.
+        select distinct on (lower(y.valor)) y.valor, y.ord
+        from (
+          select case
+                   when v_remover and lower(btrim(s.valor #>> '{}')) = lower(v_tag) then null
+                   when lower(btrim(s.valor #>> '{}')) = lower(v_tag) then v_destino
+                   else btrim(s.valor #>> '{}')
+                 end as valor,
+                 s.ord
+          from jsonb_array_elements(v_antes) with ordinality as s(valor, ord)
+          where btrim(s.valor #>> '{}') <> ''
+        ) y
+        where coalesce(y.valor, '') <> ''
+        order by lower(y.valor), y.ord
+      ) as semente
+      where semente.valor is not null
+    ),
+    '[]'::jsonb
+  );
+  if v_depois <> v_antes then
+    v_settings := jsonb_set(v_settings, '{canonical_conversation_tags}', v_depois);
+    v_definido := true;
+  end if;
+
+  if v_definido then
+    update public.organizations o
+       set settings = v_settings,
+           updated_at = now()
+     where o.id = p_org;
+  end if;
+
+  return jsonb_build_object(
+    'acao', p_acao,
+    'tag', v_tag,
+    'destino', nullif(v_destino, ''),
+    'cor', null,
+    'contatos', v_contatos,
+    'leads', v_leads,
+    'conversas', v_conversas,
+    'regras', v_regras,
+    -- `juntou` é o AVISO de que esta operação juntou duas etiquetas do
+    -- vocabulário numa só (issue #2801). Sem ele a resposta era indistinguível
+    -- de um renome simples, e a tela não tinha o que dizer. `false` no renome
+    -- que não juntou, no excluir e em `juntar` cujo destino não estava no
+    -- vocabulário curado (ver o bloco (e0)).
+    'juntou', v_juntou,
+    'alterou', (v_contatos + v_leads + v_conversas + v_regras > 0 or v_definido)
+  );
+end;
+$$;
+
+revoke execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) from public, anon;
+grant  execute on function public.fn_vocabulario_de_tags_operar(uuid, text, text, text, text) to authenticated, service_role;
+
+create or replace function public.fn_vocabulario_de_tags_pagina(
+  p_org uuid, p_busca text default '', p_offset integer default 0, p_limit integer default 100
+) returns jsonb language sql stable security invoker set search_path = public as $$
+
+  with vocabulario as (
+    -- A organização pode guardar o vocabulário de dois jeitos, e os dois contam:
+    -- `tags` (a lista com cor e descrição, vinda da tela) e
+    -- `canonical_conversation_tags` (as sementes, que a 0244 já usava).
+    select
+      nullif(btrim(coalesce(entrada.valor ->> 'tag', entrada.valor #>> '{}')), '') as tag,
+      nullif(btrim(coalesce(entrada.valor ->> 'cor', '')), '') as cor,
+      nullif(btrim(coalesce(entrada.valor ->> 'descricao', '')), '') as descricao
+    from public.organizations o
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(o.settings -> 'tags') = 'array'
+           then o.settings -> 'tags' else '[]'::jsonb end
+    ) as entrada(valor)
+    where o.id = p_org
+    union all
+    select nullif(btrim(coalesce(semente #>> '{}', '')), ''), null, null
+    from public.organizations o
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(o.settings -> 'canonical_conversation_tags') = 'array'
+           then o.settings -> 'canonical_conversation_tags' else '[]'::jsonb end
+    ) as semente(valor)
+    where o.id = p_org
+  ),
+  vocabulario_limpo as (
+    -- Uma linha por nome canônico. Se a lista curada tem cor/descrição, ela vence
+    -- a semente crua.
+    select distinct on (lower(v.tag))
+           v.tag, v.cor, v.descricao
+    from vocabulario v
+    where v.tag is not null
+    order by lower(v.tag), (v.cor is not null or v.descricao is not null) desc
+  ),
+  uso as (
+    select nullif(btrim(t.valor), '') as tag, 'contatos' as origem
+    from public.contacts c, unnest(coalesce(c.tags, '{}'::text[])) as t(valor)
+    where c.organization_id = p_org
+    union all
+    select nullif(btrim(t.valor), ''), 'leads'
+    from public.crm_leads l, unnest(coalesce(l.tags, '{}'::text[])) as t(valor)
+    where l.organization_id = p_org
+    union all
+    select nullif(btrim(t.valor), ''), 'conversas'
+    from public.conversations v, unnest(coalesce(v.tags, '{}'::text[])) as t(valor)
+    where v.organization_id = p_org
+  ),
+  uso_limpo as (
+    select u.tag, u.origem from uso u where u.tag is not null and u.tag <> ''
+  ),
+  regras as (
+    -- As ações `add_tag` e `remove_tag` dos agentes. É o que o operador NÃO via: a etiqueta
+    -- podia ter zero conversas e ainda estar sendo escrita amanhã pela regra.
+    -- `r.id` junto: a coluna "Regras de agente" da tela conta REGRAS, e a
+    -- exclusão (mais abaixo) conta `distinct r.id`. Sem o id aqui, uma regra com
+    -- duas ações `add_tag` da mesma etiqueta aparecia como "2" na lista e como
+    -- "1" no resultado da operação — o mesmo rótulo contando coisas diferentes.
+    select r.id as regra_id, nullif(btrim(etiqueta.valor #>> '{}'), '') as tag
+    from public.automation_rules r
+    cross join lateral jsonb_array_elements(coalesce(r.actions, '[]'::jsonb)) as acao(valor)
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(acao.valor -> 'config' -> 'tags') = 'array'
+           then acao.valor -> 'config' -> 'tags' else '[]'::jsonb end
+    ) as etiqueta(valor)
+    where r.organization_id = p_org
+      and acao.valor ->> 'type' in ('add_tag', 'remove_tag')
+  ),
+  regras_limpo as (
+    select r.regra_id, r.tag from regras r where r.tag is not null and r.tag <> ''
+  ),
+  bruto as (
+    select tag from vocabulario_limpo
+    union all select tag from uso_limpo
+    union all select tag from regras_limpo
+  ),
+  todas as (
+    -- #3507: a grafia COM caixa vence a minúscula. Contato e conversa guardam
+    -- a etiqueta em minúscula por contrato; regra `add_tag` e negócio guardam a
+    -- forma digitada. `min()` deixava a minúscula vencer, e renomear só a caixa
+    -- de uma etiqueta fora do vocabulário respondia 200 sem mudar a tela.
+    select (array_agg(b.tag order by (b.tag = lower(b.tag)), b.tag))[1] as tag,
+           lower(b.tag) as chave
+    from bruto b
+    where b.tag is not null
+    group by lower(b.tag)
+  ),
+  filtradas as (
+    select t.* from todas t
+    where strpos(t.chave, lower(coalesce(p_busca, ''))) > 0
+  ),
+  pagina as (
+    select * from filtradas order by chave
+    offset greatest(coalesce(p_offset, 0), 0)
+    limit least(greatest(coalesce(p_limit, 100), 1), 200)
+  ),
+  linhas as (
+  select
+    coalesce(v.tag, t.tag) as tag,
+    (select count(*) from uso_limpo u
+      where lower(u.tag) = t.chave and u.origem = 'contatos') as uso_em_contatos,
+    (select count(*) from uso_limpo u
+      where lower(u.tag) = t.chave and u.origem = 'leads')    as uso_em_leads,
+    (select count(*) from uso_limpo u
+      where lower(u.tag) = t.chave and u.origem = 'conversas') as uso_em_conversas,
+    (select count(distinct r.regra_id) from regras_limpo r
+      where lower(r.tag) = t.chave)                           as em_regras,
+    v.cor,
+    v.descricao,
+    (v.tag is not null)                                       as no_vocabulario
+  from pagina t
+  left join vocabulario_limpo v on lower(v.tag) = t.chave
+  order by t.chave
+  )
+  select jsonb_build_object(
+    'items', coalesce((select jsonb_agg(to_jsonb(l) order by lower(l.tag)) from linhas l), '[]'::jsonb),
+    'total', (select count(*) from filtradas)
+  );
+$$;
+
+revoke all on function public.fn_vocabulario_de_tags_pagina(uuid,text,integer,integer) from public, anon;
+grant execute on function public.fn_vocabulario_de_tags_pagina(uuid,text,integer,integer) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- lista de espera como módulo opcional (migration 9235) ----
+-- Espelho da migration. Antes da VARREDURA anon, porque cria função.
+
+-- ─── 1 · o escritor canônico aprende a SEGURAR ─────────────────────────────
+-- Uma linha muda em cada função: `segurar_pendente` faz a reserva nascer `pending`
+-- num serviço sem aprovação da equipe. Sem ela o escritor gravaria `confirmed` para quem
+-- ainda não respondeu à oferta. Só vale fora de sessão (`auth.uid() is null`):
+-- a tela não pede isto, e a aprovação humana do serviço que a exige não muda.
+create or replace function public.fn_calendar_service_book(p_org uuid,p_actor jsonb,p_input jsonb,p_execution jsonb default null)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare t public.calendar_event_types;a public.calendar_appointments;fact jsonb;occurrence uuid;contact uuid:=(p_input->>'contact_id')::uuid;
+  type_id uuid:=(p_input->>'event_type_id')::uuid;start_at timestamptz:=(p_input->>'starts_at')::timestamptz;
+  participant text;participant_name text:=nullif(trim(p_input->>'participant_name'),'');command_key text:=p_input->>'operation_key';
+begin
+  perform public.fn_calendar_service_assert_actor(p_org,p_actor,'agent');
+  if contact is null or command_key is null or length(command_key)>500 or not exists(select 1 from public.contacts where organization_id=p_org and id=contact and not is_anonymized)
+    then raise exception 'service_contact_not_found' using errcode='P0002';end if;
+  perform public.fn_service_lock(p_org,contact);
+  perform public.fn_calendar_service_lock(p_org);
+  -- Anonimização pode ter aguardado a mesma trava enquanto o pedido esperava.
+  if not exists(select 1 from public.contacts where organization_id=p_org and id=contact and not is_anonymized)
+    then raise exception 'service_contact_not_found' using errcode='P0002';end if;
+  if p_input->>'conversation_id' is not null and not exists(select 1 from public.conversations where organization_id=p_org
+    and id=(p_input->>'conversation_id')::uuid and contact_id=contact and not is_group)
+    then raise exception 'service_conversation_not_found' using errcode='P0002';end if;
+  if p_actor->>'type'='ai_agent' and (p_actor->>'api_token_id' is null or p_actor->>'native_job' is not null or p_execution is not null)
+    and (not public.fn_calendar_service_execution_current(p_org,contact,p_execution)
+      or (p_actor->>'native_job' is not null and p_execution->'job'->>'id' is distinct from p_actor->>'native_job'))
+    then raise exception 'service_execution_stale' using errcode='42501';end if;
+  participant:=contact::text||':'||coalesce(lower(regexp_replace(participant_name,'\s+',' ','g')),'primary');
+  -- Retry de comando também confere o conteúdo; não devolve uma operação alheia.
+  select * into a from public.calendar_appointments where organization_id=p_org and service_operation_key=command_key;
+  if found then
+    if a.service_operation_request is distinct from jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',(p_input->>'space_id')::uuid,'party_size',nullif(coalesce((p_input->>'party_size')::integer,1),1)))
+      then raise exception 'service_idempotency_conflict' using errcode='PT409';end if;
+    return to_jsonb(a)||jsonb_build_object('deduplicated',true);
+  end if;
+  select * into t from public.calendar_event_types where organization_id=p_org and id=type_id;
+  if not found then raise exception 'service_not_found' using errcode='P0002';end if;
+  -- A pessoa já reservada é encontrada antes de consumir vaga ou exigir outro profissional.
+  select * into a from public.calendar_appointments where organization_id=p_org and event_type_id=type_id and starts_at=start_at
+    and participant_key=participant and status in ('pending','confirmed');
+  if found then return to_jsonb(a)||jsonb_build_object('deduplicated',true);end if;
+  if p_input?'expected_revision' and t.service_revision is distinct from (p_input->>'expected_revision')::bigint then raise exception 'service_stale' using errcode='PT409';end if;
+  fact:=public.fn_calendar_service_check(p_org,type_id,start_at,(p_input->>'owner_user_id')::uuid,null,now(),
+    (p_input->>'space_id')::uuid,(p_input->>'party_size')::integer);
+  if not coalesce((fact->>'available')::boolean,false) then raise exception '%',fact->>'reason' using errcode='PT409';end if;
+  if p_actor->>'type'='user' and fact->>'owner_user_id' is not null and fact->>'owner_user_id' is distinct from p_actor->>'id'
+    and not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=(p_actor->>'id')::uuid
+      and revoked_at is null and role in ('manager','admin')) and not public.fn_colegas_podem_mexer_na_agenda(p_org)
+    then raise exception 'appointment_do_colega' using errcode='42501';end if;
+  occurrence:=public.fn_calendar_service_occurrence(p_org,type_id,fact);
+  insert into public.calendar_appointments(organization_id,event_type_id,title,starts_at,ends_at,time_zone,status,owner_user_id,contact_id,conversation_id,
+    description,notes,location_kind,location_details,guest_email,meeting_delivery,created_by_kind,created_by_user_id,source,service_occurrence_id,participant_key,participant_name,
+    service_booking_mode,service_capacity_rule,service_capacity_limit,service_rule_revision,service_destination_calendar_id,service_publication_mode,service_requires_confirmation,service_operation_key,service_operation_request,
+    service_space_id,service_party_size)
+    values(p_org,type_id,coalesce(nullif(p_input->>'title',''),t.name||case when participant_name is null then '' else ' · '||participant_name end),start_at,(fact->>'ends_at')::timestamptz,t.service_timezone,
+      case when t.requires_confirmation or (auth.uid() is null and p_input->>'segurar_pendente'='true') then 'pending' else 'confirmed' end,(fact->>'owner_user_id')::uuid,contact,(p_input->>'conversation_id')::uuid,
+      nullif(trim(p_input->>'description'),''),nullif(p_input->>'notes',''),t.location_kind,
+      case when p_input?'location_details' then nullif(trim(p_input->>'location_details'),'') else t.location_details end,
+      nullif(trim(p_input->>'guest_email'),''),coalesce(p_input->'meeting_delivery',jsonb_build_object('state','none')),
+      case when p_actor->>'type'='user' then 'user' when p_actor->>'type'='ai_agent' then 'ai' else 'system' end,
+      case when p_actor->>'type'='user' then (p_actor->>'id')::uuid else null end,
+      case when p_actor->>'type'='user' then 'ui' else 'mcp' end,occurrence,participant,participant_name,
+      t.booking_mode,fact->>'capacity_rule',(fact->>'capacity_limit')::integer,t.service_revision,(fact->>'destination_calendar_id')::uuid,t.service_publication_mode,t.requires_confirmation,command_key,
+      jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',(p_input->>'space_id')::uuid,'party_size',nullif(coalesce((p_input->>'party_size')::integer,1),1))),
+      (fact->>'space_id')::uuid,coalesce((fact->>'party_size')::integer,1))
+    returning * into a;
+  return to_jsonb(a)||jsonb_build_object('deduplicated',false,'service_facts',fact);
+end $$;
+revoke all on function public.fn_calendar_service_book(uuid,jsonb,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_calendar_service_book(uuid,jsonb,jsonb,jsonb) to service_role;
+
+-- O gatilho reescrevia o status vindo do escritor: a mesma condição vale aqui.
+create or replace function public.fn_calendar_service_appointment_guard()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare fact jsonb;checked boolean;type_row public.calendar_event_types;
+begin
+  if tg_op='DELETE' then return old;end if;
+  if tg_op='INSERT' and new.service_occurrence_id is null and not new.service_block
+    and exists(select 1 from public.calendar_event_types where organization_id=new.organization_id and id=new.event_type_id and service_enabled)
+    then raise exception 'service_writer_required' using errcode='42501';end if;
+  if tg_op='INSERT' and auth.uid() is not null and (new.service_block or (new.service_occurrence_id is null and (new.service_destination_calendar_id is not null or new.service_publication_mode is not null)))
+    then raise exception 'service_writer_required' using errcode='42501';end if;
+  if tg_op='UPDATE' and auth.uid() is not null and row(new.participant_key,new.participant_name,new.service_destination_calendar_id,new.service_publication_mode,new.service_requires_confirmation,new.service_operation_key,new.service_operation_request,new.service_block,new.service_space_id,new.service_party_size)
+    is distinct from row(old.participant_key,old.participant_name,old.service_destination_calendar_id,old.service_publication_mode,old.service_requires_confirmation,old.service_operation_key,old.service_operation_request,old.service_block,old.service_space_id,old.service_party_size)
+    then raise exception 'service_writer_required' using errcode='42501';end if;
+  if tg_op='UPDATE' and auth.uid() is not null and ((old.service_occurrence_id is null and new.service_occurrence_id is not null)
+    or (old.service_occurrence_id is not null and row(new.contact_id,new.event_type_id) is distinct from row(old.contact_id,old.event_type_id))
+    or (row(new.starts_at,new.ends_at,new.owner_user_id,new.service_occurrence_id) is not distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.service_occurrence_id)
+      and row(new.service_booking_mode,new.service_capacity_rule,new.service_capacity_limit,new.service_rule_revision) is distinct from row(old.service_booking_mode,old.service_capacity_rule,old.service_capacity_limit,old.service_rule_revision)))
+    then raise exception 'service_writer_required' using errcode='42501';end if;
+  if tg_op='UPDATE' and row(new.starts_at,new.ends_at,new.owner_user_id,new.status,new.service_occurrence_id,new.contact_id,new.event_type_id,new.service_destination_calendar_id,new.service_space_id,new.service_party_size)
+    is not distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.status,old.service_occurrence_id,old.contact_id,old.event_type_id,old.service_destination_calendar_id,old.service_space_id,old.service_party_size) then return new;end if;
+  if tg_op='INSERT' and new.service_occurrence_id is not null and new.contact_id is not null then perform public.fn_service_lock(new.organization_id,new.contact_id);end if;
+  perform public.fn_calendar_service_lock(new.organization_id);
+  if tg_op='INSERT' and new.service_occurrence_id is not null then
+    if new.contact_id is null or new.service_operation_key is null or not exists(select 1 from public.contacts where organization_id=new.organization_id and id=new.contact_id and not is_anonymized)
+      or new.status not in ('pending','confirmed') then raise exception 'service_creation_invalid' using errcode='22023';end if;
+    if auth.uid() is not null then
+      perform public.fn_calendar_service_assert_actor(new.organization_id,jsonb_build_object('type','user','id',auth.uid()),'agent');
+      new.created_by_kind:='user';new.created_by_user_id:=auth.uid();new.source:='ui';
+      new.meeting_delivery:=jsonb_build_object('state','none');
+    end if;
+    if new.conversation_id is not null and not exists(select 1 from public.conversations where organization_id=new.organization_id and id=new.conversation_id and contact_id=new.contact_id and not is_group)
+      then raise exception 'service_conversation_not_found' using errcode='P0002';end if;
+    new.participant_key:=new.contact_id::text||':'||coalesce(lower(regexp_replace(nullif(trim(new.participant_name),''),'\s+',' ','g')),'primary');
+    -- O lugar e as pessoas entram no pedido: a mesma chave com outra mesa é conflito, não a reserva antiga devolvida.
+    new.service_operation_request:=jsonb_build_object('event_type_id',new.event_type_id,'contact_id',new.contact_id,'starts_at',new.starts_at,'participant_key',new.participant_key)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',new.service_space_id,'party_size',nullif(new.service_party_size,1)));
+  end if;
+  if new.status not in ('pending','confirmed') or new.service_block then return new;end if;
+  checked:=new.service_occurrence_id is not null;
+  if checked then
+    if not exists(select 1 from public.calendar_service_occurrences o where o.organization_id=new.organization_id and o.id=new.service_occurrence_id
+      and o.event_type_id=new.event_type_id and o.starts_at=new.starts_at and o.ends_at=new.ends_at)
+      then raise exception 'service_occurrence_mismatch' using errcode='23503';end if;
+    -- Confirmação não reabre uma reserva já ocupante; mudança de horário, de lugar, de pessoas ou reativação revalida.
+    if tg_op='INSERT' or row(new.starts_at,new.ends_at,new.owner_user_id,new.service_occurrence_id) is distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.service_occurrence_id)
+      or row(new.service_space_id,new.service_party_size) is distinct from row(old.service_space_id,old.service_party_size)
+      or old.status not in ('pending','confirmed') then
+      fact:=public.fn_calendar_service_check(new.organization_id,new.event_type_id,new.starts_at,new.owner_user_id,new.id,now(),new.service_space_id,new.service_party_size);
+      if not coalesce((fact->>'available')::boolean,false) then raise exception '%',fact->>'reason' using errcode='PT409';end if;
+      if (fact->>'ends_at')::timestamptz is distinct from new.ends_at then raise exception 'service_duration_mismatch' using errcode='PT409';end if;
+      new.service_booking_mode:=fact->>'booking_mode';new.service_capacity_rule:=fact->>'capacity_rule';
+      new.service_capacity_limit:=(fact->>'capacity_limit')::integer;new.service_rule_revision:=(fact->>'service_revision')::bigint;
+      new.service_space_id:=(fact->>'space_id')::uuid;new.service_party_size:=coalesce((fact->>'party_size')::integer,1);
+      new.service_occurrence_id:=public.fn_calendar_service_occurrence(new.organization_id,new.event_type_id,fact);
+      if tg_op='INSERT' then
+        select * into type_row from public.calendar_event_types where organization_id=new.organization_id and id=new.event_type_id;
+        new.service_destination_calendar_id:=(fact->>'destination_calendar_id')::uuid;
+        new.service_publication_mode:=type_row.service_publication_mode;new.service_requires_confirmation:=type_row.requires_confirmation;
+        new.status:=case when type_row.requires_confirmation or (auth.uid() is null and new.status='pending') then 'pending' else 'confirmed' end;
+      end if;
+    end if;
+  end if;
+  if new.owner_user_id is not null and exists(select 1 from public.calendar_appointments a where a.organization_id=new.organization_id and a.id<>new.id
+    and a.owner_user_id=new.owner_user_id and a.status in ('pending','confirmed') and a.starts_at<new.ends_at and a.ends_at>new.starts_at
+    and not (new.service_occurrence_id is not null and a.service_occurrence_id=new.service_occurrence_id
+      and new.service_booking_mode in ('collective_limited','collective_unlimited'))
+    and (checked or a.service_occurrence_id is not null)) then raise exception 'professional_unavailable' using errcode='PT409';end if;
+  return new;
+end $$;
+revoke all on function public.fn_calendar_service_appointment_guard() from public,anon,authenticated;
+
+-- ─── 2 · a conferência dos vínculos ────────────────────────────────────────
+-- `contacts`, `calendar_event_types` e `calendar_appointments` não têm chave
+-- (organization_id, id), e uma provisionadora não pode acrescentá-la ao núcleo.
+-- Por isso a conferência é gatilho na tabela do módulo: uma linha nunca aponta
+-- para a organização vizinha, venha de onde vier a escrita.
+create or replace function public.fn_lista_de_espera_conferir_vinculos()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+begin
+  if tg_op = 'UPDATE' and new.organization_id is distinct from old.organization_id then
+    raise exception 'lista_de_espera_organizacao_imutavel' using errcode = '23514';
+  end if;
+  if (tg_op = 'INSERT' or new.contact_id is distinct from old.contact_id)
+     and not exists (select 1 from public.contacts
+                      where organization_id = new.organization_id and id = new.contact_id) then
+    raise exception 'lista_de_espera_vinculo_invalido' using errcode = '23503';
+  end if;
+  if (tg_op = 'INSERT' or new.event_type_id is distinct from old.event_type_id)
+     and not exists (select 1 from public.calendar_event_types
+                      where organization_id = new.organization_id and id = new.event_type_id) then
+    raise exception 'lista_de_espera_vinculo_invalido' using errcode = '23503';
+  end if;
+  if new.owner_user_id is not null
+     and (tg_op = 'INSERT' or new.owner_user_id is distinct from old.owner_user_id)
+     and not exists (select 1 from public.user_organizations
+                      where organization_id = new.organization_id and user_id = new.owner_user_id
+                        and revoked_at is null) then
+    raise exception 'lista_de_espera_vinculo_invalido' using errcode = '23503';
+  end if;
+  if new.created_by_user_id is not null
+     and (tg_op = 'INSERT' or new.created_by_user_id is distinct from old.created_by_user_id)
+     and not exists (select 1 from public.user_organizations
+                      where organization_id = new.organization_id and user_id = new.created_by_user_id) then
+    raise exception 'lista_de_espera_vinculo_invalido' using errcode = '23503';
+  end if;
+  if new.oferta_appointment_id is not null
+     and (tg_op = 'INSERT' or new.oferta_appointment_id is distinct from old.oferta_appointment_id)
+     and not exists (select 1 from public.calendar_appointments
+                      where organization_id = new.organization_id and id = new.oferta_appointment_id) then
+    raise exception 'lista_de_espera_vinculo_invalido' using errcode = '23503';
+  end if;
+  return new;
+end $f$;
+revoke execute on function public.fn_lista_de_espera_conferir_vinculos() from public, anon, authenticated, service_role;
+
+-- ─── 3 · a seção de LGPD ───────────────────────────────────────────────────
+-- A anonimização alcança a tabela pelo gatilho `trg_lgpd_secoes_de_modulo`, sem
+-- gatilho novo em `contacts`. `observacoes` some, e `fora_da_fila_em` recebe o
+-- instante: é ele que tira a pessoa da fila, porque a seção escreve agora em
+-- coluna de data e não troca `status`.
+create or replace function public.fn_lista_de_espera_declarar_secoes_lgpd()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+begin
+  if to_regclass('public.calendar_waitlist') is null then
+    return;
+  end if;
+  insert into public.modulo_secoes_lgpd
+      (modulo, tabela, ligacao, colunas, colunas_rotulo, colunas_redigidas, colunas_agora)
+    values (
+      'lista_de_espera',
+      'calendar_waitlist',
+      'organization_id = $1 and contact_id = $2',
+      array['observacoes'],
+      '{}'::text[],
+      '{}'::text[],
+      array['fora_da_fila_em', 'updated_at']
+    )
+    on conflict (modulo, tabela) do update
+      set ligacao = excluded.ligacao,
+          colunas = excluded.colunas,
+          colunas_rotulo = excluded.colunas_rotulo,
+          colunas_redigidas = excluded.colunas_redigidas,
+          colunas_agora = excluded.colunas_agora;
+end $f$;
+revoke execute on function public.fn_lista_de_espera_declarar_secoes_lgpd() from public, anon, authenticated;
+grant execute on function public.fn_lista_de_espera_declarar_secoes_lgpd() to service_role;
+
+-- ─── 4 · a provisionadora (ADR-0002, D2) ───────────────────────────────────
+-- Sem parâmetro, idempotente, só `service_role`. Escrita da tabela só pelo
+-- servidor: `authenticated` lê a fila da própria organização e não grava nada,
+-- e cada rota confere a organização antes de chamar o banco.
+create or replace function public.fn_lista_de_espera_provisionar()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+begin
+  create table if not exists public.calendar_waitlist (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+
+    -- Quem espera e por qual serviço. Apagar o contato ou o tipo apaga a inscrição.
+    contact_id uuid not null references public.contacts(id) on delete cascade,
+    event_type_id uuid not null references public.calendar_event_types(id) on delete cascade,
+
+    -- `set null` = "qualquer profissional".
+    owner_user_id uuid references auth.users(id) on delete set null,
+
+    -- `{dow: 0..6, start: "HH:MM", end: "HH:MM"}`. Vazio = qualquer horário.
+    janelas jsonb not null default '[]'::jsonb,
+    antecedencia_minima_horas smallint not null default 0,
+    valido_ate timestamptz,
+    urgencia smallint not null default 0,
+
+    -- A base da inscrição: quando a pessoa aceitou ser avisada e por onde.
+    consentimento_em timestamptz not null,
+    consentimento_origem text not null,
+
+    status text not null default 'waiting',
+
+    -- A vaga segurada, e o FIM DO BURACO que abriu: o compromisso segurado tem a
+    -- duração do serviço oferecido, e a vaga que passa ao próximo é o buraco.
+    oferta_appointment_id uuid references public.calendar_appointments(id) on delete set null,
+    oferta_expira_em timestamptz,
+    oferta_vaga_fim timestamptz,
+    ofertada_em timestamptz,
+
+    -- O início da última vaga que esta pessoa recusou ou deixou vencer. A vaga
+    -- passa de mão em mão, e sem isto voltaria a quem já disse não a ela.
+    vaga_recusada_inicio timestamptz,
+
+    -- Preenchida pela anonimização (seção de LGPD): a pessoa sai da fila.
+    fora_da_fila_em timestamptz,
+
+    observacoes text,
+
+    created_by_kind text not null default 'user',
+    created_by_user_id uuid references auth.users(id) on delete set null,
+
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+
+    constraint calendar_waitlist_status_check check (status in (
+      'waiting','offered','booked','expired','cancelled'
+    )),
+    constraint calendar_waitlist_created_by_kind_check check (created_by_kind in (
+      'user','ai','system','contact'
+    )),
+    constraint calendar_waitlist_consentimento_origem_check check (consentimento_origem in (
+      'tela','agente','contato'
+    )),
+    constraint calendar_waitlist_janelas_e_lista check (jsonb_typeof(janelas) = 'array'),
+    constraint calendar_waitlist_antecedencia_sensata
+      check (antecedencia_minima_horas between 0 and 720),
+    constraint calendar_waitlist_urgencia_sensata check (urgencia between -5 and 5),
+    -- O compromisso não entra nesta conferência: apagá-lo zera a coluna pela FK,
+    -- e a varredura de prazo devolve a inscrição à fila.
+    constraint calendar_waitlist_oferta_coerente check (
+      (status <> 'offered')
+      or (oferta_expira_em is not null and oferta_vaga_fim is not null)
+    )
+  );
+
+  create index if not exists calendar_waitlist_fila_idx
+    on public.calendar_waitlist (organization_id, urgencia desc, created_at)
+    where status = 'waiting' and fora_da_fila_em is null;
+  create unique index if not exists calendar_waitlist_viva_por_contato_servico_idx
+    on public.calendar_waitlist (organization_id, contact_id, event_type_id)
+    where status in ('waiting', 'offered');
+  create index if not exists calendar_waitlist_ofertas_a_vencer_idx
+    on public.calendar_waitlist (oferta_expira_em)
+    where status = 'offered';
+  create index if not exists calendar_waitlist_oferta_appointment_idx
+    on public.calendar_waitlist (oferta_appointment_id)
+    where oferta_appointment_id is not null;
+
+  alter table public.calendar_waitlist enable row level security;
+  drop policy if exists calendar_waitlist_select on public.calendar_waitlist;
+  create policy calendar_waitlist_select
+    on public.calendar_waitlist
+    for select using (
+      public.fn_is_platform_admin()
+      or organization_id in (select public.fn_user_org_ids())
+    );
+  revoke all on table public.calendar_waitlist from anon, authenticated, service_role;
+  grant select on table public.calendar_waitlist to authenticated;
+  grant select, insert, update, delete on table public.calendar_waitlist to service_role;
+
+  drop trigger if exists trg_lista_de_espera_conferir_vinculos on public.calendar_waitlist;
+  create trigger trg_lista_de_espera_conferir_vinculos
+    before insert or update on public.calendar_waitlist
+    for each row execute function public.fn_lista_de_espera_conferir_vinculos();
+
+  comment on table public.calendar_waitlist is
+    'Lista de espera (módulo opcional, ADR-0002): quem aceitou ser avisado de um encaixe, por serviço. A vaga oferecida é um compromisso `pending`, e esta linha guarda o prazo.';
+
+  perform public.fn_proteger_modulo_provisionado();
+  perform public.fn_lista_de_espera_declarar_secoes_lgpd();
+end
+$f$;
+revoke execute on function public.fn_lista_de_espera_provisionar() from public, anon, authenticated;
+grant execute on function public.fn_lista_de_espera_provisionar() to service_role;
+
+-- ─── 5 · a oferta numa transação só ────────────────────────────────────────
+-- Segurar a vaga e marcar a inscrição acontecem juntos: não existe compromisso
+-- segurado sem dono. Serviço passa pelo escritor canônico; tipo comum confere a
+-- sobreposição do profissional sob a mesma trava da agenda antes de gravar. A
+-- origem fica a do escritor (`mcp`, autor `system`): `calendar_appointments` não
+-- ganha vocabulário de módulo opcional.
+--
+-- `record` e não `%rowtype`: esta função existe mesmo onde a tabela não existe
+-- (ADR-0002, D7).
+create or replace function public.fn_lista_de_espera_ofertar(
+  p_org uuid, p_espera uuid, p_inicio timestamptz, p_fim timestamptz, p_fuso text,
+  p_owner uuid, p_vaga_fim timestamptz, p_expira timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+declare
+  w record;
+  c record;
+  t record;
+  r jsonb;
+  v_contato uuid;
+  v_compromisso uuid;
+  v_titulo text;
+  v_nota text := 'Vaga segurada para a lista de espera. Confirme a resposta da pessoa, ou desmarque para chamar a próxima.';
+begin
+  select contact_id into v_contato from public.calendar_waitlist
+   where organization_id = p_org and id = p_espera;
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'inscricao_mudou');
+  end if;
+
+  -- A ordem de travas do escritor canônico: contato, depois agenda.
+  perform public.fn_service_lock(p_org, v_contato);
+  perform public.fn_calendar_service_lock(p_org);
+
+  select status, event_type_id, fora_da_fila_em into w from public.calendar_waitlist
+   where organization_id = p_org and id = p_espera for update;
+  if w.status is distinct from 'waiting' or w.fora_da_fila_em is not null then
+    return jsonb_build_object('ok', false, 'motivo', 'inscricao_mudou');
+  end if;
+
+  select is_blocked, is_anonymized into c from public.contacts
+   where organization_id = p_org and id = v_contato;
+  if not found or c.is_blocked or c.is_anonymized then
+    return jsonb_build_object('ok', false, 'motivo', 'contato_indisponivel');
+  end if;
+
+  select id, name, is_active, service_enabled, location_kind, location_details into t
+    from public.calendar_event_types
+   where organization_id = p_org and id = w.event_type_id;
+  if not found or not t.is_active then
+    return jsonb_build_object('ok', false, 'motivo', 'servico_indisponivel');
+  end if;
+  v_titulo := t.name || ' — encaixe da lista de espera';
+
+  if t.service_enabled then
+    begin
+      r := public.fn_calendar_service_book(
+        p_org,
+        jsonb_build_object('type', 'api_token'),
+        jsonb_build_object(
+          'contact_id', v_contato, 'event_type_id', t.id, 'starts_at', p_inicio,
+          'owner_user_id', p_owner, 'title', v_titulo, 'notes', v_nota,
+          'operation_key', 'waitlist:' || gen_random_uuid()::text,
+          'segurar_pendente', true
+        )
+      );
+    exception when sqlstate 'PT409' then
+      return jsonb_build_object('ok', false, 'motivo', 'servico_indisponivel');
+    end;
+    -- Reserva que já era dela nesse instante não é oferta nova.
+    if coalesce((r->>'deduplicated')::boolean, false) then
+      return jsonb_build_object('ok', false, 'motivo', 'inscricao_mudou');
+    end if;
+    v_compromisso := (r->>'id')::uuid;
+  else
+    if p_owner is null then
+      return jsonb_build_object('ok', false, 'motivo', 'servico_indisponivel');
+    end if;
+    if exists (
+      select 1 from public.calendar_appointments a
+       where a.organization_id = p_org and a.owner_user_id = p_owner
+         and a.status in ('pending', 'confirmed')
+         and a.starts_at < p_fim and a.ends_at > p_inicio
+    ) then
+      return jsonb_build_object('ok', false, 'motivo', 'vaga_ja_ocupada');
+    end if;
+    begin
+      insert into public.calendar_appointments (
+        organization_id, event_type_id, title, starts_at, ends_at, time_zone, status,
+        owner_user_id, contact_id, location_kind, location_details, notes,
+        created_by_kind, source
+      ) values (
+        p_org, t.id, v_titulo, p_inicio, p_fim, p_fuso, 'pending',
+        p_owner, v_contato, t.location_kind, t.location_details, v_nota,
+        'system', 'mcp'
+      ) returning id into v_compromisso;
+    exception when unique_violation then
+      return jsonb_build_object('ok', false, 'motivo', 'vaga_ja_ocupada');
+    end;
+  end if;
+
+  update public.calendar_waitlist
+     set status = 'offered', oferta_appointment_id = v_compromisso, oferta_expira_em = p_expira,
+         oferta_vaga_fim = p_vaga_fim, ofertada_em = now(), updated_at = now()
+   where organization_id = p_org and id = p_espera;
+
+  return jsonb_build_object('ok', true, 'compromisso_id', v_compromisso);
+end $f$;
+revoke execute on function public.fn_lista_de_espera_ofertar(uuid, uuid, timestamptz, timestamptz, text, uuid, timestamptz, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.fn_lista_de_espera_ofertar(uuid, uuid, timestamptz, timestamptz, text, uuid, timestamptz, timestamptz)
+  to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- "Tornar principal" (migration 9048, Spec 31 parte B2) ----
+-- manifest: **"Tornar principal" troca um telefone extra pelo principal numa operação só (Spec 31, parte B2, item 6).** Função `fn_tornar_telefone_principal(p_org, p_contato, p_extra)`: o extra vira `contacts.phone_number` levando tipo, WhatsApp e o `lid` dele; o principal antigo vira extra (origem `manual`) levando os dele. Numa transação, com a ficha travada, e na ordem que a regra "um número, uma ficha" (9043) aceita: o extra sai antes de o principal mudar, e o principal antigo entra como extra depois. `waha_chat_id` sai do `source_metadata` (era o chat do número antigo). SECURITY INVOKER: quem chama é a rota pela sessão do usuário, e a RLS de `contacts` e `contact_phones` vale; a rota exige papel `agent`. Recusa (`P0002`) extra que não é desta ficha, ficha mesclada ou anonimizada. Idempotente: `create or replace` + revoke/grant. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon. Prova em `tests/invariants/tornar-telefone-principal.test.ts`.
+create or replace function public.fn_tornar_telefone_principal(p_org uuid, p_contato uuid, p_extra uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_ficha record;
+  v_extra record;
+begin
+  select c.id, c.phone_number, c.phone_type, c.phone_whatsapp,
+         nullif(pg_catalog.regexp_replace(coalesce(c.source_metadata->>'waha_lid', ''), '@.*$', ''), '') as lid
+    into v_ficha
+    from public.contacts c
+   where c.id = p_contato and c.organization_id = p_org
+     and c.is_merged_into is null and c.is_anonymized = false
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'contato_indisponivel';
+  end if;
+
+  select t.id, t.phone_number, t.tipo, t.whatsapp, t.wa_lid
+    into v_extra
+    from public.contact_phones t
+   where t.id = p_extra and t.organization_id = p_org and t.contact_id = p_contato
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'telefone_extra_indisponivel';
+  end if;
+
+  -- O extra sai ANTES: senão o principal novo colidiria com ele mesmo.
+  delete from public.contact_phones where id = v_extra.id and organization_id = p_org;
+
+  update public.contacts set
+    phone_number = v_extra.phone_number,
+    phone_type = v_extra.tipo,
+    phone_whatsapp = v_extra.whatsapp,
+    source_metadata = (source_metadata - 'waha_lid' - 'waha_chat_id')
+      || case when v_extra.wa_lid is not null
+              then pg_catalog.jsonb_build_object('waha_lid', v_extra.wa_lid)
+              else '{}'::jsonb end,
+    updated_at = now()
+  where id = p_contato and organization_id = p_org;
+
+  if v_ficha.phone_number is not null then
+    insert into public.contact_phones
+      (organization_id, contact_id, phone_number, tipo, whatsapp, origem, wa_lid)
+    values
+      (p_org, p_contato, public.fn_telefone_canonico(v_ficha.phone_number),
+       coalesce(v_ficha.phone_type, public.fn_tipo_do_telefone(v_ficha.phone_number)),
+       coalesce(v_ficha.phone_whatsapp, 'nao_sei'), 'manual', v_ficha.lid);
+  end if;
+end;
+$$;
+
+revoke execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) from public, anon;
+grant execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) to authenticated, service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -74098,6 +76064,17 @@ begin
   end if;
 end;
 $recibos_9018$;
+
+-- ---- skill ativada pela etiqueta: trigger 'tag' (migration 9230) ----
+-- Num bloco só: o update.sh roda sem ON_ERROR_STOP, e um `add` solto que falhasse deixaria a
+-- tabela sem CHECK.
+do $skill_trigger_tag$
+begin
+  alter table public.skill_activations
+    drop constraint if exists skill_activations_trigger_check;
+  alter table public.skill_activations
+    add constraint skill_activations_trigger_check check (trigger in ('hard', 'probe', 'tag'));
+end $skill_trigger_tag$;
 
 -- ---- parcela de honorários na moeda da organização (migration 0770, #3379) ----
 -- Módulo opcional: `fn_honorarios_provisionar()` só roda na INSTALAÇÃO, então
