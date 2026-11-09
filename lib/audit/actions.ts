@@ -1498,6 +1498,9 @@ export const AUDIT_ACTIONS = [
   // verificação, pois a trilha append-only não é lugar para identidade pessoal.
   "org.resend_account_connected",
   "org.resend_account_disconnected",
+  // Desfazer o vínculo pessoa ↔ empresa pela tela (issue #3198). O metadata
+  // leva só os dois ids da junção.
+  "company_people.unlinked",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

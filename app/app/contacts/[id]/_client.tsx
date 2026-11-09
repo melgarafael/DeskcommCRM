@@ -57,6 +57,7 @@ import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
 import { DialButton } from "@/components/voice/DialButton";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
+import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 
 interface Props {
@@ -65,6 +66,8 @@ interface Props {
   paineisDeModulo?: { modulo: string; objeto: string }[];
   /** Módulo opcional `mcp_por_agente` ligado (doc 252). Ausente = desligado. */
   acessosMcp?: boolean;
+  /** Módulo opcional `crm_b2b` ligado (doc 68, issue #3198). Ausente = desligado. */
+  b2b?: boolean;
 }
 
 /**
@@ -85,7 +88,12 @@ function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null
   );
 }
 
-export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMcp = false }: Props) {
+export function ContactDetailClient({
+  contactId,
+  paineisDeModulo = [],
+  acessosMcp = false,
+  b2b = false,
+}: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -557,6 +565,27 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMc
               </div>
             </dl>
           </Card>
+          {/* DE QUEM É ESTE TELEFONE (issue #3198): só com o módulo "Empresas e
+              pessoas" ligado. Desligado, nada é montado e nenhuma rota B2B é
+              chamada — a ficha fica exatamente como era. Logo abaixo dos dados do
+              contato, antes da Carteira: no B2B, "quem é e de que empresa" vem
+              antes de "quem atende". */}
+          {b2b && !contact.is_anonymized && (
+            <div className="mt-4">
+              <PessoaDoContato
+                contactId={contactId}
+                podeEditar={Boolean(
+                  (user.is_platform_admin && !user.support) ||
+                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
+                )}
+                podeCriarPessoa={Boolean(
+                  (user.is_platform_admin && !user.support) ||
+                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager),
+                )}
+                nomeSugerido={contact.name || contact.display_name || ""}
+              />
+            </div>
+          )}
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
               geral, junto dos dados que dizem "quem é esta pessoa" — quem atende
               responde a pergunta antes de prometer o negócio, e o seletor de dono
