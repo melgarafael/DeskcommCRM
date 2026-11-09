@@ -4382,3 +4382,15 @@ explícito de indisponibilidade. Laço: comparar as ofertas persistidas, tool di
 e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nativa`.
 [Registro da prova](ofertas-da-campanha.md). CNPJ já foi
 entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.
+
+## J-midia — Fotos e PDFs recebidos: ordem e Baixar (2026-11-09)
+
+Relato de um escritório pela API oficial da Meta: Foto 1-2-3 e PDF 1-2-3 apareceram 3-2-1, e a
+foto não tinha download em lugar nenhum. Spec: `tests/e2e/inbox-baixar-midia-e-ordem.spec.ts`
+(parte 6), 1366×900; evidência em `evidence/inbox-baixar-midia-e-ordem/`.
+
+| Caso | O que prova | Como |
+|---|---|---|
+| Ordem no mesmo segundo `[P0]` | 3 fotos e 3 PDFs com o mesmo `sent_at` e ids sorteados ao contrário saem na ordem de chegada | E2E (ordem lida no DOM) + invariante `messages-list-paginacao` (rajada e virada de página) |
+| Baixar a foto | miniatura, foto ampliada e menu «Baixar» disparam download com `foto-AAAA-MM-DD-HHhMM-<id>.png` e os mesmos bytes | E2E (evento de download) |
+| Baixar o PDF pelo menu | «Baixar» no menu salva com o nome original | E2E (evento de download) |

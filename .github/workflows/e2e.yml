@@ -1483,6 +1483,7 @@ jobs:
         suspensao-administrativa.spec.ts
         integracao-dados-fontes-liberadas.spec.ts
         atender-pelo-celular.spec.ts
+        inbox-baixar-midia-e-ordem.spec.ts
 
       # ─── PARTE 7 — nasceu em 2026-10-22, uma parte COMUM ───
       #

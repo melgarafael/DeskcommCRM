@@ -9446,6 +9446,7 @@ export const DICIONARIO: Traducoes = {
   "Progresso do áudio": { es: "Progreso del audio" },
   "Velocidade de reprodução": { es: "Velocidad de reproducción" },
   "Ampliar imagem": { es: "Ampliar imagen" },
+  "Baixar imagem": { es: "Descargar imagen" },
   "Imagem recebida": { es: "Imagen recibida" },
   // Transcrição do áudio no balão (#2133): rótulo e estado de carregamento.
   Transcrição: { es: "Transcripción" },
