@@ -55,9 +55,6 @@ import { valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 
-/** O nome da opção no `settings.fields[i]`. Booleano, ausente = desligado. */
-export const OPCAO_DO_RESUMO = "mostrar_no_resumo_da_passagem" as const;
-
 /**
  * Os campos que o editor marcou para o resumo, na ordem em que o funil os
  * declara. Só do NEGÓCIO (é o card) e só tipos com valor no `custom_fields`.
