@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { normalizePersonName } from "@/lib/crm-b2b/normalize";
 import {
   companyPersonCreateSchema,
@@ -142,11 +143,21 @@ export async function createPersonHandler(
     if (linkErr && linkErr.code !== "23505") {
       // Desfaz a pessoa recém-criada: sem isso o 422 deixava a pessoa gravada
       // e o "tentar de novo" da tela criava uma segunda (issue #3198).
-      await supabase
+      const { error: desfazErr } = await supabase
         .from("people")
         .delete()
         .eq("organization_id", ctx.organization_id)
         .eq("id", data.id);
+      // Se nem o desfazer passa, sobra uma pessoa sem empresa: o log com o id
+      // deixa o caso visível (só ids, nada de nome ou e-mail).
+      if (desfazErr) {
+        logger.error("people.create_rollback_failed", {
+          organization_id: ctx.organization_id,
+          person_id: data.id,
+          request_id: ctx.requestId,
+          code: desfazErr.code,
+        });
+      }
       err(ctx, 422, "validation_failed", linkErr.message);
     }
   }
@@ -352,6 +363,10 @@ export async function getContactPersonHandler(supabase: SB, ctx: HandlerCtx, con
     .select("id, person_id")
     .eq("organization_id", ctx.organization_id)
     .eq("id", contactId)
+    // A lápide de fusão não é um contato vivo (a mesma regra da listagem em
+    // `app/api/v1/contacts/_handler.ts`): aberto por um link antigo, o contato
+    // absorvido mostraria a pessoa DELE, que pode não ser a do sobrevivente.
+    .is("is_merged_into", null)
     .maybeSingle();
   if (error) err(ctx, 500, "internal_error", error.message);
   if (!contact) err(ctx, 404, "not_found", "Contato não encontrado.");
@@ -369,7 +384,11 @@ export async function getContactPersonHandler(supabase: SB, ctx: HandlerCtx, con
     .from("company_people")
     .select("id, job_title, is_decision_maker, companies:company_id(id, trade_name, legal_name)")
     .eq("organization_id", ctx.organization_id)
-    .eq("person_id", person.id);
+    .eq("person_id", person.id)
+    // Ordem estável: sem ela, as empresas do cartão trocam de lugar entre as
+    // leituras. A mais antiga primeiro, com o id como desempate.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   return { person, companies: links ?? [] };
 }

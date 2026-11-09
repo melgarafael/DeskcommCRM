@@ -39,6 +39,7 @@ import { GET as getPessoaDoContato } from "@/app/api/v1/contacts/[id]/person/rou
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   getContactPersonHandler,
@@ -65,12 +66,18 @@ type Resposta = { data: unknown; error: unknown };
  * operação e os filtros `eq` que recebeu.
  */
 function bancoFalso(respostas: Record<string, Resposta | Resposta[]>) {
-  const chamadas: Array<{ tabela: string; op: string; eq: Array<[string, unknown]> }> = [];
+  const chamadas: Array<{
+    tabela: string;
+    op: string;
+    eq: Array<[string, unknown]>;
+    is?: Array<[string, unknown]>;
+    order?: string[];
+  }> = [];
   const filas = Object.fromEntries(
     Object.entries(respostas).map(([k, v]) => [k, Array.isArray(v) ? [...v] : [v]]),
   );
   const from = (tabela: string) => {
-    const registro = { tabela, op: "select", eq: [] as Array<[string, unknown]> };
+    const registro: (typeof chamadas)[number] = { tabela, op: "select", eq: [] };
     chamadas.push(registro);
     const proxima = (): Resposta => {
       const fila = filas[tabela];
@@ -87,7 +94,14 @@ function bancoFalso(respostas: Record<string, Resposta | Resposta[]>) {
       registro.eq.push([col, val]);
       return q;
     };
-    q.is = () => q;
+    q.is = (col: string, val: unknown) => {
+      (registro.is ??= []).push([col, val]);
+      return q;
+    };
+    q.order = (col: string) => {
+      (registro.order ??= []).push(col);
+      return q;
+    };
     q.maybeSingle = async () => proxima();
     // `await q` direto (lista de vínculos) usa o `then`.
     q.then = (resolve: (r: Resposta) => unknown) => resolve(proxima());
@@ -110,6 +124,7 @@ beforeEach(() => {
   estado.modulo = true;
   vi.mocked(audit).mockClear();
   vi.mocked(requireRole).mockReset();
+  vi.mocked(logger.error).mockClear();
 });
 
 describe("unlinkCompanyPersonHandler — desfazer pessoa ↔ empresa", () => {
@@ -182,6 +197,23 @@ describe("getContactPersonHandler — de quem é este telefone", () => {
     });
     const r = await getContactPersonHandler(cliente, CTX, CONTATO);
     expect(r).toEqual({ person: pessoa, companies: vinculos });
+  });
+
+  it("⭐ lê só contato vivo: a lápide de fusão não mostra a pessoa do perdedor", async () => {
+    const { cliente, chamadas } = bancoFalso({ contacts: { data: null, error: null } });
+    expect(await codigoDoErro(getContactPersonHandler(cliente, CTX, CONTATO))).toBe(404);
+    expect(chamadas[0]!.is).toContainEqual(["is_merged_into", null]);
+  });
+
+  it("⭐ as empresas do cartão vêm em ordem estável (criação, depois id)", async () => {
+    const { cliente, chamadas } = bancoFalso({
+      contacts: { data: { id: CONTATO, person_id: PESSOA }, error: null },
+      people: { data: { id: PESSOA, full_name: "Ana", email: null }, error: null },
+      company_people: { data: [], error: null },
+    });
+    await getContactPersonHandler(cliente, CTX, CONTATO);
+    const vinculos = chamadas.find((c) => c.tabela === "company_people")!;
+    expect(vinculos.order).toEqual(["created_at", "id"]);
   });
 
   it("404 quando o contato não é desta organização", async () => {
@@ -259,6 +291,37 @@ describe("createPersonHandler — pessoa criada já ligada à empresa", () => {
       ),
     ).toBe(422);
     expect(operacoes).toEqual(["people.insert", "company_people.insert", "people.delete"]);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it("⭐ se o desfazer também falha, o log registra o id da pessoa que sobrou", async () => {
+    const { createPersonHandler } = await import("@/lib/crm-b2b/people-handler");
+    const cliente = {
+      from: (tabela: string) => {
+        const q: Record<string, unknown> = {};
+        q.insert = () =>
+          tabela === "company_people"
+            ? Promise.resolve({ error: { code: "P0001", message: "empresa de outra organização" } })
+            : q;
+        q.select = () => q;
+        q.single = async () => ({ data: { id: PESSOA }, error: null });
+        q.delete = () => q;
+        q.eq = () => q;
+        q.then = (resolve: (r: Resposta) => unknown) =>
+          resolve({ data: null, error: { code: "57014", message: "timeout" } });
+        return q;
+      },
+    } as never;
+
+    expect(
+      await codigoDoErro(
+        createPersonHandler(cliente, CTX, "u-1", { full_name: "Ana", company_id: EMPRESA }),
+      ),
+    ).toBe(422);
+    expect(logger.error).toHaveBeenCalledWith(
+      "people.create_rollback_failed",
+      expect.objectContaining({ organization_id: ORG, person_id: PESSOA, code: "57014" }),
+    );
   });
 });
 
