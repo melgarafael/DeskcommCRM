@@ -4288,7 +4288,7 @@
   "O material do seu negócio que os assistentes consultam antes de responder. Cada assistente escolhe, na tela dele, o que pode ler daqui.": "助手在回答前会查阅的业务资料。每个助手都在自己的屏幕上选择可以从此处读取的内容。",
   " — edição bloqueada.": " — 编辑已锁定。",
   "O navegador bloqueou as notificações. Libere-as nas configurações do site e recarregue.": "浏览器已阻止通知。请在网站设置中允许通知，然后重新加载。",
-  "Email ainda não está disponível. In-app (toast) e Push (Chrome) já funcionam para as cinco categorias, inclusive com a aba fechada.": "电子邮件尚不可用。应用内（toast）和推送（Chrome）已支持全部五个类别，即使标签页关闭也能工作。",
+  "Email ainda não está disponível. In-app (toast) e Push (Chrome) já funcionam para todas as categorias, inclusive com a aba fechada.": "电子邮件尚不可用。应用内（toast）和推送（Chrome）已支持所有类别，即使标签页关闭也能工作。",
   "Nesta instalação, os avisos só aparecem com o site aberto.": "在此安装中，只有网站打开时才会显示通知。",
   "Este endereço não usa conexão segura (https), e sem ela nenhum navegador entrega aviso com o site fechado. Quem administra o servidor pode ligar um domínio com https.": "此地址未使用安全连接（https），没有它，任何浏览器都无法在网站关闭时推送通知。服务器管理员可以配置一个使用 https 的域名。",
   "Ligar o Push abaixo já faz o aviso aparecer na bandeja do sistema enquanto você está com o site aberto numa aba. Para receber também com a aba fechada, quem administra o servidor precisa rodar a atualização da instalação: ela cria sozinha, uma única vez, o par de chaves que falta, mesmo quando não há versão nova:": "开启下方的推送后，只要你在标签页中打开网站，通知就会出现在系统托盘中。若要在标签页关闭时也能接收，服务器管理员需要运行安装更新：即使没有新版本，它也会自动且仅一次地生成缺少的密钥对：",

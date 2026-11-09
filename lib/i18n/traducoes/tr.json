@@ -3074,7 +3074,7 @@
   "Em vez do link do WhatsApp, o botão da sua página aponta para este endereço. Ele guarda a origem, cria um código curto e abre o WhatsApp com esse código no texto — o visitante não vê nada além do botão de sempre.": "Sayfanızdaki düğme, WhatsApp bağlantısı yerine bu adrese yönlenir. Adres kaynağı kaydeder, kısa bir kod oluşturur ve bu kodu metne ekleyerek WhatsApp'ı açar. Ziyaretçi her zamanki düğmeden başka bir şey görmez.",
   "Email": "E-posta",
   "Email ainda não está disponível.": "E-posta henüz kullanılamıyor.",
-  "Email ainda não está disponível. In-app (toast) e Push (Chrome) já funcionam para as cinco categorias, inclusive com a aba fechada.": "E-posta henüz kullanılamıyor. Uygulama içi (toast) ve Push (Chrome) bildirimleri beş kategori için şimdiden çalışıyor, sekme kapalıyken bile.",
+  "Email ainda não está disponível. In-app (toast) e Push (Chrome) já funcionam para todas as categorias, inclusive com a aba fechada.": "E-posta henüz kullanılamıyor. Uygulama içi (toast) ve Push (Chrome) bildirimleri tüm kategoriler için şimdiden çalışıyor, sekme kapalıyken bile.",
   "Email ainda não está disponível. In-app (toast) e Push (Chrome) já funcionam para as cinco categorias.": "E-posta henüz kullanılamıyor. Uygulama içi (toast) ve Push (Chrome) bildirimleri beş kategori için şimdiden çalışıyor.",
   "Email confirmado": "E-posta onaylandı",
   "Email enviado.": "E-posta gönderildi.",
