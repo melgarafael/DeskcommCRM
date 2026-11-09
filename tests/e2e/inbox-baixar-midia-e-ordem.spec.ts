@@ -208,6 +208,9 @@ test("fotos e PDFs mandados no mesmo segundo aparecem na ordem em que chegaram",
     "documento-teste-1.pdf", "documento-teste-2.pdf", "documento-teste-3.pdf",
   ]);
   await bolha(page, "Foto 1").scrollIntoViewIfNeeded();
+  // O botão de baixar só aparece com a foto carregada: é o sinal para fotografar.
+  await expect(bolha(page, "Foto 1").getByRole("link", { name: "Baixar imagem" })).toBeVisible();
+  await expect(bolha(page, "Foto 2").getByRole("link", { name: "Baixar imagem" })).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE, "01-ordem-das-fotos.png") });
   await bolha(page, "documento-teste-3.pdf").scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(EVIDENCE, "02-ordem-dos-pdfs.png") });
