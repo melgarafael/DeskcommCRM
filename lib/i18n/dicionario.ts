@@ -20310,6 +20310,58 @@ export const DICIONARIO: Traducoes = {
   "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
   "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
   "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
+
+  // ─── E-mails do sistema (lib/email/templates/) — #4302 ───────────────────
+  // A cópia dos moldes de acesso (GoTrue), do convite de time e do alarme de
+  // orçamento de IA morava dentro de cada arquivo, fora deste dicionário. Por
+  // isso o e-mail saía em português com a tela em espanhol: nenhum gate de i18n
+  // varre `lib/email/`. As chaves com `{...}` são preenchidas pelo próprio
+  // molde (`preencher`, em `lib/email/templates/texto.ts`) DEPOIS da tradução.
+  "Confirme seu e-mail · {marca}": { es: "Confirma tu correo · {marca}" },
+  "Sua conta no {marca} está quase pronta. Clique no botão abaixo para confirmar seu e-mail e ativar sua conta.": {
+    es: "Tu cuenta en {marca} está casi lista. Haz clic en el botón de abajo para confirmar tu correo y activar tu cuenta.",
+  },
+  "Confirmar e-mail": { es: "Confirmar correo" },
+  "Se você não criou esta conta, ignore este e-mail.": { es: "Si no creaste esta cuenta, ignora este correo." },
+  "Redefinir sua senha": { es: "Restablecer tu contraseña" },
+  "Redefinir sua senha · {marca}": { es: "Restablecer tu contraseña · {marca}" },
+  "Recebemos um pedido para redefinir a senha da sua conta no {marca}. Clique no botão abaixo para escolher uma nova.": {
+    es: "Recibimos una solicitud para restablecer la contraseña de tu cuenta en {marca}. Haz clic en el botón de abajo para elegir una nueva.",
+  },
+  "Se não foi você quem pediu, ignore este e-mail — sua senha continua a mesma.": {
+    es: "Si no fuiste tú quien lo pidió, ignora este correo — tu contraseña sigue siendo la misma.",
+  },
+  "Ou copie e cole este link no navegador:": { es: "O copia y pega este enlace en el navegador:" },
+  "{convidador} convidou você para a {organizacao} no {marca}": {
+    es: "{convidador} te invitó a {organizacao} en {marca}",
+  },
+  "Você foi convidado para a {organizacao}": { es: "Te invitaron a {organizacao}" },
+  "{convidador} convidou você como": { es: "{convidador} te invitó como" },
+  "no {marca}.": { es: "en {marca}." },
+  "Você foi convidado para a {organizacao} como {papel} no {marca}.": {
+    es: "Te invitaron a {organizacao} como {papel} en {marca}.",
+  },
+  "Este link expira em": { es: "Este enlace caduca el" },
+  "Se você não esperava este convite, pode ignorá-lo.": {
+    es: "Si no esperabas esta invitación, puedes ignorarla.",
+  },
+  "Aceitar: {url}": { es: "Aceptar: {url}" },
+  "Expira em {data}.": { es: "Caduca el {data}." },
+  "Alerta IA: orçamento atingiu {pct}": { es: "Alerta IA: el presupuesto alcanzó {pct}" },
+  "Orçamento mensal de IA atingiu {pct}": { es: "El presupuesto mensual de IA alcanzó {pct}" },
+  "Orçamento mensal de IA atingiu {pct}.": { es: "El presupuesto mensual de IA alcanzó {pct}." },
+  "Organização:": { es: "Organización:" },
+  "Organização: {organizacao}": { es: "Organización: {organizacao}" },
+  "Consumo no mês:": { es: "Consumo del mes:" },
+  "Consumo: {gasto} de {limite}.": { es: "Consumo: {gasto} de {limite}." },
+  "Ao atingir 100%, o bot de IA será automaticamente pausado ou desabilitado conforme a política configurada. Atendimento humano segue normalmente.": {
+    es: "Al llegar al 100%, el bot de IA se pausará o deshabilitará automáticamente según la política configurada. La atención humana sigue con normalidad.",
+  },
+  "Ver dashboard de uso": { es: "Ver panel de uso" },
+  "Este alerta é enviado automaticamente uma vez a cada 24h enquanto o consumo permanecer acima do limite configurado.": {
+    es: "Este aviso se envía automáticamente una vez cada 24 h mientras el consumo siga por encima del límite configurado.",
+  },
+  "Dashboard: {url}": { es: "Panel: {url}" },
 };
 
 
