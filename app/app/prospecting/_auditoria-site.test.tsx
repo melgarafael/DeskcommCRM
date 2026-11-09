@@ -82,7 +82,7 @@ describe("AuditoriaDoCandidato: resumo na linha, total no modal", () => {
   it("abrir o modal mostra o total + ações, e a prévia renderiza a mensagem", async () => {
     const onPrevia = vi.fn(async () => ({
       mensagem: "Olá!",
-      estrategia: { cenario: "", angulo: "", ganchos: [], objecoes: [], proximoPasso: "" },
+      estrategia: { cenario: "", angulo: "", ganchos: [], objecoes: [], proximoPasso: "", complementar: null },
       score: { valor: 0, motivo: "" },
     }));
     render(<AuditoriaDoCandidato {...props(candidato({ ...SITE_OK }))} onPrevia={onPrevia} />);
@@ -116,7 +116,7 @@ describe("AuditoriaDoCandidato: resumo na linha, total no modal", () => {
 
   const PREVIA: PreviaDaAbordagem = {
     mensagem: "Olá, vi o site de vocês.",
-    estrategia: { cenario: "", angulo: "", ganchos: [], objecoes: [], proximoPasso: "" },
+    estrategia: { cenario: "", angulo: "", ganchos: [], objecoes: [], proximoPasso: "", complementar: null },
     score: { valor: 0, motivo: "" },
   };
 

@@ -28,6 +28,7 @@
  */
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 
@@ -176,7 +177,7 @@ function uploadPedido(campos: { file?: File | null; field_key?: string }) {
   const form = new FormData();
   if (campos.field_key) form.set("field_key", campos.field_key);
   if (campos.file) form.set("file", campos.file);
-  return new NextRequest(`http://localhost/api/v1/leads/${LEAD}/attachments`, {
+  return pedidoComTamanho(`http://localhost/api/v1/leads/${LEAD}/attachments`, {
     method: "POST",
     body: form,
   });
@@ -281,7 +282,7 @@ describe("o upload recusa antes do Storage (#3431)", () => {
   it("R3: POST sem arquivo é 422 e nada vai ao Storage", async () => {
     semear({ settings: SETTINGS_DA_ROTA });
 
-    const res = await POST(uploadPedido({ field_key: "comprovante" }), ctxDoNegocio);
+    const res = await POST(await uploadPedido({ field_key: "comprovante" }), ctxDoNegocio);
 
     expect(res.status).toBe(422);
     expect(h.upload).not.toHaveBeenCalled();
@@ -291,7 +292,7 @@ describe("o upload recusa antes do Storage (#3431)", () => {
     semear({ settings: SETTINGS_DA_ROTA });
 
     const res = await POST(
-      uploadPedido({
+      await uploadPedido({
         field_key: "comprovante",
         file: new File(["conteudo"], "planilha.csv", { type: "text/csv" }),
       }),
