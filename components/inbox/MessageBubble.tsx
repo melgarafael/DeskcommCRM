@@ -3,7 +3,8 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, DownloadSimple, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { mediaDownloadSrc } from "@/components/inbox/media/media-utils";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -200,7 +201,11 @@ export function MessageBubble({
   // Encaminhar vale para qualquer mensagem com conteúdo — recebida ou enviada.
   // Só não se encaminha o que foi apagado: o conteúdo saiu do ar de propósito.
   const podeEncaminhar = Boolean(onEncaminhar) && !apagada;
-  const temMenu = Boolean(onResponder || podeEncaminhar || (podeEditar && onEditar) || podeApagar || podeOcultar);
+  // Baixar vale para toda mídia que a tela mostra (foto, vídeo, áudio, documento,
+  // figurinha). Não para a apagada nem para a oculta: o conteúdo saiu de cena de
+  // propósito, e o menu não deve ser o atalho de volta a ele.
+  const podeBaixar = hasMedia && !apagada && !ocultaNoCrm;
+  const temMenu = Boolean(onResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
@@ -421,6 +426,13 @@ export function MessageBubble({
               {podeEncaminhar && (
                 <DropdownMenuItem onSelect={() => onEncaminhar?.(message)}>
                   <ArrowBendUpRight size={16} aria-hidden />{t("Encaminhar")}
+                </DropdownMenuItem>
+              )}
+              {podeBaixar && (
+                <DropdownMenuItem asChild>
+                  <a href={mediaDownloadSrc(message.id)} download>
+                    <DownloadSimple size={16} aria-hidden />{t("Baixar")}
+                  </a>
                 </DropdownMenuItem>
               )}
               {podeEditar && onEditar && (
