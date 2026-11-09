@@ -50,7 +50,7 @@ import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
 import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
-import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
+import { nomeDoContato, rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
@@ -582,7 +582,7 @@ export function ContactDetailClient({
                   (user.is_platform_admin && !user.support) ||
                     (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager),
                 )}
-                nomeSugerido={contact.name || contact.display_name || ""}
+                nomeSugerido={nomeDoContato(contact) ?? ""}
               />
             </div>
           )}
