@@ -979,6 +979,24 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // Irmã de "Desempenho", não a mesma coisa: lá é DESFECHO (funil agora,
+    // ganho/perdido por atendente); aqui é o DINHEIRO do período — quanto
+    // entrou, quais tags venderam e quem comprou (#4280, fatia 2).
+    //
+    // Sem `sidebar`, como Faturamento: é consulta periódica (fim de semana,
+    // fechamento do mês), não uso diário. O grupo Análise já navega no limite da
+    // dobra, e a regra do hub é justamente essa — quem se visita de propósito
+    // mora no hub, não empurra o menu.
+    href: "/app/relatorios",
+    label: "Relatórios comerciais",
+    description:
+      "Quanto vendemos por período, quais tags vendem mais e quais clientes compram.",
+    icon: "ChartBar",
+    group: "analise",
+    section: "Os números do período",
+    minRole: "viewer",
+  },
+  {
     // Em Análise, e não em Atendimento: porta de módulo mora em grupo com hub
     // ("Ver tudo em Análise"), como a do Cold Call.
     href: "/app/painel",

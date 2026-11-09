@@ -20310,6 +20310,55 @@ export const DICIONARIO: Traducoes = {
   "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
   "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
   "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
+
+  // ═══ Relatórios comerciais (#4280, fatia 2) ═══
+  // A tela de leitura do que já foi vendido: faturamento, tags e clientes. As
+  // frases de aviso existem porque o painel declara o que ficou FORA (moeda,
+  // valor ausente, contato ausente, leitura interrompida) em vez de esconder.
+  "Relatórios comerciais": { es: "Informes comerciales" },
+  "Quanto vendemos no período, quais tags vendem mais e quais clientes estão comprando.": {
+    es: "Cuánto vendimos en el período, qué etiquetas venden más y qué clientes están comprando.",
+  },
+  "Quanto vendemos por período, quais tags vendem mais e quais clientes compram.": {
+    es: "Cuánto vendimos por período, qué etiquetas venden más y qué clientes compran.",
+  },
+  "Faturamento do período": { es: "Facturación del período" },
+  "Tags que mais vendem": { es: "Etiquetas que más venden" },
+  "Clientes que mais compram": { es: "Clientes que más compran" },
+  "Este mês": { es: "Este mes" },
+  "Período personalizado": { es: "Período personalizado" },
+  // "De", "Até", "Tag", "Cliente", "Valor" e "Contato" já existem neste
+  // dicionário (chaves sem aspas): não se repetem aqui.
+  "Nenhum negócio ganho no período.": { es: "Ningún negocio ganado en el período." },
+  "O período é maior do que este relatório cobre.": {
+    es: "El período es mayor de lo que cubre este informe.",
+  },
+  "Esta tela soma o que já foi ganho: quando um negócio for marcado como ganho no Kanban, o faturamento e os rankings aparecem aqui.":
+    {
+      es: "Esta pantalla suma lo que ya se ganó: cuando un negocio se marque como ganado en el Kanban, la facturación y los rankings aparecerán aquí.",
+    },
+  "Os números são um piso: a leitura foi interrompida antes do fim do período.": {
+    es: "Los números son un piso: la lectura se interrumpió antes del final del período.",
+  },
+  "negócio(s) sem valor preenchido somam zero — valor ausente, não venda de zero.": {
+    es: "negocio(s) sin valor completado suman cero — valor ausente, no venta de cero.",
+  },
+  "negócio(s) em outra moeda ficaram fora: o painel soma na moeda da empresa e não converte.":
+    {
+      es: "negocio(s) en otra moneda quedaron fuera: el panel suma en la moneda de la empresa y no convierte.",
+    },
+  "negócio(s) ganho(s) sem data de fechamento não entram em nenhum recorte de período.": {
+    es: "negocio(s) ganado(s) sin fecha de cierre no entran en ningún recorte de período.",
+  },
+  "negócio(s) ganho(s) sem contato não entram no ranking de clientes.": {
+    es: "negocio(s) ganado(s) sin contacto no entran en el ranking de clientes.",
+  },
+  "Nenhum negócio ganho no período tem tag.": {
+    es: "Ningún negocio ganado en el período tiene etiqueta.",
+  },
+  "Nenhum negócio ganho no período tem contato.": {
+    es: "Ningún negocio ganado en el período tiene contacto.",
+  },
 };
 
 
