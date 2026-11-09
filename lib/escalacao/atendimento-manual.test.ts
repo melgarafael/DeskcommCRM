@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -11,6 +11,29 @@ import {
 } from "./atendimento-manual";
 import { decidirElegibilidade, normalizarInstante } from "@/lib/ai/elegibilidade/gate";
 import { logger } from "@/lib/logger";
+
+/**
+ * Caminhos de ingestão descobertos em disco, sem dizer o nome de nenhum canal:
+ * a cerca `lint:channels` proíbe nome de provider fora de `lib/channels/`, e um
+ * teste não é exceção. Varre `lib/<x>/ingest.ts` e `lib/<x>/<y>/ingest.ts`.
+ */
+function arquivosDeIngestao(): string[] {
+  const raiz = join(process.cwd(), "lib");
+  const achados: string[] = [];
+  const considerar = (rel: string) => {
+    if (existsSync(join(raiz, rel))) achados.push(join("lib", rel));
+  };
+  for (const direto of readdirSync(raiz, { withFileTypes: true })) {
+    if (!direto.isDirectory()) continue;
+    considerar(join(direto.name, "ingest.ts"));
+    for (const filho of readdirSync(join(raiz, direto.name), { withFileTypes: true })) {
+      if (filho.isDirectory()) considerar(join(direto.name, filho.name, "ingest.ts"));
+    }
+  }
+  return achados;
+}
+
+const ler = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8");
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONV = "22222222-2222-4222-8222-222222222222";
@@ -587,9 +610,16 @@ describe("pausarIaPorAtendimentoManualDetalhado — 0 linhas: corrida × convers
    * ao atalho booleano, e todos têm de ter o aviso durável no `audit`.
    */
   it("(d4) TODA chamada da ingestão passa um aviso — nenhuma engole o false", () => {
-    const fontes = ["lib/waha/ingest.ts", "lib/channels/meta/ingest.ts", "lib/channels/zernio/ingest.ts"];
-    for (const rel of fontes) {
-      const texto = readFileSync(join(process.cwd(), rel), "utf8");
+    // Descoberta em tempo de execução, de propósito: nomear o caminho de um canal
+    // aqui escreveria o nome do provider fora de lib/channels/ e a cerca
+    // `lint:channels` (doutrina restricao-de-canal, invariante 1) reprova — com razão.
+    // Varrendo o diretório, a prova também passa a cobrir canal novo sem editar o teste.
+    const comPausa = arquivosDeIngestao().filter((rel) =>
+      /pausarIa(PorAtendimentoManual|Duravelmente)\(/.test(ler(rel)),
+    );
+    expect(comPausa.length, "nenhum ponto de chamada encontrado na ingestão").toBeGreaterThanOrEqual(3);
+    for (const rel of comPausa) {
+      const texto = ler(rel);
       const chamadas = texto.match(/pausarIa(PorAtendimentoManual|Duravelmente)\(/g) ?? [];
       const avisos = texto.match(/avisar:/g) ?? [];
       expect(chamadas.length, `${rel} não chama a pausa?`).toBeGreaterThan(0);
