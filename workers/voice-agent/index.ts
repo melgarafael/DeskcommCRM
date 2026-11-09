@@ -49,6 +49,7 @@ import {
   type AriEvent,
 } from "@/lib/voip/ariClient";
 import { AudioSocketCallBridge } from "./audioSocketBridge";
+import { montarAgendaDaVoz } from "./agenda-da-voz";
 import { idsDaLinhaDoCanal, uuidDoAudioSocketDeEntrada } from "./canal-de-entrada";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveVoiceAgent } from "@/lib/ai/agents";
@@ -427,6 +428,10 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     return;
   }
 
+  // Quem está sendo atendido nesta linha. É daqui — e só daqui — que saem o
+  // contato das tools de agenda e o `contact_id` de qualquer marcação.
+  const contactIdDaChamada = (callRow.contact_id as string | null | undefined) ?? null;
+
   const bridge = new AudioSocketCallBridge(socket, {
     callId: callRow.id,
     organizationId: callRow.organization_id,
@@ -452,6 +457,25 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
       });
       return { trechos: resultado.trechos };
     },
+    // A AGENDA desta ligação (#4221). O bridge não conhece Supabase nem
+    // tabela: ele recebe as cinco operações prontas, ligadas ao handler de
+    // verdade da tool de texto (lib/mcp/tools/agendamento.ts) por
+    // `montarAgendaDaVoz`, com a organização e o contato DESTA linha.
+    //
+    // Sem contato identificado não há para quem marcar, então a agenda nem é
+    // oferecida — mesma disciplina do `consultar_conhecimento` sem acervo:
+    // ferramenta que não existe não é declarada ao modelo.
+    ...(contactIdDaChamada
+      ? {
+          agenda: montarAgendaDaVoz({
+            supabase: supabaseAdmin,
+            organizationId: callRow.organization_id,
+            callId: callRow.id,
+            agentId: agent.id,
+            contactId: contactIdDaChamada,
+          }),
+        }
+      : {}),
   });
 
   activeAudioSocketCalls.set(uuid, {
@@ -459,7 +483,7 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     callRowId: callRow.id,
     organizationId: callRow.organization_id,
     agentId: agent.id,
-    contactId: (callRow.contact_id as string | null | undefined) ?? null,
+    contactId: contactIdDaChamada,
     answeredAt,
     transcript: [],
   });
