@@ -52,6 +52,8 @@ vi.mock("@/lib/channels/meta/ingest", () => ({
  */
 const arquivados = new Map<string, Record<string, unknown>>();
 const avisos: Record<string, unknown>[] = [];
+/** Liga uma falha de escrita do arquivo (não é dedup): a resposta não pode mentir. */
+let falhaDeEscrita = false;
 
 /** Cadeia do PostgREST: todo filtro devolve a si mesma e a promessa resolve no fim. */
 function cadeia(resultado: unknown): Record<string, unknown> {
@@ -72,6 +74,9 @@ vi.mock("@/lib/supabase/admin", () => ({
       insert: (linha: Record<string, unknown>) => {
         if (tabela === "webhook_events_log") {
           const id = String(linha.id);
+          if (falhaDeEscrita) {
+            return cadeia({ data: null, error: { code: "XX000", message: "banco indisponível" } });
+          }
           if (arquivados.has(id)) {
             return cadeia({ data: null, error: { code: "23505", message: "duplicate key" } });
           }
@@ -121,6 +126,7 @@ beforeEach(() => {
   arquivados.clear();
   avisos.length = 0;
   ingeridos.length = 0;
+  falhaDeEscrita = false;
 });
 
 afterEach(() => {
@@ -196,6 +202,20 @@ describe("(a) payload fora do contrato: 200, linha de ERRO com motivo e aviso", 
 
     const chamadas = [...log.mock.calls, ...erro.mock.calls].map((c) => String(c[0]));
     expect(chamadas.some((c) => c.includes("fora do contrato"))).toBe(true);
+  });
+
+  it("se o banco recusar a escrita, o 200 NÃO finge que a linha existe", async () => {
+    falhaDeEscrita = true;
+    const log = vi
+      .spyOn((await import("@/lib/logger")).logger, "error")
+      .mockImplementation(() => undefined);
+
+    const res = await POST(assinado(FORA_DO_CONTRATO), ctx);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ accepted: false, arquivo: "nao_arquivado" });
+    // A falha de escrita não é dedup: ela vai para o log com força.
+    expect(log.mock.calls.some((c) => String(c[0]).includes("não consegui arquivar"))).toBe(true);
   });
 });
 

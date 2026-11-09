@@ -87,8 +87,13 @@ const KIND_DO_AVISO = "other";
 export interface RecusaRegistradaDoWebhookMeta {
   /** O `id` da linha no arquivo — o mesmo nas reentregas da MESMA entrega. */
   logId: string;
-  /** `false` = esta entrega já estava arquivada (reentrega da Meta). */
-  arquivada: boolean;
+  /**
+   * O desfecho do arquivo, e são TRÊS de propósito: `ja_existia` é a reentrega
+   * da Meta deduplicada pelo `id`, e `falhou` é o banco tendo recusado a
+   * escrita. Colapsar os dois em "não gravei agora" faria a resposta dizer
+   * "já arquivado" para uma linha que não existe.
+   */
+  arquivo: "novo" | "ja_existia" | "falhou";
   /** `falhou` = a Central não aceitou o aviso agora (fica para a próxima entrega). */
   aviso: "aberto" | "ja_aberto" | "falhou";
 }
@@ -147,7 +152,7 @@ export async function registrarRecusaDoWebhookMeta(
   const id = idDaEntrega(entrada.sessao.organizationId, entrada.token, entrada.rawBody);
   const motivo = `${MOTIVO_DO_CONTRATO_VIOLADO}: ${entrada.campos.join(", ")}`;
 
-  let arquivada = false;
+  let arquivo: RecusaRegistradaDoWebhookMeta["arquivo"] = "falhou";
   try {
     const { error } = await admin
       .from("webhook_events_log")
@@ -177,8 +182,10 @@ export async function registrarRecusaDoWebhookMeta(
       .maybeSingle();
 
     if (!error) {
-      arquivada = true;
-    } else if (error.code !== "23505") {
+      arquivo = "novo";
+    } else if (error.code === "23505") {
+      arquivo = "ja_existia";
+    } else {
       // Falha que não é dedup: o corpo cru é justamente o que se queria guardar,
       // então isso vai para o log com força (o aviso abaixo ainda é tentado).
       logger.error("[meta.webhook] não consegui arquivar a recusa", {
@@ -196,7 +203,7 @@ export async function registrarRecusaDoWebhookMeta(
   }
 
   const aviso = await abrirAvisoDaRecusa(admin, entrada.sessao.organizationId);
-  return { logId: id, arquivada, aviso };
+  return { logId: id, arquivo, aviso };
 }
 
 /**

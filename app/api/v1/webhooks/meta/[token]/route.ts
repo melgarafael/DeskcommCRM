@@ -141,7 +141,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       estagio: "conteudo",
       campos: leitura.campos,
       log_id: recusa.logId,
-      arquivada: recusa.arquivada,
+      arquivo: recusa.arquivo,
       aviso: recusa.aviso,
     });
     return NextResponse.json(
@@ -155,8 +155,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         detail: "payload fora do contrato do canal",
         campos: leitura.campos,
         // `error` = esta entrega acabou de ser arquivada; `ja_arquivado` = a
-        // Meta reentregou a mesma entrega. Nenhum dos dois é "processado".
-        arquivo: recusa.arquivada ? "error" : "ja_arquivado",
+        // Meta reentregou a mesma entrega; `nao_arquivado` = o banco recusou a
+        // escrita (e a resposta NÃO finge que existe linha). Nenhum dos três é
+        // "processado".
+        arquivo:
+          recusa.arquivo === "novo"
+            ? "error"
+            : recusa.arquivo === "ja_existia"
+              ? "ja_arquivado"
+              : "nao_arquivado",
       },
       { status: 200, headers: { "X-Request-Id": requestId } },
     );
