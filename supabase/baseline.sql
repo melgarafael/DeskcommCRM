@@ -78370,3 +78370,12 @@ on conflict (id) do update
       allowed_mime_types = excluded.allowed_mime_types;
 
 notify pgrst, 'reload schema';
+
+-- ---- push_subscriptions.tipos_calados: o aparelho escolhe os tipos de aviso (migration 9311) ----
+alter table public.push_subscriptions
+  add column if not exists tipos_calados text[] not null default '{}';
+
+comment on column public.push_subscriptions.tipos_calados is
+  'Tipos de aviso que este aparelho não quer receber no celular (NOTIFY_UI_CATEGORIES). Vazio = recebe todos.';
+
+notify pgrst, 'reload schema';

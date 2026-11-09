@@ -9740,5 +9740,8 @@
   "A apresentação do catálogo está desligada nesta empresa.": "Catalog presentation is turned off for this company.",
   "O áudio precisa ser OGG/Opus, WebM/Opus ou M4A válido.": "The audio must be valid OGG/Opus, WebM/Opus or M4A.",
   "Apresentação do catálogo pela IA": "AI catalog presentation",
-  "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": "Each product can have a presentation in text or audio, with photos and price, which the AI agent sends in sequence when the customer asks."
+  "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": "Each product can have a presentation in text or audio, with photos and price, which the AI agent sends in sequence when the customer asks.",
+  "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": "Each alert turns on and off on its own in Push. Turning them all off ends this device's alerts outside the app.",
+  "Negócio entrou numa etapa que avisa": "Deal entered a stage that alerts",
+  "Dentro do app, este aviso aparece na Central de avisos.": "Inside the app, this alert shows up in the Alerts center."
 }

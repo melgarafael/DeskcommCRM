@@ -19409,8 +19409,12 @@ export const DICIONARIO: Traducoes = {
   "Mostrar quem mandou e a mensagem": { es: "Mostrar quién lo envió y el mensaje" },
   "Aparecem o nome, a foto e o começo da mensagem.": { es: "Aparecen el nombre, la foto y el comienzo del mensaje." },
   "Quem decide é um administrador.": { es: "Quien decide es un administrador." },
-  "Desligar o push de mensagem desliga todos os avisos deste aparelho fora do app.": {
-    es: "Apagar el push de mensajes apaga todos los avisos de este dispositivo fuera de la app.",
+  "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": {
+    es: "Cada aviso se activa y desactiva por separado en el Push. Desactivarlos todos termina los avisos de este dispositivo fuera de la app.",
+  },
+  "Negócio entrou numa etapa que avisa": { es: "Negocio entró en una etapa que avisa" },
+  "Dentro do app, este aviso aparece na Central de avisos.": {
+    es: "Dentro de la app, este aviso aparece en la Central de avisos.",
   },
   "O servidor recusou a inscrição deste aparelho, então os avisos não vão chegar: o interruptor de Push voltou a ficar desligado.": {
     es: "El servidor rechazó la inscripción de este dispositivo, así que los avisos no van a llegar: el interruptor de Push volvió a quedar desactivado.",

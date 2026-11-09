@@ -6025,5 +6025,9 @@
   "A apresentação do catálogo está desligada nesta empresa.": "此公司已关闭目录介绍。",
   "O áudio precisa ser OGG/Opus, WebM/Opus ou M4A válido.": "音频必须是有效的 OGG/Opus、WebM/Opus 或 M4A。",
   "Apresentação do catálogo pela IA": "AI 目录介绍",
-  "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": "每个产品都可以有文字或音频介绍（可含照片和价格），客户询问时由 AI 客服按顺序发送。"
+  "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": "每个产品都可以有文字或音频介绍（可含照片和价格），客户询问时由 AI 客服按顺序发送。",
+  "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": "每种提醒都可以在推送中单独开关。全部关闭会结束此设备在应用外的提醒。",
+  "Negócio entrou numa etapa que avisa": "商机进入了会提醒的阶段",
+  "Dentro do app, este aviso aparece na Central de avisos.": "在应用内，此提醒显示在提醒中心。",
+  "A IA passou uma conversa para a equipe": "AI 已将对话转交给团队"
 }

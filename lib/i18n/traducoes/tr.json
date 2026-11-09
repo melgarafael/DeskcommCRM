@@ -2793,7 +2793,6 @@
   "Desligar e desconectar o aparelho": "Kapat ve cihazın bağlantısını kes",
   "Desligar faz o endereço parar de responder. Quem já usa o link do WhatsApp direto não é afetado.": "Kapatmak adresin yanıt vermesini durdurur. WhatsApp bağlantısını doğrudan kullanan kişiler etkilenmez.",
   "Desligar impede novos retornos prometidos pelo agente. Os fluxos configurados abaixo e a consulta ou o cancelamento de retornos existentes continuam disponíveis.": "Kapatmak, asistanın söz verdiği yeni geri dönüşleri engeller. Aşağıda yapılandırılan akışlar ile mevcut geri dönüşleri sorgulama veya iptal etme kullanılabilir kalır.",
-  "Desligar o push de mensagem desliga todos os avisos deste aparelho fora do app.": "Mesaj push'unu kapatmak, bu cihazın uygulama dışındaki tüm bildirimlerini kapatır.",
   "Desligar pausa o envio e mantém a credencial gravada.": "Kapatmak gönderimi duraklatır ve kayıtlı kimlik bilgisini korur.",
   "Desligar todos": "Hepsini kapat",
   "Desligar todos mesmo assim": "Yine de hepsini kapat",
@@ -11449,5 +11448,8 @@
   "Leitura": "Okuma",
   "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "Yetkilendirme bağlantısı otomatiktir: müşteri yetkilendirene kadar ajan, bağlantıyı üreten aracı kendiliğinden alır. Burada seçmeniz gerekmez.",
   "Este número já está em outra campanha em andamento.": "Bu numara zaten devam eden başka bir kampanyada kullanılıyor.",
-  "Abrir essa campanha": "O kampanyayı aç"
+  "Abrir essa campanha": "O kampanyayı aç",
+  "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": "Her bildirim Push'ta ayrı ayrı açılıp kapanır. Hepsini kapatmak, bu cihazın uygulama dışındaki bildirimlerini sonlandırır.",
+  "Negócio entrou numa etapa que avisa": "Fırsat bildirim veren bir aşamaya girdi",
+  "Dentro do app, este aviso aparece na Central de avisos.": "Uygulama içinde bu bildirim Bildirim Merkezi'nde görünür."
 }

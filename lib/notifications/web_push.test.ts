@@ -37,7 +37,7 @@ import {
   enviarPushDaOrg,
 } from "./web_push";
 
-type Inscricao = { id: string; user_id: string; endpoint: string; organization_id?: string };
+type Inscricao = { id: string; user_id: string; endpoint: string; organization_id?: string; tipos_calados?: string[] };
 type Membro = { user_id: string; role: string; revoked_at: string | null; organization_id?: string };
 
 const TODOS_ATIVOS: Membro[] = ["u-ana", "u-admin", "u-bruno", "u-carla"].map((user_id) => ({
@@ -65,7 +65,13 @@ function adminFalso(opts: {
   const tabelasLidas: string[] = [];
   const filtrosDaLista: Array<[string, unknown]> = [];
   const tabelas: Record<string, Array<Record<string, unknown>>> = {
-    push_subscriptions: (opts.inscricoes ?? []).map((l) => ({ organization_id: "org-1", p256dh: "k", auth: "a", ...l })),
+    push_subscriptions: (opts.inscricoes ?? opts.visiveis ?? []).map((l) => ({
+      organization_id: "org-1",
+      p256dh: "k",
+      auth: "a",
+      tipos_calados: [],
+      ...l,
+    })),
     user_organizations: (opts.membros ?? TODOS_ATIVOS).map((m) => ({ organization_id: "org-1", ...m })),
   };
   const admin = {
@@ -97,6 +103,10 @@ function adminFalso(opts: {
           filtros.push([c, v]);
           return q;
         },
+        contains: (c: string, v: unknown) => {
+          filtros.push([`contains:${c}`, v]);
+          return q;
+        },
         then: (resolve: (r: unknown) => void) => {
           if (apagando) {
             deletados.push(filtros);
@@ -106,7 +116,13 @@ function adminFalso(opts: {
           if (tabela === "user_organizations" && opts.erroMembros) {
             return resolve({ data: null, error: opts.erroMembros });
           }
-          const linhas = (tabelas[tabela] ?? []).filter((l) => filtros.every(([c, v]) => l[c] === v));
+          const linhas = (tabelas[tabela] ?? []).filter((l) =>
+            filtros.every(([c, v]) =>
+              c.startsWith("contains:")
+                ? (v as unknown[]).every((x) => (l[c.slice("contains:".length)] as unknown[] | undefined)?.includes(x))
+                : l[c] === v,
+            ),
+          );
           return resolve({ data: linhas, error: null });
         },
       };
@@ -462,5 +478,42 @@ describe("as listas de inscrição", () => {
       ["organization_id", "org-1"],
       ["user_id", "u-ana"],
     ]);
+  });
+});
+
+describe("o aparelho escolhe os tipos de aviso (push_subscriptions.tipos_calados)", () => {
+  // O caso do Adilson (09/11/2026): o celular dele calou "Nova mensagem" e quer
+  // só "Lead atribuído a você"; o computador dele não calou nada.
+  const inscricoes: Inscricao[] = [
+    { id: "s1", user_id: "u-ana", endpoint: "https://web.push.apple.com/celular", tipos_calados: ["message", "handoff"] },
+    { id: "s2", user_id: "u-ana", endpoint: "https://fcm.googleapis.com/fcm/send/computador" },
+  ];
+
+  it("aviso de um tipo calado não vai ao aparelho que o calou, e vai ao outro", async () => {
+    const { admin } = adminFalso({ visiveis: inscricoes });
+    const r = await enviarPushAQuemVeAConversa("org-1", "conv-1", { title: "t", body: "b", tipo: "message" }, undefined, admin as never);
+    expect(r).toEqual({ sent: 1, gone: 0 });
+    expect(enviados()).toEqual(["https://fcm.googleapis.com/fcm/send/computador"]);
+  });
+
+  it("tipo que o aparelho NÃO calou chega aos dois (controle)", async () => {
+    const { admin } = adminFalso({ inscricoes });
+    const r = await enviarPushDaOrg("org-1", { title: "t", body: "b", tipo: "lead_assigned" }, { soUsuario: "u-ana" }, admin as never);
+    expect(r).toEqual({ sent: 2, gone: 0 });
+  });
+
+  it("aviso sem tipo (sem saldo, proposta para revisar) chega sempre, e nem consulta os calados", async () => {
+    const { admin, filtrosDaLista } = adminFalso({ inscricoes });
+    const r = await enviarPushDaOrg("org-1", { title: "t", body: "b" }, {}, admin as never);
+    expect(r).toEqual({ sent: 2, gone: 0 });
+    expect(filtrosDaLista.some(([c]) => c.startsWith("contains:"))).toBe(false);
+  });
+
+  it("a consulta dos calados filtra a organização do envio", async () => {
+    const { admin, filtrosDaLista } = adminFalso({ inscricoes });
+    await enviarPushDaOrg("org-1", { title: "t", body: "b", tipo: "handoff" }, {}, admin as never);
+    expect(filtrosDaLista).toContainEqual(["contains:tipos_calados", ["handoff"]]);
+    expect(filtrosDaLista.filter(([c]) => c === "organization_id").every(([, v]) => v === "org-1")).toBe(true);
+    expect(enviados()).toEqual(["https://fcm.googleapis.com/fcm/send/computador"]);
   });
 });
