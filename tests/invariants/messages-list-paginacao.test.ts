@@ -263,10 +263,10 @@ beforeAll(() => {
 /** Oráculo independente: a resposta esperada sai de SQL escrito à mão. */
 function maisRecentesPorSql(n: number): string[] {
   const out = sql(`
-    select string_agg(body, ',' order by sent_at asc, id asc) from (
-      select body, sent_at, id from public.messages
+    select string_agg(body, ',' order by sent_at asc, created_at asc, id asc) from (
+      select body, sent_at, created_at, id from public.messages
       where conversation_id = '${CONV}' and organization_id = '${ORG}'
-      order by sent_at desc, id desc
+      order by sent_at desc, created_at desc, id desc
       limit ${n}
     ) t;
   `).trim();
@@ -390,5 +390,74 @@ describe("listMessagesHandler — paginação da thread", () => {
     // O `.reverse()` da correção não pode inverter a conversa curta: quem cabe
     // numa página só tem que sair na mesma ordem de sempre (antigo → novo).
     expect(r.messages.map((m) => m.body)).toEqual(["curta-1", "curta-2", "curta-3"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rajada no mesmo segundo — a ordem de CHEGADA decide, não o id sorteado
+// ---------------------------------------------------------------------------
+
+/**
+ * O caso medido numa instalação real em 09/11/2026: o cliente mandou Foto 1, 2
+ * e 3 pela API oficial da Meta, que carimba `timestamp` em SEGUNDOS, e o CRM as
+ * mostrou 3-2-1. As três tinham o mesmo `sent_at`, e o desempate era o `id`
+ * (`uuid_generate_v4()`, sorteado). Aqui os ids nascem em ordem INVERSA à da
+ * chegada, de propósito: sem o desempate por `created_at`, a resposta sai
+ * Foto 3-2-1 e os dois casos abaixo ficam vermelhos.
+ */
+const CONV_RAJADA = "aaaabbbb-4444-4000-8000-0000000000aa";
+const CONTACT_RAJADA = "aaaabbbb-2222-4000-8000-0000000000aa";
+const RAJADA_SENT = "2026-11-09T17:14:30.000Z";
+const RAJADA_CHEGADA = (i: number) => `2026-11-09T17:14:31.${String(100 + i)}000Z`;
+// id DEcrescente com a chegada: Foto 1 tem o MAIOR id.
+const rajadaId = (i: number) => `aaaabbbb-8888-4000-8000-${String(9 - i).padStart(12, "0")}`;
+
+describe("listMessagesHandler — mensagens no mesmo segundo", () => {
+  beforeAll(() => {
+    const linhas = [1, 2, 3]
+      .map(
+        (i) =>
+          `('${rajadaId(i)}','${ORG}','${CONV_RAJADA}','${SESSION}','${CONTACT_RAJADA}','image',` +
+          `'inbound','received','crm','Foto ${i}','${RAJADA_SENT}','${RAJADA_CHEGADA(i)}')`,
+      )
+      .join(",\n      ");
+    sql(`
+      insert into public.contacts (id, organization_id, name, phone_number) values
+        ('${CONTACT_RAJADA}', '${ORG}', 'Contato Rajada', '+5511900000333')
+        on conflict (id) do nothing;
+      insert into public.conversations (id, organization_id, contact_id, channel_session_id, status) values
+        ('${CONV_RAJADA}', '${ORG}', '${CONTACT_RAJADA}', '${SESSION}', 'open')
+        on conflict (id) do nothing;
+      delete from public.messages where conversation_id = '${CONV_RAJADA}';
+      insert into public.messages
+        (id, organization_id, conversation_id, channel_session_id, contact_id, type,
+         direction, status, sent_via, body, sent_at, created_at)
+      values
+        ${linhas};
+    `);
+  });
+
+  it("[DISCRIMINA] três fotos no mesmo segundo saem na ordem em que chegaram", async () => {
+    const r = await listMessagesHandler(fakeAdminClient(), ctx, CONV_RAJADA, { limit: LIMIT });
+    expect(r.messages.map((m) => m.body)).toEqual(["Foto 1", "Foto 2", "Foto 3"]);
+  });
+
+  it("[DISCRIMINA] a virada de página no meio da rajada não pula nem repete, e mantém a ordem", async () => {
+    const p1 = await listMessagesHandler(fakeAdminClient(), ctx, CONV_RAJADA, { limit: 2 });
+    expect(p1.messages.map((m) => m.body)).toEqual(["Foto 2", "Foto 3"]);
+    const p2 = await listMessagesHandler(fakeAdminClient(), ctx, CONV_RAJADA, {
+      limit: 2,
+      cursor: p1.cursor!,
+    });
+    expect(p2.messages.map((m) => m.body)).toEqual(["Foto 1"]);
+    expect(p2.has_more).toBe(false);
+  });
+
+  it("cursor antigo, sem created_at, continua paginando (aba aberta durante a atualização)", async () => {
+    const p1 = await listMessagesHandler(fakeAdminClient(), ctx, CONV, { limit: LIMIT });
+    const decod = JSON.parse(Buffer.from(p1.cursor!, "base64url").toString("utf8")) as Record<string, string>;
+    const antigo = Buffer.from(JSON.stringify({ sent_at: decod.sent_at, id: decod.id }), "utf8").toString("base64url");
+    const p2 = await listMessagesHandler(fakeAdminClient(), ctx, CONV, { limit: LIMIT, cursor: antigo });
+    expect(p2.messages).toHaveLength(TOTAL - LIMIT);
   });
 });

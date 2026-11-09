@@ -287,6 +287,12 @@ function apiTokenIdDoActor(actor: Actor): string | undefined {
 interface MsgCursorPayload {
   sent_at: string;
   id: string;
+  /**
+   * O desempate do meio (ver a ordem em `listMessagesHandler`). Opcional porque
+   * um cursor emitido antes dele — numa aba aberta durante a atualização — não
+   * o traz, e tem de continuar paginando como antes em vez de virar 400.
+   */
+  created_at?: string;
 }
 
 function encodeMsgCursor(p: MsgCursorPayload): string {
@@ -296,6 +302,7 @@ function decodeMsgCursor(raw: string): MsgCursorPayload | null {
   try {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as MsgCursorPayload;
     if (typeof parsed.id !== "string" || typeof parsed.sent_at !== "string") return null;
+    if (parsed.created_at !== undefined && typeof parsed.created_at !== "string") return null;
     return parsed;
   } catch {
     return null;
@@ -369,6 +376,16 @@ export async function listMessagesHandler(
     .eq("conversation_id", conversationId)
     .eq("organization_id", ctx.organization_id)
     .order("sent_at", { ascending: false })
+    // DESEMPATE PELA CHEGADA, não pelo id.
+    //
+    // `sent_at` vem do canal com precisão de SEGUNDO (a API oficial da Meta manda
+    // `timestamp` em segundos). Quem manda 3 fotos de uma vez gera 3 mensagens no
+    // mesmo `sent_at`, e o `id` é `uuid_generate_v4()` — sorteado. Desempatar por
+    // ele punha as fotos em ordem aleatória: medido numa instalação real em
+    // 09/11/2026, Foto 1-2-3 e PDF 1-2-3 apareceram 3-2-1. `created_at` é o
+    // instante (com microssegundos) em que cada uma foi gravada, na ordem em que
+    // o canal as entregou. O `id` fica por último, só para a ordem ser total.
+    .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
 
@@ -383,7 +400,14 @@ export async function listMessagesHandler(
         traduzir("Cursor inválido.", ctx.idioma ?? "pt-BR"),
       );
     }
-    query = query.or(`sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`);
+    query = query.or(
+      c.created_at
+        ? `sent_at.lt.${c.sent_at},` +
+            `and(sent_at.eq.${c.sent_at},created_at.lt.${c.created_at}),` +
+            `and(sent_at.eq.${c.sent_at},created_at.eq.${c.created_at},id.lt.${c.id})`
+        : // Cursor anterior ao desempate pela chegada: segue o critério antigo.
+          `sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`,
+    );
   }
 
   const { data, error } = await query;
@@ -399,7 +423,9 @@ export async function listMessagesHandler(
   // sai o cursor, porque a próxima página é a que vem ANTES no tempo.
   const oldest = page[page.length - 1];
   const cursor =
-    hasMore && oldest ? encodeMsgCursor({ sent_at: oldest.sent_at, id: oldest.id }) : null;
+    hasMore && oldest
+      ? encodeMsgCursor({ sent_at: oldest.sent_at, created_at: oldest.created_at, id: oldest.id })
+      : null;
 
   // A RESPOSTA continua cronológica (antigo → novo), igual a antes: o consumidor
   // renderiza de cima para baixo sem mudar nada. O que mudou foi QUAIS mensagens
