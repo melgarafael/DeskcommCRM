@@ -30,6 +30,9 @@ import {
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { listaLegivel } from "@/lib/leads/activity-vocabulary";
+import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { atribuirConversaDoCadastroAoCriador } from "@/lib/contacts/conversa-do-criador";
 import type {
   ContactCreate,
@@ -363,9 +366,7 @@ export async function listContactsHandler(
     }
     const op = asc ? "gt" : "lt";
     if (c.sort) {
-      query = query.or(
-        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`,
-      );
+      query = query.or(`${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`);
     } else {
       // Página na região de sort NULL (nulls last): pagina só por id.
       query = query.is(sortCol, null);
@@ -525,9 +526,11 @@ export async function getContactHandler(
     }
   }
 
-  const { contacts: enriched, error: convErr } = await withConversas(supabase, ctx.organization_id, [
-    contact,
-  ]);
+  const { contacts: enriched, error: convErr } = await withConversas(
+    supabase,
+    ctx.organization_id,
+    [contact],
+  );
   if (convErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, convErr);
   }
@@ -647,6 +650,7 @@ export async function createContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: ContactCreate,
+  linkedLeadId?: string,
 ): Promise<CreateContactResult> {
   // ── O PADRÃO (#2730) — a MESMA régua do formulário, aqui no SERVIDOR ──────
   //
@@ -702,13 +706,25 @@ export async function createContactHandler(
     Object.assign(insertRow, await camposCpfParaGravar(supabase, input.cpf));
   }
 
-  const { data: created, error: insErr } = await supabase
-    .from("contacts")
-    .insert(insertRow)
-    .select(SELECT_COLS)
-    .single();
+  const { data: created, error: insErr } = linkedLeadId
+    ? await supabase.rpc("fn_create_contact_for_lead", {
+        p_organization_id: ctx.organization_id,
+        p_lead_id: linkedLeadId,
+        p_contact: insertRow,
+      })
+    : await supabase.from("contacts").insert(insertRow).select(SELECT_COLS).single();
 
   if (insErr) {
+    if (insErr.code === "PT404") throw new ApiError(404, "not_found", undefined, ctx.requestId);
+    if (insErr.code === "PT409")
+      throw new ApiError(
+        409,
+        "conflict",
+        undefined,
+        ctx.requestId,
+        traduzir("Este negócio já tem contato vinculado. Atualize a ficha.", ctx.idioma ?? "pt-BR"),
+      );
+    if (insErr.code === "42501") throw new ApiError(403, "forbidden", undefined, ctx.requestId);
     // 409 quando o dado já pertence a um contato vivo desta organização (#3084).
     //
     // O índice parcial `uniq_contacts_org_phone` (organization_id, phone_number)
@@ -723,7 +739,8 @@ export async function createContactHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
-  const contact = fichaDaResposta(created as LinhaDeContato);
+  // A função do negócio já devolve a ficha, com `cpf_available` e sem coluna de CPF.
+  const contact = linkedLeadId ? (created as Contact) : fichaDaResposta(created as LinhaDeContato);
   // ── A CONVERSA DO CONTATO NOVO (#3718) ────────────────────────────────────
   //
   // A regra — esta porta abre, a importação por CSV não — mora num lugar só:
@@ -732,7 +749,15 @@ export async function createContactHandler(
   // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
   // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
   // porta.
-  const conversa = await abrirConversaDoContatoNovo(supabase, {
+  // Criar pelo negócio é a MESMA ficha manual, uma por vez: a regra de abrir
+  // conversa é a da porta `manual` (`lib/contacts/conversa-ao-criar.ts`), e o
+  // `contact.created` sai igual ao das outras portas que criam contato.
+  //
+  // Cliente de SERVIÇO, não o recebido: `fn_service_begin` só é concedido a
+  // `service_role`, e com o cliente do cookie a RPC voltava 42501 — o contato
+  // gravava e a conversa nunca abria. A organização já veio de fonte confiável
+  // (sessão ou token) em `ctx`, e a escolha da sessão e a RPC filtram por ela.
+  const conversa = await abrirConversaDoContatoNovo(createAdminClient(), {
     porta: "manual",
     organizationId: ctx.organization_id,
     contactId: contact.id,
@@ -784,6 +809,40 @@ export async function createContactHandler(
     metadata: { ...a.metadataActor, source: contact.source },
   });
 
+  if (linkedLeadId) {
+    // O vínculo entra na timeline do negócio como o PATCH de `contact_id` já
+    // faz (`leads/_handler.updateLeadHandler`): nome do campo, nunca o valor.
+    const atividade = await emitLeadActivity(supabase, {
+      organizationId: ctx.organization_id,
+      leadId: linkedLeadId,
+      contactId: contact.id,
+      type: "lead_edited",
+      sourceModule: "crm",
+      sourceId: linkedLeadId,
+      actor: ctx.actor,
+      reason: `Alterou ${listaLegivel(["contact_id"])}`,
+      payload: { fields: ["contact_id"] },
+    });
+    if (!atividade.ok) {
+      await registraFalhaDeAtividade(supabase, {
+        organizationId: ctx.organization_id,
+        leadId: linkedLeadId,
+        tipo: "lead_edited",
+        origem: "contacts/_handler.createContactHandler",
+        erro: atividade.error,
+        requestId: ctx.requestId,
+      });
+    }
+    await audit({
+      action: "lead.updated",
+      actorUserId: a.actorUserId,
+      organizationId: ctx.organization_id,
+      resourceType: "lead",
+      resourceId: linkedLeadId,
+      requestId: ctx.requestId,
+      metadata: { ...a.metadataActor, from: { contact_id: null }, to: { contact_id: contact.id } },
+    });
+  }
   return { contact, action: "created" };
 }
 
@@ -795,7 +854,9 @@ export async function patchContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
   contactId: string,
-  input: ContactPatch,
+  // `null` em `phone_number` é o pedido de apagar o principal (Spec 31, B2);
+  // o schema da rota é o único que o deixa passar (`contactPatchSchemaDoPais`).
+  input: Omit<ContactPatch, "phone_number"> & { phone_number?: string | null },
 ): Promise<Contact> {
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
@@ -879,8 +940,14 @@ export async function patchContactHandler(
   // O banco deriva a coluna sozinho — era só não escrever nela.
   if (input.email !== undefined) patch.email = input.email;
   if (input.phone_number !== undefined) {
-    patch.phone_number = input.phone_number ? canonicalPhoneBR(input.phone_number) : input.phone_number;
+    patch.phone_number = input.phone_number
+      ? canonicalPhoneBR(input.phone_number)
+      : input.phone_number;
   }
+  // Tipo e WhatsApp do principal (Spec 31, B2). Ausentes não entram no patch: o
+  // gatilho do banco recalcula só o que a pessoa não fixou (ver a migration 9043).
+  if (input.phone_type !== undefined) patch.phone_type = input.phone_type;
+  if (input.phone_whatsapp !== undefined) patch.phone_whatsapp = input.phone_whatsapp;
   if (input.birthdate !== undefined) patch.birthdate = input.birthdate;
   // O TIPO DO CONTATO (issue 3005): o PATCH troca cliente ↔ fornecedor. Ausente
   // NÃO entra no patch — quem não fala de tipo não reescreve a coluna, e é por
@@ -927,6 +994,30 @@ export async function patchContactHandler(
       ctx.requestId,
       traduzir("Nenhum campo para atualizar.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // Apagar o principal com telefone extra deixaria os extras sem número de
+  // resposta ("Tornar principal" é o caminho). Recusa ANTES do UPDATE: nada é
+  // gravado (Spec 31, B2, item 6). Leitura pela sessão, com o filtro de organização.
+  if (input.phone_number === null && (existing as { phone_number?: string | null }).phone_number) {
+    const { data: extras, error: errExtras } = await supabase
+      .from("contact_phones")
+      .select("id")
+      .eq("organization_id", ctx.organization_id)
+      .eq("contact_id", contactId)
+      .limit(1);
+    if (errExtras) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, errExtras.message);
+    }
+    if (extras && extras.length > 0) {
+      throw new ApiError(
+        409,
+        "primary_phone_has_extras",
+        undefined,
+        ctx.requestId,
+        traduzir("Torne outro número principal antes de remover este.", ctx.idioma ?? "pt-BR"),
+      );
+    }
   }
 
   const tagServiceOrigin = input.tags !== undefined
@@ -1125,11 +1216,7 @@ const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{ tabela: string; rotulo: st
  * por organização, um id alheio responderia "sem vínculos" e a tela diria que é
  * seguro excluir algo que quem chamou nem enxerga.
  */
-async function contatoExistente(
-  supabase: SB,
-  ctx: HandlerCtx,
-  contactId: string,
-): Promise<void> {
+async function contatoExistente(supabase: SB, ctx: HandlerCtx, contactId: string): Promise<void> {
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
     .select("id, organization_id")
@@ -1237,7 +1324,10 @@ export async function deleteContactHandler(
       "state_conflict",
       { vinculos, por_tabela },
       ctx.requestId,
-      traduzir("Não foi possível excluir: o contato ainda tem registros vinculados.", ctx.idioma ?? "pt-BR"),
+      traduzir(
+        "Não foi possível excluir: o contato ainda tem registros vinculados.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
 
@@ -1260,12 +1350,14 @@ export async function deleteContactHandler(
   // terceiro (RFC 7009) — então revoga primeiro. A tabela é server-side only
   // (service role), filtrada pela organização do ctx. Melhor esforço: falha
   // do terceiro não barra a exclusão.
-  await revogarAcessosDoContato(createAdminClient(), ctx.organization_id, contactId).catch((err: unknown) => {
-    logger.warn("revogacao dos acessos MCP do contato falhou antes da exclusao", {
-      organization_id: ctx.organization_id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  });
+  await revogarAcessosDoContato(createAdminClient(), ctx.organization_id, contactId).catch(
+    (err: unknown) => {
+      logger.warn("revogacao dos acessos MCP do contato falhou antes da exclusao", {
+        organization_id: ctx.organization_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    },
+  );
   let apagou = false;
   try {
     const { data, error: rpcErr } = await supabase.rpc("fn_apagar_contato_com_historico", {

@@ -118,11 +118,21 @@ export function googleTransport(accessToken: string, transport: GoogleFetch = fe
       method: "POST" | "PATCH" | "DELETE",
       body: Record<string, unknown> | undefined,
       etag: string | null,
+      /**
+       * Quanta notificação o Google manda aos convidados (#4006).
+       *
+       * `all` é o de sempre: criar, remarcar, cancelar e mexer em convidado
+       * precisam avisar quem está na lista. `none` existe para UM caso —
+       * ajuste só de descrição (o bloco do negócio), que sem isso mandaria
+       * e-mail a todo cliente com compromisso futuro cada vez que uma proposta
+       * mudasse de situação.
+       */
+      sendUpdates: "all" | "none" = "all",
     ): Promise<EventoDoGoogle | null> {
       if (method !== "POST" && !etag) throw new Error("Escrita sem versão remota recusada.");
       try {
         const result = await request(
-          `${path(calendar, method === "POST" ? undefined : event)}?sendUpdates=all${method === "DELETE" ? "" : "&conferenceDataVersion=1"}`,
+          `${path(calendar, method === "POST" ? undefined : event)}?sendUpdates=${sendUpdates}${method === "DELETE" ? "" : "&conferenceDataVersion=1"}`,
           method,
           method === "POST" ? { ...body, id: event } : body,
           etag,
