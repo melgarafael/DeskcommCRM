@@ -25,12 +25,14 @@ import {
 } from "@/lib/prospecting/links-do-candidato";
 import {
   activateCampaign,
+  adjustApproach,
   adjustPace,
   adjustTags,
   assertCanalLivre,
   configureCredential,
   createSearch,
   descartarDesmarcadas,
+  moverListaParaNovaCampanha,
   selecionarNaFila,
   validateConfig,
   withProspectingLock,
@@ -234,6 +236,23 @@ export async function POST(req: NextRequest) {
       result = next;
       // O histórico precisa dizer DE QUANTO PARA QUANTO — só o nome da ação não diz.
       auditMetadata = { operation: body.action, previous, next };
+    } else if (body.action === "adjust_approach") {
+      const { previous, next } = await adjustApproach(pool, org, body.id, {
+        fonte_da_abordagem: body.fonte_da_abordagem,
+        instruction: body.instruction,
+      });
+      result = next;
+      auditMetadata = { operation: body.action, previous, next };
+    } else if (body.action === "move_list") {
+      const movida = await moverListaParaNovaCampanha(pool, org, body.id, body.request_id);
+      result = movida;
+      // Só contagens e ids de campanha: nenhuma linha de empresa vai para a trilha.
+      auditMetadata = {
+        operation: body.action,
+        new_campaign_id: movida.campaign_id,
+        moved: movida.moved,
+        repeated: movida.repeated,
+      };
     } else if (body.action === "adjust_tags") {
       // Mesma régua do ritmo (spec 27): só campanha pausada, e a auditoria diz de quanto para quanto.
       const { previous, next } = await adjustTags(pool, org, body.id, body.contact_tags);
@@ -374,7 +393,7 @@ export async function POST(req: NextRequest) {
           actorApiTokenId: auth.apiTokenId ?? null,
           resourceType: "prospecting",
           resourceId: body.candidate_id,
-          metadata: { operation: body.action, score: score.valor },
+          metadata: { operation: body.action, score: score?.valor ?? null },
           requestId,
         });
       } catch (error) {

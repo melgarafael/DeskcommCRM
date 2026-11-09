@@ -124,6 +124,26 @@ A opção de parar de receber ("responda PARAR") é oferecida na **primeira mens
 
 **Ajustar o ritmo depois de iniciada.** Com a campanha **pausada**, o administrador troca o limite por dia (1 a 50) e o intervalo (5 a 1440 minutos) em **Editar ritmo**, ao lado de **Retomar fila**; a ação é `adjust_pace` em `POST /api/v1/prospecting` (issue #2095). O valor novo vale a partir do próximo envio. Só esses dois campos mudam: conexão, agente, funil, base legal e instrução da campanha seguem fixos depois de iniciada. A mudança entra em `api_audit_log` com o ritmo anterior e o novo.
 
+### De onde vem a primeira mensagem
+
+Por padrão, o ângulo da primeira mensagem vem da **estratégia do site**: a auditoria de cada empresa e as ofertas marcadas entram por cima do prompt do agente. A campanha pode escolher, no rádio **De onde vem a primeira mensagem** do passo de configuração, o **prompt do agente** (`config.fonte_da_abordagem = "agente"`): o roteiro do agente escolhido vira a referência principal e nenhum ângulo de auditoria entra na mensagem. Nos dois modos continuam valendo as regras de transparência da abordagem fria, a voz, o rascunho guardado e a oferta de saída (a regra decisória é uma só, `entradasDaAbordagem` em `lib/prospecting/estrategia-site.ts`, chamada pelo envio e pela prévia, para a tela e o envio não divergirem).
+
+- **Campanha anterior a esta opção (sem a chave) é `estrategia`:** nada muda para quem não escolhe. Não há migration nem variável de ambiente: a escolha mora no `config` jsonb da campanha.
+- **No modo `agente` a prévia não exige veredito do site:** a empresa pode ter a prévia gerada mesmo sem auditoria concluída.
+- **A prévia guardada de outra fonte não vale.** Trocar a fonte invalida as prévias escritas com a outra (a tela avisa "Prévia de outra abordagem: a campanha mudou a fonte"); abra **Ver detalhes** e gere outra. No modo `estrategia` a prévia continua caindo quando o site é verificado de novo; no `agente` ela não depende do site.
+- **"Ver detalhes"** abre **Detalhes da empresa**, com a prévia no topo e a auditoria do site embaixo, em bloco que abre expandido na estratégia e recolhido no agente.
+
+**Editar abordagem.** Com a campanha **pausada**, **Editar abordagem** (ao lado de **Editar ritmo**) troca a fonte e a **instrução da campanha** (`adjust_approach` em `POST /api/v1/prospecting`; instrução de 10 a 2000 caracteres). Só essas duas chaves mudam (`config || patch`): conexão, agente, funil, base legal, ritmo e etiquetas seguem fixos, e a fila e as empresas não são tocadas; o próximo envio já usa a abordagem nova. Fora de campanha pausada com configuração gravada a resposta é 409 (404 se a campanha não é da organização da sessão). A mudança entra em `api_audit_log` (`prospecting.changed`) com a fonte anterior e a nova e só um indicador de que a instrução mudou, nunca o texto dela.
+
+**Usar lista em outra campanha.** Em campanha **pausada ou concluída**, **Usar lista em outra campanha** (`move_list`, com `request_id`) leva as empresas ainda não abordadas para uma **campanha nova em preparação**, onde se escolhe outra conexão, outro agente e outra abordagem, sem pagar a busca de novo (a campanha nova nasce com a busca concluída, a mesma pesquisa e sem configuração).
+
+- **MOVE, não copia.** Telefone e identificador da empresa são únicos por organização, e é isso que evita abordar a mesma empresa duas vezes. As empresas movidas voltam a `new`, marcadas e sem motivo, e perdem a prévia guardada.
+- **Vai só quem nunca foi abordado:** sem contato, negócio nem conversa, fora da supressão de LGPD, e com status `new`, `queued` ou desmarcada pelo operador. Quem foi enviado, falhou, já era contato ou foi recusado pelo produto (sem telefone, sem WhatsApp) fica na campanha antiga, com o histórico.
+- **Repetir é inofensivo:** o mesmo `request_id` devolve a mesma campanha sem mover nada a mais. Sem ninguém para levar, a resposta é 409 ("Não há empresas ainda não abordadas para levar.") e nenhuma campanha vazia é criada.
+- A trilha (`prospecting.changed`) guarda só a campanha nova, a contagem e se foi repetição, nunca linhas de empresas.
+
+**Resumo e Voz.** O resumo de cada campanha iniciada mostra **Primeira mensagem** (prompt do agente ou estratégia do site) e a **Voz** em vigor (ou "Sem voz definida"). O cartão **Voz e vocabulário** vale para todas as campanhas da organização e fica fora do bloco **Configurar busca**, então continua visível com a chave do provedor já salva; vem recolhido quando já há voz definida e aberto quando falta.
+
 **Etiquetas do contato na abordagem (spec 27).** O passo de configuração tem **Etiquetas do contato**, pré-preenchido com o nicho da busca (até 5). Ao abordar uma empresa, a campanha grava essas etiquetas no contato antes da primeira mensagem, pela mesma junção da ação `add_tag`, e anuncia `contact.tag_added` quando alguma é nova. Assim, a skill com `any_tags` entra desde a primeira resposta. Falha ao gravar a etiqueta não derruba a abordagem: vai para o log e a empresa segue. Campanha sem a chave na configuração não grava nada. A troca depois de iniciada é a ação `adjust_tags` em `POST /api/v1/prospecting`, só com a campanha pausada, fechada ao token e auditada com a lista anterior e a nova; ela vale para os contatos criados dali em diante, e ainda não tem tela.
 
 ## Operação e recuperação

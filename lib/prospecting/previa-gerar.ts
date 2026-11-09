@@ -22,9 +22,8 @@ import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-d
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { env } from "@/lib/env";
 import {
+  entradasDaAbordagem,
   estrategiaDoCandidato,
-  instrucaoDeAbordagemFria,
-  montarDadosDeAbordagem,
   pontuarCandidato,
   type EstrategiaDoLead,
   type OfertaDaCampanha,
@@ -35,7 +34,7 @@ import {
   personalizacaoDaOrganizacao,
   type PersonalizacaoProspeccao,
 } from "./personalizar";
-import { chaveDaAuditoria, type PreviaSalva } from "./previa";
+import { ANCORA_DA_FONTE_AGENTE, chaveDaAuditoria, type PreviaSalva } from "./previa";
 import { campaignConfigSchema, type Prospect } from "./schema";
 import { siteEfetivo } from "./site-efetivo";
 
@@ -58,8 +57,9 @@ export type ResultadoDaPrevia =
       ok: true;
       texto: string;
       previa: PreviaSalva;
-      estrategia: EstrategiaDoLead;
-      score: Pontuacao;
+      /** `null` quando a campanha usa o prompt do agente e o site ainda não tem veredito. */
+      estrategia: EstrategiaDoLead | null;
+      score: Pontuacao | null;
     }
   | { ok: false; motivo: MotivoSemPrevia; detalhe?: string };
 
@@ -76,55 +76,68 @@ export async function gerarPreviaDoCandidato(
   // já tem `sem-site` derivado (sem rede); o "pendente" fica só para quem tem
   // site na web e ainda espera a auditoria.
   const site = siteEfetivo(linha.data, new Date().toISOString());
-  if (!site) return { ok: false, motivo: "auditoria_pendente" };
   // Config parcial salva pelo meio (sem `agent_id`) não é campanha configurada.
   const cfg = linha.config ? campaignConfigSchema.safeParse(linha.config) : null;
+  const peloAgente = cfg?.success === true && cfg.data.fonte_da_abordagem === "agente";
+  // Só a estratégia do site depende da auditoria: pelo prompt do agente, a prévia sai
+  // mesmo com o site ainda à espera do veredito.
+  if (!site && !peloAgente) return { ok: false, motivo: "auditoria_pendente" };
   if (!cfg?.success || !cfg.data.agent_id) return { ok: false, motivo: "sem_agente" };
 
   const ofertas = (cfg.data.ofertas ?? ["site"]) as OfertaDaCampanha[];
   // Mesmos fios do envio (voz + vocabulário da org + estratégia): a prévia só
   // vale se for byte a byte o que o tick mandaria. A estratégia vem da MESMA
-  // fonte que o worker usa (`estrategiaDoCandidato`).
+  // fonte que o worker usa (`estrategiaDoCandidato`), e a decisão de instrução e
+  // dados também (`entradasDaAbordagem`).
   const personalizacao = opcoes.personalizacao ?? (await personalizacaoDaOrganizacao(pool, org));
-  const estrategia = estrategiaDoCandidato(linha.data, site, {
-    ofertas,
-    nicho: linha.search?.niche ?? linha.data.category ?? "",
-    sobrescritaVocabulario: personalizacao.vocabulario ?? null,
-    status: linha.status,
+  const estrategia = site
+    ? estrategiaDoCandidato(linha.data, site, {
+        ofertas,
+        nicho: linha.search?.niche ?? linha.data.category ?? "",
+        sobrescritaVocabulario: personalizacao.vocabulario ?? null,
+        status: linha.status,
+      })
+    : null;
+  // A prévia gera DO ZERO: sem rascunho guardado (ver o cabeçalho).
+  const { instrucao, dados } = entradasDaAbordagem({
+    config: cfg.data,
+    data: linha.data,
+    site,
+    estrategia,
+    voz: blocoVozVendedor(personalizacao),
+    previa: null,
   });
   const gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
     tenantId: org,
     agentId: cfg.data.agent_id,
     leadId: linha.contact_id ?? null,
-    instrucao: instrucaoDeAbordagemFria(
-      cfg.data.instruction,
-      cfg.data.qualification,
-      blocoVozVendedor(personalizacao) || undefined,
-      estrategia,
-      // A mesma regra do envio: a prévia é byte a byte o que o tick mandaria.
-      cfg.data.exit_offer !== "first_message",
-    ),
+    instrucao,
     origem: "Pesquisa de empresas",
     origemDaAbordagem: "prospeccao_fria",
-    // Modo "saída na 2ª": sem Auditoria/Detalhe, como no envio (worker.ts).
-    dados: montarDadosDeAbordagem(linha.data, cfg.data.exit_offer !== "first_message" ? null : site),
+    dados,
   });
   if (!gerado.ok) return { ok: false, motivo: "ia_falhou", detalhe: gerado.reason };
 
-  const score = pontuarCandidato(
-    linha.data.rating,
-    linha.data.reviews,
-    site.classe,
-    ofertas[0] ?? "site",
-    site.provisorio ?? false,
-  );
+  const score = site
+    ? pontuarCandidato(
+        linha.data.rating,
+        linha.data.reviews,
+        site.classe,
+        ofertas[0] ?? "site",
+        site.provisorio ?? false,
+      )
+    : null;
   // A prévia é ancorada na CHAVE da auditoria (sobre qual veredito ela foi
-  // escrita), nunca num instante solto.
+  // escrita), nunca num instante solto. A do prompt do agente não cita auditoria
+  // e ancora na própria fonte.
   const previa: PreviaSalva = {
     texto: gerado.texto,
-    baseada_em: chaveDaAuditoria(linha.data) ?? `${site.classe}@derivado`,
+    baseada_em: peloAgente
+      ? ANCORA_DA_FONTE_AGENTE
+      : (chaveDaAuditoria(linha.data) ?? `${site!.classe}@derivado`),
     gerada_em: new Date().toISOString(),
     agente_id: cfg.data.agent_id,
+    ...(peloAgente ? { fonte: "agente" as const } : {}),
   };
   return { ok: true, texto: gerado.texto, previa, estrategia, score };
 }

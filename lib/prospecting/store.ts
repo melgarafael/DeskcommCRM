@@ -1240,6 +1240,121 @@ export async function adjustPace(pool: pg.Pool, org: string, id: string, pace: C
 }
 
 /**
+ * A troca da FONTE da abordagem (e, se vier, da instrução) é o mesmo desenho do ritmo: UM
+ * `update`, com as guardas no próprio `where` (organização da sessão, campanha PAUSADA,
+ * configuração já gravada) e `||` trocando só as chaves pedidas. A fila e as empresas não
+ * mudam — é o que deixa trocar de estratégia sem perder a lista. A prévia guardada da outra
+ * fonte vence sozinha (`previaValida`), e o envio seguinte escreve do zero.
+ */
+export const AJUSTE_DE_ABORDAGEM_SQL =
+  "update prospecting_campaigns set config = config || $3::jsonb, updated_at = now() where organization_id = $1 and id = $2 and status = 'paused' and config is not null returning id";
+
+export async function adjustApproach(
+  pool: pg.Pool,
+  org: string,
+  id: string,
+  mudanca: { fonte_da_abordagem: "estrategia" | "agente"; instruction?: string },
+) {
+  return withProspectingLock(pool, org, async (db) => {
+    const c = (
+      await db.query<{ status: string; config: Record<string, unknown> | null }>(
+        "select status, config from prospecting_campaigns where organization_id=$1 and id=$2",
+        [org, id],
+      )
+    ).rows[0];
+    if (!c) throw new ProspectingError("Campanha não encontrada.", 404);
+    if (c.status !== "paused" || !c.config)
+      throw new ProspectingError("Pause a campanha antes de trocar a abordagem.", 409);
+    const patch: Record<string, string> = { fonte_da_abordagem: mudanca.fonte_da_abordagem };
+    if (mudanca.instruction !== undefined) patch.instruction = mudanca.instruction;
+    const changed = await db.query(AJUSTE_DE_ABORDAGEM_SQL, [org, id, JSON.stringify(patch)]);
+    if (!changed.rows.length)
+      throw new ProspectingError("Pause a campanha antes de trocar a abordagem.", 409);
+    return {
+      previous: {
+        fonte_da_abordagem: (c.config.fonte_da_abordagem as string | undefined) ?? "estrategia",
+        instruction_changed: false,
+      },
+      // A instrução é texto do operador: a trilha registra QUE mudou, não o texto.
+      next: {
+        fonte_da_abordagem: mudanca.fonte_da_abordagem,
+        instruction_changed:
+          mudanca.instruction !== undefined && mudanca.instruction !== c.config.instruction,
+      },
+    };
+  });
+}
+
+/**
+ * Quem pode ir para a campanha nova: nunca abordado (sem contato, negócio nem conversa),
+ * fora da supressão de LGPD, e ainda na fila ou desmarcado pelo operador. Quem o PRODUTO
+ * recusou (sem telefone, sem WhatsApp, já era contato) fica — o motivo continua valendo.
+ */
+export const MOVER_LISTA_SQL =
+  "update prospecting_candidates set campaign_id=$3, status='new', selected=true, error=null, attempted_at=null, data = data - 'previa', updated_at=now() where organization_id=$1 and campaign_id=$2 and contact_id is null and lead_id is null and conversation_id is null and suppression_salt is null and (status in ('new','queued') or (status='skipped' and error=$4)) returning id";
+
+/**
+ * Leva a lista para uma campanha nova em preparação. MOVE, não copia: telefone e
+ * identificador da empresa são únicos por organização (`prospecting_phone_once_org`), e é
+ * isso que impede a mesma empresa de ser abordada duas vezes. Quem já foi abordado fica na
+ * campanha antiga, com o histórico intacto. A campanha nova nasce com a busca já concluída
+ * (nenhuma busca paga de novo) e sem configuração: conexão, agente e funil são escolhidos
+ * nela, do zero. Repetir com o mesmo `request_id` devolve a mesma campanha.
+ */
+export async function moverListaParaNovaCampanha(
+  pool: pg.Pool,
+  org: string,
+  id: string,
+  requestId: string,
+) {
+  return withProspectingLock(pool, org, async (db) => {
+    const prior = (
+      await db.query<{ id: string; result_count: number | null }>(
+        "select id, result_count from prospecting_campaigns where organization_id=$1 and request_id=$2",
+        [org, requestId],
+      )
+    ).rows[0];
+    if (prior) return { campaign_id: prior.id, moved: prior.result_count ?? 0, repeated: true };
+    const c = (
+      await db.query<{ status: string; name: string; search: unknown }>(
+        "select status, name, search from prospecting_campaigns where organization_id=$1 and id=$2",
+        [org, id],
+      )
+    ).rows[0];
+    if (!c) throw new ProspectingError("Campanha não encontrada.", 404);
+    if (c.status !== "paused" && c.status !== "completed")
+      throw new ProspectingError("Pause a campanha antes de levar a lista para outra.", 409);
+    await db.query("begin");
+    try {
+      const nome = `${c.name} — lista reaproveitada`.slice(0, 120);
+      const nova = (
+        await db.query<{ id: string }>(
+          "insert into prospecting_campaigns(organization_id,request_id,name,search,search_status) values($1,$2,$3,$4,'succeeded') returning id",
+          [org, requestId, nome, c.search],
+        )
+      ).rows[0]!;
+      const { rows } = await db.query<{ id: string }>(MOVER_LISTA_SQL, [
+        org,
+        id,
+        nova.id,
+        RAZAO_NAO_SELECIONADA,
+      ]);
+      if (!rows.length)
+        throw new ProspectingError("Não há empresas ainda não abordadas para levar.", 409);
+      await db.query(
+        "update prospecting_campaigns set result_count=$3, updated_at=now() where organization_id=$1 and id=$2",
+        [org, nova.id, rows.length],
+      );
+      await db.query("commit");
+      return { campaign_id: nova.id, moved: rows.length, repeated: false };
+    } catch (error) {
+      await db.query("rollback");
+      throw error;
+    }
+  });
+}
+
+/**
  * Troca as etiquetas de contato de uma campanha PAUSADA (spec 27). A nova lista vale para os
  * próximos envios: o contato criado daqui em diante a recebe, e o que a campanha já criou a
  * recebe de novo no reenvio (a junção é idempotente e é a única recuperação se a primeira

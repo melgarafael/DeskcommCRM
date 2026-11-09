@@ -34,8 +34,16 @@ export const previaSalvaSchema = z.object({
   baseada_em: z.string().min(1).max(160),
   gerada_em: z.string().min(1).max(40),
   agente_id: z.string().uuid(),
+  /**
+   * De qual fonte da abordagem a copy nasceu (`config.fonte_da_abordagem`). Ausente = a
+   * prévia é anterior à opção, e foi escrita com a estratégia do site.
+   */
+  fonte: z.enum(["estrategia", "agente"]).optional(),
 });
 export type PreviaSalva = z.infer<typeof previaSalvaSchema>;
+
+/** Âncora da prévia escrita pelo prompt do agente: não depende de auditoria nenhuma. */
+export const ANCORA_DA_FONTE_AGENTE = "fonte:agente";
 
 /** O que `chaveDaAuditoria` e `previaValida` precisam de um candidato. */
 export interface DadosDaPrevia {
@@ -62,10 +70,18 @@ export function chaveDaAuditoria(data: Pick<DadosDaPrevia, "website" | "site">):
  * atual. `null` em qualquer outro caso — o envio então escreve do zero, que é
  * mais honesto do que mandar uma copy presa a uma medição que mudou.
  */
-export function previaValida(data: DadosDaPrevia): PreviaSalva | null {
+export function previaValida(
+  data: DadosDaPrevia,
+  fonte: "estrategia" | "agente" = "estrategia",
+): PreviaSalva | null {
   if (!data.previa) return null;
   const parsed = previaSalvaSchema.safeParse(data.previa);
   if (!parsed.success) return null;
+  // Trocar a fonte da campanha vence a prévia da outra fonte: ela foi escrita com outro
+  // ângulo. A prévia do agente não cita auditoria, então não vence quando o site muda.
+  const fonteDaPrevia = parsed.data.fonte ?? "estrategia";
+  if (fonteDaPrevia !== fonte) return null;
+  if (fonte === "agente") return parsed.data.baseada_em === ANCORA_DA_FONTE_AGENTE ? parsed.data : null;
   const chave = chaveDaAuditoria(data);
   if (!chave || parsed.data.baseada_em !== chave) return null;
   return parsed.data;
@@ -77,8 +93,12 @@ export function previaValida(data: DadosDaPrevia): PreviaSalva | null {
  * padrão da organização (a campanha ainda não tinha o seu); se a pessoa escolheu
  * outro na etapa 2, o tom da prévia não é o dele — o envio escreve do zero.
  */
-export function previaDoAgente(data: DadosDaPrevia, agenteId: string): PreviaSalva | null {
-  const previa = previaValida(data);
+export function previaDoAgente(
+  data: DadosDaPrevia,
+  agenteId: string,
+  fonte: "estrategia" | "agente" = "estrategia",
+): PreviaSalva | null {
+  const previa = previaValida(data, fonte);
   return previa && previa.agente_id === agenteId ? previa : null;
 }
 
