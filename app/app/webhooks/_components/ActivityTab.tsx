@@ -138,6 +138,18 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   falha_ao_gravar:
     "Não foi possível gravar o setor da conversa. Tente de novo; se persistir, veja o log da automação.",
   lead_nao_encontrado: "O lead deste evento não foi encontrado nesta organização, então ninguém foi atribuído.",
+  /* #4297 — a automação que move para a etapa de perda SEM motivo. A recusa é a
+     mesma do arrasto (#917, `decideMotivoDaPerda`), devolvida pelo executor como
+     CÓDIGO: sem esta frase o operador lia `lost_reason_required` — ou, antes do
+     conserto, "erro interno" — e não sabia o que fazer. */
+  lost_reason_required:
+    "Esta automação move o card para uma etapa de perda sem dizer o motivo. Abra a automação e escolha o “Motivo da perda”.",
+  /* #4297 — o outro lado da troca: a ação passou a devolver o CÓDIGO no lugar da
+     frase (era a frase que virava `internal_error`), então quem traduz a recusa
+     para o operador é este mapa. Sem esta linha o card parava e a Atividade
+     mostrava só `required_fields_missing`. */
+  required_fields_missing:
+    "A etapa de destino exige campos que o card ainda não tem. Preencha-os no card e a automação move na próxima passada.",
   /* #3804 — o destino dinâmico não achou ninguém: nem o dono do negócio, nem a
      carteira do cliente, nem o fallback servem. Emitido como `error` literal por
      lib/automation/actions/assign-owner.ts. */
