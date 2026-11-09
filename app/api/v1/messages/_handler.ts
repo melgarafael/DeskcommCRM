@@ -298,11 +298,23 @@ interface MsgCursorPayload {
 function encodeMsgCursor(p: MsgCursorPayload): string {
   return Buffer.from(JSON.stringify(p), "utf8").toString("base64url");
 }
+/**
+ * Os valores do cursor entram por interpolação no `.or()` do PostgREST. Os
+ * filtros de organização e de conversa são parâmetros separados (somados com
+ * AND), então um cursor forjado não sai da conversa — mas vírgula ou parêntese
+ * ali reescreveria o filtro de dentro dela. Só passa o FORMATO que o servidor
+ * emite: UUID e instante ISO-8601.
+ */
+const UUID_DO_CURSOR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INSTANTE_DO_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
 function decodeMsgCursor(raw: string): MsgCursorPayload | null {
   try {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as MsgCursorPayload;
     if (typeof parsed.id !== "string" || typeof parsed.sent_at !== "string") return null;
     if (parsed.created_at !== undefined && typeof parsed.created_at !== "string") return null;
+    if (!UUID_DO_CURSOR.test(parsed.id) || !INSTANTE_DO_CURSOR.test(parsed.sent_at)) return null;
+    if (parsed.created_at !== undefined && !INSTANTE_DO_CURSOR.test(parsed.created_at)) return null;
     return parsed;
   } catch {
     return null;

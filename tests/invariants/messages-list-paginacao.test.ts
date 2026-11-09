@@ -369,6 +369,16 @@ describe("listMessagesHandler — paginação da thread", () => {
     await expect(
       listMessagesHandler(fakeAdminClient(), ctx, CONV, { limit: LIMIT, cursor: enganoso }),
     ).rejects.toBeInstanceOf(ApiError);
+
+    // Forma certa, conteúdo que reescreveria o `.or()`: vírgula e parêntese
+    // no valor. Tem de ser recusado como cursor inválido, nunca interpolado.
+    const forjado = Buffer.from(
+      JSON.stringify({ sent_at: "2026-01-01T00:00:00Z),id.gt.0", id: "x" }),
+      "utf8",
+    ).toString("base64url");
+    await expect(
+      listMessagesHandler(fakeAdminClient(), ctx, CONV, { limit: LIMIT, cursor: forjado }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_cursor" });
   });
 
   it("filtra por organization_id: a org vizinha não lê a thread", async () => {
