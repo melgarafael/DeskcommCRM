@@ -57,6 +57,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { EscritaDePlatformAdminNegada, requirePlatformAdminEscrita } from "@/lib/auth/requirePlatformAdmin";
 import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
@@ -416,7 +417,15 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  const form = await req.formData().catch(() => null);
+  // Lido antes da sessão (o escopo escolhe o contexto), então o teto vem antes
+  // de tudo: 64 KB de folga para o envelope sobre o teto do logo.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DO_LOGO + 64 * 1024, {
+    requestId,
+    acimaDoTeto:
+      "O logo precisa ter até 512 KB. Arquivo maior vai inteiro para o navegador em toda página.",
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const escopoLido = escopoSchema.safeParse(form?.get("escopo"));
   if (!escopoLido.success) {
     return fail("validation_failed", "Campo 'escopo' inválido.", 422, { requestId });

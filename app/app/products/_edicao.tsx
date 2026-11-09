@@ -16,6 +16,8 @@ import {
 } from "@/lib/catalogo/edicao-do-produto";
 import type { Produto } from "@/lib/schemas/produtos";
 
+import { CatalogProductAiPresentation } from "./_apresentacao-ia";
+
 /**
  * O FORMULÁRIO DE EDIÇÃO — o que a tela nunca teve.
  *
@@ -31,7 +33,17 @@ import type { Produto } from "@/lib/schemas/produtos";
  * sincronização sobrescreveria. Fotos seguem livres pelo botão de sempre: a
  * integração não mexe nelas.
  */
-export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFechar: () => void }) {
+export function EdicaoDoProduto({
+  produto,
+  urlsDasFotos,
+  apresentacaoLigada = false,
+  aoFechar,
+}: {
+  produto: Produto;
+  urlsDasFotos: Record<string, string>;
+  apresentacaoLigada?: boolean;
+  aoFechar: () => void;
+}) {
   const t = useT();
   const router = useRouter();
   const [rascunho, setRascunho] = React.useState<RascunhoDaEdicao>(() => rascunhoDaEdicao(produto));
@@ -173,6 +185,8 @@ export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFec
           />
         </label>
       ) : null}
+
+      {apresentacaoLigada ? <CatalogProductAiPresentation product={produto} photoUrls={urlsDasFotos} /> : null}
 
       <div className="mt-4 flex items-center gap-2">
         {somenteLeitura ? null : (

@@ -141,6 +141,7 @@ const TABELAS_NA_CASCATA = [
 const TIPOS_RESERVADOS = [
   "ai.case_closed", //               0279
   "ai.case_opened", //               0279
+  "ai.case_updated", //              9240 — manda WhatsApp à equipe com comando preso à atualização
   "appointment.outcome_confirmed", //herdado
   "contact.birthday", //             0551
   "contact.phone_added", //          0670

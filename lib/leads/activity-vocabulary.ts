@@ -463,6 +463,7 @@ const NOME_DO_CAMPO: Record<string, string> = {
   tags: "as tags",
   custom_fields: "os campos personalizados",
   lost_reason: "o motivo da perda",
+  contact_id: "o contato",
 };
 
 /**
