@@ -106,7 +106,10 @@ describe("fiação — resposta manual pelo WhatsApp silencia o bot temporariame
       /const ehEco = await ehEcoDeEnvioNosso\([^)]*\);[\s\S]{0,80}?if \(!ehEco\) \{/,
     );
     expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?pausarIaDuravelmente\(/);
-    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,700}?devolverAtendimentoAoAgente\(/);
+    // Janela de 900 (era 700): o #534 acrescentou `avisar` ao bloco da pausa,
+    // que é o que impede a falha de virar silêncio. A ordem provada é a mesma —
+    // a devolução continua DEPOIS das pausas e dentro da guarda.
+    expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,900}?devolverAtendimentoAoAgente\(/);
     // A pausa da mensagem comum também, e o interruptor do agente (que decide
     // se a pausa é durável) é lido DENTRO da guarda — nunca para o eco.
     expect(corpo).toMatch(/if \(!ehEco\) \{[\s\S]{0,2000}?pausarIaPorAtendimentoManual\(/);

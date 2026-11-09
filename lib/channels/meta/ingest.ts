@@ -24,7 +24,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
-import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import {
+  pausarIaPorAtendimentoManual,
+  type FalhaDaPausa,
+  type MotivoDaPausaNaoGravada,
+} from "@/lib/escalacao/atendimento-manual";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
 import {
@@ -54,7 +58,17 @@ import type {
 type Admin = SupabaseClient;
 
 export type IngestOutcome =
-  | { status: "ingested"; messageId: string; conversationId: string }
+  | {
+      status: "ingested";
+      messageId: string;
+      conversationId: string;
+      /**
+       * A mensagem ENTROU, mas a pausa da IA não foi garantida (#534): o motivo
+       * é nomeado e a falha foi para o audit. Quem lê o desfecho não pode
+       * tratá-lo como "IA pausada".
+       */
+      pausaDaIANaoGravada?: MotivoDaPausaNaoGravada;
+    }
   | { status: "duplicate" }
   | { status: "no_session" }
   /**
@@ -506,10 +520,16 @@ export async function ingestMetaEcho(
     }
   }
 
+  let pausaDaIANaoGravada: MotivoDaPausaNaoGravada | undefined;
+  // #534: sem `avisar`, a falha da pausa viraria um `false` que ninguém lê.
   await pausarIaPorAtendimentoManual(admin, {
     organizationId: orgId,
     conversationId: conversationId as string,
     canal: "meta",
+    avisar: (falha) => {
+      pausaDaIANaoGravada = falha.motivo;
+      return avisarPausaNaoGravada(falha);
+    },
   });
 
   await audit({
@@ -526,7 +546,27 @@ export async function ingestMetaEcho(
     },
   });
 
-  return { status: "ingested", messageId, conversationId: conversationId as string };
+  return {
+    status: "ingested",
+    messageId,
+    conversationId: conversationId as string,
+    ...(pausaDaIANaoGravada ? { pausaDaIANaoGravada } : {}),
+  };
+}
+
+/** Aviso durável de que a pausa da IA não foi garantida (#534). */
+function avisarPausaNaoGravada(falha: FalhaDaPausa): Promise<void> {
+  return audit({
+    action: "ai.pausa_nao_gravada",
+    organizationId: falha.organizationId,
+    resourceType: "conversation",
+    resourceId: falha.conversationId,
+    metadata: {
+      canal: falha.canal ?? "meta",
+      motivo: falha.motivo,
+      detalhe: falha.detalhe ?? null,
+    },
+  });
 }
 
 /**
