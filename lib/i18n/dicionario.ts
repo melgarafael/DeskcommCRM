@@ -865,6 +865,12 @@ export const DICIONARIO: Traducoes = {
   "Ao ganhar": { es: "Al ganar" },
   "Ao perder": { es: "Al perder" },
   "arquivada": { es: "archivada" },
+  // ─── CAMPOS DO CARD NO RESUMO DA PASSAGEM (issue #4303) ───
+  "Mostrar no resumo da passagem": { es: "Mostrar en el resumen de la transferencia" },
+  "Quando a conversa passa para uma pessoa, o valor que este campo tem no card aparece no resumo do cartão de passagem. Desligado por padrão.":
+    {
+      es: "Cuando la conversación pasa a una persona, el valor que este campo tiene en la tarjeta aparece en el resumen de la transferencia. Desactivado por defecto.",
+    },
   "Sem marca nenhuma este campo nunca é exigido — é o comportamento de sempre. Marcado, ele precisa estar preenchido para o negócio entrar na etapa escolhida ou ser fechado como ganho/perdido.":
     {
       es: "Sin ninguna marca este campo nunca se exige — es el comportamiento de siempre. Marcado, debe estar completado para que el negocio entre en la etapa elegida o se cierre como ganado/perdido.",
