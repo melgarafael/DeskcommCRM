@@ -67,7 +67,7 @@ function agendaFalsa() {
     ),
     listarCompromissos: vi.fn(async () => "Você tem Consulta inicial em segunda-feira, 10 de novembro, às 14 horas."),
     preparar: vi.fn(
-      async (): Promise<PreparoDaVoz> => ({
+      async (_args?: unknown): Promise<PreparoDaVoz> => ({
         operacao: "marcar",
         args: { event_type_slug: "consulta-inicial", starts_at: "2026-11-10T17:00:00.000Z" },
         resumo: "Consulta inicial, segunda-feira, 10 de novembro, às 14 horas.",
@@ -328,7 +328,7 @@ describe("(f) organização nos argumentos", () => {
     });
     await outputDe("call-p");
 
-    const recebido = agenda.preparar.mock.calls[0]![0] as Record<string, unknown>;
+    const recebido = agenda.preparar.mock.calls[0]![0] as unknown as Record<string, unknown>;
     expect(recebido).toEqual({ tipo: "consulta-inicial", hora: "14:00" });
     expect(recebido).not.toHaveProperty("organization_id");
     expect(recebido).not.toHaveProperty("org_id");

@@ -157,8 +157,7 @@ describe("leitura", () => {
     const fala = await agendaDa().horariosLivres({
       tipo: "consulta-inicial",
       dias_a_frente: 7,
-      // @ts-expect-error — o modelo pode mandar isto; o tipo não declara, e
-      // nada pode encaminhar.
+      // O modelo pode mandar isto; o tipo não declara, e nada pode encaminhar.
       organization_id: "org-intrusa",
     } as never);
 
