@@ -13193,7 +13193,6 @@ export const DICIONARIO: Traducoes = {
   "Informe o funil e o campo de data.": {
     es: "Indica el embudo y el campo de fecha.",
   },
-  "Período inválido.": { es: "Período inválido." },
   // A data que NÃO EXISTE no calendário (2026-02-31) é recusa própria: o dia
   // tem a forma certa e mesmo assim não é dia nenhum. A frase existe para a
   // camada dizer o motivo em vez de mostrar grade vazia (#3221).
