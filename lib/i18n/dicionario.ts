@@ -20148,6 +20148,51 @@ export const DICIONARIO: Traducoes = {
   "O caminho para cada tarefa, e onde ir quando algo não sai como esperado.": {
     es: "El camino para cada tarea, y adónde ir cuando algo no sale como se espera.",
   },
+  // Fatia F2 da #3567: o alcance do papel (`lib/ajuda/papel.ts`). Cada frase
+  // abaixo é uma afirmação sobre o catálogo de navegação, conferida pelo teste
+  // `ajuda-diz-o-que-o-papel-pode` — não é texto solto de ajuda.
+  "O que o seu papel pode fazer": {
+    es: "Lo que tu rol puede hacer",
+  },
+  "O que este papel não abre": {
+    es: "Lo que este rol no abre",
+  },
+  "Acompanha o que a equipe já fez. Não configura a operação.": {
+    es: "Acompaña lo que el equipo ya hizo. No configura la operación.",
+  },
+  "Atende no Inbox e responde o que está na fila.": {
+    es: "Atiende en el Inbox y responde lo que está en la cola.",
+  },
+  "Além de atender, monta o agente e ajusta o vocabulário da operação.": {
+    es: "Además de atender, arma el agente y ajusta el vocabulario de la operación.",
+  },
+  "Responde pela empresa inteira, inclusive pelos canais de entrada.": {
+    es: "Responde por toda la empresa, incluidos los canales de entrada.",
+  },
+  "Ver as conversas e quem está esperando": {
+    es: "Ver las conversaciones y quién está esperando",
+  },
+  "Acompanhar os negócios no quadro": {
+    es: "Seguir los negocios en el tablero",
+  },
+  "Consultar contatos e o histórico deles": {
+    es: "Consultar contactos y su historial",
+  },
+  "Ver a equipe e a disponibilidade": {
+    es: "Ver el equipo y la disponibilidad",
+  },
+  "Ver onde a IA pediu ajuda": {
+    es: "Ver dónde la IA pidió ayuda",
+  },
+  "Criar ou ajustar o agente de IA": {
+    es: "Crear o ajustar el agente de IA",
+  },
+  "Ensinar o que o agente deve saber": {
+    es: "Enseñar lo que el agente debe saber",
+  },
+  "Renomear etapas e criar campos": {
+    es: "Renombrar etapas y crear campos",
+  },
   "Para quem instala e mantém": {
     es: "Para quien instala y mantiene",
   },
