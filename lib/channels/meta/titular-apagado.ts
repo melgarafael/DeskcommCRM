@@ -10,7 +10,7 @@ import { canonicalPhoneBR } from "../phone-variants";
  * régua do importador de histórico (`lib/channels/historico/rodada.ts`), porque
  * lá o laço é um número por rodada. Aqui não: um webhook pode trazer dezenas de
  * contatos, e perguntar dentro do laço pagava um round-trip por contato — o
- * N+1 que a 9222 resolve com `fn_titulares_apagados_a_pedido`, que responde o
+ * N+1 que a 9321 resolve com `fn_titulares_apagados_a_pedido`, que responde o
  * lote inteiro numa consulta só e com a MESMA comparação (variantes do nono
  * dígito, HMAC contra o sal da linha).
  *

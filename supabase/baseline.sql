@@ -60777,7 +60777,7 @@ $$;
 revoke execute on function public.fn_titular_apagado_a_pedido(uuid, text, text) from public, anon, authenticated;
 grant execute on function public.fn_titular_apagado_a_pedido(uuid, text, text) to service_role;
 
--- Espelho da 9222. A MESMA pergunta, para o LOTE de telefones que a agenda do
+-- Espelho da 9321. A MESMA pergunta, para o LOTE de telefones que a agenda do
 -- app entrega num webhook só (`smb_app_state_sync` → vários contatos). Devolve o
 -- subconjunto dos telefones recebidos que tem marca de apagamento a pedido.
 -- Existe porque a unitária acima responde um número por chamada, e chamá-la

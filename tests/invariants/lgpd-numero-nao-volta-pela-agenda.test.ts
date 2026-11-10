@@ -10,7 +10,7 @@ import { sql } from "./gov-helpers";
  * o apagamento se a pergunta que ela faz antes de escrever disser "sim" para
  * TODAS as grafias do número que a agenda pode entregar. A unitária
  * (`fn_titular_apagado_a_pedido`) já é a régua do importador de histórico desde
- * a 0750; a 9222 acrescentou a versão de lote (`fn_titulares_apagados_a_pedido`)
+ * a 0750; a 9321 acrescentou a versão de lote (`fn_titulares_apagados_a_pedido`)
  * para o webhook não pagar uma consulta por contato.
  *
  * Duas perguntas, então, e é isso que se prova aqui:

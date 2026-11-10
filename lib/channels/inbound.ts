@@ -497,7 +497,7 @@ async function datafyInbound(
   const agora = new Date().toISOString();
   /**
    * A pergunta do apagado a pedido é do LOTE (uma consulta para todos os
-   * contatos desta entrega, migration 9222). `undefined` = ainda não perguntou;
+   * contatos desta entrega, migration 9321). `undefined` = ainda não perguntou;
    * `null` = perguntou e falhou — aí cada evento cai na pergunta individual da
    * ingestão, que falha fechada sem parar o lote.
    */

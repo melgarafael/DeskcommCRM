@@ -138,7 +138,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   const desfechos: string[] = [];
   /**
    * A pergunta do apagado a pedido é feita UMA vez por lote, não por contato
-   * (`perguntarTitularesApagadosNoLote`, migration 9222). Estados:
+   * (`perguntarTitularesApagadosNoLote`, migration 9321). Estados:
    * `undefined` = ainda não perguntou; `null` = perguntou e FALHOU (cada evento
    * cai na pergunta individual da ingestão, que falha fechada sem parar o lote).
    */

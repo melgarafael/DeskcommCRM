@@ -569,7 +569,7 @@ export async function ingestMetaAppContactSync(
   },
   /**
    * Quais telefones DESTE lote já foram respondidos como apagados a pedido, com
-   * UMA consulta pelo lote (`perguntarTitularesApagadosNoLote`, migration 9222).
+   * UMA consulta pelo lote (`perguntarTitularesApagadosNoLote`, migration 9321).
    * Quem ingere um webhook inteiro passa isto para não pagar uma pergunta por
    * contato. Ausente = pergunta sozinho, para este número (ingestão avulsa).
    */
@@ -613,7 +613,7 @@ export async function ingestMetaAppContactSync(
   // O evento da agenda não traz LID, então a pergunta é só pelo telefone.
   //
   // Em LOTE a pergunta já foi feita uma vez, pelo chamador, para todos os
-  // contatos do webhook (`perguntarTitularesApagadosNoLote`, migration 9222):
+  // contatos do webhook (`perguntarTitularesApagadosNoLote`, migration 9321):
   // N consultas viram UMA, e nenhuma por contato. Sem o conjunto, pergunta aqui.
   const telefoneCanonico = canonicalPhoneBR(telefone);
   if (apagadosNoLote) {

@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * contato, para sempre, mesmo quando a organização nunca apagou ninguém. Um
  * webhook `smb_app_state_sync` entrega `state_sync[]` com vários contatos, então
  * o desenho certo é o do lote: uma consulta (`fn_titulares_apagados_a_pedido`,
- * migration 9222) para todos, e zero por contato.
+ * migration 9321) para todos, e zero por contato.
  *
  * Os seis lados que este arquivo mede:
  *   1. número do lote marcado ⇒ `ignored`, sem upsert e sem pergunta individual;
