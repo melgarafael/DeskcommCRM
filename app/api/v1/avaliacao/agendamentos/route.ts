@@ -107,10 +107,25 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   let contactId: string;
   try {
-    const resolvido = await resolverContatoParaAgendamento(supabase, orgId, body.data);
+    const resolvido = await resolverContatoParaAgendamento(supabase, orgId, body.data, authz.user.id);
     contactId = resolvido.contact_id;
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "contato inválido";
+    const codigo = typeof e === "object" && e && "code" in e ? String((e as { code?: string }).code) : "";
+    const msg =
+      e instanceof Error
+        ? e.message
+        : typeof e === "object" && e && "message" in e
+          ? String((e as { message?: string }).message)
+          : "contato inválido";
+    if (msg === "contact_not_found") {
+      return fail("not_found", "Contato não encontrado nesta empresa.", 404, { requestId });
+    }
+    if (msg === "client_required") {
+      return fail("validation_failed", "Informe nome e WhatsApp válidos (com DDD).", 422, { requestId });
+    }
+    if (codigo === "42501") {
+      return fail("forbidden_role", "Sem permissão para criar contato. Peça a um gestor.", 403, { requestId });
+    }
     return fail("validation_failed", msg, 422, { requestId });
   }
 

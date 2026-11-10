@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -43,12 +44,15 @@ export function FormularioAgendamento({
   edicao,
   unidades,
   aoSalvar,
+  onAgendamentoSalvo,
 }: {
   aberto: boolean;
   onAbertoChange: (v: boolean) => void;
   edicao: AgendamentoAvaliacao | null;
   unidades: UnidadeAvaliacao[];
   aoSalvar?: () => void;
+  /** Leva a agenda para a semana do horário salvo (evita lista “vazia” fora do filtro). */
+  onAgendamentoSalvo?: (scheduledAtIso: string) => void;
 }) {
   const t = useT();
   const qc = useQueryClient();
@@ -82,7 +86,7 @@ export function FormularioAgendamento({
       setConsultantId(edicao.consultant_user_id ?? "");
       setAttendantId(edicao.attendant_user_id ?? "");
       const quando = new Date(edicao.scheduled_at);
-      setData(quando.toISOString().slice(0, 10));
+      setData(format(quando, "yyyy-MM-dd"));
       setHora(
         `${String(quando.getHours()).padStart(2, "0")}:${String(quando.getMinutes()).padStart(2, "0")}`,
       );
@@ -98,8 +102,7 @@ export function FormularioAgendamento({
       setConsultantAuto(true);
       setConsultantId("");
       setAttendantId("");
-      const hoje = new Date();
-      setData(hoje.toISOString().slice(0, 10));
+      setData(format(new Date(), "yyyy-MM-dd"));
       setHora("09:00");
       setPlaca("");
       setMarca("");
@@ -117,8 +120,11 @@ export function FormularioAgendamento({
   const salvar = useMutation({
     mutationFn: async () => {
       if (!unitId) throw new Error("Selecione a unidade.");
+      if (!telefone.trim() || !nome.trim()) {
+        throw new Error("Informe WhatsApp e nome do cliente.");
+      }
       const scheduledAt = new Date(`${data}T${hora}:00`).toISOString();
-      const corpo = {
+      const corpoBase = {
         unit_id: unitId,
         scheduled_at: scheduledAt,
         duration_minutes: 20,
@@ -136,18 +142,26 @@ export function FormularioAgendamento({
       };
 
       if (edicao) {
-        await apiClient.patch(`/api/v1/avaliacao/agendamentos/${edicao.id}`, corpo);
-      } else {
-        await apiClient.post("/api/v1/avaliacao/agendamentos", corpo);
+        await apiClient.patch(`/api/v1/avaliacao/agendamentos/${edicao.id}`, corpoBase);
+        return scheduledAt;
       }
+      await apiClient.post("/api/v1/avaliacao/agendamentos", corpoBase);
+      return scheduledAt;
     },
-    onSuccess: () => {
+    onSuccess: (scheduledAt) => {
       void qc.invalidateQueries({ queryKey: ["avaliacao", "agendamentos"] });
       toast.success(edicao ? "Agendamento atualizado." : "Agendamento criado.");
+      onAgendamentoSalvo?.(scheduledAt);
       onAbertoChange(false);
       aoSalvar?.();
     },
-    onError: showApiError,
+    onError: (err) => {
+      if (err instanceof Error && err.message) {
+        toast.error(err.message);
+        return;
+      }
+      showApiError(err);
+    },
   });
 
   return (
@@ -178,9 +192,15 @@ export function FormularioAgendamento({
             <h3 className="text-sm font-medium">Agendamento</h3>
             <div className="space-y-2">
               <Label>Unidade</Label>
-              <Select value={unitId} onValueChange={setUnitId}>
+              <Select value={unitId} onValueChange={setUnitId} disabled={unidades.filter((u) => u.is_active).length === 0}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
+                  <SelectValue
+                    placeholder={
+                      unidades.filter((u) => u.is_active).length === 0
+                        ? "Cadastre uma unidade acima"
+                        : "Selecione"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {unidades
@@ -192,6 +212,9 @@ export function FormularioAgendamento({
                     ))}
                 </SelectContent>
               </Select>
+              {unidades.filter((u) => u.is_active).length === 0 ? (
+                <p className="text-xs text-destructive">Nenhuma unidade ativa — crie uma antes de salvar.</p>
+              ) : null}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">

@@ -7,6 +7,7 @@ export async function resolverContatoParaAgendamento(
   supabase: SupabaseClient,
   orgId: string,
   entrada: { contact_id?: string; client_name?: string; client_phone?: string; client_email?: string },
+  actorUserId?: string | null,
 ): Promise<{ contact_id: string; created: boolean }> {
   if (entrada.contact_id) {
     const { data } = await supabase
@@ -31,14 +32,26 @@ export async function resolverContatoParaAgendamento(
     .from("contacts")
     .insert({
       organization_id: orgId,
+      created_by_user_id: actorUserId ?? null,
       name: entrada.client_name.trim(),
       phone_number: phone,
       email: entrada.client_email?.trim() || null,
+      source: "manual",
+      source_metadata: {},
+      tags: [],
+      consent: {},
+      custom_fields: {},
     })
     .select("id")
     .single();
 
-  if (error) throw error;
+  if (error) {
+    if (error.code === "23505") {
+      const relookup = await encontrarContatoPorTelefone(supabase, orgId, phone);
+      if (relookup) return { contact_id: relookup.id, created: false };
+    }
+    throw error;
+  }
   return { contact_id: data.id, created: true };
 }
 

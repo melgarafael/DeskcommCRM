@@ -10,6 +10,7 @@ import { useAgendamentosAvaliacao } from "@/hooks/avaliacao/useAgendamentosAvali
 import { useUnidadesAvaliacao } from "@/hooks/avaliacao/useUnidadesAvaliacao";
 import { CalendarPlus } from "@/lib/ui/icons";
 
+import { AlertaSemUnidades } from "./AlertaSemUnidades";
 import { FiltrosAvaliacao } from "./FiltrosAvaliacao";
 import { FormularioAgendamento } from "./FormularioAgendamento";
 import { GradeSemanalAvaliacao } from "./GradeSemanalAvaliacao";
@@ -74,6 +75,10 @@ export function AgendaAvaliacaoShell({ timezone }: { timezone: string | null }) 
         </Button>
       </div>
 
+      {(unidades.data?.length ?? 0) === 0 ? (
+        <AlertaSemUnidades carregando={unidades.isLoading} />
+      ) : null}
+
       <FiltrosAvaliacao
         semanaLabel={semanaLabel}
         filtros={filtros}
@@ -124,6 +129,7 @@ export function AgendaAvaliacaoShell({ timezone }: { timezone: string | null }) 
         onAbertoChange={setFormAberto}
         edicao={edicao}
         unidades={unidades.data ?? []}
+        onAgendamentoSalvo={(iso) => setAncora(new Date(iso))}
       />
     </div>
   );
