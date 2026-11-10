@@ -124,6 +124,11 @@ export const AUDIT_ACTIONS = [
   "conversation.created",
   "conversation.claimed",
   "conversation.transferred",
+  // A passagem de um agente de IA para outro, pedida explicitamente (#3770).
+  // Distinta de `conversation.transferred` (que troca o DONO humano) e da
+  // `ai_router_decisions.outcome = 'reclassified'` (que é o classificador
+  // trocando o agente sozinho): aqui alguém pediu, e a trilha diz quem.
+  "conversation.ai_agent_transferred",
   "conversation.released",
   "conversation.closed",
   // O arquivamento é terminal como o fechamento, e o evento é separado de
@@ -1525,6 +1530,12 @@ export const AUDIT_ACTIONS = [
   // booleano: o CONTEÚDO das manifestações nunca entra na trilha, que é
   // append-only e a cascata de LGPD não alcança.
   "settings.ouvidoria_updated",
+  // O link de pagamento do cliente final (#3509): registrar o link na conversa
+  // (`POST /conversations/[id]/pagamentos`) e o aviso do provedor que marca
+  // "pago" (`/webhooks/pagamento/[provedor]`). O metadata leva ids, provedor e
+  // valor — nunca o link: a trilha é append-only e a cascata de LGPD não a alcança.
+  "pagamento.link_registrado",
+  "pagamento.confirmado",
   // Um módulo conectado conversou com o modelo de IA da organização (Spec 33): gasta o orçamento
   // dela. UMA linha por turno que chegou ao modelo, e só com efeito (recusa de autorização e teto
   // de gasto atingido não auditam). metadata só com contagens e a pessoa que clicava: nunca o texto
