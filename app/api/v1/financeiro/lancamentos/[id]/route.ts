@@ -67,6 +67,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("validation_failed", "Só é possível marcar como pago.", 422, { requestId });
   }
 
+  // Pago não se desfaz (o trigger `fn_lancamento_pago_e_imutavel`): marcar como pago é só da
+  // pessoa na sessão. Um módulo conectado (Spec 33) não faz esse passo. A recusa vem antes de
+  // qualquer leitura ou escrita, como o `cancel` da comanda.
+  if (authz.actor.type === "module") {
+    return fail("forbidden", "Marcar um lançamento como pago é só pela sessão.", 403, { requestId });
+  }
+
   const { id } = await ctx.params;
   if (!ID.safeParse(id).success) {
     return fail("not_found", "Lançamento não encontrado.", 404, { requestId });

@@ -8,7 +8,7 @@
  * (`checkCompatibility` + `module_incompatible`).
  *
  * O que este teste congela, tudo DERIVADO DE ARQUIVOS (sem banco, sem rodar rota):
- *   1. o conjunto de áreas (`EXTENSION_AREAS`) e as 24 permissões `area.<área>.<leitura|escrita>`;
+ *   1. o conjunto de áreas (`EXTENSION_AREAS`) e as 22 permissões `area.<área>.<leitura|escrita>`;
  *   2. por área, a lista ordenada de pares `MÉTODO /api/v1/modelo` que `areaDaPorta` libera, varrendo
  *      `app/api/v1/**\/route.ts` (método = função `GET|POST|...` exportada pela rota);
  *   3. por rota liberada, os schemas Zod que ela passa a `.parse/.safeParse` (nome, origem e hash do
@@ -84,8 +84,8 @@ describe("o contrato que o módulo conectado enxerga está congelado", () => {
   }
 
   it("a derivação enxerga o contrato inteiro (um conjunto vazio passaria por vacuidade)", () => {
-    expect(agora.areas).toHaveLength(12);
-    expect(agora.permissoes).toHaveLength(24);
+    expect(agora.areas).toHaveLength(11);
+    expect(agora.permissoes).toHaveLength(22);
     const total = Object.values(agora.rotas).reduce((n, l) => n + l.length, 0);
     expect(total, "quase nenhuma rota liberada a módulo foi encontrada: a varredura quebrou").toBeGreaterThan(40);
     expect(Object.keys(agora.formatos).length).toBeGreaterThan(0);

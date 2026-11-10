@@ -11,7 +11,6 @@
     "configuracao",
     "analise",
     "tarefas",
-    "etiquetas",
     "financeiro"
   ],
   "permissoes": [
@@ -29,8 +28,6 @@
     "area.contatos.leitura",
     "area.conversas.escrita",
     "area.conversas.leitura",
-    "area.etiquetas.escrita",
-    "area.etiquetas.leitura",
     "area.financeiro.escrita",
     "area.financeiro.leitura",
     "area.funis.escrita",
@@ -218,7 +215,6 @@
     "configuracao": [
       "DELETE /api/v1/attendants/sectors/[id]",
       "DELETE /api/v1/campaign-templates/[id]",
-      "DELETE /api/v1/channel-schedules/[id]",
       "DELETE /api/v1/message-template-groups/[id]",
       "DELETE /api/v1/settings/proposal-templates/[id]",
       "DELETE /api/v1/settings/sons",
@@ -227,7 +223,6 @@
       "GET /api/v1/campaign-templates",
       "GET /api/v1/channel-schedules",
       "GET /api/v1/message-template-groups",
-      "GET /api/v1/phone-numbers",
       "GET /api/v1/settings/campanhas",
       "GET /api/v1/settings/proposal-templates",
       "GET /api/v1/settings/proposal-templates/[id]",
@@ -241,7 +236,6 @@
       "PATCH /api/v1/attendants/availability/[id]",
       "PATCH /api/v1/attendants/sectors/[id]",
       "PATCH /api/v1/campaign-templates/[id]",
-      "PATCH /api/v1/channel-schedules/[id]",
       "PATCH /api/v1/message-template-groups/[id]",
       "PATCH /api/v1/settings/agenda-apresentacao",
       "PATCH /api/v1/settings/campanhas",
@@ -254,7 +248,6 @@
       "PATCH /api/v1/settings/task-plans",
       "POST /api/v1/attendants/sectors",
       "POST /api/v1/campaign-templates",
-      "POST /api/v1/channel-schedules",
       "POST /api/v1/message-template-groups",
       "POST /api/v1/settings/proposal-templates",
       "POST /api/v1/settings/proposal-templates/importar",
@@ -270,6 +263,7 @@
       "GET /api/v1/companies",
       "GET /api/v1/companies/[id]",
       "GET /api/v1/companies/lookup",
+      "GET /api/v1/contact-tags",
       "GET /api/v1/contacts",
       "GET /api/v1/contacts/[id]",
       "GET /api/v1/contacts/[id]/avatar",
@@ -318,6 +312,7 @@
       "DELETE /api/v1/conversations/[id]/snooze",
       "DELETE /api/v1/messages/[id]/hide",
       "GET /api/v1/calls",
+      "GET /api/v1/conversation-tags",
       "GET /api/v1/conversations",
       "GET /api/v1/conversations/[id]",
       "GET /api/v1/conversations/[id]/messages",
@@ -350,10 +345,6 @@
       "POST /api/v1/conversations/open-with-contact",
       "POST /api/v1/messages/[id]/hide",
       "PUT /api/v1/conversations/[id]/sector"
-    ],
-    "etiquetas": [
-      "GET /api/v1/contact-tags",
-      "GET /api/v1/conversation-tags"
     ],
     "financeiro": [
       "DELETE /api/v1/financeiro/catalogo/[id]",
@@ -1175,16 +1166,6 @@
           "nome": "criarSchema",
           "origem": "local",
           "hash": "5fce8097272314ec"
-        }
-      ],
-      "resposta": []
-    },
-    "/api/v1/channel-schedules/[id]": {
-      "corpo": [
-        {
-          "nome": "editarSchema",
-          "origem": "local",
-          "hash": "a566844842c583f3"
         }
       ],
       "resposta": []

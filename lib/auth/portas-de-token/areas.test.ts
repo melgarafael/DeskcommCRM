@@ -84,17 +84,17 @@ describe("areaDaPorta: casos concretos", () => {
     ["campaigns/[id]/metrics", "GET", null, null],
     ["channel-sessions/[id]", "GET", null, null],
 
-    // --- areas novas (migration 9316): tarefas, etiquetas, financeiro e as rotas que estavam fora do mapa.
+    // --- areas novas (migration 9316): tarefas, financeiro e as rotas que estavam fora do mapa.
     ["tasks", "GET", "tarefas", "leitura"],
     ["tasks", "POST", "tarefas", "escrita"],
     ["tasks/[id]", "PATCH", "tarefas", "escrita"],
     ["tasks/[id]", "DELETE", "tarefas", "escrita"],
     ["demandas/[id]", "PATCH", "tarefas", "escrita"],
-    ["contact-tags", "GET", "etiquetas", "leitura"],
-    ["conversation-tags", "GET", "etiquetas", "leitura"],
+    ["contact-tags", "GET", "contatos", "leitura"],
+    ["conversation-tags", "GET", "conversas", "leitura"],
+    ["financeiro/comandas/pendentes", "GET", "financeiro", "leitura"],
     ["financeiro/comandas", "GET", "financeiro", "leitura"],
     ["financeiro/comandas", "POST", "financeiro", "escrita"],
-    ["financeiro/comandas/pendentes", "GET", "financeiro", "leitura"],
     ["financeiro/comandas/[id]", "GET", "financeiro", "leitura"],
     ["financeiro/comandas/[id]", "PATCH", "financeiro", "escrita"],
     ["financeiro/comandas/[id]/itens", "POST", "financeiro", "escrita"],
@@ -121,9 +121,10 @@ describe("areaDaPorta: casos concretos", () => {
     ["message-template-groups/[id]", "PATCH", "configuracao", "escrita"],
     ["message-template-groups/[id]/ordem", "PUT", "configuracao", "escrita"],
     ["channel-schedules", "GET", "configuracao", "leitura"],
-    ["channel-schedules", "POST", "configuracao", "escrita"],
-    ["channel-schedules/[id]", "PATCH", "configuracao", "escrita"],
-    ["channel-schedules/[id]", "DELETE", "configuracao", "escrita"],
+    // a janela pausa canais do WhatsApp; desfazer exige a pausa manual em Conexões: só a leitura tem área
+    ["channel-schedules", "POST", null, null],
+    ["channel-schedules/[id]", "PATCH", null, null],
+    ["channel-schedules/[id]", "DELETE", null, null],
     ["ads/meta/accounts", "GET", "analise", "leitura"],
     ["ads/meta/campaigns", "GET", "analise", "leitura"],
     ["ads/meta/accounts", "POST", null, null], // so leitura
@@ -132,7 +133,7 @@ describe("areaDaPorta: casos concretos", () => {
     ["calls", "POST", null, null], // ligar para o cliente e falar com o cliente
     ["messages/[id]/media", "GET", "conversas", "leitura"],
     ["messages/[id]/media", "POST", null, null], // so leitura
-    ["phone-numbers", "GET", "configuracao", "leitura"],
+    ["phone-numbers", "GET", null, null], // a leitura só aceita sessão (não é porta de módulo)
     ["phone-numbers", "POST", null, null], // mexe na conexao do canal
     ["phone-numbers/[id]", "PATCH", null, null],
     // sem area por decisao, com motivo escrito em `areas.ts`
@@ -161,8 +162,9 @@ describe("areaDaPorta: lado seguro", () => {
     expect(areaDaPorta(`${B}coisa-nova/[id]`, "POST")).toBeNull();
   });
   it("prefixo por segmento, nao por texto: contact-tags nao e contacts", () => {
-    // `contact-tags` tem a area propria (etiquetas), nunca a de `contacts`.
-    expect(areaDaPorta(`${B}contact-tags`, "GET")).toEqual({ area: "etiquetas", modo: "leitura" });
+    // `contact-tags` e `contacts` sao segmentos diferentes: a etiqueta do contato cai em `contatos` pela
+    // propria entrada do mapa, e um nome parecido nao herda nada.
+    expect(areaDaPorta(`${B}contact-tags`, "GET")).toEqual({ area: "contatos", modo: "leitura" });
     expect(areaDaPorta(`${B}contact-tagsx`, "GET")).toBeNull();
     expect(areaDaPorta(`${B}contactsx`, "GET")).toBeNull();
   });
@@ -218,6 +220,8 @@ describe("a lista sem area tem precedencia e nunca ganha area", () => {
     "audit/export",
     "imports",
     "imports/[id]",
+    "phone-numbers",
+    "phone-numbers/[id]",
   ];
   for (const caminho of NUNCA) {
     it(`${caminho}: nenhum metodo ganha area`, () => {
@@ -260,8 +264,8 @@ describe("a lista sem area tem precedencia e nunca ganha area", () => {
     }
   });
 
-  it("o mapa usa so as 12 areas do vocabulario", () => {
-    expect(EXTENSION_AREAS).toHaveLength(12);
+  it("o mapa usa so as 11 areas do vocabulario", () => {
+    expect(EXTENSION_AREAS).toHaveLength(11);
     for (const [, area] of [...PREFIXOS_DO_MAPA, ...PREFIXOS_DO_MAPA_DE_ESCRITA]) {
       expect(EXTENSION_AREAS).toContain(area);
     }
@@ -276,11 +280,11 @@ describe("a lista sem area tem precedencia e nunca ganha area", () => {
     }
   });
 
-  it("cada uma das tres areas novas tem ao menos uma porta no mapa", () => {
+  it("cada uma das duas areas novas tem ao menos uma porta no mapa", () => {
     const usadas = new Set<string>(
       [...PREFIXOS_DO_MAPA, ...PREFIXOS_DO_MAPA_DE_ESCRITA].map(([, area]) => area),
     );
-    for (const area of ["tarefas", "etiquetas", "financeiro"]) {
+    for (const area of ["tarefas", "financeiro"]) {
       expect(usadas.has(area), area).toBe(true);
     }
   });
@@ -289,9 +293,12 @@ describe("a lista sem area tem precedencia e nunca ganha area", () => {
     expect(leituraExigeAreaContatos(`${B}financeiro/fidelidade`, "GET")).toBe(true);
     expect(leituraExigeAreaContatos(`${B}calls`, "GET")).toBe(true);
     expect(leituraExigeAreaContatos(`${B}messages/[id]/media`, "GET")).toBe(true);
+    // a fila de comandas pendentes traz o titulo do agendamento, que pode ter o nome do cliente
+    expect(leituraExigeAreaContatos(`${B}financeiro/comandas/pendentes`, "GET")).toBe(true);
     // a escrita nao e leitura; e uma leitura de financeiro sem contato embutido nao exige
     expect(leituraExigeAreaContatos(`${B}financeiro/fidelidade`, "POST")).toBe(false);
     expect(leituraExigeAreaContatos(`${B}financeiro/comandas`, "GET")).toBe(false);
+    expect(leituraExigeAreaContatos(`${B}financeiro/comandas/pendentes`, "POST")).toBe(false);
   });
 });
 

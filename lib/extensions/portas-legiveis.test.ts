@@ -102,11 +102,11 @@ describe("frases do consentimento por área (módulo conectado, F3)", () => {
     p.startsWith("area."),
   );
 
-  it("as 24 permissões de área têm frase própria, não vazia e diferente entre si", () => {
-    expect(permissoesDeArea).toHaveLength(24);
+  it("as 22 permissões de área têm frase própria, não vazia e diferente entre si", () => {
+    expect(permissoesDeArea).toHaveLength(22);
     const frases = permissoesDeArea.map((p) => fraseDaPermissaoDeArea(p));
     expect(frases.every((frase) => frase.length > 10)).toBe(true);
-    expect(new Set(frases).size).toBe(24);
+    expect(new Set(frases).size).toBe(22);
   });
 
   it("só configuração, agentes de IA e financeiro são sensíveis", () => {
@@ -119,14 +119,12 @@ describe("frases do consentimento por área (módulo conectado, F3)", () => {
       "area.financeiro.escrita",
       "area.financeiro.leitura",
     ]);
-    // Tarefas e etiquetas NÃO são sensíveis: não mexem no dinheiro nem no funcionamento da organização.
+    // Tarefas NÃO é sensível: não mexe no dinheiro nem no funcionamento da organização.
     expect(ehAreaSensivel("area.tarefas.escrita")).toBe(false);
-    expect(ehAreaSensivel("area.etiquetas.leitura")).toBe(false);
   });
 
-  it("as frases das três áreas novas dizem o que o módulo passa a poder fazer", () => {
+  it("as frases das duas áreas novas dizem o que o módulo passa a poder fazer", () => {
     expect(fraseDaPermissaoDeArea("area.tarefas.escrita")).toBe("Ver e mudar tarefas e demandas.");
-    expect(fraseDaPermissaoDeArea("area.etiquetas.leitura")).toBe("Ver as etiquetas.");
     expect(fraseDaPermissaoDeArea("area.financeiro.escrita")).toBe(
       "Ver e mudar comandas, fidelidade e lançamentos financeiros.",
     );
