@@ -63,6 +63,22 @@ describe("contratos da fila de atendimento", () => {
     expect(sectorPatchSchema.safeParse({}).success).toBe(false);
   });
 
+  it("(#3876 F3) a cor da fila é #rrggbb ou null — a FORMA é da borda, a paleta é da tela", () => {
+    for (const tom of ["#00655a", "#3E63DD", "#000000", "#ffffff"]) {
+      expect(sectorPatchSchema.safeParse({ color: tom }).success, tom).toBe(true);
+    }
+    expect(sectorPatchSchema.parse({ color: null })).toEqual({ color: null });
+    // `undefined` não entra na lista: em JSON o campo simplesmente não existe, e
+    // ausente = "não mexe na cor" (o `.partial()` do schema), não cor inválida.
+    for (const invalido of ["azul", "#abc", "#00655g", "00655a", "#00655aa", "", 123]) {
+      expect(sectorPatchSchema.safeParse({ color: invalido }).success, String(invalido)).toBe(false);
+    }
+    // A cor sozinha é corpo suficiente: quem só repinta a fila não reenvia o nome.
+    expect(sectorPatchSchema.safeParse({ color: "#00655a" }).success).toBe(true);
+    // Estrito: a rota não aceita campo que não conhece (e `color` não abre exceção).
+    expect(sectorPatchSchema.safeParse({ color: "#00655a", cor: "#00655a" }).success).toBe(false);
+  });
+
   it("a fila de uma conversa aceita null (voltar ao comportamento de sempre)", () => {
     expect(conversationSectorSchema.parse({ sector_id: null })).toEqual({ sector_id: null });
     expect(conversationSectorSchema.parse({ sector_id: uuid })).toEqual({ sector_id: uuid });

@@ -15,7 +15,12 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { cacheDaCauda } from "@/lib/agent-engine/edge/llm/run-model-call";
+import { ehOpenRouterOficial } from "@/lib/agent-engine/edge/llm/providers";
+import {
+  cacheDaCauda,
+  corpoDaOpenRouterNoResultado,
+  haLacoDeFerramentas,
+} from "@/lib/agent-engine/edge/llm/run-model-call";
 
 describe("cacheDaCauda", () => {
   it("⭐ Anthropic com laço de tools: breakpoint de 5 min no fim da conversa", () => {
@@ -39,5 +44,32 @@ describe("cacheDaCauda", () => {
     // quando ela assume (#1672). Amarrar à config usada, e não à inicial, é o
     // que mantém a regra certa depois da queda.
     expect(fonte).toContain("...cacheDaCauda(cfgUsada.provider, input.maxSteps),");
+  });
+});
+
+/**
+ * Na OpenRouter, o que decide se um campo próprio dela vai no pedido (cache,
+ * sessão) ou se o corpo da resposta é guardado (custo) é UM critério: o endereço
+ * da chamada é o host oficial? Gateway do operador nunca recebe nada novo.
+ */
+describe("OpenRouter oficial e a regra do laço", () => {
+  it("ehOpenRouterOficial: o padrão e o host exato passam; gateway, host parecido e lixo, não", () => {
+    expect(ehOpenRouterOficial(undefined)).toBe(true);
+    expect(ehOpenRouterOficial("https://openrouter.ai/api/v1")).toBe(true);
+    expect(ehOpenRouterOficial("https://meu-gateway.exemplo/v1")).toBe(false);
+    expect(ehOpenRouterOficial("https://openrouter.ai.exemplo")).toBe(false);
+    expect(ehOpenRouterOficial("lixo")).toBe(false);
+  });
+
+  it("corpoDaOpenRouterNoResultado: só a OpenRouter oficial guarda o corpo da resposta", () => {
+    expect(corpoDaOpenRouterNoResultado("openrouter", undefined)).toEqual({ include: { responseBody: true } });
+    expect(corpoDaOpenRouterNoResultado("openrouter", "https://meu-gateway.exemplo/v1")).toEqual({});
+    expect(corpoDaOpenRouterNoResultado("openai", undefined)).toEqual({});
+  });
+
+  it("haLacoDeFerramentas: um passo, ou sem teto, não é laço", () => {
+    expect(haLacoDeFerramentas(1)).toBe(false);
+    expect(haLacoDeFerramentas(undefined)).toBe(false);
+    expect(haLacoDeFerramentas(2)).toBe(true);
   });
 });

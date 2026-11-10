@@ -35,18 +35,22 @@ function publico(p: Partial<PublicoDoAgente>): PublicoDoAgente {
     excluirEtiquetas: [],
     incluirFunis: [],
     excluirFunis: [],
+    incluirOrigens: [],
+    excluirOrigens: [],
     ...p,
   };
 }
 
 describe('lerPublicoDoGatilho — a leitura defensiva do jsonb', () => {
-  it('lê as quatro listas do filters', () => {
+  it('lê as seis listas do filters', () => {
     const p = lerPublicoDoGatilho({
       filters: {
         include_tags: ['Cliente Ativo'],
         exclude_tags: ['Bloqueado'],
         include_pipeline_ids: ['p1'],
         exclude_pipeline_ids: ['p2'],
+        include_sources: ['whatsapp'],
+        exclude_sources: ['prospecting'],
       },
     });
     expect(p).toEqual({
@@ -54,7 +58,15 @@ describe('lerPublicoDoGatilho — a leitura defensiva do jsonb', () => {
       excluirEtiquetas: ['Bloqueado'],
       incluirFunis: ['p1'],
       excluirFunis: ['p2'],
+      incluirOrigens: ['whatsapp'],
+      excluirOrigens: ['prospecting'],
     });
+  });
+
+  it('só a lista de origem já é um público (não vira "atende todo mundo")', () => {
+    expect(lerPublicoDoGatilho({ filters: { exclude_sources: ['prospecting'] } })).toEqual(
+      publico({ excluirOrigens: ['prospecting'] }),
+    );
   });
 
   it.each([
@@ -136,6 +148,37 @@ describe('passaNoPublico — a decisão', () => {
     expect(passaNoPublico(p, { etiquetas: ['cliente'], funisAbertos: ['funil-suporte'] })).toBe(true);
   });
 
+  it('exclude_sources: quem nasceu da prospecção NÃO é atendido; quem chegou sozinho é', () => {
+    const atendimento = publico({ excluirOrigens: ['prospecting'] });
+    expect(
+      passaNoPublico(atendimento, { etiquetas: [], funisAbertos: [], origem: 'prospecting' }),
+      'a resposta a uma abordagem fica com o agente da prospecção',
+    ).toBe(false);
+    expect(passaNoPublico(atendimento, { etiquetas: [], funisAbertos: [], origem: 'whatsapp' })).toBe(true);
+  });
+
+  it('origem sem diferença de maiúscula, dos dois lados', () => {
+    const p = publico({ excluirOrigens: ['Prospecting'] });
+    expect(passaNoPublico(p, { etiquetas: [], funisAbertos: [], origem: 'PROSPECTING' })).toBe(false);
+  });
+
+  it('origem desconhecida: não é barrada por exclusão e não entra em "só estas origens"', () => {
+    expect(passaNoPublico(publico({ excluirOrigens: ['prospecting'] }), vazio)).toBe(true);
+    expect(passaNoPublico(publico({ excluirOrigens: ['prospecting'] }), { ...vazio, origem: '  ' })).toBe(true);
+    expect(passaNoPublico(publico({ incluirOrigens: ['whatsapp'] }), vazio)).toBe(false);
+  });
+
+  it('include_sources: basta UMA origem da lista', () => {
+    const p = publico({ incluirOrigens: ['whatsapp', 'site'] });
+    expect(passaNoPublico(p, { ...vazio, origem: 'site' })).toBe(true);
+    expect(passaNoPublico(p, { ...vazio, origem: 'prospecting' })).toBe(false);
+  });
+
+  it('exclusão de origem vence inclusão de etiqueta', () => {
+    const p = publico({ incluirEtiquetas: ['interessado'], excluirOrigens: ['prospecting'] });
+    expect(passaNoPublico(p, { etiquetas: ['interessado'], funisAbertos: [], origem: 'prospecting' })).toBe(false);
+  });
+
   it('exclusão de funil vence inclusão de etiqueta', () => {
     const p = publico({ incluirEtiquetas: ['cliente'], excluirFunis: ['funil-vendas'] });
     expect(passaNoPublico(p, { etiquetas: ['cliente'], funisAbertos: ['funil-vendas'] })).toBe(false);
@@ -199,6 +242,24 @@ describe('avaliarPublico — a decisão COM o motivo', () => {
     });
   });
 
+  it('exclusão de origem devolve a ORIGEM declarada', () => {
+    const p = publico({ excluirOrigens: ['prospecting'] });
+    expect(avaliarPublico(p, { ...vazio, origem: 'Prospecting' })).toEqual({
+      passa: false,
+      regra: 'barrado_por_origem_excluida',
+      valor: 'prospecting',
+    });
+  });
+
+  it('inclusão de origem não cumprida: barra sem valor', () => {
+    const p = publico({ incluirOrigens: ['whatsapp'] });
+    expect(avaliarPublico(p, { ...vazio, origem: 'prospecting' })).toEqual({
+      passa: false,
+      regra: 'barrado_por_origem_exigida',
+      valor: null,
+    });
+  });
+
   it('CONCORDÂNCIA: em toda a matriz, `passaNoPublico` == `avaliarPublico().passa`', () => {
     const publicos = [
       publico({}),
@@ -208,9 +269,15 @@ describe('avaliarPublico — a decisão COM o motivo', () => {
       publico({ incluirFunis: ['p1'], excluirEtiquetas: ['cliente'] }),
       publico({ incluirEtiquetas: ['cliente'], incluirFunis: ['p1'], excluirFunis: ['p2'] }),
       publico({ excluirFunis: ['p1'], incluirFunis: ['p1'] }),
+      publico({ excluirOrigens: ['prospecting'] }),
+      publico({ incluirOrigens: ['whatsapp'], excluirEtiquetas: ['cliente'] }),
+      publico({ incluirOrigens: ['prospecting'], excluirOrigens: ['prospecting'] }),
     ];
-    const fatos = [
+    const fatos: FatosDoContato[] = [
       { etiquetas: [], funisAbertos: [] },
+      { etiquetas: [], funisAbertos: [], origem: 'prospecting' },
+      { etiquetas: ['cliente'], funisAbertos: ['p1'], origem: 'WhatsApp' },
+      { etiquetas: ['outro'], funisAbertos: [], origem: null },
       { etiquetas: ['cliente'], funisAbertos: [] },
       { etiquetas: ['CLIENTE'], funisAbertos: ['p1'] },
       { etiquetas: ['outro'], funisAbertos: ['p1', 'p2'] },
@@ -225,10 +292,10 @@ describe('avaliarPublico — a decisão COM o motivo', () => {
 });
 
 describe('carregarFatosDoContato — uma consulta, com a organização no filtro', () => {
-  it('lê etiquetas da ficha e os funis dos negócios ABERTOS', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ tags: ['VIP'], funis: ['p1', 'p2'] }] });
+  it('lê etiquetas e origem da ficha e os funis dos negócios ABERTOS', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ tags: ['VIP'], source: 'prospecting', funis: ['p1', 'p2'] }] });
     const fatos = await carregarFatosDoContato({ query } as never, 'org1', 'contato1');
-    expect(fatos).toEqual({ etiquetas: ['VIP'], funisAbertos: ['p1', 'p2'] });
+    expect(fatos).toEqual({ etiquetas: ['VIP'], funisAbertos: ['p1', 'p2'], origem: 'prospecting' });
 
     const [sql, params] = query.mock.calls[0] as [string, unknown[]];
     expect(params).toEqual(['org1', 'contato1']);
@@ -241,6 +308,7 @@ describe('carregarFatosDoContato — uma consulta, com a organização no filtro
     await expect(carregarFatosDoContato({ query } as never, 'org1', 'sumiu')).resolves.toEqual({
       etiquetas: [],
       funisAbertos: [],
+      origem: null,
     });
   });
 

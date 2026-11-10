@@ -96,6 +96,17 @@ correspondentes localizados no repo):
   customer 360, contatos, tags, Nuvemshop.
 - **IA nativa** — agentes com RAG por tenant (pgvector), sentiment, handoff IA→humano,
   budget por org, MCP server interno.
+- **Servidores MCP por agente (migration 9095)** — módulo opcional `mcp_por_agente`, desligado
+  de fábrica (doc 252; liga em `/admin/sistema`). Até 5 por agente, modos `nenhuma`,
+  `chave_estatica` e `oauth_por_contato` (cada cliente autoriza a própria conta pelo link que o
+  agente envia; RFC 9728/8414/7591/7636/8707/7009), escrita delegada opcional, revogação no
+  encerramento e por LGPD. **Incompleto:** o callback não reabre o turno (a próxima mensagem do
+  cliente já encontra o acesso); o servidor da organização segue ao lado, como compartilhado.
+  Guia: `docs/integracao/mcp-oauth-por-contato.md`.
+- **Status do WhatsApp por integração** — módulo opcional `status_whatsapp`, desligado de fábrica
+  (liga em `/admin/sistema`). A ferramenta MCP `crm_publish_whatsapp_status` publica imagem por
+  `publishStatus` do canal. **Incompleto:** nenhuma publicação real foi medida; a regra do acervo
+  (`todos` exige "Guardar histórico", a lista não) foi lida na fonte da tag do kit.
 - **LGPD** — export e redact via workers, anonimização em cascata, consentimento auditado.
 - **Self-host** — `hostgator-setup-kit`, `baseline.sql` auto-curativo, runbook de produção.
 - **Webhooks & automação** — captação + regras QUANDO/SE/ENTÃO + gatilhos externos.

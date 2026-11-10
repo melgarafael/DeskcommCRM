@@ -47,6 +47,10 @@ interface Props {
    */
   dono?: { userId: string | null; nome: string | null } | null;
   contatoId?: string | null;
+  /** Contato bloqueado (opt-out) ou pessoal: a rota recusa a reação, então o menu não a oferece. */
+  contatoRecusaEnvio?: boolean;
+  /** O fio mora numa página que rola: acompanhar o fim não pode arrastar a página. */
+  soNaCaixa?: boolean;
 }
 
 /**
@@ -92,7 +96,9 @@ export function ChatThread({
   onEncaminhar,
   dono,
   contatoId,
+  contatoRecusaEnvio = false,
   searchTerm = "",
+  soNaCaixa = false,
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -103,12 +109,14 @@ export function ChatThread({
   const activeOrg = useActiveOrg();
   const currentUser = useUser();
   const deleteNote = useDeleteNote(conversationId ?? "");
-  const { editar, apagar, ocultar, restaurar, reenviar } = useAlterarMensagem(conversationId);
+  const { editar, apagar, ocultar, restaurar, reenviar, reagir } = useAlterarMensagem(conversationId);
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
   // Reenviar é envio: a rota exige `agent`, e quem só lê não ganha um botão que ela recusa.
   const podeEnviar = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
   const canalAlteraEnviada = transportaMensagem(provider)
     && capabilitiesOf(provider as ChannelProvider).alteraMensagemEnviada;
+  const canalPermiteReacao = transportaMensagem(provider)
+    && capabilitiesOf(provider as ChannelProvider).podeReagir;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
 
   const messages: Message[] = useMemo(
@@ -178,7 +186,7 @@ export function ChatThread({
       && (latest.sent_by_user_id === currentUser.id || latest.metadata?._optimistic === true),
     pages: q.data?.pages.length ?? 0,
     searching: !!termo,
-  });
+  }, soNaCaixa);
   const { scrollerRef, contentRef, bottomRef } = scroll;
 
   // Só o TERMO leva à ocorrência. Depender do conjunto de resultados faria cada
@@ -348,6 +356,11 @@ export function ChatThread({
                   // que é melhor que segurar a conversa esperando.
                   citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
                   reacoes={reacoesPorAlvo.get(item.data.id)}
+                  onReagir={podeEnviar && canalPermiteReacao && !contatoRecusaEnvio
+                    && Boolean(item.data.external_id) && item.data.type !== "reaction"
+                    && !item.data.metadata?._optimistic
+                    ? (emoji) => reagir.mutateAsync({ id: item.data.id, emoji }).then(() => undefined)
+                    : undefined}
                   // Sem isto o balão diz "Você" em toda mensagem digitada no
                   // CRM — inclusive nas do colega, porque `sent_via='user'` só
                   // registra que um humano digitou, nunca qual.

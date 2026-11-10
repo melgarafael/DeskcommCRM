@@ -16,9 +16,15 @@ import { requireRole } from "@/lib/auth/require-role";
 import { carregarCampanha } from "@/lib/campanhas/acoes";
 import { ehEditavel, ehTerminal } from "@/lib/campanhas/maquina-de-estados";
 import { gravarPool, lerPoolExtra } from "@/lib/campanhas/pool-de-numeros";
-import { decidirConteudo, decidirVelocidade, lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
+import {
+  decidirConteudo,
+  decidirVelocidade,
+  fraseDaRecusa,
+  lerModoDoCanal,
+} from "@/lib/campanhas/conteudo-do-canal";
 import { variaveisDaCampanhaSchema } from "@/lib/campanhas/modelo";
 import { editarCampanhaSchema } from "@/lib/campanhas/schemas";
+import { ehVelocidadeDaCampanha } from "@/lib/campanhas/tipos";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -32,7 +38,8 @@ const COLUNAS =
   "snapshot_excluded, scheduled_at, prepared_at, started_at, paused_at, completed_at, " +
   "cancelled_at, failure_code, failure_detail, intervalo_segundos, janela_inicio_hora, janela_fim_hora, " +
   "teto_diario, teto_horario, pipeline_id, stage_id, agent_id, created_at, created_by, " +
-  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, split_messages";
+  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, " +
+  "provider_broadcast_id, split_messages";
 
 export async function GET(
   _req: NextRequest,
@@ -232,17 +239,36 @@ export async function PATCH(
     }
   }
 
-  // ═══ A velocidade segue o conteúdo (migration 0711) ═══
-  // Rápida só com modelo. Pedida num número por QR, recusa; uma campanha rápida
-  // que trocou para um número por QR volta a gradual (a única que ali existe).
-  if (entrada.velocidade !== undefined || mudanca.message_mode !== undefined) {
+  // ═══ A velocidade segue o conteúdo (migrations 0711 e 0712) ═══
+  // Rápida e broadcast só com modelo. Pedida num número por QR, recusa; uma
+  // campanha que trocou para um número por QR volta a gradual (a única que ali
+  // existe). O broadcast pede ainda o número que o faz e variáveis de texto fixo
+  // — e por isso a decisão roda também quando o modelo ou o mapa mudam.
+  if (entrada.velocidade !== undefined || tocaConteudo) {
+    const canalAlvo = (mudanca.channel_session_id as string | undefined) ?? campanha.channel_session_id;
+    const canal = await lerModoDoCanal(supabase, authz.org.orgId, canalAlvo);
+    const variaveis = variaveisDaCampanhaSchema.safeParse(
+      mudanca.provider_template_variables ?? campanha.provider_template_variables ?? {},
+    );
     const velocidade = decidirVelocidade({
       pedida: entrada.velocidade,
-      atual: campanha.velocidade === "rapida" ? "rapida" : "gradual",
+      atual: ehVelocidadeDaCampanha(campanha.velocidade) ? campanha.velocidade : "gradual",
       modo: (mudanca.message_mode ?? campanha.message_mode) === "template" ? "template" : "text",
+      transmissao: canal.existe && canal.transmissao,
+      variaveis: variaveis.success ? variaveis.data : {},
     });
     if (!velocidade.ok) {
-      return fail(velocidade.codigo, t(velocidade.mensagem), velocidade.status, { requestId });
+      return fail(velocidade.codigo, fraseDaRecusa(velocidade, t), velocidade.status, { requestId });
+    }
+    // A lista já está com o provedor: trocar a velocidade agora deixaria quem
+    // está nela sem ninguém acompanhando o relatório. Para parar, cancele.
+    if (campanha.provider_broadcast_id && velocidade.velocidade !== campanha.velocidade) {
+      return fail(
+        "campanha_transmissao_entregue",
+        t("A lista já foi entregue ao provedor por broadcast. Para parar o envio, cancele a campanha."),
+        409,
+        { requestId },
+      );
     }
     mudanca.velocidade = velocidade.velocidade;
   }

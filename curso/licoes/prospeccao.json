@@ -1034,7 +1034,7 @@
           "id": "p5",
           "titulo": "A saída, a base legal e o início",
           "texto": "Em \"Quando oferecer a opção de parar de receber\", a recomendada já põe na primeira mensagem como parar de receber. A clínica escolhe \"Atrasar para a 2ª mensagem\": a primeira só cumprimenta e confirma se é a empresa certa, sem oferta, e a instrução para parar vai na seguinte. Em \"Referência da avaliação de legítimo interesse\", informe o documento real que justifica abordar essas empresas; ele não é o consentimento delas. Clique em \"Iniciar abordagens com IA\".",
-          "dica": "Antes de começar, o sistema confere o agente (publicado no número escolhido, com a ferramenta de mover negócios e acesso ao funil), a conexão e as etapas; se algo faltar, aparece o aviso e nada começa. Só uma campanha fica em andamento por vez, e a primeira abordagem é preparada depois de um minuto.",
+          "dica": "Antes de começar, o sistema confere o agente (publicado no número escolhido, com a ferramenta de mover negócios e acesso ao funil), a conexão e as etapas; se algo faltar, aparece o aviso e nada começa. Uma campanha por número de WhatsApp fica em andamento: cada conexão pode ter a sua ao mesmo tempo, e a primeira abordagem é preparada depois de um minuto.",
           "antes": [
             {
               "acao": "click",

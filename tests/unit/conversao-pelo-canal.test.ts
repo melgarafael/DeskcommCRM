@@ -511,35 +511,71 @@ describe("o evento de ETAPA da Meta também sai pelo canal", () => {
     });
   });
 
-  it("evento da Meta fora do vocabulário do canal (ViewContent): a pendência NOMEIA o evento, sem chamar a rede", async () => {
+  // Até 27/10/2026 `QualifiedLead` e `ViewContent` estavam na lista da tela
+  // (EVENTOS_DA_META) e fora da do canal: a regra ficava em
+  // `evento_fora_do_canal` e nada saía. O provedor os aceita em
+  // `POST /v1/whatsapp/conversions` (changelog de 23/10/2026; OpenAPI v1.370.0).
+  it.each(["QualifiedLead", "ViewContent"] as const)(
+    "⭐ %s sai pelo canal com o nome padrão, o instante da etapa e sem valor",
+    async (eventoMeta) => {
+      vi.mocked(createAdminClient).mockReturnValue(
+        fakeAdmin({ sessao: CANAL_COM_PONTE, extras: regraDaEtapa(eventoMeta) }) as never,
+      );
+      const f = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(resposta({ eventsReceived: 1, eventsFailed: 0 }));
+
+      const r = await conversaoDeEtapaMetaHandler.handle(entrouNaEtapa);
+
+      expect(r.status).toBe("ok");
+      expect(f).toHaveBeenCalledOnce();
+      expect(String(f.mock.calls[0]![0])).toContain("/v1/whatsapp/conversions");
+      const corpo = JSON.parse(f.mock.calls[0]![1]?.body as string);
+      expect(corpo).toMatchObject({
+        eventName: eventoMeta,
+        eventId: `${LEAD}:${CHAVE_DA_ETAPA}`,
+        eventTime: Math.floor(Date.parse(ENTROU_NA_ETAPA) / 1000),
+      });
+      expect(corpo).not.toHaveProperty("value");
+      expect(gravados.at(-1)).toMatchObject({ status: "sent", meta_event_name: eventoMeta });
+    },
+  );
+
+  // A guarda do #2457 continua de pé para o nome que o canal NÃO conhece — hoje,
+  // só um retrato gravado por uma versão futura da tela. Sem ela a regra cairia
+  // em `sem_conexao` e mandaria a pessoa preencher uma conexão direta que esta
+  // instalação só-com-canal nunca vai ter.
+  it("um nome que o canal não conhece (retrato gravado): pendência nomeada, sem chamar a rede", async () => {
     vi.mocked(createAdminClient).mockReturnValue(
-      fakeAdmin({ sessao: CANAL_COM_PONTE, extras: regraDaEtapa("ViewContent") }) as never,
+      fakeAdmin({
+        sessao: CANAL_COM_PONTE,
+        extras: {
+          ...regraDaEtapa("QualifiedLead"),
+          ad_conversion_dispatches: {
+            status: "skipped",
+            platform: "meta_ads",
+            value_cents: null,
+            currency: "BRL",
+            remote_request_id: null,
+            event_occurred_at: ENTROU_NA_ETAPA,
+            meta_event_name: "OrderCreated",
+          },
+        },
+      }) as never,
     );
     const f = vi.spyOn(globalThis, "fetch");
 
-    const r = await conversaoDeEtapaMetaHandler.handle(entrouNaEtapa);
-
-    expect(r).toMatchObject({ status: "skipped", detail: "evento_fora_do_canal" });
-    expect(gravados.at(-1)).toMatchObject({ status: "skipped", reason: "evento_fora_do_canal" });
-    expect(f).not.toHaveBeenCalled();
-  });
-
-  // #2457: `QualifiedLead` está na lista da tela (EVENTOS_DA_META) e fora da do
-  // canal. Sem isto a regra cai em `sem_conexao` e manda a pessoa preencher uma
-  // conexão direta que esta instalação só-com-canal nunca vai ter.
-  it("evento recomendado pela própria tela (QualifiedLead) fora da lista do canal: pendência nomeada, não `sem_conexao`", async () => {
-    vi.mocked(createAdminClient).mockReturnValue(
-      fakeAdmin({ sessao: CANAL_COM_PONTE, extras: regraDaEtapa("QualifiedLead") }) as never,
-    );
-    const f = vi.spyOn(globalThis, "fetch");
-
-    const r = await conversaoDeEtapaMetaHandler.handle(entrouNaEtapa);
+    const r = await conversaoDeEtapaMetaHandler.handle({
+      ...evento,
+      event_type: "ad_conversion.retry_requested",
+      payload: { event_name: CHAVE_DA_ETAPA },
+    });
 
     expect(r).toMatchObject({ status: "skipped", detail: "evento_fora_do_canal" });
     expect(gravados.at(-1)).toMatchObject({
       status: "skipped",
       reason: "evento_fora_do_canal",
-      detail: expect.stringContaining("QualifiedLead"),
+      detail: expect.stringContaining("OrderCreated"),
     });
     expect(f).not.toHaveBeenCalled();
   });

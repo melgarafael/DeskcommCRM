@@ -81,6 +81,8 @@ export const arquivoDeFluxoSchema = z.strictObject({
     name: z.string().trim().min(1).max(MAX_FOLLOWUP_FLOW_NAME),
     surface: z.enum(FOLLOWUP_FLOW_SURFACES).optional(),
     handoff_policy: z.enum(HANDOFF_POLICIES).default("pause"),
+    // #3974 — opção do fluxo; ausente no arquivo antigo vale `false`.
+    send_when_assigned: z.boolean().default(false),
     trigger_config: triggerConfigSchema.default({ kind: "manual" }),
     graph: flowGraphSchema,
   }),
@@ -93,6 +95,7 @@ export interface FluxoParaExportar {
   name: string;
   surface: string | null;
   handoff_policy: string;
+  send_when_assigned?: boolean | null;
   trigger_config: unknown;
   graph: FlowGraph;
 }
@@ -223,6 +226,7 @@ export function montarArquivoDeFluxo(
       name: fluxo.name.trim().slice(0, MAX_FOLLOWUP_FLOW_NAME) || "Fluxo",
       ...(surface ? { surface } : {}),
       handoff_policy: handoff,
+      send_when_assigned: fluxo.send_when_assigned === true,
       trigger_config,
       graph: fluxo.graph,
     },

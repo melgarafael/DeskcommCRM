@@ -27,7 +27,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-const SELECT_COLS = "id, name, description, created_at, updated_at";
+const SELECT_COLS = "id, name, description, color, created_at, updated_at";
 const idSchema = z.string().uuid();
 
 export async function PATCH(
@@ -63,6 +63,24 @@ export async function PATCH(
   }
 
   const admin = createAdminClient();
+
+  // A trilha guarda o DE/PARA da cor. "Pintou a fila" sem o tom anterior não
+  // responde a pergunta que a auditoria existe para responder ("quem mudou, de
+  // que para quê") nem permite desfazer. É UMA leitura a mais, e só quando a cor
+  // está no corpo — PATCH de nome/horário não paga por ela.
+  let corAnterior: string | null = null;
+  if ("color" in input) {
+    const { data: atual, error: atualError } = await admin
+      .from("attendant_sectors")
+      .select("color")
+      .eq("organization_id", authz.org.orgId)
+      .eq("id", id)
+      .maybeSingle();
+    if (atualError) return fail("internal_error", atualError.message, 500, { requestId });
+    if (!atual) return fail("not_found", t("Setor não encontrado."), 404, { requestId });
+    corAnterior = (atual as { color: string | null }).color;
+  }
+
   const { data: row, error } = await admin
     .from("attendant_sectors")
     .update({ ...input, updated_at: new Date().toISOString() })
@@ -87,7 +105,14 @@ export async function PATCH(
     resourceId: id,
     requestId,
     bypassedRls: true,
-    metadata: { fields_changed: Object.keys(input), name: row.name },
+    metadata: {
+      fields_changed: Object.keys(input),
+      name: row.name,
+      // Só quando a cor andou: PATCH de nome não ganha par de cor nenhum.
+      ...("color" in input
+        ? { color_from: corAnterior, color_to: (row as { color: string | null }).color }
+        : {}),
+    },
   });
 
   return ok(row, { requestId });

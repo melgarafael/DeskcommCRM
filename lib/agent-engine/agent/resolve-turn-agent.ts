@@ -70,6 +70,7 @@ import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
 import { agentePorRemetente } from './sender-routing';
 import { registrarDecisaoDoRoteador } from './router-decision-log';
 import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
+import { roteadorPorRemetente } from './transferir-agente';
 import {
   escolherAgenteDoNumero,
   loadPublishedAgentConfig,
@@ -79,6 +80,11 @@ import {
   type RastroDoPublico,
 } from './agent-config';
 import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
+import {
+  carregarFatosDoCrmDoContato,
+  temFatosDoCrm,
+  type LeituraDosFatosDoCrm,
+} from './fatos-do-crm-do-contato';
 import { corpoDaMensagem, type CorpoDaMensagemRow } from '../edge/crm/get-lead-context';
 
 
@@ -143,6 +149,12 @@ export interface ResolveTurnAgentDeps {
    */
   escolherAgenteDoNumero?: typeof escolherAgenteDoNumero;
   classifyIntent?: typeof classifyIntent;
+  /**
+   * Os fatos do CRM que o classificador recebe (#3917). Default: a leitura real
+   * (`fatos-do-crm-do-contato.ts`), que NUNCA lança e devolve o motivo quando
+   * não há dado.
+   */
+  carregarFatosDoCrmDoContato?: typeof carregarFatosDoCrmDoContato;
   /** O Jev ao lado do classificador (`lib/ai/decisao/roteador.ts`). */
   consultarJev?: typeof consultarJevNoRoteador;
   /** Chave e `fetch` do Jev — dublês só no teste. Default: a chave da organização e o egress com allowlist. */
@@ -296,6 +308,7 @@ export async function resolveTurnAgent(
     return { rastroDoPublico: rastro };
   };
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
+  const _carregarFatosDoCrm = deps.carregarFatosDoCrmDoContato ?? carregarFatosDoCrmDoContato;
   const _consultarJev = deps.consultarJev ?? consultarJevNoRoteador;
 
   // As duas marcas decidem o `catch`: sem o roteador carregado não se sabe se
@@ -306,8 +319,7 @@ export async function resolveTurnAgent(
   try {
     const router = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
     roteadorCarregado = true;
-    temRegrasDeRemetente = router?.senderRoutes !== undefined &&
-      (!Array.isArray(router.senderRoutes) || router.senderRoutes.length > 0);
+    temRegrasDeRemetente = router !== null && roteadorPorRemetente(router);
     if (router && temRegrasDeRemetente) {
       const { agentId, reserved } = await agentePorRemetente(db, input, router);
       // O canal opera em modo de identidade: agentes internos nunca entram por
@@ -498,11 +510,45 @@ export async function resolveTurnAgent(
     // Sob demanda, só há esta chamada se o Jev não trouxer intenção confiável.
     const modo = await (jev.modo ?? Promise.resolve('comparacao'));
     const estadoLido = await jev.estado;
-    const classificar = () => _classifyIntent(
-      db, llmCfg,
-      { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal!, recentMessages },
-      { log: deps.log },
-    );
+    /**
+     * Os fatos do CRM do contato (#3917), lidos no TURNO e não dentro do
+     * classificador: a consulta só acontece quando há mensagem inbound e um
+     * roteador de verdade, e quem já decidiu (Jev confiável) não a paga.
+     *
+     * O log leva CONTAGENS, nunca a lista: funil/etapa/etiqueta são config da
+     * empresa e podem ir para o prompt, mas o rastro do turno não carrega dado
+     * do contato (`fields` do logger, disciplina do #3722). Falha da leitura
+     * não muda o roteamento — vira uma linha de aviso com o motivo.
+     */
+    const fatosParaOClassificador = async (): Promise<LeituraDosFatosDoCrm> => {
+      const leitura = await _carregarFatosDoCrm(db, input.tenantId, input.leadId);
+      if (leitura.motivo !== null) {
+        deps.log.warn('classificador: sem fatos do CRM — turno classifica só com o texto (#3917)', {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          contactId: input.leadId,
+          motivo: leitura.motivo,
+        });
+      } else if (temFatosDoCrm(leitura.fatos)) {
+        deps.log.info('classificador: fatos do CRM do contato no contexto (#3917)', {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          contactId: input.leadId,
+          funis: leitura.fatos.funis.length,
+          etapas: leitura.fatos.funis.reduce((total, f) => total + f.etapas.length, 0),
+          etiquetas: leitura.fatos.etiquetas.length,
+        });
+      }
+      return leitura;
+    };
+    const classificar = async () => {
+      const leitura = await fatosParaOClassificador();
+      return _classifyIntent(
+        db, llmCfg,
+        { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal!, recentMessages, fatosDoCrm: leitura.fatos },
+        { log: deps.log },
+      );
+    };
     // Decisão B (doc 89): o Jev só roteia sozinho onde a empresa tem a IA de
     // sempre, a reserva dele. Sem ela, vale a regra de hoje (R2): comparação,
     // e a escolha do Jev só vale com a IA de sempre tendo respondido. A pergunta

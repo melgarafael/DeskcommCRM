@@ -12,30 +12,42 @@
  * não conclui tarefa). Uma régua só, para a lista oferecida e a gravação
  * aceita nunca discordarem.
  *
- * O CLIENT vem de quem chama, e precisa enxergar a equipe: a RLS de
- * `user_organizations` mostra a um `agent` só o próprio vínculo. A rota passa o
- * admin client filtrado pela organização da sessão — o mesmo arranjo da rota
- * de responsáveis. Sem ele, a consulta só acharia o próprio usuário e recusaria
- * todos os outros: falha FECHADA, nunca aberta.
+ * ═══ A ORGANIZAÇÃO É FILTRO DE SQL, NÃO DA RLS (#3715) ═══
+ *
+ * A consulta deixou de ser PostgREST e virou SQL pela porta de `lib/db`. O pool
+ * da aplicação NÃO passa por RLS, então quem segura o isolamento entre tenants
+ * aqui é o `where organization_id = $1` — escrito uma vez, no mesmo lugar da
+ * régua, e provado contra Postgres de verdade em
+ * `tests/invariants/tarefas-piloto-pg.test.ts`. É o mesmo arranjo de antes: a
+ * rota já passava o admin client (que também bypassa RLS) filtrado pela
+ * organização da sessão, justamente porque a RLS de `user_organizations`
+ * mostra a um `agent` só o próprio vínculo.
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Db } from "@/lib/db";
 
 export type VereditoDoResponsavel = "aceito" | "fora_da_equipe" | "falha_na_consulta";
 
 export async function conferirResponsavel(
-  db: SupabaseClient,
+  db: Db,
   organizationId: string,
   userId: string,
 ): Promise<VereditoDoResponsavel> {
-  const { data, error } = await db
-    .from("user_organizations")
-    .select("user_id")
-    .eq("organization_id", organizationId)
-    .eq("user_id", userId)
-    .is("revoked_at", null)
-    .neq("role", "viewer")
-    .maybeSingle();
+  try {
+    const linha = await db.queryOne<{ user_id: string }>(
+      `select user_id
+         from user_organizations
+        where organization_id = $1
+          and user_id = $2
+          and revoked_at is null
+          and role <> 'viewer'
+        limit 1`,
+      [organizationId, userId],
+    );
 
-  if (error) return "falha_na_consulta";
-  return data ? "aceito" : "fora_da_equipe";
+    return linha ? "aceito" : "fora_da_equipe";
+  } catch {
+    // Banco fora/inacessível é `falha_na_consulta`, nunca "aceito": a rota
+    // traduz isso em 500 e a tarefa não é gravada com responsável duvidoso.
+    return "falha_na_consulta";
+  }
 }
