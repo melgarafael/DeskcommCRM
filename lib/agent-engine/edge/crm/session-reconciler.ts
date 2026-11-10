@@ -28,7 +28,7 @@
 import type pg from 'pg';
 
 import { canonicalWahaExternalId, chatIdFromWaMessageId, parseWahaMessageId, wahaEchoExternalIds } from '@/lib/waha/message-id';
-import { chatIndividualDaMensagem } from '@/lib/waha/ultima-recebida';
+import { chatIndividualDaMensagem, chatSegueNaFicha } from '@/lib/waha/ultima-recebida';
 import { lerNumerosDeTeste, numeroPodeTestar, preGoLiveAtivo } from '@/lib/ai/elegibilidade/pre-go-live';
 import { canalDesativado } from '@/lib/channels/desativado';
 
@@ -98,7 +98,9 @@ export async function reconcileSessions(
   pool: pg.Pool,
   cfg: WatchdogConfig,
   log: Logger,
+  signal?: AbortSignal,
 ): Promise<number> {
+  if (signal?.aborted) return 0;
   const sessions = await fetchWahaSessions(cfg);
   if (sessions === null) {
     log.warn('watchdog: WAHA indisponível — tick de reconciliação pulado', {});
@@ -106,6 +108,7 @@ export async function reconcileSessions(
   }
   let fixed = 0;
   for (const s of sessions) {
+    if (signal?.aborted) break;
     const wahaStatus = (s.status ?? '').toUpperCase();
     // Arquivada não é nossa: a exclusão desloga o aparelho. Uma sessão STOPPED
     // órfã no transporte não pode voltar a receber mensagem num canal que a UI
@@ -120,6 +123,7 @@ export async function reconcileSessions(
        where cs.waha_session_name = $1 and to_jsonb(cs) ->> 'archived_at' is null`,
       [s.name],
     );
+    if (signal?.aborted) break;
     if (nossas.length === 0) continue;
 
     let nextStatus = wahaStatus;
@@ -146,6 +150,9 @@ export async function reconcileSessions(
 
     if (nossas.every((nossa) => nossa.status === nextStatus)) continue;
 
+    // Sem guarda de parada aqui: o start acima pode já ter religado a sessão, e
+    // parar agora deixaria o transporte STARTING com o espelho ainda STOPPED.
+    // O desligamento espera este laço antes de fechar o pool.
     const { rows } = await pool.query<{ id: string; status: string }>(
       `update channel_sessions
           set status = $2, updated_at = now()
@@ -222,10 +229,9 @@ async function ultimaRecebidaDaFicha(
 ): Promise<string | null> {
   if (m.is_group || !m.contact_id) return null;
   try {
-    const { rows: extras } = await pool.query(
-      `select 1 from contact_phones
-       where organization_id = $1 and contact_id = $2
-       limit 1`,
+    const { rows: extras } = await pool.query<{ phone_number: string }>(
+      `select phone_number from contact_phones
+       where organization_id = $1 and contact_id = $2`,
       [m.organization_id, m.contact_id],
     );
     if (extras.length === 0) return null;
@@ -239,7 +245,9 @@ async function ultimaRecebidaDaFicha(
     );
     const externalId = recebidas[0]?.external_id;
     if (!externalId) return null;
-    return chatIndividualDaMensagem(chatIdFromWaMessageId(externalId));
+    const chat = chatIndividualDaMensagem(chatIdFromWaMessageId(externalId));
+    if (!chat) return null;
+    return chatSegueNaFicha(chat, [m.phone_number, ...extras.map((e) => e.phone_number)]) ? chat : null;
   } catch (err) {
     // Só a organização no log: o chat e o contato carregam telefone.
     log.warn('watchdog: endereço da última recebida indisponível; segue pela regra de hoje', {
@@ -595,7 +603,7 @@ export async function runSessionWatchdogLoop(
 ): Promise<void> {
   while (!signal.aborted) {
     try {
-      const fixed = await reconcileSessions(pool, cfg, log);
+      const fixed = await reconcileSessions(pool, cfg, log, signal);
       // (a) o abort pode ter chegado DURANTE o tick: sem esta linha o redrive
       // abaixo abriria um lote NOVO com o processo já de saída.
       if (signal.aborted) break;

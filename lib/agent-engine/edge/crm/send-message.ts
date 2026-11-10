@@ -29,6 +29,7 @@ import { parseServiceBoundary } from '@/lib/atendimento/fronteira';
  */
 import { sendWithLedger, pgSendLedger, type SendOutcome } from './send-ledger';
 import { registrarCustoDeVoz, resolverCaminhoDeVoz, VozLedgerTerminalError } from './send-voice';
+import type { FormatoDaVoz } from '@/lib/ai/voz/formato';
 import { logger } from '@/lib/logger';
 export type { SendOutcome, SendLedgerStatus } from './send-ledger';
 
@@ -86,6 +87,8 @@ export interface SendMessageInput {
     apiKey: string;
     voiceId: string;
     modelId?: string;
+    /** mp3 ou ogg/opus — o que o canal da conversa entrega como nota de voz (`lib/ai/voz/formato.ts`). */
+    formato?: FormatoDaVoz;
     /**
      * Grava os bytes no Storage e devolve o path — ver `send-voice.ts`.
      *
@@ -99,21 +102,21 @@ export interface SendMessageInput {
   /**
    * Presente = o envio sai como MÍDIA e o `body` é a LEGENDA.
    *
-   * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem
+   * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem ou o áudio
    * que já mora na pasta da conversa (`whatsapp-media/...`, foto de produto — assinada
    * curta por quem conhece o provider), e `url` é a mídia de um passo automático
    * (#2734, ampliada pelo #2972 para áudio, vídeo e documento), que o operador
    * aponta direto e o handler confere antes de buscar.
    */
   media?:
-    | { storagePath: string; mime: string }
+    | { kind?: 'audio' | 'image'; storagePath: string; mime: string }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
 }
 
 /**
- * O corpo que o handler de mensagens recebe: texto, template ou imagem da
+ * O corpo que o handler de mensagens recebe: texto, template ou mídia da
  * conversa. Exportado para o teste — o tipo decide o caminho no handler, e um
- * `type` errado manda a foto como texto sem ninguém ver.
+ * `type` errado degrada áudio ou imagem sem ninguém ver.
  */
 export function corpoDoEnvio(
   input: SendMessageInput,
@@ -143,7 +146,7 @@ export function corpoDoEnvio(
               media_mime: input.media.mime,
             }
           : {
-              type: 'image' as const,
+              type: input.media.kind ?? 'image',
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
             }
@@ -250,7 +253,12 @@ export async function sendTurnMessage(
         store: pgSendLedger(db),
         identidade: { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, seq: input.seq },
         textoFalado: input.body,
-        voz: { apiKey: input.voz.apiKey, voiceId: input.voz.voiceId, modelId: input.voz.modelId },
+        voz: {
+          apiKey: input.voz.apiKey,
+          voiceId: input.voz.voiceId,
+          modelId: input.voz.modelId,
+          ...(input.voz.formato ? { formato: input.voz.formato } : {}),
+        },
         upload: input.voz.upload,
       });
       vozResolvida = { mediaStoragePath: r.mediaStoragePath, mimeType: r.mimeType };

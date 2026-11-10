@@ -55,7 +55,8 @@ import {
   type AutomationRuleRow,
 } from "@/hooks/webhooks/useAutomationRules";
 import { usePipelines, usePipelineStages, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
-import { TRIGGER_LABELS, ACTION_LABELS, type TriggerEvent, type ActionType } from "./labels";
+import { TRIGGER_LABELS, ACTION_LABELS, acaoOferecida, type TriggerEvent, type ActionType } from "./labels";
+import { useModulosLigados } from "@/hooks/auth/AuthProvider";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
 import { EtapaDeQualquerFunil } from "./EtapaDeQualquerFunil";
 import { ValorDaCondicaoDoContato } from "./CondicaoDoContato";
@@ -286,6 +287,7 @@ const QUALQUER_FONTE = "__qualquer_fonte__";
 
 export function RuleEditor({ open, onOpenChange, rule }: Props) {
   const t = useT();
+  const modulosLigados = useModulosLigados();
   const isEdit = !!rule;
   const [name, setName] = React.useState("");
   const [triggerEvent, setTriggerEvent] = React.useState<TriggerEvent | "">("");
@@ -1090,6 +1092,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                     as ações que regravam o lead: fechariam laço (#1528). */}
                 {(Object.keys(ACTION_LABELS) as ActionType[])
                   .filter((actionType) => !acoesQueFechamLaco(triggerEvent, [{ type: actionType }]).length)
+                  .filter((actionType) => acaoOferecida(actionType, modulosLigados))
                   .map((actionType) => (
                     <SelectItem key={actionType} value={actionType}>
                       {t(ACTION_LABELS[actionType])}

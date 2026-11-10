@@ -10,14 +10,14 @@ import { createClient } from "@/lib/supabase/server";
 import { POST } from "./route";
 
 /**
- * POST /api/v1/conversations/[id]/claim — assumir a conversa assume o negócio
- * ABERTO do contato (#3177, sugestão 1 da issue: "ao transferir OU assumir").
+ * POST /api/v1/conversations/[id]/claim — e o negócio ABERTO do contato?
  *
- * Aqui o portão de permissão é generoso por construção: o dono novo do card é
- * quem está assumindo (`to_user_id = user.id`), e um negócio SEM dono é visível
- * a todo `agent` nos três `visibility_mode`. Ou seja, o caso comum — card
- * largado no funil, atendente assume a conversa — passa pela RLS sem atalho
- * nenhum. O cliente continua sendo o da SESSÃO; service-role não entra aqui.
+ * Desde o #4019 a régua mora na `fn_conversation_assign`, na mesma transação da
+ * troca de dono (migration 9208): num `claim` ela só dá dono a negócio SEM
+ * responsável e nunca tira o card de um colega nem de um agente de IA (decisão
+ * B do #3216, reafirmada no doc 267). A rota não lê nem escreve o funil; quem
+ * prova o efeito no card é Postgres de verdade:
+ * `tests/invariants/negocio-aberto-acompanha-o-dono.test.ts`.
  */
 
 const ORG_A = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -29,7 +29,6 @@ const LEAD_ABERTO = "aaaaaaaa-7777-4000-8000-000000000001";
 const LEAD_PERDIDO = "aaaaaaaa-7777-4000-8000-000000000002";
 /** O colega dono do card no controle do assumir (decisão B do #3216). */
 const COLEGA = "aaaaaaaa-3333-4000-8000-000000000004";
-const AGENTE_IA = "aaaaaaaa-8888-4000-8000-000000000001";
 
 type Linha = Record<string, unknown>;
 
@@ -178,129 +177,30 @@ function req(): NextRequest {
 
 const params = { params: Promise.resolve({ id: CONV_A }) };
 
-describe("POST /api/v1/conversations/[id]/claim — o negócio aberto segue (#3177)", () => {
-  it("assumir aplica o responsável ao negócio ABERTO e sem dono do contato", async () => {
+describe("POST /api/v1/conversations/[id]/claim — o negócio aberto é do banco (#4019)", () => {
+  it("assumir pede o claim de sempre e a rota não toca no funil", async () => {
+    // Um card de colega no funil: se a rota ainda sincronizasse, ele seria lido.
+    estado.leads = [lead(LEAD_ABERTO, "open", COLEGA), lead(LEAD_PERDIDO, "lost", null)];
+
     const res = await POST(req(), params);
 
     expect(res.status).toBe(200);
-    expect(linhaDe(estado.leads, LEAD_ABERTO)).toMatchObject({
-      owner_user_id: USER,
-      owner_agent_id: null,
-      owner_kind: "user",
+    expect(estado.rpcs.find((r) => r.nome === "fn_conversation_assign")?.params).toMatchObject({
+      p_organization_id: ORG_A,
+      p_conversation_id: CONV_A,
+      p_to_user_id: USER,
+      p_reason: "claim",
+      p_enforce_expected: true,
     });
-    expect(estado.escritasDeLead).toHaveLength(1);
-    expect(estado.tabelasDaSessao).toContain("crm_leads");
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "conversation.claimed",
-        metadata: expect.objectContaining({ negocio_aberto: "sincronizado" }),
-      }),
+    // O 8º argumento não vai: no `claim` o banco já só preenche card sem dono.
+    expect(estado.rpcs.find((r) => r.nome === "fn_conversation_assign")?.params).not.toHaveProperty(
+      "p_negocio_so_sem_dono",
     );
-  });
-
-  it("CONTROLE: sem negócio aberto, assumir não cria card nenhum", async () => {
-    estado.leads = [lead(LEAD_PERDIDO, "lost", null)];
-
-    const res = await POST(req(), params);
-
-    expect(res.status).toBe(200);
-    expect(estado.leads).toHaveLength(1);
-    expect(linhaDe(estado.leads, LEAD_PERDIDO)).toMatchObject({ status: "lost", owner_user_id: null });
+    expect(estado.tabelasDaSessao).not.toContain("crm_leads");
     expect(estado.escritasDeLead).toHaveLength(0);
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({ negocio_aberto: "sem_negocio_aberto" }),
-      }),
-    );
-  });
-
-  it("CONTROLE: o card de quem JÁ é o responsável não é regravado", async () => {
-    estado.leads = [lead(LEAD_ABERTO, "open", USER)];
-
-    const res = await POST(req(), params);
-
-    expect(res.status).toBe(200);
-    expect(estado.escritasDeLead).toHaveLength(0);
-    expect(linhaDe(estado.leads, LEAD_ABERTO).assigned_at).toBe("2026-01-01T00:00:00.000Z");
-  });
-
-  it("CONTROLE (#3216, B): o card de um colega NÃO muda ao assumir", async () => {
-    estado.leads = [lead(LEAD_ABERTO, "open", COLEGA)];
-
-    const res = await POST(req(), params);
-
-    expect(res.status).toBe(200);
-    expect(linhaDe(estado.leads, LEAD_ABERTO)).toMatchObject({
-      owner_user_id: COLEGA,
-      owner_kind: "user",
-      assigned_at: "2026-01-01T00:00:00.000Z",
-    });
-    expect(estado.escritasDeLead).toHaveLength(0);
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({ negocio_aberto: "ja_tinha_responsavel" }),
-      }),
-    );
-  });
-
-  it("CONTROLE (#3216, B): o card de um agente de IA também não muda ao assumir", async () => {
-    estado.leads = [
-      { ...lead(LEAD_ABERTO, "open", null), owner_agent_id: AGENTE_IA, owner_kind: "ai" },
-    ];
-
-    const res = await POST(req(), params);
-
-    expect(res.status).toBe(200);
-    expect(linhaDe(estado.leads, LEAD_ABERTO)).toMatchObject({
-      owner_user_id: null,
-      owner_agent_id: AGENTE_IA,
-    });
-    expect(estado.escritasDeLead).toHaveLength(0);
-  });
-
-  it("CORRIDA (#3216, B): o card que ganhou dono entre a leitura e a escrita não é tomado", async () => {
-    // A leitura vê o card sem dono; antes do UPDATE, um colega o pega. O filtro
-    // "sem dono" da escrita é o que impede o assumir de passar por cima.
-    const card = lead(LEAD_ABERTO, "open", null);
-    estado.leads = [card];
-    const cliente = clienteFalso(estado);
-    const fromOriginal = cliente.from;
-    cliente.from = (tabela: string) => {
-      const q = fromOriginal(tabela);
-      const updateOriginal = q.update;
-      q.update = (v: Linha) => {
-        Object.assign(card, { owner_user_id: COLEGA, owner_kind: "user" });
-        return updateOriginal(v);
-      };
-      return q;
-    };
-    vi.mocked(createClient).mockResolvedValue(cliente as unknown as SupabaseClient);
-
-    const res = await POST(req(), params);
-
-    expect(res.status).toBe(200);
-    expect(card.owner_user_id).toBe(COLEGA);
-    expect(estado.escritasDeLead).toHaveLength(0);
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({ negocio_aberto: "mudou_entre_leitura_e_escrita" }),
-      }),
-    );
-  });
-
-  it("o banco recusando (42501) não derruba o assumir e o motivo é a recusa", async () => {
-    estado.rlsRecusa = true;
-
-    const res = await POST(req(), params);
-
-    expect(res.status).toBe(200);
-    expect(linhaDe(estado.leads, LEAD_ABERTO).owner_user_id).toBeNull();
-    expect(estado.escritasDeLead).toHaveLength(0);
-    expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({ negocio_aberto: "recusado_pelo_banco" }),
-      }),
-    );
+    expect(linhaDe(estado.leads, LEAD_ABERTO).owner_user_id).toBe(COLEGA);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "conversation.claimed" }));
+    expect(vi.mocked(audit).mock.calls[0]?.[0].metadata ?? {}).not.toHaveProperty("negocio_aberto");
   });
 
   it("a rota de assumir não inventa evento de automação novo", async () => {

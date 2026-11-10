@@ -41,10 +41,12 @@ const AGENT: PublishedAgentConfig = {
   splitMessages: false,
   splitMaxChars: 400,
   inboundDebounceMs: null,
+  replyMinIntervalMs: null,
   multimodalInput: false,
   casesEnabled: false,
   toolIds: [],
   knowledgeSourceIds: [],
+  skillNames: null,
   activeKbVersionId: null,
   ragTopK: 5,
   ragSimilarityThreshold: 0.72,
@@ -109,6 +111,16 @@ describe("generateDraftReply", () => {
     expect(runInput.leadId).toBe(input.leadId);
     expect(runInput).not.toHaveProperty("tools");
     expect(runInput).not.toHaveProperty("maxSteps");
+  });
+
+  it("agente que não vê imagens (9108): o rascunho lê o contexto com verImagens=false; o padrão vê", async () => {
+    mockGetLeadContext.mockResolvedValue({ ok: false, error: { code: "crm_error", message: "x" } } as never);
+    mockLoadAgent.mockResolvedValueOnce({ ...AGENT, imageVisionEnabled: false });
+    await generateDraftReply(db, llmCfg, crmCfg, input);
+    mockLoadAgent.mockResolvedValueOnce(AGENT);
+    await generateDraftReply(db, llmCfg, crmCfg, input);
+    expect(mockGetLeadContext.mock.calls[0]![3]).toMatchObject({ verImagens: false });
+    expect(mockGetLeadContext.mock.calls[1]![3]).toMatchObject({ verImagens: true });
   });
 
   it("sem agente publicado → no_agent, sem chamar runModelCall", async () => {

@@ -229,6 +229,20 @@
       "col": 3,
       "type": "logic",
       "label": "rajada.ts — envio rápido (0711): 6 inícios/s, 4 em voo, até 38 s por rodada; para no 1º desfecho que vale para todos"
+    },
+    {
+      "id": "transmissao",
+      "lane": "motor",
+      "col": 4,
+      "type": "logic",
+      "label": "transmissao.ts — broadcast do provedor (0712): entrega a lista numa chamada, grava o id antes dos telefones e traz o relatório por destinatário a cada rodada"
+    },
+    {
+      "id": "transmissao-do-canal",
+      "lane": "motor",
+      "col": 5,
+      "type": "external",
+      "label": "lib/channels/transmissao.ts — capability `transmissao` e a implementação do provedor: criar, telefones, enviar, relatório, cancelar"
     }
   ],
   "edges": [
@@ -271,6 +285,10 @@
     { "id": "rodada-usa-rajada", "from": "rodada", "to": "rajada", "label": "campaigns.velocidade = rapida: o envio de sempre repetido em lotes no prazo da rodada" },
     { "id": "rajada-le-fila", "from": "rajada", "to": "campaign-recipients", "label": "lotes de pendentes; reserva em compare-and-set, ninguém duas vezes" },
     { "id": "limite-volta-para-fila", "from": "erro-da-plataforma", "to": "rajada", "label": "429 do provedor / 130429: a pessoa volta para a fila e a rajada para" },
-    { "id": "detalhe-escolhe-velocidade", "from": "detalhe", "to": "campaigns", "label": "ritmo: Gradual ou Rápido (só número oficial)" }
+    { "id": "detalhe-escolhe-velocidade", "from": "detalhe", "to": "campaigns", "label": "ritmo: Gradual, Rápido ou Broadcast (só número oficial; Broadcast só com texto fixo)" },
+    { "id": "rodada-usa-transmissao", "from": "rodada", "to": "transmissao", "label": "campaigns.velocidade = transmissao: a rodada entrega a lista e depois acompanha o relatório" },
+    { "id": "transmissao-chama-o-canal", "from": "transmissao", "to": "transmissao-do-canal", "label": "um broadcast por campanha, com os valores fixos já escritos no modelo" },
+    { "id": "transmissao-atualiza-destinatarios", "from": "transmissao", "to": "campaign-recipients", "label": "reserva (sending) e o relatório: sent, delivered, read, failed com o código — nunca rebaixa" },
+    { "id": "eco-da-transmissao-volta", "from": "transmissao-do-canal", "to": "campaign-recipients", "label": "o eco pelo webhook (broadcastId) liga a mensagem ao destinatário, com o texto do modelo, sem calar o agente" }
   ]
 }

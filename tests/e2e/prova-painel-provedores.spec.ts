@@ -333,3 +333,44 @@ test("instalação sem agente publicado: os dois pontos principais são EDITÁVE
     }
   }
 });
+
+test("o follow-up tem modelo próprio — está em 'Atender o cliente', aceita escolha e a escolha GRAVA", async ({ page }) => {
+  // O ponto `followup_turn`: as mensagens que o agente manda sozinho quando o
+  // cliente para de responder. Mesmo turno do agente (por isso exige
+  // ferramentas), mas o modelo pode ser outro — é o único ponto do agente que
+  // o painel deixa trocar. Sem escolha, vale o da versão publicada; esta
+  // instalação de teste não tem agente publicado, então vale o padrão.
+  await page.goto("/app/ai/providers");
+  await page.waitForSelector('[data-testid="painel-de-provedores"]');
+  await page.click('[data-testid="avancado-atender"]');
+
+  const cartao = page.locator('[data-testid="ponto-followup_turn"]');
+  await expect(cartao).toBeVisible();
+  // Dentro do grupo certo, com o nome que a pessoa reconhece.
+  await expect(page.locator('[data-testid="papel-atender"]')).toContainText("Escrever o follow-up");
+  await expect(cartao).toContainText("precisa de ferramentas");
+  await expect(cartao).toContainText("Se falhar:");
+  await page.screenshot({ path: "evidence/modelo-do-follow-up/01-ponto-no-painel.png", fullPage: true });
+
+  await page.click('[data-testid="provider-followup_turn"]');
+  await page.getByRole("option", { name: /Anthropic/ }).first().click();
+  await page.click('[data-testid="modelo-followup_turn"]');
+  await page.getByRole("option", { name: /Claude Haiku 4\.5/ }).first().click();
+  await page.click('[data-testid="salvar-followup_turn"]');
+  await expect(page.getByText(/agora usa|não enxerga|não conseguimos verificar/i).first()).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // A PROVA: de volta à tela, o valor vem do banco, pela mesma resolução que o
+  // turno do follow-up usa — e a resposta ao cliente não mudou de ponto.
+  await page.goto("/app/ai/providers");
+  await page.waitForSelector('[data-testid="painel-de-provedores"]');
+  await page.click('[data-testid="avancado-atender"]');
+  const gravado = page.locator('[data-testid="ponto-followup_turn"]');
+  await expect(gravado).toContainText("claude-haiku-4-5");
+  await expect(page.locator('[data-testid="origem-followup_turn"]')).toContainText(/Escolhido por você/i);
+  await expect(page.locator('[data-testid="origem-agent_turn"]')).not.toContainText(/Escolhido por você/i);
+  await gravado.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "evidence/modelo-do-follow-up/02-escolha-gravada.png", fullPage: true });
+  await gravado.screenshot({ path: "evidence/modelo-do-follow-up/03-cartao-do-follow-up.png" });
+});

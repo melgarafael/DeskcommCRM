@@ -12,10 +12,13 @@ import { provedorDaChamada } from "@/lib/ai/log-invocation";
 import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
 import { costCents, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
+import { custoDoModeloForaDoMotor } from "@/lib/agent-engine/edge/llm/pricing-do-catalogo";
 import {
   aplicarOrcamento,
   LlmBudgetExceededError,
   normalizarErro,
+  tetoDeSaida,
+  tetoDeSaidaDaOrganizacao,
 } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { normalizarChaveDeOrcamento } from "@/lib/agent-engine/edge/llm/orcamento";
 import { chaveDeOrcamentoDaInstalacao } from "@/lib/instalacao/comportamento";
@@ -650,7 +653,7 @@ async function lerBindingDoPonto(
 }
 
 function buildDeriveDeps(
-  llm: Pick<OrgLlmConfig, "provider" | "apiKey" | "defaultModel" | "orcamento" | "orcamentoIndisponivelPorque" | "origemDaChave">,
+  llm: Pick<OrgLlmConfig, "provider" | "apiKey" | "defaultModel" | "orcamento" | "orcamentoIndisponivelPorque" | "origemDaChave" | "params">,
   decisao: DecisaoDeTranscricao,
   orgId: string,
   admin: ReturnType<typeof createAdminClient>,
@@ -860,6 +863,11 @@ function buildDeriveDeps(
             ],
           },
         ],
+        // Sem teto, a OpenRouter reserva o MÁXIMO do modelo contra o saldo da
+        // chave e recusa com crédito baixo. O mesmo teto das respostas do
+        // agente: o que a organização configurou, ou 4096, muito acima da
+        // saída medida (máx. 182 tokens).
+        maxOutputTokens: tetoDeSaida(tetoDeSaidaDaOrganizacao(llm.params), undefined),
       });
     } catch (err) {
       registrarChamadaDeMidia(admin, orgId, () =>
@@ -868,13 +876,14 @@ function buildDeriveDeps(
       throw err;
     }
     registrarChamadaDeMidia(admin, orgId, () => {
+      const latency_ms = Date.now() - inicio;
       const uso = {
         inputTokens: res.usage.inputTokens ?? 0,
         outputTokens: res.usage.outputTokens ?? 0,
         cacheReadTokens: res.usage.inputTokenDetails.cacheReadTokens ?? 0,
         cacheWriteTokens: res.usage.inputTokenDetails.cacheWriteTokens ?? 0,
       };
-      return {
+      const linhaCom = (cost_cents: number | null): ChamadaDeMidia => ({
         purpose: PONTO_VISAO_DE_IMAGEM,
         provider: llm.provider,
         model: modelo,
@@ -882,9 +891,12 @@ function buildDeriveDeps(
         output_tokens: uso.outputTokens,
         cache_read_tokens: uso.cacheReadTokens,
         cache_write_tokens: uso.cacheWriteTokens,
-        cost_cents: costCents(modelo, uso),
-        latency_ms: Date.now() - inicio,
-      };
+        cost_cents,
+        latency_ms,
+      });
+      // A mesma régua do seam: tabela estática primeiro; o catálogo da instalação só
+      // quando ela não conhece o modelo — e depois de o texto já ter voltado.
+      return custoComCatalogo(modelo, llm.provider, uso, linhaCom);
     });
     return res.text;
   };
@@ -1068,41 +1080,75 @@ function linhaDeFalha(
 function registrarChamadaDeMidia(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
-  montar: () => ChamadaDeMidia,
+  montar: () => ChamadaDeMidia | Promise<ChamadaDeMidia>,
 ): void {
-  try {
-    const linha = montar();
-    void Promise.resolve(
-      admin.from("llm_calls").insert({
-        organization_id: orgId,
-        status: "ok",
-        ...linha,
-        provider: provedorDaChamada(linha.provider, linha.model),
-      }),
-    ).then(
-      ({ error }) => {
-        if (error) {
-          logger.warn("[media-derive] o banco recusou a linha de custo", {
-            organization_id: orgId,
-            purpose: linha.purpose,
-            error: error.message,
-          });
-        }
-      },
-      (err: unknown) => {
-        logger.warn("[media-derive] não consegui gravar a linha de custo", {
-          organization_id: orgId,
-          purpose: linha.purpose,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      },
-    );
-  } catch (err) {
+  const avisoDeMontagem = (err: unknown) => {
     logger.warn("[media-derive] não consegui montar a linha de custo", {
       organization_id: orgId,
       error: err instanceof Error ? err.message : String(err),
     });
+  };
+  const gravar = (linha: ChamadaDeMidia) => {
+    try {
+      void Promise.resolve(
+        admin.from("llm_calls").insert({
+          organization_id: orgId,
+          status: "ok",
+          ...linha,
+          provider: provedorDaChamada(linha.provider, linha.model),
+        }),
+      ).then(
+        ({ error }) => {
+          if (error) {
+            logger.warn("[media-derive] o banco recusou a linha de custo", {
+              organization_id: orgId,
+              purpose: linha.purpose,
+              error: error.message,
+            });
+          }
+        },
+        (err: unknown) => {
+          logger.warn("[media-derive] não consegui gravar a linha de custo", {
+            organization_id: orgId,
+            purpose: linha.purpose,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        },
+      );
+    } catch (err) {
+      avisoDeMontagem(err);
+    }
+  };
+  let montada: ChamadaDeMidia | Promise<ChamadaDeMidia>;
+  try {
+    montada = montar();
+  } catch (err) {
+    avisoDeMontagem(err);
+    return;
   }
+  // Linha síncrona grava NA HORA, como sempre; só a que espera o catálogo vai
+  // para a cadeia que ninguém espera — o texto da mídia nunca depende dela.
+  if (montada instanceof Promise) void montada.then(gravar, avisoDeMontagem);
+  else gravar(montada);
+}
+
+/**
+ * O custo de uma chamada de mídia cobrada por token, pela MESMA régua do seam
+ * (`run-model-call.ts`): a tabela estática do motor primeiro; quando ela não conhece
+ * o modelo (provedor personalizado, modelo de catálogo), o preço do catálogo da
+ * instalação. Síncrono quando a tabela resolve — o INSERT sai na hora, como antes
+ * —, e uma promessa só no caso do catálogo. `custoDoModeloForaDoMotor` nunca
+ * rejeita: banco fora do ar vira custo nulo com aviso.
+ */
+function custoComCatalogo(
+  model: string,
+  provider: string,
+  uso: TokenUsage,
+  linhaCom: (cost_cents: number | null) => ChamadaDeMidia,
+): ChamadaDeMidia | Promise<ChamadaDeMidia> {
+  const doMotor = costCents(model, uso);
+  if (doMotor !== null) return linhaCom(doMotor);
+  return custoDoModeloForaDoMotor(derivePool(), { model, provider, usage: uso, log: logger }).then(linhaCom);
 }
 
 /**
@@ -1112,10 +1158,12 @@ function registrarChamadaDeMidia(
  *
  * Dois tipos de cobrança passam aqui. O modelo de conversa (degrau 4) é LLM
  * cobrado por token e devolve o uso (`transcribeMedindo`): a linha leva tokens
- * e o custo da tabela de preços, nulo só quando o modelo não está nela. O
- * serviço `/v1/audio/transcriptions` (degraus 1 a 3) usa o custo informado
- * pela API quando disponível. Sem esse dado, fica null; não se estima preço
- * por tokens nem se inventa zero.
+ * e o custo pela régua do seam — a tabela de preços e, quando ela não conhece o
+ * modelo, o catálogo da instalação —, nulo só quando nenhum dos dois o conhece.
+ * O serviço `/v1/audio/transcriptions` (degraus 1 a 3) usa o custo informado
+ * pela API: o `usage.cost` em USD da OpenRouter, ou a duração que a OpenAI
+ * cobra (`usage.seconds` do `whisper-1`) vezes o preço por minuto. Sem esse
+ * dado, fica null; não se estima preço por tokens nem se inventa zero.
  */
 function comCustoRegistrado(
   servico: TranscriptionProvider,
@@ -1153,18 +1201,25 @@ function comCustoRegistrado(
         );
         throw err;
       }
-      registrarChamadaDeMidia(ctx.admin, ctx.orgId, () => ({
-        purpose: PONTO_TRANSCRICAO_DE_AUDIO,
-        provider: ctx.provider,
-        model: ctx.model,
-        origem_da_escolha: ctx.origem,
-        input_tokens: uso?.inputTokens ?? 0,
-        output_tokens: uso?.outputTokens ?? 0,
-        cache_read_tokens: uso?.cacheReadTokens ?? 0,
-        cache_write_tokens: uso?.cacheWriteTokens ?? 0,
-        cost_cents: custoInformado !== undefined ? custoInformado : uso ? costCents(ctx.model, uso) : null,
-        latency_ms: Date.now() - inicio,
-      }));
+      registrarChamadaDeMidia(ctx.admin, ctx.orgId, () => {
+        const latency_ms = Date.now() - inicio;
+        const linhaCom = (cost_cents: number | null): ChamadaDeMidia => ({
+          purpose: PONTO_TRANSCRICAO_DE_AUDIO,
+          provider: ctx.provider,
+          model: ctx.model,
+          origem_da_escolha: ctx.origem,
+          input_tokens: uso?.inputTokens ?? 0,
+          output_tokens: uso?.outputTokens ?? 0,
+          cache_read_tokens: uso?.cacheReadTokens ?? 0,
+          cache_write_tokens: uso?.cacheWriteTokens ?? 0,
+          cost_cents,
+          latency_ms,
+        });
+        // Custo informado pelo serviço (USD da OpenRouter, duração cobrada pela
+        // OpenAI) vence; o modelo de conversa (degrau 4) vai pela régua do seam.
+        if (custoInformado !== undefined) return linhaCom(custoInformado);
+        return uso ? custoComCatalogo(ctx.model, ctx.provider, uso, linhaCom) : linhaCom(null);
+      });
       return texto;
     },
   };

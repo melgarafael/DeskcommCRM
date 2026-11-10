@@ -150,6 +150,31 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
         .eq("organization_id", org)
         .maybeSingle();
       if (contact) context.contact = contact;
+      // ── O NEGÓCIO DO CONTATO NA MENSAGEM RECEBIDA (#3974) ──────────────────
+      //
+      // Até aqui o evento de mensagem hidratava só `contact`, e a regra de
+      // "mensagem recebida" não tinha card nenhum para mover: chamada no ramo
+      // de CONTATO do `create_or_move_lead`, ela procura o negócio aberto no
+      // funil de destino e, quando não acha, CRIA um novo — ou seja, "quando o
+      // cliente responder, tira o card da etapa" era impossível de montar sem
+      // abrir um card fantasma.
+      //
+      // A escolha com VÁRIOS negócios abertos é a mesma de
+      // `negocioAbertoDoContato` (o card é do contato; o mais recente é o que a
+      // operação está tocando), mas SEM o recorte por funil: aqui não há etapa
+      // de destino que diga qual funil interessa, e inventar um seria escolher
+      // pelo usuário. Sem negócio aberto, `context.lead` simplesmente não
+      // existe — condição que dependa dele continua falsa, como antes.
+      const { data: lead } = await admin
+        .from("crm_leads")
+        .select("*")
+        .eq("organization_id", org)
+        .eq("contact_id", contactId)
+        .eq("status", "open")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lead) context.lead = ocultarProvaMetaNaResposta(lead as Record<string, unknown>);
     }
   }
   return context;

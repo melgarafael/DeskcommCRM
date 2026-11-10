@@ -89,10 +89,12 @@ function buildFieldChanges(a: AgentVersionRow, b: AgentVersionRow): FieldChange[
     ["history_token_window", "history_token_window"],
     ["handoff_tool_enabled", "handoff_tool_enabled"],
     ["handoff_legal_enabled", "handoff_legal_enabled"],
+    ["image_vision_enabled", "image_vision_enabled"],
     ["cases_enabled", "cases_enabled"],
     ["split_messages", "split_messages"],
     ["split_max_chars", "split_max_chars"],
     ["inbound_debounce_ms", "inbound_debounce_ms"],
+    ["reply_min_interval_ms", "reply_min_interval_ms"],
     ["voz_enabled", "voz_enabled"],
     ["voz_quando", "voz_quando"],
   ];
@@ -104,6 +106,12 @@ function buildFieldChanges(a: AgentVersionRow, b: AgentVersionRow): FieldChange[
 export function VersionDiff({ versionA, versionB }: Props) {
   const t = useT();
   const tools = diffArr(versionA.tool_ids ?? [], versionB.tool_ids ?? []);
+  // Skills por agente (9107): array, e não escalar — o `!==` de buildFieldChanges
+  // compararia referência. `null` (todas) → lista própria é a mudança que importa.
+  const skillsA = versionA.skill_names ?? null;
+  const skillsB = versionB.skill_names ?? null;
+  const skills = diffArr(skillsA ?? [], skillsB ?? []);
+  const skillsModoMudou = (skillsA === null) !== (skillsB === null);
   const handoffKw = diffArr(versionA.handoff_keywords ?? [], versionB.handoff_keywords ?? []);
   const followupFlows = diffArr(
     versionA.followup?.flow_pointer_ids ?? [],
@@ -159,6 +167,25 @@ export function VersionDiff({ versionA, versionB }: Props) {
         <Pills label={t("Adicionadas")} tone="add" items={tools.added} />
         <Pills label={t("Removidas")} tone="del" items={tools.removed} />
         {tools.added.length === 0 && tools.removed.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("Sem mudanças.")}</p>
+        ) : null}
+      </Section>
+
+      <Section title={t("Skills")}>
+        {skillsModoMudou ? (
+          <p className="text-xs" data-testid="diff-skills-modo">
+            <span className="font-mono text-destructive">
+              {skillsA === null ? t("todas") : t("lista própria")}
+            </span>
+            {" → "}
+            <span className="font-mono text-emerald-600">
+              {skillsB === null ? t("todas") : t("lista própria")}
+            </span>
+          </p>
+        ) : null}
+        <Pills label={t("Adicionadas")} tone="add" items={skills.added} />
+        <Pills label={t("Removidas")} tone="del" items={skills.removed} />
+        {!skillsModoMudou && skills.added.length === 0 && skills.removed.length === 0 ? (
           <p className="text-xs text-muted-foreground">{t("Sem mudanças.")}</p>
         ) : null}
       </Section>
