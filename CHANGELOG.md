@@ -47,9 +47,9 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Crédito: @webtecnica.
 
-- **O agente pode mandar uma foto por endereço junto com a resposta** O agente ganha a capacidade de mandar uma foto no WhatsApp, com o texto da resposta como legenda, quando a foto tem um endereço na internet. Só vale endereço que uma consulta ao banco externo trouxe na mesma resposta do agente, num campo só dele. O próprio sistema baixa a foto, confere que é uma imagem jpg, png ou webp de até 5 MB, guarda na conversa e só então envia; o endereço nunca passa para fora. Se o download ou a conferência falhar, a resposta sai só com texto e o sistema registra o motivo. A foto depende de a consulta trazer o endereço: numa tabela com coluna de foto, lida pelo agente ou mapeada numa receita, ele já pode usar esse endereço. As receitas prontas de WordPress e WooCommerce ainda não trazem foto.
+- **O agente pode mandar uma foto por endereço junto com a resposta** O agente ganha a capacidade de mandar uma foto no WhatsApp, com o texto da resposta como legenda, quando a foto tem um endereço na internet. Só vale endereço que uma consulta ao banco externo trouxe na mesma resposta do agente, num campo só dele. O próprio sistema baixa a foto, confere que é uma imagem jpg, png ou webp de até 5 MB, guarda na conversa e só então envia; o endereço nunca passa para fora. Se o download ou a conferência falhar, a resposta sai só com texto e o sistema registra o motivo. A foto depende de a consulta trazer o endereço: numa tabela com coluna de foto, lida pelo agente ou mapeada numa receita, ele já pode usar esse endereço. As receitas prontas de WordPress e WooCommerce ainda não trazem foto. Crédito: @paulolimajr77.
 
-- **A tabela de campanhas do Meta Ads mostra a data de início de cada campanha** Na aba Anúncios › Meta Ads, a tabela de campanhas ganhou a coluna «Início», logo depois de «Veiculação», com a data em que cada campanha começou a rodar, no idioma de quem está usando. Antes, para saber desde quando uma campanha estava no ar era preciso abrir o Gerenciador da Meta. Campanha sem data de início mostra «—», como as outras colunas sem valor. A data já vinha na leitura da plataforma: nenhuma chamada nova, nada a fazer na VPS.
+- **A tabela de campanhas do Meta Ads mostra a data de início de cada campanha** Na aba Anúncios › Meta Ads, a tabela de campanhas ganhou a coluna «Início», logo depois de «Veiculação», com a data em que cada campanha começou a rodar, no idioma de quem está usando. Antes, para saber desde quando uma campanha estava no ar era preciso abrir o Gerenciador da Meta. Campanha sem data de início mostra «—», como as outras colunas sem valor. A data já vinha na leitura da plataforma: nenhuma chamada nova, nada a fazer na VPS. Crédito: @shu-chen-dot-ca.
 
 - **Novo módulo opcional Link de pagamento na conversa, desligado de fábrica, em que o aviso de "pago" da InfinitePay fecha o negócio** Antes, o vendedor mandava na conversa o link de pagamento da InfinitePay e depois precisava conferir no extrato se o cliente pagou, para então mover o negócio à mão.
 
@@ -69,7 +69,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   ou WAHA. Cinco emojis frequentes ficam disponíveis antes de abrir o seletor
   completo; a frequência é guardada neste navegador após envio confirmado.
   A reação aparece sobre a mensagem original, não como um novo balão, e falhas
-  de envio não atualizam a lista de emojis frequentes.
+  de envio não atualizam a lista de emojis frequentes. Crédito: @routeti.
 
 - **Status do WhatsApp por integração, módulo opcional para publicar imagem pelo servidor MCP** O Status do WhatsApp por integração é um módulo opcional e vem desligado de fábrica. Quem administra o servidor liga em /admin/sistema, em "Status do WhatsApp por integração"; desligado, a ferramenta não é oferecida e nada muda na instalação. Ligado, um sistema conectado ao servidor MCP com token de escrita e papel de gerente publica uma imagem no Status de um número conectado por QR Code. A imagem sai de verdade e some em 24 horas. Quem publica escolhe uma lista de contatos ou todos, e nunca sai para todos por omissão. Na lista, quem pediu para não ser incomodado, quem foi anonimizado e os contatos marcados como pessoais ficam de fora, e a resposta diz quantos saíram. Para todos os contatos, a conexão precisa ter "Guardar histórico" ligado, e quem vê é decidido pelo WhatsApp, inclusive quem pediu para não ser incomodado. A publicação usa o mesmo ritmo do número que o envio de mensagens, e a auditoria guarda só o modo e a contagem do público, sem telefone nem legenda. Criado por @webtecnica, a partir da ideia de @lucasprestes1 no #2668.
 
@@ -94,7 +94,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   para conferir se ele estava conectado. Só que o caso mais comum não era queda
   nenhuma — era a opção **"Guardar o histórico anterior à vinculação"** desligada,
   com o número conectado o tempo todo. A pessoa ia conferir a conexão, não achava
-  defeito e ficava travada sem saber o que fazer.
+  defeito e ficava travada sem saber o que fazer. Crédito: @webtecnica.
 
   Agora cada motivo tem a sua frase, e a da opção desligada diz o caminho: ligar
   **"Guardar o histórico anterior à vinculação"** em Conexões e conectar o número
@@ -148,7 +148,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 - **Excluir uma empresa derruba na hora o acesso de quem era membro dela** Quando a plataforma excluía uma empresa, quem era membro dela seguia com o vínculo guardado no
   cache curto da autorização (`lib/auth/cache-curto.ts`) por até 30 segundos, e o login que a
   exclusão apagava seguia autenticado pelo mesmo tempo. A exclusão era o único caminho de
-  revogação que não chamava a invalidação.
+  revogação que não chamava a invalidação. Crédito: @FabioMundoDigital.
 
   Agora a empresa é invalidada no cache logo depois que o banco confirma a exclusão, e a sessão de
   cada login removido, logo depois de removê-lo. Quem manteve o login (por ter vínculo com outra
@@ -166,7 +166,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   (`PATCH /api/v1/contacts/{id}`, no formato `{ "granted": false }`), essa recusa não era lida na
   hora de enviar: as automações (WhatsApp, mensagem escrita pela IA, e-mail), as campanhas e a
   prospecção continuavam escrevendo para ele. Só a recusa recebida por um formulário era levada em
-  conta.
+  conta. Crédito: @FabioMundoDigital.
 
   Agora a recusa é lida nos dois formatos, o dos formulários e o da ficha, e bloqueia esses envios.
   Você não precisa fazer nada.
