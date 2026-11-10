@@ -31,6 +31,7 @@
  */
 import { type Role, visibilidadeRestritaAoAtendente } from "@/lib/auth/types";
 import { MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, MODULOS_SO_DA_INSTALACAO, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { moduloDoCatalogo } from "@/lib/modulos/catalogo";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
@@ -137,6 +138,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Lista de espera da agenda",
     oQueFaz: "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.",
   },
+  ouvidoria: {
+    nome: "Ouvidoria",
+    oQueFaz: "Reclamações, denúncias, elogios e sugestões com protocolo próprio, lidas só por administradores e fora do funil.",
+  },
   cobranca: {
     nome: "Cobrança dos seus clientes",
     oQueFaz: "Você cria planos e cobra as empresas desta instalação, com teste grátis e suspensão de quem não paga.",
@@ -191,16 +196,23 @@ export function portaDoModuloNaEmpresa(modulo: ModuloOpcional): { href: string; 
   return porta ? { href: porta.href, minRole: porta.minRole } : null;
 }
 
-const MODULOS: RecursoOpcional[] = MODULOS_OPCIONAIS.map((modulo) => ({
+const porFlag = (modulo: ModuloOpcional) => (MODULOS_OPCIONAIS_POR_FLAG as readonly ModuloOpcional[]).includes(modulo);
+
+/** Módulo de tabela (ADR-0002) fora de `CATALOGO_DE_MODULOS` não se instala ainda
+ * (`instalarModulo` o recusa): a linha mandaria a `/admin/modulos`, onde ele não está.
+ * A linha volta sozinha quando o slug entra no catálogo. */
+function moduloTemLinha(modulo: ModuloOpcional): boolean {
+  return porFlag(modulo) || moduloDoCatalogo(modulo) !== undefined;
+}
+
+const MODULOS: RecursoOpcional[] = MODULOS_OPCIONAIS.filter(moduloTemLinha).map((modulo) => ({
   id: `modulo:${modulo}`,
   ...TEXTO_DO_MODULO[modulo],
   nivel: "instalacao" as const,
   padrao: "desligado" as const,
   quemDecide: "dono_do_servidor" as const,
   // Módulo por chave liga em /admin/sistema; módulo de tabela (ADR-0002) se instala em /admin/modulos.
-  href: (MODULOS_OPCIONAIS_POR_FLAG as readonly ModuloOpcional[]).includes(modulo)
-    ? "/admin/sistema"
-    : "/admin/modulos",
+  href: porFlag(modulo) ? "/admin/sistema" : "/admin/modulos",
   modulo,
   ler: (f: FontesDeEstado): EstadoDoRecurso =>
     f.modulos === null ? "nao_lido" : f.modulos.includes(modulo) ? "ligado" : "desligado",
