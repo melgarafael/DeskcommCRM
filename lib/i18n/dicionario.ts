@@ -14639,6 +14639,23 @@ export const DICIONARIO: Traducoes = {
     es: "Solo un administrador de la organización puede cambiar esta opción.",
   },
   "Opção salva.": { es: "Opción guardada." },
+  // #4138 — a sugestão de duplicado pelo nome como opção da empresa
+  // (Configurações › Atendimento) e o aviso de que ela está desligada.
+  "Sugerir contatos duplicados pelo nome": {
+    es: "Sugerir contactos duplicados por el nombre",
+  },
+  "Ligada, a tela Contatos › Duplicados mostra a seção \"Parecidos — confira\": fichas cujo NOME se parece o bastante para valer uma conferência, com os dados lado a lado. É sugestão, não prova: nada é juntado sozinho, e juntar continua sendo um clique de gestor. Nunca aparece o par com CPF ou telefone diferentes. Vem desligada porque, em base de pessoa física, o nome repete e a sugestão vira ruído.": {
+    es: "Activada, la pantalla Contactos › Duplicados muestra la sección \"Parecidos — revise\": fichas cuyo NOMBRE se parece lo suficiente para valer una revisión, con los datos uno al lado del otro. Es una sugerencia, no una prueba: nada se fusiona solo, y unir sigue siendo un clic del gestor. Nunca aparece el par con CPF o teléfono diferentes. Viene desactivada porque, en una base de personas físicas, el nombre se repite y la sugerencia se vuelve ruido.",
+  },
+  "Ligado: a seção \"Parecidos — confira\" aparece na tela de duplicados, depois dos motivos fortes.": {
+    es: "Activado: la sección \"Parecidos — revise\" aparece en la pantalla de duplicados, después de los motivos fuertes.",
+  },
+  "Desligado: a tela de duplicados mostra só os motivos fortes — telefone, e-mail e CPF.": {
+    es: "Desactivado: la pantalla de duplicados muestra solo los motivos fuertes — teléfono, correo y CPF.",
+  },
+  "A sugestão por nome está desligada. Para ver a seção \"Parecidos — confira\", ligue a opção em Configurações › Atendimento.": {
+    es: "La sugerencia por nombre está desactivada. Para ver la sección \"Parecidos — revise\", activa la opción en Configuración › Atención.",
+  },
   // #3644 — quem já comprou volta pelo funil de clientes, e a janela de
   // pós-venda que anda junto (Configurações › Distribuição de atendimento).
   "Quem já comprou volta pelo funil de clientes": {
