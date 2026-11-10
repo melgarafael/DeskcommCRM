@@ -73590,6 +73590,56 @@ begin
     for select using (organization_id in (select public.fn_user_org_ids()));
 end $trilha_do_roteador$;
 
+-- ═══ 9314 — os nomes da equipe numa consulta só (#4326, fatia 3) ═══
+--
+-- Espelho do bloco da migration `20261110120000_9314_nomes_dos_membros_da_
+-- equipe.sql`. Cria função, então mora ANTES da VARREDURA anon — que é o último
+-- bloco do arquivo e proíbe `create function` depois dela.
+--
+-- `fn_nomes_dos_membros(p_org, p_ids)` devolve `(user_id, full_name, email)` de
+-- quem tem vínculo com `p_org` em `user_organizations`, inclusive com
+-- `revoked_at` preenchido (o nome segue no histórico de quem saiu) — a MESMA
+-- regra de `membrosDaOrganizacao` (lib/users/nome-do-atendente.ts). Id de outra
+-- organização não tem linha; id repetido na lista não duplica linha. O nome vem
+-- de `auth.users.raw_user_meta_data ->> 'full_name'`, o campo que
+-- `fn_conversation_assign` já copia para `assigned_to_user_name`, sem trim e sem
+-- `nullif` para o mapa sair idêntico ao de `auth.admin.getUserById`. Substitui N
+-- chamadas HTTP ao GoTrue por UMA consulta.
+--
+-- `stable`, `security definer`, `search_path = public`, EXECUTE revogado de
+-- `public`, `anon` e `authenticated` e concedido só a `service_role`.
+create or replace function public.fn_nomes_dos_membros(
+  p_org uuid,
+  p_ids uuid[]
+) returns table (
+  user_id uuid,
+  full_name text,
+  email text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select u.id as user_id,
+         u.raw_user_meta_data ->> 'full_name' as full_name,
+         u.email::text as email
+    from auth.users u
+   where u.id = any (coalesce(p_ids, '{}'::uuid[]))
+     and exists (
+       select 1
+         from public.user_organizations m
+        where m.organization_id = p_org
+          and m.user_id = u.id
+     )
+$$;
+
+revoke all on function public.fn_nomes_dos_membros(uuid,uuid[]) from public,anon,authenticated;
+grant execute on function public.fn_nomes_dos_membros(uuid,uuid[]) to service_role;
+
+comment on function public.fn_nomes_dos_membros(uuid,uuid[]) is
+  'Nome e e-mail dos membros (inclusive desligados) de uma organização, por lista de ids: uma consulta em vez de N chamadas ao GoTrue. Só service_role (#4326, fatia 3).';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
