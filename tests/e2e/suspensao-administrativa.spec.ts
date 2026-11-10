@@ -32,7 +32,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 
-import { test, expect, type BrowserContext, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type BrowserContext, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
 const credenciais = credenciaisSupabaseDeTeste();
@@ -178,6 +178,7 @@ test("suspender cala B pela tela; o hub atende quem ficou; reativar não solta r
 
     // ── 1. Quem só tem leitura tenta suspender ─────────────────────────────
     const ctxLeitura = await browser.newContext();
+    ctxLeitura.on("page", esperarARevelacaoNasCargas);
     contextos.push(ctxLeitura);
     const pLeitura = await ctxLeitura.newPage();
     await entrar(pLeitura, leitura.email);
@@ -211,6 +212,7 @@ test("suspender cala B pela tela; o hub atende quem ficou; reativar não solta r
 
     // ── 3. A admin de B, que estava trabalhando em B, cai no hub ───────────
     const ctxAdminB = await browser.newContext();
+    ctxAdminB.on("page", esperarARevelacaoNasCargas);
     contextos.push(ctxAdminB);
     await ctxAdminB.addCookies([{ name: "active_org", value: orgB, url: test.info().project.use.baseURL! }]);
     const pAdminB = await ctxAdminB.newPage();
@@ -264,6 +266,7 @@ test("suspender cala B pela tela; o hub atende quem ficou; reativar não solta r
 
     // ── 6. A atendente lê "Avise o administrador", sem LGPD ────────────────
     const ctxAtendente = await browser.newContext();
+    ctxAtendente.on("page", esperarARevelacaoNasCargas);
     contextos.push(ctxAtendente);
     const pAtendente = await ctxAtendente.newPage();
     await entrar(pAtendente, atendenteB.email);
@@ -440,6 +443,7 @@ testDoPacote.describe(
         };
         const contexto = async (email: string) => {
           const ctx = await browser.newContext();
+          ctx.on("page", esperarARevelacaoNasCargas);
           contextos.push(ctx);
           const p = await ctx.newPage();
           await entrar(p, email);
@@ -575,6 +579,7 @@ testDoPacote.describe(
           expect((await pB.request.get(detalhe)).status()).toBe(404);
           const pViewer = await contexto(viewer.email);
           expect((await pViewer.request.get(detalhe)).status()).toBe(403);
+          // dispensa-da-espera: contexto anônimo que só faz request de API; nenhuma página é aberta.
           const anonimo = await browser.newContext();
           contextos.push(anonimo);
           expect(

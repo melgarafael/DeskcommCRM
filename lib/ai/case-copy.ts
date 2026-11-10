@@ -114,6 +114,24 @@ export const CASE_ACTIONS: CaseActionOption[] = [
   },
 ];
 
+/**
+ * A 4ª porta — a que NÃO manda mensagem ao cliente (#3810).
+ *
+ * Fica fora de `CASE_ACTIONS` de propósito: aquela lista é a matriz do
+ * `POST .../reply`, tipada em `CaseHumanAction`, e esta ação não é uma resposta —
+ * é um encerramento por outra rota (`POST .../close`), com nota obrigatória. Um
+ * caso que a vida já resolveu (o cliente comprou em outro lugar, o problema
+ * passou sozinho) não podia ser fechado sem mentir para o cliente, porque as
+ * três ações acima todas avisam alguém.
+ */
+export const CASE_CLOSE_WITHOUT_REPLY = {
+  action: "closed_without_reply",
+  label: "Encerrar sem avisar o cliente",
+  help: "Tira o caso da fila sem mandar nada: o cliente não recebe mensagem nenhuma.",
+} as const;
+
+export type CasePanelAction = CaseHumanAction | typeof CASE_CLOSE_WITHOUT_REPLY.action;
+
 const EVENT_LABEL: Record<CaseEvent["kind"], string> = {
   opened: "A IA abriu o caso",
   human_replied: "Você respondeu",
@@ -138,7 +156,10 @@ const HUMAN_ACTION_LABEL: Record<CaseHumanAction, string> = {
 
 /** Traduz um evento da timeline pra uma frase pt-br — nunca o enum cru. */
 export function caseEventLabel(
-  event: Pick<CaseEvent, "kind" | "actor_kind" | "human_action"> & { source?: string | null },
+  event: Pick<CaseEvent, "kind" | "actor_kind" | "human_action"> & {
+    source?: string | null;
+    fora_da_fronteira?: string | null;
+  },
 ): string {
   if (event.kind === "opened" && event.actor_kind === "system") {
     return "O sistema abriu o caso automaticamente";
@@ -150,6 +171,9 @@ export function caseEventLabel(
   }
   if (event.kind === "human_replied" && event.human_action) {
     return HUMAN_ACTION_LABEL[event.human_action];
+  }
+  if (event.kind === "lead_provided" && event.fora_da_fronteira === "true") {
+    return "O cliente respondeu fora do atendimento atual (sem aviso no WhatsApp)";
   }
   return EVENT_LABEL[event.kind] ?? "Atualização do caso";
 }

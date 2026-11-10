@@ -10,6 +10,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { binariosDoSistema } from "../helpers/path-hermetico-do-preparo";
+
 const RAIZ = path.resolve(__dirname, "../..");
 const WORKFLOW = path.join(RAIZ, ".github/workflows/e2e.yml");
 const BROWSER = "Instalar o browser";
@@ -104,10 +106,15 @@ if sys.argv[-1] == "ffmpeg":
     output.chmod(0o755)
 `, "/usr/bin/env python3");
   const script = passo === NORMALIZAR ? "source scripts/ci/apt-e2e-failover.sh; trocar_espelho_apt_e2e" : scriptDoPasso(passo);
+  // PATH hermético (issue #3827): symlink só dos utilitários que o passo e o
+  // failover chamam. Com `/usr/bin` inteiro no PATH, o `ffmpeg` da máquina
+  // respondia ao `if ! command -v ffmpeg` e o laço de tentativas — que é o que
+  // estas cercas afirmam — nunca rodava.
+  const sistema = binariosDoSistema(path.join(raiz, "sistema"));
   const resultado = spawnSync("bash", ["-e", "-c", script], {
     cwd: RAIZ,
     env: {
-      ...process.env, PATH: `${bin}:/usr/bin:/bin`, HOME: raiz,
+      ...process.env, PATH: `${bin}:${sistema}`, HOME: raiz,
       GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: ambiente, TEST_LOG: log, TEST_APT: apt,
       TEST_SOURCE: arquivo, TEST_SCENARIO: cenario, TEST_BIN: bin,
     },

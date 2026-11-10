@@ -223,7 +223,7 @@ describe("o modelo sai pela credencial da sessão", () => {
     expect(autorizacao).not.toContain("org-a");
   });
 
-  it("pedir o número de OUTRA organização não devolve o token dela — cai no ambiente", async () => {
+  it("pedir o número de OUTRA organização não devolve o token dela — nem o do ambiente", async () => {
     sessoes = {
       [ORG_A]: { phoneNumberId: "111", cifrado: "\\xcifra-a", token: "tok-da-org-a" },
       [ORG_B]: { phoneNumberId: "222", cifrado: "\\xcifra-b", token: "tok-da-org-b" },
@@ -233,13 +233,13 @@ describe("o modelo sai pela credencial da sessão", () => {
     const spy = stubFetch({ messages: [{ id: "wamid.X" }] });
     const { db } = dbDoEspelho();
 
-    // A organização B pedindo o número da A: a chave é o PAR, então não casa —
-    // e o que sobra é a reserva do ambiente, nunca a credencial do vizinho.
-    await sendTemplateForSession(db, envio(ORG_B, "111"));
-
-    const { url, autorizacao } = chamadaGraph(spy);
-    expect(url).toContain("/999/messages");
-    expect(autorizacao).toBe("Bearer tok-do-ambiente");
+    // A organização B pedindo o número da A: a chave é o PAR, então não casa.
+    // A reserva do ambiente só vale para o número dela (999), e 111 não é ele:
+    // o desfecho é canal não conectado, nunca a credencial do vizinho nem a do env.
+    await expect(sendTemplateForSession(db, envio(ORG_B, "111"))).rejects.toThrow(
+      /^meta_not_configured/,
+    );
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("instalação que só tem o ambiente continua enviando", async () => {

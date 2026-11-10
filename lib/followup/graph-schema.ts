@@ -95,6 +95,22 @@ export const edgeBranchIdSchema = z
   });
 
 /**
+ * O horário em que uma espera fixa pode terminar (`wait.ate_o_horario`).
+ *
+ * ⚠️ FROUXO AQUI DE PROPÓSITO, como `lead_date.key` mais abaixo: o rascunho é
+ * validado só estruturalmente e o painel grava a cada clique. Exigir aqui "fim
+ * depois do início" faria o painel recusar o estado intermediário (quem troca
+ * 08:00 por 18:00 passa por um horário torto) e a tela mostraria um valor que
+ * não foi gravado. Quem exige um horário que dá para obedecer é o publish
+ * (`horario_da_espera_invalido` em `validate-publish.ts`).
+ */
+export const horarioDaEsperaSchema = z.strictObject({
+  start: z.string().max(5),
+  end: z.string().max(5),
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7),
+});
+
+/**
  * Wait node configuration schema.
  * Supports two modes:
  * - fixed: absolute wait duration in milliseconds (5 min to 90 days)
@@ -124,6 +140,16 @@ export const waitConfigSchema = z
        * do alcance da reatividade e libera o slot único anti-spam.
        */
       immune_to_reply: z.boolean().optional(),
+      /**
+       * A espera só TERMINA dentro deste horário (dias + horas, no fuso da
+       * organização). Se a duração vencer fora dele — de noite, no domingo —, a
+       * espera continua até a próxima abertura. Ver `espera-no-horario.ts`.
+       *
+       * Opcional: os grafos publicados não têm a chave e seguem válidos byte a
+       * byte. Só em `fixed`, como `immune_to_reply`: a espera adaptativa é a IA
+       * escolhendo dentro de uma faixa, e o `strictObject` dela recusa a chave.
+       */
+      ate_o_horario: horarioDaEsperaSchema.optional(),
     }),
     z.strictObject({
       mode: z.literal('smart'),
@@ -455,11 +481,31 @@ export const collectConfigSchema = z
     options: z.array(z.string().min(1).max(80)).max(20).optional(),
     /** Texto sugerido da pergunta; o agente pode reescrever (checklist guiado pela IA). */
     question: z.string().max(400).optional(),
+    /**
+     * ONDE A RESPOSTA É GRAVADA (#3363): `contato` em `contacts.custom_fields`
+     * (o caminho de sempre) ou `negocio` no card aberto do contato
+     * (`crm_leads.custom_fields`) — que é o que o card da tela, os campos
+     * obrigatórios da etapa do funil e as automações por data do funil leem.
+     *
+     * A AUSÊNCIA é `contato`, e é o que todo grafo existente tem: sem `.default()`
+     * de propósito (a mesma escolha do `escopo` do #2791, com o padrão invertido
+     * — aqui o comportamento legado é o contato). Sem default, `safeParse` devolve
+     * o grafo byte a byte e editar uma pergunta não reescreve a chave à toa.
+     *
+     * Com `negocio`, a régua "já respondido não se repergunta" vale só DENTRO do
+     * negócio atual: o valor é lido do card, então um novo negócio pergunta de
+     * novo. Um contato sem card aberto não tem onde gravar — a pergunta segue
+     * pendente até o teto de tentativas.
+     */
+    destino: z.enum(['contato', 'negocio']).optional(),
   })
   .refine((c) => c.type !== 'select' || (c.options?.length ?? 0) > 0, {
     message: 'tipo "select" exige ao menos uma opção',
     path: ['options'],
   });
+
+/** O destino da gravação de UMA pergunta (#3363) — ausência no grafo = `contato`. */
+export type DestinoDaResposta = NonNullable<z.infer<typeof collectConfigSchema>['destino']>;
 
 /**
  * Skill node (`skill`) — puxa uma skill instalada em paralelo ao passo do fluxo.

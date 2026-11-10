@@ -31,6 +31,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { Db } from "@/lib/db";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 
 const dubles = vi.hoisted(() => ({
@@ -51,6 +52,13 @@ vi.mock("@/lib/agenda/protecao-followup", async (importOriginal) => ({
 vi.mock("@/lib/notifications/web_push", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/notifications/web_push")>()),
   enviarPushAoUsuario: vi.fn(async () => undefined),
+}));
+// A tarefa automática passou a gravar por `lib/db` (#3715): a porta é dublada
+// sobre o MESMO `MundoFalso`, então o caminho medido continua sendo
+// rota → evento → motor → `crm_tasks` (e não um INSERT de mentira no vazio).
+vi.mock("@/lib/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db")>()),
+  portaDaAplicacao: () => portaDoMundo(dubles.adminAtual.valor as MundoFalso),
 }));
 
 import "@/lib/automation/actions/register-all";
@@ -244,6 +252,53 @@ class ConsultaFalsa implements PromiseLike<{ data: Linha[] | null; error: null }
 }
 
 let mundo: MundoFalso;
+
+/**
+ * A PORTA de `lib/db` sobre o MESMO `MundoFalso`.
+ *
+ * `lib/tarefas` não fala mais PostgREST (#3715): a tarefa e a linha da timeline
+ * saem por SQL. Em vez de deixar o teste medir um banco de mentira diferente do
+ * que a rota usa, esta porta traduz as DUAS formas de instrução que o módulo
+ * emite hoje — `select … where id = $1 [and organization_id = $2] limit 1` e
+ * `insert into … (colunas) values ($1…$n) returning id` — para as tabelas do
+ * `MundoFalso`. Se o SQL mudar de forma, o caso falha aqui em vez de passar por
+ * motivo falso.
+ */
+function portaDoMundo(m: MundoFalso): Db {
+  async function executar(sql: string, parametros: readonly unknown[]): Promise<Linha[]> {
+    if (/^\s*insert into/i.test(sql)) {
+      const tabela = /insert into\s+(\w+)/i.exec(sql)![1]!;
+      const colunas = /\(([\s\S]*?)\)\s*values/i
+        .exec(sql)![1]!
+        .split(",")
+        .map((c) => c.trim());
+      const linha: Linha = {};
+      colunas.forEach((coluna, i) => {
+        linha[coluna] = parametros[i] ?? null;
+      });
+      if (tabela === "crm_tasks") linha.id = m.novoId();
+      m.linhas(tabela).push(linha);
+      return [linha];
+    }
+
+    const tabela = /from\s+(\w+)/i.exec(sql)![1]!;
+    const [id, organizacao] = parametros;
+    const achada = m
+      .linhas(tabela)
+      .filter((l) => l.id === id)
+      .filter((l) => organizacao === undefined || l.organization_id === organizacao);
+    return achada.slice(0, 1);
+  }
+
+  return {
+    query: <T>(sql: string, parametros: readonly unknown[] = []) =>
+      executar(sql, parametros) as Promise<T[]>,
+    async queryOne(sql, parametros = []) {
+      const [linha] = await executar(sql, parametros);
+      return (linha ?? null) as never;
+    },
+  };
+}
 
 function regraDe(
   trigger_event: string,

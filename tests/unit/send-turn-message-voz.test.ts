@@ -146,6 +146,31 @@ describe("sendTurnMessage — voz (Fase 6a)", () => {
     );
   });
 
+  it("canal oficial: o formato ogg_opus chega à síntese, e a mensagem sai como áudio com a etiqueta do opus", async () => {
+    resolverCaminhoDeVozMock.mockResolvedValue({
+      mediaStoragePath: "org1/conv1/voz-agente-job1-1.ogg",
+      mimeType: "audio/ogg;codecs=opus",
+      caracteres: 20,
+      sintetizouAgora: true,
+    });
+    sendMessageHandlerMock.mockResolvedValue({ id: "msg1", status: "sent" });
+    const upload = vi.fn(async () => "org1/conv1/voz-agente-job1-1.ogg");
+
+    await sendTurnMessage(dbComJob(), cfg, {
+      ...baseInput,
+      voz: { textoOriginal: "Hola", apiKey: "sk", voiceId: "v1", formato: "ogg_opus", upload },
+    });
+
+    expect(resolverCaminhoDeVozMock).toHaveBeenCalledWith(
+      expect.objectContaining({ voz: { apiKey: "sk", voiceId: "v1", modelId: undefined, formato: "ogg_opus" } }),
+    );
+    const [, , payload] = sendMessageHandlerMock.mock.calls[0]!;
+    // `type: "audio"` é o que os adapters do canal oficial transformam em nota
+    // de voz (`voiceNote: true` / `voice: true`).
+    expect(payload.type).toBe("audio");
+    expect(payload.media_mime).toBe("audio/ogg;codecs=opus");
+  });
+
   it("retry que REUSOU o path (sintetizouAgora:false): NÃO registra custo de novo", async () => {
     resolverCaminhoDeVozMock.mockResolvedValue({
       mediaStoragePath: "org1/conv1/voz-agente-job1-1.mp3",

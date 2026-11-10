@@ -16,6 +16,8 @@ import { capabilitiesOf } from "@/lib/channels/capabilities";
 import type { ChannelProvider } from "@/lib/channels/types";
 import { prospectingAgentSetupSchema, type ProspectingAgentSetupInput } from "./agent-setup-schema";
 import { agentSessionLock, agentSetupSessionSchema } from "./agent-session-schema";
+import { IDIOMA_DA_CONVERSA, idiomaDaOrganizacao } from "./idioma";
+import type { Idioma } from "@/lib/i18n/idiomas";
 
 export class AgentSetupError extends Error {
   constructor(
@@ -34,13 +36,22 @@ export function setupAgentId(orgId: string, campaignId: string, requestId: strin
   const h = hash(["prospecting-agent", orgId, campaignId, requestId]);
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
-export function prospectingAgentPrompt(input: ProspectingAgentSetupInput) {
+/**
+ * `idioma` é o da ORGANIZAÇÃO (`idioma.ts`): antes a linha dizia "Converse em
+ * português do Brasil" para toda organização, e numa em espanhol o agente da
+ * campanha nascia escrevendo em português. O padrão segue português — quem não
+ * passa idioma fica como antes.
+ */
+export function prospectingAgentPrompt(
+  input: ProspectingAgentSetupInput,
+  idioma: Idioma = "pt-BR",
+) {
   const tone = {
     cordial: "cordial e acolhedor",
     professional: "profissional e consultivo",
     direct: "direto e objetivo",
   }[input.tone];
-  return `Você é ${input.name}, assistente de IA comercial. Converse em português do Brasil, em tom ${tone}, com mensagens curtas e uma pergunta por vez.
+  return `Você é ${input.name}, assistente de IA comercial. Converse em ${IDIOMA_DA_CONVERSA[idioma]}, em tom ${tone}, com mensagens curtas e uma pergunta por vez.
 Identifique-se com transparência. A origem do contato é uma pesquisa de informações comerciais públicas; nunca alegue cadastro, pedido ou consentimento que a pessoa não confirmou.
 Oferta e objetivo definidos pelo responsável:
 ${input.instruction}
@@ -234,7 +245,7 @@ interface SetupMetadata {
 // "O rascunho foi alterado" — o que a 0498 (inbound_debounce_ms) fez nas 5 specs de
 // tests/invariants/prospecting-agent-setup.test.ts.
 // ponytail: lista explícita; coluna nullable nova em ai_agent_versions entra aqui (#2004).
-const NULO_E_AUSENTE = new Set(["trigger_config", "inbound_debounce_ms"]);
+const NULO_E_AUSENTE = new Set(["trigger_config", "inbound_debounce_ms", "reply_min_interval_ms"]);
 
 function versionHash(row: Record<string, unknown>) {
   const keys = Object.keys(versionCreateSchema.shape);
@@ -361,7 +372,7 @@ export async function setupProspectingAgent(
         await provedorOferecido(admin),
       );
       const version = versionCreateSchema.parse({
-        system_prompt: prospectingAgentPrompt(input),
+        system_prompt: prospectingAgentPrompt(input, await idiomaDaOrganizacao(db, context.orgId)),
         provider: model.provider,
         model: model.model,
         credential_id: model.credential_id,

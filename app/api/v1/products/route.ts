@@ -4,6 +4,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *      servidor; `?pagina=N` (opcional) devolve 50 por página com `meta.total`.
  * POST /api/v1/products — cadastra um produto.
  *
+ * `fotos` (lista de URLs, até 5, na ordem da capa) é aceita no corpo: o
+ * servidor BAIXA cada uma e guarda o arquivo, e a URL deixa de ser a fonte —
+ * o mesmo caminho da planilha (`lib/catalogo/fotos-por-url.ts`). O campo não é
+ * coluna: sai do corpo antes do insert e entra como caminhos do bucket.
+ *
  * Escrita exige `manager`: preço de venda não se altera com papel de leitura, e
  * é o motivo de este catálogo não morar na tabela da Nuvemshop, cuja policy é
  * org-flat sem checagem de papel.
@@ -22,6 +27,8 @@ import {
   PRODUTOS_POR_PAGINA,
 } from "@/lib/catalogo/busca-da-tela";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
+import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -115,13 +122,61 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supabase = await createClient();
   // A moeda vem da organização, nunca do corpo — ver `moedaDaOrganizacao()`.
   const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
+
+  // `fotos` é URL de ENTRADA e NÃO é coluna: sai do corpo antes do insert, como
+  // a moeda sai antes de qualquer decisão. Ver o comentário do campo em
+  // `lib/schemas/produtos.ts`.
+  const { fotos, ...campos } = parsed.data;
+  const urls = fotos ?? [];
+
+  /**
+   * ─── A foto é baixada ANTES de o produto existir na tabela ────────────────
+   *
+   * O caminho no bucket é `<org>/<produto>/<uuid>.<ext>`, então o id precisa
+   * existir antes do download — daí o `id` gerado aqui e enviado no insert.
+   * É o mesmo desenho da planilha (`import/route.ts`, grupo `novo+foto`), e
+   * pelo mesmo motivo: gravar primeiro e baixar depois produziria o pior
+   * desfecho, um 201 para um produto que ENTROU sem a foto que quem chamou
+   * pediu. Baixar antes faz a recusa ser inteira.
+   *
+   * O downloader é o MESMO da planilha (teto por item, assinatura dos bytes,
+   * guarda anti-SSRF, limpeza do que já subiu quando uma falha): um segundo
+   * baixador aqui divergiria do primeiro na primeira correção de segurança.
+   */
+  const produtoId = urls.length > 0 ? randomUUID() : undefined;
+  let caminhos: string[] | undefined;
+  if (produtoId) {
+    const guardadas = await guardarFotosPorUrl({ orgId: authz.org.orgId, produtoId, urls, t });
+    if (!guardadas.ok) {
+      // 422 e não 500: o corpo é que está errado (link morto, arquivo que não é
+      // foto, acima de 5 MB), e quem lê é quem integrou.
+      return fail("validation_failed", guardadas.motivo, 422, {
+        requestId,
+        details: { fotos: [guardadas.motivo] },
+      });
+    }
+    caminhos = guardadas.caminhos;
+  }
+
   const { data, error } = await supabase
     .from("catalog_products")
-    .insert({ ...parsed.data, moeda, organization_id: authz.org.orgId, origem: "manual" })
+    .insert({
+      ...campos,
+      ...(produtoId ? { id: produtoId } : {}),
+      ...(caminhos ? { fotos: caminhos } : {}),
+      moeda,
+      organization_id: authz.org.orgId,
+      origem: "manual",
+    })
     .select(COLUNAS_DO_PRODUTO)
     .single();
 
   if (error) {
+    // Os arquivos já subiram e a linha não existe: sem esta limpeza, um código
+    // repetido deixaria fotos órfãs no bucket pagas por ninguém.
+    if (produtoId && caminhos?.length) {
+      await apagarDoBucket(authz.org.orgId, produtoId, caminhos, requestId);
+    }
     // 23505 = já existe produto com este código nesta organização. A recusa
     // nomeia o campo porque quem lê é quem digitou.
     if (error.code === "23505") {

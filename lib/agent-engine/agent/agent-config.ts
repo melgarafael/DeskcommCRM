@@ -18,10 +18,12 @@ import type pg from 'pg';
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
+import { lerModoDeConhecimento } from './modo-de-conhecimento';
 import {
+  avaliarPublico,
   carregarFatosDoContato,
   lerPublicoDoGatilho,
-  passaNoPublico,
+  type DecisaoDoPublico,
 } from './publico-do-gatilho';
 
 export interface PublishedAgentConfig {
@@ -56,8 +58,19 @@ export interface PublishedAgentConfig {
   splitMaxChars: number;
   /** Janela de rajada inbound (ms) configurada na versão. `null` = usa a env. */
   inboundDebounceMs: number | null;
+  /** Intervalo mínimo (ms) entre uma resposta da IA e a próxima à mesma conversa. `null` = sem intervalo. */
+  replyMinIntervalMs: number | null;
   /** input multimodal (imagem/áudio/pdf) habilitado no turno (Onda 3). */
   multimodalInput: boolean;
+  /**
+   * O agente vê as fotos que o cliente envia (`ai_agent_versions.image_vision_enabled`,
+   * migration 9108, padrão LIGADO). Desligado, a foto entra no turno como o aviso
+   * `MARCADOR_IMAGEM_NAO_VISTA` (nem a descrição nem a imagem nativa), e ele deixa de
+   * contar como leitor em `haLeitorDaDescricao` (a régua do dreno quando o agente da
+   * conversa não vê). Opcional porque nasce depois das fixtures que montam este
+   * tipo à mão; quem consome lê com `?? true`, o comportamento de antes.
+   */
+  imageVisionEnabled?: boolean;
   /** tools open_human_case/provide_case_update habilitadas no turno (spec 15). */
   casesEnabled: boolean;
   /** JSON versionado com `followup.callback_enabled` e os fluxos normais. */
@@ -69,6 +82,24 @@ export interface PublishedAgentConfig {
    * Vazio = NENHUM: a ferramenta de busca some do turno.
    */
   knowledgeSourceIds: string[];
+  /**
+   * Skills que ESTE agente usa (`ai_agent_versions.skill_names`, migration 9107).
+   * `null` = todas as da organização e da plataforma (o comportamento de antes, e
+   * o default de toda versão); `[]` = nenhuma. Resolvido em `skillsDoAgente`.
+   *
+   * O clone sem a coluna não chega aqui com `undefined`: o SELECT abaixo a nomeia,
+   * e sem ela falharia com 42703. Quem garante a coluna é a ORDEM do `update.sh`
+   * (`reaplicar_baseline` antes do `pull`/`up` da imagem nova), como para
+   * `knowledge_source_ids` e `voz_*`. O `?? null` do mapeamento é só tipagem.
+   */
+  skillNames: string[] | null;
+  /**
+   * Como o agente lê a base de conhecimento (#4133), de `ai_agents.config`:
+   * `busca` (default, o caminho de sempre: `search_knowledge` + embedding) ou
+   * `leitura_direta` (índice no contexto + `ler_documento`, sem provedor de
+   * embedding). Ausente/torto = `busca`; ver `lerModoDeConhecimento`.
+   */
+  knowledgeMode?: 'busca' | 'leitura_direta';
   /**
    * LEGADO: a KB ativa do agente (`ai_agents.active_kb_version_id`).
    *
@@ -165,7 +196,9 @@ interface Row {
   split_messages: boolean;
   split_max_chars: number;
   inbound_debounce_ms: number | null;
+  reply_min_interval_ms: number | null;
   multimodal_input: boolean;
+  image_vision_enabled: boolean | null;
   cases_enabled: boolean;
   followup: unknown;
   tool_ids: string[] | null;
@@ -176,6 +209,7 @@ interface Row {
   operator_tool_ids: string[] | null;
   pipeline_ids: string[] | null;
   knowledge_source_ids: string[] | null;
+  skill_names: string[] | null;
   trigger_config: unknown;
   version_created_by: string | null;
   agent_created_by: string | null;
@@ -200,7 +234,9 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.split_messages,
             v.split_max_chars,
             v.inbound_debounce_ms,
+            v.reply_min_interval_ms,
             v.multimodal_input,
+            v.image_vision_enabled,
             v.cases_enabled,
             v.followup,
             v.tool_ids,
@@ -211,6 +247,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.operator_tool_ids,
             v.pipeline_ids,
             v.knowledge_source_ids,
+            v.skill_names,
             v.voz_enabled,
             v.voz_quando,
             v.trigger_config,
@@ -263,13 +300,22 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
     inboundDebounceMs: r.inbound_debounce_ms ?? null,
+    replyMinIntervalMs: r.reply_min_interval_ms ?? null,
     multimodalInput: r.multimodal_input,
+    // `?? true`: só tipagem — a coluna é NOT NULL default true, e quem a garante
+    // num clone é a ORDEM do `update.sh` (baseline antes da imagem nova), como
+    // para `skill_names`.
+    imageVisionEnabled: r.image_vision_enabled ?? true,
     casesEnabled: r.cases_enabled,
     followup: r.followup,
     toolIds: r.tool_ids ?? [],
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro
     // legado abaixo em vez de ficar sem material nenhum.
     knowledgeSourceIds: r.knowledge_source_ids ?? [],
+    // `?? 'busca'` (dentro de `lerModoDeConhecimento`): o modo novo (#4133) não
+    // se liga por acidente — config ausente/torta mantém o caminho de sempre.
+    knowledgeMode: lerModoDeConhecimento(r.config),
+    skillNames: r.skill_names ?? null,
     activeKbVersionId: r.active_kb_version_id,
     ragTopK,
     ragSimilarityThreshold,
@@ -323,6 +369,52 @@ export type MotivoDaEscolha =
 export interface EscolhaDoNumero {
   config: PublishedAgentConfig | null;
   motivo: MotivoDaEscolha;
+  /**
+   * QUEM foi considerado e a decisão de cada um (#3722). Só existe quando
+   * algum candidato declarou público — quem não usa o recurso não ganha rastro
+   * (e não paga uma linha de log por turno).
+   */
+  rastro?: RastroDoPublico;
+}
+
+/** Um candidato no rastro: quem entrou na fila e o que a régua disse dele. */
+export interface CandidatoNoRastroDoPublico {
+  agentId: string;
+  agentName: string;
+  /** Posição na ordem de precedência (0 = o primeiro da fila de sempre). */
+  posicao: number;
+  /** `true` = pausado, que vem por último na ordem. */
+  pausado: boolean;
+  /**
+   * `true` = este agente NÃO declarou público: atende qualquer contato e a
+   * régua não o avalia. Distinto de "barrado" — é o agente genérico que a
+   * issue não quer que assuma quando outro barrou.
+   */
+  semPublico: boolean;
+  /**
+   * A decisão da régua. `null` em dois casos, ambos com `semPublico`
+   * desambiguando: sem público declarado, ou candidato que veio DEPOIS de quem
+   * ganhou e por isso não chegou a ser avaliado (a seleção para no primeiro
+   * elegível — o rastro não inventa decisão para quem não foi julgado).
+   */
+  decisao: DecisaoDoPublico | null;
+}
+
+/**
+ * O rastro da decisão do público em UM turno.
+ *
+ * Existe porque o motivo agregado (`publico_barrou`) responde "ninguém atendeu"
+ * e nada mais: não diz QUAL candidato barrou o contato nem QUAL item do
+ * público o barrou. Sem isso, a pergunta "por que o agente de vendas não
+ * respondeu este cliente?" só tinha como resposta abrir o banco.
+ */
+export interface RastroDoPublico {
+  /** `false` = o chamador não trouxe contato: a régua NÃO foi aplicada. */
+  contatoAvaliado: boolean;
+  /** A fila inteira, na ordem de precedência, com a decisão de cada um. */
+  candidatos: CandidatoNoRastroDoPublico[];
+  /** Quem ganhou. `null` = o público barrou todo mundo (silêncio). */
+  escolhidoAgentId: string | null;
 }
 
 /**
@@ -391,33 +483,63 @@ export async function escolherAgenteDoNumero(
   // O público (#3722) é lido da linha crua, ao lado da config: quem o consome é
   // só esta seleção, então ele não entra em `PublishedAgentConfig` (o turno não
   // tem o que fazer com ele). Lista torta ⇒ `null` ⇒ atende todo mundo.
-  const candidatos = rows.map((r) => ({
+  const candidatos = rows.map((r, posicao) => ({
     config: mapAgentConfigRow(r),
     publico: lerPublicoDoGatilho(r.trigger_config),
+    posicao,
+    // `!= null` cobre o fixture sem a coluna e o NULL do banco: pausado é
+    // "tem data", não "a chave existe".
+    pausado: r.paused_at != null,
   }));
   const primeiro = candidatos[0];
   if (primeiro === undefined) return { config: null, motivo: 'sem_agente' };
 
   // Ninguém declarou público: comportamento de antes, sem tocar em `contacts`.
+  // Sem público não há decisão a rastrear — e não inventar rastro aqui é o que
+  // mantém o log do turno silencioso para quem não usa o recurso.
   if (!candidatos.some((c) => c.publico !== null)) {
     return { config: primeiro.config, motivo: 'primeiro_da_fila' };
   }
 
+  // A decisão de cada candidato, preenchida conforme a régua julga. Quem vem
+  // depois do escolhido fica `null` — a seleção para no primeiro elegível e o
+  // rastro não inventa decisão para quem não foi avaliado.
+  const decisoes: Array<DecisaoDoPublico | null> = candidatos.map(() => null);
+  const rastro = (escolhidoAgentId: string | null, contatoAvaliado: boolean): RastroDoPublico => ({
+    contatoAvaliado,
+    escolhidoAgentId,
+    candidatos: candidatos.map((c, i) => ({
+      agentId: c.config.agentId,
+      agentName: c.config.agentName,
+      posicao: c.posicao,
+      pausado: c.pausado,
+      semPublico: c.publico === null,
+      decisao: decisoes[i] ?? null,
+    })),
+  });
+
   // Público configurado mas sem contato no chamador: a régua não pode ser
   // aplicada, e chutar "barrou" calaria o número por um erro de fiação. Cai no
-  // primeiro da fila e o motivo fica registrado.
+  // primeiro da fila e o motivo + o rastro dizem que NADA foi avaliado.
   if (contactId == null) {
-    return { config: primeiro.config, motivo: 'sem_contato' };
+    return { config: primeiro.config, motivo: 'sem_contato', rastro: rastro(null, false) };
   }
 
   // Erro de leitura sobe de propósito: a fila re-tenta o job.
   const fatos = await carregarFatosDoContato(db, organizationId, contactId);
-  for (const candidato of candidatos) {
-    if (candidato.publico === null || passaNoPublico(candidato.publico, fatos)) {
-      return { config: candidato.config, motivo: 'publico_liberou' };
+  for (const [i, candidato] of candidatos.entries()) {
+    if (candidato.publico !== null) {
+      const decisao = avaliarPublico(candidato.publico, fatos);
+      decisoes[i] = decisao;
+      if (!decisao.passa) continue;
     }
+    return {
+      config: candidato.config,
+      motivo: 'publico_liberou',
+      rastro: rastro(candidato.config.agentId, true),
+    };
   }
-  return { config: null, motivo: 'publico_barrou' };
+  return { config: null, motivo: 'publico_barrou', rastro: rastro(null, true) };
 }
 
 /**

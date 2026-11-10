@@ -1063,4 +1063,35 @@ describe("tick × preparo automático (B2)", () => {
     expect(ordem).toContain(`bloqueio:${ORG_A}`);
     expect(ordem).toContain(`preparo:${ORG_A}`);
   });
+
+  // #3887: conferir o WhatsApp é consulta em massa pelo número do cliente — módulo
+  // opcional, desligado por padrão. Desligado, o ramo (c) recebe lista vazia de
+  // canais e não seleciona organização nenhuma por telefone sem veredito.
+  it("módulo conferir_whatsapp desligado: o ramo do WhatsApp recebe lista vazia; ligado, os canais capazes", async () => {
+    const paramsDaSegunda = (pool: { query: { mock: { calls: unknown[][] } } }) =>
+      pool.query.mock.calls.find((c) => String(c[0]).includes("'draft'"))?.[1] as unknown[] | undefined;
+    const desligado = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(desligado.pool as never, {} as never);
+    expect(paramsDaSegunda(desligado.pool)).toEqual([[]]);
+
+    const ligado = montar({ segundaConsulta: [ORG_B] });
+    const admin = {
+      from: (tabela: string) => ({
+        select: () => ({
+          in: (_c: string, chaves: string[]) =>
+            tabela === "platform_config"
+              ? Promise.resolve({
+                  data: chaves.includes("MODULO_CONFERIR_WHATSAPP")
+                    ? [{ chave: "MODULO_CONFERIR_WHATSAPP", valor: "ligado" }]
+                    : [],
+                  error: null,
+                })
+              : { eq: async () => ({ data: [], error: null }) },
+        }),
+      }),
+    };
+    await tickProspecting(ligado.pool as never, admin as never);
+    const [canais] = paramsDaSegunda(ligado.pool) as [string[]];
+    expect(canais.length).toBeGreaterThan(0);
+  });
 });

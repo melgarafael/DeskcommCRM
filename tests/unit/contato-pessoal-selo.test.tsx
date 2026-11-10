@@ -51,7 +51,7 @@ function contato(pessoal: boolean, tags: string[]): Contact {
     email: null,
     email_normalized: null,
     phone_number: "+5511999999999",
-    cpf_hash: null,
+    cpf_available: false,
     birthdate: null,
     is_blocked: false,
     blocked_reason: null,

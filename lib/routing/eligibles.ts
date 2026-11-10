@@ -12,16 +12,50 @@
 import type { Json } from "@/lib/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { isAttendantEligible, OPEN_LOAD_STATUSES } from "./eligibility";
+import { isAttendantEligible, isWithinSchedule, OPEN_LOAD_STATUSES } from "./eligibility";
 import type { RoutingCandidate } from "./decide";
 import { availabilityScheduleSchema } from "@/lib/schemas/routing";
 
 export type RoutingScope =
   | { kind: "conversation_channel"; channelSessionId: string }
+  /**
+   * A FILA da conversa (migration 9062). `channelSessionId` opcional porque a
+   * conversa pode não ter número (canal interno): quando tem, a política do
+   * número continua valendo e o resultado é a INTERSEÇÃO — fila ∧ responsáveis
+   * do número. Escopo novo, régua velha: nada aqui reimplementa carga, folga ou
+   * horário do atendente.
+   */
+  | { kind: "sector"; sectorId: string; channelSessionId: string | null }
   | { kind: "organization_summary" };
 export class InvalidRoutingChannel extends Error {
   constructor() { super("routing_channel_invalid"); }
 }
+export class InvalidRoutingSector extends Error {
+  constructor() { super("routing_sector_invalid"); }
+}
+
+/**
+ * A fila existe e está aberta agora? Janela vazia (`{}`) = 24/7 — janela existe
+ * para RESTRINGIR, igual à jornada da pessoa. Quem chama usa o `open=false`
+ * para ADIAR a entrega (o worker já reenfileira sem elegível), nunca para
+ * descartar a conversa.
+ */
+export async function loadSectorWindow(
+  supabase: SupabaseClient,
+  organizationId: string,
+  sectorId: string,
+  now: Date,
+): Promise<{ window: { schedule: unknown; open: boolean } }> {
+  const { data: sector, error } = await supabase.from("attendant_sectors")
+    .select("id, schedule").eq("organization_id", organizationId).eq("id", sectorId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!sector) throw new InvalidRoutingSector();
+  const schedule = availabilityScheduleSchema.parse(
+    (sector as { schedule?: unknown }).schedule ?? {},
+  );
+  return { window: { schedule, open: isWithinSchedule(schedule, now) } };
+}
+
 
 /** Elegíveis = disponíveis ∧ dentro do horário ∧ com folga (carga < capacidade). */
 export async function loadEligibleAttendants(
@@ -31,13 +65,20 @@ export async function loadEligibleAttendants(
   scope: RoutingScope,
 ): Promise<RoutingCandidate[]> {
   let allowed: Set<string> | null = null;
-  if (scope.kind === "conversation_channel") {
+  // A política do NÚMERO vale nos dois escopos que sabem qual é o número.
+  const channelSessionId =
+    scope.kind === "conversation_channel"
+      ? scope.channelSessionId
+      : scope.kind === "sector"
+        ? scope.channelSessionId
+        : null;
+  if (channelSessionId) {
     const { data: channel, error: channelError } = await supabase.from("channel_sessions")
-      .select("id").eq("organization_id", organizationId).eq("id", scope.channelSessionId).maybeSingle();
+      .select("id").eq("organization_id", organizationId).eq("id", channelSessionId).maybeSingle();
     if (channelError) throw new Error(channelError.message);
     if (!channel) throw new InvalidRoutingChannel();
     const { data: policy, error: policyError } = await supabase.from("channel_routing_policies")
-      .select("id").eq("organization_id", organizationId).eq("channel_session_id", scope.channelSessionId).maybeSingle();
+      .select("id").eq("organization_id", organizationId).eq("channel_session_id", channelSessionId).maybeSingle();
     if (policyError) throw new Error(policyError.message);
     if (policy) {
       const { data: responsibles, error } = await supabase.from("channel_routing_responsibles")
@@ -48,6 +89,34 @@ export async function loadEligibleAttendants(
       if (allowed.size === 0) return [];
     }
   }
+
+  // (migration 9062) FILA: existe ∧ está aberta ∧ só quem é membro recebe.
+  // A restrição do número, quando existe, continua valendo em cima: a fila é
+  // interseção, não substituição — quem responde pelo setor mas não pelo número
+  // não recebe por este caminho, e vice-versa.
+  if (scope.kind === "sector") {
+    const { data: sector, error: sectorError } = await supabase.from("attendant_sectors")
+      .select("id, schedule").eq("organization_id", organizationId).eq("id", scope.sectorId).maybeSingle();
+    if (sectorError) throw new Error(sectorError.message);
+    if (!sector) throw new InvalidRoutingSector();
+    const sectorSchedule = availabilityScheduleSchema.parse(
+      (sector as { schedule?: unknown }).schedule ?? {},
+    );
+    // Fila fechada = ninguém elegível AGORA. O worker reenfileira (backoff),
+    // então a conversa espera a abertura em vez de ser entregue fora do horário.
+    if (!isWithinSchedule(sectorSchedule, now)) return [];
+    const { data: links, error: linksError } = await supabase.from("attendant_sector_members")
+      .select("user_id").eq("organization_id", organizationId).eq("sector_id", scope.sectorId);
+    if (linksError) throw new Error(linksError.message);
+    const members = new Set((links ?? []).map((r: { user_id: string }) => r.user_id));
+    allowed = allowed === null
+      ? members
+      : new Set([...members].filter((id) => allowed!.has(id)));
+    // Fila sem ninguém capaz de atender por este número: vazio, e isso é fato a
+    // registrar — não silêncio (ver invariante da migration).
+    if (allowed.size === 0) return [];
+  }
+
   const { data: members, error: memberError } = await supabase.from("user_organizations")
     .select("user_id").eq("organization_id", organizationId).is("revoked_at", null)
     .in("role", ["agent", "manager", "admin"]);
@@ -88,6 +157,12 @@ export async function loadEligibleAttendants(
   if (scope.kind === "conversation_channel") {
     history = history.eq("conversations.organization_id", organizationId)
       .eq("conversations.channel_session_id", scope.channelSessionId);
+  } else if (scope.kind === "sector") {
+    // Rodízio da FILA: "quem recebeu há mais tempo" dentro da própria fila — sem
+    // isso, uma pessoa que acabou de receber 5 conversas pelo outro setor
+    // apareceria como a mais antiga desta fila e levaria a próxima.
+    history = history.eq("conversations.organization_id", organizationId)
+      .eq("conversations.sector_id", scope.sectorId);
   }
   const { data: assignEvents, error: historyError } = await history;
   if (historyError) throw new Error(historyError.message);

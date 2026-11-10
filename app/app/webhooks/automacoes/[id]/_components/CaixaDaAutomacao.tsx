@@ -15,8 +15,11 @@ import { useAgentsList } from "@/hooks/ai/useAgents";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { usePipelineStages, usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
+import { useSectors } from "@/hooks/team/useSectors";
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
-import { CURATED_FIELDS, OP_LABELS, type Op } from "@/app/app/webhooks/_components/RuleEditor";
+import { CURATED_FIELDS, OP_LABELS, type CuratedField, type Op } from "@/app/app/webhooks/_components/RuleEditor";
+import { valorDaCondicaoNaTela } from "@/app/app/webhooks/_components/CondicaoDoContato";
+import { CONDICOES_DO_CONTATO } from "@/lib/automation/conditions";
 import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } from "@/app/app/webhooks/_components/labels";
 
 import { VISUAL_DAS_CONDICOES, VISUAL_DO_GATILHO, visualDaAcao } from "./visual";
@@ -44,7 +47,9 @@ function DescricaoDoMover({ config }: { config: Record<string, unknown> }) {
   return <>{`${funil.name} › ${etapa.name}`}</>;
 }
 
-function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
+// Exportada para o teste do modo novo (#3804): a frase da caixa é o que o
+// operador lê no editor, e é barato provar que ela não volta a "Escolha o atendente".
+export function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
   const t = useT();
   const { data: membros } = useAssignableMembers(true);
   const nomeDe = (userId: unknown) => {
@@ -56,6 +61,24 @@ function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
     const fila = Array.isArray(config.fila) ? (config.fila as Array<{ user_id?: unknown }>) : [];
     const nomes = fila.map((p) => nomeDe(p.user_id)).filter((n): n is string => n !== null);
     return <>{nomes.length ? `${t("Rodízio")}: ${nomes.join(", ")}` : t("Escolha quem entra no rodízio")}</>;
+  }
+  // #3804 — no destino dinâmico a pessoa só é conhecida no disparo: a caixa diz
+  // QUEM decide e com quem a regra conta se ninguém do negócio puder receber.
+  if (config.modo === "destino") {
+    const destinos = Array.isArray(config.destinos) ? (config.destinos as unknown[]) : [];
+    const nomes = destinos
+      .map((d) => (d === "responsavel_do_negocio" ? t("Responsável do negócio") : d === "dono_da_carteira" ? t("Dono da carteira do contato") : null))
+      .filter((n): n is string => n !== null);
+    const fallback = config.fallback as { modo?: unknown; user_id?: unknown; fila?: unknown } | undefined;
+    const quemDoFallback =
+      fallback?.modo === "rodizio"
+        ? t("Rodízio")
+        : (nomeDe(fallback?.user_id) ?? t("Escolha o atendente"));
+    return (
+      <>
+        {`${nomes.length ? nomes.join(" · ") : t("Escolha pelo menos um destino")} — ${t("fallback")}: ${quemDoFallback}`}
+      </>
+    );
   }
   return <>{nomeDe(config.user_id) ?? t("Escolha o atendente")}</>;
 }
@@ -107,6 +130,18 @@ function DescricaoDaDataDoAtendimento({ config }: { config: Record<string, unkno
   return <>{`${funil.name} › ${campo.label}`}</>;
 }
 
+/**
+ * #3881 — o cartão mostra o NOME do setor. Sem caso, a caixa caía no `tipo`
+ * cru (« define_sector ») em todo idioma; e o uuid não diz nada a quem lê a
+ * regra no canvas.
+ */
+function DescricaoDoSetor({ config }: { config: Record<string, unknown> }) {
+  const t = useT();
+  const { data } = useSectors();
+  const setor = data?.data.find((s) => s.id === config.sector_id);
+  return <>{setor ? setor.name : t("Escolha o setor")}</>;
+}
+
 function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string, unknown> }) {
   const t = useT();
   switch (tipo as ActionType) {
@@ -132,7 +167,8 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
     // #2642 — mesmo defeito do e-mail: sem caso, o cartão dizia « notify_team » cru.
     case "notify_team":
       return <>{t("WhatsApp da equipe")}</>;
-    case "add_tag": {
+    case "add_tag":
+    case "remove_tag": {
       const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
       return <>{tags.length ? tags.join(", ") : t("Escreva pelo menos uma tag")}</>;
     }
@@ -146,6 +182,9 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
     // #3727 — sem caso, a caixa cairia no `tipo` cru (« set_lead_date_field »).
     case "set_lead_date_field":
       return <DescricaoDaDataDoAtendimento config={config} />;
+    // #3881 — mesmo defeito: sem caso, a caixa dizia « define_sector ».
+    case "define_sector":
+      return <DescricaoDoSetor config={config} />;
   }
   return <>{tipo}</>;
 }
@@ -184,12 +223,22 @@ function DescricaoDasCondicoes({ dados, evento }: { dados: Extract<DadosDaCaixa,
   // O grupo do topo não é desenhável: a caixa diz o que é, em vez de mentir.
   if (dados.grupoPreservado) return <>{t("Grupo de condições que este desenho não edita")}</>;
   if (completas.length === 0) return <>{t("Nenhuma condição completa: roda em todo evento")}</>;
-  const campos = CURATED_FIELDS[evento as TriggerEvent] ?? [];
+  // As condições do contato (#3814) valem em qualquer gatilho: o rótulo delas
+  // não está na tabela por evento, e sem esta linha o cartão mostraria o
+  // caminho técnico (`contato.followup_vivo`) para o operador.
+  const campos: CuratedField[] = [
+    ...(CURATED_FIELDS[evento as TriggerEvent] ?? []),
+    ...CONDICOES_DO_CONTATO,
+  ];
   const primeira = completas[0]!;
   const campo = campos.find((c) => c.value === primeira.field);
   const op = t(campo?.lista && primeira.op === "contains" ? "tem a tag" : OP_LABELS[primeira.op as Op]);
   const valor =
-    campo?.kind === "stage" ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value) : primeira.value;
+    campo?.kind === "stage"
+      ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value)
+      : campo?.kind === "sim_nao"
+        ? valorDaCondicaoNaTela(primeira.value, t)
+        : primeira.value;
   // `esta vazio`/`esta preenchido` não pedem valor: a frase termina no operador,
   // sem o trecho do valor — montá-lo dizia « Nome do lead está vazio “” » (#2727).
   const alvo = `${campo ? t(campo.label) : primeira.field} ${op}`;

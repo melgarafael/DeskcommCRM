@@ -25,9 +25,20 @@ import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabular
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import { AbrirConversaAposSalvar } from "@/components/channels/AbrirConversaAposSalvar";
 import type { AlvoDeConversa } from "@/components/channels/SeletorDeCanalParaConversa";
+import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
+import { CamposDeEndereco } from "@/components/contacts/CamposDeEndereco";
+import {
+  CAMPOS_DO_ENDERECO,
+  ENDERECO_VAZIO,
+  type EnderecoDoContato,
+} from "@/lib/contacts/endereco-por-cep";
+
 
 interface FormShape {
+  custom_fields?: Record<string, unknown>;
   name?: string;
   email?: string;
   phone_number?: string;
@@ -47,6 +58,9 @@ interface Props {
    * trocar o termo com o diálogo já montado remonta com `key`.
    */
   nomeInicial?: string;
+  dadosIniciais?: { email?: string; phone_number?: string; tags?: string[] };
+  leadId?: string;
+  referenciaDoCard?: string | null;
   /**
    * Recebe o contato recém-criado. Existe para quem abriu o diálogo NO MEIO de
    * outro fluxo (marcar um horário, por exemplo) poder seguir com ele já
@@ -64,13 +78,19 @@ export function NewContactDialog({
   open,
   onOpenChange,
   nomeInicial,
+  dadosIniciais,
+  leadId,
+  referenciaDoCard,
   onCriado,
   permitirIniciarConversa = true,
 }: Props) {
   const t = useT();
   const org = useActiveOrg();
   const perfil = perfilDoPais(org?.country);
-  const create = useCreateContact();
+  const create = useCreateContact(leadId);
+  // Mesma definição da ficha: campos do contato no funil padrão, sem defaults de nicho.
+  const pipeline = useDefaultPipeline(open && Boolean(org));
+  const campos = camposPorEscopo(camposDoFunil(pipeline.data?.pipeline?.settings), "contato");
   /**
    * A CONVERSA A ABRIR DEPOIS DE SALVAR (#3483) — `null` = nada pendente.
    *
@@ -87,10 +107,7 @@ export function NewContactDialog({
   // com ele (issue #3144): a leitura com `?busca=` alcança o vocabulário curado
   // inteiro, que a lista "em uso" (teto de 200, só contatos) não vê.
   const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
-  const buscaNoVocabulario = useContactTagVocabulary(
-    org?.orgId ?? null,
-    buscaDeEtiqueta.trim(),
-  );
+  const buscaNoVocabulario = useContactTagVocabulary(org?.orgId ?? null, buscaDeEtiqueta.trim());
   const { definirCor } = useDefinirCorDaEtiqueta();
   // A cor da etiqueta é VOCABULÁRIO e a rota exige manager + MFA: para os outros
   // papéis a paleta nem chega ao campo, como na ficha e no editor do Inbox.
@@ -100,6 +117,17 @@ export function NewContactDialog({
   // EditContactDialog (#2732): sem ele, quem digita e clica em "Criar contato"
   // sem Enter perde a etiqueta em silêncio.
   const [etiquetaPendente, setEtiquetaPendente] = useState<string | null>(null);
+  /**
+   * O ENDEREÇO DO CADASTRO (#3494, fatia 2) — estado próprio, e não `FormShape`.
+   *
+   * Os sete campos nasceram na FICHA no #3670 e o cadastro não tinha nenhum: a
+   * pessoa física era criada sem CEP/logradouro e a entrega e a cobrança
+   * dependiam de abrir a ficha depois. Ficam fora do `react-hook-form` porque o
+   * único uso é o payload: o componente `CamposDeEndereco` faz o CEP preencher, e
+   * um `register` por campo não ganharia nada aqui — a validação é a mesma do
+   * servidor, no `safeParse` do envio.
+   */
+  const [endereco, setEndereco] = useState<EnderecoDoContato>(ENDERECO_VAZIO);
 
   // O diálogo segue montado entre aberturas e o campo (com o rascunho) desmonta
   // ao fechar; o pendente do pai não pode sobreviver para o próximo contato.
@@ -109,7 +137,13 @@ export function NewContactDialog({
   const [abertoAntes, setAbertoAntes] = useState(open);
   if (open !== abertoAntes) {
     setAbertoAntes(open);
-    if (!open) setEtiquetaPendente(null);
+    if (!open) {
+      setEtiquetaPendente(null);
+      // O endereço digitado é do contato que estava sendo criado: fechar (por
+      // Cancelar ou pelo pai) descarta, senão o do próximo cadastro sai com a
+      // rua do anterior.
+      setEndereco(ENDERECO_VAZIO);
+    }
   }
 
   const form = useForm<FormShape>({
@@ -119,13 +153,15 @@ export function NewContactDialog({
     mode: "onTouched",
     defaultValues: {
       name: nomeInicial ?? "",
-      email: "",
-      phone_number: "",
+      email: dadosIniciais?.email ?? "",
+      phone_number: dadosIniciais?.phone_number ?? "",
       cpf: "",
-      tags: [],
+      tags: dadosIniciais?.tags ?? [],
+      custom_fields: {},
     },
   });
 
+  const customFields = useWatch({ control: form.control, name: "custom_fields" }) ?? {};
   const cpfError = form.formState.errors.cpf;
   // ENQUANTO O DOCUMENTO ESTIVER INVÁLIDO, O ENVIO FICA IMPEDIDO (#3496).
   // Avisar no campo e deixar o clique seguir faria o aviso virar decoração: o
@@ -187,6 +223,15 @@ export function NewContactDialog({
     if (values.phone_number?.trim()) payload.phone_number = values.phone_number.trim();
     if (values.cpf?.trim()) payload.cpf = values.cpf.trim();
     if (tags.length) payload.tags = tags;
+    if (Object.keys(values.custom_fields ?? {}).length) payload.custom_fields = values.custom_fields;
+    // Endereço (#3494): só o que foi preenchido entra no corpo — campo vazio
+    // continua `null` no banco, e o contato pessoa física sem CEP é cadastro
+    // válido (a issue é explícita: erro de preenchimento não é erro de
+    // cadastro).
+    for (const campo of CAMPOS_DO_ENDERECO) {
+      const valor = endereco[campo]?.trim();
+      if (valor) payload[campo] = valor;
+    }
 
     // A MESMA régua do servidor: a tela que mostra 'Bilhete' não pode
     // recusá-lo como CPF antes de chegar lá.
@@ -215,6 +260,7 @@ export function NewContactDialog({
     toast.success(t("Contato criado"));
     form.reset();
     setEtiquetaPendente(null);
+    setEndereco(ENDERECO_VAZIO);
     onOpenChange(false);
     if (!contato) return;
     onCriado?.(contato);
@@ -235,6 +281,12 @@ export function NewContactDialog({
             {t("Preencha pelo menos um identificador (email ou telefone).")}
           </DialogDescription>
         </DialogHeader>
+        {referenciaDoCard && (
+          <details className="text-xs text-text-muted">
+            <summary>{t("Dados do negócio para conferência")}</summary>
+            <p className="max-h-36 overflow-auto whitespace-pre-wrap">{referenciaDoCard}</p>
+          </details>
+        )}
         <form
           onSubmit={(event) => {
             // O portal mantém a árvore React: o submit deste subcadastro não
@@ -254,9 +306,7 @@ export function NewContactDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="phone_number">
-              {perfil.codigo === PAIS_PADRAO
-                ? t("Telefone (DDD + número)")
-                : t("Telefone (E.164)")}
+              {perfil.codigo === PAIS_PADRAO ? t("Telefone (DDD + número)") : t("Telefone (E.164)")}
             </Label>
             <Input
               id="phone_number"
@@ -296,6 +346,18 @@ export function NewContactDialog({
             )}
           </div>
           <div className="space-y-2">
+            <span className="text-sm font-medium">{t("Endereço")}</span>
+            <CamposDeEndereco
+              idPrefix="nc"
+              valores={endereco}
+              onCampo={(campo, valor) =>
+                setEndereco((atual) => ({ ...atual, [campo]: valor }))
+              }
+              consultarCep={perfil.codigo === PAIS_PADRAO}
+              disabled={create.isPending}
+            />
+          </div>
+          <div className="space-y-2">
             {/* Era um campo de texto livre "separadas por vírgula" — o formato
                 que a ficha deixou na #2732 e o funil na #2979. Aqui o mesmo
                 seletor da ficha: sugere o que já existe, reusa a grafia gravada
@@ -308,14 +370,23 @@ export function NewContactDialog({
               vocabulario={vocabulario.data}
               disabled={create.isPending}
               onPendente={setEtiquetaPendente}
-              onDefinirCor={
-                podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
-              }
+              onDefinirCor={podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined}
               encontradas={buscaNoVocabulario.data}
               onDigitar={setBuscaDeEtiqueta}
               erroNoVocabulario={vocabulario.isError || buscaNoVocabulario.isError}
             />
           </div>
+          {campos.length > 0 && (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
+              <CustomFieldsEditor
+                fields={campos}
+                mode="contact"
+                value={customFields}
+                onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
+              />
+            </div>
+          )}
           {serverError && (
             <p className="text-sm text-error-fg">{serverError}</p>
           )}

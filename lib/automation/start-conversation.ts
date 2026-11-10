@@ -18,6 +18,7 @@ import {
   PROVIDERS_DE_TELEFONE,
   type ProviderDeMensagem,
 } from "@/lib/channels/capabilities";
+import { canalDesativado } from "@/lib/channels/desativado";
 import { abrirNegocioDaConversaNova } from "@/lib/leads/entrada-automatica-no-funil";
 import { logger } from "@/lib/logger";
 
@@ -58,15 +59,44 @@ export interface PreferenciaDeSessao {
  * quem não passa a opção continua escolhendo exatamente como antes. O `create`
  * de contato já passa (`lib/contacts/conversa-ao-criar.ts`). A conversa
  * compartilhada só cai neste fallback quando chega sem `channel_session_id`
- * (`POST /api/v1/conversations/open-with-contact`), e ali ainda chama sem a
- * opção (continuação do #3358). O MCP exige a sessão de quem chama e nunca
- * chega ao fallback.
+ * (`POST /api/v1/conversations/open-with-contact`), e ali passa
+ * `preferirTelefone` quando o pedido traz telefone (#3483). O MCP exige a
+ * sessão de quem chama e nunca chega ao fallback.
+ *
+ * ─── O CANAL DESLIGADO NÃO ENTRA NA ESCOLHA (#4092) ──────────────────────────
+ * `metadata.disabled` é a intenção declarada do dono do número (#2318): o canal
+ * não entra na inbox, não acorda a IA, não envia. A regra acima não conhecia a
+ * chave e pegava a `WORKING` mais antiga assim mesmo — numa organização em que
+ * o número velho foi DESLIGADO e um novo foi conectado depois, toda abertura
+ * sem canal escolhido caía no desligado e era recusada (409 `session_unavailable`)
+ * mesmo havendo outro canal pronto. O pulo vale em TODOS os degraus: o que a
+ * escada decide é a ORDEM (WORKING antes da degradação; telefone antes de
+ * mensagem), não a elegibilidade. Quem diz "desligado" é `canalDesativado`
+ * (`lib/channels/desativado.ts`) — a mesma régua do resto do produto, leitura
+ * estrita de `=== true`, nunca um segundo critério escrito aqui.
  */
-export async function sessaoProntaParaEnvio(
+export interface EscolhaDeSessao {
+  /** A sessão escolhida, ou `null` quando nenhuma pode enviar. */
+  id: string | null;
+  /**
+   * Havia canal de MENSAGEM na organização e todos estavam DESLIGADOS pelo
+   * operador. `id` e `todosDesligados` são perguntas diferentes: "não há canal
+   * nenhum" e "desligaram todos" entregam `id: null`, mas só o segundo mantém a
+   * recusa de antes — `session_unavailable` (409), que manda reativar ou
+   * escolher outro canal. Virar 404 ("sessão não encontrada") esconderia a
+   * causa que o operador precisa ver.
+   */
+  todosDesligados: boolean;
+}
+
+export async function escolherSessaoParaEnvio(
   supabase: SupabaseClient,
   organizationId: string,
   preferencia: PreferenciaDeSessao = {},
-): Promise<string | null> {
+): Promise<EscolhaDeSessao> {
+  /** Alguma linha da escada foi pulada por estar desligada? */
+  let viuDesligado = false;
+
   const listar = (
     providers: readonly ProviderDeMensagem[],
     soWorking: boolean,
@@ -74,14 +104,19 @@ export async function sessaoProntaParaEnvio(
   ) => {
     let q = supabase
       .from("channel_sessions")
-      .select("id")
+      // `metadata` vem porque é nele que mora o `disabled`, e o `limit(1)`
+      // saiu: o desligado pode ser justamente o PRIMEIRO da ordem, e cortar a
+      // lista no banco antes de olhar o metadata é o defeito que esta issue
+      // fecha. A escolha continua sendo a mais antiga — só que entre as que
+      // podem enviar.
+      .select("id, metadata")
       .eq("organization_id", organizationId);
     // Voz não manda texto: escolher a linha de chamada aqui faria a automação
     // "enviar" por um canal sem transporte de mensagem (spec 18).
     q = q.in("provider", [...providers]);
     if (soWorking) q = q.eq("status", "WORKING");
     if (ignorarArquivadas) q = q.is(ARCHIVED_AT, null);
-    return q.order("created_at", { ascending: true }).limit(1);
+    return q.order("created_at", { ascending: true });
   };
   const tentar = async (
     providers: readonly ProviderDeMensagem[],
@@ -91,7 +126,10 @@ export async function sessaoProntaParaEnvio(
       () => listar(providers, soWorking, true),
       () => listar(providers, soWorking, false),
     );
-    return (data as Array<{ id: string }> | null)?.[0]?.id ?? null;
+    const linhas = (data as Array<{ id: string; metadata?: unknown }> | null) ?? [];
+    const habilitada = linhas.find((linha) => !canalDesativado(linha.metadata));
+    if (!habilitada && linhas.length > 0) viuDesligado = true;
+    return habilitada?.id ?? null;
   };
 
   // Sem a preferência a lista tem UMA entrada e os degraus são os mesmos de
@@ -103,10 +141,25 @@ export async function sessaoProntaParaEnvio(
   for (const providers of filtros) {
     for (const soWorking of [true, false]) {
       const id = await tentar(providers, soWorking);
-      if (id) return id;
+      if (id) return { id, todosDesligados: false };
     }
   }
-  return null;
+  return { id: null, todosDesligados: viuDesligado };
+}
+
+/**
+ * A sessão por onde a automação envia — o id, ou `null` quando nenhuma pode.
+ *
+ * Continua devolvendo só o id porque é o que os chamadores precisam; quem tem
+ * de DISTINGUIR "não há canal" de "todos desligados" usa
+ * `escolherSessaoParaEnvio`, que responde as duas coisas.
+ */
+export async function sessaoProntaParaEnvio(
+  supabase: SupabaseClient,
+  organizationId: string,
+  preferencia: PreferenciaDeSessao = {},
+): Promise<string | null> {
+  return (await escolherSessaoParaEnvio(supabase, organizationId, preferencia)).id;
 }
 
 export async function ensureConversation(

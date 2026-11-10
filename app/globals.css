@@ -46,6 +46,18 @@
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
 
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #128c4a;
+  --color-canal-instagram: #c13584;
+  --color-canal-messenger: #0866ff;
+  --color-canal-telegram: #0088cc;
+
   /* Accent — Sage (11 stops) */
   --color-accent-50: #f3f6f1;
   --color-accent-100: #e4ebe0;
@@ -272,6 +284,18 @@
   --color-text-subtle: #7d786c;
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
+
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #128c4a;
+  --color-canal-instagram: #c13584;
+  --color-canal-messenger: #0866ff;
+  --color-canal-telegram: #0088cc;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
@@ -354,6 +378,18 @@
   /* Borders (dark) */
   --color-border: #33312a;
   --color-border-strong: #444239;
+
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #25d366;
+  --color-canal-instagram: #f472b6;
+  --color-canal-messenger: #60a5fa;
+  --color-canal-telegram: #38bdf8;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
   --color-accent-50: #f3f6f1;
@@ -855,13 +891,21 @@
     }
   }
 
-  /* Scrollbar — subtle greige */
+  /* Scrollbar — o tom de borda do TEMA, não um neutro fixo.
+     Pedir `--color-neutral-300`/`-600` parecia theme-aware (os neutros têm par
+     por tema), mas eles NÃO entram na allowlist do tema de extensão
+     (`CHAVES_DE_TOKEN_DO_TEMA`, lista fechada): com a paleta `mist` ativa a tela
+     inteira mudava e a barra ficava no greige da paleta padrão (#d2cdbf no
+     claro, #33312a no escuro). `--color-border` é declarado pelas cinco paletas
+     (`app/design/lib/tokens.ts`, `surfaces.border`) nos dois temas e é
+     sobrescrito pelo bloco `body:has([data-tema-extensao])`. Como o token já
+     troca com `[data-theme]`, o par claro/escuro sai de um `var()` só — não há
+     mais bloco `[data-theme="dark"]` exclusivo da barra (era o segundo caminho
+     pelo qual uma cor fixa voltava). O guarda é
+     `tests/unit/barra-de-rolagem-do-tema.test.ts`. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-neutral-300) transparent;
-  }
-  [data-theme="dark"] * {
-    scrollbar-color: var(--color-neutral-600) transparent;
+    scrollbar-color: var(--color-border) transparent;
   }
   ::-webkit-scrollbar {
     width: 10px;
@@ -871,23 +915,18 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background-color: var(--color-neutral-300);
+    background-color: var(--color-border);
     border-radius: var(--radius-full);
     border: 2px solid transparent;
     background-clip: padding-box;
   }
+  /* Um passo ADIANTE da borda, na direção do texto: escurece no claro, clareia
+     no escuro. Mistura de dois tokens do tema porque `--color-border-strong`
+     (o par "natural" da borda) está na allowlist do tema mas NÃO nas paletas —
+     usá-lo deixaria o hover na cor da paleta padrão justamente para quem
+     escolheu o tema. */
   ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-neutral-400);
-    background-clip: padding-box;
-    border: 2px solid transparent;
-  }
-  [data-theme="dark"] ::-webkit-scrollbar-thumb {
-    background-color: var(--color-neutral-600);
-    background-clip: padding-box;
-    border: 2px solid transparent;
-  }
-  [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-neutral-500);
+    background-color: color-mix(in oklab, var(--color-border) 70%, var(--color-text-muted));
     background-clip: padding-box;
     border: 2px solid transparent;
   }
@@ -1520,4 +1559,23 @@
     animation-duration: 1s !important;
     animation-iteration-count: infinite !important;
   }
+}
+
+/* As ondas da ligação no Cold Call: só `transform`, e paradas fora de uma ligação. */
+.cc-onda {
+  transform-origin: center;
+  transition: opacity 0.3s ease;
+}
+
+.cc-ondas-ativa .cc-onda {
+  animation: cc-onda 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes cc-onda {
+  from { transform: scaleY(0.35); }
+  to { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-ondas-ativa .cc-onda { animation: none; }
 }

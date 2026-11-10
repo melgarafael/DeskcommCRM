@@ -17,7 +17,7 @@ function viewportSize(scroller: HTMLDivElement) {
 }
 
 /** Follow the previous viewport intention, never a distance measured after a new bubble grew. */
-export function useThreadAutoScroll(position: ThreadPosition) {
+export function useThreadAutoScroll(position: ThreadPosition, soNaCaixa = false) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -34,8 +34,10 @@ export function useThreadAutoScroll(position: ThreadPosition) {
     following.current = true;
     scrollingToEnd.current = true;
     setHasNewMessages(false);
-    bottomRef.current.scrollIntoView({ behavior, block: "end" });
-  }, []);
+    // Dentro de uma página que rola (Cold Call), `scrollIntoView` arrastaria a página junto.
+    if (soNaCaixa) scrollerRef.current.scrollTo({ top: scrollerRef.current.scrollHeight, behavior });
+    else bottomRef.current.scrollIntoView({ behavior, block: "end" });
+  }, [soNaCaixa]);
 
   const onScroll = useCallback(() => {
     const scroller = scrollerRef.current;
