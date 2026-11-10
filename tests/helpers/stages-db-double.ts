@@ -220,6 +220,21 @@ export interface DbOpts {
    * `null` = sem sessão, que é o 401 do quadro.
    */
   user?: { id: string } | null;
+  /**
+   * As manifestações da ouvidoria (#3611) e o `settings` jsonb de cada
+   * organização. Tabelas de fora do funil entram por aqui para os testes do
+   * módulo medirem o próprio código sem um segundo dublê — dois dublês da mesma
+   * tabela divergem no primeiro ajuste.
+   */
+  manifestacoes?: Linha[];
+  organizationSettings?: Record<string, unknown> | null;
+  /**
+   * As CONVERSAS (#3611, fatia 2): `channel` decide se o canal é o do fluxo e
+   * `metadata` é onde o rascunho da manifestação mora. Sem elas, o dublê devolve
+   * conversa inexistente — que é o caso de "a ingestão não sabe de quem é a
+   * mensagem", e não o caso comum.
+   */
+  conversas?: Linha[];
 }
 
 type Linha = Record<string, unknown>;
@@ -267,6 +282,8 @@ export interface Registro {
     followup_flow_pointers: Linha[];
     followup_flow_versions: Linha[];
     ai_agent_versions: Linha[];
+    organizations: Linha[];
+    ouvidoria_manifestacoes: Linha[];
     conversations: Linha[];
   };
 }
@@ -333,7 +350,21 @@ export function makeDb(opts: DbOpts = {}): Registro {
       followup_flow_pointers: (opts.pointers ?? []) as Linha[],
       followup_flow_versions: (opts.flowVersions ?? []) as Linha[],
       ai_agent_versions: (opts.agentVersions ?? []) as Linha[],
-      conversations: (opts.conversations ?? []) as Linha[],
+      // O `settings` jsonb por organização (#3611): a leitura da ativação da
+      // ouvidoria é `.from("organizations").select("settings").eq("id", org)`.
+      organizations: [
+        { id: ORG_ID, settings: opts.organizationSettings ?? null },
+        { id: OUTRA_ORG, settings: opts.organizationSettings ?? null },
+      ],
+      ouvidoria_manifestacoes: (opts.manifestacoes ?? []) as Linha[],
+      // As conversas vêm de DUAS origens que não se sobrepõem: a opção
+      // `conversations` (quadro — #1993/#3945) e a `conversas` (canal —
+      // #3611, fatia 2). Unir aqui mantém as duas leituras medidas; escolher
+      // uma calaria metade dos testes.
+      conversations: [
+        ...((opts.conversations ?? []) as Linha[]),
+        ...((opts.conversas ?? []) as Linha[]),
+      ],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
@@ -495,6 +526,11 @@ export function makeDb(opts: DbOpts = {}): Registro {
         const linhas = (Array.isArray(nova) ? nova : [nova]).map((l, k) => ({
           id: `novo-${nEscrita + 1}-${k}`,
           ...l,
+          // O PostgREST devolve a linha COMO O BANCO a guardou: `created_at` tem
+          // `default now()` em toda tabela do repo e quem lê a linha recém-inserida
+          // espera o campo. Sem este default o teste da manifestação (#3611)
+          // receberia `created_at: undefined` e mediria o dublê, não o serviço.
+          created_at: l.created_at ?? new Date().toISOString(),
         }));
         const r = await escreve("insert", nova, () => {
           (tables[table] ??= []).push(...linhas);
