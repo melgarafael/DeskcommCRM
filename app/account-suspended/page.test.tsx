@@ -152,6 +152,7 @@ describe("/account-suspended: o hub de quem está numa empresa suspensa", () => 
     render(await AccountSuspendedPage({ searchParams: Promise.resolve({ ajuda: "1" }) }));
     expect(screen.getByTestId("lgpd-lista")).toBeVisible();
     expect(screen.getByRole("link", { name: "Continuar para pagamento" })).toHaveAttribute("href", "/cobranca/contratar");
+    expect(screen.getByRole("link", { name: "suporte@revenda.test" })).toHaveAttribute("href", "mailto:suporte@revenda.test");
   });
 
   it.each(["agent", "suporte"])("%s não é enviado a uma ação financeira automática", async (papel) => {

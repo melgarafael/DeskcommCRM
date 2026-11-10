@@ -111,7 +111,10 @@ export default async function AccountSuspendedPage({
     redirect(`${CAMINHO_DA_CONTRATACAO}${voltou === "1" ? "?voltou=1&retomar=1" : ""}`);
   }
   const mostra = oQueOHubMostra({ administra, tipo: tipoDaAtiva, cobrancaLigada, temAssinatura: painel?.assinatura != null });
-  const suporte = administra && mostra === "contato" ? await emailDeSuporte() : "";
+  // "Precisa de ajuda?" (da contratação) chega com `?ajuda=1`: quem administra
+  // vê o contato mesmo quando a tela mostra o pagamento.
+  const pedeAjuda = ajuda === "1";
+  const suporte = administra && (mostra === "contato" || pedeAjuda) ? await emailDeSuporte() : "";
   const outras = user.organizations
     .filter((o) => o.organization_id !== ativa.orgId && ehOperante(statusDe.get(o.organization_id)))
     .map((o) => ({ id: o.organization_id, nome: o.organization_name }));
@@ -150,6 +153,14 @@ export default async function AccountSuspendedPage({
               {t(
                 "Sua conta está suspensa. Fale com quem administra este sistema para saber o motivo e como reativá-la.",
               )}
+            </p>
+          )}
+          {pedeAjuda && suporte && (primeiroPagamento || mostra === "pagamento") && (
+            <p className="text-sm text-muted-foreground">
+              {t("Precisa de ajuda?")} {t("Fale com o suporte:")}{" "}
+              <a href={`mailto:${suporte}`} className="underline underline-offset-4 hover:text-foreground transition-colors">
+                {suporte}
+              </a>
             </p>
           )}
           <div className="flex flex-wrap items-center justify-center gap-2 pt-2">

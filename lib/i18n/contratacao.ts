@@ -22,4 +22,5 @@ export const TEXTOS_CONTRATACAO = {
   "Retomar pagamento": { es: "Retomar el pago" },
   "Já paguei: conferir pagamento": { es: "Ya pagué: comprobar el pago" },
   "Pagamento processado pelo Asaas. Escolha entre as formas disponíveis na fatura; as próximas cobranças seguem as condições apresentadas pelo provedor.": { es: "Pago procesado por Asaas. Elige entre las formas disponibles en la factura; los siguientes cobros siguen las condiciones presentadas por el proveedor." },
+  "Fale com o suporte:": { es: "Habla con soporte:" },
 };
