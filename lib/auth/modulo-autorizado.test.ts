@@ -148,8 +148,19 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
       `/api/v1/leads/${ID}/contatos-relacionados`,
       "/api/v1/leads/proposals",
       `/api/v1/proposals/${ID}/documento`,
+      // Áreas novas (migration 9316): leituras que trazem o contato exigem `contatos` também.
+      "/api/v1/calls",
+      "/api/v1/financeiro/fidelidade",
+      `/api/v1/messages/${ID}/media`,
     ];
-    const declara = ["area.contatos.leitura", "area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura"];
+    const declara = [
+      "area.contatos.leitura",
+      "area.agenda.leitura",
+      "area.agentes_ia.leitura",
+      "area.negocios.leitura",
+      "area.conversas.leitura",
+      "area.financeiro.leitura",
+    ];
     const montar = (consentidas: string[]): Banco => {
       const b = banco();
       b.instalacao = {
@@ -165,7 +176,13 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
       b.vinculo = { enabled: true, consented_areas: consentidas };
       return b;
     };
-    const semContatos = montar(["area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura"]);
+    const semContatos = montar([
+      "area.agenda.leitura",
+      "area.agentes_ia.leitura",
+      "area.negocios.leitura",
+      "area.conversas.leitura",
+      "area.financeiro.leitura",
+    ]);
     const comContatos = montar(declara);
     for (const caminho of LEITURAS) {
       expect(await decide(semContatos, "GET", caminho), `sem contatos: ${caminho}`).toEqual({
@@ -310,6 +327,9 @@ describe("autorizarModulo — porta", () => {
     "catalogo",
     "configuracao",
     "analise",
+    "tarefas",
+    "etiquetas",
+    "financeiro",
   ].flatMap((a) => [`area.${a}.leitura`, `area.${a}.escrita`]);
 
   function bancoComTudo(): Banco {
@@ -328,12 +348,48 @@ describe("autorizarModulo — porta", () => {
     ["POST", "/api/v1/campaigns"],
     ["GET", "/api/v1/modulos"],
     ["GET", "/api/v1/algo-que-nao-existe"], // desconhecida
-    ["POST", "/api/v1/financeiro/lancamentos"], // financeiro de escrita
+    // Dinheiro que não se desfaz: fica sem área mesmo com `financeiro` consentida.
+    ["POST", `/api/v1/financeiro/comandas/${ID}/finalizar`],
+    ["POST", `/api/v1/financeiro/comandas/${ID}/estornar`],
+    ["POST", "/api/v1/financeiro/comandas/faturar-lote"],
+    ["POST", `/api/v1/honorarios/parcelas/${ID}/pagar`],
+    ["POST", "/api/v1/calls"], // ligar para o cliente
+    ["POST", "/api/v1/phone-numbers"], // conexão do canal
+    ["DELETE", `/api/v1/campaign-suppressions/${ID}`],
+    ["GET", "/api/v1/audit"],
+    ["POST", "/api/v1/imports"],
   ])("porta sem área recusa mesmo com TODAS as áreas declaradas e consentidas: %s %s", async (metodo, caminho) => {
     expect(await decide(bancoComTudo(), metodo, caminho)).toEqual({
       ok: false,
       codigo: "module_area_not_granted",
     });
+  });
+
+  it("as áreas novas (tarefas, etiquetas, financeiro) abrem quando declaradas e consentidas, no modo certo", async () => {
+    const b = bancoComTudo();
+    for (const [metodo, caminho] of [
+      ["GET", "/api/v1/tasks"],
+      ["POST", "/api/v1/tasks"],
+      ["PATCH", `/api/v1/demandas/${ID}`],
+      ["GET", "/api/v1/contact-tags"],
+      ["GET", "/api/v1/financeiro/comandas"],
+      ["POST", `/api/v1/financeiro/comandas/${ID}/itens`],
+      ["POST", "/api/v1/financeiro/lancamentos"], // lê em `analise`, escreve em `financeiro`
+      ["POST", `/api/v1/honorarios/contratos/${ID}/parcelas`],
+    ] as const) {
+      expect(await decide(b, metodo, caminho), `${metodo} ${caminho}`).toMatchObject({ ok: true });
+    }
+    // `financeiro` consentida só em leitura: a escrita de lançamentos recusa; a leitura (que é de `analise`) não depende dela.
+    const soLeitura = bancoComTudo();
+    soLeitura.vinculo = {
+      enabled: true,
+      consented_areas: ["area.financeiro.leitura", "area.analise.leitura"],
+    };
+    expect(await decide(soLeitura, "POST", "/api/v1/financeiro/lancamentos")).toEqual({
+      ok: false,
+      codigo: "module_area_not_granted",
+    });
+    expect(await decide(soLeitura, "GET", "/api/v1/financeiro/lancamentos")).toMatchObject({ ok: true });
   });
 
   it("porta sem área recusa sem tocar o banco", async () => {

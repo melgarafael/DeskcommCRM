@@ -60,6 +60,14 @@ const JUSTIFICADAS: Record<string, string> = {
     "mesma rota: só sessão de pessoa (`requireRole`); token de módulo não autentica ali.",
   "POST /api/v1/agenda/lista-de-espera":
     "mesma rota: só sessão de pessoa (`requireRole`); token de módulo não autentica ali.",
+  "GET /api/v1/contact-tags":
+    "lê a coluna `tags` dos contatos só para contar; a resposta são as etiquetas normalizadas e a contagem, sem nome nem telefone.",
+  "GET /api/v1/financeiro/comandas":
+    "a lista de comandas traz só `contact_id` (identificador opaco), sem nome, telefone ou e-mail do contato.",
+  "POST /api/v1/financeiro/comandas":
+    "o handler só confere se o contato existe na organização (`select id`); a resposta é a comanda, com `contact_id`.",
+  "POST /api/v1/financeiro/fidelidade":
+    "o handler só confere se o contato existe na organização (`select id`); a resposta é a linha de pontos (`id`, `points`, `reason`).",
   "GET /api/v1/conversations/[id]/reply-address":
     "a rota só aceita sessão de pessoa (`requireRole`, sem entrada em `PUBLIC_PATHS`); token de módulo não autentica ali.",
 };

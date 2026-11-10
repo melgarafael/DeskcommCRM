@@ -118,10 +118,10 @@ describe("ConsentimentoPorArea", () => {
     expect((caixa("area.configuracao.leitura") as HTMLInputElement).checked).toBe(false);
   });
 
-  it("avisa que configuração e agentes de IA são sensíveis, só quando declarados", () => {
+  it("avisa que configuração, agentes de IA e financeiro são sensíveis, só quando declarados", () => {
     montar();
     expect(screen.getByTestId(`extension-consent-sensitive-${INSTALACAO}`).textContent).toContain(
-      "Configuração e agentes de IA são áreas sensíveis",
+      "Configuração, agentes de IA e financeiro são áreas sensíveis",
     );
     cleanup();
     montar({}, conectada({ permissions: ["area.contatos.leitura"] }));
@@ -150,6 +150,21 @@ describe("ConsentimentoPorArea", () => {
     await user.click(caixa("area.contatos.leitura"));
     await user.click(screen.getByTestId(`extension-consent-save-${INSTALACAO}`));
     expect(onSave.mock.calls[0]?.[1]).toEqual([]);
+  });
+
+  it("financeiro é sensível: vem desmarcada na primeira vez, com o selo, e tarefas vem marcada", () => {
+    montar(
+      {},
+      conectada({
+        consented_areas: [],
+        permissions: ["area.tarefas.leitura", "area.financeiro.leitura", "area.financeiro.escrita"],
+      }),
+    );
+    expect((caixa("area.financeiro.leitura") as HTMLInputElement).checked).toBe(false);
+    expect((caixa("area.financeiro.escrita") as HTMLInputElement).checked).toBe(false);
+    expect((caixa("area.tarefas.leitura") as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByTestId(`extension-consent-sensitive-${INSTALACAO}`)).toBeTruthy();
+    expect(screen.getAllByText("Sensível")).toHaveLength(2);
   });
 
   it("primeira vez: propõe o que o pacote pede, menos as sensíveis, e o botão é Consentir", async () => {

@@ -245,16 +245,16 @@ describe("perfil connected: service_origin só vale como origem exata", () => {
   });
 });
 
-describe("perfil connected: o vocabulário de permissões do banco tem as 26", () => {
+describe("perfil connected: o vocabulário de permissões do banco tem as 32", () => {
   const validas = async (lista: unknown[]) =>
     (await rpc("permissoes_validas", [JSON.stringify(lista)])) as boolean;
 
-  it("o TypeScript tem 26 e o banco aceita as 26 de uma vez", async () => {
-    expect(EXTENSION_PERMISSIONS).toHaveLength(26);
+  it("o TypeScript tem 32 e o banco aceita as 32 de uma vez", async () => {
+    expect(EXTENSION_PERMISSIONS).toHaveLength(32);
     expect(await validas([...EXTENSION_PERMISSIONS])).toBe(true);
   });
 
-  it("uma 27ª permissão é recusada, tanto desconhecida quanto repetida", async () => {
+  it("uma 33ª permissão é recusada, tanto desconhecida quanto repetida", async () => {
     expect(await validas([...EXTENSION_PERMISSIONS, "area.contatos.apagar"])).toBe(false);
     expect(await validas([...EXTENSION_PERMISSIONS, "navigation.tasks"])).toBe(false);
   });

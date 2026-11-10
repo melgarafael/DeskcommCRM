@@ -11,7 +11,9 @@
  * Regras, em ordem:
  *  1. Método fora de GET/HEAD/POST/PUT/PATCH/DELETE ⇒ null.
  *  2. A lista SEM área tem PRECEDÊNCIA sobre o mapa (rota que casa nas duas é sem área).
- *  3. Entre as entradas do mapa que casam, vence o prefixo MAIS LONGO.
+ *  3. Entre as entradas do mapa que casam, vence o prefixo MAIS LONGO. Na ESCRITA, as entradas de
+ *     `MAPA_DE_ESCRITA` são consultadas ANTES: elas existem para a porta cuja leitura fica numa área
+ *     e cuja escrita fica noutra (`financeiro/lancamentos`: lê em `analise`, escreve em `financeiro`).
  *  4. Nenhum prefixo casou ⇒ null (modelo desconhecido recusa).
  *
  * Casamento por SEGMENTO, nunca por texto solto: `contacts` casa `contacts/[id]` mas não
@@ -120,9 +122,13 @@ const SEM_AREA: readonly EntradaSemArea[] = [
   e("conversations/[id]/draft-reply"), // não classificado na R; fecha por cautela
   e("prospecting"),
 
-  // --- 5. Financeiro e honorários: a ESCRITA fica fora até o Paulo decidir uma área própria.
-  e("financeiro", "escrita"),
-  e("honorarios", "escrita"),
+  // --- 5. Financeiro e honorários: dinheiro que não se desfaz. O resto do financeiro tem a área
+  //        `financeiro` (ver MAPA e MAPA_DE_ESCRITA); estas quatro ficam de fora porque mexem com
+  //        dinheiro, não se desfazem e hoje nem aceitam token de integração (decisão de 10/11).
+  e("financeiro/comandas/[id]/finalizar"), // fecha a comanda e gera o recebimento
+  e("financeiro/comandas/[id]/estornar"), // devolve dinheiro
+  e("financeiro/comandas/faturar-lote"), // fatura várias comandas de uma vez
+  e("honorarios/parcelas/[id]/pagar"), // dá baixa numa parcela de honorário
 
   // --- 5b. Escritas que gastam dinheiro da organização ou não se desfazem: lado seguro (decisão
   //         do engenheiro, 05/11). Afrouxar depois é fácil; apertar depois de um módulo usar, não.
@@ -134,26 +140,17 @@ const SEM_AREA: readonly EntradaSemArea[] = [
   // --- 6. Leitura-apenas por decisão do mapa: regras de automação só têm área na leitura.
   e("automation-rules", "escrita"),
 
-  // --- 7. FORA DO MAPA DESTA FASE: o plano não lista a rota em nenhuma área. Decisão do
-  //        Paulo promovê-las a uma área; até lá recusam módulo.
-  e("financeiro/comandas"), // leitura de comandas e fidelidade: o mapa só dá área ao catálogo e aos lançamentos
-  e("financeiro/fidelidade"),
-  e("tasks"),
-  e("demandas"),
-  e("calls"), // leitura de chamadas também fica fora
-  e("ads"),
-  e("audit"),
-  e("imports"),
-  e("campaign-suppressions"),
-  e("campaign-templates"),
-  e("contact-tags"),
-  e("conversation-tags"),
-  e("company-people"),
-  e("people"),
-  e("phone-numbers"),
-  e("message-template-groups"),
-  e("channel-schedules"),
-  e("messages/[id]/media"),
+  // --- 7. Só LEITURA tem área: a escrita mexe com o cliente ou com a conexão do canal.
+  e("calls", "escrita"), // ligar para o cliente é falar com o cliente (D6); só a leitura do histórico tem área
+  e("phone-numbers", "escrita"), // mexe na conexão do canal
+  e("ads", "escrita"), // leitura das contas e campanhas tem área; escrita não
+  e("messages/[id]/media", "escrita"), // só a leitura do arquivo tem área
+
+  // --- 8. Sem área por decisão, com o motivo escrito (10/11/2026). Afrouxar depois é fácil;
+  //        apertar depois de um módulo usar, não.
+  e("campaign-suppressions"), // tirar alguém da lista faz a campanha voltar a escrever para quem pediu para parar
+  e("audit"), // a auditoria mostra tudo de todos
+  e("imports"), // entrada de contatos em massa, não se desfaz
 ];
 
 /**
@@ -172,6 +169,8 @@ export const PORTAS_SEM_AREA_NA_ESCRITA: readonly string[] = SEM_AREA.filter(
 const MAPA: readonly (readonly [string, ExtensionArea])[] = [
   // contatos
   ["contacts", "contatos"],
+  ["people", "contatos"],
+  ["company-people", "contatos"],
   ["tags", "contatos"],
   ["companies", "contatos"],
   ["segments", "contatos"],
@@ -187,6 +186,8 @@ const MAPA: readonly (readonly [string, ExtensionArea])[] = [
   // conversas (envio fica de fora: ver SEM_AREA)
   ["conversations", "conversas"],
   ["messages/[id]/hide", "conversas"],
+  ["messages/[id]/media", "conversas"], // só leitura (a escrita está em SEM_AREA)
+  ["calls", "conversas"], // só leitura (a escrita está em SEM_AREA)
   ["notes", "conversas"],
   ["handoffs", "conversas"],
   // agenda
@@ -211,11 +212,37 @@ const MAPA: readonly (readonly [string, ExtensionArea])[] = [
   ["attendants/sectors", "configuracao"],
   ["team/assignable", "configuracao"],
   ["routing", "configuracao"],
+  ["campaign-templates", "configuracao"],
+  ["message-template-groups", "configuracao"],
+  ["channel-schedules", "configuracao"],
+  ["phone-numbers", "configuracao"], // só leitura (a escrita está em SEM_AREA)
   // analise
   ["metrics", "analise"],
   ["reports", "analise"],
   ["financeiro/lancamentos", "analise"],
   ["honorarios", "analise"],
+  ["ads/meta/accounts", "analise"], // só leitura (a escrita está em SEM_AREA)
+  ["ads/meta/campaigns", "analise"],
+  // tarefas
+  ["tasks", "tarefas"],
+  ["demandas", "tarefas"],
+  // etiquetas
+  ["contact-tags", "etiquetas"],
+  ["conversation-tags", "etiquetas"],
+  // financeiro: comandas e fidelidade têm a área nos dois modos. As quatro portas de dinheiro que
+  // não se desfazem estão em SEM_AREA e vencem. O que não casa aqui, nem no mapa de escrita, recusa.
+  ["financeiro/comandas", "financeiro"],
+  ["financeiro/fidelidade", "financeiro"],
+];
+
+/**
+ * Entradas que valem SÓ para escrita, consultadas antes de `MAPA`. A leitura destas portas fica na
+ * área do mapa acima (catálogo, análise); a escrita é de `financeiro`.
+ */
+const MAPA_DE_ESCRITA: readonly (readonly [string, ExtensionArea])[] = [
+  ["financeiro/catalogo", "financeiro"],
+  ["financeiro/lancamentos", "financeiro"],
+  ["honorarios", "financeiro"],
 ];
 
 function segmentos(modelo: string): string[] | null {
@@ -270,6 +297,9 @@ const LEITURAS_COM_CONTATO_EMBUTIDO: readonly string[] = [
   "leads/[id]/contatos-relacionados",
   "leads/proposals",
   "proposals/[id]/documento",
+  "financeiro/fidelidade", // saldo e extrato de pontos de UM contato
+  "calls", // o histórico de chamadas traz o contato que foi chamado
+  "messages/[id]/media", // o arquivo é da conversa com o cliente
 ];
 
 export function leituraExigeAreaContatos(modelo: string, metodo: string): boolean {
@@ -292,13 +322,18 @@ export function areaDaPorta(modelo: string, metodo: string): AreaDaPorta | null 
   if (!partes) return null;
   if (estaSemAreaPorDesenho(modelo, m)) return null;
 
-  let melhor: { area: ExtensionArea; tamanho: number } | null = null;
-  for (const [prefixo, area] of MAPA) {
-    if (!casa(prefixo, partes, false)) continue;
-    const tamanho = prefixo.split("/").length;
-    if (!melhor || tamanho > melhor.tamanho) melhor = { area, tamanho };
+  // Na escrita, o mapa próprio dela vem primeiro; sem entrada ali, vale o mapa geral.
+  const mapas = modo === "escrita" ? [MAPA_DE_ESCRITA, MAPA] : [MAPA];
+  for (const mapa of mapas) {
+    let melhor: { area: ExtensionArea; tamanho: number } | null = null;
+    for (const [prefixo, area] of mapa) {
+      if (!casa(prefixo, partes, false)) continue;
+      const tamanho = prefixo.split("/").length;
+      if (!melhor || tamanho > melhor.tamanho) melhor = { area, tamanho };
+    }
+    if (melhor) return { area: melhor.area, modo };
   }
-  return melhor ? { area: melhor.area, modo } : null;
+  return null;
 }
 
 /**
@@ -310,6 +345,7 @@ export const SEGMENTOS_LITERAIS_CONHECIDOS: ReadonlySet<string> = new Set(
   [
     ...SEM_AREA.map((x) => x.modelo),
     ...MAPA.map(([prefixo]) => prefixo),
+    ...MAPA_DE_ESCRITA.map(([prefixo]) => prefixo),
     // Sem isto `agenda/vinculos` viraria `agenda/[id]` e a trava de contato nunca casaria.
     ...LEITURAS_COM_CONTATO_EMBUTIDO,
   ]
@@ -319,3 +355,7 @@ export const SEGMENTOS_LITERAIS_CONHECIDOS: ReadonlySet<string> = new Set(
 
 /** Só para o teste de consistência: o mapa cru, sem a lista sem área. */
 export const PREFIXOS_DO_MAPA: readonly (readonly [string, ExtensionArea])[] = MAPA;
+
+/** Só para o teste de consistência: o mapa que vale só na escrita. */
+export const PREFIXOS_DO_MAPA_DE_ESCRITA: readonly (readonly [string, ExtensionArea])[] =
+  MAPA_DE_ESCRITA;

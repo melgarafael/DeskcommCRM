@@ -9,7 +9,10 @@
     "agentes_ia",
     "catalogo",
     "configuracao",
-    "analise"
+    "analise",
+    "tarefas",
+    "etiquetas",
+    "financeiro"
   ],
   "permissoes": [
     "area.agenda.escrita",
@@ -26,10 +29,16 @@
     "area.contatos.leitura",
     "area.conversas.escrita",
     "area.conversas.leitura",
+    "area.etiquetas.escrita",
+    "area.etiquetas.leitura",
+    "area.financeiro.escrita",
+    "area.financeiro.leitura",
     "area.funis.escrita",
     "area.funis.leitura",
     "area.negocios.escrita",
-    "area.negocios.leitura"
+    "area.negocios.leitura",
+    "area.tarefas.escrita",
+    "area.tarefas.leitura"
   ],
   "rotas": {
     "agenda": [
@@ -165,6 +174,8 @@
       "PUT /api/v1/ai/style-adjustments"
     ],
     "analise": [
+      "GET /api/v1/ads/meta/accounts",
+      "GET /api/v1/ads/meta/campaigns",
       "GET /api/v1/financeiro/lancamentos",
       "GET /api/v1/honorarios/contratos",
       "GET /api/v1/honorarios/contratos/[id]/parcelas",
@@ -206,10 +217,17 @@
     ],
     "configuracao": [
       "DELETE /api/v1/attendants/sectors/[id]",
+      "DELETE /api/v1/campaign-templates/[id]",
+      "DELETE /api/v1/channel-schedules/[id]",
+      "DELETE /api/v1/message-template-groups/[id]",
       "DELETE /api/v1/settings/proposal-templates/[id]",
       "DELETE /api/v1/settings/sons",
       "GET /api/v1/attendants/availability",
       "GET /api/v1/attendants/sectors",
+      "GET /api/v1/campaign-templates",
+      "GET /api/v1/channel-schedules",
+      "GET /api/v1/message-template-groups",
+      "GET /api/v1/phone-numbers",
       "GET /api/v1/settings/campanhas",
       "GET /api/v1/settings/proposal-templates",
       "GET /api/v1/settings/proposal-templates/[id]",
@@ -222,6 +240,9 @@
       "GET /api/v1/team/assignable",
       "PATCH /api/v1/attendants/availability/[id]",
       "PATCH /api/v1/attendants/sectors/[id]",
+      "PATCH /api/v1/campaign-templates/[id]",
+      "PATCH /api/v1/channel-schedules/[id]",
+      "PATCH /api/v1/message-template-groups/[id]",
       "PATCH /api/v1/settings/agenda-apresentacao",
       "PATCH /api/v1/settings/campanhas",
       "PATCH /api/v1/settings/catalogo",
@@ -232,10 +253,14 @@
       "PATCH /api/v1/settings/routing/channels",
       "PATCH /api/v1/settings/task-plans",
       "POST /api/v1/attendants/sectors",
+      "POST /api/v1/campaign-templates",
+      "POST /api/v1/channel-schedules",
+      "POST /api/v1/message-template-groups",
       "POST /api/v1/settings/proposal-templates",
       "POST /api/v1/settings/proposal-templates/importar",
       "POST /api/v1/settings/sons",
-      "PUT /api/v1/attendants/sector/[id]"
+      "PUT /api/v1/attendants/sector/[id]",
+      "PUT /api/v1/message-template-groups/[id]/ordem"
     ],
     "contatos": [
       "DELETE /api/v1/companies/[id]",
@@ -259,15 +284,20 @@
       "GET /api/v1/contacts/cep",
       "GET /api/v1/contacts/compare",
       "GET /api/v1/contacts/duplicates",
+      "GET /api/v1/people",
+      "GET /api/v1/people/[id]",
       "GET /api/v1/tags/cores",
       "GET /api/v1/tags/vocabulario",
       "PATCH /api/v1/companies/[id]",
+      "PATCH /api/v1/company-people/[id]",
       "PATCH /api/v1/contacts/[id]",
       "PATCH /api/v1/contacts/[id]/carteira",
       "PATCH /api/v1/contacts/[id]/person",
       "PATCH /api/v1/contacts/[id]/phones/[id]",
+      "PATCH /api/v1/people/[id]",
       "POST /api/v1/companies",
       "POST /api/v1/companies/[id]/enrich",
+      "POST /api/v1/company-people",
       "POST /api/v1/contacts",
       "POST /api/v1/contacts/[id]/always-human",
       "POST /api/v1/contacts/[id]/personal",
@@ -279,6 +309,7 @@
       "POST /api/v1/contacts/duplicates/dismiss",
       "POST /api/v1/contacts/import",
       "POST /api/v1/contacts/import/agenda",
+      "POST /api/v1/people",
       "POST /api/v1/tags/vocabulario"
     ],
     "conversas": [
@@ -286,6 +317,7 @@
       "DELETE /api/v1/conversations/[id]/participants",
       "DELETE /api/v1/conversations/[id]/snooze",
       "DELETE /api/v1/messages/[id]/hide",
+      "GET /api/v1/calls",
       "GET /api/v1/conversations",
       "GET /api/v1/conversations/[id]",
       "GET /api/v1/conversations/[id]/messages",
@@ -298,6 +330,7 @@
       "GET /api/v1/conversations/[id]/sector",
       "GET /api/v1/conversations/[id]/transfer",
       "GET /api/v1/conversations/counts",
+      "GET /api/v1/messages/[id]/media",
       "PATCH /api/v1/conversations/[id]",
       "POST /api/v1/conversations/[id]/close",
       "POST /api/v1/conversations/[id]/drafts",
@@ -317,6 +350,29 @@
       "POST /api/v1/conversations/open-with-contact",
       "POST /api/v1/messages/[id]/hide",
       "PUT /api/v1/conversations/[id]/sector"
+    ],
+    "etiquetas": [
+      "GET /api/v1/contact-tags",
+      "GET /api/v1/conversation-tags"
+    ],
+    "financeiro": [
+      "DELETE /api/v1/financeiro/catalogo/[id]",
+      "DELETE /api/v1/financeiro/comandas/[id]/itens/[id]",
+      "DELETE /api/v1/financeiro/lancamentos/[id]",
+      "GET /api/v1/financeiro/comandas",
+      "GET /api/v1/financeiro/comandas/[id]",
+      "GET /api/v1/financeiro/comandas/pendentes",
+      "GET /api/v1/financeiro/fidelidade",
+      "PATCH /api/v1/financeiro/catalogo/[id]",
+      "PATCH /api/v1/financeiro/comandas/[id]",
+      "PATCH /api/v1/financeiro/lancamentos/[id]",
+      "POST /api/v1/financeiro/catalogo/[id]",
+      "POST /api/v1/financeiro/comandas",
+      "POST /api/v1/financeiro/comandas/[id]/itens",
+      "POST /api/v1/financeiro/fidelidade",
+      "POST /api/v1/financeiro/lancamentos",
+      "POST /api/v1/honorarios/contratos",
+      "POST /api/v1/honorarios/contratos/[id]/parcelas"
     ],
     "funis": [
       "DELETE /api/v1/pipelines/[id]",
@@ -383,9 +439,26 @@
       "POST /api/v1/proposals/[id]/decide",
       "POST /api/v1/proposals/[id]/preencher-com-conversa",
       "POST /api/v1/proposals/[id]/revise"
+    ],
+    "tarefas": [
+      "DELETE /api/v1/tasks/[id]",
+      "GET /api/v1/tasks",
+      "PATCH /api/v1/demandas/[id]",
+      "PATCH /api/v1/tasks/[id]",
+      "POST /api/v1/tasks"
     ]
   },
   "formatos": {
+    "/api/v1/ads/meta/campaigns": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "69705edca235855a"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/agenda/agendamentos": {
       "corpo": [
         {
@@ -1066,6 +1139,83 @@
       ],
       "resposta": []
     },
+    "/api/v1/calls": {
+      "corpo": [
+        {
+          "nome": "listCallsQuerySchema",
+          "origem": "@/lib/schemas/calls",
+          "hash": "00dc862b0cf5dc1d"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/campaign-templates": {
+      "corpo": [
+        {
+          "nome": "criarTemplateSchema",
+          "origem": "@/lib/campanhas/schemas",
+          "hash": "67907a013767316b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/campaign-templates/[id]": {
+      "corpo": [
+        {
+          "nome": "editarTemplateSchema",
+          "origem": "@/lib/campanhas/schemas",
+          "hash": "fee5f5a375c59d1e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/channel-schedules": {
+      "corpo": [
+        {
+          "nome": "criarSchema",
+          "origem": "local",
+          "hash": "5fce8097272314ec"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/channel-schedules/[id]": {
+      "corpo": [
+        {
+          "nome": "editarSchema",
+          "origem": "local",
+          "hash": "a566844842c583f3"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/company-people": {
+      "corpo": [
+        {
+          "nome": "companyPersonCreateSchema",
+          "origem": "@/lib/crm-b2b/schemas",
+          "hash": "75955c2a86e61070"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/contact-tags": {
+      "corpo": [
+        {
+          "nome": "tagsPageQuerySchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "4219ec67afa6fe18"
+        },
+        {
+          "nome": "tagsPageResultSchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "2074f4b202dd3c34"
+        }
+      ],
+      "resposta": [
+        "tagsPageResultSchema"
+      ]
+    },
     "/api/v1/contacts": {
       "corpo": [
         {
@@ -1115,6 +1265,28 @@
         }
       ],
       "resposta": []
+    },
+    "/api/v1/conversation-tags": {
+      "corpo": [
+        {
+          "nome": "canonicalConversationTagsSchema",
+          "origem": "@/lib/schemas/settings",
+          "hash": "afeb664b38bdc8c7"
+        },
+        {
+          "nome": "tagsPageQuerySchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "4219ec67afa6fe18"
+        },
+        {
+          "nome": "tagsPageResultSchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "2074f4b202dd3c34"
+        }
+      ],
+      "resposta": [
+        "tagsPageResultSchema"
+      ]
     },
     "/api/v1/conversations": {
       "corpo": [
@@ -1186,6 +1358,16 @@
       ],
       "resposta": []
     },
+    "/api/v1/demandas/[id]": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "5288b983dc6269e1"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/financeiro/catalogo/[id]": {
       "corpo": [
         {
@@ -1196,12 +1378,62 @@
       ],
       "resposta": []
     },
+    "/api/v1/financeiro/comandas": {
+      "corpo": [
+        {
+          "nome": "abrirComandaSchema",
+          "origem": "@/lib/financeiro/comanda",
+          "hash": "9ddc5b53f293104a"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/financeiro/comandas/[id]": {
+      "corpo": [
+        {
+          "nome": "alterarComandaSchema",
+          "origem": "@/lib/financeiro/comanda",
+          "hash": "0837b0f6ea6a4250"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/financeiro/comandas/[id]/itens": {
+      "corpo": [
+        {
+          "nome": "itemSchema",
+          "origem": "@/lib/financeiro/comanda",
+          "hash": "f6867d4dd6215c21"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/financeiro/fidelidade": {
+      "corpo": [
+        {
+          "nome": "movimentoSchema",
+          "origem": "local",
+          "hash": "eebf99712ac97bfe"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/financeiro/lancamentos": {
       "corpo": [
         {
           "nome": "criarSchema",
           "origem": "local",
           "hash": "0fb0c0a64f6bcf72"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/financeiro/lancamentos/[id]": {
+      "corpo": [
+        {
+          "nome": "alterarSchema",
+          "origem": "local",
+          "hash": "076d3a4559627320"
         }
       ],
       "resposta": []
@@ -1257,6 +1489,36 @@
           "nome": "querySchema",
           "origem": "local",
           "hash": "1bb07823e7c174f1"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-template-groups": {
+      "corpo": [
+        {
+          "nome": "createGrupoSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "d0e3d268fd5d3550"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-template-groups/[id]": {
+      "corpo": [
+        {
+          "nome": "updateGrupoSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "44eb8f1148bbf0fa"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-template-groups/[id]/ordem": {
+      "corpo": [
+        {
+          "nome": "moverGrupoSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "360e3b90c47a395e"
         }
       ],
       "resposta": []
@@ -1382,6 +1644,16 @@
           "nome": "querySchema",
           "origem": "local",
           "hash": "e3f25fb38810981e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/people": {
+      "corpo": [
+        {
+          "nome": "personCreateSchema",
+          "origem": "@/lib/crm-b2b/schemas",
+          "hash": "156b784c836bd8c5"
         }
       ],
       "resposta": []
@@ -1732,6 +2004,31 @@
       "resposta": [
         "tagsPageResultSchema"
       ]
+    },
+    "/api/v1/tasks": {
+      "corpo": [
+        {
+          "nome": "criacaoSchema",
+          "origem": "local",
+          "hash": "5bd7b4471832f8e9"
+        },
+        {
+          "nome": "listaSchema",
+          "origem": "local",
+          "hash": "b25db4e0cf6dc15f"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/tasks/[id]": {
+      "corpo": [
+        {
+          "nome": "edicaoSchema",
+          "origem": "local",
+          "hash": "49c07a1badcf3b69"
+        }
+      ],
+      "resposta": []
     }
   }
 }
