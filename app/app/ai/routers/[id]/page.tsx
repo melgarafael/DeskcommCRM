@@ -69,12 +69,11 @@ export default async function RouterEditorPage({ params }: { params: Promise<{ i
   });
 
   const initialState: RouterDetailState = {
-    // Estado EFETIVO: número removido não está roteando, por mais que a linha
-    // de `ai_routers` diga `is_active`.
-    router: {
-      ...(routerRow as RouterDetailState["router"]),
-      is_active: numeroRemovido ? false : routerRow.is_active,
-    },
+    // O formulário recebe o `is_active` GRAVADO. Entregar `false` aqui por
+    // causa do número removido faria o próximo "Salvar" gravar a desativação
+    // sem o operador ter escolhido. Quem mostra o estado efetivo (não roteia)
+    // é a tela, pela flag `numeroRemovido`.
+    router: routerRow as RouterDetailState["router"],
     members: (memberRows ?? []) as RouterDetailState["members"],
   };
 

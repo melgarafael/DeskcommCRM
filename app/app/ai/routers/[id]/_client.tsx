@@ -66,9 +66,9 @@ interface Props {
   classifierModels: ClassifierModelOption[];
   /**
    * #4340 — o `channel_session` deste roteador saiu da lista de canais
-   * oferecíveis (arquivado/removido). O `page.tsx` já entrega o roteador com
-   * `is_active: false`; esta flag existe para a tela DIZER o motivo, em vez de
-   * só parecer um roteador desligado por escolha do operador.
+   * oferecíveis (arquivado/removido). O selo passa a dizer "inativo" e a tela
+   * diz o motivo. O `is_active` do formulário continua o GRAVADO: salvar outra
+   * coisa não pode desativar o roteador sem o operador ter escolhido.
    */
   numeroRemovido?: boolean;
 }
@@ -341,8 +341,13 @@ export function RouterEditorClient({
           >
             <CaretLeft size={14} aria-hidden /> {t("Roteadores")}
           </Link>
-          <Badge variant={router.is_active ? "success" : "neutral"} className="text-xs">
-            {router.is_active ? t("ativo") : t("inativo")}
+          {/* Estado EFETIVO: número removido não roteia, diga o que disser a linha. */}
+          <Badge
+            variant={router.is_active && !numeroRemovido ? "success" : "neutral"}
+            className="text-xs"
+            data-testid="estado-do-roteador"
+          >
+            {router.is_active && !numeroRemovido ? t("ativo") : t("inativo")}
           </Badge>
         </div>
         {canManage && (

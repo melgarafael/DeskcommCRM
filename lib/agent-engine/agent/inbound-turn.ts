@@ -2926,11 +2926,12 @@ async function executarTurnoDoAgente(
       // `origem_da_escolha = 'jev'`); o único leitor desta tabela
       // (`app/api/v1/ai/evolution`) conta roteamento, não quem o fez.
       if (!decisaoJaGravada) {
-        // UM aviso POR TURNO — dentro da guarda do job, então nem a reexecução
-        // do turno reagendado repete a linha (nunca por mensagem): o operador
-        // vê "este número não tem roteador" uma vez, com o agente que assumiu.
+        // UM registro POR TURNO — dentro da guarda do job, então nem a reexecução
+        // do turno reagendado repete a linha (nunca por mensagem). É `info`, não
+        // `warn`: número sem roteador é o estado NORMAL de quem nunca criou
+        // roteador, e um aviso por turno afogaria os avisos de verdade.
         if (numeroSemRoteador) {
-          runLog.warn('número sem roteador — o turno segue no agente principal (#4340)', {
+          runLog.info('número sem roteador — o turno segue no agente principal (#4340)', {
             conversation_id: input.conversationId,
             channel_session_id: input.channelSessionId,
             agent_id: agentConfig?.agentId ?? null,

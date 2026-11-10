@@ -256,16 +256,18 @@ describe("#4340 (a) número sem roteador grava UMA decisão no_match e mantém o
     expect(jobId).toBe(JOB);
   });
 
-  it("o aviso do número sem roteador sai UMA vez por turno, não por mensagem", async () => {
+  it("o registro do número sem roteador sai UMA vez por turno, como info e não como aviso", async () => {
     const banco = bancoFingido();
     const log = logFalso();
 
     await passagem(banco, { log });
 
-    const avisos = log.warn.mock.calls.filter(([mensagem]) =>
-      String(mensagem).toLowerCase().includes("sem roteador"),
-    );
-    expect(avisos, "o aviso de número sem roteador tem de sair exatamente uma vez").toHaveLength(1);
+    const semRoteador = ([mensagem]: unknown[]) =>
+      String(mensagem).toLowerCase().includes("sem roteador");
+    const avisos = log.info.mock.calls.filter(semRoteador);
+    expect(avisos, "o registro de número sem roteador tem de sair exatamente uma vez").toHaveLength(1);
+    // Estado normal de quem nunca criou roteador: não é `warn` a cada turno.
+    expect(log.warn.mock.calls.filter(semRoteador)).toHaveLength(0);
     expect(avisos[0]?.[1]).toMatchObject({ conversation_id: CONVERSA, agent_id: "agente-principal" });
   });
 });
@@ -336,8 +338,10 @@ describe("#4340 CONTROLES — o que já gravava continua igual", () => {
     expect(banco.decisoes[0]?.[1]).toBe("router-1");
     expect(banco.decisoes[0]?.[6]).toBe("classified");
     expect(
-      log.warn.mock.calls.filter(([m]) => String(m).toLowerCase().includes("sem roteador")),
-      "aviso de número sem roteador num turno que TEM roteador",
+      [...log.info.mock.calls, ...log.warn.mock.calls].filter(([m]) =>
+        String(m).toLowerCase().includes("sem roteador"),
+      ),
+      "registro de número sem roteador num turno que TEM roteador",
     ).toHaveLength(0);
   });
 });
