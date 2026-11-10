@@ -327,6 +327,10 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
  */
 export function modoDeCampanhaDoCanal(provider: string | null | undefined): "text" | "template" | null {
   if (!transportaMensagem(provider)) return null;
+  // O chat da OLX (#2927) só existe dentro da thread que o comprador abriu num
+  // anúncio: não há para quem iniciar contato em lista. Texto livre fora da
+  // janela é verdade para a resposta, não para a campanha.
+  if (provider === CHANNEL_PROVIDER_OLX) return null;
   try {
     const caps = capabilitiesOf(provider as ProviderDeMensagem);
     if (caps.freeformOutsideWindow) return "text";

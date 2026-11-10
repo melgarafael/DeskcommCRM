@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   corpoDeEnvioOlx,
-  ehEcoDaConta,
   lerEntradaOlx,
   olxAdapter,
+  saiuDaConta,
 } from "@/lib/channels/adapters/olx";
 import type { OutboundEnvelope } from "@/lib/channels/types";
 
@@ -78,21 +78,36 @@ describe("adapter olx — ENTRADA (tradução de formato)", () => {
       name: "Fulana",
       email: "cliente@exemplo.com",
       phone: "+55 31 99999-8888",
-      messageTimestamp: "2026-10-22T12:00:00Z",
+      // Normalizado para ISO-8601 pela leitura (ver o teste do instante).
+      messageTimestamp: "2026-10-22T12:00:00.000Z",
       listId: "listing-9",
     });
-    expect(ehEcoDaConta(r.mensagem)).toBe(false);
+    expect(saiuDaConta(r.mensagem)).toBe(false);
   });
 
-  it("aceita origin 'seller' e o marca como ECO (não vira mensagem nova)", () => {
+  it("aceita origin 'seller' e o marca como SAÍDA da conta (app da OLX ou eco nosso)", () => {
     const r = lerEntradaOlx(JSON.stringify({ chatId: "c", messageId: "m", message: "oi", origin: "seller" }));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.mensagem.origin).toBe("seller");
-    expect(ehEcoDaConta(r.mensagem)).toBe(true);
+    expect(saiuDaConta(r.mensagem)).toBe(true);
     // Campos ausentes viram null, não quebram a leitura.
     expect(r.mensagem.listId).toBeNull();
     expect(r.mensagem.senderType).toBeNull();
+  });
+
+  it("instante ilegível vira null em vez de ir cru para o banco", () => {
+    const ler = (messageTimestamp: unknown) => {
+      const r = lerEntradaOlx(
+        JSON.stringify({ chatId: "c", messageId: "m", message: "oi", origin: "buyer", messageTimestamp }),
+      );
+      if (!r.ok) throw new Error("leitura recusada");
+      return r.mensagem.messageTimestamp;
+    };
+    expect(ler("2026-10-22T09:00:00-03:00")).toBe("2026-10-22T12:00:00.000Z");
+    expect(ler("ontem à tarde")).toBeNull();
+    expect(ler("")).toBeNull();
+    expect(ler(1729598400)).toBeNull();
   });
 
   it("fail-closed no contrato: JSON inválido e campo obrigatório ausente", () => {
@@ -114,21 +129,15 @@ describe("adapter olx — ENTRADA (tradução de formato)", () => {
   });
 });
 
-describe("adapter olx — CONTRATO do envio (pendente: sem fonte pública, sem credencial)", () => {
-  it("monta o corpo que a issue documenta: {textMessage, messageId, chatId}", () => {
-    // Este é o contrato que a fatia fixa. O endpoint de envio da OLX NÃO tem
-    // fonte pública (a própria issue registra a divergência da doc), e a
-    // chamada real exige OAuth — por isso o corpo é testado puro.
+describe("adapter olx — CONTRATO do envio (sem credencial)", () => {
+  it("monta o corpo que a issue documenta, com o messageId que NÓS geramos", () => {
+    // A OLX respondeu na #2927 (15/10): o messageId é do integrador e é a chave
+    // de idempotência. A citação não entra: este chat não cita.
     const corpo = corpoDeEnvioOlx(
       envelope({ providerConversationId: "chat-abc", replyToExternalId: "msg-in" }),
+      "id-gerado",
     );
-    expect(corpo).toEqual({ chatId: "chat-abc", textMessage: "olá", messageId: "msg-in" });
-  });
-
-  it("omite messageId quando não há citação", () => {
-    const corpo = corpoDeEnvioOlx(envelope({ providerConversationId: "chat-abc" }));
-    expect(corpo).toEqual({ chatId: "chat-abc", textMessage: "olá" });
-    expect(corpo).not.toHaveProperty("messageId");
+    expect(corpo).toEqual({ chatId: "chat-abc", textMessage: "olá", messageId: "id-gerado" });
   });
 
   it("não está configurado nesta instalação (não há caminho de credencial)", () => {

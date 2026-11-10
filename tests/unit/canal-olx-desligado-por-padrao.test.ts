@@ -109,7 +109,7 @@ describe("a entrada do canal", () => {
     expect(ingestOlxInbound).not.toHaveBeenCalled();
   });
 
-  it("ligado: o ECO da própria conta chega ao ingest como eco, não como mensagem nova", async () => {
+  it("ligado: o que sai da conta do vendedor chega ao ingest marcado como `seller`", async () => {
     process.env.OLX_ENABLED = "true";
     const eco = JSON.stringify({
       chatId: "chat-abc",
@@ -124,8 +124,9 @@ describe("a entrada do canal", () => {
       secret: null,
     });
     expect(r).toMatchObject({ ok: true });
-    // O corte do eco é do INGEST (é ele que sabe o que é escrever); aqui prova
-    // que o eco chega marcado e que o seam não o transforma em erro.
+    // Quem decide entre saída do app e eco nosso é o INGEST (é ele que sabe o
+    // que é escrever); aqui prova que chega marcado e que o seam não o
+    // transforma em erro.
     expect(ingestOlxInbound).toHaveBeenCalledWith(
       {},
       expect.objectContaining({ mensagem: expect.objectContaining({ origin: "seller" }) }),

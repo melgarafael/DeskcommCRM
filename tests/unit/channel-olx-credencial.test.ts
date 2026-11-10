@@ -112,9 +112,9 @@ describe("o envio real", () => {
     const beforeSend = vi.fn(async () => undefined);
     const r = await olxAdapter.send(envelope({ beforeSend }));
 
-    // A resposta de sucesso da OLX é só um status — externalId `null` é o
-    // honesto, e o seam o distingue de "não tentei".
-    expect(r).toEqual({ externalId: null });
+    // A resposta de sucesso da OLX é só um status: o id é o que NÓS geramos e
+    // mandamos no corpo (chave de idempotência da OLX, #2927).
+    expect(r.externalId).toMatch(/^[0-9a-f-]{36}$/);
     expect(beforeSend).toHaveBeenCalledTimes(1);
 
     expect(fetchFalso).toHaveBeenCalledTimes(1);
@@ -123,7 +123,11 @@ describe("o envio real", () => {
     expect(init.method).toBe("POST");
     const cabecalhoDeAutorizacao = "Bearer" + " token-de-teste";
     expect(init.headers).toMatchObject({ Authorization: cabecalhoDeAutorizacao });
-    expect(JSON.parse(String(init.body))).toEqual({ chatId: "chat-abc", textMessage: "olá" });
+    expect(JSON.parse(String(init.body))).toEqual({
+      chatId: "chat-abc",
+      textMessage: "olá",
+      messageId: r.externalId,
+    });
   });
 
   it("com o canal ligado e SEM credencial, desiste com `olx_not_configured` sem tentar a rede", async () => {

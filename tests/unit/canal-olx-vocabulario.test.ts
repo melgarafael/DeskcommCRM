@@ -69,6 +69,8 @@ describe("canal olx — vocabulário e seam", () => {
     expect(baseline).toMatch(/provider = 'olx'\s+and olx_seller_id\s+is not null/);
     expect(baseline).toMatch(/webhook_events_log_provider_check check \(provider in \([\s\S]*?'olx'/);
     expect(baseline).toContain("channel_sessions_olx_seller_id_ativo_unique");
+    // A conversa nasce com o canal dela (doc 294): o CHECK de conversations.channel conhece `olx`.
+    expect(baseline).toMatch(/conversations_channel_check\s+check \(channel in \([^)]*'olx'/);
     // Colunas ANTES do CHECK que as referencia — senão o install quebra.
     expect(baseline.indexOf("add column if not exists olx_seller_id")).toBeLessThan(
       baseline.indexOf("(provider = 'olx'"),
@@ -78,6 +80,7 @@ describe("canal olx — vocabulário e seam", () => {
     expect(mig).toContain("add column if not exists olx_seller_id");
     expect(mig).toMatch(/provider = 'olx' and olx_seller_id is not null/);
     expect(mig).toContain("'olx'");
+    expect(mig).toMatch(/conversations_channel_check\s+check \(channel in \([^)]*'olx'/);
     // A descrição vive no cabeçalho `-- manifest:` do próprio .sql.
     expect(mig).toMatch(/^-- manifest:/m);
   });

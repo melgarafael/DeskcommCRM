@@ -35587,9 +35587,11 @@ comment on column public.contacts.social_identity is
 -- afirmava o contrário ("incluídas no bloco único acima") e era falsa: o
 -- apêndice não tocava constraint nenhuma, e toda VPS de cliente batia 23514 na
 -- primeira conexão de rede social.
+-- 'olx' (migration 9317): a conversa do chat da OLX nasce com o canal dela.
+-- Bloco único desta constraint: canal novo entra NESTA lista.
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
-  check (channel in ('whatsapp', 'instagram', 'facebook'));
+  check (channel in ('whatsapp', 'instagram', 'facebook', 'olx'));
 
 
 -- APÊNDICE 20260921030100_0369_prospeccao_nativa.sql

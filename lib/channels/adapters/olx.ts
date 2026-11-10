@@ -21,9 +21,17 @@
  * O que continua de fora, e por quê: o handshake do OAuth é authorization_code
  * com redirect por navegador (`auth.olx.com.br/oauth` + `/oauth/token`), então
  * a obtenção do token é feita pelo integrador cadastrado junto à OLX e o CRM
- * recebe o access token já na mão; e a doc de envio não devolve id da mensagem
- * (só status HTTP), então `externalId` sai `null` — honesto, e diferente de um
- * `sent` inventado.
+ * recebe o access token já na mão.
+ *
+ * ─── O id da mensagem é NOSSO (resposta da OLX na issue #2927, 15/10) ───────
+ *
+ * O `messageId` do envio é gerado pelo integrador e serve de chave de
+ * idempotência. A doc de envio não devolve id nenhum (só status HTTP), então o
+ * id que nós geramos é o único que existe: ele volta como `externalId`, vira o
+ * `external_id` da nossa linha, e é com ele que o eco (`origin: "seller"`) se
+ * reconhece — `unique (organization_id, external_id)` + a limpeza do eco no
+ * handler de envio. Que o eco volte com ESTE id ainda é contrato não medido
+ * contra a OLX real.
  *
  * ─── A OLX endereça por THREAD, como o intermediado ─────────────────────────
  *
@@ -36,6 +44,8 @@
  * identifica o CONTATO para o resto do sistema (dedup, log, abertura de
  * conversa); ele não é o que endereça este envio.
  */
+import { randomUUID } from "node:crypto";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { canalChatDeVendedorLigado, chatDeVendedorApiBase, resolveTokenChatDeVendedor } from "../chat-de-vendedor/credentials";
@@ -56,23 +66,10 @@ function toE164Digits(raw: string): string {
 export interface CorpoDeEnvioOlx {
   chatId: string;
   textMessage: string;
-  /** Id da mensagem, quando há uma a que responder (a issue o lista no corpo). */
-  messageId?: string;
+  /** Id que NÓS geramos para esta mensagem — a chave de idempotência da OLX. */
+  messageId: string;
 }
 
-/**
- * Traduz o envelope para o corpo que a OLX recebe.
- *
- * Pura e exportada de propósito: é o CONTRATO que o teste fixa sem precisar de
- * credencial. `chatId` é a thread (`providerConversationId`); `textMessage` é o
- * texto; `messageId` entra só quando há citação (`replyToExternalId`).
- *
- * A doc pública (`developers.olx.com.br/chat/send_message.html`) lista os TRÊS
- * campos sempre, sem dizer o que `messageId` significa (id da mensagem a que se
- * responde? idempotência?). A leitura adotada é a de thread-reply — o id da
- * mensagem a que esta responde — e o campo é OMITIDO quando não há citação, em
- * vez de inventar um id. É contrato PENDENTE.
- */
 /**
  * `Authorization: Bearer <token>` do acesso do vendedor.
  *
@@ -83,13 +80,21 @@ function cabecalhoDeAutorizacao(token: string): string {
   return "Bearer " + token;
 }
 
-export function corpoDeEnvioOlx(envelope: OutboundEnvelope): CorpoDeEnvioOlx {
-  const corpo: CorpoDeEnvioOlx = {
+/**
+ * Traduz o envelope para o corpo que a OLX recebe.
+ *
+ * Pura e exportada de propósito: é o CONTRATO que o teste fixa sem precisar de
+ * credencial. `chatId` é a thread (`providerConversationId`); `textMessage` é o
+ * texto; `messageId` é o id que geramos para esta mensagem (ver o cabeçalho).
+ * Citação não existe neste chat: `replyToExternalId` é ignorado, como em todo
+ * canal que não sabe citar.
+ */
+export function corpoDeEnvioOlx(envelope: OutboundEnvelope, messageId: string): CorpoDeEnvioOlx {
+  return {
     chatId: envelope.providerConversationId ?? "",
     textMessage: envelope.body ?? "",
+    messageId,
   };
-  if (envelope.replyToExternalId) corpo.messageId = envelope.replyToExternalId;
-  return corpo;
 }
 
 /**
@@ -106,10 +111,11 @@ export function urlDoEnvioOlx(apiBase?: string): string {
 /**
  * Uma mensagem que chegou pelo chat da OLX, no vocabulário neutro.
  *
- * `origin` diz de quem é a mensagem: `buyer` entra (o cliente falou), `seller` é
- * o ECO do que a própria conta enviou (chega pelo webhook do mesmo jeito e não
- * pode virar mensagem nova). `senderType` é a discriminação que a OLX manda
- * junto — aceito e preservado, sem contrato fechado nesta fatia.
+ * `origin` diz de quem é a mensagem: `buyer` é o cliente; `seller` é a conta do
+ * vendedor — o eco do nosso envio OU o que o vendedor respondeu pelo app e pelo
+ * site da OLX, que seguem ativos depois de ligar o webhook. `senderType` é a
+ * discriminação que a OLX manda junto — aceito e preservado, sem contrato
+ * fechado.
  */
 export interface MensagemDeEntradaOlx {
   /** `conversations.provider_conversation_id` — a thread, que endereça este canal. */
@@ -117,7 +123,7 @@ export interface MensagemDeEntradaOlx {
   /** Deduplicação: o mesmo id nunca vira duas linhas. */
   messageId: string;
   message: string;
-  /** `buyer` = cliente; `seller` = eco do nosso próprio envio. */
+  /** `buyer` = cliente; `seller` = a conta do vendedor (eco nosso ou o app da OLX). */
   origin: "buyer" | "seller";
   /** Discriminação que a OLX manda junto do `origin`. Aberta: a doc não a fecha. */
   senderType: string | null;
@@ -125,6 +131,7 @@ export interface MensagemDeEntradaOlx {
   email: string | null;
   /** Ajuda a casar com um contato que já existe — quando vem. */
   phone: string | null;
+  /** ISO-8601 já validado; `null` quando a OLX não mandou um instante legível. */
   messageTimestamp: string | null;
   /** O anúncio — pode entrar como origem do negócio numa fatia seguinte. */
   listId: string | null;
@@ -139,6 +146,21 @@ const OBRIGATORIOS = ["chatId", "messageId", "message", "origin"] as const;
 
 function textoOuNull(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+/**
+ * O instante da mensagem, normalizado para ISO-8601 — ou `null`.
+ *
+ * Vai para `messages.sent_at` e para o carimbo da conversa: texto que o
+ * Postgres não lê como data faria o INSERT falhar e a OLX reentregar para
+ * sempre; texto que ele lê de outro jeito bagunçaria a ordem da conversa.
+ * Ilegível vira `null`, e quem grava usa a hora da chegada.
+ */
+function instanteOuNull(v: unknown): string | null {
+  const texto = textoOuNull(v);
+  if (texto === null) return null;
+  const ms = Date.parse(texto);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
 /**
@@ -185,14 +207,18 @@ export function lerEntradaOlx(raw: string): LeituraDeEntradaOlx {
       name: textoOuNull(o.name),
       email: textoOuNull(o.email),
       phone: textoOuNull(o.phone),
-      messageTimestamp: textoOuNull(o.messageTimestamp),
+      messageTimestamp: instanteOuNull(o.messageTimestamp),
       listId: textoOuNull(o.listId),
     },
   };
 }
 
-/** `true` quando a mensagem é o ECO do que a conta enviou — não entra como nova. */
-export function ehEcoDaConta(mensagem: MensagemDeEntradaOlx): boolean {
+/**
+ * `true` quando a mensagem saiu da conta do vendedor — entra como SAÍDA. O eco
+ * do nosso próprio envio não vira segunda linha: ele traz o id que geramos, e o
+ * `unique (organization_id, external_id)` o recusa.
+ */
+export function saiuDaConta(mensagem: MensagemDeEntradaOlx): boolean {
   return mensagem.origin === "seller";
 }
 
@@ -254,8 +280,7 @@ export const olxAdapter: ChannelAdapter = {
    *   3. sem credencial gravada (`olx_not_configured`).
    *
    * A resposta de sucesso da OLX é só um status (200 = enviado; a doc pública
-   * não descreve corpo), então `externalId` sai `null` — que o seam
-   * distingue de "não tentei".
+   * não descreve corpo), então `externalId` é o id que geramos e mandamos.
    */
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
     if (!envelope.providerConversationId) {
@@ -282,6 +307,7 @@ export const olxAdapter: ChannelAdapter = {
 
     await envelope.beforeSend?.();
 
+    const messageId = randomUUID();
     let r: Response;
     try {
       r = await fetch(urlDoEnvioOlx(), {
@@ -290,7 +316,7 @@ export const olxAdapter: ChannelAdapter = {
           Authorization: cabecalhoDeAutorizacao(creds.token),
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(corpoDeEnvioOlx(envelope)),
+        body: JSON.stringify(corpoDeEnvioOlx(envelope, messageId)),
         signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {
@@ -306,7 +332,7 @@ export const olxAdapter: ChannelAdapter = {
       throw new Error(`olx_${r.status}: ${corpo || "a OLX recusou o envio"}`);
     }
 
-    return { externalId: null };
+    return { externalId: messageId };
   },
 
   /**

@@ -6,10 +6,14 @@ vi.mock("@/lib/channels/marcar-conversa", () => ({
 vi.mock("@/lib/channels/pos-entrada", () => ({
   aplicarEfeitosPosEntrada: vi.fn(async () => undefined),
 }));
+vi.mock("@/lib/escalacao/atendimento-manual", () => ({
+  pausarIaPorAtendimentoManual: vi.fn(async () => true),
+}));
 
 import { ingestOlxInbound } from "@/lib/channels/olx/ingest";
 import type { MensagemDeEntradaOlx } from "@/lib/channels/adapters/olx";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
+import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 
 /**
@@ -142,7 +146,8 @@ describe("a mensagem do comprador vira linha no Inbox", () => {
     );
     expect(rastreio.updates).toContainEqual({
       tabela: "conversations",
-      corpo: { provider_conversation_id: "chat-abc" },
+      // O canal entra junto: a RPC nasce a conversa como `whatsapp`.
+      corpo: { provider_conversation_id: "chat-abc", channel: "olx" },
     });
 
     // A mensagem: mesma organização, mesma sessão, `external_id` = messageId da
@@ -172,8 +177,11 @@ describe("a mensagem do comprador vira linha no Inbox", () => {
         conversationId: "conversa-1",
         channelSessionId: "sess-1",
         origem: "olx_webhook",
+        // É dele que sai a origem do negócio que nasce: OLX, não WhatsApp.
+        canal: "olx",
       }),
     );
+    expect(pausarIaPorAtendimentoManual).not.toHaveBeenCalled();
   });
 
   it("sem telefone, a thread vira a âncora opaca do contato", async () => {
@@ -207,25 +215,54 @@ describe("a mensagem do comprador vira linha no Inbox", () => {
   });
 });
 
-describe("o eco da própria conta não duplica mensagem", () => {
-  it("é cortado ANTES de qualquer escrita — uma entrada, zero linha nova", async () => {
-    // Qualquer toque no banco derruba o teste: o eco não pode nem perguntar.
-    const nada = new Proxy(
-      {},
-      {
-        get() {
-          throw new Error("o eco da própria conta não pode tocar o banco");
-        },
-      },
-    );
-
-    const r = await ingestOlxInbound(nada as never, {
+describe("o que sai da conta do vendedor entra como SAÍDA", () => {
+  it("resposta dada pelo app da OLX aparece no Inbox e pausa a IA", async () => {
+    const { admin, rastreio } = adminFalso({ conversaExistente: { id: "conversa-1", contact_id: "contato-1" } });
+    const r = await ingestOlxInbound(admin as never, {
       organizationId: "org-1",
       channelSessionId: "sess-1",
-      mensagem: mensagem({ origin: "seller", messageId: "msg-eco" }),
+      mensagem: mensagem({ origin: "seller", messageId: "msg-do-app", message: "Ainda está disponível sim" }),
     });
 
-    expect(r).toEqual({ status: "ignored", reason: "eco_da_conta" });
+    expect(r).toMatchObject({ status: "ingested", conversationId: "conversa-1" });
+    expect(rastreio.inseridas).toHaveLength(1);
+    expect(rastreio.inseridas[0]).toMatchObject({
+      external_id: "msg-do-app",
+      direction: "outbound",
+      sent_via: "external_device",
+      status: "sent",
+    });
+    expect(pausarIaPorAtendimentoManual).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ organizationId: "org-1", conversationId: "conversa-1" }),
+    );
+    // Saída não pede opt-out, demanda nem despacho para o agente.
     expect(aplicarEfeitosPosEntrada).not.toHaveBeenCalled();
+  });
+
+  it("o eco do NOSSO envio (mesmo messageId, 23505) não duplica nem pausa a IA", async () => {
+    const { admin } = adminFalso({
+      conversaExistente: { id: "conversa-1", contact_id: "contato-1" },
+      erroDeInsert: { code: "23505", message: "duplicate key" },
+    });
+    const r = await ingestOlxInbound(admin as never, {
+      organizationId: "org-1",
+      channelSessionId: "sess-1",
+      mensagem: mensagem({ origin: "seller", messageId: "id-que-geramos" }),
+    });
+    expect(r).toMatchObject({ status: "duplicate", conversationId: "conversa-1" });
+    expect(pausarIaPorAtendimentoManual).not.toHaveBeenCalled();
+  });
+
+  it("saída numa thread que não conhecemos não cria contato com os dados do vendedor", async () => {
+    const { admin, rastreio } = adminFalso();
+    const r = await ingestOlxInbound(admin as never, {
+      organizationId: "org-1",
+      channelSessionId: "sess-1",
+      mensagem: mensagem({ origin: "seller" }),
+    });
+    expect(r).toEqual({ status: "ignored", reason: "saida_sem_conversa" });
+    expect(rastreio.rpcs).toHaveLength(0);
+    expect(rastreio.inseridas).toHaveLength(0);
   });
 });

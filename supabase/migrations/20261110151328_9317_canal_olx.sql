@@ -1,10 +1,9 @@
 -- 9317 · Canal OLX — chat de vendedor como provider de mensagem (issue #2927, fatia 1).
 --
--- manifest: Canal OLX (chat de vendedor, issue #2927): alarga os três CHECKs de
--- provider para o valor `olx`, acrescenta as colunas da sessão da conta de
--- vendedor (`olx_seller_id`, `olx_token_encrypted`) e o índice único entre
--- ativos. Vocabulário puro — o round-trip real com a OLX (OAuth, webhook,
--- envio) fica para as fatias seguintes.
+-- manifest: Canal OLX (chat de vendedor, issue #2927; módulo opcional, doc 294):
+-- alarga os três CHECKs de provider e o de `conversations.channel` para o valor
+-- `olx`, acrescenta as colunas da sessão da conta de vendedor (`olx_seller_id`,
+-- `olx_token_encrypted`) e o índice único entre ativos.
 --
 -- ─── O que entra ────────────────────────────────────────────────────────────
 -- Um provedor de canal de mensagem novo, ao lado de `waha`, `meta_cloud`,
@@ -91,5 +90,14 @@ update public.channel_sessions s
 create unique index if not exists channel_sessions_olx_seller_id_ativo_unique
   on public.channel_sessions (olx_seller_id)
   where archived_at is null and olx_seller_id is not null;
+
+-- A conversa do chat da OLX nasce com o canal dela, e não como `whatsapp`.
+-- Alargamento puro: nenhuma linha que já passava é violada.
+alter table public.conversations
+  drop constraint if exists conversations_channel_check;
+
+alter table public.conversations
+  add constraint conversations_channel_check
+    check (channel in ('whatsapp', 'instagram', 'facebook', 'olx'));
 
 notify pgrst, 'reload schema';

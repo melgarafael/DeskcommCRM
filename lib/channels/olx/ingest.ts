@@ -19,13 +19,24 @@
  * captura do `23505` — o mesmo corte dos irmãos. Sem isso, uma reentrega
  * duplica a mensagem no Inbox do cliente.
  *
- * ─── O ECO da própria conta NÃO vira mensagem ───────────────────────────────
+ * ─── O que a conta do vendedor manda entra como SAÍDA ───────────────────────
  *
- * A OLX entrega no MESMO webhook o que o vendedor enviou (`origin: "seller"`).
- * Sem o corte, o eco do nosso próprio envio viraria uma segunda linha na
- * conversa do cliente, com o texto do atendente aparecendo como se o cliente
- * tivesse falado. A discriminação é pura (`ehEcoDaConta`) e acontece ANTES de
- * qualquer escrita: uma entrada eco = zero linha nova (critério de sucesso D).
+ * A OLX entrega no MESMO webhook o que saiu da conta do vendedor
+ * (`origin: "seller"`), e o chat continua no app e no site dela depois de
+ * ligar o webhook (resposta da OLX na issue #2927, 15/10). Descartar tudo que
+ * é `seller` deixava a conversa com buracos: a resposta que o vendedor deu pelo
+ * app nunca aparecia no Inbox. Então ela entra como `outbound`, carimbada
+ * `external_device`, e a IA pausa nesta conversa — uma pessoa respondeu à mão.
+ *
+ * O eco do NOSSO envio não vira segunda linha: ele volta com o `messageId` que
+ * o adapter gerou, a nossa linha já tem esse `external_id`, e o `23505` o
+ * devolve como `duplicate` (se o eco chegar antes de a nossa linha ganhar o id,
+ * a limpeza do eco no handler de envio o apaga). Que a OLX ecoe o mesmo id é
+ * contrato ainda não medido contra a conta real.
+ *
+ * Saída para uma thread que não conhecemos é ignorada: os campos de pessoa
+ * dessa mensagem podem ser do próprio vendedor, e criar contato com eles daria
+ * ao vendedor uma ficha de cliente.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -33,8 +44,12 @@ import { logger } from "@/lib/logger";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
+import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 
-import { ehEcoDaConta, type MensagemDeEntradaOlx } from "../adapters/olx";
+import { saiuDaConta, type MensagemDeEntradaOlx } from "../adapters/olx";
+
+/** `conversations.channel` deste canal. Ver `CANAIS_DE_CONVERSA`. */
+const CANAL_DA_CONVERSA = "olx";
 
 export interface IngestResultOlx {
   status: "ingested" | "duplicate" | "ignored";
@@ -61,11 +76,6 @@ export async function ingestOlxInbound(
 ): Promise<IngestResultOlx> {
   const { mensagem } = input;
 
-  // ANTES de tudo, e sem tocar o banco: o eco do que a própria conta enviou.
-  if (ehEcoDaConta(mensagem)) {
-    return { status: "ignored", reason: "eco_da_conta" };
-  }
-
   // A thread é a prova de identidade, e vem ANTES da âncora do contato: se já
   // existe conversa com este `chatId` nesta sessão, é a MESMA pessoa — perguntar
   // de novo "quem é?" pelo telefone abriria espaço para dois contatos para uma
@@ -85,10 +95,11 @@ export async function ingestOlxInbound(
       mensagem,
     });
     if (inserida === "duplicate") return { status: "duplicate", conversationId: existente.id };
-    await marcarConversa(admin, input.organizationId, existente.id, mensagem);
-    await efeitosDaEntrada(admin, input, mensagem, existente.contact_id, existente.id, inserida);
+    await depoisDeGravar(admin, input, mensagem, existente.contact_id, existente.id, inserida);
     return { status: "ingested", conversationId: existente.id, messageId: inserida };
   }
+
+  if (saiuDaConta(mensagem)) return { status: "ignored", reason: "saida_sem_conversa" };
 
   // Sem telefone e sem a thread não há contato possível. Recusar é o certo:
   // criar contato anônimo faria a próxima mensagem da MESMA pessoa virar um
@@ -116,10 +127,32 @@ export async function ingestOlxInbound(
   });
   if (inserted === "duplicate") return { status: "duplicate", conversationId };
 
-  await marcarConversa(admin, input.organizationId, conversationId, mensagem);
-  await efeitosDaEntrada(admin, input, mensagem, contactId, conversationId, inserted);
-
+  await depoisDeGravar(admin, input, mensagem, contactId, conversationId, inserted);
   return { status: "ingested", conversationId, messageId: inserted };
+}
+
+/**
+ * O que vem depois da linha gravada. Entrada: os efeitos de negócio. Saída pelo
+ * app da OLX: a IA pausa, como em todo canal onde a pessoa responde por fora.
+ */
+async function depoisDeGravar(
+  admin: SupabaseClient,
+  input: { organizationId: string; channelSessionId: string },
+  mensagem: MensagemDeEntradaOlx,
+  contactId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<void> {
+  await marcarConversa(admin, input.organizationId, conversationId, mensagem);
+  if (saiuDaConta(mensagem)) {
+    await pausarIaPorAtendimentoManual(admin, {
+      organizationId: input.organizationId,
+      conversationId,
+      canal: CANAL_DA_CONVERSA,
+    });
+    return;
+  }
+  await efeitosDaEntrada(admin, input, mensagem, contactId, conversationId, messageId);
 }
 
 /**
@@ -219,10 +252,14 @@ async function upsertConversa(
   // A thread do provider, SEMPRE e sem condição: numa conversa recém-criada a
   // coluna é NULL, e `NULL <> 'valor'` é NULL — um filtro "só escrever se
   // mudou" nunca alcançaria a linha nova (defeito medido no canal intermediado).
-  await admin
+  // O canal entra junto: a RPC nasce a conversa como `whatsapp`, e sem esta
+  // troca a conversa da OLX aparecia (e o negócio nascia) como WhatsApp.
+  const { error: erroDaConversa } = await admin
     .from("conversations")
-    .update({ provider_conversation_id: input.providerConversationId })
+    .update({ provider_conversation_id: input.providerConversationId, channel: CANAL_DA_CONVERSA })
+    .eq("organization_id", input.organizationId)
     .eq("id", conversationId);
+  if (erroDaConversa) throw new Error(`olx_conversation_update_failed: ${erroDaConversa.message}`);
 
   return conversationId;
 }
@@ -253,9 +290,9 @@ async function inserirMensagem(
       contact_id: input.contactId,
       channel_session_id: input.channelSessionId,
       external_id: mensagem.messageId,
-      direction: "inbound",
+      direction: saiuDaConta(mensagem) ? "outbound" : "inbound",
       sent_via: "external_device",
-      status: "delivered",
+      status: saiuDaConta(mensagem) ? "sent" : "delivered",
       type: "text",
       body: mensagem.message,
       // `sent_at` do provider quando existe: a ordem da lista e o cálculo da
@@ -295,10 +332,10 @@ async function marcarConversa(
   await marcarConversaComMensagem(admin, {
     organizationId,
     conversationId,
-    direction: "inbound",
+    direction: saiuDaConta(mensagem) ? "outbound" : "inbound",
     preview: (mensagem.message ?? "").slice(0, 200),
     at: mensagem.messageTimestamp ?? new Date().toISOString(),
-    canal: "olx",
+    canal: CANAL_DA_CONVERSA,
   });
 }
 
@@ -313,7 +350,7 @@ async function efeitosDaEntrada(
   mensagem: MensagemDeEntradaOlx,
   contactId: string,
   conversationId: string,
-  messageId: string | null,
+  messageId: string,
 ): Promise<void> {
   await aplicarEfeitosPosEntrada(admin, {
     organizationId: input.organizationId,
@@ -324,5 +361,6 @@ async function efeitosDaEntrada(
     texto: mensagem.message,
     nomeDoContato: mensagem.name,
     origem: "olx_webhook",
+    canal: CANAL_DA_CONVERSA,
   });
 }

@@ -14,6 +14,10 @@ describe("modoDeCampanhaDoCanal", () => {
     expect(modoDeCampanhaDoCanal("zernio")).toBe("template");
   });
 
+  it("o chat da OLX não faz campanha: só existe na thread que o comprador abriu", () => {
+    expect(modoDeCampanhaDoCanal("olx")).toBeNull();
+  });
+
   it("rede social não faz campanha; provider desconhecido não derruba a tela", () => {
     expect(modoDeCampanhaDoCanal("zernio_social")).toBeNull();
     expect(modoDeCampanhaDoCanal("um_provider_do_futuro")).toBeNull();

@@ -12,7 +12,9 @@
  * passa antes pelo proxy da instalação (Caddy), que enxerga o IP do proxy e não
  * o da OLX.
  *
- * Então o autenticador desta entrega é o PRÓPRIO token do path: aleatório,
+ * Então o autenticador desta entrega é o PRÓPRIO token do path — EXCEÇÃO
+ * registrada pelo dono (doc 294, 10/11; tabela de `docs/threat-model.md`), que
+ * não se chama assinatura: aleatório,
  * gerado por nós (24 bytes em hex), por SESSÃO, registrado na conta do vendedor
  * no momento da conexão e conferido pela rota ANTES de qualquer leitura — a
  * mesma arquitetura do webhook de captação de leads (`/api/v1/webhooks/in/<token>`),

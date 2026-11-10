@@ -63,6 +63,11 @@ export const ORIGEM_DO_WHATSAPP_OPERADOR: OrigemDoNascimento = {
 };
 
 export function origemDoNegocioPeloCanal(canal: string | null | undefined): OrigemDoNascimento {
+  // O chat da OLX (#2927) não está no catálogo do parceiro: origem própria e
+  // explícita, pelo mesmo motivo que fez o Instagram parar de virar `whatsapp`.
+  if (canal === "olx") {
+    return { rotulo: "OLX", source: "olx", motivo: "primeira mensagem recebida no chat da OLX" };
+  }
   const rede = SOCIAL_NETWORKS.find((r) => r.inbox && r.id === canal);
   if (!rede) return ORIGEM_DO_WHATSAPP;
   return {
