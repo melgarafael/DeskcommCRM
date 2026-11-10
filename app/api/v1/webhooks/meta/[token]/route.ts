@@ -29,7 +29,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { appDaMeta } from "@/lib/channels/meta/app";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
@@ -59,7 +59,7 @@ interface RouteCtx {
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
   const { token } = await ctx.params;
   const session = await metaSessionByWebhookToken(token);
-  if (!session) return new NextResponse("not found", { status: 404 });
+  if (!session) return comIdDaRequisicao(new NextResponse("not found", { status: 404 }), req);
 
   // Do BANCO (platform_meta_app, migration 0257), com o `.env` como piso: é a
   // credencial da INSTALAÇÃO inteira, não da organização — e um clone que ainda
@@ -67,13 +67,13 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse
   // a precedência e o porquê estão em `lib/channels/meta/app.ts`.
   const { verifyToken } = await appDaMeta();
   const challenge = verificationChallenge(req.nextUrl.searchParams, verifyToken ?? "");
-  if (challenge === null) return new NextResponse("forbidden", { status: 403 });
+  if (challenge === null) return comIdDaRequisicao(new NextResponse("forbidden", { status: 403 }), req);
 
   // Texto puro, sem wrapper — ver o cabeçalho.
-  return new NextResponse(challenge, {
+  return comIdDaRequisicao(new NextResponse(challenge, {
     status: 200,
     headers: { "content-type": "text/plain" },
-  });
+  }), req);
 }
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
@@ -289,8 +289,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   // ignoramos vira re-tentativa em backoff por horas.
   // `outcomes` no corpo: quem depura vê o que aconteceu com cada evento em vez de
   // ler um contador que não distingue sucesso de falha.
-  return NextResponse.json(
+  return comIdDaRequisicao(NextResponse.json(
     { received: eventos.length, outcomes: desfechos },
     { status: 200 },
-  );
+  ), requestId);
 }
