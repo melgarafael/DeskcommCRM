@@ -13217,6 +13217,11 @@ export const DICIONARIO: Traducoes = {
   // só a moldura (interruptor, seletores, estados vazios). "Fecha" nunca aparece
   // como "data do negócio".
   "Datas dos negócios": { es: "Fechas de los negocios" },
+  // O rótulo dos dias do MEIO do intervalo (#3221) não é campo do funil: é
+  // palavra do PRODUTO, genérica de propósito ("Em viagem" seria vocabulário de
+  // agência de turismo). A chave "Em andamento" já existe neste dicionário
+  // (bloco de tarefas) com o mesmo sentido e o mesmo espanhol — reusada, não
+  // duplicada.
   "Só leitura: para mudar a data, abra o negócio.": {
     es: "Solo lectura: para cambiar la fecha, abre el negocio.",
   },
