@@ -16326,6 +16326,17 @@ export const DICIONARIO: Traducoes = {
   "O contato que já tinha este número foi ligado ao negócio.": {
     es: "El contacto que ya tenía este número fue vinculado al negocio.",
   },
+  // ─── #3669 F1 (leitura): conversas e ligações de todos os números do cliente ───
+  "Conversas e ligações dos números": { es: "Conversaciones y llamadas de los números" },
+  "Não consegui carregar as conversas e ligações.": {
+    es: "No pude cargar las conversaciones y llamadas.",
+  },
+  "Nenhuma conversa ou ligação nos outros números ainda.": {
+    es: "Todavía no hay conversaciones ni llamadas en los otros números.",
+  },
+  Recebida: { es: "Recibida" },
+  Feita: { es: "Realizada" },
+  Atendida: { es: "Atendida" },
   "Este contato já é o contato principal do negócio.": {
     es: "Este contacto ya es el contacto principal del negocio.",
   },
