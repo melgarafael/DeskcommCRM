@@ -38,6 +38,7 @@ import { partesNoFuso } from "@/lib/agenda/fuso";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 import { IDIOMA_PADRAO } from "./idiomas";
+import { REGISTRO_DE_IDIOMAS } from "./registro";
 import { MODIFICADOR_DE_DATA } from "@/lib/texto/modificador-da-variavel";
 
 /** O que o render sabe da organização que está falando com o cliente. */
@@ -65,17 +66,31 @@ interface OrdemDaData {
 const ORDENS = new Map<string, OrdemDaData>();
 const AMOSTRA = new Date(Date.UTC(2001, 1, 3));
 
+/**
+ * O idioma que vai medir a ordem — SEMPRE um dos que o produto serve.
+ *
+ * Não se pergunta ao `Intl` se a tag é válida: o ICU decide isso de forma
+ * diferente entre ambientes (tag desconhecida lança `RangeError` num build e
+ * resolve para a raiz noutro, e a raiz escreve `MM/DD/AAAA`). O CI pegou
+ * exatamente essa divergência (#4347): o mesmo teste passava local e reprovava
+ * no runner. Quem diz o que o produto serve é `normalizarIdioma`, que é puro e
+ * não depende de ICU — idioma fora da lista cai no padrão do produto.
+ */
 function tagDoIdioma(bruto: string | null | undefined): string {
   const candidato = (bruto ?? "").trim();
-  if (candidato === "") return IDIOMA_PADRAO;
-  try {
-    // Fuso/idioma inválido lança `RangeError`; a mensagem não pode cair por
-    // causa de uma coluna de texto livre.
-    new Intl.DateTimeFormat(candidato);
-    return candidato;
-  } catch {
-    return IDIOMA_PADRAO;
-  }
+  const primario = candidato.toLowerCase().split("-")[0] ?? "";
+  // A régua de "o produto conhece esta língua?" é o REGISTRO, não o `Intl`:
+  // o ICU aceita e recusa tags de formas diferentes por ambiente e, quando
+  // aceita uma tag que não conhece, escreve `MM/DD/AAAA`. Foi essa divergência
+  // que fez o mesmo teste passar aqui e reprovar no runner (#4347). O registro
+  // inclui os idiomas em construção de propósito: a coluna `locale` da
+  // organização já guardou `en-US` antes de existir tradução.
+  const conhecido =
+    primario !== "" &&
+    REGISTRO_DE_IDIOMAS.some((idioma) =>
+      (idioma.subtagsDoNavegador as readonly string[]).includes(primario),
+    );
+  return conhecido ? candidato : IDIOMA_PADRAO;
 }
 
 function ordemDoIdioma(tag: string): OrdemDaData {
