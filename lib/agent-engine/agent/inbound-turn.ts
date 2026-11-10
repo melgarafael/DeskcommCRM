@@ -142,6 +142,7 @@ import {
   checkpointContentSchema,
   fecharOTurno,
   insertCheckpoint,
+  instrucaoDeFechamentoNoIdioma,
   parseCheckpointText,
   tirarLinkDaReuniao,
   type CheckpointContent,
@@ -329,8 +330,10 @@ import {
 } from '@/lib/ai/decisao/manipulacao';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
+import { fatosDaOrganizacao } from './fatos-da-organizacao';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
+import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -1423,6 +1426,12 @@ export function blocoDoModoDePrevia(kind: TurnPreview['kind']): string {
  *
  * A régua é o que o agente TEM: os dois blocos de ensino nomeiam ferramentas, e
  * nomear uma ferramenta ausente faz o modelo tentar chamá-la.
+ *
+ * ⚠️ O bloco `agendaSystemBlock` (quem MARCA horário) segue em português por
+ * exceção declarada em `idioma-do-turno.ts`: ele é composto ramo a ramo por
+ * `tem(ferramenta)`, e traduzir exige um segundo texto por ramo — trabalho que
+ * não cabe nesta fatia e que o bloco da cadeia (este sim traduzido) cobre no
+ * caminho do turno.
  */
 export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
   const blocos: string[] = [];
@@ -2586,8 +2595,9 @@ async function executarTurnoDoAgente(
   // da abertura. Lido aqui pela mesma razão da linha acima: uma query por turno,
   // longe do ponto de uso, para não virar duas respostas para a mesma pergunta.
   // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
-  const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
-
+  // O fuso E o idioma da organização, numa query só (#4260, item 1): o idioma
+  // do turno sai daqui e chega à montagem do system sem consulta nova.
+  const { fuso: fusoDaOrg, idioma: idiomaDaOrg } = await fatosDaOrganizacao(pool, tenantId, runLog);
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
@@ -3173,6 +3183,11 @@ async function executarTurnoDoAgente(
   // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
   // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
   if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
+  // #4260, item 1: o único bloco NOVO é a diretiva de idioma, e ela entra por
+  // último para não deslocar nenhum dos de cima (o prefixo cacheável continua
+  // igual em `pt-BR`). A tradução dos blocos acima acontece DEPOIS da montagem,
+  // numa passada só — ver `blocosNoIdioma`.
+  blocosResidentes.push(diretivaDeIdioma(idiomaDaOrg));
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -3220,6 +3235,12 @@ async function executarTurnoDoAgente(
   // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
   const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
   if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
+  // #4260, item 1: a passada de idioma vem DEPOIS da montagem — a ordem dos
+  // blocos e o `join` daqui continuam os de antes, e em `pt-BR` cada bloco volta
+  // igual. Mutação local, na mesma lista: o turno não guarda os blocos.
+  blocosNoIdioma(blocosResidentes, idiomaDaOrg).forEach((bloco, indice) => {
+    blocosResidentes[indice] = bloco;
+  });
   const system = blocosResidentes.join('\n\n');
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
@@ -6180,7 +6201,10 @@ async function executarTurnoDoAgente(
     // passo falam com o cliente na ordem em que o modelo as escreveu (`fila-de-envio.ts`).
     const tools = emOrdemDeEscrita(
       envolverFerramentasComTraco(
-        presentationTools,
+        // Descrição no idioma do turno (#4260, item 1). Nome, schema e `execute`
+        // passam intactos: só a prosa muda, e ferramenta sem tradução no
+        // dicionário volta igual (as exceções declaradas em `idioma-do-turno.ts`).
+        ferramentasNoIdioma(presentationTools, idiomaDaOrg),
         // O traço continua por fora: registra tanto o veto do breaker quanto o
         // descarte de ferramentas após a apresentação terminal.
         input.tracoDoTurno?.coletor,
@@ -7030,15 +7054,22 @@ async function executarTurnoDoAgente(
             : {}),
           ...(reservaDeFormato ? { reservaDeFormato } : {}),
           system,
-          messages: [
-            // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-            // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-            ...openingTextOnly,
-            ...responseMessages,
-            ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
-            { role: 'user', content: CHECKPOINT_INSTRUCTION },
-            ...correcao,
-          ],
+          messages: instrucaoDeFechamentoNoIdioma(
+            [
+              // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
+              // fez seu trabalho na 1ª chamada e não precisa ir de novo.
+              ...openingTextOnly,
+              ...responseMessages,
+              ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
+              { role: 'user', content: CHECKPOINT_INSTRUCTION },
+              ...correcao,
+            ],
+            // #4260, item 1: a instrução de fechamento é a última coisa que o
+            // modelo lê no turno e passou a falar o idioma da organização. A
+            // passada vem depois da montagem para a ordem e a identidade da
+            // mensagem não mudarem.
+            idiomaDaOrg,
+          ),
         },
         { registry: deps.registry, log: runLog },
       );
