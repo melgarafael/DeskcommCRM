@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { bancoFalso, type BancoFalso, type Resposta } from "@/tests/helpers/banco-falso-da-cobranca";
+
 const h = vi.hoisted(() => ({
   autorizado: true,
   ligado: true,
@@ -8,6 +10,9 @@ const h = vi.hoisted(() => ({
   chamadas: [] as unknown[],
   resultado: {} as unknown,
   auditorias: [] as Array<Record<string, unknown>>,
+  /** O que a SESSÃO de quem pede lê em `conversations` (a policy já aplicada). */
+  leituraDaSessao: {} as Resposta,
+  sessao: undefined as unknown as BancoFalso,
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({
@@ -30,6 +35,7 @@ vi.mock("@/lib/env", () => ({
   },
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => h.sessao.cliente }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/lib/audit", () => ({
   audit: async (entrada: Record<string, unknown>) => {
@@ -84,6 +90,8 @@ beforeEach(() => {
   h.chamadas = [];
   h.auditorias = [];
   h.resultado = sucesso;
+  h.leituraDaSessao = { data: { id: CONV } };
+  h.sessao = bancoFalso(() => h.leituraDaSessao);
 });
 
 describe("POST /api/v1/conversations/[id]/pagamentos", () => {
@@ -143,6 +151,29 @@ describe("POST /api/v1/conversations/[id]/pagamentos", () => {
 
   it("conversa que não é uuid: 400", async () => {
     expect((await pedir(undefined, "nao-e-uuid")).status).toBe(400);
+  });
+
+  it("⭐ a conversa é lida com a SESSÃO de quem pede, pelo id e pela organização da sessão", async () => {
+    await pedir();
+    const leituras = h.sessao.cadeias.filter((c) => c.tabela === "conversations");
+    expect(leituras).toHaveLength(1);
+    const filtros = leituras[0]!.passos.filter((p) => p.metodo === "eq").map((p) => p.args);
+    expect(filtros).toContainEqual(["id", CONV]);
+    expect(filtros).toContainEqual(["organization_id", ORG]);
+  });
+
+  it("⭐ conversa que a sessão não enxerga (fora do escopo do atendente): 404 e nada gravado", async () => {
+    h.leituraDaSessao = { data: null };
+    const r = await pedir();
+    expect(r.status).toBe(404);
+    expect(h.chamadas).toEqual([]);
+    expect(h.auditorias).toEqual([]);
+  });
+
+  it("leitura da conversa pela sessão falhou: 500 e nada gravado", async () => {
+    h.leituraDaSessao = { error: { code: "XX000", message: "queda" } };
+    expect((await pedir()).status).toBe(500);
+    expect(h.chamadas).toEqual([]);
   });
 
   it("recusa do registro (conversa de outra empresa): repassa o 404", async () => {

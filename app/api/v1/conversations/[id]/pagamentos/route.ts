@@ -19,8 +19,10 @@
  * ─── Quem pode ──────────────────────────────────────────────────────────────
  *
  * `agent` para cima, com o módulo `link_de_pagamento` ligado (desligado: 404).
- * A organização vem da SESSÃO, nunca do corpo — e a conversa é procurada com
- * `organization_id` no filtro, então um id de outra empresa responde 404.
+ * A organização vem da SESSÃO, nunca do corpo. A conversa é lida com o cliente
+ * da REQUISIÇÃO antes de registrar, como em `pause-ai` e `close`: é a policy
+ * `conversations_select` que aplica o escopo de visibilidade do atendimento, e
+ * conversa que quem pede não enxerga responde 404, igual a id de outra empresa.
  */
 import { randomUUID } from "node:crypto";
 
@@ -38,6 +40,7 @@ import { urlDoAviso } from "@/lib/pagamentos/assinatura";
 import { registrarRecebimento } from "@/lib/pagamentos/registrar";
 import { PROVEDORES_DE_RECEBIMENTO, VALOR_MAXIMO_CENTS } from "@/lib/pagamentos/vocabulario";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +94,26 @@ export async function POST(req: NextRequest, ctx: Contexto) {
       details: { falta: "NEXT_PUBLIC_APP_URL" },
     });
   }
+
+  // Client da REQUISIÇÃO, nunca admin: o registro só acontece numa conversa que
+  // quem pede enxerga. O `registrarRecebimento` lê de novo com o admin para
+  // achar o contato; esta leitura é a que decide se pode.
+  const supabase = await createClient();
+  const { data: visivel, error: erroDaLeitura } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("id", conversationId)
+    .eq("organization_id", authz.org.orgId)
+    .maybeSingle();
+  if (erroDaLeitura) {
+    logger.error("[pagamentos.registrar] conversa ilegível pela sessão", {
+      requestId,
+      organization_id: authz.org.orgId,
+      codigo: erroDaLeitura.code ?? null,
+    });
+    return fail("internal_error", "Não foi possível ler a conversa.", 500, { requestId });
+  }
+  if (!visivel) return fail("not_found", "Conversa não encontrada.", 404, { requestId });
 
   const r = await registrarRecebimento(admin, {
     organizationId: authz.org.orgId,
