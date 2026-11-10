@@ -23,7 +23,7 @@ import type { GateContext } from "@/lib/agent-engine/guardrails/before-send";
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from "@/lib/ai/runtime/tools";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import type { McpContext } from "@/lib/mcp/types";
-import type { FerramentaRemota } from "@/lib/mcp/servidor-externo/chamada";
+import { declarouSomenteLeitura, type FerramentaRemota } from "@/lib/mcp/servidor-externo/chamada";
 import type { ServidorDoAgenteNoTurno } from "@/lib/mcp/servidor-externo/do-agente/carregar";
 import { toolIdRemoto } from "@/lib/mcp/servidor-externo/ids";
 
@@ -31,18 +31,30 @@ const ORG = "bcc12320-f555-4fef-8d90-38a0ac5950e0";
 const SERVIDOR_ID = "5e5e5e5e-0000-4000-8000-000000000748";
 
 /**
- * O que o servidor anuncia. `somenteLeitura` é o que `listarFerramentasDoServidor`
- * captura de `annotations.readOnlyHint === true` — a fixture usa o mesmo campo
- * que a carga real entrega, não a anotação crua.
+ * O anúncio como o servidor MCP o entrega: a fixture passa pelas ANOTAÇÕES
+ * cruas e pela MESMA função que `listarFerramentasDoServidor` usa, para que a
+ * captura de `somenteLeitura` seja a de produção — e não uma cópia da regra.
  */
+function anunciada(
+  name: string,
+  description: string,
+  annotations?: { readOnlyHint?: unknown },
+): FerramentaRemota {
+  return {
+    name,
+    description,
+    ...(declarouSomenteLeitura(annotations) ? { somenteLeitura: true as const } : {}),
+  };
+}
+
 const FERRAMENTAS: FerramentaRemota[] = [
   // Leitura declarada pelo servidor E marcada pelo admin: roda na prévia.
-  { name: "consultar_pedido", description: "Consulta um pedido", somenteLeitura: true },
+  anunciada("consultar_pedido", "Consulta um pedido", { readOnlyHint: true }),
   // Sem `readOnlyHint`: o admin pode marcar "leitura", mas a definição sai
   // `write` (as duas metades são necessárias).
-  { name: "consultar_saldo", description: "Consulta o saldo (não declarado leitura)" },
+  anunciada("consultar_saldo", "Consulta o saldo (não declarado leitura)"),
   // `readOnlyHint: false` explícito: também é escrita para a classificação.
-  { name: "alterar_pedido", description: "Altera um pedido" },
+  anunciada("alterar_pedido", "Altera um pedido", { readOnlyHint: false }),
 ];
 
 const TOOL_IDS = [
