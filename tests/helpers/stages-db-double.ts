@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/require-role";
 import type { AuthUser } from "@/lib/auth/types";
 import type { EspecieDeAutor } from "@/lib/operacao/autoria";
+import type { OwnerKind } from "@/lib/types/leads";
 
 export const ORG_ID = "22222222-2222-4222-8222-222222222222";
 export const OUTRA_ORG = "33333333-3333-4333-8333-333333333333";
@@ -117,6 +118,15 @@ export interface LeadRow {
   title?: string;
   value_cents?: number;
   currency?: string;
+  /**
+   * #3945 (0070) — de quem é o card: `user` (pessoa da equipe), `ai` (agente)
+   * ou nulo (fila). O quadro lê `owner_kind` junto com `owner_user_id` e só o
+   * dono HUMANO vira nome no card (`lib/kanban/nome-do-dono.ts`); sem as duas
+   * colunas aqui o dublê reprovaria o seam novo por tipo, e o teste mediria o
+   * dublê em vez da regra.
+   */
+  owner_kind?: OwnerKind | null;
+  owner_user_id?: string | null;
   custom_fields?: Record<string, unknown> | null;
 }
 
