@@ -54,6 +54,14 @@ const JUSTIFICADAS: Record<string, string> = {
     "a resposta é `{ campo }` ou `{ secoesEditadas }`: nome de campo e de seção, sem contato.",
   "POST /api/v1/proposals/[id]/preencher-com-conversa":
     "a rota só aceita sessão de pessoa (`requireRole`); token de módulo não autentica ali.",
+  "GET /api/v1/agenda/lista-de-espera":
+    "a rota só aceita sessão de pessoa (`requireRole`, sem entrada em `PUBLIC_PATHS`); token de módulo não autentica ali.",
+  "PATCH /api/v1/agenda/lista-de-espera":
+    "mesma rota: só sessão de pessoa (`requireRole`); token de módulo não autentica ali.",
+  "POST /api/v1/agenda/lista-de-espera":
+    "mesma rota: só sessão de pessoa (`requireRole`); token de módulo não autentica ali.",
+  "GET /api/v1/conversations/[id]/reply-address":
+    "a rota só aceita sessão de pessoa (`requireRole`, sem entrada em `PUBLIC_PATHS`); token de módulo não autentica ali.",
 };
 
 const TRAZ_CONTATO = /contacts?\s*:\s*\w*\s*\(|contacts!?\w*\s*\(|from\(\s*["']contacts["']\s*\)|contact_(?:name|phone|email)\b/;
