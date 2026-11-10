@@ -88,7 +88,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // 64 KB de folga para o envelope multipart; o file.size abaixo é o check do CSV.
   const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
     requestId,
-    idioma: user.idioma,
+    idioma: authz.idioma,
     acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
   });
   if (!corpo.ok) return corpo.response;
