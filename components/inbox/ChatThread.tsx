@@ -47,6 +47,8 @@ interface Props {
    */
   dono?: { userId: string | null; nome: string | null } | null;
   contatoId?: string | null;
+  /** Contato bloqueado (opt-out) ou pessoal: a rota recusa a reação, então o menu não a oferece. */
+  contatoRecusaEnvio?: boolean;
   /** O fio mora numa página que rola: acompanhar o fim não pode arrastar a página. */
   soNaCaixa?: boolean;
 }
@@ -94,6 +96,7 @@ export function ChatThread({
   onEncaminhar,
   dono,
   contatoId,
+  contatoRecusaEnvio = false,
   searchTerm = "",
   soNaCaixa = false,
 }: Props) {
@@ -353,7 +356,7 @@ export function ChatThread({
                   // que é melhor que segurar a conversa esperando.
                   citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
                   reacoes={reacoesPorAlvo.get(item.data.id)}
-                  onReagir={podeEnviar && canalPermiteReacao
+                  onReagir={podeEnviar && canalPermiteReacao && !contatoRecusaEnvio
                     && Boolean(item.data.external_id) && item.data.type !== "reaction"
                     && !item.data.metadata?._optimistic
                     ? (emoji) => reagir.mutateAsync({ id: item.data.id, emoji }).then(() => undefined)

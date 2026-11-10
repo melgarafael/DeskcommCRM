@@ -1509,6 +1509,9 @@ export const AUDIT_ACTIONS = [
   // booleano: o CONTEÚDO das manifestações nunca entra na trilha, que é
   // append-only e a cascata de LGPD não alcança.
   "settings.ouvidoria_updated",
+  // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
+  // o evento, não o conteúdo — mesma regra de message.edited/revoked.
+  "message.reaction_sent",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
