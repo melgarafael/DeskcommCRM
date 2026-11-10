@@ -108,6 +108,6 @@ describe("primeira empresa da intenção assinada", () => {
     colisao = true; colisoes = 1; reservada = null;
     expect(await ensureTenantForUser(user())).toEqual({ provisioned: true, organizationId: recibo!.organization_id });
     expect(insercoes().map(i => i.id)).toEqual([recibo!.organization_id, recibo!.organization_id]);
-    expect(insercoes()[1].slug).not.toBe(insercoes()[0].slug);
+    expect(insercoes()[1]!.slug).not.toBe(insercoes()[0]!.slug);
   });
 });

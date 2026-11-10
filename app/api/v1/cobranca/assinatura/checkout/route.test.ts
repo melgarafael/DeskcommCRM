@@ -101,7 +101,7 @@ describe("checkout da assinatura", () => {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ continuar_cadastro: true }),
     }));
     expect(res.status).toBe(200);
-    const chave = (h.ad.iniciarAssinatura.mock.calls[0][0] as { chaveIdempotencia: string }).chaveIdempotencia;
+    const chave = (h.ad.iniciarAssinatura.mock.calls[0]![0] as { chaveIdempotencia: string }).chaveIdempotencia;
     expect(chave).toMatch(/^[0-9a-f-]{36}$/);
     expect(chave).not.toBe(NONCE);
   });
