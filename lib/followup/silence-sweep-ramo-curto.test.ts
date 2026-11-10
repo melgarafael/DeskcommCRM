@@ -145,6 +145,7 @@ const CONTADORES_ZERADOS: SilenceSweepSummary = {
   skipped_sem_resposta_da_equipe: 0,
   skipped_resposta_a_automacao: 0,
   skipped_teto_de_repeticoes: 0,
+  skipped_sem_agente_no_canal: 0,
   pointers_failed: 0,
 };
 
