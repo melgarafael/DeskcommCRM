@@ -1457,7 +1457,7 @@ export function AgendaClient({
           card da reserva. Só existe na visão de DIA porque o número é do dia:
           numa semana, "total do dia" seria uma linha por dia e o resumo deixaria
           de responder a pergunta que o painel existe para responder. */}
-      {visao === "dia" ? (
+      {visao === "dia" && tiposIniciais.some((tipo) => tipo.servicoColetivo) ? (
         <PainelDoDia dia={diaLocalISO(ancora, fusoDaAgenda)} fuso={fusoDaAgenda} />
       ) : null}
       {/* A GRADE INTERATIVA — clicar num bloco livre marca ali, arrastar um card
