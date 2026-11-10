@@ -4750,7 +4750,7 @@ async function executarTurnoDoAgente(
                 bytes: baixada.bytes,
                 mime: baixada.mime,
               });
-              if (guardada.ok) fotosDoProduto = [{ storagePath: guardada.storagePath, mime: guardada.mime }];
+              if (guardada.ok) fotosDoProduto = [{ kind: 'image', storagePath: guardada.storagePath, mime: guardada.mime }];
               else motivo = guardada.motivo;
             }
             if (motivo !== null) {
