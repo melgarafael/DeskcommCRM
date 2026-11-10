@@ -12,12 +12,16 @@ async function semSmtpRespondido(): Promise<boolean> {
 }
 
 /**
- * A INSTALAÇÃO NÃO TEM SMTP — a mesma resposta para quem DECIDE e para quem AVISA.
+ * A INSTALAÇÃO NÃO TEM POR ONDE MANDAR E-MAIL DE LOGIN — a mesma resposta para
+ * quem DECIDE e para quem AVISA.
  *
  * Numa instalação de servidor único (`SINGLE_SERVER=1`) o serviço de login desta
- * VPS não tem por onde mandar e-mail: quem leva o SMTP do CRM até ele é o kit
- * (`sincronizar_smtp_do_gotrue`, em `hostgator-setup-kit/_common.sh`). Mesma
- * régua do kit: host E remetente.
+ * VPS só envia o que o kit leva até ele (`sincronizar_smtp_do_gotrue`, em
+ * `hostgator-setup-kit/_common.sh`): o SMTP do CRM, host E remetente; sem ele, a
+ * Resend do CRM, chave E remetente (`resend_da_instalacao`). "Sem e-mail no
+ * login" é não ter NENHUM dos dois, na mesma precedência do kit (#3039). Até aqui
+ * a régua olhava só o SMTP, e a instalação só com a Resend recusava uma
+ * recuperação que sairia.
  *
  * Duas guardas, e as duas são de honestidade:
  *
@@ -32,28 +36,30 @@ async function semSmtpRespondido(): Promise<boolean> {
  * a MESMA coisa: com a régua duplicada, no dia em que uma das duas mudasse, a
  * tela mostraria um estado que a ação já não obedece.
  *
- * Limite aceito (o mesmo que o "esqueci a senha" declara): quem pôs SMTP direto
- * no `.env` do Supabase, sem passar pela tela, ouve "sem SMTP" com um e-mail que
- * sairia. O app não enxerga aquele arquivo, e o remédio é o caminho documentado:
- * configurar o mesmo SMTP em /admin/email (que o kit passa a sincronizar).
+ * Dois limites aceitos, os dois porque o app não enxerga o `.env` do Supabase:
+ *
+ *   - quem pôs SMTP direto naquele arquivo, sem passar pela tela, ouve "sem SMTP"
+ *     com um e-mail que sairia. O remédio é o caminho documentado: configurar o
+ *     mesmo SMTP em /admin/email (que o kit passa a sincronizar);
+ *   - SMTP ou Resend salvos pela tela DEPOIS do último `update.sh` contam aqui,
+ *     mas o serviço de login só os recebe na próxima atualização: até lá a tela
+ *     deixa de recusar, e o envio pode cair no erro genérico.
  */
 export async function semSmtpNaInstalacao(): Promise<boolean> {
   if (process.env.SINGLE_SERVER !== "1") return false;
-  return semSmtpRespondido();
+  return instalacaoSemSmtp();
 }
 
 /**
  * A tarja "Sem SMTP configurado" do painel do admin (#2755, item 3) deve
- * aparecer? É uma pergunta mais larga que a de cima, sobre a mesma base:
- *
- *   - servidor único: é `semSmtpNaInstalacao` — o login só recebe o SMTP do
- *     CRM, e nem a Resend salva a recuperação de senha;
- *   - fora dele, só quando também NÃO há Resend: convites, LGPD, cobrança e
- *     automações saem pelo roteador do app (`lib/email/roteador.ts`: SMTP,
- *     senão Resend), e sem nenhum dos dois nada sai. Com a Resend entregando,
- *     a tarja seria alarme falso — o login tem e-mail próprio.
+ * aparecer? É uma pergunta mais larga que a de cima, sobre a mesma base: vale
+ * também fora do servidor único, porque convites, LGPD, cobrança e automações
+ * saem pelo roteador do app (`lib/email/roteador.ts`: SMTP, senão Resend), e sem
+ * nenhum dos dois nada sai. Com a Resend entregando, a tarja seria alarme falso
+ * nos dois casos: no servidor único o kit a leva ao login, e fora dele o login
+ * tem e-mail próprio.
  */
 export async function instalacaoSemSmtp(): Promise<boolean> {
   if (!(await semSmtpRespondido())) return false;
-  return process.env.SINGLE_SERVER === "1" || !(await isEmailConfigured());
+  return !(await isEmailConfigured());
 }
