@@ -32,6 +32,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { appDaMeta } from "@/lib/channels/meta/app";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
+import {
+  MOTIVO_DO_CONTRATO_VIOLADO,
+  registrarRecusaDoWebhookMeta,
+} from "@/lib/channels/meta/recusa-do-webhook";
 import { parseMetaWebhook, verificationChallenge, verifyMetaSignature } from "@/lib/channels/meta/webhook";
 import { statusUpdate } from "@/lib/channels/meta/status-update";
 import {
@@ -92,6 +96,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     return fail("unauthorized", "invalid_signature", 401, { requestId });
   }
 
+  // O admin nasce ANTES da leitura do contrato porque a recusa também grava:
+  // ela arquiva o corpo cru em `webhook_events_log` (ver
+  // `lib/channels/meta/recusa-do-webhook.ts`).
+  const admin = createAdminClient();
+
   // ─── O contrato do fio, ANTES do parser ───────────────────────────────────
   //
   // Isto era `JSON.parse(rawBody)` seguido de um `as`: cast, que não confere
@@ -100,28 +109,67 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   // try/catch em volta: a exceção subia sem ninguém tratá-la (o framework
   // responde 5xx) e a Meta reentregava em backoff um corpo que nunca melhora.
   //
-  // 400 e não 200: o 200 generoso desta rota existe para EVENTO QUE NÃO NOS
-  // INTERESSA (a Meta reentrega o que não recebe 2xx), e um payload fora do
-  // contrato não é isso — é o fio ter mudado, que ninguém pode descobrir tarde.
-  // O schema é loose e todo campo é opcional, então chegar aqui exige um campo
-  // que a gente LÊ vir com o tipo errado. Ver lib/channels/meta/envelope.ts.
+  // 200 e NÃO 400 (issue #290, item 3): o 4xx faz a Meta reentregar o MESMO
+  // corpo em backoff por horas — e reentrega em excesso é caminho para a WABA
+  // ser suspensa. Um corpo fora do contrato não melhora com reentrega: ele é o
+  // fio que mudou, e quem precisa saber disso é quem opera. Por isso o
+  // desfecho é o do canal por QR (que já está na main): 200, corpo cru
+  // arquivado com `status = 'error'` e o motivo, log estruturado e um aviso na
+  // Central. O corpo do 200 diz que houve recusa (`accepted: false`) — não
+  // finge que processou.
+  //
+  // O JSON quebrado continua 400 e é OUTRO caso: com HMAC válido ele só pode
+  // vir de quem assinou um corpo que nunca foi o protocolo (a Meta assina o
+  // que envia, e um proxy que mutile o corpo derruba a assinatura antes, em
+  // 401). Não é o fio mudando de forma — é um corpo que nunca chegou a ser
+  // payload.
   const leitura = lerEnvelopeMeta(rawBody);
   if (!leitura.ok) {
     if (leitura.motivo === "json_invalido") {
       return fail("invalid_request", "invalid_json", 400, { requestId });
     }
+    const recusa = await registrarRecusaDoWebhookMeta(admin, {
+      sessao: session,
+      token,
+      rawBody,
+      headers: req.headers,
+      campos: leitura.campos,
+      requestId,
+    });
     logger.error("[meta.webhook] payload fora do contrato do canal", {
       request_id: requestId,
+      estagio: "conteudo",
       campos: leitura.campos,
+      log_id: recusa.logId,
+      arquivo: recusa.arquivo,
+      aviso: recusa.aviso,
     });
-    return fail("validation_failed", "payload fora do contrato do canal", 400, {
-      requestId,
-      details: { campos: leitura.campos },
-    });
+    return NextResponse.json(
+      {
+        received: 0,
+        accepted: false,
+        outcomes: [`recusado:${MOTIVO_DO_CONTRATO_VIOLADO}`],
+        reason: "payload_fora_do_contrato",
+        // Mesma frase do dicionário: nada novo para traduzir, e o detalhe
+        // operacional vai nos campos de máquina abaixo.
+        detail: "payload fora do contrato do canal",
+        campos: leitura.campos,
+        // `error` = esta entrega acabou de ser arquivada; `ja_arquivado` = a
+        // Meta reentregou a mesma entrega; `nao_arquivado` = o banco recusou a
+        // escrita (e a resposta NÃO finge que existe linha). Nenhum dos três é
+        // "processado".
+        arquivo:
+          recusa.arquivo === "novo"
+            ? "error"
+            : recusa.arquivo === "ja_existia"
+              ? "ja_arquivado"
+              : "nao_arquivado",
+      },
+      { status: 200, headers: { "X-Request-Id": requestId } },
+    );
   }
 
   const eventos = parseMetaWebhook(leitura.envelope);
-  const admin = createAdminClient();
   const now = new Date().toISOString();
   /**
    * Desfecho de cada ingestão. Existe porque a versão anterior fazia
