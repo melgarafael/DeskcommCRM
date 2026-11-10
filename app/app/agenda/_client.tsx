@@ -17,6 +17,7 @@ import { CamadaDatasDosNegocios } from "./_components/CamadaDatasDosNegocios";
 import { CartaoDaConexaoGoogle } from "./_components/CartaoDaConexaoGoogle";
 
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
+import { PainelDoDia } from "@/components/agenda/PainelDoDia";
 import { ReservasColetivas } from "@/components/agenda/ReservasColetivas";
 import { FiltroDePessoas } from "@/components/agenda/FiltroDePessoas";
 import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
@@ -1472,6 +1473,15 @@ export function AgendaClient({
         <div className="rounded-lg border border-border bg-surface p-4">
           <EmptyAgenda />
         </div>
+      ) : null}
+      {/* O PAINEL DO DIA (#4029, saída 3) — leitura, só na visão de dia.
+          Ele responde "quantas reservas, quantas pessoas esperadas e quantas
+          confirmadas" por turma, num lugar só; confirmar/remarcar continuam no
+          card da reserva. Só existe na visão de DIA porque o número é do dia:
+          numa semana, "total do dia" seria uma linha por dia e o resumo deixaria
+          de responder a pergunta que o painel existe para responder. */}
+      {visao === "dia" && tiposIniciais.some((tipo) => tipo.servicoColetivo) ? (
+        <PainelDoDia dia={diaLocalISO(ancora, fusoDaAgenda)} fuso={fusoDaAgenda} />
       ) : null}
       {/* A GRADE INTERATIVA — clicar num bloco livre marca ali, arrastar um card
           remarca. Toda a fiação (a consulta de horários da janela desenhada, a
