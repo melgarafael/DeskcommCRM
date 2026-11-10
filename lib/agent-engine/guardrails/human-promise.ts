@@ -162,8 +162,9 @@ function buildPatterns(target: string): RegExp[] {
   return [...buildPatternsDaAcao(target), ...buildPatternsDoRetorno(target)];
 }
 
-/** Compilado uma vez no load do módulo — caminho quente sem nome próprio extra. */
+/** Compilados uma vez no load do módulo — caminho quente sem nome próprio extra. */
 const PATTERNS: readonly RegExp[] = buildPatterns(TARGET);
+const PATTERNS_DA_ACAO: readonly RegExp[] = buildPatternsDaAcao(TARGET);
 
 /** Minúsculas + remove diacríticos (NFD) — casa acento/caixa uniformemente. */
 function normalize(body: string): string {
@@ -243,13 +244,13 @@ function soPedeConsentimento(text: string): boolean {
  * só nomes próprios simples entram no alvo estendido.
  */
 export function detectHumanPromise(body: string, extraHumanNames?: readonly string[]): boolean {
-  return avaliaFamilias(body, extraHumanNames, buildPatterns);
+  return avaliaFamilias(body, extraHumanNames, buildPatterns, PATTERNS);
 }
 
 /**
- * O ALVO do tenant, resolvido uma vez: o genérico (`PATTERNS`) quando não há
- * nome próprio aproveitável, senão o TARGET estendido. Devolve `null` para o
- * caminho quente — o compilado no load do módulo.
+ * O ALVO do tenant, resolvido uma vez: `null` quando não há nome próprio
+ * aproveitável — o caminho quente, que usa o compilado no load do módulo
+ * (`PATTERNS` / `PATTERNS_DA_ACAO`) —, senão o TARGET estendido.
  */
 function alvoDoTenant(extraHumanNames?: readonly string[]): string | null {
   if (extraHumanNames === undefined || extraHumanNames.length === 0) return null;
@@ -268,12 +269,13 @@ function avaliaFamilias(
   body: string,
   extraHumanNames: readonly string[] | undefined,
   familia: (target: string) => RegExp[],
+  compilados: readonly RegExp[],
 ): boolean {
   if (body.trim() === "") return false;
   const text = normalize(body);
   if (soPedeConsentimento(text)) return false;
   const target = alvoDoTenant(extraHumanNames);
-  return (target === null ? familia(TARGET) : familia(target)).some((re) => re.test(text));
+  return (target === null ? compilados : familia(target)).some((re) => re.test(text));
 }
 
 /**
@@ -300,5 +302,5 @@ export function detectHumanHandoffPromise(
   body: string,
   extraHumanNames?: readonly string[],
 ): boolean {
-  return avaliaFamilias(body, extraHumanNames, buildPatternsDaAcao);
+  return avaliaFamilias(body, extraHumanNames, buildPatternsDaAcao, PATTERNS_DA_ACAO);
 }
