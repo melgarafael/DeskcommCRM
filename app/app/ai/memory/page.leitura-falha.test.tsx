@@ -15,7 +15,7 @@
  *   leitura ok e vazia → o texto de vazio de sempre, e nenhum aviso de falha
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -44,10 +44,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
-// A releitura do cliente fica pendente: o teste mede o estado que a PÁGINA
-// entregou, não o refetch.
+// Por padrão a releitura do cliente fica pendente (ver o `beforeEach`): o teste
+// mede o estado que a PÁGINA entregou. Os casos de releitura trocam a resposta.
+const api = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/lib/api/client", () => ({
-  apiClient: { get: vi.fn(() => new Promise(() => {})), post: vi.fn(), patch: vi.fn() },
+  apiClient: { get: api.get, post: vi.fn(), patch: vi.fn() },
 }));
 vi.mock("@/hooks/auth/AuthProvider", async (orig) => ({
   ...((await orig()) as Record<string, unknown>),
@@ -134,6 +135,8 @@ const AVISO_DE_FALHA = "Não consegui ler a memória agora";
 const APRENDIZADO_DE_VERDADE = /Nenhum aprendizado ainda/;
 
 beforeEach(() => {
+  api.get.mockReset();
+  api.get.mockImplementation(() => new Promise(() => {}));
   banco.erroEm = { ponteiros: false, versaoAtiva: false, versoes: false, aprendizados: false };
   banco.temPonteiro = true;
   banco.conteudo = "Sempre confirme o prazo de entrega antes de prometer.";
@@ -181,6 +184,48 @@ describe("leitura que falha não pode ter a cara de memória vazia", () => {
     expect(screen.queryByText(VAZIO_DE_VERDADE)).toBeNull();
     expect(screen.queryByText(APRENDIZADO_DE_VERDADE)).toBeNull();
     expect(screen.getByTestId("memoria-aprendizados-falha")).not.toBeNull();
+  });
+});
+
+describe("o aviso cede quando a releitura do cliente dá certo", () => {
+  const RELIDO = {
+    data: {
+      document: {
+        version_id: "v1",
+        version_number: 3,
+        content: "Sempre confirme o prazo de entrega antes de prometer.",
+        created_at: "2026-10-01T00:00:00Z",
+      },
+      versions: [{ id: "v1", version_number: 3, created_at: "2026-10-01T00:00:00Z" }],
+      entries: [],
+    },
+  };
+
+  it("releitura bem-sucedida: some o aviso, e a lista vazia de verdade volta a dizer vazio", async () => {
+    // A página falhou ao ler os aprendizados; a rota, relida pelo cliente,
+    // respondeu — e respondeu que não há nenhum.
+    banco.erroEm.aprendizados = true;
+    api.get.mockResolvedValue(RELIDO);
+
+    await abrir();
+
+    await waitFor(() => expect(screen.queryByTestId("memoria-leitura-falhou")).toBeNull());
+    expect(screen.queryByTestId("memoria-aprendizados-falha")).toBeNull();
+    expect(screen.getByText(APRENDIZADO_DE_VERDADE)).not.toBeNull();
+  });
+
+  it("releitura que também falha: o aviso continua", async () => {
+    banco.erroEm.aprendizados = true;
+    api.get.mockRejectedValue(new Error("HTTP 500"));
+
+    await abrir();
+
+    await waitFor(() => expect(api.get).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByTestId("memoria-tentar-de-novo").textContent).toContain("Tentar de novo"),
+    );
+    expect(screen.getByTestId("memoria-leitura-falhou")).not.toBeNull();
+    expect(screen.queryByText(APRENDIZADO_DE_VERDADE)).toBeNull();
   });
 });
 

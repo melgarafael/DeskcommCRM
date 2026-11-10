@@ -294,16 +294,24 @@ export function OrgMemoryClient({ initialState, falhasDeLeitura, hoje, limiteDoA
     flywheel: t("aprendido automaticamente"),
     agent: t("anotado pelo agente"),
   };
-  const { data, isError, isFetching, refetch } = useOrgMemory(initialState);
+  const { data, isError, isFetching, isFetchedAfterMount, refetch } = useOrgMemory(initialState);
   const document = data?.document ?? null;
   const versions = data?.versions ?? [];
   const entries = data?.entries ?? [];
   // A releitura também pode falhar (a rota devolve 500 quando não consegue ler):
   // aí não se sabe nada do que está salvo, e vale o mesmo aviso da página.
   const falhouTudo = isError;
-  const falhaDoDocumento = falhouTudo || falhasDeLeitura.documento;
-  const falhaDasVersoes = falhouTudo || falhasDeLeitura.versoes;
-  const falhaDosAprendizados = falhouTudo || falhasDeLeitura.aprendizados;
+  // `falhasDeLeitura` é uma FOTO do render do servidor e nunca muda sozinha.
+  // Depois que o cliente releu com sucesso (o "Tentar de novo", ou a releitura
+  // de entrada), quem manda é a releitura: sem isto o aviso ficava na tela para
+  // sempre, e uma lista vazia de verdade seguia dizendo "não consegui ler".
+  const releuComSucesso = isFetchedAfterMount && !isError;
+  const daPagina: FalhasDeLeitura = releuComSucesso
+    ? { documento: false, versoes: false, aprendizados: false }
+    : falhasDeLeitura;
+  const falhaDoDocumento = falhouTudo || daPagina.documento;
+  const falhaDasVersoes = falhouTudo || daPagina.versoes;
+  const falhaDosAprendizados = falhouTudo || daPagina.aprendizados;
   const algumaFalha = falhaDoDocumento || falhaDasVersoes || falhaDosAprendizados;
   const canPublish = usePermission("ai.memory.publish");
   const [limite, setLimite] = React.useState(limiteDoAviso);
