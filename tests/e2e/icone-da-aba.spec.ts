@@ -124,16 +124,43 @@ test.describe("o ícone da aba subido em /admin/marca chega à aba", () => {
       // toast não, a limpeza do `finally` ainda precisa rodar (DELETE sem ícone
       // gravado é inócuo).
       gravado = true;
+      // (2.0) O EVENTO da escrita, pedido ANTES do clique (#1879).
+      //
+      // A espera antiga era o TEXTO do toast: `enviar()` em
+      // `components/branding/CampoDoIconeDaAba.tsx` chama `toast.success` na
+      // linha 88 e só DEPOIS lê o corpo da resposta (:89) e troca o estado que
+      // pinta a prévia (:90) — e ainda agenda o `router.refresh()` (:91). O
+      // toast prova que a rota respondeu; não prova que a tela já reflete. Com
+      // 5 s de teto nessa asserção, um commit lento do React (ou a transição do
+      // refresh em cima) estourava o relógio e o rerun passava: era espera por
+      // sintoma, não pelo evento que troca a tela.
+      //
+      // Aqui a resposta da rota é esperada sem teto curto (o teto do caso é de
+      // 120 s, por causa do TOTP), e a prévia passa a ser cobrada contra a URL
+      // que a PRÓPRIA rota devolveu no corpo — o valor que o componente usa.
+      const escrita = page.waitForResponse(
+        (r) =>
+          new URL(r.url()).pathname === "/api/v1/marca/logo" &&
+          r.request().method() === "POST",
+      );
       await page.locator("#icone-da-aba").setInputFiles({
         name: "icone.png",
         mimeType: "image/png",
         buffer: PNG_DO_ICONE,
       });
+      const resposta = await escrita;
+      expect(resposta.status(), "a rota do ícone recusou o que a tela subiu").toBe(200);
+      const corpoDaSubida = (await resposta.json()) as { data?: { logo_url?: string | null } };
+      const urlGravada = corpoDaSubida.data?.logo_url ?? null;
+      expect(
+        urlGravada,
+        "a rota respondeu 200 sem devolver a URL do arquivo que diz ter gravado",
+      ).toMatch(URL_DO_ARQUIVO);
       await expect(page.getByText("Ícone da aba atualizado.")).toBeVisible({ timeout: 15_000 });
       const previa = page.locator('[data-previa-do-icone="arquivo"] img');
       await expect(previa, "o toast disse atualizado, mas a prévia não trocou").toHaveAttribute(
         "src",
-        URL_DO_ARQUIVO,
+        urlGravada as string,
       );
       await page.screenshot({ path: evidencia("2-admin-marca-previa.png"), fullPage: true });
 
@@ -150,7 +177,17 @@ test.describe("o ícone da aba subido em /admin/marca chega à aba", () => {
       ).toBe(true);
 
       // (4) Remover pela tela devolve o desenhado.
+      // Mesmo defeito de espera do lado da remoção: o toast de `remover()` sai
+      // antes de o estado da prévia voltar (:109 e :110-111). A resposta do
+      // DELETE é o evento; o registro vem antes do clique.
+      const remocao = page.waitForResponse(
+        (r) =>
+          new URL(r.url()).pathname === "/api/v1/marca/logo" &&
+          r.request().method() === "DELETE",
+      );
       await page.getByRole("button", { name: "Remover ícone", exact: true }).click();
+      const respostaDaRemocao = await remocao;
+      expect(respostaDaRemocao.status(), "a rota do ícone recusou a remoção").toBe(200);
       await expect(page.getByText("Ícone da aba removido.")).toBeVisible({ timeout: 15_000 });
       gravado = false;
       await expect(page.locator("[data-previa-do-icone]")).toHaveAttribute(
