@@ -159,4 +159,19 @@ describe("consulta ao acervo pelo operador", () => {
     expect(erro).toHaveTextContent("Não consegui consultar o acervo.");
     expect(erro).not.toHaveTextContent("unavailable");
   });
+
+  it("resposta sem envelope (proxy, HTML de erro) não mostra o corpo cru nem o status", async () => {
+    // É assim que `lib/api/client.ts` monta o erro quando o corpo não é o
+    // envelope da casa: `message` vira o corpo ou `HTTP <status>`.
+    h.post.mockRejectedValue(
+      new ApiError(502, "internal_error", undefined, "req-3", "HTTP 502", true),
+    );
+
+    render(<AcervoSearch podeAbrirFonte />);
+    perguntar();
+
+    const erro = await screen.findByTestId("acervo-erro");
+    expect(erro).toHaveTextContent("Não consegui consultar o acervo.");
+    expect(erro).not.toHaveTextContent("HTTP 502");
+  });
 });

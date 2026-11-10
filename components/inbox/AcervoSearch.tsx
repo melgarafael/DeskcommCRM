@@ -83,9 +83,10 @@ export function AcervoSearch({ podeAbrirFonte = false }: { podeAbrirFonte?: bool
       // o operador lia "não consegui consultar" sem o motivo que a rota tinha
       // dado. `ApiError` só carrega mensagem de envelope da casa — nunca stack —
       // e, quando o envelope não traz frase, `message` é o CÓDIGO (`rate_limited`),
-      // que não se mostra: aí sim o genérico.
+      // que não se mostra: aí sim o genérico. Resposta SEM envelope (proxy, HTML
+      // de erro) traz o corpo cru ou `HTTP 502` em `message`: também genérico.
       setErro(
-        e instanceof ApiError && e.message && e.message !== e.code
+        e instanceof ApiError && !e.semEnvelope && e.message && e.message !== e.code
           ? e.message
           : t("Não consegui consultar o acervo."),
       );
