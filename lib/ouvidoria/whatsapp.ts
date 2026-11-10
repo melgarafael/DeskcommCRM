@@ -38,10 +38,12 @@
  *    campanha, sem follow-up, sem despacho do agente. O rastro de que isso
  *    aconteceu é um log, não um card.
  *
- * 3. **Desligado não muda nada.** Só o `true` explícito de
- *    `settings.ouvidoria.ativa` (a régua de `ouvidoriaLigada`, da fatia 1) abre
- *    o fluxo. Ausente/lixo = `tratado: false`, e a mensagem segue o caminho de
- *    hoje — que é o controle de que esta fatia não sequestrou a ingestão.
+ * 3. **Desligado não muda nada.** São duas chaves, como no registro: o módulo
+ *    instalado (`modulos_instalados`, conferido por quem chama — a lista de
+ *    `lib/modulos/desvios-da-entrada.ts`) e o `true` explícito de
+ *    `settings.ouvidoria.ativa` (a régua de `ouvidoriaLigada`, conferida aqui).
+ *    Ausente/lixo = `tratado: false`, e a mensagem segue o caminho de hoje — que
+ *    é o controle de que esta fatia não sequestrou a ingestão.
  *
  * ─── Por que o estado mora em `conversations.metadata` ─────────────────────
  *
@@ -279,10 +281,12 @@ export function resumirRelato(partes: readonly string[]): string {
 // O rascunho: ler, gravar, expirar
 // ---------------------------------------------------------------------------
 
+function ehObjeto(valor: unknown): valor is Record<string, unknown> {
+  return typeof valor === "object" && valor !== null && !Array.isArray(valor);
+}
+
 function objeto(valor: unknown): Record<string, unknown> | null {
-  return valor && typeof valor === "object" && !Array.isArray(valor)
-    ? (valor as Record<string, unknown>)
-    : null;
+  return ehObjeto(valor) ? valor : null;
 }
 
 /**
@@ -585,10 +589,6 @@ export async function atenderOuvidoriaNoWhatsApp(
   try {
     if (passo === "reentrega") return { tratado: daOuvidoria, motivo: "reentrega" };
 
-    // ── Nada de rascunho e nada de Ouvidoria nesta mensagem: comportamento de
-    //    hoje, sem tocar em nada.
-    if (!daOuvidoria) return { tratado: false, motivo: "nao_e_ouvidoria" };
-
     // ── INICIAR: boas-vindas, e a própria mensagem já é o primeiro pedaço. Quem
     //    escreve "gostaria de fazer uma reclamação: o pedido não chegou" não
     //    pode ter a reclamação descartada em nome da cortesia.
@@ -605,9 +605,10 @@ export async function atenderOuvidoriaNoWhatsApp(
       return { tratado: true, motivo: "iniciar" };
     }
 
-    // `rascunho` não é nulo daqui para baixo: `daOuvidoria` só é verdadeiro sem
-    // rascunho no passo `iniciar`, que já retornou.
-    const atual = rascunho as RascunhoDaOuvidoria;
+    // ── Nada de rascunho e nada de Ouvidoria nesta mensagem: comportamento de
+    //    hoje, sem tocar em nada.
+    if (rascunho === null) return { tratado: false, motivo: "nao_e_ouvidoria" };
+    const atual = rascunho;
 
     // ── DESCARTAR
     if (passo === "descartar") {
@@ -725,7 +726,7 @@ export function portasDaOuvidoria(
     async responde({ texto, chave }) {
       const { sendMessageHandler } = await import("@/app/api/v1/messages/_handler");
       await sendMessageHandler(
-        supabase as never,
+        supabase,
         {
           organization_id: entrada.organizationId,
           // Autoria AUTOMAÇÃO: quem escreveu foi uma regra do módulo, não a IA

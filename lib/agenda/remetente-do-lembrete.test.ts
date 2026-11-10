@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CHANNEL_PROVIDER,
   CHANNEL_PROVIDER_META,
+  CHANNEL_PROVIDER_SOCIAL,
   CHANNEL_PROVIDER_WACALLS,
 } from "@/lib/channels/capabilities";
 import { decidirRemetenteDoLembrete, type CanalDoLembrete } from "./remetente-do-lembrete";
@@ -75,6 +76,28 @@ describe("remetente da reserva, sem depender da ordem do banco", () => {
         agora,
       ).motivo,
     ).toBe("canal_fora_da_janela_24h");
+  });
+  it("fora da janela, com UM número certo, diz qual é — para o modelo aprovado", () => {
+    // O campo não autoriza texto livre: `canal` segue nulo. Ele só diz por qual
+    // número um modelo aprovado do tipo ainda pode sair.
+    const fechado = canal("clinica", { provider: CHANNEL_PROVIDER_META });
+    const fora = (r: ReturnType<typeof decidirRemetenteDoLembrete>) => (r.canal ? undefined : r.foraDaJanela);
+    expect(decidirRemetenteDoLembrete([fechado], "clinica", agora).canal).toBeNull();
+    expect(fora(decidirRemetenteDoLembrete([fechado], "clinica", agora))?.id).toBe("clinica");
+    expect(fora(decidirRemetenteDoLembrete([fechado], null, agora))?.id).toBe("clinica");
+    const outro = canal("cursos", { provider: CHANNEL_PROVIDER_META });
+    // Dois números fora da janela: nenhum é "o" remetente.
+    expect(fora(decidirRemetenteDoLembrete([fechado, outro], null, agora))).toBeUndefined();
+    // Indicado indisponível nunca vira candidato.
+    expect(fora(decidirRemetenteDoLembrete([canal("clinica", { provider: CHANNEL_PROVIDER_META, status: "STOPPED" })], "clinica", agora))).toBeUndefined();
+  });
+  it("fora da janela, a preferência pelo canal do contato (#2594) também escolhe o número do modelo", () => {
+    const oficial = canal("oficial", { provider: CHANNEL_PROVIDER_META });
+    const social = canal("social", { provider: CHANNEL_PROVIDER_SOCIAL });
+    const fora = (r: ReturnType<typeof decidirRemetenteDoLembrete>) => (r.canal ? undefined : r.foraDaJanela);
+    // Com telefone, o de telefone; sem telefone informado, nenhuma preferência — e dois é ambíguo.
+    expect(fora(decidirRemetenteDoLembrete([social, oficial], null, agora, "+5511900000000"))?.id).toBe("oficial");
+    expect(fora(decidirRemetenteDoLembrete([social, oficial], null, agora))).toBeUndefined();
   });
   it("zero canais falha de maneira explícita", () => {
     expect(decidirRemetenteDoLembrete([], null, agora).motivo).toBe("sem_canal");

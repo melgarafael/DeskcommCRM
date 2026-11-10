@@ -52,11 +52,18 @@ import {
   type ChannelProvider,
   type ChannelSessionRef,
 } from "@/lib/channels";
-import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
+import {
+  defeitoDoNumero,
+  julgarQueda,
+  motivoParaGravar,
+  sincronizarSaudeDaConexao,
+} from "@/lib/channels/health";
+import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { ehNomeDeSessaoE2E } from "@/lib/channels/sessoes-e2e";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 
 export const dynamic = "force-dynamic";
 
@@ -67,10 +74,45 @@ type LinhaDeSessao = ChannelSessionRef & {
   id: string;
   organization_id: string;
   status: string | null;
+  /** O porquê de um número de pé com defeito (`motivoParaGravar`); a tela de Conexões o mostra. */
+  status_reason: string | null;
   display_name: string | null;
   phone_number: string | null;
   archived_at: string | null;
+  /** Observações ruins SEGUIDAS — é onde o anti-pisco guarda a contagem. */
+  consecutive_health_fails: number | null;
 };
+
+/** Falhou a leitura, o aviso sai em português — nunca deixa de sair. */
+async function idiomaDaOrganizacao(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+): Promise<Idioma> {
+  const { data } = await admin.from("organizations").select("locale").eq("id", organizationId).maybeSingle();
+  return normalizarIdioma((data as { locale?: string | null } | null)?.locale);
+}
+
+/**
+ * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
+ *
+ * O portão abaixo é saída antecipada da ROTA INTEIRA: em instalação ociosa a
+ * rota sai antes de tudo isto. `tests/unit/cron-passa-pelo-portao.test.ts` lê o
+ * AST deste arquivo e reprova quando o que está de fato abaixo do portão diverge
+ * desta lista — passo novo que não roda na instalação parada não pode nascer
+ * sem alguém ver.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const {data, error}",
+  "if (error)",
+  "const sessoes",
+  "let verificadas",
+  "const desfechos",
+  "let ignoradas",
+  "for (s of sessoes)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -78,6 +120,12 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // O PISO OCIOSO (#3731): Sem sessão de canal ativa não há saúde de canal a vigiar.
+  // A saída vem antes de qualquer consulta da rodada, e o portão responde de um
+  // retrato em memória (`lib/cron/piso-ocioso.ts`): esta rota ia ao PostgREST a
+  // cada batida só para descobrir que a fila está vazia.
+  if (await recursoOcioso("canal_vigiado")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
 
@@ -87,7 +135,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("channel_sessions")
     .select(
-      `id, organization_id, status, display_name, phone_number, archived_at, ${CHANNEL_SESSION_REF_COLUMNS}`,
+      `id, organization_id, status, status_reason, display_name, phone_number, archived_at, consecutive_health_fails, ${CHANNEL_SESSION_REF_COLUMNS}`,
     )
     .is("archived_at", null)
     .limit(LIMITE);
@@ -155,6 +203,34 @@ async function handle(req: NextRequest): Promise<Response> {
       });
       verificadas++;
 
+      // ─── UMA pergunta que falha não é uma conexão caída ──────────────────
+      //
+      // Medido: a conexão oficial piscou por 5 minutos e as duas mensagens
+      // mandadas nesse intervalo ficaram em `queued` para sempre. Não houve
+      // queda — a pergunta ao provedor falhou uma vez.
+      //
+      // Queda só vale depois de CONFIRMACOES_PARA_QUEDA observações seguidas.
+      // Recuperação, não: uma observação boa zera na hora, porque demorar a
+      // acreditar na volta segue barrando envio de um canal que já voltou. O
+      // contador só é escrito quando muda: a rodada comum (de pé, contador
+      // zero) não paga uma escrita por sessão.
+      const contadorAnterior = s.consecutive_health_fails ?? 0;
+      const julgamento = julgarQueda(saude, contadorAnterior);
+      if (julgamento.contador !== contadorAnterior) {
+        await admin
+          .from("channel_sessions")
+          .update({ consecutive_health_fails: julgamento.contador })
+          .eq("id", s.id)
+          .eq("organization_id", s.organization_id);
+      }
+
+      // Enquanto não confirma, o mundo segue como estava: nem status novo no
+      // banco, nem aviso. É o pisco sendo absorvido.
+      if (julgamento.contador > 0 && !julgamento.confirmada) {
+        desfechos.aguardando_confirmacao = (desfechos.aguardando_confirmacao ?? 0) + 1;
+        continue;
+      }
+
       // O status novo vale para o banco, mas SÓ quando deu para perguntar:
       // gravar por cima com um erro de rede transitório trocaria informação boa
       // por ruído, e é o mesmo cuidado que a tela de conexões já toma.
@@ -169,12 +245,30 @@ async function handle(req: NextRequest): Promise<Response> {
           .eq("organization_id", s.organization_id);
       }
 
+      // O número de pé com defeito (não recebe, envio restrito) não muda de
+      // status — barrar o envio seria pior —, então o defeito vai para o
+      // motivo, que a tela de Conexões mostra. Só o motivo que esta regra
+      // escreve é tocado (`motivoParaGravar`).
+      const motivo = motivoParaGravar(saude, s.status_reason);
+      if (motivo !== undefined) {
+        await admin
+          .from("channel_sessions")
+          .update({ status_reason: motivo })
+          .eq("id", s.id)
+          .eq("organization_id", s.organization_id);
+      }
+
       const apelido = s.display_name ?? s.phone_number ?? "sem nome";
       const desfecho = await sincronizarSaudeDaConexao(
         admin,
-        { id: s.id, organization_id: s.organization_id, status: statusFinal },
+        { id: s.id, organization_id: s.organization_id, status: statusFinal, status_reason: s.status_reason },
         saude,
         apelido,
+        "varredura",
+        // O aviso do número de pé com defeito sai no idioma da organização. A
+        // leitura só acontece nesse caso, que é raro — a rodada comum não paga
+        // uma consulta a mais por sessão.
+        defeitoDoNumero(saude.detail) ? await idiomaDaOrganizacao(admin, s.organization_id) : "pt-BR",
       );
       desfechos[desfecho] = (desfechos[desfecho] ?? 0) + 1;
     } catch (err) {

@@ -220,7 +220,9 @@ test.describe("aviso de caso no WhatsApp", () => {
 
     // ─── 6. o seletor fala de CAPACIDADE, nunca de provedor ───────────────
     await expect(
-      page.getByText("Só aparecem aqui os números que conseguem mandar uma mensagem a qualquer hora."),
+      page.getByText(
+        "Aparecem aqui os números que mandam mensagem a qualquer hora e os números oficiais que já têm um modelo aprovado com uma variável.",
+      ),
     ).toBeVisible();
     await page.locator("#conexao").click();
     const opcoes = page.getByRole("option");

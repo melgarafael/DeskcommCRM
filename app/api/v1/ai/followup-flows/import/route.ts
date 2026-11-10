@@ -21,6 +21,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -56,33 +57,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
 
-  const declarado = Number(req.headers.get("content-length") ?? "0");
-  if (declarado > TAMANHO_MAXIMO_DO_ARQUIVO) {
-    return fail(
-      "payload_too_large",
-      t("Arquivo grande demais para um fluxo (máximo de 512 KB)."),
-      413,
-      {
-        requestId,
-      },
-    );
-  }
+  const envio = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DO_ARQUIVO, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("Arquivo grande demais para um fluxo (máximo de 512 KB)."),
+  });
+  if (!envio.ok) return envio.response;
 
   let texto: string;
   try {
-    texto = await req.text();
+    texto = await envio.corpo.text();
   } catch {
     return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
-  }
-  if (texto.length > TAMANHO_MAXIMO_DO_ARQUIVO) {
-    return fail(
-      "payload_too_large",
-      t("Arquivo grande demais para um fluxo (máximo de 512 KB)."),
-      413,
-      {
-        requestId,
-      },
-    );
   }
 
   let raw: unknown;
@@ -155,6 +141,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       draft_graph: resultado.graph,
       trigger_config: resultado.trigger_config,
       handoff_policy: arquivo.data.flow.handoff_policy,
+      send_when_assigned: arquivo.data.flow.send_when_assigned,
       surface,
     })
     .select("*")

@@ -73,6 +73,8 @@ function statusBadgeLabel(status: AutomationRuleRunRow["status"], t: (texto: str
  */
 const MOTIVO_DA_PARADA: Record<string, string> = {
   internal_error: "Não foi possível concluir a ação. Confira o código técnico nos detalhes.",
+  conta_de_email_indisponivel:
+    "Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.",
   no_contact: "Esse lead entrou sem contato vinculado, então não havia para quem escrever.",
   contact_blocked: "O contato pediu para não receber mensagens (opt-out).",
   no_phone: "O contato não tem telefone cadastrado.",
@@ -111,6 +113,30 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   fila_vazia: "A fila do rodízio desta automação está vazia. Abra a automação e escolha quem entra no rodízio.",
   sem_rodizio:
     "A automação foi alterada e não tem mais o rodízio que disparou esta ação. Nada foi atribuído.",
+  /* #3881 — a ação `define_sector`. `setor_id_ausente` nasce no executor da
+     ação; `sem_conversa` também (negócio sem contato ou contato sem conversa
+     aberta). As recusas da régua chegam pelo `error` e a frase delas é a
+     deste mapa — o detalhe não leva `explicacao`, que venceria a tradução. */
+  sector_id_ausente:
+    "A ação Definir o setor está sem setor escolhido. Abra a automação e escolha o setor da conversa.",
+  sem_conversa:
+    "Não há conversa aberta para classificar: o contato deste evento não tem conversa em andamento. Nada mudou.",
+  /* #3881 — as recusas da régua do setor. Cada uma é uma pergunta diferente
+     para quem opera: a conversa sumiu, acabou, a fila não existe, quem escolheu
+     foi uma pessoa, ou o banco não deixou gravar. */
+  conversa_nao_encontrada:
+    "A conversa não existe mais nesta organização — nada foi alterado.",
+  conversa_encerrada:
+    "A conversa está encerrada: não aceita mais ser classificada em um setor.",
+  setor_inexistente:
+    "O setor escolhido na regra não existe nesta organização. Abra a automação e escolha um setor da lista.",
+  setor_manual_preservado:
+    "A conversa já foi classificada por uma pessoa e a regra não sobrescreve essa escolha. Nada mudou.",
+  limpeza_nao_permitida:
+    "A ação precisa de um setor de destino: só uma pessoa pode deixar a conversa sem setor.",
+  setores_desligados: "Os setores de atendimento estão desligados nesta instalação. Nada mudou.",
+  falha_ao_gravar:
+    "Não foi possível gravar o setor da conversa. Tente de novo; se persistir, veja o log da automação.",
   lead_nao_encontrado: "O lead deste evento não foi encontrado nesta organização, então ninguém foi atribuído.",
   /* #3804 — o destino dinâmico não achou ninguém: nem o dono do negócio, nem a
      carteira do cliente, nem o fallback servem. Emitido como `error` literal por
@@ -128,6 +154,7 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   missing_input:
     "A ação não recebeu o que precisava (o lead do evento ou a pessoa configurada). Abra a automação e revise.",
   no_tags: "Esta ação não tem nenhuma etiqueta escolhida. Abra a automação e escolha pelo menos uma.",
+  nada_a_tirar: "Nenhuma das etiquetas pedidas estava lá, então não havia nada a tirar.",
   no_target: "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.",
   no_lead_or_contact: "O evento que disparou a regra não trouxe um lead para criar ou mover.",
   cross_pipeline_move_not_allowed: "Mover um lead para outro funil está desligado nesta organização.",
@@ -155,6 +182,9 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.",
   roteiro_nao_iniciado:
     "O roteiro de atendimento não começou para este contato: o fluxo pode não estar publicado, o contato já pode ter um roteiro em andamento, ou já ter concluído este sem poder recomeçar.",
+  same_flow: "O contato já está neste mesmo fluxo — a automação não o recomeça.",
+  live_enrollment_paused:
+    "O contato está em outro fluxo pausado por uma pessoa da equipe, e a automação não passa por cima dessa decisão.",
   consent_declined: "O contato não autorizou o recebimento de mensagens de marketing.",
   fora_do_pre_go_live:
     "O número deste canal ainda não entrou no pré-go-live, então a mensagem escrita pela IA não sai por ele.",

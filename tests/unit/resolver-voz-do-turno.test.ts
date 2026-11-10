@@ -55,18 +55,25 @@ describe("resolverVozDoTurno", () => {
     expect((db as { query: ReturnType<typeof vi.fn> }).query).not.toHaveBeenCalled();
   });
 
-  it("canal que só aceita opus: não fala (o mp3 chegaria como anexo), nem consulta o banco", async () => {
-    const db = pool();
+  it("canal que só aceita opus (o oficial): FALA, e pede a síntese em ogg/opus — o mp3 chegaria como anexo", async () => {
+    // Até 02/11/2026 este caso devolvia `null` (texto sempre no número oficial).
+    // A ElevenLabs sintetiza em opus num contêiner OGG (medido), então o canal
+    // oficial também recebe nota de voz — desde que o formato venha daqui.
+    resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk_elevenlabs" });
     const r = await resolverVozDoTurno({
       ...base,
-      pool: db,
       voiceNote: "opus-only",
       vozEnabled: true,
       vozQuando: "sempre",
       inboundType: "audio",
     });
-    expect(r).toBeNull();
-    expect((db as { query: ReturnType<typeof vi.fn> }).query).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ apiKey: "sk_elevenlabs", voiceId: "v1", formato: "ogg_opus" });
+  });
+
+  it("canal que converte (o pareado) segue em mp3", async () => {
+    resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk_elevenlabs" });
+    const r = await resolverVozDoTurno({ ...base, vozEnabled: true, vozQuando: "sempre", inboundType: "audio" });
+    expect(r).toMatchObject({ formato: "mp3" });
   });
 
   it("vozQuando='nunca': não fala mesmo com voz_enabled=true", async () => {
@@ -100,7 +107,7 @@ describe("resolverVozDoTurno", () => {
       vozQuando: "espelhar",
       inboundType: "audio",
     });
-    expect(r).toEqual({ apiKey: "sk_elevenlabs", voiceId: "v1", modelId: "eleven_turbo_v2" });
+    expect(r).toEqual({ apiKey: "sk_elevenlabs", voiceId: "v1", modelId: "eleven_turbo_v2", formato: "mp3" });
     expect(resolveOrgLlmConfigMock).toHaveBeenCalledWith(
       expect.anything(),
       {},

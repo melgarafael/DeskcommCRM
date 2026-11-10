@@ -52,7 +52,16 @@
 
     { "id": "handoff", "lane": "volta", "col": 2, "type": "service", "label": "performHumanHandoff / triggerHandoff", "sublabel": "conversa → fila humana, razão orcamento_de_ia, zero token" },
     { "id": "conversas", "lane": "volta", "col": 3, "type": "database", "label": "conversations / contacts", "sublabel": "status='pending' · bot_silenced_until='infinity' · force_human=true" },
-    { "id": "retrata", "lane": "volta", "col": 1, "type": "service", "label": "retratarAvisos + CTE retrata", "sublabel": "gasto abaixo do limiar, teto apagado ou afrouxamento pela tela" }
+    { "id": "retrata", "lane": "volta", "col": 1, "type": "service", "label": "retratarAvisos + CTE retrata", "sublabel": "gasto abaixo do limiar, teto apagado ou afrouxamento pela tela" },
+
+    { "id": "travaleitor", "lane": "gasta", "col": 8, "type": "service", "label": "media-persist-worker (trava de leitor)", "sublabel": "MEDIA_VISION_WITHOUT_READER=defer (padrão): foto de empresa sem leitor fica skipped + derivacao_adiada; always = válvula do operador, descreve toda foto" },
+    { "id": "dreno", "lane": "gasta", "col": 9, "type": "service", "label": "drain.ts (dreno do turno)", "sublabel": "agente da conversa que vê imagens: reabre as fotos adiadas (até a janela de histórico dele); o que não vê, ou nenhum (roteador): reabre o lote só se a empresa tem leitor. Espera a foto que está sendo descrita qualquer que seja o agente, pela régua de midia-derivavel.ts — a mesma do turno em andamento" },
+    { "id": "midiaderivavel", "lane": "regra", "col": 5, "type": "service", "label": "midiaDerivavelPendente (midia-derivavel.ts)", "sublabel": "a mídia pendente mais recente da conversa e a âncora da espera: created_at, ou derivacao_pedida_em da foto reaberta. Lida pelo dreno (antes de enfileirar) e por espera-da-midia.ts (o turno em andamento, antes do prompt)" },
+    { "id": "leitor", "lane": "regra", "col": 4, "type": "service", "label": "haLeitorDaDescricao / reabrirLeituraAdiada", "sublabel": "lib/messaging/media/leitura-adiada.ts — agente com a opção ligada (cobre caso, fluxo e inscrição dele), caso aberto de agente fora do ar, inscrição sem agente, token, anúncio, external, venda pelo canal" },
+    { "id": "cronadiada", "lane": "borda", "col": 8, "type": "api", "label": "GET /api/v1/cron/media-leitura-adiada", "sublabel": "5 em 5 min · até 100 fotos por empresa · só onde há leitor e dos últimos 7 dias (always = todas, sem idade)" },
+    { "id": "msgs", "lane": "dados", "col": 7, "type": "database", "label": "messages (idx_messages_derivacao_adiada)", "sublabel": "índice parcial (9106): só o que é reabrível" },
+    { "id": "eventlog", "lane": "dados", "col": 8, "type": "database", "label": "event_log (media.derive_requested)", "sublabel": "o mesmo evento do persist · source leitura_adiada" },
+    { "id": "visaoagente", "lane": "dados", "col": 9, "type": "database", "label": "ai_agent_versions.image_vision_enabled (9108)", "sublabel": "\"Ver as fotos que o cliente envia\" na tela do agente · ligado por padrão · publicada vale; quem nunca publicou, o rascunho" }
   ],
   "edges": [
     { "id": "e1", "from": "card", "to": "hook", "label": "escolher o degrau · digitar o teto · marcar \"começar agora\"" },
@@ -106,7 +115,20 @@
     { "id": "e52", "from": "previa", "to": "llmcalls", "label": "a prévia sintetizada grava custo em sintese_de_voz (sem job) e soma no gasto do mês" },
     { "id": "e46", "from": "card", "to": "usoapi", "label": "a mesma tela: custo, chamadas, turnos e cache do período" },
     { "id": "e47", "from": "usoapi", "to": "usofn", "label": "RPC, security invoker — a RLS isola, p_org é defesa em profundidade" },
-    { "id": "e48", "from": "usofn", "to": "llmcalls", "label": "sum(cost_cents) por dia e por purpose; turnos = jobs com agent_turn ok" }
+    { "id": "e48", "from": "usofn", "to": "llmcalls", "label": "sum(cost_cents) por dia e por purpose; turnos = jobs com agent_turn ok" },
+    { "id": "e53", "from": "travaleitor", "to": "leitor", "label": "a empresa tem quem leia a descrição? só foto, só com o knob em defer; dúvida = deriva" },
+    { "id": "e54", "from": "travaleitor", "to": "msgs", "label": "sem leitor: skipped + metadata.derivacao_adiada — nenhuma chamada de visão" },
+    { "id": "e55", "from": "dreno", "to": "leitor", "label": "turno que vai ler: reabre as fotos adiadas da conversa" },
+    { "id": "e55b", "from": "leitor", "to": "visaoagente", "label": "agente só conta como leitor com a opção ligada" },
+    { "id": "e55c", "from": "dreno", "to": "visaoagente", "label": "o agente da conversa vê imagens? sim: reabre até a janela dele; não: a régua da empresa (o turno pode ir a outro agente)" },
+    { "id": "e56", "from": "cronadiada", "to": "leitor", "label": "empresas operantes com foto adiada; reabre onde há leitor, só as dos últimos JANELA_DO_CRON_DIAS (7) dias em defer" },
+    { "id": "e57", "from": "leitor", "to": "eventlog", "label": "UPDATE que reconfere a marca + emit_event, num comando só" },
+    { "id": "e58", "from": "eventlog", "to": "midia", "label": "o mesmo worker descreve: contato pessoal, teto de orçamento e linha de custo valem" },
+    { "id": "e59", "from": "leitor", "to": "msgs", "label": "acha a foto adiada pelo índice parcial e a reabre com derivacao_pedida_em" },
+    { "id": "e60", "from": "midiaderivavel", "to": "msgs", "label": "a reaberta espera até 120s, contados do pedido (derivacao_pedida_em)" },
+    { "id": "e60b", "from": "dreno", "to": "midiaderivavel", "label": "há mídia virando texto? segura o despacho" },
+    { "id": "e60c", "from": "turno", "to": "midiaderivavel", "label": "espera-da-midia.ts: a mídia que chegou DURANTE o turno, antes de montar o prompt (#3836)" },
+    { "id": "e61", "from": "cronadiada", "to": "audit", "label": "media.deferred_reading_run, só na rodada que reabriu" }
   ],
   "cards": [
     {
@@ -126,7 +148,8 @@
         "erra para MENOS (bloqueia quem não devia): a conversa vai para a fila humana (e32) e o badge aparece no cabeçalho (e34). Quem afrouxa pela tela fecha os itens no mesmo request (e7) — sem esperar tráfego que, com a IA parada, não vem",
         "erra para MAIS (não bloqueia quem devia): o gasto continua somando em llm_calls (e37), a régua o relê (e38) e a decisão seguinte enxerga o número maior. O laço é a própria realimentação do gasto",
         "erra porque NÃO SABE MEDIR (modelo sem preço em pricing.ts): cost_cents nasce NULL, e11 conta essas linhas e o card confessa a incompletude ANTES de a pessoa armar a parada",
-        "erra porque a instalação afrouxou: a faixa do kill switch nomeia AI_BUDGET_ENFORCEMENT na tela — controle que o processo ignora em silêncio é pior que controle nenhum"
+        "erra porque a instalação afrouxou: a faixa do kill switch nomeia AI_BUDGET_ENFORCEMENT na tela — controle que o processo ignora em silêncio é pior que controle nenhum",
+        "a trava de leitor da foto erra para MENOS (adia foto que alguém lê): o dreno de um agente que vê imagens reabre antes do turno (e55) e o cron em até 5 min as fotos dos últimos JANELA_DO_CRON_DIAS (7) dias (e56); a mais antiga só volta quando um agente que vê passa pela conversa. A medida que decide o knob é 'nenhuma foto dos últimos 7 dias adiada há mais de 15 min em empresa com leitor'. Erra para MAIS: é o gasto de antes. MEDIA_VISION_WITHOUT_READER=always reabre tudo"
       ]
     },
     {

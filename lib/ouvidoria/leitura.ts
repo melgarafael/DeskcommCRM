@@ -21,7 +21,7 @@
  *    cliente de serviço a RLS não separa nada; um `.eq("id", …)` sem a
  *    organização devolveria a manifestação do vizinho, e o vazamento não teria
  *    sintoma nenhum na tela.
- * 2. A RLS da 9030 (`fn_user_org_ids()` E `fn_role_at_least(…, 'admin')`) barra
+ * 2. A RLS da 9040 (`fn_user_org_ids()` E `fn_role_at_least(…, 'admin')`) barra
  *    de novo, no banco, o que passar pela camada de cima.
  *
  * "Não encontrada" é a resposta ÚNICA para id que não existe, id de outra

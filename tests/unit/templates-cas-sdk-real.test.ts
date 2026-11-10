@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 
 const h = vi.hoisted(() => ({
   client: null as unknown,
@@ -70,11 +71,11 @@ function cliente() {
   });
 }
 
-function upload(snapshot: unknown) {
+async function upload(snapshot: unknown) {
   const form = new FormData();
   form.append("file", new File([new Uint8Array([0x4f, 0x67, 0x67, 0x53])], "Áudio +10%.ogg", { type: "audio/ogg" }));
   form.append("midias_esperadas", JSON.stringify(snapshot));
-  return POST(new NextRequest(`http://localhost/api/v1/message-templates/${TPL}/midias`, {
+  return POST(await pedidoComTamanho(`http://localhost/api/v1/message-templates/${TPL}/midias`, {
     method: "POST", body: form,
   }), params);
 }

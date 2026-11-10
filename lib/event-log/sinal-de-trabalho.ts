@@ -16,7 +16,7 @@
  *   Whisper transcreve em 3,9s
  *
  * Enquanto isso o drain do turno (`lib/agent-engine/edge/crm/drain.ts`) adia o
- * turno esperando a derivação, com teto de 120s (`TETO_ESPERA_DERIVACAO_MS`).
+ * turno esperando a derivação, com teto de 120s (`TETO_DA_ESPERA_DA_DERIVACAO_MS`).
  * Com o recuo em 60s, um áudio lento — 86s documentados no cabeçalho do
  * `drain.ts` — faz 60+86 passar de 120s (com o teto default de 30s, 30+86
  * deixa só 4s de folga) e a resposta volta a ser "não consegui

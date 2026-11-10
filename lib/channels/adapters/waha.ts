@@ -10,6 +10,7 @@ import { fetchWahaMedia } from "@/lib/messaging/media/waha-source";
 import { getWahaClient } from "@/lib/waha/client";
 import { wahaSendPlanFor } from "@/lib/waha/media-send";
 import {
+  numeroTemContaNoWhatsapp,
   resolveCanonicalCusChatId,
   resolvePhoneJidDigitsForCall,
   resolveWhatsappIdForContactCard,
@@ -154,6 +155,16 @@ export const wahaAdapter: ChannelAdapter = {
   },
 
   /**
+   * `check-exists` em todas as grafias; transporte não configurado é `null`
+   * ("não deu para saber"), nunca `false`.
+   */
+  async numeroTemConta(input: { sessionRef: string; phone: string }): Promise<boolean | null> {
+    const client = getWahaClient();
+    if (!client) return null;
+    return numeroTemContaNoWhatsapp(client, input.sessionRef, input.phone);
+  },
+
+  /**
    * Agenda do aparelho primeiro (`name`), apelido do perfil se a agenda não
    * tiver. Transporte ausente é `null` — a varredura carimba sem tratar como
    * "não existe".
@@ -193,6 +204,13 @@ export const wahaAdapter: ChannelAdapter = {
   }): Promise<void> {
     const { client, chatId, messageId } = enderecoDaMensagem(input);
     await client.editMessage(input.sessionRef, chatId, messageId, input.text);
+  },
+
+  async sendReaction(input: { sessionRef: string; recipient: string | null; externalId: string; emoji: string }): Promise<{ externalId: null }> {
+    const { client, messageId } = enderecoDaMensagem(input);
+    await client.sendReaction(input.sessionRef, messageId, input.emoji);
+    // O WAHA não retorna id próprio: o webhook é a fonte da linha persistida.
+    return { externalId: null };
   },
 
   async revokeMessage(input: {

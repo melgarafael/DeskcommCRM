@@ -141,11 +141,14 @@ const TABELAS_NA_CASCATA = [
 const TIPOS_RESERVADOS = [
   "ai.case_closed", //               0279
   "ai.case_opened", //               0279
+  "ai.case_updated", //              9240 — manda WhatsApp à equipe com comando preso à atualização
   "appointment.outcome_confirmed", //herdado
   "contact.birthday", //             0551
   "contact.phone_added", //          0670
   "conversation.autonomous_turn_revoked", //0594 — revogação nativa, sessão não pode forjar
+  "conversation.closed", //          9212 — encerramento é do gatilho; forjado, mandaria mensagem pós-atendimento
   "lead.date_field_due", //          0743
+  "lead.stage_stale", //             9206 — mesma reserva do 0743: só o servidor emite
   "message.received", //             herdado
 ] as const;
 

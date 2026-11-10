@@ -89,7 +89,10 @@ describe("recaptura de jornadas com manifesto anterior", () => {
     const montagem = f.cli("montar.ts");
     expect(montagem.status).toBe(1);
     expect(montagem.stderr).toMatch(/pendente.*demo-clinicas-primeira-consulta/s);
-    expect(readFileSync(path.join(f.saida, "index.html"))).toEqual(indiceAnterior);
+    // `Buffer.equals`, e não `toEqual`: a igualdade genérica do vitest anda byte a byte, a ~4 s por MB (medido), e o
+    // índice da montagem inteira tem 1,7 MB — a comparação era ~8 s dos ~12 s deste caso, mais que as três subidas do
+    // CLI somadas (~3 s). É a mesma igualdade, byte a byte.
+    expect(readFileSync(path.join(f.saida, "index.html")).equals(indiceAnterior), "o índice anterior mudou").toBe(true);
     // O recorte sem módulos exigidos pela clínica continua utilizável e omite a jornada pendente.
     const parcial = f.cli("montar.ts", "inbox");
     expect(parcial.status).toBe(0);
@@ -127,7 +130,7 @@ describe("recaptura de jornadas com manifesto anterior", () => {
     expect(montagem.status).toBe(1);
     expect(montagem.stderr).toMatch(/capturas com falha nos módulos selecionados: agenda/);
     expect(readFileSync(foto)).toEqual(fotoAnterior);
-    expect(readFileSync(path.join(f.saida, "index.html"))).toEqual(indiceAnterior);
+    expect(readFileSync(path.join(f.saida, "index.html")).equals(indiceAnterior), "o índice anterior mudou").toBe(true);
     const outroRecorte = f.cli("montar.ts", "inbox");
     expect(outroRecorte.status).toBe(0);
     const html = readFileSync(path.join(f.saida, "index.html"), "utf8");

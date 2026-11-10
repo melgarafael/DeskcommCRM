@@ -273,7 +273,10 @@ describe("canal oficial direto — editar", () => {
       )
       .mockResolvedValueOnce(fetchOk({ success: true, id: "777", name: "boas_vindas" }));
 
-    const NOVOS = [{ type: "BODY", text: "Oi {{1}}" }];
+    // O corpo tem variável, então leva a amostra: sem ela a régua da #3635
+    // recusa o payload antes de chegar aqui — e o que este caso mede é o
+    // caminho de EDIÇÃO (id da variante + POST no nó), não a validação.
+    const NOVOS = [{ type: "BODY", text: "Oi {{1}}", example: { body_text: [["Ana"]] } }];
     const res = await post({ acao: "editar", ...ALVO, components: NOVOS });
 
     expect(res.status).toBe(200);
@@ -465,3 +468,126 @@ describe("CONTROLE CRÍTICO — o canal de PARCEIRO não mudou", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * OS LIMITES E OS EXEMPLOS, CONFERIDOS ANTES DE FALAR COM A PLATAFORMA (#3635, 2).
+ *
+ * ─── O que estava errado ─────────────────────────────────────────────────────
+ *
+ * `components` viajava cru até a Meta. Um corpo de 1500 caracteres e uma
+ * variável `{{n}}` sem amostra saíam daqui como se estivessem bons, e a recusa
+ * voltava horas depois com um erro genérico — sem dizer qual campo estourou nem
+ * qual variável ficou sem exemplo. O operador corrigia por tentativa.
+ *
+ * ─── O que estes casos prendem ───────────────────────────────────────────────
+ *
+ * 1. reprovado é 422 NOMEANDO o campo (`error.details`), não 502 "não deu";
+ * 2. a fronteira é inclusiva: 1024 passa e chega na plataforma, 1025 não;
+ * 3. o dublê de `fetch` NÃO é chamado nas recusas — sem chamada nova à Meta;
+ * 4. editar é barrado pelo mesmo caminho que criar.
+ */
+describe("canal oficial direto — limites e exemplos ANTES da plataforma", () => {
+  const corpoDe = (n: number, exemplo?: string[][]) => [
+    { type: "BODY", text: "a".repeat(n), ...(exemplo ? { example: { body_text: exemplo } } : {}) },
+  ];
+
+  it("⭐ corpo de 1500 caracteres é 422 nomeando `corpo`, e a Meta NÃO é chamada", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = await post({ acao: "criar", ...ALVO, category: "UTILITY", components: corpoDe(1500) });
+
+    expect(res.status).toBe(422);
+    const j = (await res.json()) as {
+      error: { code: string; message: string; details: Record<string, unknown> };
+    };
+    expect(j.error.details).toMatchObject({ campo: "corpo", atual: 1500, limite: 1024 });
+    // A mensagem nomeia o campo, em vez de "erro ao criar modelo".
+    expect(j.error.message).toContain("corpo");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(h.sync).not.toHaveBeenCalled();
+    expect(h.audit).not.toHaveBeenCalled();
+  });
+
+  it("⭐ variável sem exemplo é 422 apontando o NÚMERO da variável", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = await post({
+      acao: "criar",
+      ...ALVO,
+      components: [
+        { type: "BODY", text: "Olá {{1}}, seu pedido {{2}} saiu", example: { body_text: [["Ana"]] } },
+      ],
+    });
+
+    expect(res.status).toBe(422);
+    const j = (await res.json()) as {
+      error: { message: string; details: Record<string, unknown> };
+    };
+    expect(j.error.details).toMatchObject({ campo: "exemploDaVariavel", variavel: 2 });
+    // O número tem de estar na mensagem: "variável sem exemplo" não diz qual.
+    expect(j.error.message).toContain("2");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("fronteira: 1024 passa e chega na Meta; 1025 não sai daqui", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(fetchOk({ id: "tpl-novo", name: "boas_vindas", status: "PENDING" }));
+
+    const ok1024 = await post({ acao: "criar", ...ALVO, components: corpoDe(1024) });
+    expect(ok1024.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const nao1025 = await post({ acao: "criar", ...ALVO, components: corpoDe(1025) });
+    expect(nao1025.status).toBe(422);
+    // A chamada do caso de 1024 continua sendo a ÚNICA: a de 1025 não saiu.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("editar é barrado pelo MESMO caminho — e antes de resolver o id na Meta", async () => {
+    h.espelho = [LINHA_OFICIAL];
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const res = await post({
+      acao: "editar",
+      ...ALVO,
+      components: [{ type: "FOOTER", text: "b".repeat(61) }],
+    });
+
+    expect(res.status).toBe(422);
+    const j = (await res.json()) as { error: { details: Record<string, unknown> } };
+    expect(j.error.details).toMatchObject({ campo: "rodape", atual: 61, limite: 60 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("botão com texto acima de 25 é 422 com o índice do botão", async () => {
+    const res = await post({
+      acao: "criar",
+      ...ALVO,
+      components: [
+        { type: "BODY", text: "Olá" },
+        {
+          type: "BUTTONS",
+          buttons: [
+            { type: "QUICK_REPLY", text: "Ok" },
+            { type: "QUICK_REPLY", text: "c".repeat(26) },
+          ],
+        },
+      ],
+    });
+
+    expect(res.status).toBe(422);
+    const j = (await res.json()) as { error: { details: Record<string, unknown> } };
+    expect(j.error.details).toMatchObject({ campo: "textoDoBotao", botao: 2, limite: 25 });
+  });
+
+  it("o caminho feliz continua 200 — corpo com variável E exemplo passa", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(fetchOk({ id: "tpl-novo", status: "PENDING" }));
+
+    const res = await post({ acao: "criar", ...ALVO, components: CORPO });
+
+    expect(res.status).toBe(200);
+    expect(h.sync).toHaveBeenCalledTimes(1);
+  });
+});
+

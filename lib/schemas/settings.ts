@@ -12,9 +12,11 @@ import { ehHexValido } from "@/lib/branding/rampa";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { DIAS_MAXIMO_DO_RECORTE } from "@/lib/kanban/recorte-de-encerrados";
+import { DIAS_MAXIMO_PARA_REABRIR } from "@/lib/leads/janela-do-perdido";
 import {
   ICONES_DE_ATALHO,
   MAX_ATALHOS,
+  MODOS_DE_DISCAGEM,
   modeloAceito,
   TAMANHO_MAXIMO_DO_MODELO,
   TAMANHO_MAXIMO_DO_ROTULO,
@@ -163,12 +165,24 @@ export const notificationPrefsSchema = z.object({
 });
 export type NotificationPrefsInput = z.infer<typeof notificationPrefsSchema>;
 
+/**
+ * A CHAVE de um campo personalizado do funil — a mesma régua da ESCRITA
+ * (`customFieldSchema.key`) e a mesma que qualquer leitura por chave precisa.
+ *
+ * Exportada (issue #3221) porque a rota `GET /api/v1/agenda/datas-dos-negocios`
+ * recebe a chave na querystring e a interpola num caminho jsonb do PostgREST
+ * (`custom_fields->>campo`): sem a régua, um `campo` com vírgula ou ponto vira
+ * SINTAXE de filtro, e não nome de campo. Duas cópias da regex divergiriam no
+ * dia em que uma delas mudasse — por isso é a mesma constante.
+ */
+export const chaveDeCampoDoFunilSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore");
+
 export const customFieldSchema = z.object({
-  key: z
-    .string()
-    .min(1)
-    .max(40)
-    .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore"),
+  key: chaveDeCampoDoFunilSchema,
   label: z.string().min(1).max(80),
   type: z.enum([
     "text",
@@ -326,11 +340,26 @@ export const MAX_CAMPOS_DO_NEGOCIO = 50;
 export const MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO = `O funil aceita no máximo ${MAX_CAMPOS_DO_NEGOCIO} campos do negócio. Os campos do contato não entram nesta conta.`;
 
 /**
+ * A recusa da chave repetida (#4043), legível — e com a chave dentro.
+ *
+ * A ordem do funil É a do array, e `crm_leads.custom_fields` é um objeto lido
+ * POR CHAVE: dois campos com a mesma chave disputam a mesma posição na tela e a
+ * mesma gaveta do negócio. Enquanto só existia adicionar/remover, isso passava
+ * calado; com reordenar, "qual dos dois vem primeiro" deixa de ter resposta.
+ */
+export const MENSAGEM_DE_CHAVE_REPETIDA = (chave: string) =>
+  `A chave "${chave}" aparece mais de uma vez nos campos deste funil. Cada campo precisa de uma chave própria.`;
+
+/**
  * `fields` do PATCH: a cota conta só os campos do NEGÓCIO.
  *
  * O array segue sendo `customFieldSchema[]` (a forma de cada campo não mudou) —
  * o que mudou é O QUE a cota conta. Quem escreve a mensagem é esta régua, para
  * a tela do funil e a captação dizerem a mesma frase.
+ *
+ * A CHAVE REPETIDA (#4043) é recusada aqui, e não campo a campo: `customFieldSchema`
+ * julga um item, e o defeito só existe na lista. Repetir a chave não é "ordem
+ * estranha" — é a lista deixando de descrever uma ordem possível.
  */
 export const camposDoFunilPatchSchema = z
   .array(customFieldSchema)
@@ -341,6 +370,15 @@ export const camposDoFunilPatchSchema = z
         code: "custom",
         message: `${MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO} Recebidos ${doNegocio}.`,
       });
+    }
+    // Uma issue só: cinco repetições da mesma chave não são cinco consertos.
+    const vistas = new Set<string>();
+    for (const campo of campos) {
+      if (vistas.has(campo.key)) {
+        ctx.addIssue({ code: "custom", message: MENSAGEM_DE_CHAVE_REPETIDA(campo.key) });
+        return;
+      }
+      vistas.add(campo.key);
     }
   });
 
@@ -464,6 +502,19 @@ export const pipelineConfigPatchSchema = z.object({
    */
   ocultar_encerrados_dias: z.number().int().min(0).max(DIAS_MAXIMO_DO_RECORTE).optional(),
   /**
+   * A JANELA DO NEGÓCIO PERDIDO QUE VOLTA (#4076): quantos dias depois da
+   * perda a mensagem do contato ainda REABRE o mesmo card em vez de abrir um
+   * negócio novo. `0` (e a chave ausente, que é o estado de todo funil de hoje)
+   * é DESLIGADO — o comportamento de antes da opção existir.
+   *
+   * O teto vem do domínio (`lib/leads/janela-do-perdido`), que é quem decide o
+   * que é uma janela válida: um número escrito aqui e outro lá divergiriam no
+   * primeiro ajuste, e a tela mostraria um valor que o motor ignora. `min(0)` e
+   * não `min(1)`: o zero é uma DECISÃO (desliguei), e recusá-lo deixaria a
+   * janela antiga gravada quando alguém desmarcasse a opção.
+   */
+  reabrir_perdido_dias: z.number().int().min(0).max(DIAS_MAXIMO_PARA_REABRIR).optional(),
+  /**
    * OS ATALHOS DO CARD (issue #3487) — os botões que abrem outro sistema com o
    * dado do cliente: `tel:` para o softphone do PABX, `https://…?cliente={{erp_id}}`
    * para o app de pedidos.
@@ -495,6 +546,14 @@ export const pipelineConfigPatchSchema = z.object({
           .min(1)
           .max(TAMANHO_MAXIMO_DO_MODELO)
           .refine(modeloAceito, { message: "esquema_nao_permitido" }),
+        /**
+         * A forma do telefone no `tel:` (2ª fatia da #3487). Opcional: ausente é
+         * `completo`, o E.164 de sempre — todo atalho gravado antes desta opção
+         * continua idêntico, e o patch antigo (sem a chave) continua válido.
+         * `z.enum` aqui e não `refine`: é vocabulário fechado de duas palavras,
+         * e a mensagem de erro não precisa ensinar nada além da lista.
+         */
+        discagem: z.enum(MODOS_DE_DISCAGEM).optional(),
       }),
     )
     .max(MAX_ATALHOS)
@@ -600,6 +659,32 @@ export const marcaDaOrganizacaoSchema = z.object({
 });
 export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;
 
+/**
+ * A CONTA Resend da organização (#3287, fatia da conta própria) — o que a
+ * server action `conectarContaResendDaOrganizacao` aceita.
+ *
+ * `api_key` é a chave CRUA que a pessoa colou do painel da Resend. Ela NUNCA é
+ * gravada em claro nem devolvida: a action cifra antes de gravar
+ * (`organization_resend_accounts`) e a tela só vê os 4 últimos. O `.min(10)` é
+ * o mesmo piso do `criarCliente` da Resend — uma chave mais curta não é chave.
+ *
+ * `from_email` é o endereço de remetente no DOMÍNIO da organização. A forma é
+ * validada aqui; o domínio ser VERIFICADO na conta é conferido pela API da
+ * Resend na própria action (`verificarDominioNaResend`) — o critério (E): a
+ * recusa de domínio não verificado é mensagem própria, não erro cru da API.
+ */
+export const contaResendDaOrganizacaoSchema = z.object({
+  api_key: z.string().trim().min(10, "Cole a chave da sua conta Resend.").max(200),
+  from_email: z
+    .string()
+    .trim()
+    .max(254)
+    .refine((valor) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valor), {
+      message: "Use um endereço de e-mail como contato@suaempresa.com",
+    }),
+});
+export type ContaResendDaOrganizacaoInput = z.infer<typeof contaResendDaOrganizacaoSchema>;
+
 /** Prazos por organização. Leitura legada degrada; escrita usa schema estrito. */
 export const agendaSettingsWriteSchema = z.strictObject({
   confirmation_delay_minutes: z.number().int().min(1).max(10080),
@@ -648,10 +733,27 @@ export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmatio
  */
 export const internalContactTagsSchema = z.array(z.string()).catch([]);
 
+/**
+ * `team_contact_tags` (#3534): a lista de etiquetas que marcam um contato da
+ * EQUIPE QUE CONTINUA SENDO ATENDIDA — sócio que testa o agente, pessoa que
+ * pede informação a qualquer hora. A diferença para `internal_contact_tags` é
+ * toda a razão de a chave existir:
+ *
+ *   - `internal_contact_tags` → o contato NÃO é atendido pela IA (veto
+ *     `contato_interno`) e não vira card;
+ *   - `team_contact_tags`     → o contato É atendido (o turno segue normal),
+ *     é medido e registrado, mas nenhum repasse AUTOMÁTICO o silencia.
+ *
+ * Mesma forma de leitura (`catch([])`), mesmo bolso jsonb, nenhuma migration:
+ * quem nunca configurar a lista mantém exatamente o comportamento de antes.
+ */
+export const teamContactTagsSchema = z.array(z.string()).catch([]);
+
 export const crmSettingsSchema = z
   .object({
     cliente_pela_agenda: z.boolean().catch(false),
     internal_contact_tags: internalContactTagsSchema,
+    team_contact_tags: teamContactTagsSchema,
     /**
      * `telefone_de_ficha_vazia` (issue #2593): o telefone que o cliente diz
      * numa conversa entra SOZINHO na ficha SEM número — sem passar pela fila de
@@ -712,6 +814,7 @@ export const crmSettingsSchema = z
   .catch({
     cliente_pela_agenda: false,
     internal_contact_tags: [],
+    team_contact_tags: [],
     telefone_de_ficha_vazia: false,
     nome_informado_no_atendimento: false,
     avisar_transferencia_no_whatsapp: true,
@@ -771,6 +874,21 @@ export function tagsInternasDaOrg(settings: unknown): string[] {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return normalizarTags(crmSettingsSchema.parse(crm ?? {}).internal_contact_tags);
+}
+
+/**
+ * Lê `organizations.settings.crm.team_contact_tags` (#3534) já normalizada —
+ * minúscula, aparada, sem repetição —, a MESMA forma que `tagsInternasDaOrg`.
+ *
+ * Ausente, jsonb torto ou lista com lixo → lista vazia: nenhum contato é da
+ * equipe, e o produto se comporta exatamente como antes da chave existir.
+ */
+export function tagsDaEquipeDaOrg(settings: unknown): string[] {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return normalizarTags(crmSettingsSchema.parse(crm ?? {}).team_contact_tags);
 }
 
 /**
@@ -894,16 +1012,60 @@ export function meetAbertoLigado(settings: unknown): boolean {
 
 /** Só true booleano autoriza preencher o nome vazio a partir do texto real do atendimento. */
 export function nomeInformadoLigado(settings: unknown): boolean {
-  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
-    ? (settings as Record<string, unknown>).crm : undefined;
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
   return crmSettingsSchema.parse(crm ?? {}).nome_informado_no_atendimento === true;
 }
 
 /** Ausente liga; só o booleano `false` tira as transferências do Aviso no WhatsApp. */
 export function avisoDeTransferenciaLigado(settings: unknown): boolean {
-  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
-    ? (settings as Record<string, unknown>).crm : undefined;
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
+}
+
+/**
+ * `organizations.settings.memoria_da_ia.limite_do_aviso_tokens` — acima deste
+ * peso a tela Memória da IA AVISA que a memória pesa. Só avisa: nada é
+ * bloqueado nem cortado. A memória vai inteira no prompt de TODO agente,
+ * várias leituras por mensagem, e cada empresa escolhe onde quer o aviso.
+ *
+ * Ausente (toda empresa que nunca escolheu) ou torto → o RECOMENDADO, que é o
+ * limiar fixo que a tela tinha antes desta chave existir. Lido pela tela
+ * (`app/app/ai/memory/page.tsx`); gravado só por `definirLimiteDoPesoDaMemoria`.
+ */
+export const LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA = 1_500;
+/** Abaixo disto uma regra de duas frases já acende o aviso, e ele vira ruído. */
+export const LIMITE_MINIMO_DO_PESO_DA_MEMORIA = 100;
+/**
+ * O documento aceita até 50 mil caracteres (≈14 mil tokens, `postSchema` de
+ * `app/api/v1/ai/memory/route.ts`); 50 mil tokens é um quarto da janela de 200
+ * mil dos modelos comuns. Um limite acima disso não avisa nada que importe.
+ */
+export const LIMITE_MAXIMO_DO_PESO_DA_MEMORIA = 50_000;
+
+export const limiteDoPesoDaMemoriaWriteSchema = z
+  .number()
+  .int()
+  .min(LIMITE_MINIMO_DO_PESO_DA_MEMORIA)
+  .max(LIMITE_MAXIMO_DO_PESO_DA_MEMORIA);
+
+/** O limite do aviso de peso da memória nesta organização. Nunca lança. */
+export function limiteDoPesoDaMemoria(settings: unknown): number {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  const bloco = raiz?.memoria_da_ia;
+  const valor =
+    bloco && typeof bloco === "object" && !Array.isArray(bloco)
+      ? (bloco as Record<string, unknown>).limite_do_aviso_tokens
+      : undefined;
+  return limiteDoPesoDaMemoriaWriteSchema.catch(LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA).parse(valor);
 }
 
 /**
@@ -921,7 +1083,7 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
  * resto do estado do módulo (perfis autorizados, destinatários do aviso) chega
  * nas fatias seguintes e cada um é uma decisão de empresa, não uma coluna da
  * manifestação. A manifestação em si é TABELA (`ouvidoria_manifestacoes`,
- * migration 9030) — protocolo, unicidade e privacidade não cabem em jsonb.
+ * migration 9040) — protocolo, unicidade e privacidade não cabem em jsonb.
  *
  * ─── Régua de leitura ────────────────────────────────────────────────────────
  * Só o `true` EXPLÍCITO liga, a mesma de `settings.entrada_do_inbox.ativa` e de
@@ -960,4 +1122,50 @@ export function ouvidoriaDeclarada(settings: unknown): OuvidoriaDaOrganizacao {
 /** Atalho booleano para quem só precisa saber se o módulo aceita registro. */
 export function ouvidoriaLigada(settings: unknown): boolean {
   return ouvidoriaDeclarada(settings).ativa === true;
+}
+
+/**
+ * A ENTRADA AUTOMÁTICA NO FUNIL (#3603, fatia 1) — `settings.entrada_automatica_no_funil`.
+ *
+ * Um interruptor, e só isso: `{ ativa: boolean }`. Ligado, a conversa que o
+ * PRÓPRIO CRM abre (a porta `ensureConversation`: "Iniciar conversa" do Inbox,
+ * ficha do contato, lembrete de agenda e de tarefa, ferramenta de início de
+ * conversa do agente de IA) ganha negócio como a conversa que CHEGA já ganha.
+ * A que chega entra sempre, e esta chave não muda nada nela.
+ *
+ * ─── O destino não é escolhido aqui ──────────────────────────────────────────
+ * Opção (a), decidida na thread do #3616: o card nasce no MESMO destino da
+ * entrada — o funil `is_default`, na etapa de `settings.entrada_do_inbox` do
+ * funil (ou na primeira aberta), e o funil de clientes quando a regra de
+ * cliente vale. Quem decide é `garantirLeadDaConversa`; quem aplica esta chave
+ * é `lib/leads/entrada-automatica-no-funil.ts`. Um segundo destino configurável
+ * seriam duas respostas para "onde entra o contato novo?".
+ *
+ * ─── Régua de leitura ────────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga (a mesma de `settings.crm.cliente_pela_agenda` e de
+ * `settings.entrada_do_inbox.ativa`): ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO, e desligado é "nenhum negócio nasce por esta porta" — o estado de
+ * toda instalação que já existe.
+ *
+ * ⚠️ `pipeline_id`/`stage_id` gravados por uma versão anterior deste PR são
+ * IGNORADOS na leitura (o objeto do zod descarta chave desconhecida): não
+ * escolhem funil e não impedem a chave de ligar.
+ *
+ * Nunca lança: um jsonb torto não pode derrubar a abertura de uma conversa.
+ */
+export const ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE = "entrada_automatica_no_funil";
+
+export const entradaAutomaticaNoFunilSchema = z
+  .object({ ativa: z.boolean().catch(false) })
+  .catch({ ativa: false });
+
+export type EntradaAutomaticaNoFunil = z.infer<typeof entradaAutomaticaNoFunilSchema>;
+
+/** O bloco lido de `organizations.settings`. Nunca lança. */
+export function entradaAutomaticaNoFunilDeclarada(settings: unknown): EntradaAutomaticaNoFunil {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return entradaAutomaticaNoFunilSchema.parse(raiz?.[ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE] ?? {});
 }

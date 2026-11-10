@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { columnExists, countAs, indexExists, sql } from "./gov-helpers";
 
 /**
- * `ouvidoria_manifestacoes` (migration 9030, #3611): a manifestação é PRIVADA.
+ * `ouvidoria_manifestacoes` (migration 9040, #3611): a manifestação é PRIVADA.
  *
  * Quatro fatos, cada um com a sua falha muda:
  *
@@ -39,6 +39,7 @@ const PROTOCOLO_A = "OUV-20261028-AAAABBBB";
 const PROTOCOLO_B = "OUV-20261028-AAAABBBB";
 
 beforeAll(() => {
+  sql(`select public.fn_ouvidoria_provisionar();`);
   sql(`insert into auth.users (id, email) values
       ('${adminA}', 'ouv-admin-a@invariant.test'),
       ('${agentA}', 'ouv-agent-a@invariant.test'),

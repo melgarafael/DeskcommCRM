@@ -28,6 +28,7 @@ import type { EventRow } from "@/lib/event-log/dispatcher";
 import { flowGraphSchema } from "./graph-schema";
 import { triggerConfigSchema } from "./api-schemas";
 import {
+  canalDaConversaSupabase,
   decidirAgenteDoEnrollmentAutomatico,
   noDeGatilhoDoGrafo,
   type FollowupGateDb,
@@ -68,6 +69,13 @@ export interface GatilhoRetornoDb {
   ): Promise<EstadoDaConversaDeRetorno | null>;
   carregaEnrollmentVivo(orgId: string, contactId: string): Promise<EnrollmentVivoRef | null>;
   carregaNoDeGatilho(orgId: string, versionId: string): Promise<NoDeGatilho | null>;
+  /**
+   * Canal (`conversations.channel_session_id`) da conversa em que o lead VOLTOU
+   * — o número em que a persona vai falar (#3852). `null` = desconhecido, e a
+   * decisão do agente volta a ser por organização (comportamento de sempre).
+   * OPCIONAL: os dublês implementam só o que medem.
+   */
+  carregaCanalDaConversa?(orgId: string, conversationId: string): Promise<string | null>;
   insereEnrollment(input: {
     service_origin?: unknown;
     event_id?: string;
@@ -184,6 +192,10 @@ export async function aplicaGatilhoDeRetorno(
   const anterior = await deps.db.carregaInboundAnterior(row.organization_id, contatoId, mensagemId);
   const agora = deps.clock();
 
+  // #3852: quem voltou, voltou por UM número. A persona que responde tem de ser
+  // a publicada nele — não a do outro número da organização.
+  const canalConversa = (await deps.db.carregaCanalDaConversa?.(row.organization_id, conversaId)) ?? null;
+
   const vivos = await deps.db.carregaEnrollmentVivo(row.organization_id, contatoId);
 
   for (const pointer of armados) {
@@ -207,6 +219,7 @@ export async function aplicaGatilhoDeRetorno(
       row.organization_id,
       pointer.id,
       noDeGatilho.pedeAgente,
+      canalConversa,
     );
     if (barrado) {
       summary.pointers_barrados_pelo_gate++;
@@ -357,6 +370,11 @@ export function createSupabaseGatilhoRetornoDb(admin: SupabaseClient): GatilhoRe
       if (!data) return null;
       const graph = flowGraphSchema.parse(data.graph);
       return noDeGatilhoDoGrafo(graph);
+    },
+
+    carregaCanalDaConversa(orgId, conversationId) {
+      // A leitura é a MESMA do gate — uma régua, um lugar (#3852).
+      return canalDaConversaSupabase(admin, orgId, conversationId);
     },
 
     async insereEnrollment(input) {

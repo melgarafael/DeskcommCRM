@@ -5,6 +5,7 @@
 import { z } from "zod";
 
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
+import { TETO_DA_FRASE_DO_AVISO } from "@/lib/escalacao/frase-do-aviso-configurada";
 
 // ---------------------------------------------------------------------------
 // Models permitidos (Vercel AI Gateway)
@@ -162,6 +163,28 @@ export const agentConfigSchema = z.object({
    * Só quem é admin grava `config` (rota PATCH e RLS de `ai_agents`).
    */
   mcp_externo_no_atendimento: z.boolean().default(false),
+  /**
+   * COMO este agente lê a base de conhecimento (#4133):
+   *
+   *  - `busca` (default) = o caminho de sempre: `search_knowledge` por embedding;
+   *  - `leitura_direta` = índice de documentos no contexto + `ler_documento`,
+   *    sem provedor de embedding nenhum (uma chave só, a do LLM da conversa).
+   *
+   * O default é `busca` de propósito: o modo novo muda o custo por turno (o
+   * índice ocupa contexto), então não se liga por migration — se liga por agente.
+   * Espelhado em `PublishedAgentConfig.knowledgeMode` e resolvido em
+   * `lib/agent-engine/agent/modo-de-conhecimento.ts`.
+   */
+  knowledge_mode: z.enum(["busca", "leitura_direta"]).default("busca"),
+  /**
+   * A frase que o CLIENTE lê quando a IA passa a conversa para uma pessoa
+   * (#3725, tela desde o #3816). `null`/ausente = a frase padrão do produto,
+   * curta e humana (`textoDoAviso`). Lida em runtime por
+   * `lerFraseDoAvisoConfigurada`, que é quem valida tamanho e conteúdo — aqui o
+   * teto é o MESMO `TETO_DA_FRASE_DO_AVISO`, para o PATCH recusar com 400 o que
+   * a leitura recusaria em silêncio.
+   */
+  aviso_de_handoff: z.string().max(TETO_DA_FRASE_DO_AVISO).nullable().optional(),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
@@ -176,6 +199,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
   voice_model: "gpt-realtime",
   aceita_comandos_celular: false,
   mcp_externo_no_atendimento: false,
+  knowledge_mode: "busca",
   sentiment_threshold: DEFAULT_SENTIMENT_THRESHOLD,
 };
 
@@ -202,6 +226,9 @@ export const agentConfigPatchSchema = agentConfigSchema
     voice_model: cfg.voice_model.removeDefault(),
     aceita_comandos_celular: cfg.aceita_comandos_celular.removeDefault(),
     mcp_externo_no_atendimento: cfg.mcp_externo_no_atendimento.removeDefault(),
+    // Mesma regra: sem `.default()`, um PATCH de outra chave regravaria o modo
+    // de conhecimento de todo agente que nunca o configurou (#4133).
+    knowledge_mode: cfg.knowledge_mode.removeDefault(),
     // Sem `.default()`, senão um PATCH de outra chave reescrevia o limiar de
     // todo agente que nunca o configurou — o mesmo defeito de #1631.
     sentiment_threshold: cfg.sentiment_threshold.removeDefault(),
