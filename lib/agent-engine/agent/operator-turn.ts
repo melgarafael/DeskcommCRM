@@ -435,7 +435,8 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
       return;
     }
 
-    if (agentConfig.pausedAt || agentConfig.operationMode === 'assisted') return;
+    // Modo assistido NÃO barra o Operador: ele não tem ferramenta de envio. Só a pausa barra.
+    if (agentConfig.pausedAt) return;
     if (agentConfig.operationRevision)
       setExecutionAgentOperation({
         organizationId: tenantId,
