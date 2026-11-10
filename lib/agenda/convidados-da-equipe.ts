@@ -75,10 +75,19 @@ export function separarConvidadosDaEquipe(
  *
  * Compara como CONJUNTO: a ordem dos chips na tela não é informação, e trocar
  * dois convidados de lugar não é edição.
+ *
+ * `pessoasDaOrganizacao` são os ids que a tela consegue MOSTRAR (a lista de
+ * pessoas ativas, já carregada). Quem saiu da organização continua gravado no
+ * compromisso, mas não aparece como opção — a pessoa não tem como tirá-lo — e
+ * a rota recusa a lista inteira com 422 `convidado_fora_da_organizacao`. Por
+ * isso, quando HOUVE edição, o id que a tela não mostra não é reenviado. Sem
+ * edição nada muda: continua `undefined`, e o compromisso fica como está.
+ * Lista ausente ou vazia (ainda carregando) não filtra nada.
  */
 export function equipeParaSalvar(
   anteriores: readonly string[] | null | undefined,
   escolhidos: readonly string[] | null | undefined,
+  pessoasDaOrganizacao?: readonly string[],
 ): string[] | undefined {
   const antes = normalizarConvidadosDaEquipe(anteriores);
   const depois = normalizarConvidadosDaEquipe(escolhidos);
@@ -86,7 +95,9 @@ export function equipeParaSalvar(
     const conjunto = new Set(antes);
     if (depois.every((id) => conjunto.has(id))) return undefined;
   }
-  return depois;
+  if (!pessoasDaOrganizacao || pessoasDaOrganizacao.length === 0) return depois;
+  const presentes = new Set(pessoasDaOrganizacao);
+  return depois.filter((id) => presentes.has(id));
 }
 
 /**

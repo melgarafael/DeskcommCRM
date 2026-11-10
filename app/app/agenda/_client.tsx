@@ -1243,9 +1243,13 @@ export function AgendaClient({
                         // `[]` tira todo mundo. Sem o diff, o `starts_at` que
                         // todo salvamento manda levaria a equipe junto, e
                         // remarcar desconvidaria quem só queria outro horário.
+                        // Quem saiu da organização não aparece no seletor e
+                        // não pode ser tirado à mão: ao editar, o id dele não
+                        // é reenviado (a rota recusaria a lista com 422).
                         team_guest_user_ids: equipeParaSalvar(
                           equipeAoAbrir,
                           convidadosDaEquipe,
+                          pessoas.map((pessoa) => pessoa.id),
                         ),
                       })
                       .then((r) => {

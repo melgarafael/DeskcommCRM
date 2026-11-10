@@ -62,6 +62,37 @@ describe("equipeParaSalvar", () => {
   });
 });
 
+/**
+ * QUEM SAIU DA ORGANIZAÇÃO (#4006).
+ *
+ * O compromisso guarda o id de quem foi convidado. Se essa pessoa sai da
+ * organização, a tela não a mostra mais como opção (a lista de pessoas filtra
+ * os vínculos revogados) — mas o id seguia na lista enviada, e a rota respondia
+ * 422 `convidado_fora_da_organizacao` a qualquer edição da equipe, sem que a
+ * tela oferecesse um jeito de remover a pessoa.
+ */
+describe("equipeParaSalvar — convidado que saiu da organização", () => {
+  // Caio saiu: está no compromisso, não está na lista de pessoas.
+  const PESSOAS = [ANA, BRUNO];
+
+  it("ao acrescentar alguém, o id de quem saiu não é reenviado", () => {
+    expect(equipeParaSalvar([ANA, CAIO], [ANA, CAIO, BRUNO], PESSOAS)).toEqual([ANA, BRUNO]);
+  });
+
+  it("ao tirar alguém, o id de quem saiu também sai", () => {
+    expect(equipeParaSalvar([ANA, CAIO], [CAIO], PESSOAS)).toEqual([]);
+  });
+
+  it("sem edição continua não mandando nada — o compromisso fica como está", () => {
+    expect(equipeParaSalvar([ANA, CAIO], [ANA, CAIO], PESSOAS)).toBeUndefined();
+  });
+
+  it("lista de pessoas ainda não carregada não filtra ninguém", () => {
+    expect(equipeParaSalvar([ANA], [ANA, CAIO], [])).toEqual([ANA, CAIO]);
+    expect(equipeParaSalvar([ANA], [ANA, CAIO])).toEqual([ANA, CAIO]);
+  });
+});
+
 describe("as réguas que já existiam continuam valendo", () => {
   it("deduplica e derruba id que não é uuid", () => {
     expect(normalizarConvidadosDaEquipe([ANA, ANA, "x", BRUNO])).toEqual([ANA, BRUNO]);
