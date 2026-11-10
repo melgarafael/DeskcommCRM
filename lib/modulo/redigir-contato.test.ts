@@ -60,3 +60,83 @@ describe("redigirContatoParaModulo", () => {
     expect(r.contacts).toBeNull();
   });
 });
+
+// Resposta de rota é JSON arbitrário: o teste lê campos que o tipo de entrada não declara.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const red = (v: unknown): any => redigirContatoParaModulo(SEM, v);
+
+describe("redigirContatoParaModulo: texto livre", () => {
+  const contato = { id: "k1", name: "João Silva", display_name: "João", phone_number: "+55 11 98765-4321", email: "Joao.Silva@Exemplo.com" };
+  const negocio = (title: string) => ({ id: "n1", contact_id: "k1", title, contacts: contato });
+
+  it("o nome inteiro, só o primeiro nome, acento diferente, telefone formatado e e-mail em maiúscula viram [contato]", () => {
+    const titulos = [
+      "Proposta para João Silva",
+      "Retorno do Joao",
+      "ligar para (11) 98765-4321",
+      "ligar para +55 11 987654321",
+      "mandar para JOAO.SILVA@EXEMPLO.COM hoje",
+    ];
+    for (const t of titulos) {
+      const r = red(negocio(t));
+      expect(r.title, t).toContain("[contato]");
+      expect(r.title, t).not.toMatch(/Jo[ãa]o|98765|987654321|exemplo/i);
+      expect(r.text_redacted, t).toBe(true);
+    }
+    expect(red(negocio("Proposta para João Silva")).title).toBe("Proposta para [contato]");
+    expect(red(negocio("ligar para (11) 98765-4321")).title).toBe("ligar para [contato]");
+  });
+
+  it("texto sem identificador do contato não é tocado e não ganha text_redacted", () => {
+    const r = red(negocio("Proposta comercial"));
+    expect(r.title).toBe("Proposta comercial");
+    expect(r).not.toHaveProperty("text_redacted");
+  });
+
+  it("filho herda os identificadores do registro (texto dentro de lista aninhada)", () => {
+    const r = red({ ...negocio("x"), notas: [{ texto: "falei com Joao" }] });
+    expect(r.notas[0]!.texto).toBe("falei com [contato]");
+    expect(r.notas[0]!.text_redacted).toBe(true);
+  });
+
+  it("quadro com 2 negócios de contatos diferentes: o nome do contato A no título do B NÃO é trocado", () => {
+    const quadro = {
+      leads: [
+        { id: "a", title: "Reforma da Maria Souza", contact_name: "Maria Souza", contact_phone: "11 91111-2222" },
+        { id: "b", title: "Contrato da Maria Souza com Pedro Alves", contact_name: "Pedro Alves", contact_phone: "11 93333-4444" },
+      ],
+    };
+    const r = red(quadro);
+    expect(r.leads[0]!.title).toBe("Reforma da [contato]");
+    expect(r.leads[0]!.text_redacted).toBe(true);
+    // do contato B saiu só o nome do B; "Maria Souza" (contato do irmão A) fica
+    expect(r.leads[1]!.title).toBe("Contrato da Maria Souza com [contato]");
+  });
+
+  it("parte do nome com menos de 3 letras não é trocada; fronteira de palavra (Ana não sai de Banana)", () => {
+    const r = red({
+      id: "n",
+      title: "Li e Banana e Ana",
+      contacts: { id: "k", name: "Ana Li" },
+    });
+    expect(r.title).toBe("Li e Banana e [contato]");
+  });
+
+  it("módulo COM contatos e sessão: resposta idêntica à original", () => {
+    const n = negocio("Proposta para João Silva");
+    expect(redigirContatoParaModulo(COM, n)).toBe(n);
+    expect(redigirContatoParaModulo(SESSAO, n)).toBe(n);
+  });
+
+  it("o original não é alterado pelo filtro de texto", () => {
+    const n = negocio("Proposta para João Silva");
+    const copia = structuredClone(n);
+    red(n);
+    expect(n).toEqual(copia);
+  });
+
+  it("limite conhecido: apelido e nome de outra pessoa passam", () => {
+    const r = red({ id: "n", title: "Cida pediu; fale com Carlos", contacts: { id: "k", name: "Aparecida Lima" } });
+    expect(r.title).toBe("Cida pediu; fale com Carlos");
+  });
+});

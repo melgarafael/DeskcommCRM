@@ -189,6 +189,17 @@ rota; criar lançamento pendente segue permitido.
 **Leitura que traz o contato exige também `contatos`**, como agenda e follow-ups já faziam
 (`LEITURAS_COM_CONTATO_EMBUTIDO`): `financeiro/fidelidade` GET, `calls` GET, `messages/[id]/media` GET e `financeiro/comandas/pendentes` GET (o título do agendamento pode ter o nome do cliente).
 
+**Texto livre digitado pela equipe** (título do negócio, observação, descrição). Para módulo sem
+`contatos`, dentro de cada registro que traz um contato, os identificadores DESSE contato viram
+`[contato]` em todo valor string do registro e dos filhos dele (`lib/modulo/redigir-contato.ts`). É
+filtro por lista, sem adivinhar: o nome inteiro e cada parte com 3 ou mais letras, como palavra inteira
+e sem diferenciar maiúscula nem acento; o telefone pelos últimos 8 dígitos, com qualquer separador e com
+código do país e DDD na frente; o e-mail sem diferenciar maiúscula. A regra vale para baixo, nunca para
+irmãos (num quadro, o contato do negócio A não filtra o título do negócio B), e o objeto que teve texto
+trocado ganha `text_redacted: true`. Chaves `id`, `*_id`, `redacted` e `text_redacted` não são filtradas.
+**Limite que sobra:** só sai o que está escrito igual ao cadastro. Um apelido ("Cida" para "Aparecida")
+passa, e o nome de OUTRA pessoa, que não seja o contato ligado ao registro, também passa.
+
 **Nunca há área** para credencial, token, LGPD, cobrança, webhook, administração da instalação,
 extensões e envio de mensagem (D6). Além dos prefixos que já saem do recorte, ficam fora, por nome:
 
