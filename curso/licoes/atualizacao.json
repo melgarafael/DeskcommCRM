@@ -1,0 +1,155 @@
+{
+  "id": "atualizacao",
+  "titulo": "Atualização do sistema",
+  "tela": "/app/settings/atualizacao",
+  "resumo": "Onde quem instalou o sistema vê a versão em uso, descobre que saiu uma versão nova, lê o que muda e pede a atualização sem abrir o servidor.",
+  "licoes": [
+    {
+      "id": "atualizando",
+      "titulo": "Atualizando para a versão nova",
+      "objetivo": "Reconhecer o aviso de versão nova, ler o que muda e pedir a atualização pela tela.",
+      "papel": "admin",
+      "busca": [
+        "atualizar o sistema",
+        "versão nova",
+        "nova versão disponível",
+        "qual versão estou usando",
+        "o que mudou na versão",
+        "atualizar agora"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O aviso de versão nova",
+          "texto": "No rodapé do menu fica a versão em uso. Quando sai uma versão nova, aparece logo abaixo o aviso \"Nova versão\", com o número dela. Só quem administra a instalação vê esse aviso, porque só essa pessoa pode atualizar. Clique nele.",
+          "rota": "/app/inbox",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Nova versão",
+                "regex": true
+              },
+              "rotulo": "Versão nova disponível",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Nova versão",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A versão instalada e a nova",
+          "texto": "A tela abre com o número da versão nova no título. No quadro logo abaixo ficam a \"Versão instalada\", a última versão oficial publicada e a data em que o servidor confirmou o que está rodando. A \"Revisão\" é o código exato da versão, útil se for pedir ajuda.",
+          "rota": "/app/settings/atualizacao",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "h1"
+              },
+              "rotulo": "A versão nova",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "region",
+                "nome": "Versão instalada",
+                "exato": true
+              },
+              "rotulo": "A versão em uso",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que muda",
+          "texto": "Mais abaixo, \"O que muda\" lista as novidades da versão nova, como o próprio projeto as publicou. Se alguma delas pedir uma ação sua, um quadro amarelo \"Requer atenção\" aparece antes do botão, e aí vale ler antes de atualizar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "O que muda",
+                "exato": true
+              },
+              "rotulo": "As novidades",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O botão Atualizar agora",
+          "texto": "Ao lado de \"Atualizar agora\", a tela avisa o que acontece: o sistema sai do ar por cerca de 2 minutos e volta sozinho, e antes disso é feita uma cópia de segurança dos dados. Escolha um horário de pouco movimento e clique.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Atualizar agora",
+                "exato": true
+              },
+              "rotulo": "Pedir a atualização",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Atualizar agora",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Pedido enviado",
+          "texto": "O pedido fica anotado e o servidor confere de poucos em poucos minutos se há algo a fazer: a atualização pode levar uns cinco minutos para começar, e a tela parada nesse tempo é normal. O relógio mostra há quanto tempo o pedido espera. Pode fechar a página: o pedido não se perde, e a tela acompanha sozinha cada etapa até o sistema voltar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Atualizar agora",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Pedido enviado — esperando o servidor pegar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 4000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Pedido enviado — esperando o servidor pegar",
+                "exato": true
+              },
+              "rotulo": "O pedido está na fila",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "espera-decorrida"
+              },
+              "rotulo": "Há quanto tempo espera",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -45,6 +45,7 @@ import {
   camposPorEscopo,
   type EscopoDoCampo,
 } from "@/lib/leads/campos-do-funil";
+import type { CustomFieldDef } from "@/lib/schemas/settings";
 
 /** O que uma definição de campo precisa ter para esta régua existir. */
 export interface DefComPadrao {
@@ -265,11 +266,16 @@ export function camposQueMudaram(
  *
  * A ausência da chave vale `negocio` (`escopoDoCampo`), então toda definição
  * que já existe continua sendo julgada onde sempre foi.
+ *
+ * ⚠️ Devolve a definição INTEIRA (`CustomFieldDef`), não só o que a régua do
+ * `padrao` lê: `padrao`/`mensagem_padrao` são um recorte dela, e a régua da
+ * OPÇÃO do campo de seleção (#3508) lê `options`/`allow_new`/`multiple` daqui.
+ * Duas réguas, UMA leitura de `settings` — o nome ficou do primeiro uso.
  */
 export function defsDoPadraoDoFunil(
   settings: unknown,
   escopo: EscopoDoCampo = "negocio",
-): DefComPadrao[] {
+): CustomFieldDef[] {
   if (!settings || typeof settings !== "object" || Array.isArray(settings)) return [];
   return camposPorEscopo(camposDoFunil(settings as Record<string, unknown>), escopo);
 }

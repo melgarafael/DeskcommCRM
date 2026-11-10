@@ -28,6 +28,7 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { formatCents } from "@/lib/money";
 
 import { ListaDeLancamentos, type Conta, type Lancamento } from "./_lancamentos";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 type Forma = { nome: string; quantidade: number; total_cents: number };
 type Profissional = { attendant_user_id: string | null; itens: number; comissao_cents: number };
@@ -55,7 +56,8 @@ type Relatorio = Totais & {
   por_moeda?: Record<string, Totais>;
 };
 
-type Pessoa = { user_id: string; name: string | null; email: string | null };
+/** O formato de `/api/v1/team/assignable`: o nome vem em `full_name`. */
+type Pessoa = { user_id: string; full_name: string | null };
 
 /**
  * O período padrão do relatório no calendário de quem usa a tela (#2935).
@@ -122,7 +124,7 @@ export function Faturamento({
   const nomeDe = (id: string | null) => {
     if (!id) return t("Sem responsável");
     const p = (equipe.data ?? []).find((x) => x.user_id === id);
-    return p?.name ?? p?.email ?? t("Sem responsável");
+    return p ? rotuloDoMembro(p, t) : t("Sem responsável");
   };
 
   // Os nomes dos clientes, pelo mesmo motivo dos da equipe: o relatório devolve

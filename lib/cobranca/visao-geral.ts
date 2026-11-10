@@ -69,7 +69,7 @@ export async function lerVisaoGeral(admin: SupabaseClient): Promise<DadosDaVisao
           .order("received_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-    admin.rpc("fn_cobranca_reconciliaveis"),
+    admin.rpc("fn_cobranca_reconciliaveis").order("relida_em", { ascending: false, nullsFirst: false }).limit(1),
     admin.from("cobranca_assinaturas").select("estado, ultimo_erro, assinaturas_vivas, provedor").not("provedor", "is", null),
     admin
       .from("webhook_events_log")

@@ -88,6 +88,25 @@ async function medirOCanvas(page: Page, estado: string) {
           )
         : null;
     const retanguloDoPainel = document.querySelector<HTMLElement>('[data-testid="designer-painel"]')?.getBoundingClientRect();
+    /**
+     * Quando o clique NÃO chega à caixa, o relatório tem de nomear quem comeu o
+     * clique: a leitura antiga dizia só `div[data-testid=-]` e o job ficava sem
+     * como saber se era o próprio canvas, um painel ou um overlay.
+     */
+    const descrever = (alvo: Element): string => {
+      const classe =
+        typeof alvo.className === "string" && alvo.className.trim() !== ""
+          ? `.${alvo.className.trim().split(/\s+/).slice(0, 2).join(".")}`
+          : "";
+      const estilo = getComputedStyle(alvo);
+      const testid = alvo.getAttribute("data-testid");
+      return `${alvo.tagName.toLowerCase()}${classe}${testid === null ? "" : `[${testid}]`}(z=${estilo.zIndex},pe=${estilo.pointerEvents})`;
+    };
+    const centroDaCaixa =
+      retanguloDaCaixa === null
+        ? null
+        : { x: retanguloDaCaixa.left + retanguloDaCaixa.width / 2, y: retanguloDaCaixa.top + retanguloDaCaixa.height / 2 };
+    const noDaCaixa = caixa?.closest<HTMLElement>(".react-flow__node") ?? null;
     return {
       alturaDoCanvas: Math.round(container.getBoundingClientRect().height),
       larguraDoCanvas: Math.round(container.getBoundingClientRect().width),
@@ -102,11 +121,36 @@ async function medirOCanvas(page: Page, estado: string) {
           : caixa !== null && caixa.contains(centro)
             ? "a caixa do gatilho"
             : `${centro.tagName.toLowerCase()}[data-testid=${centro.getAttribute("data-testid") ?? "-"}]`,
+      camadasNoCentro:
+        centroDaCaixa === null ? [] : document.elementsFromPoint(centroDaCaixa.x, centroDaCaixa.y).slice(0, 4).map(descrever),
+      estiloDoNoDaCaixa: noDaCaixa === null ? "-" : (noDaCaixa.getAttribute("style") ?? "-"),
       painelLateralNaTela: retanguloDoPainel !== undefined && retanguloDoPainel.width > 0,
       painelLateralLargura: Math.round(retanguloDoPainel?.width ?? 0),
     };
   });
   return { estado, ...medida };
+}
+
+/**
+ * Espera o canvas estar PINTADO antes de medir o clique.
+ *
+ * O React Flow só torna o nó um alvo de clique depois de medir a caixa; antes
+ * disso o wrapper do nó está em `visibility: hidden`. Medir nessa janela mede a
+ * montagem, não o produto: no CI a primeira leitura — a única que roda sem
+ * nenhum clique antes — devolveu a camada do próprio canvas, um `div` sem
+ * data-testid (`.react-flow__pane`), e 5 ms depois o mesmo ponto já respondia à
+ * caixa (trace do job `e2e-parte (3)`).
+ *
+ * `toBeVisible` é a espera pelo ESTADO do produto (o nó medido pelo React
+ * Flow), não um timeout: se a caixa nunca ficar visível, o defeito é do produto
+ * e a falha diz isso. Os dois `requestAnimationFrame` são a barreira de pintura
+ * — garantem que o quadro que desenha a caixa foi commitado antes da medida.
+ */
+async function esperarOCanvasPintar(page: Page): Promise<void> {
+  await expect(page.getByTestId("caixa-gatilho")).toBeVisible();
+  await page.evaluate(
+    () => new Promise<void>((resolver) => requestAnimationFrame(() => requestAnimationFrame(() => resolver()))),
+  );
 }
 
 /** O resumo de uma medida, numa linha só — é ele que aparece no log do job. */
@@ -115,6 +159,7 @@ function resumoDaMedida(m: Awaited<ReturnType<typeof medirOCanvas>>): string {
     `[${m.estado}] canvas=${m.alturaDoCanvas}x${m.larguraDoCanvas}px · linha=${m.alturaDaLinha}px · coluna=${m.alturaDaColuna}px` +
     ` · caixa do gatilho=${m.alturaDaCaixa}px · caixas no DOM=${m.caixasNoDom}` +
     ` · clique no gatilho=chega na caixa? ${m.cliqueChegaNaCaixa} (quem recebe: ${m.quemRecebeOClique})` +
+    (m.cliqueChegaNaCaixa ? "" : ` · camadas no centro=${m.camadasNoCentro.join(" > ") || "-"} · estilo do nó=${m.estiloDoNoDaCaixa}`) +
     ` · painel lateral=${m.painelLateralNaTela ? "na tela" : "fora"}/${m.painelLateralLargura}px`
   );
 }
@@ -285,6 +330,16 @@ test.describe("designer de automações", () => {
     // defeito atrás de um timeout menos informativo.
     await expect(page.getByTestId("designer-canvas")).toBeAttached();
 
+    // A medida do clique só vale com a caixa já medida e pintada; a espera é
+    // registrada em vez de estourar para não perder as três medidas do relatório
+    // se o produto regredir (aí as alturas contam a história).
+    const errosDeEspera: string[] = [];
+    try {
+      await esperarOCanvasPintar(page);
+    } catch (erro) {
+      errosDeEspera.push((erro as Error).message.split("\n").slice(0, 2).join(" | "));
+    }
+
     // O clique do usuário é a prova de tela, e ele INTERCEPTADO é o segundo
     // sintoma da issue; a falha é medida, não deixada estourar, para que as
     // alturas do estado antigo também apareçam no relatório.
@@ -326,6 +381,7 @@ test.describe("designer de automações", () => {
       ).toBe(true);
     }
     expect.soft(errosDeClique, `o clique do usuário na caixa do gatilho não chegou à caixa: ${errosDeClique.join(" ;; ")}`).toEqual([]);
+    expect.soft(errosDeEspera, `o canvas não ficou pronto para o clique: ${errosDeEspera.join(" ;; ")}`).toEqual([]);
     expect.soft(painelDoGatilhoAberto, "o clique na caixa do gatilho tinha de abrir o formulário do gatilho no painel.").toBe(true);
   });
 });

@@ -32,6 +32,7 @@
  * O client é service-role e ignora RLS: `organization_id` junto em TODO `.eq`,
  * como em `lib/leads/aviso-de-etapa.handler.ts`.
  */
+import { portaDaAplicacao } from "@/lib/db";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
@@ -162,7 +163,7 @@ async function handle(row: EventRow): Promise<HandlerResult> {
     .maybeSingle();
   const idioma: Idioma = normalizarIdioma((org as { locale?: string | null } | null)?.locale);
 
-  const criada = await criarTarefaInterna(admin, {
+  const criada = await criarTarefaInterna(portaDaAplicacao(), {
     organizationId: row.organization_id,
     titulo: traduzir(TITULO_DO_AVISO, idioma),
     venceEmDias: 0,

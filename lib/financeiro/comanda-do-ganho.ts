@@ -49,6 +49,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 
+import { percentualDoItem } from "./comissao-do-item";
+
 /** O `target_kind` do vínculo com a comanda — valor que o CHECK já aceita. */
 export const ALVO_DE_VINCULO_DA_COMANDA = "order" as const;
 
@@ -185,6 +187,10 @@ export async function comandaDoGanho(
         unit_price_cents: valor,
         total_cents: valor,
         attendant_user_id: entrada.userId,
+        commission_percent: await percentualDoItem(supabase, entrada.organizationId, {
+          attendantUserId: entrada.userId,
+          eventTypeId: null,
+        }),
       })
       .select("id")
       .single();
@@ -321,6 +327,10 @@ export async function comandaDoGanho(
       unit_price_cents: valor,
       total_cents: valor,
       attendant_user_id: entrada.userId,
+      commission_percent: await percentualDoItem(supabase, entrada.organizationId, {
+        attendantUserId: entrada.userId,
+        eventTypeId: null,
+      }),
     })
     .select("id")
     .single();

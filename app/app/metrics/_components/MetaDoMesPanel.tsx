@@ -24,7 +24,9 @@
 import { useT } from "@/hooks/i18n/useT";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { ValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
 import { mesLegivel } from "@/lib/metas/periodo";
+import { MOEDA_PADRAO, formatValorDoNegocio } from "@/lib/money";
 import Link from "next/link";
 
 export interface MetaDaEmpresa {
@@ -48,9 +50,14 @@ interface Props {
   metas: readonly MetaDaEmpresa[];
   /** manager+: mostra a porta do cadastro em Configurações. */
   podeConfigurar: boolean;
+  /**
+   * As duas parcelas do período (fatia 2, item 1, da #3602). Ausente ou
+   * `null` = nada a mostrar (resposta antiga ou leitura ainda sem o bloco).
+   */
+  valores?: ValoresDoPeriodo | null;
 }
 
-export function MetaDoMesPanel({ estado, periodo, metas, podeConfigurar }: Props) {
+export function MetaDoMesPanel({ estado, periodo, metas, podeConfigurar, valores }: Props) {
   const t = useT();
   const mes = mesLegivel(periodo);
 
@@ -157,6 +164,54 @@ export function MetaDoMesPanel({ estado, periodo, metas, podeConfigurar }: Props
               </div>
             ))
           : null}
+
+        {/* As DUAS parcelas do período (fatia 2, item 1, da #3602). Só aparecem
+            quando há recorrência preenchida: quem nunca usa o campo continua
+            vendo exatamente o painel de antes. Cada moeda na sua linha — somar
+            dólar com real produziria um número que não existe (Régua 3). */}
+        {valores && valores.negocios_com_recorrencia > 0 ? (
+          <div className="flex flex-col gap-2 border-t pt-3" data-valores="periodo">
+            {valores.por_moeda.map((balde) => (
+              <div
+                key={balde.moeda ?? "sem-moeda"}
+                className="flex flex-col gap-1 text-sm"
+                data-valores="moeda"
+              >
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span>
+                    <span className="text-muted-foreground">{t("Vendido único")}: </span>
+                    <span className="tabular-nums" data-valores="unico">
+                      {formatValorDoNegocio(balde.unico_centavos, balde.moeda ?? MOEDA_PADRAO)}
+                    </span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">
+                      {t("Recorrência nova (mensal)")}:{" "}
+                    </span>
+                    <span className="tabular-nums" data-valores="recorrente-mensal">
+                      {formatValorDoNegocio(
+                        balde.recorrente_mensal_centavos,
+                        balde.moeda ?? MOEDA_PADRAO,
+                      )}
+                    </span>
+                    <span className="text-muted-foreground">{t("/mês")}</span>
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground" data-valores="com-recorrencia">
+                  {balde.negocios_com_recorrencia}{" "}
+                  {balde.negocios_com_recorrencia === 1
+                    ? t("negócio com recorrência")
+                    : t("negócios com recorrência")}
+                </span>
+              </div>
+            ))}
+            {valores.truncado ? (
+              <p className="text-xs text-muted-foreground" data-valores="piso">
+                {t("Leitura parcial: as parcelas somam o que foi lido no período.")}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

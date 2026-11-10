@@ -26,7 +26,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   decidirElegibilidade,
   montarEstadoDeElegibilidade,
-  type DecisaoDeElegibilidade,
+  type DecisaoDaConversa,
 } from "./gate";
 
 interface ConversaEmbed {
@@ -38,7 +38,7 @@ interface ConversaEmbed {
     ai_opt_out: boolean | null;
     ai_authorized_at: string | null;
     phone_number: string | null;
-    /** `contacts.tags` — a régua de contato interno (#2353). */
+    /** `contacts.tags` — a régua de contato interno (#2353) e a da equipe (#3534). */
     tags: string[] | null;
   } | null;
   channel_sessions: { metadata: Record<string, unknown> | null } | null;
@@ -52,7 +52,7 @@ interface ConversaEmbed {
 export async function decidirElegibilidadeDaConversaViaSupabase(
   admin: Pick<SupabaseClient, "from">,
   input: { organizationId: string; conversationId: string; agora: Date; ttlMs: number },
-): Promise<DecisaoDeElegibilidade | null> {
+): Promise<DecisaoDaConversa | null> {
   const { data, error } = await admin
     .from("conversations")
     .select(
@@ -68,23 +68,26 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   if (data == null) return null;
 
   const row = data as unknown as ConversaEmbed;
-  return decidirElegibilidade(
-    montarEstadoDeElegibilidade({
-      orgStatus: row.organizations?.status ?? null,
-      canalDesativado: row.channel_sessions?.metadata?.["disabled"] ?? null,
-      aiGate: row.channel_sessions?.metadata?.["ai_gate"] ?? null,
-      aiGateMode: row.channel_sessions?.metadata?.["ai_gate_mode"] ?? null,
-      aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,
-      contactPhoneNumber: row.contacts?.phone_number ?? null,
-      forceHuman: row.contacts?.force_human ?? false,
-      contactTags: row.contacts?.tags ?? null,
-      orgSettings: row.organizations?.settings,
-      aiOptOut: row.contacts?.ai_opt_out ?? false,
-      assigneeKind: row.assignee_kind,
-      botSilencedUntil: row.bot_silenced_until,
-      aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
-      agora: input.agora,
-      ttlMs: input.ttlMs,
-    }),
-  );
+  const estado = montarEstadoDeElegibilidade({
+    orgStatus: row.organizations?.status ?? null,
+    canalDesativado: row.channel_sessions?.metadata?.["disabled"] ?? null,
+    aiGate: row.channel_sessions?.metadata?.["ai_gate"] ?? null,
+    aiGateMode: row.channel_sessions?.metadata?.["ai_gate_mode"] ?? null,
+    aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,
+    contactPhoneNumber: row.contacts?.phone_number ?? null,
+    forceHuman: row.contacts?.force_human ?? false,
+    contactTags: row.contacts?.tags ?? null,
+    orgSettings: row.organizations?.settings,
+    aiOptOut: row.contacts?.ai_opt_out ?? false,
+    assigneeKind: row.assignee_kind,
+    botSilencedUntil: row.bot_silenced_until,
+    aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
+    agora: input.agora,
+    ttlMs: input.ttlMs,
+  });
+  // #3534: `contatoDaEquipe` viaja com a decisão. `contacts.tags` e
+  // `organizations.settings` já vêm no embed desta query, então a régua da
+  // equipe não custa leitura nova — e o medidor de clima, chamador daqui, passa
+  // a saber que a conversa é atendida E que não pode ser passada por clima.
+  return { ...decidirElegibilidade(estado), contatoDaEquipe: estado.contatoDaEquipe };
 }

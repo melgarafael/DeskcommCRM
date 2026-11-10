@@ -316,3 +316,38 @@ Três coisas fazem essa conferência à mão mentir, e as três mentem no sentid
    migração e aviso `exige_acao`; major só se o dono pedir.
 7. **Toda versão publicada aparece na vitrine.** A LP lê o `CHANGELOG.md`; o corte confere
    que ela chegou, nos três idiomas, e reprova quando não chegou.
+
+
+## Identidade instalada e confirmação do host
+
+O checkout que executa o kit não identifica as imagens em execução. O agente nativo
+inspeciona app, worker e scheduler do compose correto, além da voz quando instalada.
+Lê a revisão OCI e APP_VERSION da imagem imutável, não do env_file do container.
+APP_VERSION localiza a tag; a tag é buscada do origin em namespace isolado e seu
+commit precisa ser ancestral da revisão da imagem. Sem esses objetos/metadados,
+a observação é parcial, nunca uma release confirmada por inferência. Um deploy
+externo deve preservar também os objetos Git da fonte que gerou suas imagens.
+
+A observação viaja pelo heartbeat autenticado existente em runtime_confirmation,
+na mesma linha system_version. A API deriva cobertura, coerência e validade; o
+host não escolhe um veredito livre. A confirmação vence em quinze minutos (três
+batidas de cinco minutos); a data de coleta não pode ser renovada por um POST
+posterior. Heartbeats antigos continuam aceitos e limpam uma confirmação anterior:
+seu current_version é legado, explicitamente sem comprovação do conjunto executado.
+Uma imagem sem healthcheck também não comprova saúde. Mudança durante a coleta,
+serviço ausente, metadado não verificado ou revisões divergentes não viram sucesso.
+
+Base oficial, revisão personalizada, release publicada, pedido de atualização e
+confirmação são estados separados. O rodapé mantém a versão informada e o caráter
+personalizado ao lado do aviso; os detalhes administrativos mostram revisão,
+data e divergências. A comparação da release elegível usa a base executada, não
+HEAD do monitor, mantendo os gates de imagens e comparação do kit. Instalação
+personalizada exige conciliar patches antes de instalar imagens públicas, tanto
+na rota de pedido quanto no consumo de pedidos antigos pelo host.
+
+APP_VERSION sozinho não supera falha ou reversão. Uma reinstalação da mesma versão
+pode superar uma falha quando houver observação posterior, completa, coerente e
+vigente dos serviços, corroborada pela versão do processo que responde. Uma volta
+confirmada para a versão anterior mantém sua explicação. Pedido bem-sucedido sem
+confirmação continua sendo pedido, sujeito à janela nativa, nunca prova de execução.
+Nada concede Docker ao app, amplia privilégios ou cria monitor/registro paralelo.

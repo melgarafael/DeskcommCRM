@@ -45,8 +45,19 @@ beforeEach(() => {
     user: { id: ORG, idioma: "pt-BR" },
     org: { orgId: ORG, role: "agent" },
   } as Awaited<ReturnType<typeof requireRole>>);
-  vi.mocked(createClient).mockResolvedValue({} as Awaited<ReturnType<typeof createClient>>);
+  // A rota lê o dono da conversa antes de devolver (#3436): aqui a conversa não
+  // tem dono, então a regra de dono não interfere nos casos de #2379.
+  vi.mocked(createClient).mockResolvedValue(conversaSemDono() as Awaited<ReturnType<typeof createClient>>);
 });
+
+/** O único pedaço do client que a rota usa antes de chamar a regra: o dono. */
+function conversaSemDono(): Awaited<ReturnType<typeof createClient>> {
+  const b: Record<string, unknown> = {};
+  b.select = () => b;
+  b.eq = () => b;
+  b.maybeSingle = async () => ({ data: { id: CONVERSA, assigned_to_user_id: null }, error: null });
+  return { from: () => b } as unknown as Awaited<ReturnType<typeof createClient>>;
+}
 
 describe("reactivate-bot — contato 'sempre atendimento humano' (#2379)", () => {
   it("contato marcado: 409 que diz o que fazer, nunca 'Atendimento devolvido'", async () => {

@@ -8,6 +8,7 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useUltimasCompras } from "@/hooks/contacts/useUltimasCompras";
 import type { CompraDoContato } from "@/lib/leads/compras-do-contato";
+import { rotuloDaRecorrencia } from "@/lib/leads/valor-recorrente";
 import { ArrowRight } from "@/lib/ui/icons";
 
 /**
@@ -62,7 +63,17 @@ export function UltimasCompras({
     <section data-testid="ultimas-compras">
       <h3 className="text-xs font-semibold text-text">{t("Últimas compras")}</h3>
       <ul className="mt-2 space-y-1.5">
-        {compras.map((compra) => (
+        {compras.map((compra) => {
+          // A MENSALIDADE da compra (fatia 1 da #3602), ao lado do que foi pago
+          // uma vez. `null` quando a compra é de valor único, e aí a linha
+          // continua com um número só — a mesma de antes.
+          const recorrente = rotuloDaRecorrencia(
+            compra.recurring_value_cents,
+            compra.recurring_period,
+            compra.currency ?? "BRL",
+            { sufixo: t("/mês") },
+          );
+          return (
           <li
             key={compra.id}
             data-testid={`compra-${compra.id}`}
@@ -74,6 +85,11 @@ export function UltimasCompras({
               </span>
               <span className="shrink-0 tabular-nums text-muted-foreground" data-testid="compra-valor">
                 {formatMoney(compra.value_cents, compra.currency)}
+                {recorrente && (
+                  <span data-testid="compra-recorrente" className="ml-1">
+                    + {recorrente}
+                  </span>
+                )}
               </span>
             </div>
             {compra.closed_at && (
@@ -101,7 +117,8 @@ export function UltimasCompras({
               </Link>
             </Button>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </section>
   );

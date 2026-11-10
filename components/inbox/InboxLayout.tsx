@@ -32,6 +32,7 @@ import { ConversationHeader } from "./ConversationHeader";
 import { BotaoIniciarConversa } from "./PainelIniciarConversa";
 import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
+import type { ModuloDaLateral } from "@/lib/inbox/modulos-da-lateral";
 import type { Message as ConversationMensagem } from "@/lib/types/messaging";
 import { InboxKeyboardShortcuts } from "./InboxKeyboardShortcuts";
 
@@ -270,12 +271,22 @@ interface InboxLayoutProps {
    * que evita o painel nascer aberto e pular para trilho depois da hidratação.
    */
   painelRecolhidoInicial?: boolean;
+  /**
+   * Quais módulos da lateral do contato aparecem, e em que ordem (#3008).
+   *
+   * Vem do SERVIDOR (`app/app/inbox/page.tsx` -> `carregarModulosDaLateral`),
+   * pela mesma razão do recolhido acima: a preferência é da pessoa, mora no
+   * metadata dela, e o primeiro paint já tem de sair com ela — ler no cliente
+   * faria a lateral nascer completa e "pular" para a escolhida.
+   */
+  modulosDaLateral?: ModuloDaLateral[];
 }
 
 export function InboxLayout({
   initialSelectedId = null,
   rascunho = null,
   painelRecolhidoInicial = false,
+  modulosDaLateral,
 }: InboxLayoutProps = {}) {
   const t = useT();
   const { activeOrg, user } = useAuth();
@@ -1025,7 +1036,10 @@ export function InboxLayout({
                 </SheetTrigger>
                 <SheetContent side="right" className="w-[min(22rem,90vw)] overflow-y-auto p-0">
                   <SheetTitle className="sr-only">{t("Ficha do contato")}</SheetTitle>
-                  <CRMSidePanel conversation={selectedConversation} />
+                  <CRMSidePanel
+                    conversation={selectedConversation}
+                    modulosIniciais={modulosDaLateral}
+                  />
                 </SheetContent>
               </Sheet>
             )}
@@ -1139,6 +1153,11 @@ export function InboxLayout({
               // A barra de recursos lembra o recolhimento POR usuário (#3282);
               // o id vem do `AuthProvider` daqui, não de dentro do compositor.
               usuarioId={user.id}
+              // #3732: a recusa do envio pode dizer que a conversa continua em
+              // outra conversa do MESMO contato, no número de quem responde —
+              // e o botão da faixa abre essa conversa. É a mesma seleção que a
+              // faixa do número fora do ar e o cabeçalho já usam.
+              onAbrirConversa={handleSelect}
               // O aviso é DA conversa da URL: trocar de conversa dentro da inbox
               // não pode deixar um texto sugerido no campo de outra pessoa.
               rascunho={rascunhoVivo}
@@ -1165,6 +1184,7 @@ export function InboxLayout({
           conversation={selectedConversation}
           recolhido={painelRecolhido}
           onAlternarRecolhido={alternarPainelDoContato}
+          modulosIniciais={modulosDaLateral}
         />
       </div>
 

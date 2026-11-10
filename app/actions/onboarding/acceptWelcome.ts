@@ -14,12 +14,25 @@ import { requireOnboardingCtx, patchOnboardingState, OnboardingError } from "./_
 
 export type AcceptWelcomeResult =
   | { ok: true }
-  | { ok: false; error: "auth_required" | "no_active_org" | "forbidden" | "invalid_input" | "db_error"; details?: unknown };
+  | {
+      ok: false;
+      error:
+        | "auth_required"
+        | "no_active_org"
+        | "forbidden"
+        | "invalid_input"
+        | "db_error"
+        | "organization_changed";
+      details?: unknown;
+    };
 
 export async function acceptWelcome(formData: FormData): Promise<AcceptWelcomeResult> {
   // A aba de boas-vindas foi aberta para UMA organização; é ela que este
   // submit deve atingir, mesmo que a org ativa tenha mudado em outra aba.
   const orgIdDaAba = String(formData.get("organization_id") ?? "").trim() || undefined;
+
+  if (!orgIdDaAba || !z.string().uuid().safeParse(orgIdDaAba).success)
+    return { ok: false, error: "organization_changed" };
 
   let ctx;
   try {
@@ -28,6 +41,8 @@ export async function acceptWelcome(formData: FormData): Promise<AcceptWelcomeRe
     if (err instanceof OnboardingError) return { ok: false, error: err.code as never };
     throw err;
   }
+
+  if (ctx.orgId !== orgIdDaAba) return { ok: false, error: "organization_changed" };
 
   const raw = {
     display_name: String(formData.get("display_name") ?? "").trim(),

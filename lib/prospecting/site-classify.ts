@@ -12,7 +12,31 @@
  * classificar IP (`recusarSSRF`, `enderecoInterno`) mora em `site-fetch.ts`
  * (server-only) — nunca importar aquele de componente client.
  */
+import { conteudoDoTitulo, temDescricaoLonga } from "@/lib/prospecting/leitura-do-html";
 
+
+/**
+ * ─── A REGRA DO #3723: "NÃO MEDIDO" NÃO É "MEDIDO E RUIM" ────────────────────
+ *
+ * A auditoria já disse à empresa duas coisas diferentes como se fossem uma só:
+ *
+ *   MEDIDO      — abrimos o site e ele respondeu com 200 e conteúdo. O que está
+ *                 ruim está ruim: sem cadeado, quebrado no celular, quase vazio.
+ *                 Só isto vira argumento de venda.
+ *   NÃO MEDIDO  — não conseguimos olhar. `401/403/406/429/451/503` e o desafio
+ *                 anti-robô são o IP de datacenter desta VPS sendo barrado
+ *                 (medido no #3723: o mesmo site abre com 200 de rede
+ *                 residencial); timeout e conexão resetada são a rede do
+ *                 servidor. `nao-medido` é isso — e NUNCA vira argumento:
+ *                 dizer "seu site não abre" a quem tem site no ar é a pior
+ *                 primeira impressão possível numa abordagem fria.
+ *
+ * Duas consequências que valem para todo o módulo:
+ *   1. `falta-*` (item do checklist) é MELHORIA, não defeito medido: não
+ *      classifica o site nem entra no gancho da primeira mensagem.
+ *   2. Nunca citar como falta o que o próprio checklist marca como presente —
+ *      site com `wa.me` TEM telefone de contato (ver `montarChecklist`).
+ */
 
 /** Classes de auditoria. `dns-morto` é problema, não classe: a classe é `fora-do-ar`. */
 export const CLASSES_DE_SITE = [
@@ -22,8 +46,40 @@ export const CLASSES_DE_SITE = [
   "site-ruim",
   "ssl-invalido",
   "fora-do-ar",
+  "nao-medido",
 ] as const;
 export type ClasseDeSite = (typeof CLASSES_DE_SITE)[number];
+
+/**
+ * Status HTTP em que quem responde é o FIREWALL do site, não o site: o nosso IP
+ * de datacenter sendo barrado. O visitante de rede residencial vê 200 no mesmo
+ * endereço (caso B do #3723). Tratar isso como "o site responde com erro" é
+ * afirmar um defeito que só existe para o nosso robô.
+ */
+export const STATUS_DE_MEDICAO_BLOQUEADA: ReadonlySet<number> = new Set([401, 403, 406, 429, 451, 503]);
+
+export function statusBloqueiaMedicao(status: number): boolean {
+  return STATUS_DE_MEDICAO_BLOQUEADA.has(status);
+}
+
+/** `falta-*` = o que o checklist não achou na página: melhoria, não defeito. */
+export function ehMelhoria(codigo: string): boolean {
+  return codigo.startsWith("falta-");
+}
+
+/** Os problemas que a MEDIÇÃO sustenta — o resto é melhoria e não classifica. */
+export function problemasMedidos(problemas: readonly string[]): string[] {
+  return problemas.filter((p) => !ehMelhoria(p));
+}
+
+/**
+ * Citável no argumento de venda? Regra única, usada pela tela, pela prévia e
+ * pelo envio: só o que foi MEDIDO e está DEFINITIVO. Provisório é dúvida;
+ * `nao-medido` é ausência de medida — os dois calados.
+ */
+export function citavelNoArgumento(site: { classe: ClasseDeSite; provisorio: boolean }): boolean {
+  return !site.provisorio && site.classe !== "nao-medido";
+}
 
 /** Domínios que NÃO são site próprio (rede social, agregador, formulário, chat).
  * Medido na VPS em 2026-10-10: 8 de 20 `website` caíram aqui, zero fetch. */
@@ -42,6 +98,18 @@ export const DOMINIOS_AGREGADORES = [
   "forms.gle",
   "api.whatsapp.com",
   "wa.me",
+] as const;
+
+/**
+ * Redes sociais reconhecidas pelo host, com o tipo de link que lhes cabe na ficha
+ * (Spec 26). Separada de `DOMINIOS_AGREGADORES` de propósito: o LinkedIn não é
+ * agregador, e pô-lo ali mudaria `ehAgregador` para quem já o usa (a prévia e o
+ * veredito do site). Instagram e Facebook seguem nas duas listas, como antes.
+ */
+export const DOMINIOS_DE_REDE = [
+  ["instagram.com", "instagram"],
+  ["facebook.com", "facebook"],
+  ["linkedin.com", "linkedin"],
 ] as const;
 
 /** Assinatura de construtor pronto por URL final → rótulo único. */
@@ -90,6 +158,12 @@ export type ItemDoRaioX = (typeof ITENS_DO_RAIO_X)[number];
 export interface RaioXDoSite {
   tem: ItemDoRaioX[];
   falta: ItemDoRaioX[];
+  /**
+   * Verdadeiro quando a página foi montada por JavaScript (construtor pronto) e
+   * o HTML baixado não traz o conteúdo: aí "não achamos" NÃO é "não tem" — o
+   * checklist fica vazio em vez de listar faltas inventadas (caso D do #3723).
+   */
+  inconclusivo?: boolean;
 }
 
 /** Host canônico para comparação (`www.` fora, minúsculo) ou null se não for http(s). */
@@ -137,18 +211,33 @@ const TITULOS_VAZIOS = new Set(["home", "index", "início", "inicio", "untitled"
 /**
  * Raio-X do HTML: o que o site TEM e o que FALTA para transformar visita em
  * contato. Tudo derivado da página baixada — nada aqui é chute.
+ *
+ * `inconclusivo` existe porque "não achei no HTML" e "o site não tem" são coisas
+ * diferentes quando o construtor monta a página por JavaScript: o HTML baixado
+ * vem quase vazio e o checklist acusava `falta-whatsapp`, `falta-fotos`,
+ * `falta-mapa` num site que tem os três (caso D do #3723). Nesse caso o
+ * checklist sai VAZIO — sem `tem` e sem `falta` — e a tela diz que não deu para
+ * medir, em vez de listar faltas que o visitante desmentiria.
  */
-export function montarChecklist(html: string): RaioXDoSite {
+export function montarChecklist(
+  html: string,
+  opcoes: { inconclusivo?: boolean } = {},
+): RaioXDoSite {
+  if (opcoes.inconclusivo) return { tem: [], falta: [], inconclusivo: true };
   const fonte = html || "";
   const minusculo = fonte.toLowerCase();
+  // O link de WhatsApp é contato clicável: `wa.me/55…` e `api.whatsapp.com/send`
+  // abrem a conversa com o número da empresa. Exigir `href="tel:` dava
+  // `falta-tel` a site que tem WhatsApp no rodapé (caso A do #3723) — a mesma
+  // falta que o checklist, duas linhas acima, marcava como `whatsapp` presente.
+  const temWhatsapp =
+    minusculo.includes("wa.me/") || minusculo.includes("api.whatsapp.com");
   const presente: Array<[ItemDoRaioX, boolean]> = [
     [
       "whatsapp",
-      minusculo.includes("wa.me") ||
-        minusculo.includes("api.whatsapp.com") ||
-        minusculo.includes("whatsapp"),
+      temWhatsapp || minusculo.includes("whatsapp"),
     ],
-    ["tel", minusculo.includes('href="tel:') || minusculo.includes("href='tel:")],
+    ["tel", minusculo.includes('href="tel:') || minusculo.includes("href='tel:") || temWhatsapp],
     ["mailto", minusculo.includes("mailto:")],
     ["social", minusculo.includes("instagram.com") || minusculo.includes("facebook.com")],
     [
@@ -161,16 +250,15 @@ export function montarChecklist(html: string): RaioXDoSite {
     ["fotos", (minusculo.match(/<img\b/g) ?? []).length >= 3],
     [
       "titulo",
+      // Título curto é título: basta não ser vazio nem genérico. O mínimo de 8
+      // caracteres reprovava marca de 7 letras ("VittaSP"), que é o nome que a
+      // empresa escolheu — e a falta ia citada na primeira mensagem (caso A).
       (() => {
-        const m = /<title[^>]*>(.*?)<\/title>/is.exec(fonte);
-        const texto = (m?.[1] ?? "").replace(/\s+/g, " ").trim();
-        return texto.length > 8 && !TITULOS_VAZIOS.has(texto.toLowerCase());
+        const texto = (conteudoDoTitulo(fonte) ?? "").replace(/\s+/g, " ").trim();
+        return texto.length > 0 && !TITULOS_VAZIOS.has(texto.toLowerCase());
       })(),
     ],
-    [
-      "description",
-      /<meta[^>]+name=["']description["\'][^>]+content=["'](.{30,})["']/i.test(fonte),
-    ],
+    ["description", temDescricaoLonga(fonte)],
     ["favicon", /rel=["'](?:shortcut )?icon/i.test(minusculo)],
   ];
   return {
@@ -198,19 +286,28 @@ export interface EntradaDaClasse {
 }
 
 /**
- * Ordem determinística (função pura): agregador > sem-site > fora-do-ar >
- * ssl-invalido > http>=400 > demais problemas → site-ruim > site-ok.
+ * Ordem determinística (função pura): agregador > sem-site > nao-medido >
+ * fora-do-ar > ssl-invalido > http>=400 > demais problemas medidos →
+ * site-ruim > site-ok.
+ *
+ * Dúvida nunca é veredito: transitória (timeout, conexão resetada) e status de
+ * medição bloqueada (401/403/406/429/451/503) saem `nao-medido` — não é defeito
+ * do site, é a nossa medição que não passou. E `falta-*` é melhoria: sozinha
+ * não faz de um site bom um site ruim.
  */
 export function derivarClasse(entrada: EntradaDaClasse): ClasseDeSite {
   if (entrada.agregador) return "agregador";
   if (entrada.semSite) return "sem-site";
   if (entrada.erro) {
-    if (entrada.erro.tipo === "dns" || entrada.erro.tipo === "transitoria") return "fora-do-ar";
+    // Domínio que não resolve é prova (NXDOMAIN julgado antes, no fetch).
+    if (entrada.erro.tipo === "dns") return "fora-do-ar";
+    if (entrada.erro.tipo === "transitoria") return "nao-medido";
     if (entrada.erro.tipo === "ssl") return "ssl-invalido";
+    if (entrada.erro.tipo === "http" && statusBloqueiaMedicao(entrada.erro.status)) return "nao-medido";
     if (entrada.erro.tipo === "http" && entrada.erro.status >= 400) return "site-ruim";
   }
   if (entrada.urlFinal.toLowerCase().startsWith("http://")) return "site-ruim";
-  return entrada.problemas.length > 0 ? "site-ruim" : "site-ok";
+  return problemasMedidos(entrada.problemas).length > 0 ? "site-ruim" : "site-ok";
 }
 
 /** Problema → frase leiga para a tela e para a copy. PT-BR; a UI usa `t()` à parte. */
@@ -219,6 +316,9 @@ const DESCRICOES: Record<string, string> = {
   "http-sem-redirecionar": "o endereço do Google abre sem cadeado (o site tem versão segura, mas não leva para ela)",
   "ssl-invalido": "certificado de segurança inválido ou vencido (o navegador mostra alerta antes de abrir)",
   "fora-do-ar": "o site não abre",
+  "nao-medido": "não deu para abrir o site daqui (bloqueio ao nosso acesso ou rede instável) — não é defeito do site",
+  "medicao-bloqueada": "o servidor do site barrou o nosso acesso automático (proteção anti-robô) — para quem visita, o site abre",
+  "medicao-instavel": "a nossa rede não conseguiu abrir o site a tempo — não é prova de que ele esteja fora do ar",
   "dns-morto": "o endereço do site não existe mais (domínio pode ter expirado)",
   "nao-mobile": "não abre direito no celular",
   lento: "muito lento para carregar",

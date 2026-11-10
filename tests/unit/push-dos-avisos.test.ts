@@ -18,12 +18,13 @@ vi.mock("@/lib/notifications/vapid", () => ({ vapidPronto: () => true, vapidPubl
 vi.mock("@/lib/notifications/web_push", () => ({
   enviarPushDaOrg: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
   enviarPushAoUsuario: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
+  enviarPushDaEtapaAQuemVeONegocio: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
 }));
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { enviarPushDaOrg } from "@/lib/notifications/web_push";
+import { enviarPushDaEtapaAQuemVeONegocio, enviarPushDaOrg } from "@/lib/notifications/web_push";
 import { webPushInboundHandler } from "@/lib/notifications/push.handler";
-import type { EventRow } from "@/lib/event-log/dispatcher";
+import { dispatchEvent, registerHandler, type EventRow } from "@/lib/event-log/dispatcher";
 import { corpoDoAvisoDeEtapa, tituloDoAvisoDeEtapa } from "@/lib/leads/aviso-de-etapa";
 import { PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destino";
 
@@ -31,7 +32,10 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 
 const filtros: Array<[string, string, unknown]> = [];
 
-function banco(linhas: Record<string, Record<string, unknown> | null>) {
+function banco(
+  linhas: Record<string, Record<string, unknown> | null>,
+  erros: Record<string, { message: string; code: string }> = {},
+) {
   return {
     from(tabela: string) {
       const q = {
@@ -40,7 +44,7 @@ function banco(linhas: Record<string, Record<string, unknown> | null>) {
           filtros.push([tabela, coluna, valor]);
           return q;
         },
-        maybeSingle: async () => ({ data: linhas[tabela] ?? null, error: null }),
+        maybeSingle: async () => ({ data: linhas[tabela] ?? null, error: erros[tabela] ?? null }),
       };
       return q;
     },
@@ -54,6 +58,7 @@ const evento = (event_type: string, payload: Record<string, unknown>): EventRow 
 
 beforeEach(() => {
   vi.mocked(enviarPushDaOrg).mockClear();
+  vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mockClear();
   filtros.length = 0;
 });
 
@@ -74,7 +79,13 @@ describe("aviso da Central → celular", () => {
     }) as never);
     const r = await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i1" }));
     expect(r.status).toBe("ok");
-    const payload = vi.mocked(enviarPushDaOrg).mock.calls[0]![1];
+    // A etapa sai por destinatário (#3981): sem valor e sem resumo do dia, os
+    // três textos são o mesmo — e nenhum deles nomeia o cliente.
+    const [, leadId, textos] = vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]!;
+    expect(leadId).toBe("l1");
+    expect(textos.daCarteira).toEqual(textos.ampla);
+    expect(textos.semValor).toEqual(textos.ampla);
+    const payload = textos.ampla;
     expect(payload).toEqual({
       title: "Negocio entró en «Pedido confirmado»",
       body: "Abre el negocio para dar el siguiente paso. Este aviso se pidió en la configuración de la etapa.",
@@ -226,10 +237,72 @@ describe("aviso da Central → celular", () => {
     });
   });
 
+  it("aviso de etapa com destinatário vai só a ele e SEM valor: não passou pela régua de quem vê o negócio", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({
+      agent_inbox_items: {
+        id: "i11", kind: "other", ref_kind: "lead", ref_id: "l1",
+        title: tituloDoAvisoDeEtapa("Pago", "pt-BR"), body: corpoDoAvisoDeEtapa("pt-BR"), para_user_id: "u-dono",
+      },
+      organizations: { locale: "pt-BR" },
+      crm_leads: { pipeline_id: "p1", value_cents: 125000, currency: "BRL" },
+    }) as never);
+    await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i11" }));
+    expect(enviarPushDaEtapaAQuemVeONegocio).not.toHaveBeenCalled();
+    const [, payload, para] = vi.mocked(enviarPushDaOrg).mock.calls[0]!;
+    expect(para).toEqual({ papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: "u-dono" });
+    expect(payload.title).toBe(tituloDoAvisoDeEtapa("Pago", "pt-BR"));
+    expect(JSON.stringify(payload)).not.toContain("R$");
+  });
+
   it("aviso que sumiu antes do dreno não manda nada", async () => {
     vi.mocked(createAdminClient).mockReturnValue(banco({ agent_inbox_items: null }) as never);
     const r = await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "ausente" }));
     expect(r.status).toBe("skipped");
     expect(enviarPushDaOrg).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { code: "57014", message: "canceling statement due to statement timeout" },
+    { code: "PGRST002", message: "Could not query the database for the schema cache" },
+  ])("falha $code ao ler o aviso não vira descarte definitivo", async (erro) => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({}, { agent_inbox_items: erro }) as never);
+    registerHandler(webPushInboundHandler);
+    const resultado = await dispatchEvent(evento("central.aviso_criado", { item_id: "i1" }), {
+      orgParada: false, soHandlers: [webPushInboundHandler.key],
+    });
+
+    // O dreno só põe ok/skipped em consumed_by. Error conserva este consumidor
+    // para a retentativa existente, antes de qualquer envio ao provedor.
+    expect(resultado).toEqual([{
+      consumer_key: webPushInboundHandler.key, status: "error",
+      detail: expect.stringContaining(erro.message),
+    }]);
+    expect(enviarPushDaOrg).not.toHaveBeenCalled();
+    expect(filtros).toContainEqual(["agent_inbox_items", "organization_id", ORG]);
+    expect(filtros).toContainEqual(["agent_inbox_items", "id", "i1"]);
+  });
+
+  it("a leitura recuperada na tentativa seguinte entrega o aviso uma vez", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({}, {
+      agent_inbox_items: { code: "57014", message: "statement timeout" },
+    }) as never);
+    const row = evento("central.aviso_criado", { item_id: "i1" });
+    await expect(webPushInboundHandler.handle(row)).rejects.toThrow("statement timeout");
+    expect(enviarPushDaOrg).not.toHaveBeenCalled();
+
+    vi.mocked(createAdminClient).mockReturnValue(banco({
+      agent_inbox_items: {
+        id: "i1", kind: "handoff", ref_kind: "conversation", ref_id: "c1",
+        title: "Handoff", body: null, para_user_id: "u-dono",
+      },
+      organizations: { locale: "pt-BR" },
+    }) as never);
+    await expect(webPushInboundHandler.handle({ ...row, attempts: 1 })).resolves.toMatchObject({
+      status: "ok", detail: "sent:1",
+    });
+    expect(enviarPushDaOrg).toHaveBeenCalledTimes(1);
+    expect(enviarPushDaOrg).toHaveBeenCalledWith(ORG, expect.objectContaining({
+      tag: "aviso:i1", href: "/app/inbox/c1",
+    }), { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: "u-dono" });
   });
 });

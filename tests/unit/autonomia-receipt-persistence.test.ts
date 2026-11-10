@@ -29,6 +29,7 @@ it.each(["returned", "rejected"])(
       rotate: vi.fn(async () => "rotated"),
       message: vi.fn(async () => null),
       update: vi.fn(async () => {}),
+      setMediaPath: vi.fn(async () => "unused-in-this-test"),
     };
     const intent = { tenantId: "org", leadId: "contact", jobId: "job", seq: 1, body: "Approved" };
     const send = vi.fn(async () => {

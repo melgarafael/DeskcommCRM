@@ -28,6 +28,17 @@ const CODIGOS = new Set<string>([
   "AggregateError",
   "AbortError",
   "TimeoutError",
+  /**
+   * O turno ABORTADO grava o `name` do erro que o interrompeu
+   * (`lib/agent-engine/agent/inbound-turn.ts`, o `catch` que marca `status =
+   * 'aborted'`, e `JobSettledError.name`). Sem este literal, o recibo de TODO
+   * turno adiado — cap de envio, janela horária, veto de before-send, handoff —
+   * saía como `internal_error`: o leitor apagava justamente a resposta de "por
+   * que este turno não falou", que é a pergunta da issue #2869. É literal
+   * fechado, não texto livre: continua valendo a regra de que o banco não dita
+   * o vocabulário do recibo.
+   */
+  "job_settled",
   "JobSettledError",
 ]);
 const MOTIVOS_DE_ABORTO = new Set([

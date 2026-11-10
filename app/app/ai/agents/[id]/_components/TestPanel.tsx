@@ -25,6 +25,14 @@ import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 
+import type { SelectableChannel as ChannelSessionLite } from "@/lib/channels/selectable";
+import {
+  canalEmModoDeTeste,
+  decidirAvisoDoModoDeTeste,
+} from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
+import { useAcessoDaAiDoCanal } from "@/hooks/channels/useAcessoDaAiDoCanal";
+
+import { AvisoDoModoDeTeste } from "./AvisoDoModoDeTeste";
 import { RunTrace } from "./RunTrace";
 
 interface Props {
@@ -32,6 +40,15 @@ interface Props {
   draft: AgentVersionRow | null;
   published: AgentVersionRow | null;
   readOnly?: boolean;
+  /**
+   * Os canais da organização, para o modo de teste do canal DESTA versão.
+   *
+   * Vem por prop do mesmo jeito que no editor: o resumo (`acessoDaAi`) já chega
+   * pronto de `listSelectableChannels`, e a lista de telefones só é buscada por
+   * quem pode ver (administrador). Sem isso, o teste da aba dava resposta verde
+   * para um número que o WhatsApp real nunca atenderia (#3976).
+   */
+  channelSessions?: ChannelSessionLite[];
 }
 
 interface TestResponse {
@@ -124,7 +141,7 @@ function Verificacoes({ g }: { g: NonNullable<TestResponse["data"]["guardrails"]
   );
 }
 
-export function TestPanel({ agent, draft, published, readOnly }: Props) {
+export function TestPanel({ agent, draft, published, readOnly, channelSessions }: Props) {
   const t = useT();
   const telefoneExemplo = useTelefoneExemplo();
   const target = draft ?? published;
@@ -133,8 +150,31 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
   const [message, setMessage] = React.useState("");
   const [contactName, setContactName] = React.useState("");
   const [contactPhone, setContactPhone] = React.useState("");
+  // Etiquetas SIMULADAS da conversa (spec 27): texto separado por vírgula; o servidor normaliza.
+  const [contactTags, setContactTags] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
+
+  /**
+   * O número desta versão está em modo de teste? O teste da aba NÃO passa pelo
+   * canal (é dry-run), então ele respondia normalmente para um número que o
+   * WhatsApp real descartaria — "testei aqui e funcionou, no celular não".
+   *
+   * O resumo vem com a página; a LISTA de telefones só é buscada por quem pode
+   * editá-la (administrador). `readOnly` falso e canal em modo de teste com
+   * lista é a única combinação que pede a lista.
+   */
+  const canalDaVersao =
+    channelSessions?.find((c) => c.id === target?.channel_session_id) ?? null;
+  const acessoDoCanal = canalDaVersao?.acessoDaAi ?? null;
+  const lerNumeros =
+    !readOnly && canalEmModoDeTeste(acessoDoCanal) && (acessoDoCanal?.testNumbersCount ?? 0) > 0;
+  const listaAutorizada = useAcessoDaAiDoCanal(canalDaVersao?.id, lerNumeros);
+  const avisoDoNumero = decidirAvisoDoModoDeTeste({
+    acesso: acessoDoCanal,
+    numerosDeTeste: listaAutorizada.acesso?.test_phone_numbers ?? null,
+    numeroEmTeste: contactPhone,
+  });
 
   if (!target) {
     return (
@@ -165,6 +205,11 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
           ...(contactPhone.trim() ? { phone: contactPhone.trim() } : {}),
         };
       }
+      const etiquetasSimuladas = contactTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag !== "");
+      if (etiquetasSimuladas.length) body.sample_tags = etiquetasSimuladas;
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
@@ -252,6 +297,24 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
             />
           </div>
         </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="test-tags">{t("Etiquetas da conversa (simulação)")}</Label>
+          <Input
+            id="test-tags"
+            value={contactTags}
+            onChange={(e) => setContactTags(e.target.value)}
+            placeholder={t("Ex.: estetica, vip")}
+            disabled={pending || readOnly}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Separe por vírgula. As skills com estas etiquetas entram neste teste, como entrariam numa conversa com elas.",
+            )}
+          </p>
+        </div>
+
+        <AvisoDoModoDeTeste aviso={avisoDoNumero} podeConfigurar={!readOnly} notaDoSandbox />
 
         <Button onClick={handleRun} disabled={pending || readOnly} className="self-start">
           {pending ? t("Executando…") : t("Executar teste")}

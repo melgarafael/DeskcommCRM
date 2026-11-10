@@ -88,6 +88,17 @@ export interface HandlerCtx {
   serviceBoundary?: ServiceBoundary | null;
   /** Origem de evento derivado; não é campo de input público. */
   serviceOrigin?: ServiceOrigin;
+  /**
+   * Texto ORIGINAL de uma mensagem que saiu como nota de voz (Fase 6a do
+   * plano de voz) — vira `messages.media_derived_text`, para a thread não
+   * ficar cega depois que o `body` virou áudio (busca, LGPD, classificador de
+   * follow-up leem esta coluna, não `body`, para mídia).
+   *
+   * Nunca vem do corpo de uma requisição pública, de propósito: um campo
+   * assim aberto deixaria qualquer chamador da API gravar texto que não bate
+   * com o áudio de verdade. Só `sendTurnMessage` o preenche.
+   */
+  aiVoiceDerivedText?: string | null;
   /** Chave HTTP validada na borda para replay de uma criação. */
   idempotencyKey?: string;
   /** Identidade estável do job interno; não usar claim, que muda em cada reclaim. */
