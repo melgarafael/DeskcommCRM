@@ -50,10 +50,13 @@ const REFERENCIA = "README.md";
 /**
  * O que o schema EXIGE e o baseline NÃO cria — ou seja: o passo manual precisa
  * existir. A régua não é opinião: `supabase/baseline.sql` usa `public.vector`,
- * `public.citext` e `public.gin_trgm_ops`, e a única extensão que ele mesmo cria
- * é `pgcrypto` (com schema `extensions`). Extensão que o baseline cria sozinha
- * NÃO pertence a um passo manual, e o teste logo abaixo prova isso em vez de
- * confiar no comentário.
+ * `public.citext` e `public.gin_trgm_ops` muito antes de criar qualquer uma delas.
+ * O primeiro `gin_trgm_ops` é o índice `idx_contacts_org_name_trgm`, no começo do
+ * dump, e o `create extension pg_trgm with schema public` que o #3936 pôs no
+ * apêndice vem dezenas de milhares de linhas depois — tarde demais para quem aplica
+ * com `ON_ERROR_STOP=1`. `vector` e `citext` o baseline não cria nunca. `pgcrypto`
+ * ele cria sozinho, em `extensions`, e por isso fica fora do passo manual: o teste
+ * do caso pgcrypto prova isso em vez de confiar neste comentário.
  */
 const EXIGIDAS = ["vector", "citext", "pg_trgm"];
 
@@ -152,8 +155,8 @@ describe("o bloco de `create extension` do setup diz o mesmo nos três documento
       ["citext@public", "pg_trgm@public", "vector@public"].join(" "),
     );
 
-    // Confere que o arquivo citado na dívida congelada é LIDO (não é nome morto na
-    // lista): ele tem prosa própria e a régua abaixo é medida nele de verdade.
+    // Confere que o README.en.md, o último a receber o bloco (#3930), é LIDO: ele
+    // tem prosa própria e a régua abaixo é medida nele de verdade.
     expect(linhas("README.en.md").join("\n")).toContain("baseline.sql");
   });
 
@@ -240,8 +243,8 @@ describe("o bloco de `create extension` do setup diz o mesmo nos três documento
 
   it("⭐ extensão que o baseline cria em OUTRO schema não entra no passo manual (o caso pgcrypto)", () => {
     // O doc mente de dois jeitos: esquecendo o passo que existe e ANUNCIANDO um passo
-    // que ninguém precisa. O baseline cria `pgcrypto WITH SCHEMA extensions` na
-    // primeira linha de DDL dele — pedir que a pessoa crie antes é ensinar trabalho
+    // que ninguém precisa. O baseline cria `pgcrypto WITH SCHEMA extensions` por
+    // conta própria — pedir que a pessoa crie antes é ensinar trabalho
     // inútil, e pior: se um dia ele mudar de schema, sobra uma linha no doc criando
     // a extensão no lugar errado, que é o que faz o baseline falhar depois.
     //
@@ -289,13 +292,15 @@ describe("o bloco de `create extension` do setup diz o mesmo nos três documento
     // dependência que o schema não tem (medido: `git grep unaccent origin/main --
     // supabase/` devolve 0 no dia em que esta cerca nasceu).
     //
-    // E o dia seguinte está previsto: o apêndice da 9098 chega ao `baseline.sql` no
-    // mesmo PR, e a partir daí o próprio baseline cria `unaccent` — caindo na regra
-    // do teste acima. Nos dois estados, o lugar dela não é este bloco.
+    // Hoje o apêndice do `baseline.sql` cria `unaccent` (em `public`, quando ela
+    // ainda não existe em lugar nenhum) antes de qualquer uso dela. Por estar em
+    // `public`, ela NÃO cai na regra do teste acima, que só barra o que o baseline
+    // cria fora de `public`. O motivo de ficar fora do bloco é outro: o baseline já a
+    // cria antes de precisar dela, coisa que não acontece com o `pg_trgm`.
     const comUnaccent = DOCUMENTOS.flatMap((doc) =>
       extensoesDeclaradas(doc)
         .filter((d) => d.nome === "unaccent")
-        .map((d) => `${doc} → \`unaccent\``),
+        .map(() => `${doc} → \`unaccent\``),
     );
 
     expect(
@@ -320,8 +325,8 @@ describe("o bloco de `create extension` do setup diz o mesmo nos três documento
     // Esta é a metade que impede a lista de virar cemitério. O padrão oposto — só
     // ignorar o arquivo listado — faz a exceção sobreviver ao defeito, e daqui a um
     // ano ninguém sabe se a linha ainda tem motivo. Aqui, a lista é uma promessa com
-    // vencimento: quando o #3930 mergear, ESTE teste reprova o PR do mantenedor e
-    // pede uma linha de diff removendo a entrada. É de propósito.
+    // vencimento: foi o que aconteceu com o #3930 — ele entrou, este teste reprovou
+    // e a entrada saiu no mesmo dia. É de propósito.
     const referencia = conjunto(REFERENCIA).join(" ");
     const pagas: string[] = [];
 
