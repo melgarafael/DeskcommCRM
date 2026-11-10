@@ -19640,6 +19640,18 @@ export const DICIONARIO: Traducoes = {
   "Leitura parcial: as parcelas somam o que foi lido no período.": {
     es: "Lectura parcial: las partes suman lo que se leyó en el período.",
   },
+  // As mesmas duas parcelas na PREVISÃO do funil (#3602, fatia da previsão). O
+  // vocabulário é o da fatia 2 de propósito: passado e futuro da mesma carteira
+  // não podem se ler por dois nomes.
+  "Valor único": { es: "Valor único" },
+  "As duas parcelas nunca são somadas: o valor único entra uma vez e a recorrência entra todo mês.":
+    {
+      es: "Las dos partes nunca se suman: el valor único entra una vez y la recurrencia entra todos los meses.",
+    },
+  "recorrência mensal": { es: "recurrencia mensual" },
+  "Recorrência fora do mensal — não entra na projeção por mês": {
+    es: "Recurrencia fuera del mensual: no entra en la proyección por mes",
+  },
   "Só quem administra a empresa define a meta.": {
     es: "Solo quien administra la empresa define la meta.",
   },
