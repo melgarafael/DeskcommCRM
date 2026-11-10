@@ -18978,6 +18978,8 @@ export const DICIONARIO: Traducoes = {
   // #2498 — busca dentro do seletor de etiquetas do Inbox.
   "Buscar etiqueta": { es: "Buscar etiquetas" },
   "Nenhuma etiqueta com esse texto": { es: "Ninguna etiqueta con ese texto" },
+  // #1336 — estado (a) do vocabulário do Inbox: ainda não sei, não é "zero".
+  "Carregando etiquetas…": { es: "Cargando etiquetas…" },
   // #2498 — destino opcional da ação add_tag, no editor de automações.
   "Destino da etiqueta": { es: "Destino de la etiqueta" },
   "Card (comportamento atual)": { es: "Card (comportamiento actual)" },
