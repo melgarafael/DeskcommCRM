@@ -36,7 +36,6 @@ import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
-import { recusaDoAgente } from "./recusa-do-agente";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
 import {
@@ -583,6 +582,69 @@ export const MSG_CANAL_RECONECTANDO =
 export const MSG_CANAL_DESCONECTADO =
   "A conexão de saída está desconectada e precisa ser reconectada antes de a campanha continuar.";
 
+/**
+ * AS DUAS CAUSAS DO "O AGENTE AINDA NÃO SERVE" — SEPARADAS (issue #4118).
+ *
+ * A recusa existia numa frase só: "Publique o agente com a ferramenta de mover
+ * negócios e acesso ao funil escolhido." Uma frase para DUAS condições
+ * independentes (`tool_ids` sem `crm_move_lead_stage`, `pipeline_ids` sem o funil
+ * da campanha), nenhuma delas nomeada, e nenhuma pista de ONDE corrigir — a
+ * configuração fica em outra aba (`Organiza o sistema`), e as duas valem só para
+ * a versão PUBLICADA. Quem ligou o pacote "Vender e mover o funil" inteiro e viu
+ * a frase de novo não tinha como saber qual das duas faltava.
+ *
+ * Aqui a decisão é uma função pura sobre a linha que o banco devolve: cada falta
+ * vira uma frase com o nome do controle que a pessoa vê na tela ("Mover
+ * oportunidade de etapa", "Em que negócios ele pode mexer") e, no caso do funil,
+ * com o NOME do funil da campanha — o id não diz nada a quem configura.
+ *
+ * As duas podem faltar ao mesmo tempo: a lista devolve as duas, e a mensagem
+ * mostra as duas (parar na primeira faria o operador publicar, tentar de novo e
+ * bater na segunda).
+ */
+export type FaltaDoAgentePublicado = { causa: "ferramenta" | "funil"; frase: string };
+
+/** O id da ferramenta que a campanha precisa para mover o negócio de etapa. */
+export const FERRAMENTA_DE_MOVER_NEGOCIO = "crm_move_lead_stage";
+
+export function faltasDoAgentePublicado(
+  agent: { tool_ids?: string[] | null; pipeline_ids?: string[] | null },
+  funil: { id: string; name: string | null },
+): FaltaDoAgentePublicado[] {
+  const faltas: FaltaDoAgentePublicado[] = [];
+  if (!agent.tool_ids?.includes(FERRAMENTA_DE_MOVER_NEGOCIO))
+    faltas.push({
+      causa: "ferramenta",
+      frase:
+        'O agente publicado não pode mover oportunidade de etapa. Ligue "Mover oportunidade de etapa" na aba "Organiza o sistema" do agente.',
+    });
+  if (!agent.pipeline_ids?.includes(funil.id))
+    faltas.push({
+      causa: "funil",
+      frase: funil.name
+        ? `O agente publicado não tem acesso ao funil "${funil.name}". Marque esse funil em "Organiza o sistema" › "Em que negócios ele pode mexer".`
+        : 'O agente publicado não tem acesso ao funil desta campanha. Marque esse funil em "Organiza o sistema" › "Em que negócios ele pode mexer".',
+    });
+  return faltas;
+}
+
+/**
+ * O FECHO QUE FALA DA VERSÃO PUBLICADA — uma vez, depois das faltas.
+ *
+ * `validateConfig` lê `ai_agent_versions` pela `published_version_id`, então o
+ * rascunho não conta: quem liga a capacidade e salva vê a tela do agente mudada
+ * e a campanha continuar recusando. O fecho diz por que, sem repetir a instrução
+ * de publicar em cada frase.
+ */
+export const FECHO_DA_VERSAO_PUBLICADA =
+  "A campanha usa a versão publicada do agente: o ajuste só vale depois de publicar.";
+
+export function mensagemDoAgenteIncompleto(
+  faltas: readonly FaltaDoAgentePublicado[],
+): string {
+  return [...faltas.map((f) => f.frase), FECHO_DA_VERSAO_PUBLICADA].join(" ");
+}
+
 export async function validateConfig(db: pg.PoolClient, org: string, input: CampaignConfig) {
   const config = campaignConfigSchema.parse(input);
   const agent = (
@@ -592,25 +654,36 @@ export async function validateConfig(db: pg.PoolClient, org: string, input: Camp
     )
   ).rows[0];
   if (!agent) throw new ProspectingError("Escolha um agente publicado e em operação automática.");
-  // A FRASE DIZ QUAL CAPACIDADE FALTA, e onde marcá-la (#4118): "mover etapa" se
-  // liga na aba de conversa, o funil da campanha na aba "Organiza o sistema".
-  // O código cru (`faltando`) fica no log — é o que a investigação precisa; a
-  // tela precisa do rótulo e do lugar do conserto.
-  const recusa = recusaDoAgente({
-    toolIds: agent.tool_ids,
-    pipelineIds: agent.pipeline_ids,
-    pipelineId: config.pipeline_id,
+  // O NOME do funil só é buscado quando ele é a causa: o operador lê "Clínicas de
+  // Sorocaba", não um uuid — e a frase é a única coisa que ele tem para achar a
+  // caixa certa em "Em que negócios ele pode mexer".
+  const funilDaCampanha = agent.pipeline_ids?.includes(config.pipeline_id)
+    ? null
+    : ((
+        await db.query<{ name: string }>(
+          "select name from crm_pipelines where organization_id=$1 and id=$2",
+          [org, config.pipeline_id],
+        )
+      ).rows[0] ?? null);
+  const faltas = faltasDoAgentePublicado(agent, {
+    id: config.pipeline_id,
+    name: funilDaCampanha?.name ?? null,
   });
-  if (recusa) {
-    logger.warn("prospecção: o agente publicado não atende à campanha", {
-      org,
-      agentId: config.agent_id,
-      pipelineId: config.pipeline_id,
-      codigo: recusa.codigo,
-      faltando: recusa.faltando,
-    });
-    throw new ProspectingError(recusa.mensagem);
-  }
+  if (faltas.length)
+    throw new ProspectingError(
+      mensagemDoAgenteIncompleto(faltas),
+      422,
+      "campanha",
+      // O código de wire: a tela usa `details.agent_id` para oferecer o link
+      // direto do agente. Sem ele, o aviso era só texto e o caminho da correção
+      // ficava a cargo de quem lê.
+      "prospecting_agent_incompleto",
+      {
+        agent_id: config.agent_id,
+        pipeline_id: config.pipeline_id,
+        faltando: faltas.map((f) => f.causa),
+      },
+    );
   const channel = (
     await db.query<{ provider: ChannelProvider; status: string }>(
       "select provider,status from channel_sessions where organization_id=$1 and id=$2 and archived_at is null",

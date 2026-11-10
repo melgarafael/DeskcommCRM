@@ -159,6 +159,9 @@ export function comAba(value: InboxFiltersValue, tab: InboxTab): InboxFiltersVal
   return { ...value, tab, ...(tab === "mine" ? { assigned_to: undefined } : {}) };
 }
 
+/** Os três estados do vocabulário de etiqueta (#1336) — ver `estadoDoVocabulario`. */
+type EstadoDoVocabularioDeTag = "carregando" | "vazio" | "com-itens";
+
 interface Props {
   value: InboxFiltersValue;
   onChange: (next: InboxFiltersValue) => void;
@@ -344,25 +347,43 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
   // Alternador só aparece com 2+ números — com um só não há o que alternar.
   const showChannelSwitch = (channels?.length ?? 0) >= 2 || filtroForaDaLista;
   /**
-   * O SELETOR NÃO PODE SUMIR DEBAIXO DO MENU ABERTO.
+   * O SELETOR NÃO PODE SUMIR DEBAIXO DO MENU ABERTO — NEM COM O FILTRO
+   * APLICADO (#1336).
    *
-   * A condicional abaixo decide a EXISTÊNCIA do `<Select>`, e ela lê duas
-   * queries em voo — as duas com `orgId` na chave e `enabled: !!orgId`. Um
-   * único render em que o vocabulário volte a indefinido ou vazio (chave nova,
-   * refetch, organização piscando) não escondia só o controle: DESMONTAVA o
-   * Select, e o menu que o operador tinha acabado de abrir fechava sozinho, com
-   * o gatilho de volta em "Todas as tags". Era o filtro fechando na cara de
-   * quem ia escolher, e o `filtro-por-marcador-pela-tela.spec.ts` intermitente.
+   * A condicional abaixo decide a EXISTÊNCIA do controle, e ela lia duas
+   * queries em voo como um booleano só: "tenho vocabulário?". `undefined`
+   * (ainda não sei) e `[]` (sei: esta organização não tem etiqueta) caíam no
+   * mesmo lado, e os dois lados estavam errados:
    *
-   * Por isso o seletor passa a usar o último vocabulário NÃO-VAZIO que esta
-   * tela conheceu: enquanto o de agora oscila, o de antes segura o controle
-   * montado. O quadro nunca teve o defeito pelo mesmo motivo por outro caminho
-   * — `components/kanban/FilterBar.tsx` mantém o gatilho montado e só o desliga
-   * (`disabled`) sem opções. A lembrança faz o mesmo serviço sem estrear um
-   * controle morto para a organização que ainda não tem etiqueta nenhuma: essa
-   * continua sem o seletor, que é o que a condicional sempre quis dizer.
+   *   - um render em que o vocabulário voltasse a indefinido DESMONTAVA o
+   *     controle, e o menu recém-aberto fechava sozinho;
+   *   - na PRIMEIRA renderização com filtro vindo da URL (`?tag=`, o deep-link
+   *     do relatório Por etiqueta, `components/inbox/InboxLayout.tsx:311`) não
+   *     havia vocabulário lembrado nenhum: o seletor não nascia, e a lista
+   *     ficava num subconjunto — às vezes vazio — sem nada na tela para desfazer.
    *
-   * Medido em `tests/unit/inbox-filtro-de-tag-nao-desmonta.test.tsx`.
+   * Por isso o vocabulário passa a ter TRÊS estados, e é `estadoDoVocabulario`
+   * quem decide a visibilidade do gatilho:
+   *
+   *   (a) `carregando` — org nula ou consultas em voo. O gatilho FICA e o menu
+   *       diz que está carregando. Nascer desde o primeiro render é o que
+   *       impede a piscada: o controle não aparece quando o dado chega, ele já
+   *       estava lá.
+   *   (b) `vazio` — sei que a organização não tem etiqueta. Sem filtro,
+   *       continua sem seletor (nada de controle morto); COM filtro, o gatilho
+   *       fica, porque é a única válvula para desfazer.
+   *   (c) `com-itens` — o seletor de sempre.
+   *
+   * O último vocabulário NÃO-VAZIO conhecido continua segurando o controle
+   * quando o de agora oscila — o quadro faz o mesmo por outro caminho, mantendo
+   * o gatilho montado e só o desligando (`components/kanban/FilterBar.tsx`).
+   * Com o menu ABERTO a condição também não pode virar falsa: destruir o
+   * popover debaixo do dedo é o defeito original, e `menuDeEtiquetaAberto`
+   * impede a desmontagem. Ele não força abertura nenhuma — só não destrói o que
+   * já está aberto.
+   *
+   * Medido em `tests/unit/inbox-filtro-de-tag-tres-estados.test.tsx` e
+   * `tests/unit/inbox-filtro-de-tag-nao-desmonta.test.tsx`.
    */
   const [ultimoVocabulario, setUltimoVocabulario] = useState<string[]>([]);
   if (tagVocabulary != null && tagVocabulary.length > 0 && tagVocabulary !== ultimoVocabulario) {
@@ -371,33 +392,39 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
     // render deste componente com o valor novo antes de pintar, então o seletor
     // nunca chega à tela com o vocabulário velho. Efeito aqui não serviria —
     // ele roda DEPOIS da pintura, e a janela de um frame é exatamente a que
-    // desmonta o Select.
+    // desmonta o controle.
     setUltimoVocabulario(tagVocabulary);
   }
   const vocabularioDoSeletor =
     tagVocabulary != null && tagVocabulary.length > 0 ? tagVocabulary : ultimoVocabulario;
-  // O MESMO tratamento, agora para a etiqueta. Sem ele, o seletor inteiro some
-  // com o filtro AINDA APLICADO — a lista fica num subconjunto, às vezes vazio,
-  // e nada na tela diz que há filtro nem oferece como tirá-lo.
-  // "Conhecido" e "não-vazio" são coisas diferentes, e é o primeiro que vale
-  // aqui: a organização cuja ÚLTIMA etiqueta acabou de ser apagada responde
-  // vocabulário vazio, e é justamente ela que precisa do seletor de volta para
-  // desfazer o filtro que continua valendo.
-  const vocabularioConhecido = tagVocabulary != null || ultimoVocabulario.length > 0;
-  // ⚠️ A VALIDAÇÃO DO FILTRO ÓRFÃO PASSOU A SER SOBRE A LISTA (#1274). Com uma
-  // etiqueta só, "está no vocabulário" é uma pergunta; com VÁRIAS, é outra: basta
-  // uma das escolhidas ter sumido do vocabulário para o operador precisar da
-  // válvula. O sintoma sem isto seria o pior dos dois: um filtro de duas
-  // etiquetas, uma delas apagada, e a tela sem dizer que há filtro nenhum.
-  // ⚠️ `&&` AQUI DEVOLVERIA `false | string[]`, e `false.length` não existe. A
-  // forma é um ternário que devolve SEMPRE lista: o resto do componente só
-  // precisa do comprimento, e um `false` no meio obrigaria cada uso a checar.
-  const etiquetasForaDoVocabulario =
-    etiquetas.length > 0 && vocabularioConhecido
-      ? etiquetas.filter((tag) => !vocabularioDoSeletor.includes(tag))
-      : [];
+  /**
+   * OS TRÊS ESTADOS (a/b/c), num lugar só.
+   *
+   * `vocabularioDoSeletor` já inclui a lembrança do último não-vazio, então
+   * "tenho itens" cobre tanto o vocabulário de agora quanto o que esta tela já
+   * conheceu. A ordem importa: `vazio` só é dito quando o vocabulário FOI
+   * conhecido e é vazio (`tagVocabulary` é `[]`, não `undefined`); `undefined`
+   * é sempre `carregando` — "ainda não sei" —, e essa é a distinção que faltava.
+   */
+  const estadoDoVocabulario: EstadoDoVocabularioDeTag =
+    vocabularioDoSeletor.length > 0 ? "com-itens" : tagVocabulary != null ? "vazio" : "carregando";
+  /**
+   * A ETIQUETA APLICADA NUNCA DEPENDE DE O VOCABULÁRIO SER CONHECIDO.
+   *
+   * O filtro órfão já era validado sobre a LISTA (#1274), mas só quando o
+   * vocabulário era "conhecido" — e no estado (a) ele não é, então a válvula
+   * morria junto com o seletor. Aqui a pergunta é só "esta etiqueta está na
+   * lista que eu tenho?": se não está, entra como opção e pode ser desmarcada.
+   * Em (a) a lista é vazia, então TODA etiqueta aplicada entra — que é
+   * exatamente o que se precisa para desfazer um filtro que chegou pela URL.
+   *
+   * ⚠️ `filter` devolve SEMPRE lista (o `&&` de antes devolvia `false |
+   * string[]`, e o resto do componente só precisa do comprimento).
+   */
+  const etiquetasForaDoVocabulario = etiquetas.filter((tag) => !vocabularioDoSeletor.includes(tag));
+  const [menuDeEtiquetaAberto, setMenuDeEtiquetaAberto] = useState(false);
   const mostrarSeletorDeTag =
-    vocabularioDoSeletor.length > 0 || etiquetasForaDoVocabulario.length > 0;
+    estadoDoVocabulario !== "vazio" || etiquetas.length > 0 || menuDeEtiquetaAberto;
   // O menu não fecha a cada clique: quem escolhe duas etiquetas não pode ter de
   // reabrir o menu entre a primeira e a segunda, e o `DropdownMenuCheckboxItem`
   // é o item que NÃO fecha (o `Select` de hoje fecha). A regra é do componente,
@@ -568,9 +595,15 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
             )}
 
             {mostrarSeletorDeTag && (
-              <DropdownMenu onOpenChange={(aberto) => {
-                if (!aberto) setBuscaDeEtiqueta("");
-              }}>
+              <DropdownMenu
+                onOpenChange={(aberto) => {
+                  // `menuDeEtiquetaAberto` é o que impede a condição de
+                  // desmontar o popover com ele aberto — ver o comentário de
+                  // `mostrarSeletorDeTag`. Não abre nada à força: só registra.
+                  setMenuDeEtiquetaAberto(aberto);
+                  if (!aberto) setBuscaDeEtiqueta("");
+                }}
+              >
                 {/*
                   ⚠️ POR QUE ISTO DEIXOU DE SER UM `Select` (#1274).
                   O `Select` do Radix é de escolha ÚNICA e — o que mata a
@@ -615,6 +648,14 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
                   <DropdownMenuLabel>{t("Todas as tags")}</DropdownMenuLabel>
+                  {/* ESTADO (a): enquanto o vocabulário não chegou, o menu diz
+                      que está carregando em vez de parecer uma lista vazia.
+                      `status`, e não `alert`: não é erro, é espera. */}
+                  {estadoDoVocabulario === "carregando" && (
+                    <p role="status" className="px-2 pb-1 text-xs text-text-subtle">
+                      {t("Carregando etiquetas…")}
+                    </p>
+                  )}
                   {/*
                     A BUSCA (#2498): filtra o vocabulário que já está aqui dentro,
                     sem tocar em `value` — ver o comentário junto de
@@ -623,23 +664,25 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
                     alcançáveis mesmo com a lista toda filtrada, que é quando mais
                     se precisa deles.
                   */}
-                  <div className="px-2 pb-1">
-                    <Input
-                      value={buscaDeEtiqueta}
-                      onChange={(e) => setBuscaDeEtiqueta(e.target.value)}
-                      onKeyDown={(e) => {
-                        // O typeahead do Radix lê QUALQUER tecla imprimível que
-                        // suba do conteúdo e salta o foco para o item que começa
-                        // com ela — dentro de um campo de texto isso rouba a
-                        // segunda letra. `stopPropagation` só nas caracteres:
-                        // Escape continua subindo e fecha o menu.
-                        if (e.key.length === 1) e.stopPropagation();
-                      }}
-                      placeholder={t("Buscar etiqueta")}
-                      aria-label={t("Buscar etiqueta")}
-                      className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs shadow-none focus-visible:border-border"
-                    />
-                  </div>
+                  {opcoesDoSeletor.length > 0 && (
+                    <div className="px-2 pb-1">
+                      <Input
+                        value={buscaDeEtiqueta}
+                        onChange={(e) => setBuscaDeEtiqueta(e.target.value)}
+                        onKeyDown={(e) => {
+                          // O typeahead do Radix lê QUALQUER tecla imprimível que
+                          // suba do conteúdo e salta o foco para o item que começa
+                          // com ela — dentro de um campo de texto isso rouba a
+                          // segunda letra. `stopPropagation` só nas caracteres:
+                          // Escape continua subindo e fecha o menu.
+                          if (e.key.length === 1) e.stopPropagation();
+                        }}
+                        placeholder={t("Buscar etiqueta")}
+                        aria-label={t("Buscar etiqueta")}
+                        className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs shadow-none focus-visible:border-border"
+                      />
+                    </div>
+                  )}
                   <DropdownMenuItem
                     onClick={() => onChange({ ...value, tag: undefined, tagMode: undefined })}
                   >

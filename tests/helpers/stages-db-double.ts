@@ -296,7 +296,6 @@ export interface Registro {
     ai_agent_versions: Linha[];
     organizations: Linha[];
     ouvidoria_manifestacoes: Linha[];
-    conversations: Linha[];
   };
 }
 
@@ -359,7 +358,11 @@ export function makeDb(opts: DbOpts = {}): Registro {
       webhook_sources: (opts.webhookSources ?? []) as Linha[],
       automation_rules: (opts.automationRules ?? []) as Linha[],
       contacts: (opts.contacts ?? []) as Linha[],
-      conversations: (opts.conversations ?? []) as Linha[],
+      // UMA tabela, duas portas de entrada: `conversations` (a última mensagem
+      // do card, #3945) e `conversas` (o canal e o `metadata` da ouvidoria,
+      // #3611, fatia 2). Cada PR declarou a sua chave e o merge deixou duas
+      // propriedades com o mesmo nome — a segunda apagava a primeira.
+      conversations: [...(opts.conversations ?? []), ...(opts.conversas ?? [])] as Linha[],
       followup_flow_pointers: (opts.pointers ?? []) as Linha[],
       followup_flow_versions: (opts.flowVersions ?? []) as Linha[],
       ai_agent_versions: (opts.agentVersions ?? []) as Linha[],
@@ -370,9 +373,6 @@ export function makeDb(opts: DbOpts = {}): Registro {
         { id: OUTRA_ORG, settings: opts.organizationSettings ?? null },
       ],
       ouvidoria_manifestacoes: (opts.manifestacoes ?? []) as Linha[],
-      // As conversas do canal (#3611, fatia 2): `channel` e `metadata` da MESMA
-      // linha — é dela que sai o rascunho da manifestação.
-      conversations: (opts.conversas ?? []) as Linha[],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
