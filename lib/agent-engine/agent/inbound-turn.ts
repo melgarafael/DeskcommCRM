@@ -4144,7 +4144,7 @@ async function executarTurnoDoAgente(
         textoDaOrganizacao(playbook.prompt),
         renderOrgMemory(memoriaEscritaPorPessoas(orgMemory)),
         skillsDaOrganizacao,
-        evidenciasComerciais.contexto(),
+        evidenciasComerciais.materialDaOrganizacao(),
         ...valoresConsultados,
       ],
       ...(historico !== undefined ? { historico } : {}),
@@ -5782,17 +5782,24 @@ async function executarTurnoDoAgente(
               };
               continue;
             }
-            // Leitura do servidor MCP externo (#2147): o que o sistema do cliente
-            // devolveu — a data do exame na agenda dele — é fato consultado neste
-            // turno. Sem isto a revisão de promessa não via de onde a data veio
-            // e vetava a resposta certa como compromisso inventado.
+            // Leitura do servidor MCP externo (#2147): o que o sistema da empresa
+            // devolveu — a data do exame na agenda — é fato consultado neste turno.
+            // Sem isto a revisão de promessa não via de onde a data veio e vetava
+            // a resposta certa como compromisso inventado.
             if (mcp.leiturasRemotas.has(name) && typeof mcpTool.execute === 'function') {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
               rawTools[name] = {
                 ...mcpTool,
                 execute: (async (...args: Parameters<typeof executeOriginal>) => {
                   const resultado = await executeOriginal(...args);
-                  evidenciasComerciais.registrarLeituraRemota(name, resultado);
+                  const descartadas = evidenciasComerciais.registrarLeituraRemota(name, resultado);
+                  if (descartadas.length > 0) {
+                    runLog.warn('leitura remota acima do teto da evidência — fora da conferência de promessa', {
+                      ferramenta: name,
+                      descartadas: descartadas.length,
+                      tamanhos: descartadas,
+                    });
+                  }
                   return resultado;
                 }) as typeof mcpTool.execute,
               };
