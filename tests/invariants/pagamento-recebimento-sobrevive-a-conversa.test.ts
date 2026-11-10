@@ -74,7 +74,7 @@ describe("pagamento_recebimentos: o recebimento sobrevive à conversa apagada", 
   it("o FK da conversa é `on delete set null` e a coluna aceita nulo", () => {
     expect(
       sql(`
-        select c.confdeltype || '|' || a.attnotnull
+        select c.confdeltype::text || '|' || a.attnotnull
           from pg_constraint c
           join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
          where c.conrelid = 'public.pagamento_recebimentos'::regclass
