@@ -73,6 +73,8 @@ function statusBadgeLabel(status: AutomationRuleRunRow["status"], t: (texto: str
  */
 const MOTIVO_DA_PARADA: Record<string, string> = {
   internal_error: "Não foi possível concluir a ação. Confira o código técnico nos detalhes.",
+  conta_de_email_indisponivel:
+    "Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.",
   no_contact: "Esse lead entrou sem contato vinculado, então não havia para quem escrever.",
   contact_blocked: "O contato pediu para não receber mensagens (opt-out).",
   no_phone: "O contato não tem telefone cadastrado.",
@@ -152,6 +154,7 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   missing_input:
     "A ação não recebeu o que precisava (o lead do evento ou a pessoa configurada). Abra a automação e revise.",
   no_tags: "Esta ação não tem nenhuma etiqueta escolhida. Abra a automação e escolha pelo menos uma.",
+  nada_a_tirar: "Nenhuma das etiquetas pedidas estava lá, então não havia nada a tirar.",
   no_target: "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.",
   no_lead_or_contact: "O evento que disparou a regra não trouxe um lead para criar ou mover.",
   cross_pipeline_move_not_allowed: "Mover um lead para outro funil está desligado nesta organização.",
@@ -211,6 +214,11 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
      lib/automation/engine.ts, no run que registra a decisão de não rodar. */
   uma_vez_por_contato:
     "Esta automação está configurada para rodar no máximo uma vez por contato, e este contato já passou por ela. Nada foi enviado agora e nada será.",
+  /* #2974, fatia 2 — a MESMA decisão do motor, pela outra régua: a regra tem um
+     intervalo mínimo por contato e este contato passou por ela há menos tempo
+     que isso. Nasce em lib/automation/engine.ts, no run do bloqueio. */
+  intervalo_por_contato:
+    "Esta automação não repete para o mesmo contato dentro do intervalo configurado, e este contato passou por ela há menos tempo que isso. Nada foi enviado agora; ela volta a valer quando a janela terminar.",
   // #1528 — o motor pula atribuir/mover nos gatilhos do trigger (laço).
   acao_fecharia_laco:
     "Neste gatilho esta ação não roda: atribuir responsável ou mover o lead dispararia a automação de novo, sem fim. Abra a automação e tire a ação.",

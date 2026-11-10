@@ -276,9 +276,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       // O evento inteiro vira colunas, não só `status`: quando a Meta ACEITA o
       // template e reprova a entrega depois, o motivo só existe aqui. Ver
       // `lib/channels/meta/status-update.ts`.
+      //
+      // O `delivered_at` como está no banco é lido ANTES: a hora da entrega é
+      // de uma vez só e o `read` chega depois do `delivered` — sem olhar a
+      // linha, ele reescrevia o instante em que a mensagem tocou o aparelho
+      // (#4316). Mesma guarda do `carimbarUmaVez` do canal não-oficial.
+      const { data: carimbos } = await admin
+        .from("messages")
+        .select("delivered_at")
+        .eq("organization_id", session.organizationId)
+        .eq("external_id", e.externalId)
+        .maybeSingle();
       await admin
         .from("messages")
-        .update(statusUpdate(e, now))
+        .update(statusUpdate(e, now, carimbos ?? {}))
         .eq("organization_id", session.organizationId)
         .eq("external_id", e.externalId);
     }

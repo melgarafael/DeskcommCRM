@@ -80,7 +80,7 @@ async function decifraCpfs(
   destino: Map<string, string>,
 ): Promise<void> {
   for (const contato of contatos) {
-    if (!contato.cpf_hash) continue;
+    if (!contato.cpf_available) continue;
     const { data, error } = await supabase.rpc("decrypt_cpf", { p_contact_id: contato.id });
     if (error) {
       console.warn("[contacts.export] decrypt_cpf RPC indisponível", error.message);

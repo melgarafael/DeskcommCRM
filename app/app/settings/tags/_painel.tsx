@@ -18,8 +18,8 @@
  * Renomear é reversível: o nome novo aparece na lista e dá para voltar. Excluir
  * tira a etiqueta de todos os registros da organização e não existe desfazer —
  * então a confirmação diz exatamente o que sai, com o número na frente. As
- * regras `add_tag` NÃO são apagadas pela exclusão (decisão de outra tela, com o
- * runbook do agente na mão); o aviso informa quantas continuam escrevendo.
+ * regras `add_tag` e `remove_tag` NÃO são apagadas pela exclusão (decisão de outra
+ * tela, com o runbook do agente na mão); o aviso informa quantas continuam citando.
  *
  * ── Por que a cor mora NESTA tela, e não numa tela de aparência ─────────────
  *
@@ -392,7 +392,7 @@ export function PainelDeTags({ tags, idioma, paginado = false }: { tags: LinhaDe
               <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
                 {t("Atenção:")} {alvo.em_regras}{" "}
                 {t(
-                  "regra(s) de agente continuam escrevendo esta etiqueta. Excluir aqui não apaga a regra — o agente vai recriar a etiqueta no próximo atendimento.",
+                  "regra(s) de agente continuam citando esta etiqueta. Excluir aqui não apaga a regra — a que põe a etiqueta vai recriá-la no próximo atendimento.",
                 )}
               </p>
             )

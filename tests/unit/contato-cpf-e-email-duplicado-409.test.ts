@@ -62,6 +62,7 @@ interface OpcoesFake {
 }
 
 type Filtro = [string, unknown];
+type Quem = "sessao" | "servidor";
 
 interface Cadeia {
   select: (colunas?: string, opcoes?: unknown) => Cadeia;
@@ -77,7 +78,7 @@ interface Cadeia {
   then: (resolve: (v: unknown) => unknown) => unknown;
 }
 
-const buscas: Array<{ filtros: Filtro[] }> = [];
+const buscas: Array<{ quem: Quem; filtros: Filtro[] }> = [];
 const inserts: Array<Record<string, unknown>> = [];
 const updates: Array<Record<string, unknown>> = [];
 
@@ -116,7 +117,7 @@ function linhaCasaCom(linha: LinhaContato, filtros: Filtro[], variantes: string[
   return true;
 }
 
-function cadeiaDeContatos(opts: OpcoesFake = {}): Cadeia {
+function cadeiaDeContatos(opts: OpcoesFake = {}, quem: Quem = "sessao"): Cadeia {
   const gravados: LinhaContato[] = [...(opts.contatos ?? [])];
   const filtros: Filtro[] = [];
   let variantes: string[] | null = null;
@@ -214,7 +215,7 @@ function cadeiaDeContatos(opts: OpcoesFake = {}): Cadeia {
       };
     },
     then: (resolve) => {
-      buscas.push({ filtros: [...filtros] });
+      buscas.push({ quem, filtros: [...filtros] });
       const achados = filtradas().map((c) => ({
         id: c.id,
         phone_number: c.phone_number ?? null,
@@ -227,10 +228,14 @@ function cadeiaDeContatos(opts: OpcoesFake = {}): Cadeia {
   return cadeia;
 }
 
+/** O CPF repetido é relido pelo servidor, com os mesmos dados do cliente da sessão do caso. */
+let doServidor: unknown;
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => doServidor }));
+
 function clienteFalso(opts: OpcoesFake = {}): unknown {
-  return {
+  const cliente = (quem: Quem) => ({
     from: (tabela: string) =>
-      tabela === "contacts" ? cadeiaDeContatos(opts) : cadeiaQualquer(tabela),
+      tabela === "contacts" ? cadeiaDeContatos(opts, quem) : cadeiaQualquer(tabela),
     // `encrypt_cpf` devolve um ciphertext para o par cpf_hash/cpf_encrypted
     // existir (#2522); os demais RPCs (emit_event) só precisam não falhar.
     rpc: (nome: string) => ({
@@ -240,7 +245,9 @@ function clienteFalso(opts: OpcoesFake = {}): unknown {
           error: null,
         }),
     }),
-  };
+  });
+  doServidor = cliente("servidor");
+  return cliente("sessao");
 }
 
 function ctxFalso(organizationId = ORG): HandlerCtx {
@@ -297,6 +304,7 @@ describe("#3084 — POST com CPF repetido vira 409 contact_exists", () => {
     // e por `is_merged_into` (o id NUNCA vem do corpo da requisição).
     expect(inserts[0]?.cpf_hash).toBe(CPF_HASH);
     const releitura = buscas.at(-1)!;
+    expect(releitura.quem).toBe("servidor");
     expect(releitura.filtros).toEqual([
       ["organization_id", ORG],
       ["cpf_hash", CPF_HASH],

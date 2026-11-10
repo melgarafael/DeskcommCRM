@@ -180,6 +180,8 @@ describe("hubSections", () => {
     expect(secoes.map((s) => s.section)).toEqual(["O dia a dia da venda", "Preparar a venda", "Fechar a venda"]);
     expect(secoes.flatMap((s) => s.items.map((i) => i.href))).toEqual([
       "/app/prospecting",
+      // Doc 208 (A): a fila de espera da agenda. Só com o módulo instalado.
+      "/app/agenda/lista-de-espera",
       "/app/kanban",
       "/app/campaigns",
       "/app/contacts",
@@ -194,6 +196,7 @@ describe("hubSections", () => {
       // #3933: a fila de ligações ativas, ao lado do histórico de chamadas. Só com o módulo ligado.
       "/app/cold-call",
       "/app/comandas",
+      "/app/cadencias",
       "/app/products",
       "/app/imports",
       "/app/settings/tenant/pipelines",
@@ -207,6 +210,14 @@ describe("hubSections", () => {
       hubSections("crm", true, null, undefined, modulos).flatMap((s) => s.items.map((i) => i.href));
     expect(hrefs([]).filter((h) => B2B.includes(h))).toEqual([]);
     expect(hrefs(["crm_b2b"]).filter((h) => B2B.includes(h))).toEqual(B2B);
+  });
+
+  it("a lista de espera só tem porta com o módulo lista_de_espera instalado (doc 208)", () => {
+    const hrefs = (modulos: readonly ModuloOpcional[]) =>
+      hubSections("crm", true, null, undefined, modulos).flatMap((s) => s.items.map((i) => i.href));
+    expect(dest("/app/agenda/lista-de-espera").modulo).toBe("lista_de_espera");
+    expect(hrefs([])).not.toContain("/app/agenda/lista-de-espera");
+    expect(hrefs(["lista_de_espera"])).toContain("/app/agenda/lista-de-espera");
   });
 
   it("agrupa a IA nas três etapas da jornada, na ordem", () => {

@@ -66,6 +66,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
+import { invalidarOrg, invalidarUsuario } from "@/lib/auth/cache-curto";
 import { estaSuspensa } from "@/lib/organizacao/operante";
 import {
   desligarCanaisInventariados,
@@ -479,6 +480,15 @@ async function concluirDepoisDoCommit(
   },
 ): Promise<ResultadoDaExclusao> {
   try {
+    // 2b. O cache curto da autorização (`lib/auth/cache-curto.ts`, 30 s), logo
+    //     depois do commit. O snapshot de vínculos de cada membro nasce
+    //     etiquetado com as organizações dele (`etiquetasDoValor` em
+    //     `lib/auth/server.ts`), então derrubar a etiqueta da org alcança TODOS
+    //     os membros sem precisar da lista — que a cascata acabou de apagar.
+    //     Sem isto, quem era membro seguia com o vínculo em cache até o TTL,
+    //     numa organização que não existe mais.
+    invalidarOrg(entrada.orgId);
+
     // 3. Depois do commit, o que fala com o mundo — só com o inventário.
     const canais = await desligarCanaisInventariados(depois.inventario);
     const voz = await desligarVoz(entrada.orgId, depois.inventario.sessaoDeVoz);
@@ -487,6 +497,9 @@ async function concluirDepoisDoCommit(
     // 4 e 5. Registrados.
     const arquivos = await limparArquivos(admin, entrada.orgId);
     const usuarios = await removerLogins(admin, depois.removiveis);
+    // A sessão em cache de quem perdeu o login (o `getUser()` guardado até o
+    // TTL) cai junto: sem isto, o login apagado seguia autenticado por até 30 s.
+    invalidarUsuario(...usuarios.removidos);
 
     const saida: ResultadoDaExclusao = {
       organizacao: entrada.orgId,

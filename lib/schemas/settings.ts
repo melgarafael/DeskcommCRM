@@ -165,12 +165,24 @@ export const notificationPrefsSchema = z.object({
 });
 export type NotificationPrefsInput = z.infer<typeof notificationPrefsSchema>;
 
+/**
+ * A CHAVE de um campo personalizado do funil — a mesma régua da ESCRITA
+ * (`customFieldSchema.key`) e a mesma que qualquer leitura por chave precisa.
+ *
+ * Exportada (issue #3221) porque a rota `GET /api/v1/agenda/datas-dos-negocios`
+ * recebe a chave na querystring e a interpola num caminho jsonb do PostgREST
+ * (`custom_fields->>campo`): sem a régua, um `campo` com vírgula ou ponto vira
+ * SINTAXE de filtro, e não nome de campo. Duas cópias da regex divergiriam no
+ * dia em que uma delas mudasse — por isso é a mesma constante.
+ */
+export const chaveDeCampoDoFunilSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore");
+
 export const customFieldSchema = z.object({
-  key: z
-    .string()
-    .min(1)
-    .max(40)
-    .regex(/^[a-z][a-z0-9_]*$/i, "Use letras, números e underscore"),
+  key: chaveDeCampoDoFunilSchema,
   label: z.string().min(1).max(80),
   type: z.enum([
     "text",
@@ -647,6 +659,32 @@ export const marcaDaOrganizacaoSchema = z.object({
 });
 export type MarcaDaOrganizacaoInput = z.infer<typeof marcaDaOrganizacaoSchema>;
 
+/**
+ * A CONTA Resend da organização (#3287, fatia da conta própria) — o que a
+ * server action `conectarContaResendDaOrganizacao` aceita.
+ *
+ * `api_key` é a chave CRUA que a pessoa colou do painel da Resend. Ela NUNCA é
+ * gravada em claro nem devolvida: a action cifra antes de gravar
+ * (`organization_resend_accounts`) e a tela só vê os 4 últimos. O `.min(10)` é
+ * o mesmo piso do `criarCliente` da Resend — uma chave mais curta não é chave.
+ *
+ * `from_email` é o endereço de remetente no DOMÍNIO da organização. A forma é
+ * validada aqui; o domínio ser VERIFICADO na conta é conferido pela API da
+ * Resend na própria action (`verificarDominioNaResend`) — o critério (E): a
+ * recusa de domínio não verificado é mensagem própria, não erro cru da API.
+ */
+export const contaResendDaOrganizacaoSchema = z.object({
+  api_key: z.string().trim().min(10, "Cole a chave da sua conta Resend.").max(200),
+  from_email: z
+    .string()
+    .trim()
+    .max(254)
+    .refine((valor) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valor), {
+      message: "Use um endereço de e-mail como contato@suaempresa.com",
+    }),
+});
+export type ContaResendDaOrganizacaoInput = z.infer<typeof contaResendDaOrganizacaoSchema>;
+
 /** Prazos por organização. Leitura legada degrada; escrita usa schema estrito. */
 export const agendaSettingsWriteSchema = z.strictObject({
   confirmation_delay_minutes: z.number().int().min(1).max(10080),
@@ -974,15 +1012,19 @@ export function meetAbertoLigado(settings: unknown): boolean {
 
 /** Só true booleano autoriza preencher o nome vazio a partir do texto real do atendimento. */
 export function nomeInformadoLigado(settings: unknown): boolean {
-  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
-    ? (settings as Record<string, unknown>).crm : undefined;
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
   return crmSettingsSchema.parse(crm ?? {}).nome_informado_no_atendimento === true;
 }
 
 /** Ausente liga; só o booleano `false` tira as transferências do Aviso no WhatsApp. */
 export function avisoDeTransferenciaLigado(settings: unknown): boolean {
-  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
-    ? (settings as Record<string, unknown>).crm : undefined;
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
 }
 
@@ -1024,4 +1066,106 @@ export function limiteDoPesoDaMemoria(settings: unknown): number {
       ? (bloco as Record<string, unknown>).limite_do_aviso_tokens
       : undefined;
   return limiteDoPesoDaMemoriaWriteSchema.catch(LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA).parse(valor);
+}
+
+/**
+ * O MÓDULO DE OUVIDORIA (#3611, fatia 1) — `settings.ouvidoria`.
+ *
+ * A empresa LIGA o módulo para si: recebe manifestações (reclamação, denúncia,
+ * elogio, sugestão) que ganham protocolo próprio e NÃO viram cartão no funil.
+ * Quem grava é `lib/ouvidoria/registro.ts`; quem lê é
+ * `lib/ouvidoria/leitura.ts`. Este bloco é o CONTRATO do jsonb — a leitura
+ * existe UMA vez para o serviço, a tela (fatia seguinte) e qualquer script não
+ * divergirem.
+ *
+ * ─── Por que jsonb e não coluna ──────────────────────────────────────────────
+ * É preferência da organização, sem invariante que o banco prove sozinho: o
+ * resto do estado do módulo (perfis autorizados, destinatários do aviso) chega
+ * nas fatias seguintes e cada um é uma decisão de empresa, não uma coluna da
+ * manifestação. A manifestação em si é TABELA (`ouvidoria_manifestacoes`,
+ * migration 9040) — protocolo, unicidade e privacidade não cabem em jsonb.
+ *
+ * ─── Régua de leitura ────────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga, a mesma de `settings.entrada_do_inbox.ativa` e de
+ * `settings.crm.cliente_pela_agenda`: ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO — e desligado é "nenhuma manifestação é aceita", que é o estado de
+ * TODA instalação que já existe. Quem desliga não perde o acervo: a leitura das
+ * manifestações já recebidas continua valendo para os administradores (decisão
+ * de `lib/ouvidoria/leitura.ts`), porque fechar a porta de entrada não pode
+ * apagar o que a ouvidoria precisa responder.
+ *
+ * ⚠️ O VALOR É JSONB ESCRITO POR FORA (script, seed, API antiga) e não passa
+ * pelo zod de escrita; por isso o `.catch` de cada campo. Um jsonb torto
+ * desliga o módulo em silêncio, nunca lança — esta leitura roda no caminho do
+ * registro, e um throw ali derrubaria o atendimento.
+ */
+export const OUVIDORIA_CHAVE = "ouvidoria";
+
+export const ouvidoriaSchema = z
+  .object({
+    /** A porta de ENTRADA do módulo. Ausente/`false`/lixo = desligado. */
+    ativa: z.boolean().catch(false),
+  })
+  .catch({ ativa: false });
+
+export type OuvidoriaDaOrganizacao = z.infer<typeof ouvidoriaSchema>;
+
+/** O bloco lido de `organizations.settings`. Nunca lança. */
+export function ouvidoriaDeclarada(settings: unknown): OuvidoriaDaOrganizacao {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return ouvidoriaSchema.parse(raiz?.[OUVIDORIA_CHAVE] ?? {});
+}
+
+/** Atalho booleano para quem só precisa saber se o módulo aceita registro. */
+export function ouvidoriaLigada(settings: unknown): boolean {
+  return ouvidoriaDeclarada(settings).ativa === true;
+}
+
+/**
+ * A ENTRADA AUTOMÁTICA NO FUNIL (#3603, fatia 1) — `settings.entrada_automatica_no_funil`.
+ *
+ * Um interruptor, e só isso: `{ ativa: boolean }`. Ligado, a conversa que o
+ * PRÓPRIO CRM abre (a porta `ensureConversation`: "Iniciar conversa" do Inbox,
+ * ficha do contato, lembrete de agenda e de tarefa, ferramenta de início de
+ * conversa do agente de IA) ganha negócio como a conversa que CHEGA já ganha.
+ * A que chega entra sempre, e esta chave não muda nada nela.
+ *
+ * ─── O destino não é escolhido aqui ──────────────────────────────────────────
+ * Opção (a), decidida na thread do #3616: o card nasce no MESMO destino da
+ * entrada — o funil `is_default`, na etapa de `settings.entrada_do_inbox` do
+ * funil (ou na primeira aberta), e o funil de clientes quando a regra de
+ * cliente vale. Quem decide é `garantirLeadDaConversa`; quem aplica esta chave
+ * é `lib/leads/entrada-automatica-no-funil.ts`. Um segundo destino configurável
+ * seriam duas respostas para "onde entra o contato novo?".
+ *
+ * ─── Régua de leitura ────────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga (a mesma de `settings.crm.cliente_pela_agenda` e de
+ * `settings.entrada_do_inbox.ativa`): ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO, e desligado é "nenhum negócio nasce por esta porta" — o estado de
+ * toda instalação que já existe.
+ *
+ * ⚠️ `pipeline_id`/`stage_id` gravados por uma versão anterior deste PR são
+ * IGNORADOS na leitura (o objeto do zod descarta chave desconhecida): não
+ * escolhem funil e não impedem a chave de ligar.
+ *
+ * Nunca lança: um jsonb torto não pode derrubar a abertura de uma conversa.
+ */
+export const ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE = "entrada_automatica_no_funil";
+
+export const entradaAutomaticaNoFunilSchema = z
+  .object({ ativa: z.boolean().catch(false) })
+  .catch({ ativa: false });
+
+export type EntradaAutomaticaNoFunil = z.infer<typeof entradaAutomaticaNoFunilSchema>;
+
+/** O bloco lido de `organizations.settings`. Nunca lança. */
+export function entradaAutomaticaNoFunilDeclarada(settings: unknown): EntradaAutomaticaNoFunil {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return entradaAutomaticaNoFunilSchema.parse(raiz?.[ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE] ?? {});
 }
