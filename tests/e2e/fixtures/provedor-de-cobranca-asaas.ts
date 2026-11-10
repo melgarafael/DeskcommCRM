@@ -21,7 +21,7 @@
  *  - a assinatura removida some da lista sem `includeDeleted=true`;
  *  - o aviso leva só o token estático em `asaas-access-token`, sem assinatura.
  * Páginas humanas: /i/:cobranca (a invoiceUrl), com Pix e cartão de teste.
- * Controle do teste: `pagar`, `vencer`, `recusarCriacaoDeWebhook`,
+ * Controle do teste: `pagar`, `vencer`, `recusarCriacaoDeWebhook`, `contaSemDominio`,
  * `enviarAvisoForjado` (token errado) e `enviarAvisoMentiroso` (token CERTO,
  * corpo que jura "pago": o token vazou).
  */
@@ -97,6 +97,12 @@ export interface DubleAsaas {
   assinaturasDe(cliente: string): readonly AssinaturaAsaas[];
   /** true = POST /v3/webhooks recusa (conta sem permissão): o app cai no passo a passo manual. */
   recusarCriacaoDeWebhook(recusar: boolean): void;
+  /**
+   * true = a conta não cadastrou domínio: todo pedido com `callback` (POST de
+   * assinatura, PUT de cobrança) é recusado com 400, como o sandbox recusou ao
+   * autor do #3595. ponytail: o status e o `code` reais não foram medidos.
+   */
+  contaSemDominio(sem: boolean): void;
   /** Paga como o pagador faria na invoiceUrl. Pix → RECEIVED; cartão → CONFIRMED. */
   pagar(cobranca: string, forma: "pix" | "cartao"): Promise<void>;
   /** A pendente mais antiga venceu ontem sem pagamento: OVERDUE. Devolve a invoiceUrl dela. */
@@ -177,6 +183,7 @@ function paginaHtml(res: ServerResponse, status: number, titulo: string, corpo: 
 export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
   let ordem = 0;
   let recusarWebhook = false;
+  let semDominio = false;
   const chamadas: ChamadaAsaas[] = [];
   const avisos: AvisoAsaasEntregue[] = [];
   const clientes = new Map<string, ClienteAsaas>();
@@ -343,6 +350,7 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
       const ciclo: CicloAsaas | null = c.cycle === "MONTHLY" ? "MONTHLY" : c.cycle === "YEARLY" ? "YEARLY" : null;
       const vencimento = texto(c.nextDueDate);
       if (!clientes.has(cliente)) return erro(res, 400, "invalid_customer", "Cliente inexistente.");
+      if (semDominio && c.callback !== undefined) return erro(res, 400, "invalid_callback", "Configuração de domínio ausente na conta.");
       if (c.billingType !== "UNDEFINED") return erro(res, 400, "invalid_billingType", "a spec manda billingType UNDEFINED (o pagador escolhe Pix, boleto ou cartão)");
       if (!emReais(valor)) return erro(res, 400, "invalid_value", "valor em reais, a partir de 5,00, com até 2 casas");
       if (ciclo === null) return erro(res, 400, "invalid_cycle", "ciclo inválido");
@@ -390,6 +398,7 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
     if (metodo === "PUT" && pagamentoUnico) {
       const pagamento = cobrancas.get(pagamentoUnico[1] ?? "");
       if (!pagamento || pagamento.deleted) return erro(res, 404, "not_found", "Cobrança não encontrada.");
+      if (semDominio && c.callback !== undefined) return erro(res, 400, "invalid_callback", "Configuração de domínio ausente na conta.");
       const callback = c.callback;
       if (callback === null || typeof callback !== "object" || Array.isArray(callback))
         return erro(res, 400, "invalid_object", "callback inválido");
@@ -454,6 +463,9 @@ export function criarDialetoAsaas(baseAtual: () => string): DialetoAsaas {
     assinaturasDe,
     recusarCriacaoDeWebhook: (recusar) => {
       recusarWebhook = recusar;
+    },
+    contaSemDominio: (sem) => {
+      semDominio = sem;
     },
     pagar,
     async vencer(cliente) {

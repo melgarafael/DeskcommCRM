@@ -655,19 +655,47 @@ describe("iniciarAssinatura", () => {
   it.each([
     "nao-e-url", "http://crm.example.com/volta", "javascript:alert(1)",
     "https://usuario:senha@crm.example.com/volta", "https://crm.example.com/volta#fragmento",
-  ])("recusa retorno inseguro antes de chamar o provedor: %s", async (urlDeVolta) => {
+  ])("retorno que não serve não vai ao provedor, e a cobrança sai sem a volta automática: %s", async (urlDeVolta) => {
     const { adaptador, chamadas } = criando();
-    await expect(adaptador.iniciarAssinatura({ ...PEDIDO, urlDeVolta })).rejects.toMatchObject({ codigo: "retorno_invalido" });
-    expect(chamadas).toHaveLength(0);
+    expect(await adaptador.iniciarAssinatura({ ...PEDIDO, urlDeVolta })).toMatchObject({ url: "https://sandbox.asaas.com/i/pay_1" });
+    expect(chamadas.find((c) => c.rota === "POST /subscriptions")?.corpo).not.toHaveProperty("callback");
+    expect(chamadas.some((c) => c.rota.startsWith("PUT /payments"))).toBe(false);
   });
 
-  it("falha ao atualizar callback mantém a assinatura existente e não cria outra", async () => {
+  it("conta que recusa o callback (domínio não cadastrado): refaz UMA vez sem ele e a cobrança sai", async () => {
+    const { adaptador, chamadas } = criando({
+      "POST /subscriptions": (_url, corpo) =>
+        corpo !== null && typeof corpo === "object" && "callback" in corpo
+          ? { status: 400, corpo: { errors: [{ code: "invalid_callback" }] } }
+          : { corpo: assinatura({ id: "sub_novo" }) },
+    });
+    expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_novo", url: "https://sandbox.asaas.com/i/pay_1" });
+    const posts = chamadas.filter((c) => c.rota === "POST /subscriptions");
+    expect(posts).toHaveLength(2);
+    expect(posts[1]?.corpo).not.toHaveProperty("callback");
+    // A fatura recusaria o mesmo callback: não insiste.
+    expect(chamadas.some((c) => c.rota.startsWith("PUT /payments"))).toBe(false);
+  });
+
+  it("recusa que não é do callback continua recusa (não esconde o erro de verdade)", async () => {
+    const { adaptador, chamadas } = criando({ "POST /subscriptions": { status: 400, corpo: { errors: [{ code: "invalid_customer" }] } } });
+    await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ status: 400, codigo: "invalid_customer" });
+    expect(chamadas.filter((c) => c.rota === "POST /subscriptions")).toHaveLength(2);
+  });
+
+  it("POST que caiu (5xx) não é refeito sem callback: pode ter criado", async () => {
+    const { adaptador, chamadas } = criando({ "POST /subscriptions": { status: 503 } });
+    await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ status: 503 });
+    expect(chamadas.filter((c) => c.rota === "POST /subscriptions")).toHaveLength(1);
+  });
+
+  it("falha ao pôr o callback na fatura não derruba o link válido nem cria outra assinatura", async () => {
     const { adaptador, chamadas } = montar({
       "GET /subscriptions": rotaDeAssinaturas([assinatura({ id: "sub_viva" })]),
       "GET /payments": rotaDePagamentos([cobranca({ id: "pay_v", subscription: "sub_viva" })]),
       "PUT /payments/pay_v": { status: 503 },
     });
-    await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ status: 503, transitorio: true });
+    expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_viva", url: "https://sandbox.asaas.com/i/pay_v" });
     expect(chamadas.filter((c) => c.rota.startsWith("POST "))).toHaveLength(0);
     expect(chamadas.filter((c) => c.rota === "PUT /payments/pay_v").length).toBeGreaterThan(0);
   });
