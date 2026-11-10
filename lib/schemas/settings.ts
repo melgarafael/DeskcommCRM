@@ -1012,15 +1012,19 @@ export function meetAbertoLigado(settings: unknown): boolean {
 
 /** Só true booleano autoriza preencher o nome vazio a partir do texto real do atendimento. */
 export function nomeInformadoLigado(settings: unknown): boolean {
-  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
-    ? (settings as Record<string, unknown>).crm : undefined;
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
   return crmSettingsSchema.parse(crm ?? {}).nome_informado_no_atendimento === true;
 }
 
 /** Ausente liga; só o booleano `false` tira as transferências do Aviso no WhatsApp. */
 export function avisoDeTransferenciaLigado(settings: unknown): boolean {
-  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
-    ? (settings as Record<string, unknown>).crm : undefined;
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
 }
 
@@ -1062,4 +1066,50 @@ export function limiteDoPesoDaMemoria(settings: unknown): number {
       ? (bloco as Record<string, unknown>).limite_do_aviso_tokens
       : undefined;
   return limiteDoPesoDaMemoriaWriteSchema.catch(LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA).parse(valor);
+}
+
+/**
+ * A ENTRADA AUTOMÁTICA NO FUNIL (#3603, fatia 1) — `settings.entrada_automatica_no_funil`.
+ *
+ * Um interruptor, e só isso: `{ ativa: boolean }`. Ligado, a conversa que o
+ * PRÓPRIO CRM abre (a porta `ensureConversation`: "Iniciar conversa" do Inbox,
+ * ficha do contato, lembrete de agenda e de tarefa, ferramenta de início de
+ * conversa do agente de IA) ganha negócio como a conversa que CHEGA já ganha.
+ * A que chega entra sempre, e esta chave não muda nada nela.
+ *
+ * ─── O destino não é escolhido aqui ──────────────────────────────────────────
+ * Opção (a), decidida na thread do #3616: o card nasce no MESMO destino da
+ * entrada — o funil `is_default`, na etapa de `settings.entrada_do_inbox` do
+ * funil (ou na primeira aberta), e o funil de clientes quando a regra de
+ * cliente vale. Quem decide é `garantirLeadDaConversa`; quem aplica esta chave
+ * é `lib/leads/entrada-automatica-no-funil.ts`. Um segundo destino configurável
+ * seriam duas respostas para "onde entra o contato novo?".
+ *
+ * ─── Régua de leitura ────────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga (a mesma de `settings.crm.cliente_pela_agenda` e de
+ * `settings.entrada_do_inbox.ativa`): ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO, e desligado é "nenhum negócio nasce por esta porta" — o estado de
+ * toda instalação que já existe.
+ *
+ * ⚠️ `pipeline_id`/`stage_id` gravados por uma versão anterior deste PR são
+ * IGNORADOS na leitura (o objeto do zod descarta chave desconhecida): não
+ * escolhem funil e não impedem a chave de ligar.
+ *
+ * Nunca lança: um jsonb torto não pode derrubar a abertura de uma conversa.
+ */
+export const ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE = "entrada_automatica_no_funil";
+
+export const entradaAutomaticaNoFunilSchema = z
+  .object({ ativa: z.boolean().catch(false) })
+  .catch({ ativa: false });
+
+export type EntradaAutomaticaNoFunil = z.infer<typeof entradaAutomaticaNoFunilSchema>;
+
+/** O bloco lido de `organizations.settings`. Nunca lança. */
+export function entradaAutomaticaNoFunilDeclarada(settings: unknown): EntradaAutomaticaNoFunil {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return entradaAutomaticaNoFunilSchema.parse(raiz?.[ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE] ?? {});
 }
