@@ -72,6 +72,17 @@ describe("instalarModulo", () => {
     expect((mocks.admin as ReturnType<typeof fakeAdmin>).rpcCalls).toHaveLength(0);
   });
 
+  // #3625 entra sem tela: a ouvidoria não se instala até a tela chegar (#3636).
+  // Quando o slug voltar ao catálogo junto com a tela, este caso sai junto.
+  it("recusa a ouvidoria enquanto ela não tem tela", async () => {
+    mocks.admin = fakeAdmin([]);
+
+    await expect(instalarModulo(ACTOR, OPERATION, "ouvidoria")).rejects.toMatchObject({
+      code: "extension_module_unknown",
+    });
+    expect((mocks.admin as ReturnType<typeof fakeAdmin>).rpcCalls).toHaveLength(0);
+  });
+
   it("instala e audita quando a chamada aplicou de verdade", async () => {
     mocks.admin = fakeAdmin([], {
       fn_modulo_instalar: () => ({

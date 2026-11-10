@@ -47,14 +47,9 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser " +
       "avisado. Cada empresa escolhe os prazos da oferta antes de ligar.",
   },
-  {
-    slug: "ouvidoria",
-    nome: "Ouvidoria",
-    descricao:
-      "Registro de manifestações (reclamações, denúncias, elogios, sugestões) com protocolo " +
-      "próprio, leitura restrita a administradores e sem cartão no funil. Quem não instala " +
-      "o módulo não carrega a tabela.",
-  },
+  // ponytail: "ouvidoria" fica fora até haver tela (#3636). Sem o slug aqui,
+  // `instalarModulo` recusa com `extension_module_unknown` e Módulos não o lista;
+  // `MODULOS_OPCIONAIS`/`MODULOS_DE_TABELA` e as guardas seguem, e ninguém instala.
 ];
 
 export function moduloDoCatalogo(slug: string): ModuloCatalogo | undefined {
