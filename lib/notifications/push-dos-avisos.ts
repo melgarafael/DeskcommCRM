@@ -206,6 +206,7 @@ async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Pr
         corpoSemPrevia: body,
         tag,
         href: destinoDaPassagem(item),
+        tipo: "handoff",
       },
     };
   }
@@ -245,7 +246,7 @@ async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Pr
     valor = valorDoNegocio(linha);
   }
   const fixo = truncar(item.body ?? "");
-  const semValor: PushPayload = { title: truncar(item.title), body: fixo, corpoSemPrevia: fixo, tag, href };
+  const semValor: PushPayload = { title: truncar(item.title), body: fixo, corpoSemPrevia: fixo, tag, href, tipo: "stage_alert" };
   // Etapa sem negócio ligado (não deveria acontecer: `aviso-de-etapa` sempre
   // grava `ref_kind = 'lead'`) ou sem id: nada a dividir, sai o texto de antes.
   if (item.ref_kind !== "lead" || !item.ref_id) return { payload: semValor };
@@ -258,6 +259,7 @@ async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Pr
     corpoSemPrevia: fixo,
     tag,
     href,
+    tipo: "stage_alert",
   };
   // Em 'all' o dono vê a organização inteira: o texto dele é o mesmo da gestão.
   const daCarteira: PushPayload = visibilidade === "all" ? ampla : { ...ampla, body: fixo };

@@ -93,6 +93,8 @@ describe("aviso da Central → celular", () => {
       corpoSemPrevia: "Abre el negocio para dar el siguiente paso. Este aviso se pidió en la configuración de la etapa.",
       tag: "aviso:i1",
       href: "/app/pipelines/p1?lead=l1",
+      // O tipo que o aparelho pode calar (`push_subscriptions.tipos_calados`).
+      tipo: "stage_alert",
     });
     expect(JSON.stringify(payload)).not.toContain("Maria");
     // O aviso e o negócio são lidos com o filtro da organização do evento.
@@ -113,6 +115,7 @@ describe("aviso da Central → celular", () => {
       corpoSemPrevia: "Abre la conversación para responder al cliente.",
       tag: "aviso:i2",
       href: "/app/inbox/c1",
+      tipo: "handoff",
     });
   });
 

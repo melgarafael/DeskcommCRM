@@ -7,7 +7,18 @@ export const NOTIFY_UI_CATEGORIES = [
   "lead_lost",
   "mention",
   "call_inbound",
+  // Os dois avisos da Central que vão ao celular e que a pessoa pode calar.
+  // Sem saldo no provedor e proposta para revisar não entram: são raros e
+  // travam a operação, e chegam sempre.
+  "handoff",
+  "stage_alert",
 ] as const;
+
+/**
+ * Tipos que só existem no CELULAR: o aviso dentro do app é o da Central, com
+ * som próprio (`./sons-da-org.ts`), e a coluna In-app não os governa.
+ */
+export const SO_NO_CELULAR: ReadonlySet<NotifyCategory> = new Set<NotifyCategory>(["handoff", "stage_alert"]);
 
 export type NotifyCategory = (typeof NOTIFY_UI_CATEGORIES)[number];
 export type NotifyChannelPref = "in_app" | "push";
@@ -32,6 +43,8 @@ export function prefsPadrao(): NotifyPrefs {
     lead_lost: { in_app: true, push: true },
     mention: { in_app: true, push: true },
     call_inbound: { in_app: true, push: true },
+    handoff: { in_app: true, push: true },
+    stage_alert: { in_app: true, push: true },
   };
 }
 
@@ -105,6 +118,8 @@ const PREFS_DO_SERVIDOR: NotifyPrefs = {
   lead_won: { in_app: true, push: true },
   lead_lost: { in_app: true, push: true },
   mention: { in_app: true, push: true },
+  handoff: { in_app: true, push: true },
+  stage_alert: { in_app: true, push: true },
 };
 
 /**
@@ -130,13 +145,24 @@ export function canalLigado(category: NotifyCategory, channel: NotifyChannelPref
 }
 
 /**
- * O push de mensagem é o interruptor do aparelho: desligado, a inscrição sai
- * (`encerrarPushDesteAparelho`) e o servidor, que não separa categorias, não
- * alcança mais este aparelho. Nenhuma outra categoria vai à bandeja.
+ * Cada tipo liga e desliga o próprio Push. Até 09/11/2026 o de mensagem era o
+ * interruptor do aparelho, porque o servidor não separava os tipos: quem só
+ * queria "Lead atribuído a você" tinha de receber toda mensagem. Hoje o
+ * servidor sabe quais tipos o aparelho calou (`tiposCalados`, gravados na
+ * inscrição) e o aparelho só sai do push quando TODOS estão desligados.
  */
 export function pushEfetivo(prefs: NotifyPrefs, category: NotifyCategory, channel: NotifyChannelPref): boolean {
-  if (channel === "push" && !prefs.message.push) return false;
   return prefs[category][channel];
+}
+
+/** Algum tipo ainda quer o celular? Nenhum → a inscrição do aparelho sai. */
+export function algumPushLigado(prefs: NotifyPrefs): boolean {
+  return NOTIFY_UI_CATEGORIES.some((cat) => prefs[cat].push);
+}
+
+/** Os tipos que este aparelho calou — o que vai para `push_subscriptions.tipos_calados`. */
+export function tiposCalados(prefs: NotifyPrefs): NotifyCategory[] {
+  return NOTIFY_UI_CATEGORIES.filter((cat) => !prefs[cat].push);
 }
 
 export function gravarCanal(
@@ -153,7 +179,8 @@ export function gravarCanal(
       // ignore
     }
   }
-  if (category === "message" && channel === "push") setAlertsEnabled(on);
+  // `alerts.enabled` (o ícone do topo) espelha "este aparelho recebe algum aviso".
+  if (channel === "push") setAlertsEnabled(algumPushLigado(next));
   prefsEmCache = next;
   for (const ouvinte of ouvintesDePrefs) ouvinte();
   return next;
