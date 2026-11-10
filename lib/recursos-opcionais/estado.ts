@@ -24,6 +24,7 @@ import { vapidPronto } from "@/lib/notifications/vapid";
 import { isConfigured as nuvemshopConfigurada } from "@/lib/nuvemshop/config";
 import { googleAdsEstaConfigurado } from "@/lib/plataformas-de-anuncio/google/config";
 import { getWacallsClient } from "@/lib/wacalls/client";
+import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
 import { resolveServidorDeVideo } from "@/lib/video/jitsi";
 
 import type { FontesDeEstado } from "./catalogo";
@@ -67,7 +68,7 @@ export async function detectarServidor(): Promise<Record<string, boolean | null>
 
 /** Fontes da tela da empresa. `organizationId` vem da SESSÃO, nunca da requisição. */
 export async function fontesDaEmpresa(db: SupabaseClient, organizationId: string): Promise<FontesDeEstado> {
-  const [modulos, settings] = await Promise.all([
+  const [modulos, settings, telefonia] = await Promise.all([
     // ponytail: `modulosLigados` falha fechada (erro de banco = nenhum módulo) e não
     // distingue "desligado" de "não li". Para a tela que só informa, isso vira
     // "desligado"; separar os dois pede mudar o contrato dele, e não é deste PR.
@@ -86,6 +87,9 @@ export async function fontesDaEmpresa(db: SupabaseClient, organizationId: string
         return null;
       }
     })(),
+    // #1290: o mesmo sinal que o menu usa para mostrar Chamadas. Em paralelo,
+    // então a tela de Recursos opcionais não paga uma espera a mais.
+    telefoniaEmUso(db, organizationId),
   ]);
-  return { modulos, settings, servidor: {} };
+  return { modulos, settings, telefonia, servidor: {} };
 }

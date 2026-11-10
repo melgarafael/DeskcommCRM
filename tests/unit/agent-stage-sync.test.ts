@@ -111,6 +111,10 @@ describe("resolveDestinoDoAgente", () => {
  */
 type Resposta = { data: unknown; error: { message: string } | null };
 interface Cenario {
+  /** Os `update` em `crm_leads`, na ordem (#3461: a posição de entrada). */
+  escritas?: unknown[];
+  /** O primeiro card da etapa de destino, lido para pôr o que chega no topo. */
+  topo?: Resposta;
   leads: Resposta;
   stages: Resposta;
   update: Resposta;
@@ -164,18 +168,28 @@ function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
       const b = {
         _update: false,
         _select: false,
+        _topo: false,
         select: () => {
           b._select = true;
           return b;
         },
-        update: () => {
+        update: (payload?: unknown) => {
           b._update = true;
+          if (tabela === "crm_leads") c.escritas?.push(payload);
           return b;
         },
+        // A leitura do topo da etapa de destino (#3461): `.order().limit()`.
+        order: () => {
+          b._topo = true;
+          return b;
+        },
+        limit: () => b,
         eq: () => b,
         maybeSingle: () =>
           Promise.resolve(
-            tabela === "crm_pipelines"
+            tabela === "crm_leads" && b._topo
+              ? (c.topo ?? { data: null, error: null })
+              : tabela === "crm_pipelines"
               ? (c.funil ?? { data: { name: "Funil" }, error: null })
               : { data: { name: "Primeiro contato" }, error: null },
           ),
@@ -217,6 +231,18 @@ describe("sincronizaEstagioDoAgente", () => {
     const r = await sincroniza(cenario());
     expect(r).toMatchObject({ moveu: true, motivo: "movido", stageName: "Proposta enviada" });
     expect(vi.mocked(emitLeadActivity)).toHaveBeenCalledTimes(1);
+  });
+
+  it("o card CHEGA no topo da etapa de destino (#3461), e a leitura que falha não desfaz o move", async () => {
+    const escritas: unknown[] = [];
+    await sincroniza(cenario({ escritas, topo: { data: { position_in_stage: 2000 }, error: null } }));
+    expect(escritas).toEqual([expect.objectContaining({ position_in_stage: 1000 })]);
+
+    const semLeitura: unknown[] = [];
+    const r = await sincroniza(cenario({ escritas: semLeitura, topo: { data: null, error: { message: "fetch failed" } } }));
+    expect(r).toMatchObject({ moveu: true });
+    expect(semLeitura).toHaveLength(1);
+    expect(semLeitura[0]).not.toHaveProperty("position_in_stage");
   });
 
   it("SELECT de leads com erro é INDISPONIBILIDADE, não 'sem_negocio'", async () => {

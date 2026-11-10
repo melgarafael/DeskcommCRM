@@ -34,10 +34,17 @@ describe("vocabularioDeTagsSchema — o que a rota recusa antes de tocar o banco
     expect(recusa({ acao: "juntar", tag: "a" })).toBe("destino_obrigatorio");
   });
 
-  it("renomear para o MESMO nome, mesmo com outra caixa, é destino_igual_a_tag", () => {
-    // A função de banco devolveria `alterou: false` e a tela diria "nada mudou"
-    // sem explicar por quê.
-    expect(recusa({ acao: "renomear", tag: "VIP", destino: "vip" })).toBe("destino_igual_a_tag");
+  it("renomear para o nome exatamente igual, depois de aparar, é destino_igual_a_tag", () => {
+    expect(recusa({ acao: "renomear", tag: " VIP ", destino: "VIP" })).toBe("destino_igual_a_tag");
+  });
+
+  it.each([
+    ["vip", "VIP"],
+    ["Prospecção", "prospecção"],
+  ])("renomear %s para %s preserva a grafia pedida para a operação", (tag, destino) => {
+    expect(vocabularioDeTagsSchema.parse({ acao: "renomear", tag, destino })).toEqual({
+      acao: "renomear", tag, destino,
+    });
   });
 
   it("juntar 'vip' em 'VIP' PASSA — é o caso que existe para desduplicar grafia", () => {

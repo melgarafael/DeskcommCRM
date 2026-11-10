@@ -54,17 +54,34 @@ const SCOPES: { id: string; label: string }[] = [
   // (`lib/mcp/auth.ts`, `scopesRole` — sem nada aqui o padrão é `agent`).
   // Sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo:
   // todo Bearer de configuração fechava em 403 `forbidden_role`.
-  { id: "role:admin", label: "Tratar o token como administrador: as permissões marcadas agem com poder de administrador (junto de AGIR no CRM, cria agentes de IA e rascunhos e configura, busca e pausa a prospecção)" },
+  {
+    id: "role:admin",
+    label:
+      "Tratar o token como administrador: as permissões marcadas agem com poder de administrador (junto de AGIR no CRM, cria agentes de IA e rascunhos e configura, busca e pausa a prospecção)",
+  },
   // #2052 / PR #2194: configurar o agente é escopo PRÓPRIO, nunca `mcp:*`. Um
   // token já emitido não ganha este poder na atualização: só quem cria um token
   // novo marcando esta caixa. O rótulo diz o poder inteiro de propósito.
-  { id: "config:read", label: "Ler a configuração do agente de IA e dos roteadores de IA (exige papel de administrador)" },
-  { id: "config:write", label: "Editar, testar, PUBLICAR, PAUSAR, DESLIGAR e ARQUIVAR o agente de IA que atende seus clientes, e criar, editar, testar e APAGAR os roteadores de IA que escolhem qual agente responde (exige papel de administrador)" },
+  {
+    id: "config:read",
+    label:
+      "Ler a configuração do agente de IA e dos roteadores de IA (exige papel de administrador)",
+  },
+  {
+    id: "config:write",
+    label:
+      "Editar, testar, PUBLICAR, PAUSAR, DESLIGAR e ARQUIVAR o agente de IA que atende seus clientes, e criar, editar, testar e APAGAR os roteadores de IA que escolhem qual agente responde (exige papel de administrador)",
+  },
   { id: "contacts:read", label: "Ler contatos" },
   { id: "contacts:write", label: "Criar e editar contatos" },
   { id: "leads:read", label: "Ler leads" },
   { id: "leads:write", label: "Criar e editar leads" },
   { id: "messages:read", label: "Ler mensagens" },
+  {
+    id: "messages:derived:read",
+    label:
+      "Ler transcrições de áudios e textos extraídos de mídia no histórico MCP (pode conter dados pessoais)",
+  },
   { id: "messages:write", label: "Enviar mensagens" },
   // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
   { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
@@ -161,7 +178,9 @@ export function ApiTokensClient() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma) : "—"}
+                    {tok.expires_at
+                      ? new Date(tok.expires_at).toLocaleDateString(tagDoIdioma)
+                      : "—"}
                   </TableCell>
                   <TableCell>
                     {!tok.revoked_at ? (
@@ -189,9 +208,7 @@ export function ApiTokensClient() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("Criar novo token")}</DialogTitle>
-            <DialogDescription>
-              {t("O plaintext será mostrado apenas uma vez.")}
-            </DialogDescription>
+            <DialogDescription>{t("O plaintext será mostrado apenas uma vez.")}</DialogDescription>
           </DialogHeader>
           <form onSubmit={onCreate} className="space-y-4">
             <div className="space-y-2">
@@ -260,7 +277,7 @@ export function ApiTokensClient() {
           </DialogHeader>
           {created ? (
             <div className="space-y-3">
-              <code className="block break-all rounded-md border bg-muted p-3 text-sm">
+              <code className="block rounded-md border bg-muted p-3 text-sm break-all">
                 {created.plaintext}
               </code>
               <Button

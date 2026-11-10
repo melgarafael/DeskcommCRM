@@ -42,9 +42,31 @@
  *   ou `assigned_to_user_id` preenchido.
  */
 
-/** Piso e teto do prazo, em minutos. Abaixo de 5 a IA volta no meio da digitação. */
+/**
+ * Piso do prazo, em minutos. Abaixo de 5 a IA volta no meio da digitação.
+ *
+ * O TETO da devolução ao agente deixou de existir (#3313): uma agência de
+ * viagens declarou 24 h curto — cotação internacional leva dias de ida e volta
+ * com fornecedores, e a IA reassumir no meio do intervalo atrapalha. O teto
+ * antigo (24 h) NÃO virou teto novo: virou faixa de outro knob, e é por isso
+ * que existem DUAS constantes. `PRAZO_MAX_MINUTOS` continua medindo o silêncio
+ * da IA depois de uma resposta pelo celular e a devolução ao rodízio, onde o
+ * teto curto é a razão de ser da regra (quem atende pelo celular o dia inteiro
+ * renova o prazo a cada fala — #2005).
+ */
 export const PRAZO_MIN_MINUTOS = 5;
+
+/** Teto do silêncio da IA e da devolução ao rodízio: 24 h. */
 export const PRAZO_MAX_MINUTOS = 24 * 60;
+
+/**
+ * Teto da DEVOLUÇÃO AO AGENTE sozinho: 30 dias. Não é "sem limite" — é limite
+ * largo o bastante para o caso real medido, e ainda um número que o formulário
+ * consegue mostrar (`max` do input) e o zod consegue recusar. O que protege o
+ * operador de digitar 500.000 por engano não é o teto: é o texto do campo, que
+ * diz o que o prazo faz.
+ */
+export const PRAZO_MAX_MINUTOS_DEVOLUCAO = 30 * 24 * 60;
 
 /** Status em que faz sentido devolver — os mesmos de `retomada.ts`. */
 const STATUS_DEVOLVIVEIS = new Set(["open", "pending", "claimed", "ai_handling"]);
@@ -66,13 +88,18 @@ export interface ConversaEmHandoff {
 /**
  * Lê o prazo de `organizations.settings`. Ausente, nulo ou fora da faixa é
  * "nunca" — a IA-06 de sempre. Defensivo porque `settings` é jsonb livre.
+ *
+ * A faixa é a DA DEVOLUÇÃO AO AGENTE (`PRAZO_MAX_MINUTOS_DEVOLUCAO`, 30 dias),
+ * não a do silêncio do celular: este leitor é o único caminho do cron, e um
+ * teto de 24 h aqui descartaria em silêncio — sem log, sem auditoria, com a
+ * rodada respondendo `organizacoes: 0` — o prazo que a tela deixou salvar.
  */
 export function lerPrazoDeDevolucaoMinutos(settings: unknown): number | null {
   const routing = (settings as { routing?: unknown } | null)?.routing;
   const valor = (routing as { handoff_return_after_minutes?: unknown } | null)
     ?.handoff_return_after_minutes;
   if (typeof valor !== "number" || !Number.isFinite(valor)) return null;
-  if (valor < PRAZO_MIN_MINUTOS || valor > PRAZO_MAX_MINUTOS) return null;
+  if (valor < PRAZO_MIN_MINUTOS || valor > PRAZO_MAX_MINUTOS_DEVOLUCAO) return null;
   return Math.floor(valor);
 }
 

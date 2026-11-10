@@ -202,3 +202,22 @@ if (typeof criarObjectURL === "function") {
     URL.revokeObjectURL = () => {};
   }
 }
+
+/**
+ * O CACHE CURTO DE AUTORIZAÇÃO (#3696) É DO PROCESSO, NÃO DA REQUISIÇÃO.
+ *
+ * `lib/auth/cache-curto.ts` reaproveita o snapshot de permissões entre
+ * requisições por 30 s. Num arquivo de teste, "requisição" não existe: todos os
+ * casos do mesmo arquivo rodam no mesmo módulo, e o segundo caso herdaria o
+ * snapshot do primeiro — verde ou vermelho por ordem de execução, que é a pior
+ * forma de um teste mentir.
+ *
+ * Limpar entre casos, num lugar só, é o que mantém cada teste dono do seu
+ * estado. Quem testa o CACHE (o comportamento de reaproveitar) semeia e espera
+ * dentro do próprio caso, como sempre.
+ */
+const { beforeEach } = await import("vitest");
+const { esquecerTudo } = await import("@/lib/auth/cache-curto");
+beforeEach(() => {
+  esquecerTudo();
+});

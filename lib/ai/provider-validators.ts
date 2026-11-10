@@ -11,6 +11,7 @@
 import { baseDaApiDoJev } from "@/lib/ai/decisao/cliente";
 import { caminhoDaProva, ORIGEM_PADRAO, type OrigemDoJev } from "@/lib/ai/decisao/origem";
 import { PROVEDOR_POR_ASSINATURA, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
+import { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 import { motivoDaRecusaDeDestino } from "@/lib/automation/destinos-internos-autorizados";
 import { env } from "@/lib/env";
 
@@ -25,6 +26,13 @@ export interface ValidationFail {
 }
 
 export type ValidationResult = ValidationOk | ValidationFail;
+
+/**
+ * Os provedores de SERVIÇO (voz, hoje) cuja chave este arquivo sabe validar.
+ * Derivado de `lib/ai/pontos/provedores-de-servico.ts` — ver o cabeçalho
+ * daquele arquivo para o porquê de serem uma lista separada da de chat.
+ */
+export type ServiceProvider = (typeof PROVEDORES_DE_SERVICO)[number]["id"];
 
 const TIMEOUT_MS = 5000;
 /** Só do provedor personalizado — ver `validateCustomKey`. */
@@ -391,8 +399,37 @@ export async function validateCustomKey(
  * 0127 — quando era repetida à mão aqui, a 0127 abriu o banco para a OpenRouter
  * e as cópias continuaram recusando.
  */
+/**
+ * ElevenLabs — `/v1/voices` exige a chave (não é endpoint público, ao
+ * contrário do catálogo da OpenRouter) e devolve as vozes da conta, que é
+ * exatamente o que a tela de síntese precisa listar para o operador escolher.
+ * `models` aqui carrega `voice_id`, porque é o valor que
+ * `organizations.settings->'voz'.voice_id` precisa guardar — o nome por si só
+ * não identifica a voz na chamada de síntese.
+ */
+export async function validateElevenLabsKey(apiKey: string): Promise<ValidationResult> {
+  try {
+    const res = await timedFetch("https://api.elevenlabs.io/v1/voices", {
+      method: "GET",
+      headers: { "xi-api-key": apiKey },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, error: "auth_failed_401" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `provider_status_${res.status}` };
+    }
+    const json = (await res.json()) as { voices?: { voice_id?: string }[] };
+    const models = (json.voices ?? []).map((v) => v.voice_id ?? "").filter(Boolean);
+    return { ok: true, models };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.name : "network_error" };
+  }
+}
+
 export function validateProviderKey(
-  provider: ProvedorComChave,
+  // A credencial dos dois mundos (chat e serviço) mora na mesma tabela.
+  provider: ProvedorComChave | ServiceProvider,
   apiKey: string,
   baseUrl?: string,
 ): Promise<ValidationResult> {
@@ -407,6 +444,8 @@ export function validateProviderKey(
       return validateOpenRouterKey(apiKey);
     case "deepseek":
       return validateDeepSeekKey(apiKey);
+    case "elevenlabs":
+      return validateElevenLabsKey(apiKey);
     case "requesty":
       return validateRequestyKey(apiKey);
     case "custom":

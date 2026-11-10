@@ -21,7 +21,7 @@ maquinaria sem tocar o checkout principal; ele não é a casa do loop.
   Isso arma via `core.hooksPath`: `pre-commit` (imutabilidade do features.json —
   só `passes`/`verification` mudam fora de sessão humana com
   `DESKCOMM_GOV_PLAN_EDIT=1`; tripla de migration com NNNN validado contra todas
-  as branches locais; freeze de `tests/invariants/**`) e `pre-push` (push só com
+  as branches locais; deleção de `tests/invariants/**`) e `pre-push` (push só com
   `DESKCOMM_GOV_PHASE_MERGE=1`, exportada só pelo ritual de virada).
 - **Guard PreToolUse do Claude Code** (merge ADITIVO no `.claude/settings.json`
   local — preserva hooks já existentes, ex.: do Lina Space):
@@ -133,10 +133,12 @@ profundidade).
    `plan/features.json` além de `passes`/`verification` — a menos que
    `DESKCOMM_GOV_PLAN_EDIT=1` (sessão humana). E a mutação legítima é SÓ via
    `node loop/update-feature.ts` (o PreToolUse barra Edit/Write direto).
-6. **`tests/invariants/**` semi-congelado — enforcement físico**: PreToolUse
-   bloqueia Edit/Write em arquivo existente; pre-commit (`freeze-invariants.sh`)
-   bloqueia M/D sem `DESKCOMM_GOV_INVARIANTS_EDIT=1`. Adição (A) passa livre —
-   é assim que a suíte cresce. O flip test.fails→normal é a exceção documentada.
+6. **`tests/invariants/**` — deleção protegida, edição livre**: o congelamento do
+   eval do épico foi aposentado (o diretório é a suíte geral de invariantes do
+   projeto, 526 arquivos, atrás do check `invariants`). Pre-commit
+   (`guard-invariants.sh`) barra `D`/`R` de invariante que a `main` tem, sem
+   `DESKCOMM_GOV_INVARIANTS_EDIT=1`; PreToolUse barra o `rm` antes de virar
+   comando. `M` e `A` passam livres.
 7. **Migration em tripla — enforcement físico**: `check-migration-triple.sh` exige
    baseline.sql + `-- manifest:` no .sql no mesmo commit da migration nova e NNNN inédito em
    todas as branches locais (a cadeia `vendaval/F2-*` tem migrations não mergeadas).

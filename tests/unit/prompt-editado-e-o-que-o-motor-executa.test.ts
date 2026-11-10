@@ -181,6 +181,28 @@ describe("PATCH /api/v1/ai/agents/:id — conteúdo de versão publicada não se
     expect(gravado).toMatchObject({ name: "Tobias II", is_active: false });
     expect(gravado).not.toHaveProperty("system_prompt");
   });
+
+  it("⭐ o agente de VOZ publicado edita o prompt pelo cadastro — é a coluna que o motor de voz lê", async () => {
+    const r = await patch(
+      { system_prompt: "Texto novo da ligação, com pelo menos vinte caracteres." },
+      agente({ channel: "voice", published_version_id: VERSAO }),
+    );
+
+    expect(r.status, JSON.stringify(r.corpo)).toBe(200);
+    expect(gravado).toMatchObject({
+      system_prompt: "Texto novo da ligação, com pelo menos vinte caracteres.",
+    });
+  });
+
+  it("o agente de WhatsApp publicado continua recusado quando o canal vem declarado", async () => {
+    const r = await patch(
+      { system_prompt: "Texto NOVO que o dono acredita ter publicado" },
+      agente({ channel: "whatsapp", published_version_id: VERSAO }),
+    );
+
+    expect(r.status, JSON.stringify(r.corpo)).toBe(409);
+    expect(gravado).toBeNull();
+  });
 });
 
 function elementosDaPagina(fonte: string) {

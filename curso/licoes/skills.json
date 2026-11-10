@@ -1,0 +1,694 @@
+{
+  "id": "skills",
+  "titulo": "Skills",
+  "tela": "/app/ai/skills",
+  "resumo": "Manuais curtos de como agir em situações específicas, que o agente de IA consulta quando o assunto aparece na conversa: instalar do catálogo, editar e manter atualizados.",
+  "licoes": [
+    {
+      "id": "skills-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Skills",
+      "objetivo": "Entender o que é uma skill, quando o agente usa uma e o que cada parte da tela mostra.",
+      "papel": "admin",
+      "busca": [
+        "skills",
+        "habilidades da IA",
+        "ensinar procedimento ao agente",
+        "playbook do agente",
+        "o que a IA sabe fazer",
+        "skills instaladas",
+        "catálogo de skills"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Skills não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Ensinar o agente\" está o cartão \"Skills\". O caminho completo é: Agente de IA › Ver tudo em IA › Skills.",
+          "dica": "Só gerente ou administrador vê este cartão. Para um atendente, ou para quem só tem permissão de leitura, ele não aparece, e o endereço da tela leva à página \"403 — Sem permissão\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em IA",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Skills ",
+                "regex": true
+              },
+              "rotulo": "Abrir as Skills",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Skills ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que é uma skill",
+          "rota": "/app/ai/skills",
+          "texto": "Uma skill é um manual curto de como agir numa situação específica, como marcar um horário ou explicar o preparo para a primeira consulta. O agente de IA sempre sabe que a skill existe, pelo nome e pela descrição. O passo a passo completo entra na conversa quando o assunto aparece: quando o cliente escreve uma das palavras-chave da skill, ou quando a conversa ou o contato tem uma etiqueta escolhida. Assim o agente não precisa carregar todos os manuais em toda resposta. A tela tem duas partes: \"Skills instaladas\", as que a sua empresa instalou ou enviou, e \"Catálogo\", as prontas da plataforma.",
+          "dica": "Uma skill vale para todos os agentes de IA da empresa. Esta tela não tem como ligar uma skill só para um agente.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Skills instaladas",
+                "exato": true
+              },
+              "rotulo": "As da sua empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Catálogo",
+                "exato": true
+              },
+              "rotulo": "As prontas da plataforma",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que cada skill instalada mostra",
+          "texto": "Cada skill instalada mostra o nome, um selo de origem e, à direita, a data da última mudança, em \"atualizada em\". O selo \"manual\" quer dizer que a sua equipe enviou a skill num arquivo .zip. O selo \"do catálogo\" quer dizer que ela foi instalada do Catálogo. Embaixo vem a descrição, a frase que o agente lê para saber para que a skill serve. \"Editar\" abre o texto da skill e \"Desinstalar\" tira a cópia da sua empresa.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "ul > li:has-text('preparo-primeira-consulta')"
+              },
+              "rotulo": "Uma skill instalada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "manual",
+                "exato": true
+              },
+              "rotulo": "Enviada pela equipe",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "do catálogo",
+                "exato": true
+              },
+              "rotulo": "Instalada do Catálogo",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Enviar uma skill da sua equipe",
+          "texto": "\"Enviar skill (.zip)\" instala uma skill escrita pela sua equipe. O arquivo .zip precisa ter, na raiz, um arquivo chamado SKILL.md, com o nome, a descrição e as palavras-chave no começo e o passo a passo logo abaixo. Ele também pode trazer as pastas \"references\" e \"assets\", com material de apoio. Se você enviar um .zip com o nome de uma skill que já existe, a sua versão passa a valer no lugar dela.",
+          "dica": "O pacote aceita até 64 arquivos e 5 MB depois de descompactado. O passo a passo pode ter no máximo 200 linhas. O nome da skill não pode ter acento nem ç.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar skill (.zip)",
+                "exato": true
+              },
+              "rotulo": "Enviar um .zip",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Use Editar para ajustar o texto de uma skill instalada — cada salvamento cria uma versão nova e a anterior fica no histórico. Também dá para reenviar um .zip com o mesmo nome; a sua versão passa a valer no lugar da do catálogo.",
+                "exato": true
+              },
+              "rotulo": "Editar ou reenviar",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O Catálogo",
+          "texto": "No \"Catálogo\" ficam as skills prontas que a plataforma mantém e que a sua empresa ainda não instalou. Aqui sobrou a \"objecao-preco\", que ensina o agente a lidar com o cliente que acha caro, sem dar desconto que não foi autorizado. Atenção: mesmo sem instalar, uma skill do catálogo já vale para os seus agentes. \"Instalar\" cria uma cópia da sua empresa, que você pode editar.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "objecao-preco",
+                "exato": true
+              },
+              "rotulo": "Skill pronta da plataforma",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Instalar",
+                "exato": true
+              },
+              "rotulo": "Criar a cópia da empresa",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "skills-instalar-e-desinstalar",
+      "titulo": "Instalar e desinstalar uma skill do catálogo",
+      "objetivo": "Instalar uma skill pronta da plataforma e saber o que acontece quando ela é desinstalada.",
+      "papel": "admin",
+      "busca": [
+        "instalar skill",
+        "skill do catálogo",
+        "cliente achou caro",
+        "objeção de preço",
+        "desinstalar skill",
+        "remover skill",
+        "copiar skill pronta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Instalar",
+          "rota": "/app/ai/skills",
+          "texto": "Para instalar uma skill do catálogo, clique em \"Instalar\" na linha dela. Vamos instalar a \"objecao-preco\".",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "objecao-preco",
+                "exato": true
+              },
+              "rotulo": "A skill que vamos instalar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Instalar",
+                "exato": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Instalar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A skill passou para Skills instaladas",
+          "texto": "Pronto: a \"objecao-preco\" entrou em \"Skills instaladas\", com o selo \"do catálogo\", e aparece por alguns segundos uma mensagem confirmando. O \"Catálogo\" ficou vazio, porque a sua empresa já instalou tudo o que a plataforma oferece hoje. A cópia é da sua empresa: dá para editar sem mexer no catálogo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Instalar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "ul > li:has-text('objecao-preco'):has-text('do catálogo')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "ul > li:has-text('objecao-preco'):has-text('do catálogo')"
+              },
+              "rotulo": "Instalada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Nenhuma skill nova no catálogo — você já instalou tudo que a plataforma oferece hoje.",
+                "exato": true
+              },
+              "rotulo": "Catálogo vazio",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Desinstalar",
+          "texto": "\"Desinstalar\" apaga na hora a cópia da sua empresa, sem pedir confirmação. Numa skill \"do catálogo\", como esta, a versão da plataforma volta a valer para os agentes, como antes de instalar. Numa skill \"manual\", o agente deixa de usá-la, a não ser que ela tenha o mesmo nome de uma skill do catálogo: aí volta a valer a do catálogo.",
+          "dica": "As versões da cópia não são apagadas: se você instalar a mesma skill de novo, elas voltam a aparecer no \"Histórico de versões\", em \"Editar\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Desinstalar",
+                "exato": true,
+                "dentro": {
+                  "css": "ul > li:has-text('objecao-preco')"
+                }
+              },
+              "rotulo": "Apagar a cópia",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Desinstalar",
+            "exato": true,
+            "dentro": {
+              "css": "ul > li:has-text('objecao-preco')"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "De volta ao Catálogo",
+          "texto": "A \"objecao-preco\" saiu de \"Skills instaladas\" e voltou para o \"Catálogo\", com o botão \"Instalar\". Os agentes seguem usando a versão da plataforma.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Desinstalar",
+                "exato": true,
+                "dentro": {
+                  "css": "ul > li:has-text('objecao-preco')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Instalar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "ul > li:has-text('objecao-preco')"
+              },
+              "rotulo": "De volta ao Catálogo",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "skills-editar-uma-skill",
+      "titulo": "Editar uma skill",
+      "objetivo": "Mudar quando uma skill entra na conversa e o que ela manda o agente fazer, sem perder a versão anterior.",
+      "papel": "admin",
+      "busca": [
+        "editar skill",
+        "palavras-chave da skill",
+        "quando a skill entra",
+        "etiqueta que ativa skill",
+        "mudar procedimento do agente",
+        "voltar versão da skill",
+        "histórico de versões"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a skill",
+          "rota": "/app/ai/skills",
+          "texto": "Vamos ajustar a \"preparo-primeira-consulta\", que a clínica escreveu para orientar quem vem pela primeira vez. Clique em \"Editar\", na linha dela.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "ul > li:has-text('preparo-primeira-consulta')"
+                }
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Editar",
+            "exato": true,
+            "dentro": {
+              "css": "ul > li:has-text('preparo-primeira-consulta')"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Descrição e palavras-chave",
+          "texto": "A janela \"Editar skill\" mostra a skill em partes. \"Descrição\" é a frase curta que o agente sempre lê, para saber que a skill existe e para que serve; ela ocupa uma linha só, com até 500 caracteres. \"Palavras-chave de ativação\" são as palavras que fazem o passo a passo entrar na conversa: basta uma delas aparecer nas mensagens mais recentes do cliente. Maiúsculas e acentos não fazem diferença. Separe as palavras por vírgula; é preciso ter pelo menos uma.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "ul > li:has-text('preparo-primeira-consulta')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Corpo (o procedimento que o agente segue)"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Descrição (aparece no índice do agente)"
+              },
+              "rotulo": "O que o agente sempre lê",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Palavras-chave de ativação (separe por vírgula)"
+              },
+              "rotulo": "Quando a skill entra",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Acrescentar uma palavra e usar etiquetas",
+          "texto": "Os pacientes perguntam muito se precisam ir em jejum. O passo a passo já responde isso, mas a palavra \"jejum\" não estava na lista: acrescentamos no fim, depois de uma vírgula. \"Etiquetas que ativam\" é opcional: se a conversa ou o contato tiver uma dessas etiquetas, a skill entra mesmo sem nenhuma palavra-chave. Aqui, quem tem a etiqueta \"primeira-consulta\" recebe este preparo mesmo que só diga \"oi\". Escreva a etiqueta igual à usada nas conversas e nos contatos: ela precisa ser a mesma palavra, não vale só um pedaço.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Palavras-chave de ativação (separe por vírgula)"
+              },
+              "valor": "primeira consulta, primeira vez, o que levar, o que preciso levar, carteirinha, convênio, jejum"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Palavras-chave de ativação (separe por vírgula)"
+              },
+              "rotulo": "\"jejum\" no fim",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Etiquetas que ativam (opcional)"
+              },
+              "rotulo": "Entra pela etiqueta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O passo a passo e o histórico",
+          "texto": "\"Corpo\" é o passo a passo que o agente segue quando a skill entra na conversa. Ele cabe em até 200 linhas: o contador ao lado mostra quantas já foram usadas e fica vermelho quando passa do limite, e aí o botão \"Salvar\" fica desligado. Embaixo, \"Histórico de versões\" lista cada versão guardada, com dia e hora; \"em uso\" marca a que vale agora.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Corpo (o procedimento que o agente segue)"
+              },
+              "rotulo": "O passo a passo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^\\d+/200 linhas$",
+                "regex": true
+              },
+              "rotulo": "Linhas usadas",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "[role=dialog] li:has-text('em uso')"
+              },
+              "rotulo": "A versão que vale agora",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar",
+          "texto": "Clique em \"Salvar\". Salvar não apaga nada: cria uma versão nova, e a anterior fica guardada no histórico. \"Cancelar\" fecha a janela sem guardar.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true
+              },
+              "rotulo": "Fechar sem guardar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Guardar a versão nova",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Voltar a uma versão anterior",
+          "texto": "A janela fecha e aparece por alguns segundos a mensagem de que a skill foi atualizada e já vale para os agentes. Abrindo \"Editar\" de novo, a palavra \"jejum\" está na lista e o \"Histórico de versões\" tem duas linhas: a versão nova, \"em uso\", e a anterior. Se a mudança não ficou boa, clique em \"Restaurar\" ao lado da versão anterior: ela volta a valer na hora, sem precisar salvar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "ul > li:has-text('preparo-primeira-consulta')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Restaurar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Palavras-chave de ativação (separe por vírgula)"
+              },
+              "rotulo": "Com \"jejum\"",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[role=dialog] li:has-text('em uso')"
+              },
+              "rotulo": "Versão nova",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Restaurar",
+                "exato": true
+              },
+              "rotulo": "Voltar para esta",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "skills-versao-nova-do-catalogo",
+      "titulo": "Adotar a versão nova de uma skill do catálogo",
+      "objetivo": "Entender o aviso de versão nova, conferir o que muda e decidir se adota.",
+      "papel": "admin",
+      "busca": [
+        "versão nova da skill",
+        "atualizar skill",
+        "adotar versão nova",
+        "skill desatualizada",
+        "o que mudou na skill",
+        "perdi minha edição da skill"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O aviso de versão nova",
+          "rota": "/app/ai/skills",
+          "texto": "A clínica instalou a \"agendamento\" do catálogo há dois meses e depois acrescentou duas palavras-chave. Desde então, a plataforma publicou uma versão nova dessa skill. Por isso a linha dela ganhou este aviso. A cópia da sua empresa não muda sozinha: ela continua valendo até você decidir.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.border-accent:has-text('Há uma versão nova')"
+              },
+              "rotulo": "Versão nova no catálogo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que muda se você adotar",
+          "texto": "O aviso resume o que muda se você adotar a versão do catálogo: aqui, a \"Descrição\", as \"Palavras-chave de ativação\" e o \"Procedimento (corpo)\", com quantas linhas entram (+) e quantas saem (−). Palavras-chave que entram aparecem com o sinal +; as que saem ficam em vermelho, com o sinal −. Aqui saem \"avaliação\" e \"encaixe\": a clínica acrescentou essas palavras, e elas não existem na versão do catálogo.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Se você adotar a versão do catálogo, muda:",
+                "exato": true
+              },
+              "rotulo": "O resumo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "ul > li:has-text('agendamento') span.text-destructive",
+                "literal": true
+              },
+              "rotulo": "Saem ao adotar",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Adotar",
+          "texto": "Se quiser a versão nova, clique em \"Adotar versão nova\". A versão do catálogo passa a valer, e o que a clínica editou sai de uso, mas fica guardado no \"Histórico de versões\". Para não perder as palavras da clínica, você pode acrescentá-las de novo depois, em \"Editar\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adotar versão nova",
+                "exato": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Adotar versão nova",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "A versão nova já vale",
+          "texto": "O aviso sumiu, a descrição já é a da versão nova e a data em \"atualizada em\" passou a ser a de agora. Também aparece por alguns segundos uma mensagem confirmando. O selo continua \"do catálogo\": quando a plataforma publicar outra versão, o aviso volta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Adotar versão nova",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "ul > li:has-text('agendamento')",
+                "literal": true
+              },
+              "rotulo": "Sem o aviso",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Nada se perdeu",
+          "texto": "Em \"Editar\", o \"Histórico de versões\" agora tem três linhas: a versão que você acabou de adotar, \"em uso\", a que a clínica editou e a primeira cópia instalada. Para voltar às palavras-chave da clínica, clique em \"Restaurar\" ao lado da versão editada. Ao voltar para ela, o aviso de versão nova aparece de novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "ul > li:has-text('agendamento')",
+                  "literal": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[role=dialog] li:has-text('em uso')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[role=dialog] ul:has(li:has-text('em uso'))"
+              },
+              "rotulo": "Três versões guardadas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Restaurar",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "A versão da clínica",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

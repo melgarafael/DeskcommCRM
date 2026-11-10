@@ -16,15 +16,38 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * ⚠️ O upsert grava só as colunas que a planilha carrega. `descricao`,
  * `imagem_url` e `ativo` ficam de fora de propósito — quem escreveu a descrição
  * pela tela não pode perdê-la porque alguém reimportou a lista de preços.
+ *
+ * A descrição que a planilha TRAZ (uma coluna de descrição ao lado da de nome,
+ * ver `lerPlanilha`) entra num passo à parte, depois do upsert, e só onde a
+ * célula tem texto: planilha sem a coluna, ou com a célula vazia, não apaga o
+ * que a tela escreveu.
+ *
+ * ─── A foto por URL (#3587) segue a mesma regra, e por isso é uma coluna ────
+ *
+ * A planilha pode trazer a coluna de foto, com um link ou até 5 separados por
+ * `|` (o primeiro é a capa). O servidor BAIXA cada link, guarda em
+ * `catalog-photos` e grava o CAMINHO em `fotos` — o mesmo formato que a tela
+ * grava e o único que o agente aceita na hora de apresentar o produto. A URL
+ * não é gravada em coluna nenhuma: link de anúncio sai do ar quando o carro é
+ * vendido, e aí a foto do cliente some junto.
+ *
+ * A linha que traz foto manda nas fotos DAQUELE produto (as anteriores saem do
+ * bucket); célula vazia não fala nada e deixa o que a tela gravou em paz. E a
+ * linha que declara uma foto que não dá para baixar é RECUSADA inteira, como a
+ * do preço ilegível — produto no catálogo com a foto errada é o defeito que
+ * esta fatia existe para não ter.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { chaveDoCodigo, lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
+import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
+import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { COLUNAS_DO_PRODUTO } from "@/lib/schemas/produtos";
@@ -50,6 +73,8 @@ interface ResumoDaImportacao {
   total_linhas: number;
   criados: number;
   atualizados: number;
+  /** Quantos produtos tiveram a descrição escrita pela planilha. */
+  descricoes: number;
   erros: ErroDaLinha[];
   colunas_ignoradas: string[];
 }
@@ -65,9 +90,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const orgId = authz.org.orgId;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
+  // 64 KB de folga para o envelope multipart; o tamanho do CSV é conferido abaixo.
+  const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+  });
+  if (!corpo.ok) return corpo.response;
+
   let arquivo: File;
   try {
-    const form = await req.formData();
+    const form = await corpo.corpo.formData();
     const f = form.get("file");
     if (!(f instanceof File)) throw new Error("sem arquivo");
     arquivo = f;
@@ -124,6 +157,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         total_linhas: totalLinhas,
         criados: 0,
         atualizados: 0,
+        descricoes: 0,
         erros: lido.erros,
         colunas_ignoradas: lido.colunasIgnoradas,
       } satisfies ResumoDaImportacao,
@@ -144,16 +178,24 @@ export async function POST(req: NextRequest): Promise<Response> {
   // `(organization_id, codigo)` só dela, nunca da tabela inteira). Serve a
   // catálogo de loja; com centenas de milhares de produtos, vira uma função no
   // banco com `lower(codigo)` e índice de expressão.
-  const cadastrados: string[] = [];
+  /**
+   * O que já está gravado: `id` e `fotos` além do código.
+   *
+   * O `id` é o que nomeia a pasta da foto no bucket (`<org>/<id>/…`) — sem ele
+   * não há como guardar a foto de um produto que já existe. E as `fotos` de
+   * hoje são o que a planilha vai substituir: sem elas, o arquivo trocado fica
+   * órfão no bucket em toda reimportação.
+   */
+  const conhecidos: Array<{ id: string; codigo: string; fotos: string[] | null }> = [];
   // Avança pelo que VEIO, não pelo que pediu, e para na página vazia: uma
   // instalação com `max_rows` menor que a página não fica com o catálogo cortado.
   for (;;) {
     const { data, error } = await supabase
       .from("catalog_products")
-      .select("codigo")
+      .select("id, codigo, fotos")
       .eq("organization_id", orgId)
       .order("codigo")
-      .range(cadastrados.length, cadastrados.length + PAGINA - 1);
+      .range(conhecidos.length, conhecidos.length + PAGINA - 1);
     // Sem o catálogo atual não há como saber quem é repetido: seguir gravaria
     // exatamente a duplicata que esta conferência existe para impedir.
     if (error) {
@@ -165,9 +207,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
     if (!data || data.length === 0) break;
-    cadastrados.push(...data.map((r) => (r as { codigo: string }).codigo));
+    conhecidos.push(...(data as Array<{ id: string; codigo: string; fotos: string[] | null }>));
   }
+  const cadastrados = conhecidos.map((r) => r.codigo);
   const antigos = new Set(cadastrados);
+  const idPorCodigo = new Map(conhecidos.map((r) => [r.codigo, r.id]));
+  const fotosPorCodigo = new Map(conhecidos.map((r) => [r.codigo, r.fotos ?? []]));
   const porChave = new Map<string, string[]>();
   for (const codigo of cadastrados) {
     const chave = chaveDoCodigo(codigo);
@@ -190,6 +235,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     return false;
   });
   let gravados = 0;
+  /** Os códigos que REALMENTE entraram — a limpeza das fotos antigas depende disso. */
+  const gravadosPorCodigo = new Set<string>();
 
   // A moeda vem da organização, igual ao cadastro manual — mas só entra na
   // linha de produto NOVO. Um upsert do PostgREST monta UMA sentença
@@ -198,9 +245,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   // MESMA planilha depois de trocar a moeda da organização reescreveria a
   // moeda de todo produto já cadastrado — o oposto do que `descricao`,
   // `imagem_url` e `ativo` já protegem (comentário no topo do arquivo). Por
-  // isso os dois grupos são upserts SEPARADOS, nunca misturados no mesmo lote:
-  // um shape por chamada, sem depender de o PostgREST tratar chave ausente
-  // linha a linha.
+  // isso os grupos são upserts SEPARADOS, nunca misturados no mesmo lote: um
+  // shape por chamada (novo × existente, com foto × sem foto), sem depender de
+  // o PostgREST tratar chave ausente linha a linha.
   const moeda = await moedaDaOrganizacao(supabase, orgId);
 
   const base = (p: (typeof lido.produtos)[number]) => ({
@@ -217,20 +264,65 @@ export async function POST(req: NextRequest): Promise<Response> {
     origem: "planilha",
   });
 
-  const paraGravar = aceitos.map((p) =>
-    antigos.has(p.codigo) ? base(p) : { ...base(p), moeda },
-  );
+  /**
+   * ─── A foto é baixada ANTES da gravação, e a linha que falha não entra ─────
+   *
+   * O caminho no bucket é `<org>/<produto>/<uuid>.<ext>`: sem o id do produto
+   * não há onde guardar. O do produto que já existe vem da leitura do catálogo;
+   * o do produto novo nasce aqui, e é por isso que ele — e só ele — leva `id`
+   * no shape (ver o grupo `novo+foto` em `gravarEmLotes`).
+   *
+   * Guardar depois de gravar seria mais barato e produziria o pior relatório:
+   * "a linha 5 falhou" para um produto que ENTROU sem a foto que a planilha
+   * anunciava. Baixar antes faz a recusa ser inteira, como a do preço ilegível.
+   */
+  const preparadas: Array<(typeof lido.produtos)[number] & { fotos?: string[]; id?: string }> = [];
+  for (const p of aceitos) {
+    if (!p.fotos || p.fotos.length === 0) {
+      preparadas.push(p);
+      continue;
+    }
+    const idExistente = idPorCodigo.get(p.codigo);
+    const produtoId = idExistente ?? randomUUID();
+    const guardadas = await guardarFotosPorUrl({ orgId, produtoId, urls: p.fotos, t });
+    if (!guardadas.ok) {
+      erros.push({ linha: p.linha, motivo: guardadas.motivo });
+      continue;
+    }
+    preparadas.push(
+      idExistente
+        ? { ...p, fotos: guardadas.caminhos }
+        : { ...p, id: produtoId, fotos: guardadas.caminhos },
+    );
+  }
+
+  const paraGravar = preparadas.map((p) => {
+    const existente = antigos.has(p.codigo);
+    return {
+      ...base(p),
+      ...(existente ? {} : { moeda }),
+      ...(p.id ? { id: p.id } : {}),
+      ...(p.fotos ? { fotos: p.fotos } : {}),
+    };
+  });
 
   /** Grava um grupo de shape uniforme, em lotes, com reteste linha a linha no que falhar. */
-  async function gravarEmLotes(itens: typeof paraGravar): Promise<void> {
+  async function gravarEmLotes(
+    itens: typeof paraGravar,
+    modo: "upsert" | "insert",
+  ): Promise<void> {
+    const enviar = (linhas: Array<Record<string, unknown>>) =>
+      modo === "insert"
+        ? supabase.from("catalog_products").insert(linhas)
+        : supabase.from("catalog_products").upsert(linhas, { onConflict: "organization_id,codigo" });
+
     for (let i = 0; i < itens.length; i += LOTE) {
       const lote = itens.slice(i, i + LOTE);
-      const { error } = await supabase
-        .from("catalog_products")
-        .upsert(lote.map(semALinha), { onConflict: "organization_id,codigo" });
+      const { error } = await enviar(lote.map(semALinha));
 
       if (!error) {
         gravados += lote.length;
+        for (const linha of lote) gravadosPorCodigo.add(linha.codigo);
         continue;
       }
 
@@ -238,23 +330,61 @@ export async function POST(req: NextRequest): Promise<Response> {
       // o relatório precisa nomear QUAL linha — então o lote que falhou é
       // refeito produto a produto.
       for (const produto of lote) {
-        const { error: individual } = await supabase
-          .from("catalog_products")
-          .upsert([semALinha(produto)], { onConflict: "organization_id,codigo" });
+        const { error: individual } = await enviar([semALinha(produto)]);
         if (individual) {
           erros.push({ linha: produto.linha, motivo: `"${produto.nome}": ${individual.message}` });
           continue;
         }
         gravados += 1;
+        gravadosPorCodigo.add(produto.codigo);
       }
     }
   }
 
-  const novos = paraGravar.filter((p) => !antigos.has(p.codigo));
-  const existentes = paraGravar.filter((p) => antigos.has(p.codigo));
-  await gravarEmLotes(novos);
-  await gravarEmLotes(existentes);
+  /**
+   * O grupo `novo+foto` NÃO é upsert: o `id` que ele carrega é o da pasta da
+   * foto, e num upsert a chave presente também é escrita no `DO UPDATE` — um
+   * código já existente (corrida entre a leitura do catálogo e esta gravação)
+   * teria a CHAVE PRIMÁRIA trocada, e as fotos do produto em uso passariam a
+   * apontar para uma pasta que não é mais dele. Com `insert`, esse caso vira o
+   * erro de código repetido que a linha já sabe relatar.
+   */
+  const grupos = new Map<string, typeof paraGravar>();
+  for (const linha of paraGravar) {
+    const chave = `${antigos.has(linha.codigo) ? "existente" : "novo"}${"fotos" in linha ? "+foto" : ""}`;
+    grupos.set(chave, [...(grupos.get(chave) ?? []), linha]);
+  }
+  for (const [chave, linhas] of grupos) {
+    await gravarEmLotes(linhas, chave === "novo+foto" ? "insert" : "upsert");
+  }
 
+  // A foto que a planilha substituiu sai do bucket — a mesma limpeza que o PUT
+  // da tela faz. Só de quem REALMENTE entrou: apagar o arquivo de um produto
+  // cuja gravação falhou deixaria a linha apontando para foto que não existe.
+  for (const p of preparadas) {
+    if (!p.fotos || !gravadosPorCodigo.has(p.codigo)) continue;
+    const id = p.id ?? idPorCodigo.get(p.codigo);
+    if (!id) continue;
+    const antigas = (fotosPorCodigo.get(p.codigo) ?? []).filter((c) => !p.fotos!.includes(c));
+    await apagarDoBucket(orgId, id, antigas, requestId);
+  }
+
+  // A descrição, num passo À PARTE e só onde a célula trouxe texto (ver o topo
+  // do arquivo): nunca no upsert, que a apagaria de quem reimporta sem ela. Só
+  // de quem REALMENTE entrou — e a organização vai junto, como no resto.
+  let descricoes = 0;
+  for (const p of preparadas) {
+    if (!p.descricao || !gravadosPorCodigo.has(p.codigo)) continue;
+    const { error } = await supabase
+      .from("catalog_products")
+      .update({ descricao: p.descricao })
+      .eq("organization_id", orgId)
+      .eq("codigo", p.codigo);
+    if (error) erros.push({ linha: p.linha, motivo: `"${p.nome}": ${error.message}` });
+    else descricoes += 1;
+  }
+
+  const existentes = paraGravar.filter((p) => antigos.has(p.codigo));
   const atualizados = existentes.length;
   const criados = Math.max(0, gravados - atualizados);
 
@@ -270,6 +400,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       total_linhas: totalLinhas,
       criados,
       atualizados,
+      descricoes,
       erros: erros.length,
     },
   });
@@ -279,6 +410,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       total_linhas: totalLinhas,
       criados,
       atualizados,
+      descricoes,
       erros,
       colunas_ignoradas: lido.colunasIgnoradas,
     } satisfies ResumoDaImportacao,
@@ -286,17 +418,27 @@ export async function POST(req: NextRequest): Promise<Response> {
   );
 }
 
-/** GET devolve o modelo de planilha, para a pessoa não ter de adivinhar as colunas. */
+/**
+ * GET devolve o modelo de planilha, para a pessoa não ter de adivinhar as colunas.
+ *
+ * A coluna `descricao` vem ao lado da de nome, com um exemplo na primeira linha:
+ * é ela que diz ao atendente de IA o que é o produto.
+ *
+ * A coluna `foto` vem no cabeçalho e VAZIA nas duas linhas: o modelo tem de
+ * importar limpo como vem, que é o primeiro gesto de quem testa a importação.
+ * Um link de exemplo ali seria baixado de verdade — de um domínio de terceiros —
+ * e a linha voltaria recusada. O formato `link1|link2` é explicado na tela de
+ * Produtos, ao lado do link do modelo.
+ */
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const modelo = [
-    "codigo,nome,marca,categoria,preco,custo,estoque",
-    "IP15-128,iPhone 15 128GB,Apple,Celular,5499.00,4100.00,3",
-    "PERF-212,212 VIP Men 100ml,Carolina Herrera,Perfume,449.90,280.00,7",
+    "codigo,nome,marca,categoria,preco,custo,estoque,descricao,foto",
+    'IP15-128,iPhone 15 128GB,Apple,Celular,5499.00,4100.00,3,"Tela de 6,1 polegadas, 128 GB",',
+    "PERF-212,212 VIP Men 100ml,Carolina Herrera,Perfume,449.90,280.00,7,,",
   ].join("\n");
 
   return new Response(`﻿${modelo}\n`, {

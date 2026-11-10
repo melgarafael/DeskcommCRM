@@ -351,11 +351,13 @@ describe("gradual outreach", () => {
         website: "https://example.test/",
         site: {
           ver: 1,
+          // Domínio morto é o veredito PROVADO de "não abre" (#3723): 503 seria
+          // medição barrada, que não se cita.
           classe: "fora-do-ar",
-          problemas: ["http-503"],
+          problemas: ["dns-morto"],
           checklist: { tem: [], falta: [] },
           final_url: "https://example.test/",
-          http_status: 503,
+          http_status: null,
           tempo_ms: 300,
           conteudo_resumo: "Página de erro do servidor",
           pagespeed: null,
@@ -1060,5 +1062,36 @@ describe("tick × preparo automático (B2)", () => {
     await expect(tickProspecting(pool as never, {} as never)).resolves.toBeDefined();
     expect(ordem).toContain(`bloqueio:${ORG_A}`);
     expect(ordem).toContain(`preparo:${ORG_A}`);
+  });
+
+  // #3887: conferir o WhatsApp é consulta em massa pelo número do cliente — módulo
+  // opcional, desligado por padrão. Desligado, o ramo (c) recebe lista vazia de
+  // canais e não seleciona organização nenhuma por telefone sem veredito.
+  it("módulo conferir_whatsapp desligado: o ramo do WhatsApp recebe lista vazia; ligado, os canais capazes", async () => {
+    const paramsDaSegunda = (pool: { query: { mock: { calls: unknown[][] } } }) =>
+      pool.query.mock.calls.find((c) => String(c[0]).includes("'draft'"))?.[1] as unknown[] | undefined;
+    const desligado = montar({ segundaConsulta: [ORG_B] });
+    await tickProspecting(desligado.pool as never, {} as never);
+    expect(paramsDaSegunda(desligado.pool)).toEqual([[]]);
+
+    const ligado = montar({ segundaConsulta: [ORG_B] });
+    const admin = {
+      from: (tabela: string) => ({
+        select: () => ({
+          in: (_c: string, chaves: string[]) =>
+            tabela === "platform_config"
+              ? Promise.resolve({
+                  data: chaves.includes("MODULO_CONFERIR_WHATSAPP")
+                    ? [{ chave: "MODULO_CONFERIR_WHATSAPP", valor: "ligado" }]
+                    : [],
+                  error: null,
+                })
+              : { eq: async () => ({ data: [], error: null }) },
+        }),
+      }),
+    };
+    await tickProspecting(ligado.pool as never, admin as never);
+    const [canais] = paramsDaSegunda(ligado.pool) as [string[]];
+    expect(canais.length).toBeGreaterThan(0);
   });
 });

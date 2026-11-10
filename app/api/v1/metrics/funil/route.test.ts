@@ -510,6 +510,130 @@ describe("GET /api/v1/metrics/funil", () => {
     expect(temNaN(corpo)).toBe(false);
   });
 
+  // ─── As duas parcelas do período (fatia 2, item 1, da #3602) ──────────────
+
+  it("devolve vendido único (R$ 3.000) e recorrência nova (R$ 500/mês) SEPARADOS", async () => {
+    permitido();
+    const dados = alegria();
+    dados.crm_leads = [
+      lead("g1", {
+        status: "won",
+        stage_id: "W",
+        source: "site",
+        value_cents: 300_000,
+        recurring_value_cents: 50_000,
+        recurring_period: "monthly",
+        currency: "BRL",
+        created_at: "2026-09-01T00:00:00.000Z",
+        closed_at: "2026-09-03T00:00:00.000Z",
+      }),
+      // O segundo ganho da janela não tem recorrência: entra no único.
+      lead("g2", {
+        status: "won",
+        stage_id: "W",
+        source: "site",
+        value_cents: null,
+        currency: "BRL",
+        created_at: "2026-09-01T00:00:00.000Z",
+        closed_at: "2026-09-05T00:00:00.000Z",
+      }),
+    ];
+    const { client } = fakeSupabase(dados, RPC_OK);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    expect(res.status).toBe(200);
+    const corpo = ((await res.json()) as { data: Record<string, unknown> }).data;
+
+    // Antes do conserto o bloco não existia: a matriz por origem somava só
+    // `value_cents` e a recorrência nova do mês não aparecia em número nenhum.
+    expect(corpo).toHaveProperty("valores_do_periodo");
+
+    const valores = corpo.valores_do_periodo as {
+      moeda: string | null;
+      moeda_mista: boolean;
+      unico: { centavos: number | null; negocios: number };
+      recorrente_mensal: { centavos: number | null; negocios: number };
+      negocios_com_recorrencia: number;
+      truncado: boolean;
+    };
+    expect(valores.unico.centavos).toBe(300_000);
+    expect(valores.unico.negocios).toBe(2);
+    expect(valores.recorrente_mensal.centavos).toBe(50_000);
+    expect(valores.recorrente_mensal.negocios).toBe(1);
+    expect(valores.negocios_com_recorrencia).toBe(1);
+    expect(valores.moeda).toBe("BRL");
+    expect(valores.truncado).toBe(false);
+
+    // A fronteira: nada somado — nem campo, nem valor.
+    expect(valores).not.toHaveProperty("total");
+    expect(valores).not.toHaveProperty("total_centavos");
+    expect(JSON.stringify(corpo)).not.toContain("350000");
+    expect(temNaN(corpo)).toBe(false);
+  });
+
+  it("retrocompatível: sem recorrência o único é o de sempre e a recorrência é zero", async () => {
+    permitido();
+    const { client } = fakeSupabase(alegria(), RPC_OK);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    const corpo = ((await res.json()) as { data: Record<string, unknown> }).data;
+    const valores = corpo.valores_do_periodo as {
+      unico: { centavos: number | null; negocios: number };
+      recorrente_mensal: { centavos: number | null; negocios: number };
+      negocios_com_recorrencia: number;
+    };
+    // A fixture da alegria soma 120,00 + 90,00 nos dois ganhos — o mesmo número
+    // que a matriz por origem já mostrava. Nada muda para quem não usa o campo.
+    expect(valores.unico.centavos).toBe(210_00);
+    expect(valores.unico.negocios).toBe(2);
+    expect(valores.recorrente_mensal.centavos).toBe(0);
+    expect(valores.recorrente_mensal.negocios).toBe(0);
+    expect(valores.negocios_com_recorrencia).toBe(0);
+  });
+
+  it("período respeitado: ganho FORA da janela não conta em nenhuma das duas parcelas", async () => {
+    permitido();
+    const dados = alegria();
+    dados.crm_leads = [
+      lead("g4", {
+        status: "won",
+        stage_id: "W",
+        source: "site",
+        value_cents: 300_000,
+        recurring_value_cents: 50_000,
+        recurring_period: "monthly",
+        currency: "BRL",
+        created_at: "2026-08-01T00:00:00.000Z",
+        closed_at: "2026-08-31T23:00:00.000Z",
+      }),
+      lead("g1", {
+        status: "won",
+        stage_id: "W",
+        source: "site",
+        value_cents: 200_000,
+        currency: "BRL",
+        created_at: "2026-09-01T00:00:00.000Z",
+        closed_at: "2026-09-10T00:00:00.000Z",
+      }),
+    ];
+    const { client } = fakeSupabase(dados, RPC_OK);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    const corpo = ((await res.json()) as { data: Record<string, unknown> }).data;
+    const valores = corpo.valores_do_periodo as {
+      unico: { centavos: number | null; negocios: number };
+      recorrente_mensal: { centavos: number | null };
+      negocios_com_recorrencia: number;
+    };
+    expect(valores.unico.centavos).toBe(200_000);
+    expect(valores.unico.negocios).toBe(1);
+    expect(valores.recorrente_mensal.centavos).toBe(0);
+    expect(valores.negocios_com_recorrencia).toBe(0);
+  });
+
   it("leitura recusada para quem não é agent", async () => {
     vi.mocked(requireRole).mockResolvedValue({
       ok: false,

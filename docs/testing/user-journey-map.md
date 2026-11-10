@@ -523,6 +523,39 @@ diálogo e é asserida na spec.
 
 ---
 
+## J58 — Conectar o número oficial com um clique, sem conta no provedor `[P0]` (2026-10-20)
+
+Primeira impressão de quem compra de um revendedor: a empresa não tem — e não deve ter —
+acesso à conta do provedor parceiro da instalação. Com a chave dessa conta em Painel ›
+Configuração (`ZERNIO_PLATFORM_API_KEY`), Conexões › Provedor parceiro mostra «Conectar meu
+WhatsApp»: página de cadastro do provedor → volta por outro site (cookie Strict não vem,
+ponte same-origin) → a tela conclui. Spec: `tests/e2e/numero-oficial-um-clique.spec.ts`,
+contra um dublê HTTP do provedor (porta 3996) que guarda perfis, contas e assinaturas. No
+CI ela se declara pulada (sem dublê), como a J52.4.
+
+Os eventos de TODAS as conexões de um clique chegam por um webhook ÚNICO da instalação
+(`/api/v1/webhooks/canal-da-instalacao`), filtrado aos perfis delas: o provedor limita as
+assinaturas por conta. A spec conecta a empresa pela tela com uma SEGUNDA empresa já
+conectada, e prova o roteamento pela conta do evento.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J58.1 | Instalação com a chave, empresa sem conexão | o botão de um clique, com a escolha «já usa o app WhatsApp Business» / «número novo»; o campo de chave própria só a pedido | **PASS pela tela (local, 2026-10-21)** — `evidence/numero-oficial-um-clique/01-botao-de-um-clique.png` |
+| J58.2 | Clicar, concluir no provedor e voltar | «Conectado» com o número; webhook «configurado automaticamente»; a sessão aponta para a chave da instalação (nenhuma cópia dela); UMA assinatura no provedor, na entrada da instalação, filtrada aos perfis das duas empresas; o perfil termina com o começo do id da organização (e leva a marca da instalação na frente, quando há marca própria) | **PASS pela tela (local, 2026-10-21)** — mesma spec; a segunda captura da spec (a tela já conectada) se regrava na próxima rodada local |
+| J58.3 | Mensagem de cada conta, assinada com o segredo do webhook da instalação | cai na organização DELA e em nenhuma outra; conta de ninguém → 200 sem gravar; segredo errado → 401 | **PASS (local, 2026-10-21)** — mesma spec; **PASS (unit)** — `app/api/v1/webhooks/canal-da-instalacao/route.test.ts`, `lib/channels/entrada-da-instalacao.test.ts` |
+| J58.4 | Excluir a conexão | desconecta o número da conta da instalação; a assinatura NÃO é apagada — o filtro fica só com a outra empresa, que segue recebendo | **PASS (local, 2026-10-21)** — mesma spec; **PASS (unit)** — `lib/channels/connect-credencial-e-webhook.test.ts` |
+| J58.5 | Volta forjada, vencida, de outra organização, ou conta fora do perfil | nada é gravado | **PASS (unit)** — `lib/channels/conexao-um-clique.test.ts`, `tests/unit/parceiro-volta-da-conexao.test.ts` |
+| J58.6 | Plano sem vaga de número | recusa ANTES de abrir a página da Meta (o número não entra na fatura da instalação para o CRM recusar no fim) | **PASS (unit)** — `lib/channels/conexao-um-clique.test.ts` |
+| J58.7 | Mais de 50 empresas conectadas por um clique | o webhook da instalação fica SEM filtro (o provedor aceita no máximo 50 perfis), em vez de recusar a conexão nova; a entrada descarta com 200 o evento que não é de uma conexão ativa | **PASS (unit)** — `lib/channels/zernio/webhook-da-instalacao.test.ts` |
+| J58.8 | O número conectado ENVIA mas não RECEBE (a sonda do provedor traz `inboundWebhookSubscribed: false`) | o status segue `WORKING` (o envio não é barrado); o cartão em Conexões troca «Conectado» por «Atenção» e diz «A Meta informa que este número não recebe mensagens»; a Central abre UM aviso crítico com o nome da conexão, no idioma da organização, que fecha sozinho quando a sonda volta limpa | **PASS (unit)** — `tests/unit/numero-de-pe-com-defeito.test.ts`, `tests/unit/vigia-grava-o-defeito-do-numero.test.ts` (a rota do cron), `components/connections/DefeitoDoNumero.test.tsx`. Sonda que não informa o campo (`null`, chave ausente, corpo ilegível) não abre nem fecha defeito. **NÃO provado pela tela** |
+| J58.9 | O número com envio restrito pela plataforma (`messagingRestriction` 131042 pagamento, 131031 conta bloqueada, 368 política) | o mesmo selo «Atenção» com o código; o aviso diz o porquê e onde resolver, e que fecha sozinho quando uma mensagem voltar a ser entregue | **PASS (unit)** — mesmos arquivos. **NÃO provado pela tela** |
+| J58.10 | O provedor pede calma no envio (429 com `Retry-After`, ou 131056 em `platformError.code`) | a mensagem da pessoa ou do agente não vira falha: fica `queued`, sai de novo NA MESMA bolha depois da espera pedida (30 s a 5 min), na ordem da conversa e uma vez só; depois de 4 tentativas, `failed` com o motivo. A de campanha ou automação segue `failed`, que é o que o laço dela lê | **PASS (unit)** — `tests/unit/envio-desacelerado-sai-de-novo.test.ts`, `tests/unit/envio-desacelerado-nao-e-falha.test.ts`. **NÃO provado pela tela** |
+| J58.11 | Mensagem nova chegando pelo webhook (por conexão ou da instalação) | a rota responde 200 `accepted` sem esperar a ingestão (com a ingestão demorando 2 s, a resposta sai em < 500 ms); a mensagem entra logo depois, uma vez só. Sem o arquivo do webhook gravado e marcado, 503 + `Retry-After` — nunca 200 | **PASS (unit)** — `tests/unit/webhook-responde-antes-de-processar.test.ts`, `tests/unit/contrato-do-webhook-zernio.test.ts` |
+| J58.12 | O servidor reinicia entre o 200 e o fim da ingestão | o cron `webhook-replay` (atrás do piso ocioso, cujo sinal vê a linha aceita) reprocessa a linha UMA vez, pela mesma ingestão, sem duplicar, e retoma os efeitos da mensagem gravada que parou no meio (sem segundo turno nem não lida a mais); erro de banco deixa a linha pendente; no teto de tentativas ou passadas 6 h, `dead` e UM aviso na Central que manda conferir o painel do provedor, com o pedido de sair gravado antes; passadas 6 h com a mensagem no CRM e sem o pedido de despacho, rodam os efeitos sem acordar a IA e abre o aviso de mensagem sem atendimento | **PASS (unit)** — `tests/unit/webhook-responde-antes-de-processar.test.ts`, `tests/unit/channel-ingest-zernio.test.ts`, `lib/cron/piso-ocioso.test.ts` |
+
+Não provado pela tela: a janela real da Meta (QR da coexistência, código do número) — só
+com um número de verdade, e é a prova manual que fecha esta jornada.
+
 ## J52 — Campanha pelo número oficial, com modelo aprovado `[P1]` (2026-10-15)
 
 Contexto: issue #1330, fatia 4. Número oficial só aceita texto livre dentro das
@@ -554,6 +587,9 @@ plataforma devolvem a pessoa à fila em vez de falhá-la.
 | J52.6 | Entrega e leitura pelo oficial direto | o trigger de ack lê `delivered_at`/`read_at` e o destinatário vira entregue/lido | **PASS (banco)** — do #2937: `tests/invariants/ack-da-api-oficial-alcanca-o-destinatario.test.ts` |
 | J52.7 | Escolher «Rápido» no ritmo de uma campanha do número oficial (migration 0711) | a campanha que já existia vem «Gradual»; «Rápido» grava `velocidade = rapida`, some o campo de intervalo, e a confirmação de «Iniciar envio» diz «Envio rápido: sai tudo em cerca de 1 min.» | **PASS pela tela + banco** (2026-10-16) — `evidence/campanha-com-modelo-aprovado/06-envio-rapido-escolhido.png` |
 | J52.8 | Campanha rápida de 3 pessoas, uma rodada do cron (com o dublê do provedor) | o provedor recebe os 3 modelos, cada um com o primeiro nome da pessoa; os 3 destinatários ficam `sent`, a campanha `completed`, e a tela mostra «Enviadas 3» | **PASS pela tela, local** (2026-10-16) — `evidence/campanha-com-modelo-aprovado/07-rapida-lista-inteira-numa-rodada.png`; no CI pula (sem dublê) |
+| J52.9 | Escolher «Broadcast» numa campanha do número oficial cujo provedor faz broadcast (migration 0712) | com `{{1}}` = primeiro nome, a opção aparece travada e diz «usa dados de cada pessoa ({{1}})»; com texto fixo nas duas variáveis ela destrava, a tela lista «amiga» e «Cafeteira Elétrica» como o que sai para todos, e somem o intervalo e os máximos da campanha (fica a janela); a tela avisa que a lista inteira tem de caber no teto diário do número | **PASS pela tela** (2026-11-06) — `evidence/campanha-com-modelo-aprovado/08-broadcast-travado-com-nome.png`, `evidence/campanha-com-modelo-aprovado/09-broadcast-escolhido-texto-fixo.png`, `evidence/campanha-com-modelo-aprovado/09-broadcast-escolhido-375px.png` |
+| J52.10 | Campanha por broadcast de 3 pessoas, duas rodadas do cron (com o dublê do provedor) | 1ª rodada: o provedor recebe UM broadcast com o modelo e os valores já escritos, os 3 telefones e o envio — nenhum envio de um em um; a campanha guarda o id. 2ª rodada: o relatório leva os 3 a `delivered`, a campanha conclui e a tela mostra «Entregues 3» | **PASS pela tela, com o dublê** (2026-11-06) — `evidence/campanha-com-modelo-aprovado/10-broadcast-entregue-pelo-relatorio.png`; no CI pula (sem dublê) |
+| J52.11 | Pausar uma campanha por broadcast com os telefones já no rascunho do provedor; uma pessoa pede para sair; retomar | o provedor não remove destinatário, então o rascunho é apagado (`DELETE`) e a rodada seguinte cria outro: o envio alcança só os 2 que ficaram, e a pessoa segue `opted_out`. O mesmo vale para lista de exclusão, anonimização, 5xx no envio e reservado de rodada que caiu. Ninguém saiu: o rascunho é reaproveitado | **PASS pela tela, com o dublê** (2026-11-06, banco fresco do baseline + bootstrap-owner, `next build`/`start`; 9/9 na spec) — `evidence/campanha-com-modelo-aprovado/11-broadcast-acima-do-teto.png`, `evidence/campanha-com-modelo-aprovado/12-broadcast-retomada-sem-quem-saiu.png`, `evidence/campanha-com-modelo-aprovado/13-broadcast-retomada-375px.png`; os demais caminhos em `lib/campanhas/transmissao-freio.test.ts`. A saída da lista entra pela marca `is_blocked` gravada direto no contato, e provedor real **NÃO MEDIDO**; no CI pula (sem dublê) |
 
 ## J9 — Ver o que o follow-up já fez, e intervir sem matá-lo `[P1]`
 
@@ -957,6 +993,17 @@ nenhuma tela a gravava.
    servidor"). Passou a perguntar ao resolvedor.
 
 ---
+
+## J67 — A vaga que abre vai para quem pediu encaixe `[P1]` (2026-11-06)
+
+Módulo opcional (doc 208 = A, #3465). Sem instalar, nada muda.
+
+- [ ] Instalar em Módulos; a porta Lista de espera aparece; sem o módulo, a porta some e a rota responde 404.
+- [ ] Salvar sem os três prazos é impossível; ligar depois de escolher.
+- [ ] Inscrever com o consentimento marcado; cancelar um compromisso; a oferta sai e a vaga fica pendente.
+- [ ] Aceitou confirma; Recusou chama o próximo, e a vaga não volta a quem recusou.
+- [ ] Prazo vencido passa a vaga adiante; contato bloqueado ou anonimizado não recebe.
+- [ ] Banco, dois tenants e concorrência: `tests/invariants/lista-de-espera-encaixe.test.ts`.
 
 ## Lote 8 da triagem — Agenda e Contatos provados em tela (2026-09-15)
 
@@ -2190,6 +2237,31 @@ fresca ponta a ponta com a marca de um revendedor — `install.sh` numa VPS, res
 quem compra funciona inteira. Os defeitos de marca que mais custam caro moram exatamente aí,
 porque são vistos primeiro por um terceiro. **A receita para fechá-la está em J10, abaixo.**
 
+## J63 — A espera do follow-up só termina em horário comercial `[P1]` (2026-11-03)
+
+Medido numa instalação real: o fluxo "boas-vindas → 24 h → lembrete → 48 h → último toque"
+mandava o lembrete à mesma hora do formulário (2h da manhã para quem se cadastrou às 2h). A
+janela do número seguraria também a boas-vindas, que precisa sair na hora, e a faixa do agente
+vale para a inscrição inteira. A caixa Aguardar (tempo fixo) ganhou "Só terminar a espera em
+horário comercial" (`wait.ate_o_horario`, regra em `lib/followup/espera-no-horario.ts`, sobre as
+mesmas funções de calendário do horário de atendimento do agente). Spec:
+`tests/e2e/followup-builder.spec.ts` (bloco "espera só termina em horário comercial").
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J63.1 | Ligar o horário no painel da espera | início, fim e dias aparecem (padrão seg–sex 09–18); o card diz "só em horário comercial" | spec acima — a medir (CI) |
+| J63.2 | Salvar e recarregar | o painel volta com o horário gravado, não com o padrão | spec acima — a medir (CI) |
+| J63.3 | Mudar a duração com o horário ligado | o rascunho guarda a duração nova E o horário inteiro (prova pela API) | spec acima — a medir (CI); o conserto do formulário também em `WaitForm.test.tsx` |
+| J63.4 | A espera vence de noite ou no fim de semana | o motor grava a próxima abertura, no fuso da organização; na saída fora do horário, espera de novo | **PASS (unit)** — `lib/followup/espera-no-horario.test.ts` |
+| J63.5 | O cliente responde no meio da noite | a resposta corta a espera na hora (o horário segura o toque proativo, não a resposta) | **PASS (unit)** |
+| J63.6 | Horário torto (fim antes do início, nenhum dia) | o rascunho aceita; o publish recusa com `horario_da_espera_invalido` | **PASS (unit)** |
+
+Evidência de tela: nenhuma captura versionada neste PR — a prova pela tela é a spec e2e do
+editor de follow-up, que roda no CI.
+
+Não provado: um envio real atravessando a madrugada num worker (o relógio do motor é medido em
+unit e no teste do motor com banco dublê).
+
 ## J57 — Vendas e dinheiro no celular `[P1]` (2026-10-23)
 
 ADR-0006, fase F4. Telas do gestor que, a 390px, deixavam ação fora da tela ou
@@ -2209,6 +2281,21 @@ só o que aparece sem canal conectado de verdade.
 | J57.6 | Meta Ads sem conta a 390px | o `<main>` não rola para o lado (o `-m-6` acompanha o `p-4` do `<main>`) | a medir (CI) |
 | J57.7 | Faturamento a 390px e a 1280px | a linha do lançamento vira cartão; «Pagar» e «×» com ≥ 44×44px, dentro da tela, sem um cobrir o outro; a 1280px a linha volta a `table-row` e «Pagar» volta a texto | classe conferida (unit) `tests/unit/pagar-e-remover-sao-alvos-separados.test.tsx`; geometria a medir (CI) |
 | J57.8 | Nome da campanha no Meta Ads | a 1ª coluna e o nome dentro dela param em 9rem abaixo de `md` e voltam a 22rem acima | classe conferida (unit) `tests/unit/meta-ads-connect-rate-na-tela.test.tsx`; geometria a medir (CI) — a spec de hoje não chega à tabela: sem conta Meta no CI ela não aparece |
+
+## J62 — Escolher o modelo que escreve o follow-up `[P2]` (2026-11-03)
+
+Em Agente de IA › Provedores, grupo "Atender o cliente", o ponto **"Escrever o follow-up"**
+(`followup_turn`) mostra o modelo da versão publicada do agente enquanto ninguém escolheu outro, e
+aceita um modelo próprio (com ferramentas). Escolhido, só os follow-ups (passos de IA dos fluxos de
+silêncio e retornos combinados pelo agente) passam a usá-lo; a resposta ao cliente continua no
+modelo do agente. Quem escolhe o ponto no motor é o `kind` do job, em `executarTurnoDoAgente`; a
+prova de que o follow-up sai como `followup_turn` e a resposta como `agent_turn`, lida em
+`llm_calls`, é `tests/invariants/follow-up-usa-o-proprio-ponto.test.ts`.
+
+| # | Caso | Esperado | Estado |
+|---|---|---|---|
+| J62.1 | Abrir Provedores e o grupo "Atender o cliente" | o ponto aparece com o nome, a exigência de ferramentas e o sintoma de falha | spec `prova-painel-provedores.spec.ts` ("o follow-up tem modelo próprio…"); evidência em `evidence/modelo-do-follow-up/` quando roda |
+| J62.2 | Escolher outro modelo no ponto, gravar e recarregar | a escolha volta do banco com origem "Escolhido por você"; `agent_turn` não muda de origem | mesma spec |
 
 ## J10 — Instalação fresca com a marca do revendedor `[P0]` (receita manual)
 
@@ -2334,7 +2421,7 @@ grupo IA já usava.
 
 | caso | prioridade | estado |
 |---|---|---|
-| Em 1280×900 o menu inteiro cabe sem rolar | `[P1]` | **PASS**, medido por ferramenta em `tests/e2e/navegacao.spec.ts`: `scrollHeight` **763** = altura **763**, excesso **0**, 18 links. A folga real — distância entre o fim do último grupo e o fim da caixa de conteúdo da `<nav>`, que o `scrollHeight` grampeado NÃO revela — é **19px** |
+| Em 1280×900 o menu inteiro cabe sem rolar | `[P1]` | **PASS**, medido por ferramenta em `tests/e2e/navegacao.spec.ts`: `scrollHeight` **763** = altura **763**, excesso **0**, 18 links. A folga real — distância entre o fim do último grupo e o fim da caixa de conteúdo da `<nav>`, que o `scrollHeight` grampeado NÃO revela — é **7px** desde que o rodapé fixo ganhou o link da Ajuda (ver abaixo) |
 | Etapas do funil continua alcançável pelo CRM, não por Configurações | `[P1]` | **PASS**, e o caminho é percorrido inteiro: sidebar → "Ver tudo em CRM" → `/app/crm` → card → `settings/tenant/pipelines`. Evidência em `.superpowers/evidence/nav-hub-crm.png` |
 | Produtos, que saiu do menu, continua tendo porta (DoD 14) | `[P1]` | **PASS**, caso próprio na mesma spec: o link não existe no sidebar (`toHaveCount(0)`) e existe no hub |
 | A folga de 19px é real | — | **PROVADO POR SABOTAGEM.** Um sexto destino de CRM com `sidebar: true` devolve o excesso a exatamente **+13px** e reprova o mesmo caso — previsto antes de rodar, e batido |
@@ -2344,6 +2431,19 @@ grupo IA já usava.
 grampeado no `clientHeight`, então "excesso 0" e "sobra 200px" dão o MESMO número.
 Quem quiser saber quanta folga restou tem de medir o `bottom` do último filho
 contra a caixa de conteúdo da `<nav>` — foi assim que os 19px saíram.
+
+### O rodapé fixo também come altura (2026-10-30)
+
+O link da **Ajuda** entrou no rodapé fixo, e rodapé não tem hub: cada linha dele é
+altura subtraída da `<nav>`. O conteúdo da nav não mudou (**744px**, 18 links), mas
+a caixa visível caiu de **763** para **731** — os **32px** da linha nova (28px de
+item + `mb-1`) — e `navegacao.spec.ts:238` reprovou por **13px**.
+
+A devolução veio da moldura, não de item: 4px no topo/rodapé da nav (`p-2` →
+`px-2 py-1`), 4px no rodapé fixo (`p-2` → `px-2 py-1`) e 2px entre os dois links
+fixos (`mb-1` → `mb-0.5`) = **16px**. Resultado: conteúdo **736px** contra caixa
+**743px**, folga **7px**, `py-1`/`text-sm` de cada destino intactos. A regra do hub
+continua valendo — nenhum destino de menu apareceu aqui; quem pesou foi o rodapé.
 
 ## Os contadores do menu: Casos e a Fila (2026-09-27)
 
@@ -3448,6 +3548,10 @@ Cobertura: inbox-enrichment-route.test.ts e inbox-demandas-abertas.test.tsx.
 ### Auditoria do site na fila (spec 24) `[P1]`
 
 Candidatos com `data.site` exibem veredito, raio-X, estratégia e score na fila de Prospecção e no painel do Inbox; a fila ordena por score; reanálise e prévia por candidato. Cobertura: `tests/e2e/prospeccao-auditoria-do-site.spec.ts` (valores exatos: veredito, motivo, KPI médio, reordenação) + unit de classificação/estratégia/score com sabotagem. Reanálise (fetch real) e prévia (LLM) fora do e2e de propósito. Evidência: `evidence/prospeccao-auditoria-do-site/fila-com-auditoria.png`.
+
+### Prospecção a partir da própria planilha (spec 30) `[P1]`
+
+No cartão "1. Encontrar empresas", a aba "Usar minha planilha" recebe um `.csv` ou `.xlsx` (primeira aba, até 500 empresas, colunas obrigatórias: nome da empresa e telefone), pede o nome da campanha, o público e "De onde veio esta lista?" e cria uma campanha em rascunho, sem busca paga e sem chave de provedor. A tela mostra o resumo ("N linhas · X entraram · Y já estavam na base ou foram excluídas a pedido do titular · Z recusadas") e a lista das recusadas com o número da linha e o motivo; a campanha aparece em "Suas campanhas" com o rótulo "Planilha". Quem já é contato do CRM não é abordado, e reenviar o mesmo arquivo não duplica. Cobertura: `tests/e2e/prospeccao-por-planilha.spec.ts` (5 linhas: 3 entram, 1 sem telefone, 1 repetida), unit de leitura/rota e invariante de isolamento e supressão (`tests/invariants/prospeccao-planilha-isolamento-e-supressao.test.ts`). Evidência: o relatório do Playwright no CI do PR. Mapa: prospeccao-nativa.
 ## J28 — Uma pessoa assume uma conversa que a IA passou `[P0]` (2026-09-18)
 
 **Por que P0:** é a jornada em que o cliente mais sente a diferença entre um CRM com IA e
@@ -3834,7 +3938,8 @@ Spec: `tests/e2e/mapas-em-provedores.spec.ts`.
 | J40.5 | A tabela não é servida pelo PostgREST | `anon`/`authenticated` sem privilégio, `permission denied`, RLS ligada sem policy | **PASS (invariante)** — `tests/invariants/credencial-de-mapas-e-server-side.test.ts` |
 | J40.6 | O que o Google diz × o endereço anotado em 8 pedidos confirmados (28/09/2026, numa instalação real) | município 8/8, região 8/8, localidade 7/8 (na zona rural virou o povoado), rua 3/5, bairro 1/8, número interpolado → a cidade é o MUNICÍPIO; bairro e número não saem | **MEDIDO em produção** (fora deste repositório); regra em `tests/unit/mapas-pino-com-endereco.test.ts` |
 | J40.7 | O pino com endereço aproximado, aberto na conversa pela equipe | o cartão do pino mostra «Rua, Cidade, Estado (aprox.)», com o texto inteiro no `title` (o cartão corta com …) e o toque abre as COORDENADAS no mapa | **PASS pela tela** — Evidência: `evidence/triagem-16set-l12/mapas-03-pino-na-conversa.png` |
-| J40.8 | A API do canal intermediado não responde a tempo na ingestão do pino (medido 29/09/2026: timeout duas vezes seguidas) | a mensagem entra com o marcador e pede nova busca (`message.location_retry_requested`); 1 min depois, e a cada 2 min até 15, busca de novo e grava tipo `location` + link (+ endereço aproximado com chave); nunca rebaixa um pino que já tem coordenadas; desiste sem virar incidente | **PASS (unit)** — `tests/unit/pino-reintento.test.ts`, `tests/unit/channel-ingest-zernio.test.ts` |
+| J40.8 | O evento do canal intermediado chega SEM `metadata.location` (o caso de 24/09/2026; medido 29/09/2026: a busca na API dava timeout dentro da requisição) | a mensagem entra com o marcador, sem nenhuma chamada ao provedor dentro da requisição do webhook, e pede nova busca (`message.location_retry_requested`); 5 s depois — antes do turno do agente —, e a cada 2 min até 15, busca na API e grava tipo `location` + link (+ endereço aproximado com chave); nunca rebaixa um pino que já tem coordenadas; desiste sem virar incidente | **PASS (unit)** — `tests/unit/pino-reintento.test.ts`, `tests/unit/channel-ingest-zernio.test.ts` |
+| J40.9 | O evento do canal intermediado traz `metadata.location` (medido 27/10/2026: 50 de 50 pinos em 30 dias; 29 de 129 entregas de pino tinham vencido os 5 s do provedor enquanto a busca era feita na requisição) | grava tipo `location`, link e nome/endereço direto do webhook, sem perguntar ao provedor; só o endereço aproximado do Google (com chave) roda na requisição | **PASS (unit)** — `tests/unit/channel-webhook-zernio.test.ts`, `tests/unit/channel-ingest-zernio.test.ts`, `tests/unit/mapas-pino-com-endereco.test.ts` |
 
 ### Dados externos — o que o assistente pode ver
 
@@ -3887,6 +3992,24 @@ do commit (resposta perdida, processo reiniciado) e retomada pela segunda tentat
 partir da lápide, com o 500 que não diz "nada foi apagado": medida por unidade em
 `lib/tenants/exclusao.test.ts` e `…/delete/route.test.ts`, e o inventário da lápide em
 `tests/invariants/gestao-de-tenants.test.ts`.
+
+## J60 — A mensagem que saiu por modelo diz qual e mostra as opções `[P1]` (2026-11-03)
+
+Contexto: com a janela de 24 h fechada, só sai modelo aprovado. A conversa
+mostrava o corpo como um texto qualquer — quem lia não sabia que tinha saído por
+modelo nem quais botões o cliente recebeu, e a resposta dele («Quero mudar
+algo») ficava solta. O envio passa a gravar os textos dos botões, lidos do
+espelho da definição, em `messages.metadata.template_buttons`
+(`app/api/v1/messages/_handler.ts`, `lib/messaging/botoes-do-modelo.ts`), e a
+rota de mensagens passa a devolver `template_name`/`template_language`.
+
+Spec: `tests/e2e/inbox-mensagem-por-modelo.spec.ts`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J60.1 | Abrir uma conversa com uma mensagem por modelo e uma de texto | o balão do modelo tem o selo «Modelo do WhatsApp · <nome>» e a lista «Opções enviadas ao cliente» com os botões na ordem; o de texto, nenhum dos dois; as opções cabem no balão (`boundingBox`) | **Spec escrita, não rodada localmente** — a prova pela tela fica com o CI (`SPECS_PARTE_7`); a captura sai em `evidence/inbox-mensagem-por-modelo/` |
+| J60.2 | Enviar modelo com botões / sem espelho / texto comum com botões forjados no `metadata` | grava os botões da definição, na ordem / não grava nada e envia / não grava nada (o `metadata` de entrada não fala pelos botões) | **PASS (unit)** — `tests/unit/messages-handler-canal-intermediado.test.ts` |
+| J60.3 | Mensagem por modelo enviada antes desta versão (sem botões gravados) | só o selo, sem lista | **PASS (unit)** — `components/inbox/MessageBubble.test.tsx` |
 
 ## J50 — Reenviar uma mensagem que falhou `[P0]` (2026-10-21)
 
@@ -3947,6 +4070,26 @@ Capturas dos dois casos e traces foram inspecionados; evidência local em
 iniciais com nome completo, um nome e fallback pelo e-mail: 8 vermelhos antes,
 8 verdes depois. **Não medido:** reconhecimento de voz em aparelho real e o
 fluxo inteiro em espanhol (a cobertura em espanhol aqui é do componente).
+
+
+## Cadências de e-mail opcionais (PR1738 / decisão75B) `[P1]`
+
+Estado: **PASS pela tela e SMTP real** (rodada r7, head `2d44615877`, vps-teste, banco fresco do `baseline.sql`, build de produção, Mailpit) em tudo o que a tabela marca assim. O descadastro e o item cosmético de 375 px mudaram depois dessa rodada, e estão **PENDENTES de refazer pela tela** no head do PR.
+
+| Gesto | Resultado exigido | Evidência |
+|---|---|---|
+| Clonar/aplicar baseline sem instalar | Nenhuma das três tabelas de cadências existe; menu/rotas/worker sem efeito | **PASS** r7: 0 tabelas, API 404, worker sem efeito, menu 0; invariante `cadencias-provisionadora` |
+| Dono instala em /admin/modulos; admin da empresa liga | Tabelas protegidas e porta no menu; outra empresa segue desligada | **PASS** r7 |
+| Gerente cria e ativa sequência; inscreve negócio sem autorização de rastreio | E-mail real no transporte de teste, link de descadastro e nenhum pixel | **PASS** r7 |
+| Inscreve outro contato com autorização | Pixel soma somente com consentimento e empresa ligados; evento aparece na atividade | **PASS** r7 |
+| Pausa/desliga com fila vencida | Nenhum novo envio; dados preservados | **PASS** r7 |
+| Destinatário concluiu sequência e clica descadastro com empresa desligada | Supressão persistente; reinscrição recusada; repetição idempotente | **PASS** r7 pelo GET antigo; **PENDENTE** refazer com o botão de confirmar |
+| Filtro de e-mail abre o link (GET e HEAD, sem sessão) | Inscrição segue ativa; a página só pede a confirmação | r7 reprovou: os dois paravam a inscrição, sem volta. Conserto com `route.test.ts`; **PENDENTE** refazer pela tela |
+| Provedor de e-mail faz o POST de um clique, sem cookie | E-mail traz `List-Unsubscribe` e `List-Unsubscribe-Post`; o POST descadastra | `lib/email/cabecalhos-do-envio.test.ts` e `worker-envio.test.ts`; **PENDENTE** conferir os cabeçalhos no Mailpit |
+| Abre o construtor a 375 px | Nome da cadência ativa sem cortar; botão de inserir passo com 44x44 | r7 mediu 51 px de largura e 24x24; **PENDENTE** medir de novo |
+| Exporta e anonimiza o titular | Inscrições/eventos exportados; fila encerrada; pixel revogado; vizinho preservado | **PASS** r7: coletor e cascata reais; invariante LGPD |
+| Transporte aceita mas avanço falha | Fila não reenvia; inscrição mostra resultado incerto para revisão | **PASS** r7 |
+| Empresa B abre a tela e a API da empresa A | Nada de A aparece; 404 ou lista vazia | **PASS** r7 |
 
 ## Atendimento e follow-ups — integração #3475 (2026-10-26)
 
@@ -4052,6 +4195,193 @@ terão trace/vídeo. Não foi medido download na janela anterior à persistênci
 do worker, viewer PDF ou aplicativo externo. O PASS de UX deste head não
 substitui os cinco checks obrigatórios: o verify antigo falhou no teste de
 relógio, cujo reparo central entra pela composição da main, sem repetir a rodada antiga.
+## Transcrição pelo serviço da OpenRouter — adaptação #3408 (2026-10-27)
+
+**Prova real confirmada no head `081d4b2a`.** A
+[parte 6 do CI de 2026-10-27](https://github.com/melgarafael/DeskcommCRM/actions/runs/40451116611/job/122021774747)
+passou os 87 casos; o caso próprio de STT concluiu em 6,0s, sobre o checkout de
+merge `988212603648ff7f5bacc2a045e66302927aa1d1`. PNG e recibo físico foram
+baixados e inspecionados. Essa prova fica distinta do E2E global, que falhou
+na parte 1 no passo herdado de prova do hotfix. O novo candidato compõe o
+reparo dessa bancada e do catálogo por merge normal do #3544; seus checks
+próprios ainda precisam confirmar o conjunto.
+
+O caso de `atender-pelo-celular.spec.ts` usa tenant sintético próprio,
+credencial cifrada pelo helper canônico e OGG/Opus válido gerado pelo ffmpeg
+da parte 6. Processor de entrada, eventos persistidos, handlers de persistência
+e derivação, banco e Storage são reais. Somente os servidores HTTP de origem
+da mídia e do fornecedor são sintéticos, locais e explícitos. O transporte
+continua passando pelo egress canônico; fetch global não foi substituído.
+
+O JSON confirmou bytes iguais no Storage, multipart com arquivo/modelo/idioma,
+texto e estado `ready`, e custo informado de 0,0508 centavos persistido. Houve
+uma chamada positiva e um controle de redirecionamento recusado, com zero
+requisições ao destino recusado. O controle do conversor antigo recusou OGG
+antes do HTTP. O PNG mostra um manager lendo no painel o anúncio do modelo e
+a razão da escolha; não mede edição de credencial. O recibo contém apenas
+indicadores e medidas, sem chave ou URL. Os recursos próprios foram limpos.
+
+Os unitários cobrem 25 MB somente nesse fornecedor, ausência/invalidade do custo
+e erro/rejeição da gravação do estado terminal. O teto global continua 50 MiB.
+A guarda atual do worker e seu tratamento terminal foram preservados; o reparo
+da bancada não altera o produto STT já provado neste head.
+
+**Limites:** não mede aceitação, qualidade ou latência da OpenRouter pública,
+pareamento WhatsApp, webhook HTTP/HMAC, agendador ou turno do agente. Handlers
+são chamados sobre os eventos da própria mensagem, sem drenar a fila global.
+Não houve provedor pago nem runtime/DB/browser local. Coleta e unidades não
+contam como execução dessa jornada. O aceite do conjunto depende dos cinco
+checks obrigatórios e da inspeção dos novos artefatos.
+## O pacote do titular no caminho manual — resgate #3543
+
+**PREPARADO, não executado contra app/Storage/navegador nesta rodada.** O caso
+independente de `suspensao-administrativa.spec.ts` prepara dois pedidos próprios
+com o worker real, sem e-mail, e mede dois downloads, bytes/hash, JWT72h,
+isolamento HTTP, legado sem JSON e arquivo ausente. Aprovação é fixture; não
+mede SMTP, PAdES com chave real nem esperar o prazo expirar. Captura e recibo
+só serão escritos em `evidence/lgpd-pacote-manual/` após asserções e limpeza.
+
+A rota continua admin+, mas seu viewer403 não é prova de ACL admin-only no
+Storage. A policy observada noSQL é mais ampla; a auditoria desse acesso direto
+é separada. Contrato, instrumentos e limites:
+[pacote-lgpd-manual.md](pacote-lgpd-manual.md).
+
+## Respostas rápidas com conteúdos combinados — adaptação #3538
+
+**Preparado para o CI; sem execução local de navegador ou banco.** A fonte de
+@webtecnica (`48895c6f`) é preservada na composição. Destino: **núcleo**, pois
+cadastro, edição e uso de respostas rápidas pertencem ao atendimento comum.
+
+`respostas-rapidas-conteudos.spec.ts`, no CI canônico, prepara uma organização e uma
+sessão manager novas, cadastra as sete combinações pela tela e usa os botões do
+Inbox com prévia e confirmação. App, autenticação, PostgREST, Storage, pipeline
+de envio e bytes são reais; somente o transporte do fornecedor usa um receptor
+HTTP local explicitamente sintético. Não mede pareamento, conversão de áudio
+nem entrega no WhatsApp público.
+
+O mesmo caso prepara substituição de áudio no teto5, remoção junto de imagem,
+recusa que conserva o arquivo anterior, remoção pendente/desfazer/cancelar,
+conflito de edição e controles de isolamento de arquivos. Os testes dirigidos
+de rota, formulário e SDK também cobrem confirmação perdida: conservar o
+objeto é preferível a deixar uma referência sem bytes. Uma criação cujo upload
+falhou pode permanecer vazia e recuperável na lista; o diálogo fecha e orienta
+a conferi-la antes de repetir. O uso de conteúdo vazio continua recusado.
+
+Todos os novos fluxos da tela enviam o snapshot esperado e consomem a lista
+fresca. Compatibilidade de clientes antigos sem snapshot cobre somente a
+janela entre leitura e escrita da rota; escrita direta permitida por RLS não
+ganha garantia global de concorrência. Sem nova revisão monotônica, schema,
+RLS, bucket ou configuração. O laço de retorno usa o erro visível, a lista
+recarregada e a edição existente; mutações confirmadas seguem na auditoria de
+templates. A regra herdada de legenda após falha parcial de envio está fora
+deste recorte.
+
+PNG e recibo sanitizado são gravados em `evidence/respostas-rapidas-3538/`
+e anexados por arquivo ao resultado Playwright, inclusive na falha. O recibo
+vem antes da limpeza e recebe seu resultado ao final; falha de evidência também
+reprova, depois da tentativa de limpeza. Trace e vídeo ficam desligados apenas
+nesta spec para não arquivar URLs assinadas. A limpeza é limitada aos UUIDs
+sintéticos desta execução. A coleta `--list` não é prova de UX; a aceitação
+depende do CI do candidato e da inspeção das capturas produzidas.
+
+## J59 — Avisar a equipe pelo número oficial, com modelo aprovado `[P1]` (2026-11-03)
+
+Quem só tem o número oficial estável não conseguia avisar a equipe: fora da janela de 24 h ele
+só manda modelo aprovado, e a tela Aviso no WhatsApp (Agente de IA › Acompanhar o agente) só oferecia número de texto livre —
+o aviso de caso era condenado (`canal_nao_aceita_aviso_livre`) e a ação "Mensagem para a equipe"
+pulava em todo disparo. Desde a 9094 a configuração guarda o modelo aprovado
+(`config_aviso_de_caso.modelo_id`), com UMA variável no corpo, e o texto do aviso entra nela numa
+linha só. Regra única em `lib/escalacao/modelo-do-aviso.ts`. Spec:
+`tests/e2e/aviso-pelo-numero-oficial.spec.ts` (sem rede: o teste é recusado antes do provedor).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J59.1 | Número oficial com um modelo aprovado de uma variável | aparece no seletor marcado «só modelo aprovado»; a tela pede o modelo, já escolhido quando é o único, com a prévia do texto e o aviso de que cada mensagem é cobrada; o de duas variáveis não é oferecido | spec escrita; **não executada nesta entrega** (sem Docker na bancada) — fica com o `e2e` do CI, parte 7 |
+| J59.2 | Salvar | o banco guarda o modelo DESTA conexão; recarregar mostra o mesmo modelo | idem |
+| J59.3 | Enviar aviso de teste | passa da barreira do canal: a recusa que sobra é a do endereço público da bancada, não «só envia mensagens aprovadas» | idem |
+| J59.4 | O modelo volta para revisão na plataforma | bloqueio «Escolha o modelo aprovado que leva o aviso», switch travado; a conexão salva segue no seletor e diz que não tem modelo; em 390px sem rolagem lateral | idem |
+| J59.5 | Modelo de outra organização ou de outro número | a FK composta recusa o de outra organização; o RPC recusa os dois (`aviso_de_caso_modelo_invalido`); a linha sem conexão da conta oficial serve só ao número dela | `tests/invariants/aviso-por-modelo-aprovado.test.ts` (test:db) |
+| J59.6 | Aviso de caso e "Mensagem para a equipe" pelo número oficial | saem DENTRO do modelo, conferido no envio; sem modelo que sirva, o mesmo motivo de antes | **PASS (unit)** — `tests/unit/aviso-de-caso-decide.test.ts`, `tests/unit/aviso-por-modelo-acao-equipe.test.ts` |
+
+Não provado: a entrega real no celular por um número oficial de verdade (precisa de um modelo
+aprovado pela plataforma); o comando RESPONDER/PERGUNTAR por esse número, que segue fora do
+escopo; e os avisos de proposta, de agendamento e de passagem para humano, que dividem a conexão
+do aviso de caso e continuam exigindo texto livre.
+
+## Cold Call: ligar para uma lista de leads, um por vez (2026-11-03)
+
+- `[P1]` Fila e sessão de ligações abertas pela tela, com a API simulada por Playwright: `evidence/cold-call/fila-desktop.png`, `evidence/cold-call/sessao-desktop.png` e `evidence/cold-call/sessao-celular.png`. As variáveis do roteiro saem preenchidas com o lead, quem liga e a organização, sem rolagem lateral em 1920 px nem no celular.
+- **Não medido:** banco fresco do `baseline.sql` e ligação real pelo canal de voz.
+
+## J66 — A empresa nova nasce com a IA do molde escolhido pelo dono do servidor `[P1]` (2026-11-03)
+
+Numa instalação que hospeda várias empresas, toda empresa nova nascia sem escolha de modelo por
+função e com o padrão do produto, e o dono do servidor copiava a configuração de IA de uma
+empresa de referência à mão, função por função. Desde a 9096, Recursos opcionais › "IA das
+empresas novas" escolhe uma empresa ativa como molde
+(`platform_settings.molde_de_ia_org_id`), e o gatilho `fn_molde_de_ia_na_org_nova` copia as
+funções copiáveis com `credential_id` nulo — regra única em `lib/ai/molde-de-ia.ts`. Spec:
+`tests/e2e/molde-de-ia-empresas-novas.spec.ts`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J66.1 | Sem molde (o padrão) | a tela diz que cada empresa nova começa com o padrão do produto; a empresa nasce sem funções | **não medido pela tela localmente** — CI `e2e` parte 7; banco: `tests/invariants/molde-de-ia-empresas-novas.test.ts` (CI `invariants`) |
+| J66.2 | Escolher o molde | a tela mostra quantas funções e quais modelos vão ser copiados, o padrão e o que fica de fora; recarregar mostra a escolha salva | **não medido pela tela localmente** — CI `e2e` parte 7 |
+| J66.3 | Criar a empresa em Empresas › Nova | o formulário avisa de que empresa vem a IA; a página da nova mostra "IA copiada do molde" | **não medido pela tela localmente** — CI `e2e` parte 7 |
+| J66.4 | Agente de IA › Provedores da empresa nova | as funções copiadas com o modelo do molde; a de endereço próprio não veio e herda o padrão do molde | **não medido pela tela localmente** — CI `e2e` parte 7 |
+| J66.5 | Assinatura, Jev, Google, DeepSeek, endereço próprio; molde excluído; RPC de criação; outras organizações | nada disso é copiado; credencial do molde nunca vai junto; molde excluído zera a coluna e criar empresa não falha; a RPC também copia; nenhuma outra organização muda | **CI `invariants`** — `tests/invariants/molde-de-ia-empresas-novas.test.ts` |
+| J66.6 | A lista de provedores que a tela promete = a que o banco copia | `PROVEDORES_DO_MOLDE` = provedores com chave da instalação = literais do gatilho | **PASS (unit)** — `tests/unit/molde-de-ia.test.ts` |
+
+Não provado: que a primeira chamada de IA da empresa nova sai com a chave da instalação (o
+painel mostra modelo e origem, não faz chamada paga).
+
+
+## E-mail da organização — conta e domínio (#3443 + #3464)
+
+**Estado:** spec `conta-resend-da-organizacao.spec.ts` verde no CI em `d531c6ebe` (27/10,
+53,2 s, parte 2); prova pela tela em instalação limpa na vps-teste **verde** no head
+`8e8871611` (08/11, 41 de 42 marcas; a que sobra é observação: Desconectar sai num
+clique, sem confirmação — decisão do mantenedor). O
+receiver recebe requisições reais da SDK com credenciais e destinatários artificiais; isso
+não prova entrega pela Resend nem chegada à caixa de entrada.
+
+| Jornada | Aceite | Estado |
+|---|---|---|
+| Admin encontra Configurações › Marca › Como seus e-mails saem | conecta uma conta com From válido e domínio habilitado na Resend; chave não volta após recarregar | spec no CI; action/SDK unitários |
+| Chave só de envio, domínio pendente, envio desabilitado ou falha de rede | causa nomeada; sem escrita nem segredo em payload/log | unitários; spec no CI |
+| Conta ausente versus conta ilegível | ausência mantém transporte da instalação; cifra/consulta falhando recusa, sem enviar pela outra conta | unitários; invariantes e spec no CI |
+| Duas organizações com contas diferentes | automação entrega ao receiver com a chave e From da sua organização; convite/LGPD seguem pela plataforma | SDK→HTTP real para duas contas; spec no CI |
+| Conferir domínio com Reply-To de outro domínio | usa From da conta e registros oficiais; campos do browser não escolhem tenant/domínio | unitários; spec no CI |
+| Return-Path personalizado/CNAME, null MX, SPF divergente e timeout | consulta nomes oficiais; mostra divergência/indisponibilidade separadamente do estado da Resend; sem selo de garantia de entrega | unitários; spec no CI |
+| Desconectar pela tela | remove só a conta da organização ativa e restaura o transporte da instalação | action unitária; spec no CI |
+
+Fontes: `lib/email/resend-da-organizacao*.test.ts`, `lib/email/dominio-de-envio*.test.ts`,
+`tests/unit/conferir-dominio-de-envio.test.ts` e
+`tests/unit/conectar-conta-resend-da-organizacao.test.ts`. As provas do resgate
+permanecem associadas ao checkout e ao head nos recibos operacionais; nenhum PASS
+unitário é contado como captura de UX.
+
+## Ofertas da campanha no atendimento — resgate #3503 (medido em 2026-11-07)
+
+A seção final de `prospeccao-auditoria-do-site.spec.ts` mantém o caso anterior de
+score/KPI/ordenação e seu teto de 120s. Fixtures próprias cobrem três ofertas com
+agente válido, site-only e duas automações sem site, pela configuração recarregada e
+pelo modal real, em build de produção sobre banco novo do baseline. O caso inteiro
+levou 14,1s. A frase nova cabe no modal em 1280px e 375px.
+
+O helper de inbound e tool direta usa a mesma conversa e o mesmo texto cru. Modelo e
+canal controlados medem encadeamento; não provam semântica de modelo, resposta
+persistida na Inbox ou entrega. O invariante A/B usa SQL real e mede filtros
+explícitos, sem alegar RLS/PostgREST pelo adapter postgres. O lado do modelo real
+está NAO_ALCANCAVEL: nenhuma sessão lê chave de provedor.
+
+Entrada: `prospecting_campaigns.config.ofertas`; consumidores: contexto do inbound,
+`crm_get_prospecting_site_audit` e estratégia no modal de Prospecção. A consulta
+aparece no registro de ferramentas do agente; falha de leitura mantém o resultado
+explícito de indisponibilidade. Laço: comparar as ofertas persistidas, tool direta
+e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nativa`.
+[Registro da prova](ofertas-da-campanha.md). CNPJ já foi
+entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.
 
 ## Consultas MCP no Testar e no assistido — resgate #3564 (2026-10-27)
 

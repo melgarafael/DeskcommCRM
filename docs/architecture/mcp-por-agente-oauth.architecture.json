@@ -1,0 +1,324 @@
+{
+  "schema_version": 1,
+  "titulo": "Servidores MCP por agente e OAuth por contato",
+  "descricao": "Cada agente tem até 5 servidores MCP externos, com modo de autenticação próprio (nenhuma, chave fixa, OAuth por contato). No OAuth por contato, o CLIENTE FINAL autoriza o agente a acessar a conta dele no terceiro pelo link que o agente envia na conversa (MCP authorization 2025-06-18: RFC 9728, 8414, 7591, 7636 S256, 8707, 7009). Um token por servidor × contato, cifrado, lido só pelo contato do turno.",
+  "lanes": [
+    {
+      "id": "tela",
+      "label": "Tela do agente e ficha do contato (admin)"
+    },
+    {
+      "id": "dados",
+      "label": "Banco (server-side only, migration 9095)"
+    },
+    {
+      "id": "turno",
+      "label": "Turno do agente"
+    },
+    {
+      "id": "publico",
+      "label": "Rotas públicas /api/v1/mcp-oauth"
+    },
+    {
+      "id": "terceiro",
+      "label": "Terceiro (servidor MCP + authorization server)"
+    },
+    {
+      "id": "cron",
+      "label": "Cron"
+    }
+  ],
+  "mainPath": [
+    "telaServidores",
+    "descoberta",
+    "tabServidores",
+    "carga",
+    "ferramentaAcesso",
+    "pedidos",
+    "iniciar",
+    "asAutoriza",
+    "callback",
+    "credenciais",
+    "mcpTerceiro"
+  ],
+  "nodes": [
+    {
+      "id": "telaServidores",
+      "lane": "tela",
+      "label": "ServidoresMcpDoAgente.tsx",
+      "sublabel": "seção Servidores MCP · cadastro, teste, ferramentas por servidor",
+      "type": "ui",
+      "dot": "green"
+    },
+    {
+      "id": "acoes",
+      "lane": "tela",
+      "label": "app/actions/agents/servidoresMcpDoAgente.ts",
+      "sublabel": "admin · organização da sessão · auditoria agent.mcp_servidor_*",
+      "type": "api",
+      "dot": "green"
+    },
+    {
+      "id": "fichaContato",
+      "lane": "tela",
+      "label": "AcessosMcpDoContato.tsx",
+      "sublabel": "acessos ativos do contato · Revogar · token nunca aparece",
+      "type": "ui",
+      "dot": "green"
+    },
+    {
+      "id": "descoberta",
+      "lane": "tela",
+      "label": "do-agente/oauth.ts",
+      "sublabel": "RFC 9728 → 8414 (fallback OIDC) · exige S256 · DCR RFC 7591",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "tabServidores",
+      "lane": "dados",
+      "label": "ai_agent_mcp_servers",
+      "sublabel": "chave e client_secret AES-GCM · oauth_metadados · escrita_delegada",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "pedidos",
+      "lane": "dados",
+      "label": "mcp_oauth_pedidos",
+      "sublabel": "state de uso único (id) · code_verifier cifrado · 10 min",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "credenciais",
+      "lane": "dados",
+      "label": "contato_mcp_credenciais",
+      "sublabel": "1 por servidor × contato · versao (trava leve) · revogar_apos",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "gatilhos",
+      "lane": "dados",
+      "label": "gatilhos da 9095",
+      "sublabel": "encerramento/anonimização só AGENDAM revogar_apos — sem HTTP",
+      "type": "table",
+      "dot": "slate"
+    },
+    {
+      "id": "auditlog",
+      "lane": "dados",
+      "label": "api_audit_log",
+      "sublabel": "contact.mcp_acesso_* · mcp.tool_called · sem token",
+      "type": "table",
+      "dot": "slate"
+    },
+    {
+      "id": "carga",
+      "lane": "turno",
+      "label": "do-agente/carregar.ts",
+      "sublabel": "só servidor escolhido em tool_ids · token pelo CONTATO do turno · renova <60 s",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "ferramentaAcesso",
+      "lane": "turno",
+      "label": "solicitar_acesso_<slug>",
+      "sublabel": "sintética · cria pedido amarrado a contato+conversa · devolve link curto",
+      "type": "lib",
+      "dot": "purple"
+    },
+    {
+      "id": "ferramentas",
+      "lane": "turno",
+      "label": "<slug>__<nome> · wrapMcpTool",
+      "sublabel": "auditoria, papel, escopo · 401 renova e repete · 403 orienta step-up",
+      "type": "lib",
+      "dot": "purple"
+    },
+    {
+      "id": "iniciar",
+      "lane": "publico",
+      "label": "GET iniciar/<state>",
+      "sublabel": "confere validade e uso · 302 para o AS com PKCE S256 + resource",
+      "type": "api",
+      "dot": "green"
+    },
+    {
+      "id": "callback",
+      "lane": "publico",
+      "label": "GET callback/:servidor",
+      "sublabel": "consome o state ANTES da troca · confere servidor e iss · troca code+verifier · grava credencial",
+      "type": "api",
+      "dot": "green"
+    },
+    {
+      "id": "asAutoriza",
+      "lane": "terceiro",
+      "label": "authorization server",
+      "sublabel": "login do contato · consentimento · code",
+      "type": "external",
+      "dot": "amber"
+    },
+    {
+      "id": "mcpTerceiro",
+      "lane": "terceiro",
+      "label": "servidor MCP (Streamable HTTP)",
+      "sublabel": "Authorization: Bearer <token do contato> · guard anti-SSRF",
+      "type": "external",
+      "dot": "amber"
+    },
+    {
+      "id": "cronRevoga",
+      "lane": "cron",
+      "label": "cron/mcp-oauth-revogacao",
+      "sublabel": "RFC 7009 no terceiro · esvazia tokens · LGPD apaga a linha",
+      "type": "api",
+      "dot": "green"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "telaServidores",
+      "to": "acoes",
+      "label": "salvar / testar / remover"
+    },
+    {
+      "id": "e2",
+      "from": "acoes",
+      "to": "descoberta",
+      "label": "descobre e registra cliente"
+    },
+    {
+      "id": "e3",
+      "from": "descoberta",
+      "to": "tabServidores",
+      "label": "cache da descoberta"
+    },
+    {
+      "id": "e4",
+      "from": "tabServidores",
+      "to": "carga",
+      "label": "servidores do agente"
+    },
+    {
+      "id": "e5",
+      "from": "credenciais",
+      "to": "carga",
+      "label": "token do contato do turno"
+    },
+    {
+      "id": "e6",
+      "from": "carga",
+      "to": "ferramentaAcesso",
+      "label": "sem token válido"
+    },
+    {
+      "id": "e7",
+      "from": "carga",
+      "to": "ferramentas",
+      "label": "com token"
+    },
+    {
+      "id": "e8",
+      "from": "ferramentaAcesso",
+      "to": "pedidos",
+      "label": "pedido de uso único"
+    },
+    {
+      "id": "e9",
+      "from": "pedidos",
+      "to": "iniciar",
+      "label": "link no WhatsApp"
+    },
+    {
+      "id": "e10",
+      "from": "iniciar",
+      "to": "asAutoriza",
+      "label": "302"
+    },
+    {
+      "id": "e11",
+      "from": "asAutoriza",
+      "to": "callback",
+      "label": "code + state"
+    },
+    {
+      "id": "e12",
+      "from": "callback",
+      "to": "credenciais",
+      "label": "token cifrado"
+    },
+    {
+      "id": "e13",
+      "from": "ferramentas",
+      "to": "mcpTerceiro",
+      "label": "tools/call com o token do contato"
+    },
+    {
+      "id": "e14",
+      "from": "ferramentas",
+      "to": "auditlog",
+      "label": "mcp.tool_called"
+    },
+    {
+      "id": "e15",
+      "from": "gatilhos",
+      "to": "credenciais",
+      "label": "revogar_apos"
+    },
+    {
+      "id": "e16",
+      "from": "credenciais",
+      "to": "cronRevoga",
+      "label": "vencidas"
+    },
+    {
+      "id": "e17",
+      "from": "cronRevoga",
+      "to": "asAutoriza",
+      "label": "revocation_endpoint"
+    },
+    {
+      "id": "e18",
+      "from": "fichaContato",
+      "to": "credenciais",
+      "label": "listar / revogar"
+    },
+    {
+      "id": "e19",
+      "from": "callback",
+      "to": "auditlog",
+      "label": "contact.mcp_acesso_autorizado"
+    }
+  ],
+  "cards": [
+    {
+      "id": "card-contato",
+      "tone": "red",
+      "title": "O token do contato A nunca serve ao turno de B",
+      "body": "A credencial é lida por (organização, servidor, contato DO TURNO) — os três de fonte confiável. O montador ainda recusa montar servidor amarrado a outro contato. Nenhum argumento de ferramenta chega a cabeçalho, endpoint ou contato."
+    },
+    {
+      "id": "card-state",
+      "tone": "amber",
+      "title": "State de uso único, consumido antes da troca",
+      "body": "O id do pedido é o state (256 bits). O callback marca usado_em num UPDATE condicional antes de trocar o code: reuso, expirado ou inexistente param ali, sem gravar nada."
+    },
+    {
+      "id": "card-retomada",
+      "tone": "slate",
+      "title": "O turno não é reaberto pelo callback (nesta fatia)",
+      "body": "Depois de autorizar, a próxima mensagem do contato já encontra o token. Reabrir o turno sozinho exigiria emitir um evento que o motor do agente consuma como turno sem mensagem inbound — próximo passo documentado no guia."
+    },
+    {
+      "id": "card-escrita",
+      "tone": "blue",
+      "title": "Escrita delegada: desligada por padrão",
+      "body": "Só servidor oauth_por_contato com escrita_delegada ligada, ferramenta marcada Escrita pelo admin e token do contato do turno. Passa por wrapMcpTool com auditoria completa; com a opção desligada, a recusa escrita_sem_escopo_do_turno de sempre."
+    }
+  ]
+}

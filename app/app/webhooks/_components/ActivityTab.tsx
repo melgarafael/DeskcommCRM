@@ -1,5 +1,6 @@
 "use client";
 
+import { erroTecnicoConhecido, tipoDeErroConhecido } from "@/lib/automation/resultado-para-recibo";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
@@ -71,9 +72,18 @@ function statusBadgeLabel(status: AutomationRuleRunRow["status"], t: (texto: str
  * que nascem no próprio executor.
  */
 const MOTIVO_DA_PARADA: Record<string, string> = {
+  internal_error: "Não foi possível concluir a ação. Confira o código técnico nos detalhes.",
+  conta_de_email_indisponivel:
+    "Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.",
   no_contact: "Esse lead entrou sem contato vinculado, então não havia para quem escrever.",
   contact_blocked: "O contato pediu para não receber mensagens (opt-out).",
   no_phone: "O contato não tem telefone cadastrado.",
+  /* #3813 — a escolha "não enviar" quando o contato tem horário marcado. O pulo
+     é decisão de quem montou a regra/fluxo, não falha: a frase diz o motivo para
+     quem lê a aba Atividade não confundir com erro. Emitido por
+     lib/agenda/escolha-no-envio.ts (MOTIVO_DO_PULO). */
+  compromisso_na_agenda:
+    "O contato tem horário marcado na agenda — esta automação foi configurada para não enviar quando isso acontece.",
   missing_config: "Falta preencher alguma configuração desta ação — abra a automação e revise.",
   fora_da_janela_de_envio:
     "Está fora da janela de envio configurada para esse número. A mensagem sai sozinha quando ela reabrir.",
@@ -103,10 +113,48 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   fila_vazia: "A fila do rodízio desta automação está vazia. Abra a automação e escolha quem entra no rodízio.",
   sem_rodizio:
     "A automação foi alterada e não tem mais o rodízio que disparou esta ação. Nada foi atribuído.",
+  /* #3881 — a ação `define_sector`. `setor_id_ausente` nasce no executor da
+     ação; `sem_conversa` também (negócio sem contato ou contato sem conversa
+     aberta). As recusas da régua chegam pelo `error` e a frase delas é a
+     deste mapa — o detalhe não leva `explicacao`, que venceria a tradução. */
+  sector_id_ausente:
+    "A ação Definir o setor está sem setor escolhido. Abra a automação e escolha o setor da conversa.",
+  sem_conversa:
+    "Não há conversa aberta para classificar: o contato deste evento não tem conversa em andamento. Nada mudou.",
+  /* #3881 — as recusas da régua do setor. Cada uma é uma pergunta diferente
+     para quem opera: a conversa sumiu, acabou, a fila não existe, quem escolheu
+     foi uma pessoa, ou o banco não deixou gravar. */
+  conversa_nao_encontrada:
+    "A conversa não existe mais nesta organização — nada foi alterado.",
+  conversa_encerrada:
+    "A conversa está encerrada: não aceita mais ser classificada em um setor.",
+  setor_inexistente:
+    "O setor escolhido na regra não existe nesta organização. Abra a automação e escolha um setor da lista.",
+  setor_manual_preservado:
+    "A conversa já foi classificada por uma pessoa e a regra não sobrescreve essa escolha. Nada mudou.",
+  limpeza_nao_permitida:
+    "A ação precisa de um setor de destino: só uma pessoa pode deixar a conversa sem setor.",
+  setores_desligados: "Os setores de atendimento estão desligados nesta instalação. Nada mudou.",
+  falha_ao_gravar:
+    "Não foi possível gravar o setor da conversa. Tente de novo; se persistir, veja o log da automação.",
   lead_nao_encontrado: "O lead deste evento não foi encontrado nesta organização, então ninguém foi atribuído.",
+  /* #3804 — o destino dinâmico não achou ninguém: nem o dono do negócio, nem a
+     carteira do cliente, nem o fallback servem. Emitido como `error` literal por
+     lib/automation/actions/assign-owner.ts. */
+  sem_destino:
+    "Ninguém pôde receber este negócio: o responsável e a carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.",
+  /* #3514 — a passagem SDR → Closer. O negócio JÁ mudou de dono nestes dois
+     casos; a frase diz o que ficou para trás, senão a ação "falhou" esconde uma
+     troca que aconteceu. Emitidos como `error` literal por
+     lib/automation/actions/assign-owner.ts. */
+  carteira_nao_passou:
+    "O negócio passou para a pessoa escolhida, mas a carteira do cliente não: ela e as conversas que iam junto continuam com o dono anterior. A ficha do contato mostra quem é o dono agora.",
+  conversas_nao_passaram:
+    "O negócio passou para a pessoa escolhida, mas as conversas abertas do cliente que estavam com outra pessoa não foram transferidas: nenhuma mudou de dono. Transfira pela conversa, se precisar.",
   missing_input:
     "A ação não recebeu o que precisava (o lead do evento ou a pessoa configurada). Abra a automação e revise.",
   no_tags: "Esta ação não tem nenhuma etiqueta escolhida. Abra a automação e escolha pelo menos uma.",
+  nada_a_tirar: "Nenhuma das etiquetas pedidas estava lá, então não havia nada a tirar.",
   no_target: "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.",
   no_lead_or_contact: "O evento que disparou a regra não trouxe um lead para criar ou mover.",
   cross_pipeline_move_not_allowed: "Mover um lead para outro funil está desligado nesta organização.",
@@ -134,6 +182,9 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.",
   roteiro_nao_iniciado:
     "O roteiro de atendimento não começou para este contato: o fluxo pode não estar publicado, o contato já pode ter um roteiro em andamento, ou já ter concluído este sem poder recomeçar.",
+  same_flow: "O contato já está neste mesmo fluxo — a automação não o recomeça.",
+  live_enrollment_paused:
+    "O contato está em outro fluxo pausado por uma pessoa da equipe, e a automação não passa por cima dessa decisão.",
   consent_declined: "O contato não autorizou o recebimento de mensagens de marketing.",
   fora_do_pre_go_live:
     "O número deste canal ainda não entrou no pré-go-live, então a mensagem escrita pela IA não sai por ele.",
@@ -158,6 +209,11 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   missing_url: "Esta ação de webhook não tem endereço configurado. Abra a automação e preencha.",
   unknown_action:
     "A regra usa um tipo de ação que esta instalação não tem (pode ter saído em uma atualização). Abra a automação e escolha outra ação.",
+  /* #2974 — a decisão do MOTOR (não de uma ação): a regra tem "no máximo uma
+     vez por contato" e este contato já a executou. Nasce em
+     lib/automation/engine.ts, no run que registra a decisão de não rodar. */
+  uma_vez_por_contato:
+    "Esta automação está configurada para rodar no máximo uma vez por contato, e este contato já passou por ela. Nada foi enviado agora e nada será.",
   // #1528 — o motor pula atribuir/mover nos gatilhos do trigger (laço).
   acao_fecharia_laco:
     "Neste gatilho esta ação não roda: atribuir responsável ou mover o lead dispararia a automação de novo, sem fim. Abra a automação e tire a ação.",
@@ -186,6 +242,20 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
    */
   plano_nao_encontrado:
     "O plano não foi aplicado: o plano escolhido nesta regra não existe mais na lista da organização. Abra a automação e escolha outro plano.",
+  /* #3727 — a ação set_lead_date_field: os seis motivos nascem em
+     lib/automation/actions/set-lead-date-field.ts como `detail.reason`. */
+  sem_compromisso:
+    "A data do atendimento não foi gravada: o evento que disparou a regra não trouxe um compromisso. Use esta ação no gatilho “Quando alguém comparecer ao compromisso”.",
+  data_do_compromisso_ilegivel:
+    "A data do atendimento não foi gravada: o horário do compromisso veio num formato que não deu para ler.",
+  sem_contato:
+    "A data do atendimento não foi gravada: o compromisso não está ligado a um contato, então não havia negócio onde gravar.",
+  sem_negocio_aberto:
+    "A data do atendimento não foi gravada: o contato não tem negócio aberto no funil escolhido. Esta ação não cria negócio.",
+  campo_nao_e_data:
+    "A data do atendimento não foi gravada: o campo escolhido não é mais um campo de data do negócio neste funil. Abra a automação e escolha o campo de novo.",
+  sem_negocio:
+    "A data do atendimento não foi gravada: o negócio não existe mais nesta organização.",
   /* #1970 — a ação ai_decide. Estes quatro nascem aqui em lib/automation/actions/ai-decide.ts
      e chegam ao run por `detail.reason`/`action.error` (mesmo casal de canais da guarda). */
   custo_de_token_nao_registrado:
@@ -254,6 +324,13 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "O domínio do remetente não está verificado na Resend. Verifique o domínio na conta Resend e tente de novo.",
 };
 
+/** Os moldes de `explicacaoDoDestino` (lib/automation/actions/assign-owner.ts), por destino. */
+const MOLDE_DO_DESTINO: Record<string, string> = {
+  responsavel_do_negocio: "Ficou com {nome}, o responsável do negócio.",
+  dono_da_carteira: "Ficou com {nome}, o dono da carteira do cliente.",
+  fallback_fixo: "Nenhum destino do negócio serviu: ficou com {nome}, a pessoa fixa do fallback.",
+};
+
 function explicacaoDe(
   action: AutomationRuleRunActionResult,
   t: (texto: string) => string,
@@ -267,6 +344,12 @@ function explicacaoDe(
       .replace("{nome}", detail.nome)
       .replace("{posicao}", String(detail.posicao));
   }
+  // O destino dinâmico (#3804) tem o mesmo problema do rodízio: a frase pronta
+  // leva o nome de quem recebeu. O molde vem de QUAL destino decidiu.
+  const destino = typeof detail.destino === "string" ? detail.destino : null;
+  if (destino && MOLDE_DO_DESTINO[destino] && typeof detail.nome === "string") {
+    return t(MOLDE_DO_DESTINO[destino]).replace("{nome}", detail.nome);
+  }
   if (typeof detail.explicacao === "string") return t(detail.explicacao);
   // O motivo chega por DOIS canais: `detail.reason` (quem monta o detalhe) e
   // `action.error` (quem devolve só o código — `user_not_in_org` e
@@ -276,35 +359,27 @@ function explicacaoDe(
   const doErro = typeof action.error === "string" ? action.error : null;
   const motivo = doDetalhe ?? doErro;
   if (motivo && MOTIVO_DA_PARADA[motivo]) return t(MOTIVO_DA_PARADA[motivo]);
+  // Exceção estruturada: o código continua no detalhe para suporte; a leitura
+  // principal não pode virar ECONNRESET no lugar de uma frase para quem opera.
+  if (tipoDeErroConhecido(detail.error_type) && erroTecnicoConhecido(detail.error_code)) {
+    return t(MOTIVO_DA_PARADA.internal_error ?? "Essa ação não funcionou.");
+  }
   return motivo;
 }
 
 /**
- * O detalhe TÉCNICO da execução — a mensagem crua que a ação guardou.
- *
- * ─── DECISÃO DA ISSUE #1090: ele APARECE, para quem dá suporte ──────────────
- *
- * O critério, escrito para quem revisar:
- *
- *   - QUEM LÊ: a aba Atividade é de quem opera a automação dentro do produto,
- *     não é tela de cliente. Para essa pessoa, "não deu para saber quem atende"
- *     sem o motivo é beco sem saída: é a mensagem que separa "a infraestrutura
- *     caiu" (tente de novo) de "o cadastro está errado" (conserte o cadastro), e
- *     é ela que o suporte leva ao time técnico;
- *   - O QUE É: mensagem de erro de infraestrutura que a própria ação capturou
- *     (`TypeError: fetch failed`) — não é dado pessoal nem segredo, e o mesmo
- *     texto já está em `automation_rule_runs.actions_result`, na resposta da API
- *     que a própria tela consome;
- *   - ORDEM E PESO: a frase em português continua sendo a leitura principal —
- *     ela vem primeiro, e o texto técnico vem rotulado e em corpo menor. É o que
- *     impede o detalhe de voltar a ACUSAR a configuração, que foi o defeito
- *     consertado a montante (PR #1010).
- *
- * As duas grafias são aceitas porque as ações usam as duas (`detail.erro` em
- * `assign_owner`, `detail.error` nas demais).
+ * O detalhe técnico continua ajudando o suporte (#1090), com código e classe.
+ * Mensagem livre de provedor pode citar e-mail/telefone (#3267); os novos
+ * recibos passam pelo serializador antes de gravar, preservando motivos e IDs.
+ * As duas grafias legadas (`erro`/`error`) continuam legíveis até o saneamento
+ * do histórico. O texto principal em português permanece antes do detalhe.
  */
 function detalheTecnicoDe(action: AutomationRuleRunActionResult): string | null {
   const detail = action.detail ?? {};
+  if (erroTecnicoConhecido(detail.error_code)) {
+    const classe = tipoDeErroConhecido(detail.error_type) ? detail.error_type : null;
+    return [classe, detail.error_code].filter(Boolean).join(" · ");
+  }
   for (const chave of ["erro", "error"]) {
     const valor = detail[chave];
     if (typeof valor === "string" && valor.trim()) return valor.trim();

@@ -1,3 +1,5 @@
+import { runtimeIdentity } from "@/lib/system/runtime-identity";
+import { confirmedRuntime } from "@/tests/helpers/runtime-confirmation";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -94,10 +96,11 @@ describe("rollbackFoiSuperado", () => {
 
   it("data ilegível não vira comparação: NaN compara falso e mentiria por acidente", () => {
     expect(rollbackFoiSuperado("isso não é data", fimDoRun, "1.2.0", RUN)).toBe(false);
-    expect(rollbackFoiSuperado("2026-09-05T15:35:02.000Z", "isso não é data", "1.2.0", RUN)).toBe(false);
+    expect(rollbackFoiSuperado("2026-09-05T15:35:02.000Z", "isso não é data", "1.2.0", RUN)).toBe(
+      false,
+    );
   });
 });
-
 
 /**
  * A JANELA EM QUE A ATUALIZAÇÃO DEU CERTO E A TELA AINDA NÃO SABIA.
@@ -155,7 +158,12 @@ describe("sucessoJaInstalado", () => {
   it("só vale para SUCESSO — falha e rollback têm dono próprio nesta tela", () => {
     for (const status of ["dispatched", "failed", "failed_rolled_back"]) {
       expect(
-        sucessoJaInstalado("2026-09-11T13:55:00.000Z", FIM, { status, to_version: "1.1.0" }, DENTRO),
+        sucessoJaInstalado(
+          "2026-09-11T13:55:00.000Z",
+          FIM,
+          { status, to_version: "1.1.0" },
+          DENTRO,
+        ),
       ).toBe(false);
     }
   });
@@ -165,7 +173,12 @@ describe("sucessoJaInstalado", () => {
       false,
     );
     expect(
-      sucessoJaInstalado("2026-09-11T13:55:00.000Z", FIM, { status: "success", to_version: "" }, DENTRO),
+      sucessoJaInstalado(
+        "2026-09-11T13:55:00.000Z",
+        FIM,
+        { status: "success", to_version: "" },
+        DENTRO,
+      ),
     ).toBe(false);
     expect(sucessoJaInstalado("2026-09-11T13:55:00.000Z", FIM, null, DENTRO)).toBe(false);
   });
@@ -174,23 +187,37 @@ describe("sucessoJaInstalado", () => {
     // Sem a data não dá para saber se o host já falou depois — e o degrau
     // conservador é o comportamento de antes desta função existir.
     expect(sucessoJaInstalado("2026-09-11T13:55:00.000Z", null, RUN, DENTRO)).toBe(false);
-    expect(sucessoJaInstalado("2026-09-11T13:55:00.000Z", "isso não é data", RUN, DENTRO)).toBe(false);
+    expect(sucessoJaInstalado("2026-09-11T13:55:00.000Z", "isso não é data", RUN, DENTRO)).toBe(
+      false,
+    );
   });
 });
 
 describe("rollbackDesmentidoPeloApp", () => {
-  const ROLLBACK = { status: "failed_rolled_back", to_version: "v1.33.0" };
+  const ROLLBACK = {
+    status: "failed_rolled_back",
+    to_version: "v1.33.0",
+    from_version: "1.32.1",
+    finished_at: "2026-10-20T11:59:00.000Z",
+  };
+  const proof = runtimeIdentity(
+    confirmedRuntime("1.33.0", "2026-10-20T12:00:00.000Z"),
+    "2026-10-20T12:00:00.000Z",
+    new Date("2026-10-20T12:00:00.000Z"),
+  );
 
-  it("o app respondendo NA versão que o run diz ter falhado desmente o rollback", () => {
+  it("a mesma versão reinstalada com confirmação posterior do host supera a falha", () => {
     // Medido em produção (18/09): a 1.33.0 falhou porque as imagens ainda não
     // estavam publicadas; meia hora depois o mesmo `update.sh --force` subiu a
     // MESMA 1.33.0, e a tela seguia anunciando a falha — sem botão, bloqueando
     // a 1.35.0. O host reporta `to_version`, então a prova temporal não separa;
-    // a imagem separa.
-    expect(rollbackDesmentidoPeloApp(ROLLBACK, "1.33.0")).toBe(true);
+    // A observação posterior dos serviços, corroborada pelo app, separa.
+    expect(rollbackDesmentidoPeloApp(ROLLBACK, "1.33.0", proof)).toBe(true);
     // O `v` da tag do run não existe na tag da imagem — mesma versão.
-    expect(rollbackDesmentidoPeloApp(ROLLBACK, "v1.33.0")).toBe(true);
-    expect(rollbackDesmentidoPeloApp({ status: "failed", to_version: "1.33.0" }, "1.33.0")).toBe(true);
+    expect(rollbackDesmentidoPeloApp(ROLLBACK, "v1.33.0", proof)).toBe(true);
+    expect(rollbackDesmentidoPeloApp({ ...ROLLBACK, status: "failed" }, "1.33.0", proof)).toBe(
+      true,
+    );
   });
 
   it("rollback de verdade: quem responde é a versão anterior", () => {
@@ -201,7 +228,9 @@ describe("rollbackDesmentidoPeloApp", () => {
 
   it("sem versão legível, ou run que não falhou, não afirma nada", () => {
     expect(rollbackDesmentidoPeloApp(ROLLBACK, null)).toBe(false);
-    expect(rollbackDesmentidoPeloApp({ status: "success", to_version: "1.33.0" }, "1.33.0")).toBe(false);
+    expect(rollbackDesmentidoPeloApp({ status: "success", to_version: "1.33.0" }, "1.33.0")).toBe(
+      false,
+    );
     expect(rollbackDesmentidoPeloApp({ status: "failed_rolled_back" }, "1.33.0")).toBe(false);
     expect(rollbackDesmentidoPeloApp(null, "1.33.0")).toBe(false);
   });

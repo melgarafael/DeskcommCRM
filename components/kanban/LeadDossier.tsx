@@ -11,6 +11,7 @@ import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
+import { AtalhosDoNegocio } from "./AtalhosDoCard";
 import { ConversaNoDossie } from "./ConversaNoDossie";
 import { LeadFieldsForm, type ControleDosCamposDoNegocio } from "./LeadFieldsForm";
 import { RevisaoDoDocumento } from "./RevisaoDoDocumento";
@@ -22,6 +23,7 @@ import { OwnerBadge } from "./OwnerBadge";
 import { EtapaNoDossie } from "./EtapaNoDossie";
 import { SecaoDoDossie, useSecoesRecolhidas } from "./SecaoDoDossie";
 import { resolveLeadOwner } from "@/lib/kanban/owner";
+import type { AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
 import type { CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 
@@ -40,6 +42,14 @@ interface Props {
    */
   etapas?: Pick<Stage, "id" | "name">[];
   onMudarEtapa?: (stageId: string) => void;
+  /**
+   * OS ATALHOS DO CARD (#3487): o que está em `crm_pipelines.settings.atalhos`,
+   * já lido por `atalhosDoFunil`. Quem monta o dossiê tem o funil em mão — o
+   * quadro, a lista e o calendário recebem `pipeline`/`funil` inteiros —, então
+   * a lista vem por prop em vez de o dossiê sair buscando por conta própria.
+   * Ausente = nenhum botão, que é o comportamento de antes da entrega.
+   */
+  atalhos?: AtalhoDoCard[];
 }
 
 function formatValor(cents: number | null, currency: string | null): string {
@@ -97,9 +107,16 @@ export function LeadDossier({
   ownerNames,
   etapas,
   onMudarEtapa,
+  atalhos,
 }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
+  // Sem prop, nenhum botão: quem abre o dossiê TEM o funil em mão (o quadro, a
+  // lista e o calendário passam `atalhos`) e é de lá que sai o `settings`. Ler
+  // o cache do react-query aqui dentro custaria um `QueryClientProvider`
+  // obrigatório em todo teste que monta o dossiê — inclusive os que existiam
+  // antes desta entrega — para economizar uma prop que o chamador já tem.
+  const atalhosDoCard = atalhos ?? [];
   const campos = useRef<HTMLDivElement | null>(null);
   const formulario = useRef<ControleDosCamposDoNegocio | null>(null);
   const timeline = useLeadTimeline(open ? lead.id : null, lead.contact_id);
@@ -126,9 +143,12 @@ export function LeadDossier({
   const user = useUser();
   const activeOrg = useActiveOrg();
   const podeCriarProposta =
-    user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager) || false;
+    user.is_platform_admin ||
+    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager) ||
+    false;
   // A MESMA régua do arrasto e do "Mover para…" do card (`KanbanCardActions`).
   const podeMoverCard = usePermission("pipeline.move_card");
+  const podeCriarContato = usePermission("contact.create");
   // Tarefas são `agent`+, a mesma régua da tela de Tarefas e da rota — e o
   // suporte temporário só lê, como lá (`requireSupportWrite`).
   const podeEditarTarefas =
@@ -177,7 +197,7 @@ export function LeadDossier({
 
         {/* ① cabeçalho vivo */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border pb-3 text-xs">
-          <span className="font-medium tabular-nums text-text">
+          <span className="font-medium text-text tabular-nums">
             {formatValor(lead.value_cents, lead.currency)}
           </span>
           {etapas && onMudarEtapa ? (
@@ -235,6 +255,13 @@ export function LeadDossier({
           </p>
         )}
 
+        {/* OS ATALHOS DO CARD (#3487) — logo abaixo do cabeçalho, ANTES de
+            tudo que rola. A entrega inteira existe para o atendente não sair do
+            card: um botão que exige rolar até o fim é o mesmo que copiar o
+            telefone e colar no softphone. Sem atalho configurado, nada é
+            desenhado — nem separador, nem faixa vazia. */}
+        <AtalhosDoNegocio atalhos={atalhosDoCard} lead={lead} contactId={lead.contact_id} />
+
         <ConversaNoDossie
           conversa={lead.conversa}
           contactId={lead.contact_id}
@@ -254,6 +281,8 @@ export function LeadDossier({
             contactId={lead.contact_id}
             pipelineId={pipelineId}
             leadId={lead.id}
+            lead={lead}
+            podeCriarContato={podeCriarContato}
           />
         </SecaoDoDossie>
 
@@ -276,7 +305,12 @@ export function LeadDossier({
               podeDecidir={podeConfirmarDoDocumento}
               aoDecidir={(confirmado) => formulario.current?.confirmarCampo(confirmado)}
             />
-            <LeadFieldsForm lead={lead} pipelineId={pipelineId} fieldDefs={fieldDefs} controle={formulario} />
+            <LeadFieldsForm
+              lead={lead}
+              pipelineId={pipelineId}
+              fieldDefs={fieldDefs}
+              controle={formulario}
+            />
           </div>
         </SecaoDoDossie>
 

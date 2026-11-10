@@ -30,6 +30,16 @@ export interface TokensDoCodex {
   token_type?: string;
   /** Epoch ms em que o access_token vence. */
   expires_at: number | null;
+  /**
+   * Epoch ms a partir de quando ESTE par pode ser rotacionado de novo (#3371,
+   * fatia 5). Gravado na rotação, junto com o `expires_at` do token NOVO.
+   *
+   * Existe porque a janela de 8 dias é MAIOR que a vida de um access_token: sem
+   * este marco, `renovacaoProxima(expires_at)` volta `true` em TODO turno logo
+   * depois de rotacionar, e a renovação automática vira um laço — foram ~500
+   * tentativas em ~26 h no incidente do cliente Obralivre.
+   */
+  proxima_renovacao_em?: number | null;
 }
 
 export type FetchDeToken = (url: string, init?: RequestInit) => Promise<Response>;

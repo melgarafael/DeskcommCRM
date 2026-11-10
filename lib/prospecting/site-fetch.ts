@@ -12,9 +12,11 @@
  * - corpo abortado ao passar de 200KB (nunca fatiado depois);
  * - timeout 8000ms por tentativa; 1 retry real em falha transitória
  *   (timeout/conexão) — o docstring antigo prometia sem implementar;
- * - transitória persistente vira veredito PROVISÓRIO (não citável, reverificado
- *   até `LIMITE_TENTATIVAS`); definitivo só o comprovado (HTTP/SSL/agregador)
- *   e o domínio inexistente (NXDOMAIN com certeza do resolvedor, na hora).
+ * - falha de MEDIÇÃO nunca vira veredito de mérito (#3723): transitória
+ *   persistente e status de bloqueio (401/403/406/429/451/503, anti-robô)
+ *   ficam PROVISÓRIOS e, esgotado `LIMITE_TENTATIVAS`, congelam `nao-medido` —
+ *   não citável. Definitivo e citável só o comprovado: HTTP/SSL do site,
+ *   agregador, e o domínio inexistente (NXDOMAIN com certeza do resolvedor).
  *
  * Residual conhecido: DNS rebinding entre a verificação e o connect (TOCTOU),
  * declarado na guarda da casa. Fora do modelo de ameaça desta fase.
@@ -32,10 +34,20 @@ import {
   hostDeSite,
   MINIMO_CHARS_PAGINA_REAL,
   montarChecklist,
+  statusBloqueiaMedicao,
   vereditoPuro,
   type ErroDeRede,
   type SiteEnrichment,
 } from "@/lib/prospecting/site-classify";
+import {
+  conteudoDoTitulo,
+  conteudosDeH1H2,
+  descricaoComConteudoAntes,
+  descricaoComNomeAntes,
+  semBlocosDeScript,
+  semTags,
+  temLinkComHrefHttp,
+} from "@/lib/prospecting/leitura-do-html";
 import { LIMITE_TENTATIVAS } from "@/lib/prospecting/site-efetivo";
 
 const TIMEOUT_MS = 8000;
@@ -190,14 +202,18 @@ interface Busca {
 }
 
 /**
- * Resposta de erro que NÃO é prova de defeito do site: 429 (limite de taxa) e 503
- * (indisponível) são temporários por definição, e o desafio anti-robô é o
- * datacenter da VPS sendo barrado enquanto o site abre normal para quem visita.
- * Virar "o site responde com erro" para sempre — e ser dito à empresa — é o mesmo
- * risco que já se fechou para timeout e DNS: segue PROVISÓRIO (não citável).
+ * Resposta de erro que NÃO é prova de defeito do site: é o NOSSO acesso barrado.
+ *
+ * 401/403/406/429/451/503 são firewall, limite de taxa ou indisponibilidade
+ * momentânea, e o desafio anti-robô (`cf-mitigated`) é o datacenter da VPS sendo
+ * barrado enquanto o site abre normal para quem visita — medido no #3723: o
+ * mesmo site devolveu 403 ao nosso IP e 200 de rede residencial. Virar "o site
+ * responde com erro" para sempre — e ser dito à empresa — só se fechou para
+ * timeout e DNS antes; 403 continuava vazando como veredito definitivo.
+ * Segue PROVISÓRIO (não citável) e, persistindo, congela `nao-medido`.
  */
-function erroPassageiro(b: Pick<Busca, "status" | "desafioAntiRobo">): boolean {
-  return b.status === 429 || b.status === 503 || b.desafioAntiRobo === true;
+function medicaoBarrada(b: Pick<Busca, "status" | "desafioAntiRobo">): boolean {
+  return statusBloqueiaMedicao(b.status) || b.desafioAntiRobo === true;
 }
 
 async function buscar(
@@ -255,33 +271,37 @@ async function httpsAbre(
   }
 }
 
-function extrairPrimeiro(html: string, padrao: RegExp): string | null {
-  const m = padrao.exec(html);
-  return m?.[1] ? m[1].replace(/\s+/g, " ").trim() || null : null;
+function normalizar(texto: string | null): string | null {
+  return texto ? texto.replace(/\s+/g, " ").trim() || null : null;
 }
 
 function montarResumo(html: string): string | null {
   const partes: string[] = [];
-  const titulo = extrairPrimeiro(html, /<title[^>]*>(.*?)<\/title>/is);
+  const titulo = normalizar(conteudoDoTitulo(html));
   if (titulo) partes.push(`Título: ${titulo}`);
   const descricao =
-    extrairPrimeiro(html, /<meta[^>]+name=["']description["\'][^>]+content=["'](.*?)["']/is) ??
-    extrairPrimeiro(html, /<meta[^>]+content=["'](.*?)["\'][^>]+name=["']description["']/is);
+    normalizar(descricaoComNomeAntes(html)) ?? normalizar(descricaoComConteudoAntes(html));
   if (descricao) partes.push(`Descrição: ${descricao}`);
-  const cabecalhos = [...html.matchAll(/<h[12][^>]*>(.*?)<\/h[12]>/gis)]
-    .map((m) => (m[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+  const cabecalhos = conteudosDeH1H2(html)
+    .map((c) => semTags(c).replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .slice(0, 6);
   if (cabecalhos.length > 0) partes.push(`Cabeçalhos: ${cabecalhos.join(" | ")}`);
-  const corpo = html
-    .replace(/<(script|style|noscript)[^>]*>.*?<\/\1>/gis, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, MAX_CHARS_RESUMO);
+  const corpo = textoVisivel(html).slice(0, MAX_CHARS_RESUMO);
   if (corpo) partes.push(`Trecho: ${corpo}`);
   if (partes.length === 0) return null;
   return partes.join("\n").slice(0, MAX_CHARS_RESUMO);
+}
+
+/**
+ * O texto que um visitante lê, sem tags, scripts e estilos. Serve ao teste do
+ * checklist inconclusivo (página montada por JavaScript): `html.trim().length`
+ * conta `<script>` e markup de construtor como se fosse conteúdo.
+ */
+export function textoVisivel(html: string): string {
+  return semTags(semBlocosDeScript(html || ""))
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function anoDesatualizado(html: string): string | null {
@@ -297,12 +317,18 @@ function anoDesatualizado(html: string): string | null {
 /**
  * Audita um site e devolve o veredito pronto para `data.site`.
  *
- * Transitória (timeout, conexão resetada, dúvida de rede) ganha UMA nova
- * tentativa e, persistindo, vira veredito PROVISÓRIO (`provisorio: true`,
- * `tentativas` incrementado) — não citável, reverificado pelo tick depois do
- * intervalo mínimo até `LIMITE_TENTATIVAS`, quando congela definitivo.
- * Domínio inexistente (NXDOMAIN) é prova, não dúvida: definitivo na hora.
- * O docstring antigo prometia esse retry sem implementá-lo; agora existe de verdade.
+ * ─── MEDIDO × NÃO MEDIDO (regra do #3723) ───────────────────────────────────
+ * Só é veredito o que a medição PROVOU: 200 com conteúdo, NXDOMAIN com certeza
+ * do resolvedor (`dns-morto`), certificado inválido, 4xx/5xx de verdade (404,
+ * 500). O resto é `nao-medido`:
+ *
+ * - 401/403/406/429/451/503 e desafio anti-robô → é o IP do datacenter sendo
+ *   barrado (o site abre para o visitante), nunca "o site responde com erro";
+ * - timeout, conexão resetada e dúvida de DNS → ganham UMA nova tentativa e,
+ *   persistindo, congelam `nao-medido` com `provisorio: false` e `tentativas`
+ *   no teto: param de ser reverificados e NUNCA são citados (antes congelavam
+ *   `fora-do-ar`, e a estratégia mandava dizer à empresa que o site não abre).
+ *
  * `pagespeed` sempre null nesta fase (faixa lenta posterior, spec §3.5).
  */
 export async function auditarSite(
@@ -329,10 +355,17 @@ export async function auditarSite(
     conteudo_resumo: null, pagespeed: null, verificado_em: agoraIso,
     provisorio, tentativas,
   });
-  const provisorio = (tentativas: number): SiteEnrichment =>
-    tentativas + 1 >= LIMITE_TENTATIVAS
-      ? falha("fora-do-ar", ["fora-do-ar"], false, tentativas + 1)
-      : falha("fora-do-ar", ["fora-do-ar"], true, tentativas + 1);
+  /**
+   * Não conseguimos olhar: o veredito é `nao-medido`, e o único caminho para
+   * definitivo é o TETO DE TENTATIVAS — nunca a conclusão de que o site está
+   * fora do ar. Definitivo porque `deveReverificar` para de chamar; não citável
+   * porque a classe não é mérito.
+   */
+  const naoMedido = (
+    tentativas: number,
+    problema: "medicao-bloqueada" | "medicao-instavel",
+  ): SiteEnrichment =>
+    falha("nao-medido", [problema], tentativas + 1 < LIMITE_TENTATIVAS, tentativas + 1);
 
   const tentar = async (): Promise<SiteEnrichment> => {
     let busca: Busca;
@@ -346,22 +379,25 @@ export async function auditarSite(
         return falha("fora-do-ar", ["fora-do-ar"]);
       }
       // Domínio NÃO EXISTE (NXDOMAIN com certeza do resolvedor): prova, não
-      // dúvida — definitivo e citável na hora, sem retry.
+      // dúvida — definitivo e citável na hora, sem retry. O problema vai como
+      // `dns-morto` (o endereço não existe mais) e não como "fora-do-ar": é a
+      // diferença entre "o site não abre" (não medido) e "o domínio morreu"
+      // (medido), e é ela que a leitura usa para decidir o que é citável.
       if (bloqueio.includes("dns_nxdomain")) {
-        return falha("fora-do-ar", ["fora-do-ar"], false, tentativasAnteriores + 1);
+        return falha("fora-do-ar", ["dns-morto"], false, tentativasAnteriores + 1);
       }
       // DNS que não resolveu: passageiro até prova em contrário.
-      if (bloqueio.includes("dns_")) return provisorio(tentativasAnteriores);
+      if (bloqueio.includes("dns_")) return naoMedido(tentativasAnteriores, "medicao-instavel");
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       if (mensagem === "redirects-demais") return falha("site-ruim", []);
       if (codigoSsl(erro)) return falha("ssl-invalido", ["ssl-invalido"]);
-      if (ehFalhaDeDns(erro)) return provisorio(tentativasAnteriores);
+      if (ehFalhaDeDns(erro)) return naoMedido(tentativasAnteriores, "medicao-instavel");
       // Transitória (timeout, reset): UMA nova tentativa antes de declarar.
       await new Promise((r) => setTimeout(r, 1000));
       try {
         busca = await buscar(url, fetchFn, verificar);
       } catch {
-        return provisorio(tentativasAnteriores);
+        return naoMedido(tentativasAnteriores, "medicao-instavel");
       }
     }
 
@@ -369,7 +405,8 @@ export async function auditarSite(
     const minusculo = html.toLowerCase();
     const problemas: string[] = [];
     if (busca.status >= 400) {
-      if (erroPassageiro(busca)) return provisorio(tentativasAnteriores);
+      // Firewall/limite/anti-robô: quem não passou fomos nós, não o site.
+      if (medicaoBarrada(busca)) return naoMedido(tentativasAnteriores, "medicao-bloqueada");
       return {
         ver: 1, classe: "site-ruim", problemas: [`http-${busca.status}`],
         checklist: montarChecklist(html), final_url: busca.finalUrl.slice(0, 500),
@@ -385,7 +422,7 @@ export async function auditarSite(
       // redireciona) e a copy não pode afirmar o que não é.
       problemas.push((await httpsAbre(busca.finalUrl, fetchFn, verificar)) ? "http-sem-redirecionar" : "sem-https");
     }
-    else if (/(?:\ssrc=["']http:\/\/|<link[^>]+href=["']http:\/\/)/i.test(html)) problemas.push("conteudo-misto");
+    else if (/\ssrc=["']http:\/\//i.test(html) || temLinkComHrefHttp(html)) problemas.push("conteudo-misto");
     if (!minusculo.includes("viewport")) problemas.push("nao-mobile");
     if (html.trim().length < MINIMO_CHARS_PAGINA_REAL) problemas.push("quase-vazia");
     const construtor = detectarConstrutor(busca.finalUrl, html);
@@ -393,8 +430,15 @@ export async function auditarSite(
     const parado = anoDesatualizado(html);
     if (parado) problemas.push(parado);
 
-    const checklist = montarChecklist(html);
-    for (const item of checklist.falta) problemas.push(`falta-${item}`);
+    // Construtor que monta a página por JavaScript entrega um HTML quase vazio:
+    // o que "não achamos" ali não é falta do site, é falta de renderização
+    // (caso D do #3723 — Wix com `falta-whatsapp`, `falta-fotos`, `falta-mapa`).
+    const checklist = montarChecklist(html, {
+      inconclusivo: construtor !== null && textoVisivel(html).length < MINIMO_CHARS_PAGINA_REAL,
+    });
+    // `falta-*` NÃO entra em `problemas`: item de checklist é melhoria, não
+    // defeito medido — e `problemas` é o que a classe e a copy citam. O
+    // checklist guarda o tem/falta para a ficha da tela.
 
     const erro: ErroDeRede | undefined = undefined;
     const classe = derivarClasse({
@@ -417,7 +461,9 @@ export async function auditarSite(
   try {
     return await tentar();
   } catch {
-    return falha("fora-do-ar", ["fora-do-ar"]);
+    // Erro inesperado: não provamos nada sobre o site — não medido, e não
+    // "fora do ar" (a versão anterior citava a empresa por causa disto).
+    return falha("nao-medido", ["medicao-instavel"], false, tentativasAnteriores + 1);
   }
 }
 
@@ -461,7 +507,7 @@ export async function auditarSites(
   const provisorioDe = (i: number): SiteEnrichment => {
     const anterior = anteriorDe(i);
     return {
-      ver: 1, classe: "fora-do-ar", problemas: ["fora-do-ar"],
+      ver: 1, classe: "nao-medido", problemas: ["medicao-instavel"],
       checklist: { tem: [], falta: [] }, final_url: null, http_status: null,
       tempo_ms: 0, conteudo_resumo: null, pagespeed: null, verificado_em: agoraIso,
       provisorio: true, tentativas: anterior,
@@ -495,7 +541,7 @@ export async function auditarSites(
         ]);
       } catch {
         saidas[i] = {
-          ver: 1, classe: "fora-do-ar", problemas: ["fora-do-ar"],
+          ver: 1, classe: "nao-medido", problemas: ["medicao-instavel"],
           checklist: { tem: [], falta: [] }, final_url: null, http_status: null,
           tempo_ms: 0, conteudo_resumo: null, pagespeed: null, verificado_em: agoraIso,
           provisorio: true, tentativas: anterior + 1,

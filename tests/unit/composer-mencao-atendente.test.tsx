@@ -36,7 +36,10 @@ vi.mock("@/hooks/inbox/useCreateNote", () => ({ useCreateNote: () => ({ mutate: 
 vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: uploadMock, isPending: false }),
 }));
-vi.mock("@/hooks/inbox/useMessageTemplates", () => ({ useMessageTemplates: () => ({ data: [], isLoading: false }) }));
+vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
+  useGruposDeRespostas: () => ({ data: [] }),
+  useMessageTemplates: () => ({ data: [], isLoading: false }) }));
 vi.mock("@/hooks/inbox/useDraftReply", () => ({
   useDraftReply: () => ({ mutate: vi.fn(), isPending: false }),
 }));
@@ -126,28 +129,30 @@ describe("Composer — menção de atendentes em nota interna", () => {
     await digitar("@");
 
     const lista = await listaDeMencao();
-    const opcao = within(lista).getByRole("option", { name: /atendente sem nome/i });
+    const opcao = within(lista).getByRole("option", { name: /atendente 3ck9/i });
     // O rótulo é ESTÁVEL e não carrega `user_id`: nada de `Atendente sem-nome`
-    // (o `uuid8` que a #3023 proíbe em qualquer caminho).
-    expect(opcao.textContent).toBe("Atendente sem nome");
+    // (o `uuid8` que a #3023 proíbe em qualquer caminho). O sufixo é o hash do
+    // id — `3CK9` para `sem-nome-0004`, o mesmo em qualquer render.
+    expect(opcao.textContent).toBe("Atendente 3CK9");
     expect(opcao.textContent).not.toMatch(/sem-nome/);
+    expect(opcao.textContent).not.toMatch(/sem-no/);
   });
 
   it("escolher quem não tem nome põe o rótulo no campo e o id SÓ no token (#3023)", async () => {
     abrirModoNota();
     const campo = await digitar("fala com @");
     const lista = await listaDeMencao();
-    fireEvent.click(within(lista).getByRole("option", { name: /atendente sem nome/i }));
+    fireEvent.click(within(lista).getByRole("option", { name: /atendente 3ck9/i }));
 
     // O campo mostra o mesmo rótulo — nada de `mencao:sem-nome…` no texto.
-    expect(campo).toHaveValue("fala com @Atendente sem nome ");
+    expect(campo).toHaveValue("fala com @Atendente 3CK9 ");
     fireEvent.click(screen.getByRole("button", { name: /^enviar$/i }));
 
     await waitFor(() => expect(createNoteMock).toHaveBeenCalled());
     const enviado = createNoteMock.mock.calls[0]![0] as { body: string };
     // O id viaja no token (é assim que a notificação acerta a pessoa); o RÓTULO
     // que a tela e a nota mostram não é o id.
-    expect(enviado.body).toBe("fala com @[Atendente sem nome](mencao:sem-nome-0004)");
+    expect(enviado.body).toBe("fala com @[Atendente 3CK9](mencao:sem-nome-0004)");
   });
 
   it("escolher grava no corpo o id da ESCOLHIDA — e o da colega de mesmo nome não", async () => {
@@ -267,7 +272,9 @@ describe("o rótulo do atendente sem nome, num lugar só (#3023)", () => {
       .getAllByRole("option")
       .map((o) => o.textContent ?? "");
 
-    expect(rotulos.some((r) => r.includes("Atendente sem nome"))).toBe(true);
+    // A MESMA régua das outras telas: nome, senão e-mail, senão `Atendente` +
+    // sufixo do hash do id — aqui, `Atendente 3CK9` para `sem-nome-0004`.
+    expect(rotulos.some((r) => r.includes("Atendente 3CK9"))).toBe(true);
     // A régua da issue: NENHUM caminho renderiza os 8 primeiros dígitos.
     for (const rotulo of rotulos) {
       expect(rotulo).not.toMatch(/sem-nome|ana-lima|ana-souza|carlos/);

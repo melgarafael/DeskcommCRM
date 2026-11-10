@@ -1,8 +1,20 @@
 import { expect, type Page } from "@playwright/test";
 
+import {
+  exigirMesDeAberturaComVaga,
+  garantirDiaComVagaNoMes,
+  irParaOMesDoPainel,
+  mesDaChave,
+} from "./agenda-mes-com-vaga";
+
 /**
  * A SEMANA ÍNTEGRA — o único lugar destas specs onde "que dia é hoje" entra na
  * conta, e ele entra DECLARADO.
+ *
+ * ⚠️ O recorte de MÊS (o mini-calendário do painel: `dia-<yyyy-MM-dd>`,
+ * `mes-seguinte`) mora em `agenda-mes-com-vaga.ts`, e é de lá que `escolherDiaDesenhado`
+ * e `diasCheios` navegam. Este arquivo cuida da GRADE (`coluna-dia-*`), que é
+ * outra pergunta: "que semana a tela está desenhando".
  *
  * ═══ O defeito que este módulo existe para fechar ════════════════════════════
  *
@@ -254,71 +266,47 @@ export async function diasDesenhados(page: Page): Promise<string[]> {
  * Escolhe, no painel de marcação já aberto, um dia que a grade esteja
  * desenhando — e devolve a chave escolhida.
  *
- * O mini-calendário do painel abre no mês de HOJE (`ancora={new Date()}` em
- * `_client.tsx`), e a semana seguinte pode cair inteira no mês que vem: numa
- * sexta dia 31, os cinco dias úteis da semana seguinte são todos do mês
- * seguinte, e nenhum deles é clicável na grade em tela. Por isso o salto de mês
- * é um passo previsto, e não um remendo — sem ele esta função reprovaria dois
- * dias por mês, que é a mesma classe de vermelho-por-calendário que ela existe
- * para fechar.
+ * ═══ POR QUE ELE NAVEGA ATÉ O MÊS, E NÃO ESPERA O PAINEL AVANÇAR ═══════════
+ *
+ * A versão anterior fazia a coisa certa pela metade: esperava `[data-disponivel]`
+ * no mês em tela, e SÓ DEPOIS de essa espera falhar clicava em `mes-seguinte`.
+ * No fim do dia — e o fim do dia é todo dia útil depois das ~16:30 BRT — o mês em
+ * tela não tem vaga nenhuma, então a espera estourava antes de o salto de mês
+ * acontecer. Nove casos de agenda reprovaram a `main` em 2026-10-30 exatamente
+ * nessa linha (medição e trace no cabeçalho de `agenda-mes-com-vaga.ts`).
+ *
+ * A semana desenhada já DIZ de que mês ela é. Então o painel é levado até lá, e a
+ * espera passa a ser pelo critério certo: um dia DA SEMANA DESENHADA aceso. Sem
+ * isso, o salto de mês era um remendo para o caso de o painel abrir no mês
+ * errado; agora é a regra, e vale para qualquer distância.
+ *
+ * ⚠️ A espera continua sendo pelos dias DESENHADOS, e não por "algum dia
+ * disponível": o mês visível mora em DOIS estados (o `mes` do painel troca no
+ * clique; o `mesDoPainel` do `_client.tsx` troca depois, no efeito `onMesVisivel`)
+ * e no meio há um quadro com o mês novo na tela e os horários do mês VELHO por
+ * baixo. Medido no trace do run 36292363538: `toBeVisible` verde em 2 ms e a
+ * varredura vazia 17 ms depois.
  */
 export async function escolherDiaDesenhado(page: Page, dias: readonly string[]): Promise<string> {
-  const disponiveis = async (): Promise<string[]> =>
-    (
-      await page
-        .locator('[data-testid^="dia-"][data-disponivel="true"]')
-        .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.slice(4)))
-    ).filter((k) => dias.includes(k));
-
-  // Até a consulta de horários responder, TODO dia nasce indisponível — uma
-  // varredura feita antes disso leria "nenhum dia da semana desenhada" onde há.
-  await expect(
-    page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
-    "nenhum dia disponível no painel — o seed da agenda não deixou jornada publicada, ou o " +
-      "painel abriu num mês sem vaga (fim de mês: ver `agenda-painel-abre-no-mes-com-vaga.test.tsx`)",
-  ).toBeVisible({ timeout: 20_000 });
-
-  let candidatos = await disponiveis();
-  if (candidatos.length === 0) {
-    await page.getByTestId("mes-seguinte").click();
-    // ⚠️ ESPERA PELOS DIAS DA SEMANA DESENHADA, não por "algum dia disponível".
-    //
-    // O mês visível mora em DOIS estados: o `mes` do painel, que o clique troca
-    // na hora, e o `mesDoPainel` do `_client.tsx`, que decide a consulta e só
-    // troca no efeito `onMesVisivel`. No meio há um quadro com o mês novo na tela
-    // e os horários do mês VELHO por baixo — e a janela do mês velho vai até
-    // `endOfMonth + 1 dia` (`janelaDoMesVisivel`), então traz o dia 1º aceso
-    // sozinho. A espera antiga passava nesse quadro e a varredura lia só o dia 1º.
-    // Medido no trace do run 36292363538 (27/09 ~04h UTC, semana desenhada
-    // 04–10/out, 1º de outubro numa quinta): snapshot com só `dia-2026-10-01`
-    // disponível, `toBeVisible` verde em 2 ms, varredura vazia 17 ms depois, e o
-    // GET de outubro ainda pendente quando a spec reprovou.
-    //
-    // Nem a RESPOSTA do mês novo serve de portão: a chave de um mês futuro não
-    // depende de `agora`, e com o `staleTime` de 30 s o mês volta do cache sem
-    // requisição nenhuma (medido: `agenda-remarcar-e-cancelar`, que marca e
-    // remarca no mesmo mês, esperou 20 s por uma resposta que não vinha). O que
-    // não depende de rede nem de cache é o próprio critério: algum dia da semana
-    // desenhada aceso. O quadro de transição não acende nenhum deles.
-    await expect
-      .poll(disponiveis, {
-        timeout: 20_000,
-        message:
-          `nenhum dia da semana desenhada (${dias.join(", ")}) ficou disponível no painel ` +
-          "depois de avançar o mês — o alvo e a grade deixariam de falar do mesmo período",
-      })
-      .not.toEqual([]);
-    candidatos = await disponiveis();
-  }
-
-  const escolhido = candidatos.sort()[0];
+  await exigirMesDeAberturaComVaga(page);
   expect(
-    escolhido,
-    `nenhum dia da semana desenhada (${dias.join(", ")}) está disponível no painel — ` +
+    dias.length,
+    "a semana desenhada veio vazia — sem ela não há como escolher um dia que a grade mostre",
+  ).toBeGreaterThan(0);
+
+  const alvo = mesDaChave([...dias].sort()[0]!);
+  await irParaOMesDoPainel(page, alvo);
+
+  const candidatos = await garantirDiaComVagaNoMes(
+    page,
+    (chave) => dias.includes(chave),
+    `nenhum dia da semana desenhada (${dias.join(", ")}) tem vaga no mês de ${alvo} — ` +
       "o alvo e a grade deixariam de falar do mesmo período",
-  ).toBeTruthy();
+  );
+
+  const escolhido = candidatos.sort()[0]!;
   await page.getByTestId(`dia-${escolhido}`).click();
-  return escolhido!;
+  return escolhido;
 }
 
 /**
@@ -353,51 +341,37 @@ export async function escolherDiaDesenhado(page: Page, dias: readonly string[]):
  * a `main` reprovar duas vezes com contagens DIFERENTES no mesmo commit: 9
  * horários às 15:27 UTC e 7 às 16:37, porque o dia escolhido era hoje.
  */
-async function diasCheios(page: Page): Promise<string[]> {
-  const varrer = async (): Promise<string[]> => {
-    const hoje = await page.evaluate(() => {
-      // Calculado DENTRO do browser de propósito: é o mesmo relógio e o mesmo
-      // fuso que formatam o `data-testid` de cada dia. Comparar com a data do
-      // processo do Node erraria por um dia sempre que os dois discordassem.
-      const d = new Date();
-      const dd = (n: number) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${dd(d.getMonth() + 1)}-${dd(d.getDate())}`;
-    });
-    const chaves = await page
-      .locator('[data-testid^="dia-"][data-disponivel="true"]')
-      .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")!.slice(4)));
-    // `yyyy-MM-dd` compara como texto na mesma ordem em que compara como data.
-    return chaves.filter((k) => k > hoje).sort();
-  };
+async function diasCheios(
+  page: Page,
+  opcoes: { teto?: number; meses?: number } = {},
+): Promise<string[]> {
+  await exigirMesDeAberturaComVaga(page);
+  const hoje = await page.evaluate(() => {
+    // Calculado DENTRO do browser de propósito: é o mesmo relógio e o mesmo
+    // fuso que formatam o `data-testid` de cada dia. Comparar com a data do
+    // processo do Node erraria por um dia sempre que os dois discordassem.
+    const d = new Date();
+    const dd = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${dd(d.getMonth() + 1)}-${dd(d.getDate())}`;
+  });
 
-  await expect(
-    page.locator('[data-testid^="dia-"][data-disponivel="true"]').first(),
-    "nenhum dia disponível — o seed da agenda não deixou jornada publicada, ou o painel " +
-      "abriu num mês sem vaga (fim de mês: ver `agenda-painel-abre-no-mes-com-vaga.test.tsx`); " +
-      "sem dia clicável a coluna de horários nunca abre (o defeito ficaria invisível)",
-  ).toBeVisible({ timeout: 20_000 });
-
-  const cheios = await varrer();
-  if (cheios.length > 0) return cheios;
-
-  // Hoje é o último dia útil do mês visível: o próximo dia com jornada cai no
-  // mês seguinte, e o mini-calendário só torna clicável o que é `isSameMonth` do
-  // mês em tela. Sem este passo as specs reprovariam nos dias 30/31 — a mesma
-  // classe de vermelho-por-calendário que este módulo existe para fechar.
-  await page.getByTestId("mes-seguinte").click();
-  // ⚠️ ESPERA PELO PRÓPRIO CRITÉRIO, não por "algum dia disponível" — a mesma
-  // corrida que `escolherDiaDesenhado` já fechou: logo depois do clique há um
-  // quadro com o mês novo na tela e os horários do mês VELHO por baixo, e um
-  // `toBeVisible` passa nele antes de a varredura ler o mês novo vazio. Medido
-  // no último dia de setembro (30/09, ~01h43 e ~02h10 UTC, na `main` e no #1938):
-  // "nenhum dia FUTURO disponível" com a espera antiga verde.
-  await expect
-    .poll(varrer, {
-      message: "nem o mês seguinte oferece dia futuro — a consulta deveria ter pedido o mês visível",
-      timeout: 20_000,
-    })
-    .not.toEqual([]);
-  return varrer();
+  // `yyyy-MM-dd` compara como texto na mesma ordem em que compara como data.
+  //
+  // ⚠️ O SALTO DE MÊS SAIU DAQUI e virou `garantirDiaComVagaNoMes`, e a diferença
+  // não é de estilo: a versão anterior primeiro EXIGIA um dia aceso no mês em
+  // tela (`toBeVisible`, 20 s) e só depois clicava em `mes-seguinte`. Quando o
+  // mês em tela acabou — todo dia útil depois das ~16:30 BRT, não só nos dias 30
+  // e 31 —, a exigência estourava antes do salto, e o salto nunca acontecia. Foi
+  // o que reprovou nove casos em 2026-10-30 (trace e medição no cabeçalho de
+  // `agenda-mes-com-vaga.ts`). Agora o mês em tela é PERCORRIDO, não exigido.
+  return garantirDiaComVagaNoMes(
+    page,
+    (chave) => chave > hoje,
+    "nenhum dia FUTURO com vaga em nenhum dos meses percorridos — sem um dia com a " +
+      "jornada inteira, a contagem de horários volta a depender da hora em que a suíte roda " +
+      "(veja `agenda-painel-abre-no-mes-com-vaga.test.tsx`)",
+    opcoes,
+  );
 }
 
 function exigirDia(cheios: readonly string[], qual: string): string {
@@ -410,9 +384,16 @@ function exigirDia(cheios: readonly string[], qual: string): string {
   return dia!;
 }
 
-/** O PRIMEIRO dia cheio que o painel oferece. Clica nele e devolve a chave. */
-export async function escolherPrimeiroDiaCheio(page: Page): Promise<string> {
-  const dia = exigirDia(await diasCheios(page), "primeiro");
+/**
+ * O PRIMEIRO dia cheio que o painel oferece. Clica nele e devolve a chave.
+ *
+ * `opcoes` repassa `teto`/`meses` a `garantirDiaComVagaNoMes`.
+ */
+export async function escolherPrimeiroDiaCheio(
+  page: Page,
+  opcoes: { teto?: number; meses?: number } = {},
+): Promise<string> {
+  const dia = exigirDia(await diasCheios(page, opcoes), "primeiro");
   await page.getByTestId(`dia-${dia}`).click();
   return dia;
 }
@@ -426,9 +407,18 @@ export async function escolherPrimeiroDiaCheio(page: Page): Promise<string> {
  * ela NÃO pode é cair em hoje, e caía: `dias.last()` é o último dia disponível
  * do MÊS EM TELA, e no último dia útil do mês esse último é o próprio hoje, com
  * o resto do dia por lista.
+ *
+ * ⚠️ "MÊS EM TELA" é literal: a janela que a rota devolve para novembro vai até
+ * 1º de dezembro (`janelaDoMesVisivel` soma um dia ao fim do mês), e o
+ * calendário desenha as pontas. `diasComVagaNoMes` filtra pelo mês do próprio
+ * calendário — sem esse filtro, "o último dia" poderia ser de outro mês e a grade
+ * não teria como mostrá-lo.
  */
-export async function escolherUltimoDiaCheio(page: Page): Promise<string> {
-  const dia = exigirDia(await diasCheios(page), "ultimo");
+export async function escolherUltimoDiaCheio(
+  page: Page,
+  opcoes: { teto?: number; meses?: number } = {},
+): Promise<string> {
+  const dia = exigirDia(await diasCheios(page, opcoes), "ultimo");
   await page.getByTestId(`dia-${dia}`).click();
   return dia;
 }

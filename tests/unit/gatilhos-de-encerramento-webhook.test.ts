@@ -78,25 +78,29 @@ type Linha = Record<string, unknown>;
 
 /**
  * Supabase em memória no mesmo desenho do vizinho: `from(tabela)` filtra por
- * `.eq`, `insert` grava e devolve a linha, e o construtor é "thenable" como o
+ * `.eq`/`.in`, `insert` grava e devolve a linha, e o construtor é "thenable" como o
  * de verdade. Acrescenta só `auth.admin.getUserById` (resolução de nome do
- * responsável sob opt-in) e `order`.
+ * responsável sob opt-in, que confere o vínculo em `user_organizations`) e `order`.
  */
 function bancoFalso(tabelas: Record<string, Linha[]>): SupabaseClient {
   const cliente = {
     from(tabela: string) {
-      const filtros: Array<[string, unknown]> = [];
+      const filtros: Array<(l: Linha) => boolean> = [];
       let inserida: Linha | null = null;
       const linhas = (): Linha[] =>
         inserida
           ? [inserida]
-          : (tabelas[tabela] ?? []).filter((l) => filtros.every(([c, v]) => l[c] === v));
+          : (tabelas[tabela] ?? []).filter((l) => filtros.every((f) => f(l)));
       const consulta = {
         select: () => consulta,
         order: () => consulta,
         update: () => consulta,
         eq: (coluna: string, valor: unknown) => {
-          filtros.push([coluna, valor]);
+          filtros.push((l) => l[coluna] === valor);
+          return consulta;
+        },
+        in: (coluna: string, valores: unknown[]) => {
+          filtros.push((l) => valores.includes(l[coluna]));
           return consulta;
         },
         insert: (payload: Linha) => {
@@ -258,6 +262,7 @@ function cenario(regraExtra: Linha[] = []): { banco: SupabaseClient; tabelas: Re
       },
     ],
     automation_rule_runs: [],
+    user_organizations: [ANA, BETO].map((user_id) => ({ user_id, organization_id: ORG })),
   };
   const banco = bancoFalso(tabelas);
   deps.criarClientAdmin.mockReturnValue(banco);

@@ -26,15 +26,233 @@ import {
   usePublishOrgMemory,
   useCreateOrgMemoryEntry,
   useSetOrgMemoryEntryStatus,
+  useSetOrgMemoryEntryValidity,
   useOrgMemoryVersion,
   type OrgMemoryState,
   type OrgMemoryVersionMeta,
   type OrigemDaMemoria,
 } from "@/hooks/ai/useOrgMemory";
 import { useT } from "@/hooks/i18n/useT";
+import { countPayloadTokens } from "@/lib/ai/estimativa-de-tokens";
+import { entradasVigentes, renderOrgMemory } from "@/lib/agent-engine/agent/org-memory";
+import {
+  definirLimiteDoPesoDaMemoria,
+  type ErroLimiteDoPeso,
+} from "@/app/actions/settings/definirLimiteDoPesoDaMemoria";
+import {
+  LIMITE_MAXIMO_DO_PESO_DA_MEMORIA,
+  LIMITE_MINIMO_DO_PESO_DA_MEMORIA,
+  LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA,
+} from "@/lib/schemas/settings";
 
 interface Props {
   initialState: OrgMemoryState;
+  /** `YYYY-MM-DD` no fuso da organização — a régua de "vencida" do runtime. */
+  hoje: string;
+  /** O limite do aviso de peso desta organização (`limiteDoPesoDaMemoria`). */
+  limiteDoAviso: number;
+  /**
+   * Quem pode mudar o limite, calculado no servidor com a MESMA regra de
+   * `definirLimiteDoPesoDaMemoria` — não `usePermission`, que libera o
+   * platform admin que a action recusa.
+   */
+  podeEditarOLimite: boolean;
+}
+
+/**
+ * O peso da memória em tokens, pela MESMA conta do runtime: `renderOrgMemory`
+ * sobre o texto e os aprendizados ATIVOS e VIGENTES (`entradasVigentes`, no fuso
+ * da organização). Aprendizado vencido ou arquivado não entra no prompt, e por
+ * isso não pesa aqui.
+ */
+export function pesoDaMemoriaEmTokens(
+  content: string,
+  entries: OrgMemoryState["entries"],
+  hoje: string,
+): number {
+  return countPayloadTokens(
+    renderOrgMemory({
+      content: content.trim() === "" ? null : content,
+      entries: entradasVigentes(
+        entries.filter((e) => e.status === "active"),
+        hoje,
+      ),
+    }),
+  );
+}
+
+/** Caracteres e tokens do texto, e o aviso de peso quando passa do limite. Só informa. */
+export function PesoDaMemoria({
+  content,
+  entries,
+  hoje,
+  limite,
+}: {
+  content: string;
+  entries: OrgMemoryState["entries"];
+  hoje: string;
+  limite: number;
+}) {
+  const t = useT();
+  const tokens = pesoDaMemoriaEmTokens(content, entries, hoje);
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-muted-foreground" data-testid="memoria-peso">
+        {content.length} {t("caracteres")} · ≈{tokens} {t("tokens")}
+      </span>
+      {tokens > limite ? (
+        <p className="text-xs text-warning-fg" data-testid="memoria-peso-aviso">
+          {t(
+            "Este texto vai inteiro em toda resposta de todo agente, várias leituras por mensagem. Regra que vale para um agente só rende mais no prompt dele; o que tem prazo pode virar aprendizado com validade.",
+          )}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+const ERROS_DO_LIMITE: Record<ErroLimiteDoPeso, string> = {
+  invalido: "Use um número inteiro de tokens dentro da faixa do campo.",
+  sessao: "Sua sessão expirou. Entre de novo.",
+  somente_leitura: "Acompanhamento somente leitura ou encerrado.",
+  sem_empresa: "Nenhuma empresa ativa.",
+  sem_permissao: "Só um administrador pode mudar esse limite.",
+  mfa: "Confirme a verificação em duas etapas nesta sessão.",
+  falha: "Não consegui salvar essa mudança agora.",
+};
+
+/**
+ * O limite em vigor do aviso de peso e a recomendação. Um administrador da
+ * empresa escolhe o número; os outros só leem. O aviso continua só informando.
+ */
+export function LimiteDoAviso({
+  limite,
+  podeEditar,
+  onSalvo,
+}: {
+  limite: number;
+  podeEditar: boolean;
+  onSalvo: (valor: number) => void;
+}) {
+  const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
+  const [texto, setTexto] = React.useState(String(limite));
+  const [salvando, startTransition] = React.useTransition();
+  const recomendacao = (
+    <>
+      <p className="text-xs text-muted-foreground">
+        {t("Recomendado:")} {LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA.toLocaleString(tagDoIdioma)} {t("tokens")}.{" "}
+        {t("A memória vai inteira em toda resposta de todo agente; o aviso só informa, nada é cortado.")}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {t("Vale para toda a empresa. Só administradores podem mudar.")}
+      </p>
+    </>
+  );
+
+  if (!podeEditar) {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-muted-foreground" data-testid="memoria-limite">
+          {t("Mostrar o aviso de peso acima de")} {limite.toLocaleString(tagDoIdioma)} {t("tokens")}
+        </p>
+        {recomendacao}
+      </div>
+    );
+  }
+
+  function salvar(e: React.FormEvent) {
+    e.preventDefault();
+    const valor = Number(texto);
+    startTransition(async () => {
+      const r = await definirLimiteDoPesoDaMemoria(valor);
+      if (r.ok) {
+        onSalvo(r.valor);
+        toast.success(t("Salvo"));
+      } else {
+        toast.error(t(ERROS_DO_LIMITE[r.erro]));
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <form onSubmit={salvar} className="flex flex-wrap items-center gap-2" data-testid="memoria-limite">
+        <Label htmlFor="memoria-limite-tokens" className="text-xs font-normal text-muted-foreground">
+          {t("Mostrar o aviso de peso acima de")}
+        </Label>
+        <Input
+          id="memoria-limite-tokens"
+          type="number"
+          inputMode="numeric"
+          min={LIMITE_MINIMO_DO_PESO_DA_MEMORIA}
+          max={LIMITE_MAXIMO_DO_PESO_DA_MEMORIA}
+          step={1}
+          required
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          className="w-28"
+        />
+        <span className="text-xs text-muted-foreground">{t("tokens")}</span>
+        <Button type="submit" size="sm" variant="outline" disabled={salvando || Number(texto) === limite}>
+          {salvando ? t("Salvando…") : t("Salvar")}
+        </Button>
+      </form>
+      {recomendacao}
+    </div>
+  );
+}
+
+/**
+ * Data de CALENDÁRIO (`YYYY-MM-DD`) para a tela.
+ *
+ * `formatDate` converte instante — e "2026-10-26" lido como instante é meia-noite
+ * UTC, que no Brasil aparece como 25/10 às 21h. O prazo do aprendizado é um dia,
+ * não um momento: monta-se a data no calendário local, sem fuso no meio.
+ */
+/**
+ * Campo "Vale até" da linha. Grava ao SAIR do campo, e só se mudou: o navegador
+ * emite um valor completo a cada segmento digitado ("0002-11-15" no primeiro
+ * dígito do ano), e gravar a cada `onChange` salvava essa data pela metade e
+ * tirava o foco no meio da digitação. A `key` de quem usa remonta o campo quando
+ * o servidor devolve outro valor.
+ */
+export function ValidadeDaLinha({
+  id,
+  valor,
+  onSalvar,
+}: {
+  id: string;
+  valor: string;
+  onSalvar: (dia: string) => void;
+}) {
+  return (
+    <Input
+      id={id}
+      type="date"
+      defaultValue={valor}
+      onBlur={(e) => {
+        if (e.target.value !== valor) onSalvar(e.target.value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      className="w-full sm:w-44"
+    />
+  );
+}
+
+export function formatDateOnly(dia: string, idioma: string): string {
+  const [ano, mes, diaDoMes] = dia.split("-").map(Number);
+  if (!ano || !mes || !diaDoMes) return dia;
+  // `new Date(2, …)` lê o ano 2 como 1902; setFullYear não reinterpreta.
+  const data = new Date(2000, mes - 1, diaDoMes);
+  data.setFullYear(ano);
+  return data.toLocaleDateString(idioma, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 function formatDate(iso: string, idioma: string): string {
@@ -47,7 +265,7 @@ function formatDate(iso: string, idioma: string): string {
   });
 }
 
-export function OrgMemoryClient({ initialState }: Props) {
+export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarOLimite }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   // Exaustivo por tipo: uma origem nova no CHECK sem rótulo aqui para de compilar,
@@ -62,6 +280,7 @@ export function OrgMemoryClient({ initialState }: Props) {
   const versions = data?.versions ?? [];
   const entries = data?.entries ?? [];
   const canPublish = usePermission("ai.memory.publish");
+  const [limite, setLimite] = React.useState(limiteDoAviso);
 
   const [content, setContent] = React.useState(document?.content ?? "");
   const [historyTarget, setHistoryTarget] = React.useState<OrgMemoryVersionMeta | null>(null);
@@ -69,10 +288,12 @@ export function OrgMemoryClient({ initialState }: Props) {
   const [formOpen, setFormOpen] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
+  const [validUntil, setValidUntil] = React.useState("");
 
   const publish = usePublishOrgMemory();
   const createEntry = useCreateOrgMemoryEntry();
   const setStatus = useSetOrgMemoryEntryStatus();
+  const setValidity = useSetOrgMemoryEntryValidity();
   const versionDetail = useOrgMemoryVersion(historyTarget?.id ?? null);
 
   // Sincroniza o textarea quando a versão ativa mudar sob nós (ex.: outro admin publicou).
@@ -110,14 +331,25 @@ export function OrgMemoryClient({ initialState }: Props) {
     e.preventDefault();
     if (!title.trim() || !body.trim()) return;
     createEntry.mutate(
-      { title: title.trim(), body: body.trim() },
+      { title: title.trim(), body: body.trim(), valid_until: validUntil || null },
       {
         onSuccess: () => {
           toast.success(t("Aprendizado adicionado."));
           setTitle("");
           setBody("");
+          setValidUntil("");
           setFormOpen(false);
         },
+        onError: showApiError,
+      },
+    );
+  }
+
+  function handleSetValidity(id: string, dia: string) {
+    setValidity.mutate(
+      { id, valid_until: dia || null },
+      {
+        onSuccess: () => toast.success(t("Validade atualizada.")),
         onError: showApiError,
       },
     );
@@ -169,9 +401,10 @@ export function OrgMemoryClient({ initialState }: Props) {
             className="min-h-[220px] font-mono text-[13px]"
           />
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">
-              {content.length} {t("caracteres")}
-            </span>
+            <div className="flex flex-col gap-2">
+              <PesoDaMemoria content={content} entries={entries} hoje={hoje} limite={limite} />
+              <LimiteDoAviso limite={limite} podeEditar={podeEditarOLimite} onSalvo={setLimite} />
+            </div>
             <div className="flex items-center gap-2">
               {!canPublish && (
                 <span className="text-xs text-muted-foreground">
@@ -258,6 +491,21 @@ export function OrgMemoryClient({ initialState }: Props) {
                   required
                 />
               </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="entry-valid-until">{t("Vale até (opcional)")}</Label>
+                <Input
+                  id="entry-valid-until"
+                  type="date"
+                  value={validUntil}
+                  onChange={(e) => setValidUntil(e.target.value)}
+                  className="w-full sm:w-56"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Sem data, o aprendizado vale para sempre. Com data, ele sai sozinho da conversa dos agentes depois desse dia — é assim que a programação da semana ou o cardápio do dia deixam de valer.",
+                  )}
+                </p>
+              </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" size="sm" onClick={() => setFormOpen(false)}>
                   {t("Cancelar")}
@@ -302,7 +550,25 @@ export function OrgMemoryClient({ initialState }: Props) {
                     <span className="ml-auto text-xs text-muted-foreground">{formatDate(entry.created_at, tagDoIdioma)}</span>
                   </div>
                   <p className="whitespace-pre-wrap text-text-muted">{entry.body}</p>
-                  <div className="flex sm:justify-end">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor={`entry-validade-${entry.id}`} className="text-xs">
+                        {t("Vale até")}
+                      </Label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <ValidadeDaLinha
+                          key={`${entry.id}-${entry.valid_until ?? ""}`}
+                          id={`entry-validade-${entry.id}`}
+                          valor={entry.valid_until ?? ""}
+                          onSalvar={(dia) => handleSetValidity(entry.id, dia)}
+                        />
+                        <Badge variant={entry.valid_until ? "info" : "neutral"} className="text-[10px]">
+                          {entry.valid_until
+                            ? `${t("vale até")} ${formatDateOnly(entry.valid_until, tagDoIdioma)}`
+                            : t("sem prazo")}
+                        </Badge>
+                      </div>
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"
