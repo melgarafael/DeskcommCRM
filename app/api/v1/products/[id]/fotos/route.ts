@@ -20,6 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import {
   BUCKET_DAS_FOTOS,
   conferirNovaOrdem,
@@ -91,14 +92,15 @@ export async function POST(
     return fail("validation_failed", t("Cada produto tem no máximo 5 fotos."), 422, { requestId });
   }
 
-  // Recusa pelo Content-Length declarado ANTES de bufferizar o corpo (como a rota de
-  // mídia da conversa); o file.size abaixo continua sendo o check autoritativo.
-  const declarado = Number(req.headers.get("content-length") ?? 0);
-  if (declarado > TAMANHO_MAXIMO_DA_FOTO + 1_048_576) {
-    return fail("payload_too_large", t("A foto precisa ter até 5 MB."), 413, { requestId });
-  }
-
-  const form = await req.formData().catch(() => null);
+  // O teto vale também para o envio sem tamanho declarado; o file.size abaixo
+  // continua sendo o check autoritativo da foto.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DA_FOTO + 1_048_576, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: t("A foto precisa ter até 5 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
     return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });

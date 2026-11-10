@@ -17,6 +17,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { listaAgendamentos, type AgendamentoListado } from "@/lib/agenda/consulta";
+import { MAXIMO_DE_CONVIDADOS_DA_EQUIPE } from "@/lib/agenda/convidados-da-equipe";
 import { DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN } from "@/lib/agenda/duracao-escolhida";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
@@ -106,6 +107,22 @@ const tituloDoCompromisso = z.preprocess(
     .max(200, { message: "O título do compromisso cabe em até 200 caracteres." }),
 );
 
+/**
+ * OS CONVIDADOS DA EQUIPE (#4006) — ids de membros desta organização.
+ *
+ * `[]` limpa a lista; AUSENTE não mexe. A distinção é a mesma do e-mail do
+ * convidado, e existe pelo mesmo motivo: um PATCH de remarcação não pode
+ * desconvidar a equipe só porque a tela não mandou o campo.
+ *
+ * O teto vem de `lib/agenda/convidados-da-equipe.ts` — a MESMA constante que o
+ * handler aplica. Aqui ele é 422 de schema (o id malformado nem chega ao banco);
+ * lá é a conferência de organização, que o schema não tem como fazer.
+ */
+const convidadosDaEquipe = z
+  .array(z.string().uuid())
+  .max(MAXIMO_DE_CONVIDADOS_DA_EQUIPE)
+  .optional();
+
 const marcarSchema = z.object({
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
@@ -117,6 +134,7 @@ const marcarSchema = z.object({
   description: z.string().max(2000).optional(),
   location_details: z.string().max(300).optional(),
   guest_email: emailDoConvidado.optional(),
+  team_guest_user_ids: convidadosDaEquipe,
   /**
    * A duração DESTE atendimento, em minutos (issue #3709) — ausente, a do tipo.
    *
@@ -154,6 +172,7 @@ const alterarSchema = z
     status: z.enum(["confirmed", "completed", "no_show"]).optional(),
     notes: z.string().max(2000).optional(),
     guest_email: emailDoConvidado.optional(),
+    team_guest_user_ids: convidadosDaEquipe,
     /**
      * O texto que a grade desenha no bloco (#3776). Entra no `.refine` abaixo:
      * sem isso o campo era DESCARTADO em silêncio e o pedido voltava com
@@ -169,6 +188,7 @@ const alterarSchema = z
       c.status !== undefined ||
       c.notes !== undefined ||
       c.guest_email !== undefined ||
+      c.team_guest_user_ids !== undefined ||
       c.title !== undefined,
     {
       message: "Informe pelo menos um campo para alterar.",

@@ -107,10 +107,10 @@
 
 ### Tarefa 6: cercas, documentos e declarações
 
-**Files:** `tests/unit/modulo-quadro-so-pela-ponte.test.ts` (cerca); `docs/testing/user-journey-map.md` (J70); `docs/architecture/extensoes-declarativas.architecture.json` (nós: `module_frame`, `module_bridge`, `module_nav_group`, `module_panel`, cada um com ≥2 arestas); `evidence/modulo-conectado-f4/declaracoes.md`; `.changes/modulo-conectado-tela.md` (`capacidade_nova`, `adicionado`; nenhuma ação do operador).
+**Files:** `tests/unit/modulo-quadro-so-pela-ponte.test.ts` (cerca); `docs/testing/user-journey-map.md` (J71); `docs/architecture/extensoes-declarativas.architecture.json` (nós: `module_frame`, `module_bridge`, `module_nav_group`, `module_panel`, cada um com ≥2 arestas); `evidence/modulo-conectado-f4/declaracoes.md`; `.changes/modulo-conectado-tela.md` (`capacidade_nova`, `adicionado`; nenhuma ação do operador).
 
 - [ ] Cerca por varredura: nenhum arquivo fora de `QuadroDoModulo.tsx` escreve um `<iframe` com origem de módulo, e nenhum `postMessage(` no repositório usa `"*"` como segundo argumento nos arquivos de `components/modulo/`.
-- [ ] J70 com os casos do Foco da revisão, marcados "NÃO EXECUTADO" até haver módulo real; declarações: o que foi medido, o que **não** (módulo real, navegador de verdade, CSP, painel em celular), destino "núcleo + extensão (conector)", respostas do Sistema Vivo (alimenta: catálogo + ativação + consentimento; alimenta: a pessoa na tela; registro: audit já cobre as chamadas; tela: a própria; porta: grupo "Módulos" + ⌘K + painel; anti-morte: aviso de fora do ar; laço: `host:error` e o aviso visível ao admin).
+- [ ] J71 com os casos do Foco da revisão, marcados "NÃO EXECUTADO" até haver módulo real; declarações: o que foi medido, o que **não** (módulo real, navegador de verdade, CSP, painel em celular), destino "núcleo + extensão (conector)", respostas do Sistema Vivo (alimenta: catálogo + ativação + consentimento; alimenta: a pessoa na tela; registro: audit já cobre as chamadas; tela: a própria; porta: grupo "Módulos" + ⌘K + painel; anti-morte: aviso de fora do ar; laço: `host:error` e o aviso visível ao admin).
 
 ## Autoverificação do plano
 

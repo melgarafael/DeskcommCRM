@@ -20,6 +20,7 @@ import {
   requestIdOf,
   seModuloB2bDesligado,
 } from "@/lib/crm-b2b/route-helpers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 
 export const dynamic = "force-dynamic";
 
@@ -84,8 +85,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Só pessoa vira autor: o id de um token não existe em `auth.users`.
   const autorId = authz.actor.type === "user" ? authz.actor.id : null;
 
+  // 64 KB de folga para o envelope multipart e o campo `mapping`.
+  const corpo = await lerCorpoComTeto(req, IMPORT_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: "Arquivo grande demais.",
+  });
+  if (!corpo.ok) return corpo.response;
+
   try {
-    const form = await req.formData();
+    const form = await corpo.corpo.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
       return fail("validation_failed", "Envie o arquivo no campo 'file'.", 422, { requestId });

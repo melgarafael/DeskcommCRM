@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { fail, ok } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
@@ -153,7 +154,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { id: leadId } = await ctx.params;
   const orgId = organizationId;
 
-  const form = await req.formData().catch(() => null);
+  // 1 MB de folga para o envelope multipart; o file.size abaixo é o check do anexo.
+  const corpo = await lerCorpoComTeto(req, MAX_BYTES + 1_048_576, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: t("O arquivo excede o limite de 50 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   if (!form) {
     return fail("validation_failed", t("Requisição multipart inválida."), 400, { requestId });
   }

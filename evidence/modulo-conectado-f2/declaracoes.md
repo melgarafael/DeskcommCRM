@@ -146,14 +146,14 @@ Só o que a F2 muda. Cada uma tem o comando que a produz hoje.
   das recusas em `fn_extensions_module_token_rotate` e a reconferência do teto quando a linha estava
   expirada nunca rodaram.
 - **O fluxo ponta a ponta com um módulo real não foi exercido.** Nenhum módulo `connected` existe no
-  laboratório (ver J67.1), então nenhuma busca real saiu de um módulo assinando com o segredo.
+  laboratório (ver J68.1), então nenhuma busca real saiu de um módulo assinando com o segredo.
 - **A concorrência entre buscas só é provada pelos invariantes de banco** (`tests/invariants/
   extensoes-token-modulo-funcoes.test.ts`). Nenhuma jornada em tela cobre duas buscas ao mesmo tempo.
 - **Mensagem de chave de cifra ausente na tela** não foi conferida: não se sabe se o operador vê o motivo
   ou só a falha genérica da instalação.
 - **Linha "Módulo <slug>" antes da primeira busca** (a vaga reservada) não foi vista em tela; a afirmação
   de que ela ainda não tem texto utilizável é previsão do desenho, não medição.
-- **Nenhuma jornada em navegador.** J68 é especificação: os casos estão com "NÃO EXECUTADO" e nenhum abriu
+- **Nenhuma jornada em navegador.** J69 é especificação: os casos estão com "NÃO EXECUTADO" e nenhum abriu
   `/admin/extensoes` nem `/app/settings/api-tokens`.
 - **`lib/database.types.ts` não foi regenerado.** O arquivo não está no diff da F2
   (`git diff --name-only f88438ad8 30a87a43a -- lib/database.types.ts` sai vazio), então os tipos gerados

@@ -38,6 +38,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast, type Role } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -143,18 +144,16 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (owner === null && papel !== null && !roleAtLeast(papel, "manager")) {
     return fail("forbidden", t("Só manager+ altera template compartilhado."), 403, { requestId });
   }
-  // Recusa pelo Content-Length declarado ANTES de bufferizar o corpo (como a
-  // rota de mídia da conversa). O teto daqui é o MAIOR dos dois (áudio, 16 MB)
-  // mais a folga do multipart: o tipo ainda não foi farejado, e o teto por tipo
-  // é conferido abaixo, sobre os bytes.
-  const declarado = Number(req.headers.get("content-length") ?? 0);
-  if (declarado > TAMANHO_MAXIMO_DO_AUDIO + 1_048_576) {
-    return fail("payload_too_large", t("A mídia passou do tamanho máximo aceito."), 413, {
-      requestId,
-    });
-  }
-
-  const form = await req.formData().catch(() => null);
+  // O teto daqui é o MAIOR dos dois (áudio, 16 MB) mais a folga do multipart:
+  // o tipo ainda não foi farejado, e o teto por tipo é conferido abaixo, sobre
+  // os bytes.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DO_AUDIO + 1_048_576, {
+    requestId,
+    idioma,
+    acimaDoTeto: t("A mídia passou do tamanho máximo aceito."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
     return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });

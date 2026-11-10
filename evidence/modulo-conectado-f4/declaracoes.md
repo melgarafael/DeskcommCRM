@@ -108,7 +108,7 @@ contado nas arestas (frame 5, bridge 4, nav_group 2, panel 2); a cerca foi escri
 
 - **Nada foi executado nesta máquina.** Nenhum `pnpm`, `vitest`, typecheck, lint, build, Docker ou
   Playwright. A cerca nova também não foi rodada: o veredito é o CI do PR interno.
-- **Módulo real:** nenhum serviço de verdade falou a ponte. J70 é especificação, todos os casos
+- **Módulo real:** nenhum serviço de verdade falou a ponte. J71 é especificação, todos os casos
   "NÃO EXECUTADO".
 - **Navegador de verdade:** nenhum teste abriu a tela. Comportamento do sandbox, de pop-ups e de
   `postMessage` entre origens reais só foi testado com simulação de jsdom.
@@ -117,6 +117,6 @@ contado nas arestas (frame 5, bridge 4, nav_group 2, panel 2); a cerca foi escri
 - **Painel em celular:** abaixo de 768 px o painel vira a rota; não foi visto em aparelho real.
 - **`Esc` com o foco dentro do iframe:** a tecla vai ao iframe e não chega ao CRM; o painel fecha pelo
   botão ou com o foco fora do quadro. Não foi medido, é comportamento conhecido do navegador.
-- **Coluna de CI da J70** foi montada a partir dos nomes e da intenção dos testes das tarefas anteriores;
+- **Coluna de CI da J71** foi montada a partir dos nomes e da intenção dos testes das tarefas anteriores;
   cada teste não foi relido caso a caso nesta tarefa.
 - **Espelho `.claude/skills` não regenerado:** a F4 não tocou o guia `deskcomm-extensao`.

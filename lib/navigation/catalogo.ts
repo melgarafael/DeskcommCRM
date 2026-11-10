@@ -220,6 +220,18 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // Módulo opcional (ADR-0002, doc 208): a porta só existe depois que o
+    // administrador da instalação instala `lista_de_espera` em `/admin/modulos`.
+    href: "/app/agenda/lista-de-espera",
+    label: "Lista de espera",
+    description: "Quem aceitou ser avisado quando abrir um horário, na ordem da fila.",
+    icon: "CalendarBlank",
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "viewer",
+    modulo: "lista_de_espera",
+  },
+  {
     // Renomeado de "Templates": estes são scripts do atendente, consumidos pelo
     // Composer do inbox. O nome "Templates" fica livre para os da Meta (HSM),
     // onde é o termo técnico correto.
@@ -882,6 +894,27 @@ export const NAV_CATALOG = [
     // `/admin/modulos`. Mesmo mecanismo genérico de `banco_externo` acima, só
     // que a fonte é a TABELA, não a flag de `platform_config`; `deModuloDesligado`
     // e este filtro não sabem a diferença, e não precisam saber.
+    href: "/app/cadencias",
+    label: "Cadências de e-mail",
+    description: "Sequências de e-mail por negócio, com descadastro.",
+    icon: "PaperPlaneTilt",
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "manager",
+    modulo: "cadencias",
+    capacidade: "cadencias",
+  },
+  {
+    href: "/app/settings/cadencias",
+    label: "Configurar cadências",
+    description: "Ativar as cadências de e-mail nesta empresa.",
+    icon: "PaperPlaneTilt",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
+    modulo: "cadencias",
+  },
+  {
     href: "/app/honorarios",
     label: "Honorários",
     description: "O modelo de cobrança de cada caso e o calendário de parcelas.",
@@ -956,6 +989,18 @@ export const NAV_CATALOG = [
     group: "analise",
     section: "Os números do período",
     sidebar: true,
+  },
+  {
+    // Em Análise, e não em Atendimento: porta de módulo mora em grupo com hub
+    // ("Ver tudo em Análise"), como a do Cold Call.
+    href: "/app/painel",
+    label: "Painel de atendimento",
+    description: "Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número.",
+    icon: "ListChecks",
+    group: "analise",
+    section: "Os números do período",
+    // Módulo opcional da instalação, desligado por padrão (#3403).
+    modulo: "painel_atendimento",
   },
   {
     // Observabilidade, não configuração: por isso não fica junto dos agentes.

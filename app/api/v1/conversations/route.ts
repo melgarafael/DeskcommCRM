@@ -109,6 +109,7 @@ async function responderLista(
   const qsParsed = listConversationsQuerySchema.safeParse({
     status: url.searchParams.get("status") ?? undefined,
     exclude_finished: url.searchParams.get("exclude_finished") === "true" ? true : undefined,
+    closed_since: url.searchParams.get("closed_since") ?? undefined,
     assigned_to: url.searchParams.get("assigned_to") ?? undefined,
     // QUEM MANDA na conversa (migration 0203) — o filtro das abas Fila e
     // Automático. Faltar aqui é a MESMA rotura que o `tag` teve logo abaixo: o

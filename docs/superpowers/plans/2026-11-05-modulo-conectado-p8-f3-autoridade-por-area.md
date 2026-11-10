@@ -105,7 +105,7 @@ Papel mínimo: `configuracao` e `agentes_ia` exigem que o **consentimento** seja
 ## Tarefa 6 — Atribuição e fecho
 
 - Audit de chamada de módulo: ator = token do módulo (F2), `metadata.person_id` = pessoa do JWT quando houver.
-- `.changes/modulo-conectado-autoridade.md`, J69, mapa de arquitetura, `evidence/modulo-conectado-f3/declaracoes.md` (destino, 10 respostas do Sistema Vivo, o que NÃO foi medido), mesma forma da F1/F2.
+- `.changes/modulo-conectado-autoridade.md`, J70, mapa de arquitetura, `evidence/modulo-conectado-f3/declaracoes.md` (destino, 10 respostas do Sistema Vivo, o que NÃO foi medido), mesma forma da F1/F2.
 
 ## Fora desta fase
 

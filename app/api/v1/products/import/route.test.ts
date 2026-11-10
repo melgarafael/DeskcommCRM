@@ -5,6 +5,7 @@
 // parser de multipart do NextRequest (undici). Mesmo achado documentado em
 // app/api/v1/ai/skills/import/route.test.ts.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
@@ -126,10 +127,10 @@ function csv(linhas: string): File {
   return new File([conteudo], "catalogo.csv", { type: "text/csv" });
 }
 
-function pedido(arquivo: File): NextRequest {
+function pedido(arquivo: File): Promise<NextRequest> {
   const form = new FormData();
   form.set("file", arquivo);
-  return new NextRequest("http://localhost/api/v1/products/import", { method: "POST", body: form });
+  return pedidoComTamanho("http://localhost/api/v1/products/import", { method: "POST", body: form });
 }
 
 beforeEach(() => {
@@ -154,7 +155,7 @@ describe("POST /api/v1/products/import — reimportar não pisa a moeda de quem 
     vi.mocked(createClient).mockResolvedValue(supabaseCom("MXN", []) as never);
     const { POST } = await import("./route");
 
-    await POST(pedido(csv("IP15,iPhone 15,5499,00")));
+    await POST(await pedido(csv("IP15,iPhone 15,5499,00")));
 
     expect(upserts).toHaveLength(1);
     expect(upserts[0]![0]).toMatchObject({ codigo: "IP15", moeda: "MXN" });
@@ -173,7 +174,7 @@ describe("POST /api/v1/products/import — reimportar não pisa a moeda de quem 
     vi.mocked(createClient).mockResolvedValue(supabaseCom("MXN", ["AND-01"]) as never);
     const { POST } = await import("./route");
 
-    await POST(pedido(csv("AND-01,Galaxy S24,3999,00")));
+    await POST(await pedido(csv("AND-01,Galaxy S24,3999,00")));
 
     const linhaExistente = upserts.flat().find((l) => l.codigo === "AND-01");
     expect(linhaExistente).toBeDefined();
@@ -185,7 +186,7 @@ describe("POST /api/v1/products/import — reimportar não pisa a moeda de quem 
     const { POST } = await import("./route");
 
     await POST(
-      pedido(csv("IP15,iPhone 15,5499,00\nAND-01,Galaxy S24,3999,00")),
+      await pedido(csv("IP15,iPhone 15,5499,00\nAND-01,Galaxy S24,3999,00")),
     );
 
     const todas = upserts.flat();
@@ -207,7 +208,7 @@ describe("POST /api/v1/products/import — o código não diferencia maiúsculas
   async function importar(codigosExistentes: string[], linhas: string) {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", codigosExistentes) as never);
     const { POST } = await import("./route");
-    const res = await POST(pedido(csv(linhas)));
+    const res = await POST(await pedido(csv(linhas)));
     return { status: res.status, corpo: (await res.json()) as { data: Record<string, unknown> } };
   }
 
@@ -254,7 +255,7 @@ describe("POST /api/v1/products/import — o código não diferencia maiúsculas
     );
     const { POST } = await import("./route");
 
-    const res = await POST(pedido(csv("ip15,iPhone 15,4999")));
+    const res = await POST(await pedido(csv("ip15,iPhone 15,4999")));
 
     expect(res.status).toBe(500);
     expect(upserts).toEqual([]);
@@ -269,7 +270,7 @@ describe("POST /api/v1/products/import — estoque inválido não chega ao banco
       "codigo;nome;preco;estoque\nP1;Produto existente;10;-5\nP2;Produto novo;20;3\n",
     ], "catalogo.csv", { type: "text/csv" });
 
-    const res = await POST(pedido(arquivo));
+    const res = await POST(await pedido(arquivo));
     const corpo = await res.json();
 
     expect(res.status).toBe(200);
@@ -364,7 +365,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", []) as never);
     const { POST } = await import("./route");
 
-    const res = await POST(pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
+    const res = await POST(await pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
     const corpo = await res.json();
 
     expect(res.status).toBe(200);
@@ -393,7 +394,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", []) as never);
     const { POST } = await import("./route");
 
-    await POST(pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
+    await POST(await pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
 
     expect(sonda.guardadas).toEqual([URL_DA_FOTO]);
     expect(pedidas).toEqual([URL_DA_FOTO]);
@@ -404,7 +405,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", []) as never);
     const { POST } = await import("./route");
 
-    await POST(pedido(csv("IP15,iPhone 15,5499,00")));
+    await POST(await pedido(csv("IP15,iPhone 15,5499,00")));
 
     const linha = upserts.flat().find((l) => l.codigo === "IP15")!;
     expect(linha).not.toHaveProperty("fotos");
@@ -418,7 +419,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     const { POST } = await import("./route");
 
     const res = await POST(
-      pedido(
+      await pedido(
         new File(
           [
             `codigo,nome,preco,foto\nIP15,iPhone 15,5499,${URL_DA_FOTO}\nPERF,212 VIP,449.90,\n`,
@@ -447,7 +448,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", []) as never);
     const { POST } = await import("./route");
 
-    const res = await POST(pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
+    const res = await POST(await pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
     const corpo = await res.json();
 
     expect(res.status).toBe(200);
@@ -483,7 +484,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", []) as never);
     const { POST } = await import("./route");
 
-    const res = await POST(pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
+    const res = await POST(await pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
     const corpo = await res.json();
 
     expect(res.status).toBe(200);
@@ -506,7 +507,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     );
     const { POST } = await import("./route");
 
-    await POST(pedido(planilhaComFoto(`AND-01,Galaxy S24,3999,${URL_DA_FOTO}`)));
+    await POST(await pedido(planilhaComFoto(`AND-01,Galaxy S24,3999,${URL_DA_FOTO}`)));
 
     const linha = upserts.flat().find((l) => l.codigo === "AND-01")!;
     // Produto existente NÃO ganha `id` no shape (não reescreve a chave dele).
@@ -534,7 +535,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", []) as never);
     const { POST } = await import("./route");
 
-    await POST(pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
+    await POST(await pedido(planilhaComFoto(`IP15,iPhone 15,5499,${URL_DA_FOTO}`)));
 
     expect(sonda.guardadas).toEqual([URL_DA_FOTO, destino]);
     expect(pedidas).toEqual([URL_DA_FOTO, destino]);
@@ -579,7 +580,7 @@ describe("POST /api/v1/products/import — a descrição da planilha", () => {
     const { POST } = await import("./route");
 
     const res = await POST(
-      pedido(planilha("codigo,nome,descricao,preco\nIP15,iPhone 15,Tela de 6 polegadas,5499\nAND-01,Galaxy S24,,3999\n")),
+      await pedido(planilha("codigo,nome,descricao,preco\nIP15,iPhone 15,Tela de 6 polegadas,5499\nAND-01,Galaxy S24,,3999\n")),
     );
     const corpo = (await res.json()) as { data: { descricoes: number } };
 
@@ -600,7 +601,7 @@ describe("POST /api/v1/products/import — a descrição da planilha", () => {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", ["AND-01"]) as never);
     const { POST } = await import("./route");
 
-    await POST(pedido(csv("AND-01,Galaxy S24,3999")));
+    await POST(await pedido(csv("AND-01,Galaxy S24,3999")));
 
     expect(upserts.flat()).toHaveLength(1);
     expect(atualizacoes).toEqual([]);

@@ -121,9 +121,9 @@ a decisão, sem cortar o acesso do serviço. Sem seção no `CHANGELOG.md`.
 - **Sabotagens previstas, não rodadas.** Tirar `(profile = 'connected') = (entrada tem service_origin)`
   (esperado: o caso "declarative com service_origin" fica vermelho); tirar o incremento de revisão em
   `fn_extensions_set_switch` (esperado: o caso de revisão velha fica vermelho). Ficam para o CI.
-- **Jornada J67 não executada.** O caso J67.1 está bloqueado: `experiments/extensoes/catalog/catalog.py`
+- **Jornada J68 não executada.** O caso J68.1 está bloqueado: `experiments/extensoes/catalog/catalog.py`
   recusa perfil diferente de `declarative` (linha 168) e não grava `service_origin` (linha 353).
-- **Reinstalar mantendo o desligado** (J67.8) foi lido no código, não testado.
+- **Reinstalar mantendo o desligado** (J68.8) foi lido no código, não testado.
 - **Tela de extensões** não foi vista por nenhum navegador.
 - **Comentário em `app/admin/(protected)/extensoes/page.tsx` (linha 153)** diz que ligar e desligar "se
   faz na tela da empresa". O código mostra o botão só na tela de administração da instalação. Pode ser
