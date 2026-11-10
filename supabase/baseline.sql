@@ -73757,7 +73757,7 @@ end $trilha_do_roteador$;
 
 -- ═══ 9314 — os nomes da equipe numa consulta só (#4326, fatia 3) ═══
 --
--- Espelho do bloco da migration `20261110120000_9314_nomes_dos_membros_da_
+-- Espelho do bloco da migration `20261110224826_9314_nomes_dos_membros_da_
 -- equipe.sql`. Cria função, então mora ANTES da VARREDURA anon — que é o último
 -- bloco do arquivo e proíbe `create function` depois dela.
 --
