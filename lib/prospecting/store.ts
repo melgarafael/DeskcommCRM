@@ -827,15 +827,24 @@ export async function criarPegadaDoCandidato(
   let contactId = contatoDaCampanha ?? p.contact_id;
   if (!contactId) {
     const linksDoNovo = linksParaContatoNovo(p);
-    const contact = await createContactHandler(admin, ctx, {
-      name: p.data.name,
-      display_name: p.data.name,
-      phone_number: p.phone,
-      source: "prospecting",
-      source_metadata: { campaign_id: c.id, place_id: p.data.key, maps_url: p.data.maps_url },
-      consent: { legitimate_interest: { ref: config.legal_basis_ref } },
-      ...(linksDoNovo ? { custom_fields: linksDoNovo } : {}),
-    });
+    // Porta `prospeccao`: a conversa abre logo abaixo, no canal da CAMPANHA. Pela
+    // porta `manual` o cadastro abria antes outra, no telefone mais antigo da
+    // organização, e cada empresa abordada aparecia duas vezes na caixa.
+    const contact = await createContactHandler(
+      admin,
+      ctx,
+      {
+        name: p.data.name,
+        display_name: p.data.name,
+        phone_number: p.phone,
+        source: "prospecting",
+        source_metadata: { campaign_id: c.id, place_id: p.data.key, maps_url: p.data.maps_url },
+        consent: { legitimate_interest: { ref: config.legal_basis_ref } },
+        ...(linksDoNovo ? { custom_fields: linksDoNovo } : {}),
+      },
+      undefined,
+      { porta: "prospeccao" },
+    );
     contactId = String(contact.contact.id);
     await db.query(
       "update prospecting_candidates set contact_id=$3 where organization_id=$1 and id=$2",
