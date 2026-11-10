@@ -149,6 +149,18 @@ describe("POST /api/v1/conversations/[id]/pagamentos", () => {
     },
   );
 
+  it.each(["12a", "USD", "brl"])("⭐ moeda %j: 400 e nada registrado (só BRL)", async (moeda) => {
+    const r = await pedir({ provedor: "infinitepay", valor_cents: 15000, moeda });
+    expect(r.status).toBe(400);
+    expect(h.chamadas).toEqual([]);
+  });
+
+  it("controle: moeda BRL explícita registra", async () => {
+    const r = await pedir({ provedor: "infinitepay", valor_cents: 15000, moeda: "BRL" });
+    expect(r.status).toBe(201);
+    expect(h.chamadas).toEqual([{ organizationId: ORG, conversationId: CONV, provedor: "infinitepay", valorCents: 15000, moeda: "BRL" }]);
+  });
+
   it("conversa que não é uuid: 400", async () => {
     expect((await pedir(undefined, "nao-e-uuid")).status).toBe(400);
   });

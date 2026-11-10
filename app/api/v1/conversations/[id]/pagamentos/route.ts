@@ -48,7 +48,8 @@ const corpoSchema = z.strictObject({
   provedor: z.enum(PROVEDORES_DE_RECEBIMENTO),
   /** Valor em CENTAVOS (o repo inteiro fala centavos). É o que o aviso tem de trazer. */
   valor_cents: z.number().int().positive().max(VALOR_MAXIMO_CENTS),
-  moeda: z.string().length(3).optional(),
+  /** O único provedor (InfinitePay) só cobra em real; outra moeda é 400, não um link que nunca bate. */
+  moeda: z.enum(["BRL"]).optional(),
 });
 
 interface Contexto {
