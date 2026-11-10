@@ -1,7 +1,7 @@
 import { expect, it, vi, beforeEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MessageBubble } from "./MessageBubble";
+import { MessageBubble, colunasDoSeletorDeReacao } from "./MessageBubble";
 import type { Message } from "@/lib/types/messaging";
 
 vi.mock("@emoji-mart/react", () => ({
@@ -47,4 +47,16 @@ it("abre seletor completo e só exibe emoji após confirmação do servidor", as
   await act(async () => { confirmar(); });
   rerender(<MessageBubble message={message} onReagir={onReagir} reacoes={[{ emoji: "🤩", direction: "outbound" }]} />);
   expect(screen.getByTestId("message-reactions")).toHaveTextContent("🤩");
+});
+
+// Medido na prova pela tela do #4194: a 375px o seletor de 9 colunas (352px) vazava
+// 22px pela borda do modal. Largura do emoji-mart = colunas × 36 + 28; área útil do
+// modal = janela − 58.
+it("o seletor de reações cabe no modal em telas estreitas e tem 9 colunas nas largas", () => {
+  for (const janela of [320, 360, 375, 390, 414, 640, 1280]) {
+    const colunas = colunasDoSeletorDeReacao(janela);
+    expect(colunas * 36 + 28, `janela ${janela}px`).toBeLessThanOrEqual(janela - 58);
+  }
+  expect(colunasDoSeletorDeReacao(375)).toBe(8);
+  expect(colunasDoSeletorDeReacao(1280)).toBe(9);
 });

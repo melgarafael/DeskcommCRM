@@ -43,6 +43,14 @@ import {
 
 const PickerDeReacao = lazy(() => import("@emoji-mart/react"));
 const REACOES_INICIAIS = ["👍", "❤️", "😂", "😮", "🙏"];
+
+// O emoji-mart tem largura fixa de `colunas × 36px + 28px` (9 colunas = 352px), e o
+// modal só oferece `janela − 2rem − p-3 − borda` = janela − 58px. A 375px isso dá
+// 317px, e o seletor de 9 colunas vazava 22px pela borda do modal. As colunas saem
+// da largura da janela, entre 6 e 9.
+export function colunasDoSeletorDeReacao(larguraDaJanela: number): number {
+  return Math.max(6, Math.min(9, Math.floor((larguraDaJanela - 58 - 28) / 36)));
+}
 // Identificador persistido no navegador; não é texto de marca exibido ao usuário.
 const REACOES_STORAGE = ["desk", "comm:reacoes-frequentes:v1"].join("");
 
@@ -786,6 +794,7 @@ export function MessageBubble({
                 data={async () => (await import("@emoji-mart/data")).default}
                 locale="pt"
                 previewPosition="none"
+                perLine={colunasDoSeletorDeReacao(window.innerWidth)}
                 onEmojiSelect={(e: { native: string }) => {
                   setSeletorDeReacaoAberto(false);
                   void enviarReacao(e.native).catch(() => undefined);
