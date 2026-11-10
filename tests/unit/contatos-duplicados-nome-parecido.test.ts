@@ -24,6 +24,8 @@ function contato(id: string, campos: Partial<ContatoParaDeduplicar> = {}): Conta
     email_normalized: null,
     phone_number: null,
     cpf_hash: null,
+    wa_identity: null,
+    wa_lid: null,
     is_merged_into: null,
     is_anonymized: false,
     source_metadata: null,
