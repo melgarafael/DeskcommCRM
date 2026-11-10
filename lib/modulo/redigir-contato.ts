@@ -15,8 +15,14 @@
  *   - telefone: os últimos 8 dígitos com qualquer separador entre eles, mais o código do país e o DDD na frente;
  *   - e-mail: igual, sem diferenciar maiúscula.
  * Chave `id`, `*_id`, `redacted` e `text_redacted` nunca são filtradas.
- * LIMITE CONHECIDO: só sai o que está escrito igual ao cadastro. Apelido ("Cida" para "Aparecida") passa, e o
- * nome de OUTRA pessoa, que não seja o contato ligado ao registro, também passa.
+ * LIMITES CONHECIDOS: só sai o que está escrito igual ao cadastro. Apelido ("Cida" para "Aparecida") passa, e o
+ * nome de OUTRA pessoa, que não seja o contato ligado ao registro, também passa. Nome (ou parte) com menos de
+ * 3 letras não é filtrado; telefone com menos de 8 dígitos não é filtrado; separador que não seja espaço,
+ * ponto, hífen ou parênteses (ex.: barra, travessão) não é coberto. Telefones secundários (`contact_phones`)
+ * não chegam por nenhum dos 3 consumidores (medido), então não são coletados; se um consumidor passar a trazê-los,
+ * a coleta precisa aprender essa chave.
+ * No quadro, o nome do contato não vem na linha do negócio: a rota o lê e o anexa (`anexarNomeDoContato`)
+ * SÓ para módulo sem `contatos`, antes deste filtro, que o anula na saída.
  *
  * Sessão de navegador e token que não é de módulo não passam por aqui: veem tudo, como sempre viram.
  * LADO SEGURO: token de módulo SEM o campo `contatoVisivel` (nunca preenchido, teste que simula o
@@ -43,6 +49,7 @@ const CHAVES_DO_OBJETO_DO_CONTATO: ReadonlySet<string> = new Set(["contacts", "c
 const CAMPOS_SOLTOS_DE_CONTATO: ReadonlySet<string> = new Set([
   "contact_name",
   "contact_display_name",
+  "contact_address_book_name",
   "contact_phone",
   "contact_email",
   "contact_links",
@@ -62,6 +69,7 @@ const CHAVES_DE_NOME: ReadonlySet<string> = new Set([
   "address_book_name",
   "contact_name",
   "contact_display_name",
+  "contact_address_book_name",
 ]);
 const CHAVES_DE_TELEFONE: ReadonlySet<string> = new Set(["phone_number", "phone", "phone_e164", "contact_phone"]);
 const CHAVES_DE_EMAIL: ReadonlySet<string> = new Set(["email", "contact_email"]);
@@ -88,7 +96,9 @@ function escaparRegex(t: string): string {
   return t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const SEPARADOR = "[\\s.\\-()]*";
+// Separador LIMITADO (até 3) e um só entre as partes: `*` aninhado sobre o mesmo conjunto daria backtracking
+// exponencial (ReDoS) num texto de milhares de espaços ou pontos.
+const SEPARADOR = "[\\s.\\-()]{0,3}";
 
 /** Padrão (sobre o texto dobrado) de um telefone: os últimos 8 dígitos, com qualquer separador entre eles. */
 function padraoDeTelefone(bruto: string): RegExp | null {
@@ -233,6 +243,9 @@ function redigir(
     } else if (CAMPOS_SOLTOS_DE_CONTATO.has(chave)) {
       saida[chave] = null;
     } else if (chaveIntocavel(chave)) {
+      // `id`/`*_id` são primitivos (string/número) e `redacted`/`text_redacted` são booleanos: copiar o valor
+      // não compartilha referência mutável com o original. Além da profundidade máxima o valor também passa
+      // por referência, sem alteração; a resposta de rota é JSON recém-lido e ninguém a muta depois.
       saida[chave] = x;
     } else {
       saida[chave] = redigir(x, profundidade + 1, aqui, marca);

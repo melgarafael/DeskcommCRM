@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { anexarNomeDoContato } from "@/lib/kanban/dados-do-contato";
+import type { Lead } from "@/lib/types/leads";
+
 import { moduloSemContato, redigirContatoParaModulo } from "./redigir-contato";
 
 const SEM = { actor: { type: "module" }, contatoVisivel: false };
@@ -100,17 +103,42 @@ describe("redigirContatoParaModulo: texto livre", () => {
   });
 
   it("quadro com 2 negócios de contatos diferentes: o nome do contato A no título do B NÃO é trocado", () => {
-    const quadro = {
-      leads: [
-        { id: "a", title: "Reforma da Maria Souza", contact_name: "Maria Souza", contact_phone: "11 91111-2222" },
-        { id: "b", title: "Contrato da Maria Souza com Pedro Alves", contact_name: "Pedro Alves", contact_phone: "11 93333-4444" },
-      ],
-    };
-    const r = red(quadro);
+    // Formato REAL do quadro: o lead vem de `crm_leads` SEM nome; a rota lê o contato e anexa o nome.
+    const leads = [
+      { id: "a", contact_id: "ka", title: "Reforma da Maria Souza" },
+      { id: "b", contact_id: "kb", title: "Contrato da Maria Souza com Pedro Alves" },
+    ] as unknown as Lead[];
+    const anexados = anexarNomeDoContato(leads, [
+      { id: "ka", name: "Maria Souza" },
+      { id: "kb", name: "Pedro Alves" },
+    ]);
+    const r = red({ leads: anexados });
     expect(r.leads[0]!.title).toBe("Reforma da [contato]");
     expect(r.leads[0]!.text_redacted).toBe(true);
     // do contato B saiu só o nome do B; "Maria Souza" (contato do irmão A) fica
     expect(r.leads[1]!.title).toBe("Contrato da Maria Souza com [contato]");
+    // o nome anexado só serve ao filtro: não sai na resposta
+    expect(r.leads[0]!.contact_name).toBeNull();
+  });
+
+  it("quadro no formato real: título 'Proposta João Silva', contato com `name`, vira [contato]", () => {
+    const leads = [{ id: "a", contact_id: "k", title: "Proposta João Silva" }] as unknown as Lead[];
+    const r = red({ leads: anexarNomeDoContato(leads, [{ id: "k", name: "João Silva", display_name: "João" }]) });
+    expect(r.leads[0]!.title).toBe("Proposta [contato]");
+    expect(JSON.stringify(r)).not.toContain("Silva");
+  });
+
+  it("sem anexar o nome (sessão ou módulo com contatos), o lead não ganha campo nenhum", () => {
+    const leads = [{ id: "a", contact_id: "k", title: "Proposta João Silva" }] as unknown as Lead[];
+    expect(anexarNomeDoContato(leads, [])).toBe(leads);
+    expect(Object.keys(anexarNomeDoContato(leads, [{ id: "k", name: null }])[0]!)).toEqual(["id", "contact_id", "title"]);
+  });
+
+  it("texto enorme de separadores não trava (sem backtracking exponencial) e volta sem mudança", () => {
+    const texto = " .-".repeat(33_334) + "fim";
+    const r = red({ id: "n", title: texto, contacts: { id: "k", phone_number: "+55 11 98765-4321" } });
+    expect(r.title).toBe(texto);
+    expect(r).not.toHaveProperty("text_redacted");
   });
 
   it("parte do nome com menos de 3 letras não é trocada; fronteira de palavra (Ana não sai de Banana)", () => {
