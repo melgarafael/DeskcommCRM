@@ -1,6 +1,6 @@
 # Etiquetas pesquisáveis e paginadas
 
-Entrada: vocabulário curado, tags em uso e regras add_tag da organização. Saída: gerência paginada e sugestões nos editores do Inbox. Porta: Configurações → Tags e editor de etiquetas do Inbox. Leitura usa sessão e security invoker; não recebe organização do cliente. Operações e audit transacionais existentes permanecem.
+Entrada: vocabulário curado, tags em uso e regras add_tag e remove_tag da organização. Saída: gerência paginada e sugestões nos editores do Inbox. Porta: Configurações → Tags e editor de etiquetas do Inbox. Leitura usa sessão e security invoker; não recebe organização do cliente. Operações e audit transacionais existentes permanecem.
 
 A busca é literal, inclui nomes após a 500ª posição e mostra total verdadeiro. Erro de leitura aparece nos dois editores. A função antiga permanece para consumidores sem parâmetros. Junção aceita nome exato existente para destino fora da página, validado pelo banco.
 

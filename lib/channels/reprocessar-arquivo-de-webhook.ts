@@ -1,6 +1,8 @@
 /**
  * Reprocessa o arquivo de webhook do canal por QR que o banco recusou por um
- * instante — o corpo do cron `app/api/v1/cron/webhook-replay`.
+ * instante — a primeira metade do cron `app/api/v1/cron/webhook-replay` (a
+ * segunda, a entrada que responde antes de processar, mora em
+ * `./reprocessar-entradas-aceitas.ts`).
  *
  * Mora em `lib/channels/` porque precisa nomear o transporte (a ingestão, o
  * contrato do envelope, o valor de `provider` no arquivo), e esta é a fronteira

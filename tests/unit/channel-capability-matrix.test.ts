@@ -40,6 +40,8 @@ const CAPABILITIES = [
   "groups",
   "costPerMessage",
   "alteraMensagemEnviada",
+  "podeReagir",
+  "transmissao",
   "phonebook",
   "statusUpdates",
 ] as const;

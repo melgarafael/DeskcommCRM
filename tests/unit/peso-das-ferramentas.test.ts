@@ -119,12 +119,16 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_draft_proposal": { tokens: 1059, motivo: BASE },
   "crm_request_human_handoff": { tokens: 583, motivo: BASE },
   "get_lead_context": { tokens: 46, motivo: BASE },
-  "send_message": { tokens: 137, motivo: BASE },
+  "send_message": { tokens: 191, motivo: "imagem_url (Spec 25 R4): a foto por endereço, com a regra de procedência na descrição" },
   "update_lead_state": { tokens: 240, motivo: BASE },
   "schedule_followup": { tokens: 200, motivo: BASE },
   "save_lead_note": { tokens: 229, motivo: BASE },
   "get_lead_note": { tokens: 99, motivo: BASE },
   "search_knowledge": { tokens: 131, motivo: BASE },
+  // #4133: nasceu com o modo `leitura_direta` (índice no contexto + leitura do
+  // documento pelo id). Entra no lugar da busca quando o agente escolhe o modo;
+  // o teto é o da primeira medição, sem gordura.
+  "ler_documento": { tokens: 142, motivo: "ferramenta nova do modo leitura_direta (#4133), medida na criação (2026-11-06)" },
   "request_human_handoff": { tokens: 510, motivo: BASE },
   "read_skill_reference": { tokens: 154, motivo: BASE },
   "open_human_case": { tokens: 384, motivo: BASE },
@@ -133,7 +137,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
 };
 
-const TETO_TOTAL = 29952;
+// 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
+// modo `leitura_direta` — nunca junto de `search_knowledge`; +54 com `imagem_url`
+// no `send_message` (Spec 25 R4, #3276).
+const TETO_TOTAL = 30148;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

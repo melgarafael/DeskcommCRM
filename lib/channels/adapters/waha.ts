@@ -206,6 +206,13 @@ export const wahaAdapter: ChannelAdapter = {
     await client.editMessage(input.sessionRef, chatId, messageId, input.text);
   },
 
+  async sendReaction(input: { sessionRef: string; recipient: string | null; externalId: string; emoji: string }): Promise<{ externalId: null }> {
+    const { client, messageId } = enderecoDaMensagem(input);
+    await client.sendReaction(input.sessionRef, messageId, input.emoji);
+    // O WAHA não retorna id próprio: o webhook é a fonte da linha persistida.
+    return { externalId: null };
+  },
+
   async revokeMessage(input: {
     sessionRef: string;
     recipient: string | null;

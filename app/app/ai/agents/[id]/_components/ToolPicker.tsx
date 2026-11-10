@@ -185,6 +185,26 @@ function AvisoTeto({ texto }: { texto: string }) {
   );
 }
 
+/**
+ * O catálogo de capacidades. Exportado porque a lista que ele traz é a parte da
+ * tela do agente que mais cresce depois de carregar: quem rola até uma seção
+ * abaixo dela espera esta MESMA leitura (`RolagemDeChegada`, #3975).
+ */
+export function useCatalogoDeFerramentas() {
+  return useQuery({
+    queryKey: ["mcp", "tools"],
+    queryFn: async () => {
+      const res = await apiClient.get<ApiResponse>("/api/v1/mcp/tools");
+      // `name` é o mesmo `id` — a regra de seleção fala em `name`, o wire em `id`.
+      return {
+        tools: res.data.tools.map((t) => ({ ...t, name: t.id })) as McpToolMeta[],
+        desligadas: res.data.desligadas_pela_organizacao ?? [],
+      };
+    },
+    staleTime: 60_000,
+  });
+}
+
 export function ToolPicker({ value: valorSalvo, onChange, disabled, ocultar }: Props) {
   const t = useT();
   const value = React.useMemo(
@@ -200,18 +220,7 @@ export function ToolPicker({ value: valorSalvo, onChange, disabled, ocultar }: P
     null,
   );
 
-  const query = useQuery({
-    queryKey: ["mcp", "tools"],
-    queryFn: async () => {
-      const res = await apiClient.get<ApiResponse>("/api/v1/mcp/tools");
-      // `name` é o mesmo `id` — a regra de seleção fala em `name`, o wire em `id`.
-      return {
-        tools: res.data.tools.map((t) => ({ ...t, name: t.id })) as McpToolMeta[],
-        desligadas: res.data.desligadas_pela_organizacao ?? [],
-      };
-    },
-    staleTime: 60_000,
-  });
+  const query = useCatalogoDeFerramentas();
 
   const catalogo = React.useMemo<McpToolMeta[]>(
     () => (query.data?.tools ?? []).filter((c) => !(ocultar ?? []).includes(c.name)),

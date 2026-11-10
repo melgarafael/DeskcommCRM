@@ -73,6 +73,8 @@ function statusBadgeLabel(status: AutomationRuleRunRow["status"], t: (texto: str
  */
 const MOTIVO_DA_PARADA: Record<string, string> = {
   internal_error: "Não foi possível concluir a ação. Confira o código técnico nos detalhes.",
+  conta_de_email_indisponivel:
+    "Não foi possível ler a conta de e-mail da empresa. Confira a conexão em Configurações › Marca e tente de novo.",
   no_contact: "Esse lead entrou sem contato vinculado, então não havia para quem escrever.",
   contact_blocked: "O contato pediu para não receber mensagens (opt-out).",
   no_phone: "O contato não tem telefone cadastrado.",
@@ -152,6 +154,7 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   missing_input:
     "A ação não recebeu o que precisava (o lead do evento ou a pessoa configurada). Abra a automação e revise.",
   no_tags: "Esta ação não tem nenhuma etiqueta escolhida. Abra a automação e escolha pelo menos uma.",
+  nada_a_tirar: "Nenhuma das etiquetas pedidas estava lá, então não havia nada a tirar.",
   no_target: "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.",
   no_lead_or_contact: "O evento que disparou a regra não trouxe um lead para criar ou mover.",
   cross_pipeline_move_not_allowed: "Mover um lead para outro funil está desligado nesta organização.",
