@@ -666,7 +666,7 @@ beforeAll(() => {
           values (v_org, 'rls-invariant-' || v_org::text, v_conv, v_contact, true, 'completed', 0);
         end if;
 
-        -- migration 4076 (#4023/#4026): a nota de satisfacao e a linha de
+        -- migration 4026 (#4023/#4026): a nota de satisfacao e a linha de
         -- quarentena. Semeio uma de cada por organizacao -- a ultima fechada
         -- como 'sem_nota' e a outra 'em_quarentena', os dois estados que mais
         -- erram na mao. A quarentena exige message_id unico: o id sai do
@@ -682,6 +682,17 @@ beforeAll(() => {
             (organization_id, conversation_id, contact_id, message_id, veredito, confianca, sinais)
           values (v_org, v_conv, v_contact, gen_random_uuid(), 'suspeito', 0.85,
                   '["numero_estrangeiro_no_texto"]'::jsonb);
+        end if;
+
+        -- migration 9312 (#3509, degrau 1) -- o recebimento do cliente final
+        -- registrado na conversa. A semente usa v_conv (a policy de leitura confere
+        -- o par conversa/organizacao) e o estado 'pendente', unico que nao exige
+        -- pago_em nem external_id.
+        if not exists (select 1 from public.pagamento_recebimentos where organization_id = v_org) then
+          insert into public.pagamento_recebimentos
+            (organization_id, conversation_id, provedor, aviso_token_hash, valor_cents, status)
+          values (v_org, v_conv, 'infinitepay',
+                  encode(sha256(convert_to('rls-invariant-' || v_org::text, 'UTF8')), 'hex'), 15000, 'pendente');
         end if;
       end loop;
     end
@@ -911,6 +922,10 @@ export const TABLES = [
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
   // prova vive em `tests/invariants/cobranca-isolamento.test.ts`.
+  // migration 9312 (#3509, degrau 1) — o recebimento do cliente final. A
+  // leitura é org-scoped E exige o par conversa/organização. A escrita é só do
+  // servidor; quem mede isso é `pagamento-recebimentos-escrita-so-do-servidor.test.ts`.
+  "pagamento_recebimentos",
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

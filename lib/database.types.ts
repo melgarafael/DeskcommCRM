@@ -2036,6 +2036,7 @@ export type Database = {
       };
       ai_router_decisions: {
         Row: {
+          agente_anterior_id: string | null;
           agent_id: string | null;
           confidence: number | null;
           conversation_id: string | null;
@@ -2043,12 +2044,16 @@ export type Database = {
           id: string;
           intent_name: string | null;
           job_id: string | null;
+          motivo: string | null;
           organization_id: string;
+          origem: string;
           outcome: string;
           router_id: string | null;
+          solicitado_por: string | null;
         };
         ComputedFields: never;
         Insert: {
+          agente_anterior_id?: string | null;
           agent_id?: string | null;
           confidence?: number | null;
           conversation_id?: string | null;
@@ -2056,11 +2061,15 @@ export type Database = {
           id?: string;
           intent_name?: string | null;
           job_id?: string | null;
+          motivo?: string | null;
           organization_id: string;
+          origem?: string;
           outcome: string;
           router_id?: string | null;
+          solicitado_por?: string | null;
         };
         Update: {
+          agente_anterior_id?: string | null;
           agent_id?: string | null;
           confidence?: number | null;
           conversation_id?: string | null;
@@ -2068,9 +2077,12 @@ export type Database = {
           id?: string;
           intent_name?: string | null;
           job_id?: string | null;
+          motivo?: string | null;
           organization_id?: string;
+          origem?: string;
           outcome?: string;
           router_id?: string | null;
+          solicitado_por?: string | null;
         };
         Relationships: [
           {
@@ -12026,6 +12038,58 @@ export type Database = {
           },
         ];
       };
+      ouvidoria_manifestacoes: {
+        Row: {
+          canal: string;
+          contact_id: string | null;
+          created_at: string;
+          id: string;
+          organization_id: string;
+          protocolo: string;
+          status: string;
+          texto: string;
+          updated_at: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          canal: string;
+          contact_id?: string | null;
+          created_at?: string;
+          id?: string;
+          organization_id: string;
+          protocolo: string;
+          status?: string;
+          texto: string;
+          updated_at?: string;
+        };
+        Update: {
+          canal?: string;
+          contact_id?: string | null;
+          created_at?: string;
+          id?: string;
+          organization_id?: string;
+          protocolo?: string;
+          status?: string;
+          texto?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ouvidoria_manifestacoes_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "ouvidoria_manifestacoes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       pacing_ledger: {
         Row: {
           channel_session_id: string;
@@ -15888,6 +15952,7 @@ export type Database = {
         Returns: Json;
       };
       fn_honorarios_provisionar: { Args: Record<PropertyKey, never>; Returns: undefined };
+      fn_ouvidoria_provisionar: { Args: Record<PropertyKey, never>; Returns: undefined };
       fn_is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       fn_is_platform_admin_full: { Args: Record<PropertyKey, never>; Returns: boolean };
       fn_lead_adicionar_etiquetas: {
