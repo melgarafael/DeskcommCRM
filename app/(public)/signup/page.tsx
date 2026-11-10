@@ -74,8 +74,9 @@ export default async function SignupPage({
     planoInicialDoSeletor(planos, cadastro?.padraoId ?? null),
     Boolean(invite),
   );
-  // O Google atual cria no padrão; um link com escolha não pode perdê-la.
-  const googleSemPlano = (cadastro?.exigeEscolha ?? false) || selecao.linkSolicitado;
+  // O Google atual cria no padrão; um link que escolheu um plano oferecido não
+  // pode perdê-la. Link inválido ou instalação sem plano seguem a regra de sempre.
+  const googleSemPlano = (cadastro?.exigeEscolha ?? false) || selecao.linkEscolheuPlano;
 
   // Convite VÁLIDO passa em qualquer modo — é o ponto inteiro do convite.
   const modo = convite ? null : await modoDeCadastro();
