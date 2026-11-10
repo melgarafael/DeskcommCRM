@@ -1,5 +1,5 @@
 /**
- * A NOVA BUSCA DAS COORDENADAS DE UM PINO que entrou só com o marcador.
+ * A BUSCA DAS COORDENADAS DE UM PINO que entrou só com o marcador.
  *
  * Medido em 29/09/2026: a API do canal não respondeu a tempo ("The operation was
  * aborted due to timeout", duas vezes), e o pino de um pedido confirmado ficou
@@ -8,10 +8,18 @@
  * sozinho e grava o pino como a ingestão o teria gravado (tipo `location`, corpo
  * com o link e, com a chave de Mapas, o endereço aproximado).
  *
+ * Desde 27/10/2026 ele é também a ÚNICA busca pela API: a ingestão lê as
+ * coordenadas do próprio webhook (`metadata.location`) e, quando elas não vêm,
+ * não pergunta mais à API dentro da requisição — o provedor dá por falhada a
+ * entrega que passa de 5 s (`./localizacao.ts`).
+ *
  * O ritmo:
- * - espera 1 minuto antes da primeira tentativa — o dreno pode rodar dentro da
- *   própria requisição do webhook, e bater de novo na API que acabou de falhar
- *   só atrasaria a resposta ao provedor;
+ * - espera 5 segundos antes da primeira tentativa. Antes era 1 minuto, porque a
+ *   ingestão acabava de bater na API e falhar; agora a ingestão nem chama a API,
+ *   e o que importa é chegar ANTES do turno do agente — que espera a rajada do
+ *   cliente (`INBOUND_DEBOUNCE_MS`, 8 s por padrão) e confirma a cidade pelo
+ *   pino. A espera continua maior que zero para o dreno escopado que roda dentro
+ *   da requisição do webhook não pegar este evento ali;
  * - depois, a cada 2 minutos, até 15 minutos da ingestão; então desiste
  *   (`skipped`, nunca `error`: não é incidente — o agente já pede ao cliente que
  *   reenvie quando o pino não tem link). O `retry` do dreno não conta tentativa,
@@ -31,7 +39,7 @@ import { resolveZernioCreds } from "./credentials";
 import { buscarLocalizacaoZernio, EVENTO_NOVA_BUSCA_DO_PINO } from "./localizacao";
 
 const CONSUMER_KEY = "zernio.pino_reintento";
-export const ESPERA_INICIAL_MS = 60_000;
+export const ESPERA_INICIAL_MS = 5_000;
 export const INTERVALO_MS = 2 * 60_000;
 export const DESISTE_APOS_MS = 15 * 60_000;
 

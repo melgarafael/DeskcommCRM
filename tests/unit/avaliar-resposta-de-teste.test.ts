@@ -98,7 +98,7 @@ describe("avaliação da resposta no botão Testar — mídia do produto (#2490)
     produtoResolvido: true,
     fotosCadastradas: 1,
     fotosPreparadas: 1,
-    anexos: [{ storagePath: "org/dry-run/catalogo-a.jpg", mime: "image/jpeg" }],
+    anexos: [{ kind: "image" as const, storagePath: "org/dry-run/catalogo-a.jpg", mime: "image/jpeg" }],
   };
 
   it("texto limpo com a foto PENDENTE não é aprovado", () => {

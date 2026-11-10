@@ -2,8 +2,8 @@
  * `send_message` com `imagem_url`: a foto que veio de um RESULTADO DE FERRAMENTA
  * (ex.: uma receita do banco externo, Spec 25 R4).
  *
- * Opção A (decisão do dono): o CRM baixa a imagem com a própria rede
- * (`baixar-imagem-segura.ts`), confere o conteúdo, guarda no Storage da conversa
+ * Revisão à D7 aceita na triagem (Spec 25): o CRM baixa a imagem com a própria
+ * rede (`baixar-imagem-segura.ts`), confere o conteúdo, guarda no Storage da conversa
  * (`guardarImagemNaConversa`) e manda ao canal só o `storagePath`, exatamente
  * como a foto do catálogo. O gateway de mensageria nunca recebe a URL da fonte.
  *
@@ -61,33 +61,43 @@ export function descreverSemQuery(bruta: string): string {
 }
 
 /**
- * Ferramentas cujo resultado pode trazer o endereço de uma foto: o banco externo e o
- * catálogo. O resultado de outras (conversa, contato, notas) pode repetir o que o
- * contato escreveu, então não conta.
+ * Ferramentas cujo resultado pode trazer o endereço de uma foto: as duas que leem o
+ * banco externo. O catálogo fica de fora: `crm_search_products` devolve só a contagem
+ * de `fotos`, e a foto dele sai por `produto_codigo`.
  */
 export const FERRAMENTAS_QUE_TRAZEM_IMAGEM: ReadonlySet<string> = new Set([
   'crm_consultar_receita',
   'crm_query_external_data',
-  'crm_search_products',
 ]);
 
-/** Termina fora de pontuação: em texto corrido, o ponto final não faz parte do endereço. */
-const URL_NO_TEXTO = /https?:\/\/[^\s"'<>\\]*[^\s"'<>\\.,;:!?)\]}]/gi;
+const ENDERECO_INTEIRO = /^https?:\/\/\S+$/i;
 
-const urlsEm = (valor: unknown): string[] => JSON.stringify(valor ?? null).match(URL_NO_TEXTO) ?? [];
+/**
+ * Os campos que SÃO um endereço, em qualquer profundidade. Endereço no meio de um
+ * texto não conta. As ferramentas devolvem objeto, não texto serializado.
+ */
+function enderecosEm(valor: unknown): string[] {
+  if (typeof valor === 'string') {
+    const texto = valor.trim();
+    return ENDERECO_INTEIRO.test(texto) ? [texto] : [];
+  }
+  if (valor === null || typeof valor !== 'object') return [];
+  return Object.values(valor).flatMap(enderecosEm);
+}
 
 /**
  * Os endereços que as ferramentas de dados devolveram NESTE turno. O `send_message`
  * só busca uma `imagem_url` que esteja aqui, igual, letra por letra. Endereço que
  * também estava nos argumentos da chamada não conta: é o pedido voltando na resposta,
- * não um dado que a ferramenta trouxe.
+ * não um dado que a ferramenta trouxe. Célula com vários endereços (galeria) não
+ * autoriza nenhum deles: separá-los é da fatia que trouxer a foto de uma lista.
  */
 export function criarProcedenciaDeImagens() {
   const vistas = new Set<string>();
   return {
     registrar(resultado: unknown, argumentos: unknown) {
-      const pedidas = new Set(urlsEm(argumentos));
-      for (const url of urlsEm(resultado)) if (!pedidas.has(url)) vistas.add(url);
+      const pedidas = new Set(enderecosEm(argumentos));
+      for (const url of enderecosEm(resultado)) if (!pedidas.has(url)) vistas.add(url);
     },
     viu: (url: string) => vistas.has(url),
   };

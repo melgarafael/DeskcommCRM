@@ -78,7 +78,7 @@ describe("validação e guarda da foto por URL — antes da cadeia e nunca na pr
     const chamada = corpoDoSend.slice(guarda, corpoDoSend.indexOf("});", guarda));
     expect(chamada).toContain("tenantId,");
     expect(chamada).toContain("conversationId: input.conversationId,");
-    expect(corpoDoSend).toContain("fotosDoProduto = [{ storagePath: guardada.storagePath, mime: guardada.mime }];");
+    expect(corpoDoSend).toContain("fotosDoProduto = [{ kind: 'image', storagePath: guardada.storagePath, mime: guardada.mime }];");
   });
 
   it("a foto recusada não derruba o texto: o motivo é registrado e o envio segue só com texto", () => {

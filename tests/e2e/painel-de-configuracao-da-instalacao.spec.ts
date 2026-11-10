@@ -43,7 +43,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { expect, test } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin, loginComoDono } from "./helpers/login-admin";
 import { afirmarDonoDoServidor } from "./utils/precondicao";
@@ -77,6 +77,7 @@ test.describe("Painel de configuração da instalação", () => {
         baseURL: testInfo.project.use.baseURL,
         storageState: undefined,
       });
+      contexto.on("page", esperarARevelacaoNasCargas);
       const page = await contexto.newPage();
       await loginComoDono(page, lerCreds());
       await contexto.storageState({ path: sessaoDoDono });

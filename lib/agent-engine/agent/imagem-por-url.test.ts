@@ -48,13 +48,10 @@ describe("descreverSemQuery — o que vai ao log não tem query (pode ter token)
 describe("criarProcedenciaDeImagens — só vale endereço que a ferramenta trouxe no turno", () => {
   const URL_DA_FOTO = "https://exemplo.test/casas/1.jpg";
 
-  it("acha o endereço no resultado, em qualquer profundidade e dentro de texto JSON", () => {
+  it("vale o campo que é o endereço inteiro, em qualquer profundidade", () => {
     const procedencia = criarProcedenciaDeImagens();
     procedencia.registrar({ linhas: [{ foto: URL_DA_FOTO }] }, {});
-    procedencia.registrar(
-      { content: [{ type: "text", text: JSON.stringify({ foto: "https://exemplo.test/casas/2.jpg?v=1" }) }] },
-      {},
-    );
+    procedencia.registrar({ linhas: [{ dados: { galeria: ["https://exemplo.test/casas/2.jpg?v=1"] } }] }, {});
     expect(procedencia.viu(URL_DA_FOTO)).toBe(true);
     expect(procedencia.viu("https://exemplo.test/casas/2.jpg?v=1")).toBe(true);
   });
@@ -67,10 +64,19 @@ describe("criarProcedenciaDeImagens — só vale endereço que a ferramenta trou
     expect(procedencia.viu("https://exemplo.test/casas/1.jpg?x=1")).toBe(false);
   });
 
-  it("a pontuação de texto corrido não entra no endereço", () => {
+  it("endereço no meio de um texto não conta", () => {
     const procedencia = criarProcedenciaDeImagens();
-    procedencia.registrar(`A foto está em ${URL_DA_FOTO}.`, {});
-    expect(procedencia.viu(URL_DA_FOTO)).toBe(true);
+    procedencia.registrar({ linhas: [{ descricao: `A foto está em ${URL_DA_FOTO}.` }] }, {});
+    procedencia.registrar({ linhas: [{ descricao: `A foto está em ${URL_DA_FOTO}` }] }, {});
+    expect(procedencia.viu(URL_DA_FOTO)).toBe(false);
+  });
+
+  it("célula com vários endereços não autoriza nenhum deles", () => {
+    const procedencia = criarProcedenciaDeImagens();
+    procedencia.registrar({ linhas: [{ fotos: `${URL_DA_FOTO},https://exemplo.test/casas/2.jpg` }] }, {});
+    procedencia.registrar({ linhas: [{ fotos: `${URL_DA_FOTO}|https://exemplo.test/casas/2.jpg` }] }, {});
+    expect(procedencia.viu(URL_DA_FOTO)).toBe(false);
+    expect(procedencia.viu("https://exemplo.test/casas/2.jpg")).toBe(false);
   });
 
   it("o endereço que estava nos argumentos da chamada não conta como trazido pela ferramenta", () => {
