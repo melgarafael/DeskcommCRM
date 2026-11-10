@@ -20044,6 +20044,11 @@ export const DICIONARIO: Traducoes = {
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
   },
+  // #4339: a porta do `|data` — só nas telas em que o formato funciona
+  // (automação e follow-up); campanha e Inbox ainda não leem o modificador.
+  "Para escrever uma data no formato do cliente, use {{campo|data}}.": {
+    es: "Para escribir una fecha en el formato del cliente, usa {{campo|data}}.",
+  },
   // Installed runtime identity, distinct from an available release.
   "Versão ainda não confirmada": { es: "Versión aún no confirmada" },
   "Execução não confirmada": { es: "Ejecución no confirmada" },
