@@ -19,13 +19,7 @@ import { claimOfJob } from '@/lib/agent-engine/queue/claim';
  */
 import type { Tool } from 'ai';
 
-import {
-  carregarServidorMcpExternoDoTurno,
-  type ServidorMcpExternoMontado,
-} from '@/lib/mcp/servidor-externo/carregar';
-import { escolhasRemotas } from '@/lib/mcp/servidor-externo/ids';
-import { getToolByName } from '@/lib/mcp/tools';
-import { ehLeituraRemota } from '@/lib/mcp/tools/externo';
+import { carregarServidorMcpExternoDoTurno } from '@/lib/mcp/servidor-externo/carregar';
 import { carregarServidoresDoAgenteNoTurno } from '@/lib/mcp/servidor-externo/do-agente/carregar';
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from '@/lib/ai/runtime/tools';
 import { mintEphemeralToken, revokeEphemeralToken } from '@/lib/ai/runtime/mcp_token';
@@ -72,34 +66,12 @@ export interface McpTurnTools {
   /** revoga o token efêmero — chamar no fim do turno (caminho feliz). */
   cleanup: () => Promise<void>;
   /**
-   * Nomes, em `tools`, das ferramentas do servidor MCP externo montadas como
-   * LEITURA (as duas metades de `ehLeituraRemota`). O turno registra o
-   * resultado delas como evidência da revisão de promessa: a data que a agenda
-   * do cliente devolveu não é compromisso inventado pelo modelo.
+   * Nomes, em `tools`, das remotas do servidor MCP externo montadas como
+   * LEITURA — quem decide é `definirFerramentasRemotas`, e a ponte só anota o
+   * que montou. O turno registra o resultado delas como evidência da
+   * conferência de promessa.
    */
   leiturasRemotas: ReadonlySet<string>;
-}
-
-/**
- * As remotas de leitura que de fato entraram no turno. Nome que colide com o
- * catálogo compilado fica de fora: ali quem está montado é a compilada, e o
- * resultado dela já tem o próprio caminho (ou nenhum) até a evidência.
- */
-export function leiturasRemotasMontadas(
-  toolIds: readonly string[],
-  servidor: Pick<ServidorMcpExternoMontado, 'ferramentas'> | null,
-  tools: Readonly<Record<string, Tool>>,
-): ReadonlySet<string> {
-  const nomes = new Set<string>();
-  if (!servidor) return nomes;
-  const anunciadas = new Map(servidor.ferramentas.map((f) => [f.name, f]));
-  for (const escolha of escolhasRemotas(toolIds)) {
-    const ferramenta = anunciadas.get(escolha.nome);
-    if (!ferramenta || !ehLeituraRemota(escolha, ferramenta)) continue;
-    if (getToolByName(escolha.nome) !== undefined || !(escolha.nome in tools)) continue;
-    nomes.add(escolha.nome);
-  }
-  return nomes;
 }
 
 /**
@@ -260,6 +232,7 @@ export async function buildMcpTurnTools(
     },
   );
 
+  const leiturasRemotas = new Set<string>();
   const tools = pickToolsFromMcp({
     supabase: cfg.supabase,
     ctx,
@@ -280,12 +253,13 @@ export async function buildMcpTurnTools(
     ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
     ...(servidoresDoAgente.length > 0 ? { servidoresDoAgente } : {}),
     ...(options?.efeitos ? { efeitos: options.efeitos } : {}),
+    leiturasRemotas,
   });
 
   return {
     tools,
     toolIds: Object.keys(tools),
-    leiturasRemotas: leiturasRemotasMontadas(allowed, servidorExterno, tools),
+    leiturasRemotas,
     cobertasPelaNativa: cobertas,
     // ponytail: revoke só no caminho feliz — em crash do turno o token expira
     // pelo TTL curto do mint (mesmo tradeoff aceito pelo runtime nativo no grace).

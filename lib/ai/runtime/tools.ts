@@ -109,6 +109,14 @@ export interface PickToolsInput {
    */
   servidoresDoAgente?: readonly ServidorDoAgenteNoTurno[];
   /**
+   * Coletor: recebe o nome de cada remota do `servidorMcpExterno` MONTADA como
+   * LEITURA (`category: "read"` de `definirFerramentasRemotas`). Quem passa é
+   * o turno, que registra o resultado delas como evidência da conferência de
+   * promessa. Os servidores do agente ficam fora de propósito. Ausente =
+   * ninguém pergunta.
+   */
+  leiturasRemotas?: Set<string>;
+  /**
    * O PREDICADO ÚNICO do efeito deste turno (#3333) — ver
    * `lib/ai/runtime/efeito-das-escritas.ts`.
    *
@@ -738,6 +746,7 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         // nunca executada — com ou sem identidade.
         if (input.contatoDoTurno && def.category === "read" && !identificado) continue;
         result[def.name] = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+        if (def.category === "read") input.leiturasRemotas?.add(def.name);
       }
     }
   }

@@ -105,11 +105,11 @@ function shapeDaFerramenta(ferramenta: FerramentaRemota): Record<string, z.ZodTy
 
 /**
  * LEITURA só com as duas metades do item 8 — ver o cabeçalho deste arquivo.
- * Exportada porque a montagem do turno também precisa saber quais remotas são
- * leitura (o resultado delas vira evidência da revisão de promessa) e não pode
- * ter uma segunda cópia da regra.
+ * Uma regra só para o servidor da instalação e para os servidores do agente:
+ * quem precisa saber se uma remota é leitura lê a `category` da definição que
+ * sai daqui, nunca recalcula.
  */
-export function ehLeituraRemota(
+function remotaMontaComoLeitura(
   escolha: EscolhaRemota,
   ferramenta: Pick<FerramentaRemota, "somenteLeitura">,
 ): boolean {
@@ -158,7 +158,7 @@ export function definirFerramentasRemotas(
       continue;
     }
 
-    const ehLeitura = ehLeituraRemota(escolha, ferramenta);
+    const ehLeitura = remotaMontaComoLeitura(escolha, ferramenta);
 
     definicoes.push({
       name: ferramenta.name,
@@ -238,7 +238,7 @@ export function definirFerramentasDoServidorDoAgente(
     }
     if (nomesOcupados.has(nome)) continue;
 
-    const ehLeitura = escolha.leitura && ferramenta.somenteLeitura === true;
+    const ehLeitura = remotaMontaComoLeitura(escolha, ferramenta);
     const delegada = !ehLeitura && !escolha.leitura && servidor.escritaDelegada && credencialDoContato;
 
     definicoes.push({
