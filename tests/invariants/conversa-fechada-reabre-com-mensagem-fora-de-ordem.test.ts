@@ -23,7 +23,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * O conserto move o guard para DEPOIS do cálculo de `reopened`, restringindo-o
  * ao caminho que NÃO reabre (`if not reopened and …`). A reabertura passa a ser
  * decidida pela CHEGADA, não pela ordem do `sent_at` — que continua ordenando a
- * timeline e carimbando `service_started_at`.
+ * timeline. O episódio reaberto começa em `greatest(sent_at, service_closed_at)`:
+ * nunca antes do fim do anterior.
  *
  * O que este arquivo mede, na ordem:
  *   1. o defeito: fora de ordem em conversa encerrada reabre e volta à Fila;
@@ -182,9 +183,10 @@ describe("#3015 — mensagem fora de ordem não perde mais o cliente", () => {
     expect(depois.comando_da_conversa, "a aba Fila pede exatamente este comando").toBe("aguardando");
     expect(depois.assigned_to_user_id).toBeNull();
     expect(Number(depois.service_revision)).toBe(Number(antes.service_revision) + 1);
-    expect(depois.service_started_at?.toISOString(), "sent_at segue ordenando o episódio").toBe(
-      enviadaEm.toISOString(),
-    );
+    expect(
+      depois.service_started_at?.toISOString(),
+      "o episódio novo não começa antes do fim do anterior",
+    ).toBe(antes.service_closed_at!.toISOString());
     expect(
       await carimboDaMensagem(msg),
       "a mensagem entra no episódio novo (sem carimbo ela sai da memória do atendimento)",

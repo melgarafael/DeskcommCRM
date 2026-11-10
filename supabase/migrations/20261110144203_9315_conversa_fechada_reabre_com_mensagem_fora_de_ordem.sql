@@ -1,6 +1,6 @@
--- manifest: **A conversa fechada volta a reabrir quando a mensagem do cliente chega FORA DE ORDEM (issue #3015).** `fn_service_inbound` descartava a mensagem antes de decidir a reabertura: `if m.sent_at <= c.service_closed_at then return; end if` vinha ANTES de `reopened := c.status in ('closed','resolved','archived')`. Quando o webhook entrega uma mensagem cujo `sent_at` é anterior ao fechamento — entrega atrasada do canal, lote do provider, relógio do aparelho atrás —, o guard devolvia cedo e NADA acontecia: a conversa do par (contato, canal) seguia `closed` com a mensagem dentro, o Inbox não a mostrava (a aba Fila filtra por `comando_da_conversa = 'aguardando'`, e `closed` vira `encerrada`) e o cliente ficava sem resposta, sem erro em lugar nenhum. Medido numa sonda de banco real: canal B fechado 30 min antes, mensagem com `sent_at` de 1h atrás → B permanecia `closed`/`encerrada` e fora da Fila. O conserto move o guard para DEPOIS do cálculo de `reopened` e o restringe ao caminho que NÃO é reabertura: mensagem nova em conversa encerrada reabre o atendimento pela ordem de CHEGADA, não pela ordem do `sent_at`, e o `sent_at` continua sendo o que ordena a timeline e o que carimba `service_started_at`. O que o guard protegia continua protegido: reentrega da MESMA linha não reabre (o `m.service_revision is not null` do topo e o índice único por `external_id`), e a segunda mensagem atrasada de um episódio já reaberto não reabre de novo (a conversa já está `open`, então o guard volta a valer). Recorte por par (contato, canal) intacto. `create or replace`, sem tabela/coluna/policy/dado novo; apêndice idempotente no `baseline.sql`.
+-- manifest: **A conversa fechada volta a reabrir quando a mensagem do cliente chega FORA DE ORDEM (issue #3015).** `fn_service_inbound` descartava a mensagem antes de decidir a reabertura: `if m.sent_at <= c.service_closed_at then return; end if` vinha ANTES de `reopened := c.status in ('closed','resolved','archived')`. Quando o webhook entrega uma mensagem cujo `sent_at` é anterior ao fechamento — entrega atrasada do canal, lote do provider, relógio do aparelho atrás —, o guard devolvia cedo e NADA acontecia: a conversa do par (contato, canal) seguia `closed` com a mensagem dentro, o Inbox não a mostrava (a aba Fila filtra por `comando_da_conversa = 'aguardando'`, e `closed` vira `encerrada`) e o cliente ficava sem resposta, sem erro em lugar nenhum. Medido numa sonda de banco real: canal B fechado 30 min antes, mensagem com `sent_at` de 1h atrás → B permanecia `closed`/`encerrada` e fora da Fila. O conserto move o guard para DEPOIS do cálculo de `reopened` e o restringe ao caminho que NÃO é reabertura: mensagem nova em conversa encerrada reabre o atendimento pela ordem de CHEGADA, não pela ordem do `sent_at`; o `sent_at` continua ordenando a timeline, e o episódio reaberto começa em `greatest(sent_at, service_closed_at)` — nunca antes do fim do anterior, senão a resposta do episódio encerrado entra no recorte do novo e a atrasada é lida como já respondida (contexto do agente e pedidos em aberto). O que o guard protegia continua protegido: reentrega da MESMA linha não reabre (o `m.service_revision is not null` do topo e o índice único por `external_id`), e a segunda mensagem atrasada de um episódio já reaberto não reabre de novo (a conversa já está `open`, então o guard volta a valer). Recorte por par (contato, canal) intacto. `create or replace`, sem tabela/coluna/policy/dado novo; apêndice idempotente no `baseline.sql`.
 
--- 0767 — a reabertura para de depender da ORDEM do `sent_at` (issue #3015).
+-- 9315 — a reabertura para de depender da ORDEM do `sent_at` (issue #3015).
 --
 -- ## O defeito
 --
@@ -25,9 +25,12 @@
 --   if not reopened and m.sent_at <= c.service_closed_at then return; end if;
 --
 -- Conversa encerrada + mensagem inbound nova ⇒ reabre, com `sent_at` anterior ou
--- não. `sent_at` continua sendo o que ordena a timeline e o que carimba
--- `service_started_at` do episódio novo — o que deixa de ser verdade é que ele
--- decida QUEM espera resposta.
+-- não. `sent_at` continua sendo o que ordena a timeline — o que deixa de ser
+-- verdade é que ele decida QUEM espera resposta. O episódio novo começa em
+-- `greatest(m.sent_at, c.service_closed_at)`: nunca antes do fim do anterior.
+-- Quem recorta a SAÍDA por `service_started_at` (o contexto do agente em
+-- `get-lead-context.ts` e os pedidos em aberto do `ai-sentiment-worker`) leria a
+-- resposta do episódio encerrado como resposta à atrasada.
 --
 -- ## O que o guard protegia, e continua protegido
 --
@@ -55,7 +58,8 @@
 -- invalida o trabalho do episódio encerrado), `service_closed_at` continua sendo
 -- o instante do fechamento — a reabertura NÃO o limpa, é a fronteira do
 -- episódio que terminou —, e `service_started_at` recebe o `sent_at` da mensagem
--- que reabriu, como já recebia. As duas metades do gatilho (`trg_service_stamp_status`
+-- que reabriu, salvo quando ele é anterior ao fechamento: aí recebe o próprio
+-- `service_closed_at`. As duas metades do gatilho (`trg_service_stamp_status`
 -- e `trg_service_reopened_routing`) seguem intocadas.
 
 create or replace function public.fn_service_inbound(p_message uuid)
@@ -135,7 +139,7 @@ begin
    update public.conversations set
      status=case when keep_owner then 'claimed' else 'open' end,
      status_changed_at=clock_timestamp(),
-     service_revision=service_revision+1,service_started_at=m.sent_at,
+     service_revision=service_revision+1,service_started_at=greatest(m.sent_at,c.service_closed_at),
      assigned_to_user_id=case when keep_owner then c.assigned_to_user_id else null end,
      -- O relógio do episódio NOVO, não o do encerrado: o prazo de devolução
      -- automática à IA (handoff_return_after_minutes) conta a partir do

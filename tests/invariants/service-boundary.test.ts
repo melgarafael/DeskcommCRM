@@ -203,6 +203,19 @@ describe("transição real de atendimento", () => {
     });
     expect(routing[0].next_attempt_at.getTime()).toBeLessThan(pending[0].next_attempt_at.getTime());
   });
+  it("duas entradas concorrentes reabrem a conversa fechada uma vez só", async () => {
+    await close();
+    const closed = await state();
+    const old = await readCurrentServiceBoundary(pool, GOV_ORG, conversation);
+    await Promise.all([inbound(), inbound()]);
+    const reopened = await state();
+    expect(reopened.status).toBe("open");
+    expect(Number(reopened.service_revision)).toBe(Number(closed.service_revision) + 1);
+    expect(reopened.current_demanda_id).not.toBe(closed.current_demanda_id);
+    await expect(requireCurrentServiceBoundary(pool, old)).rejects.toThrow(
+      "service_boundary_stale",
+    );
+  });
   it("CAS de close obsoleto não fecha nova revisão; escopo forjado é recusado", async () => {
     // PT409, não 40001 (migration 0514): revisão obsoleta é recusa PERMANENTE, e
     // 40001 vira HTTP 500 na REST, que é reexecutado sem fim no self-hosted.

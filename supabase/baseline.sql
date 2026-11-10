@@ -66034,7 +66034,7 @@ begin
 end;
 $$;
 
--- ---- a conversa fechada reabre com mensagem fora de ordem (migration 0767, issue #3015) ----
+-- ---- a conversa fechada reabre com mensagem fora de ordem (migration 9315, issue #3015) ----
 -- O guard `m.sent_at <= c.service_closed_at` decidia a REABERTURA pela ordem do
 -- `sent_at` do payload do canal: mensagem entregue depois do fechamento mas
 -- enviada antes dele (entrega atrasada, lote do provider, relógio do aparelho
@@ -66048,8 +66048,9 @@ $$;
 -- reentrega da mesma linha (o `m.service_revision is not null` do topo, mais o
 -- índice único por `external_id` da ingestão) não reabre, e a segunda mensagem
 -- atrasada de um episódio já reaberto também não (a conversa já está `open`, e
--- aí o guard volta a valer). `sent_at` segue ordenando a timeline e carimbando
--- `service_started_at`.
+-- aí o guard volta a valer). `sent_at` segue ordenando a timeline; o episódio
+-- reaberto começa em `greatest(sent_at, service_closed_at)`, nunca antes do fim
+-- do anterior.
 create or replace function public.fn_service_inbound(p_message uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -66127,7 +66128,7 @@ begin
    update public.conversations set
      status=case when keep_owner then 'claimed' else 'open' end,
      status_changed_at=clock_timestamp(),
-     service_revision=service_revision+1,service_started_at=m.sent_at,
+     service_revision=service_revision+1,service_started_at=greatest(m.sent_at,c.service_closed_at),
      assigned_to_user_id=case when keep_owner then c.assigned_to_user_id else null end,
      -- O relógio do episódio NOVO, não o do encerrado: o prazo de devolução
      -- automática à IA (handoff_return_after_minutes) conta a partir do
