@@ -23,6 +23,7 @@ export const signupSchema = z
   .object({
     org_name: organizationNameSchema,
     cobranca_plan_id: z.string().uuid().optional(),
+    continuar_pagamento: z.boolean().optional(),
     email: z.string().email("Email inválido"),
     password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
     password_confirm: z.string(),
@@ -69,6 +70,27 @@ export const signupComConviteSchema = z
 export type SignupComConviteInput = z.infer<typeof signupComConviteSchema>;
 
 /**
+ * O TETO DA SENHA É DE 72 BYTES — E É BYTES, NÃO CARACTERES.
+ *
+ * O bcrypt, que o GoTrue usa por baixo, só considera os primeiros 72 bytes da
+ * senha e recusa o resto com "Password cannot be longer than 72 characters".
+ * Como acento conta 2 bytes em UTF-8 e emoji conta 4, uma senha de 38
+ * caracteres pode estourar o limite que 72 letras ASCII não estouram — por
+ * isso a régua é `TextEncoder`, e não `.max(72)`, que mede caracteres e
+ * deixaria o caso multibyte passar até o erro genérico do provedor.
+ *
+ * `TextEncoder` em vez de `Buffer.byteLength` porque este schema também roda
+ * no navegador (é o resolver do formulário de nova senha) e `Buffer` não
+ * existe no bundle do cliente.
+ */
+export const LIMITE_DA_SENHA_EM_BYTES = 72;
+export const SENHA_LONGA_DEMAIS = "Senha longa demais: o limite é de 72 bytes";
+
+function bytesDaSenha(valor: string): number {
+  return new TextEncoder().encode(valor).byteLength;
+}
+
+/**
  * A régua da senha que alguém DEFINE para o próprio acesso entrar (#3876).
  *
  * Mora aqui, e não dentro do schema de redefinição, porque agora tem DOIS
@@ -88,7 +110,12 @@ export const senhaDoAcesso = z
   .min(8, "Senha deve ter pelo menos 8 caracteres")
   .regex(/[A-Za-zÀ-ÿ]/, "Senha deve ter pelo menos uma letra")
   .regex(/[0-9]/, "Senha deve ter pelo menos um número")
-  .regex(/[^A-Za-zÀ-ÿ0-9\s]/, "Senha deve ter pelo menos um símbolo");
+  .regex(/[^A-Za-zÀ-ÿ0-9\s]/, "Senha deve ter pelo menos um símbolo")
+  .superRefine((valor, ctx) => {
+    if (bytesDaSenha(valor) > LIMITE_DA_SENHA_EM_BYTES) {
+      ctx.addIssue({ code: "custom", message: SENHA_LONGA_DEMAIS });
+    }
+  });
 
 export const forgotPasswordSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -98,7 +125,8 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
 export const resetPasswordSchema = z
   .object({
-    // A MESMA régua do "admin define a senha" — um objeto só, dois leitores.
+    // A MESMA régua do "admin define a senha" — um objeto só, dois leitores,
+    // já com o teto de 72 bytes que a main trouxe (#4313).
     password: senhaDoAcesso,
     password_confirm: z.string(),
     // Código TOTP: só exigido quando a conta tem MFA (a sessão de recovery é

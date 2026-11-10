@@ -15,6 +15,7 @@ export type UpdatePasswordResult = {
     | "validation_error"
     | "session_expired"
     | "same_password"
+    | "password_too_long"
     | "update_failed"
     | "mfa_required"
     | "mfa_invalid"
@@ -81,6 +82,12 @@ export async function updatePassword(
   if (error) {
     if (/different from the old password/i.test(error.message)) {
       return { ok: false, error: "same_password" };
+    }
+    // O bcrypt corta em 72 bytes: o schema já recusa o caso normal, mas a
+    // versão do GoTrue pode divergir da nossa régua. Causa conhecida tem
+    // código próprio — não cai no genérico.
+    if (/cannot be longer than 72 characters/i.test(error.message)) {
+      return { ok: false, error: "password_too_long" };
     }
     await audit({
       action: "auth.password_reset_failed",

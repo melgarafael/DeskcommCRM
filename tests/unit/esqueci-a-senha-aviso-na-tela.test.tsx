@@ -61,6 +61,11 @@ describe("a tela de esqueci a senha", () => {
     expect(alerta.textContent, "mandar repetir um gesto que nunca funciona").not.toMatch(
       /Tente novamente/i,
     );
+    // #3039: a frase afirma só o que o CRM sabe. Com SMTP posto à mão no `.env` do
+    // Supabase o serviço de login TEM por onde enviar, e o CRM não enxerga aquele
+    // arquivo: falar do serviço de login, ou de "nenhum e-mail", seria afirmar sem saber.
+    expect(alerta.textContent).toMatch(/sem SMTP nem Resend configurados no CRM/);
+    expect(alerta.textContent).not.toMatch(/e-mail nenhum|serviço de login/);
   });
 
   it("⭐ CONTROLE — request_failed (tem SMTP): o genérico continua como estava", async () => {
