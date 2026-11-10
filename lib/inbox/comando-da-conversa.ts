@@ -191,7 +191,82 @@ const MENOS_INFINITO = "-infinity";
  * `conversations.status='resolved'` (só há leitores), então isto não muda nada
  * hoje — e passa a importar no instante em que o banco calcular o mesmo comando.
  */
-export const STATUS_ENCERRADOS = new Set(["closed", "archived", "resolved"]);
+export const STATUS_ENCERRADOS_LISTA = ["closed", "archived", "resolved"] as const;
+export const STATUS_ENCERRADOS: ReadonlySet<string> = new Set(STATUS_ENCERRADOS_LISTA);
+
+/**
+ * O PRÉ-FILTRO DO COMANDO — o que o banco pode recusar ANTES de avaliar a função.
+ *
+ * ─── O desperdício que ele conserta (issue #4325) ───────────────────────────
+ * `comando_da_conversa` é `stable security definer` (`baseline.sql:51746-51765`):
+ * o Postgres NÃO faz inline, então a lista da Fila e as duas contagens a avaliam
+ * LINHA A LINHA, antes do `LIMIT`, em todo o histórico fechado da organização.
+ * Mas `fn_comando_da_conversa` (baseline:42674-42699) só chega a `aguardando` ou
+ * `automatico` quando `assigned_to_user_id is null` E o status está fora de
+ * `('closed','archived','resolved')`. Pedir essas duas condições ao banco tira do
+ * caminho as linhas que a função já recusaria.
+ *
+ * ─── O que ele NÃO é ───────────────────────────────────────────────────────
+ * Ele não substitui a função: o `comando_da_conversa.in.(…)` continua no `WHERE`
+ * e é quem DECIDE. O pré-filtro só reduz o conjunto que ela avalia, e é por isso
+ * que os dois têm de ser logicamente implicados um pelo outro — condição
+ * NECESSÁRIA de `aguardando`/`automatico`, nada além.
+ *
+ * ─── Quando ele vale ───────────────────────────────────────────────────────
+ * Só quando o comando pedido é subconjunto de `{aguardando, automatico}`. Comando
+ * vazio (ou qualquer valor fora do conjunto, ou mistura) devolve `null`: a
+ * consulta tem de ser, byte a byte, a de antes. A lista de status é a de
+ * `STATUS_ENCERRADOS_LISTA` — a MESMA da função SQL, com `resolved`; copiá-la de
+ * `CONVERSATION_TERMINAL_STATUSES` daria um filtro frouxo (aquela constante
+ * responde outra pergunta e não tem `resolved`).
+ */
+export const COMANDOS_SEM_DONO_E_ABERTOS = ["aguardando", "automatico"] as const;
+
+export interface PreFiltroDoComando {
+  /** `.is("assigned_to_user_id", null)` — sem dono é condição da função. */
+  semDono: true;
+  /** `.not("status", "in", "(closed,archived,resolved)")` — idem. */
+  statusEncerrados: readonly string[];
+}
+
+/** Os predicados do pré-filtro, ou `null` quando a consulta é a de sempre. */
+export function preFiltroDoComando(
+  comando: string | readonly string[] | null | undefined,
+): PreFiltroDoComando | null {
+  const pedidos = typeof comando === "string" ? [comando] : (comando ?? []);
+  if (pedidos.length === 0) return null;
+  const dentroDoConjunto = pedidos.every((c) =>
+    (COMANDOS_SEM_DONO_E_ABERTOS as readonly string[]).includes(c),
+  );
+  if (!dentroDoConjunto) return null;
+  return { semDono: true, statusEncerrados: STATUS_ENCERRADOS_LISTA };
+}
+
+/**
+ * Aplica o pré-filtro NA MESMA consulta — a lista e as duas contagens chamam esta
+ * função, e é ela que garante que o pedido seja um só em vez de três cópias.
+ *
+ * O tipo é o mínimo que o builder do PostgREST oferece (`.is`/`.not` encadeando
+ * sobre si mesmos), então serve tanto para o `supabase.from(...).select(...)` da
+ * lista quanto para a fábrica `countExact()` das contagens.
+ */
+export interface ConsultaComPreFiltro<Q> {
+  is(coluna: string, valor: null): Q;
+  not(coluna: string, operador: "in", valor: string): Q;
+}
+
+export function comPreFiltroDoComando<Q extends ConsultaComPreFiltro<Q>>(
+  consulta: Q,
+  comando: string | readonly string[] | null | undefined,
+): Q {
+  const pre = preFiltroDoComando(comando);
+  // Sem pré-filtro a consulta volta INTACTA — nenhum predicado a mais, nenhuma
+  // mudança de plano, nenhuma mudança de resposta.
+  if (!pre) return consulta;
+  return consulta
+    .is("assigned_to_user_id", null)
+    .not("status", "in", `(${pre.statusEncerrados.join(",")})`);
+}
 
 /**
  * O silêncio, lido do jeito que o Postgres o entrega.

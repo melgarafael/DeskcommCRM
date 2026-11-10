@@ -263,7 +263,7 @@ describe("painel de atendimento", () => {
       }
     });
 
-    it("a consulta da fila é a da aba Fila: pede quem manda, não `sem dono`", async () => {
+    it("a consulta da fila é a da aba Fila: pede quem manda, não o filtro `assigned_to`", async () => {
       const url = consultas().fila;
       expect(url).not.toContain("assigned_to");
       expect(parametros(url).comando).toEqual(["aguardando"]);
@@ -274,7 +274,14 @@ describe("painel de atendimento", () => {
       const chamadas = await chamadasAoBanco(url);
       expect(chamadas).toContainEqual({ metodo: "in", args: ["comando_da_conversa", ["aguardando"]] });
       expect(chamadas).toContainEqual({ metodo: "order", args: [ORDEM_DA_ESPERA.coluna, ORDEM_DA_ESPERA.opcoes] });
-      expect(chamadas.some((c) => c.args[0] === "assigned_to_user_id")).toBe(false);
+      // O único predicado sobre o dono é o `is null` do PRÉ-FILTRO (#4325):
+      // condição NECESSÁRIA de `aguardando`/`automatico`, que reduz as linhas
+      // que a função avalia sem mudar a resposta. O filtro `assigned_to` da tela
+      // — um usuário específico, via `.eq`/`.or` — continua PROIBIDO aqui: é ele
+      // que fazia a Fila deixar de ser "quem manda" e virar "sem dono" (#990).
+      expect(chamadas.filter((c) => c.args[0] === "assigned_to_user_id")).toEqual([
+        { metodo: "is", args: ["assigned_to_user_id", null] },
+      ]);
     });
 
     it("`encerradas` recorta no banco pelo encerramento, a partir da meia-noite da organização", async () => {
