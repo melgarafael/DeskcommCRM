@@ -17,7 +17,7 @@ export const TEXTOS_CONTRATACAO = {
   "Ainda não identificamos a confirmação do pagamento. Você pode retomar o pagamento ou conferir novamente em instantes.": { es: "Todavía no identificamos la confirmación del pago. Puedes retomar el pago o comprobarlo de nuevo en unos instantes." },
   "Não foi possível conferir o pagamento. Tente novamente.": { es: "No se pudo comprobar el pago. Inténtalo de nuevo." },
   "Confira o plano e o período acima antes de continuar para o pagamento.": { es: "Revisa el plan y el período de arriba antes de continuar al pago." },
-  "Necessário para emitir a cobrança no Asaas. O documento vai ao provedor e não fica guardado neste sistema.": { es: "Es necesario para emitir el cobro en Asaas. El documento se envía al proveedor y no se guarda en este sistema." },
+  "Necessário para emitir a cobrança no Asaas. O documento vai ao provedor e não é guardado aqui além do CNPJ já cadastrado da empresa.": { es: "Es necesario para emitir el cobro en Asaas. El documento se envía al proveedor y no se guarda aquí, salvo el CNPJ ya registrado de la empresa." },
   "A cobrança ainda não está disponível. Fale com quem administra o sistema; seu plano está preservado.": { es: "El cobro aún no está disponible. Habla con quien administra el sistema; tu plan se mantiene." },
   "Retomar pagamento": { es: "Retomar el pago" },
   "Já paguei: conferir pagamento": { es: "Ya pagué: comprobar el pago" },

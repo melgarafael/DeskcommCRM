@@ -130,7 +130,7 @@ export function ContinuarPagamento(p: Props) {
               onChange={(e) => setDocumento(e.target.value)} aria-invalid={erroDocumento}
               aria-describedby="documento-da-contratacao-ajuda" disabled={ocupado} />
             <p id="documento-da-contratacao-ajuda" className="text-sm text-muted-foreground">
-              {t(erroDocumento ? "Confira o CPF ou CNPJ: os dígitos não batem." : "Necessário para emitir a cobrança no Asaas. O documento vai ao provedor e não fica guardado neste sistema.")}
+              {t(erroDocumento ? "Confira o CPF ou CNPJ: os dígitos não batem." : "Necessário para emitir a cobrança no Asaas. O documento vai ao provedor e não é guardado aqui além do CNPJ já cadastrado da empresa.")}
             </p>
           </div>
         )}
