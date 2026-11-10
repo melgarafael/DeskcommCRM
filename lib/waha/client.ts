@@ -1136,12 +1136,22 @@ export class WahaClient {
    * junto em TODA chamada — é o que torna "página seguinte" uma pergunta com
    * resposta.
    *
-   * ─── O caso NOWEB sem store, que vem vazio e não é erro ────────────────────
+   * ─── O caso NOWEB sem store: `[]` ou 400, e o 400 NÃO é instabilidade ─────
    *
    * No NOWEB (o engine padrão do kit) este endpoint só enxerga o que o store
    * da sessão guardou (`noweb.store.enabled` — a opção "Guardar histórico" da
    * conexão). Sem ele a resposta é `[]`: lista vazia é um desfecho legítimo e
-   * quem chama decide o que comunicar; HTTP errado continua sendo exceção.
+   * quem chama decide o que comunicar.
+   *
+   * Dependendo da versão do transporte, porém, o store desligado vira
+   * **400** — e aí ele NÃO significa instabilidade, significa "este endpoint
+   * não existe nesta sessão" (a doc do WAHA é explícita: os endpoints de
+   * contatos não funcionam por padrão no NOWEB). O status sai daqui cru
+   * (`waha_contacts_all_400`) e quem classifica é
+   * `lib/channels/agenda-do-aparelho-falha.ts`: tratá-lo aqui como queda do
+   * número foi o defeito do #4102 — a tela mandava conferir uma conexão que
+   * estava boa, e a pessoa ficava travada sem saber que faltava ligar uma
+   * opção. O corpo da resposta continua não atravessando.
    */
   async listarAgendaDoAparelho(
     session: string,
