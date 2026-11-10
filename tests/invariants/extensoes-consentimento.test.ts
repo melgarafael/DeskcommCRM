@@ -23,8 +23,8 @@ const orgB = "c0ae0000-0000-4000-8000-0000000000b6";
 const SERVICO = "https://servico.consentimento.test";
 const CONFIG = { density: "comfortable", show_description: true };
 const DECLARADAS = ["area.contatos.leitura", "area.contatos.escrita", "area.configuracao.leitura", "area.agentes_ia.escrita"];
-// As três áreas da migration 9316 (tarefas, etiquetas, financeiro).
-const DECLARADAS_NOVAS = ["area.tarefas.escrita", "area.etiquetas.leitura", "area.financeiro.leitura", "area.financeiro.escrita"];
+// As duas áreas da migration 9316 (tarefas e financeiro).
+const DECLARADAS_NOVAS = ["area.tarefas.escrita", "area.financeiro.leitura", "area.financeiro.escrita"];
 let seq = 0;
 const origem = () => `https://consentimento-${++seq}.invariant.test`;
 
@@ -413,14 +413,13 @@ describe("recusas", () => {
   });
 });
 
-describe("as áreas tarefas, etiquetas e financeiro (migration 9316)", () => {
-  it("o pacote pode declará-las, e um admin da organização consente tarefas.escrita, etiquetas e financeiro", async () => {
+describe("as áreas tarefas e financeiro (migration 9316)", () => {
+  it("o pacote pode declará-las, e um admin da organização consente tarefas.escrita e financeiro", async () => {
     const inst = await instalarEAtivar(DECLARADAS_NOVAS);
 
-    await consentir(outroAdmin, orgA, inst, ["area.financeiro.leitura", "area.tarefas.escrita", "area.etiquetas.leitura"]);
+    await consentir(outroAdmin, orgA, inst, ["area.financeiro.leitura", "area.tarefas.escrita"]);
 
     expect((await vinculo(orgA, inst))?.consented_areas).toEqual([
-      "area.etiquetas.leitura",
       "area.financeiro.leitura",
       "area.tarefas.escrita",
     ]);
@@ -430,7 +429,7 @@ describe("as áreas tarefas, etiquetas e financeiro (migration 9316)", () => {
     ["viewer", viewer],
     ["agent", agente],
     ["manager", gerente],
-  ])("%s não consente financeiro (quem não administra a organização é recusado na porta)", async (_papel, ator) => {
+  ])("%s não consente financeiro: quem barra é `fn_extensions_assert_actor` (exige admin da organização), não o regex das áreas sensíveis", async (_papel, ator) => {
     const inst = await instalarEAtivar(DECLARADAS_NOVAS);
 
     for (const area of ["area.financeiro.leitura", "area.financeiro.escrita"]) {
@@ -448,11 +447,10 @@ describe("as áreas tarefas, etiquetas e financeiro (migration 9316)", () => {
     expect(e).toMatchObject({ code: "PT409", message: "extension_area_not_declared" });
   });
 
-  it("o CHECK aceita as seis permissões novas direto na tabela", async () => {
+  it("o CHECK aceita as quatro permissões novas direto na tabela", async () => {
     const inst = await instalarEAtivar();
     const novas = [
       "area.tarefas.leitura", "area.tarefas.escrita",
-      "area.etiquetas.leitura", "area.etiquetas.escrita",
       "area.financeiro.leitura", "area.financeiro.escrita",
     ];
 

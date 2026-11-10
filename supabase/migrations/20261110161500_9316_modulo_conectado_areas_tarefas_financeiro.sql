@@ -1,6 +1,6 @@
--- manifest: **Módulo conectado, 3 áreas novas: `tarefas`, `etiquetas` e `financeiro` (spec 33).** O vocabulário de áreas passa de 9 para 12 (cada uma com leitura e escrita, 18 → 24 permissões `area.<área>.<leitura|escrita>`; com as 8 de hoje, 26 → 32). `fn_extensions_permissoes_validas` aceita as 6 permissões novas e o teto `between 1 and 26` vira `between 1 and 32`; o CHECK `organization_extensions_consented_areas_check` é refeito com as 24; `fn_extensions_set_consent` passa a exigir `admin`/`owner` também para `area.financeiro.*` (o regex `'^area\.(configuracao|agentes_ia)\.'` vira `'^area\.(configuracao|agentes_ia|financeiro)\.'`: dinheiro é área sensível, como configuração e agentes de IA). Só `create or replace` das duas funções (corpos copiados das ÚLTIMAS definições do baseline, a 9115 e a 9119) e `drop constraint if exists` + `add constraint`; ACL das funções preservada; sem tabela nova; sem dado a corrigir (as áreas já consentidas, as 18 antigas, continuam dentro do CHECK novo). Espelho idempotente no apêndice do `supabase/baseline.sql`. Prova em `tests/invariants/extensoes-consentimento.test.ts` e `tests/invariants/extensoes-conectado.test.ts`.
+-- manifest: **Módulo conectado, 2 áreas novas: `tarefas` e `financeiro` (spec 33).** O vocabulário de áreas passa de 9 para 11 (cada uma com leitura e escrita, 18 → 22 permissões `area.<área>.<leitura|escrita>`; com as 8 de hoje, 26 → 30). `fn_extensions_permissoes_validas` aceita as 4 permissões novas e o teto `between 1 and 26` vira `between 1 and 30`; o CHECK `organization_extensions_consented_areas_check` é refeito com as 22; `fn_extensions_set_consent` passa a exigir `admin`/`owner` também para `area.financeiro.*` (o regex `'^area\.(configuracao|agentes_ia)\.'` vira `'^area\.(configuracao|agentes_ia|financeiro)\.'`: dinheiro é área sensível, como configuração e agentes de IA). Só `create or replace` das duas funções (corpos copiados das ÚLTIMAS definições do baseline, a 9115 e a 9119) e `drop constraint if exists` + `add constraint`; ACL das funções preservada; sem tabela nova; sem dado a corrigir (as áreas já consentidas, as 18 antigas, continuam dentro do CHECK novo). Espelho idempotente, NO LUGAR, nos blocos da 9115 e da 9119 do `supabase/baseline.sql`. Prova em `tests/invariants/extensoes-consentimento.test.ts` e `tests/invariants/extensoes-conectado.test.ts`.
 -- ============================================================================
--- 9316 — MÓDULO CONECTADO: as áreas `tarefas`, `etiquetas` e `financeiro`.
+-- 9316 — MÓDULO CONECTADO: as áreas `tarefas` e `financeiro`.
 --
 -- Spec: docs/specs/33-spec-modulo-conectado.md (seção F3, lista de áreas). Racional completo no cabeçalho
 -- das migrations 9115 (vocabulário de permissões) e 9119 (consentimento). As duas funções abaixo são
@@ -15,7 +15,7 @@ create or replace function public.fn_extensions_permissoes_validas(p_permissions
 returns boolean language sql immutable set search_path = public, pg_temp as $$
   select p_permissions is not null
     and jsonb_typeof(p_permissions) = 'array'
-    and jsonb_array_length(p_permissions) between 1 and 32
+    and jsonb_array_length(p_permissions) between 1 and 30
     and not exists (
       select 1 from jsonb_array_elements(p_permissions) e
       where jsonb_typeof(e.value) <> 'string'
@@ -33,7 +33,6 @@ returns boolean language sql immutable set search_path = public, pg_temp as $$
               'area.configuracao.leitura', 'area.configuracao.escrita',
               'area.analise.leitura', 'area.analise.escrita',
               'area.tarefas.leitura', 'area.tarefas.escrita',
-              'area.etiquetas.leitura', 'area.etiquetas.escrita',
               'area.financeiro.leitura', 'area.financeiro.escrita')
     )
     and (select count(distinct e.value) from jsonb_array_elements(p_permissions) e)
@@ -57,7 +56,6 @@ alter table public.organization_extensions add constraint organization_extension
     'area.configuracao.leitura','area.configuracao.escrita',
     'area.analise.leitura','area.analise.escrita',
     'area.tarefas.leitura','area.tarefas.escrita',
-    'area.etiquetas.leitura','area.etiquetas.escrita',
     'area.financeiro.leitura','area.financeiro.escrita'
   ]::text[]);
 
@@ -98,6 +96,7 @@ begin
     raise exception using errcode='PT409',message='extension_area_not_declared';
   end if;
   -- Decisão 5 da spec 33: configuração, agentes de IA e financeiro só por quem administra a organização.
+  -- Hoje este ramo é defesa a mais: `fn_extensions_assert_actor` já exige `admin` na organização antes de chegar aqui.
   if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia|financeiro)\.') then
     select u.role into v_role from public.user_organizations u
       where u.user_id=p_actor and u.organization_id=p_organization and u.revoked_at is null and u.accepted_at is not null;

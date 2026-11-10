@@ -52,8 +52,6 @@ const NOME_DA_PORTA: Record<ExtensionPermission, string> = {
   "area.analise.escrita": "Análise (escrita)",
   "area.tarefas.leitura": "Tarefas (leitura)",
   "area.tarefas.escrita": "Tarefas (escrita)",
-  "area.etiquetas.leitura": "Etiquetas (leitura)",
-  "area.etiquetas.escrita": "Etiquetas (escrita)",
   "area.financeiro.leitura": "Financeiro (leitura)",
   "area.financeiro.escrita": "Financeiro (escrita)",
 };
@@ -198,10 +196,6 @@ export function fraseDaPermissaoDeArea(
       return t("Ver as tarefas.");
     case "area.tarefas.escrita":
       return t("Ver e mudar tarefas e demandas.");
-    case "area.etiquetas.leitura":
-      return t("Ver as etiquetas.");
-    case "area.etiquetas.escrita":
-      return t("Criar e alterar as etiquetas.");
     case "area.financeiro.leitura":
       return t("Ver comandas, fidelidade e lançamentos financeiros.");
     case "area.financeiro.escrita":

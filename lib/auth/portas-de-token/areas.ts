@@ -142,7 +142,7 @@ const SEM_AREA: readonly EntradaSemArea[] = [
 
   // --- 7. Só LEITURA tem área: a escrita mexe com o cliente ou com a conexão do canal.
   e("calls", "escrita"), // ligar para o cliente é falar com o cliente (D6); só a leitura do histórico tem área
-  e("phone-numbers", "escrita"), // mexe na conexão do canal
+  e("channel-schedules", "escrita"), // a janela pausa canais do WhatsApp; desfazer exige a pausa manual em Conexões
   e("ads", "escrita"), // leitura das contas e campanhas tem área; escrita não
   e("messages/[id]/media", "escrita"), // só a leitura do arquivo tem área
 
@@ -151,6 +151,7 @@ const SEM_AREA: readonly EntradaSemArea[] = [
   e("campaign-suppressions"), // tirar alguém da lista faz a campanha voltar a escrever para quem pediu para parar
   e("audit"), // a auditoria mostra tudo de todos
   e("imports"), // entrada de contatos em massa, não se desfaz
+  e("phone-numbers"), // a leitura só aceita sessão (`requireRole`); a escrita mexe na conexão do canal
 ];
 
 /**
@@ -212,10 +213,10 @@ const MAPA: readonly (readonly [string, ExtensionArea])[] = [
   ["attendants/sectors", "configuracao"],
   ["team/assignable", "configuracao"],
   ["routing", "configuracao"],
+  // O modelo de campanha não envia nada sozinho: quem dispara a campanha é a pessoa.
   ["campaign-templates", "configuracao"],
   ["message-template-groups", "configuracao"],
   ["channel-schedules", "configuracao"],
-  ["phone-numbers", "configuracao"], // só leitura (a escrita está em SEM_AREA)
   // analise
   ["metrics", "analise"],
   ["reports", "analise"],
@@ -226,9 +227,9 @@ const MAPA: readonly (readonly [string, ExtensionArea])[] = [
   // tarefas
   ["tasks", "tarefas"],
   ["demandas", "tarefas"],
-  // etiquetas
-  ["contact-tags", "etiquetas"],
-  ["conversation-tags", "etiquetas"],
+  // etiquetas (não há área própria: não existe rota de escrita de etiqueta)
+  ["contact-tags", "contatos"], // só leitura hoje
+  ["conversation-tags", "conversas"], // só leitura hoje
   // financeiro: comandas e fidelidade têm a área nos dois modos. As quatro portas de dinheiro que
   // não se desfazem estão em SEM_AREA e vencem. O que não casa aqui, nem no mapa de escrita, recusa.
   ["financeiro/comandas", "financeiro"],
@@ -300,6 +301,7 @@ const LEITURAS_COM_CONTATO_EMBUTIDO: readonly string[] = [
   "financeiro/fidelidade", // saldo e extrato de pontos de UM contato
   "calls", // o histórico de chamadas traz o contato que foi chamado
   "messages/[id]/media", // o arquivo é da conversa com o cliente
+  "financeiro/comandas/pendentes", // traz o `title` do agendamento, que pode ter o nome do cliente
 ];
 
 export function leituraExigeAreaContatos(modelo: string, metodo: string): boolean {

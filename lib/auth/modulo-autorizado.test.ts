@@ -151,6 +151,7 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
       // Áreas novas (migration 9316): leituras que trazem o contato exigem `contatos` também.
       "/api/v1/calls",
       "/api/v1/financeiro/fidelidade",
+      "/api/v1/financeiro/comandas/pendentes", // traz o título do agendamento, que pode ter o nome do cliente
       `/api/v1/messages/${ID}/media`,
     ];
     const declara = [
@@ -328,7 +329,6 @@ describe("autorizarModulo — porta", () => {
     "configuracao",
     "analise",
     "tarefas",
-    "etiquetas",
     "financeiro",
   ].flatMap((a) => [`area.${a}.leitura`, `area.${a}.escrita`]);
 
@@ -355,6 +355,9 @@ describe("autorizarModulo — porta", () => {
     ["POST", `/api/v1/honorarios/parcelas/${ID}/pagar`],
     ["POST", "/api/v1/calls"], // ligar para o cliente
     ["POST", "/api/v1/phone-numbers"], // conexão do canal
+    ["GET", "/api/v1/phone-numbers"], // a leitura só aceita sessão
+    ["POST", "/api/v1/channel-schedules"], // a janela pausa canais do WhatsApp
+    ["DELETE", `/api/v1/channel-schedules/${ID}`],
     ["DELETE", `/api/v1/campaign-suppressions/${ID}`],
     ["GET", "/api/v1/audit"],
     ["POST", "/api/v1/imports"],
@@ -365,13 +368,15 @@ describe("autorizarModulo — porta", () => {
     });
   });
 
-  it("as áreas novas (tarefas, etiquetas, financeiro) abrem quando declaradas e consentidas, no modo certo", async () => {
+  it("as áreas novas (tarefas, financeiro) abrem quando declaradas e consentidas, no modo certo", async () => {
     const b = bancoComTudo();
     for (const [metodo, caminho] of [
       ["GET", "/api/v1/tasks"],
       ["POST", "/api/v1/tasks"],
       ["PATCH", `/api/v1/demandas/${ID}`],
-      ["GET", "/api/v1/contact-tags"],
+      ["GET", "/api/v1/contact-tags"], // área `contatos`
+      ["GET", "/api/v1/conversation-tags"], // área `conversas`
+      ["GET", "/api/v1/channel-schedules"], // a leitura segue em `configuracao`
       ["GET", "/api/v1/financeiro/comandas"],
       ["POST", `/api/v1/financeiro/comandas/${ID}/itens`],
       ["POST", "/api/v1/financeiro/lancamentos"], // lê em `analise`, escreve em `financeiro`

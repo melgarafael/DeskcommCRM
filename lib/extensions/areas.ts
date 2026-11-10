@@ -22,7 +22,6 @@ export const EXTENSION_AREAS = [
   "configuracao",
   "analise",
   "tarefas",
-  "etiquetas",
   "financeiro",
 ] as const;
 export type ExtensionArea = (typeof EXTENSION_AREAS)[number];

@@ -151,19 +151,21 @@ no audit. Nasce a variante `module` em `Actor`, para a auditoria dizer qual mód
 É a decisão D4 da ADR, aplicada num ponto só, `resolveAuthDual`.
 
 **Consentimento por área.** A tela de ativação lista as áreas em frases legíveis, e a organização
-pode aceitar menos do que o pacote pede. São **12 áreas**: `contatos`, `negocios`, `conversas`,
+pode aceitar menos do que o pacote pede. São **11 áreas**: `contatos`, `negocios`, `conversas`,
 `agenda`, `funis`, `agentes_ia`, `catalogo`, `configuracao`, `analise` e, desde a migration 9316
-(10/11/2026), `tarefas`, `etiquetas` e `financeiro`. Cada área tem leitura e escrita separadas (24
+(10/11/2026), `tarefas` e `financeiro`. Cada área tem leitura e escrita separadas (22
 permissões `area.<área>.<leitura|escrita>`). Toda rota convertida declara sua área. Rota sem área
 recusa token de módulo, e um teste varre isso.
 
-**As três áreas novas** (frases da tela de consentimento em `lib/extensions/portas-legiveis.ts`):
+**As duas áreas novas** (frases da tela de consentimento em `lib/extensions/portas-legiveis.ts`):
 
 | Área | Frase | Sensível? | Rotas (`app/api/v1/...`) |
 |---|---|---|---|
 | `tarefas` | "Ver e mudar tarefas e demandas." | não | `tasks`, `tasks/[id]` (leitura e escrita); `demandas/[id]` PATCH (escrita) |
-| `etiquetas` | "Ver as etiquetas." | não | `contact-tags`, `conversation-tags` (GET) |
 | `financeiro` | "Ver e mudar comandas, fidelidade e lançamentos financeiros." | **sim** (só quem administra a organização consente; não vem pré-marcada na tela) | `financeiro/comandas` (GET, POST), `financeiro/comandas/[id]` (GET, PATCH), `financeiro/comandas/[id]/itens` (POST), `financeiro/comandas/[id]/itens/[itemId]` (DELETE), `financeiro/comandas/pendentes` (GET), `financeiro/fidelidade` (GET, POST); a ESCRITA de `financeiro/catalogo/[tipo]`, `financeiro/lancamentos`, `financeiro/lancamentos/[id]`, `honorarios/contratos` e `honorarios/contratos/[id]/parcelas` |
+
+Não existe área `etiquetas`: não há rota de escrita de etiqueta, e anunciar escrita que não existe é
+proibido. `contact-tags` (GET) vive em `contatos` e `conversation-tags` (GET) em `conversas`.
 
 A leitura de `financeiro/catalogo/[tipo]` continua em `catalogo`, e a de `financeiro/lancamentos` e de
 `honorarios/*` continua em `analise`: o mapa tem uma entrada que vale só para escrita
@@ -171,15 +173,21 @@ A leitura de `financeiro/catalogo/[tipo]` continua em `catalogo`, e a de `financ
 
 **Outras rotas que saíram da lista "fora do mapa"** (10/11/2026): `people`, `people/[id]`,
 `company-people`, `company-people/[id]` em `contatos` (leitura e escrita); `campaign-templates`,
-`campaign-templates/[id]`, `message-template-groups` (e todas as subrotas, inclusive `[id]/ordem`),
-`channel-schedules`, `channel-schedules/[id]` em `configuracao` (leitura e escrita);
+`campaign-templates/[id]` (o modelo não envia nada sozinho; quem dispara a campanha é a pessoa) e
+`message-template-groups` (e todas as subrotas, inclusive `[id]/ordem`) em `configuracao` (leitura e
+escrita); `channel-schedules` e `channel-schedules/[id]` em `configuracao` só na leitura (a janela pausa
+canais do WhatsApp, e desfazer exige a pausa manual em Conexões, então a escrita não tem área);
 `ads/meta/accounts` e `ads/meta/campaigns` em `analise` (só leitura); `calls` GET e
-`messages/[id]/media` GET em `conversas` (só leitura); `phone-numbers` e `phone-numbers/[id]` GET em
-`configuracao` (só leitura). A escrita de `calls` (ligar para o cliente é falar com o cliente) e a de
-`phone-numbers` (mexe na conexão do canal) continuam sem área.
+`messages/[id]/media` GET em `conversas` (só leitura). A escrita de `calls` (ligar para o cliente é falar
+com o cliente) continua sem área, e `phone-numbers` fica inteiro sem área: a leitura só aceita sessão
+(`requireRole`, sem `resolveAuthDual`) e a escrita mexe na conexão do canal.
+
+**Lançamento pago não se desfaz:** `financeiro/lancamentos` POST com `status: "paid"` e
+`financeiro/lancamentos/[id]` PATCH `pay: true` recusam o ator `module` com 403 `forbidden` na própria
+rota; criar lançamento pendente segue permitido.
 
 **Leitura que traz o contato exige também `contatos`**, como agenda e follow-ups já faziam
-(`LEITURAS_COM_CONTATO_EMBUTIDO`): `financeiro/fidelidade` GET, `calls` GET e `messages/[id]/media` GET.
+(`LEITURAS_COM_CONTATO_EMBUTIDO`): `financeiro/fidelidade` GET, `calls` GET, `messages/[id]/media` GET e `financeiro/comandas/pendentes` GET (o título do agendamento pode ter o nome do cliente).
 
 **Nunca há área** para credencial, token, LGPD, cobrança, webhook, administração da instalação,
 extensões e envio de mensagem (D6). Além dos prefixos que já saem do recorte, ficam fora, por nome:
@@ -208,6 +216,8 @@ extensões e envio de mensagem (D6). Além dos prefixos que já saem do recorte,
 | `modulos`, `modulos/instalar` | administração de extensões |
 | `campaign-suppressions`, `campaign-suppressions/[id]` | tirar alguém da lista faz a campanha voltar a escrever para quem pediu para parar |
 | `audit`, `audit/export` | a auditoria mostra tudo de todos |
+| `phone-numbers`, `phone-numbers/[id]` | a leitura só aceita sessão; a escrita mexe na conexão do canal |
+| `channel-schedules`, `channel-schedules/[id]` (escrita) | a janela pausa canais do WhatsApp; desfazer exige a pausa manual em Conexões |
 | `imports`, `imports/[id]` | entrada de contatos em massa, não se desfaz |
 | `financeiro/comandas/[id]/finalizar`, `financeiro/comandas/[id]/estornar`, `financeiro/comandas/faturar-lote`, `honorarios/parcelas/[id]/pagar` | mexem com dinheiro, não se desfazem, e hoje nem aceitam token de integração |
 | `ai/budget`, `ai/voz`, `ai/knowledge/reindex-all` (escrita), `contacts/merge` (escrita), `automation-rules` (escrita) | gastam dinheiro da organização ou não se desfazem; a escrita de `automation-rules` só tem área na leitura |

@@ -108,6 +108,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  // Lançamento já PAGO não se desfaz (trigger `fn_lancamento_pago_e_imutavel`): um módulo
+  // conectado (Spec 33) só cria pendente; nascer pago é só da pessoa na sessão.
+  if (authz.actor.type === "module" && lido.data.status === "paid") {
+    return fail("forbidden", "Lançar como já pago é só pela sessão.", 403, { requestId });
+  }
+
   const supabase = authz.supabase;
   const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
