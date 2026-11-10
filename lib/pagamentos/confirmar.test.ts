@@ -17,12 +17,11 @@ vi.mock("@/lib/audit", () => ({
   },
 }));
 
-import { confirmarPagamento } from "./confirmar";
+import { confirmarPagamento, lerRecebimentoDoAviso } from "./confirmar";
 import type { Recebimento } from "./registrar";
 
 const ORG = "cccccccc-0000-4000-8000-000000000001";
 const CONV = "cccccccc-0000-4000-8000-000000000002";
-const MSG = "cccccccc-0000-4000-8000-000000000003";
 const LEAD = "cccccccc-0000-4000-8000-000000000004";
 const REC = "cccccccc-0000-4000-8000-000000000005";
 const ETAPA_GANHO = "cccccccc-0000-4000-8000-000000000007";
@@ -36,10 +35,9 @@ const pendente = (over: Partial<Recebimento> = {}): Recebimento => ({
   id: REC,
   organization_id: ORG,
   conversation_id: CONV,
-  message_id: MSG,
   lead_id: LEAD,
   provedor: "infinitepay",
-  external_id: "pay_123",
+  external_id: null,
   valor_cents: 15000,
   moeda: "BRL",
   status: "pendente",
@@ -64,7 +62,6 @@ interface Mundo {
   statusNoFecho?: string;
   /** `crm_pipelines.settings` — é dele que a régua de campos obrigatórios lê. */
   settings: Record<string, unknown> | null;
-  mensagem: { id: string; metadata: Record<string, unknown> | null } | null;
   atividade: Resposta;
 }
 
@@ -77,10 +74,6 @@ function responder(c: Cadeia): Resposta {
   if (c.tabela === "pagamento_recebimentos") {
     if (op === "update") return m.cas;
     return { data: m.linhas };
-  }
-  if (c.tabela === "messages") {
-    if (op === "update") return { data: null };
-    return { data: m.mensagem };
   }
   if (c.tabela === "crm_stages") return { data: m.etapa };
   if (c.tabela === "crm_leads") {
@@ -107,30 +100,23 @@ beforeEach(() => {
     moveu: { data: [{ id: LEAD }] },
     etapa: { id: ETAPA_GANHO, name: "Pago" },
     lead: { id: LEAD, stage_id: ETAPA_ATUAL, pipeline_id: PIPELINE, status: "open", contact_id: CONTATO },
-    mensagem: {
-      id: MSG,
-      metadata: {
-        pagamento: {
-          provedor: "infinitepay",
-          id: "pay_123",
-          valor: 15000,
-          moeda: "BRL",
-          status: "pendente",
-          recebimento_id: REC,
-        },
-      },
-    },
     atividade: { data: null },
     settings: null,
   };
   banco = bancoFalso(responder);
 });
 
-const pedido = { provedor: "infinitepay", externalId: "pay_123", quando: QUANDO };
+/** O aviso de R$ 150,00 do pagamento `slug-123` no provedor. */
+const pedido = (over: Partial<Recebimento> = {}, valorAvisadoCents: number | null = 15000) => ({
+  recebimento: m.linhas[0] ? { ...m.linhas[0], ...over } : pendente(over),
+  idNoProvedor: "slug-123",
+  valorAvisadoCents,
+  quando: QUANDO,
+});
 
 describe("confirmar o pagamento", () => {
   it("⭐ aviso válido: marca paga UMA vez, move o negócio e escreve uma linha na timeline", async () => {
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: true, efeito: "pago" });
     if (!r.ok || r.efeito !== "pago") return;
     expect(r.recebimento.status).toBe("paga");
@@ -139,15 +125,9 @@ describe("confirmar o pagamento", () => {
     // O compare-and-set: o filtro LEVA `status = 'pendente'` — é ele que faz a
     // segunda entrega não encontrar linha nenhuma.
     const cas = argumentos(cadeias("pagamento_recebimentos").find((c) => operacao(c) === "update")!, "update")?.[0];
-    expect(cas).toMatchObject({ status: "paga" });
+    expect(cas).toMatchObject({ status: "paga", external_id: "slug-123" });
     const filtro = cadeias("pagamento_recebimentos").find((c) => operacao(c) === "update")!;
     expect(filtro.passos.filter((p) => p.metodo === "eq").map((p) => p.args)).toContainEqual(["status", "pendente"]);
-
-    // O ponteiro da conversa acompanha.
-    const patch = argumentos(cadeias("messages").find((c) => operacao(c) === "update")!, "update")?.[0] as {
-      metadata: { pagamento: { status: string } };
-    };
-    expect(patch.metadata.pagamento.status).toBe("paga");
 
     // A timeline: UMA linha de pagamento, com o tipo próprio e o valor.
     const linhas = cadeias("crm_lead_activities").map(
@@ -161,7 +141,7 @@ describe("confirmar o pagamento", () => {
 
   it("⭐ evento REPETIDO (já pago): nada muda — sem update, sem etapa, sem segunda linha na timeline", async () => {
     m.linhas = [pendente({ status: "paga", pago_em: QUANDO.toISOString() })];
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r).toEqual({ ok: true, efeito: "duplicado", status: "paga" });
     expect(escritas("pagamento_recebimentos")).toEqual([]);
     expect(escritas("crm_leads")).toEqual([]);
@@ -170,36 +150,14 @@ describe("confirmar o pagamento", () => {
 
   it("⭐ CORRIDA: o compare-and-set atualiza zero linhas (outra entrega chegou antes) — nada acontece", async () => {
     m.cas = { data: [] };
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r).toEqual({ ok: true, efeito: "duplicado", status: "paga" });
     expect(escritas("crm_leads")).toEqual([]);
     expect(cadeias("crm_lead_activities")).toEqual([]);
-    expect(escritas("messages")).toEqual([]);
-  });
-
-  it("limite de 2 na busca por id externo: é a ambiguidade que se mede, não a primeira linha", async () => {
-    await confirmarPagamento(banco.cliente as never, pedido);
-    const select = cadeias("pagamento_recebimentos")[0]!;
-    expect(select.passos.filter((p) => p.metodo === "limit").map((p) => p.args)).toContainEqual([2]);
-  });
-
-  it("⭐ id externo ambíguo (mesma conta em duas empresas): 500 e NADA é marcado", async () => {
-    m.linhas = [pendente(), pendente({ id: "cccccccc-0000-4000-8000-0000000000bb", organization_id: "cccccccc-0000-4000-8000-0000000000cc" })];
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
-    expect(r).toMatchObject({ ok: false, status: 500 });
-    expect(escritas("pagamento_recebimentos")).toEqual([]);
-    expect(h.erro).toHaveBeenCalled();
-  });
-
-  it("id que não é nosso: `desconhecido` e nada escrito", async () => {
-    m.linhas = [];
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
-    expect(r).toEqual({ ok: true, efeito: "desconhecido" });
-    expect(banco.cadeias.filter((c) => operacao(c) !== "select")).toEqual([]);
   });
 
   it("⭐ ganhar pelo pagamento é o MESMO fecho do botão Ganhar: grava a etapa de ganho, a linha de encerramento e a auditoria `lead.won`", async () => {
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: true });
     const patch = argumentos(escritas("crm_leads")[0]!, "update")?.[0] as { stage_id: string };
     expect(patch.stage_id).toBe(ETAPA_GANHO);
@@ -214,7 +172,7 @@ describe("confirmar o pagamento", () => {
     m.settings = {
       fields: [{ key: "nota_fiscal", label: "Nota fiscal", type: "text", obrigatorio_em: { ao_ganhar: true } }],
     };
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: true, efeito: "pago" });
     if (!r.ok || r.efeito !== "pago") return;
     expect(r.recebimento.status).toBe("paga");
@@ -231,21 +189,21 @@ describe("confirmar o pagamento", () => {
 
   it("motivo de ganho exigido pelo funil também segura o card (a mesma régua do botão)", async () => {
     m.settings = { won_reason_required: true };
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toMatchObject({ moveu: false, motivo: "campos_obrigatorios" });
     expect(escritas("crm_leads")).toEqual([]);
   });
 
   it("alguém ganhou o negócio entre a nossa leitura e o fecho: `ja_esta_la`, nada reescrito", async () => {
     m.statusNoFecho = "won";
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "ja_esta_la" });
     expect(escritas("crm_leads")).toEqual([]);
   });
 
   it("⭐ humano PERDEU o negócio entre a nossa leitura e o fecho: `conflito_humano`, e o desfecho dele vence", async () => {
     m.statusNoFecho = "lost";
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "conflito_humano" });
     expect(escritas("crm_leads")).toEqual([]);
     expect(h.auditorias.filter((a) => a.action === "lead.won")).toEqual([]);
@@ -253,7 +211,7 @@ describe("confirmar o pagamento", () => {
 
   it("⭐ humano mexeu no card entre a leitura e a escrita: `conflito_humano`, e a decisão dele vence", async () => {
     m.moveu = { data: [] };
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "conflito_humano" });
     // O update leva o estado LIDO no filtro — é a trava otimista: etapa de origem e negócio aberto.
     const upd = cadeias("crm_leads").find((c) => operacao(c) === "update")!;
@@ -265,21 +223,21 @@ describe("confirmar o pagamento", () => {
 
   it("funil SEM etapa de ganho: não move (estado legítimo, não erro)", async () => {
     m.etapa = null;
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "sem_etapa_de_ganho" });
     expect(escritas("crm_leads")).toEqual([]);
   });
 
   it("negócio já encerrado (ganho ou perdido): não reescreve o desfecho", async () => {
     m.lead!.status = "lost";
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "negocio_encerrado" });
     expect(escritas("crm_leads")).toEqual([]);
   });
 
   it("sem negócio vinculado: marca pago e não escreve timeline (não há negócio onde escrever)", async () => {
     m.linhas = [pendente({ lead_id: null })];
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "sem_negocio" });
     expect(cadeias("crm_leads")).toEqual([]);
     expect(cadeias("crm_lead_activities")).toEqual([]);
@@ -287,24 +245,58 @@ describe("confirmar o pagamento", () => {
 
   it("falha ao gravar o ganho: `falha_de_escrita`, e o pagamento continua pago", async () => {
     m.moveu = { error: { code: "XX000", message: "queda" } };
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r.ok && r.efeito === "pago" && r.movido).toEqual({ moveu: false, motivo: "falha_de_escrita" });
     expect(h.aviso).toHaveBeenCalled();
   });
 
   it("falha ao marcar o pagamento: 500 (o provedor reentrega) e nada mais é escrito", async () => {
     m.cas = { error: { code: "42501", message: "rls" } };
-    const r = await confirmarPagamento(banco.cliente as never, pedido);
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
     expect(r).toMatchObject({ ok: false, status: 500 });
-    expect(escritas("messages")).toEqual([]);
     expect(cadeias("crm_lead_activities")).toEqual([]);
   });
 
-  it("metadata da mensagem de OUTRO recebimento não é reescrito (ponteiro trocado à mão)", async () => {
-    m.mensagem!.metadata = {
-      pagamento: { provedor: "infinitepay", id: "pay_123", valor: 15000, moeda: "BRL", status: "pendente", recebimento_id: "outro" },
-    };
-    await confirmarPagamento(banco.cliente as never, pedido);
-    expect(escritas("messages")).toEqual([]);
+
+  it("⭐ valor do aviso DIFERENTE do registrado: nada marcado, nada movido", async () => {
+    const r = await confirmarPagamento(banco.cliente as never, pedido({}, 100));
+    expect(r).toEqual({ ok: true, efeito: "valor_divergente" });
+    expect(escritas("pagamento_recebimentos")).toEqual([]);
+    expect(escritas("crm_leads")).toEqual([]);
+    expect(cadeias("crm_lead_activities")).toEqual([]);
+  });
+
+  it("⭐ aviso SEM valor não prova nada: nada marcado", async () => {
+    const r = await confirmarPagamento(banco.cliente as never, pedido({}, null));
+    expect(r).toEqual({ ok: true, efeito: "valor_divergente" });
+    expect(escritas("pagamento_recebimentos")).toEqual([]);
+  });
+
+  it("o mesmo pagamento do provedor já confirmou OUTRO recebimento (índice único): nada mais acontece", async () => {
+    m.cas = { error: { code: "23505", message: "duplicate key" } };
+    const r = await confirmarPagamento(banco.cliente as never, pedido());
+    expect(r).toEqual({ ok: true, efeito: "id_ja_usado" });
+    expect(escritas("crm_leads")).toEqual([]);
+    expect(cadeias("crm_lead_activities")).toEqual([]);
+  });
+});
+
+describe("achar o recebimento do aviso", () => {
+  it("⭐ pelo id que veio NA URL e pelo provedor — nunca por um dado que outra empresa escreve", async () => {
+    m.linhas = [pendente()];
+    banco = bancoFalso(() => ({ data: { ...pendente(), aviso_token_hash: "a".repeat(64) } }));
+    const r = await lerRecebimentoDoAviso(banco.cliente as never, "infinitepay", REC);
+    expect(r).toMatchObject({ ok: true, recebimento: { id: REC, aviso_token_hash: "a".repeat(64) } });
+    const leitura = banco.cadeias[0]!;
+    const eqs = leitura.passos.filter((p) => p.metodo === "eq").map((p) => p.args);
+    expect(eqs).toEqual([
+      ["id", REC],
+      ["provedor", "infinitepay"],
+    ]);
+  });
+
+  it("banco que não respondeu: `ok: false` (a rota devolve 500 e o provedor reentrega)", async () => {
+    banco = bancoFalso(() => ({ error: { code: "XX000", message: "queda" } }));
+    expect(await lerRecebimentoDoAviso(banco.cliente as never, "infinitepay", REC)).toEqual({ ok: false });
   });
 });

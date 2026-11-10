@@ -375,6 +375,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
       "Ligado, cada empresa pode cadastrar na agenda um lugar, como mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.",
     foraDoMenu: "Não cria porta no menu do CRM: por enquanto o lugar é cadastrado e reservado pela API, em /api/v1/agenda/servicos.",
   },
+  {
+    modulo: "link_de_pagamento",
+    id: "modulo-link-de-pagamento",
+    rotulo: "Link de pagamento na conversa",
+    descricao:
+      "Ligado, a atendente registra numa conversa o valor a cobrar e recebe um endereço de aviso, que ela cola como URL do Webhook ao criar o link de pagamento na InfinitePay. Quando o cliente paga, o aviso marca o recebimento como pago e leva o negócio para a etapa de ganho, se o valor bater com o registrado. Desligado, ninguém registra recebimento e os avisos são recusados; os recebimentos já registrados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: por enquanto o recebimento é registrado pela API, em /api/v1/conversations/[id]/pagamentos.",
+  },
 ];
 
 /**

@@ -1,96 +1,53 @@
 /**
- * REGISTRAR O LINK NA CONVERSA (issue #3509, degrau 1 — item 2).
+ * REGISTRAR O RECEBIMENTO NA CONVERSA (issue #3509, degrau 1 — item 2).
  *
  * ─── O que a atendente faz, e o que o código faz ────────────────────────────
  *
- * Ela cola o link no aplicativo do meio de pagamento, manda para o cliente pelo
- * Inbox (fluxo de envio de sempre) e clica em "registrar pagamento" na mensagem.
- * A partir daí o link é DADO: a conversa mostra valor e estado, e o aviso do
- * provedor sabe qual negócio mover.
+ * 1. Na conversa, ela registra o valor a cobrar. O CRM cria o recebimento
+ *    (`pendente`) e devolve o ENDEREÇO DE AVISO deste recebimento.
+ * 2. No aplicativo do meio de pagamento, ela cria o link e cola esse endereço
+ *    como "URL do Webhook". Manda o link ao cliente pelo Inbox, como sempre.
+ * 3. Quando o cliente paga, o provedor chama o endereço, e o recebimento vira
+ *    `paga` sem ninguém digitar nada (`lib/pagamentos/confirmar.ts`).
  *
- * Nada aqui envia mensagem, e isso não é limitação — é a cadeia anti-banimento
- * do produto: quem envia é uma pessoa, sempre. O registro é posterior ao envio
- * de propósito, e é o que permite a conferência abaixo existir.
+ * O registro vem ANTES do link porque é o único jeito de o aviso saber de qual
+ * recebimento fala: o id do pagamento que o provedor manda no aviso não existe
+ * quando o link é criado (medido na InfinitePay em 31/10 e 03/11/2026), e a URL
+ * configurada volta inteira em todo aviso.
  *
- * ─── As três guardas, e por que cada uma ────────────────────────────────────
+ * Nada aqui envia mensagem: quem envia é uma pessoa, sempre (cadeia
+ * anti-banimento do produto).
  *
- * 1. A MENSAGEM É DESTA CONVERSA E DESTA ORGANIZAÇÃO (`organization_id` +
- *    `conversation_id` no filtro): registrar por id alheio gravando no próprio
- *    tenant seria cross-tenant por id — o defeito que a 0036 fecha nas policies.
- * 2. O LINK ESTÁ NO CORPO DA MENSAGEM: sem isso o CRM guardaria um pagamento que
- *    ninguém mandou ao cliente, e o aviso de "pago" chegaria para um link que
- *    nunca saiu daqui.
- * 3. É OUTBOUND: link que o CLIENTE mandou não é cobrança nossa.
+ * ─── A guarda ───────────────────────────────────────────────────────────────
  *
- * ─── Idempotência ───────────────────────────────────────────────────────────
- *
- * Clicar duas vezes no botão (ou o retry da tela) não pode dar 409 nem duplicar:
- * se a mesma mensagem já tem aquele pagamento, o resultado é o mesmo registro,
- * com `reutilizado: true`. A chave é o índice único
- * `(organization_id, provedor, external_id)` da 9047 — o mesmo que faz o aviso
- * repetido do provedor não criar linha nova.
+ * A CONVERSA É DESTA ORGANIZAÇÃO (`organization_id` no filtro): registrar por id
+ * alheio gravando no próprio tenant seria cross-tenant por id.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 import { MOEDA_PADRAO } from "@/lib/money";
 
-import {
-  CHAVE_DO_METADADO,
-  idExternoAceitavel,
-  lerPagamentoDoMetadado,
-  linkAceitavel,
-  mensagemContemOLink,
-  metadadoDoPagamento,
-  type PagamentoNaMensagem,
-} from "./link";
-import {
-  TAMANHO_MAXIMO_DO_ID_EXTERNO,
-  VALOR_MAXIMO_CENTS,
-  type ProvedorDeRecebimento,
-  type SituacaoDoRecebimento,
-} from "./vocabulario";
+import { novoTokenDoAviso } from "./assinatura";
+import { VALOR_MAXIMO_CENTS, type ProvedorDeRecebimento, type SituacaoDoRecebimento } from "./vocabulario";
 
 export interface Recebimento {
   id: string;
   organization_id: string;
   conversation_id: string;
-  message_id: string | null;
   lead_id: string | null;
   provedor: string;
-  external_id: string;
+  external_id: string | null;
   valor_cents: number;
   moeda: string;
   status: SituacaoDoRecebimento;
   pago_em: string | null;
 }
 
-export interface EntradaDoRegistro {
-  organizationId: string;
-  conversationId: string;
-  messageId: string;
-  provedor: ProvedorDeRecebimento;
-  externalId: string;
-  valorCents: number;
-  moeda?: string;
-  link: string;
-}
-
-export type ResultadoDoRegistro =
-  | { ok: true; recebimento: Recebimento; pagamento: PagamentoNaMensagem; reutilizado: boolean }
-  | {
-      ok: false;
-      code: "validation_failed" | "not_found" | "state_conflict" | "internal_error";
-      message: string;
-      status: 400 | 404 | 409 | 422 | 500;
-      details?: unknown;
-    };
-
-const COLUNAS: string = [
+export const COLUNAS_DO_RECEBIMENTO: string = [
   "id",
   "organization_id",
   "conversation_id",
-  "message_id",
   "lead_id",
   "provedor",
   "external_id",
@@ -100,34 +57,30 @@ const COLUNAS: string = [
   "pago_em",
 ].join(", ");
 
-interface MensagemLida {
-  id: string;
-  conversation_id: string;
-  contact_id: string | null;
-  direction: string | null;
-  body: string | null;
-  metadata: Record<string, unknown> | null;
+export interface EntradaDoRegistro {
+  organizationId: string;
+  conversationId: string;
+  provedor: ProvedorDeRecebimento;
+  valorCents: number;
+  moeda?: string;
 }
 
-export async function registrarLinkDoPagamento(
+export type ResultadoDoRegistro =
+  /** `token` é o texto do segredo: vai na URL entregue AGORA e não é guardado. */
+  | { ok: true; recebimento: Recebimento; token: string }
+  | {
+      ok: false;
+      code: "validation_failed" | "not_found" | "internal_error";
+      message: string;
+      status: 404 | 422 | 500;
+      details?: unknown;
+    };
+
+export async function registrarRecebimento(
   admin: SupabaseClient,
   entrada: EntradaDoRegistro,
 ): Promise<ResultadoDoRegistro> {
-  const link = entrada.link.trim();
-  const idExterno = entrada.externalId.trim();
   const moeda = (entrada.moeda ?? MOEDA_PADRAO).toUpperCase();
-
-  if (!linkAceitavel(link)) {
-    return recusa("validation_failed", 422, "O link precisa ser um endereço https válido.", {
-      campo: "link",
-    });
-  }
-  if (!idExternoAceitavel(idExterno)) {
-    return recusa("validation_failed", 422, "O identificador do pagamento no provedor é inválido.", {
-      campo: "id_externo",
-      limite: TAMANHO_MAXIMO_DO_ID_EXTERNO,
-    });
-  }
   if (!Number.isInteger(entrada.valorCents) || entrada.valorCents <= 0 || entrada.valorCents > VALOR_MAXIMO_CENTS) {
     return recusa("validation_failed", 422, "O valor precisa ser maior que zero e caber no teto.", {
       campo: "valor_cents",
@@ -135,139 +88,51 @@ export async function registrarLinkDoPagamento(
     });
   }
 
-  // ── 1. A mensagem, no escopo certo ────────────────────────────────────────
-  const { data: mensagemBruta, error: erroDaMensagem } = await admin
-    .from("messages")
-    .select("id, conversation_id, contact_id, direction, body, metadata")
+  const { data: conversaBruta, error: erroDaConversa } = await admin
+    .from("conversations")
+    .select("id, contact_id")
     .eq("organization_id", entrada.organizationId)
-    .eq("conversation_id", entrada.conversationId)
-    .eq("id", entrada.messageId)
+    .eq("id", entrada.conversationId)
     .maybeSingle();
-  if (erroDaMensagem) {
-    logger.error("[pagamentos.registrar] mensagem ilegível", {
+  if (erroDaConversa) {
+    logger.error("[pagamentos.registrar] conversa ilegível", {
       organization_id: entrada.organizationId,
-      conversation_id: entrada.conversationId,
-      codigo: erroDaMensagem.code ?? null,
+      codigo: erroDaConversa.code ?? null,
     });
-    return recusa("internal_error", 500, "Não foi possível ler a mensagem.");
+    return recusa("internal_error", 500, "Não foi possível ler a conversa.");
   }
-  const mensagem = mensagemBruta as MensagemLida | null;
-  if (!mensagem) {
-    return recusa("not_found", 404, "Mensagem não encontrada nesta conversa.");
-  }
-  if (mensagem.direction !== "outbound") {
-    return recusa("validation_failed", 422, "Só um link ENVIADO por nós pode ser registrado.", {
-      campo: "mensagem_id",
-    });
-  }
-  if (!mensagemContemOLink(mensagem.body, link)) {
-    return recusa("validation_failed", 422, "O link não está no corpo desta mensagem.", {
-      campo: "link",
-    });
-  }
+  const conversa = conversaBruta as { id: string; contact_id: string | null } | null;
+  if (!conversa) return recusa("not_found", 404, "Conversa não encontrada.");
 
   // O negócio aberto do CONTATO é o candidato a ser movido quando o pagamento
   // confirmar. Nenhum ou mais de um: `lead_id` fica nulo — escolher sozinho entre
-  // dois negócios do mesmo contato é adivinhação (`lib/inbox/
-  // negocio-aberto-do-contato.ts` diz o mesmo, e pelo mesmo motivo).
-  const leadId = await negocioAbertoUnico(admin, entrada.organizationId, mensagem.contact_id);
+  // dois negócios do mesmo contato é adivinhação.
+  const leadId = await negocioAbertoUnico(admin, entrada.organizationId, conversa.contact_id);
 
-  // ── 2. O registro: a verdade ──────────────────────────────────────────────
-  const jaNaMensagem = lerPagamentoDoMetadado(mensagem.metadata);
-  if (jaNaMensagem && jaNaMensagem.id === idExterno && jaNaMensagem.provedor === entrada.provedor) {
-    const existente = await lerRecebimento(admin, entrada.organizationId, mensagem.id);
-    if (existente) {
-      return { ok: true, recebimento: existente, pagamento: jaNaMensagem, reutilizado: true };
-    }
-  }
-
+  const { token, hash } = novoTokenDoAviso();
   const { data: inserido, error: erroDoInsert } = await admin
     .from("pagamento_recebimentos")
     .insert({
       organization_id: entrada.organizationId,
-      conversation_id: entrada.conversationId,
-      message_id: mensagem.id,
+      conversation_id: conversa.id,
       lead_id: leadId,
       provedor: entrada.provedor,
-      external_id: idExterno,
+      aviso_token_hash: hash,
       valor_cents: entrada.valorCents,
       moeda,
       status: "pendente",
     })
-    .select(COLUNAS)
+    .select(COLUNAS_DO_RECEBIMENTO)
     .single();
-
-  let recebimento = inserido as Recebimento | null;
-  let reutilizado = false;
-
-  if (erroDoInsert || !recebimento) {
-    if (erroDoInsert?.code !== "23505") {
-      logger.error("[pagamentos.registrar] recebimento não gravado", {
-        organization_id: entrada.organizationId,
-        provedor: entrada.provedor,
-        codigo: erroDoInsert?.code ?? null,
-      });
-      return recusa("internal_error", 500, "Não foi possível registrar o pagamento.");
-    }
-    // 23505 = o índice único. Duas causas, e elas NÃO são a mesma coisa:
-    const existente = await lerPorChaveExterna(admin, entrada.organizationId, entrada.provedor, idExterno);
-    if (!existente) return recusa("internal_error", 500, "Não foi possível registrar o pagamento.");
-    if (existente.message_id && existente.message_id !== mensagem.id) {
-      return recusa("state_conflict", 409, "Este pagamento já foi registrado em outra mensagem.", {
-        recebimento_id: existente.id,
-        conversation_id: existente.conversation_id,
-      });
-    }
-    recebimento = existente;
-    reutilizado = true;
-  }
-
-  // ── 3. O ponteiro na mensagem: o que a conversa mostra ────────────────────
-  const pagamento = metadadoDoPagamento({
-    provedor: recebimento.provedor,
-    id: recebimento.external_id,
-    valor: recebimento.valor_cents,
-    moeda: recebimento.moeda,
-    status: recebimento.status,
-    recebimento_id: recebimento.id,
-  });
-  const patch = await gravarMetadado(admin, entrada.organizationId, mensagem, pagamento);
-  if (!patch.ok) {
-    // O registro existe; o ponteiro não. Recusa ALTA para a tela poder repetir —
-    // e o retry cai no caminho `reutilizado` acima, que regrava o ponteiro.
-    return recusa("internal_error", 500, "Pagamento registrado, mas a conversa não foi atualizada. Repita.");
-  }
-
-  return { ok: true, recebimento, pagamento, reutilizado };
-}
-
-/**
- * Grava `metadata.pagamento` preservando o resto do metadata.
- *
- * `metadata` é do cliente (o envio aceita metadata livre): sobrescrever o objeto
- * inteiro apagaria `queued_reason`, `sent_on_behalf`, `media` etc. — o balão
- * perderia o que já sabia para ganhar o que acabou de saber.
- */
-async function gravarMetadado(
-  admin: SupabaseClient,
-  organizationId: string,
-  mensagem: MensagemLida,
-  pagamento: PagamentoNaMensagem,
-): Promise<{ ok: boolean }> {
-  const metadata = { ...(mensagem.metadata ?? {}), [CHAVE_DO_METADADO]: pagamento };
-  const { error } = await admin
-    .from("messages")
-    .update({ metadata })
-    .eq("organization_id", organizationId)
-    .eq("id", mensagem.id);
-  if (error) {
-    logger.error("[pagamentos.registrar] metadata da mensagem não gravado", {
-      organization_id: organizationId,
-      codigo: error.code ?? null,
+  if (erroDoInsert || !inserido) {
+    logger.error("[pagamentos.registrar] recebimento não gravado", {
+      organization_id: entrada.organizationId,
+      provedor: entrada.provedor,
+      codigo: erroDoInsert?.code ?? null,
     });
-    return { ok: false };
+    return recusa("internal_error", 500, "Não foi possível registrar o pagamento.");
   }
-  return { ok: true };
+  return { ok: true, recebimento: inserido as unknown as Recebimento, token };
 }
 
 async function negocioAbertoUnico(
@@ -296,40 +161,9 @@ async function negocioAbertoUnico(
   return ids.length === 1 ? ids[0]!.id : null;
 }
 
-async function lerRecebimento(
-  admin: SupabaseClient,
-  organizationId: string,
-  messageId: string,
-): Promise<Recebimento | null> {
-  const { data } = await admin
-    .from("pagamento_recebimentos")
-    .select(COLUNAS)
-    .eq("organization_id", organizationId)
-    .eq("message_id", messageId)
-    .limit(1)
-    .maybeSingle();
-  return (data as Recebimento | null) ?? null;
-}
-
-async function lerPorChaveExterna(
-  admin: SupabaseClient,
-  organizationId: string,
-  provedor: string,
-  externalId: string,
-): Promise<Recebimento | null> {
-  const { data } = await admin
-    .from("pagamento_recebimentos")
-    .select(COLUNAS)
-    .eq("organization_id", organizationId)
-    .eq("provedor", provedor)
-    .eq("external_id", externalId)
-    .maybeSingle();
-  return (data as Recebimento | null) ?? null;
-}
-
 function recusa(
-  code: "validation_failed" | "not_found" | "state_conflict" | "internal_error",
-  status: 400 | 404 | 409 | 422 | 500,
+  code: "validation_failed" | "not_found" | "internal_error",
+  status: 404 | 422 | 500,
   message: string,
   details?: unknown,
 ): ResultadoDoRegistro {

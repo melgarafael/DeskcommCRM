@@ -28,9 +28,9 @@ export function ehProvedorDeRecebimento(bruto: string): bruto is ProvedorDeReceb
 
 /**
  * O estado do recebimento — o MESMO vocabulário do CHECK da tabela (migration
- * 9047). Duas listas existem porque o banco precisa recusar sozinho (um `psql`
+ * 9312). Duas listas existem porque o banco precisa recusar sozinho (um `psql`
  * na mão não passa por este arquivo); o par é medido em
- * `lib/pagamentos/vocabulario.test.ts`.
+ * `tests/invariants/vocabulario-banco-x-typescript.test.ts`.
  */
 export const SITUACOES_DO_RECEBIMENTO = [
   "pendente",
@@ -59,14 +59,6 @@ export const EVENTOS_QUE_ENCERRAM = ["refunded", "canceled", "cancelled", "expir
 export const LIMITE_DO_CORPO = 1_048_576;
 
 /**
- * A janela do carimbo de tempo na assinatura HMAC, em segundos. É a mesma
- * pergunta da Stripe (`TOLERANCIA_DO_WEBHOOK_S`): sem janela, uma assinatura
- * capturada vale para sempre, e o aviso de pagamento é justamente o que não pode
- * ser reentregue fora de hora.
- */
-export const TOLERANCIA_DO_AVISO_S = 300;
-
-/**
  * Teto do valor. Não é regra de negócio: é o limite em que um `valor` absurdo
  * (dígito a mais, centavos em unidade errada) para de ser possível sem alguém
  * perceber. R$ 1.000.000,00.
@@ -75,6 +67,3 @@ export const VALOR_MAXIMO_CENTS = 100_000_000;
 
 /** O id do pagamento no provedor cabe em 128 caracteres em qualquer formato que já vimos. */
 export const TAMANHO_MAXIMO_DO_ID_EXTERNO = 128;
-
-/** O teto do link: URL de checkout é curta; 2048 é o teto prático de navegador. */
-export const TAMANHO_MAXIMO_DO_LINK = 2048;

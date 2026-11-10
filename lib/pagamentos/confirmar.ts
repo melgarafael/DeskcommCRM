@@ -3,8 +3,9 @@
  *
  * ─── Quem decide que pagou ──────────────────────────────────────────────────
  *
- * O aviso do provedor, depois de a assinatura conferir (a conferência é da
- * rota, `lib/pagamentos/assinatura.ts`). Aqui é o EFEITO, e ele tem de ser
+ * O aviso do provedor, depois de o segredo DESTE recebimento conferir (a
+ * conferência é da rota, `lib/pagamentos/assinatura.ts`) e de o valor do aviso
+ * bater com o registrado (aqui). Aqui é o EFEITO, e ele tem de ser
  * exatamente-uma-vez: o provedor reentrega, o usuário recarrega o painel dele, o
  * retry da fila acontece — e nada disso pode mover o negócio de novo nem
  * escrever uma segunda linha de "pagamento recebido" na timeline.
@@ -13,10 +14,10 @@
  *
  * `update ... where id = ? and status = 'pendente'`. Chegar primeiro = 1 linha
  * atualizada = efeito. Chegar depois = 0 linhas = NADA acontece (nem timeline,
- * nem etapa, nem metadata). Um `select` seguido de `update` seria check-then-act
+ * nem etapa). Um `select` seguido de `update` seria check-then-act
  * e duas entregas SIMULTÂNEAS passariam as duas pela janela — o mesmo defeito
- * que a 0027 matou nos contatos. O índice único da 9047 cobre o outro lado
- * (reentrega que tenta CRIAR outra linha).
+ * que a 0027 matou nos contatos. O índice único da 9312 cobre o outro lado:
+ * o MESMO pagamento do provedor não confirma dois recebimentos.
  *
  * ─── Por que a etapa de destino é `is_won` ──────────────────────────────────
  *
@@ -40,9 +41,9 @@ import { ApiError } from "@/lib/api/types";
 import { logger } from "@/lib/logger";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { encerraDemanda } from "@/lib/leads/encerramento";
+import { formatCents } from "@/lib/money";
 
-import { CHAVE_DO_METADADO, lerPagamentoDoMetadado, metadadoDoPagamento, valorEmTexto } from "./link";
-import type { Recebimento } from "./registrar";
+import { COLUNAS_DO_RECEBIMENTO, type Recebimento } from "./registrar";
 import type { SituacaoDoRecebimento } from "./vocabulario";
 
 export type MotivoDoNaoMovimento =
@@ -63,87 +64,84 @@ export type ResultadoDaConfirmacao =
   | { ok: true; efeito: "pago"; recebimento: Recebimento; movido: VereditoDoMovimento }
   /** Já estava resolvido (ou outra entrega do mesmo evento chegou primeiro): NADA mudou. */
   | { ok: true; efeito: "duplicado"; status: SituacaoDoRecebimento }
-  /** Id que não é nosso: não é erro do provedor, e a conciliação futura cura. */
-  | { ok: true; efeito: "desconhecido" }
+  /** O valor do aviso não é o registrado: NADA muda, e o humano confere. */
+  | { ok: true; efeito: "valor_divergente" }
+  /** Este pagamento do provedor já confirmou OUTRO recebimento da empresa: NADA muda. */
+  | { ok: true; efeito: "id_ja_usado" }
   | { ok: false; code: "internal_error"; message: string; status: 500 };
 
-const COLUNAS: string = [
-  "id",
-  "organization_id",
-  "conversation_id",
-  "message_id",
-  "lead_id",
-  "provedor",
-  "external_id",
-  "valor_cents",
-  "moeda",
-  "status",
-  "pago_em",
-].join(", ");
+export type RecebimentoDoAviso = Recebimento & { aviso_token_hash: string };
+
+/**
+ * A linha que o aviso diz ser dele — pelo id que veio NA URL, nunca por um dado
+ * que outra empresa consiga escrever. `null` é "não existe", e a rota responde
+ * igual a segredo errado (não confirma existência).
+ */
+export async function lerRecebimentoDoAviso(
+  admin: SupabaseClient,
+  provedor: string,
+  recebimentoId: string,
+): Promise<{ ok: true; recebimento: RecebimentoDoAviso | null } | { ok: false }> {
+  const { data, error } = await admin
+    .from("pagamento_recebimentos")
+    .select(`${COLUNAS_DO_RECEBIMENTO}, aviso_token_hash`)
+    .eq("id", recebimentoId)
+    .eq("provedor", provedor)
+    .maybeSingle();
+  if (error) {
+    logger.error("[pagamentos.confirmar] recebimento ilegível", { provedor, codigo: error.code ?? null });
+    return { ok: false };
+  }
+  return { ok: true, recebimento: (data as unknown as RecebimentoDoAviso | null) ?? null };
+}
 
 export async function confirmarPagamento(
   admin: SupabaseClient,
-  entrada: { provedor: string; externalId: string; quando: Date },
+  entrada: {
+    recebimento: Recebimento;
+    /** O id do pagamento NO PROVEDOR (o `invoice_slug` da InfinitePay). */
+    idNoProvedor: string;
+    /** O valor que o aviso diz, em centavos; `null` quando o aviso não traz. */
+    valorAvisadoCents: number | null;
+    quando: Date;
+  },
 ): Promise<ResultadoDaConfirmacao> {
-  // ⚠️ O aviso chega SEM organização (não há sessão num webhook), então a busca
-  // é por (provedor, id externo) e o índice único da 9047 é por organização —
-  // duas organizações da MESMA instalação poderiam, em tese, ter o mesmo id
-  // externo se apontassem para a mesma conta do provedor. Ambiguidade aqui não
-  // se resolve escolhendo: duas linhas com o mesmo id é conta compartilhada
-  // entre empresas, e quem decide isso é gente. Recusa ALTA (500) para o
-  // provedor reentregar depois de alguém olhar — nunca marcar a linha errada.
-  const { data: achados, error: erroDaBusca } = await admin
-    .from("pagamento_recebimentos")
-    .select(COLUNAS)
-    .eq("provedor", entrada.provedor)
-    .eq("external_id", entrada.externalId)
-    .limit(2);
-  if (erroDaBusca) {
-    logger.error("[pagamentos.confirmar] recebimento ilegível", {
-      provedor: entrada.provedor,
-      codigo: erroDaBusca.code ?? null,
-    });
-    return { ok: false, code: "internal_error", message: "Não foi possível ler o recebimento.", status: 500 };
-  }
-  // O `select` tipado do supabase-js devolve união com erro de string; o cast
-  // passa por `unknown` para o compilador não fingir que a forma é garantida.
-  const linhas = (achados ?? []) as unknown as Recebimento[];
-  if (linhas.length === 0) return { ok: true, efeito: "desconhecido" };
-  if (linhas.length > 1) {
-    logger.error("[pagamentos.confirmar] id externo ambíguo entre organizações", {
-      provedor: entrada.provedor,
-      ocorrencias: linhas.length,
-    });
-    return {
-      ok: false,
-      code: "internal_error",
-      message: "Este identificador de pagamento existe em mais de uma empresa.",
-      status: 500,
-    };
-  }
-  return confirmarUm(admin, linhas[0]!, entrada.quando);
-}
-
-async function confirmarUm(
-  admin: SupabaseClient,
-  recebimento: Recebimento,
-  quando: Date,
-): Promise<ResultadoDaConfirmacao> {
+  const { recebimento, quando } = entrada;
   // Já resolvido antes desta entrega: sai sem escrever NADA. Esta leitura é
   // atalho; a garantia é o compare-and-set abaixo.
   if (recebimento.status !== "pendente") {
     return { ok: true, efeito: "duplicado", status: recebimento.status };
   }
 
+  // O valor é a única conferência de CONTEÚDO que um aviso sem assinatura deixa
+  // fazer: quem tiver a URL não consegue, além do segredo, acertar o valor
+  // errado. Aviso sem valor não prova nada e não marca.
+  if (entrada.valorAvisadoCents !== recebimento.valor_cents) {
+    logger.warn("[pagamentos.confirmar] valor do aviso diverge do registrado; nada marcado", {
+      organization_id: recebimento.organization_id,
+      recebimento_id: recebimento.id,
+      com_valor: entrada.valorAvisadoCents !== null,
+    });
+    return { ok: true, efeito: "valor_divergente" };
+  }
+
   // ── O compare-and-set ─────────────────────────────────────────────────────
+  const pagoEm = quando.toISOString();
   const { data: atualizadas, error: erroDoUpdate } = await admin
     .from("pagamento_recebimentos")
-    .update({ status: "paga", pago_em: quando.toISOString() })
+    .update({ status: "paga", pago_em: pagoEm, external_id: entrada.idNoProvedor })
     .eq("id", recebimento.id)
     .eq("organization_id", recebimento.organization_id)
     .eq("status", "pendente")
     .select("id");
   if (erroDoUpdate) {
+    if (erroDoUpdate.code === "23505") {
+      logger.warn("[pagamentos.confirmar] pagamento do provedor já confirmou outro recebimento", {
+        organization_id: recebimento.organization_id,
+        recebimento_id: recebimento.id,
+      });
+      return { ok: true, efeito: "id_ja_usado" };
+    }
     logger.error("[pagamentos.confirmar] pagamento não marcado", {
       organization_id: recebimento.organization_id,
       provedor: recebimento.provedor,
@@ -157,50 +155,11 @@ async function confirmarUm(
     return { ok: true, efeito: "duplicado", status: "paga" };
   }
 
-  const pago: Recebimento = { ...recebimento, status: "paga", pago_em: quando.toISOString() };
-
-  // O ponteiro da conversa acompanha. Falhar aqui NÃO desfaz o pagamento: a
-  // verdade já está gravada, e o balão que ficar "pendente" é consertado pela
-  // próxima leitura da tela (o metadado é cópia, não fonte).
-  await atualizarMetadadoDaMensagem(admin, pago);
-
+  const pago: Recebimento = { ...recebimento, status: "paga", pago_em: pagoEm, external_id: entrada.idNoProvedor };
   const movido = await moverParaGanho(admin, pago);
   await registrarNaTimeline(admin, pago, movido);
 
   return { ok: true, efeito: "pago", recebimento: pago, movido };
-}
-
-async function atualizarMetadadoDaMensagem(admin: SupabaseClient, recebimento: Recebimento): Promise<void> {
-  if (!recebimento.message_id) return;
-  const { data, error } = await admin
-    .from("messages")
-    .select("id, metadata")
-    .eq("organization_id", recebimento.organization_id)
-    .eq("id", recebimento.message_id)
-    .maybeSingle();
-  if (error || !data) return;
-  const linha = data as { id: string; metadata: Record<string, unknown> | null };
-  const atual = lerPagamentoDoMetadado(linha.metadata);
-  // Só reescreve se o ponteiro é DESTE recebimento: metadado trocado à mão não
-  // vira pagamento pago por engano.
-  if (!atual || atual.recebimento_id !== recebimento.id) return;
-  await admin
-    .from("messages")
-    .update({
-      metadata: {
-        ...(linha.metadata ?? {}),
-        [CHAVE_DO_METADADO]: metadadoDoPagamento({
-          provedor: recebimento.provedor,
-          id: recebimento.external_id,
-          valor: recebimento.valor_cents,
-          moeda: recebimento.moeda,
-          status: "paga",
-          recebimento_id: recebimento.id,
-        }),
-      },
-    })
-    .eq("organization_id", recebimento.organization_id)
-    .eq("id", linha.id);
 }
 
 /**
@@ -279,7 +238,7 @@ async function registrarNaTimeline(
   movido: VereditoDoMovimento,
 ): Promise<void> {
   if (!recebimento.lead_id) return;
-  const valor = valorEmTexto(recebimento.valor_cents, recebimento.moeda);
+  const valor = formatCents(recebimento.valor_cents, recebimento.moeda);
   const sufixo = movido.moveu
     ? " · negócio marcado como ganho"
     : movido.motivo === "campos_obrigatorios" && movido.detalhe

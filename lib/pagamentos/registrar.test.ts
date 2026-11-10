@@ -13,33 +13,22 @@ import {
 const h = vi.hoisted(() => ({ erro: vi.fn(), aviso: vi.fn() }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: h.aviso, error: h.erro, info: vi.fn() } }));
 
-import { registrarLinkDoPagamento, type Recebimento } from "./registrar";
+import { hashDoToken } from "./assinatura";
+import { registrarRecebimento, type Recebimento } from "./registrar";
 
 const ORG = "cccccccc-0000-4000-8000-000000000001";
 const CONV = "cccccccc-0000-4000-8000-000000000002";
-const MSG = "cccccccc-0000-4000-8000-000000000003";
 const LEAD = "cccccccc-0000-4000-8000-000000000004";
 const REC = "cccccccc-0000-4000-8000-000000000005";
 const CONTATO = "cccccccc-0000-4000-8000-000000000006";
-const LINK = "https://pay.infinitepay.io/abc123";
-
-interface MensagemFalsa {
-  id: string;
-  conversation_id: string;
-  contact_id: string | null;
-  direction: string | null;
-  body: string | null;
-  metadata: Record<string, unknown> | null;
-}
 
 const recebimento = (over: Partial<Recebimento> = {}): Recebimento => ({
   id: REC,
   organization_id: ORG,
   conversation_id: CONV,
-  message_id: MSG,
   lead_id: LEAD,
   provedor: "infinitepay",
-  external_id: "pay_123",
+  external_id: null,
   valor_cents: 15000,
   moeda: "BRL",
   status: "pendente",
@@ -48,205 +37,89 @@ const recebimento = (over: Partial<Recebimento> = {}): Recebimento => ({
 });
 
 interface Mundo {
-  mensagem: MensagemFalsa | null;
+  conversa: { id: string; contact_id: string | null } | null;
   leads: Array<{ id: string }>;
   insert: Resposta;
-  existente: Recebimento | null;
-  patch: Resposta;
 }
 
 let m: Mundo;
 let banco: BancoFalso;
 
 function responder(c: Cadeia): Resposta {
-  if (c.tabela === "messages") {
-    const op = operacao(c);
-    if (op === "update") return m.patch;
-    return { data: m.mensagem };
-  }
+  if (c.tabela === "conversations") return { data: m.conversa };
   if (c.tabela === "crm_leads") return { data: m.leads };
-  if (c.tabela === "pagamento_recebimentos") {
-    const op = operacao(c);
-    if (op === "insert") return m.insert;
-    // A releitura tanto por message_id (idempotência do botão) quanto por
-    // (provedor, id externo) (o 23505 do índice único) cai aqui.
-    return { data: m.existente };
-  }
+  if (c.tabela === "pagamento_recebimentos") return m.insert;
   return {};
 }
 
 const pedido = (over: Record<string, unknown> = {}) => ({
   organizationId: ORG,
   conversationId: CONV,
-  messageId: MSG,
   provedor: "infinitepay" as const,
-  externalId: "pay_123",
   valorCents: 15000,
-  link: LINK,
   ...over,
 });
 
-const cadeia = (tabela: string, op: string) =>
-  banco.cadeias.filter((c) => c.tabela === tabela && operacao(c) === op);
+const inserido = () =>
+  argumentos(banco.cadeias.find((c) => c.tabela === "pagamento_recebimentos")!, "insert")?.[0] as Record<string, unknown>;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  m = {
-    mensagem: {
-      id: MSG,
-      conversation_id: CONV,
-      contact_id: CONTATO,
-      direction: "outbound",
-      body: `segue o link: ${LINK}`,
-      metadata: { queued_reason: "canal fora" },
-    },
-    leads: [{ id: LEAD }],
-    insert: { data: recebimento() },
-    existente: null,
-    patch: { data: null },
-  };
+  m = { conversa: { id: CONV, contact_id: CONTATO }, leads: [{ id: LEAD }], insert: { data: recebimento() } };
   banco = bancoFalso(responder);
 });
 
-describe("registrar o link na conversa", () => {
-  it("⭐ caminho feliz: grava o recebimento pendente e o ponteiro na mensagem, preservando o metadata", async () => {
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    expect(r.ok).toBe(true);
+describe("registrar o recebimento na conversa", () => {
+  it("⭐ cria o recebimento pendente, ligado ao negócio aberto do contato, e devolve o segredo da URL", async () => {
+    const r = await registrarRecebimento(banco.cliente as never, pedido());
+    expect(r).toMatchObject({ ok: true, recebimento: { id: REC, status: "pendente" } });
     if (!r.ok) return;
-    expect(r.reutilizado).toBe(false);
-    expect(r.recebimento.id).toBe(REC);
-
-    const gravado = argumentos(cadeia("pagamento_recebimentos", "insert")[0]!, "insert")?.[0];
-    expect(gravado).toEqual({
-      organization_id: ORG,
-      conversation_id: CONV,
-      message_id: MSG,
-      lead_id: LEAD,
-      provedor: "infinitepay",
-      external_id: "pay_123",
-      valor_cents: 15000,
-      moeda: "BRL",
-      status: "pendente",
-    });
-
-    // O ponteiro: o metadata ANTERIOR sobrevive — o balão não perde o que sabia.
-    const patch = argumentos(cadeia("messages", "update")[0]!, "update")?.[0] as {
-      metadata: Record<string, unknown>;
-    };
-    expect(patch.metadata.queued_reason).toBe("canal fora");
-    expect(patch.metadata.pagamento).toEqual({
-      provedor: "infinitepay",
-      id: "pay_123",
-      valor: 15000,
-      moeda: "BRL",
-      status: "pendente",
-      recebimento_id: REC,
-    });
+    const linha = inserido();
+    expect(linha).toMatchObject({ organization_id: ORG, conversation_id: CONV, lead_id: LEAD, status: "pendente" });
+    // Só o HASH vai para o banco, e é o hash DO segredo devolvido.
+    expect(linha.aviso_token_hash).toBe(hashDoToken(r.token));
+    expect(JSON.stringify(linha)).not.toContain(r.token);
   });
 
-  it("⭐ mensagem de outra conversa/organização: 404 e NADA é gravado", async () => {
-    m.mensagem = null;
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    expect(r).toMatchObject({ ok: false, code: "not_found", status: 404 });
-    expect(banco.cadeias.filter((c) => c.tabela === "pagamento_recebimentos")).toEqual([]);
-    expect(cadeia("messages", "update")).toEqual([]);
+  it("⭐ cada registro tem o SEU segredo: dois registros, dois hashes diferentes", async () => {
+    const a = await registrarRecebimento(banco.cliente as never, pedido());
+    const b = await registrarRecebimento(banco.cliente as never, pedido());
+    expect(a.ok && b.ok && a.token !== b.token).toBe(true);
   });
 
-  it("o filtro da mensagem carrega organização E conversa (não é busca por id solto)", async () => {
-    await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    const select = banco.cadeias.find((c) => c.tabela === "messages")!;
-    expect(valorDoFiltro(select, "eq", "organization_id")).toBe(ORG);
-    expect(valorDoFiltro(select, "eq", "conversation_id")).toBe(CONV);
-    expect(valorDoFiltro(select, "eq", "id")).toBe(MSG);
-  });
-
-  it("⭐ link que não está no corpo da mensagem: 422 e nada gravado", async () => {
-    m.mensagem!.body = "outro link: https://pay.infinitepay.io/outro";
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    expect(r).toMatchObject({ ok: false, code: "validation_failed", status: 422 });
+  it("⭐ conversa de OUTRA organização: 404, e nada é gravado", async () => {
+    m.conversa = null;
+    const r = await registrarRecebimento(banco.cliente as never, pedido());
+    expect(r).toMatchObject({ ok: false, status: 404 });
+    const leitura = banco.cadeias.find((c) => c.tabela === "conversations")!;
+    expect(valorDoFiltro(leitura, "eq", "organization_id")).toBe(ORG);
     expect(banco.cadeias.filter((c) => c.tabela === "pagamento_recebimentos")).toEqual([]);
   });
 
-  it("⭐ mensagem que o CLIENTE mandou: 422 (link recebido não é cobrança nossa)", async () => {
-    m.mensagem!.direction = "inbound";
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
+  it("contato com dois negócios abertos: não adivinha, `lead_id` fica nulo", async () => {
+    m.leads = [{ id: LEAD }, { id: "cccccccc-0000-4000-8000-0000000000ff" }];
+    await registrarRecebimento(banco.cliente as never, pedido());
+    expect(inserido().lead_id).toBeNull();
+  });
+
+  it("conversa sem contato: registra sem negócio", async () => {
+    m.conversa = { id: CONV, contact_id: null };
+    await registrarRecebimento(banco.cliente as never, pedido());
+    expect(inserido().lead_id).toBeNull();
+    expect(banco.cadeias.filter((c) => c.tabela === "crm_leads")).toEqual([]);
+  });
+
+  it.each([0, -1, 1.5, 100_000_001])("valor %s: 422 sem tocar no banco", async (valorCents) => {
+    const r = await registrarRecebimento(banco.cliente as never, pedido({ valorCents }));
     expect(r).toMatchObject({ ok: false, status: 422 });
-  });
-
-  it("valor zero/negativo, link http e id com espaço são recusados ANTES de tocar o banco", async () => {
-    for (const ruim of [
-      pedido({ valorCents: 0 }),
-      pedido({ valorCents: -100 }),
-      pedido({ valorCents: 1.5 }),
-      pedido({ link: "http://pay.infinitepay.io/abc123" }),
-      pedido({ externalId: "com espaco" }),
-    ]) {
-      const r = await registrarLinkDoPagamento(banco.cliente as never, ruim);
-      expect(r).toMatchObject({ ok: false, status: 422 });
-    }
     expect(banco.cadeias).toEqual([]);
   });
 
-  it("sem negócio aberto único, o recebimento nasce com lead_id nulo (o pagamento continua válido)", async () => {
-    m.leads = [];
-    await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    const gravado = argumentos(cadeia("pagamento_recebimentos", "insert")[0]!, "insert")?.[0] as {
-      lead_id: string | null;
-    };
-    expect(gravado.lead_id).toBeNull();
-  });
-
-  it("DOIS negócios abertos do contato: não escolhe nenhum (lead_id nulo)", async () => {
-    m.leads = [{ id: LEAD }, { id: "cccccccc-0000-4000-8000-0000000000ff" }];
-    await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    const gravado = argumentos(cadeia("pagamento_recebimentos", "insert")[0]!, "insert")?.[0] as {
-      lead_id: string | null;
-    };
-    expect(gravado.lead_id).toBeNull();
-  });
-
-  it("⭐ repetir o clique: mesmo pagamento na mesma mensagem é REUTILIZADO, sem gravar de novo", async () => {
-    m.mensagem!.metadata = {
-      pagamento: {
-        provedor: "infinitepay",
-        id: "pay_123",
-        valor: 15000,
-        moeda: "BRL",
-        status: "pendente",
-        recebimento_id: REC,
-      },
-    };
-    m.existente = recebimento();
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    expect(r).toMatchObject({ ok: true, reutilizado: true });
-    expect(cadeia("pagamento_recebimentos", "insert")).toEqual([]);
-  });
-
-  it("⭐ 23505 com a MESMA mensagem: reutiliza (o retry da tela não vira erro)", async () => {
-    m.insert = { error: { code: "23505", message: "duplicate key" } };
-    m.existente = recebimento();
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    expect(r).toMatchObject({ ok: true, reutilizado: true });
-  });
-
-  it("⭐ 23505 com OUTRA mensagem: 409 — o mesmo pagamento não vive em duas conversas", async () => {
-    m.insert = { error: { code: "23505", message: "duplicate key" } };
-    m.existente = recebimento({ message_id: "cccccccc-0000-4000-8000-0000000000aa" });
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    expect(r).toMatchObject({ ok: false, code: "state_conflict", status: 409 });
-  });
-
-  it("falha de escrita do recebimento que não é 23505: 500 e o ponteiro NÃO é escrito", async () => {
-    m.insert = { error: { code: "23503", message: "fk" } };
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    expect(r).toMatchObject({ ok: false, code: "internal_error", status: 500 });
-    expect(cadeia("messages", "update")).toEqual([]);
+  it("falha ao gravar: 500, e o erro é logado sem o segredo", async () => {
+    m.insert = { error: { code: "42501", message: "rls" } };
+    const r = await registrarRecebimento(banco.cliente as never, pedido());
+    expect(r).toMatchObject({ ok: false, status: 500 });
     expect(h.erro).toHaveBeenCalled();
-  });
-
-  it("metadata não gravado: 500 (a tela repete, e o retry cai no caminho reutilizado)", async () => {
-    m.patch = { error: { code: "42501", message: "rls" } };
-    const r = await registrarLinkDoPagamento(banco.cliente as never, pedido());
-    expect(r).toMatchObject({ ok: false, code: "internal_error", status: 500 });
+    expect(operacao(banco.cadeias.find((c) => c.tabela === "pagamento_recebimentos")!)).toBe("insert");
   });
 });

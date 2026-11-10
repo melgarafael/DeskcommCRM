@@ -175,6 +175,11 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Reservas de lugar",
     oQueFaz: "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.",
   },
+  link_de_pagamento: {
+    nome: "Link de pagamento na conversa",
+    oQueFaz:
+      "A atendente registra na conversa o valor a cobrar e recebe um endereço para colar no link de pagamento; quando o cliente paga, o provedor avisa e o negócio vai para ganho.",
+  },
 };
 
 /**

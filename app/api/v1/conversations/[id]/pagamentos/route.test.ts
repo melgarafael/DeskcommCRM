@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   autorizado: true,
+  ligado: true,
+  base: "https://crm.exemplo.com.br",
   chamadas: [] as unknown[],
   resultado: {} as unknown,
-  aviso: vi.fn(),
   auditorias: [] as Array<Record<string, unknown>>,
 }));
 
@@ -20,15 +21,23 @@ vi.mock("@/lib/auth/require-role", () => ({
       : { ok: false, response: new Response("{}", { status: 403 }) },
 }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.ligado }));
+vi.mock("@/lib/env", () => ({
+  env: {
+    get NEXT_PUBLIC_APP_URL() {
+      return h.base;
+    },
+  },
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
-vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: h.aviso } }));
+vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/lib/audit", () => ({
   audit: async (entrada: Record<string, unknown>) => {
     h.auditorias.push(entrada);
   },
 }));
 vi.mock("@/lib/pagamentos/registrar", () => ({
-  registrarLinkDoPagamento: async (_admin: unknown, entrada: unknown) => {
+  registrarRecebimento: async (_admin: unknown, entrada: unknown) => {
     h.chamadas.push(entrada);
     return h.resultado;
   },
@@ -36,132 +45,109 @@ vi.mock("@/lib/pagamentos/registrar", () => ({
 
 import { POST } from "./route";
 
+const ORG = "cccccccc-0000-4000-8000-000000000001";
 const CONV = "cccccccc-0000-4000-8000-000000000002";
-const MSG = "cccccccc-0000-4000-8000-000000000003";
-const LINK = "https://pay.infinitepay.io/abc123";
+const REC = "cccccccc-0000-4000-8000-000000000005";
+const TOKEN = "segredo-deste-recebimento-com-43-caracteres-x";
 
-const corpo = (over: Record<string, unknown> = {}) =>
-  JSON.stringify({
-    mensagem_id: MSG,
-    provedor: "infinitepay",
-    id_externo: "pay_123",
-    valor_cents: 15000,
-    link: LINK,
-    ...over,
-  });
-
-const pedir = (over: Record<string, unknown> = {}, conversa = CONV) =>
-  POST(new NextRequest(`http://localhost/api/v1/conversations/${conversa}/pagamentos`, { method: "POST", body: corpo(over) }), {
-    params: Promise.resolve({ id: conversa }),
-  });
+const pedir = (corpo: Record<string, unknown> = { provedor: "infinitepay", valor_cents: 15000 }, conversa = CONV) =>
+  POST(
+    new NextRequest(`http://localhost/api/v1/conversations/${conversa}/pagamentos`, {
+      method: "POST",
+      body: JSON.stringify(corpo),
+    }),
+    { params: Promise.resolve({ id: conversa }) },
+  );
 
 const sucesso = {
   ok: true,
-  reutilizado: false,
+  token: TOKEN,
   recebimento: {
-    id: "cccccccc-0000-4000-8000-000000000005",
-    status: "pendente",
+    id: REC,
+    organization_id: ORG,
+    conversation_id: CONV,
+    lead_id: null,
+    provedor: "infinitepay",
+    external_id: null,
     valor_cents: 15000,
     moeda: "BRL",
-    pago_em: null,
-  },
-  pagamento: {
-    provedor: "infinitepay",
-    id: "pay_123",
-    valor: 15000,
-    moeda: "BRL",
     status: "pendente",
-    recebimento_id: "cccccccc-0000-4000-8000-000000000005",
+    pago_em: null,
   },
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   h.autorizado = true;
+  h.ligado = true;
+  h.base = "https://crm.exemplo.com.br";
   h.chamadas = [];
   h.auditorias = [];
   h.resultado = sucesso;
 });
 
-describe("POST /conversations/[id]/pagamentos", () => {
-  it("⭐ registra o link e devolve 201 com valor e status pendente (o que a conversa mostra)", async () => {
+describe("POST /api/v1/conversations/[id]/pagamentos", () => {
+  it("⭐ registra e entrega a URL do aviso: id do recebimento e segredo, uma vez, sem cache", async () => {
     const r = await pedir();
     expect(r.status).toBe(201);
-    const json = (await r.json()) as { data: { status: string; valor_cents: number; pagamento: { status: string } } };
-    expect(json.data.status).toBe("pendente");
-    expect(json.data.valor_cents).toBe(15000);
-    expect(json.data.pagamento.status).toBe("pendente");
-    // A organização vem da SESSÃO, nunca do corpo.
-    expect(h.chamadas[0]).toMatchObject({
-      organizationId: "cccccccc-0000-4000-8000-000000000001",
-      conversationId: CONV,
-      messageId: MSG,
-      valorCents: 15000,
-    });
+    expect(r.headers.get("Cache-Control")).toBe("no-store");
+    const { data } = (await r.json()) as { data: { url_do_aviso: string; recebimento_id: string } };
+    const url = new URL(data.url_do_aviso);
+    expect(url.origin + url.pathname).toBe("https://crm.exemplo.com.br/api/v1/webhooks/pagamento/infinitepay");
+    expect(url.searchParams.get("r")).toBe(REC);
+    expect(url.searchParams.get("t")).toBe(TOKEN);
+    expect(h.chamadas).toEqual([{ organizationId: ORG, conversationId: CONV, provedor: "infinitepay", valorCents: 15000 }]);
   });
 
-  it("provedor fora da lista: 400 antes de qualquer chamada", async () => {
-    const r = await pedir({ provedor: "stripe" });
-    expect(r.status).toBe(400);
+  it("⭐ auditoria do registro sem o segredo", async () => {
+    await pedir();
+    expect(h.auditorias).toHaveLength(1);
+    expect(h.auditorias[0]).toMatchObject({ action: "pagamento.link_registrado", organizationId: ORG, resourceId: REC });
+    expect(JSON.stringify(h.auditorias)).not.toContain(TOKEN);
+  });
+
+  it("⭐ módulo desligado: 404 e nada registrado", async () => {
+    h.ligado = false;
+    expect((await pedir()).status).toBe(404);
     expect(h.chamadas).toEqual([]);
   });
 
-  it("valor em centavos inteiro positivo: zero/negativo/fracionário são 400", async () => {
-    for (const valor of [0, -100, 10.5]) {
-      const r = await pedir({ valor_cents: valor });
-      expect(r.status).toBe(400);
+  it("⭐ instalação sem endereço https público: 503 ANTES de gravar (o aviso nunca chegaria)", async () => {
+    for (const base of ["http://localhost:3000", "https://placeholder.invalid"]) {
+      h.base = base;
+      const r = await pedir();
+      expect(r.status).toBe(503);
     }
     expect(h.chamadas).toEqual([]);
   });
 
-  it("conversa que não é uuid: 400", async () => {
-    const r = await pedir({}, "nao-e-uuid");
-    expect(r.status).toBe(400);
-  });
-
-  it("sem papel suficiente: a resposta do gate passa intacta", async () => {
+  it("sem papel de agent: a resposta do RBAC, e nada registrado", async () => {
     h.autorizado = false;
-    const r = await pedir();
-    expect(r.status).toBe(403);
+    expect((await pedir()).status).toBe(403);
     expect(h.chamadas).toEqual([]);
   });
 
-  it("repetir o clique devolve 200 (não é erro) e marca `reutilizado`", async () => {
-    h.resultado = { ...sucesso, reutilizado: true };
-    const r = await pedir();
-    expect(r.status).toBe(200);
-    expect(((await r.json()) as { data: { reutilizado: boolean } }).data.reutilizado).toBe(true);
+  it("corpo com campo a mais (o organization_id do corpo NUNCA vale): 400", async () => {
+    const r = await pedir({ provedor: "infinitepay", valor_cents: 15000, organization_id: "outra" });
+    expect(r.status).toBe(400);
+    expect(h.chamadas).toEqual([]);
   });
 
-  it("erro do serviço é traduzido para o status certo (409 e 422 não viram 500)", async () => {
-    h.resultado = { ok: false, code: "state_conflict", status: 409, message: "já registrado em outra conversa" };
-    expect((await pedir()).status).toBe(409);
+  it.each([{ provedor: "outro", valor_cents: 100 }, { provedor: "infinitepay", valor_cents: 0 }])(
+    "pedido inválido %j: 400",
+    async (corpo) => {
+      expect((await pedir(corpo)).status).toBe(400);
+      expect(h.chamadas).toEqual([]);
+    },
+  );
 
-    h.resultado = { ok: false, code: "validation_failed", status: 422, message: "link fora do corpo" };
-    expect((await pedir()).status).toBe(422);
+  it("conversa que não é uuid: 400", async () => {
+    expect((await pedir(undefined, "nao-e-uuid")).status).toBe(400);
   });
 
-  it("⭐ registrar o link entra na trilha de auditoria: quem, qual organização, qual recebimento", async () => {
-    expect((await pedir()).status).toBe(201);
-    expect(h.auditorias).toHaveLength(1);
-    expect(h.auditorias[0]).toMatchObject({
-      action: "pagamento.link_registrado",
-      actorUserId: "cccccccc-0000-4000-8000-0000000000ee",
-      organizationId: "cccccccc-0000-4000-8000-000000000001",
-      resourceType: "pagamento_recebimento",
-      resourceId: "cccccccc-0000-4000-8000-000000000005",
-    });
-    // O link não vai para a trilha: ela é append-only e a cascata de LGPD não a alcança.
-    expect(JSON.stringify(h.auditorias[0])).not.toContain(LINK);
-  });
-
-  it("clique repetido e recusa não auditam: nada novo foi registrado", async () => {
-    h.resultado = { ...sucesso, reutilizado: true };
-    await pedir();
-    h.resultado = { ok: false, code: "state_conflict", status: 409, message: "já registrado em outra conversa" };
-    await pedir();
-    h.autorizado = false;
-    await pedir();
+  it("recusa do registro (conversa de outra empresa): repassa o 404", async () => {
+    h.resultado = { ok: false, code: "not_found", message: "Conversa não encontrada.", status: 404 };
+    expect((await pedir()).status).toBe(404);
     expect(h.auditorias).toEqual([]);
   });
 });

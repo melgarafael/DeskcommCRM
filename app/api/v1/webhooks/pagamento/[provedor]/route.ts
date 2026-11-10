@@ -4,30 +4,23 @@
  *
  * ─── A ordem das guardas é a entrega ────────────────────────────────────────
  *
- * 1. Provedor fora da lista → 404 (não confirmamos o que existe).
- * 2. SEM SEGREDO CONFIGURADO → 503 dizendo qual chave falta, e NADA acontece.
- *    A tentação é responder 200 para "não perder o aviso". Ela é o defeito: o
- *    provedor para de reentregar o que ele acha que já chegou, e o pagamento
- *    some para sempre, com o log dizendo "recebido". Falhar alto é o único
- *    desfecho honesto.
- * 3. Corpo grande demais → 413, antes de ler o corpo inteiro.
- * 4. PROVA DE ORIGEM, sobre o corpo CRU → 401. É o item que a issue #3509 chama
- *    de "não pode ficar para depois": sem ela, um POST de qualquer pessoa marca
- *    pagamento e move negócio. Três formas, na ordem: HMAC (provedor que
- *    assina), token em cabeçalho, e — medido na InfinitePay em 31/10/2026 —
- *    **segredo na URL** (`?t=...`), porque o aviso dela não vem assinado nem
- *    traz token em cabeçalho nenhum. Ver `lib/pagamentos/assinatura.ts`.
- * 5. Rosca de recusas por IP (o balde de quem não se autenticou) → 429.
- * 6. Só então o corpo é interpretado, e ainda assim o único efeito é
- *    `confirmarPagamento`, que é compare-and-set.
+ * 1. Provedor fora da lista, ou módulo `link_de_pagamento` desligado → 404.
+ * 2. Corpo grande demais → 413, antes de ler o corpo inteiro.
+ * 3. PROVA DE ORIGEM → 401. O recebimento é achado pelo id que vem NA URL
+ *    (`?r=`), lido por nome, e o segredo (`?t=` ou `X-Webhook-Token`) é
+ *    conferido contra o hash DAQUELE recebimento. Recebimento inexistente
+ *    responde igual a segredo errado: não confirmamos o que existe. Não há
+ *    segredo da instalação: cada recebimento tem o seu (`lib/pagamentos/assinatura.ts`).
+ * 4. Rosca de recusas por IP (o balde de quem não se autenticou) → 429.
+ * 5. Só então o corpo é interpretado, e o único efeito é `confirmarPagamento`,
+ *    que confere o VALOR e é compare-and-set.
  *
  * ─── O que o aviso NÃO faz ──────────────────────────────────────────────────
  *
  * Não relê o pagamento na API do provedor (`payment_check`): isso exige
- * credencial, que este degrau não tem. É a diferença declarada para o desenho
- * da issue — aqui a confiança vem da prova de origem, não da releitura. Quando a
- * credencial existir, a releitura entra ANTES do compare-and-set e esta rota
- * não muda de forma.
+ * credencial, que este degrau não tem. Doc 232 (A): o "pago" sem releitura vale
+ * só enquanto não houver credencial do provedor; quando houver, a releitura
+ * entra ANTES do compare-and-set e esta rota não muda de forma.
  *
  * ─── O que o aviso real da InfinitePay ensinou (31/10/2026) ────────────────
  *
@@ -35,13 +28,15 @@
  * assinado; (b) o `order_nsu` que mandamos na criação não volta — o provedor
  * manda um UUID dele; (c) `settled` pode chegar ANTES de `paid`; (d) só o
  * `paid` traz `transaction_nsu`, `paid_amount`, `installments`,
- * `capture_method` e `receipt_url`. Por isso: o segredo pode vir na URL, a
- * chave da idempotência é o `invoice_slug`, e `settled` conta como pago — a
- * ordem não é garantida, e o compare-and-set garante o efeito único.
+ * `capture_method` e `receipt_url`. Em 03/11 (link do painel, resposta 500): o
+ * `paid` chega 5 vezes em ~2 min com corpo idêntico, e os parâmetros que pusemos
+ * na URL voltam em todas, em ordem que muda. Por isso: o segredo e o id do
+ * recebimento vêm na URL e são lidos por nome, o `invoice_slug` é o id do
+ * pagamento gravado na confirmação, e `settled` conta como pago — a ordem não é
+ * garantida, e o compare-and-set garante o efeito único.
  *
- * Evento desconhecido → 200 e nada muda. Id desconhecido → 200 e nada muda: não
- * é erro do provedor (pode ser pagamento de outra instalação), e a conciliação
- * futura é quem cura.
+ * Evento desconhecido → 200 e nada muda. Valor divergente → 200 e nada muda: a
+ * reentrega não muda o valor, e insistir só gastaria as tentativas do provedor.
  */
 import { randomUUID } from "node:crypto";
 
@@ -52,14 +47,19 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
-import { PARAMETRO_DO_TOKEN_NA_URL, verificarAssinatura } from "@/lib/pagamentos/assinatura";
-import { confirmarPagamento } from "@/lib/pagamentos/confirmar";
-import { configuracaoDoRecebimento } from "@/lib/pagamentos/configuracao";
+import {
+  PARAMETRO_DO_RECEBIMENTO_NA_URL,
+  PARAMETRO_DO_TOKEN_NA_URL,
+  verificarOrigem,
+} from "@/lib/pagamentos/assinatura";
+import { confirmarPagamento, lerRecebimentoDoAviso } from "@/lib/pagamentos/confirmar";
 import {
   EVENTOS_QUE_ENCERRAM,
   EVENTOS_QUE_PAGAM,
   LIMITE_DO_CORPO,
+  TAMANHO_MAXIMO_DO_ID_EXTERNO,
   ehProvedorDeRecebimento,
 } from "@/lib/pagamentos/vocabulario";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -92,6 +92,9 @@ const avisoSchema = z
     // `invoice_type`, mas com estes dois (medido em 31/10/2026). Declará-los é
     // documentar a forma; a inferência do evento é que usa.
     paid_amount: z.number().optional(),
+    // O valor da cobrança em centavos (100 = R$ 1,00, medido em 31/10), em todo
+    // aviso. É o que se compara com o registrado.
+    amount: z.number().optional(),
     receipt_url: z.string().max(512).optional(),
     // Forma genérica que outros provedores usam (e a que já existia aqui).
     id: z.string().min(1).max(256).optional(),
@@ -114,15 +117,9 @@ export async function POST(req: NextRequest, ctx: Contexto) {
   }
   const provedor = bruto;
 
-  const { segredo, chave } = await configuracaoDoRecebimento();
-  if (!segredo) {
-    logger.error("[pagamentos.webhook] aviso recusado: segredo não configurado", { provedor });
-    return fail("unavailable", "O aviso de pagamento não está configurado nesta instalação.", 503, {
-      requestId,
-      // Diz o QUE falta e ONDE: sem isso o operador vê 503 para sempre e não
-      // tem como saber que a chave existe no painel.
-      details: { falta: chave, onde: "Painel → Cobrança" },
-    });
+  const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "link_de_pagamento"))) {
+    return fail("not_found", "Not found", 404, { requestId });
   }
 
   if (Number(req.headers.get("content-length") ?? "0") > LIMITE_DO_CORPO) {
@@ -133,14 +130,19 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     return fail("payload_too_large", "Aviso grande demais.", 413, { requestId });
   }
 
-  const veredito = verificarAssinatura(
-    corpo,
-    req.headers,
-    segredo,
-    new Date(),
-    req.nextUrl.searchParams.get(PARAMETRO_DO_TOKEN_NA_URL),
-  );
-  if (!veredito.ok) {
+  // Lidos por NOME: o provedor devolve os parâmetros em ordem que muda.
+  const recebimentoId = req.nextUrl.searchParams.get(PARAMETRO_DO_RECEBIMENTO_NA_URL);
+  const lido = z.string().uuid().safeParse(recebimentoId).success
+    ? await lerRecebimentoDoAviso(admin, provedor, recebimentoId!)
+    : ({ ok: true, recebimento: null } as const);
+  if (!lido.ok) {
+    // 500 e o provedor reentrega: o banco não respondeu, nada foi decidido.
+    return fail("internal_error", "Não foi possível ler o recebimento.", 500, { requestId });
+  }
+  const veredito = lido.recebimento
+    ? verificarOrigem(req.headers, req.nextUrl.searchParams.get(PARAMETRO_DO_TOKEN_NA_URL), lido.recebimento.aviso_token_hash)
+    : ({ ok: false, motivo: "token_invalido" } as const);
+  if (!veredito.ok || !lido.recebimento) {
     // O balde é o IP de quem NÃO se autenticou. Sem proxy à frente, é um balde
     // só — e só recusas o dividem, então não bloqueia ninguém de verdade.
     const balde = ipDoCliente(req.headers) ?? "sem-proxy";
@@ -151,18 +153,21 @@ export async function POST(req: NextRequest, ctx: Contexto) {
         headers: { "Retry-After": "60" },
       });
     }
-    // Nem corpo nem cabeçalho no log: o corpo é de quem não se autenticou, e o
-    // cabeçalho é a assinatura dele. O motivo é tudo o que o dono precisa.
-    logger.warn("[pagamentos.webhook] aviso recusado", { provedor, motivo: veredito.motivo });
-    return fail("unauthorized", "Assinatura inválida.", 401, { requestId });
+    // Nem corpo, nem URL, nem cabeçalho no log: a URL leva o segredo. O motivo
+    // é tudo o que o dono precisa.
+    logger.warn("[pagamentos.webhook] aviso recusado", {
+      provedor,
+      motivo: veredito.ok ? "token_invalido" : veredito.motivo,
+    });
+    return fail("unauthorized", "Aviso não reconhecido.", 401, { requestId });
   }
+  const recebimento = lido.recebimento;
 
   let json: unknown;
   try {
     json = JSON.parse(corpo);
   } catch {
-    // Assinado e não é JSON: recusar é a leitura segura (o desenho da Stripe em
-    // `lib/cobranca/provedores/stripe.ts`).
+    // Origem conferida e não é JSON: recusar é a leitura segura.
     return fail("validation_failed", "Aviso inválido.", 400, { requestId });
   }
   const aviso = avisoSchema.safeParse(json);
@@ -181,14 +186,14 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     });
   }
   /**
-   * O identificador do recebimento é o `invoice_slug` — e isso é MEDIÇÃO, não
-   * preferência: o `order_nsu` que mandamos ao criar o link NÃO volta no aviso
-   * (o provedor manda um UUID dele), e o `invoice_slug` é o único campo estável
-   * entre os três avisos do mesmo pagamento (`created`, `settled`, `paid`).
-   * `transaction_nsu` só existe no `paid`, então serve de reserva, nunca de
-   * chave primária da idempotência.
+   * O id do pagamento NO PROVEDOR é o `invoice_slug` — e isso é MEDIÇÃO: o
+   * `order_nsu` que mandamos ao criar o link NÃO volta (o provedor manda um
+   * UUID dele), e o `invoice_slug` é o único campo estável entre os avisos do
+   * mesmo pagamento (`created`, `settled`, `paid`). Ele não ACHA o recebimento
+   * (quem acha é o `?r=` da URL): ele é gravado na confirmação, e o índice
+   * único impede o mesmo pagamento de confirmar dois recebimentos.
    */
-  const externalId = (
+  const idNoProvedor = (
     aviso.data.invoice_slug ??
     aviso.data.transaction_nsu ??
     aviso.data.data?.id ??
@@ -207,13 +212,15 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     });
     return ok({ ignorado: true, evento: evento === "" ? null : evento }, { requestId });
   }
-  if (externalId === "") {
+  if (idNoProvedor === "" || idNoProvedor.length > TAMANHO_MAXIMO_DO_ID_EXTERNO) {
     return fail("validation_failed", "Aviso sem o identificador do pagamento.", 400, { requestId });
   }
 
-  const r = await confirmarPagamento(createAdminClient(), {
-    provedor,
-    externalId,
+  const valorAvisado = aviso.data.amount ?? aviso.data.paid_amount;
+  const r = await confirmarPagamento(admin, {
+    recebimento,
+    idNoProvedor,
+    valorAvisadoCents: typeof valorAvisado === "number" && Number.isInteger(valorAvisado) ? valorAvisado : null,
     quando: new Date(),
   });
   if (!r.ok) {
@@ -221,9 +228,10 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     // reentrega é inofensiva, pelo compare-and-set).
     return fail("internal_error", r.message, r.status, { requestId });
   }
-  if (r.efeito === "desconhecido") {
-    logger.info("[pagamentos.webhook] pagamento de outra origem", { provedor });
-    return ok({ ignorado: "desconhecido" }, { requestId });
+  if (r.efeito === "valor_divergente" || r.efeito === "id_ja_usado") {
+    // 200: a reentrega traz o mesmo corpo e daria o mesmo veredito. O log da
+    // confirmação diz qual recebimento, para o humano conferir no extrato.
+    return ok({ ignorado: r.efeito }, { requestId });
   }
   if (r.efeito === "duplicado") {
     // Reentrega do MESMO evento: 200 sem efeito. 409 faria o provedor insistir.

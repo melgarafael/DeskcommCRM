@@ -1,22 +1,26 @@
 /**
- * POST /api/v1/conversations/[id]/pagamentos — REGISTRAR o link de pagamento na
- * conversa (issue #3509, degrau 1).
+ * POST /api/v1/conversations/[id]/pagamentos — REGISTRAR um recebimento na
+ * conversa e entregar o ENDEREÇO DE AVISO dele (issue #3509, degrau 1).
  *
  * ─── O que esta rota NÃO faz ────────────────────────────────────────────────
  *
  * Não gera link, não chama provedor e não envia mensagem. Gerar o link é da
- * conta do dono no aplicativo do meio de pagamento (não temos contrato nem
- * token), e enviar é sempre um clique humano — a cadeia anti-banimento do
- * produto. O que a rota faz é transformar em DADO um link que já está na
- * conversa: cria o recebimento (`pendente`) e escreve o ponteiro
- * `metadata.pagamento` na mensagem, para o balão mostrar valor e estado.
+ * conta do dono no aplicativo do meio de pagamento, e enviar é sempre um clique
+ * humano. O que a rota faz é criar o recebimento (`pendente`) e devolver a URL
+ * que a atendente cola como "URL do Webhook" ao criar o link
+ * (`lib/pagamentos/registrar.ts` explica a ordem).
+ *
+ * ─── O segredo é mostrado UMA vez ───────────────────────────────────────────
+ *
+ * A URL leva o segredo deste recebimento, e só o hash fica no banco. Repetir o
+ * registro cria OUTRO recebimento com outra URL; o anterior fica pendente e
+ * ninguém o confirma. Por isso a resposta não é cacheável.
  *
  * ─── Quem pode ──────────────────────────────────────────────────────────────
  *
- * `agent` para cima: quem atende registra. `viewer` não escreve (RLS diz o
- * mesmo, com `fn_role_at_least`). A organização vem da SESSÃO, nunca do corpo —
- * e a mensagem é procurada com `organization_id` + `conversation_id` no filtro,
- * então um id de outra empresa responde 404, não 403 (não confirma existência).
+ * `agent` para cima, com o módulo `link_de_pagamento` ligado (desligado: 404).
+ * A organização vem da SESSÃO, nunca do corpo — e a conversa é procurada com
+ * `organization_id` no filtro, então um id de outra empresa responde 404.
  */
 import { randomUUID } from "node:crypto";
 
@@ -26,28 +30,21 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { env } from "@/lib/env";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
-import { registrarLinkDoPagamento } from "@/lib/pagamentos/registrar";
-import {
-  PROVEDORES_DE_RECEBIMENTO,
-  TAMANHO_MAXIMO_DO_ID_EXTERNO,
-  VALOR_MAXIMO_CENTS,
-} from "@/lib/pagamentos/vocabulario";
+import { urlDoAviso } from "@/lib/pagamentos/assinatura";
+import { registrarRecebimento } from "@/lib/pagamentos/registrar";
+import { PROVEDORES_DE_RECEBIMENTO, VALOR_MAXIMO_CENTS } from "@/lib/pagamentos/vocabulario";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
 const corpoSchema = z.strictObject({
-  /** A mensagem que já foi enviada com o link dentro. */
-  mensagem_id: z.string().uuid(),
   provedor: z.enum(PROVEDORES_DE_RECEBIMENTO),
-  /** Id do pagamento NO PROVEDOR. */
-  id_externo: z.string().min(1).max(TAMANHO_MAXIMO_DO_ID_EXTERNO),
-  /** Valor em CENTAVOS (o repo inteiro fala centavos). */
+  /** Valor em CENTAVOS (o repo inteiro fala centavos). É o que o aviso tem de trazer. */
   valor_cents: z.number().int().positive().max(VALOR_MAXIMO_CENTS),
-  /** A MESMA URL que está no corpo da mensagem — a rota confere. */
-  link: z.string().min(1),
   moeda: z.string().length(3).optional(),
 });
 
@@ -71,6 +68,11 @@ export async function POST(req: NextRequest, ctx: Contexto) {
   const authz = await requireRole("agent", { requestId, resource: "pagamento_recebimentos" });
   if (!authz.ok) return authz.response;
 
+  const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "link_de_pagamento"))) {
+    return fail("not_found", "Not found", 404, { requestId });
+  }
+
   const corpo = corpoSchema.safeParse(await req.json().catch(() => ({})));
   if (!corpo.success) {
     return fail("validation_failed", "Pedido inválido.", 400, {
@@ -78,58 +80,58 @@ export async function POST(req: NextRequest, ctx: Contexto) {
       details: corpo.error.flatten(),
     });
   }
-
   const d = corpo.data;
-  const r = await registrarLinkDoPagamento(createAdminClient(), {
+
+  // Antes de gravar: sem endereço público, o aviso nunca chegaria e o
+  // recebimento ficaria pendente para sempre com cara de que vai confirmar.
+  const base = env.NEXT_PUBLIC_APP_URL ?? "";
+  if (urlDoAviso(base, d.provedor, "00000000-0000-4000-8000-000000000000", "x") === null) {
+    return fail("unavailable", "Esta instalação não tem um endereço público https para receber o aviso de pagamento.", 503, {
+      requestId,
+      details: { falta: "NEXT_PUBLIC_APP_URL" },
+    });
+  }
+
+  const r = await registrarRecebimento(admin, {
     organizationId: authz.org.orgId,
     conversationId,
-    messageId: d.mensagem_id,
     provedor: d.provedor,
-    externalId: d.id_externo,
     valorCents: d.valor_cents,
-    link: d.link,
     ...(d.moeda === undefined ? {} : { moeda: d.moeda }),
   });
 
   if (r.ok) {
-    logger.info("[pagamentos.registrar] link registrado na conversa", {
+    logger.info("[pagamentos.registrar] recebimento registrado na conversa", {
       requestId,
       organization_id: authz.org.orgId,
       conversation_id: conversationId,
       provedor: d.provedor,
-      reutilizado: r.reutilizado,
     });
-    // Clique repetido não registrou nada novo: a trilha já tem a primeira vez.
-    if (!r.reutilizado) {
-      await audit({
-        action: "pagamento.link_registrado",
-        actorUserId: authz.user.id,
-        organizationId: authz.org.orgId,
-        resourceType: "pagamento_recebimento",
-        resourceId: r.recebimento.id,
-        requestId,
-        metadata: {
-          conversation_id: conversationId,
-          message_id: d.mensagem_id,
-          provedor: d.provedor,
-          valor_cents: r.recebimento.valor_cents,
-          moeda: r.recebimento.moeda,
-        },
-      });
-    }
-    // 200 mesmo no reutilizado: clicar duas vezes é o MESMO resultado, e o
-    // cliente da tela não deve tratar a repetição como erro.
+    await audit({
+      action: "pagamento.link_registrado",
+      actorUserId: authz.user.id,
+      organizationId: authz.org.orgId,
+      resourceType: "pagamento_recebimento",
+      resourceId: r.recebimento.id,
+      requestId,
+      metadata: {
+        conversation_id: conversationId,
+        provedor: d.provedor,
+        valor_cents: r.recebimento.valor_cents,
+        moeda: r.recebimento.moeda,
+      },
+    });
     return ok(
       {
         recebimento_id: r.recebimento.id,
         status: r.recebimento.status,
         valor_cents: r.recebimento.valor_cents,
         moeda: r.recebimento.moeda,
-        pago_em: r.recebimento.pago_em,
-        pagamento: r.pagamento,
-        reutilizado: r.reutilizado,
+        lead_id: r.recebimento.lead_id,
+        // Mostrada uma vez: o segredo dela não fica no banco.
+        url_do_aviso: urlDoAviso(base, r.recebimento.provedor, r.recebimento.id, r.token),
       },
-      { requestId, status: r.reutilizado ? 200 : 201 },
+      { requestId, status: 201, headers: { "Cache-Control": "no-store" } },
     );
   }
 

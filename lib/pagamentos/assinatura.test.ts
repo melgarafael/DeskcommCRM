@@ -1,122 +1,67 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  assinarParaTeste,
-  CABECALHO_DA_ASSINATURA,
   CABECALHO_DO_TOKEN,
-  verificarAssinatura,
+  hashDoToken,
+  novoTokenDoAviso,
+  urlDoAviso,
+  verificarOrigem,
 } from "./assinatura";
-import { TOLERANCIA_DO_AVISO_S } from "./vocabulario";
 
-const SEGREDO = "segredo-de-teste-com-32-caracteres";
-const AGORA = new Date("2026-10-27T12:00:00Z");
-const CORPO = '{"id":"pay_1","event":"paid"}';
+const { token: TOKEN, hash: HASH } = novoTokenDoAviso();
+const REC = "cccccccc-0000-4000-8000-000000000005";
 
-function cabecalhos(extra: Record<string, string>): Headers {
-  return new Headers(extra);
-}
-
-describe("assinatura do aviso de pagamento", () => {
-  it("HMAC correto e dentro da janela: aceita, e diz que foi HMAC", () => {
-    const h = cabecalhos({ [CABECALHO_DA_ASSINATURA]: assinarParaTeste(CORPO, SEGREDO, AGORA) });
-    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA)).toEqual({ ok: true, modo: "hmac" });
+describe("a prova de origem do aviso de pagamento", () => {
+  it("o hash guardado é o sha256 hex do segredo, e o segredo é longo", () => {
+    expect(HASH).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashDoToken(TOKEN)).toBe(HASH);
+    expect(TOKEN.length).toBeGreaterThanOrEqual(43);
   });
 
-  it("⭐ HMAC de OUTRO segredo: inválida (é o caso do teste negativo da rota)", () => {
-    const h = cabecalhos({ [CABECALHO_DA_ASSINATURA]: assinarParaTeste(CORPO, "outro-segredo-qualquer", AGORA) });
-    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA)).toEqual({
+  it("⭐ segredo na URL que confere: aceita, e diz que veio pela URL", () => {
+    expect(verificarOrigem(new Headers(), TOKEN, HASH)).toEqual({ ok: true, modo: "url_token" });
+  });
+
+  it("⭐ segredo de OUTRO recebimento: recusa", () => {
+    expect(verificarOrigem(new Headers(), novoTokenDoAviso().token, HASH)).toEqual({
       ok: false,
-      motivo: "assinatura_invalida",
+      motivo: "token_invalido",
     });
   });
 
-  it("⭐ corpo alterado depois de assinado: inválida (a assinatura cobre o corpo, não só o id)", () => {
-    const h = cabecalhos({ [CABECALHO_DA_ASSINATURA]: assinarParaTeste(CORPO, SEGREDO, AGORA) });
-    const forjado = CORPO.replace('"paid"', '"paid","valor":1');
-    expect(verificarAssinatura(forjado, h, SEGREDO, AGORA).ok).toBe(false);
-  });
-
-  it("⭐ fora da janela do carimbo: inválida dos dois lados (assinatura velha não vale para sempre)", () => {
-    const velho = new Date(AGORA.getTime() - (TOLERANCIA_DO_AVISO_S + 5) * 1000);
-    const h = cabecalhos({ [CABECALHO_DA_ASSINATURA]: assinarParaTeste(CORPO, SEGREDO, velho) });
-    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA).ok).toBe(false);
-
-    const futuro = new Date(AGORA.getTime() + (TOLERANCIA_DO_AVISO_S + 5) * 1000);
-    const h2 = cabecalhos({ [CABECALHO_DA_ASSINATURA]: assinarParaTeste(CORPO, SEGREDO, futuro) });
-    expect(verificarAssinatura(CORPO, h2, SEGREDO, AGORA).ok).toBe(false);
-  });
-
-  it("carimbo malformado ou sem v1: inválida (não cai para o modo token)", () => {
-    const h = cabecalhos({ [CABECALHO_DA_ASSINATURA]: "t=abc,v1=nao-e-hex" });
-    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA)).toEqual({
-      ok: false,
-      motivo: "assinatura_invalida",
-    });
-  });
-
-  it("token estático correto: aceita, e diz que foi token", () => {
-    const h = cabecalhos({ [CABECALHO_DO_TOKEN]: SEGREDO });
-    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA)).toEqual({ ok: true, modo: "token" });
-  });
-
-  it("⭐ token estático errado: inválida", () => {
-    const h = cabecalhos({ [CABECALHO_DO_TOKEN]: `${SEGREDO}x` });
-    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA).ok).toBe(false);
-  });
-
-  it("⭐ FAIL CLOSED: assinatura presente e errada NÃO cai para o token correto", () => {
-    // O ataque: manda um X-Assinatura quebrado e o token certo, esperando que a
-    // rota tente o segundo caminho. A presença do cabeçalho de assinatura decide
-    // o modo — e ela está errada.
-    const h = cabecalhos({
-      [CABECALHO_DA_ASSINATURA]: assinarParaTeste(CORPO, "segredo-errado", AGORA),
-      [CABECALHO_DO_TOKEN]: SEGREDO,
-    });
-    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA)).toEqual({
-      ok: false,
-      motivo: "assinatura_invalida",
-    });
-  });
-
-  it("sem cabeçalho nenhum: `sem_assinatura` (a rota responde 401, não 200)", () => {
-    expect(verificarAssinatura(CORPO, cabecalhos({}), SEGREDO, AGORA)).toEqual({
-      ok: false,
-      motivo: "sem_assinatura",
-    });
-  });
-
-  // ── `url_token`: o provedor que NÃO assina (medido na InfinitePay, 31/10) ──
-
-  it("segredo na URL correto, sem cabeçalho nenhum: aceita e diz que foi url_token", () => {
-    expect(verificarAssinatura(CORPO, cabecalhos({}), SEGREDO, AGORA, SEGREDO)).toEqual({
+  it("segredo em cabeçalho que confere: aceita", () => {
+    expect(verificarOrigem(new Headers({ [CABECALHO_DO_TOKEN]: TOKEN }), null, HASH)).toEqual({
       ok: true,
-      modo: "url_token",
+      modo: "token",
     });
   });
 
-  it("⭐ segredo na URL errado: inválida (nunca `sem_assinatura`, que viraria 401 por outro motivo)", () => {
-    expect(verificarAssinatura(CORPO, cabecalhos({}), SEGREDO, AGORA, `${SEGREDO}x`)).toEqual({
-      ok: false,
-      motivo: "assinatura_invalida",
-    });
+  it("⭐ cabeçalho presente e errado NÃO cai para a URL certa (fail closed)", () => {
+    expect(verificarOrigem(new Headers({ [CABECALHO_DO_TOKEN]: "errado" }), TOKEN, HASH).ok).toBe(false);
   });
 
-  it("⭐ FAIL CLOSED com URL: assinatura HMAC presente e errada NÃO cai para o segredo da URL", () => {
-    // O ataque: manda `X-Assinatura` quebrada e a URL com o segredo certo,
-    // apostando que a rota desiste do primeiro caminho e aceita o segundo.
-    const h = cabecalhos({ [CABECALHO_DA_ASSINATURA]: assinarParaTeste(CORPO, "segredo-errado", AGORA) });
-    expect(verificarAssinatura(CORPO, h, SEGREDO, AGORA, SEGREDO)).toEqual({
-      ok: false,
-      motivo: "assinatura_invalida",
-    });
+  it("⭐ sem segredo nenhum: recusa (ausência de prova não é prova)", () => {
+    expect(verificarOrigem(new Headers(), null, HASH)).toEqual({ ok: false, motivo: "sem_token" });
+    expect(verificarOrigem(new Headers(), "", HASH).ok).toBe(false);
   });
 
-  it("segredo na URL vazio não vale como prova (string vazia ≠ ausência)", () => {
-    expect(verificarAssinatura(CORPO, cabecalhos({}), SEGREDO, AGORA, "").ok).toBe(false);
+  it("hash guardado fora da forma: recusa, sem exceção", () => {
+    expect(verificarOrigem(new Headers(), TOKEN, "curto").ok).toBe(false);
+  });
+});
+
+describe("o endereço de aviso entregue à atendente", () => {
+  it("⭐ leva o id do recebimento e o segredo por NOME, e o caminho do provedor", () => {
+    const url = new URL(urlDoAviso("https://crm.exemplo.com.br/", "infinitepay", REC, TOKEN)!);
+    expect(url.origin + url.pathname).toBe("https://crm.exemplo.com.br/api/v1/webhooks/pagamento/infinitepay");
+    expect(url.searchParams.get("r")).toBe(REC);
+    expect(url.searchParams.get("t")).toBe(TOKEN);
   });
 
-  it("segredo vazio: inválida, nunca `sem_assinatura` (defeito de chamada falha fechado)", () => {
-    const h = cabecalhos({ [CABECALHO_DO_TOKEN]: "" });
-    expect(verificarAssinatura(CORPO, h, "", AGORA).ok).toBe(false);
-  });
+  it.each(["http://localhost:3000", "https://placeholder.invalid", "http://crm.exemplo.com.br", "https://app", ""])(
+    "⭐ %j não abre fora da máquina (ou não é https): nenhum endereço",
+    (base) => {
+      expect(urlDoAviso(base, "infinitepay", REC, TOKEN)).toBeNull();
+    },
+  );
 });

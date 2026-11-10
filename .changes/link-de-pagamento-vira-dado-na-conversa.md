@@ -1,7 +1,15 @@
 ---
 impacto: capacidade_nova
 secao: adicionado
-titulo: O link de pagamento colado na conversa vira registro, e o aviso de "pago" da InfinitePay fecha o negócio sozinho
+titulo: Novo módulo opcional Link de pagamento na conversa, desligado de fábrica, em que o aviso de "pago" da InfinitePay fecha o negócio
 ---
 
-Antes, o vendedor colava na conversa o link de pagamento da InfinitePay e depois precisava conferir no extrato se o cliente pagou, para então mover o negócio à mão. Agora o link enviado pode ser registrado na conversa (pela API, em `POST /api/v1/conversations/{id}/pagamentos`), com valor e situação "pendente". Quando a InfinitePay avisa que o cliente pagou, o registro passa a "pago" e o negócio é marcado como ganho pelo mesmo caminho do botão "Marcar como ganho": se o funil exige algum campo ou o motivo do ganho para fechar, o pagamento fica registrado, o negócio não anda, e a linha do tempo do negócio diz o que falta. Aviso repetido não marca nada duas vezes. Registrar o link e confirmar o pagamento entram no registro de auditoria. Para ligar, cole em Painel › Cobrança o segredo dos avisos de pagamento da InfinitePay, o mesmo cadastrado lá; sem ele, todo aviso é recusado e nada muda nos negócios. Quem não usa InfinitePay não vê diferença.
+Antes, o vendedor mandava na conversa o link de pagamento da InfinitePay e depois precisava conferir no extrato se o cliente pagou, para então mover o negócio à mão.
+
+Com o módulo **Link de pagamento na conversa** ligado em Administração › Sistema, a atendente registra numa conversa o valor a cobrar (por enquanto pela API, em `POST /api/v1/conversations/{id}/pagamentos`) e recebe um endereço de aviso próprio daquele recebimento. Ela cola esse endereço como "URL do Webhook" ao criar o link na InfinitePay e manda o link ao cliente como sempre. Quando o cliente paga, o aviso marca o recebimento como pago e leva o negócio para ganho pelo mesmo caminho do botão "Marcar como ganho": se o funil exige algum campo ou o motivo do ganho, o pagamento fica registrado, o negócio não anda, e a linha do tempo diz o que falta.
+
+O aviso só vale se trouxer o segredo daquele recebimento e o mesmo valor registrado; aviso repetido não marca nada duas vezes. Não há segredo compartilhado da instalação: cada recebimento tem o seu, e a empresa não precisa configurar chave nenhuma. O endereço só é entregue quando a instalação tem um endereço público https. Registrar e confirmar entram na auditoria.
+
+Desligado (o padrão), ninguém registra recebimento e os avisos são recusados. Quem não liga não vê diferença.
+
+Trabalho original de @webtecnica (#3590), com as medições contra a InfinitePay de @franceschini-lucas e @webtecnica.
