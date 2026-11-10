@@ -107,16 +107,27 @@ export interface ChaveDaInstalacao {
  * (vigiada por `pnpm lint:channels`) proíbe nomeá-lo fora daquela fronteira.
  * Este arquivo as consome como DADOS — continua sem nomear ninguém.
  */
-const DE_CANAL: readonly ChaveDaInstalacao[] = CHAVES_DE_CANAL_DA_INSTALACAO.map((c) => ({
-  chave: c.chave,
-  rotulo: c.rotulo,
-  explicacao: c.explicacao,
-  grupo: "whatsapp" as const,
-  natureza: "segredo" as const,
-  controle: "diagnostico" as const,
-  motivo: "pareada_com_conteiner" as const,
-  comoTrocar: c.comoTrocar,
-}));
+const DE_CANAL: readonly ChaveDaInstalacao[] = CHAVES_DE_CANAL_DA_INSTALACAO.map((c) =>
+  c.comoTrocar
+    ? {
+        chave: c.chave,
+        rotulo: c.rotulo,
+        explicacao: c.explicacao,
+        grupo: "whatsapp" as const,
+        natureza: "segredo" as const,
+        controle: "diagnostico" as const,
+        motivo: "pareada_com_conteiner" as const,
+        comoTrocar: c.comoTrocar,
+      }
+    : {
+        chave: c.chave,
+        rotulo: c.rotulo,
+        explicacao: c.explicacao,
+        grupo: "whatsapp" as const,
+        natureza: "segredo" as const,
+        controle: "edita" as const,
+      },
+);
 
 export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
   ...DE_CANAL,

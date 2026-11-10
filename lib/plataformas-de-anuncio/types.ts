@@ -306,6 +306,16 @@ export interface LinhaDeCampanha {
   /** `effective_status` — a veiculação real, que difere do status quando o pai está pausado. */
   veiculacao: string | null;
   objetivo: string | null;
+  /**
+   * `created_time` da campanha, como a plataforma manda (`…+0000`).
+   *
+   * Nulo quando a linha veio SÓ de insights — campanha apagada entre as duas
+   * chamadas, ou payload sem o campo. A ordenação trata nulo como "sem data" e
+   * joga a linha para o fim, em vez de tratá-la como 1970 (#3911).
+   */
+  criadaEm: string | null;
+  /** `start_time` da campanha. Desempata `criadaEm` igual, e serve de data quando ela falta. */
+  iniciadaEm: string | null;
   resultado: ResultadoDaCampanha;
   gasto: number | null;
   impressoes: number | null;

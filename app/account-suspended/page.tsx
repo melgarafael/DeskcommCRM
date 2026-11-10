@@ -13,9 +13,11 @@ import { orgAtivaSemPortao, requireAuth } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { emailDeSuporte } from "@/lib/branding/saida";
 import { lerPainelDoHub, oQueOHubMostra } from "@/lib/cobranca/hub";
+import { CAMINHO_DA_CONTRATACAO, podeContinuarContratacao, primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
+import { logger } from "@/lib/logger";
 import { ehOperante, tipoDaSuspensao } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -46,7 +48,7 @@ const PEDIDO = z.uuid();
 export default async function AccountSuspendedPage({
   searchParams,
 }: {
-  searchParams: Promise<{ pedido?: string; voltou?: string }>;
+  searchParams: Promise<{ pedido?: string; voltou?: string; ajuda?: string }>;
 }) {
   const user = await requireAuth();
   const ativa = await orgAtivaSemPortao(user);
@@ -77,7 +79,7 @@ export default async function AccountSuspendedPage({
   // Com `?pedido=` (o e-mail de prazo da LGPD chega aqui por
   // `app/lgpd/pedido/[id]/route.ts`), volta ao PEDIDO: é aqui que o link decide
   // no clique se a empresa opera.
-  const { pedido, voltou } = await searchParams;
+  const { pedido, voltou, ajuda } = await searchParams;
   const pedidoValido = PEDIDO.safeParse(pedido).success ? pedido : undefined;
   if (ehOperante(ativa.org_status) && ehOperante(statusDe.get(ativa.orgId))) {
     redirect(pedidoValido ? `/app/lgpd/requests/${pedidoValido}` : "/app");
@@ -90,10 +92,29 @@ export default async function AccountSuspendedPage({
     (user.is_platform_admin && !user.support) || ROLE_RANK[ativa.role] >= ROLE_RANK.admin;
   // Spec da cobrança §9: suspensa POR FALTA DE PAGAMENTO + quem administra →
   // o painel de pagamento. Leitura do painel que falha NÃO derruba o hub: cai para "contato".
-  const cobrancaLigada = administra && tipoDaAtiva === "cobranca" && (await moduloLigado(admin, "cobranca"));
-  const painel = cobrancaLigada ? await lerPainelDoHub(admin, ativa.orgId) : null;
+  const cobrancaLigada = tipoDaAtiva === "cobranca" && (await moduloLigado(admin, "cobranca"));
+  const painel = cobrancaLigada && administra ? await lerPainelDoHub(admin, ativa.orgId) : null;
+  // A apresentação não confunde uma compra nova com dívida vencida. Usuário
+  // comum continua sem ações financeiras; pedido LGPD nunca perde o destino.
+  const inicial = cobrancaLigada
+    ? await admin.from("cobranca_assinaturas")
+      .select("estado, pagamento_inicial_pendente, periodo_pago_desde").eq("organization_id", ativa.orgId).maybeSingle()
+    : null;
+  // Leitura que falha NÃO derruba o hub (Sair, suporte e LGPD moram aqui): segue
+  // como "conta suspensa", que é o que a tela mostrava antes de saber da compra.
+  if (inicial?.error) {
+    logger.warn("account_suspended.primeiro_pagamento_indisponivel", { organizationId: ativa.orgId, code: inicial.error.code });
+  }
+  const primeiroPagamento = inicial?.error ? false : primeiroPagamentoPendente(inicial?.data ?? null);
+  const podeContratar = podeContinuarContratacao(user, ativa.role);
+  if (primeiroPagamento && podeContratar && !pedidoValido && ajuda !== "1") {
+    redirect(`${CAMINHO_DA_CONTRATACAO}${voltou === "1" ? "?voltou=1&retomar=1" : ""}`);
+  }
   const mostra = oQueOHubMostra({ administra, tipo: tipoDaAtiva, cobrancaLigada, temAssinatura: painel?.assinatura != null });
-  const suporte = administra && mostra === "contato" ? await emailDeSuporte() : "";
+  // "Precisa de ajuda?" (da contratação) chega com `?ajuda=1`: quem administra
+  // vê o contato mesmo quando a tela mostra o pagamento.
+  const pedeAjuda = ajuda === "1";
+  const suporte = administra && (mostra === "contato" || pedeAjuda) ? await emailDeSuporte() : "";
   const outras = user.organizations
     .filter((o) => o.organization_id !== ativa.orgId && ehOperante(statusDe.get(o.organization_id)))
     .map((o) => ({ id: o.organization_id, nome: o.organization_name }));
@@ -103,12 +124,14 @@ export default async function AccountSuspendedPage({
     <IdiomaProvider locale={idioma}>
       <main className="flex min-h-screen flex-col items-center gap-8 p-4 sm:p-8">
         <Card className="w-full max-w-md space-y-4 p-8 text-center">
-          <h1 className="text-2xl font-semibold">{t("Conta suspensa")}</h1>
+          <h1 className="text-2xl font-semibold">{t(primeiroPagamento ? "Aguardando primeiro pagamento" : "Conta suspensa")}</h1>
           {/* Quem participa de várias empresas precisa saber QUAL parou. Dado, não interface: sem t(). */}
           <p className="text-base font-medium">{ativa.name}</p>
-          {mostra === "pagamento" ? (
+          {primeiroPagamento ? (
+            <p className="text-sm text-muted-foreground">{t("A contratação ainda não foi concluída. Quem administra esta empresa pode continuar para o pagamento.")}</p>
+          ) : mostra === "pagamento" ? (
             <p className="text-sm text-muted-foreground">
-              {t("A conta foi suspensa por falta de pagamento. Assim que o pagamento for confirmado, tudo volta a funcionar na hora.")}
+              {t("A conta foi suspensa por falta de pagamento. O acesso é reavaliado após a confirmação do pagamento.")}
             </p>
           ) : !administra ? (
             <p className="text-sm text-muted-foreground">
@@ -132,6 +155,14 @@ export default async function AccountSuspendedPage({
               )}
             </p>
           )}
+          {pedeAjuda && suporte && (primeiroPagamento || mostra === "pagamento") && (
+            <p className="text-sm text-muted-foreground">
+              {t("Precisa de ajuda?")} {t("Fale com o suporte:")}{" "}
+              <a href={`mailto:${suporte}`} className="underline underline-offset-4 hover:text-foreground transition-colors">
+                {suporte}
+              </a>
+            </p>
+          )}
           <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
             <OutrasOrganizacoes outras={outras} />
             {/* Encerra a sessão, como a irmã /acesso-revogado: um link para /login
@@ -143,7 +174,10 @@ export default async function AccountSuspendedPage({
             </form>
           </div>
         </Card>
-        {mostra === "pagamento" && painel?.assinatura && (
+        {primeiroPagamento && podeContratar && (
+          <Button asChild><a href={CAMINHO_DA_CONTRATACAO}>{t("Continuar para pagamento")}</a></Button>
+        )}
+        {!primeiroPagamento && mostra === "pagamento" && painel?.assinatura && (
           <section aria-label={t("Pagamento")} className="w-full max-w-xl space-y-4">
             <PainelDaAssinatura dados={painel} idioma={idioma} />
             <AcoesDaAssinatura

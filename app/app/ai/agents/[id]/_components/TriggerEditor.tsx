@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
+import { ORIGEM_AGENDA_DO_CELULAR } from "@/lib/leads/origem-do-contato";
 import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 
 export interface BusinessHoursValue {
@@ -40,12 +41,15 @@ export interface TriggerValue {
      * `exclude_` = não atende quem cumpre, e a exclusão vence. Opcionais na
      * INTERFACE porque draft salvo antes desta entrega não tem as chaves — a
      * tela lê com `?? []` e quem grava é o Zod (`lib/ai/agents/validation.ts`),
-     * que preenche as quatro.
+     * que preenche as seis.
      */
     include_tags?: string[];
     exclude_tags?: string[];
     include_pipeline_ids?: string[];
     exclude_pipeline_ids?: string[];
+    /** Origem do contato (`contacts.source`) — ex.: `prospecting`, `whatsapp`. */
+    include_sources?: string[];
+    exclude_sources?: string[];
   };
   concurrency: "one_per_conversation" | "one_per_contact";
 }
@@ -168,6 +172,111 @@ function ListaDeFunis({
                 }
               />
               {f.name}
+            </label>
+          );
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">{ajuda}</p>
+    </div>
+  );
+}
+
+/**
+ * As origens que a tela oferece: as do filtro de origem da lista de contatos
+ * (`app/app/contacts/_client.tsx`) mais `prospecting`, a de quem nasce de uma
+ * campanha de prospecção. Uma função com o LITERAL em cada ramo, e não uma
+ * tabela `{ rotulo }`: `t()` com argumento não literal escapa do guardião de
+ * espanhol (`i18n-espanhol-cobre-a-tela`).
+ */
+const ORIGENS_OFERECIDAS = [
+  "whatsapp",
+  "prospecting",
+  "site",
+  "meta_ads",
+  "google_ads",
+  "manual",
+  "import_csv",
+  ORIGEM_AGENDA_DO_CELULAR,
+  "nuvemshop",
+] as const;
+
+function rotuloDaOrigem(source: string, t: (texto: string) => string): string {
+  switch (source) {
+    case "whatsapp":
+      return t("Chegou pelo WhatsApp");
+    case "prospecting":
+      return t("Prospecção");
+    case "site":
+      return t("Site (landing page)");
+    case "meta_ads":
+      return t("Anúncio da Meta");
+    case "google_ads":
+      return t("Anúncio do Google");
+    case "manual":
+      return t("Manual");
+    case "import_csv":
+      return t("Importado (CSV)");
+    case ORIGEM_AGENDA_DO_CELULAR:
+      return t("Agenda do celular");
+    case "nuvemshop":
+      return "Nuvemshop";
+    default:
+      return source;
+  }
+}
+
+/**
+ * Lista de origens com caixa de seleção — o "só estas" / "não estas" do
+ * público. Uma origem gravada pela API que a tela não conhece continua
+ * aparecendo, marcada: escondê-la faria o próximo salvar apagá-la sem aviso.
+ */
+function ListaDeOrigens({
+  id,
+  rotulo,
+  ajuda,
+  selecionados,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  rotulo: string;
+  ajuda: string;
+  selecionados: readonly string[];
+  onChange: (origens: string[]) => void;
+  disabled?: boolean;
+}) {
+  const t = useT();
+  const marcados = new Set(selecionados.map((o) => o.toLowerCase()));
+  const conhecidas: readonly string[] = ORIGENS_OFERECIDAS;
+  const extras = selecionados.filter((o) => !conhecidas.includes(o.toLowerCase()));
+  const opcoes = [...conhecidas, ...extras];
+  return (
+    <div className="space-y-1" id={id}>
+      <Label>{rotulo}</Label>
+      <div className="flex flex-wrap gap-2">
+        {opcoes.map((origem) => {
+          const marcado = marcados.has(origem.toLowerCase());
+          const nome = rotuloDaOrigem(origem, t);
+          return (
+            <label
+              key={origem}
+              className="flex cursor-pointer items-center gap-2 rounded-md border border-border/60 px-2 py-1 text-xs"
+            >
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-primary"
+                checked={marcado}
+                disabled={disabled}
+                aria-label={nome}
+                onChange={() =>
+                  onChange(
+                    marcado
+                      ? selecionados.filter((x) => x.toLowerCase() !== origem.toLowerCase())
+                      : [...selecionados, origem],
+                  )
+                }
+              />
+              {nome}
             </label>
           );
         })}
@@ -350,6 +459,23 @@ export function TriggerEditor({ value, onChange, disabled, organizationTimezone,
           funis={funis}
           selecionados={value.filters.exclude_pipeline_ids ?? []}
           onChange={(ids) => patchFilters({ exclude_pipeline_ids: ids })}
+          disabled={disabled}
+        />
+
+        <ListaDeOrigens
+          id="include_sources"
+          rotulo={t("Atender só quem chegou por estas origens")}
+          ajuda={t("A origem é por onde o contato entrou no CRM. Em branco, qualquer origem serve.")}
+          selecionados={value.filters.include_sources ?? []}
+          onChange={(origens) => patchFilters({ include_sources: origens })}
+          disabled={disabled}
+        />
+        <ListaDeOrigens
+          id="exclude_sources"
+          rotulo={t("Não atender quem chegou por estas origens")}
+          ajuda={t("Ex.: marque Prospecção para que as respostas de uma campanha fiquem com o agente que fez a abordagem.")}
+          selecionados={value.filters.exclude_sources ?? []}
+          onChange={(origens) => patchFilters({ exclude_sources: origens })}
           disabled={disabled}
         />
 

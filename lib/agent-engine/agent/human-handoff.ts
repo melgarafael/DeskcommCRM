@@ -50,6 +50,7 @@ import {
 import { traduzir } from '@/lib/i18n/dicionario';
 import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
 import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
+import { CONVERSATION_TERMINAL_STATUSES } from '@/lib/schemas';
 import { ehOptOutProvavel } from '@/lib/opt-out/deteccao';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
 
@@ -330,8 +331,56 @@ export function detectAmbiguousOptOut(message: string): boolean {
  * e o modelo aprovado do worker passam por ele ANTES de qualquer gate de elegibilidade,
  * e era por ali que o texto fixo continuava saindo para quem ganhou a etiqueta depois de
  * o card nascer.
+ *
+ * #4146 — O SILÊNCIO NÃO ATRAVESSA CONVERSA ENCERRADA, NEM OUTRO NÚMERO.
+ *
+ * O `exists` abaixo lia `bot_silenced_until` de QUALQUER conversa do contato, sem
+ * olhar status nem a conversa do turno. Um handoff acontecido na conversa A, que
+ * depois foi ARQUIVADA, calava também a conversa B — inclusive a de outro número
+ * do mesmo contato — para sempre ('infinity' nunca vence). O cliente escrevia no
+ * número novo e o agente ficava mudo sem ninguém ter assumido nada ali.
+ *
+ * Duas correções, e as duas são ESTREITAMENTO de escopo (nunca afrouxam bloqueio
+ * de contato):
+ *   (a) conversa em status TERMINAL não cala mais ninguém — a lista vem de
+ *       `CONVERSATION_TERMINAL_STATUSES` (fonte única), não de literal novo;
+ *   (b) quando o chamador informa a conversa do turno (`conversationId`), o
+ *       silêncio só vale para ELA: o handoff de A não veta o trabalho em B.
+ * `force_human`, `ai_opt_out`, contato interno e contato bloqueado seguem
+ * GLOBAIS — são do contato, não da conversa, e nada aqui os toca.
  */
-export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: string): Promise<boolean> {
+
+/**
+ * Lista de status terminais em SQL (`'closed', 'archived'`), derivada da fonte
+ * única em `lib/schemas/messaging.ts`. Fica fora da função porque é constante
+ * do módulo: inventar literal aqui é como as duas réguas divergem.
+ */
+const STATUS_TERMINAIS_EM_SQL = CONVERSATION_TERMINAL_STATUSES.map((s) => `'${s}'`).join(', ');
+
+/**
+ * Onde o silêncio vale — a conversa do turno, quando o chamador a tem.
+ *
+ * AUSENTE é o contrato antigo (leitura do CONTATO inteiro) e continua correto
+ * para quem pergunta "esta pessoa está com um humano em algum lugar?": `cancel`
+ * de inscrição do fluxo, opt-out e varreduras. PRESENTE é a pergunta do turno —
+ * "posso falar NESTA conversa?" — e é o único jeito de o handoff de uma conversa
+ * não vetar outra.
+ */
+export interface OpcoesDaGuardaDeHandoff {
+  /** conversations.id do turno. Ausente/null = leitura por contato. */
+  conversationId?: string | null;
+}
+
+export async function isLeadInHandoff(
+  db: pg.Pool,
+  tenantId: string,
+  leadId: string,
+  opcoes: OpcoesDaGuardaDeHandoff = {},
+): Promise<boolean> {
+  const conversationId = opcoes.conversationId ?? null;
+  // Escopo por conversa: `$3` só entra na consulta quando há id — assim os
+  // chamadores antigos continuam mandando dois parâmetros.
+  const escopo = conversationId === null ? '' : 'and v.id = $3';
   const { rows } = await db.query<{ handoff: boolean }>(
     `select (
        c.force_human
@@ -343,12 +392,17 @@ export async function isLeadInHandoff(db: pg.Pool, tenantId: string, leadId: str
        or exists (
          select 1 from conversations v
          where v.organization_id = $1 and v.contact_id = c.id
+           -- #4146: conversa ENCERRADA não cala mais ninguém. Sem esta linha, o
+           -- silêncio de uma conversa arquivada seguia vetando as outras do
+           -- mesmo contato, para sempre ('infinity' não vence nunca).
+           and v.status not in (${STATUS_TERMINAIS_EM_SQL})
            and v.bot_silenced_until is not null and v.bot_silenced_until > now()
+           ${escopo}
        )
      ) as handoff
      from contacts c
      where c.organization_id = $1 and c.id = $2`,
-    [tenantId, leadId],
+    escopo === '' ? [tenantId, leadId] : [tenantId, leadId, conversationId],
   );
   return rows[0]?.handoff === true;
 }

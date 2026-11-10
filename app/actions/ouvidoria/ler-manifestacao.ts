@@ -24,23 +24,27 @@
  * do produto a opção MAIS permissiva, e manifestação é o dado mais sensível que
  * este CRM guarda.
  *
- * ─── Por que a leitura não checa o módulo ligado ────────────────────────────
+ * ─── Por que a leitura não checa a chave da empresa ─────────────────────────
  *
- * Desligar o módulo fecha a ENTRADA; não apaga o acervo nem o protocolo que já
- * foi entregue a alguém. A razão inteira está no cabeçalho de `leitura.ts`.
+ * Desligar `settings.ouvidoria` fecha a ENTRADA; não apaga o acervo nem o
+ * protocolo que já foi entregue a alguém. A razão inteira está no cabeçalho de
+ * `leitura.ts`. O MÓDULO DA INSTALAÇÃO é outra pergunta: sem ele a tabela não
+ * existe, e a resposta é `not_found`, como nas rotas da lista de espera.
  *
  * ─── As respostas ───────────────────────────────────────────────────────────
  *
  * `not_found` cobre "não existe", "é de outra organização" e "id malformado" —
  * uma resposta só, porque distinguir contaria ao vizinho que a linha existe.
  * A ação NUNCA devolve a manifestação de outro tenant com `ok: true`: há dois
- * predicados (o `.eq("organization_id", …)` da leitura e a RLS da 9030) e o
+ * predicados (o `.eq("organization_id", …)` da leitura e a RLS da 9040) e o
  * teste de unidade mede o primeiro.
  */
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { supportWriteError } from "@/lib/impersonate/support";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { lerManifestacao, type ManifestacaoLida } from "@/lib/ouvidoria/leitura";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export type ResultadoDaLeituraDaOuvidoria =
@@ -66,8 +70,9 @@ export async function lerManifestacaoDaOuvidoria(
   const org = await resolveActiveOrg(user);
   if (!org) return { ok: false, error: "forbidden_tenant" };
   if (ROLE_RANK[org.role] < ROLE_RANK.admin) return { ok: false, error: "forbidden_role" };
+  if (!(await moduloLigado(createAdminClient(), "ouvidoria"))) return { ok: false, error: "not_found" };
 
-  // Cliente de SESSÃO de propósito: a RLS da 9030 (organização + admin) é a
+  // Cliente de SESSÃO de propósito: a RLS da 9040 (organização + admin) é a
   // segunda cerca, e ela só existe neste caminho.
   const supabase = await createClient();
   const resultado = await lerManifestacao({ supabase, organizationId: org.orgId }, id);

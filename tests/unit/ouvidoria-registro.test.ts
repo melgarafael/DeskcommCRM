@@ -21,6 +21,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+// O módulo da instalação (`modulos_instalados`) — o dublê de banco não serve essa
+// tabela; a leitura real é medida em `lib/instalacao/modulos.test.ts`.
+const { moduloLigado } = vi.hoisted(() => ({ moduloLigado: vi.fn() }));
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado }));
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -42,6 +46,7 @@ function comContato(db: ReturnType<typeof makeDb>, org = ORG_ID) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  moduloLigado.mockResolvedValue(true);
 });
 
 // ---------------------------------------------------------------------------
@@ -143,6 +148,20 @@ describe("registrarManifestacao — a linha nasce com protocolo do servidor", ()
       expect(resultado).toEqual({ ok: false, erro: "modulo_desligado" });
       expect(db.escritas).toHaveLength(0);
     }
+  });
+
+  it("⭐ módulo NÃO instalado: a chave ligada não leva o insert a uma tabela que não existe", async () => {
+    moduloLigado.mockResolvedValue(false);
+    const db = makeDb({ organizationSettings: LIGADO });
+
+    const resultado = await registrarManifestacao(deps(db), {
+      texto: "Reclamação numa instalação sem o módulo.",
+      canal: "whatsapp",
+    });
+
+    expect(resultado).toEqual({ ok: false, erro: "modulo_desligado" });
+    expect(db.escritas).toHaveLength(0);
+    expect(moduloLigado).toHaveBeenCalledWith(db.client, "ouvidoria");
   });
 
   it("texto vazio, canal inventado e texto acima do teto são validação", async () => {

@@ -10,6 +10,8 @@ import { listSelectableChannels } from "@/lib/channels/selectable";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { rotulosDosResponsaveisDaAgenda } from "@/lib/agenda/rotulos-dos-responsaveis";
 import { rotuloDoResponsavel } from "@/lib/agenda/identidade-do-responsavel";
+import { modelosQueOLembreteEnvia } from "@/lib/agenda/lembrete-por-modelo";
+import { COLUNAS_DO_TIPO_DE_AGENDAMENTO } from "@/lib/agenda/consulta";
 
 import { TiposDeAgendamentoClient, type TipoRow } from "./_client";
 
@@ -66,12 +68,11 @@ export default async function TiposDeAgendamentoPage() {
     { data: pessoas },
     { data: org },
     { data: canais, error: erroCanais },
+    { data: modelos, error: erroModelos },
   ] = await Promise.all([
     supabase
       .from("calendar_event_types")
-      .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, default_owner_user_id, requires_confirmation, is_active, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity",
-      )
+      .select(COLUNAS_DO_TIPO_DE_AGENDAMENTO)
       .eq("organization_id", activeOrg.orgId)
       .order("is_active", { ascending: false })
       .order("name"),
@@ -85,6 +86,15 @@ export default async function TiposDeAgendamentoPage() {
     // RPC, que a action chama.
     supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
     listSelectableChannels(supabase, activeOrg.orgId)
+      .then((data) => ({ data, error: null }))
+      .catch((error: unknown) => ({
+        data: [],
+        error: { message: error instanceof Error ? error.message : String(error) },
+      })),
+    // Os modelos aprovados que o lembrete consegue mandar fora da janela de 24 h.
+    // Falha de leitura é dita como falha (e o seletor fica travado, preservando a
+    // escolha guardada), nunca como "nenhum modelo".
+    modelosQueOLembreteEnvia(supabase, activeOrg.orgId)
       .then((data) => ({ data, error: null }))
       .catch((error: unknown) => ({
         data: [],
@@ -114,6 +124,14 @@ export default async function TiposDeAgendamentoPage() {
           id: c.id,
           nome: `${t(c.display_name)}${c.phone_number && c.display_name !== c.phone_number ? ` · ${c.phone_number}` : ""}${c.status === "WORKING" ? "" : ` · ${rotuloDoEstadoDoCanal(c.status, t)}`}`,
         }))}
+        erroModelos={erroModelos ? erroModelos.message : null}
+        // O rótulo leva o número dono: o modelo só sai por ele. Modelo de número
+        // que não está mais entre os canais da organização não é oferecido.
+        modelos={modelos.flatMap((m) => {
+          const canal = canais.find((c) => c.id === m.channel_session_id);
+          if (!canal) return [];
+          return [{ id: m.id, nome: `${m.name} (${m.language}) · ${t(canal.display_name)}` }];
+        })}
         erroDeLeitura={erroTipos ? erroTipos.message : null}
         pessoas={(pessoas ?? []).map((p) => ({
           id: String(p.user_id),

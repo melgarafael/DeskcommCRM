@@ -83,7 +83,7 @@ export type SignInWithGoogleResult =
  * estar habilitado na instalação). No sucesso, devolve a URL do `/authorize`.
  */
 export async function signInWithGoogle(
-  params: { next?: string; convite?: string } = {},
+  params: { next?: string; convite?: string; idioma?: string; fuso?: string } = {},
 ): Promise<SignInWithGoogleResult> {
   const hdrs = await headers();
   const requestId = hdrs.get("x-request-id");

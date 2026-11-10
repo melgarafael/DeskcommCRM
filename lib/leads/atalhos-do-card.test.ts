@@ -390,3 +390,88 @@ describe("leitura do jsonb — cadastro sujo não derruba o resto", () => {
     expect(atalhosDoFunil({ atalhos: oito })).toHaveLength(6);
   });
 });
+
+/**
+ * A 2ª fatia dos atalhos: a FORMA do telefone no `tel:`.
+ *
+ * O PABX em nuvem que a issue descreve disca `tel:11999999999` — DDD + número,
+ * sem o `55` (foi assim que o autor testou). `contacts.phone_number` guarda
+ * E.164 COM o `+55`, porque é a mesma ficha que atende o WhatsApp: mudar a
+ * coluna quebraria a ingestão do canal. Logo, o `{{telefone}}` da 1ª fatia
+ * entregava `tel:+5511999999999` — no softphone do PABX isso é chamada
+ * internacional, e o operador voltava a copiar e colar, que é o defeito que a
+ * issue veio consertar.
+ *
+ * A saída é a opção POR ATALHO: o mesmo contato serve a dois destinos que
+ * querem formas diferentes do mesmo número.
+ */
+describe("discagem sem o código do país (#3487, 2ª fatia)", () => {
+  const BR = { telefone: "+55 11 98888-7777" };
+  const LIGAR = { rotulo: "Ligar", icone: "telefone" as const, url: "tel:{{telefone}}" };
+
+  it("`sem_pais` tira o 55 e o `+`: é a forma que o PABX disca", () => {
+    expect(montarHref("tel:{{telefone}}", BR, { discagem: "sem_pais" })).toBe("tel:11988887777");
+  });
+
+  it("`completo` continua o padrão — quem já disca internacional não muda de comportamento", () => {
+    expect(montarHref("tel:{{telefone}}", BR)).toBe("tel:+5511988887777");
+    expect(montarHref("tel:{{telefone}}", BR, { discagem: "completo" })).toBe("tel:+5511988887777");
+  });
+
+  it("o `55` escrito à mão no modelo também sai — a opção vence o texto", () => {
+    expect(
+      montarHref("tel:+55{{telefone}}", { telefone: "11988887777" }, { discagem: "sem_pais" }),
+    ).toBe("tel:11988887777");
+  });
+
+  it("fixo de 12 dígitos perde o país; número sem `+` também é reduzido", () => {
+    expect(montarHref("tel:{{telefone}}", { telefone: "+55 11 3333-4444" }, { discagem: "sem_pais" })).toBe(
+      "tel:1133334444",
+    );
+    expect(montarHref("tel:{{telefone}}", { telefone: "5511988887777" }, { discagem: "sem_pais" })).toBe(
+      "tel:11988887777",
+    );
+  });
+
+  it("não inventa regra para o que não é brasileiro", () => {
+    // `+1 415…` não começa com 55: fica inteiro. E um `55` no meio não é país.
+    expect(montarHref("tel:{{telefone}}", { telefone: "+1 415 555 2671" }, { discagem: "sem_pais" })).toBe(
+      "tel:14155552671",
+    );
+  });
+
+  it("`55` com DDD inválido depois não é cortado — só corta o que tem cara de país", () => {
+    // `55` + `09` não é DDD brasileiro (começa em 1); cortar ali inventaria um
+    // número. Mesma prudência de `phoneLookupVariants` com o nono dígito.
+    expect(montarHref("tel:{{telefone}}", { telefone: "+55 09 9999-9999" }, { discagem: "sem_pais" })).toBe(
+      "tel:550999999999",
+    );
+  });
+
+  it("a faixa passa a opção adiante — e sem telefone o botão continua não aparecendo", () => {
+    const visiveis = atalhosParaExibir([{ ...LIGAR, discagem: "sem_pais" }], BR);
+    expect(visiveis.map((a) => a.href)).toEqual(["tel:11988887777"]);
+    expect(visiveis[0]?.externo).toBe(false);
+    expect(atalhosParaExibir([{ ...LIGAR, discagem: "sem_pais" }], {})).toEqual([]);
+  });
+
+  it("o cadastro aceita a opção e recusa valor fora da lista", () => {
+    expect(pipelineConfigPatchSchema.safeParse({ atalhos: [{ ...LIGAR, discagem: "sem_pais" }] }).success).toBe(
+      true,
+    );
+    expect(pipelineConfigPatchSchema.safeParse({ atalhos: [LIGAR] }).success).toBe(true);
+    expect(pipelineConfigPatchSchema.safeParse({ atalhos: [{ ...LIGAR, discagem: "sem_ddi" }] }).success).toBe(
+      false,
+    );
+  });
+
+  it("a opção sobrevive à leitura do jsonb; valor desconhecido não vira campo", () => {
+    const [comOpcao] = atalhosDoFunil({ atalhos: [{ ...LIGAR, discagem: "sem_pais" }] });
+    expect(comOpcao).toEqual({ ...LIGAR, discagem: "sem_pais" });
+    // Sem a chave (todo atalho gravado antes desta fatia) o objeto tem a MESMA
+    // forma de antes: o padrão é aplicado na hora de montar o link, não na
+    // leitura — senão o jsonb antigo mudaria de forma ao ser lido e regravado.
+    expect(atalhosDoFunil({ atalhos: [LIGAR] })[0]).toEqual(LIGAR);
+    expect(atalhosDoFunil({ atalhos: [{ ...LIGAR, discagem: "xx" }] })[0]).toEqual(LIGAR);
+  });
+});

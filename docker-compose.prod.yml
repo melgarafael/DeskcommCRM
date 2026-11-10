@@ -23,7 +23,11 @@ services:
     # O teto não impede o pico legítimo; impede que UM serviço leve a máquina
     # inteira. Estourá-lo mata só quem estourou, e o `restart: unless-stopped`
     # o traz de volta — falha isolada em vez de queda geral.
-    mem_limit: 768m
+    # O teto vem do `.env` (APP_MEM_LIMIT), e sem a chave fica o de sempre. Numa
+    # VPS maior, suba-o lá — nunca aqui: este arquivo é do clone, e uma edição à
+    # mão faz o `git checkout` do update.sh recusar a versão nova que também o
+    # mudou.
+    mem_limit: ${APP_MEM_LIMIT:-768m}
     # Imagem GENÉRICA pré-buildada: o leigo só puxa (sobe em ~2min, roda em 2GB).
     # Os NEXT_PUBLIC_* reais vêm em RUNTIME (env_file abaixo) — o browser lê via
     # <PublicEnvScript/> e o servidor via lib/env.ts. Não precisa buildar no VPS.
@@ -114,7 +118,11 @@ services:
     # O teto não impede o pico legítimo; impede que UM serviço leve a máquina
     # inteira. Estourá-lo mata só quem estourou, e o `restart: unless-stopped`
     # o traz de volta — falha isolada em vez de queda geral.
-    mem_limit: 512m
+    # O teto vem do `.env` (WORKER_MEM_LIMIT), e sem a chave fica o de sempre. Numa
+    # VPS maior, suba-o lá — nunca aqui: este arquivo é do clone, e uma edição à
+    # mão faz o `git checkout` do update.sh recusar a versão nova que também o
+    # mudou.
+    mem_limit: ${WORKER_MEM_LIMIT:-512m}
     # Imagem publicada — e não mais `build:` sozinho. O motivo é o modo de falha
     # que isso escondia: serviço build-only é PULADO por `docker compose pull`
     # ("Skipped - No image to be pulled") e imune a `up -d` sem `--build`. Ele era
@@ -194,7 +202,11 @@ services:
     # O teto não impede o pico legítimo; impede que UM serviço leve a máquina
     # inteira. Estourá-lo mata só quem estourou, e o `restart: unless-stopped`
     # o traz de volta — falha isolada em vez de queda geral.
-    mem_limit: 1280m
+    # O teto vem do `.env` (WAHA_MEM_LIMIT), e sem a chave fica o de sempre. Numa
+    # VPS maior, suba-o lá — nunca aqui: este arquivo é do clone, e uma edição à
+    # mão faz o `git checkout` do update.sh recusar a versão nova que também o
+    # mudou.
+    mem_limit: ${WAHA_MEM_LIMIT:-1280m}
     # Core grátis por padrão; troque para devlikeapro/waha-plus via WAHA_IMAGE se
     # precisar de multi-número/retry/S3 (licença paga).
     #

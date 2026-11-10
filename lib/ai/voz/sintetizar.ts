@@ -11,6 +11,13 @@
  * `tests/unit/pontos-de-ia-completude.test.ts` existe para pegar: ponto no
  * registro (ou gasto no log) que nenhum caminho de produção aciona.
  */
+import {
+  ehContainerOgg,
+  MIME_DA_NOTA_DE_VOZ_OPUS,
+  SAIDA_OPUS_DA_ELEVENLABS,
+  type FormatoDaVoz,
+} from "./formato";
+
 export interface SintetizarVozInput {
   apiKey: string;
   voiceId: string;
@@ -21,11 +28,20 @@ export interface SintetizarVozInput {
   stability?: number;
   /** 0–1. Default 0.75 — idem. */
   similarityBoost?: number;
+  /**
+   * `mp3` (o default de sempre) ou `ogg_opus`, o que o canal oficial exige para
+   * nota de voz — quem escolhe é `formatoDaVozParaCanal` (`./formato.ts`).
+   */
+  formato?: FormatoDaVoz;
 }
 
 export interface SintetizarVozResultado {
   audio: Buffer;
-  /** `audio/mpeg` no formato padrão (`mp3_44100_128`). Só canal `server-convert` o entrega como nota de voz — ver `voz-do-turno.ts`. */
+  /**
+   * `audio/mpeg` no formato padrão (`mp3_44100_128`); `audio/ogg;codecs=opus`
+   * quando `formato` é `ogg_opus` — a etiqueta que o canal oficial aceita, não o
+   * `audio/opus` que a ElevenLabs devolve (ver `./formato.ts`).
+   */
   mimeType: string;
   /** Caracteres de `texto` — a unidade de cobrança (`custoDeVozCents` em pricing.ts). */
   caracteres: number;
@@ -37,16 +53,22 @@ export async function sintetizarVoz(
   input: SintetizarVozInput,
   fetchImpl: typeof fetch = fetch,
 ): Promise<SintetizarVozResultado> {
+  const opus = input.formato === "ogg_opus";
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(input.voiceId)}${
+    opus ? `?output_format=${SAIDA_OPUS_DA_ELEVENLABS}` : ""
+  }`;
   const res = await fetchImpl(
-    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(input.voiceId)}`,
+    url,
     {
       method: "POST",
       headers: {
         "xi-api-key": input.apiKey,
         "content-type": "application/json",
         // mp3_44100_128 é o default da própria API — explícito aqui para o
-        // contrato não depender de um default que a ElevenLabs pode mudar.
-        accept: "audio/mpeg",
+        // contrato não depender de um default que a ElevenLabs pode mudar. Em
+        // opus quem manda é o `output_format` da URL, e a resposta vem como
+        // `audio/opus` (medido) — por isso o `accept` não a restringe.
+        accept: opus ? "*/*" : "audio/mpeg",
       },
       body: JSON.stringify({
         text: input.texto,
@@ -60,6 +82,14 @@ export async function sintetizarVoz(
   );
   if (!res.ok) throw new Error(`synthesis_${res.status}`);
   const audio = Buffer.from(await res.arrayBuffer());
+  if (opus) {
+    // Conferido no BYTE, não no cabeçalho: um opus cru (sem contêiner) ou um mp3
+    // de volta chegariam ao canal oficial como anexo — ou nem chegariam (131053).
+    // Lançar aqui faz o envio cair para TEXTO (`send-message.ts`), que é o
+    // combinado da voz: ela é um extra, nunca o que deixa o cliente sem resposta.
+    if (!ehContainerOgg(audio)) throw new Error("synthesis_formato_inesperado");
+    return { audio, mimeType: MIME_DA_NOTA_DE_VOZ_OPUS, caracteres: input.texto.length };
+  }
   return {
     audio,
     mimeType: res.headers.get("content-type") ?? "audio/mpeg",

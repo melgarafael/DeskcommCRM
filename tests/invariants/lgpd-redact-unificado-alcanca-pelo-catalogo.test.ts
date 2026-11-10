@@ -257,6 +257,16 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "fn_apaga_propostas_de_contato_anonimizado: a fila guarda o VALOR proposto para virar escrita em contacts — apaga, não redige, porque proposta pendente de contato anonimizado não tem mais destinatário.",
   },
+  contato_mcp_credenciais: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9095: fn_mcp_contato_anonimizado_revoga_acessos agenda a revogação IMEDIATA na virada; o cron mcp-oauth-revogacao revoga no terceiro (RFC 7009 — precisa do token) e, com o contato anonimizado, apaga a linha.",
+  },
+  mcp_oauth_pedidos: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9095: fn_mcp_contato_anonimizado_revoga_acessos APAGA os pedidos de autorização pendentes na virada — link de acesso de contato anonimizado não tem mais destinatário.",
+  },
   crm_tasks: {
     decidida: "redigir",
     caminho: "gatilho",
@@ -352,7 +362,7 @@ const DECISOES: Record<string, Decisao> = {
   ouvidoria_manifestacoes: {
     decidida: "manter",
     razao:
-      "O RELATO é o documento da manifestação (#3611): ele responde ao protocolo que já foi entregue a quem reclamou, e a ouvidoria precisa do texto para apurar — redigir apagaria a própria manifestação que a empresa tem de responder, e o prazo de resposta é sobre ela. A identificação do manifestante sai junto com o contato: `contact_id` é `on delete set null`, então apagar/anonimizar a pessoa desliga o vínculo e a linha continua legível só para os administradores (RLS da 9030). Redigir o TEXTO é decisão de produto da fatia de gestão (retenção e resposta), registrada aqui para não ser tomada por acidente.",
+      "O RELATO é o documento da manifestação (#3611): ele responde ao protocolo que já foi entregue a quem reclamou, e a ouvidoria precisa do texto para apurar — redigir apagaria a própria manifestação que a empresa tem de responder, e o prazo de resposta é sobre ela. A identificação do manifestante sai junto com o contato: `contact_id` é `on delete set null`, então apagar/anonimizar a pessoa desliga o vínculo e a linha continua legível só para os administradores (RLS da 9040). Redigir o TEXTO é decisão de produto da fatia de gestão (retenção e resposta), registrada aqui para não ser tomada por acidente.",
   },
   send_ledger: {
     decidida: "manter",
@@ -387,6 +397,7 @@ const DEZ_E_UM = [
  */
 beforeAll(() => {
   sql("select public.fn_financeiro_provisionar();");
+  sql("select public.fn_ouvidoria_provisionar();");
 });
 
 describe("LGPD: redact unificado — catálogo de FKs com decisão escrita", () => {

@@ -17,6 +17,7 @@
  * ledger), e um reenvio humano por cima sairia em dobro.
  */
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
+import { MOTIVO_DO_PULO } from "@/lib/agenda/escolha-no-envio";
 
 export type TipoDeReenvio = "seguro" | "confirmar" | "nenhum";
 
@@ -57,6 +58,13 @@ const FALHA_SEGURA = new Set([
 const FALHA_SEM_REENVIO = new Set([
   "channel_archived",
   "missing_phone_number",
+  // #3848 — o fluxo escolheu NÃO enviar porque o contato tem compromisso na
+  // agenda. Insistir por aqui furaria a proteção que o operador configurou: a
+  // rota de reenvio não reavalia a agenda (não leva `proactiveContext`), então
+  // o toque sairia mesmo — em silêncio, contra a decisão da regra. A ação
+  // honesta na Inbox é abrir o compromisso; mandar assim mesmo é mudar a
+  // escolha do fluxo ou escrever pelo campo de resposta.
+  MOTIVO_DO_PULO,
   // Número sem WhatsApp.
   "131026",
   // Limites de envio, de spam e de qualidade: um toque a mais é o que derruba o número.

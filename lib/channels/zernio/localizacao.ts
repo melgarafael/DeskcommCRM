@@ -1,14 +1,26 @@
 /**
- * Localização compartilhada: o webhook deste canal NÃO traz as coordenadas.
+ * Localização compartilhada pelo cliente — o pino do WhatsApp neste canal.
  *
- * Medido no payload real (24/09/2026): o cliente mandou o pino do WhatsApp e o
- * evento chegou só com `text: "📍 Location"` e `attachments: []`. As
- * coordenadas existem — a API de mensagens da conversa devolve a MESMA
- * mensagem com `metadata.location = { latitude, longitude }` —, mas só lá.
+ * ─── De onde vêm as coordenadas ─────────────────────────────────────────────
  *
- * Então, quando o texto é o marcador de localização, a ingestão pergunta à API
- * pela mensagem (o `id` dela lá é o wamid, o nosso `external_id`) e grava as
- * coordenadas. Uma chamada a mais só para esse tipo de mensagem.
+ * Do PRÓPRIO webhook, em `metadata.location` (lido por `parseZernioInbound`).
+ * Nem sempre foi assim: medido no payload real em 24/09/2026, o pino chegava só
+ * com `text: "📍 Location"` e `attachments: []`, e as coordenadas existiam
+ * apenas na API de mensagens da conversa. A ingestão, então, perguntava à API
+ * DENTRO da requisição do webhook — até 2 × 4 s mais 0,8 s de espera.
+ *
+ * ─── Por que a API saiu do caminho da requisição (27/10/2026) ──────────────
+ *
+ * O provedor dá por FALHADA a entrega que não responde em 5 s, e reentrega. No
+ * log de entregas dele (30 dias), 29 das 129 entregas de pino tinham vencido
+ * por tempo — e os 50 pinos do período já traziam `metadata.location`, ou seja,
+ * a consulta não acrescentava nada e era a parte mais lenta do pino.
+ *
+ * Hoje: com `metadata.location`, nenhuma chamada ao provedor; só o endereço
+ * aproximado do Google (teto próprio de 2,5 s), que o agente usa para confirmar
+ * a cidade. Sem `metadata.location`, a mensagem entra com o marcador e a busca
+ * pela API vai para `./pino-reintento.handler.ts`, que roda em segundos pelo
+ * dreno do worker, sem segurar a resposta ao provedor.
  *
  * ─── Nunca derruba a ingestão ───────────────────────────────────────────────
  *
@@ -22,7 +34,7 @@ import { logger } from "@/lib/logger";
 import { enderecoAproximadoDoPino } from "@/lib/mapas/credencial";
 import { lerLocalizacao, type Localizacao } from "@/lib/messaging/localizacao";
 
-import { resolveZernioCreds, type ZernioCredentials } from "./credentials";
+import type { ZernioCredentials } from "./credentials";
 import type { ZernioInboundMessage } from "./webhook";
 
 /**
@@ -93,8 +105,12 @@ export async function buscarLocalizacaoZernio(
 }
 
 /**
- * A mensagem com as coordenadas, quando ela é um pino; a mesma mensagem, sem
- * mudança, em qualquer outro caso — inclusive quando a busca falha.
+ * A mensagem com o endereço aproximado, quando ela é um pino que o webhook já
+ * trouxe com coordenadas; a mesma mensagem, sem mudança, em qualquer outro caso.
+ *
+ * NÃO pergunta ao provedor: sem `metadata.location` no evento, quem busca é a
+ * nova busca do pino (`pinoFicouSemCoordenadas` → `pedirNovaBuscaDoPino`), fora
+ * da requisição. Ver o cabeçalho.
  */
 export async function completarLocalizacao(
   admin: SupabaseClient,
@@ -102,24 +118,16 @@ export async function completarLocalizacao(
   msg: ZernioInboundMessage,
 ): Promise<ZernioInboundMessage> {
   if (msg.kind !== "message" || msg.attachments.length > 0) return msg;
-  if (!ehMarcadorDeLocalizacao(msg.text) || !msg.accountId) return msg;
+  const location = msg.location;
+  if (!location || location.aproximado) return msg;
   try {
-    const creds = await resolveZernioCreds(admin, { organizationId, accountId: msg.accountId });
-    if (!creds) return msg;
-    const location = await buscarLocalizacaoZernio(creds, msg.conversationId, msg.externalId);
-    if (!location) {
-      logger.warn("zernio: pino sem coordenadas na API — mensagem entra com o marcador", {
-        organization_id: organizationId,
-      });
-      return msg;
-    }
     // Com a chave de Mapas da organização, as coordenadas ganham rua, cidade e
     // região aproximadas — o agente deixa de perguntar a cidade de quem mandou o
     // pino. Sem chave, nenhuma rede a mais; e a falha nunca derruba o pino.
     const aproximado = await enderecoAproximadoDoPino(admin, organizationId, location);
-    return { ...msg, location: aproximado ? { ...location, aproximado } : location };
+    return aproximado ? { ...msg, location: { ...location, aproximado } } : msg;
   } catch (err) {
-    logger.warn("zernio: busca das coordenadas do pino falhou — mensagem entra com o marcador", {
+    logger.warn("zernio: endereço aproximado do pino falhou — o pino entra só com as coordenadas", {
       organization_id: organizationId,
       detail: err instanceof Error ? err.message : String(err),
     });
@@ -129,12 +137,13 @@ export async function completarLocalizacao(
 
 /**
  * O pino ficou só com o marcador: era pino (o texto é o alfinete), veio pelo
- * WhatsApp e a busca das coordenadas não trouxe nada — a API não respondeu a
- * tempo, ou a mensagem ainda não aparecia na listagem.
+ * WhatsApp e o evento não trouxe `metadata.location`. A busca pela API sai
+ * daqui para a nova busca do pino, fora da requisição do webhook.
  *
- * Medido em 29/09/2026: "The operation was aborted due to timeout" duas vezes
- * seguidas, e o pino de um pedido confirmado ficou sem mapa — o entregador sem
- * a localização. A próxima busca, minutos depois, trouxe as coordenadas.
+ * Medido em 29/09/2026, quando a busca ainda era feita dentro da requisição:
+ * "The operation was aborted due to timeout" duas vezes seguidas, e o pino de
+ * um pedido confirmado ficou sem mapa — o entregador sem a localização. A busca
+ * feita minutos depois trouxe as coordenadas.
  */
 export function pinoFicouSemCoordenadas(msg: ZernioInboundMessage): boolean {
   return (
