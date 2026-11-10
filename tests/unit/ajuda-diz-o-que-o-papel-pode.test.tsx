@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
@@ -18,8 +16,9 @@ import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
  * A Ajuda por papel afirma coisas sobre permissão ("o seu papel pode abrir
  * isto", "este papel não abre aquilo"). Texto de permissão que ninguém confere
  * envelhece em silêncio: o `minRole` do catálogo muda e a frase continua
- * prometendo a tela que sumiu. Por isso cada item carrega `href` + `fonte`, e
- * aqui os dois são medidos contra o catálogo e contra o arquivo citado.
+ * prometendo a tela que sumiu. Por isso cada item carrega o `href` da tela, e
+ * aqui ele é medido contra o catálogo. O vínculo é pelo `href`, não por número
+ * de linha: linha fixa do catálogo envelhece a cada tela nova.
  */
 
 const authRef: {
@@ -73,19 +72,6 @@ describe("a ajuda diz o alcance de cada papel", () => {
     }
   });
 
-  it("toda fonte é arquivo:linha real, apontando para o href citado", () => {
-    for (const ajuda of Object.values(AJUDA_POR_PAPEL)) {
-      for (const item of [...ajuda.poderes, ...ajuda.limites]) {
-        expect(JSON.stringify(item), `${ajuda.papel}: item sem fonte`).toContain('"fonte"');
-        const [arquivo = "", linha = "0"] = item.fonte.split(":");
-        expect(arquivo, `fonte sem arquivo em ${item.href}`).toBeTruthy();
-        const linhas = readFileSync(resolve(process.cwd(), arquivo), "utf8").split("\n");
-        const citada = linhas[Number(linha) - 1] ?? "";
-        expect(citada, `${item.fonte} não cita ${item.href}`).toContain(`href: "${item.href}"`);
-      }
-    }
-  });
-
   it("todo texto novo tem espanhol no dicionário", () => {
     for (const ajuda of Object.values(AJUDA_POR_PAPEL)) {
       expect(temEspanhol(ajuda.resumo), ajuda.resumo).toBe(true);
@@ -93,7 +79,7 @@ describe("a ajuda diz o alcance de cada papel", () => {
         expect(temEspanhol(item.texto), item.texto).toBe(true);
       }
     }
-    for (const chave of ["O que o seu papel pode fazer", "O que este papel não abre", "Fonte"]) {
+    for (const chave of ["O que o seu papel pode fazer", "O que este papel não abre"]) {
       expect(DICIONARIO[chave]?.es, chave).toBeTruthy();
     }
   });
@@ -107,6 +93,24 @@ describe("o bloco aparece na tela com o papel de quem está olhando", () => {
     expect(screen.getByTestId("ajuda-papel--app-settings-tenant-pipelines")).toBeInTheDocument();
     expect(screen.getByTestId("ajuda-limite--app-connections")).toBeInTheDocument();
     expect(screen.queryByTestId("ajuda-papel--app-connections")).toBeNull();
+  });
+
+  it("porta que a empresa escondeu do menu não vira atalho no bloco, como no índice", () => {
+    // O mesmo filtro do índice (`destinosDaInterface`): a empresa deixou só o
+    // funil no menu, então o gerente não recebe link para Contatos aqui.
+    authRef.activeOrg!.interface_settings = {
+      preset: "completa",
+      destinos: ["/app/ajuda", "/app/kanban"],
+    };
+    render(<AjudaConteudo />);
+    expect(screen.getByTestId("ajuda-do-papel")).toBeInTheDocument();
+    expect(screen.getByTestId("ajuda-papel--app-kanban")).toBeInTheDocument();
+    expect(screen.queryByTestId("ajuda-papel--app-contacts")).toBeNull();
+  });
+
+  it("a tela não mostra caminho de arquivo do repositório", () => {
+    render(<AjudaConteudo />);
+    expect(screen.getByTestId("ajuda-do-papel").textContent).not.toMatch(/catalogo\.ts|Fonte/);
   });
 
   it("o somente-leitura não recebe atalho de configuração", () => {

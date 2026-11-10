@@ -12,16 +12,18 @@
  *
  * ─── Cada frase tem de ser conferível ─────────────────────────────────────
  *
- * Todo poder aponta para a rota do catálogo que o sustenta (`href`) e para a
- * linha do repo onde isso está escrito (`fonte`). O teste
- * `tests/unit/ajuda-diz-o-que-o-papel-pode` cobra três coisas, e é o que
- * impede esta lista de virar FAQ inventado:
+ * Todo poder aponta para a rota do catálogo que o sustenta (`href`). O vínculo
+ * é pelo `href`, nunca por número de linha: linha fixa do catálogo envelhece a
+ * cada tela nova. O teste `tests/unit/ajuda-diz-o-que-o-papel-pode` cobra duas
+ * coisas, e é o que impede esta lista de virar FAQ inventado:
  *
  *   1. `poderes` só citam telas cujo `minRole` o papel REALMENTE alcança;
  *   2. `limites` só citam telas que o papel realmente NÃO alcança — o
- *      contrário seria esconder do usuário algo que ele pode abrir;
- *   3. toda `fonte` é um `arquivo:linha` que existe, e a linha citada é a do
- *      `href` daquela tela no catálogo.
+ *      contrário seria esconder do usuário algo que ele pode abrir.
+ *
+ * Na tela, os `poderes` ainda passam pelo MESMO filtro do índice
+ * (`destinosDaInterface`): porta que a empresa escondeu do menu não vira
+ * atalho aqui.
  *
  * ─── `ai_operator` NÃO aparece ────────────────────────────────────────────
  *
@@ -38,14 +40,12 @@
 
 import type { Role } from "@/lib/auth/types";
 
-/** Um poder (ou um limite) do papel, com a prova ao lado. */
+/** Um poder (ou um limite) do papel, preso à tela do catálogo pelo `href`. */
 export interface PoderDoPapel {
   /** Texto do item. É a CHAVE do dicionário — o português é a chave. */
   texto: string;
   /** Rota do catálogo que sustenta a frase. O teste confere o `minRole` dela. */
   href: string;
-  /** Onde isso está escrito no repo, no formato `arquivo:linha`. */
-  fonte: string;
 }
 
 export interface AjudaDoPapel {
@@ -58,54 +58,46 @@ export interface AjudaDoPapel {
 }
 
 /**
- * Os destinos citados, cada um com a linha do catálogo onde o `minRole` mora.
- * Uma linha por afirmação: é isso que o teste lê para conferir o papel.
+ * Os destinos citados. O `minRole` de cada um mora no catálogo
+ * (`lib/navigation/catalogo.ts`), na entrada com o mesmo `href` — é por ele que
+ * o teste confere o papel.
  */
 const DESTINO = {
   inbox: {
     texto: "Ver as conversas e quem está esperando",
     href: "/app/inbox",
-    fonte: "lib/navigation/catalogo.ts:173",
   },
   kanban: {
     texto: "Acompanhar os negócios no quadro",
     href: "/app/kanban",
-    fonte: "lib/navigation/catalogo.ts:234",
   },
   contatos: {
     texto: "Consultar contatos e o histórico deles",
     href: "/app/contacts",
-    fonte: "lib/navigation/catalogo.ts:257",
   },
   equipe: {
     texto: "Ver a equipe e a disponibilidade",
     href: "/app/team",
-    fonte: "lib/navigation/catalogo.ts:1002",
   },
   casos: {
     texto: "Ver onde a IA pediu ajuda",
     href: "/app/ai/cases",
-    fonte: "lib/navigation/catalogo.ts:687",
   },
   agentes: {
     texto: "Criar ou ajustar o agente de IA",
     href: "/app/ai/agents",
-    fonte: "lib/navigation/catalogo.ts:577",
   },
   conhecimento: {
     texto: "Ensinar o que o agente deve saber",
     href: "/app/ai/knowledge/sources",
-    fonte: "lib/navigation/catalogo.ts:660",
   },
   etapas: {
     texto: "Renomear etapas e criar campos",
     href: "/app/settings/tenant/pipelines",
-    fonte: "lib/navigation/catalogo.ts:556",
   },
   conexoes: {
     texto: "Conectar um canal",
     href: "/app/connections",
-    fonte: "lib/navigation/catalogo.ts:784",
   },
 } as const satisfies Record<string, PoderDoPapel>;
 

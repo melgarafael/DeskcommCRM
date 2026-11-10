@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import { useT } from "@/hooks/i18n/useT";
-import { ajudaDoPapel, type PoderDoPapel } from "@/lib/ajuda/papel";
+import { ajudaDoPapel } from "@/lib/ajuda/papel";
 
 /**
  * "O QUE O SEU PAPEL PODE FAZER" (issue #3567, fatia F2).
@@ -12,17 +12,24 @@ import { ajudaDoPapel, type PoderDoPapel } from "@/lib/ajuda/papel";
  * para o atalho da tarefa. Sem papel resolvido (instalação sem vínculo, papel
  * de máquina ou papel desconhecido) o bloco simplesmente não renderiza — o
  * índice abaixo continua valendo.
+ *
+ * `destinos` é a MESMA lista que filtra o índice (`destinosDaInterface`): um
+ * atalho só aparece se a porta existe no menu desta pessoa. Sem isso o bloco
+ * ofereceria link para tela que a empresa escondeu.
  */
-export function BlocoDoPapel({ papel }: { papel: string | null | undefined }) {
+export function BlocoDoPapel({
+  papel,
+  destinos,
+}: {
+  papel: string | null | undefined;
+  destinos: readonly { href: string }[];
+}) {
   const t = useT();
   const ajuda = ajudaDoPapel(papel);
   if (!ajuda) return null;
 
-  const prova = (item: PoderDoPapel) => (
-    <span className="text-xs text-muted-foreground">
-      {t("Fonte")}: <code className="font-mono">{item.fonte}</code>
-    </span>
-  );
+  const visiveis = new Set(destinos.map((destino) => destino.href));
+  const poderes = ajuda.poderes.filter((item) => visiveis.has(item.href));
 
   return (
     <section
@@ -41,7 +48,7 @@ export function BlocoDoPapel({ papel }: { papel: string | null | undefined }) {
       </div>
 
       <ul className="flex flex-col divide-y">
-        {ajuda.poderes.map((item) => (
+        {poderes.map((item) => (
           <li key={item.href} className="py-1.5">
             <Link
               href={item.href}
@@ -50,7 +57,6 @@ export function BlocoDoPapel({ papel }: { papel: string | null | undefined }) {
             >
               {t(item.texto)}
             </Link>
-            <div>{prova(item)}</div>
           </li>
         ))}
       </ul>
@@ -64,7 +70,6 @@ export function BlocoDoPapel({ papel }: { papel: string | null | undefined }) {
             {ajuda.limites.map((item) => (
               <li key={item.href} data-testid={`ajuda-limite-${item.href.replace(/\//g, "-")}`}>
                 <span className="text-sm text-muted-foreground">{t(item.texto)}</span>
-                <div>{prova(item)}</div>
               </li>
             ))}
           </ul>

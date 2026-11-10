@@ -36,7 +36,7 @@ export function AjudaConteudo() {
       </header>
 
       {/* O alcance do papel vem ANTES do índice: "posso" antes de "onde". */}
-      <BlocoDoPapel papel={activeOrg?.role ?? null} />
+      <BlocoDoPapel papel={activeOrg?.role ?? null} destinos={destinos} />
 
       <div className="grid gap-6 md:grid-cols-2">
         {blocos.map((bloco) => (
