@@ -13403,6 +13403,9 @@ export const DICIONARIO: Traducoes = {
   "Reconectar o áudio": { es: "Reconectar el audio" },
   "Chamada de voz": { es: "Llamada de voz" },
   "Chamada de voz sem resposta": { es: "Llamada de voz sin respuesta" },
+  // #3509: a linha da timeline quando o provedor confirma o pagamento. Diz que
+  // foi o AVISO do provedor, e não uma conferência no extrato.
+  "Pagamento confirmado pelo aviso do provedor": { es: "Pago confirmado por el aviso del proveedor" },
   "A chamada de voz não está configurada.": { es: "La llamada de voz no está configurada." },
   "Falta o endereço do serviço (": { es: "Falta la dirección del servicio (" },
   ") nas variáveis de ambiente desta instalação.": {
@@ -14149,6 +14152,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Pipeline não tem stage de fechamento como ganho.": {
     es: "El embudo no tiene una etapa de cierre para negocios ganados.",
+  },
+  "O negócio mudou enquanto era encerrado.": {
+    es: "El negocio cambió mientras se cerraba.",
   },
   "Pipeline não tem stage de fechamento como perda.": {
     es: "El embudo no tiene una etapa de cierre para negocios perdidos.",
@@ -19841,6 +19847,16 @@ export const DICIONARIO: Traducoes = {
   // O módulo opcional das reservas de lugar (#4029, doc 283) em /admin/sistema e em Recursos opcionais.
   "Reservas de lugar": { es: "Reserva de lugares" },
   "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.": { es: "La agenda reserva un lugar, como mesa, palco o cancha, con capacidad en personas." },
+  "Link de pagamento na conversa": { es: "Enlace de pago en la conversación" },
+  // #3509: as recusas da rota que registra o recebimento na conversa.
+  "Pedido inválido.": { es: "Solicitud inválida." },
+  "Esta instalação não tem um endereço público https para receber o aviso de pagamento.": { es: "Esta instalación no tiene una dirección pública https para recibir el aviso de pago." },
+  "Não foi possível ler a conversa.": { es: "No fue posible leer la conversación." },
+  "Não foi possível registrar o pagamento.": { es: "No fue posible registrar el pago." },
+  "O valor precisa ser maior que zero e caber no teto.": { es: "El valor debe ser mayor que cero y caber en el tope." },
+  "O valor a cobrar é registrado numa conversa pela API, em /api/v1/conversations/[id]/pagamentos (uma integração; ainda não há botão na tela), e a resposta traz um endereço para colar no link de pagamento; quando o cliente paga, o provedor avisa e o negócio vai para ganho.": {
+    es: "El valor a cobrar se registra en una conversación por la API, en /api/v1/conversations/[id]/pagamentos (una integración; todavía no hay botón en la pantalla), y la respuesta trae una dirección para pegar en el enlace de pago; cuando el cliente paga, el proveedor avisa y el negocio pasa a ganado.",
+  },
   "Ligado, cada empresa pode cadastrar na agenda um lugar, como mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.": { es: "Activado, cada empresa puede registrar en la agenda un lugar, como mesa, palco o cancha, con capacidad en personas, y la reserva pasa a elegir el lugar e indicar cuántas personas vienen. Desactivado, nadie crea un lugar nuevo; los lugares y las reservas que ya existen quedan guardados." },
   "Não cria porta no menu do CRM: por enquanto o lugar é cadastrado e reservado pela API, em /api/v1/agenda/servicos.": { es: "No crea entrada en el menú del CRM: por ahora el lugar se registra y se reserva por la API, en /api/v1/agenda/servicos." },
   // O módulo opcional dos servidores MCP por agente (#3857, doc 252) em /admin/sistema e em Recursos opcionais.
