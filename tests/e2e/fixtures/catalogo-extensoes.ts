@@ -258,7 +258,7 @@ export async function criarAtoresDasExtensoes(): Promise<AtoresDasExtensoes> {
   }
 }
 
-async function catalogoCli(argumentos: string[]): Promise<string> {
+export async function catalogoCli(argumentos: string[]): Promise<string> {
   const { stdout } = await executar("python3", [CAMINHO_CLI, ...argumentos], {
     cwd: process.cwd(),
     encoding: "utf8",
@@ -271,13 +271,17 @@ async function aguardarDepoisDoBuild(buildMtimeMs: number): Promise<void> {
   if (espera > 0) await new Promise((resolve) => setTimeout(resolve, espera));
 }
 
-async function iniciarServidor(banco: string): Promise<{
+export async function iniciarServidor(
+  banco: string,
+  /** Opções a mais do `serve` (ex.: `--modulo-de-ensaio`). Vazio = o servidor de sempre. */
+  argumentosExtras: string[] = [],
+): Promise<{
   processo: ChildProcessWithoutNullStreams;
   pid: number;
 }> {
   const processo = spawn(
     "python3",
-    [CAMINHO_CLI, "serve", "--db", banco, "--host", "127.0.0.1", "--port", "56331"],
+    [CAMINHO_CLI, "serve", "--db", banco, "--host", "127.0.0.1", "--port", "56331", ...argumentosExtras],
     { cwd: process.cwd(), stdio: "pipe" },
   );
   const pid = processo.pid;
@@ -312,7 +316,7 @@ async function iniciarServidor(banco: string): Promise<{
   return { processo, pid };
 }
 
-async function encerrarProcessoProprio(
+export async function encerrarProcessoProprio(
   processo: ChildProcessWithoutNullStreams,
   pid: number,
 ): Promise<void> {
