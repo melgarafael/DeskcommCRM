@@ -8621,6 +8621,8 @@ export const DICIONARIO: Traducoes = {
   "Lead ganho": { es: "Lead ganado" },
   "Lead perdido": { es: "Lead perdido" },
   "Você foi mencionado": { es: "Te mencionaron" },
+  // #2372 — o selo da linha na lista de conversas (o mesmo aviso, em duas palavras).
+  "Mencionado": { es: "Te mencionaron" },
   // ─── lib/notifications/push.handler.ts + push-de-venda.ts (o push no celular) ───
   "Nova mensagem no grupo": { es: "Mensaje nuevo en el grupo" },
   "Hoje nesta etapa: {quantidade}": { es: "Hoy en esta etapa: {quantidade}" },

@@ -87,6 +87,15 @@ interface Props {
    * QueryClient set". Quem faz o `POST .../usable-for-rag` é a lista.
    */
   onAlternarExemplo?: (id: string, enabled: boolean) => void;
+  /**
+   * Esta conversa tem uma menção PENDENTE para quem está olhando a lista
+   * (#2372). Vem da lista (uma marca só, compartilhada) e não de hook por
+   * linha, pela mesma razão do `automaticoDaOrg`.
+   *
+   * Ausente = sem marca, e é o default de todo teste que renderiza a linha
+   * sozinha: o selo só aparece com `true` porque afirmar o contrário seria pior.
+   */
+  mencionado?: boolean;
 }
 
 /**
@@ -163,6 +172,7 @@ export function ConversationListItem({
   selecionado = false,
   onAlternarSelecao,
   onAlternarExemplo,
+  mencionado = false,
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -392,6 +402,26 @@ export function ConversationListItem({
             {conversation.is_group && (
               <Badge variant="secondary" className="h-4 shrink-0 px-1.5 text-[10px]">
                 {t("Grupo")}
+              </Badge>
+            )}
+            {/*
+              O SELO "MENCIONADO" (#2372), ao lado do nome.
+
+              O sino e o push dizem que houve menção; a lista precisa dizer ONDE,
+              e a hora do canto não ajuda. Fica antes das etiquetas porque não é
+              classificação do contato — é um recado pendente para QUEM ESTÁ
+              OLHANDO, e some no clique que abre a conversa (`ConversationList`).
+              `default` já usa fundo `accent-soft` + texto `accent`: o par que o
+              selo de exemplo usa no escuro e no claro.
+            */}
+            {mencionado && (
+              <Badge
+                variant="default"
+                data-testid="selo-mencionado"
+                title={t("Você foi mencionado")}
+                className="h-4 shrink-0 gap-1 px-1.5 text-[10px] font-normal"
+              >
+                {t("Mencionado")}
               </Badge>
             )}
           </span>
