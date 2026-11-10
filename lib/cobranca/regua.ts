@@ -98,8 +98,10 @@ export function decidirRegua(
   }
 
   // A suspensão inicial restringe acesso enquanto o primeiro pagamento não chega.
-  // Não é uma dívida vencida nem deve gerar lembretes de inadimplência.
-  if (a.entradaPendente && a.estado !== "ativa") return decisao(NADA);
+  // Não é uma dívida vencida nem deve gerar lembretes de inadimplência. Só vale
+  // para quem ESTÁ suspensa por cobrança: depois do "Dar prazo" a empresa volta
+  // a operar sem ter pago, e a régua precisa avisar e suspender de novo.
+  if (a.entradaPendente && a.estado !== "ativa" && suspensao === "cobranca") return decisao(NADA);
 
   // Teste grátis sem provedor que acabou: vira dívida desde o fim do teste. Com
   // provedor, quem traduz é `sincronizar` (a Stripe pode estar no teste dela).
