@@ -4257,7 +4257,6 @@ export const DICIONARIO: Traducoes = {
   "Em uso por": { es: "En uso por" },
   "Este número já está em outra campanha em andamento.": { es: "Este número ya está en otra campaña en curso." },
   "Abrir essa campanha": { es: "Abrir esa campaña" },
-  "Abrir o agente": { es: "Abrir el agente" },
   'O pacote "Vender e mover o funil" está ligado, mas nenhum funil está marcado logo abaixo: o agente não vai poder mover negócio de funil nenhum, e uma campanha de Prospecção não inicia com ele assim. Não é bloqueio — dá para salvar e publicar agora e marcar o funil depois.': {
     es: 'El paquete "Vender y mover el embudo" está activado, pero no hay ningún embudo marcado justo abajo: el agente no podrá mover ningún negocio de ningún embudo, y una campaña de Prospección no se inicia así. No es un bloqueo: puedes guardar y publicar ahora y marcar el embudo después.',
   },
