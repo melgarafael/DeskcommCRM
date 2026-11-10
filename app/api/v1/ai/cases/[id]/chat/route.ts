@@ -539,6 +539,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       serviceRevision: fronteira?.service_revision ?? null,
       abertoEm: caso.opened_at,
       limite: janela,
+      verImagens: persona.fonte === "agente_do_caso" ? (persona.agente.imageVisionEnabled ?? true) : true,
     }),
     lerMemoriaDoAtendimento(pool, c.orgId, contactId, caso.conversation_id),
     lerDecisoesDaEquipe(createAdminClient(), c.orgId, caso.conversation_id),

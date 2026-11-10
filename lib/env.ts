@@ -326,6 +326,10 @@ const schema = z.object({
   // e NUNCA `z.enum` (motivo mais abaixo, em AGENT_DISPATCH_CONSUMER): quem valida
   // a grafia é o boot do worker, em `lib/agent-engine/env.ts`.
   OPENAI_REASONING_EFFORT: z.string().optional().default(""),
+  // Cache de prompt nos Claude pela OpenRouter (ligado por padrão; `off` desliga).
+  // `z.string()` pelo mesmo motivo do knob acima: quem valida a grafia é o boot
+  // do worker, e quem lê em runtime é `createDefaultRegistry`, via process.env.
+  OPENROUTER_PROMPT_CACHE: z.string().optional().default(""),
   // Transcrição de áudio num serviço COMPATÍVEL com o da OpenAI (Groq, um
   // Whisper próprio): a chave vale só para `/audio/transcriptions` — a conversa
   // com o cliente e a leitura de imagem continuam no provedor do ponto.
@@ -340,6 +344,18 @@ const schema = z.object({
   // da OpenAI da organização — assim como `TRANSCRIPTION_MODEL`. Leitura
   // tolerante em `idiomasDaTranscricao` (grafia errada não derruba o worker).
   TRANSCRIPTION_LANGUAGES: z.string().optional().default(""),
+  // Foto só passa pela visão (paga) quando alguém da empresa vai ler a
+  // descrição. `defer` (padrão) liga a trava: numa empresa sem leitor — nenhum
+  // agente com "ver as fotos" ligado (ai_agent_versions.image_vision_enabled),
+  // nenhuma integração (token, anúncio, modo external, venda pelo canal,
+  // inscrição de follow-up sem agente), nenhum caso aberto de agente fora do ar
+  // — a foto é guardada sem descrição, e o dreno ou o cron
+  // `media-leitura-adiada` a descrevem quando aparecer quem leia. `always` é a
+  // válvula do operador: descreve toda foto e reabre as
+  // adiadas. Só `always` desliga — vazio ou grafia torta ficam no padrão. Quem
+  // lê é `adiarSemLeitorLigado`, em lib/messaging/media/leitura-adiada.ts.
+  // `z.string()` e nunca `z.enum`, pelo motivo de AI_BUDGET_ENFORCEMENT abaixo.
+  MEDIA_VISION_WITHOUT_READER: z.string().optional().default("defer"),
   // Endereço da API do Jev (TypeSafe AI). Vazio é ausente: vale
   // https://api.typesafe.ai. Existe para o dublê do e2e — a CHAVE nunca vem
   // daqui, é por organização (BYOK). Quem lê é `baseDaApiDoJev()`, em
@@ -463,6 +479,7 @@ const schema = z.object({
    * e são o piso de rollback. Todas `optional().default()`: `.env` antigo não
    * quebra ao atualizar.
    */
+  CADENCIA_LIMITE_EMAILS_POR_DIA: z.coerce.number().int().min(1).max(10_000).optional().default(60),
   SMTP_HOST: z.string().optional().default(""),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(587),
   SMTP_SECURITY: z.enum(["starttls", "tls", "none"]).optional().default("starttls"),

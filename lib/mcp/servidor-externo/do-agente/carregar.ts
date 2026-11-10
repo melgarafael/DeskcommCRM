@@ -31,6 +31,7 @@ import { fetchDeSaida, listarFerramentasDoServidor, type FerramentaRemota } from
 import { cabecalhosDoContato } from "../carregar";
 import { servidoresEscolhidos } from "../ids";
 import { hostDoEndpoint } from "../registro";
+import { TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS } from "../tempos-do-turno";
 import {
   credencialProntaParaOTurno,
   criarPedidoDeAutorizacao,
@@ -145,7 +146,10 @@ async function carregarOauth(
   if (!credencial) return semAutorizacao;
 
   const listar = (token: string) =>
-    listarFerramentasDoServidor({ endpoint: servidor.endpoint, chave: token }, { fetch });
+    listarFerramentasDoServidor(
+      { endpoint: servidor.endpoint, chave: token },
+      { fetch, timeoutMs: TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS },
+    );
 
   let ferramentas: FerramentaRemota[];
   try {
@@ -212,7 +216,7 @@ async function carregarComChave(
   try {
     const ferramentas = await listarFerramentasDoServidor(
       { endpoint: servidor.endpoint, chave },
-      { fetch, ...(cabecalhos ? { cabecalhos } : {}) },
+      { fetch, timeoutMs: TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS, ...(cabecalhos ? { cabecalhos } : {}) },
     );
     if (ferramentas.length === 0) return null;
     return {

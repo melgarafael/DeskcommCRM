@@ -8,6 +8,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { AgentForm, type ChannelSessionLite } from "./AgentForm";
 import type { CoberturaPorFunil } from "./FunisDoAgente";
 import type { MaterialDoAcervo } from "./BasesDoAgente";
+import type { SkillDisponivel } from "@/lib/ai/skills/skills-do-agente";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { TestPanel } from "./TestPanel";
 import { RunsTable } from "./RunsTable";
@@ -24,6 +25,8 @@ interface Props {
   cobertura?: CoberturaPorFunil;
   /** O acervo da organização, para a seção "o que ele consulta" (0181). */
   materiais?: MaterialDoAcervo[];
+  /** As skills da organização, para a seção "quais skills ele usa" (9107). */
+  skills?: SkillDisponivel[];
   agent: AgentRow;
   draft: AgentVersionRow | null;
   published: AgentVersionRow | null;
@@ -84,6 +87,7 @@ export function AgentTabs(props: Props) {
           funis={props.funis}
           cobertura={props.cobertura}
           materiais={props.materiais}
+          skills={props.skills}
           routerMembership={props.routerMembership}
           readOnly={props.readOnly}
           organizationTimezone={props.organizationTimezone}
@@ -97,6 +101,7 @@ export function AgentTabs(props: Props) {
           draft={props.draft}
           published={props.published}
           readOnly={props.readOnly}
+          channelSessions={props.channelSessions}
         />
       </TabsContent>
 

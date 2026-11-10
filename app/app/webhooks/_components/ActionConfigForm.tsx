@@ -21,6 +21,7 @@ import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSour
 import { useAgentsList } from "@/hooks/ai/useAgents";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAssignableMembers, type AssignableMember } from "@/hooks/inbox/useAssignableMembers";
+import { useSectors } from "@/hooks/team/useSectors";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import {
   CHAVE_DA_ESCOLHA,
@@ -130,6 +131,10 @@ export type ActionItem =
       type: "add_tag";
       config: { tags: string[]; destino?: "card" | "contato" };
     }
+  | {
+      type: "remove_tag";
+      config: { tags: string[]; destino?: "card" | "contato" };
+    }
   | { type: "assign_owner"; config: ConfigDoAtribuir }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string; include_owner?: boolean } }
   | {
@@ -158,7 +163,11 @@ export type ActionItem =
   // isso não existe campo de número, de endereço, de pessoa nem de canal: a
   // configuração guarda só o canal, e é o executor que lê o destino
   // cadastrado. Mesmos campos do schema da API.
-  | { type: "notify_team"; config: { canal: "whatsapp" } };
+  | { type: "notify_team"; config: { canal: "whatsapp" } }
+  // #3881 — a conversa vai para um SETOR. Mesmos campos do schema da API: o
+  // setor escolhido e a caixa (desligada por padrão) que autoriza a regra a
+  // reclassificar o que uma pessoa classificou à mão.
+  | { type: "define_sector"; config: { sector_id: string; sobrescrever_setor_manual?: boolean } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -183,6 +192,7 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     case "send_ai_message":
       return { type, config: { agent_id: "", channel_session_id: "", instruction: "" } };
     case "add_tag":
+    case "remove_tag":
       return { type, config: { tags: [] } };
     case "assign_owner":
       return { type, config: { user_id: "" } };
@@ -209,6 +219,11 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     // por isso o `config` guarda apenas o canal (o schema exige o literal).
     case "notify_team":
       return { type, config: { canal: "whatsapp" } };
+    // #3881 — o setor nasce vazio: a lista é da INSTALAÇÃO (módulo `setores`) e
+    // quem escolhe é quem monta a regra. Sem escolha, a regra falha nomeada no
+    // disparo (`sector_id_ausente`) em vez de gravar qualquer coisa.
+    case "define_sector":
+      return { type, config: { sector_id: "" } };
   }
 }
 
@@ -784,14 +799,21 @@ function SendAiMessageForm({
 function AddTagForm({
   config,
   onChange,
-}: FormProps<{ tags: string[]; destino?: "card" | "contato" }>) {
+  tirar = false,
+}: FormProps<{ tags: string[]; destino?: "card" | "contato" }> & {
+  /** `remove_tag`: a mesma tela, com as frases de quem TIRA a etiqueta. */
+  tirar?: boolean;
+}) {
   const t = useT();
   const [text, setText] = React.useState(config.tags.join(", "));
   return (
     <div className="space-y-2">
       <div className="space-y-1">
-        <Label>{t("Tags (separadas por vírgula)")}</Label>
+        <Label htmlFor={tirar ? "remove-tag-tags" : "add-tag-tags"}>
+          {tirar ? t("Tags para tirar (separadas por vírgula)") : t("Tags (separadas por vírgula)")}
+        </Label>
         <Input
+          id={tirar ? "remove-tag-tags" : "add-tag-tags"}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -807,7 +829,7 @@ function AddTagForm({
         />
       </div>
       <div className="space-y-1">
-        <Label>{t("Destino da etiqueta")}</Label>
+        <Label>{tirar ? t("De onde tirar") : t("Destino da etiqueta")}</Label>
         <Select
           value={config.destino ?? "card"}
           onValueChange={(v) => onChange({ ...config, destino: v as "card" | "contato" })}
@@ -816,13 +838,15 @@ function AddTagForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="card">{t("Card (comportamento atual)")}</SelectItem>
-            <SelectItem value="contato">{t("Contato do lead")}</SelectItem>
+            <SelectItem value="card">{tirar ? t("Do card") : t("Card (comportamento atual)")}</SelectItem>
+            <SelectItem value="contato">{tirar ? t("Do contato do lead") : t("Contato do lead")}</SelectItem>
           </SelectContent>
         </Select>
         {config.destino === "contato" && (
           <p className="text-xs text-muted-foreground">
-            {t("Sem contato vinculado, a etiqueta não é aplicada.")}
+            {tirar
+              ? t("Sem contato vinculado, nenhuma etiqueta é tirada.")
+              : t("Sem contato vinculado, a etiqueta não é aplicada.")}
           </p>
         )}
       </div>
@@ -1711,6 +1735,77 @@ function NotifyTeamForm() {
   );
 }
 
+/**
+ * `define_sector` (#3881) — a regra classifica a conversa num SETOR.
+ *
+ * A lista vem de `/api/v1/attendants/sectors` (o mesmo leitor da aba Equipe:
+ * uma pergunta, um dono). Módulo `setores` desligado ⇒ a rota responde 404 e a
+ * tela diz isso, em vez de oferecer uma escolha que não existe na instalação.
+ *
+ * A caixa de sobrescrita nasce DESMARCADA e o texto diz o que ela faz: sem ela,
+ * a regra só classifica conversa sem setor ou conversa que a própria automação
+ * classificou. É a precedência do trabalho manual, dita na tela de quem monta a
+ * regra — não escondida no executor.
+ */
+function DefineSectorForm({
+  config,
+  onChange,
+}: FormProps<{ sector_id: string; sobrescrever_setor_manual?: boolean }>) {
+  const t = useT();
+  const setores = useSectors();
+  const lista = setores.data?.data ?? [];
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <Label>{t("Setor da conversa")}</Label>
+        {setores.isError ? (
+          <p className="text-xs text-muted-foreground">
+            {t("Os setores de atendimento não estão disponíveis nesta instalação.")}
+          </p>
+        ) : (
+          <Select
+            value={config.sector_id || undefined}
+            onValueChange={(v) => onChange({ ...config, sector_id: v })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t("Escolha o setor")} />
+            </SelectTrigger>
+            <SelectContent>
+              {lista.map((setor) => (
+                <SelectItem key={setor.id} value={setor.id}>
+                  {setor.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "A conversa passa a ser distribuída para quem atende este setor. Se ela já tiver dono, continua com ele.",
+          )}
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <Label>{t("Sobrescrever o setor escolhido por uma pessoa")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Desligado, a regra só classifica conversa sem setor ou que ela mesma classificou antes.",
+            )}
+          </p>
+        </div>
+        <Switch
+          checked={config.sobrescrever_setor_manual === true}
+          onCheckedChange={(v) =>
+            onChange({ ...config, sobrescrever_setor_manual: v ? true : undefined })
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ActionConfigForm({
   action,
   onChange,
@@ -1750,6 +1845,14 @@ export function ActionConfigForm({
     case "add_tag":
       return (
         <AddTagForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "remove_tag":
+      return (
+        <AddTagForm
+          tirar
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />
@@ -1798,5 +1901,12 @@ export function ActionConfigForm({
       );
     case "notify_team":
       return <NotifyTeamForm />;
+    case "define_sector":
+      return (
+        <DefineSectorForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
   }
 }

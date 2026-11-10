@@ -15,6 +15,7 @@ import { useAgentsList } from "@/hooks/ai/useAgents";
 import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { usePipelineStages, usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
+import { useSectors } from "@/hooks/team/useSectors";
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
 import { CURATED_FIELDS, OP_LABELS, type CuratedField, type Op } from "@/app/app/webhooks/_components/RuleEditor";
 import { valorDaCondicaoNaTela } from "@/app/app/webhooks/_components/CondicaoDoContato";
@@ -129,6 +130,18 @@ function DescricaoDaDataDoAtendimento({ config }: { config: Record<string, unkno
   return <>{`${funil.name} › ${campo.label}`}</>;
 }
 
+/**
+ * #3881 — o cartão mostra o NOME do setor. Sem caso, a caixa caía no `tipo`
+ * cru (« define_sector ») em todo idioma; e o uuid não diz nada a quem lê a
+ * regra no canvas.
+ */
+function DescricaoDoSetor({ config }: { config: Record<string, unknown> }) {
+  const t = useT();
+  const { data } = useSectors();
+  const setor = data?.data.find((s) => s.id === config.sector_id);
+  return <>{setor ? setor.name : t("Escolha o setor")}</>;
+}
+
 function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string, unknown> }) {
   const t = useT();
   switch (tipo as ActionType) {
@@ -154,7 +167,8 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
     // #2642 — mesmo defeito do e-mail: sem caso, o cartão dizia « notify_team » cru.
     case "notify_team":
       return <>{t("WhatsApp da equipe")}</>;
-    case "add_tag": {
+    case "add_tag":
+    case "remove_tag": {
       const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
       return <>{tags.length ? tags.join(", ") : t("Escreva pelo menos uma tag")}</>;
     }
@@ -168,6 +182,9 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
     // #3727 — sem caso, a caixa cairia no `tipo` cru (« set_lead_date_field »).
     case "set_lead_date_field":
       return <DescricaoDaDataDoAtendimento config={config} />;
+    // #3881 — mesmo defeito: sem caso, a caixa dizia « define_sector ».
+    case "define_sector":
+      return <DescricaoDoSetor config={config} />;
   }
   return <>{tipo}</>;
 }

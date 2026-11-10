@@ -10,7 +10,16 @@
  *   2. conversa que falha (sessão torta, RPC fora) → o cadastro continua de pé
  *      e o erro SAI no log. Era o `catch {}` vazio: contato sem conversa e
  *      nenhuma linha para investigar.
+ *   3. a conversa abre pelo cliente de SERVIÇO, não pelo da sessão. O
+ *      `fn_service_begin` é concedido só a `service_role` (baseline); com o
+ *      cliente do cookie a RPC volta 42501, e o contato nascia sem conversa
+ *      com um `logger.warn` como único rastro. O falso de sessão abaixo recusa
+ *      a RPC como o banco recusa — e o último caso confere essa concessão no
+ *      próprio baseline, para o falso não inventar um grant que não existe.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -23,6 +32,9 @@ vi.mock("@/lib/audit", () => ({
   isServiceRoleConfigured: () => false,
   hashEmail: (e: string) => e,
 }));
+
+const servico = vi.hoisted(() => ({ db: null as unknown }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => servico.db }));
 
 const ORG = "44444444-4444-4444-8444-444444444444";
 const USUARIO = "55555555-5555-4555-8555-555555555555";
@@ -89,12 +101,25 @@ function cadeia(tabela: string, sessoes: Linha[]) {
   return self;
 }
 
-function cliente(opcoes: { sessoes?: Linha[]; erroDaRpc?: { message: string } | null } = {}) {
+function cliente(
+  opcoes: {
+    sessoes?: Linha[];
+    erroDaRpc?: { message: string } | null;
+    /** `authenticated` = cliente do cookie: sem EXECUTE em `fn_service_begin`. */
+    papel?: "service_role" | "authenticated";
+  } = {},
+) {
   const rpcs: Array<{ nome: string; args: Record<string, unknown> }> = [];
   const from = vi.fn((tabela: string) => cadeia(tabela, opcoes.sessoes ?? []));
   const rpc = vi.fn(async (nome: string, args: Record<string, unknown> = {}) => {
     rpcs.push({ nome, args });
     if (nome !== "fn_service_begin") return { data: null, error: null };
+    if (opcoes.papel === "authenticated") {
+      return {
+        data: null,
+        error: { code: "42501", message: "permission denied for function fn_service_begin" },
+      };
+    }
     if (opcoes.erroDaRpc) return { data: null, error: opcoes.erroDaRpc };
     return {
       data: {
@@ -137,8 +162,10 @@ function ctx(): HandlerCtx {
   return { organization_id: ORG, actor: { type: "user", id: USUARIO }, requestId: "req-3718" };
 }
 
-function criar(clienteFalso: { db: never }) {
-  return createContactHandler(clienteFalso.db, ctx(), {
+/** A rota com cookie: o handler recebe o cliente da SESSÃO; o de serviço vem do módulo. */
+function criar(doServico: { db: never }, daSessao = cliente({ papel: "authenticated" })) {
+  servico.db = doServico.db;
+  return createContactHandler(daSessao.db, ctx(), {
     name: "Ana",
     phone_number: TELEFONE,
   } as never);
@@ -151,8 +178,9 @@ beforeEach(() => {
 describe("createContactHandler — o contato novo abre a conversa (#3718)", () => {
   it("abre pela sessão de TELEFONE, mesmo com a social sendo a mais antiga da org", async () => {
     const banco = cliente({ sessoes: [SESSAO_SOCIAL, SESSAO_QUE_DISCA] });
+    const daSessao = cliente({ papel: "authenticated" });
 
-    const { contact } = await criar(banco);
+    const { contact } = await criar(banco, daSessao);
 
     expect(contact.id).toBe(CONTATO);
     const abertura = banco.rpcs.find((r) => r.nome === "fn_service_begin");
@@ -161,8 +189,8 @@ describe("createContactHandler — o contato novo abre a conversa (#3718)", () =
       p_contact: CONTATO,
       p_session: "sessao-que-disca",
     });
-    // E o evento do contato continua saindo, como antes.
-    expect(banco.rpcs.some((r) => r.nome === "emit_event")).toBe(true);
+    // E o evento do contato continua saindo, como antes, pelo cliente da rota.
+    expect(daSessao.rpcs.some((r) => r.nome === "emit_event")).toBe(true);
   });
 
   it("conversa que falha não derruba o cadastro — e agora deixa o erro no log", async () => {
@@ -185,5 +213,33 @@ describe("createContactHandler — o contato novo abre a conversa (#3718)", () =
       contact_id: CONTATO,
       detail: "service_channel_not_found",
     });
+  });
+
+  it("pelo cookie, a conversa abre pelo cliente de serviço — a sessão não executa fn_service_begin", async () => {
+    const aviso = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const daSessao = cliente({ sessoes: [SESSAO_QUE_DISCA], papel: "authenticated" });
+    const doServico = cliente({ sessoes: [SESSAO_QUE_DISCA] });
+
+    await criar(doServico, daSessao);
+
+    expect(aviso).not.toHaveBeenCalled();
+    expect(daSessao.rpcs.some((r) => r.nome === "fn_service_begin")).toBe(false);
+    expect(doServico.rpcs.find((r) => r.nome === "fn_service_begin")?.args).toMatchObject({
+      p_org: ORG,
+      p_contact: CONTATO,
+      p_session: "sessao-que-disca",
+    });
+  });
+
+  it("o falso de sessão acima recusa a RPC porque o baseline não a concede a authenticated", () => {
+    const baseline = readFileSync(join(process.cwd(), "supabase/baseline.sql"), "utf8");
+    // A instrução inteira até o `;`: o `to` pode cair na linha de baixo.
+    const grants = [
+      ...baseline.matchAll(
+        /grant\s+execute\s+on\s+function\s+public\.fn_service_begin\([^)]*\)\s+to\s+([^;]+);/gi,
+      ),
+    ].map((m) => m[1]);
+    expect(grants.length).toBeGreaterThan(0);
+    expect(grants.at(-1)).not.toMatch(/authenticated/i);
   });
 });

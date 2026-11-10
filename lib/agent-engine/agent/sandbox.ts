@@ -12,6 +12,8 @@ export async function testAgentVersion(
     runId: string;
     sampleMessage: string;
     sampleContact?: { name?: string; phone?: string };
+    /** Etiquetas simuladas (spec 27, fatia 3): entram no matcher de skills desta prévia. */
+    sampleTags?: string[];
     channelId: string | null;
   },
 ) {
@@ -41,6 +43,7 @@ export async function testAgentVersion(
     context,
     contactId: null,
     channelId: input.channelId,
+    tags: input.sampleTags,
     result,
   });
   return result;

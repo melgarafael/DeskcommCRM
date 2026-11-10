@@ -43,6 +43,8 @@ export interface McpContext {
   role: Role;
   actor: Actor;
   apiTokenId: string;
+  /** Escopos da linha autenticada; nunca argumentos da ferramenta. */
+  tokenScopes?: readonly string[];
   requestId: string;
   /** Service-role admin client. Tools devem filtrar `organization_id` em toda query. */
   supabase: SupabaseClient;
@@ -127,8 +129,5 @@ export interface McpToolDefinition<TInput extends z.ZodRawShape = z.ZodRawShape>
    * dá ao leitor uma chave estável.
    */
   termoBuscado?: (input: z.infer<z.ZodObject<TInput>>) => string | null;
-  handler: (
-    input: z.infer<z.ZodObject<TInput>>,
-    ctx: McpContext,
-  ) => Promise<unknown>;
+  handler: (input: z.infer<z.ZodObject<TInput>>, ctx: McpContext) => Promise<unknown>;
 }

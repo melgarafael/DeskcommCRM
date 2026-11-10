@@ -147,16 +147,24 @@ const corpo = z
      * configuração (a função do banco faz as duas escritas).
      *
      * `whatsapp` é o número PESSOAL de quem atende (o nome da coluna em
-     * `user_organizations`), e `null` explícito LIMPA o número — é a forma de a
-     * pessoa dizer "apague o meu" sem depender de um campo vazio significar a
-     * mesma coisa.
+     * `user_organizations`). Três coisas diferentes, e confundi-las apaga
+     * número de gente (#3935):
+     *
+     * · a chave AUSENTE diz "a tela não falou deste membro" → o banco NÃO toca
+     *   na coluna. É o que permite salvar uma tela que não exibiu a equipe sem
+     *   zerar o número de quem está gravado;
+     * · `null` AFIRMA que a pessoa não tem número → grava nulo (é a forma de
+     *   apagar de propósito o número que a pessoa viu na tela);
+     * · string é o número novo, normalizado pelo corpo da função.
+     *
+     * A lista inteira ausente (`undefined`) também não toca em nada.
      */
     responsaveis: z
       .array(
         z
           .object({
             user_id: z.string().uuid(),
-            whatsapp: z.string().trim().nullable(),
+            whatsapp: z.string().trim().nullable().optional(),
           })
           .strict(),
       )
@@ -397,7 +405,11 @@ export async function PUT(req: NextRequest): Promise<Response> {
       // "responsável" numa auditoria. CONTAGEM, nunca os números: telefone de
       // funcionário no `api_audit_log` fica para sempre.
       destino_modo: dados.destino_modo,
-      membros_com_whatsapp: (dados.responsaveis ?? []).filter((r) => r.whatsapp !== null).length,
+      // Só quem RECEBEU número: chave ausente não grava nada (#3935), e `""`
+      // grava nulo — contar os dois diria um número que o banco não tem.
+      membros_com_whatsapp: (dados.responsaveis ?? []).filter(
+        (r) => typeof r.whatsapp === "string" && r.whatsapp !== "",
+      ).length,
     },
   });
 

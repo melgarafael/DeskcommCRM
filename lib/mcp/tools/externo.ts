@@ -49,6 +49,7 @@ import type {
   ServidorDoAgenteProntoNoTurno,
 } from "@/lib/mcp/servidor-externo/do-agente/carregar";
 import { parametroDoDesafio } from "@/lib/mcp/servidor-externo/do-agente/oauth";
+import { TIMEOUT_DA_CHAMADA_NO_TURNO_MS } from "@/lib/mcp/servidor-externo/tempos-do-turno";
 import {
   nomeDaFerramentaDeAcesso,
   nomeParaOModelo,
@@ -158,11 +159,14 @@ export function definirFerramentasRemotas(
       requiresRole: "agent",
       requiresScope: ehLeitura ? "mcp:read" : "mcp:write",
       handler: async (input) => {
+        // O ORÇAMENTO DO TURNO, aqui e não no cliente: a mesma chamada feita
+        // pelo cadastro ("Testar conexão") pode esperar 15 s, quem está na
+        // conversa não. Ver `tempos-do-turno.ts`.
         const resultado = await chamarFerramentaRemota(
           servidor,
           ferramenta.name,
           (input ?? {}) as Record<string, unknown>,
-          opcoes,
+          { ...opcoes, timeoutMs: opcoes?.timeoutMs ?? TIMEOUT_DA_CHAMADA_NO_TURNO_MS },
         );
         return resultado.dados === undefined
           ? { texto: resultado.texto }
@@ -239,6 +243,7 @@ export function definirFerramentasDoServidorDoAgente(
         const chamar = () =>
           chamarFerramentaRemota(montado.chamavel, ferramenta.name, argumentos, {
             fetch: montado.fetch,
+            timeoutMs: TIMEOUT_DA_CHAMADA_NO_TURNO_MS,
             ...(montado.cabecalhos ? { cabecalhos: montado.cabecalhos } : {}),
             aoRecusar: (status, texto) => {
               desafio = { status, texto };
