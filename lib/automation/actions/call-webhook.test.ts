@@ -417,27 +417,20 @@ describe("executeCallWebhook", () => {
   });
 
   it("include_owner: o nome do responsável só sai para membro da organização da regra", async () => {
+    // O nome vem de UMA consulta (`fn_nomes_dos_membros`), não mais de um
+    // `getUserById` por pessoa: o dublê modela a MESMA regra — só quem tem
+    // vínculo com a organização da regra ganha nome.
     function adminCom(membros: string[]): ActionCtx["admin"] {
-      let org: unknown = null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const vinculos: any = {
-        select: () => vinculos,
-        eq: (_col: string, v: unknown) => ((org = v), vinculos),
-        in: async () => ({
-          data: org === "org-1" ? membros.map((user_id) => ({ user_id })) : [],
+      return {
+        rpc: async (_fn: string, args: { p_org: string; p_ids: string[] }) => ({
+          data:
+            args.p_org === "org-1"
+              ? args.p_ids
+                  .filter((id) => membros.includes(id))
+                  .map((user_id) => ({ user_id, full_name: "Ana", email: null }))
+              : [],
           error: null,
         }),
-      };
-      return {
-        from: () => vinculos,
-        auth: {
-          admin: {
-            getUserById: async () => ({
-              data: { user: { user_metadata: { full_name: "Ana" } } },
-              error: null,
-            }),
-          },
-        },
       } as unknown as ActionCtx["admin"];
     }
 
