@@ -331,7 +331,8 @@ function variante<T>(leadId: string, opcoes: readonly T[]): T {
  * `fraseConfigurada` (#3725) — a frase que o TENANT escreveu para o agente
  * (`ai_agents.config.aviso_de_handoff`, ver `./frase-do-aviso-configurada`).
  * Quando ela existe e passa na validação, é ELA que o cliente lê: substitui o
- * aviso inteiro, fecho incluído. O padrão do produto é curto e humano
+ * aviso inteiro, fecho incluído — exceto em `suspeita_de_opt_out`, que sai
+ * sempre com a confirmação de saída. O padrão do produto é curto e humano
  * justamente porque a frase fixa antiga ("Prefiro não arriscar aqui: passei seu
  * pedido para um atendente humano.") soava a robô no meio de uma conversa de
  * venda — quem quiser o próprio tom, escreve na configuração do agente.
@@ -344,7 +345,9 @@ export function textoDoAviso(
   fraseConfigurada: string | null = null,
 ): string {
   const configurada = fraseConfigurada === null ? null : normalizarFraseDoAviso(fraseConfigurada);
-  if (configurada !== null) return configurada;
+  // A frase do tenant fala de passagem ("já chamei o time"); quem pediu para
+  // PARAR precisa ler a confirmação de saída, então o opt-out nunca a usa.
+  if (configurada !== null && motivo !== "suspeita_de_opt_out") return configurada;
   const textos = textosDoIdioma(idioma);
   const abertura = variante(leadId, textos.aberturas[motivo]);
 
