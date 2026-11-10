@@ -125,9 +125,9 @@ async function captura(page: Page, nome: string): Promise<void> {
  * Quando o serviço de autenticação engasga, ele devolve
  * `504 Processing this request timed out` e o produto trata a requisição como
  * NÃO AUTENTICADA (`[auth] getUser falhou — tratando como não autenticado`).
- * A consulta da fila volta vazia e a tela mostra "Nenhum caso aberto", que é
- * indistinguível de "não há casos" para quem está olhando — e para um
- * localizador também.
+ * A consulta da fila volta vazia e a tela mostra o estado vazio ("Nenhum caso
+ * aberto", ou o aviso `casos-sem-chave`), que é indistinguível de "não há casos"
+ * para quem está olhando — e para um localizador também.
  *
  * Que é ambiente e não produto foi medido pelos dois lados, no mesmo minuto: as
  * MESMAS consultas (`conversasVisiveisDosCasos` + `listarChamados`), rodadas
@@ -394,7 +394,11 @@ test.describe("conversar com a IA que abriu o caso", () => {
     // não uma cópia da regra em TypeScript.
     await definirVisibilidade("own");
     await page.goto("/app/ai/cases");
-    await expect(page.getByText("Nenhum caso aberto")).toBeVisible({ timeout: ESPERA });
+    // Os dois vazios valem: o cenário semeia o caso direto, sem agente com a chave
+    // ligada, então a tela pode explicar a chave em vez do "Nenhum caso aberto".
+    await expect(
+      page.getByTestId("casos-sem-chave").or(page.getByText("Nenhum caso aberto")),
+    ).toBeVisible({ timeout: ESPERA });
     expect(
       await page.getByTestId("case-item").count(),
       "com visibility_mode='own' o agente que não é dono não pode ver o caso na fila",

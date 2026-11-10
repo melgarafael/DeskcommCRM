@@ -1,5 +1,6 @@
 /** Side-effect module: registra todos os executores de ação do motor. */
 import "@/lib/automation/actions/add-tag";
+import "@/lib/automation/actions/remove-tag";
 import "@/lib/automation/actions/ai-decide";
 import "@/lib/automation/actions/notify-team";
 import "@/lib/automation/actions/apply-task-plan";

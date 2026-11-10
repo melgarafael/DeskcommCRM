@@ -15,11 +15,16 @@ import { useT } from "@/hooks/i18n/useT";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
+  OFERTAS_DA_CAMPANHA,
+  ROTULOS_DAS_OFERTAS,
   campaignConfigSchema,
+  etiquetasDoNicho,
+  problemaNasEtiquetas,
   safePublicLink,
   type CampaignConfig,
   type Prospect,
 } from "@/lib/prospecting/schema";
+import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
@@ -312,6 +317,10 @@ export function ProspectingClient() {
     total: number;
   } | null>(null);
   const [recusadasDaImportacao, setRecusadasDaImportacao] = useState<RecusadaDaLinha[]>([]);
+  // O texto digitado no campo de etiquetas, cru: a lista normalizada não pode ser o valor do
+  // campo, senão a vírgula que o operador acabou de digitar some e ele não consegue pôr a segunda.
+  // Um texto por campanha: guardar um só apagaria o aviso de A ao digitar em B e voltar.
+  const [tagsDigitadas, setTagsDigitadas] = useState<Record<string, string>>({});
   const [campaignDrafts, setCampaignDrafts] = useState<Record<string, CampaignConfig>>({});
   const [manualCampaigns, setManualCampaigns] = useState<Record<string, boolean>>({});
   const [createdAgents, setCreatedAgents] = useState<{ id: string; name: string }[]>([]);
@@ -330,7 +339,21 @@ export function ProspectingClient() {
   } | null>(null);
   const campaign = data?.campaigns.find((c) => c.id === selected) ?? data?.campaigns[0];
   // A stored config is frozen by activation; unsaved choices belong to one campaign.
-  const config = campaign?.config ?? (campaign && campaignDrafts[campaign.id]) ?? emptyConfig;
+  const configGuardada =
+    campaign?.config ?? (campaign && campaignDrafts[campaign.id]) ?? emptyConfig;
+  // Campanha ainda sem configuração gravada: as etiquetas do contato vêm pré-preenchidas com o
+  // nicho da busca (spec 27), e é esse valor que o "Iniciar" manda. Campanha já gravada fica
+  // como está, e um rascunho que o operador já mexeu também.
+  const config: CampaignConfig =
+    campaign && !campaign.config && configGuardada.contact_tags === undefined
+      ? {
+          ...configGuardada,
+          contact_tags: etiquetasDoNicho(campaign.search?.niche ?? ""),
+        }
+      : configGuardada;
+  const textoDasEtiquetas =
+    (campaign && tagsDigitadas[campaign.id]) ?? (config.contact_tags ?? []).join(", ");
+  const etiquetasComProblema = problemaNasEtiquetas(textoDasEtiquetas);
   // "Configurada" é a campanha que TEM agente escolhido. Config parcial salva
   // pelo meio (instrução/qualificação sem agente) NÃO trava a etapa 2: medido na
   // VPS, 3 rascunhos assim ficavam sem como ser iniciados.
@@ -1636,12 +1659,8 @@ export function ProspectingClient() {
                                     "A auditoria do site escolhe o melhor argumento por empresa, nesta ordem.",
                                   )}
                                 </p>
-                                {(
-                                  [
-                                    ["site", t("Site profissional")],
-                                    ["automacao_crm", t("Automação do atendimento (CRM)")],
-                                    ["automacao_n8n", t("Automações e integrações (N8N)")],
-                                  ] as const
+                                {OFERTAS_DA_CAMPANHA.map(
+                                  (valor) => [valor, t(ROTULOS_DAS_OFERTAS[valor])] as const,
                                 ).map(([valor, rotulo]) => (
                                   <label key={valor} className="flex items-start gap-2 text-sm">
                                     <input
@@ -1779,6 +1798,38 @@ export function ProspectingClient() {
                             )}
                           </fieldset>
                           <div>
+                            <Label htmlFor="prospecting-contact-tags">
+                              {t("Etiquetas do contato")}
+                            </Label>
+                            <Input
+                              id="prospecting-contact-tags"
+                              value={textoDasEtiquetas}
+                              aria-invalid={etiquetasComProblema !== null}
+                              onChange={(e) => {
+                                if (!campaign) return;
+                                setTagsDigitadas((atuais) => ({
+                                  ...atuais,
+                                  [campaign.id]: e.target.value,
+                                }));
+                                update("contact_tags", normalizarTags(e.target.value.split(",")));
+                              }}
+                              className="mt-1"
+                              placeholder={t("Ex.: estetica, clinicas")}
+                            />
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {t(
+                                "As skills com estas etiquetas entram desde a primeira resposta. Separe por vírgula, até 5. Vem preenchida com o nicho da busca quando ele cabe; pode trocar.",
+                              )}
+                            </p>
+                            {etiquetasComProblema && (
+                              <p className="mt-1 text-xs text-destructive" role="alert">
+                                {etiquetasComProblema === "demais"
+                                  ? t("São no máximo 5 etiquetas. Apague as que sobraram para iniciar.")
+                                  : t("Cada etiqueta tem até 40 caracteres. Encurte a mais longa para iniciar.")}
+                              </p>
+                            )}
+                          </div>
+                          <div>
                             <Label htmlFor="prospecting-basis">
                               {t("Referência da avaliação de legítimo interesse")}
                             </Label>
@@ -1812,7 +1863,8 @@ export function ProspectingClient() {
                           disabled={
                             busy ||
                             !agents.length ||
-                            !data?.channels.some((c) => c.status === "WORKING")
+                            !data?.channels.some((c) => c.status === "WORKING") ||
+                            etiquetasComProblema !== null
                           }
                         >
                           {t("Iniciar abordagens com IA")}
