@@ -47,8 +47,13 @@ const h = vi.hoisted(() => ({
   decifrar: vi.fn(),
   app: vi.fn(),
   busca: vi.fn(),
+  audit: vi.fn(),
+  limite: vi.fn(),
   banco: undefined as unknown,
 }));
+
+vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: h.limite }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => h.banco,
@@ -205,6 +210,9 @@ beforeEach(() => {
   h.decifrar.mockReset();
   h.app.mockReset();
   h.busca.mockReset();
+  h.audit.mockReset();
+  h.limite.mockReset();
+  h.limite.mockResolvedValue({ allowed: true });
 
   h.app.mockResolvedValue({ appSecret: SEGREDO_DO_APP, verifyToken: "verify-token-do-app" });
   h.decifrar.mockResolvedValue("token-de-pagina-em-claro");
@@ -622,5 +630,62 @@ describe("POST — o mesmo aviso duas vezes", () => {
     expect(json.data.leads[0]!.desfecho).toBe("duplicado");
     expect(json.data.leads[0]!.lead_id).toBe("card-existente");
     expect(falso.cadeias.filter((c) => c.tabela === "crm_leads" && operacao(c) === "insert")).toEqual([]);
+  });
+});
+
+describe("POST — o que quem opera vê, e o teto da porta pública", () => {
+  it("lead ignorado com fonte dona aparece em Leads recebidos, com o motivo e sem respostas", async () => {
+    banco();
+    await entregar(entregaDoLeadAds({ comRespostas: false }));
+    expect(h.registrar).toHaveBeenCalledTimes(1);
+    const [, captacao] = h.registrar.mock.calls[0]! as [unknown, Record<string, unknown>];
+    expect(captacao).toMatchObject({
+      organizationId: ORG,
+      webhookSourceId: FONTE_DA_URL.id,
+      outcome: "recusado",
+      rejectReason: "lead_ads_sem_respostas",
+      fields: { leadgen_id: ESPERADO_DO_EXEMPLO.leadgenId },
+    });
+  });
+
+  it("a busca que falhou aparece na organização da página dona", async () => {
+    banco();
+    estado.donas = [{ ...FONTE_DA_PAGINA }];
+    h.busca.mockResolvedValue({ ok: false, motivo: "recusada_pela_meta", detalhe: "http_401" });
+    await entregar(entregaDoLeadAds({ comRespostas: false }));
+    const [, captacao] = h.registrar.mock.calls[0]! as [unknown, Record<string, unknown>];
+    expect(captacao).toMatchObject({
+      organizationId: ORG_DA_PAGINA,
+      rejectReason: "lead_ads_busca_falhou",
+      fields: { detalhe: "recusada_pela_meta:http_401" },
+    });
+  });
+
+  it("página sem dona NÃO entra em Leads recebidos de organização nenhuma", async () => {
+    banco();
+    estado.fonteDaUrl.meta_page_id = "999888777";
+    await entregar(entregaDoLeadAds());
+    expect(h.registrar).not.toHaveBeenCalled();
+  });
+
+  it("assinatura recusada fica na auditoria da organização do endereço", async () => {
+    banco();
+    const resposta = await entregar(entregaDoLeadAds(), { assinatura: "sha256=00" });
+    expect(resposta.status).toBe(401);
+    expect(h.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "webhook.inbound_invalid_signature",
+        organizationId: ORG,
+        resourceId: FONTE_DA_URL.id,
+      }),
+    );
+  });
+
+  it("acima do teto responde 429 antes de ler o banco", async () => {
+    const falso = banco();
+    h.limite.mockResolvedValue({ allowed: false });
+    const resposta = await entregar(entregaDoLeadAds());
+    expect(resposta.status).toBe(429);
+    expect(falso.cadeias).toEqual([]);
   });
 });

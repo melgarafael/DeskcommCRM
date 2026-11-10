@@ -35,7 +35,7 @@
  * A plataforma tem UMA URL de destino para o objeto `page`, e ela vale para todas
  * as páginas do App. Um token por fonte, sozinho, deixaria todas as páginas
  * entregando na fonte de quem cadastrou a URL. O dono do lead é a coluna
- * `webhook_sources.meta_page_id` (migration 9081), casada com o `entry[].id` do
+ * `webhook_sources.meta_page_id` (migration 9320), casada com o `entry[].id` do
  * aviso:
  *
  *   1. fonte que declara aquela página → é a dona, MESMO que o token da URL seja
@@ -103,10 +103,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { audit } from "@/lib/audit";
 import { appDaMeta } from "@/lib/channels/meta/app";
 import { verificationChallenge } from "@/lib/channels/meta/webhook";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { registrarCaptacao, type MotivoDaRecusa } from "@/lib/webhooks/captacao";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { CABECALHO_DA_ASSINATURA_DA_META, assinaturaDaMetaConfere, idadeDoSinal } from "@/lib/leads/lead-ads/assinatura";
 import { entradaDoLeadDoFormulario, type FonteDoLeadAds } from "@/lib/leads/lead-ads/entrada";
@@ -132,6 +135,26 @@ interface RouteCtx {
  */
 const LIMITE_DO_CORPO = 1_048_576;
 
+/**
+ * Teto de entregas por minuto por endereço. A rota é pública e lê o banco antes
+ * da assinatura; o teto corta quem martela. É mais largo que o da captação
+ * (`webhooks/in`, 60) porque o App tem UMA URL para todas as páginas da
+ * instalação — e o 429 não perde lead: a plataforma reentrega o que não recebe 2xx.
+ */
+const ENTREGAS_POR_MINUTO = 300;
+
+/**
+ * O motivo do lead ignorado, como a tela "Leads recebidos" o mostra. Só os
+ * ignorados que TÊM fonte dona entram lá: o de página sem dona não é de
+ * organização nenhuma, e gravá-lo na fonte do endereço escreveria o aviso de uma
+ * página alheia na empresa errada — ele fica só no log.
+ */
+const MOTIVO_NA_TELA: Partial<Record<string, MotivoDaRecusa>> = {
+  sem_field_data: "lead_ads_sem_respostas",
+  sem_respostas_na_meta: "lead_ads_busca_falhou",
+  pagina_desligada: "lead_ads_fonte_pausada",
+};
+
 /** O que a fonte precisa ter para a porta funcionar, venha do path ou da página. */
 interface FonteDaPorta {
   id: string;
@@ -141,7 +164,7 @@ interface FonteDaPorta {
   etapaId: string;
   /** A página que ela representa; `null` = não reivindica nenhuma. */
   pageId: string | null;
-  /** Opção da fonte (migration 9081): buscar as respostas, DESLIGADA por padrão. */
+  /** Opção da fonte (migration 9320): buscar as respostas, DESLIGADA por padrão. */
   buscaLigada: boolean;
   /** Cifrado; decifrado uma vez por entrega, nunca devolvido. */
   tokenCifrado: string | null;
@@ -198,6 +221,13 @@ interface LeadIgnorado {
   detalhe?: string;
 }
 
+/** O ignorado que tem fonte dona — e por isso aparece em "Leads recebidos". */
+interface IgnoradoComDona {
+  lead: LeadDoFormulario;
+  fonte: FonteDaPorta;
+  ignorado: LeadIgnorado;
+}
+
 /**
  * `GET` — o handshake de verificação da URL.
  *
@@ -224,6 +254,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse
 export async function POST(req: NextRequest, { params }: RouteCtx) {
   const requestId = randomUUID();
   const { token } = await params;
+
+  const limite = await checkRateLimit(`meta_lead_ads:${token}`, ENTREGAS_POR_MINUTO, 60);
+  if (!limite.allowed) {
+    return fail("rate_limited", "Too many requests.", 429, { requestId, headers: { "Retry-After": "60" } });
+  }
   const admin = createAdminClient();
 
   // A fonte do path é o ENDEREÇO, não o dono do lead (ver o cabeçalho, §2). Ela
@@ -278,6 +313,16 @@ export async function POST(req: NextRequest, { params }: RouteCtx) {
       webhook_source_id: fonteDaUrl.id,
       motivo: recusaDaAssinatura,
     });
+    // A recusa fica na auditoria da organização do ENDEREÇO (a única provada
+    // aqui, pelo `path_token`), com a mesma ação da captação por formulário.
+    await audit({
+      action: "webhook.inbound_invalid_signature",
+      organizationId: fonteDaUrl.organizationId,
+      resourceType: "webhook_source",
+      resourceId: fonteDaUrl.id,
+      requestId,
+      metadata: { reason: recusaDaAssinatura, porta: "meta_lead_ads" },
+    });
     return fail("unauthorized", recusaDaAssinatura, 401, { requestId });
   }
 
@@ -309,6 +354,7 @@ export async function POST(req: NextRequest, { params }: RouteCtx) {
   const tokensDecifrados = new Map<string, string | null>();
 
   const aEntrar: Array<{ lead: LeadDoFormulario; fonte: FonteDaPorta; atrasoSegundos: number | null }> = [];
+  const comDona: IgnoradoComDona[] = [];
 
   for (const lead of leitura.leads) {
     const fonte = donaDoLead(lead, fonteDaUrl, donasPorPagina);
@@ -319,7 +365,9 @@ export async function POST(req: NextRequest, { params }: RouteCtx) {
     if (!fonte.ativa) {
       // A página tem dona e a dona está desligada: nada é escrito, e o motivo é
       // outro — quem desligou a fonte precisa ver isso na resposta.
-      ignorados.push({ leadgen_id: lead.leadgenId, motivo: "pagina_desligada" });
+      const ignorado: LeadIgnorado = { leadgen_id: lead.leadgenId, motivo: "pagina_desligada" };
+      ignorados.push(ignorado);
+      comDona.push({ lead, fonte, ignorado });
       continue;
     }
 
@@ -329,15 +377,16 @@ export async function POST(req: NextRequest, { params }: RouteCtx) {
       if (!busca.ok) {
         // O lead NÃO entra com dado inventado. O motivo é nomeado, e o `detalhe`
         // só existe quando há o que dizer (status HTTP, sem token, tempo).
-        ignorados.push(
+        const ignorado: LeadIgnorado =
           busca.motivo === "busca_desligada"
             ? { leadgen_id: lead.leadgenId, motivo: "sem_field_data" }
             : {
                 leadgen_id: lead.leadgenId,
                 motivo: "sem_respostas_na_meta",
                 ...(busca.detalhe ? { detalhe: `${busca.motivo}:${busca.detalhe}` } : { detalhe: busca.motivo }),
-              },
-        );
+              };
+        ignorados.push(ignorado);
+        comDona.push({ lead, fonte, ignorado });
         logger.warn("[lead-ads] aviso sem as respostas do formulário", {
           request_id: requestId,
           webhook_source_id: fonte.id,
@@ -363,6 +412,25 @@ export async function POST(req: NextRequest, { params }: RouteCtx) {
     // atraso de N segundos", e gravar `0` numa entrega no prazo faria todo lead
     // normal parecer atrasado para quem lê o `utm` depois.
     aEntrar.push({ lead: completo, fonte, atrasoSegundos: idade.atrasada ? idade.segundos : null });
+  }
+
+  for (const { lead, fonte, ignorado } of comDona) {
+    // Quem opera a fonte vê o lead que a plataforma avisou e não entrou, com o
+    // motivo, na tela "Leads recebidos" — sem abrir log de servidor. Só ids e o
+    // diagnóstico: as respostas não existem neste ponto (é por isso que não entrou).
+    await registrarCaptacao(admin, {
+      organizationId: fonte.organizationId,
+      webhookSourceId: fonte.id,
+      sourceName: fonte.nome,
+      outcome: "recusado",
+      rejectReason: MOTIVO_NA_TELA[ignorado.motivo] ?? null,
+      fields: {
+        leadgen_id: lead.leadgenId,
+        ...(lead.pageId ? { page_id: lead.pageId } : {}),
+        ...(ignorado.detalhe ? { detalhe: ignorado.detalhe } : {}),
+      },
+      requestId,
+    });
   }
 
   const leads: Array<{

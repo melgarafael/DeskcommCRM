@@ -193,6 +193,30 @@
       "type": "table",
       "label": "contacts.ai_authorized_at",
       "sublabel": "gate allowlist; preserva atendimento humano"
+    },
+    {
+      "id": "meta-lead-ads",
+      "lane": "entrada",
+      "col": 2,
+      "type": "external",
+      "label": "Formulário de anúncio da Meta",
+      "sublabel": "aviso assinado pelo App da instalação; chega sem as respostas"
+    },
+    {
+      "id": "rota-meta-lead-ads",
+      "lane": "entendimento",
+      "col": 6,
+      "type": "route",
+      "label": "POST /api/v1/webhooks/meta-lead-ads/[token]",
+      "sublabel": "o dono do lead é a página; busca as respostas com o token da página (desligada por padrão)"
+    },
+    {
+      "id": "porta-meta-lead-ads",
+      "lane": "humano",
+      "col": 5,
+      "type": "frontend",
+      "label": "Webhooks › fonte › Formulários de anúncio da Meta",
+      "sublabel": "página, token (só admin) e a chave da busca; a página é a que o token lê"
     }
   ],
   "edges": [
@@ -369,6 +393,36 @@
       "from": "autorizar-ia-formulario",
       "to": "contato-elegivel-ia",
       "label": "autorização atômica ou recusa; nunca envia mensagem"
+    },
+    {
+      "id": "e-meta-1",
+      "from": "meta-lead-ads",
+      "to": "rota-meta-lead-ads",
+      "label": "POST com X-Hub-Signature-256"
+    },
+    {
+      "id": "e-meta-2",
+      "from": "rota-meta-lead-ads",
+      "to": "lead",
+      "label": "lead com as respostas vira contato e card"
+    },
+    {
+      "id": "e-meta-3",
+      "from": "rota-meta-lead-ads",
+      "to": "captacao",
+      "label": "o que entrou e o que foi ignorado, com o motivo"
+    },
+    {
+      "id": "e-meta-4",
+      "from": "porta-meta-lead-ads",
+      "to": "rota-meta-lead-ads",
+      "label": "liga a página, o token e a busca da fonte"
+    },
+    {
+      "id": "e-meta-5",
+      "from": "captacao",
+      "to": "porta-meta-lead-ads",
+      "label": "laço de retorno: o motivo em Leads recebidos diz o que ligar"
     }
   ],
   "cards": [
@@ -387,6 +441,10 @@
     {
       "titulo": "Limites conhecidos",
       "texto": "Os botões de campo na ação de WhatsApp usam o funil PADRÃO da organização, não o funil específico da regra. Variável ausente vira vazio (comportamento que já existia). O mapeador de chaves (resolveField) lê o protótipo: {{constructor}} já imprimia 'function Object()' antes desta mudança e continua imprimindo."
+    },
+    {
+      "titulo": "Por que o lead da Meta é da página, e a página é a do token",
+      "texto": "O App da Meta tem uma URL de destino só para o objeto página, então a mesma URL recebe os leads de todas as páginas da instalação. Quem decide a empresa do lead é a página gravada na fonte, e ela só se grava conferida pelo próprio token (GET /me), por quem administra. Lead que a Meta avisa e não entra aparece em Leads recebidos com o motivo, na organização da página dona; o de página sem dona fica só no log."
     }
   ]
 }
