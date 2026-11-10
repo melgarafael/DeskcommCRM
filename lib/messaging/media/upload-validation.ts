@@ -58,6 +58,8 @@ const DOCUMENT_MIMES = new Set([
   "text/plain",
   "text/csv",
   "application/zip",
+  "application/xml",
+  "text/xml",
 ]);
 
 /**
@@ -89,7 +91,7 @@ export function validateOutboundMedia(mime: string, sizeBytes: number): Ok | Fai
     return { ok: false, code: "validation_failed", message: "Arquivo vazio." };
   }
   if (sizeBytes > MAX_MEDIA_BYTES) {
-    return { ok: false, code: "payload_too_large", message: "Arquivo acima de 50MB." };
+    return { ok: false, code: "payload_too_large", message: "Arquivo acima de 100MB." };
   }
   const kind = kindFromMime(mime);
   if (kind) return { ok: true, kind };

@@ -78,6 +78,10 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
+    proxyClientMaxBodySize: "105mb",
+    serverActions: {
+      bodySizeLimit: "105mb",
+    },
   },
   images: {
     // O app não usa next/image de fato (só <img> raw); desligar o otimizador

@@ -19,6 +19,8 @@ describe("extFromMime", () => {
     expect(extFromMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe("docx");
     expect(extFromMime("text/csv")).toBe("csv");
     expect(extFromMime("application/zip")).toBe("zip");
+    expect(extFromMime("application/xml")).toBe("xml");
+    expect(extFromMime("text/xml")).toBe("xml");
     expect(extFromMime("audio/webm")).toBe("webm");
   });
   it("cai em bin para mime desconhecido", () => {
@@ -34,7 +36,7 @@ describe("storagePathFor", () => {
 });
 
 describe("MAX_MEDIA_BYTES", () => {
-  it("é 50MB", () => {
-    expect(MAX_MEDIA_BYTES).toBe(52_428_800);
+  it("é 100MB", () => {
+    expect(MAX_MEDIA_BYTES).toBe(104_857_600);
   });
 });
