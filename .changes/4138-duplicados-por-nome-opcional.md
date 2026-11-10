@@ -18,10 +18,10 @@ inteiro, com "Não são a mesma empresa". Nada é fundido sozinho em nenhum dos 
 estados: a sugestão só abre a conferência, e juntar continua sendo um clique de
 gestor.
 
-O par com identidade forte que se **contradiz** deixa de ser sugerido: dois CPFs
-diferentes são duas pessoas, e dois telefones diferentes são duas fichas — o nome
-sozinho não junta nenhum dos dois. A ficha sem número (a que nasce do WhatsApp)
-continua sendo o par útil.
+O par com CPF que se **contradiz** deixa de ser sugerido: dois CPFs diferentes
+são duas pessoas, e o nome sozinho não as junta. Telefone diferente não tira o
+par da lista — a mesma empresa com dois números é justamente o par que a
+sugestão existe para achar.
 
 Sem migration: a opção é um booleano em `organizations.settings.crm`, como as
 vizinhas.

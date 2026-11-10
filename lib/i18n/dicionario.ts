@@ -14644,8 +14644,8 @@ export const DICIONARIO: Traducoes = {
   "Sugerir contatos duplicados pelo nome": {
     es: "Sugerir contactos duplicados por el nombre",
   },
-  "Ligada, a tela Contatos › Duplicados mostra a seção \"Parecidos — confira\": fichas cujo NOME se parece o bastante para valer uma conferência, com os dados lado a lado. É sugestão, não prova: nada é juntado sozinho, e juntar continua sendo um clique de gestor. Nunca aparece o par com CPF ou telefone diferentes. Vem desligada porque, em base de pessoa física, o nome repete e a sugestão vira ruído.": {
-    es: "Activada, la pantalla Contactos › Duplicados muestra la sección \"Parecidos — revise\": fichas cuyo NOMBRE se parece lo suficiente para valer una revisión, con los datos uno al lado del otro. Es una sugerencia, no una prueba: nada se fusiona solo, y unir sigue siendo un clic del gestor. Nunca aparece el par con CPF o teléfono diferentes. Viene desactivada porque, en una base de personas físicas, el nombre se repite y la sugerencia se vuelve ruido.",
+  "Ligada, a tela Contatos › Duplicados mostra a seção \"Parecidos — confira\": fichas cujo NOME se parece o bastante para valer uma conferência, com os dados lado a lado. É sugestão, não prova: nada é juntado sozinho, e juntar continua sendo um clique de gestor. Nunca aparece o par com CPFs diferentes. Vem desligada porque, em base de pessoa física, o nome repete e a sugestão vira ruído.": {
+    es: "Activada, la pantalla Contactos › Duplicados muestra la sección \"Parecidos — revise\": fichas cuyo NOMBRE se parece lo suficiente para valer una revisión, con los datos uno al lado del otro. Es una sugerencia, no una prueba: nada se fusiona solo, y unir sigue siendo un clic del gestor. Nunca aparece el par con CPF diferentes. Viene desactivada porque, en una base de personas físicas, el nombre se repite y la sugerencia se vuelve ruido.",
   },
   "Ligado: a seção \"Parecidos — confira\" aparece na tela de duplicados, depois dos motivos fortes.": {
     es: "Activado: la sección \"Parecidos — revise\" aparece en la pantalla de duplicados, después de los motivos fuertes.",

@@ -71,7 +71,7 @@ export function DuplicadosPorNome({
           </Label>
           <p className="max-w-2xl text-xs text-muted-foreground">
             {t(
-              "Ligada, a tela Contatos › Duplicados mostra a seção \"Parecidos — confira\": fichas cujo NOME se parece o bastante para valer uma conferência, com os dados lado a lado. É sugestão, não prova: nada é juntado sozinho, e juntar continua sendo um clique de gestor. Nunca aparece o par com CPF ou telefone diferentes. Vem desligada porque, em base de pessoa física, o nome repete e a sugestão vira ruído.",
+              "Ligada, a tela Contatos › Duplicados mostra a seção \"Parecidos — confira\": fichas cujo NOME se parece o bastante para valer uma conferência, com os dados lado a lado. É sugestão, não prova: nada é juntado sozinho, e juntar continua sendo um clique de gestor. Nunca aparece o par com CPFs diferentes. Vem desligada porque, em base de pessoa física, o nome repete e a sugestão vira ruído.",
             )}
           </p>
           <p className="max-w-2xl text-xs" data-testid="duplicados-por-nome-estado">

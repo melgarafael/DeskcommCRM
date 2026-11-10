@@ -473,9 +473,9 @@ export function identidadeForteConflita(
  *  (b') os nomes são idênticos — cai em (b), com o mesmo mínimo de 6 letras.
  *
  * O par entra **e sobrevive à contradição** de identidade forte
- * (`identidadeForteConflita`): dois CPFs ou dois telefones diferentes não são o
- * mesmo cadastro, e sugerir a junção aí é o ruído que a opção da empresa existe
- * para evitar.
+ * (`identidadeForteConflita`): dois CPFs diferentes não são o mesmo cadastro, e
+ * sugerir a junção aí é o ruído que a opção da empresa existe para evitar.
+ * Telefone diferente NÃO suprime — ver o comentário de `identidadeForteConflita`.
  *
  * `dispensados` são as chaves de `parDeContatos` que a pessoa já tirou da lista.
  */
@@ -569,9 +569,9 @@ export function encontrarParecidosPorNome(
     const ca = porId.get(a);
     const cb = porId.get(b);
     if (!ca || !cb) continue;
-    // Documento ou número que se contradiz não é o mesmo cadastro: o nome não
-    // sugere. É a régua que separa a sugestão útil do ruído (dois CPFs, dois
-    // telefones).
+    // Documento que se contradiz não é o mesmo cadastro: o nome não sugere. É
+    // a régua que separa a sugestão útil do ruído (dois CPFs). Telefone
+    // diferente não entra na régua.
     if (identidadeForteConflita(ca, cb)) continue;
     const ordenados = [ca, cb].sort(
       (p, q) => p.created_at.localeCompare(q.created_at) || p.id.localeCompare(q.id),
