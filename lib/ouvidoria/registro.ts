@@ -28,7 +28,7 @@
  *    tem campo `protocolo`: quem tentar mandar um, recebe `validacao` e nada é
  *    gravado (não é "ignorado em silêncio", é recusado). A forma do valor e a
  *    unicidade por organização são cobradas de novo pelo banco (CHECK + índice
- *    único da migration 9030) — três cercas para o mesmo fato.
+ *    único da migration 9040) — três cercas para o mesmo fato.
  *
  * 2. **Registrar NÃO cria negócio no funil.** É o controle central da issue. O
  *    corpo desta função escreve em UMA tabela; o teste de unidade reprova
@@ -56,7 +56,7 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { ouvidoriaLigada } from "@/lib/schemas/settings";
 
-/** Os canais que a fatia 1 aceita — os mesmos do CHECK da migration 9030. */
+/** Os canais que a fatia 1 aceita — os mesmos do CHECK da migration 9040. */
 export const CANAIS_DA_OUVIDORIA = [
   "whatsapp",
   "web",
@@ -68,12 +68,12 @@ export const CANAIS_DA_OUVIDORIA = [
 
 export type CanalDaOuvidoria = (typeof CANAIS_DA_OUVIDORIA)[number];
 
-/** Os estados da manifestação — os mesmos do CHECK da migration 9030. */
+/** Os estados da manifestação — os mesmos do CHECK da migration 9040. */
 export const STATUS_DA_OUVIDORIA = ["recebida", "em_analise", "concluida"] as const;
 
 export type StatusDaOuvidoria = (typeof STATUS_DA_OUVIDORIA)[number];
 
-/** O piso e o teto do relato; os mesmos da CHECK `texto` da 9030. */
+/** O piso e o teto do relato; os mesmos da CHECK `texto` da 9040. */
 export const TEXTO_MINIMO = 1;
 export const TEXTO_MAXIMO = 20000;
 

@@ -34,7 +34,7 @@
  * `not_found` cobre "não existe", "é de outra organização" e "id malformado" —
  * uma resposta só, porque distinguir contaria ao vizinho que a linha existe.
  * A ação NUNCA devolve a manifestação de outro tenant com `ok: true`: há dois
- * predicados (o `.eq("organization_id", …)` da leitura e a RLS da 9030) e o
+ * predicados (o `.eq("organization_id", …)` da leitura e a RLS da 9040) e o
  * teste de unidade mede o primeiro.
  */
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
@@ -67,7 +67,7 @@ export async function lerManifestacaoDaOuvidoria(
   if (!org) return { ok: false, error: "forbidden_tenant" };
   if (ROLE_RANK[org.role] < ROLE_RANK.admin) return { ok: false, error: "forbidden_role" };
 
-  // Cliente de SESSÃO de propósito: a RLS da 9030 (organização + admin) é a
+  // Cliente de SESSÃO de propósito: a RLS da 9040 (organização + admin) é a
   // segunda cerca, e ela só existe neste caminho.
   const supabase = await createClient();
   const resultado = await lerManifestacao({ supabase, organizationId: org.orgId }, id);

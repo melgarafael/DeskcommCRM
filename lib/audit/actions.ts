@@ -1498,7 +1498,7 @@ export const AUDIT_ACTIONS = [
   // verificação, pois a trilha append-only não é lugar para identidade pessoal.
   "org.resend_account_connected",
   "org.resend_account_disconnected",
-  // A ativação do módulo de Ouvidoria (#3611, migration 9030) — ligar a porta
+  // A ativação do módulo de Ouvidoria (#3611, migration 9040) — ligar a porta
   // que aceita manifestação confidencial, e desligá-la. Metadata leva só o
   // booleano: o CONTEÚDO das manifestações nunca entra na trilha, que é
   // append-only e a cascata de LGPD não alcança.

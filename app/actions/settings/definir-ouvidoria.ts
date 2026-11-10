@@ -18,7 +18,7 @@
  * `conversions`, `crm`, `fidelidade` e o resto em silêncio.
  *
  * ⚠️ ADMIN, e não `manager`: quem liga a porta por onde entra reclamação com
- * dado sensível é o mesmo papel que pode LER o que entrou (a RLS da 9030 exige
+ * dado sensível é o mesmo papel que pode LER o que entrou (a RLS da 9040 exige
  * `admin`). Deixar o Gerente ligar criaria a promessa de um módulo que ele
  * próprio não consegue abrir.
  */

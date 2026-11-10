@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { columnExists, countAs, indexExists, sql } from "./gov-helpers";
 
 /**
- * `ouvidoria_manifestacoes` (migration 9030, #3611): a manifestação é PRIVADA.
+ * `ouvidoria_manifestacoes` (migration 9040, #3611): a manifestação é PRIVADA.
  *
  * Quatro fatos, cada um com a sua falha muda:
  *

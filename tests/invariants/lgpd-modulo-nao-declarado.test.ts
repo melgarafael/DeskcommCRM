@@ -120,7 +120,7 @@ const ALLOWLIST: Record<string, string> = {
     "apagaria a própria manifestação. A identificação do manifestante sai junto " +
     "com o contato: contact_id é on delete set null, então apagar/anonimizar a " +
     "pessoa desliga o vínculo e a linha continua legível só para administradores " +
-    "(RLS da 9030). Não é seção declarada porque não há o que redigir.",
+    "(RLS da 9040). Não é seção declarada porque não há o que redigir.",
 };
 
 /**

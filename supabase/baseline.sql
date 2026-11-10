@@ -66752,12 +66752,12 @@ end;
 $function$;
 
 -- ---- ouvidoria: a manifestação registrada vira módulo provisionado (migration 9040, #3611) ----
--- manifest: Ouvidoria vira módulo provisionado (ADR-0002 D2/D3/D4/D5). A tabela
--- `ouvidoria_manifestacoes` sai do baseline e passa a nascer em
--- `public.fn_ouvidoria_provisionar()`, sem parâmetro e com EXECUTE só de
--- service_role, que cria a tabela e chama `fn_proteger_modulo_provisionado()`
--- na mesma transação. Quem não instala o módulo não carrega a tabela. A
--- ativação por empresa continua em `organizations.settings.ouvidoria`.
+-- manifest: Ouvidoria como módulo provisionado (ADR-0002 D2/D3/D4/D5). A tabela
+-- `ouvidoria_manifestacoes` nasce SÓ em `public.fn_ouvidoria_provisionar()`,
+-- sem parâmetro e com EXECUTE só de service_role, que cria a tabela e chama
+-- `fn_proteger_modulo_provisionado()` na mesma transação. Quem não instala o
+-- módulo não carrega a tabela. A ativação por empresa mora em
+-- `organizations.settings.ouvidoria`.
 -- Espelho do corpo da 9040. Entra ANTES da VARREDURA anon porque cria função.
 create or replace function public.fn_ouvidoria_provisionar()
 returns void
@@ -66808,7 +66808,7 @@ begin
   begin
     if to_regclass('public.ouvidoria_manifestacoes') is not null then
       comment on column public.ouvidoria_manifestacoes.protocolo is
-        'Protocolo da manifestação, GERADO NO SERVIDOR (lib/ouvidoria/registro.ts) — nunca aceito do cliente. Único POR ORGANIZAÇÃO (índice ouvidoria_manifestacoes_protocolo_org_idx); a forma OUV-AAAAMMDD-XXXXXXXX é cobrada pelo CHECK da coluna (9030).';
+        'Protocolo da manifestação, GERADO NO SERVIDOR (lib/ouvidoria/registro.ts) — nunca aceito do cliente. Único POR ORGANIZAÇÃO (índice ouvidoria_manifestacoes_protocolo_org_idx); a forma OUV-AAAAMMDD-XXXXXXXX é cobrada pelo CHECK da coluna (9040).';
       comment on column public.ouvidoria_manifestacoes.contact_id is
         'Contato do CRM que relatou, OPCIONAL. on delete set null: apagar ou anonimizar a pessoa NÃO apaga a manifestação nem o protocolo (decisão escrita no catálogo LGPD dos invariantes).';
       comment on column public.ouvidoria_manifestacoes.status is
@@ -66826,14 +66826,6 @@ grant execute on function public.fn_ouvidoria_provisionar() to service_role;
 
 comment on function public.fn_ouvidoria_provisionar() is
   'Provisiona o schema do módulo de Ouvidoria (ADR-0002 D2): a tabela ouvidoria_manifestacoes, que sai do baseline e nasce na instalação do módulo. Sem parâmetro e com EXECUTE só de service_role (D4); termina em fn_proteger_modulo_provisionado() para a tabela nascer protegida na mesma transação (D5).';
-
-insert into public.modulos_instalados (modulo, estado, instalado_por, reaplicado_em)
-  select 'ouvidoria', 'ativo', null, now()
-   where to_regclass('public.ouvidoria_manifestacoes') is not null
-     and not exists (
-       select 1 from public.modulos_instalados where modulo = 'ouvidoria'
-     )
-  on conflict (modulo) do nothing;
 
 -- ---- O ledger de envio guarda mídia já sintetizada (migration 9051) ----
 -- Espelho idêntico da 9051 (o porquê está no cabeçalho dela): o lugar onde o

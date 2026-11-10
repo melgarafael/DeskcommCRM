@@ -1079,7 +1079,7 @@ export function limiteDoPesoDaMemoria(settings: unknown): number {
  * resto do estado do módulo (perfis autorizados, destinatários do aviso) chega
  * nas fatias seguintes e cada um é uma decisão de empresa, não uma coluna da
  * manifestação. A manifestação em si é TABELA (`ouvidoria_manifestacoes`,
- * migration 9030) — protocolo, unicidade e privacidade não cabem em jsonb.
+ * migration 9040) — protocolo, unicidade e privacidade não cabem em jsonb.
  *
  * ─── Régua de leitura ────────────────────────────────────────────────────────
  * Só o `true` EXPLÍCITO liga, a mesma de `settings.entrada_do_inbox.ativa` e de
