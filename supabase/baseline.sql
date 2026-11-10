@@ -9374,14 +9374,11 @@ begin
   end loop;
 end $$;
 
--- A policy ampla (só "é da organização") fica só para ai_router_decisions.
--- ai_routers e ai_router_members têm policies por papel desde a 0150, que
--- derruba a ampla delas; recriá-la aqui fazia cada update.sh (em autocommit)
--- reabrir escrita a qualquer membro da organização até aquele drop.
-drop policy if exists tenant_isolation_ai_router_decisions_all on public.ai_router_decisions;
-create policy tenant_isolation_ai_router_decisions_all on public.ai_router_decisions for all
-  using (organization_id in (select * from public.fn_user_org_ids()))
-  with check (organization_id in (select * from public.fn_user_org_ids()));
+-- Nenhuma policy ampla (só "é da organização") nasce aqui. ai_routers e
+-- ai_router_members têm policies por papel desde a 0150; ai_router_decisions tem
+-- leitura para membros e escrita só pelo servidor desde a 9064 (bloco no fim do
+-- apêndice). Recriar a ampla aqui faria cada update.sh (em autocommit) reabrir
+-- escrita a qualquer membro da organização até aquele bloco.
 
 -- ---- knowledge_searches: telemetria de busca de conhecimento (migration 0086) ----
 
@@ -73498,6 +73495,24 @@ alter table public.ai_router_decisions
 
 alter table public.ai_router_decisions
   add column if not exists solicitado_por uuid;
+
+-- A TRILHA É ESCRITA SÓ PELO SERVIDOR. Desde a 0085 a tabela tinha uma policy
+-- `for all` por organização: qualquer membro, com a própria sessão, podia gravar
+-- nela pela API REST. Com `solicitado_por`, `origem` e `motivo`, a linha passa a
+-- dizer quem pediu a passagem, e isso só o servidor escreve: o turno do agente
+-- (`inbound-turn.ts`) e a ação (`transferir-agente.ts`) gravam pela conexão
+-- direta do motor, e nenhum caminho de sessão escreve aqui. Os membros seguem
+-- lendo (o painel de evolução lê pela sessão).
+--
+-- Num bloco só: se a criação falhasse depois do `drop`, a tabela ficaria sem
+-- policy de leitura no `update.sh` (que roda sem ON_ERROR_STOP).
+do $trilha_do_roteador$
+begin
+  drop policy if exists tenant_isolation_ai_router_decisions_all on public.ai_router_decisions;
+  drop policy if exists tenant_isolation_ai_router_decisions_select on public.ai_router_decisions;
+  create policy tenant_isolation_ai_router_decisions_select on public.ai_router_decisions
+    for select using (organization_id in (select public.fn_user_org_ids()));
+end $trilha_do_roteador$;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

@@ -1,4 +1,4 @@
--- manifest: A passagem de conversa de um agente de IA para outro ganha trilha própria: `ai_router_decisions.outcome` aceita `transferred` (desfecho da AÇÃO, distinto de `reclassified`, que é o do classificador) e a tabela ganha `origem` (`classificador`/`acao`), `agente_anterior_id`, `motivo` (vocabulário fechado) e `solicitado_por` — quem pediu, de qual agente para qual, quando e por quê, sem texto livre e sem PII (#3770).
+-- manifest: A passagem de conversa de um agente de IA para outro ganha trilha própria: `ai_router_decisions.outcome` aceita `transferred` (desfecho da AÇÃO, distinto de `reclassified`, que é o do classificador) e a tabela ganha `origem` (`classificador`/`acao`), `agente_anterior_id`, `motivo` (vocabulário fechado) e `solicitado_por` — quem pediu, de qual agente para qual, quando e por quê, sem texto livre e sem PII (#3770). A trilha das decisões passa a ser escrita só pelo servidor: a policy `for all` por organização vira leitura para os membros (`tenant_isolation_ai_router_decisions_select`), e quem grava é o motor, pela conexão direta.
 --
 -- 9064 — a ação explícita de transferência entre agentes de IA (#3770).
 --
@@ -82,3 +82,21 @@ alter table public.ai_router_decisions
 -- QUEM pediu, quando foi uma pessoa.
 alter table public.ai_router_decisions
   add column if not exists solicitado_por uuid;
+
+-- A TRILHA É ESCRITA SÓ PELO SERVIDOR. Desde a 0085 a tabela tinha uma policy
+-- `for all` por organização: qualquer membro, com a própria sessão, podia gravar
+-- nela pela API REST. Com `solicitado_por`, `origem` e `motivo`, a linha passa a
+-- dizer quem pediu a passagem, e isso só o servidor escreve: o turno do agente
+-- (`inbound-turn.ts`) e a ação (`transferir-agente.ts`) gravam pela conexão
+-- direta do motor, e nenhum caminho de sessão escreve aqui. Os membros seguem
+-- lendo (o painel de evolução lê pela sessão).
+--
+-- Num bloco só: se a criação falhasse depois do `drop`, a tabela ficaria sem
+-- policy de leitura no `update.sh` (que roda sem ON_ERROR_STOP).
+do $trilha_do_roteador$
+begin
+  drop policy if exists tenant_isolation_ai_router_decisions_all on public.ai_router_decisions;
+  drop policy if exists tenant_isolation_ai_router_decisions_select on public.ai_router_decisions;
+  create policy tenant_isolation_ai_router_decisions_select on public.ai_router_decisions
+    for select using (organization_id in (select public.fn_user_org_ids()));
+end $trilha_do_roteador$;
