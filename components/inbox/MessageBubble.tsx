@@ -83,8 +83,13 @@ interface Props {
 /** Quem tem um motor que reenvia sozinho quando a conexão volta (`redriveQueued`). */
 const SAI_SOZINHA_QUANDO_VOLTAR = new Set(["ai", "automation", "system"]);
 
-function AckIndicator({ status, paradaSemConexao, saiSozinha, t }: {
-  status: string; paradaSemConexao: boolean; saiSozinha: boolean; t: (texto: string) => string;
+function AckIndicator({ status, deliveredAt, readAt, paradaSemConexao, saiSozinha, t }: {
+  status: string;
+  /** Carimbo da entrega (`delivered_at`) — o canal oficial só tem aqui o "entregue". */
+  deliveredAt?: string | null;
+  /** Carimbo da leitura (`read_at`) — idem para o "lida". */
+  readAt?: string | null;
+  paradaSemConexao: boolean; saiSozinha: boolean; t: (texto: string) => string;
 }) {
   // Só a linha que o envio PAROU por falta de conexão (`queued_reason`). Todo
   // envio nasce `queued` por um instante; mostrar o relógio nele diria
@@ -102,10 +107,15 @@ function AckIndicator({ status, paradaSemConexao, saiSozinha, t }: {
       </span>
     );
   }
-  if (status === "read") {
+  // A Cloud API oficial NÃO muda `status` — ele fica colapsado em `sent |
+  // failed` de propósito (`lib/channels/meta/status-update.ts`), e entrega e
+  // leitura vivem só nos carimbos. Por isso o tique parte dos FATOS, na ordem
+  // em que acontecem (leitura > entrega > status), e o `status` fica como
+  // último recurso para o canal que ainda usa o domínio fino.
+  if (readAt || status === "read") {
     return <Checks size={12} weight="bold" className="text-blue-400" aria-label={t("Lida")} />;
   }
-  if (status === "delivered") {
+  if (deliveredAt || status === "delivered") {
     return <Checks size={12} weight="bold" className="text-current/70" aria-label={t("Entregue")} />;
   }
   if (status === "sent") {
@@ -634,7 +644,9 @@ export function MessageBubble({
           {showCitationButton && (
             <CitationButton citations={citations} messageId={message.id} />
           )}
-          {isOutbound && !isFailed && <AckIndicator status={message.status} paradaSemConexao={paradaSemConexao}
+          {isOutbound && !isFailed && <AckIndicator status={message.status}
+            deliveredAt={message.delivered_at} readAt={message.read_at}
+            paradaSemConexao={paradaSemConexao}
             saiSozinha={SAI_SOZINHA_QUANDO_VOLTAR.has(message.sent_via)} t={t} />}
           {isFailed && !pulo && (
             // Provider local: o painel do inbox não tem TooltipProvider ancestral e
