@@ -37,11 +37,13 @@ import { entradaDoCatalogo } from "./catalogos";
 import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
+import { TEXTOS_CONTRATACAO } from "./contratacao";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  ...TEXTOS_CONTRATACAO,
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
   "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
@@ -400,6 +402,9 @@ export const DICIONARIO: Traducoes = {
   "Com o Google, a empresa começa no plano padrão. Para escolher outro, use e-mail e senha.": { es: "Con Google, la empresa empieza en el plan predeterminado. Para elegir otro, usa correo electrónico y contraseña." },
   "Para garantir que o plano selecionado seja contratado, conclua o cadastro com e-mail e senha.": { es: "Para garantizar que se contrate el plan seleccionado, completa el registro con correo electrónico y contraseña." },
   "sem período de teste": { es: "sin período de prueba" },
+  "O plano deste link não está disponível. Confira o plano e o período no seletor antes de continuar.": { es: "El plan de este enlace no está disponible. Revisa el plan y el período en el selector antes de continuar." },
+  "Plano selecionado": { es: "Plan seleccionado" },
+  "pagamento anual de uma vez": { es: "pago anual en una sola vez" },
   "Pagar ajuste do upgrade": { es: "Pagar el ajuste de la mejora" },
   "Conclua ou aguarde a cobrança proporcional antes de solicitar outra troca de plano.": { es: "Completa o espera el cobro proporcional antes de solicitar otro cambio de plan." },
   "A cobrança foi iniciada, mas não conseguimos registrar o pagamento. Tente novamente; se houver uma cobrança aberta, fale com o suporte.": { es: "Se inició el cobro, pero no pudimos registrar el pago. Inténtalo de nuevo; si hay un cobro abierto, contacta con soporte." },
@@ -15759,8 +15764,8 @@ export const DICIONARIO: Traducoes = {
   Assunto: { es: "Asunto" },
   Abrir: { es: "Abrir" },
   "A IA prometeu algo e travou": { es: "La IA prometió algo y se trabó" },
-  "(resumo escrito pela IA a partir da conversa)":
-    { es: "(resumen escrito por la IA a partir de la conversación)" },
+  "(montado automaticamente; confira na conversa)":
+    { es: "(armado automáticamente; revisa la conversación)" },
   "Responder aqui não chega ao cliente — abra o link para responder.":
     { es: "Las respuestas aquí no le llegan al cliente. Abre el enlace para responder." },
   "Para orientar a IA sem falar diretamente com o cliente, envie:": {
@@ -17516,6 +17521,13 @@ export const DICIONARIO: Traducoes = {
   "Honorários": { es: "Honorarios" },
   "Lista de espera": { es: "Lista de espera" },
   "Lista de espera da agenda": { es: "Lista de espera de la agenda" },
+  "Ouvidoria": { es: "Defensoría del cliente" },
+  "Registro de manifestações (reclamações, denúncias, elogios, sugestões) com protocolo próprio, leitura restrita a administradores e sem cartão no funil. Quem não instala o módulo não carrega a tabela.": {
+    es: "Registro de manifestaciones (reclamos, denuncias, elogios, sugerencias) con protocolo propio, lectura restringida a administradores y sin tarjeta en el embudo. Quien no instala el módulo no carga la tabla.",
+  },
+  "Reclamações, denúncias, elogios e sugestões com protocolo próprio, lidas só por administradores e fora do funil.": {
+    es: "Reclamos, denuncias, elogios y sugerencias con protocolo propio, leídos solo por administradores y fuera del embudo.",
+  },
   "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, na ordem da fila.": { es: "Cuando se abre un horario, la plaza se ofrece a una persona a la vez, en el orden de la fila." },
   "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.": { es: "Cuando se abre un horario, la plaza se ofrece a una persona a la vez, entre quienes aceptaron recibir el aviso." },
   "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado. Cada empresa escolhe os prazos da oferta antes de ligar.": { es: "Cuando se abre un horario, la plaza se ofrece a una persona a la vez, entre quienes aceptaron recibir el aviso. Cada empresa elige los plazos de la oferta antes de activarla." },
@@ -17804,6 +17816,23 @@ export const DICIONARIO: Traducoes = {
   // ─── C-076: Comandos pelo celular (#on/#off) ───
   "Comandos pelo celular": { es: "Comandos desde el celular" },
   "Aceitar #on/#off enviados pelo celular": { es: "Aceptar #on/#off enviados desde el celular" },
+  "Frase do aviso de passagem": { es: "Frase del aviso de traspaso" },
+  "É o que o cliente lê quando o agente passa a conversa para uma pessoa. Deixe vazio para usar a frase padrão.": {
+    es: "Es lo que el cliente lee cuando el agente pasa la conversación a una persona. Déjalo vacío para usar la frase predeterminada.",
+  },
+  "Ex.: Já chamei alguém do time — já te respondemos.": { es: "Ej.: Ya avisé a alguien del equipo — enseguida te respondemos." },
+  "A frase passa do limite de 320 caracteres.": { es: "La frase supera el límite de 320 caracteres." },
+  "A frase precisa ter entre 3 e 320 caracteres, com pelo menos uma letra ou número.": {
+    es: "La frase debe tener entre 3 y 320 caracteres, con al menos una letra o un número.",
+  },
+  "Frase própria removida — o cliente volta a ler o aviso padrão.": {
+    es: "Frase propia eliminada — el cliente vuelve a leer el aviso predeterminado.",
+  },
+  "Frase do aviso salva — vale no próximo aviso de passagem.": {
+    es: "Frase del aviso guardada — se aplica en el próximo aviso de traspaso.",
+  },
+  "Salvar frase": { es: "Guardar frase" },
+  "Vazio = frase padrão do produto.": { es: "Vacío = frase predeterminada del producto." },
   "Usar o servidor de ferramentas externo durante o atendimento": { es: "Usar el servidor de herramientas externo durante la atención" },
   "O servidor recebe a identidade do cliente da conversa e deve filtrar os dados por ela.": { es: "El servidor recibe la identidad del cliente de la conversación y debe filtrar los datos por ella." },
   "Servidor de ferramentas externo ligado no atendimento.": { es: "Servidor de herramientas externo activado en la atención." },

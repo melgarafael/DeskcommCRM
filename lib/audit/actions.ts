@@ -1289,6 +1289,12 @@ export const AUDIT_ACTIONS = [
   // regra consulta o modelo.
   "settings.automation_ai_decide_updated",
 
+  // A entrada automática no funil (#3603): o interruptor
+  // `organizations.settings.entrada_automatica_no_funil.ativa` foi ligado ou
+  // desligado. A trilha responde "quem fez a conversa que o CRM abre passar a
+  // gerar (ou deixar de gerar) negócio?" — o destino é o mesmo da entrada.
+  "settings.entrada_automatica_no_funil_updated",
+
   // Planos de tarefa (#1752): a lista `settings.task_plans` mudou pela rota
   // `settings/task-plans` — mesma família de `campaign.settings_updated`.
   "task_plans.settings_updated",
@@ -1498,6 +1504,11 @@ export const AUDIT_ACTIONS = [
   // verificação, pois a trilha append-only não é lugar para identidade pessoal.
   "org.resend_account_connected",
   "org.resend_account_disconnected",
+  // A ativação do módulo de Ouvidoria (#3611, migration 9040) — ligar a porta
+  // que aceita manifestação confidencial, e desligá-la. Metadata leva só o
+  // booleano: o CONTEÚDO das manifestações nunca entra na trilha, que é
+  // append-only e a cascata de LGPD não alcança.
+  "settings.ouvidoria_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
