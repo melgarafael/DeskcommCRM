@@ -1509,6 +1509,17 @@ export const AUDIT_ACTIONS = [
   // verificação, pois a trilha append-only não é lugar para identidade pessoal.
   "org.resend_account_connected",
   "org.resend_account_disconnected",
+  // A ativação do módulo de Ouvidoria (#3611, migration 9040) — ligar a porta
+  // que aceita manifestação confidencial, e desligá-la. Metadata leva só o
+  // booleano: o CONTEÚDO das manifestações nunca entra na trilha, que é
+  // append-only e a cascata de LGPD não alcança.
+  "settings.ouvidoria_updated",
+  // O link de pagamento do cliente final (#3509): registrar o link na conversa
+  // (`POST /conversations/[id]/pagamentos`) e o aviso do provedor que marca
+  // "pago" (`/webhooks/pagamento/[provedor]`). O metadata leva ids, provedor e
+  // valor — nunca o link: a trilha é append-only e a cascata de LGPD não a alcança.
+  "pagamento.link_registrado",
+  "pagamento.confirmado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
