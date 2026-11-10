@@ -958,9 +958,17 @@ export const DICIONARIO: Traducoes = {
   "Torne outro número principal antes de remover este.": {
     es: "Haga principal otro número antes de quitar este.",
   },
-  "Número inválido. Confira o DDD e tente de novo.": {
-    es: "Número no válido. Revise el código de área e inténtelo de nuevo.",
+  // #4242 — a tela mostra a mensagem do SERVIDOR (é ela que conhece o país) e
+  // só cai no texto local sem mensagem; o local não fala em DDD nem contradiz
+  // o E.164. E "Tornar principal" avisa antes de descartar o rótulo.
+  "Número inválido. Informe o telefone no formato E.164, com o código do país.": {
+    es: "Número no válido. Informe el teléfono en formato E.164, con el código del país.",
   },
+  "Este número vai virar o principal e o rótulo será descartado: o telefone principal da ficha não guarda rótulo.":
+    {
+      es: "Este número pasará a ser el principal y su etiqueta se descartará: el teléfono principal de la ficha no guarda etiqueta.",
+    },
+  "Rótulo que será descartado:": { es: "Etiqueta que se descartará:" },
   "A resposta sai por:": { es: "La respuesta sale por:" },
   "Pontuação": { es: "Puntuación" },
   // #2642 — formulário da ação notify_team, depois do recorte: o destino é o
