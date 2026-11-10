@@ -28,6 +28,7 @@ import {
 import type { ServidorMcpExternoMontado } from "@/lib/mcp/servidor-externo/carregar";
 import type { ServidorDoAgenteNoTurno } from "@/lib/mcp/servidor-externo/do-agente/carregar";
 import { escolhasDoServidor, escolhasRemotas } from "@/lib/mcp/servidor-externo/ids";
+import { marcarLeituraRemota } from "@/lib/mcp/servidor-externo/leitura-remota";
 import { catalogEntry, deCapacidadeDesligada, deModuloDesligado } from "@/lib/mcp/tools/catalog";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
@@ -764,7 +765,16 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         escolhasDoServidor(input.toolIds, montado.servidor.id),
         input.contatoDoTurno,
       );
-      for (const def of defs) result[def.name] = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+      for (const def of defs) {
+        const montada = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+        // #4317 — a MESMA marca do servidor externo da organização (#3575):
+        // `category === "read"` aqui JÁ é as duas metades juntas, decididas em
+        // `definirFerramentasDoServidorDoAgente` (marca `leitura` do admin em
+        // `tool_ids` E `somenteLeitura` capturado por `declarouSomenteLeitura`
+        // — `readOnlyHint === true` exato). Sem as duas, a definição sai
+        // `write` e NÃO recebe a marca: a prévia continua recusando.
+        result[def.name] = def.category === "read" ? marcarLeituraRemota(montada) : montada;
+      }
     } else if (!input.contatoDoTurno || montado.contato !== input.contatoDoTurno) {
       continue;
     }
