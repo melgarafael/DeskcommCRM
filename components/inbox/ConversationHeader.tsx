@@ -46,6 +46,7 @@ import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conv
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
+import { DialogoMoverParaFila, ItemMoverParaFila } from "@/components/inbox/MoverParaFila";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { ItemReservarServico, ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
@@ -139,6 +140,9 @@ export function ConversationHeader({
   // A folha de reserva segue o MESMO desenho do convite: o item do ⋯ só levanta
   // a bandeira, a folha mora fora do menu e o menu fecha como qualquer outro.
   const [reservaAberta, setReservaAberta] = useState(false);
+  // A FILA (#3876): o item do ⋯ só levanta a bandeira — o diálogo mora fora do
+  // menu, pelo mesmo motivo do convite acima.
+  const [filaAberta, setFilaAberta] = useState(false);
 
   const c = conversation.contacts ?? null;
   /**
@@ -664,6 +668,17 @@ export function ConversationHeader({
                 {t("Convidar")}
               </DropdownMenuItem>
             )}
+            {/* ─── A FILA (#3876) ──────────────────────────────────────────
+                Uma ação que a conversa já tinha e a tela não oferecia: o
+                `PUT /conversations/[id]/sector` (9062) estava sem consumidor.
+                Fica no ⋯ porque classificar é correção de rota, não é do dia a
+                dia. `ItemMoverParaFila` devolve `null` quando a rota recusaria
+                (viewer, módulo desligado, conversa encerrada).
+                O export em PDF (#1982) NÃO entra aqui: o PR #4207, aberto
+                antes, é quem entrega essa tela — duas entregas da mesma fatia
+                viram dois itens no menu. */}
+            <DropdownMenuSeparator />
+            <ItemMoverParaFila encerrada={encerrada} onAbrir={() => setFilaAberta(true)} />
             <DropdownMenuSeparator />
             {podePausar && (
               <DropdownMenuItem
@@ -805,6 +820,18 @@ export function ConversationHeader({
         aberto={conviteAberto}
         onAbertoChange={setConviteAberto}
       />
+      {/* O diálogo da fila, FORA do menu ⋯ — o mesmo desenho do convite acima —
+          e montado só quando abre. Aberto é o único estado em que ele existe, e
+          um diálogo fechado que consultasse setores em toda conversa seria uma
+          requisição por cabeçalho montado para quem nunca tocou no ⋯. */}
+      {filaAberta && (
+        <DialogoMoverParaFila
+          conversationId={conversation.id}
+          filaAtual={conversation.sector_id ?? null}
+          aberto
+          onAbertoChange={setFilaAberta}
+        />
+      )}
       {podeReservar && c?.id && activeOrg && (
         <ReservarServicoNaConversa
           key={`${activeOrg.orgId}:${conversation.id}`}

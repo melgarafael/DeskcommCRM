@@ -20513,6 +20513,29 @@ export const DICIONARIO: Traducoes = {
   "O agente publicado não pode mover oportunidade de etapa e não tem acesso ao funil desta campanha. Ligue 'Mover oportunidade de etapa' na aba Conversa com o cliente, marque o funil em Organiza o sistema › 'Em que negócios ele pode mexer' e publique o agente de novo.": {
     es: "El agente publicado no puede mover la oportunidad de etapa y no tiene acceso al embudo de esta campaña. Activa 'Mover oportunidad de etapa' en la pestaña Conversación con el cliente, marca el embudo en Organiza el sistema › 'En qué negocios puede intervenir' y publica el agente de nuevo.",
   },
+
+  // o botão de exportar a conversa (#1982) NÃO mora aqui: o PR #4207, aberto
+  // antes, é quem entrega essa tela — duas entregas da mesma fatia viram dois
+  // itens no menu.
+
+  // ─── filas visíveis e transferíveis (#3876) ────────────────────────────────
+  "Filtrar por fila": { es: "Filtrar por fila" },
+  "Todas as filas": { es: "Todas las filas" },
+  "Fila removida": { es: "Fila eliminada" },
+  "Mover para fila": { es: "Mover a la fila" },
+  "Classifica esta conversa em outra fila de atendimento.": {
+    es: "Clasifica esta conversación en otra fila de atención.",
+  },
+  "Escolha a fila para onde esta conversa vai. Se ela estiver sem dono, volta para a distribuição.": {
+    es: "Elige la fila a la que va esta conversación. Si está sin dueño, vuelve a la distribución.",
+  },
+  "Fila atual": { es: "Fila actual" },
+  "Nenhuma fila cadastrada.": { es: "Ninguna fila registrada." },
+  "Movendo…": { es: "Moviendo…" },
+  "Conversa movida para a fila.": { es: "Conversación movida a la fila." },
+  "Não foi possível mover a conversa de fila.": {
+    es: "No se pudo mover la conversación de fila.",
+  },
 };
 
 
