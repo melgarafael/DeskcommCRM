@@ -3059,6 +3059,11 @@ export const DICIONARIO: Traducoes = {
   "Funil de destino (opcional)": { es: "Embudo de destino (opcional)" },
   "Sem destino — só escolher o agente": { es: "Sin destino — solo elegir el agente" },
   "Primeira etapa aberta": { es: "Primera etapa abierta" },
+  // #2569 — o id gravado já está na tela antes de a lista de funis/etapas
+  // voltar: o gatilho diz que HÁ destino (nunca fica vazio nem vira "Sem
+  // destino") e o nome toma o lugar quando a lista chega.
+  "Funil selecionado": { es: "Embudo seleccionado" },
+  "Etapa selecionada": { es: "Etapa seleccionada" },
   Início: { es: "Inicio" },
   Fim: { es: "Fin" },
   Dias: { es: "Días" },
