@@ -305,11 +305,13 @@
       "POST /api/v1/conversations/[id]/media",
       "POST /api/v1/conversations/[id]/notes",
       "POST /api/v1/conversations/[id]/notes/media",
+      "POST /api/v1/conversations/[id]/pagamentos",
       "POST /api/v1/conversations/[id]/participants",
       "POST /api/v1/conversations/[id]/pause-ai",
       "POST /api/v1/conversations/[id]/reactivate-bot",
       "POST /api/v1/conversations/[id]/snooze",
       "POST /api/v1/conversations/[id]/transfer",
+      "POST /api/v1/conversations/[id]/transferir-agente",
       "POST /api/v1/conversations/[id]/usable-for-rag",
       "POST /api/v1/conversations/bulk",
       "POST /api/v1/conversations/open-with-contact",
@@ -1144,6 +1146,16 @@
       ],
       "resposta": []
     },
+    "/api/v1/conversations/[id]/pagamentos": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "93671da7b5102b7f"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/conversations/[id]/snooze": {
       "corpo": [
         {
@@ -1160,6 +1172,16 @@
           "nome": "previaSchema",
           "origem": "local",
           "hash": "c1e9e9d2b1c80eed"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/conversations/[id]/transferir-agente": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "c163e1f550d7ce43"
         }
       ],
       "resposta": []
