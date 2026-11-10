@@ -140,12 +140,13 @@ export async function ensureTenantForUser(
   // confirmado 2x em paralelo (pior caso: org duplicada órfã). Advisory lock
   // por user_id se isso aparecer na prática.
   let org: { id: string; slug: string } | null = null;
+  let idReservado = intencao?.organization_id ?? null;
   for (let attempt = 0; attempt < 3 && !org; attempt++) {
     const slug = attempt === 0 ? base : `${base}-${Math.random().toString(36).slice(2, 6)}`;
     const { data, error } = await admin
       .from("organizations")
       .insert({
-        ...(intencao ? { id: intencao.organization_id } : {}),
+        ...(idReservado ? { id: idReservado } : {}),
         slug,
         display_name: orgName,
         legal_name: orgName,
@@ -160,6 +161,15 @@ export async function ensureTenantForUser(
       org = data;
     } else if (error && error.code !== "23505") {
       throw new Error(`signup provisioning: org insert failed: ${error.message}`);
+    } else if (idReservado) {
+      // O 23505 pode ser do UUID reservado, não do slug: a mesma intenção já
+      // criou esta empresa (vínculo que falhou depois, ou confirmação clicada
+      // duas vezes). Repetir o mesmo id esgotaria as tentativas.
+      const reservada = await empresaDoIdReservado(admin, idReservado, user.id);
+      if (reservada.tipo === "ja_vinculada") return { provisioned: false, organizationId: idReservado };
+      if (reservada.tipo === "adotar") org = reservada.org;
+      else if (reservada.tipo === "de_outro") idReservado = null;
+      // "livre": a colisão foi do slug; a próxima tentativa troca o slug e mantém o id.
     }
   }
   if (!org) throw new Error("signup provisioning: slug exhausted after 3 attempts");
@@ -190,6 +200,44 @@ export async function ensureTenantForUser(
   });
 
   return { provisioned: true, organizationId: org.id };
+}
+
+type EmpresaDoIdReservado =
+  | { tipo: "livre" }
+  | { tipo: "adotar"; org: { id: string; slug: string } }
+  | { tipo: "ja_vinculada" }
+  | { tipo: "de_outro" };
+
+/**
+ * Quem ocupa o UUID que a intenção assinada reservou. Só a empresa criada por
+ * ESTA pessoa e sem ninguém mais vinculado é retomada; qualquer outro dono faz
+ * o provisionamento seguir sem o id reservado.
+ */
+async function empresaDoIdReservado(
+  admin: ReturnType<typeof createAdminClient>,
+  id: string,
+  userId: string,
+): Promise<EmpresaDoIdReservado> {
+  const { data: org, error } = await admin
+    .from("organizations")
+    .select("id, slug, created_by")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`signup provisioning: leitura da empresa reservada falhou: ${error.message}`);
+  if (!org) return { tipo: "livre" };
+  if (org.created_by !== userId) return { tipo: "de_outro" };
+
+  const { data: vinculos, error: erroVinculos } = await admin
+    .from("user_organizations")
+    .select("user_id, revoked_at")
+    .eq("organization_id", id);
+  if (erroVinculos) {
+    throw new Error(`signup provisioning: leitura dos vínculos da empresa reservada falhou: ${erroVinculos.message}`);
+  }
+  const lista = vinculos ?? [];
+  if (lista.length === 0) return { tipo: "adotar", org: { id: org.id, slug: org.slug } };
+  if (lista.length === 1 && lista[0].user_id === userId && lista[0].revoked_at === null) return { tipo: "ja_vinculada" };
+  return { tipo: "de_outro" };
 }
 
 type ExternalProvisionInput = {
