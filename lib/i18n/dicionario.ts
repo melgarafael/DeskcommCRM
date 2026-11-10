@@ -7552,6 +7552,22 @@ export const DICIONARIO: Traducoes = {
   // Motivo da perda no "mover lead" (etapa de perda exige motivo)
   "Motivo da perda": { es: "Motivo de pérdida" },
   "Escolha o motivo": { es: "Elige el motivo" },
+  // #4297 — a etapa de perda na AUTOMAÇÃO: o campo da ação e as duas frases
+  // (a recusa na porta de gravação e a explicação na aba Atividade).
+  "Escolha o motivo da perda": { es: "Elige el motivo de pérdida" },
+  "Esta etapa fecha o negócio como perdido: a automação precisa dizer por quê.": {
+    es: "Esta etapa cierra el negocio como perdido: la automatización debe decir por qué.",
+  },
+  "Escolha o “Motivo da perda” nesta ação: a etapa de destino fecha o negócio como perdido, e um negócio não pode ser perdido sem motivo.": {
+    es: "Elige el “Motivo de pérdida” en esta acción: la etapa de destino cierra el negocio como perdido, y un negocio no puede perderse sin motivo.",
+  },
+  "Etapa de perda: {etapas}.": { es: "Etapa de pérdida: {etapas}." },
+  "Esta automação move o card para uma etapa de perda sem dizer o motivo. Abra a automação e escolha o “Motivo da perda”.": {
+    es: "Esta automatización mueve la tarjeta a una etapa de pérdida sin decir el motivo. Abre la automatización y elige el “Motivo de pérdida”.",
+  },
+  "A etapa de destino exige campos que o card ainda não tem. Preencha-os no card e a automação move na próxima passada.": {
+    es: "La etapa de destino exige campos que la tarjeta todavía no tiene. Complétalos en la tarjeta y la automatización moverá en la próxima pasada.",
+  },
   "Escolha o motivo da perda.": { es: "Elige el motivo de pérdida." },
   "falta o motivo da perda": { es: "falta el motivo de pérdida" },
   "Texto da mensagem": { es: "Texto del mensaje" },

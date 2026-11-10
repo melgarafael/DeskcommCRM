@@ -150,10 +150,12 @@ describe("create_or_move_lead — a régua de campos obrigatórios chega aqui (#
       { pipeline_id: PIPE, stage_id: ETAPA_PROPOSTA_UUID },
     );
 
-    // A automação reporta `failed` com a FRASE da recusa — é o que a aba
-    // Atividade mostra ao operador, e sem ela o erro vira um sucesso calado.
+    // #4297 — A automação reporta `failed` com o CÓDIGO da recusa, não com a
+    // frase: era a frase que o recibo trocava por `internal_error` (texto livre
+    // não entra no recibo — ele pode carregar nome, telefone, CPF). A frase que
+    // o operador lê agora vem do mapa da aba Atividade, por código.
     expect(resultado.status).toBe("failed");
-    expect(JSON.stringify(resultado)).toContain("Concorrente");
+    expect(resultado.error).toBe("required_fields_missing");
     // E a prova de que nada foi movido.
     expect(db.tabelas.crm_leads.find((l) => l.id === "lead-1")?.stage_id).toBe("novo");
   });
