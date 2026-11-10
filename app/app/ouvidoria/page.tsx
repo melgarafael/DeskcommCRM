@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { listarManifestacoesDaOuvidoria } from "@/app/actions/ouvidoria/listar-manifestacoes";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { acessoDaOuvidoria } from "@/lib/ouvidoria/acesso";
 import { statusPedido } from "@/lib/ouvidoria/tela";
+import { ouvidoriaLigada } from "@/lib/schemas/settings";
+import { createClient } from "@/lib/supabase/server";
 
+import { EntradaDaOuvidoria } from "./_entrada";
 import { TabelaDeManifestacoes } from "./_tabela";
 
 /**
@@ -41,16 +44,24 @@ export default async function OuvidoriaPage({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const acesso = await acessoDaOuvidoria();
-  if (!acesso.ok) redirect(acesso.error === "unauthenticated" ? "/login" : "/app");
+  if (!acesso.ok) {
+    // Módulo não instalado: a tela não existe nesta instalação (ADR-0002).
+    if (acesso.error === "not_found") notFound();
+    redirect(acesso.error === "unauthenticated" ? "/login" : "/app");
+  }
 
   const t = (texto: string) => traduzir(texto, acesso.user.idioma);
   const parametros = await searchParams;
   const status = statusPedido(parametros.status);
 
-  const resultado = await listarManifestacoesDaOuvidoria({
-    status: parametros.status ?? null,
-    pagina: parametros.pagina ?? null,
-  });
+  const supabase = await createClient();
+  const [resultado, { data: organizacao }] = await Promise.all([
+    listarManifestacoesDaOuvidoria({
+      status: parametros.status ?? null,
+      pagina: parametros.pagina ?? null,
+    }),
+    supabase.from("organizations").select("settings").eq("id", acesso.org.orgId).maybeSingle(),
+  ]);
 
   return (
     <main className="flex h-full flex-col gap-6 md:p-6">
@@ -59,6 +70,9 @@ export default async function OuvidoriaPage({
         <p className="text-sm text-muted-foreground">
           {t("Manifestações recebidas pela empresa. Só quem a organização autoriza lê o relato.")}
         </p>
+        <div className="mt-3">
+          <EntradaDaOuvidoria ligada={ouvidoriaLigada(organizacao?.settings)} />
+        </div>
       </header>
 
       {resultado.ok ? (

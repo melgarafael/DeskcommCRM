@@ -15,7 +15,7 @@
  *   5. `concluida` não volta para `recebida` sem motivo.
  *
  * NÃO mede a RLS: aqui o cliente do Supabase é dublado. A segunda cerca
- * (`ouvidoria_manifestacoes_admin_select`, migration 9030) é de
+ * (`ouvidoria_manifestacoes_admin_select`, migration 9040) é de
  * `tests/invariants/ouvidoria-registro-privado.test.ts`, que exige banco. Está
  * escrito para ninguém contar duas vezes a mesma garantia.
  *
@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => ({
   loadAuthUser: vi.fn(),
   resolveActiveOrg: vi.fn(),
   audit: vi.fn(),
+  moduloLigado: vi.fn(),
+  definirOuvidoria: vi.fn(),
 }));
 
 /** As duas bases: a do cliente de SESSÃO e a do cliente de SERVIÇO. */
@@ -54,9 +56,16 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => bancos.escrita }));
 vi.mock("@/lib/audit", () => ({ audit: mocks.audit, isServiceRoleConfigured: () => true }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: mocks.moduloLigado }));
+vi.mock("@/app/actions/settings/definir-ouvidoria", () => ({
+  definirOuvidoriaDaEmpresa: mocks.definirOuvidoria,
+}));
 vi.mock("next/navigation", () => ({
   redirect: (href: string) => {
     throw new Error(`redirect:${href}`);
+  },
+  notFound: () => {
+    throw new Error("notFound");
   },
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
 }));
@@ -151,6 +160,8 @@ function acompanhamento() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.audit.mockResolvedValue(undefined);
+  mocks.moduloLigado.mockResolvedValue(true);
+  mocks.definirOuvidoria.mockResolvedValue({ ok: true });
   sessao("admin");
 });
 
@@ -206,6 +217,38 @@ describe("a porta da ouvidoria: quem entra", () => {
     expect(resultado.ok).toBe(true);
     if (resultado.ok) expect(resultado.pagina.manifestacoes.map((m) => m.protocolo)).toEqual([MAN_A.protocolo]);
     expect(bLeitura.escritas).toHaveLength(0);
+  });
+});
+
+describe("o módulo da instalação (ADR-0002)", () => {
+  it("⭐ sem o módulo instalado: lista e mudança de status respondem not_found, sem ler a tabela", async () => {
+    mocks.moduloLigado.mockResolvedValue(false);
+    const { bLeitura } = prepararBancos({ leitura: { manifestacoes: [MAN_A] } });
+
+    await expect(listarManifestacoesDaOuvidoria({})).resolves.toEqual({ ok: false, error: "not_found" });
+    await expect(
+      mudarStatusDaManifestacao({ id: MAN_A.id, status: "em_analise" }),
+    ).resolves.toEqual({ ok: false, error: "not_found" });
+    expect(mocks.moduloLigado).toHaveBeenCalledWith(expect.anything(), "ouvidoria");
+    expect(createClient).not.toHaveBeenCalled();
+    expect(bLeitura.escritas).toHaveLength(0);
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it("⭐ sem o módulo instalado: as duas telas são 404, não redirecionamento", async () => {
+    mocks.moduloLigado.mockResolvedValue(false);
+    prepararBancos({ leitura: { manifestacoes: [MAN_A] } });
+
+    await expect(OuvidoriaPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("notFound");
+    await expect(ManifestacaoPage({ params: Promise.resolve({ id: MAN_A.id }) })).rejects.toThrow("notFound");
+  });
+
+  it("papel abaixo de admin é recusado ANTES de perguntar pelo módulo", async () => {
+    sessao("manager");
+    prepararBancos({ leitura: { manifestacoes: [MAN_A] } });
+
+    await expect(listarManifestacoesDaOuvidoria({})).resolves.toEqual({ ok: false, error: "forbidden_role" });
+    expect(mocks.moduloLigado).not.toHaveBeenCalled();
   });
 });
 
@@ -523,6 +566,18 @@ describe("a tela da ouvidoria", () => {
     expect(screen.getByRole("heading", { name: "Mudar status" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Em análise" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Concluída" })).toBeNull();
+  });
+
+  it("a chave de receber manifestações mostra o estado gravado na empresa", async () => {
+    prepararBancos({ leitura: { manifestacoes: [], organizationSettings: { ouvidoria: { ativa: true } } } });
+    render(await OuvidoriaPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByRole("switch", { name: "Receber manifestações nesta empresa" })).toBeChecked();
+  });
+
+  it("sem a chave gravada, receber manifestações aparece desligado", async () => {
+    prepararBancos({ leitura: { manifestacoes: [] } });
+    render(await OuvidoriaPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByRole("switch", { name: "Receber manifestações nesta empresa" })).not.toBeChecked();
   });
 
   it("detalhe de outra organização: 'não encontrada' e o relato não aparece", async () => {

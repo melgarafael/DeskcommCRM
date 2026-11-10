@@ -20386,6 +20386,7 @@ export const DICIONARIO: Traducoes = {
   "As manifestações aparecem aqui assim que alguém falar com a empresa.": {
     es: "Las manifestaciones aparecen aquí en cuanto alguien hable con la empresa.",
   },
+  "Receber manifestações nesta empresa": { es: "Recibir manifestaciones en esta empresa" },
   "Manifestações recebidas pela empresa. Só quem a organização autoriza lê o relato.": {
     es: "Manifestaciones recibidas por la empresa. Solo quien la organización autoriza lee el relato.",
   },

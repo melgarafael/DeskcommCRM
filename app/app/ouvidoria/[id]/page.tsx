@@ -1,7 +1,7 @@
 import { format } from "date-fns";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { lerManifestacaoDaOuvidoria } from "@/app/actions/ouvidoria/ler-manifestacao";
 import { Badge } from "@/components/ui/badge";
@@ -76,7 +76,11 @@ export default async function ManifestacaoDaOuvidoriaPage({
   params: Promise<{ id: string }>;
 }) {
   const acesso = await acessoDaOuvidoria();
-  if (!acesso.ok) redirect(acesso.error === "unauthenticated" ? "/login" : "/app");
+  if (!acesso.ok) {
+    // Módulo não instalado: a tela não existe nesta instalação (ADR-0002).
+    if (acesso.error === "not_found") notFound();
+    redirect(acesso.error === "unauthenticated" ? "/login" : "/app");
+  }
 
   const t = (texto: string) => traduzir(texto, acesso.user.idioma);
   const { id } = await params;

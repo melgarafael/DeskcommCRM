@@ -24,17 +24,19 @@
  * do produto a opção MAIS permissiva, e manifestação é o dado mais sensível que
  * este CRM guarda.
  *
- * ─── Por que a leitura não checa o módulo ligado ────────────────────────────
+ * ─── Por que a leitura não checa a chave da empresa ─────────────────────────
  *
- * Desligar o módulo fecha a ENTRADA; não apaga o acervo nem o protocolo que já
- * foi entregue a alguém. A razão inteira está no cabeçalho de `leitura.ts`.
+ * Desligar `settings.ouvidoria` fecha a ENTRADA; não apaga o acervo nem o
+ * protocolo que já foi entregue a alguém. A razão inteira está no cabeçalho de
+ * `leitura.ts`. O MÓDULO DA INSTALAÇÃO é outra pergunta: sem ele a tabela não
+ * existe, e a resposta é `not_found`, como nas rotas da lista de espera.
  *
  * ─── As respostas ───────────────────────────────────────────────────────────
  *
  * `not_found` cobre "não existe", "é de outra organização" e "id malformado" —
  * uma resposta só, porque distinguir contaria ao vizinho que a linha existe.
  * A ação NUNCA devolve a manifestação de outro tenant com `ok: true`: há dois
- * predicados (o `.eq("organization_id", …)` da leitura e a RLS da 9030) e o
+ * predicados (o `.eq("organization_id", …)` da leitura e a RLS da 9040) e o
  * teste de unidade mede o primeiro.
  *
  * ─── A régua de acesso saiu daqui (fatia 3) ─────────────────────────────────
@@ -42,8 +44,9 @@
  * A fatia 3 precisa da MESMA régua em cinco portas (lista, detalhe, mudança de
  * status e as duas telas). Ela mora em `lib/ouvidoria/acesso.ts`, com a ordem
  * das recusas documentada lá — e esta ação passou a chamá-la em vez de repetir
- * as quatro linhas. A conduta é idêntica: a barreira de acompanhamento continua
- * vindo ANTES de `resolveActiveOrg`, e o piso continua `admin`.
+ * as cinco linhas. A conduta é idêntica: a barreira de acompanhamento continua
+ * vindo ANTES de `resolveActiveOrg`, o piso continua `admin` e, sem o módulo
+ * instalado, a resposta continua `not_found`.
  */
 import { acessoDaOuvidoria } from "@/lib/ouvidoria/acesso";
 import { lerManifestacao, type ManifestacaoLida } from "@/lib/ouvidoria/leitura";
@@ -62,7 +65,7 @@ export async function lerManifestacaoDaOuvidoria(
   const acesso = await acessoDaOuvidoria();
   if (!acesso.ok) return acesso;
 
-  // Cliente de SESSÃO de propósito: a RLS da 9030 (organização + admin) é a
+  // Cliente de SESSÃO de propósito: a RLS da 9040 (organização + admin) é a
   // segunda cerca, e ela só existe neste caminho.
   const supabase = await createClient();
   const resultado = await lerManifestacao({ supabase, organizationId: acesso.org.orgId }, id);

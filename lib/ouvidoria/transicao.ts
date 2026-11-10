@@ -72,7 +72,7 @@ export type ConferenciaDaTransicao =
 
 /** O status pedido é um dos três do CHECK? */
 export function ehStatusDaOuvidoria(v: unknown): v is StatusDaOuvidoria {
-  return typeof v === "string" && (STATUS_DA_OUVIDORIA as readonly string[]).includes(v);
+  return STATUS_DA_OUVIDORIA.some((s) => s === v);
 }
 
 /**
@@ -90,10 +90,10 @@ export function proximosStatus(
   de: StatusDaOuvidoria,
 ): Array<{ para: StatusDaOuvidoria; reabertura: boolean }> {
   const degrau = ORDEM_DO_STATUS[de];
-  const adiante = (STATUS_DA_OUVIDORIA as readonly StatusDaOuvidoria[])
+  const adiante = STATUS_DA_OUVIDORIA
     .filter((s) => ORDEM_DO_STATUS[s] === degrau + 1)
     .map((para) => ({ para, reabertura: false }));
-  const atras = (STATUS_DA_OUVIDORIA as readonly StatusDaOuvidoria[])
+  const atras = STATUS_DA_OUVIDORIA
     .filter((s) => ORDEM_DO_STATUS[s] < degrau)
     .sort((a, b) => ORDEM_DO_STATUS[b] - ORDEM_DO_STATUS[a])
     .map((para) => ({ para, reabertura: true }));

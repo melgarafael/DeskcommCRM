@@ -6,7 +6,7 @@
  * A fatia 1 decidiu a régua de acesso e a escreveu DENTRO de
  * `app/actions/ouvidoria/ler-manifestacao.ts` (linha 64: a barreira de
  * acompanhamento, antes de resolver tenant; linha 68: o piso de papel). A fatia
- * 3 precisa da MESMA régua em quatro portas — a lista, o detalhe, a mudança de
+ * 3 precisa da MESMA régua em cinco portas — a lista, o detalhe, a mudança de
  * status e as duas telas — e quatro cópias divergem no primeiro ajuste: é
  * sempre uma que fica para trás, e a que fica é a que ninguém abre.
  *
@@ -21,7 +21,11 @@
  *    tenant: quem está do lado de fora olhando a tela do cliente não lê o
  *    relato de quem reclamou, nem com `admin` no papel;
  * 3. `forbidden_tenant` — sessão sem organização ativa;
- * 4. `forbidden_role` — papel abaixo do piso.
+ * 4. `forbidden_role` — papel abaixo do piso;
+ * 5. `not_found` — o módulo `ouvidoria` não está instalado (ADR-0002). Sem ele a
+ *    tabela não existe; a resposta é a mesma das rotas da lista de espera, e as
+ *    telas viram 404. Vem DEPOIS do papel para não contar a quem não pode entrar
+ *    se o módulo existe nesta instalação.
  *
  * A barreira é `supportWriteError`, a mesma das actions de leitura desta
  * natureza. Ela responde pelo MODO do acompanhamento (somente leitura recusa);
@@ -35,7 +39,7 @@
  * administradores". Enquanto a configuração não existe, a régua é a MAIS
  * restritiva das opções que a issue lista — abrir para `manager` seria escolher
  * pelo dono do produto a opção mais permissiva, e manifestação é o dado mais
- * sensível que este CRM guarda. É a mesma régua da RLS da 9030
+ * sensível que este CRM guarda. É a mesma régua da RLS da 9040
  * (`fn_role_at_least(organization_id, 'admin')`): a tela e o banco não podem
  * discordar sobre quem lê.
  *
@@ -49,15 +53,17 @@
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK, type ActiveOrg, type AuthUser, type Role } from "@/lib/auth/types";
 import { supportWriteError } from "@/lib/impersonate/support";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 /** O piso de papel da ouvidoria: `admin` e acima. Ver o cabeçalho. */
 export const PAPEL_MINIMO_DA_OUVIDORIA: Role = "admin";
 
 /**
- * As três recusas. Os nomes são os mesmos que as actions devolvem ao cliente —
- * a UI não inventa um quarto vocabulário para dizer "não pode".
+ * As recusas. Os nomes são os mesmos que as actions devolvem ao cliente — a UI
+ * não inventa outro vocabulário para dizer "não pode" ou "não existe aqui".
  */
-export type RecusaDaOuvidoria = "unauthenticated" | "forbidden_tenant" | "forbidden_role";
+export type RecusaDaOuvidoria = "unauthenticated" | "forbidden_tenant" | "forbidden_role" | "not_found";
 
 export type AcessoDaOuvidoria =
   | { ok: true; user: AuthUser; org: ActiveOrg }
@@ -81,6 +87,7 @@ export async function acessoDaOuvidoria(): Promise<AcessoDaOuvidoria> {
   if (ROLE_RANK[org.role] < ROLE_RANK[PAPEL_MINIMO_DA_OUVIDORIA]) {
     return { ok: false, error: "forbidden_role" };
   }
+  if (!(await moduloLigado(createAdminClient(), "ouvidoria"))) return { ok: false, error: "not_found" };
 
   return { ok: true, user, org };
 }

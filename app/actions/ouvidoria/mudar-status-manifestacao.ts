@@ -5,7 +5,7 @@
  *
  * ─── Por que o UPDATE passa pelo service role ──────────────────────────────
  *
- * A migration 9030 revogou `update` de `authenticated` em
+ * A migration 9040 revogou `update` de `authenticated` em
  * `ouvidoria_manifestacoes` e concedeu escrita só a `service_role`. Isso é
  * deliberado e está escrito em `tests/invariants/ouvidoria-registro-privado.test.ts`
  * (fato 3): sem a revogação, qualquer administrador "corrigiria" o texto de uma
@@ -24,7 +24,7 @@
  * 3. LÊ a manifestação pelo cliente de SESSÃO (`lib/ouvidoria/leitura.ts`, a
  *    leitura da fatia 1). Não é redundância: é ela que diz o status de HOJE, e
  *    sem ela não há transição a conferir — só um status a sobrescrever. E é a
- *    RLS da 9030 que responde "não é sua" nesta etapa;
+ *    RLS da 9040 que responde "não é sua" nesta etapa;
  * 4. confere a transição (`lib/ouvidoria/transicao.ts`) — para frente um degrau,
  *    para trás com motivo, nada para o mesmo lugar;
  * 5. escreve com o cliente de SERVIÇO, com TRÊS predicados: organização, id e o
@@ -130,7 +130,7 @@ export async function mudarStatusDaManifestacao(
     return { ok: false, error: "erro_ao_gravar" };
   }
 
-  const confirmada = (data as { status?: string } | null)?.status === conferida.para;
+  const confirmada = data?.status === conferida.para;
   if (!confirmada) {
     logger.error("[ouvidoria] a mudança de status não confirmou o novo estado", {
       organization_id: acesso.org.orgId,

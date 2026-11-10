@@ -18,7 +18,7 @@
  *    ela nem existe. É este `.eq("organization_id", …)` que o caso de tenant
  *    mede; apagá-lo faz a manifestação do vizinho aparecer na lista, e o
  *    sintoma na tela seria "mais uma linha", não um erro.
- * 2. A RLS da 9030 (`fn_user_org_ids()` E `fn_role_at_least(…, 'admin')`).
+ * 2. A RLS da 9040 (`fn_user_org_ids()` E `fn_role_at_least(…, 'admin')`).
  *
  * ─── Por que a régua de página vem do catálogo ─────────────────────────────
  *
@@ -49,11 +49,13 @@
  * última página ou ao abrir um link antigo.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 
 import { FAIXA_ALEM_DO_FIM, intervaloDaPagina, paginaDaUrl } from "@/lib/catalogo/busca-da-tela";
 import { logger } from "@/lib/logger";
 
-import { STATUS_DA_OUVIDORIA, type CanalDaOuvidoria, type StatusDaOuvidoria } from "./registro";
+import { CANAIS_DA_OUVIDORIA, STATUS_DA_OUVIDORIA, type CanalDaOuvidoria, type StatusDaOuvidoria } from "./registro";
+import { ehStatusDaOuvidoria } from "./transicao";
 
 /** Manifestações por página. Constante do servidor, nunca da URL (ver cabeçalho). */
 export const MANIFESTACOES_POR_PAGINA = 25;
@@ -95,9 +97,14 @@ export interface PedidoDaLista {
 
 const COLUNAS = "id, protocolo, canal, status, created_at";
 
-function objeto(v: unknown): Record<string, unknown> | null {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-}
+/** A linha como o banco a devolve. Os enums são os mesmos CHECKs da tabela. */
+const linhaDaLista = z.object({
+  id: z.string(),
+  protocolo: z.string(),
+  canal: z.enum(CANAIS_DA_OUVIDORIA),
+  status: z.enum(STATUS_DA_OUVIDORIA),
+  created_at: z.string(),
+});
 
 /**
  * O status pedido, ou `null` para "todos". Valor desconhecido NÃO é erro: cai em
@@ -106,9 +113,7 @@ function objeto(v: unknown): Record<string, unknown> | null {
 export function statusPedido(bruto: unknown): StatusDaOuvidoria | null {
   if (typeof bruto !== "string") return null;
   const limpo = bruto.trim();
-  return (STATUS_DA_OUVIDORIA as readonly string[]).includes(limpo)
-    ? (limpo as StatusDaOuvidoria)
-    : null;
+  return ehStatusDaOuvidoria(limpo) ? limpo : null;
 }
 
 /** Uma página da lista da organização. Nunca lança. */
@@ -160,16 +165,17 @@ export async function listarManifestacoes(
   }
 
   const linhas = Array.isArray(data) ? data : [];
-  const manifestacoes = linhas
-    .map(objeto)
-    .filter((l): l is Record<string, unknown> => l !== null)
-    .map<ManifestacaoNaLista>((l) => ({
-      id: String(l.id),
-      protocolo: String(l.protocolo),
-      canal: l.canal as CanalDaOuvidoria,
-      status: l.status as StatusDaOuvidoria,
-      createdAt: String(l.created_at),
-    }));
+  const manifestacoes = linhas.flatMap<ManifestacaoNaLista>((bruta) => {
+    const lida = linhaDaLista.safeParse(bruta);
+    if (!lida.success) {
+      // Os CHECKs da tabela tornam isto impossível; se acontecer, fica no log
+      // em vez de a linha sumir da lista sem rastro.
+      logger.warn("[ouvidoria] linha fora do formato na lista", { organization_id: deps.organizationId });
+      return [];
+    }
+    const l = lida.data;
+    return [{ id: l.id, protocolo: l.protocolo, canal: l.canal, status: l.status, createdAt: l.created_at }];
+  });
 
   const total = typeof count === "number" ? count : manifestacoes.length;
 

@@ -36,6 +36,7 @@ export type ResultadoDaListaDaOuvidoria =
         | "unauthenticated"
         | "forbidden_tenant"
         | "forbidden_role"
+        | "not_found"
         | "erro_ao_ler";
     };
 
@@ -45,7 +46,7 @@ export async function listarManifestacoesDaOuvidoria(
   const acesso = await acessoDaOuvidoria();
   if (!acesso.ok) return acesso;
 
-  // Cliente de SESSÃO de propósito: a RLS da 9030 é a segunda cerca, e ela só
+  // Cliente de SESSÃO de propósito: a RLS da 9040 é a segunda cerca, e ela só
   // existe neste caminho.
   const supabase = await createClient();
   const resultado = await listarManifestacoes(
