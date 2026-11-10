@@ -9374,14 +9374,11 @@ begin
   end loop;
 end $$;
 
--- A policy ampla (só "é da organização") fica só para ai_router_decisions.
--- ai_routers e ai_router_members têm policies por papel desde a 0150, que
--- derruba a ampla delas; recriá-la aqui fazia cada update.sh (em autocommit)
--- reabrir escrita a qualquer membro da organização até aquele drop.
-drop policy if exists tenant_isolation_ai_router_decisions_all on public.ai_router_decisions;
-create policy tenant_isolation_ai_router_decisions_all on public.ai_router_decisions for all
-  using (organization_id in (select * from public.fn_user_org_ids()))
-  with check (organization_id in (select * from public.fn_user_org_ids()));
+-- Nenhuma policy ampla (só "é da organização") nasce aqui. ai_routers e
+-- ai_router_members têm policies por papel desde a 0150; ai_router_decisions tem
+-- leitura para membros e escrita só pelo servidor desde a 9064 (bloco no fim do
+-- apêndice). Recriar a ampla aqui faria cada update.sh (em autocommit) reabrir
+-- escrita a qualquer membro da organização até aquele bloco.
 
 -- ---- knowledge_searches: telemetria de busca de conhecimento (migration 0086) ----
 
@@ -73520,6 +73517,78 @@ do $reaplicar$ begin
   end if;
 end $reaplicar$;
 
+
+-- ---- passagem explícita entre agentes de IA na trilha do roteador (migration 9064, #3770) ----
+-- `transferred` é o desfecho da AÇÃO pedida — distinto de `reclassified`, que é
+-- o classificador trocando o agente. `origem` separa os dois mundos; `motivo` é
+-- vocabulário FECHADO porque a tabela tem contrato de "sem PII" desde a 0085
+-- (o par TypeScript é `MOTIVOS_DA_TRANSFERENCIA_DE_AGENTE`, em
+-- `lib/agent-engine/agent/transferir-agente.ts`).
+--
+-- Idempotente nas duas pontas: `add column if not exists` para a base que já
+-- existe e `drop constraint if exists` + `add` porque o CHECK do dump nasceu sem
+-- nome (o Postgres o batiza de `ai_router_decisions_outcome_check`, o MESMO nome
+-- que a constraint daqui). Fica ACIMA da VARREDURA anon, como todo apêndice novo.
+-- IMPORTANTE — por que `= any (array[...])` e não `in (...)`:
+-- a cerca `tests/unit/desfecho-da-captacao-um-vocabulario-so.test.ts` acha o
+-- CHECK de `webhook_lead_captures.outcome` pela ÚLTIMA ocorrência, no
+-- `baseline.sql` inteiro, da grafia `outcome` + `in (...)`. Um apêndice novo, no fim do
+-- arquivo, com essa mesma grafia para OUTRA tabela cega a cerca (ela passa a
+-- ler o vocabulário do roteador e acusa três defeitos que não existem). As duas
+-- formas viram a MESMA constraint no catálogo (`pg_get_constraintdef` normaliza
+-- `in (...)` para `= any (array[...])`), então a verdade do banco não muda —
+-- muda só o que a cerca enxerga. A fragilidade da cerca fica registrada no PR.
+--
+-- O comentário fica ACIMA do `drop`, não entre ele e o `add`: a cerca
+-- `tests/unit/baseline-reaplicavel.test.ts` exige o `drop constraint if exists`
+-- do MESMO nome nas 10 linhas anteriores ao `add`, e comentário no meio da
+-- janela conta como falta de guarda (o `update.sh` do clone erraria
+-- 'already exists').
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_outcome_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_outcome_check
+  check (outcome = any (array['classified', 'sticky', 'reclassified', 'fallback', 'no_match', 'classifier_failed', 'transferred']));
+
+alter table public.ai_router_decisions
+  add column if not exists origem text not null default 'classificador';
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_origem_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_origem_check
+  check (origem in ('classificador', 'acao'));
+
+alter table public.ai_router_decisions
+  add column if not exists agente_anterior_id uuid references ai_agents(id) on delete set null;
+
+alter table public.ai_router_decisions
+  add column if not exists motivo text;
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_motivo_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_motivo_check
+  check (motivo is null or motivo in ('pedido_do_agente', 'pedido_do_operador', 'regra_de_automacao'));
+
+alter table public.ai_router_decisions
+  add column if not exists solicitado_por uuid;
+
+-- A TRILHA É ESCRITA SÓ PELO SERVIDOR. Desde a 0085 a tabela tinha uma policy
+-- `for all` por organização: qualquer membro, com a própria sessão, podia gravar
+-- nela pela API REST. Com `solicitado_por`, `origem` e `motivo`, a linha passa a
+-- dizer quem pediu a passagem, e isso só o servidor escreve: o turno do agente
+-- (`inbound-turn.ts`) e a ação (`transferir-agente.ts`) gravam pela conexão
+-- direta do motor, e nenhum caminho de sessão escreve aqui. Os membros seguem
+-- lendo (o painel de evolução lê pela sessão).
+--
+-- Num bloco só: se a criação falhasse depois do `drop`, a tabela ficaria sem
+-- policy de leitura no `update.sh` (que roda sem ON_ERROR_STOP).
+do $trilha_do_roteador$
+begin
+  drop policy if exists tenant_isolation_ai_router_decisions_all on public.ai_router_decisions;
+  drop policy if exists tenant_isolation_ai_router_decisions_select on public.ai_router_decisions;
+  create policy tenant_isolation_ai_router_decisions_select on public.ai_router_decisions
+    for select using (organization_id in (select public.fn_user_org_ids()));
+end $trilha_do_roteador$;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

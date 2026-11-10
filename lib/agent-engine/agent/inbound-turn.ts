@@ -224,6 +224,7 @@ import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
+import { ferramentaDePassagemEntreAgentes } from './transferir-agente';
 import {
   hasOpenCaseForContact,
   blocoDoCasoAguardandoCliente,
@@ -5562,6 +5563,28 @@ async function executarTurnoDoAgente(
         }
       },
     });
+  }
+
+  // #3770 — `transfer_to_agent`: o agente em turno passa a conversa a outro
+  // membro do roteador (motivo `pedido_do_agente`). Só entra onde a passagem vale
+  // no turno seguinte — a mesma régua da ação (`roteadorDaPassagem`) — e o destino
+  // é um enum dos OUTROS membros. Falha ao montar = turno sem a ferramenta.
+  if (!preview && routed.routerId !== null && agentConfig !== null) {
+    try {
+      const passagem = await ferramentaDePassagemEntreAgentes(pool, {
+        organizationId: tenantId,
+        conversationId: input.conversationId,
+        channelSessionId: input.channelSessionId,
+        agenteAtualId: agentConfig.agentId,
+        jobId: liveJob().id,
+        noteRunError,
+      });
+      if (passagem !== null) rawTools.transfer_to_agent = passagem;
+    } catch (err) {
+      runLog.warn('ferramenta de passagem entre agentes não montada — turno segue sem ela', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
   }
 
   // Fase 2B: a tela pode DESLIGAR a tool de handoff do modelo (a detecção
