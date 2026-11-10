@@ -95,7 +95,7 @@ export function SignupForm({
           password: values.password,
           password_confirm: values.password_confirm,
         }
-      : values;
+      : { ...values, continuar_pagamento: planoSelecionado?.trial_dias === 0 };
     // O idioma desta tela e o fuso do navegador: a empresa nasce com eles
     // quando o e-mail for confirmado (`lib/auth/perfil-da-empresa-nova.ts`).
     void enviar(() => signUp(entrada, convite?.token, { idioma, fuso: fusoDoNavegador() }), (res) => {
@@ -192,6 +192,9 @@ export function SignupForm({
         <p className="text-sm text-muted-foreground">
           {t("Enviamos um link de confirmação para")} <strong>{sentTo}</strong>.{" "}
           {t("Abra o e-mail e clique no link para ativar sua conta.")}
+          {!convite && planoSelecionado?.trial_dias === 0 && (
+            <> {t("Seu plano está preservado. Depois da confirmação, continue para o pagamento.")}</>
+          )}
         </p>
       </div>
     );
@@ -348,7 +351,7 @@ export function SignupForm({
       )}
       {semResposta && <AvisoSemResposta />}
       <Button type="submit" className="w-full" disabled={isPending}>
-        {isPending ? t("Criando conta...") : t("Criar conta")}
+        {isPending ? t("Criando conta...") : t(!convite && planoSelecionado?.trial_dias === 0 ? "Criar conta e continuar para pagamento" : "Criar conta")}
       </Button>
     </form>
   );
