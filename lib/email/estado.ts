@@ -32,10 +32,13 @@ async function semSmtpRespondido(): Promise<boolean> {
  * a MESMA coisa: com a régua duplicada, no dia em que uma das duas mudasse, a
  * tela mostraria um estado que a ação já não obedece.
  *
- * Limite aceito (o mesmo que o "esqueci a senha" declara): quem pôs SMTP direto
- * no `.env` do Supabase, sem passar pela tela, ouve "sem SMTP" com um e-mail que
+ * Limite aceito (e declarado na tela desde o #3039): quem pôs SMTP direto no
+ * `.env` do Supabase, sem passar pela tela, ouve "sem SMTP" com um e-mail que
  * sairia. O app não enxerga aquele arquivo, e o remédio é o caminho documentado:
- * configurar o mesmo SMTP em /admin/email (que o kit passa a sincronizar).
+ * configurar o mesmo SMTP em /admin/email (que o kit passa a sincronizar). Por
+ * isso a frase do "esqueci a senha" afirma o que esta régua MEDE — o SMTP do
+ * CRM e a dependência do servidor único —, e não "nenhum e-mail sai", que é
+ * mais do que ela sabe.
  */
 export async function semSmtpNaInstalacao(): Promise<boolean> {
   if (process.env.SINGLE_SERVER !== "1") return false;

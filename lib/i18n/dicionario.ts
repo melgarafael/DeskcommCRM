@@ -11547,8 +11547,10 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível enviar o e-mail. Tente novamente.": {
     es: "No se pudo enviar el correo. Intenta de nuevo.",
   },
-  "A recuperação de senha não está disponível nesta instalação: sem SMTP configurado não sai e-mail nenhum. Contate o administrador para configurar em /admin/email.": {
-    es: "La recuperación de contraseña no está disponible en esta instalación: sin SMTP configurado no sale ningún correo. Contacta al administrador para configurarlo en /admin/email.",
+  // #3039 — a recuperação depende do SMTP do CRM, mas "nenhum e-mail sai" é
+  // mais do que a instalação sabe (SMTP direto no .env do GoTrue sai sem ele).
+  "O CRM está sem SMTP configurado e, nesta instalação, o e-mail de recuperação de senha depende dele. Por isso o link não foi enviado. Contate o administrador para configurar em /admin/email.": {
+    es: "El CRM está sin SMTP configurado y, en esta instalación, el correo de recuperación de contraseña depende de él. Por eso no se envió el enlace. Contacta al administrador para configurarlo en /admin/email.",
   },
   "Verifique seu e-mail": { es: "Revisa tu correo" },
   "Se existir uma conta com esse e-mail, enviamos um link para redefinir a senha.": {

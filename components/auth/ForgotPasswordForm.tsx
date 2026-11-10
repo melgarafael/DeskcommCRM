@@ -39,12 +39,19 @@ export function ForgotPasswordForm() {
       } else if (res.error === "validation_error") {
         setServerError(t("Email inválido. Confira o campo."));
       } else if (res.error === "smtp_not_configured") {
-        // #2755 — sem SMTP a instalação não envia e-mail NENHUM: dizer
-        // "tente novamente" mandava quem esqueceu a senha repetir um gesto que
-        // nunca vai funcionar. Dizemos o que é, e quem resolve é o administrador.
+        // #2755 — sem SMTP não há "tente novamente" que resolva: a pessoa
+        // repetiria um gesto que não vai funcionar. Dizemos o que é, e quem
+        // resolve é o administrador.
+        //
+        // #3039 — e dizemos SÓ o que esta instalação MEDE. O CRM lê o SMTP
+        // dele (`lib/email/estado.ts`), não o `.env` do GoTrue: quem pôs SMTP
+        // direto lá tem e-mail saindo de um CRM sem SMTP. "Não sai e-mail
+        // nenhum" era mais do que a régua sabe. Este código só existe em
+        // servidor único (`semSmtpNaInstalacao`), então a frase fala do SMTP
+        // do CRM e da dependência que o kit sincroniza — não de todo e-mail.
         setServerError(
           t(
-            "A recuperação de senha não está disponível nesta instalação: sem SMTP configurado não sai e-mail nenhum. Contate o administrador para configurar em /admin/email.",
+            "O CRM está sem SMTP configurado e, nesta instalação, o e-mail de recuperação de senha depende dele. Por isso o link não foi enviado. Contate o administrador para configurar em /admin/email.",
           ),
         );
       } else {
