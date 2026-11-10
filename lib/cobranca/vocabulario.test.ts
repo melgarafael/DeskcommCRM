@@ -62,10 +62,6 @@ describe("o vocabulário de recursos", () => {
       expect(RECURSOS[r].minimo, `${r}: piso do CHECK`).toBeGreaterThan(0);
       expect(RECURSOS[r].rotulo.length, `${r}: rótulo vazio`).toBeGreaterThan(0);
     }
-    console.log(
-      `[vocabulário] ${RECURSOS_DO_PLANO.length} recursos: ` +
-        RECURSOS_DO_PLANO.map((r) => `${r}→${RECURSOS[r].coluna} (>=${RECURSOS[r].minimo})`).join(", "),
-    );
   });
 });
 
@@ -167,11 +163,6 @@ describe("compatibilidade: o plano de hoje continua com o MESMO limite", () => {
       teto_ia_usd_cents: linha.teto_ia_usd_cents,
     });
     expect(RECURSOS_DO_PLANO.length).toBe(Object.keys(depois).length);
-
-    console.log(
-      `[tabela] ${nome}: ${RECURSOS_DO_PLANO.length} recursos → ` +
-        RECURSOS_DO_PLANO.map((r) => `${r}=${depois[r] ?? "sem limite"}`).join(", "),
-    );
   });
 
   it("cada limite individual continua vindo da sua coluna, recurso por recurso", () => {
