@@ -21,7 +21,7 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { extractBearer } from "@/lib/mcp/auth";
-import { redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
+import { moduloSemContato, redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
@@ -30,7 +30,12 @@ import {
   type PropostaAmbigua,
 } from "@/lib/leads/next-action";
 import type { LeadCandidate } from "@/lib/leads/active-lead";
-import { anexarDadosDoContato, type LinhaDoContatoNoQuadro } from "@/lib/kanban/dados-do-contato";
+import {
+  anexarDadosDoContato,
+  anexarNomeDoContato,
+  type LinhaDoContatoNoQuadro,
+  type NomeDoContatoNoQuadro,
+} from "@/lib/kanban/dados-do-contato";
 import {
   anexarAnexosAosNegocios,
   type LinhaDoAnexoNoQuadro,
@@ -357,6 +362,8 @@ async function withMarcadoresDoContato(
   supabase: SupabaseClient,
   organizationId: string,
   leadsDoQuadro: Lead[],
+  /** Só módulo sem `contatos`: lê também o nome, para o filtro de texto livre (a resposta continua sem ele). */
+  lerNome = false,
 ): Promise<{ leads: Lead[]; error: string | null }> {
   const contactIds = [
     ...new Set(leadsDoQuadro.map((l) => l.contact_id).filter((c): c is string => !!c)),
@@ -366,14 +373,21 @@ async function withMarcadoresDoContato(
   const { data, error } = await buscaEmLotes(contactIds, (lote) =>
     supabase
       .from("contacts")
-      .select("id, tags, phone_number, email, custom_fields, is_anonymized")
+      .select(
+        lerNome
+          ? "id, tags, phone_number, email, custom_fields, is_anonymized, name, display_name, address_book_name"
+          : "id, tags, phone_number, email, custom_fields, is_anonymized",
+      )
       .eq("organization_id", organizationId)
       .in("id", lote),
   );
   if (error) return { leads: leadsDoQuadro, error: error.message };
 
   const linhas = (data ?? []) as Array<{ id: string; tags: string[] | null } & LinhaDoContatoNoQuadro>;
-  const leads = anexarDadosDoContato(leadsDoQuadro, linhas);
+  const comDados = anexarDadosDoContato(leadsDoQuadro, linhas);
+  const leads = lerNome
+    ? anexarNomeDoContato(comDados, linhas as unknown as NomeDoContatoNoQuadro[])
+    : comDados;
 
   const porContato = new Map<string, string[]>();
   for (const row of linhas) {
@@ -755,6 +769,7 @@ async function responder(
     supabase,
     (pipeline as Pipeline).organization_id,
     leadsComConversa.leads,
+    quemChama ? moduloSemContato(quemChama) : false,
   );
   if (leadsComMarcadores.error) {
     return fail("internal_error", leadsComMarcadores.error, 500, { requestId });
