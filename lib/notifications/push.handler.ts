@@ -206,6 +206,12 @@ async function handleAvisoQuePedeGente(row: EventRow): Promise<HandlerResult> {
     return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
   }
   const { sent } = await enviarPushDaOrg(row.organization_id, aviso.payload, aviso.para);
+  // O responsável da passagem sem celular inscrito: o aviso volta ao time, porque
+  // uma passagem que não chega a ninguém deixa o cliente esperando sem ninguém saber.
+  if (sent === 0 && aviso.seNinguemRecebeu) {
+    const doTime = await enviarPushDaOrg(row.organization_id, aviso.payload, aviso.seNinguemRecebeu);
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${doTime.sent}` };
+  }
   return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
 }
 
