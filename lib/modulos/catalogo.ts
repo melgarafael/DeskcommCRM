@@ -15,6 +15,11 @@ export interface ModuloCatalogo {
 
 export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
   {
+    slug: "cadencias",
+    nome: "Cadências de e-mail",
+    descricao: "Sequências de e-mail por negócio, com envio pela instalação, descadastro e abertura somente com consentimento. Contribuição de Marcelo (@lmarceloc), PR #1738.",
+  },
+  {
     slug: "honorarios",
     nome: "Honorários (advocacia)",
     descricao:
@@ -42,6 +47,9 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser " +
       "avisado. Cada empresa escolhe os prazos da oferta antes de ligar.",
   },
+  // ponytail: "ouvidoria" fica fora até haver tela (#3636). Sem o slug aqui,
+  // `instalarModulo` recusa com `extension_module_unknown` e Módulos não o lista;
+  // `MODULOS_OPCIONAIS`/`MODULOS_DE_TABELA` e as guardas seguem, e ninguém instala.
 ];
 
 export function moduloDoCatalogo(slug: string): ModuloCatalogo | undefined {
