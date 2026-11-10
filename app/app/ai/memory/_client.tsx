@@ -46,8 +46,26 @@ import {
   LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA,
 } from "@/lib/schemas/settings";
 
+/**
+ * Quais leituras da página FALHARAM (não: vieram vazias).
+ *
+ * #4171 — a tela tratava os dois casos igual e mostrava "Nenhuma versão
+ * publicada ainda" em cima de um banco fora do ar. Cada falha é um estado
+ * próprio, com a seção certa dizendo que não conseguiu LER.
+ */
+export interface FalhasDeLeitura {
+  /** O ponteiro da versão ativa (ou a versão apontada) não pôde ser lido. */
+  documento: boolean;
+  /** O histórico de versões não pôde ser lido. */
+  versoes: boolean;
+  /** Os aprendizados não puderam ser lidos. */
+  aprendizados: boolean;
+}
+
 interface Props {
   initialState: OrgMemoryState;
+  /** O que a página não conseguiu LER — distinto de "não existe nada". */
+  falhasDeLeitura: FalhasDeLeitura;
   /** `YYYY-MM-DD` no fuso da organização — a régua de "vencida" do runtime. */
   hoje: string;
   /** O limite do aviso de peso desta organização (`limiteDoPesoDaMemoria`). */
@@ -266,7 +284,7 @@ function formatDate(iso: string, idioma: string): string {
   });
 }
 
-export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarOLimite }: Props) {
+export function OrgMemoryClient({ initialState, falhasDeLeitura, hoje, limiteDoAviso, podeEditarOLimite }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   // Exaustivo por tipo: uma origem nova no CHECK sem rótulo aqui para de compilar,
@@ -276,10 +294,17 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
     flywheel: t("aprendido automaticamente"),
     agent: t("anotado pelo agente"),
   };
-  const { data } = useOrgMemory(initialState);
+  const { data, isError, isFetching, refetch } = useOrgMemory(initialState);
   const document = data?.document ?? null;
   const versions = data?.versions ?? [];
   const entries = data?.entries ?? [];
+  // A releitura também pode falhar (a rota devolve 500 quando não consegue ler):
+  // aí não se sabe nada do que está salvo, e vale o mesmo aviso da página.
+  const falhouTudo = isError;
+  const falhaDoDocumento = falhouTudo || falhasDeLeitura.documento;
+  const falhaDasVersoes = falhouTudo || falhasDeLeitura.versoes;
+  const falhaDosAprendizados = falhouTudo || falhasDeLeitura.aprendizados;
+  const algumaFalha = falhaDoDocumento || falhaDasVersoes || falhaDosAprendizados;
   const canPublish = usePermission("ai.memory.publish");
   const [limite, setLimite] = React.useState(limiteDoAviso);
 
@@ -381,6 +406,32 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
 
   return (
     <div className="flex flex-col gap-6">
+      {/* #4171 — leitura falhou não é memória vazia. O aviso fica no topo, com a
+          mesma ação das outras telas de leitura quebrada: tentar de novo. */}
+      {algumaFalha && (
+        <Card
+          className="border-destructive/40 p-4"
+          role="alert"
+          data-testid="memoria-leitura-falhou"
+        >
+          <h2 className="font-medium">{t("Não consegui ler a memória agora")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t(
+              "A página não conseguiu buscar o que está salvo — isso não quer dizer que a memória esteja vazia, e os agentes continuam usando o que já foi publicado. Tente de novo em instantes.",
+            )}
+          </p>
+          <Button
+            className="mt-3"
+            variant="outline"
+            size="sm"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+            data-testid="memoria-tentar-de-novo"
+          >
+            {isFetching ? t("Tentando…") : t("Tentar de novo")}
+          </Button>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -395,6 +446,11 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
             {document ? (
               <Badge variant="success">
                 v{document.version_number} {t("ativa")}
+              </Badge>
+            ) : falhaDoDocumento ? (
+              // Não é "nada publicado": é "não deu para ler".
+              <Badge variant="neutral" data-testid="memoria-documento-falha">
+                {t("Não consegui ler a versão ativa")}
               </Badge>
             ) : (
               <Badge variant="neutral">{t("Nenhuma versão publicada ainda")}</Badge>
@@ -430,7 +486,7 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
             </div>
           </div>
 
-          {versions.length > 0 && (
+          {versions.length > 0 ? (
             <div className="mt-4 border-t border-border pt-3">
               <p className="mb-2 text-xs font-medium text-muted-foreground">{t("Histórico de versões")}</p>
               <ul className="flex flex-col gap-1">
@@ -453,7 +509,14 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
                 ))}
               </ul>
             </div>
-          )}
+          ) : falhaDasVersoes ? (
+            <p
+              className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground"
+              data-testid="memoria-versoes-falha"
+            >
+              {t("Não consegui ler o histórico de versões agora.")}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -537,7 +600,18 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
             </button>
           )}
 
-          {visibleEntries.length === 0 ? (
+          {falhaDosAprendizados && entries.length === 0 ? (
+            // Antes, este ramo caía em "Nenhum aprendizado ainda" — a lista vazia
+            // por falha de leitura virava a afirmação de que nada foi ensinado.
+            <p
+              className="rounded-md border border-dashed border-destructive/40 p-4 text-sm text-muted-foreground"
+              data-testid="memoria-aprendizados-falha"
+            >
+              {t(
+                "Não consegui ler os aprendizados agora. O que já está salvo continua valendo para os agentes.",
+              )}
+            </p>
+          ) : visibleEntries.length === 0 ? (
             <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
               {showArchived
                 ? t("Nenhum aprendizado arquivado.")

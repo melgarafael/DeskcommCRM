@@ -4837,6 +4837,18 @@ export const DICIONARIO: Traducoes = {
   "Novo aprendizado": { es: "Nuevo aprendizaje" },
   "Não consegui carregar a configuração de IA": { es: "No pude cargar la configuración de IA" },
   "Não consegui carregar as execuções": { es: "No pude cargar las ejecuciones" },
+  "Não consegui ler a memória agora": { es: "No pude leer la memoria ahora" },
+  "A página não conseguiu buscar o que está salvo — isso não quer dizer que a memória esteja vazia, e os agentes continuam usando o que já foi publicado. Tente de novo em instantes.":
+    {
+      es: "La página no pudo buscar lo que está guardado; eso no significa que la memoria esté vacía, y los agentes siguen usando lo que ya se publicó. Inténtalo de nuevo en unos instantes.",
+    },
+  "Não consegui ler a versão ativa": { es: "No pude leer la versión activa" },
+  "Não consegui ler o histórico de versões agora.": {
+    es: "No pude leer el historial de versiones ahora.",
+  },
+  "Não consegui ler os aprendizados agora. O que já está salvo continua valendo para os agentes.": {
+    es: "No pude leer los aprendizajes ahora. Lo que ya está guardado sigue valiendo para los agentes.",
+  },
   "Não conseguimos carregar os números agora. Recarregue a página em alguns instantes — se continuar assim, avise quem cuida da sua instalação.": {
     es: "No pudimos cargar los números en este momento. Recarga la página en unos instantes. Si el problema continúa, avisa a quien administra tu instalación.",
   },
@@ -12604,6 +12616,10 @@ export const DICIONARIO: Traducoes = {
   "Erro ao buscar version.": { es: "Error al buscar la versión." },
   "Erro ao carregar agent.": { es: "Error al cargar el agente." },
   "Erro ao carregar a versão da memória.": { es: "Error al cargar la versión de la memoria." },
+  "Erro ao carregar a versão ativa da memória.": {
+    es: "Error al cargar la versión activa de la memoria.",
+  },
+  "Erro ao carregar a memória.": { es: "Error al cargar la memoria." },
   "Erro ao carregar catálogo de skills.": { es: "Error al cargar el catálogo de skills." },
   "Erro ao carregar descrição das skills.": { es: "Error al cargar la descripción de las skills." },
   "Erro ao carregar entradas da memória.": { es: "Error al cargar las entradas de la memoria." },
