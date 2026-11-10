@@ -135,8 +135,7 @@ function bancoQueRegistra(opts: DbOpts = {}) {
       const alvo = real.from(tabela);
       const registro = { tabela, chamadas: [] as Array<{ metodo: string; args: unknown[] }> };
       consultas.push(registro);
-      let soma: unknown;
-      soma = new Proxy(alvo, {
+      const soma: unknown = new Proxy(alvo, {
         get(obj, prop) {
           const valor = Reflect.get(obj, prop);
           if (typeof valor !== "function") return valor;
