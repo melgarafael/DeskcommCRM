@@ -93,6 +93,7 @@ function estado(extra: Partial<EstadoDeElegibilidade> = {}): EstadoDeElegibilida
     aiOptOut: false,
     botSilencedUntil: null,
     assigneeKind: "ai",
+    iaComDono: false,
     aiAuthorizedAt: null,
     preGoLiveAtivo: false,
     numeroDeTesteAutorizado: false,

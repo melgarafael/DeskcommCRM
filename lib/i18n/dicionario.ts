@@ -2225,6 +2225,25 @@ export const DICIONARIO: Traducoes = {
   "Automático volta em instantes": { es: "El automático vuelve en unos instantes" },
   "Cliente pediu para não receber mensagens": { es: "El cliente pidió no recibir mensajes" },
   "Pausar o automático": { es: "Pausar el automático" },
+  "IA com o dono": { es: "IA con el dueño" },
+  "Desliga a IA nesta conversa. Ela volta a ficar calada e continua sua.": {
+    es: "Apaga la IA en esta conversa. Vuelve a quedar en silencio y sigue siendo tuya.",
+  },
+  "A IA responde esta conversa sem tirar o dono de você. Se ela passar para uma pessoa, a conversa continua com o mesmo atendente.":
+    {
+      es: "La IA responde esta conversa sin quitarte la propiedad. Si pasa a una persona, la conversa sigue con el mismo agente.",
+    },
+  "Esta conversa está encerrada — não há atendimento automático a ligar ou desligar.": {
+    es: "Esta conversa está cerrada: no hay atención automática que activar o desactivar.",
+  },
+  "Esta conversa não tem atendente — assuma a conversa antes de ligar a IA com o dono.": {
+    es: "Esta conversa no tiene agente: asume la conversa antes de activar la IA con el dueño.",
+  },
+  "O contato está marcado como humano obrigatório.": {
+    es: "El contacto está marcado como humano obligatorio.",
+  },
+  "O contato pediu para não falar com a IA.": { es: "El contacto pidió no hablar con la IA." },
+  "O contato está bloqueado.": { es: "El contacto está bloqueado." },
   "Ver contato": { es: "Ver contacto" },
 
   // ─── Inbox: composer ───

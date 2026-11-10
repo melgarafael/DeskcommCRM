@@ -34,6 +34,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { moverLeadParaEtapaDeHandoff } from "@/lib/leads/handoff-stage-move";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { lerModoIaComDono } from "@/lib/ai/elegibilidade/ia-com-dono";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 
 import { avisarLeadDoCrm, type DesfechoDoAvisoDoCrm } from "./aviso-ao-lead";
@@ -191,7 +192,7 @@ export async function triggerHandoff(
     const { data: convNow } = await admin
       .from("conversations")
       .select(
-        "id, organization_id, contact_id, last_handoff_at, last_handoff_reason, last_outbound_at",
+        "id, organization_id, contact_id, last_handoff_at, last_handoff_reason, last_outbound_at, assigned_to_user_id, metadata",
       )
       .eq("id", input.conversationId)
       .eq("organization_id", input.organizationId)
@@ -206,6 +207,8 @@ export async function triggerHandoff(
       organization_id: string;
       last_handoff_at: string | null;
       last_handoff_reason: string | null;
+      assigned_to_user_id: string | null;
+      metadata: unknown;
     };
     const c = convNow as unknown as ConvNowRow;
 
@@ -287,15 +290,24 @@ export async function triggerHandoff(
     // We use 'infinity' (Postgres timestamp special) so any later comparison
     // `bot_silenced_until > now()` is always true. supabase-js sends as text
     // and Postgres parses correctly for timestamptz columns.
+    //
+    // ─── A EXCEÇÃO DO MODO "IA COM O DONO" (#3967) ────────────────────────────
+    //
+    // `pending` significa "na fila, esperando um atendente". Numa conversa que
+    // já TEM dono e está no modo ligado, mandá-la para `pending` é tirá-la da
+    // visão do atendente que a acompanha para colocá-la numa fila que não é
+    // dela — aqui a passagem é "a IA para e o dono assume", não "a conversa
+    // procura alguém". O dono fica, o status fica, o silêncio entra: a IA cala
+    // e a conversa continua exatamente de quem já era.
+    const donoNoModo = lerModoIaComDono(c.metadata) && (c.assigned_to_user_id ?? null) !== null;
     await guard();
     const { error: updErr } = await admin
       .from("conversations")
       .update({
-        status: "pending",
+        ...(donoNoModo ? {} : { status: "pending", status_changed_at: nowIso }),
         bot_silenced_until: SILENCE_INFINITY,
         last_handoff_at: nowIso,
         last_handoff_reason: input.reason,
-        status_changed_at: nowIso,
         // Fase 3 (review T5, finding 4): zera a aderência ao agente do router — se o
         // bot for reativado, o router decide de novo (não reassume por inércia).
         active_ai_agent_id: null,
