@@ -23,4 +23,7 @@ export const TEXTOS_CONTRATACAO = {
   "Já paguei: conferir pagamento": { es: "Ya pagué: comprobar el pago" },
   "Pagamento processado pelo Asaas. Escolha entre as formas disponíveis na fatura; as próximas cobranças seguem as condições apresentadas pelo provedor.": { es: "Pago procesado por Asaas. Elige entre las formas disponibles en la factura; los siguientes cobros siguen las condiciones presentadas por el proveedor." },
   "Fale com o suporte:": { es: "Habla con soporte:" },
+  "O plano mudou. Confira a escolha antes de continuar para o pagamento.": { es: "El plan cambió. Revisa la elección antes de continuar al pago." },
+  "Confira seu plano e continue para o pagamento.": { es: "Revisa tu plan y continúa al pago." },
+  "Não foi possível retomar sua contratação. Tente novamente.": { es: "No se pudo retomar tu contratación. Inténtalo de nuevo." },
 };
