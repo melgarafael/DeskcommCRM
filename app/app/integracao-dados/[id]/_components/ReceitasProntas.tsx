@@ -463,6 +463,8 @@ function rotulosDoErro(t: (texto: string) => string): Record<string, string> {
     // A instância.
     descricao: t("Descrição"),
     rotulo: t("Nome da receita"),
+    // R5b: o 422 do destino arquivado chega com este caminho (medido na prova de tela do #3328).
+    destino_do_interesse: t("Para onde vai o interesse do cliente"),
     // Os "fixos" da receita.
     prefixo: t("Prefixo das tabelas"),
     post_type: t("Tipo de post"),

@@ -16504,6 +16504,10 @@ export const DICIONARIO: Traducoes = {
     es: "El embudo o la etapa elegidos para el interés del cliente no existen o no están activos.",
   },
   "Escolha um funil e uma etapa ativos.": { es: "Elige un embudo y una etapa activos." },
+  "Funil arquivado": { es: "Embudo archivado" },
+  "O funil escolhido foi arquivado. Escolha outro funil, ou «Sem funil», e salve.": {
+    es: "El embudo elegido fue archivado. Elige otro embudo, o «Sin embudo», y guarda.",
+  },
   "O prefixo aparece antes de _posts no banco do WordPress (padrão wp_).": {
     es: "El prefijo va antes de _posts en la base de WordPress (por defecto wp_).",
   },
