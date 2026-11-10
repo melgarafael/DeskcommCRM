@@ -117,3 +117,45 @@ export async function metaSessionForOrg(
     phoneNumberId: data.meta_phone_number_id ?? null,
   };
 }
+
+/**
+ * A CONTA (WABA) da conexão oficial que atende este número — a chave com que se
+ * gerencia modelo pela tela (#3635).
+ *
+ * `sessionRef` deste canal é o `phone_number_id` (ver `resolveSessionRef`), e é
+ * por ele que a credencial é achada — mas a coleção de modelos vive na CONTA, não
+ * no número: `POST /{waba_id}/message_templates`. Resolver a WABA pela MESMA
+ * sessão que assina a chamada é o que impede uma organização alcançar o modelo
+ * de outra: o par `(organization_id, meta_phone_number_id)` é único por conta e
+ * a linha arquivada não conta (mesmo recorte do índice da 0165).
+ *
+ * `null` = conexão sem WABA gravada (base anterior à 0144) ou número que não é
+ * desta organização. Quem chama transforma isso em erro claro, nunca em chamada
+ * "no escuro".
+ */
+export async function metaWabaDoNumero(
+  organizationId: string,
+  phoneNumberId: string,
+): Promise<string | null> {
+  if (!organizationId || !phoneNumberId) return null;
+  const admin = createAdminClient();
+  const base = () =>
+    admin
+      .from("channel_sessions")
+      .select("meta_waba_id")
+      .eq("organization_id", organizationId)
+      .eq("provider", CHANNEL_PROVIDER_META)
+      .eq("meta_phone_number_id", phoneNumberId);
+  const { data, error } = await queryTolerantToMissingArchived(
+    () => base().is(ARCHIVED_AT, null).maybeSingle(),
+    () => base().maybeSingle(),
+  );
+  if (error) {
+    // Falha de leitura FECHA a ação: com `null` no lugar do erro a chamada
+    // sairia para a WABA errada (ou para o ambiente), que é a classe de defeito
+    // que a #236 pagou caro para descobrir.
+    throw new Error(`meta_waba_lookup_failed: ${error.code ?? "sem_codigo"} ${error.message ?? ""}`.trim());
+  }
+  const waba = data?.meta_waba_id;
+  return typeof waba === "string" && waba.length > 0 ? waba : null;
+}

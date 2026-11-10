@@ -39,7 +39,7 @@ export async function GET(): Promise<Response> {
   const lido = await lerSettings(authz.org.orgId);
   if ("error" in lido) return fail("internal_error", lido.error?.message ?? "", 500, { requestId });
   const c = configAssinatura(lido.settings);
-  return ok({ humanos: c.humanos, ia: c.ia, nome_ia: c.nomeIa }, { requestId });
+  return ok({ humanos: c.humanos, ia: c.ia, nome_ia: c.nomeIa, por_agente: c.porAgente }, { requestId });
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
@@ -58,10 +58,10 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
   }
-  const nova = parsed.data;
-
   const lido = await lerSettings(authz.org.orgId);
   if ("error" in lido) return fail("internal_error", lido.error?.message ?? "", 500, { requestId });
+  // `por_agente` ausente (cliente anterior ao #3310) mantém o que está gravado.
+  const nova = { ...parsed.data, por_agente: parsed.data.por_agente ?? configAssinatura(lido.settings).porAgente };
 
   // Cliente admin: a RLS de `organizations` só deixa platform admin escrever.
   const { error } = await createAdminClient()

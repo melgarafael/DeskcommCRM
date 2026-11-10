@@ -1,0 +1,220 @@
+{
+  "id": "infoprodutos",
+  "titulo": "Infoprodutos",
+  "resumo": "Acesso, adequação da oferta e suporte com passagem à equipe quando a base não resolve.",
+  "jornadas": [
+    {
+      "id": "infoprodutos-acesso",
+      "titulo": "Acesso que precisa da equipe",
+      "empresa": "Escola Digital Farol (fictícia)",
+      "contexto": "Pati Exemplo não consegue abrir a aula 3 de Fotografia na Prática: aparece erro 403, mesmo após sair e entrar novamente e trocar de navegador.",
+      "resultado": "Caso aberto para a equipe, pedido de informação registrado e pergunta enviada na retomada do agente; acesso ainda não resolvido.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Telas reais com dados fictícios e estados reconstituídos. O motor abriu um caso e retomou a conversa após a equipe pedir informação. Transporte externo simulado; acesso à plataforma de aulas não foi resolvido.",
+      "dependencias": "Canal conectado, agente publicado com regras de suporte e passagem à equipe, material oficial e atendentes disponíveis. O roteiro não redefine senha nem comprova integração com plataforma de cursos; nunca pedir senha ao aluno.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "agentes",
+          "licao": "quando-responder-e-passar",
+          "porque": "Definir os limites e as situações em que a equipe continua o atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "casos",
+          "licao": "abrindo-um-caso",
+          "porque": "Conferir a pergunta, o contexto e o bloqueio que exigem a equipe."
+        },
+        {
+          "modulo": "casos",
+          "licao": "respondendo-um-caso",
+          "porque": "Pedir informação ao cliente e acompanhar a situação do caso."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Aula com erro 403",
+          "cliente": "Pati relata erro 403 na aula 3 e informa as tentativas já feitas.",
+          "operacao": "O piloto recebe a descrição sem pedir senha ou prometer acesso à plataforma de aulas.",
+          "valor": "A equipe começa pelo erro concreto e pelas tentativas já realizadas.",
+          "captura": "demo-infoprodutos-acesso--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Caso com contexto",
+          "cliente": "Pati informa que as outras aulas funcionam.",
+          "operacao": "No piloto, o motor abriu Erro 403 na aula 3 — Fotografia na Prática, com o bloqueio de acesso à plataforma. A foto reconstitui o caso aguardando a equipe.",
+          "valor": "A demanda permanece identificada, sem uma solução improvisada.",
+          "captura": "demo-infoprodutos-acesso--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "A equipe pede uma informação",
+          "cliente": "Falta saber o título completo que aparece na aula 3.",
+          "operacao": "A equipe escolhe Preciso de info do cliente e pede o título completo da aula. A foto reconstitui essa escolha antes do envio.",
+          "valor": "A pessoa responsável define o dado necessário para continuar a investigação.",
+          "captura": "demo-infoprodutos-acesso--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Pergunta na retomada",
+          "cliente": "Pati recebe a pergunta sobre o título completo da aula.",
+          "operacao": "O motor retomou a conversa e fez a pergunta solicitada. O caso ficou aguardando a cliente; não houve correção do acesso à plataforma.",
+          "valor": "A conversa continua a partir da decisão humana, com a pendência visível.",
+          "captura": "demo-infoprodutos-acesso--historia--continuidade"
+        }
+      ]
+    },
+    {
+      "id": "infoprodutos-escolher-formacao",
+      "titulo": "Escolher uma formação pelo objetivo",
+      "empresa": "Oficina Digital Rumo (fictícia)",
+      "contexto": "Guto quer aprender uma habilidade, mas não sabe qual formação atende ao seu nível.",
+      "resultado": "Interesse qualificado e próximo passo comercial registrado.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Catálogo e pré-requisitos atualizados pela escola, funil e tarefas habilitados. Não prometer renda, emprego, certificação não prevista ou resultados de aprendizagem garantidos.",
+      "montagem": [
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "funis",
+          "licao": "novo-negocio",
+          "porque": "Criar uma oportunidade ligada ao contato."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-criar-uma-tarefa",
+          "porque": "Criar um próximo passo explícito para a equipe."
+        },
+        {
+          "modulo": "funis",
+          "licao": "mover-e-fechar",
+          "porque": "Mover o negócio conforme o avanço real do atendimento."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Um objetivo de estudo",
+          "cliente": "Guto quer aprender a editar vídeos para o próprio negócio.",
+          "operacao": "A equipe pergunta experiência e tipo de projeto antes de apresentar uma formação.",
+          "valor": "A recomendação considera o ponto de partida.",
+          "captura": "demo-infoprodutos-escolher-formacao--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Pré-requisito importa",
+          "cliente": "Guto diz que ainda não domina as ferramentas básicas.",
+          "operacao": "O atendente registra o interesse no funil e a necessidade de conferir os pré-requisitos no catálogo oficial.",
+          "valor": "A venda não apaga uma possível incompatibilidade.",
+          "captura": "demo-infoprodutos-escolher-formacao--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Comparar programas",
+          "cliente": "Guto pede a diferença entre a formação básica e a avançada.",
+          "operacao": "Uma tarefa é atribuída à equipe pedagógica ou comercial para comparar os programas vigentes.",
+          "valor": "A resposta depende do conteúdo real dos cursos.",
+          "captura": "demo-infoprodutos-escolher-formacao--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Dar tempo para decidir",
+          "cliente": "Guto pede para analisar a comparação.",
+          "operacao": "A equipe atualiza a etapa do negócio conforme essa decisão e registra o próximo contato combinado, sem marcar matrícula.",
+          "valor": "O quadro distingue pesquisa e compra efetiva.",
+          "captura": "demo-infoprodutos-escolher-formacao--historia--continuidade"
+        }
+      ]
+    },
+    {
+      "id": "infoprodutos-contestacao",
+      "titulo": "Pedido de reembolso com análise humana",
+      "empresa": "Ateliê de Aprender (fictícia)",
+      "contexto": "Pati quer cancelar uma compra e pergunta como funciona o reembolso.",
+      "resultado": "Solicitação reunida em caso e tratada pela equipe responsável.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Política aplicável e equipe responsável, agente com abertura de casos se usado. Não conceder ou negar direito, prometer prazo de estorno nem executar reembolso na plataforma externa neste roteiro.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "agentes",
+          "licao": "quando-responder-e-passar",
+          "porque": "Definir os limites e as situações em que a equipe continua o atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "casos",
+          "licao": "abrindo-um-caso",
+          "porque": "Ler a demanda que precisa de decisão da equipe."
+        },
+        {
+          "modulo": "casos",
+          "licao": "respondendo-um-caso",
+          "porque": "Pedir informação, registrar a decisão ou passar ao humano."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "assumir-e-responder",
+          "porque": "Assumir o atendimento e responder pela equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Pedido de cancelamento",
+          "cliente": "Pati diz que quer cancelar o curso.",
+          "operacao": "O atendimento identifica o produto e a solicitação sem tentar transformar o pedido em nova oferta.",
+          "valor": "A demanda é tratada pelo que foi pedido.",
+          "captura": "demo-infoprodutos-contestacao--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Uma análise identificável",
+          "cliente": "Pati informa a referência da compra.",
+          "operacao": "O agente do roteiro abre caso para a equipe conferir a transação e a política aplicável, com o mínimo de dados necessário.",
+          "valor": "A solicitação fica organizada para análise.",
+          "captura": "demo-infoprodutos-contestacao--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Resposta depende da conferência",
+          "cliente": "Pati pergunta se o dinheiro já foi devolvido.",
+          "operacao": "A equipe escolhe atendimento humano e registra o que precisa verificar na plataforma, sem confirmar um estorno não realizado.",
+          "valor": "Evita confundir registro do pedido e execução financeira.",
+          "captura": "demo-infoprodutos-contestacao--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Comunicar a situação real",
+          "cliente": "Pati aguarda a confirmação do suporte.",
+          "operacao": "A pessoa responsável informa a decisão e os procedimentos efetivos; eventual reembolso é executado no sistema próprio.",
+          "valor": "A resposta acompanha o fato apurado pela equipe.",
+          "captura": "demo-infoprodutos-contestacao--historia--continuidade"
+        }
+      ]
+    }
+  ]
+}

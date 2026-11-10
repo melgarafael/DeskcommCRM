@@ -192,12 +192,14 @@ describe("renomear/juntar/excluir relê todo cache que guarda o nome da etiqueta
 });
 
 describe("gatilho da cor no editor", () => {
-  it("é 28x28 também no desktop: o `lg:h-8` do size=sm não sobrevive", () => {
+  it("é 28x28 no desktop (o `lg:h-8` do size=sm não sobrevive) e 44x44 abaixo de `lg`, como o toque pede", () => {
     render(<SeletorDeCorDaEtiqueta cor={null} onChange={() => {}} />);
     const classes = screen.getByRole("button", { name: "Cor da etiqueta" }).className.split(/\s+/);
-    expect(classes).toContain("h-7");
-    expect(classes).toContain("w-7");
+    expect(classes).toContain("lg:h-7");
+    expect(classes).toContain("lg:w-7");
     expect(classes).not.toContain("lg:h-8");
+    expect(classes).toContain("h-11");
+    expect(classes).toContain("w-11");
   });
 });
 

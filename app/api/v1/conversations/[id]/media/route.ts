@@ -6,8 +6,10 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
@@ -69,15 +71,15 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (convErr) return fail("internal_error", t("Erro ao validar conversa."), 500, { requestId });
   if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
-  // Guard de DoS: rejeita pelo Content-Length declarado ANTES de bufferizar
-  // o corpo inteiro. 1MB de slack pro overhead de multipart; o check
-  // autoritativo continua o file.size pós-parse (Content-Length pode mentir).
-  const declared = Number(req.headers.get("content-length") ?? 0);
-  if (declared > MAX_MEDIA_BYTES + 1_048_576) {
-    return fail("payload_too_large", t("Arquivo acima de 50MB."), 413, { requestId });
-  }
-
-  const form = await req.formData().catch(() => null);
+  // Guard de DoS: o corpo nunca passa do teto, nem sem Content-Length. 1MB de
+  // slack pro overhead de multipart; o check autoritativo continua o file.size.
+  const corpo = await lerCorpoComTeto(req, MAX_MEDIA_BYTES + 1_048_576, {
+    requestId,
+    idioma: authz.idioma ?? IDIOMA_PADRAO,
+    acimaDoTeto: t("Arquivo acima de 50MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
     return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });
@@ -90,6 +92,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail(verdict.code, verdict.message, status, { requestId });
   }
 
+  // A marca do gravador do composer (F2): "isto é nota de voz". Só com ela o
+  // AAC do iPhone vira opus — sem ela, um m4a enviado por token segue intacto.
+  const marca = z.literal("1").nullable().safeParse(form?.get("nota_de_voz") ?? null);
+  if (!marca.success) {
+    return fail("validation_failed", t("Campo 'nota_de_voz' inválido."), 422, { requestId });
+  }
+  const notaDeVoz = marca.data === "1";
+
   const bruto = Buffer.from(await file.arrayBuffer());
 
   // Nota de voz gravada no browser sai em `webm` (o Chrome não grava ogg), e o
@@ -98,7 +108,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // receber um arquivo válido, e o mesmo áudio poder ser reenviado depois sem
   // repetir o trabalho. Falha devolve o original: o canal que converte sozinho
   // continua funcionando como sempre.
-  const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime });
+  const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime, notaDeVoz });
   const mimeFinal = audio.mime;
   const buffer = audio.buffer;
 

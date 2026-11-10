@@ -58,6 +58,7 @@ tom, tamanho, uma pergunta por vez; o que registrar para o retorno.
 ## Skills do produto — o lugar do conteúdo condicional
 
 Um roteiro situacional (objeção de preço, reativação depois de 30 dias, agendamento) vira uma
-skill da organização: índice sempre presente, corpo só quando a palavra-chave aparece. Corpo
+skill da organização: índice sempre presente, corpo só quando a palavra-chave aparece ou, se a skill
+tiver `any_tags`, quando a conversa ou o contato tem uma dessas etiquetas. Corpo
 curto e imperativo, palavras-chave em português sem acento (a normalização remove), no máximo
 200 linhas. Skills de plataforma `agendamento` e `objecao-preco` já valem para todos.

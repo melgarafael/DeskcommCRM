@@ -1,0 +1,634 @@
+{
+  "id": "marca",
+  "titulo": "Marca",
+  "tela": "/app/settings/marca",
+  "resumo": "Onde você coloca o nome, a cor e o logo da sua empresa dentro do sistema, e escolhe o nome que aparece nos e-mails que as automações mandam aos seus clientes.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela Marca",
+      "objetivo": "Achar a tela Marca e reconhecer os quadros que ela reúne.",
+      "papel": "admin",
+      "busca": [
+        "mudar a cor do sistema",
+        "colocar o nome da minha empresa",
+        "personalizar o sistema com minha marca",
+        "onde troco o logo",
+        "marca da clínica",
+        "identidade visual"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" está o cartão \"Marca\". Clique nele.",
+          "dica": "Só quem é administrador da empresa abre esta tela. Gerente e atendente que digitarem o endereço caem numa página de acesso negado.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/marca']"
+              },
+              "rotulo": "Marca",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/marca']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Como sua empresa aparece",
+          "texto": "O primeiro quadro guarda o nome, a cor e o logo da sua empresa. Com eles, o menu lateral e os botões passam a ter a sua cara para quem trabalha na sua empresa, e os e-mails do sistema, como o convite da equipe, saem com o nome da sua empresa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/marca']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Como sua empresa aparece",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "header:has(> h1)"
+              },
+              "rotulo": "Tela Marca",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #org_app_name)"
+              },
+              "rotulo": "Nome",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label[for='org_accent_hex'])"
+              },
+              "rotulo": "Cor",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label[for='logo-organizacao'])"
+              },
+              "rotulo": "Logo",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os e-mails e a origem de cada coisa",
+          "texto": "Rolando a tela, \"Como seus e-mails saem\" muda o nome que o cliente vê nos e-mails das automações. \"De onde vem cada coisa\" diz, para o nome, a cor e o logo, se foi você que definiu aqui, se veio de quem instalou o sistema ou se é o padrão.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "De onde vem cada coisa",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.shadow-xs:has(> h2:text-is('Como seus e-mails saem'))"
+              },
+              "rotulo": "Nome nos e-mails",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.shadow-xs:has(h2:text-is('De onde vem cada coisa'))"
+              },
+              "rotulo": "De onde vem cada coisa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O que a marca ainda não muda",
+          "texto": "O último quadro avisa onde a sua marca ainda não aparece: o título da aba do navegador e a tela de entrada continuam com o nome do sistema. Os e-mails de convite da equipe e de pedidos de dados já saem com o nome da sua empresa, quando o envio de e-mails está ligado no sistema. O relatório de LGPD entregue ao cliente leva a razão social, que fica em Configurações › Organização. O nome, a cor e o nome nos e-mails só são gravados quando você clica em \"Salvar\", no fim da página. O logo é diferente: ele é gravado assim que você escolhe o arquivo.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.shadow-xs:has(> h2:text-is('O que isto ainda não muda'))"
+              },
+              "rotulo": "Onde a marca não chega",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nome-e-cor",
+      "titulo": "Colocar o nome e a cor da empresa",
+      "objetivo": "Escrever o nome da empresa, escolher a cor da marca, conferir a prévia e salvar.",
+      "papel": "admin",
+      "busca": [
+        "mudar a cor dos botões",
+        "trocar o nome no menu",
+        "cor da minha marca no sistema",
+        "personalizar cores",
+        "nome da clínica no topo do menu",
+        "código da cor da marca"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O nome da empresa",
+          "texto": "Em \"Nome da sua empresa\", escreva o nome como você quer que a equipe veja. Quando a empresa não tem logo, é ele que aparece no alto do menu lateral. Com logo, o logo ocupa esse lugar. Deixando em branco, fica o nome que já aparece em cinza dentro do campo.",
+          "rota": "/app/settings/marca",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_app_name"
+              },
+              "valor": "Clínica Bem Viver"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #org_app_name)"
+              },
+              "rotulo": "Nome da empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A cor da marca",
+          "texto": "Em \"Cor da sua marca\", cole o código da cor, como #0e7c66. Se preferir escolher no olho, clique no quadradinho colorido ao lado: ele abre o seletor de cores do computador e preenche o código para você.",
+          "dica": "O código da cor costuma estar no material da sua marca, com quem fez o seu logo ou no seu site.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_app_name"
+              },
+              "valor": "Clínica Bem Viver"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_accent_hex"
+              },
+              "valor": "#0e7c66"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label[for='org_accent_hex'])"
+              },
+              "rotulo": "Cor da marca",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A escala de tons",
+          "texto": "Logo abaixo aparece a escala que o sistema monta a partir da sua cor. Os tons com contorno são os que vão de fato para a tela, e a legenda diz qual é qual: \"Sua cor\", \"Botões no modo claro\" e \"Botões no modo escuro\". Aqui, no modo claro, o botão usa exatamente a sua cor. No modo escuro, usa um tom mais claro da mesma escala, para não se perder no fundo escuro. Com algumas cores, o modo claro também troca por um tom vizinho, para o texto em cima do botão continuar legível.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "img",
+                "nome": "Escala de",
+                "exato": false
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "img",
+                "nome": "Escala de",
+                "exato": false
+              },
+              "rotulo": "Escala da sua cor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "ul:has(> li:has-text('Botões no modo claro'))"
+              },
+              "rotulo": "Onde cada tom vai",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Conferir antes de salvar",
+          "texto": "Em \"De onde vem cada coisa\", o nome e a cor agora dizem \"você definiu aqui\". Logo abaixo podem aparecer avisos sobre a cor. Com este verde, o aviso lembra que ele ficou parecido com o verde que o sistema usa para indicar sucesso: vale conferir se os avisos continuam fáceis de distinguir.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "De onde vem cada coisa",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.shadow-xs:has(h2:text-is('De onde vem cada coisa'))"
+              },
+              "rotulo": "Você definiu aqui",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar e ver no menu",
+          "texto": "Clique em \"Salvar\", no fim da página. Um aviso rápido \"Marca salva.\" confirma e, sem recarregar nada, os botões passam a usar a sua cor, ou o tom dela que o sistema escolheu na escala. Se a empresa ainda não tem logo, o alto do menu lateral passa a mostrar o nome da empresa.",
+          "dica": "Para voltar ao que era antes, apague o nome e a cor, deixe os campos em branco e salve de novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "aside span[title='Clínica Bem Viver']"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "aside span[title='Clínica Bem Viver']"
+              },
+              "rotulo": "Nome no menu",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Botão com a sua cor",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quando-a-cor-e-ajustada",
+      "titulo": "Quando o sistema ajusta a sua cor",
+      "objetivo": "Entender os avisos sobre a cor, usar uma cor diferente no tema escuro e corrigir um código de cor errado.",
+      "papel": "admin",
+      "busca": [
+        "cor do botão ficou diferente",
+        "minha cor não apareceu",
+        "cor amarela ficou escura",
+        "cor para o modo escuro",
+        "cor cinza não funciona",
+        "código de cor inválido"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Uma cor clara demais",
+          "texto": "Com uma cor bem clara, como este amarelo, o texto em cima dos botões ficaria difícil de ler. Por isso, no modo claro, o sistema usa um tom mais escuro da mesma escala. No modo escuro, a sua cor vai como está. As frases em \"De onde vem cada coisa\" contam isso. A última, em laranja, lembra que este amarelo ficou parecido com a cor que o sistema usa para indicar erro: vale conferir se os avisos de erro continuam fáceis de distinguir.",
+          "rota": "/app/settings/marca",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_accent_hex"
+              },
+              "valor": "#f5c518"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "texto": "A sua cor original continua no logo e nos destaques.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.shadow-xs:has(h2:text-is('De onde vem cada coisa')) ul"
+              },
+              "rotulo": "O que o sistema fez",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma cor neutra",
+          "texto": "Cinza, preto ou branco não destacam nada na tela. Com uma cor assim, o aviso diz que os botões seguem com a cor padrão do sistema.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_accent_hex"
+              },
+              "valor": "#808080"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "texto": "Sua cor é um tom neutro",
+                "exato": false
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Sua cor é um tom neutro",
+                "exato": false
+              },
+              "rotulo": "Cor neutra",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Uma cor só para o tema escuro",
+          "texto": "Se a sua marca tem uma versão para fundo escuro, coloque-a em \"Cor da sua marca no tema escuro (opcional)\". Deixando em branco, os dois modos usam a cor de cima. A legenda embaixo da escala, em \"Botões no modo escuro\", passa a seguir essa cor. O código pode sair um pouco diferente do que você digitou, porque o sistema escolhe na escala o tom que deixa o texto do botão legível.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_accent_hex"
+              },
+              "valor": "#0e7c66"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_accent_dark_hex"
+              },
+              "valor": "#3fbfa0"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label[for='org_accent_dark_hex'])"
+              },
+              "rotulo": "Cor do tema escuro",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "ul:has(> li:has-text('Botões no modo escuro'))"
+              },
+              "rotulo": "Tom do modo escuro",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Código de cor errado",
+          "texto": "O campo aceita só o código da cor, como #0e7c66. Se você escrever outra coisa, como o nome da cor, aparece em vermelho \"Use um código de cor como #7a5cd6.\" e o botão \"Salvar\", no fim da página, fica apagado até você corrigir.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "header:has(> h1)"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_accent_hex"
+              },
+              "valor": "verde"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Use um código de cor como #7a5cd6.",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Código inválido",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "logo-e-emails",
+      "titulo": "Logo e nome nos e-mails",
+      "objetivo": "Saber como subir o logo da empresa e escolher o nome e o endereço de resposta dos e-mails das automações.",
+      "papel": "admin",
+      "busca": [
+        "colocar o logo da empresa",
+        "trocar logo do sistema",
+        "logo para fundo escuro",
+        "nome que aparece no email",
+        "resposta do cliente no meu email",
+        "remetente dos emails automáticos"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O logo",
+          "texto": "Em \"Logo\", clique no botão de escolher arquivo (no seu computador ele pode aparecer como \"Escolher arquivo\" ou \"Choose File\") e selecione a imagem. Ela sobe na hora, sem precisar do \"Salvar\", e aparece o aviso \"Logo atualizado.\". Use PNG ou JPG de até 512 KB, de preferência com fundo transparente. Depois disso surge o botão \"Remover\", para tirar o logo.",
+          "dica": "Se o seu logo é escuro e some no fundo escuro, suba uma versão clara em \"Logo para o tema escuro (opcional)\".",
+          "rota": "/app/settings/marca",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label[for='logo-organizacao'])"
+              },
+              "rotulo": "Logo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> label[for='logo-escuro-organizacao'])"
+              },
+              "rotulo": "Logo do tema escuro",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A prévia nos dois fundos",
+          "texto": "Embaixo, a prévia mostra como o logo fica no fundo claro e no fundo escuro do sistema. Sem logo próprio, ela mostra o que aparece hoje no lugar dele.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Como seus e-mails saem",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-previa-do-logo='claro']"
+              },
+              "rotulo": "Aparência clara",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-previa-do-logo='escuro']"
+              },
+              "rotulo": "Aparência escura",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O nome nos e-mails",
+          "texto": "Em \"Como seus e-mails saem\", \"Nome de exibição\" é o remetente que o cliente lê nos e-mails das automações. \"Responder para\" é o e-mail que recebe a resposta quando o cliente responde. O endereço de envio continua sendo o do sistema. Isso vale para as automações que mandam e-mail, e só quando quem instalou o sistema já ligou o envio de e-mails.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_email_from_name"
+              },
+              "valor": "Clínica Bem Viver"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_email_reply_to"
+              },
+              "valor": "recepcao@clinicabemviver.com.br"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "De onde vem cada coisa",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #org_email_from_name)"
+              },
+              "rotulo": "Remetente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #org_email_reply_to)"
+              },
+              "rotulo": "Para onde vai a resposta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "E-mail escrito errado",
+          "texto": "Um endereço sem @ ou sem o final, como .com.br, mostra em vermelho \"Use um endereço de e-mail como contato@suaempresa.com\" e deixa o \"Salvar\" apagado. Corrija e clique em \"Salvar\". O nome e o endereço passam a valer nos próximos e-mails das suas automações, se o envio de e-mails do sistema estiver ligado.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#org_email_reply_to"
+              },
+              "valor": "recepcao@clinicabemviver"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Use um endereço de e-mail como contato@suaempresa.com",
+                "exato": true
+              },
+              "rotulo": "Endereço incompleto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar apagado",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

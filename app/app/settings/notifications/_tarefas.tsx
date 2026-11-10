@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { carregarTaskReminderPrefs, updateTaskReminderPrefs } from "@/app/actions/settings/updateTaskReminderPrefs";
 import {
   ehAntecedenciaValida,
@@ -37,6 +38,7 @@ const ANTCEDENCIAS: ReadonlyArray<{ min: 15 | 60 | 1440; rotulo: string }> = [
 
 export function TaskReminderPrefs() {
   const t = useT();
+  const telefoneExemplo = useTelefoneExemplo();
   const [pref, setPref] = useState<PreferenciaDeLembrete>(() => preferenciaPadraoDeLembrete());
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -158,7 +160,7 @@ export function TaskReminderPrefs() {
             inputMode="numeric"
             value={pref.whatsapp_numero ?? ""}
             disabled={salvando}
-            placeholder="5511999990000"
+            placeholder={telefoneExemplo.replace(/\D/g, "")}
             onChange={(e) => setPref({ ...pref, whatsapp_numero: e.target.value })}
             onBlur={() => {
               if (pref.whatsapp_numero !== null) void salvar(pref);

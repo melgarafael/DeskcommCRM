@@ -1,0 +1,115 @@
+[
+  {
+    "id": "chatcmpl_be9f12d0-0554-4ebc-9a32-29b629ff175e",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_codes": [],
+    "request_sha256": "56ba093a3311ba06279f6fe3009f2a76a54d07a02f592d01a259ed903d2ad6ac",
+    "at": "2026-10-26T19:12:09.791Z"
+  },
+  {
+    "id": "chatcmpl_8bf941ea-3c64-442a-a872-f27c589ee213",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_codes": [],
+    "request_sha256": "bfa9121bf9a5d0000f70a9754decef95319b9d01fa8b557fe5f24d7ce37b02ef",
+    "at": "2026-10-26T19:12:09.792Z"
+  },
+  {
+    "id": "chatcmpl_0f2dc309-8edf-47f1-b1f8-e6e00e8cb1d7",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [
+      "crm_move_lead_stage",
+      "get_lead_context",
+      "get_lead_note",
+      "request_human_handoff",
+      "save_lead_note",
+      "schedule_followup",
+      "send_message",
+      "update_lead_state"
+    ],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": [
+      8206
+    ],
+    "tool_result_codes": [],
+    "request_sha256": "a8b5fae008ab43cb880118eacae97864c1850ad70be1f401c86f522b29422476",
+    "at": "2026-10-26T19:12:09.806Z"
+  },
+  {
+    "id": "chatcmpl_d55e0ab0-312f-42e4-a954-0e39efc2b873",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_codes": [],
+    "request_sha256": "82fb936485da2bfcf09da7e6b5bfd7d39b248f51cb617420f6b63cd6d8a89032",
+    "at": "2026-10-26T19:12:09.814Z"
+  },
+  {
+    "id": "chatcmpl_7832ad1c-fd2f-464a-9bd1-b4dbb838688c",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [
+      "crm_move_lead_stage",
+      "get_lead_context",
+      "get_lead_note",
+      "request_human_handoff",
+      "save_lead_note",
+      "schedule_followup",
+      "send_message",
+      "update_lead_state"
+    ],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_codes": [
+      "outro"
+    ],
+    "request_sha256": "70c1d436ea0c6de2e84e6c134e7a66bb5f16f17a787dc6b1014b662fdeedecef",
+    "at": "2026-10-26T19:12:09.828Z"
+  },
+  {
+    "id": "chatcmpl_b7505b22-3788-47ad-bc41-8a9fd5d922de",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_codes": [],
+    "request_sha256": "67a2b015f7bff5d4dcea5762d629abcf233244e7b05b866b96fdad5e93aa729d",
+    "at": "2026-10-26T19:12:09.838Z"
+  },
+  {
+    "id": "chatcmpl_64102031-099e-47ed-8aa7-5ea84b698cf5",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_codes": [],
+    "request_sha256": "951b87dc36b59fad9a577000c42dd43009dd5f8b820dc294b350f454a110d541",
+    "at": "2026-10-26T19:12:09.846Z"
+  }
+]

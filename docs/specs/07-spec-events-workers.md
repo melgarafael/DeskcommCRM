@@ -116,6 +116,12 @@ comment on table public.event_log is
 - `status` é redundante a `consumed_by` mas facilita queries de DLQ (`status = 'dead'`).
 - `next_attempt_at` permite agendar retry sem job externo: worker filtra `where next_attempt_at <= now()`.
 
+No dreno `lib/event-log/drain.ts`, a elegibilidade (`pending` e prazo ausente ou
+vencido) é revalidada no próprio `UPDATE` que reclama a linha. Filtrar apenas na
+leitura do lote permite que outro dreno reagende o evento e que uma leitura antiga
+ignore esse adiamento. Regressão executável:
+`pnpm test:unit tests/unit/dreno-concorrente-nao-roda-gatilho-em-dobro.test.ts`.
+
 ### 2.2 Indexes
 
 ```sql

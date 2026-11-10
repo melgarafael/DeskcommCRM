@@ -83,12 +83,23 @@ const COLUNAS_DO_CONTATO = "id, name, display_name, phone_number, is_blocked, is
  */
 export async function buscarCandidatos(
   admin: SupabaseClient,
-  entrada: { organizationId: string; filtro: FiltroDeAudiencia; agora: Date; corpo?: string },
+  entrada: {
+    organizationId: string;
+    filtro: FiltroDeAudiencia;
+    agora: Date;
+    corpo?: string;
+    /**
+     * Campanha com modelo aprovado não tem texto para varrer: quem diz que os
+     * campos do negócio valem a consulta é o mapa de variáveis (migration 0710).
+     */
+    lerCamposDoNegocio?: boolean;
+  },
 ): Promise<{ candidatos: CandidatoDaAudiencia[]; truncado: boolean }> {
   const { organizationId, filtro, agora } = entrada;
   // O corpo entra SÓ para decidir se as colunas de campo personalizado valem a
   // consulta: texto de `{{nome}}` não puxa jsonb de 5.000 linhas em toda prévia.
-  const camposDoTexto = camposUsadosNoTexto(entrada.corpo ?? "");
+  const doTexto = camposUsadosNoTexto(entrada.corpo ?? "");
+  const camposDoTexto = { ...doTexto, lead: doTexto.lead || entrada.lerCamposDoNegocio === true };
   const colunasDeContato = camposDoTexto.contato ? ", custom_fields" : "";
 
   // ─── Os contatos que têm negócio no recorte ───
@@ -308,9 +319,10 @@ export async function buscarCandidatos(
  */
 export async function camposDoDestinatario(
   admin: SupabaseClient,
-  entrada: { organizationId: string; contactId: string; corpo: string },
+  entrada: { organizationId: string; contactId: string; corpo: string; lerCamposDoNegocio?: boolean },
 ): Promise<{ lead?: CamposPersonalizados | null; contato?: CamposPersonalizados | null }> {
-  const campos = camposUsadosNoTexto(entrada.corpo);
+  const doTexto = camposUsadosNoTexto(entrada.corpo);
+  const campos = { ...doTexto, lead: doTexto.lead || entrada.lerCamposDoNegocio === true };
   if (!campos.lead && !campos.contato) return {};
   const saida: { lead?: CamposPersonalizados | null; contato?: CamposPersonalizados | null } = {};
   if (campos.contato) {
@@ -445,4 +457,31 @@ function ordinal(a: string, b: string): number {
 /** Aspas para o literal de array do Postgres — etiqueta com vírgula quebraria o `{a,b}`. */
 function citar(valor: string): string {
   return `"${valor.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+
+/**
+ * Quem já desligou o marketing desta empresa NA PLATAFORMA (erro `131050` num
+ * envio anterior de campanha). A plataforma não avisa por webhook à parte: o
+ * único rastro é a falha. Mandar de novo não entrega, não é cobrado e só
+ * aumenta a conta de falhas do número — então a pessoa sai da lista com
+ * `recusou_marketing`, o mesmo motivo de quem recusou pelo cadastro.
+ *
+ * Os dois formatos do rastro: o oficial direto grava o código em
+ * `last_error_code`; o parceiro grava o rótulo dele ali e o código no começo
+ * do detalhe (`"131050 — …"`).
+ */
+export async function contatosQueRecusaramMarketingNaPlataforma(
+  admin: SupabaseClient,
+  organizationId: string,
+): Promise<Set<string>> {
+  const { data, error } = await admin
+    .from("campaign_recipients")
+    .select("contact_id")
+    .eq("organization_id", organizationId)
+    .eq("status", "failed")
+    .or("last_error_code.eq.131050,last_error_detail.like.131050*")
+    .limit(10_000);
+  if (error) throw new Error(`audiência: recusas de marketing na plataforma — ${error.message}`);
+  return new Set(((data ?? []) as Array<{ contact_id: string }>).map((l) => l.contact_id));
 }

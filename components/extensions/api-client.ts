@@ -1,3 +1,5 @@
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
+
 export type ExtensionApiError = { code: string; message: string };
 
 export type ExtensionApiResult<T> =
@@ -47,6 +49,7 @@ export async function requestExtensionApi<T>(
   }
 
   if (!response.ok || body?.data === undefined) {
+    if (response.status === 403 && body?.error?.code === "mfa_required") irAoDesafioDeMfa();
     return {
       ok: false,
       status: response.status,

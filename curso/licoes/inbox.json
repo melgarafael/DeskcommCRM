@@ -1,0 +1,2730 @@
+{
+  "id": "inbox",
+  "titulo": "Inbox",
+  "tela": "/app/inbox",
+  "resumo": "Onde você e a IA atendem os clientes do WhatsApp lado a lado: a fila de quem espera, a conversa, a ficha do cliente e os atalhos do dia a dia.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a Inbox",
+      "objetivo": "Reconhecer as três partes da Inbox (lista, conversa e ficha do cliente) e abrir a primeira conversa.",
+      "papel": "admin",
+      "busca": [
+        "inbox",
+        "caixa de entrada",
+        "conversas",
+        "tela principal",
+        "whatsapp",
+        "atendimento",
+        "ficha do cliente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "As três partes da tela",
+          "texto": "A Inbox é onde você lê e responde os clientes. À esquerda fica a lista de conversas, no meio aparece a conversa que você abrir e à direita fica a ficha do cliente. Quando você entra pelo menu, ela abre na aba Fila, que mostra quem está esperando por uma pessoa. Ao lado ficam as abas Automático (conversas que o atendimento automático está cuidando) e Minhas (as que estão com você). Na linha de baixo, as abas Todas, Fechadas e Arquivadas mostram todas as conversas, as já encerradas e as guardadas fora da fila.",
+          "dica": "No meio da tela aparece \"Ou navegue com J e K\": as teclas \"j\" e \"k\" passam para a próxima conversa e para a anterior. Você aprende esses atalhos na última lição.",
+          "rota": "/app/inbox",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div:has(> div.min-h-0.flex-1.overflow-hidden [data-testid='selecionar-todas-visiveis'])"
+              },
+              "rotulo": "Lista de conversas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div[class~='group/conversa']"
+              },
+              "rotulo": "Aqui aparece a conversa aberta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "para ver detalhes do contato"
+              },
+              "rotulo": "Aqui fica a ficha do cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "Abas da lista (abre na Fila)",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Começar uma conversa você mesmo",
+          "texto": "O botão \"Iniciar conversa\", no alto da lista, serve para você mandar a primeira mensagem para um cliente, sem esperar que ele escreva. A conversa abre no seu nome e o atendimento automático não responde nela. A exceção é quando outro atendente já está cuidando daquele número: aí a conversa continua com ele. Para seguir, clique na conversa da Mariana Souza, a primeira da lista.",
+          "dica": "Só quem é atendente ou tem cargo acima vê este botão.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Iniciar conversa",
+                "exato": true
+              },
+              "rotulo": "Falar primeiro com um cliente",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000001\"]"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Abrindo uma conversa",
+          "texto": "Clique numa linha da lista para abrir a conversa no meio da tela. A linha aberta fica com o fundo destacado e uma barra colorida à esquerda. Um segundo e meio depois de abrir, o contador de mensagens não lidas some sozinho. Nesta conversa aparece o cartão \"Por que a IA passou para você\": é o resumo que o atendimento automático deixa quando passa o cliente para uma pessoa. O botão \"Assumir e responder\" do cartão passa a conversa para você; isso fica para a lição sobre assumir um cliente.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000001\"]"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "chat-thread"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 3000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000001\"]"
+              },
+              "rotulo": "Conversa aberta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "cartao-passagem"
+              },
+              "rotulo": "Resumo deixado pela IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O topo da conversa",
+          "texto": "No topo aparecem o nome do cliente, um selo que diz se o atendimento está aberto ou já terminou e quem está cuidando dele agora: uma pessoa, o atendimento automático ou ninguém (\"Sem responsável\"). Ao lado do nome aparece também o número por onde o cliente chegou (aqui, \"Recepção Bem Viver\"). Os botões logo abaixo, como Assumir e Fechar, valem para esta conversa. No canto direito, abaixo dos botões, o aviso \"Automático pausado\" diz que o atendimento automático não responde nesta conversa. \"Reservar serviço\" marca um horário na agenda e \"Marcar como pessoal\" tira o contato da Inbox; os outros botões aparecem nas próximas lições.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Aberta",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Situação do atendimento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "canal-da-conversa"
+              },
+              "rotulo": "Número por onde o cliente chegou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "comando-da-conversa"
+              },
+              "rotulo": "Quem está cuidando agora",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Assumir",
+                "exato": true
+              },
+              "rotulo": "Assumir: a conversa passa para você",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Fechar",
+                "exato": true
+              },
+              "rotulo": "Fechar: encerra o atendimento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "badge-atendimento-humano"
+              },
+              "rotulo": "Automático pausado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A ficha do cliente",
+          "texto": "A coluna da direita é a ficha do cliente. No alto ficam o telefone e as etiquetas do cliente. Mais abaixo vêm as \"Tags da conversa\", que valem só para este atendimento, e as \"Demandas abertas\" (o que ele pediu e ainda não foi resolvido). Rolando a ficha para baixo aparecem os \"Leads recentes\" (os negócios dele no funil) e os \"Pedidos recentes\". Tudo sem você precisar sair da conversa. Os outros blocos, como \"Sobre a empresa\" e \"Tarefas desta demanda\", ficam para a lição sobre a ficha. Em telas largas de computador ela fica à vista (dá para escondê-la no botão \"Recolher\"); no celular, ela abre pelo botão \"Ficha\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "aside:has([data-testid='inbox-demandas'])"
+              },
+              "rotulo": "Ficha do cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "inbox-demandas"
+              },
+              "rotulo": "Demandas abertas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Ajustar a largura da lista",
+          "texto": "Para deixar a lista de conversas mais larga ou mais estreita, arraste a divisória entre a lista e a conversa. Dar dois cliques nela volta as colunas à largura padrão, e o navegador guarda a largura que você escolheu.",
+          "dica": "Com o foco na divisória, as setas ← e → do teclado também mudam a largura.",
+          "antes": [
+            {
+              "acao": "hover",
+              "alvo": {
+                "role": "separator",
+                "nome": "Ajustar largura da lista de conversas",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "separator",
+                "nome": "Ajustar largura da lista de conversas",
+                "exato": true
+              },
+              "rotulo": "Arraste para ajustar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "abas-e-sinais",
+      "titulo": "Entendendo a lista: abas, cores e contadores",
+      "objetivo": "Saber o que cada aba mostra e ler de relance quem está cuidando de cada cliente, quem espera há mais tempo e quem tem mensagem nova.",
+      "papel": "admin",
+      "busca": [
+        "abas",
+        "fila",
+        "automático",
+        "minhas",
+        "todas",
+        "fechadas",
+        "arquivadas",
+        "bolinha",
+        "não lidas",
+        "contador",
+        "quem está atendendo",
+        "posição na fila"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "As seis abas",
+          "texto": "As abas separam as conversas: Automático (o robô está atendendo), Fila (esperando uma pessoa), Minhas (as suas que ainda estão abertas), Todas (todas as conversas, inclusive as fechadas e as arquivadas), Fechadas e Arquivadas. O número cinza ao lado de cada aba mostra quantas conversas há nela. Quando o número é zero, ele não aparece.",
+          "dica": "O número das abas se atualiza sozinho a cada 30 segundos.",
+          "rota": "/app/inbox",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "As seis abas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "span.tabular-nums",
+                "dentro": {
+                  "role": "tab",
+                  "nome": "^Fila",
+                  "regex": true
+                }
+              },
+              "rotulo": "Quantas conversas há na aba",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Quem espera há mais tempo",
+          "texto": "Na Fila, quem espera há mais tempo fica em cima. Cada linha mostra a posição (1º, 2º…) e há quanto tempo o cliente aguarda resposta. A bolinha âmbar no canto de baixo, à esquerda, do círculo com as iniciais quer dizer \"Aguardando atendente\". O número em destaque à direita é a quantidade de mensagens que ainda não foram lidas.",
+          "dica": "Ao abrir a conversa, o contador de não lidas zera.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000001\"] [aria-label=\"Posição 1 na fila\"]"
+              },
+              "rotulo": "Posição na fila",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000001\"] span.rounded-full.bg-accent"
+              },
+              "rotulo": "Mensagens não lidas",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "^Aguardando",
+                "regex": true,
+                "dentro": {
+                  "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000002\"]"
+                }
+              },
+              "rotulo": "Há quanto tempo espera",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000002\"] [role=img][title=\"Aguardando atendente\"]"
+              },
+              "rotulo": "Âmbar = esperando uma pessoa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "tab",
+            "nome": "^Automático",
+            "regex": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "O que o robô está atendendo",
+          "texto": "A aba Automático mostra as conversas em que o atendimento automático está respondendo sozinho. Essas conversas aparecem com a bolinha roxa, que quer dizer \"Automático atendendo\". Nas outras abas, como a Todas, um ícone de robô antes da prévia da mensagem indica a mesma coisa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "^Automático",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000003\"] [role=img][title=\"Automático atendendo\"]"
+              },
+              "rotulo": "Roxo = robô atendendo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "tab",
+            "nome": "^Minhas",
+            "regex": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "As suas conversas",
+          "texto": "A aba Minhas lista as conversas que estão no seu nome e ainda estão abertas. A bolinha azul quer dizer \"Em atendimento\": uma pessoa da equipe está cuidando.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "^Minhas",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000005\"] [role=img][title=\"Em atendimento\"]"
+              },
+              "rotulo": "Azul = uma pessoa está cuidando",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "tab",
+            "nome": "^Todas",
+            "regex": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Quem cuida e o que é grupo",
+          "texto": "Na aba Todas aparecem selos nas linhas. \"Grupo\" marca um grupo de WhatsApp. O nome da pessoa da equipe diz quem cuida daquele cliente. Nesta clínica de exemplo, você é a Helena Prado (o \"HP\" no canto de cima). O ícone de robô antes da prévia da mensagem quer dizer que o atendimento automático está respondendo.",
+          "dica": "O nome da pessoa não aparece nas abas Fila, Automático e Minhas, nem quando todas as conversas da lista são da mesma pessoa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "^Todas",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Grupo",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000010\"]"
+                }
+              },
+              "rotulo": "Grupo de WhatsApp",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000007\"] [aria-label^=\"Responsável:\"]"
+              },
+              "rotulo": "Quem da equipe cuida",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000003\"] p > svg"
+              },
+              "rotulo": "Robô = atendimento automático",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Selos de cuidado",
+          "texto": "Mais abaixo na mesma lista aparecem outros dois selos. \"Exemplo para a IA\" marca uma conversa usada para ensinar o robô a responder. O ícone de brilho à direita de cada linha liga ou desliga esse selo: cheio e verde, está ligado; só o contorno, desligado. \"Bloqueado\" marca um cliente que pediu para não receber mais mensagens.",
+          "antes": [
+            {
+              "acao": "hover",
+              "alvo": {
+                "texto": "Bloqueado",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000011\"]"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "selo-exemplo-ia"
+              },
+              "rotulo": "Ensina a IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "exemplo-ia-be100000-0000-4000-8000-000000000012"
+              },
+              "rotulo": "Liga ou desliga o exemplo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Bloqueado",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000011\"]"
+                }
+              },
+              "rotulo": "Pediu para não receber mensagens",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "tab",
+            "nome": "^Fechadas",
+            "regex": true
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "Atendimentos encerrados",
+          "texto": "A aba Fechadas guarda os atendimentos que já foram encerrados. A aba Arquivadas guarda o que você tirou da frente sem apagar. Uma conversa fechada ou arquivada sem responsável fica com a bolinha cinza clara. Ao passar o mouse sobre a bolinha de qualquer conversa fechada, aparece a palavra \"Encerrada\".",
+          "dica": "Uma conversa fechada que tem responsável continua com a bolinha azul, mas o texto dela diz \"Encerrada\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "^Fechadas",
+                "regex": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "^Fechadas",
+                "regex": true
+              },
+              "rotulo": "Atendimentos encerrados",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000011\"] [role=img][title=\"Encerrada\"]"
+              },
+              "rotulo": "Cinza claro = Encerrada",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000008\"] [role=img][title=\"Encerrada\"]"
+              },
+              "rotulo": "Encerrada, com responsável: continua azul",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "^Arquivadas",
+                "regex": true
+              },
+              "rotulo": "Guardadas sem apagar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "achando-a-conversa",
+      "titulo": "Achando a conversa certa",
+      "objetivo": "Usar a busca e os filtros (Não lidos, Grupos, etiquetas) e desfazer tudo quando a lista parecer vazia.",
+      "papel": "admin",
+      "busca": [
+        "buscar",
+        "pesquisar",
+        "procurar cliente",
+        "filtro",
+        "não lidos",
+        "grupos",
+        "etiqueta",
+        "tag",
+        "todas as tags",
+        "limpar filtros",
+        "lista vazia"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Buscar pelo nome",
+          "texto": "Digite o nome ou o telefone do cliente na busca. Aqui digitamos \"Mari\" e a lista já mostra a Mariana. A lista filtra logo depois que você para de digitar. A busca também encontra palavras da última mensagem da conversa, mas não das mensagens mais antigas.",
+          "dica": "Digite pelo menos 2 letras. Para buscar pelo telefone, digite pelo menos 4 números. A busca não muda o número ao lado de \"Todas\": ele continua contando a aba toda.",
+          "rota": "/app/inbox?filter=all",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Buscar conversas",
+                "exato": true
+              },
+              "valor": "Mari"
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Buscar conversas",
+                "exato": true
+              },
+              "rotulo": "Nome, telefone ou última mensagem",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Não lidos",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Só o que ainda não foi lido",
+          "texto": "O botão \"Não lidos\" liga e desliga um filtro. Quando está ligado, fica colorido, e a lista mostra só as conversas com mensagens que ninguém leu ainda.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Buscar conversas",
+                "exato": true
+              },
+              "valor": ""
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Não lidos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Não lidos",
+                "exato": true
+              },
+              "rotulo": "Ligado: só não lidas",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Grupos",
+            "exato": true
+          },
+          "dica": "Com \"Não lidos\" ligado, o número ao lado de cada aba também passa a contar só as conversas não lidas. Aqui, \"Todas\" mostra 4 em vez de 12. Como os números mudam de tamanho, as abas podem trocar de linha. O Inbox lembra o \"Não lidos\" e o número escolhido neste navegador: ao voltar, ele abre do jeito que você deixou, até você desligar o filtro."
+        },
+        {
+          "id": "p3",
+          "titulo": "Só os grupos",
+          "texto": "O botão \"Grupos\" mostra só as conversas de grupos de WhatsApp e esconde, por enquanto, as conversas com um cliente só.",
+          "dica": "O filtro \"Grupos\" não muda o número ao lado de \"Todas\" (continua 12): ele só esconde as outras conversas da lista. Um grupo só entra na Inbox depois de ligado em Conexões › Grupos, a partir da primeira mensagem que chegar depois disso.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Não lidos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Grupos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Grupos",
+                "exato": true
+              },
+              "rotulo": "Ligado: só grupos",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000010\"]"
+              },
+              "rotulo": "Conversa de grupo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Filtrar por tag",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Filtrar por etiqueta",
+          "texto": "Clique no botão \"Todas as tags\", logo abaixo da busca, e marque uma ou mais etiquetas, como \"retorno\" ou \"convenio\", para ver só os clientes marcados com elas. O menu fica aberto enquanto você marca. Se a lista for longa, use o campo \"Buscar etiqueta\" no topo do menu.",
+          "dica": "Com duas ou mais etiquetas marcadas, aparecem as opções \"Todas (E)\" (a conversa precisa ter todas) e \"Qualquer uma (OU)\" (basta ter uma).",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Grupos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Filtrar por tag",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "menuitemcheckbox",
+                "nome": "retorno",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "menuitemcheckbox",
+                "nome": "retorno",
+                "exato": true
+              },
+              "rotulo": "Marque a etiqueta",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "menuitemcheckbox",
+            "nome": "retorno",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "A lista filtrada",
+          "texto": "Agora a lista mostra só os clientes com a etiqueta escolhida, e o botão passa a mostrar essa etiqueta em destaque. Na própria linha do cliente, as etiquetas aparecem em selos. Quando são mais de duas, as outras viram um \"+1\", \"+2\"… Repare que o número ao lado de \"Todas\" também caiu, para 1: a etiqueta muda a contagem das abas, assim como \"Não lidos\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitemcheckbox",
+                "nome": "retorno",
+                "exato": true
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Filtrar por tag",
+                "exato": true
+              },
+              "rotulo": "Filtro de etiqueta ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000005\"]"
+              },
+              "rotulo": "Cliente com a etiqueta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Quando a lista fica vazia",
+          "texto": "Aqui buscamos \"Joa\" com a etiqueta \"retorno\" ainda ligada. Nenhuma conversa combina com os dois ao mesmo tempo, então aparece \"Nenhuma conversa com esses filtros\" e, logo abaixo, os filtros que estão ligados (\"Ativos: Busca · Etiqueta\"). A caixa não está vazia: são os filtros que estão escondendo as conversas. O \"1\" ao lado de \"Todas\" é a Fernanda: ela tem a etiqueta, mas não combina com a busca \"Joa\". A busca não muda esse número.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Buscar conversas",
+                "exato": true
+              },
+              "valor": "Joa"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Nenhuma conversa com esses filtros",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Nenhuma conversa com esses filtros",
+                "exato": true
+              },
+              "rotulo": "Os filtros esconderam tudo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar filtros",
+                "exato": true
+              },
+              "rotulo": "Desfazer de uma vez",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Limpar filtros",
+            "exato": true
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "Limpar tudo",
+          "texto": "\"Limpar filtros\" desliga de uma vez a busca, Não lidos, Grupos, as etiquetas e os demais filtros. O botão de etiqueta volta a dizer \"Todas as tags\", a lista volta inteira e você continua na mesma aba.",
+          "dica": "Os filtros se perdem quando você recarrega a página. Só a aba escolhida fica guardada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar filtros",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Buscar conversas",
+                "exato": true
+              },
+              "rotulo": "Busca vazia de novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Filtrar por tag",
+                "exato": true
+              },
+              "rotulo": "Etiquetas desligadas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "^Todas",
+                "regex": true
+              },
+              "rotulo": "Mesma aba",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lendo-o-historico",
+      "titulo": "Lendo o histórico da conversa",
+      "objetivo": "Entender as mensagens: de quem é cada uma, se foi entregue e lida, quando falhou, e como achar ou citar uma mensagem antiga.",
+      "papel": "admin",
+      "busca": [
+        "histórico",
+        "mensagens",
+        "enviada",
+        "entregue",
+        "lida",
+        "checks",
+        "falhou",
+        "IA respondeu",
+        "responder mensagem",
+        "citar",
+        "buscar na conversa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Cliente à esquerda, empresa à direita",
+          "texto": "As mensagens do cliente ficam à esquerda, em cinza. As mensagens da empresa ficam à direita, na cor da marca. Pílulas como \"Hoje\" e \"Ontem\" separam os dias.",
+          "rota": "/app/inbox?id=be100000-0000-4000-8000-000000000005",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid=\"message-bubble\"]:has-text(\"Preciso levar algum exame?\")"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid=\"message-bubble\"]:has-text(\"Preciso levar algum exame?\")"
+              },
+              "rotulo": "Mensagem do cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid=\"message-bubble\"]:has-text(\"Tenho quinta às 9h30\")"
+              },
+              "rotulo": "Mensagem da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^(Hoje|Ontem)$",
+                "regex": true,
+                "n": 0,
+                "dentro": {
+                  "testid": "chat-thread"
+                }
+              },
+              "rotulo": "Dia da conversa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Quem mandou cada mensagem",
+          "texto": "Toda mensagem que sai da empresa mostra, em cima, quem a mandou: \"IA\", com um robozinho, para o atendimento automático; \"Você\" para o que você escreveu; \"Atendente\" para outra pessoa da equipe; e \"Celular\" quando alguém respondeu pelo WhatsApp do telefone. Lembretes e follow-ups automáticos aparecem como \"Automação\". Assim dá para saber o que o robô respondeu e o que foi escrito por uma pessoa.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid=\"message-bubble\"]:has-text(\"Que bom ter notícias suas\")"
+              },
+              "rotulo": "Respondida pela IA",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid=\"message-bubble\"]:has-text(\"Tenho quinta às 9h30\")"
+              },
+              "rotulo": "Escrita por você",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Enviada, entregue e lida",
+          "texto": "Nas mensagens enviadas pela empresa, os tiques ao lado da hora mostram o caminho da mensagem: um tique quer dizer enviada, dois tiques cinza quer dizer entregue, e dois tiques azuis quer dizer que o cliente leu. Repare na cor: é ela que separa entregue de lida.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Entregue",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid=\"message-bubble\"]:has-text(\"Traga o laudo\")"
+                }
+              },
+              "rotulo": "Entregue: dois tiques cinza",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "rotulo": "Lida",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid=\"message-bubble\"]:has-text(\"Tenho quinta às 9h30\")"
+                }
+              },
+              "rotulo": "Lida: dois tiques azuis",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Mensagem que não saiu",
+          "texto": "Quando uma mensagem não sai, ela ganha uma borda vermelha e o selo \"Falhou\", ao lado da hora. Logo abaixo vem o motivo. Quando o sistema não sabe o motivo, aparece um aviso geral, como na foto. Nas mensagens escritas pela equipe costuma aparecer o botão \"Tentar de novo\", que manda a mesma mensagem outra vez. Quando há chance de ela já ter chegado ao cliente, o sistema pede confirmação antes. Se mandar de novo não resolveria, como num número sem WhatsApp, o botão não aparece. As respostas da IA não ganham esse botão: o próprio sistema tenta de novo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Falhou",
+                "exato": true,
+                "dentro": {
+                  "testid": "chat-thread"
+                }
+              },
+              "rotulo": "Selo de falha",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "motivo-da-falha"
+              },
+              "rotulo": "Por que não saiu",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Tentar de novo",
+                "exato": true,
+                "dentro": {
+                  "testid": "chat-thread"
+                }
+              },
+              "rotulo": "Mandar de novo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O menu de cada mensagem",
+          "texto": "Passe o mouse sobre uma mensagem e clique na setinha \"Opções da mensagem\". Esse menu reúne as ações daquela mensagem, como responder a ela ou encaminhá-la para outra conversa. Nas mensagens do cliente, gestores e administradores também veem \"Ocultar no CRM\". Ele esconde a mensagem só aqui dentro: ela continua no WhatsApp do cliente.",
+          "dica": "No computador, a setinha só aparece quando o mouse passa sobre a mensagem. No celular, ela fica sempre à vista.",
+          "antes": [
+            {
+              "acao": "hover",
+              "alvo": {
+                "css": "[data-testid=\"message-bubble\"]:has-text(\"Preciso levar algum exame?\")"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Opções da mensagem",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid=\"message-bubble\"]:has-text(\"Preciso levar algum exame?\")"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Responder a esta mensagem",
+                "exato": true
+              },
+              "rotulo": "Responder citando",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Encaminhar",
+                "exato": true
+              },
+              "rotulo": "Mandar para outra conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Ocultar no CRM",
+                "exato": true
+              },
+              "rotulo": "Esconder só aqui no CRM",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "menuitem",
+            "nome": "Responder a esta mensagem",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Responder em cima de uma mensagem",
+          "texto": "Com \"Responder a esta mensagem\", o trecho escolhido aparece acima do campo de escrever. Quando você envia uma resposta escrita, ela sai citando essa mensagem, como no WhatsApp. O X desfaz a escolha.",
+          "dica": "Arquivos enviados saem sem a citação.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Responder a esta mensagem",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div:has(> button[aria-label=\"Cancelar resposta\"])"
+              },
+              "rotulo": "Mensagem que você vai citar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar resposta",
+                "exato": true
+              },
+              "rotulo": "Desfazer a citação",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "rotulo": "Sua resposta vai aqui",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Cancelar resposta",
+            "exato": true
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "Buscar dentro da conversa",
+          "texto": "A lupa no topo abre uma busca dentro da conversa. As mensagens que têm a palavra ganham um contorno, e um contador mostra quantas foram encontradas. A busca só olha as mensagens que já estão carregadas na tela, e as notas internas ficam de fora.",
+          "dica": "A tecla Esc fecha a busca. Em conversas longas, aparece no topo do histórico o botão \"Carregar mais antigas\": clique nele antes, para a busca alcançar mensagens mais antigas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar resposta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Buscar nesta conversa",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "searchbox",
+                "nome": "Buscar nas mensagens carregadas",
+                "exato": true
+              },
+              "valor": "laudo"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "searchbox",
+                "nome": "Buscar nas mensagens carregadas",
+                "exato": true
+              },
+              "rotulo": "Palavra procurada",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Resultados nas mensagens carregadas",
+                "dentro": {
+                  "testid": "chat-thread"
+                }
+              },
+              "rotulo": "Quantas foram achadas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-search-match] [data-testid=\"message-bubble\"]"
+              },
+              "rotulo": "Mensagem encontrada (repare no contorno)",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "assumir-e-responder",
+      "titulo": "Assumir um cliente e preparar a resposta",
+      "objetivo": "Pegar uma conversa que a IA passou para a equipe e montar a resposta com texto, respostas prontas e anexos.",
+      "papel": "admin",
+      "busca": [
+        "assumir",
+        "pegar conversa",
+        "IA passou",
+        "passagem",
+        "responder",
+        "escrever mensagem",
+        "resposta pronta",
+        "respostas rápidas",
+        "atalho barra",
+        "anexar",
+        "enviar",
+        "sugerir resposta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Por que a IA passou para você",
+          "texto": "Quando o atendimento automático entrega um cliente para a equipe, aparece este cartão dentro da conversa. Ele mostra o motivo da troca, o que o cliente quer, o que a IA já tentou, as últimas palavras dele e se ele já foi avisado de que uma pessoa vai assumir.",
+          "rota": "/app/inbox",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000001\"]"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "cartao-passagem"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "passagem-motivo"
+              },
+              "rotulo": "Motivo da troca",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "cartao-passagem"
+              },
+              "rotulo": "Resumo para quem vai assumir",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "passagem-assumir"
+              },
+              "rotulo": "Pegar este cliente",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "passagem-assumir"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Agora a conversa é sua",
+          "texto": "Ao clicar em \"Assumir e responder\", a conversa passa para o seu nome. Ela sai da aba Fila e agora fica na aba Minhas. Por isso ela some da lista da esquerda, que continua mostrando a Fila: para achá-la de novo, clique em Minhas. O topo da conversa mostra você como responsável. O atendimento automático, que já tinha parado quando passou o cliente para a equipe, continua parado: o selo no topo diz \"Automático pausado — alguém assumiu\".",
+          "dica": "Antes de assumir, o botão \"Assumir\" no topo da conversa faz a mesma coisa. Depois que a conversa é sua, ali aparece \"Liberar\", para soltá-la.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "passagem-assumir"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Helena Prado",
+                "dentro": {
+                  "testid": "comando-da-conversa"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "comando-da-conversa"
+              },
+              "rotulo": "Você é o responsável",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "badge-atendimento-humano"
+              },
+              "rotulo": "Automático pausado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "^Minhas",
+                "regex": true
+              },
+              "rotulo": "Agora está em Minhas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "textbox",
+            "nome": "Mensagem",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Escrever a resposta",
+          "texto": "Escreva no campo de baixo. Quando está vazio, ele mostra \"Escreva uma mensagem…\". O Enter envia, e Shift + Enter pula uma linha sem enviar. O botão de avião, à direita, também envia. A estrelinha, entre o rosto e o campo, pede ao agente de IA uma sugestão de resposta. A sugestão aparece num quadro acima do campo, com \"Aprovar e enviar\" e \"Rejeitar\": nada sai sem o seu clique.",
+          "dica": "Com o campo vazio, no lugar do avião aparece o microfone, que serve para gravar áudio.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "valor": "Oi, Mariana! Aqui é a Helena, da recepção."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "rotulo": "Escreva aqui",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar",
+                "exato": true
+              },
+              "rotulo": "Enviar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Sugerir resposta",
+                "exato": true
+              },
+              "rotulo": "Sugestão da IA",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Respostas prontas num clique",
+          "texto": "Os botões logo acima do campo são as respostas rápidas da equipe. Um clique coloca o texto pronto no campo, no lugar do que estiver escrito, já com o primeiro nome do cliente, para você conferir antes de enviar. Nada é enviado sozinho.",
+          "dica": "As respostas rápidas são criadas no item \"Respostas rápidas\" do menu lateral. A aba \"Nota interna\", ao lado de \"Responder\", serve para escrever recados que só a equipe vê.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "valor": ""
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "barra-de-recursos"
+              },
+              "rotulo": "Respostas rápidas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Horários da nutricionista",
+                "exato": true,
+                "dentro": {
+                  "testid": "barra-de-recursos"
+                }
+              },
+              "rotulo": "Clique para usar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Horários da nutricionista",
+            "exato": true,
+            "dentro": {
+              "testid": "barra-de-recursos"
+            }
+          }
+        },
+        {
+          "id": "p4b",
+          "titulo": "O nome do cliente já vem trocado",
+          "texto": "Depois do clique, o texto da resposta pronta fica no campo, já com \"Mariana\" no lugar do nome. Confira, ajuste se quiser e só então envie.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Horários da nutricionista",
+                "exato": true,
+                "dentro": {
+                  "testid": "barra-de-recursos"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "rotulo": "Nome já trocado: confira e envie",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Ou chame pelo atalho /",
+          "texto": "Digitar uma barra (/) no começo do campo abre a lista das respostas prontas. Continue digitando, sem espaço, parte do nome (por exemplo /exame) ou o atalho cadastrado em Respostas rápidas (por exemplo /jejum). A lista filtra: na foto, /exame deixou só \"Preparo para exame de sangue\". Clique na que quiser.",
+          "dica": "O {{primeiro_nome}} que aparece na lista é trocado pelo primeiro nome do cliente quando você escolhe a resposta. Neste menu o Enter não escolhe: é preciso clicar. A tecla Esc fecha a lista.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "valor": "/exame"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox",
+                "nome": "Templates de script",
+                "exato": true
+              },
+              "rotulo": "Escolha com um clique",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "^Preparo para exame de sangue",
+            "dentro": {
+              "role": "listbox",
+              "nome": "Templates de script",
+              "exato": true
+            },
+            "regex": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Anexar foto, documento ou contato",
+          "texto": "O botão \"+\" abre as opções de anexo. Em \"Fotos e vídeos\" ou \"Documento\" você escolhe um arquivo, e a janela \"Enviar anexo\" mostra como ele vai ficar e deixa escrever uma legenda antes de enviar. \"Contato\" abre a janela \"Enviar contato\", onde você escolhe alguém da sua base ou digita nome e telefone.",
+          "dica": "Você também pode colar uma imagem copiada (Ctrl+V, ou Cmd+V no Mac) direto no campo de mensagem.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "valor": ""
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Anexar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Anexar",
+                "exato": true
+              },
+              "rotulo": "Botão +",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Fotos e vídeos",
+                "exato": true
+              },
+              "rotulo": "Foto ou vídeo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Documento",
+                "exato": true
+              },
+              "rotulo": "PDF, planilha…",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Contato",
+                "exato": true
+              },
+              "rotulo": "Cartão de contato",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nota-interna",
+      "titulo": "Recados para a equipe com a nota interna",
+      "objetivo": "Registrar um recado que só a equipe vê e chamar um colega com @.",
+      "papel": "admin",
+      "busca": [
+        "nota interna",
+        "recado",
+        "anotação",
+        "só a equipe vê",
+        "mencionar",
+        "@",
+        "marcar colega",
+        "avisar colega"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que é uma nota interna",
+          "texto": "As notas internas aparecem no meio da conversa, num balão amarelado, com o nome de quem escreveu e o aviso \"Nota interna · só o time vê\". Elas nunca chegam ao cliente e servem para combinar coisas com a equipe. A mensagem com borda vermelha logo acima é outro assunto: um envio que falhou, que se manda de novo em \"Tentar de novo\".",
+          "rota": "/app/inbox?id=be100000-0000-4000-8000-000000000005",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Nota interna · só o time vê"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-xl.bg-warning-bg:has-text(\"Paciente pós-operatória\")"
+              },
+              "rotulo": "Nota interna: só a equipe vê",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nota interna",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Mudar para Nota interna",
+          "texto": "Acima do campo de escrever há duas opções: \"Responder\" manda a mensagem para o cliente e \"Nota interna\" guarda um recado só para a equipe. Com a nota escolhida, o botão \"Nota interna\" fica colorido, o fundo em volta do campo fica amarelado e o campo passa a mostrar \"Escreva uma nota interna… (só o time vê)\". Os botões de respostas rápidas somem, porque elas são para o cliente.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nota interna",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Responder",
+                "exato": true
+              },
+              "rotulo": "Responder: vai para o cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nota interna",
+                "exato": true
+              },
+              "rotulo": "Nota interna ligada: só a equipe vê",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "rotulo": "Escreva o recado aqui",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Chamar um colega com @",
+          "texto": "Na nota, digite @ para abrir a lista da equipe e clique no colega. O seu próprio nome também aparece na lista. Quando a nota for salva, o colega recebe o aviso \"Você foi mencionado\": na tela, se estiver com o sistema aberto, e no celular ou computador, se tiver ativado as notificações.",
+          "dica": "Deixe um espaço antes do @. Você também pode digitar as primeiras letras do nome para filtrar a lista. O @ só chama a lista na nota interna. Ao responder o cliente, ele vira texto comum.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "valor": "Retorno confirmado para quinta às 9h30. @"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "option",
+                "nome": "Carlos Mendes",
+                "exato": true,
+                "dentro": {
+                  "role": "listbox"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Carlos Mendes",
+                "exato": true,
+                "dentro": {
+                  "role": "listbox"
+                }
+              },
+              "rotulo": "Lista da equipe: clique em Carlos Mendes",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Carlos Mendes",
+            "exato": true,
+            "dentro": {
+              "role": "listbox"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvar a nota",
+          "texto": "O nome do colega entra no texto. Aperte Enter, ou clique no aviãozinho ao lado, para salvar a nota. Para pular linha, use Shift+Enter.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Carlos Mendes",
+                "exato": true,
+                "dentro": {
+                  "role": "listbox"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "rotulo": "Enter salva a nota",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar",
+                "exato": true
+              },
+              "rotulo": "Ou clique no aviãozinho",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A nota no histórico",
+          "texto": "A nota aparece no histórico com o seu nome e a hora, e a menção ao colega fica destacada. Ao passar o mouse sobre a nota, aparece uma lixeira no canto. Quem escreveu a nota, e também gestores e administradores, podem apagá-la por ela. A nota é apagada na hora, sem pedir confirmação.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Enter",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Retorno confirmado para quinta às 9h30."
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "css": "div.rounded-xl.bg-warning-bg:has-text(\"Retorno confirmado para quinta às 9h30.\")"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-xl.bg-warning-bg:has-text(\"Retorno confirmado para quinta às 9h30.\")"
+              },
+              "rotulo": "Sua nota, com seu nome, a hora e o colega marcado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-xl.bg-warning-bg:has-text(\"Retorno confirmado para quinta às 9h30.\") button[aria-label=\"Excluir nota\"]"
+              },
+              "rotulo": "Lixeira: apaga na hora, sem confirmar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "passar-pausar-encerrar",
+      "titulo": "Pausar o robô, passar adiante e encerrar",
+      "objetivo": "Controlar quem atende (pausar e devolver o automático, transferir), pedir um lembrete e encerrar, reabrir e arquivar um atendimento.",
+      "papel": "admin",
+      "busca": [
+        "pausar robô",
+        "pausar IA",
+        "devolver ao automático",
+        "transferir",
+        "passar para colega",
+        "lembrete",
+        "lembrar",
+        "fechar conversa",
+        "encerrar",
+        "reabrir",
+        "arquivar"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Calar o robô numa conversa sua",
+          "texto": "Esta conversa já está no seu nome, mas o atendimento automático (o robô) ainda pode responder nela. O seu nome aparece logo abaixo do nome do cliente (nesta demonstração, Helena Prado). \"Pausar o automático\" faz o robô parar de responder nesta conversa, e o responsável continua o mesmo. O botão \"Liberar\", logo à esquerda, faz outra coisa: solta a conversa, que fica sem responsável.",
+          "dica": "Numa conversa sem responsável, o botão que cala o robô é o \"Assumir\".",
+          "rota": "/app/inbox?id=be100000-0000-4000-8000-000000000007",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "pausar-o-automatico"
+              },
+              "rotulo": "Parar o robô aqui",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "comando-da-conversa"
+              },
+              "rotulo": "Responsável: você (aqui, Helena Prado)",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Liberar",
+                "exato": true
+              },
+              "rotulo": "Soltar a conversa (é outra coisa)",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "pausar-o-automatico"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Devolver ao automático",
+          "texto": "Com o robô pausado, aparece o aviso \"Automático pausado — alguém assumiu\", e o botão muda para \"Devolver ao automático\". Ao devolver, o robô volta a atender e a conversa fica sem responsável.",
+          "dica": "Se o robô estava parado para o cliente inteiro (isso acontece quando ele pediu para falar com uma pessoa), devolver religa o robô em todas as conversas desse cliente. Se a ficha do cliente estiver marcada como \"Sempre atendimento humano\", o sistema não deixa devolver.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "pausar-o-automatico"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "devolver-ao-automatico"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "badge-atendimento-humano"
+              },
+              "rotulo": "Por que o robô está parado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "devolver-ao-automatico"
+              },
+              "rotulo": "Religar o robô",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "devolver-ao-automatico"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Transferir para um colega",
+          "texto": "Ao devolver, a conversa ficou sem responsável: no topo, o botão voltou a ser \"Assumir\". \"Transferir\" passa a conversa para outra pessoa da equipe na hora, sem ela precisar aceitar. Escolha quem vai continuar e, se quiser, escreva o motivo: a troca fica registrada, e o motivo aparece no histórico do negócio desse cliente.",
+          "dica": "Transferir também faz o robô parar de responder nesta conversa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "devolver-ao-automatico"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Transferir",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "rotulo": "Transferir para"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Ana Ribeiro"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Motivo (opcional)"
+              },
+              "valor": "Cliente quer falar sobre a avaliação postural com a fisioterapeuta."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog",
+                "nome": "Transferir conversa"
+              },
+              "rotulo": "Janela de transferência",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Transferir para"
+              },
+              "rotulo": "Quem continua",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "rotulo": "Motivo (opcional)"
+              },
+              "rotulo": "Recado para o colega",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Transferir",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Transferir conversa"
+                }
+              },
+              "rotulo": "Confirmar",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Transferir",
+            "exato": true,
+            "dentro": {
+              "role": "dialog",
+              "nome": "Transferir conversa"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Pedir um lembrete",
+          "texto": "\"Lembrar\" serve para quando você está esperando o cliente responder. Escolha o prazo: se ele não responder até lá, a conversa sobe para o topo da lista e aparece um aviso na Central dizendo que o cliente não respondeu no prazo. Nada é enviado ao cliente. Nesta conversa o robô já estava pausado. O balão vermelho é uma mensagem que não saiu, e o quadro bege é um recado interno da equipe: nada disso tem a ver com o lembrete.",
+          "dica": "Com um lembrete ligado, o botão passa a dizer \"Lembrete ativo\", e é por ele que você cancela.",
+          "rota": "/app/inbox?id=be100000-0000-4000-8000-000000000005",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Lembrar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[aria-haspopup=\"menu\"][data-state=\"open\"]"
+              },
+              "rotulo": "Botão Lembrar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Em 1 hora",
+                "exato": true
+              },
+              "rotulo": "Prazo do lembrete",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "menuitem",
+            "nome": "Em 1 hora",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Encerrar o atendimento",
+          "texto": "Quando o assunto terminou, clique em \"Fechar\". Uma confirmação aparece antes de encerrar. Ela diz que dá para reabrir depois, mas nem sempre é preciso: se o cliente escrever de novo, a conversa reabre sozinha, sem responsável.",
+          "dica": "O lembrete marcado no passo anterior continua ligado. Se o prazo vencer com a conversa fechada, nada acontece. Se ela for reaberta antes, o lembrete volta a valer.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Em 1 hora",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Lembrete ativo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Fechar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog",
+                "nome": "Fechar esta conversa?"
+              },
+              "rotulo": "Confirme o encerramento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Fechar",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog",
+                  "nome": "Fechar esta conversa?"
+                }
+              },
+              "rotulo": "Encerrar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Fechar",
+            "exato": true,
+            "dentro": {
+              "role": "alertdialog",
+              "nome": "Fechar esta conversa?"
+            }
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Reabrir",
+          "texto": "Depois de fechada, a conversa mostra o selo \"Fechada\", e o campo de mensagem fica travado: parece normal, mas não aceita texto. \"Reabrir\" começa um novo atendimento com o mesmo cliente, mas sem responsável: até alguém clicar em \"Assumir\", quem cuida dela é o atendimento automático.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Fechar",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog",
+                  "nome": "Fechar esta conversa?"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Reabrir",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Fechada",
+                "exato": true
+              },
+              "rotulo": "Atendimento encerrado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Mensagem",
+                "exato": true
+              },
+              "rotulo": "Campo travado: não aceita texto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Reabrir",
+                "exato": true
+              },
+              "rotulo": "Voltar a atender",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Reabrir",
+            "exato": true
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "Arquivar sem apagar",
+          "texto": "\"Arquivar\" tira a conversa da Fila e da aba Minhas e a guarda na aba Arquivadas (é o \"histórico\" de que a confirmação fala). Nada é apagado. Se a conversa ainda estava aberta, o atendimento é encerrado; se o cliente escrever de novo, ela volta, sem responsável.",
+          "dica": "O lembrete marcado antes continua ligado. Depois de reabrir, o botão no topo da conversa diz \"Lembrete ativo\", e é por ele que você cancela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Reabrir",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Fechar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Arquivar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog",
+                "nome": "Arquivar esta conversa?"
+              },
+              "rotulo": "Confirme",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Arquivar",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog",
+                  "nome": "Arquivar esta conversa?"
+                }
+              },
+              "rotulo": "Guardar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Arquivar",
+            "exato": true,
+            "dentro": {
+              "role": "alertdialog",
+              "nome": "Arquivar esta conversa?"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ficha-do-cliente",
+      "titulo": "A ficha do cliente ao lado da conversa",
+      "objetivo": "Organizar o cliente sem sair da conversa: etiquetas, próximo passo da demanda e etapa no funil.",
+      "papel": "admin",
+      "busca": [
+        "ficha",
+        "painel do contato",
+        "etiqueta",
+        "tag do contato",
+        "tag da conversa",
+        "demanda",
+        "próximo passo",
+        "funil",
+        "etapa",
+        "lead",
+        "recolher painel"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que a ficha mostra",
+          "texto": "No alto da ficha ficam o nome, o telefone e as etiquetas do cliente. Logo abaixo há atalhos: \"Marcar compromisso\" abre a Agenda já com este cliente escolhido, \"Tags do contato\" abre o editor de etiquetas, \"Novo Lead\" abre um negócio novo para ele no funil e \"Ver contato\" leva à ficha completa do cliente. A mensagem com borda vermelha na conversa é só um envio que falhou neste exemplo; ela não tem a ver com a ficha.",
+          "rota": "/app/inbox?filter=all&id=be100000-0000-4000-8000-000000000005",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Marcar compromisso"
+              },
+              "rotulo": "Agendar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Tags do contato"
+              },
+              "rotulo": "Etiquetas da pessoa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo Lead"
+              },
+              "rotulo": "Negócio novo no funil",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver contato",
+                "exato": true
+              },
+              "rotulo": "Ficha completa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Tags do contato"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Etiquetas da pessoa",
+          "texto": "As \"Tags do contato\" acompanham o cliente em todas as conversas dele. Digite uma etiqueta nova e aperte Enter para adicionar. O X ao lado de uma etiqueta (aqui, o de \"retorno\") remove essa etiqueta. O botãozinho de paleta logo depois de cada etiqueta troca a cor dela.",
+          "dica": "Com o campo vazio, aparecem logo abaixo, com um \"+\", as etiquetas já usadas na clínica. Ao digitar, ficam só as que combinam com o texto; aqui nenhuma aparece porque nenhuma combina com \"vip\". Clicar numa delas abre a janela \"Adicionar tag\" para escolher a cor e grava a etiqueta com a mesma grafia, para todo mundo escrever igual.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Tags do contato"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Adicionar tag ao contato"
+              },
+              "valor": "vip"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Adicionar tag ao contato"
+              },
+              "rotulo": "Nova etiqueta",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover tag retorno",
+                "exato": true
+              },
+              "rotulo": "Tirar etiqueta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cor da etiqueta retorno",
+                "exato": true
+              },
+              "rotulo": "Trocar a cor",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Etiquetas só deste atendimento",
+          "texto": "Repare que \"vip\" já entrou nas etiquetas da pessoa. Já as \"Tags da conversa\" marcam só este atendimento, como o assunto tratado agora. Elas não ficam gravadas no cliente. Digite e aperte Enter, igual às etiquetas da pessoa. Enquanto você não aperta Enter, continua aparecendo \"Sem tags.\".",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Enter",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Adicionar tag ao contato"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Remover tag vip",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Adicionar tag à conversa"
+              },
+              "valor": "pos-cirurgia"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Adicionar tag à conversa"
+              },
+              "rotulo": "Etiqueta do atendimento",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O que o cliente pediu",
+          "texto": "Em \"Demandas abertas\" fica cada pedido do cliente que ainda não foi resolvido, com a situação (\"Aberta\") e há quanto tempo está aberto. Quando ninguém combinou o que fazer, aparece a frase \"Sem próximo passo definido\". \"Demanda vigente neste canal\" é só um aviso, não um botão: mostra que esta é a demanda desta conversa. \"Encerrar demanda\" registra o resultado quando o pedido estiver resolvido. Clique em \"Marcar próximo passo\" para anotar o que vai acontecer a seguir.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Enter",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Adicionar tag à conversa"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Remover tag pos-cirurgia",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "inbox-demandas"
+              },
+              "rotulo": "Demandas em aberto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "marcar-proximo-passo"
+              },
+              "rotulo": "Anotar o próximo passo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "marcar-proximo-passo"
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Anotar o próximo passo",
+          "texto": "Escreva o que vai acontecer a seguir e clique em \"Salvar\" (ou aperte Enter).",
+          "dica": "O botão \"Salvar\" só funciona depois de pelo menos 3 letras.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "marcar-proximo-passo"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "campo-proximo-passo"
+              },
+              "valor": "Ligar para confirmar o curativo"
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "testid": "salvar-proximo-passo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "campo-proximo-passo"
+              },
+              "rotulo": "O que vem a seguir",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "salvar-proximo-passo"
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar-proximo-passo"
+          }
+        },
+        {
+          "id": "p5-salvo",
+          "titulo": "Próximo passo anotado",
+          "texto": "Depois de salvar, a demanda mostra o próximo passo no lugar de \"Sem próximo passo definido\", e o botão \"Marcar próximo passo\" some. Assim a equipe toda vê o que falta fazer.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-proximo-passo"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "demanda-com-proximo-passo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "demanda-com-proximo-passo"
+              },
+              "rotulo": "Próximo passo anotado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "O cliente no funil",
+          "texto": "Em \"Leads recentes\" (lead é o negócio aberto com este cliente) aparecem o nome do negócio e, logo abaixo, o funil e a etapa em que ele está. \"Etapa do funil\" muda a etapa sem sair da conversa, e \"Abrir no funil\" abre o quadro do funil já com os detalhes deste negócio na tela. \"Levar para outro funil\" muda o negócio de funil, não só de etapa. A frase \"Este funil não tem campos extras.\" só avisa que este funil não pede informações a mais. \"Tarefas desta demanda\" e \"Memória do contato\", mais acima, são outras partes da ficha. Para continuar, clique em \"Recolher\", no alto da ficha.",
+          "dica": "Se você escolher uma etapa de perda, o sistema pede o motivo antes de mover.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "inbox-etapa-select"
+              },
+              "rotulo": "Mudar de etapa",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "inbox-abrir-no-funil"
+              },
+              "rotulo": "Ver no quadro",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "inbox-levar-para-outro-funil"
+              },
+              "rotulo": "Trocar de funil",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Recolher painel do contato"
+              },
+              "rotulo": "Recolher a ficha",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Recolher painel do contato"
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "Recolher a ficha",
+          "texto": "\"Recolher\" esconde a ficha e dá mais espaço para a conversa. Este navegador lembra a escolha nas próximas visitas. Para abrir a ficha de novo, clique no botão com setas duplas (») no alto da borda direita.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Recolher painel do contato"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Expandir painel do contato"
+              },
+              "rotulo": "Abrir a ficha de novo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Expandir painel do contato"
+          }
+        }
+      ]
+    },
+    {
+      "id": "atalhos-e-lote",
+      "titulo": "Trabalhar mais rápido: atalhos e ações em lote",
+      "objetivo": "Navegar pelo teclado e resolver várias conversas de uma vez.",
+      "papel": "admin",
+      "busca": [
+        "atalhos",
+        "teclado",
+        "J K",
+        "próxima conversa",
+        "selecionar várias",
+        "em lote",
+        "marcar como lida",
+        "arquivar várias",
+        "transferir várias"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Cinco letras que economizam cliques",
+          "texto": "Com a Inbox aberta e o cursor fora de qualquer campo de texto, cinco teclas fazem o trabalho do mouse: \"j\" abre a próxima conversa da lista, \"k\" volta para a anterior, \"r\" leva o cursor ao campo de resposta, \"a\" assume a conversa aberta e \"e\" fecha a conversa aberta. Só o \"e\" pergunta antes de agir (\"Fechar conversa?\").",
+          "dica": "Os atalhos não funcionam enquanto o cursor está dentro de um campo de texto. Clique fora dele antes de usar. Aperte \"?\" para ver a lista de atalhos.",
+          "rota": "/app/inbox?filter=all",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Ou navegue com J e K",
+                "exato": true
+              },
+              "rotulo": "O lembrete dos atalhos",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Andar pela lista com J e K",
+          "texto": "Aperte \"j\" para abrir a próxima conversa da lista e \"k\" para voltar à anterior, sem usar o mouse. Se nenhuma conversa estiver aberta, o \"j\" abre a primeira da lista. Atenção: abrir uma conversa a marca como lida em poucos segundos.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 400
+            },
+            {
+              "acao": "press",
+              "tecla": "j"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-conversation-id][aria-current=\"true\"]"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-conversation-id][aria-current=\"true\"]"
+              },
+              "rotulo": "Conversa aberta pelo \"j\"",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "selecao-em-lote-be100000-0000-4000-8000-000000000002"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Marcar várias conversas",
+          "texto": "A caixinha à esquerda de cada linha marca a conversa sem abri-la. Assim que uma é marcada, aparece acima da lista a barra de ações em lote, com a quantidade de conversas selecionadas. Aqui marcamos as conversas do Roberto e da Mariana. A conversa do Pedro, aberta no meio da tela, também fica com o fundo verde-claro, mas não entra no lote: a caixinha dela está vazia. Só contam as caixinhas marcadas, por isso a barra diz \"2 conversas selecionadas\".",
+          "dica": "\"Selecionar todas\" marca todas as conversas que estão na lista agora (na aba Todas, inclusive as fechadas e as arquivadas) e só acrescenta à seleção. Para desmarcar tudo, use o X no fim da barra.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "selecao-em-lote-be100000-0000-4000-8000-000000000002"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "selecao-em-lote-be100000-0000-4000-8000-000000000001"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "barra-de-acoes-em-lote"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "selecao-em-lote-be100000-0000-4000-8000-000000000002"
+              },
+              "rotulo": "Marcar sem abrir",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "barra-de-acoes-em-lote"
+              },
+              "rotulo": "Ações para as marcadas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div:has(> [data-testid=\"selecionar-todas-visiveis\"])"
+              },
+              "rotulo": "Selecionar todas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Mais ações",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Mais ações",
+          "texto": "Em \"Mais ações\" ficam Arquivar, Pausar IA, Devolver ao automático e \"Transferir para…\". Cada conversa marcada recebe a ação como se você a fizesse uma por uma. Pausar IA desliga o atendimento automático e, se a conversa não tiver responsável, você passa a ser o responsável. Devolver ao automático tira o responsável e deixa a IA atender de novo.",
+          "dica": "Arquivar, Pausar IA e Devolver ao automático acontecem na hora, sem pedir confirmação. \"Transferir para…\" abre uma janela para escolher o colega e, se quiser, escrever o motivo; só transfere quando você confirma em Transferir. Se alguma conversa não puder receber a ação, o aviso no fim diz quantas foram recusadas e o motivo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Mais ações",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "lote-arquivar"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "lote-arquivar"
+              },
+              "rotulo": "Arquivar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "lote-pausar-ia"
+              },
+              "rotulo": "Pausar IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "lote-devolver-ao-automatico"
+              },
+              "rotulo": "Devolver ao automático",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "lote-transferir"
+              },
+              "rotulo": "Transferir para…",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Marcar todas como lidas",
+          "texto": "\"Marcar como lida\" zera o contador de não lidas de todas as conversas marcadas. No fim, aparece o aviso \"2 conversas atualizadas.\" e a seleção é desfeita. O \"Fechar\" da barra, ao lado de \"2 conversas selecionadas\", encerra todas as marcadas de uma vez e, ao contrário da tecla \"e\", não pede confirmação. Não confunda com o \"Fechar\" do topo da conversa aberta: esse fecha só a conversa do Pedro.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 400
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "lote-marcar-como-lida"
+              },
+              "rotulo": "Marcar como lida",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "lote-fechar"
+              },
+              "rotulo": "Fechar (da barra)",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "lote-marcar-como-lida"
+          }
+        }
+      ]
+    }
+  ]
+}

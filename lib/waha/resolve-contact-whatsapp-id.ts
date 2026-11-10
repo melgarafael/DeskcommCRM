@@ -146,6 +146,34 @@ export async function resolvePhoneJidDigitsForCall(
   return r ? phoneJidDigitsFromCheckResult(r) : null;
 }
 
+/**
+ * O número tem conta no WhatsApp? Basta UMA grafia existir (o nono dígito no
+ * Brasil). Diferente das funções acima, aqui FALHA não é "não": `false` só sai
+ * quando TODAS as grafias foram respondidas e nenhuma existe; se alguma
+ * consulta lançou e nenhuma existiu, a resposta é `null` ("não deu para
+ * saber"). Sem memo: a prospecção pergunta uma vez por número e grava a
+ * resposta, e o memo só guarda o positivo de outro uso.
+ */
+export async function numeroTemContaNoWhatsapp(
+  client: WahaClient,
+  session: string,
+  phone: string,
+): Promise<boolean | null> {
+  let falhou = false;
+  const tried = new Set<string>();
+  for (const variant of phoneLookupVariants(phone)) {
+    const digits = variant.replace(/\D/g, "");
+    if (!digits || tried.has(digits)) continue;
+    tried.add(digits);
+    try {
+      if ((await client.checkContactExists(session, digits)).numberExists) return true;
+    } catch {
+      falhou = true;
+    }
+  }
+  return falhou ? null : false;
+}
+
 /** Consulta WAHA; null = não achou ou falhou (caller usa fallback). */
 export async function resolveWhatsappIdForContactCard(
   client: WahaClient,

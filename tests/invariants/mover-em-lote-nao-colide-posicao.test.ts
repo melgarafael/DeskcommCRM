@@ -21,7 +21,10 @@ import { midpoint } from "@/lib/kanban/fractional-indexing";
  * As três propriedades que o quadro precisa, e que estão medidas abaixo:
  *   1. nenhuma posição colide (o `distinct` conta o mesmo que o total);
  *   2. a ORDEM relativa em que os cards estavam sobrevive à movida;
- *   3. o lote não pousa por cima de quem já estava na etapa de destino.
+ *   3. o lote pousa no TOPO da etapa de destino — ACIMA de quem já estava, sem
+ *      reescrever a posição de ninguém (issue #3461: o card que entra na coluna
+ *      nasce no topo; até a 9058 o lote encostava abaixo do último, e era por
+ *      isso que a conversa transferida do Inbox aparecia no fim).
  */
 
 const container = process.env.TEST_DB_CONTAINER;
@@ -171,10 +174,21 @@ describe("0209 — mover em lote não empilha os cards na mesma posição", () =
     resetarFixture();
     const noDestino = moverLoteELer();
     const residente = noDestino.find((c) => c.id === RESIDENTE.id);
+    // O residente não é tocado: o lote desce ABAIXO do piso dele, não por cima.
     expect(residente?.pos).toBe(RESIDENTE.pos);
     for (const card of noDestino.filter((c) => c.id !== RESIDENTE.id)) {
-      expect(card.pos).toBeGreaterThan(RESIDENTE.pos);
+      // Ordem crescente = menor primeiro: "acima" na coluna é posição MENOR.
+      expect(card.pos).toBeLessThan(RESIDENTE.pos);
     }
+  });
+
+  it("o primeiro card da coluna é do LOTE — o recém-chegado fica no topo (#3461)", () => {
+    resetarFixture();
+    const noDestino = moverLoteELer();
+    // `moverLoteELer` devolve ordenado por (posição, id): o primeiro da lista é
+    // o topo da coluna como a tela o desenha.
+    expect(noDestino[0]!.id).not.toBe(RESIDENTE.id);
+    expect(LOTE.some((l) => l.id === noDestino[0]!.id)).toBe(true);
   });
 
   it("o arrasto seguinte para ENTRE dois cards do lote calcula posição, não NaN", () => {

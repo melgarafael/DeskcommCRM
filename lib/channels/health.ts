@@ -30,7 +30,16 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
+
 import { PROVIDERS_DE_MENSAGEM } from "./capabilities";
+import {
+  DETALHE_NAO_RECEBE,
+  PREFIXO_ENVIO_RESTRITO,
+  defeitoDoNumero,
+  type DefeitoDoNumero,
+} from "./defeito-do-numero";
 import { ehNomeDeSessaoE2E } from "./sessoes-e2e";
 
 /** Único estado em que mensagem entra e sai. Contrato do CRM (uppercase). */
@@ -66,6 +75,95 @@ export const REF_KIND_SESSAO = "channel_session";
 export const DETALHE_CREDENCIAL_RECUSADA = "credencial_recusada_pelo_transporte";
 
 /**
+ * O NÚMERO ESTÁ DE PÉ, MAS NÃO ESTÁ INTEIRO.
+ *
+ * ─── O defeito que isto fecha (27/10/2026) ──────────────────────────────────
+ *
+ * A sonda do canal oficial devolvia `WORKING` para dois números que não
+ * estavam inteiros, porque só olhava se o elo com a plataforma respondia:
+ *
+ *   - o número que ENVIA mas não RECEBE: a plataforma informa que a assinatura
+ *     do webhook de mensagens do número caiu, e as mensagens dos clientes não
+ *     chegam ao CRM. Ninguém percebe pelo envio, que segue funcionando;
+ *   - o número com envio RESTRITO pela plataforma (pagamento, conta bloqueada,
+ *     política): as mensagens saem do CRM e são recusadas lá.
+ *
+ * ─── Por que o status continua WORKING ─────────────────────────────────────
+ *
+ * `WORKING` é o que deixa o envio sair (`messages/_handler`), e nos dois casos
+ * barrar o envio é PIOR que o defeito: o número que não recebe ainda atende
+ * quem já está na conversa; e a restrição, segundo o provedor, só se desfaz
+ * quando uma mensagem volta a ser entregue — barrar o envio a deixaria de pé
+ * para sempre. Então o status fica, e o defeito vai por dois caminhos que já
+ * existem: o MOTIVO em `channel_sessions.status_reason` (a tela de Conexões o
+ * mostra) e o aviso de conexão da Central (abaixo), que fecha sozinho quando a
+ * sonda volta limpa.
+ *
+ * Os dois detalhes são contrato entre o adapter, que os escreve, e esta regra,
+ * que os lê — como `DETALHE_CREDENCIAL_RECUSADA`. Moram em
+ * `./defeito-do-numero.ts`, puro, porque a tela de Conexões (cliente) também os lê.
+ */
+export { DETALHE_NAO_RECEBE, PREFIXO_ENVIO_RESTRITO, defeitoDoNumero, type DefeitoDoNumero };
+
+/**
+ * O que gravar em `channel_sessions.status_reason` depois desta observação.
+ *
+ * `undefined` = não mexer. A regra só cuida do motivo que ELA escreve: com o
+ * número de pé, grava o defeito, ou limpa o defeito que ela mesma tinha
+ * gravado. Qualquer outro motivo (o reparo de conexão, por exemplo) é de outro
+ * dono. E observação que não deu para fazer, ou de número caído, não mexe — a
+ * queda tem o seu próprio caminho.
+ */
+export function motivoParaGravar(
+  saude: SaudeObservada,
+  motivoAtual: string | null | undefined,
+): string | null | undefined {
+  if (!saude.reachable || (saude.status ?? "").toUpperCase() !== STATUS_SAUDAVEL) return undefined;
+  const defeito = defeitoDoNumero(saude.detail) ? saude.detail : null;
+  if (defeito) return defeito === motivoAtual ? undefined : defeito;
+  if (defeitoSegueSemMedida(saude, motivoAtual)) return undefined;
+  return defeitoDoNumero(motivoAtual) ? null : undefined;
+}
+
+function avisoDoDefeito(defeito: DefeitoDoNumero, apelido: string, idioma: Idioma): AvisoDeConexao {
+  const t = (texto: string) => traduzir(texto, idioma);
+  if (defeito.tipo === "nao_recebe") {
+    return {
+      kind: "channel_number_alert",
+      severity: "critical",
+      title: t('O número "{apelido}" não recebe mensagens').replace("{apelido}", apelido),
+      body: t(
+        "A Meta informa que as mensagens dos clientes para este número não chegam ao CRM, embora ele ainda consiga enviar. Reconecte o número em Conexões. Se continuar assim, o número pode estar ligado a outra conta do WhatsApp Business (por exemplo, depois de ser vinculado a uma página do Facebook).",
+      ),
+      episodio: "NAO_RECEBE",
+    };
+  }
+  // O porquê, pelo código da plataforma. Um literal por ramo, e não um mapa:
+  // a cerca de i18n só cobra o espanhol do que consegue ler escrito.
+  const motivo =
+    defeito.codigo === "131042"
+      ? t(
+          "A Meta recusou mensagens por um problema de pagamento ou de elegibilidade da conta do WhatsApp Business (código 131042). Confira a forma de pagamento da conta no Gerenciador do WhatsApp, na Meta.",
+        )
+      : defeito.codigo === "131031"
+        ? t(
+            "A Meta bloqueou a conta do WhatsApp Business deste número (código 131031). Veja o motivo e peça a revisão no Gerenciador do WhatsApp, na Meta.",
+          )
+        : defeito.codigo === "368"
+          ? t(
+              "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.",
+            )
+          : t("A Meta está recusando mensagens deste número (código {codigo}).").replace("{codigo}", defeito.codigo);
+  return {
+    kind: "channel_number_alert",
+    severity: "critical",
+    title: t('A Meta restringiu o envio do número "{apelido}"').replace("{apelido}", apelido),
+    body: `${motivo} ${t("Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.")}`,
+    episodio: `ENVIO_RESTRITO_${defeito.codigo}`,
+  };
+}
+
+/**
  * Marca do episódio aberto por um EMPURRÃO do provedor.
  *
  * A varredura não fecha episódio com esta marca: ela mede credencial e conta,
@@ -73,6 +171,65 @@ export const DETALHE_CREDENCIAL_RECUSADA = "credencial_recusada_pelo_transporte"
  * contas. Sem a marca, o crítico de suspensão sumia da Central em ≤5 minutos.
  */
 export const PREFIXO_EMPURRAO = "PUSH:";
+
+/**
+ * Quantas observações SEGUIDAS de queda antes de acreditar nela.
+ *
+ * ─── O defeito que isto existe para impedir ─────────────────────────────────
+ *
+ * Medido numa instalação real: a conexão oficial saiu de WORKING e voltou cinco
+ * minutos depois. Nesse intervalo o operador mandou duas mensagens, as duas
+ * foram para `queued` com `channel_session_not_working`, e nenhuma saiu nunca.
+ * Não houve queda de verdade: a pergunta ao provedor falhou UMA vez, e a
+ * varredura traduziu isso em queda na primeira tentativa.
+ *
+ * Uma pergunta que falha não é uma conexão caída. Com a varredura de 5 em 5
+ * minutos, exigir DUAS confirmações custa no pior caso ~5 minutos a mais para
+ * anunciar uma queda real — e evita anunciar a que não existe, que é a que
+ * derruba mensagem de cliente.
+ *
+ * ─── Por que 2, e não 3 ─────────────────────────────────────────────────────
+ *
+ * Porque o outro lado do erro também é caro: cada rodada a mais é tempo em que
+ * uma queda REAL segue sem aviso. Dois é o menor número que descarta o pisco
+ * isolado, que foi o padrão observado.
+ *
+ * A coluna `consecutive_health_fails` existe desde o desenho original e a spec
+ * descreve incrementá-la — nenhum código o fazia. Este é o consumidor que
+ * faltava; ela é zerada ao reconectar, e volta a zero em qualquer observação boa.
+ */
+export const CONFIRMACOES_PARA_QUEDA = 2;
+
+export interface JulgamentoDaQueda {
+  /** Acreditar na queda AGORA (só então o status vai ao banco e o aviso abre). */
+  confirmada: boolean;
+  /** O que gravar em `consecutive_health_fails`. */
+  contador: number;
+}
+
+/**
+ * Uma observação ruim confirma a queda, ou ainda é pisco?
+ *
+ * Observação BOA zera na hora — recuperação nunca espera confirmação: o custo de
+ * acreditar cedo numa volta é nenhum, e o de demorar é seguir barrando envio de
+ * um canal que já voltou.
+ *
+ * "Não deu para perguntar" (`reachable: false`) conta como ruim de propósito:
+ * do lado de quem atende, um provedor que não responde e um canal caído são a
+ * mesma coisa — ninguém recebe mensagem. O que muda é o texto do aviso, não se
+ * ele existe.
+ */
+export function julgarQueda(saude: SaudeObservada, contadorAtual: number): JulgamentoDaQueda {
+  const status = (saude.status ?? "").toUpperCase();
+  const ruim = !saude.reachable || (STATUS_QUE_AVISAM as readonly string[]).includes(status);
+
+  if (!ruim) return { confirmada: false, contador: 0 };
+
+  // Para no teto: a sessão caída não paga um UPDATE por rodada para um número
+  // que ninguém mais lê.
+  const contador = Math.min(contadorAtual + 1, CONFIRMACOES_PARA_QUEDA);
+  return { confirmada: contador >= CONFIRMACOES_PARA_QUEDA, contador };
+}
 
 export interface AvisoDeConexao {
   kind: "qr_rescan" | "channel_number_alert";
@@ -87,6 +244,17 @@ export interface SaudeObservada {
   reachable: boolean;
   status: string | null;
   detail: string | null;
+  defeitosSemMedida?: DefeitoDoNumero["tipo"][];
+}
+
+/**
+ * O defeito gravado segue valendo porque a sonda não mediu o que o fecharia?
+ * Sem isto, "não informado" contava como cura: o cartão voltava a «Conectado» e
+ * a Central fechava o crítico com o defeito de pé.
+ */
+function defeitoSegueSemMedida(saude: SaudeObservada, motivoAtual: string | null | undefined): boolean {
+  const aberto = defeitoDoNumero(motivoAtual);
+  return aberto !== null && (saude.defeitosSemMedida ?? []).includes(aberto.tipo);
 }
 
 /**
@@ -96,7 +264,12 @@ export interface SaudeObservada {
  * com dois números ligados "WhatsApp desconectado" não diz QUAL — e a primeira
  * pergunta de quem lê o aviso é exatamente essa.
  */
-export function avisoDaConexao(saude: SaudeObservada, apelido: string): AvisoDeConexao | null {
+export function avisoDaConexao(
+  saude: SaudeObservada,
+  apelido: string,
+  /** Só os avisos novos do número de pé com defeito saem no idioma da organização; os de queda seguem em português. */
+  idioma: Idioma = "pt-BR",
+): AvisoDeConexao | null {
   if (!saude.reachable) {
     // "Não deu para perguntar" tem DOIS motivos que pedem ações opostas, e
     // tratá-los igual foi o defeito medido: numa VPS real a chave do WAHA foi
@@ -133,7 +306,12 @@ export function avisoDaConexao(saude: SaudeObservada, apelido: string): AvisoDeC
   }
 
   const status = (saude.status ?? "").toUpperCase();
-  if (!status || status === STATUS_SAUDAVEL) return null;
+  if (status === STATUS_SAUDAVEL) {
+    // De pé, mas sem receber ou com o envio restrito: avisa sem derrubar.
+    const defeito = defeitoDoNumero(saude.detail);
+    return defeito ? avisoDoDefeito(defeito, apelido, idioma) : null;
+  }
+  if (!status) return null;
   if (!(STATUS_QUE_AVISAM as readonly string[]).includes(status)) return null;
 
   if (status === "SCAN_QR_CODE") {
@@ -163,7 +341,8 @@ export interface ConexaoCaida {
 }
 
 /**
- * As conexões desta organização que estão fora do ar AGORA.
+ * As conexões desta organização que estão fora do ar AGORA — e que QUEM PEDE
+ * pode ver.
  *
  * Mora aqui, e não na tela, por duas razões que o repo já pagou caro: telas que
  * montam a consulta de `channel_sessions` à mão foram o que deixou três
@@ -172,14 +351,23 @@ export interface ConexaoCaida {
  * segunda lista divergiria com o tempo, e a faixa deixaria de aparecer para um
  * estado que a Central considera grave.
  *
+ * O cliente recebido determina se a consulta respeita a RLS. O layout passa
+ * o cliente da sessão, como GET /api/v1/channel-sessions; o cliente de serviço
+ * atravessaria as policies. O filtro explícito de organização vale nos dois.
+ *
+ * A policy nativa de SELECT permite leitura por organização e acesso de
+ * plataforma. Não há nela divisão de canais por atendente. O recorte adicional
+ * da instalação do relato #3088 só será herdado aqui se estiver na RLS; um patch
+ * exclusivo da rota não é aplicado por esta consulta direta.
+ *
  * Arquivada fica de fora: foi desligada de propósito, e anunciar que uma conexão
  * aposentada está parada é o ruído que ensina a ignorar a faixa.
  */
 export async function listarConexoesCaidas(
-  admin: SupabaseClient,
+  cliente: SupabaseClient,
   organizationId: string,
 ): Promise<ConexaoCaida[]> {
-  const { data } = await admin
+  const { data } = await cliente
     .from("channel_sessions")
     .select("id, display_name, phone_number, status, waha_session_name")
     .eq("organization_id", organizationId)
@@ -198,6 +386,29 @@ export async function listarConexoesCaidas(
     // conexão de ninguém, a mesma faixa permanente do parágrafo acima. Quem não
     // é seed passa por este filtro intacto, inclusive caído.
     .filter((s) => !ehNomeDeSessaoE2E(s.waha_session_name as string | null))
+    // ─── E sessão SEM NÚMERO E SEM NOME também não (#3416) ────────────────────
+    //
+    // Abriu o QR, não leu, o código expirou: a linha fica `FAILED` sem nunca
+    // ter tido telefone, e a faixa dizia "WhatsApp sem nome está desconectado —
+    // nenhuma mensagem entra nem sai". Não entra nem sai nada porque nunca houve
+    // número aqui; para quem só olha o produto no teste grátis, isso é um
+    // quebrado que não quebrou.
+    //
+    // As DUAS réguas juntas, e a segunda veio medida no e2e
+    // (`tests/e2e/atender-pelo-celular.spec.ts`, caso A-6): um canal CAÍDO com
+    // apelido e sem número gravado continua sendo conexão de alguém e tem de
+    // aparecer — a faixa é o único aviso dele. O que não é conexão de ninguém é
+    // a linha que não tem nem número (o apelido cairia em "sem nome") nem nome.
+    //
+    // As duas colunas já vinham no select (é delas que sai o apelido), então o
+    // filtro não custa consulta. Número é a régua principal: é o que a rota de
+    // saúde de Conexões grava quando a sessão está `WORKING`
+    // (`app/api/v1/channel-sessions/[id]/route.ts`, `numeroObservadoDaSessao`).
+    .filter(
+      (s) =>
+        Boolean((s.phone_number as string | null)?.trim()) ||
+        Boolean((s.display_name as string | null)?.trim()),
+    )
     .map((s) => ({
     id: s.id as string,
     apelido: (s.display_name as string | null) ?? (s.phone_number as string | null) ?? "sem nome",
@@ -209,6 +420,18 @@ interface SessaoParaVigiar {
   id: string;
   organization_id: string;
   status: string | null;
+  /** O motivo gravado, quando quem chamou o leu: é onde mora o defeito do número aberto. */
+  status_reason?: string | null;
+  /**
+   * O NÚMERO da conexão, quando quem chamou leu a linha.
+   *
+   * `null` EXPLÍCITO = a sessão não tem número, nunca teve: ela nasceu de um QR
+   * aberto que ninguém leu (#3416). `undefined` = a chamada não leu esta coluna,
+   * e NADA muda — quem não sabe o número não muda de comportamento, senão um
+   * caller que deixasse de selecionar `phone_number` silenciaria o aviso de uma
+   * conexão de verdade.
+   */
+  phone_number?: string | null;
 }
 
 /**
@@ -253,8 +476,25 @@ export async function sincronizarSaudeDaConexao(
    * ela mesma poderia ter aberto.
    */
   origem: "varredura" | "empurrao" = "varredura",
+  /** O idioma da organização, para os avisos que já saem traduzidos (`avisoDaConexao`). */
+  idioma: Idioma = "pt-BR",
 ): Promise<"avisado" | "ja_avisado" | "resolvido" | "sem_mudanca"> {
-  const aviso = avisoDaConexao(saude, apelido);
+  // ─── A sessão SEM NÚMERO não é conexão fora do ar (#3416) ─────────────────
+  //
+  // Abre o QR e não lê: a sessão nasce `SCAN_QR_CODE` e o WAHA a derruba em
+  // `FAILED` quando o código expira. Do ponto de vista do aviso isso é uma
+  // queda — e era: o assistente do primeiro acesso já abria o crítico
+  // "precisa escanear o QR de novo" no segundo em que a pessoa pedia o código,
+  // e a expiração abria o segundo ("fora do ar (FAILED)"). Duas gritas para uma
+  // pessoa que está com o celular na mão olhando PARA o QR, e nenhum número
+  // para perder: "nenhuma mensagem entra nem sai por esta conexão" só diz algo
+  // quando há um número no ar.
+  //
+  // Nulo EXPLÍCITO é a regra; `undefined` (quem não leu a coluna) segue avisando
+  // como sempre. E o ramo de `!aviso` abaixo é o que FECHA um episódio já
+  // aberto — então esta mesma chamada limpa o aviso que a própria sessão
+  // abriu antes de expirar, sem precisar de um segundo caminho.
+  const aviso = sessao.phone_number === null ? null : avisoDaConexao(saude, apelido, idioma);
 
   const { data: linha } = await admin
     .from("channel_session_health")
@@ -271,6 +511,7 @@ export async function sincronizarSaudeDaConexao(
     if (origem === "varredura" && jaEscalado.startsWith(PREFIXO_EMPURRAO)) {
       return "sem_mudanca";
     }
+    if (defeitoSegueSemMedida(saude, sessao.status_reason)) return "sem_mudanca";
     await admin
       .from("agent_inbox_items")
       .update({ status: "resolved" })

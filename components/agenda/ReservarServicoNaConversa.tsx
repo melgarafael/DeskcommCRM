@@ -3,6 +3,8 @@ import * as React from "react";
 import { randomId } from "@/lib/random-id";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { CalendarBlank } from "@/lib/ui/icons";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
@@ -15,14 +17,33 @@ import type { DisponibilidadeDoServico } from "@/lib/agenda/servicos/consulta";
 type Service = { id: string; name: string; service_enabled?: boolean; requires_confirmation: boolean; booking_mode?: string };
 type Receipt = { id: string; status: string; starts_at: string; ends_at: string; time_zone: string; participant_name: string | null; google_publication: string; human_confirmation: string; deduplicated?: boolean };
 const PUBLICATION: Record<string, string> = { not_configured: "Somente no CRM", pending: "Publicação pendente", synced: "Publicado no Google", failed: "Falha de publicação", conflict: "Conflito com o Google", removed: "Remoção confirmada no Google" };
-const field = "rounded-md border border-border bg-surface-elevated p-2 text-sm w-full";
+// 16px abaixo do md: o Safari do iPhone amplia a página ao focar campo menor.
+const field = "rounded-md border border-border bg-surface-elevated p-2 text-base md:text-sm w-full";
 
-/** Reserva pelo escritor normal. Não manda mensagem nem publica um agente. */
-export function ReservarServicoNaConversa({ contactId, conversationId, contactName }: { contactId: string; conversationId: string; contactName: string }) {
+/**
+ * O item do menu ⋯ (#3003). Só levanta a bandeira de quem o monta: a folha NÃO
+ * pode ser filha do menu. Com ela lá dentro, o item precisava segurar o menu
+ * aberto (fechar desmontaria a folha), e ao fechar a folha o ⋯ continuava
+ * aberto — com a página inteira sob `aria-hidden`. Medido na tela da vps-teste.
+ */
+export function ItemReservarServico({ onSelect }: { onSelect: () => void }) {
+  const t = useT();
+  // GUIA CURTA (#3003): o rótulo nomeia o gesto, não a consequência. Reservar
+  // NÃO manda mensagem ao contato nem comprova publicação no Google — é o que
+  // a própria folha avisa depois do clique, e agora antes dele.
+  return <DropdownMenuItem data-testid="acao-reservar-servico" title={t("Marca um horário na agenda para este contato, sem enviar mensagem a ele.")} onSelect={onSelect}>
+    <CalendarBlank size={16} aria-hidden className="mr-2" />{t("Reservar serviço")}
+  </DropdownMenuItem>;
+}
+
+/**
+ * Reserva pelo escritor normal. Não manda mensagem nem publica um agente.
+ * Controlada por quem a monta FORA do menu (ver `ItemReservarServico`).
+ */
+export function ReservarServicoNaConversa({ contactId, conversationId, contactName, aberto, onAbertoChange }: { contactId: string; conversationId: string; contactName: string; aberto: boolean; onAbertoChange: (aberto: boolean) => void }) {
   const t = useT(); const locale = useTagDeIdioma();
   const qc = useQueryClient();
   const peopleHint = React.useId();
-  const [open, setOpen] = React.useState(false);
   const [services, setServices] = React.useState<Service[]>([]);
   const [typeId, setTypeId] = React.useState("");
   const [day, setDay] = React.useState(() => new Date().toISOString().slice(0, 10));
@@ -43,11 +64,14 @@ export function ReservarServicoNaConversa({ contactId, conversationId, contactNa
     setZone(result.fuso_da_regra);
     setAvailability((result.servico?.availability ?? []).filter((row) => diaLocalISO(new Date(row.starts_at), result.fuso_da_regra) === day));
   }
-  return <><Button size="sm" variant="outline" onClick={() => { setOpen(true); void execute(async () => {
-    const rows = (await apiClient.get<{ data: Service[] }>("/api/v1/agenda/tipos")).data;
-    const valid = rows.filter((r) => r.service_enabled); setServices(valid); if (!typeId && valid[0]) setTypeId(valid[0].id);
-  }); }}>{t("Reservar serviço")}</Button>
-    <Sheet open={open} onOpenChange={setOpen}><SheetContent className="overflow-y-auto sm:max-w-lg"><SheetHeader><SheetTitle className="break-words">{services.find((s) => s.id === typeId)?.name ? <>{t("Agendar")} {services.find((s) => s.id === typeId)?.name}</> : t("Reservar serviço")}</SheetTitle></SheetHeader>
+  // Cada abertura relê os serviços, como o clique no antigo botão fazia.
+  React.useEffect(() => {
+    if (!aberto) return;
+    apiClient.get<{ data: Service[] }>("/api/v1/agenda/tipos")
+      .then(({ data: rows }) => { const valid = rows.filter((r) => r.service_enabled); setServices(valid); setTypeId((atual) => atual || valid[0]?.id || ""); })
+      .catch(showApiError);
+  }, [aberto]);
+  return <Sheet open={aberto} onOpenChange={onAbertoChange}><SheetContent className="overflow-y-auto sm:max-w-lg"><SheetHeader><SheetTitle className="break-words">{services.find((s) => s.id === typeId)?.name ? <>{t("Agendar")} {services.find((s) => s.id === typeId)?.name}</> : t("Reservar serviço")}</SheetTitle></SheetHeader>
       <div className="space-y-4 py-4"><p>{t("Contato responsável:")} {contactName}</p><p className="text-sm text-text-muted">{t("Consultar não reserva. Reservar não envia mensagem nem comprova publicação Google.")}</p>
         {services.length === 0 ? <p>{t("Nenhum serviço com programação ativa. Configure em Configurações da Agenda.")}</p> : <>
           <label className="block space-y-1">{t("Serviço")}<select aria-label={t("Serviço")} className={field} value={typeId} onChange={(e) => { setTypeId(e.target.value); setAvailability(null); setSelected(null); setReceipts(null); }}>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
@@ -75,5 +99,5 @@ export function ReservarServicoNaConversa({ contactId, conversationId, contactNa
           {r.deduplicated && <p className="text-xs">{t("Reserva existente recuperada, sem criar outra.")}</p>}
         </section>)}
       </div>
-    </SheetContent></Sheet></>;
+    </SheetContent></Sheet>;
 }

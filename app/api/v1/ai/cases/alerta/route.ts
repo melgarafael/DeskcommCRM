@@ -1,15 +1,61 @@
 /**
- * GET/PUT /api/v1/ai/cases/alerta — a configuração do aviso de caso no WhatsApp
- * da equipe (migration 0292).
+ * GET/PUT/DELETE /api/v1/ai/cases/alerta — a configuração do aviso de caso no
+ * WhatsApp da equipe (migration 0292).
  *
- * ## A escrita é do RPC, e a rota não escreve UMA linha na tabela
+ * ## DELETE: remover o destinatário, sem exigir um número substituto (issue #3338)
  *
- * `fn_definir_aviso_de_caso` faz, dentro da MESMA transação da escrita, sete
- * guardas que uma rota faria em sete idas ao banco com uma janela de corrida
- * entre cada duas: papel, suporte, MFA, E.164, canal da organização, recusa do
- * número da própria organização e recusa de número que já é um cliente. Um
- * `upsert` daqui repetiria as sete e divergiria delas no primeiro dia em que
- * alguém mudasse uma.
+ * O `PUT` exige um telefone E.164 válido: é a forma que o banco aceita, e não
+ * há como "salvar sem número". Sem uma ação de remoção, quem quisesse LIBERAR o
+ * número antigo — para as mensagens dele voltarem a virar atendimento — tinha
+ * dois contornos, e os dois são mentira: apagar o campo (a tela desabilita
+ * Salvar) ou cadastrar um número inexistente no lugar. O `DELETE` é essa ação.
+ *
+ * ## Remover é a LINHA sair, não o telefone virar nulo
+ *
+ * `telefone_destino` é `not null` com CHECK E.164 (migration 0292): não existe
+ * "configuração sem número" no schema, e inventar um valor vazio ou sentinela
+ * seria o mesmo contorno, agora gravado. Apagar a linha é o que sobra — e é
+ * exatamente o que a regra de `lib/escalacao/numero-interno-de-aviso.ts` lê:
+ * sem `telefone_destino` e sem `destino_jid`, não há destino a reconhecer como
+ * interno, e o número volta à ingestão normal. O `destino_jid` vai junto porque
+ * ele é a OUTRA porta do mesmo corte (o destinatário em modo privacidade).
+ *
+ * ## Isto NÃO é pausar, e pausar continua sendo pausar
+ *
+ * `ligado: false` PRESERVA o telefone e, por decisão escrita no cabeçalho de
+ * `numero-interno-de-aviso.ts`, o número segue interno: as mensagens da equipe
+ * continuam sendo cortadas na ingestão. É o comportamento pedido pela issue e
+ * ele não muda aqui. O que este handler faz é remover a configuração inteira —
+ * e é a única das duas ações que devolve o número ao Inbox. Por isso ele não
+ * escreve `ligado` em lugar nenhum: quem pausa é o switch, quem remove é este
+ * botão.
+ *
+ * ## As guardas são as mesmas, MENOS as que só valem para uma escrita de número
+ *
+ * `requireSupportWrite()`, papel `admin` e a dívida de MFA (`mfaEmDivida`, a
+ * mesma régua de `fn_session_mfa_proven` que o RPC cobra). O resto do corpo do
+ * RPC — E.164, canal da organização, "é um número da própria org", "já é um
+ * cliente seu" — existe para validar o número que ENTRA. Não há número entrando
+ * aqui: a escrita é o DELETE de uma linha cujo `organization_id` é o da sessão,
+ * e é o `eq` que faz a fronteira entre tenants.
+ *
+ * ⚠️ `createAdminClient()` e não o client de sessão: a tabela é `revoke all`
+ * para `authenticated` — o papel autorizado é o do ROUTE, conferido acima. A
+ * alternativa seria um RPC novo, e isso é migration: a remoção não precisa de
+ * schema novo.
+ *
+ * ## A escrita do `PUT` é do RPC — e a rota não escreve uma linha na tabela
+ *
+ * (`DELETE` é a exceção, e está declarada acima: não existe RPC de remoção.)
+ *
+ * `fn_definir_aviso_de_caso` faz, dentro da MESMA transação da escrita, oito
+ * guardas que uma rota faria em oito idas ao banco com uma janela de corrida
+ * entre cada duas: papel, suporte, MFA, E.164, canal da organização, modelo da
+ * organização e da conexão (9094), recusa do número da própria organização e
+ * recusa de número que já é um cliente. Um `upsert` daqui repetiria as oito e
+ * divergiria delas no primeiro dia em que alguém mudasse uma. O que o banco NÃO
+ * pergunta sobre o modelo — aprovado, uma variável só — a rota pergunta antes
+ * (`lib/escalacao/modelo-do-aviso.ts`).
  *
  * ## …E mesmo assim a rota chama `requireSupportWrite()` na primeira linha
  *
@@ -34,6 +80,16 @@
  * `confirma_contato: true`. Isso é irreversível o bastante para custar um
  * clique deliberado.
  *
+ * ## …menos quando o número é da EQUIPE (#3900)
+ *
+ * Em `destino_modo = 'responsavel'` o destino é o WhatsApp pessoal de quem
+ * atende, e numa agência de viagens essa pessoa viaja pela própria agência — é
+ * cliente também. Tornar esse número interno é o defeito da issue: quando ela
+ * escreve como cliente, a mensagem não entra. Para número de membro ATIVO o
+ * banco não pergunta (não há consequência a confirmar) e responde
+ * `destino_e_de_membro`, que vira `autorizacao_do_destino` na auditoria. A rota
+ * não decide isso: ela só registra o que a função respondeu.
+ *
  * ## i18n
  *
  * `PASTAS_IGNORADAS` do gate de espanhol inclui `api`, então as frases desta
@@ -47,8 +103,11 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { mfaEmDivida } from "@/lib/auth/server";
 import { env } from "@/lib/env";
 import { mascara } from "@/lib/escalacao/aviso-ao-suporte";
+import { carregarModeloDoAviso, type MotivoDoModeloRecusado } from "@/lib/escalacao/modelo-do-aviso";
+import { limparCacheDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { lerEstadoDaTelaDeAviso } from "@/lib/escalacao/tela-do-aviso";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -77,8 +136,80 @@ const corpo = z
     resposta_whatsapp_habilitada: z.boolean().default(false),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
+    /**
+     * COMO escolher quem recebe (#3803). `fixo` é o comportamento de sempre e o
+     * default da coluna; `responsavel` liga a cadeia conversa → negócio →
+     * carteira → número da empresa.
+     */
+    destino_modo: z.enum(["fixo", "responsavel"]).default("fixo"),
+    /**
+     * O WhatsApp de cada pessoa da equipe, gravado na MESMA transação da
+     * configuração (a função do banco faz as duas escritas).
+     *
+     * `whatsapp` é o número PESSOAL de quem atende (o nome da coluna em
+     * `user_organizations`). Três coisas diferentes, e confundi-las apaga
+     * número de gente (#3935):
+     *
+     * · a chave AUSENTE diz "a tela não falou deste membro" → o banco NÃO toca
+     *   na coluna. É o que permite salvar uma tela que não exibiu a equipe sem
+     *   zerar o número de quem está gravado;
+     * · `null` AFIRMA que a pessoa não tem número → grava nulo (é a forma de
+     *   apagar de propósito o número que a pessoa viu na tela);
+     * · string é o número novo, normalizado pelo corpo da função.
+     *
+     * A lista inteira ausente (`undefined`) também não toca em nada.
+     */
+    responsaveis: z
+      .array(
+        z
+          .object({
+            user_id: z.string().uuid(),
+            whatsapp: z.string().trim().nullable().optional(),
+          })
+          .strict(),
+      )
+      .max(200)
+      .optional(),
+    /**
+     * O modelo aprovado que leva o aviso quando a conexão só manda modelo
+     * (migration 9094). Ausente/`null` = sem modelo: a conexão precisa mandar
+     * texto livre. Gravar o que veio — inclusive o `null` — é o que impede um
+     * modelo de outra conexão de ficar para trás depois de trocar de número.
+     */
+    modelo_id: z.string().uuid().nullable().optional(),
   })
   .strict();
+
+/**
+ * Por que o modelo escolhido não serve — a frase de cada motivo da regra única
+ * (`lib/escalacao/modelo-do-aviso.ts`). `indeterminado` não é culpa de quem
+ * escolheu: é a leitura que falhou, e a resposta é tentar de novo.
+ */
+const RECUSAS_DO_MODELO: Record<
+  MotivoDoModeloRecusado,
+  { status: 422 | 503; frase: string }
+> = {
+  inexistente: {
+    status: 422,
+    frase: "Esse modelo não existe mais nesta conta. Escolha outro modelo aprovado.",
+  },
+  outra_conexao: {
+    status: 422,
+    frase: "Esse modelo não é da conexão escolhida. Escolha um dos modelos aprovados dela.",
+  },
+  nao_aprovado: {
+    status: 422,
+    frase: "Esse modelo ainda não está aprovado. Escolha um modelo aprovado.",
+  },
+  variaveis: {
+    status: 422,
+    frase: "O modelo precisa ter uma variável só, no texto — é nela que o aviso entra.",
+  },
+  indeterminado: {
+    status: 503,
+    frase: "Não foi possível conferir o modelo agora. Tente de novo em instantes.",
+  },
+};
 
 /**
  * O que cada exceção do RPC vira no wire.
@@ -114,11 +245,26 @@ const RECUSAS_DO_RPC = {
     frase:
       "Esse é um dos números conectados da sua conta. Ele não pode receber os avisos, senão um responde ao outro sem parar.",
   },
+  aviso_de_caso_destino_invalido: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Escolha uma forma de destino válida: o número da empresa ou o responsável pelo atendimento.",
+  },
+  aviso_de_caso_whatsapp_invalido: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Um dos números de WhatsApp da equipe não é válido. Use o código do país, por exemplo +55 31 99999-8888.",
+  },
   aviso_de_caso_numero_de_cliente: {
     code: "aviso_numero_de_cliente",
     status: 422 as const,
     frase:
       "Esse número já é de um cliente seu. Se você continuar, as mensagens dele param de chegar ao CRM.",
+  },
+  aviso_de_caso_modelo_invalido: {
+    code: "aviso_modelo_invalido",
+    status: 422 as const,
+    frase: "Esse modelo não é da conexão escolhida. Escolha um dos modelos aprovados dela.",
   },
 } as const;
 
@@ -168,6 +314,28 @@ export async function PUT(req: NextRequest): Promise<Response> {
   // primeira guarda do corpo da função recusaria — com o código de quem não
   // tem permissão, sobre um admin que tem.
   const db = await createClient();
+
+  // O modelo serve? A regra única, ANTES do RPC: o banco confere que ele é
+  // desta organização e desta conexão, mas "aprovado" e "uma variável" moram no
+  // espelho e no contrato derivado — perguntas que o SQL não faz.
+  const modeloId = dados.modelo_id ?? null;
+  if (modeloId) {
+    const avaliacao = await carregarModeloDoAviso(db, {
+      organizationId: authz.org.orgId,
+      channelSessionId: dados.channel_session_id,
+      modeloId,
+    });
+    if (!avaliacao.ok) {
+      const recusa = RECUSAS_DO_MODELO[avaliacao.motivo];
+      return fail(
+        recusa.status === 503 ? "unavailable" : "aviso_modelo_invalido",
+        t(recusa.frase),
+        recusa.status,
+        { requestId },
+      );
+    }
+  }
+
   const { data, error } = await db.rpc(
     "fn_definir_aviso_de_caso" as never,
     {
@@ -178,6 +346,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
       p_ligado: dados.ligado,
       p_confirma_contato: dados.confirma_contato ?? false,
       p_resposta_whatsapp_habilitada: dados.resposta_whatsapp_habilitada,
+      p_destino_modo: dados.destino_modo,
+      // A rota NÃO normaliza: quem normaliza é o corpo da função do banco, com a
+      // mesma régua da tela (`normalizarTelefoneDeAviso`). Normalizar nos dois
+      // lugares seria a segunda implementação da regra.
+      p_responsaveis: dados.responsaveis === undefined ? null : dados.responsaveis,
+      p_modelo: modeloId,
     } as never,
   );
 
@@ -189,7 +363,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
   }
 
-  const resultado = (data ?? {}) as { trocou_numero?: boolean; antes_ligado?: boolean };
+  const resultado = (data ?? {}) as {
+    trocou_numero?: boolean;
+    antes_ligado?: boolean;
+    /** #3900 — o destino é o WhatsApp de um membro ativo da equipe. */
+    destino_e_de_membro?: boolean;
+  };
 
   // ⚠️ O número entra MASCARADO. `api_audit_log` é append-only — sem UPDATE nem
   // DELETE para papel nenhum, nem para `service_role` —, então o que entra ali
@@ -209,7 +388,28 @@ export async function PUT(req: NextRequest): Promise<Response> {
       depois_ligado: dados.ligado,
       resposta_whatsapp_habilitada: dados.resposta_whatsapp_habilitada,
       canal: dados.channel_session_id,
+      modelo: modeloId,
       confirmou_contato: dados.confirma_contato ?? false,
+      // QUAL regra autorizou um destino que já é cliente (#3900). O banco diz se
+      // o número é de um membro ativo da equipe; sem esta linha, "a pessoa
+      // confirmou" e "o número é da equipe, e por isso não vira interno" ficam
+      // indistinguíveis num log append-only — e a próxima pessoa não consegue
+      // responder por que uma atendente continuou chegando ao CRM.
+      autorizacao_do_destino: resultado.destino_e_de_membro
+        ? "membro_da_equipe"
+        : dados.confirma_contato
+          ? "confirmacao_explicita"
+          : "sem_confirmacao",
+      // O MODO é o que muda o desenho do aviso depois desta entrega, e o log é
+      // append-only: sem ele não há como datar a troca de "número fixo" para
+      // "responsável" numa auditoria. CONTAGEM, nunca os números: telefone de
+      // funcionário no `api_audit_log` fica para sempre.
+      destino_modo: dados.destino_modo,
+      // Só quem RECEBEU número: chave ausente não grava nada (#3935), e `""`
+      // grava nulo — contar os dois diria um número que o banco não tem.
+      membros_com_whatsapp: (dados.responsaveis ?? []).filter(
+        (r) => typeof r.whatsapp === "string" && r.whatsapp !== "",
+      ).length,
     },
   });
 
@@ -220,6 +420,98 @@ export async function PUT(req: NextRequest): Promise<Response> {
   const estado = await lerEstadoDaTelaDeAviso({
     db,
     admin: createAdminClient(),
+    organizationId: authz.org.orgId,
+    urlPublica: env.NEXT_PUBLIC_APP_URL,
+  });
+  return ok(estado, { requestId });
+}
+
+/**
+ * `DELETE` — a REMOÇÃO do destinatário. Ver o cabeçalho do arquivo.
+ *
+ * Devolve o estado recalculado, como o `PUT`: quem clica em "remover" precisa
+ * ver a tela sem configuração, e não um `{ ok: true }` para a tela adivinhar.
+ */
+export async function DELETE(_req: NextRequest): Promise<Response> {
+  // PRIMEIRO passo, como no PUT. O acompanhamento somente-leitura não remove a
+  // configuração de ninguém, e esta guarda é o que fecha a porta de suporte do
+  // client de serviço usado logo abaixo.
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
+  const requestId = randomUUID();
+  const authz = await requireRole("admin", { requestId, resource: "config_aviso_de_caso" });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  // A MESMA régua que o RPC cobra (`fn_session_mfa_proven`, via `mfaEmDivida`):
+  // quem tem fator cadastrado prova o código também para REMOVER. Sem isto a
+  // remoção seria a porta dos fundos da configuração — a ação que desfaz o que
+  // só uma sessão provada podia fazer.
+  if (await mfaEmDivida()) {
+    return fail("mfa_required", t("Confirme a verificação em duas etapas."), 403, { requestId });
+  }
+
+  // `select` depois do `delete`: sem ele o PostgREST não devolve a linha
+  // removida, e o rastro de auditoria perderia o número mascarado — que é o que
+  // responde "quem removeu qual destinatário". O `eq` do `organization_id` é a
+  // fronteira entre tenants aqui: a tabela é `revoke all` para `authenticated`,
+  // então quem escreve é este client de serviço, com o papel já conferido.
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("config_aviso_de_caso" as never)
+    .delete()
+    .eq("organization_id" as never, authz.org.orgId)
+    .select("telefone_destino, ligado, resposta_whatsapp_habilitada");
+
+  if (error) {
+    return fail("internal_error", t("Não foi possível remover o destinatário."), 500, {
+      requestId,
+    });
+  }
+
+  const removida =
+    (
+      (data ?? []) as Array<{
+        telefone_destino?: string | null;
+        ligado?: boolean | null;
+        resposta_whatsapp_habilitada?: boolean | null;
+      }>
+    )[0] ?? null;
+
+  // ⚠️ O memo de 30 s da regra ainda guarda a configuração ANTIGA, e é ele que
+  // responde ao ingestor a cada mensagem recebida: sem esta linha, o número
+  // removido continuaria sendo cortado até o memo expirar. Vale para ESTE
+  // processo; nos outros (o worker que recebe o webhook), quem responde é o TTL.
+  limparCacheDoNumeroInterno();
+
+  // Linha nenhuma removida não é mutação, e sem mutação não há o que auditar —
+  // a mesma régua da inscrição de push que já não existia. Chega aqui com a
+  // tela aberta em duas abas, e a resposta certa é o estado, não um erro.
+  if (removida) {
+    void audit({
+      action: "ai.case_alert_settings_removed",
+      organizationId: authz.org.orgId,
+      actorUserId: authz.user.id,
+      resourceType: "config_aviso_de_caso",
+      resourceId: authz.org.orgId,
+      metadata: {
+        // Mascarado pela MESMA razão do PUT: `api_audit_log` é append-only e a
+        // cascata de LGPD não o alcança.
+        destino_mascarado: mascara(removida.telefone_destino ?? ""),
+        // A decisão de pausa COMO ELA ESTAVA, e só isso: este handler não
+        // escreve `ligado` em lugar nenhum, então este campo é o registro do
+        // que havia — não um valor que a remoção tenha passado a valer.
+        antes_ligado: Boolean(removida.ligado),
+        resposta_whatsapp_habilitada: Boolean(removida.resposta_whatsapp_habilitada),
+      },
+    });
+  }
+
+  const db = await createClient();
+  const estado = await lerEstadoDaTelaDeAviso({
+    db,
+    admin,
     organizationId: authz.org.orgId,
     urlPublica: env.NEXT_PUBLIC_APP_URL,
   });

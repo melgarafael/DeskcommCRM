@@ -20,6 +20,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { compararSkill, type ComparativoEntrada } from "@/lib/ai/skills/comparativo";
 import { temPonteiroCanonico } from "@/lib/ai/skills/ponteiro-canonico";
 import { temVersaoNovaNoCatalogo } from "@/lib/ai/skills/versao-nova-catalogo";
+import { agentesComListaPropria } from "@/lib/ai/skills/skills-do-agente";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -37,7 +38,7 @@ interface VersionRow {
   id: string;
   description: string;
   body: string;
-  matcher: { any_keywords: string[]; probe_keywords?: string[] };
+  matcher: { any_keywords: string[]; probe_keywords?: string[]; any_tags?: string[] };
   forked_from_version_id: string | null;
 }
 
@@ -142,5 +143,16 @@ export async function GET(_req: NextRequest): Promise<Response> {
     .filter((p) => !installedNames.has(p.name))
     .map((p) => ({ name: p.name, description: versionById.get(p.version_id)?.description ?? "" }));
 
-  return ok({ installed, catalog }, { requestId });
+  // Quem NÃO recebe uma skill instalada agora (skills por agente, 9107): a tela
+  // nomeia esses agentes no aviso de instalação em vez de dizer que vale para todos.
+  let agentes_com_lista_propria: Awaited<ReturnType<typeof agentesComListaPropria>>;
+  try {
+    agentes_com_lista_propria = await agentesComListaPropria(admin, org.orgId);
+  } catch {
+    return fail("internal_error", t("Erro ao carregar os agentes com lista própria de skills."), 500, {
+      requestId,
+    });
+  }
+
+  return ok({ installed, catalog, agentes_com_lista_propria }, { requestId });
 }

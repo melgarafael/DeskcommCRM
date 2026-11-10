@@ -10,20 +10,35 @@ Conserto estrutural: migration `0237_guarda_contra_replay_do_gateway`.
 - `psql` pelo pooler responde em milissegundos. O banco não é o problema.
 - `curl "$SUPABASE_URL/rest/v1/<qualquer tabela>"` → 503 com o mesmo `PGRST002`.
 
+## Antes de rodar — a pasta e o `psql`
+
+Tudo abaixo roda **na VPS, por SSH**, de dentro da pasta da instalação, e o
+`psql` é o do contêiner: a VPS instalada pelo kit não traz cliente de Postgres
+no host. Rode este bloco uma vez na sessão e os comandos seguintes funcionam
+copiando e colando. O porquê de cada linha está em
+[`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
+
+```bash
+P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
+if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
+psql_vps() { bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && psql_run "$@"' _ "$@"; }
+psql_vps -c 'select 1'   # tem de responder 1
+```
+
 ## Diagnóstico (cada linha é comando, não afirmação)
 
 Rollbacks por segundo — a assinatura do replay é "milhares por segundo com o app ocioso":
 
 ```bash
-psql "$SUPABASE_DB_URL" -Atc "select xact_rollback, xact_commit from pg_stat_database where datname=current_database()"
+psql_vps -Atc "select xact_rollback, xact_commit from pg_stat_database where datname=current_database()"
 sleep 10
-psql "$SUPABASE_DB_URL" -Atc "select xact_rollback from pg_stat_database where datname=current_database()"
+psql_vps -Atc "select xact_rollback from pg_stat_database where datname=current_database()"
 ```
 
 Quem está abortando (medido: só `fn_followup_patch` e `fn_google_appointment`, ambas terminando em `40001`):
 
 ```bash
-psql "$SUPABASE_DB_URL" -Atc "select state, left(query,120) from pg_stat_activity where usename='authenticator' and state<>'idle'"
+psql_vps -Atc "select state, left(query,120) from pg_stat_activity where usename='authenticator' and state<>'idle'"
 ```
 
 Prova de que a VPS NÃO é a origem (57 pacotes na porta 443 em 14 s contra 31.839 rollbacks):
@@ -57,14 +72,60 @@ O hook `pgrst.db_pre_request = public.fn_pgrst_recusar_replay_do_gateway` respon
 cujo `sb-request-id` tem mais de 5 minutos. 4xx não é reexecutado. Conferir que está registrado:
 
 ```bash
-psql "$SUPABASE_DB_URL" -Atc "select rolconfig from pg_roles where rolname='authenticator'"   # contém pgrst.db_pre_request=...
-psql "$SUPABASE_DB_URL" -Atc "select sum(calls) from pg_stat_statements s join pg_roles r on r.oid=s.userid where r.rolname='authenticator' and query ilike '%fn_pgrst_recusar_replay_do_gateway%'"  # cresce a cada requisição
+psql_vps -Atc "select rolconfig from pg_roles where rolname='authenticator'"   # contém pgrst.db_pre_request=...
+psql_vps -Atc "select sum(calls) from pg_stat_statements s join pg_roles r on r.oid=s.userid where r.rolname='authenticator' and query ilike '%fn_pgrst_recusar_replay_do_gateway%'"  # cresce a cada requisição
 ```
 
 **Instalar o hook NO MEIO da tempestade não basta:** o `NOTIFY pgrst, 'reload config'` também precisa de uma conexão do
 pool, e o PostgREST não tenta de novo quando falha. O destravamento de emergência é chamar a guarda por dentro das
 funções que estão sendo reexecutadas (uma linha `perform public.fn_pgrst_recusar_replay_do_gateway();` logo após o
 `begin`), esperar os rollbacks zerarem, mandar o `NOTIFY` de novo e RESTAURAR os corpos originais com `diff` vazio.
+
+## Outro ramo: falta de memória/IO (NÃO é replay do gateway)
+
+O sintoma é o mesmo 503 `PGRST002`, o mecanismo é outro — e trocar o diagnóstico aqui faz perder horas. Antes de
+suspeitar do replay, confirme que **o hook está registrado e o pool está vazio**; se estiver, este é o outro ramo.
+
+Medido numa instalação em Supabase **free, compute Nano (0,5 GB)** em 29/10: 100% das chamadas `/rest/v1` em 522 por
+~6 h, sem ninguém usando, e só voltou com *Restart project* manual.
+
+**Como o cache se perde sem ninguém pedir nada.** A Nano entra em swap (o painel mostrou ~480–600 MB e commitment de
+1,49 GB na véspera) e consome o *Disk IO Budget* (saldo 58%; esgotado = 5 MB/s). Com o disco lento, tudo passa do
+`statement_timeout=8s` do papel `authenticator` — inclusive a **introspecção do schema cache** do PostgREST
+(`WITH -- Recursively get the base types of domains …`), que com o banco saudável leva ~722 ms neste schema
+(213 tabelas, 584 funções, 684 policies, 759 índices, 222 triggers). Sem cache, toda requisição vira `PGRST002`, o
+PostgREST tenta de novo, a introspecção estoura de novo — e fica nesse laço por horas.
+
+**Diagnóstico (cada passo é um comando ou um caminho exato no painel, não uma afirmação):**
+
+1. **A introspecção estourou o teto?** É o sinal mais direto deste ramo, e ele **não** se lê pelo `psql`:
+   `postgres_logs` é uma fonte do *Logs Explorer* do painel, não uma tabela do banco (pelo `psql` dá
+   `relation "postgres_logs" does not exist`). No painel: **Logs → Logs Explorer**, e rode:
+
+   ```sql
+   select timestamp, event_message from postgres_logs
+   where regexp_contains(event_message, 'base types of domains')
+     and regexp_contains(event_message, 'statement timeout')
+   order by timestamp desc limit 20
+   ```
+
+   **Zero linhas não descarta este ramo.** Esta sonda não foi medida contra um projeto no laço: no `postgres_logs`,
+   o texto da consulta pode vir em outro campo (o `metadata`), e não na linha
+   `canceling statement due to statement timeout`. Se der zero, rode de novo casando só
+   `regexp_contains(event_message, 'statement timeout')` e abra o `metadata` das linhas na janela da queda para ver
+   qual consulta foi cancelada.
+
+2. **O hook do replay está mesmo registrado?** Se está, este NÃO é o ramo do replay:
+
+   ```bash
+   psql_vps -Atc "select rolconfig from pg_roles where rolname='authenticator'"
+   ```
+
+3. **O disco está no limite?** No painel: **Project Settings → Infrastructure → Disk IO Budget**.
+
+**Conserto:** *Restart project* no painel do Supabase (é o único caminho que devolve o cache sem esperar a janela de
+IO). Se o projeto voltar a cair parado, o compute é o gargalo: ver `supabase-compute-insuficiente-free.md` para o que
+medir antes de subir da Nano.
 
 ## Follow-up (não feito aqui)
 

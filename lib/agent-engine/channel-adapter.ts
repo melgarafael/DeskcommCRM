@@ -1,5 +1,10 @@
+import type { FormatoDaVoz } from '@/lib/ai/voz/formato';
 import type { AgentOperationContext } from '@/lib/ai/agents/operation';
 import type { JobClaim } from './queue/claim';
+// Tipo SÓ (erased no build): o vocabulário de mídia do passo automático vem da
+// régua única (`lib/messaging/media/midia-com-legenda.ts`) — e é `import type`
+// para este contrato continuar puro, sem dependência de runtime.
+import type { TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
 /**
  * Contrato agnóstico de canal (F2-25; blueprint risco nº 1 + veredito executivo).
  *
@@ -39,18 +44,36 @@ export interface ChannelSendInput {
     language: string;
     /** Valor por slot, chaveado por `slotKey` — a mesma chave da tela. */
     values: Record<string, string>;
-  };  /**
+  };
+  /**
+   * Presente = este envio é uma NOTA DE VOZ (Fase 6b do plano de voz,
+   * `docs/superpowers/plans/2026-10-29-voz-elevenlabs.md`), não texto.
+   *
+   * Opcional pela MESMA razão do `template` acima: um adapter que ignore o
+   * campo manda `body` como texto — degrada, não quebra. Hoje só o adapter
+   * WAHA-via-CRM o lê (repassa direto a `SendMessageInput.voz`, mesmo shape).
+   */
+  voz?: {
+    textoOriginal: string;
+    apiKey: string;
+    voiceId: string;
+    modelId?: string;
+    /** mp3 (canal que converte) ou ogg/opus (canal oficial) — `lib/ai/voz/formato.ts`. */
+    formato?: FormatoDaVoz;
+    upload: (audio: Buffer, mimeType: string) => Promise<string>;
+  };
+  /**
    * Presente = este envio é uma MÍDIA e o `body` é a legenda (pode ser vazio).
    *
-   * Duas procedências, um caminho só: `storagePath` é a imagem que já mora no
+   * Duas procedências, um caminho só: `storagePath` é a imagem ou o áudio que já mora no
    * Storage da conversa (hoje só a foto do catálogo usa — `agent/fotos-do-produto.ts`);
    * `url` é a mídia de um passo automático (#2734), apontada direto pelo operador.
    * Caminho, nunca bytes: quem assina a URL curta para o canal é o handler de
    * mensagens, como em toda mídia — e é ele que confere a URL antes de buscar.
    */
   media?:
-    | { storagePath: string; mime: string }
-    | { url: string; mime: string; type: 'image' | 'document' };
+    | { kind?: 'audio' | 'image'; storagePath: string; mime: string }
+    | { url: string; mime: string; type: TipoDeMidiaComLegenda };
 }
 
 /**

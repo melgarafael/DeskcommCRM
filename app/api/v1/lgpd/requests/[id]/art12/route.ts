@@ -215,7 +215,7 @@ export async function POST(
   const prazo = prazoDeUmMes(recebidoEm);
   // O perfil já foi lido na guarda do país, no alto desta rota: UMA leitura só,
   // e é ela que decide o idioma e a lei do aviso.
-  const marca = await marcaDaSaida(orgId);
+  const marca = await marcaDaSaida(orgId, { semMemo: true });
 
   try {
     await sendAvisoArt12(

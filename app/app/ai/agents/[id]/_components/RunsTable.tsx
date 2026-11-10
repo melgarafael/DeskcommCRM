@@ -80,8 +80,8 @@ export function RunsTable({ agentId, active }: Props) {
       ) : null}
 
       <div className="rounded-md border border-border/60">
-        <Table>
-          <TableHeader>
+        <Table className="max-md:block">
+          <TableHeader className="max-md:hidden">
             <TableRow>
               <TableHead className="w-[170px]">{t("Início")}</TableHead>
               <TableHead>{t("Status")}</TableHead>
@@ -93,10 +93,10 @@ export function RunsTable({ agentId, active }: Props) {
               <TableHead className="text-right">{t("Ações")}</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="max-md:block">
             {rows.length === 0 && !isLoading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
+              <TableRow className="max-md:block">
+                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground max-md:block">
                   {t("Nenhuma execução ainda.")}
                 </TableCell>
               </TableRow>
@@ -105,21 +105,21 @@ export function RunsTable({ agentId, active }: Props) {
             {rows.map((r) => (
               <TableRow
                 key={r.id}
-                className="cursor-pointer"
+                className="cursor-pointer max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-1 max-md:px-3 max-md:py-2"
                 onClick={() => {
                   setSelected(r);
                   setOpen(true);
                 }}
               >
-                <TableCell className="font-mono text-xs">
+                <TableCell className="font-mono text-xs max-md:basis-full max-md:p-0">
                   {new Date(r.started_at).toLocaleString()}
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-md:p-0">
                   <Badge variant={STATUS_VARIANT[r.status] ?? "outline"} className="text-xs">
                     {r.status}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-xs">
+                <TableCell className="text-xs max-md:hidden">
                   {r.is_dry_run ? (
                     <Badge variant="outline" className="text-xs">
                       {t("teste")}
@@ -128,14 +128,18 @@ export function RunsTable({ agentId, active }: Props) {
                     <span className="text-muted-foreground">{t("produção")}</span>
                   )}
                 </TableCell>
-                <TableCell className="font-mono text-xs">
+                <TableCell className="font-mono text-xs max-md:hidden">
                   {(r.tokens_in ?? 0).toLocaleString()} /{" "}
                   {(r.tokens_out ?? 0).toLocaleString()}
                 </TableCell>
-                <TableCell className="font-mono text-xs">{fmtCost(r.cost_cents)}</TableCell>
-                <TableCell className="font-mono text-xs">{fmtLatency(r.latency_ms)}</TableCell>
-                <TableCell className="font-mono text-xs">{r.steps_count ?? 0}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="font-mono text-xs max-md:p-0 max-md:before:mr-1 max-md:before:font-sans max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]" data-rotulo={t("Custo")}>
+                  {fmtCost(r.cost_cents)}
+                </TableCell>
+                <TableCell className="font-mono text-xs max-md:p-0 max-md:before:mr-1 max-md:before:font-sans max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]" data-rotulo={t("Latência")}>
+                  {fmtLatency(r.latency_ms)}
+                </TableCell>
+                <TableCell className="font-mono text-xs max-md:hidden">{r.steps_count ?? 0}</TableCell>
+                <TableCell className="text-right max-md:ml-auto max-md:p-0">
                   <Button
                     variant="ghost"
                     size="sm"

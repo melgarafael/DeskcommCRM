@@ -76,6 +76,18 @@ const CONFIG = {
   provider: null as string | null,
   /** #2734 — `conversations.last_inbound_at` (ISO), para a janela de 24 h. */
   ultimoInbound: null as string | null,
+  /** #2877 — `org_guardrail_layers.restricao_comercial`; `"falha"` = a leitura estoura. */
+  camadaComercial: false as boolean | "falha",
+  /**
+   * #3974 — a opção por fluxo "enviar mesmo com a conversa atribuída": o flag
+   * gravado no pointer e o estado do comando (contato + conversas). O padrão é
+   * `ligada: false`, que é o caminho de quem não usa a opção.
+   */
+  opcaoComDono: {
+    ligada: false,
+    contato: null as Record<string, unknown> | null,
+    conversas: [] as Record<string, unknown>[],
+  },
 };
 
 function reiniciarConfig() {
@@ -95,6 +107,9 @@ function reiniciarConfig() {
   CONFIG.ritmo = { ultimoEnvioIso: null, doDia: 0 };
   CONFIG.provider = null;
   CONFIG.ultimoInbound = null;
+  CONFIG.camadaComercial = false;
+  CONFIG.opcaoComDono = { ligada: false, contato: null, conversas: [] };
+  JOB.payload.fixed_body = "Oi, tudo bem?";
   delete (JOB.payload as Record<string, unknown>).fixed_media_url;
 }
 
@@ -139,7 +154,11 @@ function admin(revogado = false, falhaDeLeitura: Error | null = null) {
       maybeSingle: () => {
         if (table === "job_queue" && chain._upd) return Promise.resolve({ data: { id: JOB.id, locked_by:chain._upd.locked_by, locked_at:chain._upd.locked_at }, error: null });
         if (table === "followup_enrollments")
-          return Promise.resolve({ data: { current_node_id: "node-1",status:"active",revision:1,agent_id:"ag-1" }, error: null });
+          return Promise.resolve({ data: { current_node_id: "node-1",status:"active",revision:1,agent_id:"ag-1", pointer_id: "ptr-1" }, error: null });
+        // #3974 — a opção por fluxo e o estado do comando (contato + conversas).
+        if (table === "followup_flow_pointers")
+          return Promise.resolve({ data: { send_when_assigned: CONFIG.opcaoComDono.ligada }, error: null });
+        if (table === "contacts") return Promise.resolve({ data: CONFIG.opcaoComDono.contato, error: null });
         if (table === "conversations") return Promise.resolve({ data: { channel_session_id: CONFIG.sessao, last_inbound_at: CONFIG.ultimoInbound }, error: null });
         if (table === "channel_sessions") return Promise.resolve({ data: CONFIG.provider ? { provider: CONFIG.provider } : null, error: null });
         if (table === "channel_knobs") return Promise.resolve({ data: CONFIG.knobs, error: null });
@@ -148,6 +167,10 @@ function admin(revogado = false, falhaDeLeitura: Error | null = null) {
             data: CONFIG.ritmo.ultimoEnvioIso ? { sent_at: CONFIG.ritmo.ultimoEnvioIso } : null,
             error: null,
           });
+        if (table === "org_guardrail_layers")
+          return Promise.resolve(CONFIG.camadaComercial === "falha"
+            ? { data: null, error: { message: "offline" } }
+            : { data: { enabled: CONFIG.camadaComercial }, error: null });
         if (table === "organizations") return Promise.resolve({ data: { timezone: CONFIG.fuso }, error: null });
         if (table === "ai_agents") return Promise.resolve({ data: { published_version_id: "v1" }, error: null });
         if (table === "ai_agent_versions") return Promise.resolve({ data: { followup: CONFIG.followup }, error: null });
@@ -156,6 +179,10 @@ function admin(revogado = false, falhaDeLeitura: Error | null = null) {
       then: (r: (v: unknown) => unknown) => {
         if (table === "job_queue" && !chain._upd) {
           return Promise.resolve({ data: [JOB], error: null }).then(r);
+        }
+        // #3974 — as conversas do contato para a régua da posse.
+        if (table === "conversations") {
+          return Promise.resolve({ data: CONFIG.opcaoComDono.conversas, error: null }).then(r);
         }
         // A contagem do dia é `head: true`: volta `count`, nunca linha.
         if (table === "pacing_ledger") {
@@ -326,6 +353,26 @@ describe("enviarTextoFixoPendente · janela de disparo (#2658)", () => {
     expect(statusUpdates).not.toContain("done");
   });
 
+  // #3974 — a opção libera a POSSE da conversa, não o relógio: liberado o veto
+  // do dono, o passo ainda passa pela janela do canal.
+  it("opção 'enviar com a conversa atribuída' ligada + conversa com dono + 03h → adia para a abertura, não envia", async () => {
+    configurarJanelaReal();
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [{ assigned_to_user_id: "user-1", bot_silenced_until: "infinity", status: "open" }];
+
+    const enviados = await comRelogoEm("2026-10-08T04:00:00Z", () => enviarTextoFixoPendente(admin()));
+
+    expect(enviados).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment.mock.calls[0]![4]).toEqual({
+      kind: "deferred",
+      until: new Date("2026-10-08T11:00:00Z"),
+      reason: "outside_window",
+    });
+  });
+
   it("canal aberto mas SÁBADO (faixa seg–sex) → adia para segunda, motivo da faixa", async () => {
     configurarJanelaReal();
     decidir.mockResolvedValue({ permite: true, motivo: "autorizado" });
@@ -401,6 +448,21 @@ describe("enviarTextoFixoPendente · ritmo do canal", () => {
     // sozinho na liberação.
     expect(settleCalls.at(-1)!.p_done).toBe(false);
     expect(statusUpdates).toContain("pending");
+    expect(ledgerInserts).toHaveLength(0);
+  });
+
+  it("opção 'enviar com a conversa atribuída' ligada + conversa com dono: o ritmo continua valendo (#3974)", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [{ assigned_to_user_id: "user-1", bot_silenced_until: "infinity", status: "open" }];
+    CONFIG.ritmo.ultimoEnvioIso = "2026-10-15T15:00:00.000Z";
+
+    const enviados = await comRelogoEm("2026-10-15T15:00:00.200Z", () => enviarTextoFixoPendente(admin()));
+
+    expect(enviados).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment.mock.calls[0]![4]).toMatchObject({ kind: "deferred", reason: "pacing_throttle" });
     expect(ledgerInserts).toHaveLength(0);
   });
 
@@ -551,9 +613,9 @@ describe("enviarTextoFixoPendente · mídia com legenda (#2734)", () => {
     });
   });
 
-  it(".docx: recusado com o motivo, nada sai, e o passo volta como `skipped`", async () => {
+  it("URL sem tipo identificável: recusada com o motivo, nada sai, e o passo volta como `skipped`", async () => {
     decidir.mockResolvedValue({ permite: true });
-    comMidia("https://cdn.exemplo.com/contrato.docx");
+    comMidia("https://cdn.exemplo.com/arquivo-sem-tipo");
 
     expect(await enviarTextoFixoPendente(admin())).toBe(0);
     expect(sendMessageHandler).not.toHaveBeenCalled();
@@ -594,5 +656,156 @@ describe("enviarTextoFixoPendente · mídia com legenda (#2734)", () => {
 
     expect(await enviarTextoFixoPendente(admin())).toBe(1);
     expect(sendMessageHandler.mock.calls[0]![2]).toMatchObject({ type: "text", body: "Oi, tudo bem?" });
+  });
+});
+
+// #2877 / #3270 — o atalho inline manda o mesmo `fixed_body` que o worker manda
+// pela cadeia; sem a régua aqui, quem pegasse o job primeiro entregava o preço.
+describe("enviarTextoFixoPendente · restrição comercial", () => {
+  beforeEach(() => {
+    decidir.mockResolvedValue({ permite: true, motivo: "autorizado", bloqueioPorAllowlist: false });
+    JOB.payload.fixed_body = "Consigo fazer por 1.800 se fechar hoje";
+  });
+
+  it("camada ligada → o preço NÃO sai, passo skipped e job done", async () => {
+    CONFIG.camadaComercial = true;
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment).toHaveBeenCalledWith(
+      expect.anything(), "org-1", "enr-1", "node-1",
+      { kind: "skipped", reason: "O envio foi recusado pelas regras do atendimento." },
+      undefined, "job-1", expect.anything(),
+    );
+    expect(settleCalls).toEqual([expect.objectContaining({ p_done: true, p_error: "commercial_requires_human", p_retry_at: null })]);
+  });
+
+  it("camada desligada → sai normalmente", async () => {
+    CONFIG.camadaComercial = false;
+    expect(await enviarTextoFixoPendente(admin())).toBe(1);
+    expect(sendMessageHandler).toHaveBeenCalledOnce();
+  });
+
+  it("leitura da camada falha → NÃO sai (falha fechada)", async () => {
+    CONFIG.camadaComercial = "falha";
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("corpo sem cara de preço sai mesmo com a camada ligada", async () => {
+    CONFIG.camadaComercial = true;
+    JOB.payload.fixed_body = "Oi, tudo bem?";
+    expect(await enviarTextoFixoPendente(admin())).toBe(1);
+  });
+});
+
+describe("enviarTextoFixoPendente · opção 'enviar com a conversa atribuída' (#3974)", () => {
+  const conversaComDono = { assigned_to_user_id: "user-1", bot_silenced_until: "infinity", status: "open" };
+  const conversaComDonoVencida = { assigned_to_user_id: "user-1", bot_silenced_until: null, status: "open" };
+
+  it("RED literal: fluxo SEM a opção + conversa com dono → NÃO envia e o job é encerrado", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = false;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [conversaComDono];
+
+    const enviados = await enviarTextoFixoPendente(admin());
+
+    expect(enviados).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment).not.toHaveBeenCalled();
+    expect(statusUpdates).toContain("done");
+  });
+
+  it("GREEN: fluxo COM a opção + conversa com dono → ENVIA e o turno conclui como enviado", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [conversaComDono];
+
+    const enviados = await enviarTextoFixoPendente(admin());
+
+    expect(enviados).toBe(1);
+    expect(sendMessageHandler).toHaveBeenCalledOnce();
+    expect(completeTurnForEnrollment).toHaveBeenCalledOnce();
+    // O registro deixa de ser "pulado": o passo fecha como enviado.
+    expect(completeTurnForEnrollment.mock.calls[0]![4]).toEqual({ kind: "sent" });
+    expect(statusUpdates).not.toContain("descartado");
+  });
+
+  it("opção ligada, mas a conversa com dono NÃO está silenciada (rodízio) → envia, como já era", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [conversaComDonoVencida];
+
+    expect(await enviarTextoFixoPendente(admin())).toBe(1);
+  });
+
+  it("opção ligada + force_human no contato → NÃO envia (a opção não vence o handoff)", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_silenciada", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: true, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [conversaComDono];
+
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("opção ligada + contato com opt-out de IA → NÃO envia", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_silenciada", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: true, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [conversaComDono];
+
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("opção ligada + contato bloqueado → NÃO envia", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_silenciada", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: true, tags: [] };
+    CONFIG.opcaoComDono.conversas = [conversaComDono];
+
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("opção ligada + etiqueta de contato interno → NÃO envia", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_silenciada", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = {
+      force_human: false,
+      ai_opt_out: false,
+      is_blocked: false,
+      tags: ["equipe"],
+      organizations: { settings: { crm: { internal_contact_tags: ["equipe"] } } },
+    };
+    CONFIG.opcaoComDono.conversas = [conversaComDono];
+
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("opção ligada + silêncio de 5 min SEM dono → NÃO envia (é alguém digitando, não posse)", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_silenciada", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [
+      conversaComDono,
+      { assigned_to_user_id: null, bot_silenced_until: new Date(Date.now() + 5 * 60_000).toISOString(), status: "open" },
+    ];
+
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("opção não se aplica a motivo que não é posse (sem_autorizacao) → NÃO envia", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "sem_autorizacao", bloqueioPorAllowlist: true });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [conversaComDono];
+
+    expect(await enviarTextoFixoPendente(admin())).toBe(0);
   });
 });

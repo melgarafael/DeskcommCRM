@@ -5,6 +5,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { BulkActionBar } from "@/components/kanban/BulkActionBar";
+import type { Pipeline, Stage } from "@/lib/kanban/types";
 
 /**
  * Tag em lote só oferecia "nova tag" (#852, item 3 da divisão). No funil, com
@@ -73,6 +74,22 @@ function renderBarra() {
     />,
   );
 }
+
+/**
+ * A LEITURA LEVE que o server component entrega (#3172, item 4 do CR): o funil
+ * e as etapas vivas, sem negócio nenhum. A página passou a exigi-la — quem abre
+ * direto na Lista não tem quadro para tirar etapa, e sem ela o botão de criar
+ * negócio ficaria apagado.
+ */
+const FUNIL_LEVE = {
+  id: "p-1",
+  name: "Funil",
+  vocabulary: null,
+  settings: {},
+} as unknown as Pipeline;
+const ETAPAS = [
+  { id: "e-1", name: "Prospecção", position: 0, is_won: false, is_lost: false },
+] as unknown as Stage[];
 
 beforeEach(() => mutate.mockReset());
 
@@ -147,7 +164,16 @@ describe("BulkActionBar — tag em lote", () => {
 describe("a página do funil ENTREGA as tags do quadro à barra", () => {
   it("as tags dos leads do quadro chegam ao menu de tag em lote", async () => {
     const { PipelinePageClient } = await import("@/app/app/pipelines/[id]/_client");
-    render(<PipelinePageClient pipelineId="p-1" initialName="Funil" role="admin" funis={[]} />);
+    render(
+      <PipelinePageClient
+        pipelineId="p-1"
+        initialName="Funil"
+        role="admin"
+        funis={[]}
+        funilInicial={FUNIL_LEVE}
+        etapasIniciais={ETAPAS}
+      />,
+    );
 
     await userEvent.click(await screen.findByRole("button", { name: /tag/i }));
     expect(await screen.findByRole("menuitem", { name: "google" })).toBeTruthy();

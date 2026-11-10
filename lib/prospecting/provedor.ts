@@ -34,9 +34,13 @@
  * coluna, mesmo endereçamento, mesma cifra. Ela NÃO está presa a um provedor:
  * a escolha mora em `organizations.settings` e a chave em `prospecting_settings`,
  * e nada liga uma à outra. Trocar a escolha sem regravar a chave mandaria a
- * chave antiga ao provedor novo. Hoje só a Apify é escolhível em produção; a
- * fatia que trouxer um provedor real precisa prender a chave ao provedor dela
- * (#2174).
+ * chave antiga ao provedor novo. Com o `local-http` da #2942 o catálogo de
+ * produção deixou de ser só a Apify — prender a chave ao provedor dela segue
+ * pendente (#2174). Até lá, o `scavio` confere o formato da chave ANTES da
+ * rede e recusa a de outro provedor, para a chave da Apify não sair para a
+ * Scavio. Exceção desta fatia: o `local-http` NÃO usa essa coluna
+ * (`exigeCredencialDaOrganizacao: false`) — a URL dele vem da instalação
+ * (`PROSPECTING_LOCAL_HTTP_URL`), nunca da organização.
  */
 import {
   ProspectingError,
@@ -44,7 +48,10 @@ import {
   readResults as readResultsDaApify,
   readSearch as readSearchDaApify,
   startSearch as startSearchDaApify,
+  type OpcoesDaBusca,
 } from "./provider";
+import { provedorLocalHttp, validarCredencialLocalHttp } from "./provedor-local-http";
+import { provedorScavio, validarCredencialScavio } from "./provedor-scavio";
 import { provedorDeTeste } from "./provedor-teste";
 import type { SearchInput } from "./schema";
 
@@ -63,7 +70,8 @@ export interface DadosDaExecucao {
  * de sempre, venham de onde vierem.
  */
 export interface ProvedorDeBusca {
-  startSearch(chave: string, input: SearchInput): Promise<DadosDaExecucao>;
+  /** `opcoes.idioma`: o da organização (`idioma.ts`). Provedor que não o usa, ignora. */
+  startSearch(chave: string, input: SearchInput, opcoes?: OpcoesDaBusca): Promise<DadosDaExecucao>;
   readSearch(chave: string, id: string): Promise<DadosDaExecucao>;
   readResults(chave: string, dataset: string, limit: number): Promise<Record<string, unknown>[]>;
 }
@@ -81,6 +89,14 @@ export interface ProvedorDeBusca {
 interface RegistroDoProvedor {
   provedor: ProvedorDeBusca;
   validarCredencial: (chave: string) => Promise<void>;
+  /**
+   * Esta escolha exige uma credencial SALVA por organização (`credential()`,
+   * `store.ts`)? `apify` e `teste` sim — a chave é da organização. O
+   * `local-http` da #2942 NÃO: a URL do engine vem da INSTALAÇÃO
+   * (`PROSPECTING_LOCAL_HTTP_URL`), nunca da organização, então não há segredo
+   * por organização para exigir.
+   */
+  exigeCredencialDaOrganizacao: boolean;
 }
 
 /** O default da issue: organização sem escolha nenhuma continua na Apify. */
@@ -96,6 +112,7 @@ const REGISTRO: Record<string, RegistroDoProvedor> = {
     validarCredencial: async (chave) => {
       await providerRequest(chave, "users/me");
     },
+    exigeCredencialDaOrganizacao: true,
   },
   teste: {
     provedor: provedorDeTeste,
@@ -104,6 +121,30 @@ const REGISTRO: Record<string, RegistroDoProvedor> = {
       if (!chave.trim())
         throw new ProspectingError("Informe a chave de busca do provedor de teste.");
     },
+    exigeCredencialDaOrganizacao: true,
+  },
+  /**
+   * #2942: o engine de scraping self-hosted, apontado pela INSTALAÇÃO
+   * (`PROSPECTING_LOCAL_HTTP_URL`) e não pela organização. A régua é o health
+   * check dele. Diferente de `teste`, ele NÃO é de ambiente: existe em
+   * produção, que é justamente quem precisa dele. E não exige credencial por
+   * organização — não há segredo por organização nesta fatia.
+   */
+  "local-http": {
+    provedor: provedorLocalHttp,
+    validarCredencial: validarCredencialLocalHttp,
+    exigeCredencialDaOrganizacao: false,
+  },
+  /**
+   * #1758, classe 1: a API da Scavio (Google Maps), com a chave DA ORGANIZAÇÃO
+   * na mesma coluna cifrada da Apify. A régua é `GET /api/v1/usage`, que não
+   * gasta crédito. Síncrona: a busca roda em `readResults` (F4) e os lugares
+   * saem nos nomes que `normalizeProspect()` já lê (F3).
+   */
+  scavio: {
+    provedor: provedorScavio,
+    validarCredencial: validarCredencialScavio,
+    exigeCredencialDaOrganizacao: true,
   },
 };
 
@@ -162,6 +203,18 @@ export async function provedorDaOrganizacao(
   organizacao: string,
 ): Promise<ProvedorDeBusca> {
   return registroDaEscolha(await escolha(banco, organizacao)).provedor;
+}
+
+/**
+ * A escolha desta organização exige uma credencial salva (`credential()`,
+ * `store.ts`)? `false` só para o `local-http` (#2942), cuja URL vem da
+ * INSTALAÇÃO. Sem escolha nenhuma, vale a Apify — que exige.
+ */
+export async function provedorExigeCredencialDaOrganizacao(
+  banco: FonteDeSettings,
+  organizacao: string,
+): Promise<boolean> {
+  return registroDaEscolha(await escolha(banco, organizacao)).exigeCredencialDaOrganizacao;
 }
 
 /** A régua de credencial do provedor escolhido — sem escolha, a Apify de sempre (`users/me`). */

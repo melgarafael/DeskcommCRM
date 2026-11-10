@@ -1,11 +1,11 @@
 /**
  * O caso parado volta a pedir passagem — e para de pedir na hora certa.
  *
- * O caso 4 é o que mais importa e o menos óbvio: a cobrança NÃO pode mexer em
- * `updated_at`. A consulta usa `updated_at` para saber se alguém encostou no
- * caso; se o próprio aviso o atualizasse, o watcher adiaria a si mesmo por mais
- * 24h a cada rodada — sabotagem silenciosa, que só apareceria como "a segunda
- * cobrança nunca chega".
+ * QUEM venceu é decidido no banco (`fn_casos_parados_para_lembrar`, migration
+ * 0766), e o que a conta faz com a cadência e o relógio por espera é medido no
+ * Postgres real em `tests/invariants/lembrete-de-caso-parado.test.ts`. Aqui
+ * fica o que a ROTA faz com cada linha vencida: o aviso, os dois contadores e o
+ * teto que vem da organização.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -21,31 +21,20 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 const hAtras = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
 
 interface Capturado {
-  filtros: Array<{ col: string; val: unknown; op: string }>;
+  rpc: Array<{ nome: string; args: unknown }>;
   avisos: Array<Record<string, unknown>>;
   updates: Array<Record<string, unknown>>;
 }
 
 function admin(casos: Array<Record<string, unknown>>, jaTemAviso: boolean, cap: Capturado) {
   return {
+    rpc: async (nome: string, args: unknown) => {
+      cap.rpc.push({ nome, args });
+      return { data: casos, error: null };
+    },
     from(tabela: string) {
       if (tabela === "agent_cases") {
         return {
-          select: () => {
-            const chain: Record<string, unknown> = {
-              eq: (col: string, val: unknown) => {
-                cap.filtros.push({ col, val, op: "eq" });
-                return chain;
-              },
-              lt: (col: string, val: unknown) => {
-                cap.filtros.push({ col, val, op: "lt" });
-                return chain;
-              },
-              order: () => chain,
-              limit: async () => ({ data: casos, error: null }),
-            };
-            return chain;
-          },
           update: (patch: Record<string, unknown>) => {
             cap.updates.push(patch);
             const c: Record<string, unknown> = { eq: () => c, then: (r: (v: unknown) => unknown) => Promise.resolve({ error: null }).then(r) };
@@ -100,7 +89,19 @@ function admin(casos: Array<Record<string, unknown>>, jaTemAviso: boolean, cap: 
   };
 }
 
-const vazio = (): Capturado => ({ filtros: [], avisos: [], updates: [] });
+const vazio = (): Capturado => ({ rpc: [], avisos: [], updates: [] });
+
+/** Uma linha como `fn_casos_parados_para_lembrar` a devolve. */
+const vencido = (over: Record<string, unknown> = {}) => ({
+  id: "c1",
+  organization_id: ORG,
+  title: "x",
+  opened_at: hAtras(50),
+  followup_attempts: 0,
+  cobrancas_na_espera: 0,
+  teto: 3,
+  ...over,
+});
 const req = () => new NextRequest("http://localhost/x", { headers: { authorization: "Bearer segredo" } });
 
 beforeEach(() => vi.clearAllMocks());
@@ -110,7 +111,7 @@ describe("case-stale-watcher", () => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(
       admin(
-        [{ id: "c1", organization_id: ORG, title: "Liberar acesso", opened_at: hAtras(50), updated_at: hAtras(50), followup_attempts: 0 }],
+        [vencido({ title: "Liberar acesso" })],
         false,
         cap,
       ) as never,
@@ -131,26 +132,23 @@ describe("case-stale-watcher", () => {
     expect(String(cap.avisos[0]!.title)).toContain("espera decisão");
   });
 
-  it("a consulta filtra por awaiting_human, pelo silêncio e pelo teto", async () => {
+  it("quem venceu vem da função do banco, com o limite da rodada", async () => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(admin([], false, cap) as never);
 
     const { POST } = await import("./route");
     await POST(req());
 
-    expect(cap.filtros).toContainEqual({ col: "status", val: "awaiting_human", op: "eq" });
-    // `updated_at`, não `opened_at`: qualquer mexida no caso conta como
-    // "alguém encostou", e cobrar por idade absoluta avisaria de novo sobre um
-    // caso que a equipe está tratando agora.
-    expect(cap.filtros.some((f) => f.col === "updated_at" && f.op === "lt")).toBe(true);
-    expect(cap.filtros.some((f) => f.col === "followup_attempts" && f.op === "lt")).toBe(true);
+    // A conta cruza o caso com a cadência da organização; um filtro montado
+    // aqui não a alcança, e um `limit` sem ela esconderia os vencidos.
+    expect(cap.rpc).toEqual([{ nome: "fn_casos_parados_para_lembrar", args: { p_limite: 200 } }]);
   });
 
   it("não abre um segundo aviso enquanto o primeiro está aberto", async () => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(
       admin(
-        [{ id: "c1", organization_id: ORG, title: "x", opened_at: hAtras(50), updated_at: hAtras(50), followup_attempts: 1 }],
+        [vencido({ followup_attempts: 1, cobrancas_na_espera: 1 })],
         true, // já existe aviso aberto
         cap,
       ) as never,
@@ -165,29 +163,30 @@ describe("case-stale-watcher", () => {
     expect(cap.updates).toHaveLength(0);
   });
 
-  it("⚠️ a cobrança NÃO mexe em updated_at — senão o watcher adia a si mesmo", async () => {
+  it("a cobrança sobe os DOIS contadores e não mexe no relógio nem no status", async () => {
     const cap = vazio();
+    // Caso que já foi cobrado 3 vezes numa espera ANTERIOR (followup_attempts=3)
+    // e voltou para a equipe: nesta espera ele ainda não recebeu nada.
     vi.mocked(createAdminClient).mockReturnValue(
-      admin(
-        [{ id: "c1", organization_id: ORG, title: "x", opened_at: hAtras(50), updated_at: hAtras(50), followup_attempts: 0 }],
-        false,
-        cap,
-      ) as never,
+      admin([vencido({ followup_attempts: 3, cobrancas_na_espera: 0 })], false, cap) as never,
     );
 
     const { POST } = await import("./route");
-    await POST(req());
+    const body = (await (await POST(req())).json()) as { data: Record<string, number> };
 
+    expect(body.data).toMatchObject({ avisados: 1 });
     expect(cap.updates).toHaveLength(1);
-    expect(cap.updates[0]).toEqual({ followup_attempts: 1 });
+    expect(cap.updates[0]).toEqual({ followup_attempts: 4, cobrancas_na_espera: 1 });
+    // Mexer em `status` dispararia o gatilho da espera e zeraria o relógio.
     expect(Object.keys(cap.updates[0]!)).not.toContain("updated_at");
+    expect(Object.keys(cap.updates[0]!)).not.toContain("status");
   });
 
   it("o último aviso diz que é o último", async () => {
     const cap = vazio();
     vi.mocked(createAdminClient).mockReturnValue(
       admin(
-        [{ id: "c1", organization_id: ORG, title: "x", opened_at: hAtras(80), updated_at: hAtras(30), followup_attempts: 2 }],
+        [vencido({ opened_at: hAtras(80), followup_attempts: 2, cobrancas_na_espera: 2 })],
         false,
         cap,
       ) as never,
@@ -197,7 +196,27 @@ describe("case-stale-watcher", () => {
     await POST(req());
 
     expect(String(cap.avisos[0]!.body)).toContain("último aviso");
-    expect(cap.updates[0]).toEqual({ followup_attempts: 3 });
+    expect(cap.updates[0]).toEqual({ followup_attempts: 3, cobrancas_na_espera: 3 });
+  });
+
+  it("o último é o do teto da ORGANIZAÇÃO, não o três fixo", async () => {
+    const cap = vazio();
+    vi.mocked(createAdminClient).mockReturnValue(
+      admin(
+        [
+          vencido({ id: "c1", cobrancas_na_espera: 2, teto: 5 }),
+          vencido({ id: "c2", cobrancas_na_espera: 0, teto: 1 }),
+        ],
+        false,
+        cap,
+      ) as never,
+    );
+
+    const { POST } = await import("./route");
+    await POST(req());
+
+    expect(String(cap.avisos[0]!.body)).not.toContain("último aviso");
+    expect(String(cap.avisos[1]!.body)).toContain("último aviso");
   });
 
   it("rodada sem ninguém a cobrar não audita", async () => {

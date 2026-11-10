@@ -36,7 +36,7 @@
  * estrutural na rota. Documentado no checkpoint.
  */
 import type { MappedLead } from "@/lib/webhooks/inbound";
-import { normalizePhoneBR } from "@/lib/webhooks/inbound";
+import { ehChaveDeAnuncio, normalizePhoneBR } from "@/lib/webhooks/inbound";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -170,7 +170,42 @@ export function mapRdStationPayload(payload: unknown): RdStationMapped {
     phone: normalizePhoneBR(phoneRaw),
     email,
     custom_fields,
-    source_metadata: {},
+    source_metadata: chavesDeAnuncio(lead, first, last),
     externalId,
   };
+}
+
+/**
+ * As chaves de anúncio do envelope do RD (issue #3149) — o clique com que a
+ * pessoa chegou, e não o que ela respondeu.
+ *
+ * ─── Onde o RD põe o `fbclid` ────────────────────────────────────────────────
+ *
+ * O envelope tem TRÊS lugares para um campo do formulário, e um formulário
+ * montado num anúncio pode entregar a chave em qualquer um deles: no item do
+ * lead (`leads[0].fbclid`), na conversão mais recente ou na primeira
+ * (`leads[0].last_conversion.content.fbclid`). Procurar num só perderia o
+ * clique de quem usa os outros dois, e a falha seria silenciosa — o lead entra
+ * sem atribuição e ninguém vê nada.
+ *
+ * A ordem é a da AUTORIDADE: `lead`, `first_conversion` e depois
+ * `last_conversion`, que sobrepõe os anteriores por ser a conversão mais
+ * recente. Mesma lista de chaves do caminho genérico (`CHAVES_DE_ANUNCIO`), e
+ * mesmo destino: `source_metadata`, de onde a rota estampa a atribuição do
+ * contato. Só as SETE chaves conhecidas entram — o resto do envelope continua
+ * saindo como sempre saiu.
+ */
+function chavesDeAnuncio(
+  ...origens: Array<Record<string, unknown>>
+): Record<string, string> {
+  const metadata: Record<string, string> = {};
+  for (const origem of origens) {
+    for (const [chave, bruto] of Object.entries(origem)) {
+      if (!ehChaveDeAnuncio(chave)) continue;
+      const valor =
+        str(bruto) ?? (typeof bruto === "number" ? String(bruto) : null);
+      if (valor !== null) metadata[chave.trim().toLowerCase()] = valor;
+    }
+  }
+  return metadata;
 }

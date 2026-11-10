@@ -1,7 +1,7 @@
 /**
  * Funções de escape para MySQL, em um só lugar para ser reutilizado por todas
- * as famílias de receitas (woocommerce hoje; acf-imoveis, jetengine-imoveis,
- * tabela-direta amanhã em R2/R3).
+ * as famílias de receitas (woocommerce e o conteúdo do WordPress hoje;
+ * jetengine-imoveis e tabela-direta depois, na R3).
  *
  * Nunca concatenar valor cru no SQL: identificadores vão por crase (com crase
  * interna dobrada) e valores de LIKE vão por placeholder `?` após escapar

@@ -44,6 +44,8 @@
  * PRÓPRIA do jsonb do banco — `{{lead.__proto__}}` não atravessa protótipo.
  */
 
+import { RESERVA_DA_VARIAVEL } from "@/lib/texto/reserva-da-variavel";
+
 import { horaNoFuso } from "./relogio";
 
 /** As variáveis que existem. Oferecer uma que não resolve é prometer dado que não há. */
@@ -74,11 +76,13 @@ export interface ValoresDoDestinatario {
 }
 
 /**
- * O token aceita ponto — `{{lead.gancho}}`. Só palavra e ponto: um caminho com
- * espaço ou símbolo não casa e vira literal, que é o destino de todo token que
- * este módulo não conhece.
+ * O token aceita ponto — `{{lead.gancho}}` — e, opcionalmente, um TEXTO DE
+ * RESERVA entre aspas: `{{primeiro_nome|"aluno"}}` (sintaxe em
+ * `lib/texto/reserva-da-variavel.ts`). Só palavra e ponto no caminho: um caminho
+ * com espaço ou símbolo não casa e vira literal, que é o destino de todo token
+ * que este módulo não conhece.
  */
-const TOKEN = /\{\{\s*([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*\}\}/g;
+const TOKEN = new RegExp(String.raw`\{\{\s*([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*${RESERVA_DA_VARIAVEL}\}\}`, "g");
 
 /**
  * Nomes que um jsonb pode trazer gravados e que NÃO são campo nenhum: são
@@ -104,22 +108,27 @@ export function renderizar(
   const faltando = new Set<string>();
   const desconhecidas = new Set<string>();
 
-  const texto = template.replace(TOKEN, (literal, bruto: string) => {
+  const texto = template.replace(TOKEN, (literal, bruto: string, reserva: string | undefined) => {
     const chave = bruto.toLowerCase();
+    // Sem o dado: a reserva, se quem escreveu deu uma; senão FALTA, como sempre.
+    // Só nas variáveis conhecidas — a desconhecida não ganha reserva (fica literal).
+    const faltou = (variavel: string) =>
+      reserva !== undefined ? reserva : marcarFalta(faltando, variavel, literal);
     switch (chave) {
       case "nome": {
-        if (nome === "") return marcarFalta(faltando, "nome", literal);
+        if (nome === "") return faltou("nome");
         return blindar(nome);
       }
       case "primeiro_nome": {
         const primeiro = nome.split(/\s+/)[0] ?? "";
-        if (primeiro === "") return marcarFalta(faltando, "primeiro_nome", literal);
+        if (primeiro === "") return faltou("primeiro_nome");
         return blindar(primeiro);
       }
       case "saudacao": {
         // Sem instante, a saudação fica literal: quem renderiza a PRÉVIA não
         // sabe a hora do envio, e cravar uma ali ensinaria o operador a esperar
-        // aquela. A prévia mostra `{{saudacao}}`; o envio resolve.
+        // aquela. A prévia mostra `{{saudacao}}`; o envio resolve. A reserva
+        // nunca é usada: saudação não falta.
         if (!quando) return literal;
         return saudacaoDaHora(quando.agora, quando.fuso);
       }
@@ -130,7 +139,7 @@ export function renderizar(
           const valor = lerCampo(mapa, nomeDoCampo(bruto));
           // Sem valor = FALTA, igual a `{{nome}}` sem nome: o literal fica
           // visível na prévia e quem chama tira a pessoa da lista.
-          if (valor === null) return marcarFalta(faltando, chave, literal);
+          if (valor === null) return faltou(chave);
           return blindar(valor);
         }
         desconhecidas.add(bruto);

@@ -37,7 +37,7 @@ export function AgentsListFilters({
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         className="w-full sm:w-64"
-        aria-label={t("Buscar agents")}
+        aria-label={t("Buscar agentes")}
       />
       <Select value={status} onValueChange={(v) => onStatusChange(v as StatusFilter)}>
         <SelectTrigger className="w-44" aria-label={t("Filtrar por status")}>

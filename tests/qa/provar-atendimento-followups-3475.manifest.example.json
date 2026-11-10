@@ -1,0 +1,151 @@
+{
+  "schema": 1,
+  "synthetic": true,
+  "environment_id": "qa-3475-substitua-pela-bancada-reservada",
+  "build": {
+    "sha": "0000000000000000000000000000000000000000",
+    "id": "SUBSTITUA_BUILD_ID"
+  },
+  "organization": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "slug": "qa-3475-substitua-fixture-exclusiva"
+  },
+  "users": {
+    "manager": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "email": "qa3475-manager@example.test",
+      "password_env": "QA_3475_MANAGER_PASSWORD"
+    },
+    "viewer": {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "email": "qa3475-viewer@example.test",
+      "password_env": "QA_3475_VIEWER_PASSWORD"
+    },
+    "other_tenant": {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "email": "qa3475-other@example.test",
+      "password_env": "QA_3475_OTHER_PASSWORD",
+      "organization_id": "00000000-0000-4000-8000-000000000005"
+    },
+    "admin": {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "email": "qa3475-admin@example.test",
+      "password_env": "QA_3475_ADMIN_PASSWORD"
+    }
+  },
+  "enrollments": {
+    "dossie_dormente": {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "contact_id": "00000000-0000-4000-8000-000000000110",
+      "contact_name": "QA3475 Dossiê Espera",
+      "conversation_id": "00000000-0000-4000-8000-000000000210"
+    },
+    "dossie_coletando": {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "contact_id": "00000000-0000-4000-8000-000000000111",
+      "contact_name": "QA3475 Dossiê Roteiro",
+      "conversation_id": "00000000-0000-4000-8000-000000000211"
+    },
+    "inbox_dormente": {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "contact_id": "00000000-0000-4000-8000-000000000112",
+      "contact_name": "QA3475 Inbox Espera",
+      "conversation_id": "00000000-0000-4000-8000-000000000212"
+    }
+  },
+  "human": {
+    "conversation_id": "00000000-0000-4000-8000-000000000030",
+    "pure_conversation_id": "00000000-0000-4000-8000-000000000031",
+    "user_id": "00000000-0000-4000-8000-000000000002",
+    "token_env": "QA_3475_TOKEN_ON_BEHALF",
+    "no_scope_token_env": "QA_3475_TOKEN_SEM_ESCOPO"
+  },
+  "signatures": {
+    "agent_id": "00000000-0000-4000-8000-000000000040",
+    "agent_name": "Agente QA3475",
+    "llm_mode": "byok",
+    "automation": {
+      "rule_id": "00000000-0000-4000-8000-000000000041",
+      "conversation_id": "00000000-0000-4000-8000-000000000042",
+      "event_type": "contact.tag_added",
+      "entity_type": "contact",
+      "entity_id": "00000000-0000-4000-8000-000000000043",
+      "payload": {
+        "contact_id": "00000000-0000-4000-8000-000000000043",
+        "tag": "qa3475-assinatura"
+      }
+    },
+    "prospecting": {
+      "campaign_id": "00000000-0000-4000-8000-000000000044",
+      "candidate_id": "00000000-0000-4000-8000-000000000045",
+      "config": {
+        "agent_id": "00000000-0000-4000-8000-000000000040",
+        "channel_session_id": "00000000-0000-4000-8000-000000000046",
+        "pipeline_id": "00000000-0000-4000-8000-000000000047",
+        "stage_id": "00000000-0000-4000-8000-000000000048",
+        "qualified_stage_id": "00000000-0000-4000-8000-000000000049",
+        "instruction": "Faça a abordagem sintética autorizada de teste.",
+        "qualification": "Qualifique somente o contato sintético desta prova.",
+        "ofertas": [
+          "site"
+        ],
+        "daily_limit": 10,
+        "interval_minutes": 5,
+        "legal_basis_ref": "bancada sintética autorizada QA3475",
+        "funnel_entry": "on_start"
+      }
+    }
+  },
+  "notices": {
+    "agent_id": "00000000-0000-4000-8000-000000000050",
+    "version_id": "00000000-0000-4000-8000-000000000051",
+    "keyword_regex": "orçamento",
+    "cases": [
+      {
+        "name": "recusada",
+        "conversation_id": "00000000-0000-4000-8000-000000000060",
+        "contact_id": "00000000-0000-4000-8000-000000000070",
+        "channel_session_id": "00000000-0000-4000-8000-000000000080",
+        "body": "Olá, bom dia",
+        "type": "text",
+        "expected_notice": true
+      },
+      {
+        "name": "aceita",
+        "conversation_id": "00000000-0000-4000-8000-000000000061",
+        "contact_id": "00000000-0000-4000-8000-000000000071",
+        "channel_session_id": "00000000-0000-4000-8000-000000000080",
+        "body": "Quero um orçamento",
+        "type": "text",
+        "expected_notice": false
+      },
+      {
+        "name": "midia_sem_texto",
+        "conversation_id": "00000000-0000-4000-8000-000000000062",
+        "contact_id": "00000000-0000-4000-8000-000000000072",
+        "channel_session_id": "00000000-0000-4000-8000-000000000080",
+        "body": null,
+        "type": "audio",
+        "expected_notice": true
+      },
+      {
+        "name": "ja_engajado",
+        "conversation_id": "00000000-0000-4000-8000-000000000063",
+        "contact_id": "00000000-0000-4000-8000-000000000073",
+        "channel_session_id": "00000000-0000-4000-8000-000000000080",
+        "body": "Sim, combinado",
+        "type": "text",
+        "expected_notice": false
+      }
+    ],
+    "push_transport": null
+  },
+  "ack": {
+    "conversation_id": "00000000-0000-4000-8000-000000000100",
+    "channel_session_id": "00000000-0000-4000-8000-000000000080",
+    "session_name": "qa3475-session",
+    "webhook_token_env": "QA_3475_WEBHOOK_PATH_TOKEN",
+    "hmac_secret_env": "QA_3475_WEBHOOK_HMAC_SECRET",
+    "other_tenant_message_id": "00000000-0000-4000-8000-000000000101"
+  }
+}

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: mocks.user,
   mfaEmDivida: mocks.debt,
+  mfaEmDividaEstrita: mocks.debt,
   sessionAal: mocks.aal,
 }));
 vi.mock("@/lib/logger", () => ({ logger: { error: mocks.log } }));

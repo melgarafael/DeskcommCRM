@@ -75,7 +75,7 @@ export function FollowupFlowPicker({ value, onChange, disabled }: Props) {
         );
       })}
       {value.length > 20 ? (
-        <p className="text-xs text-destructive">{t("Máximo de 20 fluxos por agent.")}</p>
+        <p className="text-xs text-destructive">{t("Máximo de 20 fluxos por agente.")}</p>
       ) : null}
     </fieldset>
   );

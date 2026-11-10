@@ -109,6 +109,16 @@ describe("escolherModeloDoProvedor", () => {
     ]);
     expect(escolha).toMatchObject({ escolhido: true, origem: "automatico" });
   });
+
+  it("NÃO escolhe a variante :batch, mesmo sendo a mais barata com ferramentas", () => {
+    // A variante em lote declara ferramentas e custa a metade do modelo base,
+    // mas devolve 404 no endpoint de chat: o agente publicado ficaria mudo.
+    const escolha = escolherModeloDoProvedor([
+      comTools("x", 10, 50),
+      comTools("x:batch", 5, 25),
+    ]);
+    expect(escolha).toEqual({ escolhido: true, modelId: "x", origem: "automatico" });
+  });
 });
 
 /**

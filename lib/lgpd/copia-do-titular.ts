@@ -93,10 +93,18 @@ export const O_QUE_FICA = {
   leads: "as oportunidades abertas para ele: título, estado e valor",
   honorarios_contratos: "o contrato de honorários dele (sem a divisão interna do escritório)",
   honorarios_parcelas: "as parcelas que ele paga",
+  cadencias_inscricoes: "as sequências de e-mail nas quais foi inscrito, autorização de abertura e descadastro",
+  cadencias_eventos: "os envios, aberturas e paradas registrados sobre ele, sem metadados internos do provedor",
+  lead_field_proposals:
+    "os campos que a IA leu num documento do negocio dele e propos para o card (o documento e os valores ficam no anexo)",
   orders: "os pedidos dele na loja",
   activities: "o que foi registrado sobre ele e quando",
   checkpoints: "o resumo que a máquina fez da conversa com ele (LGPD art. 20)",
+  mcp_pedidos_de_acesso: "os links de autorização gerados para ele acessar sistemas externos, e quando foram usados",
+  mcp_acessos: "os sistemas externos que ele autorizou o agente a acessar, com os escopos e as datas (nunca o token)",
   appointments: "os compromissos dele, com o link da reunião e a anotação que o PDF já imprime",
+  calendar_waitlist:
+    "a inscrição dele na lista de espera de encaixe: o serviço, as janelas que ele pediu, a urgência, a oferta que recebeu e a observação da recepção que a anonimização apaga (seção só do data.json, como `activities`)",
   sales: "as compras dele e por que foram canceladas ou estornadas",
   proposals: "as propostas comerciais enviadas a ele",
   tasks: "o que se combinou fazer para ele",
@@ -107,6 +115,8 @@ export const O_QUE_FICA = {
   voice_calls: "as chamadas de voz dele: número, duração e como terminaram",
   prospecting_candidates:
     "o dado público do negócio dele que originou a abordagem (origem dos dados, art. 19, II)",
+  meta_ctwa_click_dispatches:
+    "os cliques dele em anúncios que abriram uma conversa, quando foram recebidos e o resultado do envio à plataforma",
   cases:
     "que o atendimento dele parou e foi para a equipe: quando, por qual caminho e como terminou (o texto que a IA digitou ao abrir sai: `CAMPOS_DA_EQUIPE`)",
   case_events:
@@ -121,6 +131,7 @@ export const O_QUE_FICA = {
   group_messages_authored: "o que ele escreveu em grupos",
   conversation_drafts: "o texto escrito PARA ele por outro sistema",
   contact_field_proposals: "o dado dele que a IA ouviu na conversa e propôs gravar, e o que se decidiu",
+  lead_attachments: "os documentos anexados aos negócios dele: nome, tipo, tamanho e data (o arquivo não vai no relatório)",
   lead_notes: "a memória que a IA guarda sobre ele (LGPD art. 20)",
   ai_agent_runs:
     "o que a IA fez na conversa com ele e quando: o nome de cada ação, sem o que ela digitou (#1965, revisto no doc 110, 1A)",

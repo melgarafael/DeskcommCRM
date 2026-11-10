@@ -1,0 +1,1048 @@
+{
+  "id": "equipe",
+  "titulo": "Equipe",
+  "tela": "/app/team",
+  "resumo": "Quem trabalha no sistema, com qual papel, o que cada um vê no menu, como as conversas são divididas e o horário de cada atendente.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-equipe",
+      "titulo": "Conhecendo a tela Equipe",
+      "objetivo": "Achar a tela Equipe, entender a lista de membros e saber trocar o papel, tirar e devolver o acesso de alguém.",
+      "papel": "admin",
+      "busca": [
+        "equipe",
+        "membros",
+        "funcionários",
+        "quem tem acesso",
+        "papel do usuário",
+        "tirar acesso de funcionário",
+        "permissões"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a Equipe",
+          "texto": "A tela Equipe fica nas Configurações, no grupo \"Sua empresa\". É nela que você vê quem trabalha no sistema, com qual papel, e quantas conversas cada pessoa aguenta ao mesmo tempo. Para seguir, clique em \"Equipe\".",
+          "rota": "/app/settings",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/team']"
+              },
+              "rotulo": "Equipe",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/team']"
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Duas abas e o botão de convite",
+          "texto": "A tela tem duas abas. \"Membros\" lista as pessoas com acesso e os convites enviados. \"Atendimento\" mostra como as conversas são distribuídas e o horário de cada um. O botão \"Convidar membros\" chama gente nova; ele só aparece para quem é Administrador.",
+          "rota": "/app/team",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "Membros",
+                "exato": true
+              },
+              "rotulo": "Membros",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "Atendimento",
+                "exato": true
+              },
+              "rotulo": "Atendimento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Convidar membros",
+                "exato": true
+              },
+              "rotulo": "Chamar gente nova",
+              "tipo": "seta"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p3",
+          "titulo": "A lista de membros",
+          "texto": "Cada linha é uma pessoa: nome e e-mail, o papel, a interface (o que ela vê no menu), a situação e a última vez que entrou no sistema. \"Aceito\" quer dizer que a pessoa aceitou o convite e tem acesso (o Carlos ainda não entrou, por isso a última atividade dele está vazia); \"Revogado\", que ela perdeu o acesso. Na sua própria linha aparece \"você\": ninguém troca o próprio papel nem tira o próprio acesso.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "table",
+                "n": 0
+              },
+              "rotulo": "Quem tem acesso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "você",
+                "exato": true
+              },
+              "rotulo": "Sua linha",
+              "tipo": "seta"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p4",
+          "titulo": "Trocar o papel de alguém",
+          "texto": "Clique no papel de uma pessoa para trocá-lo. \"Somente leitura\" consulta sem atender. \"Atendente\" atende as conversas. \"Gerente\" também acompanha a equipe e ajusta o atendimento. \"Administrador\" pode tudo nesta empresa, inclusive convidar e tirar pessoas. A troca vale assim que você escolhe, sem botão de salvar. Atenção: quem passa para \"Somente leitura\" deixa de atender, e as conversas abertas que estavam com essa pessoa voltam para a Fila. O sistema não deixa rebaixar o último Administrador.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Papel de Ana Ribeiro",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Os quatro papéis",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Tirar o acesso de alguém",
+          "texto": "No botão de três pontinhos da linha fica \"Revogar acesso\". Ao confirmar em \"Revogar\", a pessoa não entra mais nesta empresa, as conversas abertas que estavam com ela voltam para a Fila, sem dono, e ela sai da lista de responsáveis dos números de atendimento. A linha dela continua na lista, com o selo \"Revogado\". O sistema não deixa revogar o último Administrador. Aqui, só olhe: feche em \"Cancelar\". O aviso fala em \"tenant\": é o mesmo que esta empresa.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ações",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Ana Ribeiro",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Revogar acesso",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "Confirmação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Revogar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Confirma e tira o acesso",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "O aviso diz que só dá para desfazer convidando de novo, mas \"Devolver acesso\", no próximo passo, resolve sem convite."
+        },
+        {
+          "id": "p6",
+          "titulo": "Devolver o acesso",
+          "texto": "O Marcos saiu da clínica e teve o acesso revogado. Se ele voltar, não precisa de convite novo: nos três pontinhos da linha dele aparece \"Devolver acesso\". O clique já devolve, sem pedir confirmação, e ele volta a entrar com o mesmo papel que tinha antes. Se ele atendia algum número, coloque-o de novo como responsável em Configurações › Distribuição de atendimento: essa parte não volta sozinha.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ações",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Marcos Teixeira",
+                  "regex": true
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Revogado",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text('Marcos Teixeira')"
+                }
+              },
+              "rotulo": "Sem acesso hoje",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Devolver acesso",
+                "exato": true
+              },
+              "rotulo": "Devolve a entrada",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "convidar-pessoas",
+      "titulo": "Convidar alguém para a equipe",
+      "objetivo": "Mandar convites, acompanhar se chegaram e reenviar, copiar ou cancelar um convite.",
+      "papel": "admin",
+      "busca": [
+        "convidar",
+        "adicionar funcionário",
+        "novo usuário",
+        "convite não chegou",
+        "link de convite",
+        "cadastrar atendente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão de convite",
+          "texto": "Para chamar alguém para trabalhar no sistema, clique em \"Convidar membros\", no alto da tela Equipe.",
+          "rota": "/app/team",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Convidar membros",
+                "exato": true
+              },
+              "rotulo": "Convidar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Convidar membros",
+            "exato": true
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Preencher o convite",
+          "texto": "No campo \"Emails\", escreva um e-mail por linha. Escolha em \"Papel\" o acesso que as pessoas vão ter nesta empresa. Depois clique em \"Enviar convites\"; o resultado aparece logo abaixo do botão, com a situação de cada convite. Nesta foto os e-mails estão preenchidos, sem enviar.",
+          "dica": "Se o sistema não tiver um serviço de e-mail configurado, o convite é criado mesmo assim. Embaixo do e-mail aparece um aviso técnico (\"Resend não configurado\") e o link do convite: copie esse link e mande para a pessoa, por exemplo pelo WhatsApp.",
+          "rota": "/app/team/invite",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Emails"
+              },
+              "valor": "bruno.lima@clinicabemviver.com.br\nclara.souza@clinicabemviver.com.br"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Emails"
+              },
+              "rotulo": "Um e-mail por linha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Papel",
+                "exato": true
+              },
+              "rotulo": "Papel de todos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar convites",
+                "exato": true
+              },
+              "rotulo": "Envia",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Acompanhar os convites",
+          "texto": "De volta à aba \"Membros\", abaixo da equipe fica a lista \"Convites\". Ela mostra o papel, o \"Status\" (\"Pendente\", \"Expirado\", \"Aceito\" ou \"Revogado\"), se o e-mail saiu, quando foi enviado, até quando vale e quem convidou. Quando aparece \"Não saiu\", o e-mail não foi entregue: use \"Copiar link\" e mande o link para a pessoa por WhatsApp. Se o convite estiver \"Expirado\", primeiro use \"Reenviar\" para renovar o prazo e só depois copie o link. Se o convite foi reenviado, a data mostra quantas vezes, como \"(reenviado 1x)\".",
+          "rota": "/app/team",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Convites",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "table",
+                "n": 1
+              },
+              "rotulo": "Convites enviados",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Não saiu",
+                "exato": true
+              },
+              "rotulo": "E-mail não entregue",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar link",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Copiar link",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Reenviar ou cancelar",
+          "texto": "Nos três pontinhos de um convite em aberto ficam três opções. \"Reenviar\" renova o convite por mais 24 horas e tenta mandar o e-mail de novo; serve também para convite expirado. \"Copiar link\" copia o link do convite. \"Revogar\" cancela: a pessoa não consegue mais entrar com aquele link. O Gerente vê esta lista, mas só o Administrador mexe nela.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Convites",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ações",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "paulo\\.andrade",
+                  "regex": true
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "tr:has-text('paulo.andrade')"
+              },
+              "rotulo": "Convite do Paulo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "menu"
+              },
+              "rotulo": "Reenviar, copiar ou cancelar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "interface-de-cada-um",
+      "titulo": "Escolher o que cada pessoa vê no menu",
+      "objetivo": "Deixar o menu de uma pessoa mais simples, sem mudar o que o papel dela permite.",
+      "papel": "admin",
+      "busca": [
+        "menu simplificado",
+        "esconder telas",
+        "interface",
+        "personalizar menu",
+        "o que o funcionário vê"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A coluna Interface",
+          "texto": "A coluna \"Interface\" diz como está o menu de cada pessoa: \"Completa\", \"Simplificada\" ou \"Personalizada\". Clique no botão de uma pessoa para mudar. Aqui, vamos abrir o da Ana.",
+          "rota": "/app/team",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Interface de Ana Ribeiro",
+                "exato": true
+              },
+              "rotulo": "Menu da Ana",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Interface de Ana Ribeiro",
+            "exato": true
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Completa ou simplificada",
+          "texto": "Em \"Perfil de interface\", \"Completa\" mostra todas as telas que o papel permite. \"Simplificada\" deixa só o dia a dia: Inbox, Agenda, Funis, Contatos, Tarefas e Conexões, além das configurações pessoais (Perfil, Segurança, Notificações e App no celular), que nunca somem. A interface muda só o menu: o que a pessoa pode fazer continua definido pelo papel.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Interface de Ana Ribeiro",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Perfil de interface"
+              },
+              "rotulo": "Completa ou Simplificada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher tela por tela",
+          "texto": "Clique em \"Personalizar áreas visíveis\" para marcar e desmarcar telas uma a uma; ao desmarcar qualquer tela, o campo acima muda para \"Personalizada\". Ao clicar em \"Salvar interface\", o menu da pessoa muda na próxima vez que ela recarregar a página ou abrir o sistema, sem precisar sair da conta. A mudança vale só nesta empresa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Personalizar áreas visíveis"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Radar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[role=dialog] details"
+              },
+              "rotulo": "Telas, uma a uma",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar interface",
+                "exato": true
+              },
+              "rotulo": "Salva",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "distribuir-conversas",
+      "titulo": "Como as conversas são distribuídas",
+      "objetivo": "Escolher se as conversas novas esperam na fila ou vão sozinhas para alguém da equipe.",
+      "papel": "admin",
+      "busca": [
+        "distribuir conversas",
+        "rodízio",
+        "roteamento",
+        "dividir atendimento",
+        "quem recebe a conversa",
+        "fila"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A aba Atendimento",
+          "texto": "Na aba \"Atendimento\", o quadro \"Modo de roteamento\" decide para quem vão as conversas novas na empresa toda. Se um número tiver regra própria em Configurações › Distribuição de atendimento, vale a regra do número (essa tela também mostra este mesmo modo, com outros nomes). Logo abaixo fica a lista de atendentes, com o plantão, a carga e o horário de cada um. Gerentes e Administradores mexem aqui; os outros papéis veem só um aviso.",
+          "rota": "/app/team?aba=atendimento",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "Atendimento",
+                "exato": true
+              },
+              "rotulo": "Atendimento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has-text('Como as conversas novas são distribuídas')"
+              },
+              "rotulo": "Para quem vão as conversas",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Os três modos",
+          "texto": "\"Manual (atendente puxa da fila)\": ninguém recebe sozinho; a conversa espera na Fila até alguém assumir. \"Rodízio (distribui automático)\": o sistema entrega uma conversa para cada atendente, na vez de cada um. \"Menor carga (quem tem menos conversas na mão)\": vai para quem está com menos conversas abertas. Nos dois automáticos, só recebe quem está de plantão, ainda tem espaço e não é \"Somente leitura\"; se o número tiver lista de responsáveis, só quem está nela.",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "dentro": {
+                  "css": "div.rounded-lg.border:has-text('Como as conversas novas são distribuídas')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Escolha o modo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quando ninguém está livre",
+          "texto": "Se não há ninguém disponível, o sistema espera alguns segundos e tenta de novo. É o campo \"Backoff (s)\", a espera entre tentativas, que começa em 60. Depois do número de \"Tentativas máx.\" (5 de início), aparece em \"Alertas\" (o sino) o aviso \"Uma conversa aguarda um responsável\", e o sistema passa a tentar de 15 em 15 minutos. O botão \"Salvar\" acende quando você muda algo.",
+          "rota": "/app/team?aba=atendimento",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Tentativas máx."
+              },
+              "rotulo": "Quantas tentativas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Backoff (s)"
+              },
+              "rotulo": "Intervalo entre tentativas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "dentro": {
+                  "css": "div.rounded-lg.border:has-text('Como as conversas novas são distribuídas')"
+                }
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "antes": []
+        }
+      ]
+    },
+    {
+      "id": "plantao-e-capacidade",
+      "titulo": "Plantão, carga e capacidade",
+      "objetivo": "Ler quem está atendendo agora e definir quantas conversas cada pessoa aguenta ao mesmo tempo.",
+      "papel": "admin",
+      "busca": [
+        "plantão",
+        "quem está online",
+        "capacidade",
+        "limite de conversas",
+        "disponível",
+        "atendente desligado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quem está de plantão",
+          "texto": "A coluna \"Status\" tem dois selos. O de cima diz se a pessoa recebe conversas agora: \"De plantão\" (chave ligada e dentro do horário, ou sem horário publicado), \"Fora do horário\" (chave ligada, mas fora do expediente dela) ou \"Desligado\" (chave desligada). O de baixo diz se ela está com o sistema aberto: \"Com a tela aberta\" ou \"Sem sinal de tela\", com a hora do último sinal.",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.rounded-md.border:has([data-testid='atendentes-e-horarios'])"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "De plantão",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Helena Prado",
+                  "regex": true
+                }
+              },
+              "rotulo": "Recebe conversas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "td:nth-child(2) > div > :first-child",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Ana Ribeiro",
+                  "regex": true
+                }
+              },
+              "rotulo": "Plantão conforme a jornada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Desligado",
+                "exato": true
+              },
+              "rotulo": "Não recebe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "presenca",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Ana Ribeiro",
+                  "regex": true
+                }
+              },
+              "rotulo": "Sem sinal, com a hora",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Carga e capacidade",
+          "texto": "\"Carga\" é quantas conversas abertas estão com a pessoa agora. \"Capacidade\" é quantas ela aguenta ao mesmo tempo. Quando a carga chega à capacidade, o número fica vermelho e a distribuição automática pula essa pessoa. Para mudar, digite o novo número e clique fora do campo: salva na hora.",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.rounded-md.border:has([data-testid='atendentes-e-horarios'])"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Carga",
+                "exato": true
+              },
+              "rotulo": "Conversas agora",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "spinbutton",
+                "nome": "Capacidade de Ana Ribeiro",
+                "exato": true
+              },
+              "rotulo": "Máximo ao mesmo tempo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Ligar e desligar o plantão",
+          "texto": "A chave \"Disponível\" liga e desliga o plantão de cada pessoa, e vale na hora. Desligada, a pessoa não recebe conversas pela distribuição automática, mas continua podendo assumir conversas pela Inbox. Atenção: desligada, ela também não pode ser marcada nos tipos de agendamento configurados como serviço. O Carlos está com a chave desligada.",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.rounded-md.border:has([data-testid='atendentes-e-horarios'])"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Disponibilidade de Carlos Mendes",
+                "exato": true
+              },
+              "rotulo": "Chave do plantão",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "horario-de-atendimento",
+      "titulo": "Publicar o horário de atendimento",
+      "objetivo": "Montar a semana de trabalho de um atendente, para a distribuição respeitar o expediente e a Agenda oferecer horários.",
+      "papel": "admin",
+      "busca": [
+        "horário de atendimento",
+        "expediente",
+        "jornada",
+        "horários da agenda",
+        "não publicado",
+        "dias de trabalho"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A coluna Horário",
+          "texto": "A coluna \"Horário\" mostra a semana de trabalho de cada um. \"Não publicado\" quer dizer que a pessoa ainda não tem horário: se a chave dela estiver ligada, a distribuição manda conversa para ela a qualquer hora, mas a Agenda não oferece nenhum horário para marcar com ela. Para montar a semana do Carlos, clique no botão do relógio (\"Editar\") na linha dele.",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.rounded-md.border:has([data-testid='atendentes-e-horarios'])"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Não publicado",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Helena Prado",
+                  "regex": true
+                }
+              },
+              "rotulo": "Helena, sem horário",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
+              },
+              "rotulo": "Montar a semana",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "dentro": {
+              "role": "row",
+              "nome": "Carlos Mendes",
+              "regex": true
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O editor de horário",
+          "texto": "O editor começa vazio e avisa: \"Nenhuma janela publicada — ninguém consegue marcar com esta pessoa.\" Primeiro, confira o \"Fuso horário\". Depois, clique em \"Adicionar janela\". Cada janela é um dia com hora de início e de fim.",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Fuso horário"
+              },
+              "rotulo": "Fuso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2 > button:first-of-type",
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Nova janela",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Uma janela pronta",
+          "texto": "A janela nova nasce na segunda, das 08:00 às 18:00. Troque o dia e as horas se precisar; a lixeira apaga a janela. Para ter manhã e tarde com intervalo, use duas janelas no mesmo dia. Com a janela de segunda-feira pronta, clique em \"Copiar estes horários para os outros dias úteis\".",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "div.space-y-2 > button:first-of-type",
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "janela"
+              },
+              "rotulo": "Dia, início e fim",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar estes horários para os outros dias úteis",
+                "exato": true
+              },
+              "rotulo": "Repetir de segunda a sexta",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "A semana inteira",
+          "texto": "O botão copiou as faixas da segunda para terça, quarta, quinta e sexta. Nada foi gravado ainda: dá para ajustar um dia ou cancelar. Quando estiver certo, clique em \"Salvar\".",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "div.space-y-2 > button:first-of-type",
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar estes horários para os outros dias úteis",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[role=dialog] div.space-y-2:has([data-testid='janela'])"
+              },
+              "rotulo": "Segunda a sexta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.flex-col-reverse > button:last-child",
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Grava",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Conferir o que foi gravado",
+          "texto": "Depois de salvar, o quadro \"Publicado\" mostra o que ficou gravado, juntando os dias iguais: aqui, \"Seg–Sex 08:00–18:00\". Confira antes de sair e clique em \"Fechar\". A partir de agora, a Agenda mostra esses horários livres do Carlos. Lembre que a chave \"Disponível\" dele está desligada: ligue-a para ele também receber conversas e poder ser marcado nos agendamentos configurados como serviço.",
+          "rota": "/app/team?aba=atendimento",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "div.space-y-2 > button:first-of-type",
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar estes horários para os outros dias úteis",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "div.flex-col-reverse > button:last-child",
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "resumo-publicado"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "resumo-publicado"
+              },
+              "rotulo": "O que ficou gravado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Fechar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                },
+                "n": 0
+              },
+              "rotulo": "Fechar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

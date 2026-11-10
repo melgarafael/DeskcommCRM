@@ -1,0 +1,401 @@
+{
+  "id": "plano-e-cobranca",
+  "titulo": "Plano e cobrança",
+  "tela": "/app/settings/billing",
+  "resumo": "Onde você vê o plano da sua empresa, quanto dele já usa, a situação do pagamento, e onde troca de plano ou cancela a assinatura.",
+  "licoes": [
+    {
+      "id": "conhecendo-seu-plano",
+      "titulo": "Conhecendo seu plano",
+      "objetivo": "Achar a tela, ler o plano contratado, a situação do pagamento e quanto do plano a empresa já usa.",
+      "papel": "admin",
+      "busca": [
+        "meu plano",
+        "plano e cobrança",
+        "assinatura",
+        "mensalidade",
+        "quanto eu pago",
+        "limite do plano",
+        "faturas",
+        "pagamento do sistema"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" está o cartão \"Plano e cobrança\". Clique nele.",
+          "dica": "Só quem é administrador da empresa abre esta tela. Gerente e atendente que digitarem o endereço caem na página \"Sem permissão\". Se a tela mostrar só \"Em breve\", quem instalou o sistema não usa planos pagos: não há nada a pagar aqui.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/billing']"
+              },
+              "rotulo": "Plano e cobrança",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/billing']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Seu plano e a situação do pagamento",
+          "texto": "O quadro \"Seu plano\" mostra o nome do plano que a sua empresa assina e quanto ele custa por mês (ou por ano, se o plano for anual). Logo abaixo vem a situação do pagamento em poucas palavras. \"Em dia\" quer dizer que está tudo pago. Quando algo muda, a frase muda junto: \"Em atraso desde\" uma data, \"Cancelada, acesso até\" uma data, ou \"Teste grátis até\" uma data.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/billing']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Seu plano: Profissional",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div:has(> h2:has-text('Seu plano'))"
+              },
+              "rotulo": "Plano contratado e preço",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Em dia",
+                "exato": true
+              },
+              "rotulo": "Situação do pagamento",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quanto do plano você já usa",
+          "texto": "Embaixo, três linhas comparam o que a empresa usa com o limite do plano. \"Pessoas\" conta quem tem acesso ao sistema. \"Números conectados\" conta os canais cadastrados em Conexões que não foram excluídos, mesmo os que estão desconectados no momento. \"Uso de IA no mês\" mostra quanto todas as funções de inteligência artificial do sistema gastaram neste mês, em dólar, e volta a zero no começo de cada mês. Quando um plano não tem limite, aparece \"sem limite\".",
+          "dica": "Chegou no limite de pessoas ou de números? O sistema não deixa passar dele. Para liberar espaço, exclua um número em Conexões ou tire o acesso de alguém em Equipe. Para crescer, troque para um plano maior, como mostra a próxima lição.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "dl:has([data-uso='assentos'])"
+              },
+              "rotulo": "Uso contra o limite do plano",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Trocar o cartão e ver as faturas",
+          "texto": "O botão \"Gerenciar pagamento\" leva você, nesta mesma aba, à página da empresa que faz a cobrança. Lá você troca o cartão de crédito e vê as faturas. Ao terminar, ela traz você de volta. A troca de plano não fica lá: ela é feita aqui mesmo, no botão \"Trocar de plano\". Se a cobrança da sua empresa é por boleto ou Pix (Asaas), esse botão não aparece: a fatura chega por um link.",
+          "dica": "Se um dia a mensalidade atrasar e houver uma fatura em aberto, aparece aqui o botão \"Pagar agora\", que abre essa fatura, e o botão \"Já paguei\", que confere na hora se o pagamento já chegou.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Gerenciar pagamento",
+                "exato": true
+              },
+              "rotulo": "Cartão e faturas",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar de plano",
+                "exato": true
+              },
+              "rotulo": "Troca de plano",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trocar-de-plano",
+      "titulo": "Trocar de plano",
+      "objetivo": "Comparar o plano atual com outro, ver quanto custa subir de plano e o que acontece ao descer.",
+      "papel": "admin",
+      "busca": [
+        "trocar de plano",
+        "mudar plano",
+        "plano maior",
+        "aumentar limite de pessoas",
+        "fazer upgrade",
+        "plano mais barato",
+        "diminuir plano"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a troca",
+          "texto": "Na tela \"Plano e cobrança\", clique em \"Trocar de plano\". Abre um quadro logo abaixo dos botões, e o botão some enquanto o quadro está aberto. Para desistir, saia da tela sem confirmar.",
+          "rota": "/app/settings/billing",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar de plano",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar de plano",
+                "exato": true
+              },
+              "rotulo": "Trocar de plano",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Trocar de plano",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Comparar os planos lado a lado",
+          "texto": "Em \"Novo plano\", escolha o plano que você quer. Aqui escolhemos \"Clínica Completa\". Logo abaixo, o plano atual e o novo aparecem lado a lado, com o preço e os limites de pessoas, de números conectados e de IA por mês. Só aparecem os outros planos que quem administra o sistema oferece, com a mesma forma de cobrança (mensal ou anual) do plano de hoje.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar de plano",
+                "exato": true
+              }
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "css": "#novo-plano"
+              },
+              "opcao": "Clínica Completa"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#novo-plano"
+              },
+              "rotulo": "Escolha o novo plano",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div[aria-live='polite']"
+              },
+              "rotulo": "Atual x novo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Subir de plano: o valor proporcional",
+          "texto": "Quando o plano novo é mais caro, a tela já mostra uma estimativa do ajuste: a diferença de preço só pelos dias que faltam até a próxima renovação. A data da renovação não muda. Ao confirmar, abre o pagamento desse ajuste (no boleto/Pix, aparece o botão \"Abrir a fatura\"). Os limites novos passam a valer depois que o pagamento é confirmado. Até lá, ficam os limites de hoje.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Ajuste proporcional estimado para hoje",
+                "regex": true
+              },
+              "rotulo": "Quanto custa subir agora",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar troca",
+                "exato": true
+              },
+              "rotulo": "Confirmar troca",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "Saiu sem pagar? O botão \"Pagar ajuste do upgrade\" fica nesta tela. Se a diferença for pequena (menos de R$ 5), não há cobrança agora: o plano novo entra na próxima renovação."
+        },
+        {
+          "id": "p4",
+          "titulo": "Descer de plano: vale na renovação",
+          "texto": "Escolha agora um plano mais barato, como o \"Essencial\". A troca para baixo não cobra nada hoje: o plano novo e os limites dele passam a valer na próxima renovação, e a fatura atual continua com o mesmo valor e a mesma data. Depois de confirmar, o quadro \"Seu plano\" mostra \"Novo plano a partir de\" com a data e o nome do plano.",
+          "dica": "Se a empresa usa mais do que o plano escolhido permite, a troca é recusada e a tela diz o que fazer antes, por exemplo \"Revogue o acesso de 1 pessoa(s) em Equipe.\" Durante o teste grátis é diferente: qualquer troca, para cima ou para baixo, vale na hora e sem ajuste.",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "css": "#novo-plano"
+              },
+              "opcao": "Essencial"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "O plano escolhido e seus limites passam a valer na próxima renovação",
+                "regex": true
+              },
+              "rotulo": "Vale na próxima renovação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar troca",
+                "exato": true
+              },
+              "rotulo": "Confirmar troca",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cancelar-assinatura",
+      "titulo": "Cancelar a assinatura",
+      "objetivo": "Saber onde se cancela a assinatura e o que acontece com o acesso depois.",
+      "papel": "admin",
+      "busca": [
+        "cancelar assinatura",
+        "cancelar plano",
+        "parar de pagar",
+        "encerrar contrato do sistema",
+        "reembolso",
+        "até quando tenho acesso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão de cancelar",
+          "texto": "Na tela \"Plano e cobrança\", o último botão da fileira é \"Cancelar assinatura\". Clicar nele ainda não cancela nada: só abre a confirmação.",
+          "rota": "/app/settings/billing",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar assinatura",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar assinatura",
+                "exato": true
+              },
+              "rotulo": "Cancelar assinatura",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Cancelar assinatura",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Leia antes de confirmar",
+          "texto": "A confirmação avisa: você continua usando o sistema até o fim do período que já pagou, e não há devolução do valor proporcional. Só depois de clicar em \"Confirmar cancelamento\" o pedido vai para a empresa que faz a cobrança. Se mudar de ideia, basta sair da tela sem clicar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar assinatura",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Você mantém o acesso até o fim do período já pago. Não há reembolso proporcional.",
+                "exato": true
+              },
+              "rotulo": "O que acontece ao cancelar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar cancelamento",
+                "exato": true
+              },
+              "rotulo": "Confirmar cancelamento",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Depois de cancelar",
+          "texto": "A foto mostra a tela antes do cancelamento. Depois que você confirma, a tela diz até que dia mantém o acesso, e a frase da situação, que hoje diz \"Em dia\", passa a dizer \"Cancelada, acesso até\" essa data. Até lá, os administradores veem uma faixa no alto do sistema: \"Sua assinatura termina em\" e a data. Os botões \"Trocar de plano\" e \"Cancelar assinatura\" deixam de aparecer.",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar assinatura",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Em dia",
+                "exato": true
+              },
+              "rotulo": "Passa a dizer \"Cancelada, acesso até\"",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar de plano",
+                "exato": true
+              },
+              "rotulo": "Some depois de cancelar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar assinatura",
+                "exato": true
+              },
+              "rotulo": "Some depois de cancelar",
+              "tipo": "numero"
+            }
+          ],
+          "dica": "Mudou de ideia depois que o acesso acabou? Aparece o botão \"Assinar de novo\", nesta tela ou na tela de conta suspensa, para onde o sistema leva quando o acesso é bloqueado.",
+          "rota": "/app/settings/billing"
+        }
+      ]
+    }
+  ]
+}

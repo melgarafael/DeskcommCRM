@@ -33,8 +33,15 @@
  *   errado (ausência de ambiente ≠ defeito).
  */
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { createClient } from "@supabase/supabase-js";
+
+import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import type { RuntimeConfirmation } from "../../lib/system/runtime-identity";
+import type { Database } from "../../lib/database.types";
+import { confirmedRuntime } from "../helpers/runtime-confirmation";
 
 import { test, expect, type Page, type APIRequestContext } from "./helpers/test";
 
@@ -50,6 +57,7 @@ test.skip(
 
 interface E2ECreds {
   password: string;
+  org_id: string;
   users: Record<string, { id: string; email: string; role: string }>;
   admin_totp?: { factor_id: string; secret: string };
   dono_totp?: { factor_id: string; secret: string };
@@ -86,12 +94,18 @@ async function login(page: Page, email: string): Promise<void> {
   await page.waitForURL(/\/app\//);
 }
 
-async function loginWithTotp(page: Page, email: string, secret: string): Promise<void> {
+async function loginWithTotp(
+  page: Page,
+  email: string,
+  secret: string,
+  antesDeMfa?: () => Promise<void>,
+): Promise<void> {
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(creds.password);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/login\/mfa/);
+  await antesDeMfa?.();
 
   // Até 2 tentativas: um código pode expirar na borda da janela de 30s.
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -127,6 +141,8 @@ async function heartbeat(
     off_release?: boolean;
     compare_failed?: boolean;
     has_known_release?: boolean;
+    supports_forced_update?: boolean;
+    runtime_confirmation?: RuntimeConfirmation | null;
   },
 ): Promise<HeartbeatResponse> {
   const res = await request.post("/api/v1/system/agent", {
@@ -140,10 +156,24 @@ async function heartbeat(
       compare_failed: opts.compare_failed ?? false,
       has_known_release: opts.has_known_release ?? true,
       changelog: opts.changelog ?? "",
+      // Omissão continua omissão: um helper do disco não anuncia pelo agente.
+      ...(opts.supports_forced_update === undefined
+        ? {}
+        : { supports_forced_update: opts.supports_forced_update }),
+      ...(opts.runtime_confirmation === undefined
+        ? {}
+        : { runtime_confirmation: opts.runtime_confirmation }),
     },
   });
   expect(res.status()).toBe(200);
   return res.json();
+}
+
+/** Readback pela sessão real do navegador, sem bearer nem interceptação. */
+async function estadoDaTela(page: Page) {
+  const res = await page.request.get("/api/v1/system/version");
+  expect(res.status()).toBe(200);
+  return (await res.json()).data;
 }
 
 /** Desfecho reportado pelo agente, como o `agent.sh` faz ao fim do update.sh. */
@@ -350,7 +380,17 @@ test("quando a atualização falha, a tela nomeia a versão certa, mostra o log 
   test.setTimeout(120_000);
   resetEstado();
   await heartbeat(request, { current_version: "1.0.0", latest_version: "1.1.0" });
-  await loginWithTotp(page, creds.users.dono!.email, creds.dono_totp!.secret);
+  await loginWithTotp(page, creds.users.dono!.email, creds.dono_totp!.secret, async () => {
+    await test.step("força exige o MFA desta sessão antes de criar um pedido", async () => {
+      await expect(page.getByLabel("Dígito 1", { exact: true })).toBeVisible();
+      expect((await estadoDaTela(page)).run).toBeNull();
+      const recusa = await page.request.post("/api/v1/system/update", { data: { force: true } });
+      expect(recusa.status()).toBe(403);
+      expect((await recusa.json()).error.code).toBe("mfa_required");
+      expect((await estadoDaTela(page)).run).toBeNull();
+      await page.screenshot({ path: "evidence/forca-runtime-mfa.png" });
+    }, { timeout: 5_000 });
+  });
   await page.goto("/app/settings/atualizacao");
   await page.getByRole("button", { name: /atualizar agora/i }).click();
   // ⛔ NÃO é "Atualizando para a versão 1.1.0". O clique registra um PEDIDO; quem
@@ -485,6 +525,198 @@ test("quando a atualização falha, a tela nomeia a versão certa, mostra o log 
   ).toHaveCount(0);
   await expect(page.getByRole("button", { name: /atualizar agora/i })).toBeVisible();
   await page.screenshot({ path: "evidence/final-5-falha-superada.png" });
+
+  // Reusa o terceiro run e a sessão já provada, depois de TODOS os controles
+  // legados acima. A base 1.1.0 é from_version: a falha continua vigente e a
+  // força terá alvo IGUAL à versão confirmada, sem criar outro run preparatório.
+  await test.step("força respeita capacidade, identidade e a mesma tag", async () => {
+    const forcar = page.getByRole("button", { name: "Forçar atualização", exact: true });
+    const instalada = page.getByRole("region", { name: "Versão instalada", exact: true });
+    const comando = "bash hostgator-setup-kit/update.sh --to v1.1.0 --force";
+    const c = credenciaisSupabaseDeTeste();
+    expect(["127.0.0.1", "localhost"]).toContain(new URL(c.url).hostname);
+    const db = createClient(c.url, c.serviceRole, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    let runForcado: string | null = null;
+    const conferirRecusa = async (
+      nome: string,
+      runtime: RuntimeConfirmation | null,
+      status: "legacy" | "confirmed" | "partial",
+      customized: boolean | null,
+      anuncia?: boolean,
+    ) => {
+      await heartbeat(request, {
+        current_version: "1.1.0", latest_version: "1.1.0",
+        runtime_confirmation: runtime, supports_forced_update: anuncia,
+      });
+      await page.reload();
+      const antes = await estadoDaTela(page);
+      expect(antes.identity).toMatchObject({ status, customized });
+      expect(antes.force_update_supported).toBe(false);
+      expect(antes.run).toMatchObject({ id: terceiro.data.run_id, status: "failed", superseded: false });
+      await expect(page.getByRole("heading", { name: /a atualização para a versão 1\.2\.0 não deu certo/i })).toBeVisible();
+      await expect(forcar).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Atualizar agora", exact: true })).toHaveCount(0);
+      if (nome === "legado") {
+        await expect(instalada).toContainText("Execução não confirmada");
+        await expect(page.getByText(comando, { exact: true })).toBeVisible();
+      } else {
+        await expect(page.getByText("O agente do servidor ainda não confirmou suporte para refazer a atualização pela tela.", { exact: true })).toBeVisible();
+      }
+      if (customized) await expect(instalada).toContainText("Personalizada");
+      if (customized || status === "partial") {
+        await expect(page.getByRole("button", { name: "Voltar para a versão anterior", exact: true })).toHaveCount(0);
+      }
+      if (status === "partial") {
+        await expect(instalada).toContainText("Ainda não confirmada");
+        await expect(instalada.locator("li", { hasText: "voice-agent" })).toContainText("Não confirmado");
+      }
+      await page.screenshot({ path: `evidence/forca-runtime-${nome}.png` });
+      const recusa = await page.request.post("/api/v1/system/update", { data: { force: true } });
+      expect(recusa.status()).toBe(409);
+      expect((await recusa.json()).error.code).toBe("state_conflict");
+      expect((await estadoDaTela(page)).run).toEqual(antes.run);
+    };
+
+    try {
+      await conferirRecusa("legado", null, "legacy", null);
+      // O helper até oferece true; sem anúncio no topo ele não ganha capacidade.
+      await conferirRecusa("capacidade-ausente", {
+        ...confirmedRuntime("1.1.0"), supports_forced_update: true,
+      }, "confirmed", false);
+      await conferirRecusa("personalizada", confirmedRuntime("1.1.0", new Date().toISOString(), true), "confirmed", true, true);
+      const ausente = confirmedRuntime("1.1.0");
+      ausente.services.push({
+        role: "voice-agent", container_id: null, image_id: null, revision: null,
+        base_version: null, base_revision: null, source_verified: false,
+        running: false, healthy: false,
+      });
+      await conferirRecusa("servico-ausente", ausente, "partial", null, true);
+
+      const oficial = { current_version: "1.1.0", latest_version: "1.1.0",
+        runtime_confirmation: confirmedRuntime("1.1.0"), supports_forced_update: true };
+      await heartbeat(request, oficial);
+      await page.reload();
+      const estado = await estadoDaTela(page);
+      expect(estado.identity).toMatchObject({ status: "confirmed", base_version: "1.1.0", customized: false });
+      expect(estado).toMatchObject({ force_update_supported: true, update_available: false, manual_reconciliation_required: false });
+      expect(estado.run).toMatchObject({ id: terceiro.data.run_id, from_version: "1.1.0", superseded: false });
+      await expect(instalada).toContainText("Versão instalada: 1.1.0");
+      await expect(instalada).toContainText("Última confirmação");
+      await expect(instalada).not.toContainText("Execução não confirmada");
+      await expect(page.getByRole("button", { name: "Atualizar agora", exact: true })).toHaveCount(0);
+      await expect(forcar).toBeVisible();
+      await expect(forcar).toBeEnabled();
+      const yBotao = (await forcar.boundingBox())!.y;
+      const yComando = (await page.getByText(comando, { exact: true }).boundingBox())!.y;
+      expect(yBotao).toBeLessThan(yComando);
+      await page.screenshot({ path: "evidence/forca-runtime-oficial.png" });
+      const resposta = page.waitForResponse((res) =>
+        new URL(res.url()).pathname === "/api/v1/system/update" && res.request().method() === "POST",
+      );
+      await forcar.focus();
+      await expect(forcar).toBeFocused();
+      await forcar.press("Enter");
+      const pedido = await resposta;
+      expect(pedido.request().postDataJSON()).toEqual({ force: true });
+      expect(pedido.status()).toBe(200);
+      const { data: ordem } = await pedido.json();
+      runForcado = ordem.run_id;
+      expect(ordem.to_version).toBe("v1.1.0");
+      const { data: gravado, error } = await db.from("system_update_runs")
+        .select("id, from_version, to_version, force_requested, status")
+        .eq("id", ordem.run_id).single();
+      expect(error).toBeNull();
+      expect(gravado).toMatchObject({ id: ordem.run_id, status: "dispatched",
+        from_version: "1.1.0", to_version: "v1.1.0", force_requested: true });
+      await expect(page.getByRole("heading", { name: /pedido enviado/i })).toBeVisible();
+      expect((await estadoDaTela(page)).run).toMatchObject({ id: ordem.run_id, status: "dispatched", to_version: "v1.1.0" });
+      await page.screenshot({ path: "evidence/forca-runtime-pedido.png" });
+      const entrega = await heartbeat(request, oficial);
+      expect(entrega.data).toMatchObject({ update_requested: true, run_id: ordem.run_id, to_version: "v1.1.0", force_requested: true });
+    } finally {
+      // A sessão de teste é dona da fila: o heartbeat legado recusa/encerra
+      // qualquer força que este bloco tenha deixado pendente, sem executar update.
+      const recusaDoAntigo = await heartbeat(request, {
+        current_version: "1.1.0", latest_version: "1.1.0", runtime_confirmation: null,
+      });
+      expect(recusaDoAntigo.data).toMatchObject({ update_requested: false, run_id: null, force_requested: false });
+      if (runForcado) {
+        const { data: fechado, error } = await db.from("system_update_runs")
+          .select("id, status, force_requested").eq("id", runForcado).single();
+        expect(error).toBeNull();
+        expect(fechado).toMatchObject({ id: runForcado, status: "failed", force_requested: true });
+      }
+    }
+  }, { timeout: 30_000 });
+});
+
+test("retrato antigo informa a última conferência sem antecipar o comando manual", async ({ page, request }, testInfo) => {
+  test.setTimeout(90_000);
+  // Só a idade é preparada no banco de teste: login, heartbeat, leitura da API
+  // e a tela continuam reais. Nenhum relógio do produto ou resposta é alterado.
+  const c = credenciaisSupabaseDeTeste();
+  expect(["127.0.0.1", "localhost"]).toContain(new URL(c.url).hostname);
+  const db = createClient(c.url, c.serviceRole, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const envelhecer = async (minutos: number): Promise<string> => {
+    const ultimaConferencia = new Date(Date.now() - minutos * 60_000).toISOString();
+    const { data, error } = await db.from("system_version")
+      .update({ agent_last_seen_at: ultimaConferencia })
+      .eq("id", 1).select("agent_last_seen_at").single();
+    expect(error).toBeNull();
+    expect(Date.parse(data!.agent_last_seen_at)).toBe(Date.parse(ultimaConferencia));
+    return ultimaConferencia;
+  };
+
+  resetEstado();
+  try {
+    await heartbeat(request, { current_version: "1.0.0", latest_version: "" });
+    await loginWithTotp(page, creds.users.dono!.email, creds.dono_totp!.secret);
+    await page.goto("/app/settings/atualizacao");
+    await expect(page.getByText("É a mais recente. Não há nada a fazer.")).toBeVisible();
+    await expect(page.getByText("bash hostgator-setup-kit/update.sh")).toHaveCount(0);
+
+    const ultimaConferencia = await envelhecer(31);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Não sei se há versão nova" })).toBeVisible();
+    await expect(page.getByText("É a mais recente. Não há nada a fazer.")).toHaveCount(0);
+    await expect(page.getByText(/verifique a conexão do servidor com a internet/)).toBeVisible();
+    await expect(page.getByText("bash hostgator-setup-kit/update.sh")).toHaveCount(0);
+    const hora = await page.evaluate((iso) => {
+      const d = new Date(iso);
+      return `${String(d.getHours()).padStart(2, "0")}h${String(d.getMinutes()).padStart(2, "0")}`;
+    }, ultimaConferencia);
+    await expect(page.getByText(hora, { exact: true })).toBeVisible();
+    await expect(page.getByText(/Versão instalada:.*1\.0\.0/)).toBeVisible();
+    const pastaDaEvidencia = path.join("evidence", "retrato-host-3504");
+    fs.mkdirSync(pastaDaEvidencia, { recursive: true });
+    await testInfo.attach("retrato-antigo", {
+      body: await page.screenshot({ path: path.join(pastaDaEvidencia, "retrato-antigo.png") }),
+      contentType: "image/png",
+    });
+
+    await heartbeat(request, { current_version: "1.0.0", latest_version: "1.1.0" });
+    await envelhecer(31);
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Atualizar agora", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Não sei se há versão nova" })).toHaveCount(0);
+    await expect(page.getByText("bash hostgator-setup-kit/update.sh")).toHaveCount(0);
+
+    await envelhecer(25 * 60);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Atualização automática indisponível" })).toBeVisible();
+    await expect(page.getByText("bash hostgator-setup-kit/update.sh")).toBeVisible();
+    await testInfo.attach("agente-offline", {
+      body: await page.screenshot({ path: path.join(pastaDaEvidencia, "agente-offline.png") }),
+      contentType: "image/png",
+    });
+  } finally {
+    // Não deixar a idade preparada para as outras jornadas desta instalação.
+    await heartbeat(request, { current_version: "1.0.0", latest_version: "" });
+  }
 });
 
 test("quando o host não conseguiu comparar, a tela não diz que está em dia", async ({
@@ -575,4 +807,210 @@ test("quem não é dono do servidor não vê o botão", async ({ page, request }
   await page.goto("/app/settings/atualizacao");
   await expect(page.getByText(/404 — Página não encontrada/i)).toBeVisible();
   await page.screenshot({ path: "evidence/task9-4-nao-dono-404.png" });
+
+  // HTTP real no Auth/PostgREST já existentes. Não é SET ROLE, token inventado
+  // nem um novo caso; o custo marginal fica separado da prova UI e será medido.
+  await test.step(
+    "JWT real não altera força nem confirmação pelas tabelas globais",
+    () => provarJwtSemAcessoGlobal(page),
+    { timeout: 20_000 },
+  );
 });
+
+async function provarJwtSemAcessoGlobal(page: Page): Promise<void> {
+  const inicio = performance.now();
+  let inicioLimpeza: number | null = null;
+  let provasConcluidas = false;
+  let dadosRestaurados = false;
+  // O helper canônico tem fallback de desenvolvimento em arquivo. Aqui só se
+  // aceita o ambiente completo do CI, antes de resolver qualquer credencial.
+  for (const chave of [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_DB_URL",
+  ]) {
+    if (!process.env[chave]) throw new Error(`JWT de teste exige ${chave} no ambiente.`);
+  }
+  const c = credenciaisSupabaseDeTeste();
+  expect(["127.0.0.1", "localhost"]).toContain(new URL(c.url).hostname);
+  expect(c.origem).toBe("ambiente");
+  // Só os clientes deste helper: prazo finito sem sobrescrever o fetch global.
+  // O sinal passado pelo SDK (ou pelo Request) continua podendo cancelar antes.
+  const buscarComPrazo: typeof fetch = (input, init) => {
+    const sinais = [AbortSignal.timeout(5_000)];
+    if (input instanceof Request) sinais.push(input.signal);
+    if (init?.signal) sinais.push(init.signal);
+    return fetch(input, { ...init, signal: AbortSignal.any(sinais) });
+  };
+  const opcoes = {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: buscarComPrazo },
+  };
+  const servico = createClient<Database>(c.url, c.serviceRole, opcoes);
+  const usuario = createClient<Database>(c.url, c.anonKey, opcoes);
+  const loginJwt = await usuario.auth.signInWithPassword({
+    email: creds.users.agent!.email,
+    password: creds.password,
+  });
+  // Nunca passar a sessão ou o bearer ao expect/trace/anexo: só fatos seguros.
+  expect(loginJwt.error === null).toBe(true);
+  const bearer = loginJwt.data.session?.access_token;
+  if (!bearer) throw new Error("Auth de teste não emitiu JWT para o usuário existente.");
+  try {
+    const validado = await usuario.auth.getUser(bearer);
+    expect(validado.error === null).toBe(true);
+    expect(validado.data.user?.id).toBe(creds.users.agent!.id);
+    expect(validado.data.user?.role).toBe("authenticated");
+    const vinculo = await servico
+      .from("user_organizations")
+      .select("user_id, organization_id, role, accepted_at, revoked_at")
+      .eq("user_id", creds.users.agent!.id)
+      .eq("organization_id", creds.org_id)
+      .is("revoked_at", null)
+      .not("accepted_at", "is", null)
+      .single();
+    expect(vinculo.error).toBeNull();
+    expect(vinculo.data?.role).toBe("agent");
+    const plataforma = await servico
+      .from("platform_admins")
+      .select("user_id")
+      .eq("user_id", creds.users.agent!.id)
+      .is("revoked_at", null)
+      .maybeSingle();
+    expect(plataforma.error).toBeNull();
+    expect(plataforma.data).toBeNull();
+
+    const ler = async () => {
+      const [runs, versao] = await Promise.all([
+        servico.from("system_update_runs").select("*").order("id"),
+        servico.from("system_version").select("*").eq("id", 1).single(),
+      ]);
+      expect(runs.error).toBeNull();
+      expect(versao.error).toBeNull();
+      if (!runs.data || !versao.data) throw new Error("Readback de teste sem dados nativos.");
+      return { runs: runs.data, versao: versao.data };
+    };
+    const original = await ler();
+    const existente = randomUUID();
+    const tentativa = randomUUID();
+    const criadosPelaRota: string[] = [];
+    const runtime = confirmedRuntime("1.1.0");
+    const nova = { id: tentativa, status: "success", force_requested: true };
+    // Node fetch/SDK não entram no APIRequestContext traceado do Playwright.
+    // URL sem credencial; bearer só nesta closure e nunca em evidência/log.
+    const escrever = (
+      token: string,
+      chave: string,
+      metodo: "POST" | "PATCH",
+      recurso: string,
+      corpo: unknown,
+    ) =>
+      fetch(`${c.url}/rest/v1/${recurso}`, {
+        method: metodo,
+        headers: {
+          apikey: chave,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(corpo),
+        signal: AbortSignal.timeout(5_000),
+      });
+    try {
+      const fixture = await servico.from("system_update_runs").insert({
+        id: existente,
+        status: "success",
+        force_requested: false,
+      });
+      expect(fixture.error).toBeNull();
+      const antes = await ler();
+      const inalterado = async () => expect(await ler()).toEqual(antes);
+      const insercao = await escrever(bearer, c.anonKey, "POST", "system_update_runs", nova);
+      expect(insercao.status).toBe(403);
+      await insercao.arrayBuffer();
+      await inalterado();
+      for (const [recurso, corpo] of [
+        [`system_update_runs?id=eq.${existente}`, { force_requested: true }],
+        ["system_version?id=eq.1", { runtime_confirmation: runtime }],
+      ] as const) {
+        const recusa = await escrever(bearer, c.anonKey, "PATCH", recurso, corpo);
+        expect([200, 204, 403]).toContain(recusa.status);
+        if (recusa.status === 200) expect(await recusa.json()).toEqual([]);
+        else await recusa.arrayBuffer();
+        // 200/[] sozinho não prova RLS. A leitura independente precisa ser igual.
+        await inalterado();
+      }
+      const rota = await page.request.post("/api/v1/system/update", { data: { force: true } });
+      const aposRota = await ler();
+      // Se o guard regredir, ainda limpamos os runs novos desta chamada e
+      // deste usuário. Nunca incluir um UUID que já existia antes dela.
+      criadosPelaRota.push(
+        ...aposRota.runs
+          .filter(
+            (run) =>
+              run.requested_by === creds.users.agent!.id &&
+              !antes.runs.some((anterior) => anterior.id === run.id),
+          )
+          .map((run) => run.id),
+      );
+      expect(rota.status()).toBe(403);
+      expect((await rota.json()).error.code).toBe("forbidden");
+      expect(aposRota).toEqual(antes);
+
+      // Mesmas três mutações, agora com o controle positivo de serviço.
+      for (const [metodo, recurso, corpo] of [
+        ["POST", "system_update_runs", nova],
+        ["PATCH", `system_update_runs?id=eq.${existente}`, { force_requested: true }],
+        ["PATCH", "system_version?id=eq.1", { runtime_confirmation: runtime }],
+      ] as const) {
+        const positivo = await escrever(c.serviceRole, c.serviceRole, metodo, recurso, corpo);
+        expect(positivo.ok).toBe(true);
+        await positivo.arrayBuffer();
+      }
+      const depois = await ler();
+      expect(depois.runs.find((r) => r.id === existente)?.force_requested).toBe(true);
+      expect(depois.runs.find((r) => r.id === tentativa)?.force_requested).toBe(true);
+      expect(depois.versao.runtime_confirmation).toEqual(runtime);
+      provasConcluidas = true;
+    } finally {
+      inicioLimpeza = performance.now();
+      // Só a coluna e os dois UUIDs desta fase; nenhum dispatched é criado.
+      const resultados = await Promise.all([
+        servico
+          .from("system_version")
+          .update({ runtime_confirmation: original.versao.runtime_confirmation })
+          .eq("id", 1),
+        servico
+          .from("system_update_runs")
+          .delete()
+          .in("id", [existente, tentativa, ...criadosPelaRota]),
+      ]);
+      for (const resultado of resultados) expect(resultado.error).toBeNull();
+      expect(await ler()).toEqual(original);
+      dadosRestaurados = true;
+    }
+  } finally {
+    // Revoga só a sessão SDK emitida aqui, inclusive se uma precondição falhar.
+    // A sessão UI do mesmo usuário continua independente.
+    const encerramento = await usuario.auth.signOut({ scope: "local" });
+    fs.mkdirSync("evidence", { recursive: true });
+    fs.writeFileSync(
+      "evidence/forca-runtime-jwt-tempos.json",
+      JSON.stringify(
+        {
+          total_ms: Math.round(performance.now() - inicio),
+          cleanup_ms: inicioLimpeza === null ? null : Math.round(performance.now() - inicioLimpeza),
+          proofs_completed: provasConcluidas,
+          data_restored: dadosRestaurados,
+          sdk_session_revoked: encerramento.error === null,
+          token_recorded: false,
+        },
+        null,
+        2,
+      ),
+      { mode: 0o600 },
+    );
+    expect(encerramento.error === null).toBe(true);
+  }
+}

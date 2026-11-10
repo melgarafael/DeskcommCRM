@@ -127,7 +127,7 @@ const LEAD_0529 = "cccccccc-2115-4000-8000-000000000009";
 const INVITE_0529 = "cccccccc-2115-4000-8000-00000000000a";
 const CONTACT_PROBE_0529 = "cccccccc-2115-4000-8000-00000000000b";
 
-/** As 11 policies da fatia — `[tabela, policy]`, na ordem do issue. */
+/** As policies da fatia — `[tabela, policy]`, na ordem do issue (#3202: channel_sessions virou insert/update/delete). */
 const FATIA_1: ReadonlyArray<readonly [string, string]> = [
   ["team_invites", "team_invites_write"],
   ["messages", "messages_insert"],
@@ -136,7 +136,9 @@ const FATIA_1: ReadonlyArray<readonly [string, string]> = [
   ["crm_leads", "crm_leads_insert"],
   ["crm_leads", "crm_leads_update"],
   ["crm_leads", "crm_leads_delete"],
-  ["channel_sessions", "channel_sessions_tenant_write"],
+  ["channel_sessions", "channel_sessions_tenant_insert"],
+  ["channel_sessions", "channel_sessions_tenant_update"],
+  ["channel_sessions", "channel_sessions_tenant_delete"],
   ["conversations", "conversations_agent_insert"],
   ["conversations", "conversations_agent_update"],
   ["conversations", "conversations_agent_delete"],
@@ -192,7 +194,7 @@ describe("0529 — support_readonly não escreve na fatia 1 do #2115", () => {
     `);
   });
 
-  it("catálogo: as 11 policies vivas usam fn_is_platform_admin_full() e não a pura", () => {
+  it("catálogo: as policies vivas usam fn_is_platform_admin_full() e não a pura", () => {
     const faltando: string[] = [];
     for (const [tabela, policy] of FATIA_1) {
       const expr = expressaoViva(tabela, policy);

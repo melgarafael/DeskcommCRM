@@ -95,6 +95,22 @@ describe("parseChatId separa desconhecido de grupo", () => {
   });
 });
 
+describe("parseChatId valida o telefone antes do banco (#3519)", () => {
+  it.each(["@c.us", "@s.whatsapp.net"])("recusa telefones inválidos em %s", (sufixo) => {
+    for (const numero of ["0", "", "+", "1234567", "1234567890123456", "++5511999999999", "5511abc9999999", "5511999999999\n"]) {
+      expect(parseChatId(`${numero}${sufixo}`), numero).toEqual({ kind: "unknown", phone: null, lid: null });
+    }
+  });
+
+  it.each(["@c.us", "@s.whatsapp.net"])("preserva os limites válidos em %s", (sufixo) => {
+    for (const numero of ["12345678", "5511999999999", "123456789012345"]) {
+      for (const prefixo of ["", "+"]) {
+        expect(parseChatId(`${prefixo}${numero}${sufixo}`)).toEqual({ kind: "phone", phone: `+${numero}`, lid: null });
+      }
+    }
+  });
+});
+
 describe("o chat não reconhecido deixa rastro", () => {
   it("emite whatsapp.chat_id_not_recognized em vez de sumir calado", async () => {
     const { admin, rpcs } = bancoDeMentira();
@@ -148,7 +164,7 @@ describe("o chat não reconhecido NÃO vira contato", () => {
     // conflita e NASCE UM CONTATO NOVO A CADA WEBHOOK.
     const { admin, rpcs, messages } = bancoDeMentira();
 
-    for (const chat of ["11111111111@newsletter", "status@broadcast", "120363000000000000@g.us"]) {
+    for (const chat of ["11111111111@newsletter", "status@broadcast", "120363000000000000@g.us", "0@s.whatsapp.net", "0@c.us"]) {
       await dispatchWahaEvent(admin as never, SESSION as never, inbound(chat), "req-1");
     }
 

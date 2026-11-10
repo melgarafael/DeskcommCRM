@@ -189,10 +189,14 @@ describe("os elos que somem sem barulho", () => {
     expect(fonte).toMatch(/edited_at, revoked_at/);
   });
 
-  it("a bolha DIZ que foi editada, e esconde o texto da apagada", () => {
+  it("a bolha DIZ que foi editada, e consulta a régua do texto apagado", () => {
     const fonte = readFileSync("components/inbox/MessageBubble.tsx", "utf8");
     expect(fonte).toMatch(/revoked_at/);
-    expect(fonte).toMatch(/Esta mensagem foi apagada/);
     expect(fonte).toMatch(/editada/);
+    // Quem decide se o texto da apagada aparece na bolha é
+    // `lib/messaging/apagada.ts`, não uma condição solta dentro dela.
+    expect(fonte).toMatch(/textoDaApagadaApareceNaInbox/);
+    const regua = readFileSync("lib/messaging/apagada.ts", "utf8");
+    expect(regua).toMatch(/Esta mensagem foi apagada pelo contato/);
   });
 });

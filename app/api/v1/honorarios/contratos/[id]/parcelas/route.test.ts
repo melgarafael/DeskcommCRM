@@ -46,15 +46,33 @@ function negado(): void {
   } as never);
 }
 
-function fakeSupabase(resultado: { data: unknown; error: { code?: string } | null }) {
-  const builder: Record<string, unknown> = {
-    select: () => builder,
-    order: () => Promise.resolve(resultado),
-    eq: () => builder,
-    insert: () => builder,
-    single: () => Promise.resolve(resultado),
+/**
+ * Dublê do PostgREST.
+ *
+ * `organizations` responde `currency` porque o POST resolve a moeda da parcela
+ * no SERVIDOR desde o #3379 (`moedaDaOrganizacao` lê `organizations.currency`
+ * com `maybeSingle`). As outras tabelas devolvem o `resultado` do caso — é o
+ * mesmo dublê de antes, com a leitura que a rota passou a fazer.
+ */
+function fakeSupabase(
+  resultado: { data: unknown; error: { code?: string } | null },
+  moeda = "BRL",
+) {
+  const builderPara = (tabela: string): Record<string, unknown> => {
+    const builder: Record<string, unknown> = {
+      select: () => builder,
+      order: () => Promise.resolve(resultado),
+      eq: () => builder,
+      insert: () => builder,
+      single: () => Promise.resolve(resultado),
+      maybeSingle: () =>
+        Promise.resolve(
+          tabela === "organizations" ? { data: { currency: moeda }, error: null } : resultado,
+        ),
+    };
+    return builder;
   };
-  return { from: () => builder };
+  return { from: (tabela: string) => builderPara(tabela) };
 }
 
 beforeEach(() => {

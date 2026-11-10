@@ -1,0 +1,6 @@
+-- manifest: **Os códigos de recuperação gravados antes do HMAC saem de `user_recovery_codes`** (decisão do dono, doc 195 = A). Desde o #3339 o servidor grava `code_hash` como o HMAC-SHA256 de 32 bytes (`lib/auth/recovery-codes.ts`, com o `INTERNAL_SECRET` da instalação), e nenhuma linha gravada antes casa com ele: elas ocupavam a tabela sem servir para entrar. Apagá-las faz a tela de Segurança mostrar a verdade — quem tem a verificação ligada e ficou sem códigos vê o aviso para gerar novos. O critério é o FORMATO, não a data: toda linha cujo `code_hash` não tem 32 bytes é da forma antiga (o `Buffer` que o supabase-js serializava como o texto JSON `{"type":"Buffer",...}`), e toda linha que o servidor grava hoje tem 32. Por isso re-aplicar (o `update.sh` re-aplica o baseline a cada atualização) não apaga código novo, e uma instalação que atualizar daqui a meses apaga só o que o código antigo gravou até lá. Vigiado por `tests/invariants/codigos-de-recuperacao-antigos-saem.test.ts`. Idempotente, psql puro, sem BEGIN/COMMIT; espelho no apêndice do `baseline.sql`, antes da VARREDURA anon.
+
+-- Códigos usados também saem: na forma antiga nem o registro de uso diz algo
+-- (o login nunca achava a linha para marcá-la).
+delete from public.user_recovery_codes
+ where octet_length(code_hash) <> 32;

@@ -29,7 +29,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
-import type { AvisoDaTela, ConexaoParaAviso } from "@/lib/escalacao/estado-do-aviso";
+import type { AvisoDaTela, ConexaoParaAviso, MembroDoAvisoNaTela } from "@/lib/escalacao/estado-do-aviso";
 import type { MotivoDoTeste } from "@/lib/escalacao/aviso-de-teste";
 import type { EntregaNaTela } from "@/lib/escalacao/tela-do-aviso";
 import type { LacoDoAviso } from "@/lib/escalacao/laco-do-aviso";
@@ -42,11 +42,23 @@ export interface ConfigDoAvisoNaTela {
   rotulo: string | null;
   ligado: boolean;
   resposta_whatsapp_habilitada: boolean;
+  /** O modelo aprovado que leva o aviso pela conexão que só manda modelo (9094). */
+  modelo_id?: string | null;
   atualizado_em: string;
+  /** `fixo` (o número da empresa) ou `responsavel` (#3803). */
+  destino_modo: "fixo" | "responsavel";
 }
 
 export interface EstadoDoAviso {
   config: ConfigDoAvisoNaTela | null;
+  /** A equipe e o WhatsApp de cada um (#3803). */
+  equipe: MembroDoAvisoNaTela[];
+  /**
+   * `true` = a leitura dos números da equipe falhou, e `equipe` está vazia por
+   * isso. Opcional porque um pacote de JS antigo no navegador de alguém não tem
+   * o campo — e `undefined` vale como "leu" (#3935).
+   */
+  equipe_indisponivel?: boolean;
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -112,6 +124,22 @@ export interface EntradaDoSalvar {
   resposta_whatsapp_habilitada: boolean;
   /** `true` = "eu sei que esse número é um cliente meu, e quero mesmo assim". */
   confirma_contato?: boolean;
+  /** COMO escolher quem recebe (#3803). Ausente = `fixo`, o default do banco. */
+  destino_modo?: "fixo" | "responsavel";
+  /**
+   * O WhatsApp de cada pessoa da equipe. Três estados, e a diferença entre eles
+   * é a diferença entre salvar e apagar (#3935):
+   *
+   * · chave `whatsapp` AUSENTE = "a tela não falou deste membro" → o banco não
+   *   toca no número gravado;
+   * · `null` = "esta pessoa não tem número" → apaga o número gravado;
+   * · string = o número novo.
+   *
+   * A lista inteira omitida também não toca em nada.
+   */
+  responsaveis?: Array<{ user_id: string; whatsapp?: string | null }>;
+  /** `null` = sem modelo (texto livre). Ver a rota. */
+  modelo_id?: string | null;
 }
 
 export function useSalvarAvisoDeCaso() {
@@ -124,6 +152,26 @@ export function useSalvarAvisoDeCaso() {
     onSuccess: (estado) => {
       // O PUT devolve o estado recalculado: escrever no cache evita o piscar de
       // uma tela que volta ao valor antigo enquanto o GET seguinte não chega.
+      qc.setQueryData(CHAVE_DO_AVISO, estado);
+    },
+  });
+}
+
+/**
+ * A REMOÇÃO do destinatário (issue #3338) — o `DELETE` que devolve o número à
+ * ingestão normal, sem exigir um número substituto.
+ *
+ * Escreve no cache com o estado que a rota devolve, como o `salvar`: é o mesmo
+ * contrato (o `DELETE` recalcula o estado inteiro) e o mesmo motivo (evitar o
+ * piscar de uma tela que volta ao valor antigo enquanto o GET não chega). O que
+ * muda é o que a tela mostra depois: sem configuração.
+ */
+export function useRemoverAvisoDeCaso() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient.delete<{ data: EstadoDoAviso }>("/api/v1/ai/cases/alerta").then((r) => r.data),
+    onSuccess: (estado) => {
       qc.setQueryData(CHAVE_DO_AVISO, estado);
     },
   });

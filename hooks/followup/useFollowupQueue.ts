@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
+import { dossieQueryKey } from "./useFollowupEnrollment";
 
 /**
  * Os estados que `followup_enrollments.status` aceita — todos eles.
@@ -92,7 +93,8 @@ export function useCancelFollowupEnrollment() {
       );
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, enrollmentId) => {
+      void qc.invalidateQueries({ queryKey: dossieQueryKey(enrollmentId) });
       void qc.invalidateQueries({ queryKey: ["followup", "queue"] });
       toast.success(t("Follow-up cancelado."));
     },

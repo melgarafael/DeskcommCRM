@@ -263,7 +263,10 @@ describe("a rota messages/[id]/media não re-busca do provedor o que expirou", (
    */
   async function chamada(): Promise<Response> {
     const { GET } = await import("@/app/api/v1/messages/[id]/media/route");
-    return GET({} as never, { params: Promise.resolve({ id: "mensagem-1" }) });
+    // Request de verdade: a rota lê `?formato=` da URL (F2).
+    return GET(new Request("http://localhost/api/v1/messages/mensagem-1/media") as never, {
+      params: Promise.resolve({ id: "mensagem-1" }),
+    });
   }
 
   beforeEach(() => {

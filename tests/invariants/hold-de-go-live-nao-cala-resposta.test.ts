@@ -35,6 +35,10 @@ const pool = new pg.Pool({
 const ORG = "0be7a70a-2580-4000-8000-000000000101";
 const CONTATO = "0be7a70a-2580-4000-8000-000000000102";
 const SESSAO = "0be7a70a-2580-4000-8000-000000000103";
+const CONVERSA = "0be7a70a-2580-4000-8000-000000000104";
+// Um SEGUNDO número do mesmo contato, saudável: o follow-up da conversa dele não pode ser retido.
+const SESSAO_B = "0be7a70a-2580-4000-8000-000000000105";
+const CONVERSA_B = "0be7a70a-2580-4000-8000-000000000106";
 
 async function enfileirar(kind: "inbound_turn" | "followup_turn", jaRetido = false): Promise<void> {
   const payload = jaRetido
@@ -44,6 +48,17 @@ async function enfileirar(kind: "inbound_turn" | "followup_turn", jaRetido = fal
     `insert into job_queue (organization_id, contact_id, kind, payload, status, run_after)
      values ($1, $3, $4, ${payload}, 'pending', ${jaRetido ? "'infinity'" : "now()"})`,
     [ORG, SESSAO, CONTATO, kind],
+  );
+}
+
+/** O follow-up como o motor de fluxo e o agendador o enfileiram: sem o canal, só a conversa do atendimento. */
+async function enfileirarFollowupDaConversa(conversa: string = CONVERSA): Promise<void> {
+  await pool.query(
+    `insert into job_queue (organization_id, contact_id, kind, payload, status, run_after)
+     values ($1, $2, 'followup_turn',
+             jsonb_build_object('service_boundary', jsonb_build_object('conversation_id', $3::text)),
+             'pending', now())`,
+    [ORG, CONTATO, conversa],
   );
 }
 
@@ -91,6 +106,16 @@ beforeAll(async () => {
      values ($1, $2, 'sessao-hold', '\\x00'::bytea, 'WORKING') on conflict (id) do nothing`,
     [SESSAO, ORG],
   );
+  await pool.query(
+    `insert into channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted, status)
+     values ($1, $2, 'sessao-hold-b', '\\x00'::bytea, 'WORKING') on conflict (id) do nothing`,
+    [SESSAO_B, ORG],
+  );
+  await pool.query(
+    `insert into conversations (id, organization_id, contact_id, channel_session_id)
+     values ($1, $2, $3, $4), ($5, $2, $3, $6) on conflict (id) do nothing`,
+    [CONVERSA, ORG, CONTATO, SESSAO, CONVERSA_B, SESSAO_B],
+  );
 });
 
 afterEach(async () => {
@@ -100,7 +125,8 @@ afterEach(async () => {
 afterAll(async () => {
   await pool.query("delete from job_queue where organization_id = $1", [ORG]);
   await pool.query("delete from channel_session_health where organization_id = $1", [ORG]);
-  await pool.query("delete from channel_sessions where id = $1", [SESSAO]);
+  await pool.query("delete from conversations where id = any($1::uuid[])", [[CONVERSA, CONVERSA_B]]);
+  await pool.query("delete from channel_sessions where id = any($1::uuid[])", [[SESSAO, SESSAO_B]]);
   await pool.query("delete from contacts where id = $1", [CONTATO]);
   await pool.query("delete from organizations where id = $1", [ORG]);
   await pool.end();
@@ -183,5 +209,40 @@ describe("enforceHolds nos holds que NÃO são go-live", () => {
       inbound_turn: { retido: false },
       followup_turn: { retido: false },
     });
+  });
+});
+
+describe("follow-up que não traz o canal no payload", () => {
+  /**
+   * É assim que o motor de fluxo e o agendador enfileiram `followup_turn`: com a
+   * conversa do atendimento (`service_boundary`) e SEM `channel_session_id` — é
+   * pela conversa que o handler acha o canal. Os casos acima enfileiram com o
+   * canal no payload, que é o formato do `inbound_turn` e que nenhum produtor de
+   * `followup_turn` emite; a regra casava só essa chave, então o follow-up real
+   * saía com o número em go-live.
+   */
+  it("é retido pelo canal da conversa e volta limpo quando o número é liberado", async () => {
+    await saude({ ativo: true, razao: "go_live" });
+    await enfileirarFollowupDaConversa();
+
+    expect((await enforceHolds(pool)).held).toBe(1);
+    expect(await estado()).toEqual({ followup_turn: { retido: true } });
+
+    await saude({ ativo: false, razao: null });
+    expect((await enforceHolds(pool)).released).toBe(1);
+    const { rows } = await pool.query<{ payload: Record<string, unknown> }>(
+      "select payload from job_queue where organization_id = $1",
+      [ORG],
+    );
+    // As duas marcas do hold saem juntas: o job volta como o motor o enfileirou.
+    expect(Object.keys(rows[0]!.payload)).toEqual(["service_boundary"]);
+  });
+
+  it("não retém o follow-up da conversa de OUTRO número, que está saudável", async () => {
+    await saude({ ativo: true, razao: "go_live" });
+    await enfileirarFollowupDaConversa(CONVERSA_B);
+
+    expect((await enforceHolds(pool)).held).toBe(0);
+    expect(await estado()).toEqual({ followup_turn: { retido: false } });
   });
 });

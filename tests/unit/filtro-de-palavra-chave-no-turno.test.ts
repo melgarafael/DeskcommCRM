@@ -84,10 +84,30 @@ interface Linha {
   media_mime: string | null;
   media_derived_text: string | null;
   sent_at: Date;
+  /**
+   * #3142 — a autoria da linha, que o envio e a ingestão gravam no banco.
+   * `texto()` NÃO carimba nada por padrão: uma outbound sem carimbo é fala de
+   * GENTE (o operador cumprimentou), não resposta de agente — é o que mantém os
+   * casos do #2696 acima medindo a ENTRADA da conversa.
+   */
+  sent_via?: string | null;
+  ai_actor_id?: string | null;
+  status?: string;
 }
 
-/** Mensagem de texto como a linha do banco a devolve. */
-function texto(direction: Linha["direction"], body: string, minutos: number): Linha {
+/**
+ * Mensagem de texto como a linha do banco a devolve.
+ *
+ * `autor` carimba quem falou, no vocabulário do banco: `"ai"` + o id do agente
+ * em `metadata.ai_actor_id` (é o que o handler do app grava para todo envio de
+ * agente — `app/api/v1/messages/_handler.ts`), ou `"user"` para o operador.
+ */
+function texto(
+  direction: Linha["direction"],
+  body: string,
+  minutos: number,
+  autor?: { sent_via: string; ai_actor_id?: string | null; status?: string },
+): Linha {
   return {
     direction,
     type: "text",
@@ -97,6 +117,13 @@ function texto(direction: Linha["direction"], body: string, minutos: number): Li
     media_mime: null,
     media_derived_text: null,
     sent_at: new Date(Date.UTC(2026, 9, 6, 15, minutos)),
+    ...(autor === undefined
+      ? {}
+      : {
+          sent_via: autor.sent_via,
+          ai_actor_id: autor.ai_actor_id ?? null,
+          status: autor.status ?? "delivered",
+        }),
   };
 }
 
@@ -132,11 +159,36 @@ const LINHA_DO_CONTATO = {
  *
  *  - contato e histórico seguem o SQL real (a abertura é a REAL, então o
  *    contexto — e o corpo composto — vêm de `getLeadContext`);
- *  - a linha fixada no job (`and id = $3`) é a que o turno responde.
+ *  - a linha fixada no job (`and id = $3`) é a que o turno responde;
+ *  - **#3142** — a consulta da âncora (`agente-ja-respondeu.ts`) é respondida
+ *    pela MESMA régua do SQL real, calculada sobre `historico`: outbound com
+ *    `sent_via='ai'`, `metadata->>'ai_actor_id'` igual ao agente do turno,
+ *    `status <> 'failed'` e dentro do atendimento corrente. Assim é o fixture
+ *    da conversa que engaja (ou não) o agente, e não um booleano injetado.
  */
-function poolCom(historico: Linha[], fixada: Linha | null) {
+function poolCom(
+  historico: Linha[],
+  fixada: Linha | null,
+  opts: {
+    /** `conversations.service_started_at`: a fronteira do atendimento corrente. */
+    atendimentoDesde?: Date | null;
+  } = {},
+) {
+  const desde = opts.atendimentoDesde ?? null;
   return {
-    query: vi.fn(async (sql: string) => {
+    query: vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("m.metadata->>'ai_actor_id'")) {
+        const agente = String(params?.[2] ?? "");
+        const respondeu = historico.some(
+          (l) =>
+            l.direction === "outbound" &&
+            l.sent_via === "ai" &&
+            (l.ai_actor_id ?? null) === agente &&
+            l.status !== "failed" &&
+            (desde === null || l.sent_at >= desde),
+        );
+        return { rows: [{ respondeu }] };
+      }
       if (/from contacts where organization_id = \$1 and id = \$2/.test(sql)) {
         return { rows: [LINHA_DO_CONTATO] };
       }
@@ -163,10 +215,25 @@ function logFalso() {
   return { info, warn: vi.fn(), error: vi.fn(), debug: vi.fn(), infoChamado: info };
 }
 
+/**
+ * O turno REAL, na resolução que o roteador produziria.
+ *
+ * `modo`:
+ *  - `"sem-roteador"` — a instalação padrão (um agente só): `no_router`, sem
+ *    roteador nenhum. É onde o sticky NUNCA é gravado (ponto 1a do CR).
+ *  - `"com-roteador"` — roteador ativo que TROCA de assunto: outcome
+ *    `reclassified`, como o `reclassified agent-vendas true` que o mantenedor
+ *    mediu (ponto 1b + ponto 2).
+ *
+ * O agente que responde é o MESMO nos dois modos (`agente-1`); o que muda é o
+ * roteador. É assim que se prova que a âncora não depende dele.
+ */
 async function turno(
   pool: never,
   filtro: RegExp | null,
   log: ReturnType<typeof logFalso>,
+  modo: "sem-roteador" | "com-roteador" = "sem-roteador",
+  agente = "agente-1",
 ): Promise<void> {
   const job = {
     id: JOB,
@@ -190,7 +257,7 @@ async function turno(
   await runAgentTurn(deps as never, job as never, pool, { workerId: "w" }, {
     resolvedAgent: {
       config: {
-        agentId: "agente-1",
+        agentId: agente,
         versionId: "v1",
         operationMode: "automatic",
         pausedAt: null,
@@ -202,10 +269,12 @@ async function turno(
         handoffKeywords: [],
         filtroDePalavraChave: filtro,
       },
-      routerId: null,
-      intentName: null,
-      confidence: null,
-      outcome: "fallback",
+      // #3142 — a resolução NÃO carrega mais sinal de engajamento: ela roda
+      // antes de o agente ser escolhido e não tem como responder a pergunta.
+      routerId: modo === "com-roteador" ? "router-1" : null,
+      intentName: modo === "com-roteador" ? "vendas" : null,
+      confidence: modo === "com-roteador" ? 0.9 : null,
+      outcome: modo === "com-roteador" ? "reclassified" : "fallback",
     },
     channelSessionId: CANAL,
     conversationId: CONVERSA,
@@ -213,6 +282,7 @@ async function turno(
     buildOpening: () => "",
   } as never);
 }
+
 
 const mensagensDeLog = (log: ReturnType<typeof logFalso>): string[] =>
   log.infoChamado.mock.calls.map((c) => String(c[0]));
@@ -353,6 +423,187 @@ describe("ponto 1 do CR — as detecções rodam ANTES do portão", () => {
   });
 });
 
+describe("#3142 — o filtro decide a ENTRADA, não cada mensagem", () => {
+  /** A fala do agente que vai responder, como o caminho de envio a grava. */
+  const doAgente = { sent_via: "ai", ai_actor_id: "agente-1" };
+
+  const COMPRA_AZUL = texto("inbound", "camiseta azul, tamanho M", 3);
+
+  it("SEM roteador — o MESMO agente já respondeu neste atendimento: o filtro não cala", async () => {
+    // O exemplo do #2696: o agente respondeu "quero um orçamento", perguntou o
+    // produto, e o cliente respondeu "camiseta azul, tamanho M" — sem nenhuma
+    // palavra do filtro. Na instalação padrão (sem roteador) o sticky NUNCA é
+    // gravado (ponto 1a do CR): a âncora é a outbound do próprio agente.
+    const log = logFalso();
+    const pool = poolCom(
+      [
+        texto("inbound", "quero um orçamento", 1),
+        texto("outbound", "Qual o produto?", 2, doAgente),
+        COMPRA_AZUL,
+      ],
+      COMPRA_AZUL,
+    );
+
+    // O ponto de parada é a primeira chamada de modelo (sem config de LLM na
+    // org): chegar aqui é a prova de que o turno atravessou o portão.
+    await expect(turno(pool, FILTRO, log, "sem-roteador")).rejects.toThrow(/config LLM/);
+    expect(
+      mensagensDeLog(log).some((m) => m.includes("turno pulado")),
+      "o turno de quem já respondeu não pode ser calado pelo filtro",
+    ).toBe(false);
+  });
+
+  it("COM roteador (reclassified) — a MESMA âncora vale: não cala", async () => {
+    // Ponto 1b: com roteador, o sticky é gravado no INÍCIO do turno (antes do
+    // portão) e engajava a conversa por uma mensagem que o filtro calou. A
+    // âncora nova é a resposta, então o modo do roteador não muda o desfecho.
+    const log = logFalso();
+    const pool = poolCom(
+      [
+        texto("inbound", "quero um orçamento", 1),
+        texto("outbound", "Qual o produto?", 2, doAgente),
+        COMPRA_AZUL,
+      ],
+      COMPRA_AZUL,
+    );
+
+    await expect(turno(pool, FILTRO, log, "com-roteador")).rejects.toThrow(/config LLM/);
+    expect(mensagensDeLog(log).some((m) => m.includes("turno pulado"))).toBe(false);
+  });
+
+  it("CONTROLE DA ENTRADA, SEM roteador — nenhuma resposta deste agente: continua calando", async () => {
+    const log = logFalso();
+    const pool = poolCom(
+      [texto("outbound", "Oi! Como posso ajudar?", 0), COMPRA_AZUL],
+      COMPRA_AZUL,
+    );
+    await expect(turno(pool, FILTRO, log, "sem-roteador")).resolves.toBeUndefined();
+    expect(mensagensDeLog(log).some((m) => m.includes("turno pulado"))).toBe(true);
+  });
+
+  it("CONTROLE DA ENTRADA, COM roteador — uma mensagem calada não engaja por si", async () => {
+    // O que o sticky fazia: a primeira mensagem (sem a palavra) era calada e
+    // mesmo assim marcava a conversa como engajada — a SEGUNDA entrava sem
+    // filtro. Aqui não há resposta nenhuma do agente, então o filtro vale.
+    const log = logFalso();
+    const pool = poolCom(
+      [texto("inbound", "oi", 1), COMPRA_AZUL],
+      COMPRA_AZUL,
+    );
+    await expect(turno(pool, FILTRO, log, "com-roteador")).resolves.toBeUndefined();
+    expect(mensagensDeLog(log).some((m) => m.includes("turno pulado"))).toBe(true);
+  });
+
+  it("PONTO 2 — fala de OUTRO agente não engaja o agente que vai responder", async () => {
+    // O caso medido pelo mantenedor: sticky = suporte, o roteador troca para
+    // vendas (`reclassified agent-vendas true`) e o agente de vendas entrava
+    // pulando o PRÓPRIO filtro. O engajamento é do agente, não da conversa.
+    const log = logFalso();
+    const pool = poolCom(
+      [
+        texto("outbound", "Sou do suporte, em que posso ajudar?", 1, {
+          sent_via: "ai",
+          ai_actor_id: "agente-suporte",
+        }),
+        COMPRA_AZUL,
+      ],
+      COMPRA_AZUL,
+    );
+    await expect(turno(pool, FILTRO, log, "com-roteador")).resolves.toBeUndefined();
+    expect(mensagensDeLog(log).some((m) => m.includes("turno pulado"))).toBe(true);
+  });
+
+  it("PONTO 2, o outro lado — a resposta do PRÓPRIO agente engaja, com roteador", async () => {
+    const pool = poolCom(
+      [
+        texto("outbound", "Sou de vendas, qual o produto?", 1, {
+          sent_via: "ai",
+          ai_actor_id: "agente-vendas",
+        }),
+        COMPRA_AZUL,
+      ],
+      COMPRA_AZUL,
+    );
+    await expect(turno(pool, FILTRO, logFalso(), "com-roteador", "agente-vendas")).rejects.toThrow(
+      /config LLM/,
+    );
+  });
+
+  it("CONTROLE — envio que FALHOU não é resposta: o filtro segue valendo", async () => {
+    const log = logFalso();
+    const pool = poolCom(
+      [
+        texto("outbound", "Qual o produto?", 1, { ...doAgente, status: "failed" }),
+        COMPRA_AZUL,
+      ],
+      COMPRA_AZUL,
+    );
+    await expect(turno(pool, FILTRO, log)).resolves.toBeUndefined();
+    expect(mensagensDeLog(log).some((m) => m.includes("turno pulado"))).toBe(true);
+  });
+
+  it("CONTROLE — resposta do agente no atendimento ANTERIOR não engaja este", async () => {
+    // "Neste atendimento" é a fronteira de `conversations.service_started_at` —
+    // a MESMA que o histórico do turno usa. Um atendimento novo é uma ENTRADA
+    // nova, como a tela promete.
+    const log = logFalso();
+    const pool = poolCom(
+      [
+        texto("outbound", "Qual o produto?", 1, doAgente),
+        texto("inbound", "camiseta azul, tamanho M", 9),
+      ],
+      texto("inbound", "camiseta azul, tamanho M", 9),
+      { atendimentoDesde: new Date(Date.UTC(2026, 9, 6, 15, 5)) },
+    );
+    await expect(turno(pool, FILTRO, log)).resolves.toBeUndefined();
+    expect(mensagensDeLog(log).some((m) => m.includes("turno pulado"))).toBe(true);
+  });
+
+  it("CONTROLE — fala do OPERADOR não engaja o agente (sent_via='user')", async () => {
+    const log = logFalso();
+    const pool = poolCom(
+      [texto("outbound", "Já te respondo!", 1, { sent_via: "user" }), COMPRA_AZUL],
+      COMPRA_AZUL,
+    );
+    await expect(turno(pool, FILTRO, log)).resolves.toBeUndefined();
+    expect(mensagensDeLog(log).some((m) => m.includes("turno pulado"))).toBe(true);
+  });
+
+  it("CONTROLE — sem filtro configurado o turno segue idêntico (com ou sem âncora)", async () => {
+    const pool = poolCom([texto("outbound", "Oi!", 0), COMPRA_AZUL], COMPRA_AZUL);
+    await expect(turno(pool, null, logFalso(), "com-roteador")).rejects.toThrow(/config LLM/);
+  });
+
+  it("CONTROLE — o engajamento NÃO vence o pedido de humano (a ordem do início do turno fica)", async () => {
+    const log = logFalso();
+    const pedido = texto("inbound", "quero falar com um atendente", 3);
+    const pool = poolCom([texto("outbound", "Qual o produto?", 1, doAgente), pedido], pedido);
+    await expect(turno(pool, FILTRO, log, "com-roteador")).resolves.toBeUndefined();
+    expect(mocks.passagem).toHaveBeenCalledTimes(1);
+    expect(mocks.passagem.mock.calls[0]?.[2]).toEqual(
+      expect.objectContaining({ reason: "requested_human" }),
+    );
+  });
+
+  it("CONTROLE — o engajamento NÃO vence o opt-out ambíguo", async () => {
+    const optOut = texto("inbound", "me deixa em paz", 3);
+    const pool = poolCom([texto("outbound", "Qual o produto?", 1, doAgente), optOut], optOut);
+    await expect(turno(pool, FILTRO, logFalso(), "com-roteador")).resolves.toBeUndefined();
+    expect(mocks.passagem.mock.calls[0]?.[2]).toEqual(
+      expect.objectContaining({ reason: "suspected_optout" }),
+    );
+  });
+
+  it("CONTROLE — falha aberta segue aberta: regex quebrada não vira mordaça", async () => {
+    // O filtro que a tela grava torto NÃO é filtro: `lerFiltroDePalavraChave`
+    // devolve null (falha aberta), e o turno segue, com ou sem âncora.
+    const quebrado = lerFiltroDePalavraChave({ filters: { keyword_regex: "(orçamento" } });
+    expect(quebrado).toBeNull();
+    const pool = poolCom([texto("outbound", "Oi!", 0), COMPRA_AZUL], COMPRA_AZUL);
+    await expect(turno(pool, quebrado, logFalso())).rejects.toThrow(/config LLM/);
+  });
+});
+
 /**
  * A ORDEM também se vigia no texto — comportamento verde por acidente (ex.: o
  * portão virar no-op) não prova posição, e o defeito do CR é de posição.
@@ -386,5 +637,59 @@ describe("fiação — o portão vem DEPOIS das duas detecções", () => {
     expect(t).toMatch(
       /inboundsPendentes\.length > 0\s*\?\s*inboundsPendentes\s*:\s*mensagemDoJob/,
     );
+  });
+
+  /**
+   * #3142 — o portão olha a ÂNCORA (outbound DESTE agente neste atendimento)
+   * para o agente que VAI responder. Se esta leitura sumir, o defeito do #2696
+   * volta (conversa em curso calada por um miss) e nenhum teste de decisão pura
+   * denuncia: é a ligação que se vigia.
+   */
+  it("o portão lê a âncora do agente que vai responder, ANTES de julgar a mensagem", () => {
+    const i = FONTE.indexOf("async function executarTurnoDoAgente(");
+    const t = FONTE.slice(i);
+    const leitura = t.indexOf("agenteJaRespondeuNoAtendimento(pool");
+    expect(leitura, "a leitura da âncora sumiu do turno").toBeGreaterThan(-1);
+    expect(t, "a âncora precisa ser do agente que vai responder").toMatch(
+      /agentId: agentConfig\.agentId/,
+    );
+    expect(t, "o portão parou de consultar a âncora").toMatch(/!agenteJaEngajado/);
+    // A leitura vem antes do julgamento da mensagem e o portão segue depois das
+    // duas detecções (acima).
+    expect(leitura).toBeLessThan(t.indexOf("turnoDisparaNasMensagens("));
+  });
+
+  /**
+   * O CR do #3240 recusou o sticky do roteador como âncora. Vigia-se o desenho:
+   * a resolução não expõe (nem pode expor) sinal de engajamento — ela roda
+   * antes de o agente ser escolhido.
+   */
+  it("o sticky do roteador NÃO é mais a âncora", () => {
+    const i = FONTE.indexOf("async function executarTurnoDoAgente(");
+    const t = FONTE.slice(i);
+    expect(t, "o turno voltou a ler o engajamento da resolução").not.toMatch(
+      /'agenteJaEngajado' in routed/,
+    );
+    const RESOLUCAO = readFileSync(
+      join(process.cwd(), "lib/agent-engine/agent/resolve-turn-agent.ts"),
+      "utf8",
+    );
+    expect(RESOLUCAO, "a resolução voltou a carregar sinal de engajamento").not.toMatch(
+      /agenteJaEngajado/,
+    );
+  });
+
+  it("a âncora é a outbound do agente (sent_via='ai' + metadata.ai_actor_id), não o sticky", () => {
+    const ANCORA = readFileSync(
+      join(process.cwd(), "lib/agent-engine/agent/agente-ja-respondeu.ts"),
+      "utf8",
+    );
+    expect(ANCORA).toMatch(/m\.sent_via = 'ai'/);
+    expect(ANCORA).toMatch(/m\.metadata->>'ai_actor_id' = \$3/);
+    expect(ANCORA).toMatch(/m\.status <> 'failed'/);
+    // A fronteira do atendimento: a MESMA régua do histórico do turno.
+    expect(ANCORA).toMatch(/m\.sent_at >= c\.service_started_at/);
+    // A CONSULTA não lê o sticky — o cabeçalho do módulo explica por quê.
+    expect(ANCORA.slice(ANCORA.indexOf("select exists"))).not.toMatch(/active_ai_agent_id/);
   });
 });

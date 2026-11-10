@@ -280,17 +280,17 @@ function explicarRecusa(motivo: string | undefined, quantos: number | undefined)
     case "funil_com_negocios":
       return (
         `Este quadro já tem ${quantos ?? "alguns"} cliente(s) dentro, então trocar as colunas agora ` +
-        `deixaria eles sem lugar. Você pode ajustar as colunas depois, em Configurações › Funis.`
+        `deixaria eles sem lugar. Você pode ajustar as colunas depois, em CRM › Ver tudo em CRM › Etapas do funil.`
       );
     case "etapa_em_uso_por_webhook":
       return (
         "Uma das colunas atuais está sendo usada por uma integração que traz clientes de fora. " +
-        "Trocar o quadro desligaria essa integração, então preferi não mexer — ajuste em Configurações › Funis."
+        "Trocar o quadro desligaria essa integração, então preferi não mexer — ajuste em CRM › Ver tudo em CRM › Etapas do funil."
       );
     case "funil_nao_encontrado":
       return "Não encontrei o quadro desta empresa. Recarregue a página.";
     default:
-      return "Não consegui montar o quadro agora. Você pode fazer isso depois em Configurações › Funis.";
+      return "Não consegui montar o quadro agora. Você pode fazer isso depois em CRM › Ver tudo em CRM › Etapas do funil.";
   }
 }
 

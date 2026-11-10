@@ -1,0 +1,663 @@
+{
+  "id": "organizacao",
+  "titulo": "Organização",
+  "tela": "/app/settings/tenant",
+  "resumo": "Onde você cadastra os dados da sua empresa, decide por quanto tempo guardar fotos e áudios das conversas, ajusta o menu da equipe e, se precisar, apaga os dados de teste para recomeçar.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela Organização",
+      "objetivo": "Achar a tela Organização e reconhecer os quadros que ela reúne.",
+      "papel": "admin",
+      "busca": [
+        "dados da empresa",
+        "configurações da empresa",
+        "onde mudo o nome da empresa",
+        "cadastro da clínica",
+        "organização",
+        "razão social e cnpj"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" está o cartão \"Organização\". Clique nele.",
+          "dica": "Só quem é administrador da empresa abre esta tela. Gerente e atendente que digitarem o endereço caem numa página de acesso negado.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/tenant']"
+              },
+              "rotulo": "Organização",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/tenant']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O cadastro da empresa",
+          "texto": "O primeiro quadro guarda o cadastro da sua empresa: o nome que a equipe vê, a razão social, o CNPJ, o fuso horário, o idioma, a moeda e o país, o e-mail do encarregado de dados, o endereço da sua política de privacidade e por quanto tempo guardar as fotos e os áudios das conversas. Nada muda enquanto você não clicar em \"Salvar\", no fim do quadro.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/tenant']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Organização",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "header:has(> h1)"
+              },
+              "rotulo": "Tela Organização",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "form:has(#display_name)"
+              },
+              "rotulo": "Cadastro da empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os outros quadros",
+          "texto": "Rolando a tela aparecem mais três quadros. \"Menu lateral\" escolhe quais áreas a empresa mostra no menu. \"Inbox\" guarda uma regra de atendimento que vale para todos. \"Zona de perigo\" apaga os dados de teste. O cadastro, o menu e a regra da Inbox têm cada um o seu botão de gravar: salvar um não salva os outros.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "zona-de-perigo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "fieldset:has(> legend:text-is('Interface'))"
+              },
+              "rotulo": "Menu lateral",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.shadow-xs:has(> h2:text-is('Inbox'))"
+              },
+              "rotulo": "Regra de atendimento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "zona-de-perigo"
+              },
+              "rotulo": "Apagar os dados de teste",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dados-da-empresa",
+      "titulo": "Preencher os dados da empresa",
+      "objetivo": "Conferir o nome, a razão social e o CNPJ, cadastrar o encarregado de dados e salvar.",
+      "papel": "admin",
+      "busca": [
+        "mudar nome da empresa",
+        "cadastrar cnpj",
+        "razão social",
+        "encarregado de dados lgpd",
+        "email do dpo",
+        "política de privacidade da clínica",
+        "fuso horário da empresa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Nome, razão social e CNPJ",
+          "texto": "\"Nome de exibição\" é como a empresa aparece para a equipe dentro do sistema. \"Razão social\" e \"CNPJ\" são os dados oficiais: é a razão social que aparece no relatório que o cliente recebe quando pede uma cópia dos dados dele.",
+          "dica": "Escreva o CNPJ sempre do mesmo jeito, com pontos, barra e traço. Se outra empresa desta instalação já tem esse CNPJ cadastrado, o sistema não grava e avisa \"Este CNPJ já pertence a outra organização.\".",
+          "rota": "/app/settings/tenant",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #display_name)"
+              },
+              "rotulo": "Nome que a equipe vê",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #legal_name)"
+              },
+              "rotulo": "Nome oficial",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #cnpj)"
+              },
+              "rotulo": "CNPJ",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Fuso, idioma, moeda e país",
+          "texto": "\"Fuso horário\" e \"Idioma\" são os padrões da empresa. \"Moeda\" vale para todo preço do catálogo, mas um produto já cadastrado continua com a moeda com que foi criado. \"País\" decide qual documento o contato usa e qual lei aparece no relatório de dados do cliente. Trocar o país já sugere o fuso dele no campo \"Fuso horário\".",
+          "dica": "A lista de países é curta de propósito: só entram países cuja lei de proteção de dados já foi revisada.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #timezone)"
+              },
+              "rotulo": "Fuso da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #locale)"
+              },
+              "rotulo": "Idioma",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #currency)"
+              },
+              "rotulo": "Moeda dos preços",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #country)"
+              },
+              "rotulo": "País e lei",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O encarregado de dados e a política de privacidade",
+          "texto": "\"DPO email\" é o e-mail do encarregado de dados, a pessoa que responde quando um cliente pergunta o que a empresa guarda sobre ele. Esse e-mail sai no relatório de dados que o cliente recebe. Em \"URL política de privacidade\", cole o endereço completo da página de privacidade da sua empresa, começando com https://. Quem da sua equipe abrir a página de privacidade do sistema passa a ser levado para a sua.",
+          "dica": "Deixando o e-mail em branco, o sistema usa o encarregado cadastrado para a instalação inteira, se houver.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#dpo_email"
+              },
+              "valor": "privacidade@clinicabemviver.com.br"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#privacy_policy_url"
+              },
+              "valor": "https://clinicabemviver.com.br/privacidade"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #dpo_email)"
+              },
+              "rotulo": "E-mail do encarregado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #privacy_policy_url)"
+              },
+              "rotulo": "Sua política de privacidade",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvar",
+          "texto": "Clique em \"Salvar\", no canto do quadro. O botão mostra \"Salvando…\" enquanto grava. A confirmação \"Organização atualizada.\" aparece por alguns segundos e não está na foto; o próximo passo reabre a tela para conferir o que ficou salvo. Se um campo estiver mal preenchido, como um e-mail sem @, o próprio navegador aponta o campo e não deixa salvar até você corrigir.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Grava o cadastro",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Conferindo o que ficou gravado",
+          "texto": "Ao abrir a tela de novo, os campos mostram o que ficou gravado: o e-mail do encarregado e o endereço da política de privacidade agora fazem parte do cadastro da empresa.",
+          "rota": "/app/settings/tenant",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #dpo_email)"
+              },
+              "rotulo": "E-mail gravado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #privacy_policy_url)"
+              },
+              "rotulo": "Endereço gravado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "retencao-de-midia",
+      "titulo": "Por quanto tempo guardar fotos e áudios",
+      "objetivo": "Entender a retenção de mídia e a limpeza automática das fotos, áudios e anexos antigos.",
+      "papel": "admin",
+      "busca": [
+        "apagar fotos antigas",
+        "guardar áudios do whatsapp",
+        "retenção de mídia",
+        "espaço de armazenamento cheio",
+        "limpeza automática",
+        "por quanto tempo guarda os arquivos"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A retenção de mídia",
+          "texto": "\"Retenção de mídia (dias)\" é por quanto tempo o sistema guarda as fotos, áudios e documentos que chegam pelas conversas. O padrão é 365 dias. O valor aceito vai de 30 a 3650 dias (dez anos).",
+          "rota": "/app/settings/tenant",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> #media_retention_days)"
+              },
+              "rotulo": "Dias de guarda",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-3:has(#media_retention_enforced)"
+              },
+              "rotulo": "Limpeza automática",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Trocar o prazo",
+          "texto": "Digite um prazo novo, por exemplo 180. A frase abaixo da chave \"Limpeza automática de mídia antiga\" já mostra o resultado: com ela ligada, a mídia das conversas e os anexos das notas internas com mais de 180 dias passam a ser apagados. Só vale depois de clicar em \"Salvar\".",
+          "dica": "O texto das mensagens não é apagado: a limpeza tira só os arquivos (fotos, áudios, documentos) e, junto com o áudio, a transcrição dele. No lugar do arquivo, a conversa mostra um aviso de que a mídia expirou.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#media_retention_days"
+              },
+              "valor": "180"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#media_retention_days"
+              },
+              "rotulo": "Novo prazo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-3:has(#media_retention_enforced)"
+              },
+              "rotulo": "O que acontece com ele",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Ligar e desligar a limpeza",
+          "texto": "Clique na chave para desligar a limpeza: a frase muda para \"Desligado\", e nenhum arquivo é apagado por idade. Ao ligar de novo, o navegador pede uma confirmação, porque a partir daí os arquivos mais antigos que o prazo começam a ser apagados. Como sempre nesta tela, a mudança só vale depois de \"Salvar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "#media_retention_enforced"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#media_retention_enforced"
+              },
+              "rotulo": "Chave da limpeza",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Desligado: a mídia das conversas",
+                "exato": false
+              },
+              "rotulo": "Nada é apagado por idade",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "menu-e-regras-da-inbox",
+      "titulo": "O menu da empresa e a regra da Inbox",
+      "objetivo": "Escolher quais áreas aparecem no menu para toda a empresa e conhecer o bloqueio da caixa de mensagem até assumir.",
+      "papel": "admin",
+      "busca": [
+        "esconder itens do menu",
+        "menu simplificado para a equipe",
+        "deixar o menu mais simples",
+        "atendente só responde depois de assumir",
+        "bloquear resposta sem assumir",
+        "personalizar menu lateral"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O quadro Menu lateral",
+          "texto": "Aqui você escolhe as áreas que a empresa mostra no menu lateral. Isso não muda o que cada pessoa pode fazer: quem tem permissão ainda chega a uma área escondida por um link ou um aviso. Depois, em \"Equipe\", você ainda pode deixar o menu de uma pessoa com menos áreas, mas nunca com mais do que a empresa escolheu aqui.",
+          "rota": "/app/settings/tenant",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Aplicar interface",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.shadow-xs:has(> h2:text-is('Menu lateral'))"
+              },
+              "rotulo": "Menu da empresa toda",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Completa ou Simplificada",
+          "texto": "Em \"Perfil de interface\", \"Completa\" mostra todas as áreas que o papel de cada pessoa permite. \"Simplificada\" deixa no menu só o dia a dia: Inbox, Agenda, Funis, Contatos e Tarefas, e Conexões para quem administra. Perfil, Segurança, Notificações e App no celular ficam sempre lá, e, para quem administra, também Equipe e Organização. Trocar de perfil desfaz a escolha feita área por área.",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Perfil de interface",
+                "exato": true
+              },
+              "opcao": "Simplificada"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Perfil de interface",
+                "exato": true
+              },
+              "rotulo": "Simplificada escolhida",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher área por área",
+          "texto": "Clique em \"Personalizar áreas visíveis\" para marcar e desmarcar cada área, separadas por grupo. A lista rola: descendo dentro dela aparecem as outras áreas, como Contatos, Tarefas e Conexões. Ao mexer numa caixa, o título ganha \"(personalizada)\". Para valer, clique em \"Aplicar interface\" (até lá, o menu da esquerda continua igual): aparece o aviso \"Menu lateral da empresa salvo.\".",
+          "dica": "Se você desmarcar tudo, aparece o aviso \"Selecione ao menos uma área de trabalho permitida ao papel.\".",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Perfil de interface",
+                "exato": true
+              },
+              "opcao": "Simplificada"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Personalizar áreas visíveis"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Aplicar interface",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "details:has(> summary)"
+              },
+              "rotulo": "Áreas, uma a uma",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Aplicar interface",
+                "exato": true
+              },
+              "rotulo": "Grava o menu",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Bloquear a caixa até assumir",
+          "texto": "No quadro \"Inbox\", marque \"Bloquear a caixa de mensagem até o atendente assumir a conversa\" e clique em \"Aplicar regras de atendimento\". A partir daí, só o responsável pela conversa consegue digitar. Quem abre uma conversa sem responsável, ou que está com um colega, não consegue digitar nem enviar até clicar em \"Assumir\". Quem já assumiu continua respondendo normalmente.",
+          "dica": "A regra vale para a empresa inteira e não muda o que cada papel pode fazer: só pede que a pessoa assuma antes de escrever.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.shadow-xs:has(> h2:text-is('Inbox'))"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Bloquear a caixa de mensagem até o atendente assumir a conversa"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.shadow-xs:has(> h2:text-is('Inbox')) label"
+              },
+              "rotulo": "Regra marcada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Aplicar regras de atendimento",
+                "exato": true
+              },
+              "rotulo": "Grava a regra",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zona-de-perigo",
+      "titulo": "Apagar os dados de teste",
+      "objetivo": "Saber o que a Zona de perigo apaga, o que ela mantém e como a confirmação protege contra um clique sem querer.",
+      "papel": "admin",
+      "busca": [
+        "apagar tudo e começar de novo",
+        "limpar dados de teste",
+        "zerar conversas e contatos",
+        "zona de perigo",
+        "excluir todos os contatos",
+        "recomeçar do zero"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que a Zona de perigo faz",
+          "texto": "No fim da tela fica a \"Zona de perigo\". Ela apaga de vez as mensagens, conversas, negócios, propostas, contatos, agendamentos e pedidos da empresa, com tudo o que estava ligado a eles, como notas e histórico. Serve para limpar os testes antes de começar a atender de verdade. Continuam de pé a equipe, as configurações, os funis e etapas, os agentes de IA e os números de WhatsApp conectados.",
+          "rota": "/app/settings/tenant",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "zona-de-perigo"
+              },
+              "rotulo": "Apaga os dados de atendimento",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "abrir-zona-de-perigo"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A confirmação",
+          "texto": "O botão \"Apagar todos os dados de atendimento\" não apaga nada sozinho: ele abre uma janela avisando que a ação é irreversível. Enquanto o nome da empresa, como aparece em negrito na janela, não for digitado igualzinho, com as mesmas maiúsculas e acentos, o botão \"Apagar de vez\" fica desativado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "abrir-zona-de-perigo"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "confirmar-nome-da-organizacao"
+              },
+              "rotulo": "Digite o nome da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "apagar-de-vez"
+              },
+              "rotulo": "Ainda bloqueado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true
+              },
+              "rotulo": "Fecha sem apagar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Nome digitado: botão liberado",
+          "texto": "Com \"Clínica Bem Viver\" digitado, o botão \"Apagar de vez\" fica liberado. Ao clicar nele, tudo é apagado e aparece um aviso com quantas mensagens, conversas, negócios e contatos saíram. Não dá para desfazer. Se mudou de ideia, clique em \"Cancelar\" e nada acontece.",
+          "dica": "Faça isso só enquanto ainda estiver testando: depois que os clientes reais chegarem, essa limpeza apaga o histórico deles.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "confirmar-nome-da-organizacao"
+              },
+              "valor": "Clínica Bem Viver"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "apagar-de-vez"
+              },
+              "rotulo": "Apaga de vez",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true
+              },
+              "rotulo": "Desiste sem apagar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -20,9 +20,14 @@ import { McpAuthError, ensureRole, ensureScope } from "@/lib/mcp/auth";
 import type { McpAuthResult } from "@/lib/mcp/auth";
 import { logger } from "@/lib/logger";
 import { allTools, getToolByName } from "@/lib/mcp/tools";
-import { escolhasRemotas } from "@/lib/mcp/servidor-externo/ids";
-import { definirFerramentasRemotas } from "@/lib/mcp/tools/externo";
+import {
+  definirFerramentasDoServidorDoAgente,
+  definirFerramentasRemotas,
+  ferramentaDeSolicitarAcesso,
+} from "@/lib/mcp/tools/externo";
 import type { ServidorMcpExternoMontado } from "@/lib/mcp/servidor-externo/carregar";
+import type { ServidorDoAgenteNoTurno } from "@/lib/mcp/servidor-externo/do-agente/carregar";
+import { escolhasDoServidor, escolhasRemotas } from "@/lib/mcp/servidor-externo/ids";
 import { catalogEntry, deCapacidadeDesligada, deModuloDesligado } from "@/lib/mcp/tools/catalog";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
@@ -33,6 +38,8 @@ import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
 import { escritaCabeNoTurno } from "./escopo-das-escritas";
+import type { DesfechoDaEscrita, EfeitoDasEscrituras } from "./efeito-das-escritas";
+import { ESCRITAS_DE_AGENDAMENTO } from "./recibos-de-agendamento";
 import {
   chaveDaEscritaDoNegocio,
   criarFilaDeEscritasDoNegocio,
@@ -96,6 +103,26 @@ export interface PickToolsInput {
    * é síncrono.
    */
   servidorMcpExterno?: ServidorMcpExternoMontado;
+  /**
+   * Servidores MCP DO AGENTE já carregados para este turno (migration 9095),
+   * por `carregarServidoresDoAgenteNoTurno`. Ausente/vazio = nenhum.
+   */
+  servidoresDoAgente?: readonly ServidorDoAgenteNoTurno[];
+  /**
+   * O PREDICADO ÚNICO do efeito deste turno (#3333) — ver
+   * `lib/ai/runtime/efeito-das-escritas.ts`.
+   *
+   * Esta ponte é o ÚNICO ponto que sabe o desfecho de uma escrita (ela decide o `success`
+   * do audit depois do escopo de contato, do negócio do turno, do escopo de funil, da
+   * recusa do handler e da escrita sem desfecho). Por isso é ELA que responde à pergunta
+   * "esta ação já produziu efeito?", uma vez por saída, em vez de cada call site
+   * reimplementar "deu certo?".
+   *
+   * Ausente = ninguém pergunta: um chamador que não conhece o campo simplesmente não
+   * registra desfecho. A direção segura aqui é NÃO registrar — o que desarma um gate,
+   * nunca libera uma escrita.
+   */
+  efeitos?: EfeitoDasEscrituras;
 }
 
 /**
@@ -194,7 +221,7 @@ const HANDOFF_TOOL_NAME = "crm_request_human_handoff";
 const DRAFT_PROPOSAL_TOOL_NAME = "crm_draft_proposal";
 const PREPARAR_PROPOSTA_TOOL_NAME = "crm_preparar_proposta";
 
-function shapeToZodObject(shape: Record<string, z.ZodTypeAny>): z.ZodTypeAny {
+export function shapeToZodObject(shape: Record<string, z.ZodTypeAny>): z.ZodTypeAny {
   // The MCP tool inputSchema is a Zod *raw shape* (object of zod types).
   //
   // Shape VAZIO vira registro livre, e não `z.object({})`: um servidor MCP
@@ -213,11 +240,27 @@ function wrapMcpTool(
 ): Tool {
   const inputSchema = shapeToZodObject(def.inputSchema as Record<string, z.ZodTypeAny>);
 
+  // ── A RESPOSTA ÚNICA PARA "ESTA AÇÃO JÁ PRODUZIU EFEITO?" (#3333) ────────
+  //
+  // Toda saída desta ponte que ENCERRA uma escrita passa por aqui, com o MESMO
+  // desfecho que já vai para o `api_audit_log`: o efeito não é uma segunda
+  // opinião sobre "deu certo?", é a que já existe, publicada para quem produz a
+  // fala (`guardrails/before-send.ts`, gate `registro_sem_efeito`).
+  //
+  // Leitura (`read`) não registra: ela não cria registro nenhum, e o predicado é
+  // sobre o que passou a existir.
+  const anotarEfeito = (desfecho: DesfechoDaEscrita): void => {
+    if (def.category === "read") return;
+    input.efeitos?.registrar(def.name, desfecho);
+  };
+
   return tool({
     description: def.description,
     inputSchema,
     execute: async (args: unknown) => {
       const startedAt = Date.now();
+      const geracaoDaAgenda = ESCRITAS_DE_AGENDAMENTO.has(def.name)
+        ? input.efeitos?.iniciarAgendamento() : undefined;
       // ── O UUID QUE O MODELO INVENTA PARA "NÃO SEI" ────────────────────────
       //
       // Aqui, na fronteira, e não em cada handler. Medido em produção: um
@@ -269,7 +312,7 @@ function wrapMcpTool(
         // `write` E `handoff`: a passagem também age sobre uma conversa. A regra
         // e o mapa campo → dono moram em `escopo-das-escritas.ts`; o `lead_id`
         // segue com a guarda logo abaixo. Sem contato do turno, nada muda.
-        if (input.contatoDoTurno && def.category !== "read") {
+        if (input.contatoDoTurno && def.category !== "read" && def.escritaDelegadaAoContato !== true) {
           const escopo = await escritaCabeNoTurno(
             input.supabase,
             input.ctx.organizationId,
@@ -286,6 +329,7 @@ function wrapMcpTool(
               success: false,
               errorMessage: `contato_da_conversa:${escopo.motivo}`,
             });
+            anotarEfeito("falhou");
             return escopo;
           }
         }
@@ -325,6 +369,7 @@ function wrapMcpTool(
               success: false,
               errorMessage: `negocio_da_conversa:${alvo.motivo}`,
             });
+            anotarEfeito("falhou");
             return { permitido: false, motivo: alvo.motivo, mensagem: alvo.mensagem };
           }
           if (alvo.trocado) {
@@ -350,7 +395,10 @@ function wrapMcpTool(
           ferramenta: def.name,
           argumentos: argsRecord,
           escopo: input.pipelineIds,
-          ehEscrita: def.category === "write",
+          // A escrita delegada ao contato age na conta DELE no terceiro, não em
+          // negócio do CRM: não há funil a escopar (e ela nunca é classificada
+          // em `ALVO_DE_FUNIL`, que a recusaria por vacuidade).
+          ehEscrita: def.category === "write" && def.escritaDelegadaAoContato !== true,
           resolvePipelineDoLead: async (leadId) => {
             const { data, error } = await input.supabase
               .from("crm_leads")
@@ -408,6 +456,7 @@ function wrapMcpTool(
           // Devolve TEXTO em vez de lançar: o modelo lê, entende por que foi
           // recusado e segue a conversa. Uma exceção viraria erro de execução e
           // o turno morreria — para o cliente, o assistente teria emudecido.
+          anotarEfeito("falhou");
           return { permitido: false, motivo: veredito.motivo, mensagem: explicacao };
         }
 
@@ -477,6 +526,7 @@ function wrapMcpTool(
             success: false,
             errorMessage: `contato_da_conversa:${recusa}`,
           });
+          anotarEfeito("falhou");
           return result;
         }
 
@@ -492,6 +542,11 @@ function wrapMcpTool(
             : { desfecho: "sem_resultado" as const, motivo: motivoDoVazio }),
           ...(termoBuscado === null ? {} : { termo: termoBuscado }),
         });
+        // O MESMO critério do audit: vazio declarado não é efeito (#484).
+        anotarEfeito(motivoDoVazio === null ? "produziu_efeito" : "falhou");
+        if (geracaoDaAgenda !== undefined && motivoDoVazio === null) {
+          input.efeitos?.registrarRecibosDeAgendamento(geracaoDaAgenda, result);
+        }
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : "unknown_error";
@@ -503,6 +558,10 @@ function wrapMcpTool(
           success: false,
           errorMessage: message,
         });
+        // Escrita sem desfecho NÃO é falha: ninguém sabe se ela aconteceu. O predicado
+        // guarda a diferença (`incerto`) porque o ensino do veto muda — em `falhou` a fala
+        // pode dizer "não registrei"; em `incerto` ela não pode afirmar nem negar.
+        anotarEfeito(err instanceof EscritaDoNegocioSemDesfechoError ? "incerto" : "falhou");
         if (err instanceof EscritaDoNegocioSemDesfechoError) {
           logger.error("escrita do negócio sem desfecho; novas escritas recusadas", {
             tool_name: def.name,
@@ -680,6 +739,38 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         if (input.contatoDoTurno && def.category === "read" && !identificado) continue;
         result[def.name] = wrapMcpTool(def, entradaDaRemota, executarEscrita);
       }
+    }
+  }
+
+  // ── Servidores MCP DO AGENTE (migration 9095) ────────────────────────────
+  //
+  // Mesma porta das remotas acima — `wrapMcpTool`, auditoria, papel, escopo —,
+  // com nomes namespaced (`<slug>__<nome>`). Servidor `oauth_por_contato` só
+  // chega aqui em turno com contato (a carga não o monta sem contato), e
+  // sempre ganha a ferramenta `solicitar_acesso_<slug>`: sem token, ela é a
+  // ÚNICA desse servidor; com token, serve ao step-up de escopo.
+  for (const montado of input.servidoresDoAgente ?? []) {
+    const ocupados = new Set([...allTools.map((t) => t.name), ...Object.keys(result)]);
+    const entradaDaRemota = input.contatoDoTurno
+      ? { ...input, ctx: { ...input.ctx, contatoDoTurno: input.contatoDoTurno } }
+      : input;
+    if (montado.estado === "pronto") {
+      // Defesa em profundidade, a mesma do servidor compartilhado: em turno com
+      // contato, só monta o que está amarrado A ESTE contato.
+      if (input.contatoDoTurno && montado.contato !== input.contatoDoTurno) continue;
+      const defs = definirFerramentasDoServidorDoAgente(
+        montado,
+        ocupados,
+        escolhasDoServidor(input.toolIds, montado.servidor.id),
+        input.contatoDoTurno,
+      );
+      for (const def of defs) result[def.name] = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+    } else if (!input.contatoDoTurno || montado.contato !== input.contatoDoTurno) {
+      continue;
+    }
+    const acesso = montado.servidor.modo === "oauth_por_contato" ? ferramentaDeSolicitarAcesso(montado) : null;
+    if (acesso && !ocupados.has(acesso.name)) {
+      result[acesso.name] = wrapMcpTool(acesso, entradaDaRemota, executarEscrita);
     }
   }
 

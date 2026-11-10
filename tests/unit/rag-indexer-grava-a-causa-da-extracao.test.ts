@@ -28,7 +28,7 @@ import { extrairTextoDoArquivo } from "@/lib/ai/rag/ingest/documento";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/ai/embed", () => ({
-  embedText: vi.fn(),
+  embedTexts: vi.fn(),
   SemChaveDeEmbeddingError: class SemChaveDeEmbeddingError extends Error {},
 }));
 vi.mock("@/lib/ai/embeddings/chave", () => ({ resolverChaveDeEmbedding: vi.fn() }));

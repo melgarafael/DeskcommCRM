@@ -1,0 +1,483 @@
+{
+  "id": "atividades",
+  "titulo": "Atividades",
+  "tela": "/app/activities",
+  "resumo": "O relatório do que aconteceu no CRM num período: quanto foi a equipe, quanto foram os agentes de IA, quem fez cada coisa e quais assuntos mais ocuparam o atendimento.",
+  "licoes": [
+    {
+      "id": "conhecendo-atividades",
+      "titulo": "Conhecendo a tela Atividades",
+      "objetivo": "Ler o resumo do período: o total de acontecimentos, quanto foi a equipe, os agentes e o automático, e em que dias tudo aconteceu.",
+      "papel": "admin",
+      "busca": [
+        "atividades",
+        "relatório",
+        "o que aconteceu",
+        "o que a equipe fez",
+        "histórico da semana",
+        "quem fez o quê",
+        "produtividade da equipe"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que esta tela mostra",
+          "texto": "A tela Atividades mostra o que aconteceu no seu CRM num período e quem fez cada coisa. Cada acontecimento é algo que ficou registrado num negócio do funil: mudar de etapa, assumir uma conversa, marcar um horário, concluir uma tarefa. A tela abre na aba \"Atividades\", com os \"Últimos 7 dias\". À direita aparece o total de acontecimentos do período.",
+          "dica": "A outra aba, \"Por etiqueta\", mostra quais assuntos mais ocuparam o atendimento. Ela tem uma lição só para ela.",
+          "rota": "/app/activities",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "As duas abas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Período",
+                "exato": true
+              },
+              "rotulo": "Período do relatório",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "total-de-atividades"
+              },
+              "rotulo": "Total do período",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Gente, agente ou automático",
+          "texto": "Os três cartões dividem o total por origem. \"A equipe\" conta o que as pessoas da sua equipe fizeram. \"Os agentes\" conta o que os agentes de IA fizeram sozinhos. \"Automático\" conta o que não foi nem uma pessoa da equipe nem um agente: o próprio sistema (por exemplo, ao criar o negócio quando chega a primeira mensagem), uma automação ou o próprio cliente. Embaixo do número fica a porcentagem do total.",
+          "dica": "O desenho ao lado de cada nome se repete na tela inteira: bolinha cheia é pessoa, anel é agente de IA e bolinha tracejada é automático.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "origem-filled"
+              },
+              "rotulo": "Feito pela equipe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "origem-ring"
+              },
+              "rotulo": "Feito pelos agentes de IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "origem-dashed"
+              },
+              "rotulo": "Feito automaticamente",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Em que dias as coisas aconteceram",
+          "texto": "O quadro \"Quando\" tem uma barra por dia, com a data embaixo. O dia de hoje também entra: em \"Últimos 7 dias\" aparecem 8 barras. Quanto mais alta a barra, mais coisa aconteceu naquele dia. Para ver o número exato, pare o mouse sobre a barra. No celular, o número aparece escrito embaixo da data. A primeira e a última barra pegam só um pedaço do dia, por isso podem sair mais baixas.",
+          "dica": "Um dia sem nenhum acontecimento fica com uma barrinha mínima: ninguém mexeu nos negócios naquele dia. Pode ser um domingo, mas vale conferir se o atendimento não ficou parado.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "serie-diaria"
+              },
+              "rotulo": "Uma barra por dia",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quem-fez-o-que",
+      "titulo": "Quem fez o quê",
+      "objetivo": "Ver quem mais trabalhou no período, que tipo de coisa foi feita, e ir de um acontecimento até o negócio dele.",
+      "papel": "admin",
+      "busca": [
+        "quem fez",
+        "ranking da equipe",
+        "o que cada atendente fez",
+        "o que a IA fez",
+        "linha do tempo",
+        "histórico de ações",
+        "abrir o negócio"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os dois rankings",
+          "texto": "\"Quem fez\" lista quem agiu no período (cada pessoa da equipe, cada agente de IA e o automático), de quem fez mais para quem fez menos, com o número e uma barra do tamanho da parte de cada um. O desenho antes do nome diz o tipo: bolinha cheia é pessoa, anel é agente e bolinha tracejada é automático (o sistema ou uma automação). Ao lado, \"O que foi feito\" faz a mesma conta pelo tipo de acontecimento, como \"Mudou de estágio\" ou \"Assumiu a conversa\".",
+          "rota": "/app/activities",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "ranking-de-atores"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "[data-testid='ranking-de-tipos'] > div:nth-child(8)"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "ranking-de-atores"
+              },
+              "rotulo": "Quem fez",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "ranking-de-tipos"
+              },
+              "rotulo": "O que foi feito",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A linha do tempo da operação",
+          "texto": "Mais embaixo fica a \"Linha do tempo da operação\": os acontecimentos do período, do mais recente para o mais antigo. Cada linha traz o dia e a hora, o que aconteceu, quem fez, o negócio e o nome do cliente. Quando há um motivo, ele aparece logo abaixo: por exemplo, de qual etapa para qual o negócio foi movido. O nome do negócio é um link. Clique nele para abrir o negócio.",
+          "dica": "A lista mostra até os 200 acontecimentos mais recentes. Se o período tiver mais, um aviso no fim da lista diz o total.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "[data-testid='lista-de-atividades'] > li:nth-child(4)"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='lista-de-atividades'] > li:first-child"
+              },
+              "rotulo": "Quando, o quê, quem e com qual cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "dentro": {
+                  "css": "[data-testid='lista-de-atividades'] > li:first-child"
+                }
+              },
+              "rotulo": "Abre o negócio",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "dentro": {
+              "css": "[data-testid='lista-de-atividades'] > li:first-child"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Do acontecimento ao negócio",
+          "texto": "O link leva ao funil onde o negócio está agora, com a ficha dele já aberta. Role a ficha até \"Linha do tempo\": ali fica o histórico completo daquele negócio, inclusive o acontecimento em que você clicou. A tela Atividades é o resumo de todos os negócios juntos; a ficha é a história de um só.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "dentro": {
+                  "css": "[data-testid='lista-de-atividades'] > li:first-child"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "[role='dialog'] section[data-secao='linha-do-tempo']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[role='dialog'] section[data-secao='linha-do-tempo']"
+              },
+              "rotulo": "Histórico deste negócio",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mudar-o-periodo",
+      "titulo": "Olhar um período maior",
+      "objetivo": "Trocar o período do relatório para 30 ou 90 dias e comparar com a última semana.",
+      "papel": "admin",
+      "busca": [
+        "mudar o período",
+        "últimos 30 dias",
+        "relatório do mês",
+        "últimos 90 dias",
+        "ver meses anteriores",
+        "filtrar por data"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Escolher o período",
+          "texto": "Clique no botão \"Últimos 7 dias\" para trocar o período. As opções são 7, 30 e 90 dias, sempre contando para trás a partir de agora. Os cartões, o gráfico, os rankings e a lista mudam juntos.",
+          "rota": "/app/activities",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Período",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Os três períodos",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Últimos 30 dias",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O mês inteiro na tela",
+          "texto": "Com \"Últimos 30 dias\", entram também os acontecimentos das semanas anteriores. Aqui o total subiu de 29 para 39, e o gráfico \"Quando\" passou a ter uma barra para cada dia, de um mês atrás até hoje. Assim dá para comparar a última semana com as anteriores.",
+          "dica": "O período não fica guardado: ao sair e voltar para a tela, ela abre de novo nos \"Últimos 7 dias\". Se nada foi registrado no período escolhido, a tela mostra \"Nada aconteceu neste período\" e um botão \"Ver conversas\", que abre a Inbox.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Últimos 30 dias",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "39 acontecimentos",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Período",
+                "exato": true
+              },
+              "rotulo": "Agora: 30 dias",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "total-de-atividades"
+              },
+              "rotulo": "Total do mês",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "serie-diaria"
+              },
+              "rotulo": "Um mês de barras",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "por-etiqueta",
+      "titulo": "Quais assuntos mais ocuparam o atendimento",
+      "objetivo": "Usar a aba Por etiqueta para ver quais assuntos mais apareceram nas conversas e ir direto a elas na Inbox.",
+      "papel": "admin",
+      "busca": [
+        "por etiqueta",
+        "relatório de tags",
+        "assuntos mais comuns",
+        "tempo de espera",
+        "conversas por assunto",
+        "etiquetas mais usadas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A aba Por etiqueta",
+          "texto": "A aba \"Por etiqueta\" mostra quais assuntos mais ocuparam o atendimento. Ela conta as etiquetas postas nas conversas (as \"Tags da conversa\" da Inbox), nas conversas que começaram no período. Uma conversa com duas etiquetas conta nas duas linhas. Por isso, no alto, o total aparece em \"etiquetagens\", e não em conversas.",
+          "dica": "Esta aba tem o seu próprio botão de período, com as mesmas opções de 7, 30 e 90 dias.",
+          "rota": "/app/activities",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Por etiqueta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "tabela-por-etiqueta"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tab",
+                "nome": "Por etiqueta",
+                "exato": true
+              },
+              "rotulo": "Aba Por etiqueta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "total-de-etiquetagens"
+              },
+              "rotulo": "Total de etiquetas usadas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "tabela-por-etiqueta"
+              },
+              "rotulo": "Uma linha por etiqueta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Lendo uma linha",
+          "texto": "A tabela vem da etiqueta mais usada para a menos usada. Em cada linha, \"Conversas\" é quantas conversas tiveram aquela etiqueta. \"Abertas\" e \"Resolvidas\" separam as que ainda estão em andamento das já encerradas. \"Espera média\" é quanto tempo, em média, o cliente ficou esperando resposta (um traço quer dizer que não deu para medir). \"Fatia\" é a parte daquela etiqueta no total.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "linha-de-etiqueta",
+                "n": 0
+              },
+              "rotulo": "O assunto mais comum",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Espera média",
+                "exato": true
+              },
+              "rotulo": "Quanto o cliente esperou",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "convenio",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Ir direto às conversas do assunto",
+          "texto": "Clique no nome de uma etiqueta para abrir a Inbox já filtrada por ela, na aba \"Todas\". No filtro de etiquetas aparece a etiqueta escolhida. Atenção: a Inbox mostra as conversas com aquela etiqueta de qualquer data, e também as conversas de clientes que têm a etiqueta na ficha do cliente. Por isso podem aparecer mais conversas do que o número da tabela: aqui, \"convenio\" tinha 2 na tabela e a Inbox mostra 4. Na lista, a etiqueta que aparece embaixo do nome é a da ficha do cliente. A etiqueta posta só na conversa não aparece ali: abra a conversa para vê-la em \"Tags da conversa\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "convenio",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Filtrar por tag",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Filtrar por tag",
+                "exato": true
+              },
+              "rotulo": "Filtrado por convenio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000003\"]"
+              },
+              "rotulo": "Etiqueta da ficha: aparece embaixo do nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-conversation-id=\"be1c0000-0000-4000-8000-000000000002\"]"
+              },
+              "rotulo": "Etiqueta só na conversa (não aparece na lista)",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

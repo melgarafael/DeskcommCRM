@@ -1,0 +1,736 @@
+{
+  "id": "aviso-de-agendamento",
+  "titulo": "Aviso de agendamento",
+  "tela": "/app/agenda/avisos",
+  "resumo": "Receber no seu WhatsApp cada horário marcado, remarcado ou cancelado, e às 7h o resumo do dia, para nunca marcar duas pessoas no mesmo horário.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo o Aviso de agendamento",
+      "objetivo": "Achar a tela e entender cada parte: para onde vai o aviso, a chave que liga, os botões e a lista dos últimos avisos.",
+      "papel": "admin",
+      "busca": [
+        "aviso de agendamento",
+        "receber agendamento no whatsapp",
+        "avisar quando marcar horário",
+        "aviso de consulta marcada",
+        "notificação de agenda no celular",
+        "resumo da agenda do dia"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Clique em \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" fica o cartão \"Aviso de agendamento\". Ele serve para quem também marca horários fora do sistema (no caderno, no celular): cada horário que a IA ou a equipe marcar aqui chega no seu WhatsApp, e você não marca duas pessoas no mesmo horário.",
+          "dica": "Só quem administra a conta vê e muda esta tela.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Configurações",
+                "exato": true
+              },
+              "rotulo": "Configurações",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Aviso de agendamento",
+                "regex": true
+              },
+              "rotulo": "Abrir Aviso de agendamento",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Aviso de agendamento",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "As partes da tela",
+          "texto": "No alto fica o quadro de configuração: para onde o aviso vai e a chave que liga. Embaixo fica a lista \"Últimos avisos\", com o que já foi mandado. Nesta clínica o aviso já está ligado e vai para o celular da Helena. Repare que o menu lateral passa a marcar \"Agenda\": esta tela também fica dentro da Agenda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^Aviso de agendamento",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Aviso de agendamento",
+                "exato": true
+              },
+              "rotulo": "Título da tela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Últimos avisos",
+                "exato": true
+              },
+              "rotulo": "Lista do que já foi mandado",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Usar o mesmo número do aviso de caso",
+          "texto": "A primeira chave reaproveita o número que você já cadastrou no aviso de caso (o aviso que chega no seu WhatsApp quando a IA abre um caso). Aqui ela aparece travada, porque esse aviso ainda não tem número. Quando tiver, você pode ligar esta chave: os avisos da agenda vão para o mesmo número, e se você trocar o número lá, eles acompanham.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Usar o mesmo número do aviso de caso",
+                "exato": true
+              },
+              "rotulo": "Travada: o aviso de caso não tem número",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "numero-do-caso"
+              },
+              "rotulo": "Por que está travada",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "O aviso de caso é configurado na tela \"Aviso no WhatsApp\", do Agente de IA. Ache pela busca do alto da tela."
+        },
+        {
+          "id": "p4",
+          "titulo": "Quem envia e quem recebe",
+          "texto": "Em \"Conexão que envia os avisos\" você escolhe qual número de WhatsApp da clínica manda a mensagem. Só aparecem os números que podem mandar uma mensagem escrita na hora, sem precisar de modelo aprovado. Atenção: um número desconectado também aparece na lista, e por ele o aviso não sai. Em \"Número que recebe os avisos\" vai o celular de quem quer ser avisado, começando por +55 e o DDD.",
+          "dica": "O número que recebe não pode ser um dos números conectados da sua conta: um ficaria respondendo o outro sem parar. O sistema recusa na hora de salvar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Conexão que envia os avisos",
+                "exato": true
+              },
+              "rotulo": "Número da clínica que envia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "rotulo": "Celular que recebe",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A chave que liga o aviso",
+          "texto": "A chave \"Receber avisos de agendamento no WhatsApp\" liga e desliga o aviso. Ligada, cada horário marcado, remarcado ou cancelado vira uma mensagem curta com o primeiro nome do cliente, o serviço, o dia e a hora, quem atende e de onde veio: IA, equipe ou o próprio cliente. Se a agenda estiver ligada ao Google Agenda, um horário remarcado ou cancelado lá também gera aviso. Às 7h chega também o resumo do dia, com a agenda de hoje.",
+          "dica": "Só o primeiro nome do cliente vai na mensagem, porque o celular pode ser lido por quem estiver perto.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Receber avisos de agendamento no WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Ligado",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Salvar e o horário de silêncio",
+          "texto": "Nada muda até você clicar em \"Salvar\". Logo abaixo do quadro, a tela avisa: das 22h às 7h não sai aviso, para não acordar ninguém. O que for marcado nesse horário aparece no resumo das 7h. O horário é o da empresa. O botão \"Enviar teste\", ao lado, é explicado na lição \"Pausar o aviso e mandar um teste\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Das 22h às 7h não sai aviso",
+                "exato": false
+              },
+              "rotulo": "Silêncio de noite",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trocar-o-numero",
+      "titulo": "Escolher para onde vai o aviso",
+      "objetivo": "Escolher o número da clínica que envia, digitar o celular que recebe e salvar.",
+      "papel": "admin",
+      "busca": [
+        "trocar número do aviso de agendamento",
+        "mudar celular que recebe aviso",
+        "configurar aviso de agenda no whatsapp",
+        "escolher número que envia aviso",
+        "ligar aviso de agendamento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Escolher o número que envia",
+          "texto": "Clique em \"Conexão que envia os avisos\" para abrir a lista dos números da clínica. Aqui só existe a \"Recepção Bem Viver\". Se a clínica não tiver nenhum número que sirva, a lista fica travada e a tela pede para conectar um WhatsApp em Conexões antes.",
+          "rota": "/app/agenda/avisos",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Conexão que envia os avisos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "option",
+                "nome": "Recepção Bem Viver",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Recepção Bem Viver",
+                "exato": true
+              },
+              "rotulo": "Número da clínica",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Recepção Bem Viver",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Digitar o celular que recebe",
+          "texto": "Em \"Número que recebe os avisos\", digite o celular começando pelo código do país: +55, o DDD e o número. O sistema tira sozinho espaços, traços e parênteses. Enquanto o número estiver incompleto, aparece \"Esse número ainda não está completo.\" e o botão \"Salvar\" fica apagado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Recepção Bem Viver",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "valor": "+55 31 99"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "rotulo": "Celular de quem recebe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "telefone-invalido"
+              },
+              "rotulo": "Ainda falta número",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Número completo, ligar e salvar",
+          "texto": "Com o número completo, o aviso some e o \"Salvar\" acende. Confira se a chave \"Receber avisos de agendamento no WhatsApp\" está ligada: ela só pode ser ligada depois de escolher a conexão e o número. Clique em \"Salvar\": aparece por alguns segundos, no canto de baixo da tela, a confirmação \"Aviso salvo.\".",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "valor": "+55 31 99123-7788"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "rotulo": "Número completo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Receber avisos de agendamento no WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Ligado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Conferir que ficou salvo",
+          "texto": "Ao abrir a tela de novo, o número novo continua no campo e a chave segue ligada: a mudança foi gravada. A partir de agora os avisos vão para esse celular. Ele passa a ser um número da equipe: o que ele mandar para a clínica não vira atendimento na Inbox.",
+          "rota": "/app/agenda/avisos",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "rotulo": "Número novo, já gravado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Receber avisos de agendamento no WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Ligado",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "numero-recusado",
+      "titulo": "Quando o sistema estranha o número",
+      "objetivo": "Entender o que fazer quando o número digitado já é de um cliente ou é um número da própria clínica.",
+      "papel": "admin",
+      "busca": [
+        "número já é de um cliente",
+        "usar mesmo assim aviso",
+        "aviso de agendamento não salva",
+        "número conectado não pode receber aviso",
+        "erro ao salvar número do aviso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Um número que já é de cliente",
+          "texto": "Aqui foi digitado o celular da Juliana Castro, que é paciente da clínica. Ao clicar em \"Salvar\", o sistema confere se o número já está nos seus contatos antes de gravar.",
+          "rota": "/app/agenda/avisos",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "valor": "+5511987650003"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "rotulo": "Celular de uma paciente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O sistema pergunta antes",
+          "texto": "Aparece um quadro com o aviso \"Esse número já é de um cliente seu\". Se você continuar, esse número passa a ser só da equipe: as mensagens que ele mandar param de chegar como atendimento. \"Usar mesmo assim\" grava assim mesmo. \"Escolher outro número\" fecha o quadro sem gravar nada.",
+          "dica": "Use \"Usar mesmo assim\" só se o número for mesmo seu, por exemplo quando você se cadastrou como cliente para testar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "confirmar-numero-de-cliente"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "confirmar-numero-de-cliente"
+              },
+              "rotulo": "O sistema pergunta antes",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Escolher outro número",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Um número da própria clínica",
+          "texto": "E se você digitar o número da \"Recepção Bem Viver\", que é o próprio WhatsApp da clínica? Esse o sistema não aceita: um número ficaria respondendo o outro sem parar. Ao clicar em \"Salvar\", aparece por alguns segundos, no canto de baixo da tela, a mensagem \"Esse é um dos números conectados da sua conta\", e nada é gravado. Digite outro celular.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Escolher outro número",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "valor": "+551140028922"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Número que recebe os avisos",
+                "exato": true
+              },
+              "rotulo": "Número da própria clínica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar recusa este número",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ultimos-avisos",
+      "titulo": "Conferir se os avisos estão chegando",
+      "objetivo": "Ler a lista \"Últimos avisos\" e saber o que cada linha quer dizer.",
+      "papel": "admin",
+      "busca": [
+        "aviso de agendamento não chegou",
+        "conferir avisos enviados",
+        "histórico de avisos da agenda",
+        "aviso não saiu",
+        "resumo das 7h não chegou"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista dos últimos avisos",
+          "texto": "Cada linha é um aviso, da mais nova para a mais antiga (aparecem as 20 últimas). À esquerda vem o tipo: \"Novo agendamento\", \"Remarcado\", \"Cancelado\" ou \"Resumo do dia\". À direita, o dia e a hora em que o aviso saiu (ou em que foi registrado, se não saiu). Não é a hora da consulta. Embaixo, o que aconteceu com ele (\"Enviado\", \"Não saiu\" ou \"Entrou no resumo das 7h\") e para qual celular, só com os quatro últimos números à mostra.",
+          "rota": "/app/agenda/avisos",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              },
+              "rotulo": "Últimos avisos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Um aviso que não saiu",
+          "texto": "Quando uma linha diz \"Não saiu\", a frase em vermelho logo abaixo explica o motivo. Aqui foi \"A conexão de WhatsApp escolhida para os avisos está fora do ar.\": o número da clínica estava desconectado naquela hora. Esse aviso não é mandado de novo depois. Confira o número em Conexões. Se a lista estiver vazia, o aviso ainda não foi ligado ou acabou de ser ligado: com ele ligado, todo dia de manhã aparece pelo menos a linha do resumo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='entregas-do-aviso-de-agendamento'] li:has(.text-destructive)"
+              },
+              "rotulo": "Não saiu, e o motivo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que foi marcado de madrugada",
+          "texto": "Quando alguém marca, remarca ou cancela um horário entre 22h e 7h (vale a hora em que isso foi feito, não a hora da consulta), o aviso não sai na hora. A linha mostra \"Vai no resumo das 7h\" e, depois que o resumo sai, muda para \"Entrou no resumo das 7h\". O \"Resumo do dia\" traz a agenda de hoje e, no fim, o que mudou durante a noite.",
+          "dica": "O resumo sai logo depois das 7h. Se o sistema estiver fora do ar até as 10h, o resumo daquele dia não é mandado, e o que mudou de madrugada vai no resumo do dia seguinte.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='entregas-do-aviso-de-agendamento'] li:has-text('Entrou no resumo das 7h')"
+              },
+              "rotulo": "Marcado de madrugada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='entregas-do-aviso-de-agendamento'] li:has-text('Resumo do dia')",
+                "n": 0
+              },
+              "rotulo": "Resumo das 7h",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pausar-e-testar",
+      "titulo": "Pausar o aviso e mandar um teste",
+      "objetivo": "Desligar o aviso por um tempo sem perder a configuração, e saber quando usar o botão de teste.",
+      "papel": "admin",
+      "busca": [
+        "desligar aviso de agendamento",
+        "parar de receber aviso da agenda",
+        "pausar aviso no whatsapp",
+        "testar aviso de agendamento",
+        "enviar teste do aviso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Desligar a chave",
+          "texto": "Para parar de receber os avisos, clique na chave \"Receber avisos de agendamento no WhatsApp\" para desligá-la. A conexão e o número continuam preenchidos, então para voltar basta ligar de novo. Ainda falta gravar: o próximo clique é em \"Salvar\".",
+          "rota": "/app/agenda/avisos",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Receber avisos de agendamento no WhatsApp",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Receber avisos de agendamento no WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Desligado",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Salvar para valer",
+          "texto": "A chave só vale depois do \"Salvar\". Clique nele: aparece por alguns segundos, no canto de baixo da tela, a confirmação \"Aviso salvo.\". A partir daí nenhum aviso novo sai, nem o resumo das 7h. A lista \"Últimos avisos\" continua aí, com o que já foi mandado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Receber avisos de agendamento no WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Desligado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A pausa ficou gravada, e o teste",
+          "texto": "Abrindo a tela de novo, a chave continua desligada: a pausa foi gravada, e a conexão e o número seguem preenchidos para quando você quiser voltar. O botão \"Enviar teste\" manda uma mensagem de verdade para o número salvo, dizendo que o aviso está configurado e funcionando. Ele funciona mesmo com a chave desligada. Use quando trocar o número, para ter certeza de que chega. O teste conta no limite diário de mensagens do número da clínica, e dá para mandar até três por hora.",
+          "dica": "O botão só funciona depois de salvar. Se a mensagem não sair, a tela diz o motivo, por exemplo que o número da clínica está desconectado.",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "entregas-do-aviso-de-agendamento"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Receber avisos de agendamento no WhatsApp",
+                "exato": true
+              },
+              "rotulo": "Continua desligado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "div.flex-wrap:has(> button:has-text('Enviar teste'))"
+              },
+              "rotulo": "\"Enviar teste\", ao lado do Salvar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "O teste manda uma mensagem de verdade",
+                "exato": false
+              },
+              "rotulo": "Gasta uma mensagem",
+              "tipo": "caixa"
+            }
+          ],
+          "rota": "/app/agenda/avisos"
+        }
+      ]
+    }
+  ]
+}

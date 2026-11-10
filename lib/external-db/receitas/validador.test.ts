@@ -129,4 +129,24 @@ describe("validarConsultaDeReceita — segunda trava", () => {
       validarConsultaDeReceita("select * from wp_posts_123 where id = ?", TABELAS),
     ).toThrow(/tabela_nao_liberada:wp_posts_123/);
   });
+
+  it("enxerga tabela numa subconsulta do SELECT (group_concat) e rejeita se não estiver liberada", () => {
+    const sql =
+      "select p.ID, (select group_concat(t.name) from `wp_term_relationships` tr join `wp_term_taxonomy` tt on tt.term_taxonomy_id = tr.term_taxonomy_id join `wp_terms` t on t.term_id = tt.term_id where tr.object_id = p.ID) as bairro from `wp_posts` p limit 5";
+    expect(() => validarConsultaDeReceita(sql, [...TABELAS, "wp_terms", "wp_term_taxonomy", "wp_term_relationships"])).not.toThrow();
+    expect(() =>
+      validarConsultaDeReceita(sql, TABELAS),
+    ).toThrow(/tabela_nao_liberada:wp_term_relationships/);
+  });
+
+  it("enxerga tabela num EXISTS do WHERE e rejeita se não estiver liberada", () => {
+    const sql =
+      "select * from `wp_posts` p where exists (select 1 from `wp_term_relationships` tr where tr.object_id = p.ID) limit 5";
+    expect(() =>
+      validarConsultaDeReceita(sql, [...TABELAS, "wp_term_relationships"]),
+    ).not.toThrow();
+    expect(() => validarConsultaDeReceita(sql, TABELAS)).toThrow(
+      /tabela_nao_liberada:wp_term_relationships/,
+    );
+  });
 });

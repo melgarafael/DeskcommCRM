@@ -17,7 +17,9 @@
  *     renova fora da janela.
  *  4. No `runModelCall`, uma chamada da assinatura que falha (429/401/5xx)
  *     é REFEITA na reserva e a linha gravada conta o provedor que respondeu;
- *     sem reserva, o erro ORIGINAL sobe como sempre.
+ *     sem reserva, o erro ORIGINAL sobe como sempre. E o 400 que na verdade é
+ *     cota estourada ("Subscription Sharing usage limit", #3371) também cai —
+ *     o status sozinho não decide mais sozinho.
  *
  * Sabotagens que confirman que as guarda vigiam (previsão escrita antes de
  * rodar): apagar o ramo da assinatura em `resolveOrgLlmConfig` deixa o caso 2a
@@ -378,6 +380,38 @@ describe("4. a queda no runModelCall: a reserva responde e o log conta quem", ()
     expect(lancou).toBeInstanceOf(Error);
     expect((lancou as Error).message).toContain("429");
     expect(inserts.find((i) => i.sql.includes("'erro'")), "a falha continua gravada").toBeDefined();
+  });
+
+  it("a assinatura falha com 400 de cota estourada e a chamada cai na reserva (#3371)", async () => {
+    // O incidente de 23/10/2026: o ChatGPT por assinatura devolve HTTP 400 com
+    // "The ChatGPT user has reached their Subscription Sharing usage limit".
+    // A linha de login é OBRIGATÓRIA aqui: sem ela a resolução inicial já cai
+    // na reserva (credentials.ts) e a fábrica da assinatura nem fala — o caso
+    // passaria por vacuidade, com e sem o fix. Com a linha, a falha acontece NA
+    // assinatura e é a política de queda que decide o resto.
+    (estado.fake as FakeSupabase).linha = linhaDoLogin(); // assinatura utilizável
+    const { pool } = poolDoSeam(PROVEDOR_POR_ASSINATURA);
+    const erroDeCota = () =>
+      Object.assign(new Error("The ChatGPT user has reached their Subscription Sharing usage limit"), {
+        statusCode: 400,
+      });
+    const registro = {
+      [PROVEDOR_POR_ASSINATURA]: registroQueFalha(erroDeCota()),
+      openai: registroOk,
+      anthropic: registroOk,
+      fake: registroOk,
+    } as never;
+
+    const r = await runModelCall(
+      pool,
+      cfgComReserva,
+      { tenantId: ORG, purpose: "agent_turn", messages: [{ role: "user", content: "oi" }] },
+      { registry: registro },
+    );
+
+    expect(r.provider, "o 400 de cota estourada não caiu na reserva — o turno ficaria calado").toBe(
+      "openai",
+    );
   });
 
   it("provedor SEM reserva continua falhando como sempre (o freio é por provedor)", async () => {

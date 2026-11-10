@@ -628,6 +628,23 @@ describe('graph-schema', () => {
       expect(flowGraphSchema.safeParse(grafoMinimo({ max_tentativas_pergunta: 0 })).success).toBe(false);
       expect(flowGraphSchema.safeParse(grafoMinimo({ max_tentativas_pergunta: 11 })).success).toBe(false);
     });
+
+    // #2630 — a entrada por etapa do funil: o campo vive AQUI, no grafo, porque
+    // na superfície de atendimento o `trigger_config` é obrigado a `manual`.
+    it('aceita as etapas do funil e recusa lista vazia de item ou acima do teto', () => {
+      const etapa = '11111111-1111-4111-8111-111111111111';
+      const ok = flowGraphSchema.safeParse(grafoMinimo({ etapas_do_funil: [etapa] }));
+      expect(ok.success).toBe(true);
+      if (ok.success) expect(ok.data.settings?.etapas_do_funil).toEqual([etapa]);
+      // Sem o campo, nada muda: o roteiro simplesmente não liga por etapa.
+      expect(flowGraphSchema.safeParse(grafoMinimo({})).success).toBe(true);
+      expect(flowGraphSchema.safeParse(grafoMinimo({ etapas_do_funil: [''] })).success).toBe(false);
+      expect(
+        flowGraphSchema.safeParse(
+          grafoMinimo({ etapas_do_funil: Array.from({ length: 31 }, (_, i) => `etapa-${i}`) }),
+        ).success,
+      ).toBe(false);
+    });
   });
 
   describe('flowEdgeSchema', () => {

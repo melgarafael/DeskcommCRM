@@ -63,7 +63,10 @@ describe("a barra ocupa lugar, em vez de flutuar", () => {
     // aceitar os dois deixaria a volta do defeito passar: o princípio 2 de
     // `docs/design-system/screen-flow/07-responsive-strategy.md` manda `dvh`
     // "sempre que altura cheia", e aqui é altura cheia.
-    expect(BARRA, "a barra voltou a medir `100vh`").toMatch(/h-dvh/);
+    //
+    // A altura é `100dvh` MENOS `--faixas-de-cima` (as faixas de aviso grudam
+    // acima dela; sem o desconto o documento mede a tela mais a faixa).
+    expect(BARRA, "a barra voltou a medir `100vh`").toMatch(/h-\[calc\(100dvh-var\(--faixas-de-cima,0px\)\)\]/);
     expect(BARRA, "`h-screen` não acompanha a barra do navegador móvel").not.toMatch(/h-screen/);
   });
 

@@ -99,40 +99,29 @@ function embedded<T>(v: T | T[] | null): T | null {
 /**
  * Os nomes de quem interveio, resolvidos uma vez por pessoa.
  *
- * Mesmo caminho de `lib/leads/timeline-query.ts`, inclusive os IMPORTS TARDIOS:
- * `@/lib/audit` e `@/lib/supabase/admin` arrastam `@/lib/env`, que lança se
- * faltar variável — no topo, quebrariam qualquer teste que só importasse este
- * módulo. Sem service role configurado, os nomes simplesmente não vêm e a tela
- * cai em "uma pessoa da equipe": a falta do nome nunca derruba o dossiê.
+ * O `actor_user_id` é dado da linha (o `payload` do evento). O nome passa pela
+ * mesma regra do resto do produto (`nomesDosAtendentes`): só membro (ou
+ * ex-membro) desta organização ganha nome, e só o `full_name`, nunca e-mail.
+ *
+ * IMPORT TARDIO, como em `lib/leads/timeline-query.ts`: o helper arrasta
+ * `@/lib/env`, que lança se faltar variável — no topo, quebraria qualquer teste
+ * que só importasse este módulo. Sem nome, a tela cai em "uma pessoa da equipe":
+ * a falta do nome nunca derruba o dossiê.
  */
-async function resolveAutores(eventos: Array<{ payload: unknown }>): Promise<Record<string, string>> {
-  const ids = [
-    ...new Set(
-      eventos
-        .map((e) => (e.payload as { actor_user_id?: unknown } | null)?.actor_user_id)
-        .filter((v): v is string => typeof v === "string" && v.length > 0),
-    ),
-  ];
+async function resolveAutores(
+  orgId: string,
+  eventos: Array<{ payload: unknown }>,
+): Promise<Record<string, string>> {
+  const ids = eventos
+    .map((e) => (e.payload as { actor_user_id?: unknown } | null)?.actor_user_id)
+    .filter((v): v is string => typeof v === "string" && v.length > 0);
   if (ids.length === 0) return {};
 
-  const { isServiceRoleConfigured } = await import("@/lib/audit");
-  if (!isServiceRoleConfigured()) return {};
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const admin = createAdminClient();
-
-  const nomes: Record<string, string> = {};
-  await Promise.all(
-    ids.map(async (id) => {
-      try {
-        const { data } = await admin.auth.admin.getUserById(id);
-        const nome = data?.user?.user_metadata?.full_name ?? data?.user?.email;
-        if (typeof nome === "string" && nome.trim() !== "") nomes[id] = nome;
-      } catch {
-        // Nome que não resolve não é erro do dossiê — a linha existe com ou sem ele.
-      }
-    }),
-  );
-  return nomes;
+  const { nomesDosAtendentes } = await import("@/lib/users/nome-do-atendente");
+  const nomes = await nomesDosAtendentes(orgId, ids);
+  const autores: Record<string, string> = {};
+  for (const [id, nome] of nomes) if (nome && nome.trim() !== "") autores[id] = nome;
+  return autores;
 }
 
 export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
@@ -248,7 +237,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     eventos: lidos.slice(0, TETO_DE_EVENTOS) as EventoDeEnrollment[],
     eventos_truncados: truncado,
     plano_de_tempo: leituraDoPlano(row.timing_plan),
-    autores: await resolveAutores(lidos),
+    autores: await resolveAutores(org.orgId, lidos),
   };
 
   return ok(dossie, { requestId });

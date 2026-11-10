@@ -26,10 +26,10 @@ export function AgentOperation({ agent, readOnly }: { agent: AgentRow; readOnly?
       className="flex flex-wrap items-center gap-3 rounded-md border p-3"
       aria-label={t("Operação do agente")}
     >
-      <label className="text-sm">
+      <label className="text-sm max-md:w-full max-md:min-w-0">
         {t("Operação do agente")}{" "}
         <select
-          className="ml-2 rounded-md border bg-background p-2"
+          className="ml-2 rounded-md border bg-background p-2 max-md:mt-1 max-md:ml-0 max-md:block max-md:w-full max-md:min-h-11"
           aria-label={t("Modo de operação")}
           value={agent.operation_mode ?? "automatic"}
           disabled={readOnly || busy}

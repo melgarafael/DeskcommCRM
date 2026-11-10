@@ -1,0 +1,900 @@
+{
+  "id": "casos",
+  "titulo": "Casos",
+  "tela": "/app/ai/cases",
+  "resumo": "Os pedidos que a IA não consegue resolver sozinha e deixa para a equipe decidir, enquanto continua falando com o cliente.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Casos",
+      "papel": "admin",
+      "objetivo": "Entender o que é um caso, onde fica a lista e como ler cada linha.",
+      "busca": [
+        "casos",
+        "o que é um caso",
+        "IA travou",
+        "IA pediu ajuda",
+        "pendências da IA",
+        "fila de casos"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que aparece aqui",
+          "rota": "/app/ai/cases",
+          "texto": "Às vezes a IA recebe um pedido que só alguém da equipe resolve: um desconto, um horário fora da agenda, uma dúvida do convênio. Nesses momentos ela abre um caso nesta tela e continua conversando com o cliente enquanto espera a sua resposta. À esquerda fica a lista de casos. À direita aparecem os detalhes do caso que você abrir.",
+          "dica": "A lista se atualiza sozinha a cada minuto. O número ao lado de \"Casos\" no menu conta só os casos que estão esperando a equipe. Quem é atendente só vê os casos das conversas a que tem acesso.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='case-list'] ul"
+              },
+              "rotulo": "Lista de casos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Selecione um caso à esquerda",
+                "exato": true
+              },
+              "rotulo": "Aqui aparecem os detalhes",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Lendo uma linha da lista",
+          "texto": "Cada linha mostra o assunto do caso, escrito pela IA, e um selo com a situação. \"Aguardando você\" quer dizer que a IA está esperando uma decisão da equipe. \"Aguardando o cliente\" quer dizer que a equipe já pediu uma informação e agora é o cliente que precisa responder. Embaixo vêm o tipo do pedido (como \"Pagamento\" ou \"Horário\"), o nome do cliente e há quanto tempo o caso foi aberto. Os casos mais novos ficam no alto.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Desconto no Pix"
+              },
+              "rotulo": "Caso esperando a equipe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Sábado de manhã"
+              },
+              "rotulo": "Caso esperando o cliente",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "tab",
+            "nome": "Concluídos",
+            "exato": true
+          },
+          "antes": []
+        },
+        {
+          "id": "p3",
+          "titulo": "Abertos e Concluídos",
+          "texto": "A aba \"Abertos\" mostra os casos que ainda não terminaram, e o número entre parênteses diz quantos são. A aba \"Concluídos\" guarda os que já acabaram, com três desfechos possíveis: \"Concluído\" (a equipe ou a IA resolveu), \"Virou atendimento humano\" (a conversa passou para uma pessoa da equipe) e \"Cancelado\" (o pedido deixou de existir).",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Concluídos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar sessão"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "Abertos e Concluídos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar sessão"
+              },
+              "rotulo": "Concluído",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Curativo"
+              },
+              "rotulo": "Virou atendimento humano",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Recibo do plano"
+              },
+              "rotulo": "Cancelado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "abrindo-um-caso",
+      "titulo": "Abrindo um caso",
+      "papel": "admin",
+      "objetivo": "Abrir um caso e entender o que o cliente pediu, por que a IA travou e o que já aconteceu.",
+      "busca": [
+        "abrir caso",
+        "detalhes do caso",
+        "por que a IA travou",
+        "o que o cliente precisa",
+        "linha do tempo",
+        "ver conversa do caso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quem é o cliente",
+          "rota": "/app/ai/cases",
+          "texto": "Clique numa linha da lista para ver o caso à direita. No alto aparecem o nome e o telefone do cliente e o selo com a situação do caso. O link \"Ver conversa\" abre a conversa desse cliente na Inbox, para você ler tudo o que ele e a IA já falaram.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Desconto no Pix"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Pedro Henrique Lima",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Desconto no Pix"
+              },
+              "rotulo": "Caso aberto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='case-detail'] header > div:first-child"
+              },
+              "rotulo": "Cliente e link da conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Aguardando você",
+                "exato": true,
+                "dentro": {
+                  "testid": "case-detail"
+                }
+              },
+              "rotulo": "Situação do caso",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O pedido e o motivo",
+          "texto": "Dois quadros resumem o caso. \"O que o cliente precisa\" conta o pedido com as palavras da IA. \"Por que a IA travou\" explica o que impediu a IA de resolver sozinha. Aqui, o Pedro quer desconto no Pix, e a IA não pode prometer um preço diferente sem a equipe confirmar.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='case-detail'] div.grid > div:nth-child(1)"
+              },
+              "rotulo": "O pedido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='case-detail'] div.grid > div:nth-child(2)"
+              },
+              "rotulo": "Por que a IA travou",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p3",
+          "titulo": "A linha do tempo",
+          "texto": "No fim do caso fica a \"Linha do tempo\": tudo o que aconteceu, do mais antigo para o mais novo, com há quanto tempo foi. Aqui ela mostra que a IA abriu o caso e depois registrou que avisou o Pedro de que a recepção confirma o valor. Quando alguém da equipe responde, a resposta também entra nesta lista.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Linha do tempo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='case-detail'] > div > div:last-child"
+              },
+              "rotulo": "Tudo o que já aconteceu",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "respondendo-um-caso",
+      "titulo": "Respondendo um caso",
+      "papel": "admin",
+      "objetivo": "Escolher o que fazer com um caso que espera a equipe e mandar a decisão para a IA.",
+      "busca": [
+        "responder caso",
+        "resolver caso",
+        "concluir caso",
+        "passar para humano",
+        "pedir informação ao cliente",
+        "decisão da equipe"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Três caminhos",
+          "rota": "/app/ai/cases",
+          "texto": "No quadro \"O que você quer fazer?\" você escolhe o que acontece com o caso. \"Concluí\": você resolveu, e a IA avisa o cliente e encerra o assunto. \"Preciso de info do cliente\": a IA pergunta ao cliente o que faltou, e o caso volta para você quando ele responder. \"Não consigo — passar pra humano\": a IA sai da conversa e o cliente passa a ser atendido por uma pessoa da equipe.",
+          "dica": "Nenhuma opção vem marcada, de propósito: \"Concluí\" e \"Não consigo\" encerram o caso, e não dá para desfazer.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Desconto no Pix"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Pedro Henrique Lima",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "radiogroup",
+                "nome": "O que você quer fazer?"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "radio",
+                "nome": "Concluí"
+              },
+              "rotulo": "Resolvi",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "radio",
+                "nome": "Preciso de info do cliente"
+              },
+              "rotulo": "Falta uma informação",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "radio",
+                "nome": "Não consigo — passar pra humano"
+              },
+              "rotulo": "Passar para a equipe",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "radio",
+            "nome": "Concluí"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolha e escreva",
+          "texto": "Clique na opção e escreva no campo abaixo o que foi decidido. Com \"Concluí\" ou \"Preciso de info do cliente\", quem lê o que você escreve é a IA, e é com isso que ela responde o cliente. Então escreva a decisão de forma clara, com valores e horários. Com \"Não consigo — passar pra humano\", o texto vira um recado para a pessoa da equipe que vai assumir a conversa. Aqui, a recepção liberou 5% de desconto no Pix.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "radio",
+                "nome": "Concluí"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Escreva sua resposta para a IA..."
+              },
+              "valor": "Pode dar 5% de desconto no Pix: a consulta fica R$ 266,00."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "radio",
+                "nome": "Concluí"
+              },
+              "rotulo": "Opção escolhida",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "placeholder": "Escreva sua resposta para a IA..."
+              },
+              "rotulo": "Sua decisão para a IA",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Enviar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Enviar a decisão",
+          "texto": "O botão \"Enviar\" só funciona com uma opção marcada e o campo preenchido. Ao enviar, aparece o aviso \"Resposta registrada para processamento.\". Com \"Concluí\", o caso vai para a aba \"Concluídos\" e a IA escreve para o cliente (para isso, a IA e o WhatsApp precisam estar ligados). Com \"Não consigo — passar pra humano\", ele também vai para \"Concluídos\" e a conversa passa para a equipe. Com \"Preciso de info do cliente\", ele continua em \"Abertos\", agora como \"Aguardando o cliente\".",
+          "dica": "Se outra pessoa da equipe já respondeu o mesmo caso, aparece o aviso \"Este caso já foi respondido ou fechado.\" e nada muda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "radio",
+                "nome": "Concluí"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Escreva sua resposta para a IA..."
+              },
+              "valor": "Pode dar 5% de desconto no Pix: a consulta fica R$ 266,00."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar",
+                "exato": true
+              },
+              "rotulo": "Manda a decisão para a IA",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conversar-sobre-o-caso",
+      "titulo": "Tirando dúvidas com a IA antes de decidir",
+      "papel": "admin",
+      "objetivo": "Conhecer a conversa interna com a IA sobre um caso e saber o que fazer quando ela ainda não está ligada.",
+      "busca": [
+        "perguntar para a IA sobre o caso",
+        "conversar sobre o caso",
+        "conversa interna",
+        "nenhum provedor de IA configurado",
+        "IA não responde no caso",
+        "configurar provedor de IA"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Conversar sobre o caso",
+          "rota": "/app/ai/cases",
+          "texto": "Abaixo do quadro de resposta fica \"Conversar sobre o caso\". Ali a equipe faz perguntas à IA que abriu o caso antes de decidir, como \"Por que a IA não resolveu sozinha?\" ou \"O que o cliente já tentou?\". É uma conversa interna: o cliente não vê nada, e a IA ali não manda mensagem nem muda o caso. As perguntas dos colegas também aparecem nesse quadro, em alguns segundos. Enquanto a IA não estiver ligada, esse quadro mostra um aviso no lugar do campo de pergunta, e o próximo passo explica o porquê.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Desconto no Pix"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Pedro Henrique Lima",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "case-chat"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "case-chat"
+              },
+              "rotulo": "Conversa interna com a IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Quando a IA ainda não está ligada",
+          "texto": "Enquanto nenhuma chave de IA estiver cadastrada, no lugar do campo de pergunta aparece o aviso \"Nenhum provedor de IA está configurado\" e o link \"Abrir IA › Provedores\", que leva para a tela onde quem administra liga a IA.",
+          "dica": "Com a IA ligada, aparecem o campo \"Sua pergunta para a IA\" e o botão \"Perguntar\", e, enquanto ninguém perguntou nada, algumas sugestões de pergunta. Clicar numa sugestão só preenche o campo. Ctrl + Enter (Cmd + Enter no Mac) também envia. Cada pergunta é cobrada na conta da sua chave de IA.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "case-chat"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Nenhum provedor de IA está configurado",
+                "exato": false
+              },
+              "rotulo": "A IA ainda não está ligada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir IA › Provedores",
+                "exato": true
+              },
+              "rotulo": "Onde ligar a IA",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Abrir IA › Provedores",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A tela de provedores",
+          "texto": "O link abre a tela \"Provedores de IA\", onde quem administra escolhe qual IA atende cada parte do sistema. Enquanto falta a chave, ela avisa que você ainda não cadastrou a chave da IA principal, e o link \"Cadastrar uma chave\" leva para onde se cadastra. Só gerentes e administradores entram nela. Depois que a IA estiver ligada, volte em \"Casos\" e o campo de pergunta aparece no lugar do aviso.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir IA › Provedores",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Provedores de IA",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Provedores de IA",
+                "exato": true
+              },
+              "rotulo": "Tela de provedores",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Você ainda não cadastrou a chave da sua IA principal"
+              },
+              "rotulo": "Falta cadastrar a chave",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Cadastrar uma chave",
+                "exato": true
+              },
+              "rotulo": "Comece por aqui",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "O resto da tela (\"Modelo padrão\" e os quadros abaixo dele) pode ficar como está por enquanto: o primeiro passo é só cadastrar a chave."
+        }
+      ]
+    },
+    {
+      "id": "outras-situacoes",
+      "titulo": "Casos esperando o cliente ou abertos pelo sistema",
+      "papel": "admin",
+      "objetivo": "Reconhecer um caso que espera o cliente e um caso que o sistema abriu sozinho.",
+      "busca": [
+        "aguardando o cliente",
+        "caso parado",
+        "aberto automaticamente",
+        "sistema abriu caso",
+        "não consigo responder caso",
+        "botões desativados no caso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Caso aguardando o cliente",
+          "rota": "/app/ai/cases",
+          "texto": "Quando a equipe escolhe \"Preciso de info do cliente\", o caso fica com o selo \"Aguardando o cliente\". Nessa situação as opções ficam apagadas e não dá para responder: a vez é do cliente. Quando ele responder, a IA leva a resposta para o caso e ele volta a ficar \"Aguardando você\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Sábado de manhã"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Camila Rocha",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Aguardando o cliente",
+                "exato": true,
+                "dentro": {
+                  "testid": "case-detail"
+                }
+              },
+              "rotulo": "A vez é do cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Aguardando o cliente responder — a IA avisa você quando tiver a informação.",
+                "exato": true
+              },
+              "rotulo": "Por que não dá para responder",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que a equipe pediu",
+          "texto": "A linha do tempo mostra o pedido da equipe (\"Você pediu uma informação ao cliente\") com o texto que foi escrito, e logo depois \"A IA perguntou ao cliente\". Assim qualquer pessoa da equipe sabe em que pé está o caso sem precisar perguntar. Atenção: a tela escreve \"Você\" para qualquer pessoa da equipe que decidiu, mesmo que não tenha sido você.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Linha do tempo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='case-detail'] > div > div:last-child"
+              },
+              "rotulo": "O pedido e a pergunta ao cliente",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Convênio Unimed"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Caso aberto automaticamente",
+          "texto": "Alguns casos trazem o selo \"Aberto automaticamente\". Isso acontece quando a IA disse ao cliente que ia chamar alguém da equipe, mas não abriu o caso. O sistema percebe e abre o caso por ela, para o cliente não ficar esperando à toa. Você responde esse caso do mesmo jeito que os outros.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Convênio Unimed"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Juliana Castro",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Aberto automaticamente",
+                "exato": true
+              },
+              "rotulo": "O sistema abriu pela IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Convênio Unimed"
+              },
+              "rotulo": "Caso aberto",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "historico",
+      "titulo": "Consultando casos encerrados",
+      "papel": "admin",
+      "objetivo": "Ver como cada caso terminou e o que a equipe decidiu.",
+      "busca": [
+        "casos concluídos",
+        "histórico de casos",
+        "caso cancelado",
+        "virou atendimento humano",
+        "como o caso foi resolvido",
+        "casos antigos"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrindo um caso encerrado",
+          "rota": "/app/ai/cases",
+          "texto": "Na aba \"Concluídos\", clique num caso para ver como ele terminou. O selo no alto diz o desfecho, e o quadro \"O que você quer fazer?\" explica por que não aceita mais resposta. Neste caso, que foi concluído, aparece \"Este caso já foi concluído.\". As opções ficam apagadas, porque não há mais o que decidir.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Concluídos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar sessão"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar sessão"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Lucas Martins",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "radiogroup",
+                "nome": "O que você quer fazer?"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar sessão"
+              },
+              "rotulo": "Caso encerrado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Concluído",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid='case-detail'] header"
+                }
+              },
+              "rotulo": "Como terminou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Este caso já foi concluído.",
+                "exato": true
+              },
+              "rotulo": "Não aceita mais resposta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Como o caso foi resolvido",
+          "texto": "A linha do tempo conta a história do caso. Aqui a IA abriu o caso, a equipe resolveu (\"Você concluiu o caso\", com o que foi escrito para a IA) e o caso ficou \"Concluído\". O texto da equipe é o que a IA recebe para responder o Lucas. A tela escreve \"Você\" para qualquer pessoa da equipe que decidiu.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Linha do tempo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='case-detail'] > div > div:last-child"
+              },
+              "rotulo": "A decisão da equipe",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Curativo"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Um caso que virou atendimento humano",
+          "texto": "Este caso terminou com \"Não consigo — passar pra humano\". A linha do tempo mostra \"Você decidiu passar para atendimento humano\" (a tela diz \"Você\" para quem da equipe tomou a decisão) com o motivo, e depois \"Virou atendimento humano\". A partir daí a conversa com a Fernanda segue na Inbox, com uma pessoa da equipe.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Concluídos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar sessão"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Curativo"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Fernanda Oliveira",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Linha do tempo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='case-detail'] > div > div:last-child"
+              },
+              "rotulo": "Passou para a equipe",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Recibo do plano"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Um caso cancelado pela IA",
+          "texto": "A própria IA também encerra um caso quando o pedido deixa de existir. Aqui o Roberto achou o recibo sozinho: a IA anotou o motivo (\"A IA registrou o que aconteceu\") e o caso ficou \"Cancelado\", sem ninguém da equipe precisar mexer.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Concluídos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Trocar sessão"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Recibo do plano"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Roberto Almeida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Linha do tempo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='case-detail'] > div > div:last-child"
+              },
+              "rotulo": "A IA encerrou sozinha",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -26,7 +26,8 @@ import { NUVEMSHOP_CLASSIFICACAO, type HealthStatus } from "./route";
  *    enxerga o CHECK).
  */
 
-vi.mock("@/lib/auth/requirePlatformAdmin", () => ({
+vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>()),
   requirePlatformAdmin: vi.fn(),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));

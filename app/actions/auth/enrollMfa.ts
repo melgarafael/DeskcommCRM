@@ -5,10 +5,13 @@ import { redirect } from "next/navigation";
 
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/logger";
+import { sessionAal } from "@/lib/auth/server";
 
 export type EnrollMfaResult =
   | { ok: true; factor_id: string; qr_data_url: string; uri: string; secret: string }
-  | { ok: false; error: "enroll_failed"; message?: string };
+  | { ok: false; error: "enroll_failed"; message?: string }
+  | { ok: false; error: "mfa_required" };
 
 /**
  * Starts a TOTP enrollment. Returns factor_id + QR data URL (PNG) + raw URI.
@@ -26,10 +29,34 @@ export async function enrollMfa(): Promise<EnrollMfaResult> {
   if (!user) redirect("/login");
 
   // Drop any stale unverified TOTP factors (idempotent re-enroll).
-  const { data: existing } = await supabase.auth.mfa.listFactors();
+  const { data: existing, error: listErr } = await supabase.auth.mfa.listFactors();
+  // Sem a lista não dá para saber se a conta já tem fator: recusa em vez de
+  // tratar como primeiro cadastro.
+  if (listErr) return { ok: false, error: "enroll_failed", message: listErr.message };
+
+  // Quem JÁ tem fator verificado só cadastra outro depois de provar o atual
+  // nesta sessão (`aal2` exato). Um fator novo confirmado sobe a sessão para
+  // `aal2` e emite códigos de recuperação — o mesmo que dispensar o fator antigo.
+  const temFatorVerificado = existing?.all?.some(
+    (f) => f.factor_type === "totp" && f.status === "verified",
+  );
+  if (temFatorVerificado && (await sessionAal()) !== "aal2") {
+    return { ok: false, error: "mfa_required" };
+  }
+
   for (const f of existing?.all ?? []) {
     if (f.factor_type === "totp" && f.status === "unverified") {
-      await supabase.auth.mfa.unenroll({ factorId: f.id });
+      // O retorno era ignorado. Falhar calado aqui deixa o fator antigo de pé, e
+      // o cadastro novo morre no "already exists" do GoTrue — que a tela mostra
+      // como frase genérica (#3156). A falha vai para o log do servidor (#3161).
+      const { error: unenrollErr } = await supabase.auth.mfa.unenroll({ factorId: f.id });
+      if (unenrollErr) {
+        logger.error("[mfa-cadastro] o fator não confirmado não pôde ser removido", {
+          factor_id: f.id,
+          code: unenrollErr.code,
+          error: unenrollErr.message,
+        });
+      }
     }
   }
 
@@ -59,6 +86,14 @@ export async function enrollMfa(): Promise<EnrollMfaResult> {
     issuer: marca.nome,
   });
   if (error || !data) {
+    // O motivo do provedor sai da tela (#3156) e precisa ficar em algum lugar:
+    // sem esta linha, quem opera a VPS vê "não consegui ativar" e nada mais.
+    // Entram só o motivo e o código do erro — nem o TOTP nem o segredo passam
+    // por aqui.
+    logger.error("[mfa-cadastro] o provedor recusou o cadastro do fator", {
+      code: error?.code,
+      error: error?.message,
+    });
     return { ok: false, error: "enroll_failed", message: error?.message };
   }
 

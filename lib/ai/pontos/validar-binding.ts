@@ -49,6 +49,8 @@ export type ResultadoDaValidacao =
  */
 export function validarBinding(entrada: {
   pontoId: string;
+  /** Precisa vir junto do model_id: um ponto fixo-com-opções só aceita o PAR. */
+  provider: string;
   modelo: CapacidadeDoModelo;
 }): ResultadoDaValidacao {
   const ponto = PONTO_POR_ID.get(entrada.pontoId);
@@ -61,6 +63,23 @@ export function validarBinding(entrada: {
   }
 
   if (ponto.fixo !== undefined) {
+    // Ponto fixo COM menu: não é a catraca de ferramentas/visão abaixo (que
+    // pressupõe modelo de CONVERSA) — é "este par está no menu, ou não está".
+    if (ponto.fixo.opcoes !== undefined) {
+      const noMenu = ponto.fixo.opcoes.some(
+        (o) => o.provider === entrada.provider && o.modelId === entrada.modelo.model_id,
+      );
+      if (!noMenu) {
+        return {
+          ok: false,
+          codigo: "opcao_fora_do_menu",
+          mensagem:
+            `${ponto.rotulo} só aceita um dos serviços oferecidos para este ponto: ` +
+            `${ponto.fixo.opcoes.map((o) => o.rotulo).join(", ")}.`,
+        };
+      }
+      return { ok: true, avisos: [] };
+    }
     return {
       ok: false,
       codigo: "ponto_fixo",

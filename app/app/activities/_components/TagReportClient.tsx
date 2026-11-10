@@ -38,6 +38,13 @@ import { Tag } from "@/lib/ui/icons";
  */
 const PERIODOS = [7, 30, 90] as const;
 
+/**
+ * Célula de número que, no celular, vira "Rótulo valor" dentro do cartão da
+ * etiqueta: o cabeçalho some abaixo de `md` e o rótulo vem do `data-rotulo`.
+ * Só classes `max-md:` — no computador é a tabela de sempre.
+ */
+const CELULA_DE_NUMERO = "text-right tabular-nums max-md:p-0 max-md:text-left max-md:before:mr-1 max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]";
+
 export function TagReportClient() {
   const t = useT();
   const [dias, setDias] = useState<number>(7);
@@ -119,8 +126,8 @@ export function TagReportClient() {
           <CardTitle className="text-base">{t("O que mais ocupou a operação")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table data-testid="tabela-por-etiqueta">
-            <TableHeader>
+          <Table data-testid="tabela-por-etiqueta" className="max-md:block">
+            <TableHeader className="max-md:hidden">
               <TableRow>
                 <TableHead>{t("Etiqueta")}</TableHead>
                 <TableHead className="text-right">{t("Conversas")}</TableHead>
@@ -130,10 +137,14 @@ export function TagReportClient() {
                 <TableHead className="w-44">{t("Fatia")}</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-md:block">
               {linhas.map((linha: LinhaDeEtiqueta) => (
-                <TableRow key={linha.etiqueta} data-testid="linha-de-etiqueta">
-                  <TableCell>
+                <TableRow
+                  key={linha.etiqueta}
+                  data-testid="linha-de-etiqueta"
+                  className="max-md:grid max-md:grid-cols-2 max-md:gap-x-3 max-md:py-2"
+                >
+                  <TableCell className="max-md:col-span-2 max-md:p-0">
                     {/* O "e daí" da linha: lista que não leva ao trabalho é
                         decoração. Um marcador por vez (#1886 é o filtro de
                         várias), então o link carrega UMA etiqueta.
@@ -143,18 +154,24 @@ export function TagReportClient() {
                     <Link
                       href={`/app/inbox?filter=all&tag=${encodeURIComponent(linha.etiqueta)}`}
                       data-testid="link-de-etiqueta"
-                      className="text-accent underline underline-offset-2"
+                      className="text-accent underline underline-offset-2 max-md:inline-flex max-md:min-h-11 max-md:items-center"
                     >
                       {linha.etiqueta}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{linha.conversas}</TableCell>
-                  <TableCell className="text-right tabular-nums">{linha.abertas}</TableCell>
-                  <TableCell className="text-right tabular-nums">{linha.resolvidas}</TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell data-rotulo={t("Conversas")} className={CELULA_DE_NUMERO}>
+                    {linha.conversas}
+                  </TableCell>
+                  <TableCell data-rotulo={t("Abertas")} className={CELULA_DE_NUMERO}>
+                    {linha.abertas}
+                  </TableCell>
+                  <TableCell data-rotulo={t("Resolvidas")} className={CELULA_DE_NUMERO}>
+                    {linha.resolvidas}
+                  </TableCell>
+                  <TableCell data-rotulo={t("Espera média")} className={CELULA_DE_NUMERO}>
                     {esperaLegivel(linha.espera_media_segundos)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-md:col-span-2 max-md:px-0">
                     <div className="flex items-center gap-2">
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                         <div

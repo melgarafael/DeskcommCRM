@@ -150,4 +150,31 @@ describe("bloqueioDePublicacao", () => {
       }),
     ).toEqual({ codigo: "alteracoes_nao_salvas" });
   });
+  it("permite publicar um membro do roteador sem número próprio quando o canal do roteador está WORKING", () => {
+    expect(bloqueioDePublicacao(pronto({
+      numero: { estado: null },
+      roteador: { estadoDoCanal: "WORKING" },
+    }))).toBeNull();
+  });
+
+  it("não libera agente comum sem número nem roteador", () => {
+    expect(bloqueioDePublicacao(pronto({ numero: { estado: null }, roteador: null })))
+      .toEqual({ codigo: "sem_numero" });
+  });
+
+  it("bloqueia membro de roteador com canal desconectado", () => {
+    expect(bloqueioDePublicacao(pronto({
+      numero: { estado: null },
+      roteador: { estadoDoCanal: "STOPPED" },
+    }))).toEqual({ codigo: "numero_desconectado", estado: "STOPPED" });
+  });
+
+  it("não ignora edições pendentes mesmo com roteador conectado", () => {
+    expect(bloqueioDePublicacao(pronto({
+      numero: { estado: null },
+      roteador: { estadoDoCanal: "WORKING" },
+      alteracoesNaoSalvas: true,
+    }))).toEqual({ codigo: "alteracoes_nao_salvas" });
+  });
+
 });

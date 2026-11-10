@@ -19,12 +19,16 @@ const TRATA = "trata";
 const CHAMADORES: Record<string, string> = {
   "app/api/v1/cron/agenda-reminder/route.ts": TRATA, // tests/unit/lembrete-pula-org-parada.test.ts
   "app/api/v1/cron/task-reminder/route.ts": TRATA, // app/api/v1/cron/task-reminder/route.test.ts (OrgNaoOperanteError no catch do WhatsApp)
+  "lib/agenda/encaixe-supabase.ts":
+    "configDaEspera já nega a org parada antes de oferecer; se a suspensão chegar no meio, o aviso devolve false e a vaga é solta, sem nada gravado como enviado",
   "lib/campanhas/rodada.ts": TRATA, // registrarExcecaoDoEnvio, tests/unit/suspensao-nao-dispara-campanha.test.ts
   "lib/prospecting/worker.ts": TRATA, // tests/unit/prospecting-worker.test.ts
   "lib/followup/enviar-texto-fixo.ts": TRATA, // lib/followup/enviar-texto-fixo.test.ts
   "lib/agent-engine/edge/crm/send-message.ts":
     "propaga o 403 como ApiError; sendWithLedger relança a suspensão e o agent-worker encerra o job terminal",
   "app/api/v1/messages/route.ts": "rota de API: o ApiError 403 org_suspended vira a resposta JSON de quem chamou",
+  "app/api/v1/messages/[id]/retry/route.ts":
+    "rota de API: requireRole já recusa a org parada; se a suspensão chegar no meio, o ApiError devolve a linha ao estado lido e vira a resposta JSON",
   "app/api/v1/proposals/[id]/send/route.ts":
     "o catch devolve a proposta a rascunho; nada fica gravado como enviado, e a pessoa reenvia depois",
   "lib/ai/handoff/aviso-ao-lead.ts": "devolve avisado:false; é aviso de um instante, sem fila nem estado que sobreviva",
@@ -36,6 +40,8 @@ const CHAMADORES: Record<string, string> = {
   "lib/campanhas/acoes.ts": "ação disparada da tela: o erro sobe para quem clicou, sem estado gravado",
   "lib/mcp/tools/messages.ts": "ferramenta MCP: o erro sobe ao cliente; o token da org parada já é recusado antes",
   "lib/mcp/tools/start-conversation.ts": "ferramenta MCP: o erro sobe ao cliente; o token da org parada já é recusado antes",
+  "lib/inbox/encaminhar-mensagem.ts":
+    "propaga o 403 org_suspended ao chamador da rota `forward`; nada é gravado — a linha do destino só nasce se o envio aceitar",
 };
 
 const PORTA = "app/api/v1/messages/_handler.ts";

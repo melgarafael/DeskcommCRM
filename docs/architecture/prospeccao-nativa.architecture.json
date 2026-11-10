@@ -25,6 +25,7 @@
     "operator",
     "discovery",
     "candidates",
+    "whatsapp-check",
     "site-enrich",
     "crm",
     "queue",
@@ -117,6 +118,13 @@
       "label": "ElevenLabs Agents privado e teste no navegador"
     },
     {
+      "id": "whatsapp-check",
+      "lane": "app",
+      "col": 3,
+      "type": "component",
+      "label": "WhatsApp conferido antes da abordagem (check-exists do WAHA)"
+    },
+    {
       "id": "site-enrich",
       "lane": "app",
       "col": 3,
@@ -150,6 +158,13 @@
       "col": 6,
       "type": "component",
       "label": "Gatilho: mensagem da saída falhou, a reserva volta"
+    },
+    {
+      "id": "site-tool",
+      "lane": "app",
+      "col": 5,
+      "type": "component",
+      "label": "Consulta da análise do site na conversa (só leitura, por contato do turno)"
     }
   ],
   "edges": [
@@ -159,6 +174,11 @@
       "label": "busca com teto"
     },
     {
+      "from": "operator",
+      "to": "candidates",
+      "label": "planilha (CSV/XLSX)"
+    },
+    {
       "from": "discovery",
       "to": "candidates",
       "label": "normalizar e deduplicar"
@@ -166,7 +186,7 @@
     {
       "from": "candidates",
       "to": "crm",
-      "label": "ativação autorizada"
+      "label": "ativação autorizada (o contato nasce com os links)"
     },
     {
       "from": "crm",
@@ -292,6 +312,36 @@
       "from": "saida-volta-com-a-mensagem",
       "to": "operator",
       "label": "audita prospecting.exit_offer_withdrawn; a tela volta a 'Saída ainda não oferecida'"
+    },
+    {
+      "from": "candidates",
+      "to": "site-tool",
+      "label": "lê data.site, cadastro e ofertas da configuração da campanha do contato da conversa"
+    },
+    {
+      "from": "site-tool",
+      "to": "inbound-turn",
+      "label": "o agente consulta ofertas e estratégia complementar durante a conversa; a configuração também entra no contexto do inbound"
+    },
+    {
+      "from": "site-tool",
+      "to": "operator",
+      "label": "cada consulta sai no registro de ferramentas do agente (laço: a tela mostra se o agente usa)"
+    },
+    {
+      "from": "candidates",
+      "to": "whatsapp-check",
+      "label": "telefone sem veredito em data.whatsapp, 15 por minuto"
+    },
+    {
+      "from": "whatsapp-check",
+      "to": "queue",
+      "label": "sem WhatsApp: fora da seleção e da fila, com o motivo"
+    },
+    {
+      "from": "whatsapp-check",
+      "to": "operator",
+      "label": "a lista mostra Tem/Sem WhatsApp e o contador"
     }
   ]
 }

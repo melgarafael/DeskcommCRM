@@ -35,7 +35,7 @@
  * O Elementor não manda identificador único do envio, então não há `externalId`.
  */
 import type { MappedLead } from "@/lib/webhooks/inbound";
-import { normalizePhoneBR } from "@/lib/webhooks/inbound";
+import { ehChaveDeAnuncio, normalizePhoneBR } from "@/lib/webhooks/inbound";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -159,7 +159,17 @@ export function mapElementorPayload(payload: unknown): ElementorMapped {
   const source_metadata: Record<string, string> = {};
   for (const c of campos) {
     if (usados.has(c.id) || c.value === null) continue;
-    if (c.id.toLowerCase().startsWith("utm_")) source_metadata[c.id.toLowerCase()] = c.value;
+    // ─── A chave de anúncio NÃO é campo do card (issue #3149) ───────────────
+    //
+    // O `id` do campo do Elementor é livre: um formulário montado num anúncio
+    // manda `fields[fbclid][value]`, e até aqui isso virava campo personalizado
+    // do card. Aqui vale a MESMA lista do caminho genérico (`CHAVES_DE_ANUNCIO`,
+    // em `inbound.ts`) e o MESMO destino (`source_metadata`), de onde a rota
+    // estampa a atribuição do contato. Sem esta linha, o clique do anúncio não
+    // chega à atribuição em nenhum envio do Elementor — o resto do caminho
+    // (extrator, RPC de primeiro toque, conversão da Meta) já está pronto.
+    const id = c.id.toLowerCase();
+    if (id.startsWith("utm_") || ehChaveDeAnuncio(id)) source_metadata[id] = c.value;
     else custom_fields[c.id] = c.value;
   }
   if (envio.formId) custom_fields.elementor_form_id = envio.formId;

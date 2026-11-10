@@ -21,24 +21,45 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { credentialsListQueryKey, type CredentialRow } from "@/hooks/ai/useCredentials";
-import { IDS_COM_CHAVE, PROVEDORES_COM_CHAVE, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
+import { credentialsListQueryKey, type CredentialRow, type ServiceProvider } from "@/hooks/ai/useCredentials";
+import {
+  IDS_COM_CHAVE,
+  PROVEDORES_COM_CHAVE,
+  PROVEDOR_POR_ASSINATURA,
+  type ProvedorComChave,
+} from "@/lib/ai/pontos/provedores";
+import { IDS_DE_SERVICO, PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import { useT } from "@/hooks/i18n/useT";
 
+/**
+ * A frase da casa para o provedor da assinatura — a MESMA que a rota devolve
+ * quando alguém tenta cadastrar a conta colando uma chave
+ * (`MENSAGEM_ASSINATURA_SO_PELO_LOGIN`, em `lib/ai/credenciais/guardar.ts`).
+ * Aqui ela vem antes do POST: a tela já sabe disso sem gastar a volta (#2952).
+ */
+const MENSAGEM_DA_ASSINATURA =
+  "A conta do ChatGPT não se cadastra colando uma chave: ela se conecta pelo botão de login em IA › Credenciais.";
+
 const formSchema = z.object({
-  // Derivado das listas (`lib/ai/pontos/provedores.ts`), como a rota.
-  provider: z.enum(IDS_COM_CHAVE),
+  // Derivado das listas (`lib/ai/pontos/provedores.ts` e `provedores-de-servico.ts`), como a rota.
+  provider: z.enum([...IDS_COM_CHAVE, ...IDS_DE_SERVICO]),
   // Opcional: o leigo cola só a chave. Em branco, o nome vira o do provedor
   // (ver `onSubmit`) — o banco exige um, e a pessoa não precisa inventá-lo.
   label: z.string().trim().max(80),
-  api_key: z.string().trim().min(8, "Chave muito curta").max(2048),
+  // O mínimo de 8 caracteres é cobrado no `onSubmit`: a assinatura do ChatGPT
+  // é a única em que NÃO há chave a colar (#2952), então o schema não pode
+  // recusá-la antes de o formulário saber de quem se trata.
+  api_key: z.string().trim().max(2048),
   /** Só o provedor personalizado (#1642) tem — vira campo quando ele é escolhido. */
   base_url: z.string().trim().max(500),
 });
@@ -68,7 +89,7 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
   const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
-  const [provider, setProvider] = useState<ProvedorComChave>(providerInicial);
+  const [provider, setProvider] = useState<ProvedorComChave | ServiceProvider>(providerInicial);
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   /** O endereço da API compatível com a OpenAI — só o provedor personalizado tem. */
@@ -79,7 +100,12 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
   );
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
-  const provedor = PROVEDORES_COM_CHAVE.find((p) => p.id === provider) ?? PROVEDORES_COM_CHAVE[0];
+  const provedor =
+    PROVEDORES_COM_CHAVE.find((p) => p.id === provider) ??
+    PROVEDORES_DE_SERVICO.find((p) => p.id === provider) ??
+    PROVEDORES_COM_CHAVE[0];
+  /** A conta do ChatGPT se conecta pelo login, não por chave colada (#2952). */
+  const ehAssinatura = provider === PROVEDOR_POR_ASSINATURA;
 
   const reset = () => {
     setProvider(providerInicial);
@@ -93,6 +119,13 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+
+    // A chave curta é cobrada aqui, e não no schema: é o único ponto que
+    // sabe se o provedor é o da assinatura, onde nada se cola (#2952).
+    if (!ehAssinatura && apiKey.trim().length < 8) {
+      setErrors({ api_key: t("Chave muito curta") });
+      return;
+    }
 
     if (provider === "custom" && !/^https?:\/\/\S+$/.test(baseUrl.trim())) {
       setErrors({
@@ -109,6 +142,16 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
         label: flat.label?.[0] ? t(flat.label[0]) : undefined,
         api_key: flat.api_key?.[0] ? t(flat.api_key[0]) : undefined,
       });
+      return;
+    }
+
+    // A assinatura do ChatGPT não tem chave: a credencial nasce do login
+    // (PKCE) e a rota recusa a chave colada por desenho
+    // (`assinatura_so_pelo_login`). O formulário aceita o campo vazio aqui,
+    // mas não inventa um POST para receber a recusa que já está na tela: o
+    // caminho é o painel de login, e é ele que a frase diz (#2952).
+    if (ehAssinatura) {
+      toast.error(t(MENSAGEM_DA_ASSINATURA));
       return;
     }
 
@@ -165,8 +208,13 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
         const fresh = qc.getQueryData<CredentialRow[]>(credentialsListQueryKey);
         const justCreated = fresh?.find((c) => c.id === res.data.id);
         if (justCreated?.models_available != null) {
+          // "modelos" não descreve o catálogo de um serviço de voz — ali o que
+          // a chave devolve é a lista de vozes da conta, não modelo de chat.
+          const substantivo = PROVEDORES_DE_SERVICO.some((p) => p.id === justCreated.provider)
+            ? t("vozes disponíveis.")
+            : t("modelos disponíveis.");
           toast.success(
-            `${t("Validada")} — ${justCreated.models_available.length} ${t("modelos disponíveis.")}`,
+            `${t("Validada")} — ${justCreated.models_available.length} ${substantivo}`,
           );
         } else if (justCreated?.validation_error) {
           const erro = descreverErroDeValidacao(justCreated.validation_error, justCreated.provider);
@@ -206,16 +254,27 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="cred-provider">{t("Provedor")}</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as ProvedorComChave)}>
+            <Select value={provider} onValueChange={(v) => setProvider(v as ProvedorComChave | ServiceProvider)}>
               <SelectTrigger id="cred-provider">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PROVEDORES_COM_CHAVE.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.rotulo}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {PROVEDORES_COM_CHAVE.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.rotulo}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectSeparator />
+                <SelectGroup>
+                  <SelectLabel>{t("Serviços de voz")}</SelectLabel>
+                  {PROVEDORES_DE_SERVICO.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.rotulo}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t(provedor.quandoUsar)}</p>
@@ -295,8 +354,11 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={provedor.prefixoDaChave}
               autoComplete="off"
-              required
+              required={!ehAssinatura}
             />
+            {ehAssinatura && (
+              <p className="text-xs text-muted-foreground">{t(MENSAGEM_DA_ASSINATURA)}</p>
+            )}
             {errors.api_key && (
               <p className="text-xs text-destructive">{errors.api_key}</p>
             )}

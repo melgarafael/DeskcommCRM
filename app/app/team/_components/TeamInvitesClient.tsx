@@ -92,8 +92,8 @@ export function TeamInvitesClient({ canManage }: Props) {
         <p className="text-sm text-muted-foreground">{t("Nenhum convite enviado.")}</p>
       ) : (
         <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
+          <Table className="max-md:block">
+            <TableHeader className="max-md:hidden">
               <TableRow>
                 <TableHead>{t("E-mail")}</TableHead>
                 <TableHead>{t("Papel")}</TableHead>
@@ -106,26 +106,36 @@ export function TeamInvitesClient({ canManage }: Props) {
                 {canManage ? <TableHead className="w-[60px]" /> : null}
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-md:block">
               {invites.map((inv) => {
                 const emAberto = inv.status === "pendente" || inv.status === "expirado";
                 return (
-                  <TableRow key={inv.id}>
-                    <TableCell className="font-medium">{inv.email}</TableCell>
-                    <TableCell>
+                  <TableRow
+                    key={inv.id}
+                    className="max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-1 max-md:px-4 max-md:py-2"
+                  >
+                    <TableCell className="font-medium max-md:basis-full max-md:p-0 max-md:wrap-anywhere">
+                      {inv.email}
+                    </TableCell>
+                    <TableCell className="max-md:p-0">
                       <Badge variant="secondary">{t(rotuloDoPapel(inv.role))}</Badge>
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm max-md:hidden">
                       {inv.interface_settings?.destinos
                         ? t("Personalizada")
                         : inv.interface_settings?.preset === "simplificada"
                           ? t("Simplificada")
                           : t("Completa")}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:p-0">
                       <Badge variant={BADGE_VARIANT[inv.status]}>{STATUS_LABEL[inv.status]}</Badge>
                     </TableCell>
-                    <TableCell>
+                    {/* No celular o cabeçalho some: o rótulo vem do atributo,
+                        senão o «Sim» fica solto sem dizer do quê. */}
+                    <TableCell
+                      data-rotulo={t("E-mail enviado")}
+                      className="max-md:basis-full max-md:p-0 max-md:before:mr-1.5 max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]"
+                    >
                       {inv.email_dispatched ? (
                         <span className="text-sm text-muted-foreground">{t("Sim")}</span>
                       ) : (
@@ -138,7 +148,7 @@ export function TeamInvitesClient({ canManage }: Props) {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-7 w-fit gap-1 text-xs"
+                              className="w-fit gap-1 text-xs md:h-7"
                               onClick={() => copyLink(inv.accept_url!)}
                             >
                               <Copy size={13} />
@@ -148,7 +158,7 @@ export function TeamInvitesClient({ canManage }: Props) {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-muted-foreground max-md:hidden">
                       {new Date(inv.last_sent_at).toLocaleString(tagDoIdioma)}
                       {inv.resend_count > 0 ? (
                         <span className="ml-1 text-xs">
@@ -156,16 +166,19 @@ export function TeamInvitesClient({ canManage }: Props) {
                         </span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell
+                      data-rotulo={t("Expira em")}
+                      className="text-sm text-muted-foreground max-md:flex-auto max-md:p-0 max-md:text-xs max-md:before:mr-1.5 max-md:before:text-muted-foreground max-md:before:content-[attr(data-rotulo)]"
+                    >
                       {inv.status === "aceito"
                         ? "—"
                         : new Date(inv.expires_at).toLocaleString(tagDoIdioma)}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-muted-foreground max-md:hidden">
                       {inv.inviter_name ?? "—"}
                     </TableCell>
                     {canManage ? (
-                      <TableCell>
+                      <TableCell className="max-md:ml-auto max-md:p-0">
                         {emAberto ? (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

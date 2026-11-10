@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_CHANNEL_PROVIDER } from "@/lib/channels/capabilities";
 import { logger } from "@/lib/logger";
 
-import { alternarGrupo, GrupoError, listarGruposDoNumero, type DepsDeGrupos } from "./servico";
+import {
+  alternarGrupo,
+  definirIaDoGrupo,
+  GrupoError,
+  listarGruposDoNumero,
+  type DepsDeGrupos,
+} from "./servico";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const SESS = "22222222-2222-4222-8222-222222222222";
@@ -12,13 +18,33 @@ const G1 = "1@g.us";
 const G2 = "2@g.us";
 const G3_ORFAO = "3@g.us"; // ligado no banco, mas fora da resposta fixa de listGroups (G1/G2)
 
-function deps(opts: { ligados?: string[]; capability?: "full" | "none"; confirma?: boolean } = {}) {
+function deps(
+  opts: {
+    ligados?: string[];
+    capability?: "full" | "none";
+    confirma?: boolean;
+    /** Grupos com a chave da IA ligada (`ia_responde = true`). */
+    iaLiberado?: string[];
+  } = {},
+) {
   const linhas = new Map<
     string,
-    { group_chat_id: string; subject: string | null; enabled: boolean; enabled_at: string | null }
+    {
+      group_chat_id: string;
+      subject: string | null;
+      enabled: boolean;
+      enabled_at: string | null;
+      ia_responde: boolean;
+    }
   >();
   for (const g of opts.ligados ?? []) {
-    linhas.set(g, { group_chat_id: g, subject: null, enabled: true, enabled_at: "2026-09-23T00:00:00.000Z" });
+    linhas.set(g, {
+      group_chat_id: g,
+      subject: null,
+      enabled: true,
+      enabled_at: "2026-09-23T00:00:00.000Z",
+      ia_responde: (opts.iaLiberado ?? []).includes(g),
+    });
   }
   const d: DepsDeGrupos & { setGroupIntake: ReturnType<typeof vi.fn>; audit: ReturnType<typeof vi.fn> } = {
     db: {
@@ -30,8 +56,19 @@ function deps(opts: { ligados?: string[]; capability?: "full" | "none"; confirma
       listarLinhas: vi.fn(async () => [...linhas.values()]),
       contarLigados: vi.fn(async () => [...linhas.values()].filter((l) => l.enabled).length),
       gravarLinha: vi.fn(async (_o, _s, row) => {
-        linhas.set(row.group_chat_id, row);
+        // Como no banco: linha NOVA nasce com a chave da IA no default
+        // (desligada); upsert de linha existente não toca nela.
+        const anterior = linhas.get(row.group_chat_id);
+        linhas.set(row.group_chat_id, { ...row, ia_responde: anterior?.ia_responde ?? false });
         return { id: "row-" + row.group_chat_id };
+      }),
+      definirIa: vi.fn(async (_o, _s, chatId, valor) => {
+        const l = linhas.get(chatId);
+        // Mesma régua do banco: a atualização só alcança linha LIGADA. Grupo
+        // sem linha (nunca ligado) ou desligado → null.
+        if (!l || !l.enabled) return null;
+        linhas.set(chatId, { ...l, ia_responde: valor });
+        return { id: "row-" + chatId };
       }),
     },
     listGroups: vi.fn(async () => [
@@ -50,8 +87,18 @@ describe("listarGruposDoNumero", () => {
   it("junta a lista do WhatsApp com o estado gravado; o padrão é desligado", async () => {
     const r = await listarGruposDoNumero(deps({ ligados: [G1] }), { organizationId: ORG, channelSessionId: SESS });
     expect(r).toEqual([
-      { chatId: G1, subject: "Cliente A", enabled: true, enabledAt: "2026-09-23T00:00:00.000Z", presente: true },
-      { chatId: G2, subject: "Família", enabled: false, enabledAt: null, presente: true },
+      { chatId: G1, subject: "Cliente A", enabled: true, enabledAt: "2026-09-23T00:00:00.000Z", presente: true, iaResponde: false },
+      { chatId: G2, subject: "Família", enabled: false, enabledAt: null, presente: true, iaResponde: false },
+    ]);
+  });
+  it("#2729: a chave da IA vem junto de cada grupo, e o padrão é DESLIGADO", async () => {
+    const r = await listarGruposDoNumero(deps({ ligados: [G1], iaLiberado: [G1] }), {
+      organizationId: ORG,
+      channelSessionId: SESS,
+    });
+    expect(r.map((g) => [g.chatId, g.iaResponde])).toEqual([
+      [G1, true],
+      [G2, false],
     ]);
   });
   it("canal sem capacidade de grupos é recusado", async () => {
@@ -69,6 +116,7 @@ describe("listarGruposDoNumero", () => {
       enabled: true,
       enabledAt: "2026-09-23T00:00:00.000Z",
       presente: false,
+      iaResponde: false,
     });
   });
   it("grupo DESLIGADO que o número já deixou não aparece — não há nada para desligar", async () => {
@@ -205,5 +253,60 @@ describe("alternarGrupo", () => {
     );
     expect(aviso).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ causa: "transporte reiniciando" }));
     aviso.mockRestore();
+  });
+});
+
+/**
+ * #2729 — a chave POR GRUPO "Permitir que a IA responda neste grupo".
+ *
+ * Ela é uma preferência LOCAL do CRM: não mexe no filtro do WhatsApp, não
+ * confirma nada com o transporte e não pode existir para um grupo que nem
+ * está na inbox (sem linha ligada não há mensagem para a IA responder).
+ */
+describe("definirIaDoGrupo", () => {
+  const ia = { organizationId: ORG, channelSessionId: SESS, groupChatId: G1, actorUserId: "u1", requestId: "r1" };
+
+  it("liga a chave num grupo LIGADO, sem tocar no filtro do WhatsApp, e audita", async () => {
+    const d = deps({ ligados: [G1] });
+    await expect(definirIaDoGrupo(d, { ...ia, iaResponde: true })).resolves.toEqual({ ia_responde: true });
+    expect(d.db.definirIa).toHaveBeenCalledWith(ORG, SESS, G1, true);
+    // A chave é local: o transporte não é perguntado nem reiniciado.
+    expect(d.setGroupIntake).not.toHaveBeenCalled();
+    expect(d.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "channel.group_ai_enabled",
+        organizationId: ORG,
+        actorUserId: "u1",
+        metadata: expect.objectContaining({ group_chat_id: G1, ia_responde: true }),
+      }),
+    );
+  });
+
+  it("desliga a chave e audita o desligar", async () => {
+    const d = deps({ ligados: [G1], iaLiberado: [G1] });
+    await expect(definirIaDoGrupo(d, { ...ia, iaResponde: false })).resolves.toEqual({ ia_responde: false });
+    expect(d.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "channel.group_ai_disabled", metadata: expect.objectContaining({ ia_responde: false }) }),
+    );
+    // A chave não muda quem está na inbox: o grupo continua ligado.
+    const lista = await listarGruposDoNumero(d, { organizationId: ORG, channelSessionId: SESS });
+    expect(lista.find((g) => g.chatId === G1)).toMatchObject({ enabled: true, iaResponde: false });
+  });
+
+  it("grupo DESLIGADO (ou nunca ligado) é recusado: nada a liberar, nada gravado", async () => {
+    const d = deps({ ligados: [] });
+    await expect(definirIaDoGrupo(d, { ...ia, iaResponde: true })).rejects.toMatchObject({ code: "grupo_desligado" });
+    expect(d.audit).not.toHaveBeenCalled();
+  });
+
+  it("id que não é de grupo é recusado antes de qualquer efeito", async () => {
+    const d = deps({ ligados: [G1] });
+    await expect(definirIaDoGrupo(d, { ...ia, groupChatId: "5521999990000@c.us", iaResponde: true })).rejects.toThrow();
+    expect(d.db.definirIa).not.toHaveBeenCalled();
+  });
+
+  it("canal sem capacidade de grupos é recusado", async () => {
+    const d = deps({ ligados: [G1], capability: "none" });
+    await expect(definirIaDoGrupo(d, { ...ia, iaResponde: true })).rejects.toMatchObject({ code: "canal_sem_grupos" });
   });
 });

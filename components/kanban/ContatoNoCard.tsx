@@ -1,7 +1,7 @@
 "use client";
 
+import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { useT } from "@/hooks/i18n/useT";
-import { TIPOS_DE_LINK } from "@/lib/leads/links-de-contato";
 import type { Lead } from "@/lib/types/leads";
 import { EnvelopeSimple, Phone } from "@/lib/ui/icons";
 
@@ -55,26 +55,7 @@ export function ContatoNoCard({ lead }: Props) {
         </div>
       )}
       {links.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {links.map(({ tipo, href }) => {
-            const definicao = TIPOS_DE_LINK.find((d) => d.id === tipo);
-            const rotulo = definicao ? t(definicao.rotulo) : tipo;
-            return (
-              <a
-                key={tipo}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={`${rotulo} — ${href}`}
-                aria-label={`${t("Abrir")} ${rotulo}`}
-                onClick={(e) => e.stopPropagation()}
-                className="rounded-md border border-border px-1.5 py-0.5 text-[11px] leading-4 text-text-muted hover:border-accent hover:text-accent"
-              >
-                {definicao?.curto ?? tipo}
-              </a>
-            );
-          })}
-        </div>
+        <ListaDeLinks links={links} aoClicarNoLink={(e) => e.stopPropagation()} />
       )}
     </div>
   );

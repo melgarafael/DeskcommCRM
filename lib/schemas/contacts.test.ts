@@ -11,11 +11,14 @@
 import { describe, expect, it } from "vitest";
 import {
   contactCreateSchema,
+  contactCreateSchemaDoPais,
   contactListQuerySchema,
   contactPatchSchema,
+  contactPatchSchemaDoPais,
   isValidCpf,
   lgpdAnonymizeSchema,
 } from "./contacts";
+import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { campoVisivel, camposVisiveis, mostrarQuandoSchema } from "./mostrar-quando";
 import { customFieldSchema } from "./settings";
 
@@ -107,12 +110,126 @@ describe("contactCreateSchema", () => {
   });
 });
 
+describe("telefone nacional da organização brasileira (#3301)", () => {
+  const BR = perfilDoPais("BR");
+  const PT = perfilDoPais("PT");
+  const criar = contactCreateSchemaDoPais(BR);
+
+  it("aceita DDD + número com e sem máscara, e grava E.164 com +55", () => {
+    // A régua do brasileiro: DDD + 9 dígitos (celular) e DDD + 8 (fixo), com a
+    // máscara que as pessoas usam de fato — parêntese no DDD, traço/barra antes
+    // dos quatro últimos. O que a API grava é sempre a forma canônica.
+    const digitado = {
+      "(11) 99999-8888": "+5511999998888",
+      "11 99999-8888": "+5511999998888",
+      "11999998888": "+5511999998888",
+      "(11) 3322-4455": "+551133224455",
+      "1133224455": "+551133224455",
+      // O DDI colado sem o `+` (a issue pede os dois formatos): entra uma vez só.
+      "5511999998888": "+5511999998888",
+      "55 11 99999-8888": "+5511999998888",
+      "55 (11) 3322-4455": "+551133224455",
+    };
+    for (const [entrada, esperado] of Object.entries(digitado)) {
+      const r = criar.safeParse({ phone_number: entrada });
+      expect(r.success, `recusou ${entrada}`).toBe(true);
+      expect(r.success && r.data.phone_number, entrada).toBe(esperado);
+      // O +55 é escrito UMA vez: o número que chega ao banco é o E.164 que o
+      // resto do produto (busca por duplicados, envio) procura.
+      expect(r.success && r.data.phone_number?.startsWith("+55")).toBe(true);
+    }
+  });
+
+  it("o PATCH do país aceita e normaliza pela MESMA régua", () => {
+    const r = contactPatchSchemaDoPais(BR).safeParse({ phone_number: "(11) 99999-8888" });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.phone_number).toBe("+5511999998888");
+  });
+
+  it("número com `+` e máscara mantém o DDI que a pessoa escreveu — nunca vira +55", () => {
+    // 10/11 dígitos de outro país (EUA, França, Alemanha) cabem na régua
+    // nacional; sem respeitar o `+`, o DDI viraria DDD e o contato seria de outra pessoa.
+    const digitado = {
+      "+1 (415) 555-1234": "+14155551234",
+      "+33 1 23 45 67 89": "+33123456789",
+      "+55 (11) 99999-8888": "+5511999998888",
+    };
+    for (const [entrada, esperado] of Object.entries(digitado)) {
+      const r = criar.safeParse({ phone_number: entrada });
+      expect(r.success && r.data.phone_number, entrada).toBe(esperado);
+    }
+    expect(criar.safeParse({ phone_number: "+12" }).success).toBe(false);
+    expect(criar.safeParse({ phone_number: "+55 (11) 99999-8888 ramal 22" }).success).toBe(false);
+  });
+
+  it("E.164 continua aceito sem ser reescrito", () => {
+    const r = criar.safeParse({ phone_number: "+5511999998888" });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.phone_number).toBe("+5511999998888");
+  });
+
+  it("recusa DDD inválido e tamanho errado, com o exemplo na mensagem", () => {
+    // DDD 09 não existe (o primeiro dígito é de 1 a 9), 9 dígitos não têm DDD, e
+    // 12 dígitos não são nem nacional nem E.164 — os três reprovam, e a frase
+    // ensina o formato com o exemplo do PERFIL, não com texto cravado.
+    for (const entrada of ["09999998888", "119999888", "119999988887", "abc"]) {
+      const r = criar.safeParse({ phone_number: entrada });
+      expect(r.success, `aceitou ${entrada}`).toBe(false);
+      const mensagem = r.success ? "" : (r.error.issues[0]?.message ?? "");
+      expect(mensagem, entrada).toContain("DDD");
+      expect(mensagem, entrada).toContain(BR.telefoneExemplo);
+      expect(mensagem, entrada).toContain("11999998888");
+    }
+  });
+
+  it("organização de outro país segue aceitando SÓ o formato internacional completo", () => {
+    const criarPT = contactCreateSchemaDoPais(PT);
+    // O nacional brasileiro não passa por lá: o DDD não diz nada a quem
+    // cadastra em Lisboa, e aceitá-lo gravaria `+5511999998888` para um número
+    // que ninguém digitou.
+    for (const entrada of ["11999998888", "(11) 99999-8888", "912345678"]) {
+      expect(criarPT.safeParse({ phone_number: entrada }).success, entrada).toBe(false);
+    }
+    const ok = criarPT.safeParse({ phone_number: "+351912345678" });
+    expect(ok.success).toBe(true);
+    expect(ok.success && ok.data.phone_number).toBe("+351912345678");
+  });
+
+  it("a régua SEM perfil continua exigindo o + (o Brasil de quem não tem organização em mãos)", () => {
+    // `contactCreateSchema` atende quem não tem perfil; ele não muda neste PR.
+    expect(contactCreateSchema.safeParse({ phone_number: "11999998888" }).success).toBe(false);
+    expect(contactCreateSchema.safeParse({ phone_number: "+5511999998888" }).success).toBe(true);
+  });
+});
+
 describe("contactPatchSchema", () => {
   it("não materializa source=manual quando PATCH omite source", () => {
     const parsed = contactPatchSchema.parse({ tags: ["vip"] });
 
     expect(parsed).toEqual({ tags: ["vip"] });
     expect("source" in parsed).toBe(false);
+  });
+
+  it("não materializa contact_type quando o PATCH omite o tipo", () => {
+    // O default 'cliente' é do BANCO (migration 0763): um PATCH que só troca o
+    // nome não pode mandar `contact_type: 'cliente'` e rebaixar um fornecedor
+    // em silêncio. O campo ausente fica AUSENTE.
+    const parsed = contactPatchSchema.parse({ name: "Ana" });
+
+    expect("contact_type" in parsed).toBe(false);
+  });
+
+  it("aceita o PATCH de fornecedor (issue 3005)", () => {
+    const parsed = contactPatchSchema.parse({ contact_type: "fornecedor" });
+
+    expect(parsed.contact_type).toBe("fornecedor");
+  });
+
+  it("recusa um tipo que o CHECK do banco não conhece", () => {
+    // A lista é a MESMA dos dois lados (`CONTACT_TIPOS`): deixar passar
+    // 'transportadora' aqui seria 23514 no caminho de gravação, longe da causa.
+    expect(contactPatchSchema.safeParse({ contact_type: "transportadora" }).success).toBe(false);
+    expect(contactCreateSchema.safeParse({ contact_type: "cliente" }).success).toBe(true);
   });
 });
 

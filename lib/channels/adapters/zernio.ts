@@ -39,9 +39,13 @@ import type { FetchedMedia } from "@/lib/messaging/media/types";
 import { resolveZernioCreds } from "../zernio/credentials";
 import { zernioTemplateOps } from "../zernio/templates";
 import { zernioReportConversion } from "../zernio/conversoes";
+import { parametrosDoParceiro } from "../zernio/parametros-do-modelo";
+import type { TemplateContract } from "../meta/template-contract";
 import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { zernioMediaFetchInit } from "../zernio/webhook";
+import { DETALHE_NAO_RECEBE, PREFIXO_ENVIO_RESTRITO } from "../defeito-do-numero";
+import { marcaDeEspera, segundosDoRetryAfter } from "../erro-da-plataforma";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -61,21 +65,27 @@ function attachmentFields(env: OutboundEnvelope): Record<string, unknown> {
   const base: Record<string, unknown> = {
     attachmentUrl: env.media.url,
     ...(env.media.filename ? { attachmentName: env.media.filename } : {}),
-    ...(env.media.caption ? { message: env.media.caption } : {}),
   };
+  // A legenda só acompanha o anexo que vira MENSAGEM. Numa nota de voz ela
+  // sobra: a bolha de voz não tem legenda, e mandá-la como `message` de um
+  // anexo de voz ou é ignorada pela API ou vira texto solto na conversa —
+  // então a nota de voz sai sem `message`, como nos outros adapters (issue
+  // #3266). Imagem, vídeo e documento seguem levando a legenda.
+  const legenda: Record<string, unknown> = env.media.caption ? { message: env.media.caption } : {};
   switch (env.kind) {
     case "image":
-      return { ...base, attachmentType: "image" };
+      return { ...base, ...legenda, attachmentType: "image" };
     case "video":
-      return { ...base, attachmentType: "video" };
+      return { ...base, ...legenda, attachmentType: "video" };
     case "audio":
       // `voiceNote: true` é o que faz virar BOLHA DE VOZ. A API aceita a flag
       // mas NÃO converte: exige ogg/opus mono, igual ao canal oficial. Mandar
       // mp3 com a flag entrega anexo de música — por isso a capability declara
       // `opus-only`, e a conversão é de quem prepara a mídia, não daqui.
+      // Sem `legenda`: bolha de voz não leva legenda.
       return { ...base, attachmentType: "audio", voiceNote: true };
     default:
-      return { ...base, attachmentType: "file" };
+      return { ...base, ...legenda, attachmentType: "file" };
   }
 }
 
@@ -219,6 +229,7 @@ export const zernioAdapter: ChannelAdapter = {
       data?: { messageId?: string };
       error?: string;
       code?: string;
+      platformError?: { code?: number | string } | null;
     } | null;
 
     if (!res.ok || json?.success === false) {
@@ -226,6 +237,33 @@ export const zernioAdapter: ChannelAdapter = {
       // distingue "fora da janela" de "número bloqueado" de "conta suspensa", e
       // sem isso o operador vê só "falhou".
       const detalhe = json?.code ? `${json.code}: ${json.error ?? ""}` : (json?.error ?? res.statusText);
+      // ─── DESACELERAR não é falhar ─────────────────────────────────────────
+      //
+      // Dois avisos de VELOCIDADE, e nenhum diz que a mensagem está errada —
+      // por isso o código próprio, que o handler traduz em `queued` (e numa
+      // nova tentativa) em vez de `failed` quando a mensagem é da pessoa ou do
+      // agente; a que tem laço próprio (campanha, automação) segue `failed`,
+      // com este texto, e o laço dela reconhece o 429 (`ehLimiteDeVelocidade`):
+      //
+      //   - 131056 da Meta ("pace to ~10/min per recipient", changelog 28/08).
+      //     Chega como `code: "131056"` OU, na forma documentada do OpenAPI
+      //     v1.370.0, como `code: "platform_api_error"` com `platformError.code:
+      //     131056` e um `error` de texto livre. Ler só o primeiro deixava o
+      //     segundo virar `failed`;
+      //   - 429 do provedor (changelog 25/09): a conta foi limitada, e a
+      //     especificação diz "No message was sent" — tentar de novo não
+      //     duplica nada. O `Retry-After` vai carimbado (`[espera:Ns]`) para
+      //     quem reagenda respeitar.
+      const codigoDaPlataforma = String(json?.platformError?.code ?? "");
+      if (
+        res.status === 429 ||
+        String(json?.code ?? "") === "131056" ||
+        codigoDaPlataforma === "131056" ||
+        `${detalhe}`.includes("131056")
+      ) {
+        const espera = res.status === 429 ? segundosDoRetryAfter(res.headers?.get("retry-after")) : null;
+        throw new Error(`zernio_throttled: ${res.status} ${detalhe}${marcaDeEspera(espera)}`.trim());
+      }
       throw new Error(`zernio_send_failed: ${res.status} ${detalhe}`.trim());
     }
 
@@ -255,6 +293,7 @@ export const zernioAdapter: ChannelAdapter = {
     name: string;
     language: string;
     values: Record<string, string>;
+    contrato?: TemplateContract | null;
   }): Promise<{ externalId: string | null }> {
     const admin = createAdminClient();
     const creds = await resolveZernioCreds(admin, {
@@ -267,13 +306,14 @@ export const zernioAdapter: ChannelAdapter = {
       );
     }
 
-    // `{{1}}`, `{{2}}`… viram posições. Chave que não é número fica de fora em
-    // vez de entrar em ordem alfabética — ordem inventada manda o valor errado
-    // para o lugar errado, e o cliente recebe o nome de outra pessoa.
-    const params = Object.keys(input.values)
-      .filter((k) => /^\d+$/.test(k))
-      .sort((a, b) => Number(a) - Number(b))
-      .map((k) => input.values[k] ?? "");
+    // A ordem e o lugar de cada valor saem do CONTRATO conferido: cabeçalho,
+    // corpo e sufixo de link numa lista plana; imagem trocada em `headerMedia`;
+    // cupom em `templateButtonParams`. Sem contrato (modelo fora do espelho),
+    // só as chaves numéricas, em ordem numérica — ver `parametros-do-modelo.ts`.
+    const { templateParams: params, headerMedia, templateButtonParams } = parametrosDoParceiro(
+      input.contrato ?? null,
+      input.values,
+    );
 
     await input.beforeSend?.();
     const res = await fetch(`${creds.baseUrl}/v1/inbox/conversations`, {
@@ -288,6 +328,8 @@ export const zernioAdapter: ChannelAdapter = {
         templateName: input.name,
         ...(input.language ? { templateLanguage: input.language } : {}),
         ...(params.length ? { templateParams: params } : {}),
+        ...(headerMedia ? { headerMedia } : {}),
+        ...(templateButtonParams ? { templateButtonParams } : {}),
       }),
     });
 
@@ -296,11 +338,17 @@ export const zernioAdapter: ChannelAdapter = {
       data?: { messageId?: string };
       error?: string;
       code?: string;
+      platformError?: { code?: number | string };
     } | null;
 
     if (!res.ok || json?.success === false) {
       const detalhe = json?.code ? `${json.code}: ${json.error ?? ""}` : (json?.error ?? res.statusText);
-      throw new Error(`zernio_template_failed: ${res.status} ${detalhe}`.trim());
+      // O código da PLATAFORMA (131050, 132015…) vai marcado no texto: é ele que
+      // diz se a falha é desta pessoa ou do número inteiro, e quem lê a falha
+      // (a campanha) decide por ele — `codigoDaPlataforma` em `erro-da-plataforma.ts`.
+      const plataforma =
+        json?.platformError?.code !== undefined ? ` [plataforma:${json.platformError.code}]` : "";
+      throw new Error(`zernio_template_failed: ${res.status} ${detalhe}${plataforma}`.trim());
     }
 
     return { externalId: json?.data?.messageId ?? null };
@@ -413,6 +461,27 @@ export const zernioAdapter: ChannelAdapter = {
    *                    publicou a sonda. Cai no `status` geral em vez de falhar:
    *                    campo ausente é ausência de informação, não más notícias.
    *   qualquer outro → NÃO sabemos. `reachable: false`, sem status.
+   *
+   * ─── De pé, mas não inteiro (27/10/2026) ───────────────────────────────────
+   *
+   * Dois campos que a sonda traz e que esta leitura ignorava — e com eles
+   * ignorados, o número aparecia `WORKING` nos dois casos:
+   *
+   *   `platformConnection.inboundWebhookSubscribed: false`
+   *                  → a Meta diz que o provedor não assina o webhook de
+   *                    mensagens deste número: ele ENVIA e não RECEBE. `null` é
+   *                    "a Meta não informou" — não é evidência: não abre aviso e
+   *                    também não fecha o que está aberto (`defeitosSemMedida`).
+   *   `messagingRestriction` (na RAIZ — medido nesta instalação: `null` quando
+   *                    não há nada) → a plataforma recusou envio deste número
+   *                    com 131042 (pagamento), 131031 (conta bloqueada) ou 368
+   *                    (política). É observado nos envios, não sondado: atrasa
+   *                    uma mensagem em cada direção, e some quando uma mensagem
+   *                    volta a ser entregue.
+   *
+   * Os dois seguem `WORKING`, com o defeito no `detail` (`DETALHE_NAO_RECEBE`,
+   * `PREFIXO_ENVIO_RESTRITO`): barrar o envio seria pior, e quem avisa é a regra
+   * de `../health.ts`. O porquê inteiro está em `../defeito-do-numero.ts`.
    */
   async checkHealth(
     input: ChannelTenantScope & { sessionRef: string },
@@ -456,10 +525,40 @@ export const zernioAdapter: ChannelAdapter = {
         status?: string;
         phoneStatus?: string | null;
         metaError?: { code?: number; subcode?: number; message?: string } | null;
+        inboundWebhookSubscribed?: boolean | null;
       } | null;
+      messagingRestriction?: { code?: number | null; subcode?: number | null } | null;
     } | null;
 
     const elo = json?.platformConnection;
+
+    // De pé, mas não inteiro: o detalhe diz o quê, e o status continua WORKING.
+    // Não receber vem antes: é o defeito que ninguém vê — o envio segue saindo.
+    const restricao = json?.messagingRestriction;
+    const restricaoCodigo =
+      restricao && typeof restricao === "object"
+        ? (restricao.code ?? restricao.subcode ?? "desconhecido")
+        : null;
+    const dePe = (): ChannelHealth => {
+      if (elo?.inboundWebhookSubscribed === false) {
+        return { reachable: true, status: "WORKING", detail: DETALHE_NAO_RECEBE };
+      }
+      if (restricaoCodigo !== null) {
+        return { reachable: true, status: "WORKING", detail: `${PREFIXO_ENVIO_RESTRITO}${restricaoCodigo}` };
+      }
+      // Sem defeito à vista não é número inteiro: só `true` descarta o defeito de
+      // recebimento, e só a chave presente (mesmo `null`) descarta a restrição.
+      const defeitosSemMedida = [
+        ...(elo?.inboundWebhookSubscribed === true ? [] : (["nao_recebe"] as const)),
+        ...(restricao === undefined ? (["envio_restrito"] as const) : []),
+      ];
+      return {
+        reachable: true,
+        status: "WORKING",
+        detail: null,
+        ...(defeitosSemMedida.length > 0 ? { defeitosSemMedida } : {}),
+      };
+    };
 
     if (elo?.status === "disconnected") {
       const e = elo.metaError;
@@ -471,14 +570,12 @@ export const zernioAdapter: ChannelAdapter = {
     if (elo?.status === "unknown") {
       return { reachable: false, status: null, detail: "sonda_do_elo_meta_inconclusiva" };
     }
-    if (elo?.status === "connected") {
-      return { reachable: true, status: "WORKING", detail: null };
-    }
+    if (elo?.status === "connected") return dePe();
 
     // Sem `platformConnection`: decide pelo veredito geral da conta.
     return json?.status === "error"
       ? { reachable: true, status: "FAILED", detail: "conta_em_erro" }
-      : { reachable: true, status: "WORKING", detail: null };
+      : dePe();
   },
 
   /** Gestão das definições aprovadas — ver `../zernio/templates.ts`. */
@@ -491,5 +588,8 @@ export const zernioAdapter: ChannelAdapter = {
     notConfigured: "zernio_not_configured",
     sendFailed: "zernio_error",
     unknownError: "zernio_unknown",
+    // O pedido de DESACELERAR (131056 da plataforma, 429 do provedor). Código
+    // próprio porque o desfecho é outro — ver o ramo de `send` acima.
+    throttled: "zernio_throttled",
   },
 };

@@ -1,0 +1,215 @@
+{
+  "id": "consorcio",
+  "titulo": "Consórcio",
+  "resumo": "Intenção de compra, análise de informações e encaminhamento sem promessa de contemplação ou crédito.",
+  "jornadas": [
+    {
+      "id": "consorcio-planejamento",
+      "titulo": "Do objetivo à conversa com o consultor",
+      "empresa": "Ciclo Consórcios (fictícia)",
+      "contexto": "Caio considera um consórcio para imóvel, mas ainda compara possibilidades.",
+      "resultado": "Oportunidade com objetivo declarado e reunião com consultor.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Funil, agenda e consultor disponíveis. Condições devem vir de material vigente da administradora; não há aprovação de crédito, rentabilidade ou contemplação garantida.",
+      "montagem": [
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "funis",
+          "licao": "novo-negocio",
+          "porque": "Criar uma oportunidade ligada ao contato."
+        },
+        {
+          "modulo": "agenda",
+          "licao": "novo-agendamento",
+          "porque": "Registrar o compromisso com o contato e quem atende."
+        },
+        {
+          "modulo": "funis",
+          "licao": "ficha-do-negocio",
+          "porque": "Reunir contexto e tarefas na ficha do negócio."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Começar pelo objetivo",
+          "cliente": "Caio quer entender se consórcio faz sentido para comprar um imóvel.",
+          "operacao": "O atendimento pergunta o objetivo e se existe necessidade imediata, sem recomendar um contrato por conta própria.",
+          "valor": "O consultor sabe o que precisa discutir.",
+          "captura": "demo-consorcio-planejamento--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Interesse sem adesão",
+          "cliente": "Caio diz que está apenas comparando alternativas.",
+          "operacao": "A equipe cria oportunidade ligada ao contato e registra o estágio de pesquisa, sem marcar adesão.",
+          "valor": "O funil representa intenção, não contratação.",
+          "captura": "demo-consorcio-planejamento--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Conversa com responsável",
+          "cliente": "Caio aceita esclarecer as condições com o consultor.",
+          "operacao": "A equipe confere e registra uma reunião na Agenda, com horário aceito pelo interessado.",
+          "valor": "Há um próximo passo combinado.",
+          "captura": "demo-consorcio-planejamento--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Preparação da reunião",
+          "cliente": "Caio quer levar dúvidas sobre taxas e reajustes.",
+          "operacao": "A pessoa responsável anota essas perguntas na ficha para a reunião com informações vigentes da administradora.",
+          "valor": "A conversa comercial começa por dúvidas reais.",
+          "captura": "demo-consorcio-planejamento--historia--continuidade"
+        }
+      ]
+    },
+    {
+      "id": "consorcio-lance",
+      "titulo": "Pergunta sobre lance vira caso para análise",
+      "empresa": "Elo Administradora Comercial (fictícia)",
+      "contexto": "Téo pergunta se um lance específico garantiria sua contemplação.",
+      "resultado": "Dúvida examinada pelo consultor sem promessa de resultado.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Agente com casos habilitados, equipe responsável e regras vigentes da administradora. Não calcular probabilidade, recomendar valor de lance ou prometer contemplação; o roteiro não envia lance.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "agentes",
+          "licao": "quando-responder-e-passar",
+          "porque": "Definir os limites e as situações em que a equipe continua o atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "casos",
+          "licao": "abrindo-um-caso",
+          "porque": "Ler a demanda que precisa de decisão da equipe."
+        },
+        {
+          "modulo": "casos",
+          "licao": "respondendo-um-caso",
+          "porque": "Pedir informação, registrar a decisão ou passar ao humano."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "assumir-e-responder",
+          "porque": "Assumir o atendimento e responder pela equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Uma expectativa de garantia",
+          "cliente": "Téo pergunta se determinado lance seria suficiente.",
+          "operacao": "O agente do roteiro esclarece que não pode assegurar resultado e identifica a dúvida a encaminhar.",
+          "valor": "Evita converter hipótese em promessa comercial.",
+          "captura": "demo-consorcio-lance--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Contexto para análise",
+          "cliente": "Téo informa a qual grupo e cota se refere.",
+          "operacao": "O roteiro abre caso com os dados necessários para o responsável consultar as regras aplicáveis.",
+          "valor": "A dúvida não fica diluída numa conversa de venda genérica.",
+          "captura": "demo-consorcio-lance--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Decisão de quem conhece o contrato",
+          "cliente": "Téo pergunta como funciona o procedimento.",
+          "operacao": "O consultor registra que seguirá por atendimento humano para explicar regras e limitações da administradora.",
+          "valor": "A explicação se apoia no contrato correto.",
+          "captura": "demo-consorcio-lance--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Continuidade sem submissão automática",
+          "cliente": "Téo quer decidir depois de entender os riscos.",
+          "operacao": "O consultor assume e explica o procedimento real; enviar ou alterar um lance fora do CRM é ação separada.",
+          "valor": "A decisão permanece informada e com o interessado.",
+          "captura": "demo-consorcio-lance--historia--continuidade"
+        }
+      ]
+    },
+    {
+      "id": "consorcio-cadastro",
+      "titulo": "Pendência cadastral com responsável",
+      "empresa": "Roda Planejamento (fictícia)",
+      "contexto": "Sol já iniciou um processo com a equipe e precisa saber o que falta no cadastro.",
+      "resultado": "Pendência organizada em tarefa, sem confundir entrega de documentos com aprovação.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Processo e canal documental definidos pela empresa, equipe e tarefas disponíveis. Não analisa crédito, não aprova cadastro nem modifica dados da administradora automaticamente.",
+      "montagem": [
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "nota-interna",
+          "porque": "Guardar contexto visível somente para a equipe."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-criar-uma-tarefa",
+          "porque": "Criar um próximo passo explícito para a equipe."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-concluir-editar-apagar",
+          "porque": "Concluir ou atualizar a tarefa após a ação real."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Uma solicitação em andamento",
+          "cliente": "Sol pergunta se a equipe já conferiu o cadastro.",
+          "operacao": "O atendente recupera o histórico antes de pedir novamente os mesmos itens.",
+          "valor": "A pessoa não precisa recontar todo o processo.",
+          "captura": "demo-consorcio-cadastro--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Conferência mínima",
+          "cliente": "Sol diz quais documentos já enviou pelo canal combinado.",
+          "operacao": "A equipe registra uma nota administrativa sobre a conferência, sem copiar conteúdo sensível desnecessário.",
+          "valor": "O contexto circula dentro da equipe com menos exposição.",
+          "captura": "demo-consorcio-cadastro--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Item que falta conferir",
+          "cliente": "Sol quer saber qual providência depende da equipe.",
+          "operacao": "O responsável cria tarefa para conferir a pendência com a administradora e atualiza os detalhes conforme a resposta real.",
+          "valor": "A pendência ganha dono, sem prazo padrão inventado.",
+          "captura": "demo-consorcio-cadastro--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Conferência encerrada",
+          "cliente": "Sol recebe a orientação sobre o item pendente.",
+          "operacao": "A equipe conclui a tarefa apenas após a conferência; deixa claro que isso não equivale à aprovação de crédito ou de cadastro.",
+          "valor": "A lista distingue trabalho feito de decisão externa.",
+          "captura": "demo-consorcio-cadastro--historia--continuidade"
+        }
+      ]
+    }
+  ]
+}

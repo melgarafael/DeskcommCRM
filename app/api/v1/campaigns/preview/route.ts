@@ -14,7 +14,8 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { preverAudiencia } from "@/lib/campanhas/preparacao";
+import { conferirModeloDaCampanha } from "@/lib/campanhas/modelo-da-conexao";
+import { preverAudiencia, type ModeloPreparado } from "@/lib/campanhas/preparacao";
 import { previaSchema } from "@/lib/campanhas/schemas";
 import { TEXTO_DA_EXCLUSAO } from "@/lib/campanhas/tipos";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -49,12 +50,34 @@ export async function POST(req: NextRequest): Promise<Response> {
   // o usuário não veria por outro caminho — e é isso que ela precisa contar.
   const admin = createAdminClient();
   try {
+    // Com modelo, quem sai por "falta um dado" é decidido pelo MAPA de variáveis
+    // — a mesma conferência de salvar e de preparar. Modelo que ainda não serve
+    // (mapa incompleto) não derruba a prévia: ela conta pelo público, e a tela
+    // já mostra o que falta no mapa.
+    let modelo: ModeloPreparado | undefined;
+    if (parsed.data.modelo) {
+      const m = parsed.data.modelo;
+      const conferencia = await conferirModeloDaCampanha(
+        admin,
+        {
+          organizationId: authz.org.orgId,
+          channelSessionId: m.channel_session_id,
+          name: m.name,
+          language: m.language,
+        },
+        m.variables,
+      );
+      if (conferencia.ok) {
+        modelo = { definicao: conferencia.definicao, contrato: conferencia.contrato, variaveis: m.variables };
+      }
+    }
     const resumo = await preverAudiencia(admin, {
       organizationId: authz.org.orgId,
       filtro: parsed.data.audience_filter,
       corpo: parsed.data.message_body,
       agora: new Date(),
       campanhaId: parsed.data.campaign_id,
+      ...(modelo ? { modelo } : {}),
     });
     return ok(
       {

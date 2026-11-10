@@ -2,7 +2,7 @@
  * Cost computation for ai_agent_runs (S-13.08).
  *
  * Looks up the curated `ai_models` catalog (Spec 10 §2.2) and converts token
- * usage into cents, rounded up. Cached in-memory for 5 min — stale catalog data
+ * usage into cents, FRACIONADO (sem arredondar). Cached in-memory for 5 min — stale catalog data
  * never crashes.
  *
  * Custo DESCONHECIDO nunca é contado como grátis: quando o modelo não é
@@ -19,6 +19,13 @@
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import { multiplicadorDoDegrau } from "@/lib/ai/custo-escalonado";
+import { normalizarModeloId } from "@/lib/ai/modelo-id";
+
+// A normalização do id mudou de arquivo (o degrau do Haiku 5.5 a usa e não pode
+// importar de quem o importa — #4123), mas continua saindo daqui: é deste
+// módulo que o resto do repo a conhece.
+export { normalizarModeloId };
 
 interface ModelPricingRow {
   provider: string;
@@ -59,43 +66,6 @@ export interface ComputeCostInput {
   model: string;
   inputTokens?: number;
   outputTokens?: number;
-}
-
-/**
- * Gera os ids canônicos a tentar contra a tabela, do mais específico para o
- * generalista — o match nunca escolhe um generalista quando o exato existe.
- *
- * O catálogo (`ai_models`) guarda `model_id` como o provedor o nomeia: na
- * Anthropic/OpenAI sem prefixo, num roteador com prefixo `provider/`
- * (`anthropic/claude-haiku-4-5`). O id que chega pode trazer três variações que
- * o catálogo não conhece e que a normalização absorve:
- *
- *  - sufixo de variante do roteador (`:beta`, `:free`) — mas o id CRU, com o
- *    sufixo, é sempre o primeiro candidato: `<m>:free` tem linha própria no
- *    catálogo da OpenRouter, com preço 0, e ela vence a linha paga `<m>`;
- *  - prefixo `provider/` já embutido no `model` (issue #1929);
- *  - a versão grafada com ponto (`claude-haiku-4.5`) em vez do hífen do
- *    catálogo (`claude-haiku-4-5`) — o caso desta issue (#1931).
- */
-export function normalizarModeloId(model: string): string[] {
-  // `:free`, `:beta`, `:beta:free` — o OpenRouter anexa variantes ao id.
-  const comPrefixo = (model.split(":")[0] ?? "").trim();
-  const nome = comPrefixo.includes("/")
-    ? comPrefixo.slice(comPrefixo.indexOf("/") + 1)
-    : comPrefixo;
-
-  const candidatos: string[] = [];
-  const ordem = [
-    model.trim(), // como veio, com o sufixo — o exato vence
-    comPrefixo, // só com o sufixo recortado
-    comPrefixo.replace(/\./g, "-"), // grafia do catálogo com hífen
-    nome, // recorte do prefixo
-    nome.replace(/\./g, "-"), // recorte do prefixo + hífen
-  ];
-  for (const c of ordem) {
-    if (c && c.length > 0 && !candidatos.includes(c)) candidatos.push(c);
-  }
-  return candidatos;
 }
 
 function acharLinha(
@@ -144,7 +114,7 @@ function avisarSemPreco(provider: string, modelo: string): void {
 }
 
 /**
- * Returns cost in cents (rounded up), or `null` when the model has no known
+ * Returns cost in cents (fracionado), or `null` when the model has no known
  * price — nunca 0. Unknown é diferente de free: inventar 0 faria um modelo
  * caro entrar no teto como gratuito (defeito do #1880, agora calado em null).
  */
@@ -168,7 +138,20 @@ export async function computeCostCents(input: ComputeCostInput): Promise<number 
   const cents =
     ((input.inputTokens ?? 0) * inputRate) / 1_000_000 +
     ((input.outputTokens ?? 0) * outputRate) / 1_000_000;
-  return Math.ceil(cents);
+  // Degrau do Haiku 5.5 (#4123): acima de 100 mil tokens de entrada a chamada
+  // inteira custa 5×. A regra mora num lugar só (`lib/ai/custo-escalonado.ts`) —
+  // a mesma que `computeCost` (`lib/ai/cost.ts`) aplica. Aqui a entrada é o
+  // total do turno (soma dos passos), a mesma régua de `llm_calls.input_tokens`
+  // que a issue mediu.
+  //
+  // FRACIONADO, nunca `Math.ceil` por chamada — o mesmo contrato de
+  // `computeCost` (`lib/ai/cost.ts`), que já deixou de arredondar. O ceil
+  // "errava cobrando a mais" e, numa chamada de ~600 tokens num modelo barato
+  // (≈0,08¢), gravava 1¢: 12× o real em cada turno. Medido numa instalação
+  // real em 14 dias: 1.122¢ registrados contra ~103¢ de custo. E o teto de
+  // gasto (`cost_budget_cents`, em agent.ts) compara com ESTE número. A
+  // coluna `ai_agent_runs.cost_cents` é `numeric(10,4)`.
+  return cents * multiplicadorDoDegrau(input.model, input.inputTokens);
 }
 
 /** Test-only: drop the in-memory pricing cache. */

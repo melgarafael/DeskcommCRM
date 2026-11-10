@@ -49,6 +49,104 @@ describe("parseReaisToCents", () => {
   });
 });
 
+/**
+ * ⚠️ O SEPARADOR DECIMAL É FATO DA MOEDA, NÃO DO FORMULÁRIO (#3331).
+ *
+ * Medido numa instalação real, organização com `currency = USD`: quem digitava
+ * `1,300` no campo de moeda do funil tinha **1,30** gravado — porque o parser
+ * não sabia a moeda e tratava a vírgula como decimal, que é a regra do pt-BR.
+ * Em en-US a vírgula é separador de MILHAR: eram mil e trezentos dólares.
+ *
+ * O que a moeda decide é o PAPEL de cada sinal, e o papel vem do MESMO `Intl`
+ * que escreve o preço em `formatCents` (decimal de USD/MXN é «.», de BRL/EUR/
+ * AOA é «,»). O que NÃO muda com a moeda: a régua de três dígitos do grupo de
+ * milhar, que é o que desambigua o sinal solitário nas duas convenções.
+ */
+describe("parseReaisToCents — o separador vem da MOEDA da organização (#3331)", () => {
+  it("⭐ dólar: '1,300' são mil e trezentos, não um e trinta", () => {
+    expect(parseReaisToCents("1,300", "USD")).toBe(130000);
+  });
+
+  it("dólar: '1,234.56' são mil duzentos e trinta e quatro e cinquenta e seis", () => {
+    expect(parseReaisToCents("1,234.56", "USD")).toBe(123456);
+  });
+
+  it("real: '1.300' continua mil e trezentos (nada muda para quem já usa)", () => {
+    expect(parseReaisToCents("1.300", "BRL")).toBe(130000);
+  });
+
+  it("real: '1.234,56' continua mil duzentos e trinta e quatro e cinquenta e seis", () => {
+    expect(parseReaisToCents("1.234,56", "BRL")).toBe(123456);
+  });
+
+  /**
+   * A MESMA string lida nas duas moedas: é a prova de que quem decide deixou
+   * de ser o formulário.
+   */
+  it("⭐ a mesma string muda de leitura conforme a moeda", () => {
+    expect(parseReaisToCents("1.300", "BRL")).toBe(130000);
+    expect(parseReaisToCents("1.300", "USD")).toBe(130);
+    expect(parseReaisToCents("1,300", "USD")).toBe(130000);
+  });
+
+  /**
+   * Euro entra pelo mesmo caminho, e não por uma tabela nova: em pt-PT o
+   * milhar é espaço (que o parser já descarta) e o decimal é vírgula, então o
+   * ponto sobra sem papel declarado e cai na régua de três dígitos — que é
+   * exatamente a leitura de antes. Cobre o ramo "sinal que a moeda não usa".
+   */
+  it("euro (pt-PT): o ponto também é milhar, e a vírgula é decimal", () => {
+    expect(parseReaisToCents("1.300", "EUR")).toBe(130000);
+    expect(parseReaisToCents("1,300", "EUR")).toBe(130);
+  });
+
+  /**
+   * ⚠️ O CASO AMBÍGUO — o que este conserto resolve e o que ele NÃO resolve.
+   *
+   * `1,30` numa organização em dólar: vírgula com DOIS dígitos depois não é
+   * grupo de milhar em convenção nenhuma (o grupo tem sempre três dígitos, em
+   * en-US e em pt-BR) e também não é o decimal da moeda. Não existe leitura
+   * en-US para este texto; a única leitura VÁLIDA em alguma convenção é a
+   * decimal — 1,30 dólares, 130 centavos. É a leitura escolhida, e ela é a
+   * mesma que o parser já fazia antes do conserto (nada piora para quem
+   * digitou assim).
+   *
+   * O que NÃO fica resolvido, de propósito: se a pessoa queria dizer 130
+   * dólares e digitou a vírgula por hábito, o parser não adivinha — o eco
+   * embaixo do campo (`EcoDoValor`) escreve `= $1.30` antes de salvar, que é
+   * onde esse engano aparece; e `130` ou `1.30` saem certos. O parser também
+   * não recusa o texto: devolver `null` transformaria uma leitura duvidosa em
+   * campo inválido, e "Valor inválido" não ensina qual dos dois números era.
+   */
+  it("⭐ ambiguidade declarada: '1,30' em dólar é decimal (e o eco mostra isso)", () => {
+    expect(parseReaisToCents("1,30", "USD")).toBe(130);
+    // No real nada muda: três casas depois da vírgula não existem em real, e a
+    // vírgula é o decimal da moeda — "1,300" segue sendo um e trinta.
+    expect(parseReaisToCents("1,30", "BRL")).toBe(130);
+    expect(parseReaisToCents("1,300", "BRL")).toBe(130);
+  });
+
+  it("sem moeda, a régua é a de sempre (o padrão é o real)", () => {
+    expect(parseReaisToCents("1.234")).toBe(123400);
+    expect(parseReaisToCents("249,90")).toBe(24990);
+    expect(parseReaisToCents("1,234.56")).toBe(123456);
+    expect(MOEDA_PADRAO).toBe("BRL");
+  });
+
+  it("sinal repetido é sempre milhar, em qualquer moeda", () => {
+    expect(parseReaisToCents("1.234.567", "USD")).toBe(123456700);
+    expect(parseReaisToCents("1,234,567", "USD")).toBe(123456700);
+    expect(parseReaisToCents("1.234.567", "BRL")).toBe(123456700);
+    expect(parseReaisToCents("1,234,567", "BRL")).toBe(123456700);
+  });
+
+  it("moeda que o Intl recusa cai na régua do padrão, sem lançar", () => {
+    expect(() => parseReaisToCents("1.300", "BR")).not.toThrow();
+    expect(parseReaisToCents("1.300", "BR")).toBe(130000);
+    expect(parseReaisToCents("1.300", "")).toBe(130000);
+  });
+});
+
 describe("formatCentsBRL", () => {
   it("mostra em reais o que está guardado em centavos", () => {
     expect(formatCentsBRL(24990).replace(/ /g, " ")).toBe("R$ 249,90");

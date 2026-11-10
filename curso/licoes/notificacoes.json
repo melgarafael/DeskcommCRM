@@ -1,0 +1,405 @@
+{
+  "id": "notificacoes",
+  "titulo": "Notificações",
+  "tela": "/app/settings/notifications",
+  "resumo": "Onde você escolhe sobre o que quer ser avisado, como o aviso aparece na tela e no celular, os lembretes de tarefa e os sons da equipe.",
+  "licoes": [
+    {
+      "id": "conhecendo-notificacoes",
+      "titulo": "Conhecendo a tela de notificações",
+      "objetivo": "Saber até onde os avisos chegam nesta instalação e escolher, por tipo de aviso, se ele aparece na tela.",
+      "papel": "admin",
+      "busca": [
+        "notificações",
+        "avisos",
+        "desligar aviso",
+        "aviso de mensagem nova",
+        "notificação no navegador",
+        "parar de receber avisos",
+        "configurar alertas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde ficam as notificações",
+          "texto": "Clique em \"Configurações\", no rodapé do menu lateral, para abrir a lista de todas as configurações. Notificações fica no grupo \"Sua conta\": é onde você decide sobre o que quer ser avisado e por onde.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Notificações",
+                "regex": true
+              },
+              "rotulo": "Notificações",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Notificações",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Até onde os avisos chegam",
+          "texto": "O quadro amarelo no topo diz o que esta instalação consegue fazer. Na imagem, ele avisa que os avisos só aparecem enquanto o site está aberto numa aba: faltam as chaves do servidor, e quem cuida do servidor resolve rodando a atualização da instalação, que cria essas chaves. Se na sua tela o quadro falar em conexão segura (https), quem cuida do servidor precisa ligar um domínio com https. Se ele disser que os avisos já funcionam \"inclusive com a aba fechada\", não falta nada. O link \"Receber no celular: instalar o app\" leva ao passo a passo de pôr o sistema no celular.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^Notificações",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Notificações",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='push-status']"
+              },
+              "rotulo": "O que esta instalação consegue",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "link-app-no-celular"
+              },
+              "rotulo": "Instalar no celular",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os tipos de aviso",
+          "texto": "A tabela lista os seis tipos de aviso: \"Nova mensagem\", \"Lead atribuído a você\", \"Lead ganho\" e \"Lead perdido\" (dos negócios em que você é o responsável), \"Você foi mencionado\" (quando alguém cita você numa nota interna de conversa) e \"Ligação recebida\" (só para quem usa a telefonia do sistema). Cada coluna é um jeito de ser avisado. \"In-app\" é a janelinha que surge no canto da tela com o site aberto. \"Push\" é a notificação do próprio computador ou celular, que aparece mesmo com outra janela na frente; com o site fechado, só se o quadro do topo disser que a instalação consegue. \"Email\" ainda não está disponível. Nesta foto a coluna Push aparece apagada: o navegador usado bloqueou as notificações, como explicamos no passo 5.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "table:has([data-testid='alerts-toggle'], [data-testid='alerts-enable'])"
+              },
+              "rotulo": "Um tipo de aviso por linha",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Desligar um aviso na tela",
+          "texto": "Clique no interruptor da linha e da coluna que quer mudar. Aqui, desligamos a janelinha de \"Lead perdido\": quando um negócio em que você é o responsável for marcado como perdido, nada aparece no canto da tela. A mudança vale na hora e não tem botão de salvar. Ela fica guardada só neste navegador: no celular ou em outro computador, cada um escolhe de novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Lead perdido via in_app",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Lead perdido via in_app",
+                "exato": true
+              },
+              "rotulo": "Desligado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O interruptor que manda nos outros",
+          "texto": "O \"Push\" de \"Nova mensagem\" é a chave geral dos avisos fora do site neste aparelho: desligado, nenhum outro aviso vai para a bandeja e os outros interruptores de Push ficam travados. Os interruptores de Push de cada tipo só valem com o site aberto; com o site fechado, quem manda é só essa chave geral. Na imagem, o navegador está bloqueando as notificações. Por isso a linha mostra \"O navegador bloqueou as notificações\" e a coluna Push fica apagada: os interruptores até aparecem ligados, mas não valem nem mudam enquanto o navegador bloquear. Para liberar, clique no ícone à esquerda do endereço do site (um cadeado ou dois tracinhos), permita as notificações e recarregue a página.",
+          "dica": "Num navegador que ainda não respondeu, ligar o Push faz o navegador perguntar se o site pode mostrar notificações. Responda \"Permitir\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='alerts-toggle'], [data-testid='alerts-enable']"
+              },
+              "rotulo": "Chave geral do Push",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "O navegador bloqueou as notificações. Libere-as nas configurações do site e recarregue."
+              },
+              "rotulo": "Navegador bloqueou",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lembretes-de-tarefa",
+      "titulo": "Lembretes de tarefa",
+      "objetivo": "Escolher quando o sistema avisa sobre tarefas perto do prazo ou vencidas, e se o aviso chega também no WhatsApp.",
+      "papel": "admin",
+      "busca": [
+        "lembrete de tarefa",
+        "aviso de prazo",
+        "tarefa vencida",
+        "avisar antes de vencer",
+        "lembrete no whatsapp",
+        "não esquecer retorno ao cliente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O quadro dos lembretes",
+          "texto": "Mais abaixo na tela fica \"Lembretes de tarefa\". Ele avisa o responsável quando o prazo de uma tarefa chega perto, mesmo que ninguém esteja com o site aberto: o aviso fica guardado na Central. De fábrica, o aviso de prazo perto vem ligado, com 1 hora de antecedência.",
+          "rota": "/app/settings/notifications",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "lembrete-whatsapp"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "lembrete-task-due"
+              },
+              "rotulo": "Avisar antes do prazo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "lembrete-antecedencia"
+              },
+              "rotulo": "Quanto tempo antes",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Mudar a antecedência",
+          "texto": "Em \"Antecedência do aviso\", escolha entre 15 minutos, 1 hora ou 1 dia. Aqui escolhemos \"1 dia\": o aviso chega 24 horas antes do prazo. A escolha é salva na hora e é só sua: cada pessoa da equipe escolhe os próprios lembretes.",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "testid": "lembrete-antecedencia"
+              },
+              "opcao": "1 dia"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "lembrete-antecedencia"
+              },
+              "rotulo": "1 dia antes",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Avisar quando a tarefa vence",
+          "texto": "Ligue \"Avisar quando a tarefa vence sem conclusão\" para receber um aviso quando o prazo passar e a tarefa ainda não estiver concluída. Ele vem desligado de fábrica. O aviso sai uma vez só por tarefa, sem repetir.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "lembrete-task-overdue"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "lembrete-task-overdue"
+              },
+              "rotulo": "Ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "O aviso de vencimento sai uma vez por tarefa; não se repete a cada rodada."
+              },
+              "rotulo": "Um aviso por tarefa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Receber também no WhatsApp",
+          "texto": "Ligue \"Receber também no WhatsApp\" e digite o seu número só com algarismos, começando pelo 55 do Brasil e o DDD, como pede o campo \"Número com DDD, só dígitos\". Ao sair do campo, ele é salvo. A mensagem sai pelo número de WhatsApp da empresa, e só quando ele estiver conectado. Ela traz só o nome da tarefa e aparece na caixa de entrada como uma conversa com o seu contato. O seu número precisa estar cadastrado como contato no sistema: sem isso, o lembrete fica só na Central.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "lembrete-whatsapp"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "lembrete-whatsapp-numero"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "lembrete-whatsapp-numero"
+              },
+              "valor": "5511987650030"
+            },
+            {
+              "acao": "press",
+              "tecla": "Tab",
+              "alvo": {
+                "testid": "lembrete-whatsapp-numero"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "lembrete-whatsapp"
+              },
+              "rotulo": "WhatsApp ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "lembrete-whatsapp-numero"
+              },
+              "rotulo": "Seu número",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "o-que-o-aviso-mostra-e-sons",
+      "titulo": "O que o aviso mostra e os sons",
+      "objetivo": "Decidir o que os avisos mostram com o celular bloqueado e conhecer os sons dos avisos da equipe.",
+      "papel": "admin",
+      "busca": [
+        "privacidade da notificação",
+        "esconder mensagem no celular bloqueado",
+        "tela bloqueada",
+        "som do aviso",
+        "trocar som da notificação",
+        "aviso sonoro"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que aparece fora do site",
+          "texto": "O quadro \"O que os avisos mostram fora do app\" decide o que aparece no aviso do celular bloqueado e nas notificações do computador. A escolha vale para toda a empresa. De fábrica, fica em \"Mostrar quem mandou (recomendado)\": aparecem o nome e a foto do cliente, mas não o que ele escreveu.",
+          "rota": "/app/settings/notifications",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "tela-bloqueada"
+              },
+              "rotulo": "Vale para toda a empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Esconder tudo",
+          "texto": "Para mais sigilo, escolha \"Esconder tudo\": o aviso diz só que chegou algo, sem o nome do cliente nem a mensagem. A mudança é salva assim que você clica. Só administradores podem mudar; os outros da equipe veem a escolha, com o aviso \"Quem decide é um administrador.\"",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "tela-bloqueada-oculto"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has([data-testid='tela-bloqueada-oculto'])"
+              },
+              "rotulo": "Escolhido",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os sons dos avisos",
+          "texto": "No fim da tela ficam os \"Sons dos avisos\". Eles tocam com o site aberto quando chega um aviso na Central. \"Etapa que avisa\" toca quando um negócio entra numa etapa do funil marcada para avisar. \"Precisa de uma pessoa\" toca quando o atendimento automático passa a conversa para alguém da equipe, ou quando ele para porque acabou o saldo do serviço de IA. Clique em \"Ouvir\" para escutar o som.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "sons-dos-avisos"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='sons-dos-avisos'] ul"
+              },
+              "rotulo": "Os dois sons",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ouvir",
+                "exato": true,
+                "dentro": {
+                  "testid": "som-venda"
+                }
+              },
+              "rotulo": "Escutar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Trocar por um som seu",
+          "texto": "Hoje as duas linhas dizem \"Som do sistema\": é o som de fábrica. Clique em \"Trocar som\" e escolha um arquivo de áudio MP3, OGG ou WAV de até 1 MB no seu computador. O som novo vale para toda a equipe, e a linha passa a dizer \"Som personalizado\". Para voltar ao som de fábrica, aparece o botão \"Usar o do sistema\". Trocar e voltar o som é para gerentes e administradores.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Trocar som",
+                "exato": true,
+                "dentro": {
+                  "testid": "som-venda"
+                }
+              },
+              "rotulo": "Escolher um arquivo",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

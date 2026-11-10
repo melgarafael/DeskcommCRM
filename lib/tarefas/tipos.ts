@@ -21,11 +21,33 @@
  * por um `Record` de objetos deixaria o par cego.
  */
 
+/** Onde o aviso de tarefa leva: quem recebe é sempre o responsável. */
+export const HREF_MINHAS_TAREFAS = "/app/tasks?assigned_to=me";
+
 export const PRIORIDADES_DA_TAREFA = ["low", "medium", "high", "urgent"] as const;
 export type PrioridadeDaTarefa = (typeof PRIORIDADES_DA_TAREFA)[number];
 
 export const SITUACOES_DA_TAREFA = ["pending", "in_progress", "done", "cancelled"] as const;
 export type SituacaoDaTarefa = (typeof SITUACOES_DA_TAREFA)[number];
+
+/**
+ * As situações em que a tarefa ainda PEDE AÇÃO — o que `?aberto=true` significa
+ * na rota e o que o contador do menu conta.
+ *
+ * Existe como constante, e não como literal em cada lugar, porque são dois
+ * consumidores com a mesma pergunta: `app/api/v1/tasks/route.ts` (o filtro) e
+ * `components/shell/ContadorDeTarefas.tsx` (o número). Duas listas iguais
+ * separadas divergem na primeira mudança de vocabulário — e a divergência aqui
+ * seria muda: o menu contaria uma coisa e a tela mostraria outra.
+ */
+export const SITUACOES_ABERTAS_DA_TAREFA = ["pending", "in_progress"] as const;
+
+const ABERTAS = new Set<string>(SITUACOES_ABERTAS_DA_TAREFA);
+
+/** A MESMA régua de `SITUACOES_ABERTAS_DA_TAREFA`, para quem tem um status na mão. */
+export function tarefaEstaAberta(status: SituacaoDaTarefa): boolean {
+  return ABERTAS.has(status);
+}
 
 /** O negócio a que a tarefa está presa, como a lista o mostra. */
 export interface NegocioDaTarefa {

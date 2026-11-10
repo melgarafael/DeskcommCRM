@@ -85,6 +85,22 @@ export async function sincronizarAvisoDoAgendador(
 ): Promise<void> {
   try {
     if (estado.estado === "saudavel") {
+      // LER ANTES DE ESCREVER (#3695). Sem aviso aberto não há o que fechar, e
+      // o PATCH incondicional custava uma escrita por minuto na Central de uma
+      // instalação saudável — a rodada de `channel-pause-scheduler` é de um
+      // minuto e a caixa fica vazia justamente quando está tudo bem. O `update`
+      // continua com `status = 'open'` no filtro: entre esta leitura e a
+      // escrita, quem clicou em "resolver" ganha a corrida.
+      const { data: abertos, error: erroLeitura } = await admin
+        .from("agent_inbox_items")
+        .select("id")
+        .eq("kind", KIND_DO_AVISO)
+        .eq("title", TITULO_DO_AVISO_DO_AGENDADOR)
+        .eq("status", "open")
+        .limit(1);
+      if (erroLeitura) throw new Error(`ler avisos abertos: ${erroLeitura.message}`);
+      if ((abertos ?? []).length === 0) return;
+
       const { error } = await admin
         .from("agent_inbox_items")
         .update({ status: "resolved", resolved_at: new Date().toISOString() })

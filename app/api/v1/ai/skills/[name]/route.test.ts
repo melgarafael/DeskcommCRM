@@ -288,6 +288,32 @@ describe("PUT /api/v1/ai/skills/[name]", () => {
     );
   });
 
+  it("aceita any_tags no matcher, grava na versão nova e audita a contagem de etiquetas", async () => {
+    mockAuthzOk();
+    mockSkillInstalada();
+    vi.mocked(insertSkillVersion).mockResolvedValue({ id: "v2" } as never);
+    vi.mocked(setSkillPointer).mockResolvedValue(undefined as never);
+    const { PUT } = await import("./route");
+    const res = await PUT(
+      reqPut("catalogo", { ...BODY_VALIDO, matcher: { any_keywords: ["moto"], any_tags: ["odonto", "clinica"] } }),
+      { params: Promise.resolve({ name: "catalogo" }) },
+    );
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(insertSkillVersion)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        matcher: { any_keywords: ["moto"], any_tags: ["odonto", "clinica"] },
+      }),
+    );
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ai.skill_saved",
+        metadata: { name: "catalogo", keywords: 1, tags: 2 },
+      }),
+    );
+  });
+
   it("matcher sem palavras-chave → 422, sem tocar o banco", async () => {
     mockAuthzOk();
     const { PUT } = await import("./route");

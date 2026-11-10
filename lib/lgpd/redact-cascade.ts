@@ -19,6 +19,8 @@
  * organization_id check). The admin client bypasses RLS.
  */
 
+import { logger } from "@/lib/logger";
+import { isLeadAttachmentPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface CascadeResult {
@@ -197,6 +199,52 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
         bucket: "internal-media",
         objectPath: caminho,
       });
+    }
+  }
+
+  // ANEXOS DE NEGÓCIOS / LEADS (crm_lead_attachments) — LGPD
+  const { data: leadsDoContato, error: leadsErro } = await admin
+    .from("crm_leads")
+    .select("id")
+    .eq("organization_id", args.organizationId)
+    .eq("contact_id", args.contactId);
+  if (leadsErro) {
+    throw new Error(`[lgpd-redact-cascade] leads do contato não lidos: ${leadsErro.message}`);
+  }
+  const idsDosLeads = (leadsDoContato ?? []).map((l) => l.id);
+  if (idsDosLeads.length > 0) {
+    const { data: anexosDosLeads, error: anexosErro } = await admin
+      .from("crm_lead_attachments")
+      .select("id, lead_id, storage_path")
+      .eq("organization_id", args.organizationId)
+      .in("lead_id", idsDosLeads);
+    if (anexosErro) {
+      throw new Error(`[lgpd-redact-cascade] anexos dos leads não lidos: ${anexosErro.message}`);
+    }
+    for (const anexo of anexosDosLeads ?? []) {
+      if (!anexo.storage_path) continue;
+      // A fila remove com o cliente admin: só o que mora sob o prefixo do negócio.
+      if (!isLeadAttachmentPathOwnedBy(anexo.storage_path, args.organizationId, anexo.lead_id)) {
+        logger.warn("[lgpd-redact-cascade] anexo com caminho fora do negócio; não enfileirado", {
+          attachmentId: anexo.id,
+          requestId: args.requestId,
+        });
+        continue;
+      }
+      await enfileirarMidiaNaFila(admin, {
+        organizationId: args.organizationId,
+        requestId: args.requestId,
+        bucket: "internal-media",
+        objectPath: anexo.storage_path,
+      });
+    }
+    const { error: apagarErro } = await admin
+      .from("crm_lead_attachments")
+      .delete()
+      .eq("organization_id", args.organizationId)
+      .in("lead_id", idsDosLeads);
+    if (apagarErro) {
+      throw new Error(`[lgpd-redact-cascade] anexos dos leads não apagados: ${apagarErro.message}`);
     }
   }
 

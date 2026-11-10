@@ -15,7 +15,8 @@
  *   "assinatura_mensagens": {
  *     "humanos": true,
  *     "ia": true,
- *     "nome_ia": "Assistente Virtual"
+ *     "nome_ia": "Assistente Virtual",
+ *     "por_agente": false
  *   }
  * }
  * ```
@@ -27,6 +28,11 @@
  * comportamento novo até um admin ligar. É decisão deliberada: uma assinatura
  * automática que o operador não pediu seria a mesma classe de surpresa que
  * quem liga a feature não controla.
+ *
+ * `por_agente` (#3310) segue a mesma régua: desligado, a IA assina com
+ * `nome_ia`, como sempre; ligado, assina com o nome de cada agente que enviou
+ * (`nome_ia` vira a reserva). Decisão do dono (doc 191, opção B): o nome que o
+ * operador escolheu não muda sozinho numa atualização.
  *
  * ## O que este módulo NÃO decide
  *
@@ -44,6 +50,8 @@ export interface ConfigAssinatura {
   ia: boolean;
   /** O nome configurável da IA (ex.: "Assistente Virtual" ou o nome do agente). */
   nomeIa: string;
+  /** A IA assina com o nome de cada agente que enviou quando `true` (#3310). */
+  porAgente: boolean;
 }
 
 const assinaturaSchema = z
@@ -51,8 +59,9 @@ const assinaturaSchema = z
     humanos: z.boolean().catch(false),
     ia: z.boolean().catch(false),
     nome_ia: z.string().trim().min(1).max(120).catch("Assistente Virtual"),
+    por_agente: z.boolean().catch(false),
   })
-  .catch({ humanos: false, ia: false, nome_ia: "Assistente Virtual" });
+  .catch({ humanos: false, ia: false, nome_ia: "Assistente Virtual", por_agente: false });
 
 /**
  * Lê a config de `organizations.settings`. Nunca lança: um jsonb torto não pode
@@ -64,7 +73,7 @@ export function configAssinatura(settings: unknown): ConfigAssinatura {
       ? (settings as Record<string, unknown>)
       : undefined;
   const parsed = assinaturaSchema.parse(raiz?.assinatura_mensagens ?? {});
-  return { humanos: parsed.humanos, ia: parsed.ia, nomeIa: parsed.nome_ia };
+  return { humanos: parsed.humanos, ia: parsed.ia, nomeIa: parsed.nome_ia, porAgente: parsed.por_agente };
 }
 
 /**
@@ -92,12 +101,17 @@ export function linhaDeAssinatura(
   config: ConfigAssinatura,
   origem: "user" | "ai",
   nomeHumano?: string | null,
+  /**
+   * O nome do AGENTE que enviou (#3310) — só para a IA, só com `porAgente`
+   * ligado, e só quando existe. Ausente/`null` = `nome_ia`, como antes.
+   */
+  nomeDoAgente?: string | null,
 ): string | null {
   if (origem === "ai") {
     if (!config.ia) return null;
     // Para a IA o relato não pede capitalização — o nome é o que a organização
     // configurou ("Assistente Virtual", o nome do agente, uma marca).
-    return `*${config.nomeIa}*\n`;
+    return `*${config.porAgente ? nomeDaAssinaturaDaIA(config, nomeDoAgente) : config.nomeIa}*\n`;
   }
   if (!config.humanos) return null;
   const nome = nomeHumano?.trim();
@@ -133,10 +147,40 @@ export const assinaturaEntradaSchema = z
       .min(1)
       .max(120)
       .regex(/^[^*\r\n]+$/),
+    /** Ausente = mantém o que está gravado (cliente da API anterior ao #3310). */
+    por_agente: z.boolean().optional(),
   })
   .strict();
 
 const LINHA_DE_ASSINATURA = /^\*[^*\n]+\*\n/;
+
+/**
+ * O nome com que a IA assina quando `por_agente` está ligado (#3310).
+ *
+ * **O do AGENTE que enviou, e `nome_ia` como RESERVA.** `nome_ia` é um nome só
+ * para a organização: numa conta com dois agentes no mesmo número (roteador de
+ * intenção) o cliente lia o nome da agente A numa mensagem que a agente B
+ * escreveu — e a conversa seguia com outra pessoa. A reserva vale para a
+ * mensagem SEM agente (aviso do sistema, automação) e para quando a leitura do
+ * nome falha; assinatura genérica é melhor que assinatura nenhuma, e muito
+ * melhor que a errada.
+ *
+ * O nome do agente passa pela MESMA régua do `nome_ia` (`assinaturaEntradaSchema`):
+ * `*` ou quebra de linha desmontam a linha `*Nome*\n` — o negrito sai torto para
+ * o cliente e `semAssinatura` deixa de reconhecê-la na guarda de eco. A régua do
+ * cadastro não alcança o nome do agente, então ela é aplicada na hora de assinar.
+ */
+export function nomeDaAssinaturaDaIA(
+  config: ConfigAssinatura,
+  nomeDoAgente?: string | null,
+): string {
+  const doAgente = nomeDoAgente?.trim();
+  if (!doAgente || NOME_QUE_DESMONTA_A_LINHA.test(doAgente)) return config.nomeIa;
+  return doAgente;
+}
+
+/** `*` ou quebra de linha: qualquer um dos dois atrapalha a linha `*Nome*\n`. */
+const NOME_QUE_DESMONTA_A_LINHA = /[*\r\n]/;
 
 /**
  * O texto sem a linha de assinatura do começo, se houver. Quem precisa é a

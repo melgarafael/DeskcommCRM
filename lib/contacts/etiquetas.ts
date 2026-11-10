@@ -99,6 +99,13 @@ export function etiquetaExistentePara(
  * oferece o que existe, que é o ponto da issue. Com texto, filtra por trecho da
  * chave (`includes`) — "cli" encontra "cliente pagante" —, descarta o que já
  * está no contato e nunca repete pela chave.
+ *
+ * ⚠️ A ORDEM É A DA FONTE, e quem a decide é quem chama (#3180): com o campo
+ * vazio, o que aparece são as primeiras da lista que chegou. `conhecidas` tem de
+ * vir ordenada por USO — `/api/v1/contact-tags` e `/api/v1/conversation-tags`
+ * entrega as mais usadas primeiro —, nunca reordenada aqui no alfabeto: uma
+ * etiqueta que a organização quase não usa não merece o primeiro lugar só por
+ * começar com "a".
  */
 export function sugestoesDeEtiqueta(args: {
   conhecidas: readonly string[];
@@ -115,6 +122,36 @@ export function sugestoesDeEtiqueta(args: {
       return k === "" ? true : ck.includes(k);
     })
     .slice(0, args.limite ?? 8);
+}
+
+/**
+ * O rótulo da etiqueta NOVA que a opção "Criar «…»" oferece, ou `null` quando
+ * não há o que criar (#3180, critério 3).
+ *
+ * Três recusas, e cada uma é o que impede a opção de mentir:
+ *
+ *  - campo vazio — não há nome a criar;
+ *  - o texto CASA com uma etiqueta conhecida pela chave larga — a sugestão dela
+ *    já está na lista, e oferecer "Criar «carteira-andreia»" ao lado de
+ *    "+ carteira-andreia" seria oferecer de novo a variante que a issue veio
+ *    impedir (quem digita "Carteira-Andréia" quer a que existe);
+ *  - o texto já está no item — criar não faria nada.
+ *
+ * Correspondência PARCIAL não entra na recusa: digitar "carteira" com
+ * `carteira-andreia` no vocabulário ainda é uma etiqueta nova, e é justamente
+ * aí que a opção precisa aparecer — no fim da lista, para ficar claro que ela
+ * não existe ainda.
+ */
+export function opcaoDeCriar(args: {
+  conhecidas: readonly string[];
+  selecionadas: readonly string[];
+  digitado: string;
+}): string | null {
+  const k = chaveDeComparacaoDeEtiqueta(args.digitado);
+  if (k === "") return null;
+  if (etiquetaExistentePara(args.conhecidas, args.digitado) !== null) return null;
+  if (args.selecionadas.some((t) => chaveDeComparacaoDeEtiqueta(t) === k)) return null;
+  return normalizarTag(args.digitado);
 }
 
 /**

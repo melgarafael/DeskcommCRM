@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "synthetic": true,
+  "environment_id": "qa-3475-01a178b3",
+  "build": {
+    "sha": "20f335eaede5c423a0fcc902d79eaabb103ea342",
+    "id": "cyznjcUkNaQa9Fn5H6iU4"
+  },
+  "started_at": "2026-10-26T19:05:42.583Z",
+  "updated_at": "2026-10-26T19:05:57.842Z",
+  "complete": false,
+  "core_complete": false,
+  "scenarios": [
+    {
+      "scenario": "dossie",
+      "state": "not_run",
+      "checks": []
+    },
+    {
+      "scenario": "inbox",
+      "state": "not_run",
+      "checks": []
+    },
+    {
+      "scenario": "pausa",
+      "state": "not_run",
+      "checks": []
+    },
+    {
+      "scenario": "assinatura",
+      "state": "failed",
+      "checks": [],
+      "error": "prospecting_start_failed"
+    },
+    {
+      "scenario": "avisos",
+      "state": "passed",
+      "checks": [
+        "recusada: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada",
+        "aceita: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada",
+        "midia_sem_texto: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada",
+        "ja_engajado: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada"
+      ]
+    },
+    {
+      "scenario": "ack",
+      "state": "not_run",
+      "checks": []
+    }
+  ],
+  "subproofs": {
+    "pushTransport": {
+      "state": "not_run",
+      "reason": "Envelope criptográfico não recebido; UI/decisão/job são medidos separadamente."
+    },
+    "invisibleAgentTool": {
+      "state": "not_run",
+      "reason": "A guarda requer observar um inbound_turn real chamando send_message com Cf e recebendo corpo_vazio; API comum e ausência no sandbox não provam isso."
+    }
+  },
+  "transport_receipts": [
+    {
+      "id": "qa-3475-9064adff-4ff7-46ad-ab27-68cee9dd04d0",
+      "session": "qa3475-default",
+      "text_sha256": "549a8901c1c2965e600b5c390500db8e99f4cf0789fdfd2bbae87b782052851e"
+    }
+  ],
+  "limits": [
+    "Nenhuma prova de instalação/build: a bancada é fornecida pelo coordenador.",
+    "Somente os cenários passed foram executados e medidos; subprovas not_run continuam explícitas mesmo com RC 0.",
+    "Sem trace/HAR, para não persistir bearer, senha ou cabeçalhos de sessão."
+  ]
+}

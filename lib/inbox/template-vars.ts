@@ -1,4 +1,5 @@
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { RESERVA_DA_VARIAVEL } from "@/lib/texto/reserva-da-variavel";
 import type { MidiaDeTemplate } from "@/lib/templates/midias";
 
 /**
@@ -115,10 +116,12 @@ export function payloadDeUso(
 export function interpolateTemplate(body: string, contact: TemplateContact): string {
   const full = nomeResolvido(contact);
   const first = full.split(/\s+/)[0] ?? "";
-  return body.replace(/\{\{\s*([a-zA-Z_]+)\s*\}\}/g, (literal, rawKey: string) => {
+  const marcacao = new RegExp(String.raw`\{\{\s*([a-zA-Z_]+)\s*${RESERVA_DA_VARIAVEL}\}\}`, "g");
+  return body.replace(marcacao, (literal, rawKey: string, reserva: string | undefined) => {
     const key = rawKey.toLowerCase();
-    if (key === "nome") return full !== "" ? full : literal;
-    if (key === "primeiro_nome") return first !== "" ? first : literal;
+    // Sem nome, a reserva (`{{nome|"aluno"}}`) cobre; sem reserva, o literal fica.
+    if (key === "nome") return full !== "" ? full : (reserva ?? literal);
+    if (key === "primeiro_nome") return first !== "" ? first : (reserva ?? literal);
     return literal; // desconhecida: mantém
   });
 }

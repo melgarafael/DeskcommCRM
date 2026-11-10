@@ -6,6 +6,7 @@
  * - `crm_get_conversation_history` -> listMessagesHandler (carrega historico)
  */
 import { z } from "zod";
+import { projetarDerivadoNoHistorico } from "@/lib/mcp/media-derived-read";
 
 import {
   listConversationsHandler,
@@ -14,13 +15,11 @@ import {
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
-import {
-  criarRascunho,
-  JANELA_MAXIMA_HORAS,
-  TEXTO_MAXIMO,
-} from "@/lib/inbox/rascunho-sugerido";
+import { criarRascunho, JANELA_MAXIMA_HORAS, TEXTO_MAXIMO } from "@/lib/inbox/rascunho-sugerido";
+import { VALIDADE_DO_LINK_DE_MIDIA_S } from "@/lib/messaging/media/link-temporario";
 import { getQueuePositions } from "@/lib/routing/queue";
-import { resolveUserNames } from "./_users";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import type { McpToolDefinition } from "../types";
 
 /**
@@ -46,9 +45,7 @@ const listInputShape = {
   contact_id: z.string().uuid().optional(),
   // `pending` entra: é o estado da conversa que o próprio agente escalou, e sem
   // ele a IA não conseguia listar o que ela mesma passou para uma pessoa.
-  status: z
-    .enum(["open", "pending", "claimed", "ai_handling", "closed", "archived"])
-    .optional(),
+  status: z.enum(["open", "pending", "claimed", "ai_handling", "closed", "archived"]).optional(),
   limit: z.number().int().min(1).max(50).default(10),
   cursor: z.string().optional(),
 };
@@ -129,8 +126,9 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
     // organização — com `last_message_preview` junto, que é texto do lado de
     // lá indo para o WhatsApp do cliente A, encaminhável, sem volta.
     // Nomes (dedupe) e posições de fila (1 query cada) — sem N+1 na listagem.
-    const names = await resolveUserNames(
+    const names = await nomesDosAtendentesCom(
       ctx.supabase,
+      ctx.organizationId,
       conversations.map((c) => c.assigned_to_user_id),
     );
     const queueMap = conversations.some(isInQueue)
@@ -224,7 +222,7 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
           "conversa não é sua para ler; siga a conversa com quem está falando.",
       };
     }
-    const names = await resolveUserNames(ctx.supabase, [conv.assigned_to_user_id]);
+    const names = await nomesDosAtendentesCom(ctx.supabase, ctx.organizationId, [conv.assigned_to_user_id]);
     const queue_position = isInQueue(conv)
       ? ((await getQueuePositions(ctx.supabase, ctx.organizationId)).get(conv.id) ?? null)
       : null;
@@ -258,6 +256,75 @@ const historyInputShape = {
   limit: z.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
 };
+
+const MEDIA_BUCKET = "whatsapp-media";
+
+export type MediaDoHistorico = {
+  /**
+   * `ready`: arquivo guardado; `pending`: a mensagem tem mídia mas o worker
+   * ainda não a guardou (ou o link falhou) — quem consome tenta de novo depois;
+   * `expired`: apagada pela retenção (o mesmo marcador que faz a rota de mídia
+   * responder 410); ausente no mapa = mensagem sem mídia.
+   */
+  status: "ready" | "pending" | "expired";
+  signedUrl: string | null;
+};
+
+type MensagemComMidia = {
+  id: string;
+  media_url?: string | null;
+  media_storage_path?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+/** A mesma régua da rota de mídia: sem arquivo, sem endereço e com o marcador da retenção. */
+const expirou = (m: MensagemComMidia) =>
+  !m.media_storage_path && !m.media_url && m.metadata?.media_status === "expired";
+
+/**
+ * Para cada mensagem do histórico que carrega mídia, diz o estado e, com
+ * `comLink`, gera o link temporário do arquivo guardado. Nunca lança: falha ao
+ * assinar vira `pending` (a conversa continua legível). Só toca no storage se
+ * houver link a assinar.
+ */
+export async function resolverMidiasDoHistorico(
+  messages: ReadonlyArray<MensagemComMidia>,
+  { comLink = true }: { comLink?: boolean } = {},
+): Promise<Map<string, MediaDoHistorico>> {
+  const out = new Map<string, MediaDoHistorico>();
+  const comMidia = messages.filter((m) => m.media_storage_path || m.media_url || expirou(m));
+  if (comMidia.length === 0) return out;
+
+  const aAssinar: Array<{ id: string; caminho: string }> = [];
+  for (const m of comMidia) {
+    if (expirou(m)) out.set(m.id, { status: "expired", signedUrl: null });
+    else if (!m.media_storage_path) out.set(m.id, { status: "pending", signedUrl: null });
+    else if (!comLink) out.set(m.id, { status: "ready", signedUrl: null });
+    else aAssinar.push({ id: m.id, caminho: m.media_storage_path });
+  }
+  if (aAssinar.length === 0) return out;
+
+  const storage = createAdminClient().storage.from(MEDIA_BUCKET);
+  await Promise.all(
+    aAssinar.map(async (m) => {
+      try {
+        const { data, error } = await storage.createSignedUrl(
+          m.caminho,
+          VALIDADE_DO_LINK_DE_MIDIA_S,
+        );
+        out.set(
+          m.id,
+          error || !data?.signedUrl
+            ? { status: "pending", signedUrl: null }
+            : { status: "ready", signedUrl: data.signedUrl },
+        );
+      } catch {
+        out.set(m.id, { status: "pending", signedUrl: null });
+      }
+    }),
+  );
+  return out;
+}
 
 export const crmGetConversationHistory: McpToolDefinition<typeof historyInputShape> = {
   name: "crm_get_conversation_history",
@@ -339,6 +406,13 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
     } catch (e: unknown) {
       throw e;
     }
+    // No turno do agente de atendimento o link NÃO sai: ele vale como portador
+    // por 1h para foto ou áudio de cliente, iria para o provedor de IA e para os
+    // registros da rodada, e o agente não tem como abri-lo. Tipo e estado ficam.
+    // Pela API (sem contato do turno) o link sai normalmente.
+    const media = await resolverMidiasDoHistorico(result.messages, {
+      comLink: !ctx.contatoDoTurno,
+    });
     return {
       messages: result.messages.map((m) => ({
         id: m.id,
@@ -346,6 +420,14 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
         type: m.type,
         body: m.body,
         media_url: m.media_url,
+        // Mídia utilizável por quem consome pela API: tipo, tamanho e um link
+        // temporário do arquivo já guardado (`media_url` é o endereço interno do
+        // gateway e não serve fora dele). Ver `resolverMidiasDoHistorico`.
+        ...projetarDerivadoNoHistorico(m, ctx),
+        media_mime: m.media_mime ?? null,
+        media_size_bytes: m.media_size_bytes ?? null,
+        media_status: media.get(m.id)?.status ?? "none",
+        media_signed_url: media.get(m.id)?.signedUrl ?? null,
         sent_via: m.sent_via,
         sent_at: m.sent_at,
         status: m.status,
@@ -378,7 +460,9 @@ const rascunhoInputShape = {
     .min(1)
     .max(64)
     .default("integracao")
-    .describe("De onde veio o texto (ex.: 'erp'). É o que a caixa de entrada mostra no aviso de origem."),
+    .describe(
+      "De onde veio o texto (ex.: 'erp'). É o que a caixa de entrada mostra no aviso de origem.",
+    ),
   expira_em_horas: z
     .number()
     .int()

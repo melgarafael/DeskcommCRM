@@ -62,6 +62,70 @@ export const updateLeadStateInputSchema = z.strictObject({
 });
 export type UpdateLeadStateInput = z.infer<typeof updateLeadStateInputSchema>;
 
+// "Responder o cliente" não é próxima ação: o agente já responde a cada
+// mensagem, e a frase ocuparia a faixa do card (a proposta, com Aprovar e
+// Ignorar) sem dizer nada a quem vende — escondendo "esfriando", a retomada e a
+// probabilidade, que moram na MESMA faixa (`lib/kanban/card-state.ts`).
+//
+// Só a frase VAZIA cai aqui: um verbo de resposta + palavras de enchimento, e
+// nada mais. "Responder ao cliente com o orçamento do modelo X" tem conteúdo e
+// passa. As listas são curtas de propósito: o alvo é a frase que não diz nada,
+// não julgar o texto do modelo. Verbos e substantivos aqui valem em espanhol
+// também ("Responder al cliente"), idioma em que o agente igualmente opera.
+const VERBOS_DE_RESPOSTA = new Set(['responder', 'atender', 'retornar']);
+const SO_FIGURANTES = new Set([
+  'cliente',
+  'lead',
+  'contato',
+  'mensagem',
+  'duvida',
+  'pergunta',
+  'agora',
+  'logo',
+]);
+const DE_LIGACAO = new Set([
+  'a',
+  'as',
+  'o',
+  'os',
+  'ao',
+  'aos',
+  'do',
+  'da',
+  'de',
+  'para',
+  'pro',
+  'pra',
+  'nova',
+  'ultima',
+  // espanhol
+  'al',
+  'el',
+  'la',
+  'los',
+  'las',
+  'del',
+]);
+
+/**
+ * A frase é só "responder o cliente" (ou equivalente): não é próxima ação.
+ *
+ * Sem acento e sem caixa, porque o modelo escreve "Responder à dúvida do
+ * cliente", "responder ao cliente." e "Atender o lead" para dizer a MESMA coisa:
+ * a resposta que ele já dá sozinho a cada mensagem.
+ */
+export function proximaAcaoGenerica(texto: string): boolean {
+  const [verbo, ...resto] = texto
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((p) => p !== '' && !DE_LIGACAO.has(p));
+  return (
+    verbo !== undefined && VERBOS_DE_RESPOSTA.has(verbo) && resto.every((p) => SO_FIGURANTES.has(p))
+  );
+}
+
 export interface LeadStateRow {
   id: string;
   organization_id: string;
@@ -184,6 +248,13 @@ export async function applyLeadStateUpdate(
   }
   const input = parsed.data;
 
+  // A frase que não diz nada não é gravada — o resto da chamada vale (a mesma
+  // chamada pode marcar avanço de estágio) e o modelo recebe o aviso na resposta
+  // da ferramenta. Não gravar é também o que impede `next_action_seq` de andar:
+  // a proposta que a pessoa está vendo no card continua sendo a mesma.
+  const generica = typeof input.next_action === 'string' && proximaAcaoGenerica(input.next_action);
+  const novaProximaAcao = generica ? undefined : input.next_action;
+
   const current = await getLeadState(db, ids.tenantId, ids.leadId);
   const currentStage: LeadStage = current?.stage ?? 'new';
 
@@ -200,7 +271,8 @@ export async function applyLeadStateUpdate(
 
   const nextStage = transition?.to ?? currentStage;
   const qualification = { ...(current?.qualification ?? {}), ...(input.qualification ?? {}) };
-  const nextAction = input.next_action !== undefined ? input.next_action : (current?.next_action ?? null);
+  const nextAction =
+    novaProximaAcao !== undefined ? novaProximaAcao : (current?.next_action ?? null);
 
   // `next_action_seq` só avança quando a próxima ação é REESCRITA nesta chamada
   // ($6), e avança mesmo que o texto novo seja idêntico ao anterior: é o que
@@ -228,7 +300,7 @@ export async function applyLeadStateUpdate(
     nextStage,
     JSON.stringify(qualification),
     nextAction,
-    input.next_action !== undefined,
+    novaProximaAcao !== undefined,
   ];
 
   let state: LeadStateRow;
@@ -253,5 +325,13 @@ export async function applyLeadStateUpdate(
     : noop
       ? `o lead já está em "${currentStage}" — nada a alterar no estágio.`
       : `estado atualizado (estágio permanece "${currentStage}").`;
-  return { ok: true, state, transition, message };
+  // O aviso vai na `message`, que é de onde o modelo lê o desfecho da
+  // ferramenta. Recusar a chamada inteira seria pior: o avanço de estágio que
+  // veio junto é legítimo e se perderia por causa de um campo de texto.
+  const avisoDaGenerica = generica
+    ? ' A próxima ação NÃO foi gravada: responder o cliente é o que você já faz a cada ' +
+      'mensagem. Grave next_action só quando houver uma ação concreta (o que, e até ' +
+      'quando); sem ela, não envie o campo.'
+    : '';
+  return { ok: true, state, transition, message: message + avisoDaGenerica };
 }

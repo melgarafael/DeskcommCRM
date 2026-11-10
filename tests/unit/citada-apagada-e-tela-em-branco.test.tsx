@@ -101,10 +101,16 @@ describe("a citação de uma mensagem APAGADA não devolve o texto", () => {
  * decidiam por dados diferentes — a lista pelo id, a conversa pelo objeto já
  * carregado. Este bloco cobre os dois estados possíveis, não um caso feliz.
  */
-/** O que o navegador aplica abaixo do `md`: as variantes com prefixo não valem. */
+/**
+ * O que o navegador aplica abaixo do `md`: as classes sem prefixo e as com
+ * `max-md:` (sem o prefixo); as demais variantes não valem. `invisible` conta
+ * como escondida — é como a lista sai da frente sem perder a rolagem.
+ */
 function visivelNoCelular(classes: string): boolean {
-  const semPrefixo = classes.split(/\s+/).filter((c) => !c.includes(":"));
-  return semPrefixo.includes("flex") && !semPrefixo.includes("hidden");
+  const abaixoDoMd = classes
+    .split(/\s+/)
+    .flatMap((c) => (c.startsWith("max-md:") ? [c.slice("max-md:".length)] : c.includes(":") ? [] : [c]));
+  return abaixoDoMd.includes("flex") && !abaixoDoMd.includes("hidden") && !abaixoDoMd.includes("invisible");
 }
 
 describe("no celular sempre há exatamente UMA coluna na tela", () => {
@@ -130,7 +136,28 @@ describe("no celular sempre há exatamente UMA coluna na tela", () => {
       const { lista, conversa } = colunasDoCelular(temSelecao);
       for (const c of [lista, conversa]) {
         expect(c.split(/\s+/).includes("hidden") ? c : `${c} md:flex`).toContain("md:flex");
+        // Camada e invisibilidade valem SÓ abaixo do `md`: sem prefixo, o
+        // computador ganharia uma conversa por cima da lista.
+        const semPrefixo = c.split(/\s+/).filter((x) => !x.includes(":"));
+        expect(semPrefixo).not.toContain("fixed");
+        expect(semPrefixo).not.toContain("invisible");
       }
     }
+  });
+
+  it("escolhida a conversa, ela vira camada de tela cheia acima das barras e abaixo das faixas", () => {
+    // z-45: acima da barra de abas (z-40) e do TopBar (z-20), abaixo das
+    // faixas de cima e dos portais Radix (z-50). O topo desconta as faixas —
+    // o aviso de canal caído é o único sinal de que nada entra nem sai.
+    const { conversa } = colunasDoCelular(true);
+    const classes = conversa.split(/\s+/);
+    expect(classes).toContain("max-md:fixed");
+    expect(classes).toContain("max-md:inset-x-0");
+    expect(classes).toContain("max-md:z-[45]");
+    expect(conversa).toContain("max-md:top-[max(var(--vv-topo,0px),var(--faixas-de-cima,0px))]");
+    expect(conversa).toMatch(/max-md:h-\[calc\(var\(--vv-topo,0px\)\+var\(--vv-altura,100dvh\)-/);
+    expect(classes).toContain("max-md:pb-[env(safe-area-inset-bottom)]");
+    // Com o teclado aberto o indicador de home não está na tela.
+    expect(classes).toContain("max-md:data-[teclado-aberto]:pb-0");
   });
 });

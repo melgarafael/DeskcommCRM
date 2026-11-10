@@ -163,6 +163,11 @@ backups/
 # que o rollback devolve (#1955). Estado da VPS, como o marcador acima.
 .deskcomm-update-diagnostico.log
 .deskcomm-env-antes-do-update
+# A vigência do app DEPOIS de uma atualização (#2757): a marca (epoch + a
+# versão de onde se saiu) e o contador de healthchecks seguidos que faltam
+# para o agente voltar sozinho. Mesmo estado da VPS das marcas acima.
+.update-vigia
+.update-vigia-falhas
 
 # Dump de banco de QA. A doutrina já estava escrita duas linhas acima e só o
 # PADRÃO faltava: `backups/` não casa com `.qa-backups/`, e um dump de 1,1 MB de
@@ -198,3 +203,6 @@ __pycache__/
 # compose não tem de onde nascer).
 caddy-sites/*
 !caddy-sites/README.caddy
+
+# Curso ilustrado — fotos e site gerados (curso/capturar.ts, curso/montar.ts)
+curso/saida/

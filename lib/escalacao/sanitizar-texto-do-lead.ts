@@ -85,6 +85,21 @@ function contaDigitos(trecho: string): number {
 }
 
 /**
+ * SÓ a retirada de URL — sem truncar e sem mexer no resto.
+ *
+ * Extraída porque a mesma régua de link vale em dois escopos: por CAMPO
+ * (abaixo, em `sanitizarTextoDoLead`) e no TEXTO INTEIRO já montado
+ * (`lib/automation/sanitizar-resumo-para-a-equipe.ts`, a última porta antes da
+ * mensagem). Um regex de URL escrito duas vezes vira duas réguas no dia em que
+ * alguém consertar só uma — e é justamente o link que não pode escapar.
+ *
+ * As três classes: `http(s)://…`, `www.…` e domínio nu (`banco.example/paga`).
+ */
+export function semUrls(texto: string): string {
+  return texto.replace(URL_COM_ESQUEMA, " ").replace(URL_COM_WWW, " ").replace(DOMINIO_NU, " ");
+}
+
+/**
  * Limpa e trunca. `null` quando nada sobrevive — nunca string vazia.
  *
  * A diferença importa na saída: uma linha `Assunto: ` AFIRMA que há um assunto e
@@ -100,10 +115,7 @@ export function sanitizarTextoDoLead(
 ): string | null {
   if (typeof bruto !== "string") return null;
 
-  const limpo = bruto
-    .replace(URL_COM_ESQUEMA, " ")
-    .replace(URL_COM_WWW, " ")
-    .replace(DOMINIO_NU, " ")
+  const limpo = semUrls(bruto)
     .replace(CORRIDA_DE_DIGITOS, (trecho) => (contaDigitos(trecho) >= 8 ? " " : trecho))
     .replace(MARCADORES, "")
     .replace(CONTROLES, " ")

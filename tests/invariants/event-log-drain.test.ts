@@ -48,7 +48,10 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
   private orderAsc = true;
   private limitN?: number;
 
-  constructor(private table: string) {}
+  constructor(
+    private table: string,
+    private antesDoClaim?: () => Promise<void>,
+  ) {}
 
   select(cols: string): this {
     if (this.mode === "update") {
@@ -141,7 +144,8 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
       if (f.op === "or") {
         // Parses PostgREST-style "col.is.null,col.lte.<iso>" (the only shape drain.ts emits).
         const parts = f.raw!.split(",").map((p) => {
-          const [col, kind, arg] = p.split(".") as [string, string, string];
+          const [col, kind, ...resto] = p.split(".");
+          const arg = resto.join("."); // conserva os milissegundos e o Z do ISO
           if (kind === "is" && arg === "null") return `${col} is null`;
           if (kind === "lte") return `${col} <= ${sqlLiteral(arg)}`;
           throw new Error(`fakeAdminClient: unsupported .or() clause: ${p}`);
@@ -173,6 +177,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
 
   private async execute(): Promise<{ data: unknown; error: { message: string } | null }> {
     try {
+      if (this.mode === "update" && this.updateData?.status === "processing") {
+        await this.antesDoClaim?.();
+      }
       const needsRows = this.mode === "select" || this.selectAfterUpdate;
       if (needsRows) {
         // json_agg over a multi-column row inserts line breaks between fields
@@ -203,8 +210,16 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
   }
 }
 
-function fakeAdminClient(): SupabaseClient {
-  return { from: (table: string) => new FakeQuery(table) } as unknown as SupabaseClient;
+function fakeAdminClient(antesDoClaim?: () => Promise<void>): SupabaseClient {
+  // Uma intercalação por cliente: o outro dreno termina entre a leitura do lote
+  // e o UPDATE do primeiro claim, ambos contra o Postgres real.
+  let pendente = antesDoClaim;
+  const intercalar = async () => {
+    const executar = pendente;
+    pendente = undefined;
+    await executar?.();
+  };
+  return { from: (table: string) => new FakeQuery(table, intercalar) } as unknown as SupabaseClient;
 }
 
 function emitDrainCase(mode: string, eventType = "test.drain_case"): string {
@@ -437,5 +452,55 @@ describe("drainEventLog — cron driver genérico do event_log (migration 0037)"
     await drainEventLog(fakeAdminClient(), { limit: 50 });
 
     expect(rowState(emCurso).status, "reclamou um evento que estava em curso").toBe("processing");
+  });
+
+  it.each(["retry", "error"] as const)("claim tardio respeita o %s gravado pelo outro dreno", async (modo) => {
+    const tipo = `test.drain_concorrente_${modo}`;
+    const chave = `test-drain-concorrente-${modo}`;
+    const retryAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    let execucoes = 0;
+    registerHandler({
+      key: chave,
+      naOrgParada: "roda",
+      events: [tipo],
+      async handle() {
+        execucoes += 1;
+        return { consumer_key: chave, status: modo, retry_at: retryAt, detail: "falha transitória" };
+      },
+    });
+    const id = emitDrainCase("n/a", tipo);
+    let estadoAposPrimeiro: ReturnType<typeof rowState> | undefined;
+    const atrasado = fakeAdminClient(async () => {
+      await drainEventLog(fakeAdminClient(), { limit: 50 });
+      estadoAposPrimeiro = rowState(id);
+    });
+
+    await drainEventLog(atrasado, { limit: 50 });
+
+    expect(estadoAposPrimeiro?.status).toBe("pending");
+    expect(estadoAposPrimeiro?.attempts).toBe(modo === "error" ? 1 : 0);
+    expect(new Date(estadoAposPrimeiro!.next_attempt_at!).getTime()).toBeGreaterThan(Date.now());
+    expect(execucoes, "o segundo dreno ignorou o prazo futuro gravado pelo primeiro").toBe(1);
+    expect(rowState(id), "o claim recusado não deve reescrever o adiamento").toEqual(estadoAposPrimeiro);
+  });
+
+  it("a fachada SQL preserva milissegundos e UTC na fronteira do prazo", async () => {
+    // Relógio materializado no banco: não congela Date nem os processos psql.
+    // Sem conservar `.987Z` no parser do OR, até a igualdade exclui esta linha.
+    const id = emitDrainCase("ok");
+    const prazo = "2100-03-18T11:00:00.987Z";
+    sql(`update public.event_log set next_attempt_at = '${prazo}' where id = '${id}';`);
+    const noLimite = (limite: string) => fakeAdminClient()
+      .from("event_log")
+      .select("id")
+      .eq("id", id)
+      .or(`next_attempt_at.is.null,next_attempt_at.lte.${limite}`);
+
+    const antes = await noLimite("2100-03-18T11:00:00.986Z");
+    expect(antes.error).toBeNull();
+    expect(antes.data).toEqual([]);
+    const exato = await noLimite(prazo);
+    expect(exato.error).toBeNull();
+    expect(exato.data).toEqual([{ id }]);
   });
 });

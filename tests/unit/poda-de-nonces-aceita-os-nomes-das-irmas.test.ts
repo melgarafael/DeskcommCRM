@@ -55,7 +55,11 @@ const MIGRATION = readFileSync(
 /** Os dois nomes que o cron manda em `db.rpc(nome, { ... })`. */
 const NOMES_DO_CRON = ["p_retencao_dias", "p_limite"];
 
-/** As SETE podas drenadas pelo mesmo laço (`drenar`), na ordem do arquivo. */
+/**
+ * As podas drenadas pelo mesmo laço (`drenar`), na ordem do arquivo. A lista
+ * cresce com o laço: toda poda nova que entra nele herda esta régua de nomes de
+ * parâmetro, que é o contrato do PostgREST (resolve sobrecarga POR NOME).
+ */
 const PODAS = [
   "fn_podar_fila_de_jobs",
   "fn_expurgar_auditoria_vencida",
@@ -64,6 +68,8 @@ const PODAS = [
   "fn_expurgar_conversa_do_caso_vencida",
   "fn_expurgar_passagens_vencidas",
   "fn_expurgar_avisos_de_caso_vencidos",
+  // 0778 (#3201): o traço do turno, com a janela da telemetria da IA.
+  "fn_expurgar_traco_do_turno_vencido",
 ];
 
 const ALVO = "fn_expurgar_nonces_de_oauth";
@@ -127,14 +133,14 @@ describe("a poda de nonces de OAuth aceita os nomes das irmãs", () => {
     expect(CRON).toMatch(/await db\.rpc\(nome, \{\s*p_retencao_dias: dias,\s*p_limite: TAMANHO_DO_LOTE,/);
   });
 
-  it("as sete podas do mesmo laço declaram exatamente os dois nomes", () => {
+  it("as podas do mesmo laço declaram exatamente os dois nomes", () => {
     for (const fn of PODAS) {
       expect(assinaturaEmVigor(BASELINE, fn), `${fn} não declara os nomes que o cron envia`)
         .toEqual(NOMES_DO_CRON);
     }
   });
 
-  it("o cron chama as sete pelo mesmo laço", () => {
+  it("o cron chama todas pelo mesmo laço", () => {
     for (const fn of PODAS) {
       expect(CRON, `${fn} não é chamada pelo cron`).toContain(`"${fn}"`);
     }

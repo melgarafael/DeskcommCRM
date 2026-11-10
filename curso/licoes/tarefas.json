@@ -1,0 +1,1091 @@
+{
+  "id": "tarefas",
+  "titulo": "Tarefas",
+  "tela": "/app/tasks",
+  "resumo": "A lista do que a equipe combinou de fazer, com prazo e responsável: anotar, concluir, filtrar e ver tudo num calendário.",
+  "licoes": [
+    {
+      "id": "tarefas-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Tarefas",
+      "objetivo": "Entender como as tarefas da equipe ficam organizadas por prazo e o que cada linha mostra.",
+      "papel": "admin",
+      "busca": [
+        "tarefas",
+        "lista de tarefas",
+        "o que fazer",
+        "pendências da equipe",
+        "tarefas atrasadas",
+        "prazo das tarefas",
+        "lembretes"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "As tarefas, separadas por prazo",
+          "rota": "/app/tasks",
+          "texto": "Tarefas é a lista do que a equipe combinou de fazer, como \"ligar de volta na terça\". A tela separa as tarefas em grupos pelo prazo. \"Atrasadas\" vem primeiro, em vermelho, porque pede ação agora: são as tarefas com prazo num dia que já passou. Depois vêm \"Hoje\", \"Esta semana\" (os próximos 7 dias), \"Mais tarde\" e, no fim, \"Sem prazo\". Uma tarefa de hoje cujo horário já passou continua em \"Hoje\", com a hora em vermelho. Um grupo sem nenhuma tarefa nem aparece.",
+          "dica": "A tela abre mostrando só as tarefas em aberto. As já feitas ficam escondidas; você aprende a vê-las na lição sobre filtros.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Atrasadas",
+                "exato": true
+              },
+              "rotulo": "Prazo num dia que passou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Hoje",
+                "exato": true
+              },
+              "rotulo": "Vence hoje",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Esta semana",
+                "exato": true
+              },
+              "rotulo": "Próximos 7 dias",
+              "tipo": "numero"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "O que cada linha mostra",
+          "texto": "Cada linha é uma tarefa. Embaixo do título aparecem os detalhes, quando alguém escreveu. Depois vêm a prioridade (Baixa, Média, Alta ou Urgente), o dia e a hora do prazo (em vermelho quando já passou) e quem é o responsável. Quando a tarefa está ligada a um negócio do funil, o nome do negócio aparece no fim da linha.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Enviar o plano alimentar revisado da Mariana')"
+              },
+              "rotulo": "Uma tarefa com todos os detalhes",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p3",
+          "titulo": "Os botões do alto da tela",
+          "texto": "No alto da tela ficam os comandos. O seletor \"Em aberto\" escolhe quais tarefas aparecem. \"Lista\" e \"Calendário\" trocam o jeito de ver as tarefas. \"Atualizar\" busca a lista de novo, para você ver o que um colega acabou de mudar. \"Nova tarefa\" abre o formulário para anotar uma tarefa.",
+          "dica": "Quem só tem permissão de leitura vê as tarefas, mas não vê o botão \"Nova tarefa\".",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Em aberto')"
+              },
+              "rotulo": "Quais tarefas mostrar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div:has(> button[aria-pressed])"
+              },
+              "rotulo": "Lista ou calendário",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Atualizar",
+                "exato": true
+              },
+              "rotulo": "Buscar de novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova tarefa",
+                "exato": true
+              },
+              "rotulo": "Anotar uma tarefa",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        }
+      ]
+    },
+    {
+      "id": "tarefas-criar-uma-tarefa",
+      "titulo": "Criar uma tarefa",
+      "objetivo": "Anotar uma tarefa nova com detalhes, prioridade e responsável.",
+      "papel": "admin",
+      "busca": [
+        "criar tarefa",
+        "nova tarefa",
+        "anotar tarefa",
+        "lembrete para equipe",
+        "responsável pela tarefa",
+        "prioridade",
+        "passar tarefa para colega"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o formulário",
+          "rota": "/app/tasks",
+          "texto": "Para anotar uma tarefa nova, clique em \"Nova tarefa\", no canto de cima, à direita.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova tarefa",
+                "exato": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova tarefa",
+            "exato": true
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "O que precisa ser feito",
+          "texto": "No primeiro campo, \"O que precisa ser feito\", escreva a tarefa numa frase curta. Ele é o único campo obrigatório. Em \"Detalhes\", anote o que você vai querer lembrar quando chegar a hora.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova tarefa",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "O que precisa ser feito"
+              },
+              "valor": "Ligar para a Camila e confirmar a avaliação postural"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Detalhes"
+              },
+              "valor": "Ela perguntou se a avaliação é no mesmo dia da primeira sessão."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "O que precisa ser feito"
+              },
+              "rotulo": "Título da tarefa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Detalhes"
+              },
+              "rotulo": "Anotações",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Prazo, prioridade e situação",
+          "texto": "Em \"Prazo\" você escolhe o dia e em \"Horário\" a hora. O prazo é opcional: sem ele, a tarefa vai para o grupo \"Sem prazo\". A hora só fica liberada depois que você escolhe o dia. \"Prioridade\" vai de Baixa a Urgente e já vem como Média; aqui escolhemos Alta. \"Situação\" já vem como Pendente.",
+          "dica": "Para criar a tarefa já com o dia preenchido, use o calendário: é a lição \"Ver as tarefas no calendário\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "rotulo": "Prioridade"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Alta",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Prazo"
+              },
+              "rotulo": "Dia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Horário"
+              },
+              "rotulo": "Hora",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Prioridade"
+              },
+              "rotulo": "Prioridade",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Situação"
+              },
+              "rotulo": "Situação",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Quem vai fazer",
+          "texto": "Em \"Responsável\", escolha quem vai cumprir a tarefa. A lista traz as pessoas da equipe, menos quem só tem permissão de leitura; você aparece como \"Eu\". \"Ninguém\" deixa a tarefa sem dono.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "rotulo": "Responsável",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Nova tarefa",
+                  "exato": true
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Ana Ribeiro",
+                "exato": true
+              },
+              "rotulo": "Pessoas da equipe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Ninguém",
+                "exato": true
+              },
+              "rotulo": "Sem responsável",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Ana Ribeiro",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar",
+          "texto": "Com tudo preenchido, clique em \"Salvar\". \"Cancelar\" fecha o formulário sem guardar nada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Ana Ribeiro",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Responsável",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Nova tarefa",
+                  "exato": true
+                }
+              },
+              "rotulo": "Ana vai fazer",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true
+              },
+              "rotulo": "Fechar sem guardar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Guardar a tarefa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "A tarefa entrou na lista",
+          "texto": "A tarefa aparece na lista na hora. Como ficou sem prazo, ela entrou no grupo \"Sem prazo\", com a prioridade Alta e a Ana Ribeiro como responsável.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Ligar para a Camila e confirmar a avaliação postural')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Ligar para a Camila e confirmar a avaliação postural')"
+              },
+              "rotulo": "Tarefa nova",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tarefas-concluir-editar-apagar",
+      "titulo": "Concluir, editar e apagar",
+      "objetivo": "Marcar uma tarefa como feita, mudar uma tarefa e apagar a que não serve mais.",
+      "papel": "admin",
+      "busca": [
+        "concluir tarefa",
+        "marcar como feita",
+        "editar tarefa",
+        "apagar tarefa",
+        "excluir tarefa",
+        "mudar prioridade",
+        "riscar tarefa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os comandos de cada linha",
+          "rota": "/app/tasks",
+          "texto": "A caixinha à esquerda de cada tarefa marca a tarefa como concluída. Quando você passa o mouse sobre a linha, aparecem dois botões à direita: o lápis, para editar, e a lixeira, para apagar.",
+          "antes": [
+            {
+              "acao": "hover",
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Ligar para o Roberto e remarcar a fisioterapia')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Marcar como concluída",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Ligar para o Roberto e remarcar a fisioterapia')"
+                }
+              },
+              "rotulo": "Concluir",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar a tarefa",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Ligar para o Roberto e remarcar a fisioterapia')"
+                }
+              },
+              "rotulo": "Editar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Apagar a tarefa",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Ligar para o Roberto e remarcar a fisioterapia')"
+                }
+              },
+              "rotulo": "Apagar",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "checkbox",
+            "nome": "Marcar como concluída",
+            "exato": true,
+            "dentro": {
+              "css": "div.group.rounded-lg:has-text('Ligar para o Roberto e remarcar a fisioterapia')"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Tarefa concluída",
+          "texto": "Ao clicar na caixinha, a tarefa do Roberto foi marcada como concluída e saiu da lista, que mostra só o que está em aberto. Agora só a tarefa da Mariana está atrasada. Para rever as concluídas, troque o filtro para \"Concluída\" (próxima lição).",
+          "dica": "Se a tarefa estiver ligada a um negócio, a conclusão fica registrada na \"Linha do tempo\" da ficha do negócio.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Marcar como concluída",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Ligar para o Roberto e remarcar a fisioterapia')"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Atrasadas'))"
+              },
+              "rotulo": "Só a da Mariana sobrou",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Editar uma tarefa",
+          "texto": "Clique no lápis para abrir a tarefa no formulário \"Editar tarefa\". Ele traz tudo o que já estava preenchido. Aqui vamos subir a prioridade da tarefa da Fernanda para Urgente.",
+          "antes": [
+            {
+              "acao": "hover",
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Confirmar o retorno da Fernanda com o Dr. Paulo')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar a tarefa",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Confirmar o retorno da Fernanda com o Dr. Paulo')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "rotulo": "Prioridade"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Urgente",
+                "exato": true
+              },
+              "rotulo": "Mudar para Urgente",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Urgente",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvar a mudança",
+          "texto": "Clique em \"Salvar\". A linha da tarefa mostra a prioridade nova na hora.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Urgente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Urgente",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Confirmar o retorno da Fernanda com o Dr. Paulo')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Urgente",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Confirmar o retorno da Fernanda com o Dr. Paulo')"
+                }
+              },
+              "rotulo": "Agora é Urgente",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Apagar em dois cliques",
+          "texto": "Para apagar, clique na lixeira. No lugar dela aparece o botão vermelho \"Confirmar\": só ao clicar nele a tarefa é apagada. Tarefa apagada não volta. Se ela só não vai mais ser feita, prefira editar e mudar a situação para \"Cancelada\".",
+          "antes": [
+            {
+              "acao": "hover",
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Repor luvas e máscaras do consultório odontológico')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Apagar a tarefa",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Repor luvas e máscaras do consultório odontológico')"
+                }
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Repor luvas e máscaras do consultório odontológico')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Repor luvas e máscaras do consultório odontológico')"
+                }
+              },
+              "rotulo": "Confirmar apaga de vez",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tarefas-filtrar-por-situacao",
+      "titulo": "Ver as tarefas concluídas e as em andamento",
+      "objetivo": "Usar o filtro de situação para ver as tarefas concluídas, canceladas ou em andamento, e reabrir uma tarefa.",
+      "papel": "admin",
+      "busca": [
+        "tarefas concluídas",
+        "ver tarefas feitas",
+        "filtro de tarefas",
+        "tarefas canceladas",
+        "reabrir tarefa",
+        "em andamento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O filtro de situação",
+          "rota": "/app/tasks",
+          "texto": "O seletor no alto começa em \"Em aberto\", que junta as tarefas pendentes e as em andamento. Clique nele para escolher outra situação: \"Pendente\", \"Em andamento\", \"Concluída\" ou \"Cancelada\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Em aberto')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Escolha a situação",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Concluída",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "As tarefas concluídas",
+          "texto": "Com \"Concluída\", a lista mostra o grupo \"Encerradas\": as tarefas aparecem riscadas e com a caixinha marcada. Para reabrir uma tarefa, clique na caixinha marcada: ela volta a ser pendente e reaparece em \"Em aberto\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Concluída",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Encerradas",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Concluída')"
+              },
+              "rotulo": "Filtro: Concluída",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Reabrir a tarefa",
+                "exato": true,
+                "dentro": {
+                  "css": "div.group.rounded-lg:has-text('Enviar o endereço da clínica para a Fernanda')"
+                }
+              },
+              "rotulo": "Clique para reabrir",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "As tarefas em andamento",
+          "texto": "Com \"Em andamento\", aparecem só as tarefas que alguém marcou como \"Em andamento\". Essa marcação é feita à mão, no formulário da tarefa, no campo \"Situação\".",
+          "dica": "Para voltar à lista normal, escolha \"Em aberto\" no mesmo seletor.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Concluída')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Em andamento",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Montar a escala de férias da recepção')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Em andamento')"
+              },
+              "rotulo": "Filtro: Em andamento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.group.rounded-lg:has-text('Montar a escala de férias da recepção')"
+              },
+              "rotulo": "Marcada em andamento",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tarefas-calendario",
+      "titulo": "Ver as tarefas no calendário",
+      "objetivo": "Ver as tarefas do mês num calendário, abrir uma tarefa e criar outra já com o dia escolhido.",
+      "papel": "admin",
+      "busca": [
+        "calendário de tarefas",
+        "tarefas do mês",
+        "ver por data",
+        "agenda de tarefas",
+        "tarefa no dia",
+        "criar tarefa no calendário"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Trocar para o calendário",
+          "rota": "/app/tasks",
+          "texto": "Clique em \"Calendário\" para ver as tarefas do mês, cada uma no dia do seu prazo. O dia de hoje fica marcado com um círculo colorido. As tarefas atrasadas aparecem em vermelho. As setas dos lados do nome do mês passam para o mês anterior e para o próximo.",
+          "dica": "Num dia com mais de três tarefas, aparece \"+1 mais\", \"+2 mais\"… Esse aviso não abre nada; para ver todas, volte para \"Lista\". O calendário mostra as mesmas tarefas do seletor de situação (com \"Em aberto\", as concluídas ficam de fora), e as tarefas sem prazo não aparecem nele.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Calendário",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "h2.capitalize"
+              },
+              "rotulo": "Mês que você está vendo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.grid.grid-cols-7 > div:has(> span.bg-primary)"
+              },
+              "rotulo": "Hoje",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Mês anterior",
+                "exato": true
+              },
+              "rotulo": "Mês anterior",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Próximo mês",
+                "exato": true
+              },
+              "rotulo": "Próximo mês",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Abrir uma tarefa pelo calendário",
+          "texto": "Clique no nome de uma tarefa para abrir o formulário \"Editar tarefa\" com tudo o que já foi preenchido.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar o retorno da Fernanda com o Dr. Paulo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "A tarefa aberta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Criar uma tarefa num dia",
+          "texto": "Clique num espaço vazio de um dia para abrir \"Nova tarefa\" com aquele dia já em \"Prazo\". O horário começa às 9h e pode ser trocado. Escreva o que precisa ser feito e clique em \"Salvar\".",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "div.grid.grid-cols-7 > div:has(> span.bg-primary) + div > span, div.grid.grid-cols-7 > div:has(> span.bg-primary):not(:has(+ div > span)) > span"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "O que precisa ser feito"
+              },
+              "valor": "Lembrar os pacientes do jejum para o exame de sangue"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Detalhes"
+              },
+              "valor": "Exame é na segunda às 7h; jejum de 8 horas."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Prazo"
+              },
+              "rotulo": "Dia já preenchido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Horário"
+              },
+              "rotulo": "Hora",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "A tarefa no dia",
+          "texto": "Depois de \"Salvar\", a tarefa aparece no dia escolhido.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Lembrar os pacientes do jejum para o exame de sangue",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Lembrar os pacientes do jejum para o exame de sangue",
+                "exato": true
+              },
+              "rotulo": "Tarefa nova",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tarefas-ligadas-a-negocio",
+      "titulo": "Tarefas ligadas a um negócio",
+      "objetivo": "Ir da tarefa para o negócio do funil e ver as tarefas daquele negócio.",
+      "papel": "admin",
+      "busca": [
+        "tarefa do negócio",
+        "tarefa do lead",
+        "abrir negócio da tarefa",
+        "funil e tarefas",
+        "tarefas do cliente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O nome do negócio é um atalho",
+          "rota": "/app/tasks",
+          "texto": "Quando uma tarefa está ligada a um negócio do funil, o nome do negócio aparece no fim da linha. Clique nele para abrir o negócio.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Primeira consulta nutricional — Mariana",
+                "exato": true
+              },
+              "rotulo": "Abrir o negócio",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Primeira consulta nutricional — Mariana",
+            "exato": true
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "As tarefas dentro do negócio",
+          "texto": "O funil abre com a ficha do negócio por cima. Na seção \"Tarefas\" da ficha aparecem só as tarefas deste negócio, inclusive as já concluídas, e, ao lado do título, a conta de quantas estão abertas e quantas estão atrasadas. Dali também dá para criar uma tarefa em \"Nova tarefa\": ela já nasce ligada ao negócio.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Primeira consulta nutricional — Mariana",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "section[aria-labelledby='dossie-tarefas']"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section[aria-labelledby='dossie-tarefas']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section[aria-labelledby='dossie-tarefas']"
+              },
+              "rotulo": "Tarefas deste negócio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova tarefa",
+                "exato": true,
+                "dentro": {
+                  "css": "section[aria-labelledby='dossie-tarefas']"
+                }
+              },
+              "rotulo": "Criar tarefa já ligada",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Criar uma tarefa pelo negócio",
+          "texto": "Clique em \"Nova tarefa\", na seção \"Tarefas\" da ficha. O formulário é o mesmo da tela de Tarefas, com duas diferenças: a tarefa já nasce ligada a este negócio, e o campo \"Responsável\" já vem com você (\"Eu\"), porque quem anota o próximo passo do negócio quase sempre é quem vai cumpri-lo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova tarefa",
+                "exato": true,
+                "dentro": {
+                  "css": "section[aria-labelledby='dossie-tarefas']"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog",
+                "nome": "Nova tarefa",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Responsável",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Nova tarefa",
+                  "exato": true
+                }
+              },
+              "rotulo": "Já vem com você",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

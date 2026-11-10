@@ -17,6 +17,7 @@ vi.mock("@/lib/agent-engine/pacing/store", () => ({
   recordSend: async () => undefined,
 }));
 
+import { rodarEmRajada, type DesfechoDeUm } from "@/lib/campanhas/rajada";
 import { ocupaONumero, rodarUmaRodadaDeCampanha } from "@/lib/campanhas/rodada";
 
 const r = (detalhe: string, concluidas = 0) => ({ concluidas, detalhe });
@@ -159,5 +160,48 @@ describe("rodada com duas campanhas no mesmo número", () => {
     const r = await rodarUmaRodadaDeCampanha(cenario({ contact_id: "contato-1", contacts: contato(true) }), AGORA);
     expect(r.detalhe).toMatch(/antiga:pulado:/);
     expect(r.detalhe).not.toContain("seguinte:");
+  });
+});
+
+describe("a campanha RÁPIDA segue a mesma régua", () => {
+  const rajada = (pendentes: number, desfecho: DesfechoDeUm, aoConcluir: DesfechoDeUm) => {
+    let relogio = 0;
+    const fila = Array.from({ length: pendentes }, (_, i) => i);
+    return rodarEmRajada<number>(
+      {
+        buscarLote: async (n) => fila.splice(0, n),
+        enviarUm: async () => desfecho,
+        aindaEmAndamento: async () => true,
+        concluirSeAcabou: async () => aoConcluir,
+        agora: () => relogio,
+        esperar: async (ms) => {
+          relogio += ms;
+        },
+      },
+      { concorrencia: 4, intervaloEntreIniciosMs: 167, tamanhoDoLote: 24, prazoMs: 38_000 },
+    );
+  };
+  const nada = { enviadas: 0, pulados: 0, concluidas: 0 };
+
+  it("⭐ parada no teto diário dela sem enviar ninguém: o número fica livre para a seguinte", async () => {
+    const r = await rajada(5, { ...nada, detalhe: "ritmo:teto_diario" }, { ...nada, detalhe: "aguardando" });
+    expect(r.detalhe).toBe("ritmo:teto_diario");
+    expect(ocupaONumero(r)).toBe(false);
+  });
+
+  it("ninguém pronto ainda (next_attempt_at no futuro): o número fica livre", async () => {
+    const r = await rajada(0, { ...nada, detalhe: "enviado:sent:principal" }, { ...nada, detalhe: "aguardando" });
+    expect(r.detalhe).toBe("aguardando");
+    expect(ocupaONumero(r)).toBe(false);
+  });
+
+  it("controle: a rajada que USOU o número segura a vez da seguinte", async () => {
+    const r = await rajada(
+      3,
+      { enviadas: 1, pulados: 0, concluidas: 0, detalhe: "enviado:sent:principal" },
+      { ...nada, detalhe: "aguardando" },
+    );
+    expect(r.enviadas).toBe(3);
+    expect(ocupaONumero(r)).toBe(true);
   });
 });

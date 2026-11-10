@@ -1,0 +1,424 @@
+{
+  "id": "admin-usage",
+  "titulo": "Usage (Admin)",
+  "tela": "/admin/usage",
+  "resumo": "Quanto cada empresa do servidor conversou e gastou com IA, dia a dia e somado, para você saber quem usa mais e quanto custa.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de uso",
+      "objetivo": "Abrir a tela \"Usage\" do Admin e ler os três gráficos de consumo da instalação.",
+      "papel": "admin",
+      "busca": [
+        "consumo de ia",
+        "quanto gastei com ia",
+        "uso por empresa",
+        "mensagens por dia",
+        "custo da inteligência artificial",
+        "tokens por dia",
+        "relatório de uso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica o consumo",
+          "texto": "No Admin, o item \"Usage\" do menu (a palavra inglesa para \"uso\") abre a tela \"Uso & Custo\". Ela mostra quanto as empresas da instalação conversaram e quanto gastaram com IA. A tela junta todas as empresas do servidor, e não só a sua. No Admin, cada empresa se chama \"tenant\".",
+          "dica": "Só quem é administrador da plataforma entra no Admin. Para um atendente ou gerente de uma empresa, esta área não abre. A faixa amarela \"Sem SMTP configurado\", no alto, é um aviso geral do Admin: o envio de e-mails ainda não está configurado. O item \"E-mail\" do menu leva ao ajuste.",
+          "rota": "/admin/usage",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Usage",
+                "exato": true
+              },
+              "rotulo": "Usage no menu do Admin",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Uso & Custo",
+                "exato": true
+              },
+              "rotulo": "Consumo de todas as empresas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O período",
+          "texto": "No canto direito fica o período que a tela inteira mostra. Ela abre em \"Últimos 30 dias\". Os gráficos e a tabela de baixo sempre falam desse mesmo período. Na última lição você aprende a trocá-lo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox"
+              },
+              "rotulo": "Período da tela",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Mensagens e custo por dia",
+          "texto": "\"Mensagens / dia\" soma as mensagens enviadas e recebidas por todas as empresas em cada dia, inclusive as de contatos pessoais, que a tabela lá de baixo deixa de fora. \"Custo AI / dia (R$)\" mostra quanto a IA custou em cada dia. Atenção: apesar do \"R$\" no título, os valores estão em dólar (US$), a moeda em que o provedor de IA cobra. Quando um gráfico não tem nada no período, ele mostra \"Sem dados no período\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h3:has-text('Mensagens / dia'))"
+              },
+              "rotulo": "Mensagens de todas as empresas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h3:has-text('Custo AI / dia'))"
+              },
+              "rotulo": "Gasto com IA, em dólar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Tokens: o que a IA lê e escreve",
+          "texto": "\"AI Tokens / dia\" conta os tokens usados em cada dia. Token é um pedacinho de texto: a IA lê a conversa e escreve a resposta em tokens, e o provedor cobra por eles. Por isso este gráfico costuma subir e descer junto com o do custo. Os números do eixo usam \"k\" para mil: \"20k\" são 20 mil tokens.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h3:has-text('AI Tokens / dia'))"
+              },
+              "rotulo": "Tokens usados pela IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O número de um dia",
+          "texto": "Pare o mouse sobre qualquer ponto de um gráfico para ver a data e o número daquele dia. Aqui, o balão mostra quantas mensagens houve no dia apontado.",
+          "antes": [
+            {
+              "acao": "hover",
+              "alvo": {
+                "css": ".recharts-surface",
+                "n": 0
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": ".recharts-default-tooltip",
+                "n": 0
+              },
+              "rotulo": "Data e número do dia",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "uso-por-empresa",
+      "titulo": "Quanto cada empresa usa",
+      "objetivo": "Ler a tabela \"Uso por tenant\" e achar quem gasta mais com IA e quem está sem agente no ar.",
+      "papel": "admin",
+      "busca": [
+        "qual empresa gasta mais",
+        "custo de ia por cliente",
+        "empresa sem agente",
+        "mensagens por empresa",
+        "uso por tenant",
+        "tabela de consumo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A tabela por empresa",
+          "texto": "Abaixo dos gráficos fica \"Uso por tenant\": uma linha por empresa da instalação, com os números do período escolhido. Embaixo do nome vem o identificador curto da empresa no sistema. A empresa que mais gasta com IA vem primeiro; em caso de empate, a que tem mais mensagens.",
+          "rota": "/admin/usage",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "row",
+                "nome": "Clínica Bem Viver"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Uso por tenant",
+                "exato": true
+              },
+              "rotulo": "Uso de cada empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "table"
+              },
+              "rotulo": "Uma linha por empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que cada coluna conta",
+          "texto": "\"Mensagens\" conta as enviadas e recebidas no período, fora as dos contatos marcados como pessoais. \"Conversas\" conta as conversas que começaram no período. \"Invoc. AI\" conta cada vez que o sistema chamou a IA: respostas do agente, testes, leitura de áudios, base de conhecimento e outras tarefas. \"Tokens\" soma o texto que ela leu e escreveu. \"Custo AI\" é quanto isso custou, em dólar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Mensagens",
+                "exato": true
+              },
+              "rotulo": "Mensagens do período",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Conversas",
+                "exato": true
+              },
+              "rotulo": "Conversas que começaram",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Invoc. AI",
+                "exato": true
+              },
+              "rotulo": "Chamadas feitas à IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Tokens",
+                "exato": true
+              },
+              "rotulo": "Texto lido e escrito pela IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Custo AI",
+                "exato": true
+              },
+              "rotulo": "Quanto custou, em dólar",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quem mais gasta com IA",
+          "texto": "A FisioMove Reabilitação está no topo: é a empresa que mais gastou com IA nos últimos 30 dias. A coluna \"Agente\" mostra o nome do atendente de IA publicado nela, o \"Téo — Agenda da Fisio\". Quando uma empresa tem mais de um agente publicado, aparece o de maior prioridade. Atenção: um agente pausado continua aparecendo aqui, então o nome nesta coluna não garante que ele esteja respondendo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "FisioMove Reabilitação"
+              },
+              "rotulo": "Maior gasto com IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Empresa sem agente no ar",
+          "texto": "Na linha da OdontoVita, a coluna \"Agente\" diz \"Nenhum agente publicado\": essa empresa não tem atendente de IA no ar, e as colunas de IA dela estão zeradas mesmo com mensagens no período. Se o cliente contratou o atendimento com IA, esse é o sinal de que algo ficou para trás.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Nenhum agente publicado",
+                "exato": true
+              },
+              "rotulo": "Sem atendente de IA no ar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Agente publicado, mas sem uso",
+          "texto": "A Clínica Bem Viver tem a \"Bia — Recepção virtual\" publicada, mas a IA está zerada: no período, a Bia não respondeu ninguém. Ter o agente publicado não basta. Se a IA de uma empresa fica zerada com o agente no ar, vale conferir se ele não está pausado ou sem número de WhatsApp ligado.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Clínica Bem Viver"
+              },
+              "rotulo": "Agente no ar, IA zerada",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "periodo-e-planilha",
+      "titulo": "Trocar o período e baixar a planilha",
+      "objetivo": "Ver o uso dos últimos 7 ou 90 dias e baixar a tabela numa planilha.",
+      "papel": "admin",
+      "busca": [
+        "uso da última semana",
+        "consumo dos últimos 90 dias",
+        "mudar período do relatório",
+        "exportar planilha de uso",
+        "baixar csv de consumo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrindo os períodos",
+          "texto": "Clique no período, no canto direito, para ver as opções: \"Últimos 7 dias\", \"Últimos 30 dias\" e \"Últimos 90 dias\".",
+          "rota": "/admin/usage",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "option",
+                "nome": "Últimos 7 dias"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Os três períodos",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Últimos 7 dias"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Só a última semana",
+          "texto": "Com \"Últimos 7 dias\", os gráficos passam a mostrar só os 7 dias mais recentes, e a tabela recalcula os números de cada empresa para essa semana. Bom para ver se o movimento de agora está normal.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Últimos 7 dias"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "combobox"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox"
+              },
+              "rotulo": "Período trocado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h3:has-text('Mensagens / dia'))"
+              },
+              "rotulo": "Só os últimos 7 dias",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Três meses de uso",
+          "texto": "Com \"Últimos 90 dias\", dá para ver a tendência. Repare no custo: ele sobe por volta de 40 dias atrás, quando a FisioMove Reabilitação começou a usar a IA. Na tabela abaixo do gráfico, o NutriVida Consultório passa para o topo ao somar os três meses.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Últimos 90 dias"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "combobox"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h3:has-text('Custo AI / dia'))"
+              },
+              "rotulo": "O custo sobe quando a FisioMove começa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Baixar a planilha",
+          "texto": "O botão \"Exportar CSV\", acima da tabela, baixa a tabela numa planilha, com uma linha por empresa e os números do período escolhido; o nome do arquivo diz o período, como \"usage-90d.csv\". Abra no Google Planilhas (Arquivo > Importar). No Excel, use Dados > De Texto/CSV em vez de dar dois cliques, senão tudo cai numa coluna só. Atenção: a coluna \"custo_reais\" está, na verdade, em dólar, como na tela.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Exportar CSV",
+                "exato": true
+              },
+              "rotulo": "Baixa a tabela numa planilha",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

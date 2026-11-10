@@ -21,6 +21,11 @@ interface Props {
    * isso é ANTES de a pessoa buscar três credenciais no painel, não depois.
    */
   oficialPodeReceber: boolean;
+  /**
+   * O exemplo do telefone do pareamento, do país da organização. O onboarding não tem o
+   * `AuthProvider`, então o país vem da página, não do contexto (ausente = o leitor tolerante, o Brasil).
+   */
+  telefoneExemplo?: string;
 }
 
 /**
@@ -220,6 +225,7 @@ export function ConnectWhatsappClient({
   wahaConfigured,
   sessionName,
   oficialPodeReceber,
+  telefoneExemplo,
 }: Props) {
   const t = useT();
   const [pending, startTransition] = useTransition();
@@ -459,7 +465,7 @@ export function ConnectWhatsappClient({
             recarregaria a imagem quando o WAHA girasse o QR por trás.
           */}
           {showQr && info.channel_session_id && (
-            <PairingOptions key={info.channel_session_id} sessionId={info.channel_session_id} qr={
+            <PairingOptions key={info.channel_session_id} sessionId={info.channel_session_id} telefoneExemplo={telefoneExemplo} qr={
             <div className="mt-3 flex flex-col items-center gap-2">
               {qrFailed ? (
                 <p className="text-xs text-muted-foreground">

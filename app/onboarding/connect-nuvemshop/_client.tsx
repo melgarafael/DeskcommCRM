@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
 import { Button } from "@/components/ui/button";
 import { connectNuvemshop } from "@/app/actions/integrations/connectNuvemshop";
@@ -36,7 +37,9 @@ export function ConnectNuvemshopClient() {
             startTransition(async () => {
               const res = await connectNuvemshop();
               if (res && !res.ok) {
-                if (res.error === "not_configured") {
+                if (res.error === "mfa_required") {
+                  irAoDesafioDeMfa();
+                } else if (res.error === "not_configured") {
                   toast.message(t("Nuvemshop ainda não configurado neste ambiente."), {
                     description: t("Pule por enquanto e configure depois em Integrações."),
                   });

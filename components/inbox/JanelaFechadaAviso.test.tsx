@@ -13,8 +13,9 @@
  * `key` e só o endereço os separa).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 
 const mutate = vi.fn();
 
@@ -123,5 +124,48 @@ describe("JanelaFechadaAviso", () => {
 
     expect(screen.getByRole("textbox")).toHaveValue("https://exemplo.com/salva.jpg");
     expect(screen.getByRole("button", { name: /Enviar modelo/ })).toBeEnabled();
+  });
+
+  async function enviarERecusar(error_code: string, error_message: string) {
+    salvos.valores = { "header:1": "https://exemplo.com/salva.jpg" };
+    const user = userEvent.setup();
+    montar();
+    await user.selectOptions(screen.getByRole("combobox"), "aviso_debriefing_adv|pt_BR");
+    await user.click(screen.getByRole("button", { name: /Enviar modelo/ }));
+    const { onSuccess } = mutate.mock.calls[0]![1] as { onSuccess: (r: unknown) => void };
+    act(() => onSuccess({ data: { status: "failed", error_code, error_message } }));
+    return vi.mocked(toast.error).mock.calls.at(-1) as [string, { description: string }];
+  }
+
+  it("modelo recusado com texto cru do canal: o aviso não mostra o endereço interno", async () => {
+    const [titulo, opcoes] = await enviarERecusar(
+      "canal_x_error", "fetch failed http://servico-interno:3000/api/sendText",
+    );
+    expect(titulo).toBe("Não consegui enviar o modelo.");
+    expect(opcoes.description).toBe("Não foi possível enviar esta mensagem.");
+  });
+
+  it("o caso de 21/09: falta o valor do cabeçalho, e o aviso diz isso", async () => {
+    const [, opcoes] = await enviarERecusar("canal_x_error", "template_missing_values: 1");
+    expect(opcoes.description).toBe("Falta o valor de uma variável do modelo para este contato.");
+  });
+
+  it("modelo recusado pela plataforma (132000): a causa, não 'confira a conexão'", async () => {
+    const [, opcoes] = await enviarERecusar(
+      "meta_error", "meta_132000: (#132000) Number of parameters does not match the expected number of params",
+    );
+    expect(opcoes.description).toBe("Os valores enviados não batem com as variáveis do modelo.");
+  });
+
+  it("modelo recusado com código sem frase nossa (100): o texto da plataforma", async () => {
+    const [, opcoes] = await enviarERecusar("meta_error", "meta_100: Parameter name is missing or empty");
+    expect(opcoes.description).toBe("(#100) Parameter name is missing or empty");
+  });
+
+  it("modelo recusado pelo modo de teste: o aviso conta a frase nossa", async () => {
+    const [, opcoes] = await enviarERecusar(
+      "pre_go_live", "Envio automático bloqueado pelo modo de teste do canal.",
+    );
+    expect(opcoes.description).toBe("Envio automático bloqueado pelo modo de teste do canal.");
   });
 });

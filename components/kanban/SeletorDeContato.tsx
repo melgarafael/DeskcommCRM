@@ -124,6 +124,7 @@ export function SeletorDeContato({ escolhido, onEscolher }: Props) {
           onOpenChange={setCriando}
           nomeInicial={termo}
           onCriado={escolher}
+          permitirIniciarConversa={false}
         />
       )}
     </div>

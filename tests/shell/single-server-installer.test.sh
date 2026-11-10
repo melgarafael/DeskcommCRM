@@ -116,6 +116,8 @@ check "instalador entrega a sincronizacao ao Supabase" \
   grep -q 'sincronizar_signup_mode_do_gotrue' "$INSTALLER"
 check "override leva a chave oficial DISABLE_SIGNUP ao container auth" \
   grep -qF 'GOTRUE_DISABLE_SIGNUP: "${DISABLE_SIGNUP:-false}"' "$OVERRIDE"
+check "override reaproveita as conexoes do Auth com o Postgres (supabase/auth#2831)" \
+  grep -qF 'GOTRUE_DB_MAX_IDLE_POOL_SIZE: "${GOTRUE_DB_MAX_IDLE_POOL_SIZE:-10}"' "$OVERRIDE"
 
 if [[ "$FAILS" -ne 0 ]]; then
   printf '\n%d teste(s) falharam.\n' "$FAILS"

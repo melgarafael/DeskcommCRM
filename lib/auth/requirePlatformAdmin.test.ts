@@ -6,7 +6,7 @@ vi.mock("next/navigation", () => ({
     throw new Error(`redirect:${destino}`);
   },
 }));
-vi.mock("@/lib/auth/server", () => ({ mfaEmDivida: async () => h.divida }));
+vi.mock("@/lib/auth/server", () => ({ mfaEmDividaEstrita: async () => h.divida }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {

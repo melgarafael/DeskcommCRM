@@ -1,0 +1,889 @@
+{
+  "id": "respostas-rapidas",
+  "titulo": "Respostas rápidas",
+  "tela": "/app/templates",
+  "resumo": "Textos, imagens e áudios prontos que você e a equipe usam na Inbox com um clique, para não digitar a mesma coisa toda vez.",
+  "licoes": [
+    {
+      "id": "conhecendo-respostas-rapidas",
+      "titulo": "Conhecendo as respostas rápidas",
+      "objetivo": "Entender o que cada linha da lista mostra: de quem é a resposta, se leva imagem ou áudio e o que dá para fazer com ela.",
+      "papel": "admin",
+      "busca": [
+        "respostas rápidas",
+        "mensagens prontas",
+        "textos salvos",
+        "modelos de mensagem",
+        "scripts de atendimento",
+        "resposta padrão",
+        "onde ficam as respostas prontas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista de respostas prontas",
+          "texto": "Respostas rápidas são mensagens que você salva uma vez e usa sempre que precisar, sem digitar de novo: horários, endereço, preparo para exame. Cada linha mostra o nome da resposta e o começo do texto. Elas aparecem na Inbox, logo acima do campo de mensagem, na mesma ordem desta lista.",
+          "rota": "/app/templates",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-rfd-droppable-id='respostas-rapidas']"
+              },
+              "rotulo": "Suas respostas prontas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova resposta rápida",
+                "exato": true
+              },
+              "rotulo": "Criar uma nova",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Da equipe ou só sua",
+          "texto": "O selo ao lado do nome diz de quem é a resposta. \"Compartilhado\" é da equipe: todos usam. \"Pessoal\" é só de quem criou: aqui, a \"Confirmação de consulta\" é da Helena, que é quem está usando o sistema nesta tela, e só ela pode mudá-la. Os colegas não veem as respostas pessoais uns dos outros.",
+          "dica": "A conta que instalou o sistema é a exceção: ela vê também as respostas pessoais dos colegas, na lista e nos botões da Inbox, com o selo \"Pessoal\" e sem lápis nem lixeira.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Compartilhado",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Da equipe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Pessoal",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Confirmação de consulta')"
+                }
+              },
+              "rotulo": "Só de quem criou",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Respostas com imagem ou áudio",
+          "texto": "Uma resposta rápida pode levar imagens junto com o texto, ou ser só um áudio. O selo \"Imagens\" mostra quantas imagens ela leva. O selo \"🎧 Áudio\" marca a resposta que é um áudio gravado; no lugar do texto aparece \"Resposta rápida de áudio\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Imagens 1",
+                "exato": true
+              },
+              "rotulo": "Leva 1 imagem",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "🎧 Áudio",
+                "exato": true
+              },
+              "rotulo": "É um áudio",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Os botões de cada linha",
+          "texto": "À direita de cada linha ficam o lápis, que abre a resposta para editar, e a lixeira, que apaga. Os pontinhos à esquerda servem para mudar a ordem: clique neles e arraste a linha para cima ou para baixo. Esses botões só aparecem nas respostas que você pode mudar.",
+          "dica": "Quem é atendente vê os botões só nas respostas pessoais dele. As compartilhadas só gerente e administrador mudam.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[aria-label='Arrastar para reordenar']",
+                "n": 0
+              },
+              "rotulo": "Arrastar para mudar a ordem",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar resposta rápida",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Editar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir resposta rápida",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Excluir",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "criar-resposta",
+      "titulo": "Criar uma resposta rápida",
+      "objetivo": "Salvar um texto pronto, com o nome do cliente trocado sozinho, e encontrá-lo na Inbox.",
+      "papel": "admin",
+      "busca": [
+        "criar resposta rápida",
+        "nova mensagem pronta",
+        "salvar texto para reutilizar",
+        "colocar nome do cliente na mensagem",
+        "atalho de mensagem",
+        "compartilhar resposta com a equipe"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Começar uma nova",
+          "texto": "Clique em \"Nova resposta rápida\", no alto da tela. Abre uma janela para escrever a resposta.",
+          "rota": "/app/templates",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova resposta rápida",
+                "exato": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova resposta rápida",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome e mensagem",
+          "texto": "Em \"Título\" vai o nome curto que aparece no botão da Inbox. Em \"Mensagem\" vai o texto que o cliente vai receber. Escreva {{primeiro_nome}} onde quiser o primeiro nome do cliente, ou {{nome}} para o nome completo: na Inbox, ele é trocado sozinho pelo nome de quem está na conversa.",
+          "dica": "Se a Inbox não souber o nome do cliente (nem no cadastro, nem no WhatsApp), o {{primeiro_nome}} fica escrito do jeito que está, aparece um aviso amarelo e o envio fica travado até você apagar ou trocar essa parte. Para não depender do nome, escreva um texto de reserva depois de uma barra: com {{primeiro_nome|\"cliente\"}}, a palavra \"cliente\" entra quando o nome falta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova resposta rápida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Título",
+                "exato": true
+              },
+              "valor": "Pagamento por Pix"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Mensagem",
+                "exato": true
+              },
+              "valor": "Oi, {{primeiro_nome}}! Aceitamos Pix, sim. A chave é o CNPJ da clínica: 12.345.678/0001-90. Depois é só mandar o comprovante por aqui."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Título",
+                "exato": true
+              },
+              "rotulo": "Nome do botão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Mensagem",
+                "exato": true
+              },
+              "rotulo": "Texto para o cliente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "para personalizar",
+                "exato": false
+              },
+              "rotulo": "Nome do cliente trocado sozinho",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Atalho e equipe",
+          "texto": "O \"Atalho (opcional)\" é uma palavra curta para achar a resposta rápido: na Inbox, com o campo de mensagem vazio, digite / e o atalho (aqui, /pix) e clique na resposta que aparece na lista. Ligue \"Compartilhar com a equipe\" para todos usarem a resposta; desligado, ela fica só para você. Depois de criada, isso não muda mais. No fim, clique em \"Criar resposta rápida\".",
+          "dica": "Só gerente e administrador veem a opção de compartilhar. O que um atendente cria é sempre pessoal.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Atalho (opcional)",
+                "exato": true
+              },
+              "valor": "pix"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Compartilhar com a equipe",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Atalho (opcional)",
+                "exato": true
+              },
+              "rotulo": "Palavra para achar com /",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Compartilhar com a equipe",
+                "exato": true
+              },
+              "rotulo": "Ligado: a equipe toda usa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar resposta rápida",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "A resposta nova entra no topo",
+          "texto": "Ao clicar em \"Criar resposta rápida\", a janela fecha e a resposta aparece no alto da lista, com o selo \"Compartilhado\". Toda resposta nova entra em primeiro lugar; para mudar a posição, arraste-a pelos pontinhos.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar resposta rápida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Pagamento por Pix",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Pagamento por Pix')"
+              },
+              "rotulo": "Criada no topo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Pronta para usar na Inbox",
+          "texto": "Abra uma conversa na Inbox: a resposta nova já está entre os botões acima do campo de mensagem. Um clique coloca o texto no campo, com o nome do cliente já trocado. Atenção: ele substitui o que você já tinha escrito. Nada é enviado sem você conferir e clicar em enviar. Se os botões estiverem apagados, a conversa ainda não pode receber resposta (por exemplo, falta assumi-la).",
+          "rota": "/app/inbox",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-conversation-id=\"be100000-0000-4000-8000-000000000001\"]"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "barra-de-recursos"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "barra-de-recursos"
+              },
+              "rotulo": "Respostas rápidas na Inbox",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Pagamento por Pix",
+                "exato": true,
+                "dentro": {
+                  "testid": "barra-de-recursos"
+                }
+              },
+              "rotulo": "A que você criou",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "imagem-e-audio",
+      "titulo": "Respostas com imagem ou áudio",
+      "objetivo": "Saber como pôr imagens numa resposta rápida, criar uma resposta de áudio e conferir o que já está salvo.",
+      "papel": "admin",
+      "busca": [
+        "resposta rápida com imagem",
+        "mandar foto pronta",
+        "resposta de áudio",
+        "áudio pronto para o cliente",
+        "anexar imagem na resposta",
+        "formato de áudio aceito"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Imagens junto com o texto",
+          "texto": "Na janela \"Nova resposta rápida\", abaixo do atalho, fica a parte \"Imagens (opcional)\". Clique em \"Adicionar imagem\" e escolha uma foto do seu computador: vale JPG ou PNG, até 5 MB cada, no máximo 5 imagens. Na Inbox, a imagem entra junto com o texto, e você vê a prévia antes de enviar.",
+          "rota": "/app/templates",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova resposta rápida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Imagens (opcional)",
+                "exato": true
+              },
+              "rotulo": "Imagens desta resposta",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Adicionar imagem",
+                "exato": true
+              },
+              "rotulo": "Escolher foto",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Áudio",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma resposta que é um áudio",
+          "texto": "No alto da janela, em \"Tipo de resposta rápida\", clique em \"Áudio\". O campo de mensagem dá lugar a \"Arquivo de áudio\": escolha o arquivo gravado (OGG, MP3, AAC, AMR ou WAV, até 16 MB). A resposta de áudio não tem texto: na Inbox, o clique abre a janela \"Enviar anexo\" com o arquivo pronto, e você confere e clica em \"Enviar\". Para ouvir antes, use o lápis aqui nesta tela.",
+          "dica": "O áudio do gravador do iPhone e do Mac (M4A) não é aceito e nem aparece na hora de escolher o arquivo. Converta para MP3 antes.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Áudio",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.space-y-2:has(> div.flex.gap-1 > button)",
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Texto ou Áudio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Arquivo de áudio",
+                "exato": true
+              },
+              "rotulo": "Escolha o arquivo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Conferir a imagem salva",
+          "texto": "Para ver o que uma resposta já leva, clique no lápis dela. No \"Cartão da clínica\", a imagem aparece em miniatura abaixo de \"Imagens (opcional)\". O X no canto tira a imagem, mas nada muda até você clicar em \"Salvar\": \"Cancelar\" devolve tudo como estava.",
+          "rota": "/app/templates",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar resposta rápida",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Cartão da clínica')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "img",
+                "nome": "Imagem da resposta rápida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "img",
+                "nome": "Imagem da resposta rápida",
+                "exato": true
+              },
+              "rotulo": "Imagem salva",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover imagem",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Tirar a imagem",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Ouvir o áudio salvo",
+          "texto": "Numa resposta de áudio, o lápis abre a janela com o tocador do áudio atual: dê o play para ouvir antes de usar (o tempo do áudio aparece depois do play). Para trocar o áudio, escolha outro arquivo em \"Arquivo de áudio\" e clique em \"Salvar\".",
+          "rota": "/app/templates",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar resposta rápida",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Orientações da fisioterapia')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "audio",
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Arquivo de áudio",
+                "exato": true
+              },
+              "rotulo": "Trocar por outro",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "audio",
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Áudio atual",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editar-ordenar-excluir",
+      "titulo": "Editar, mudar a ordem e excluir",
+      "objetivo": "Manter a lista em dia: corrigir um texto, deixar as mais usadas no começo e apagar o que não serve mais.",
+      "papel": "admin",
+      "busca": [
+        "editar resposta rápida",
+        "mudar texto da mensagem pronta",
+        "mudar ordem das respostas",
+        "arrastar resposta",
+        "apagar resposta rápida",
+        "excluir mensagem pronta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Corrigir um texto",
+          "texto": "Clique no lápis da resposta que quer mudar. A janela \"Editar resposta rápida\" abre com tudo preenchido: altere o que precisar e clique em \"Salvar\". O botão \"Compartilhar com a equipe\" fica esmaecido, sem como clicar, porque não dá para mudar isso depois de criada.",
+          "dica": "Para transformar uma resposta pessoal em compartilhada, crie uma nova com a opção ligada e exclua a antiga.",
+          "rota": "/app/templates",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar resposta rápida",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Confirmação de consulta')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Mensagem",
+                "exato": true
+              },
+              "valor": "Oi, {{primeiro_nome}}! Passando para confirmar sua consulta de amanhã. Posso manter o horário? Se precisar remarcar, é só responder aqui."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Mensagem",
+                "exato": true
+              },
+              "rotulo": "Texto corrigido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Compartilhar com a equipe",
+                "exato": true
+              },
+              "rotulo": "Não muda depois de criada",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Mudar a ordem",
+          "texto": "As respostas mais usadas ficam melhor no começo, porque a Inbox mostra os botões na ordem desta lista. Clique nos pontinhos à esquerda de uma resposta e arraste para cima ou para baixo. Aqui, a \"Confirmação de consulta\" foi levada para o primeiro lugar.",
+          "dica": "Também dá pelo teclado: com o foco nos pontinhos, aperte a barra de espaço, use as setas ↑ e ↓ e aperte espaço de novo para soltar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "press",
+              "tecla": "Space",
+              "alvo": {
+                "css": "[aria-label='Arrastar para reordenar']",
+                "dentro": {
+                  "css": "li:has-text('Confirmação de consulta')"
+                }
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "ArrowUp"
+            },
+            {
+              "acao": "press",
+              "tecla": "ArrowUp"
+            },
+            {
+              "acao": "press",
+              "tecla": "ArrowUp"
+            },
+            {
+              "acao": "press",
+              "tecla": "Space"
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Confirmação de consulta')"
+              },
+              "rotulo": "Agora é a primeira",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Excluir uma resposta",
+          "texto": "Clique na lixeira da resposta que não serve mais. Antes de apagar, aparece a pergunta \"Excluir esta resposta rápida?\": clique em \"Excluir\" para confirmar ou em \"Cancelar\" para desistir. Não dá para desfazer, e as imagens ou o áudio dela são apagados junto.",
+          "rota": "/app/templates",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir resposta rápida",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Preparo para exame de sangue')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Confirme antes de apagar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true
+              },
+              "rotulo": "Apagar de vez",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Excluir",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Saiu da lista",
+          "texto": "Depois de confirmar, o \"Preparo para exame de sangue\" some desta lista e dos botões da sua Inbox. Para os colegas, ele some assim que a Inbox deles recarregar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-rfd-droppable-id='respostas-rapidas']"
+              },
+              "rotulo": "Sem o Preparo para exame de sangue",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "visao-do-atendente",
+      "titulo": "O que o atendente vê",
+      "objetivo": "Entender o que muda quando quem entra na tela é um atendente, e não um gerente ou administrador.",
+      "papel": "agent",
+      "busca": [
+        "atendente não consegue editar resposta",
+        "permissão respostas rápidas",
+        "por que não aparece o lápis",
+        "resposta pessoal do atendente",
+        "quem pode compartilhar resposta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista vista pela Ana",
+          "texto": "A Ana é atendente. Ela vê e usa todas as respostas compartilhadas, mas não tem lápis, lixeira nem pontinhos nelas: só gerente e administrador mudam o que é da equipe. A \"Confirmação de consulta\", que é pessoal da Helena, não aparece para ela.",
+          "rota": "/app/templates",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Cartão da clínica')"
+              },
+              "rotulo": "Da equipe: a Ana só usa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova resposta rápida",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que a Ana cria é só dela",
+          "texto": "Na janela \"Nova resposta rápida\" da Ana não existe a opção \"Compartilhar com a equipe\": tudo o que um atendente cria fica pessoal. Para uma resposta valer para todos, peça a um gerente ou administrador que a crie.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova resposta rápida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Título",
+                "exato": true
+              },
+              "valor": "Lembrete dos exercícios"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Mensagem",
+                "exato": true
+              },
+              "valor": "{{primeiro_nome}}, não esqueça dos alongamentos que combinamos: 3 vezes por semana, 10 minutos cada."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "Sem a opção de compartilhar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar resposta rápida",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A resposta pessoal da Ana",
+          "texto": "Depois de criada, a resposta aparece no alto da lista com o selo \"Pessoal\". Nela a Ana tem o lápis, a lixeira e os pontinhos: é dela, ela pode mudar. Os outros atendentes e o gerente não veem esta resposta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar resposta rápida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Lembrete dos exercícios",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Lembrete dos exercícios')"
+              },
+              "rotulo": "Pessoal da Ana: ela pode mudar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

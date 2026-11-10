@@ -131,7 +131,9 @@ tem_title() {
 echo "==> prelude (os stubs que um Postgres cru não tem)"
 # Extraído do scripts/test-db.sh em vez de duplicado: prelude que diverge do
 # harness mediria um mundo que o gate obrigatório não conhece.
-prelude=$(sed -n "/^psql_install <<'SQL'$/,/^SQL$/p" "$ROOT/scripts/test-db.sh" | sed '1d;$d')
+# O primeiro bloco literal é o prelude. Blocos posteriores gravam o recibo do
+# harness; concatená-los faria o update executar SQL/linhas de shell fora dele.
+prelude=$(awk -v marco="psql_install <<'SQL'" '$0 == marco { captura=1; next } captura && $0 == "SQL" { exit } captura { print }' "$ROOT/scripts/test-db.sh")
 # Guarda de instrumento: se a extração falhar (o test-db.sh muda de forma), o
 # prelude sai VAZIO e o install falha longe daqui, com um erro que não menciona
 # prelude nenhum. Aconteceu ao escrever este script: o regex sem o apóstrofo
@@ -141,6 +143,23 @@ if [ "$(grep -c 'create extension' <<<"$prelude")" -lt 3 ]; then
   echo "       O formato daquele arquivo mudou — conserte o recorte aqui, e não duplique o prelude." >&2
   exit 1
 fi
+# A guarda acima só olha `create extension`, e `alter default privileges` é outra
+# coisa que o prelude carrega e que se perde do mesmo jeito (issue #887). A perda
+# não tem sintoma na hora: o `update` roda, o baseline aplica, e as tabelas do
+# corpo nascem sem o privilégio padrão do Supabase — que é precisamente o mundo
+# em que "o papel X não tem o privilégio Y" fica verde por construção. Uma família
+# por linha, e as três: funções, tabelas e sequences.
+for familia in functions tables sequences; do
+  if ! grep -qiE "^alter default privileges .* on ${familia} " <<<"$prelude"; then
+    echo "FATAL: a extração do prelude perdeu 'alter default privileges … on ${familia}'." >&2
+    echo "       As três famílias do pg_default_acl do Supabase (functions, tables, sequences)" >&2
+    echo "       moram dentro do bloco \`psql_install <<'SQL'\` do scripts/test-db.sh e são" >&2
+    echo "       extraídas junto com ele. Sem elas este gate mede um banco MAIS RESTRITIVO que o" >&2
+    echo "       do cliente, e todo invariante de negação de privilégio passa por construção." >&2
+    echo "       Conserte o recorte aqui — não duplique o prelude." >&2
+    exit 1
+  fi
+done
 psql_stop <<<"$prelude"
 echo "    ✓ prelude ok ($(wc -l <<<"$prelude" | tr -d ' ') linhas, extraídas do harness)"
 

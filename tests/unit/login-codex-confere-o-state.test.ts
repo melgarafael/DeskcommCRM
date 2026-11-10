@@ -27,6 +27,7 @@ vi.mock("@/lib/env", () => ({ env: { INTERNAL_SECRET: SEGREDO } }));
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(async () => ({ id: PESSOA, support: null })),
   resolveActiveOrg: vi.fn(async () => ({ orgId: ORG, role: "admin" })),
+  mfaEmDivida: vi.fn(async () => false),
 }));
 vi.mock("@/lib/auth/pode-administrar-empresa", () => ({ podeAdministrarEmpresa: () => true }));
 vi.mock("@/lib/impersonate/support", () => ({ supportWriteError: () => null }));

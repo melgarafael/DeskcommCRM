@@ -7,11 +7,17 @@
  * pior possível para quem instala: cadastrar a chave da OpenAI pela tela não
  * habilitava a base de conhecimento, enquanto duas telas do produto prometiam
  * que sim.
+ *
+ * Duas entradas, UMA preparação. `embedText` embeda um texto; `embedTexts`
+ * embeda uma lista numa chamada. A escolha da chave, do modelo, a régua do par
+ * provedor×modelo e a asserção de dimensão são as mesmas nos dois caminhos de
+ * propósito: se divergissem, metade do acervo nasceria com um vetor e a
+ * consulta sairia com outro, e o recall quebraria sem erro nenhum.
  */
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { embed } from "ai";
+import { embed, embedMany } from "ai";
 
 import {
   DIMENSOES_DO_EMBEDDING,
@@ -47,6 +53,12 @@ export interface EmbedResult {
   model: string;
 }
 
+export interface EmbedManyResult {
+  embeddings: number[][];
+  promptTokens: number;
+  model: string;
+}
+
 /** Falta de chave é um ESTADO do tenant, não um acidente: tipo próprio para quem
  *  chama poder mostrar a tela certa em vez de repetir um erro genérico. */
 export class SemChaveDeEmbeddingError extends Error {
@@ -60,10 +72,11 @@ export class SemChaveDeEmbeddingError extends Error {
   }
 }
 
-export async function embedText(
-  content: string,
-  opts: EmbedOptions,
-): Promise<EmbedResult> {
+/**
+ * Tudo que as duas entradas decidem ANTES de chamar o provedor. Extraído para
+ * que `embedText` e `embedTexts` não possam divergir numa régua.
+ */
+async function prepararEmbedding(opts: EmbedOptions) {
   const chave =
     opts.chave ?? (await resolverChaveDeEmbedding(opts.organizationId, opts.ponto));
   if (!chave) {
@@ -113,17 +126,16 @@ export async function embedText(
         chave.provedor === "openrouter" ? modelId : modelId.replace(/^openai\//, ""),
       );
 
-  const result = await embed({
-    model: resolvido,
-    value: content,
-    headers: chave.viaGateway
-      ? gatewayHeaders({ organizationId: opts.organizationId })
-      : undefined,
-    // O Gemini devolve 3072 dimensões por padrão; pedir 1536 é o que deixa a
-    // coluna `vector(1536)` servir aos dois provedores sem migration. A busca é
-    // por cosseno (`<=>`), então o vetor não normalizado dessa dimensão não
-    // distorce a nota. O `taskType` é o par documento×pergunta do próprio Google.
-    ...(chave.provedor === "google"
+  const headers = chave.viaGateway
+    ? gatewayHeaders({ organizationId: opts.organizationId })
+    : undefined;
+
+  // O Gemini devolve 3072 dimensões por padrão; pedir 1536 é o que deixa a
+  // coluna `vector(1536)` servir aos dois provedores sem migration. A busca é
+  // por cosseno (`<=>`), então o vetor não normalizado dessa dimensão não
+  // distorce a nota. O `taskType` é o par documento×pergunta do próprio Google.
+  const extrasDoProvedor =
+    chave.provedor === "google"
       ? {
           providerOptions: {
             google: {
@@ -133,24 +145,97 @@ export async function embedText(
             },
           },
         }
-      : {}),
-  });
+      : {};
 
-  // Dimensão asserida a cada chamada: divergir de modelo quebra o recall em
-  // SILÊNCIO (os vetores deixam de ser comparáveis), e uma chamada recusada é
-  // infinitamente melhor que um acervo que responde errado com nota alta.
-  if (result.embedding.length !== DIMENSOES_DO_EMBEDDING) {
+  return { modelId, resolvido, headers, extrasDoProvedor };
+}
+
+/**
+ * Dimensão asserida a cada chamada: divergir de modelo quebra o recall em
+ * SILÊNCIO (os vetores deixam de ser comparáveis), e uma chamada recusada é
+ * infinitamente melhor que um acervo que responde errado com nota alta.
+ */
+function conferirDimensao(embedding: number[], modelId: string): void {
+  if (embedding.length !== DIMENSOES_DO_EMBEDDING) {
     throw new Error(
-      `embedding com ${result.embedding.length} dimensões, esperado ${DIMENSOES_DO_EMBEDDING} ` +
+      `embedding com ${embedding.length} dimensões, esperado ${DIMENSOES_DO_EMBEDDING} ` +
         `(pin de contrato ${modelId}) — recall quebraria em silêncio`,
     );
   }
+}
 
-  // EmbedResult.embedding is `number[]` for single-value embed.
-  const promptTokens =
-    (result.usage as { tokens?: number; promptTokens?: number } | undefined)?.tokens ??
-    (result.usage as { tokens?: number; promptTokens?: number } | undefined)?.promptTokens ??
-    0;
+function tokensDoUso(usage: unknown): number {
+  const u = usage as { tokens?: number; promptTokens?: number } | undefined;
+  return u?.tokens ?? u?.promptTokens ?? 0;
+}
 
-  return { embedding: result.embedding, promptTokens, model: modelId };
+export async function embedText(
+  content: string,
+  opts: EmbedOptions,
+): Promise<EmbedResult> {
+  const { modelId, resolvido, headers, extrasDoProvedor } = await prepararEmbedding(opts);
+
+  const result = await embed({
+    model: resolvido,
+    value: content,
+    headers,
+    ...extrasDoProvedor,
+  });
+
+  conferirDimensao(result.embedding, modelId);
+
+  return { embedding: result.embedding, promptTokens: tokensDoUso(result.usage), model: modelId };
+}
+
+/**
+ * Vários textos numa chamada, para quem indexa em volume.
+ *
+ * Existe porque o laço de um-a-um era o teto real da indexação, e não a API da
+ * loja: a 200-400 ms por pedaço, um catálogo de mil produtos passava da janela
+ * de 10 minutos que o reaper do drain usa para devolver evento à fila — e o
+ * efeito não era carga lenta, era DOIS workers indexando a mesma fonte, com o
+ * embedding pago em dobro e corrida na ativação da versão.
+ *
+ * `embedMany` já divide a lista conforme o limite do provedor e paraleliza as
+ * partes, então quem chama manda o lote inteiro e não precisa saber do limite
+ * de cada API.
+ */
+export async function embedTexts(
+  contents: string[],
+  opts: EmbedOptions,
+): Promise<EmbedManyResult> {
+  // A lista vazia sai sem chamar o provedor, mas DEPOIS de preparar: num
+  // arquivo cujo contrato é recusar em vez de seguir no escuro, o atalho não
+  // pode ser a única porta que passa sem conferir chave e par provedor×modelo.
+  const { modelId, resolvido, headers, extrasDoProvedor } = await prepararEmbedding(opts);
+
+  if (contents.length === 0) {
+    return { embeddings: [], promptTokens: 0, model: modelId };
+  }
+
+  const result = await embedMany({
+    model: resolvido,
+    values: contents,
+    headers,
+    ...extrasDoProvedor,
+  });
+
+  // Um vetor por texto, na ordem. Sem esta conta, quem chama gravaria o
+  // embedding de um pedaço na linha de outro — acervo errado respondendo com
+  // nota alta, que é o pior modo de falhar que este arquivo tem.
+  if (result.embeddings.length !== contents.length) {
+    throw new Error(
+      `embedding em lote devolveu ${result.embeddings.length} vetores para ${contents.length} textos ` +
+        `(modelo ${modelId}) — a ordem deixaria de casar com os trechos`,
+    );
+  }
+  for (const embedding of result.embeddings) {
+    conferirDimensao(embedding, modelId);
+  }
+
+  return {
+    embeddings: result.embeddings,
+    promptTokens: tokensDoUso(result.usage),
+    model: modelId,
+  };
 }

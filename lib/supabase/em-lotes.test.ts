@@ -27,6 +27,26 @@ describe("buscaEmLotes", () => {
     expect(r.error).toBeNull();
   });
 
+  it("com orçamento de bytes, o lote fecha pelo tamanho codificado na URL, não pela contagem", async () => {
+    // id de mensagem do WhatsApp: ~70 B por candidato depois de codificado.
+    const longos = Array.from({ length: 300 }, (_, i) => `false_5511900000001@s.whatsapp.net_3A${i}${"F".repeat(34)}`);
+    const vistos: string[][] = [];
+    const r = await buscaEmLotes(
+      longos,
+      async (lote) => {
+        vistos.push(lote);
+        return { data: lote, error: null };
+      },
+      { bytesPorLote: 2000 },
+    );
+    expect(vistos.length).toBeGreaterThan(1);
+    for (const l of vistos) {
+      expect(l.length).toBeLessThanOrEqual(IDS_POR_LOTE);
+      expect(l.map((x) => encodeURIComponent(`"${x}",`).length).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(2000);
+    }
+    expect(r.data).toEqual(longos);
+  });
+
   it("erro em qualquer lote vira erro do todo, não resultado parcial", async () => {
     const r = await buscaEmLotes(ids(250), async (lote) =>
       lote[0] === `id-${IDS_POR_LOTE}`

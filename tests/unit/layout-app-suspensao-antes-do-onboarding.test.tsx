@@ -12,6 +12,7 @@ vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: async () => ({ id: "user-1", idioma: "pt-BR", is_platform_admin: false, support: null, organizations: [] }),
   resolveActiveOrg: async () => ({ orgId: "org-1", role: "admin", interface_settings: null }),
   isMfaEnrolled: async () => true,
+  exigirProvaDeMfa: async () => {},
   requiresMfa: async () => false,
 }));
 vi.mock("@/lib/auth/vinculo-revogado", () => ({ acessoFoiRevogado: async () => false }));
@@ -20,7 +21,10 @@ vi.mock("next/navigation", () => ({
     throw new Error(`redirect:${destino}`);
   },
 }));
-vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
+// `getAll` não é enfeite: o cliente da sessão (`lib/supabase/server`) lê os
+// cookies por ele. Um dublê só com `get` derruba a casca — e o teste passaria
+// com o erro registrado como unhandled, que é ainda pior (#3088).
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined, getAll: () => [] }) }));
 vi.mock("@/lib/branding/instalacao", () => ({ marcaDaInstalacao: async () => ({}) }));
 vi.mock("@/lib/branding/organizacao", () => ({
   resolverMarcaDaOrganizacao: () => ({

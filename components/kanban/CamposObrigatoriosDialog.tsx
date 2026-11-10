@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import { parseReaisToCents } from "@/lib/money";
+import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
+import { exemploDoCampoDeMoeda, lerCampoDeMoeda } from "@/lib/leads/campo-de-moeda";
+import { MOEDA_PADRAO } from "@/lib/money";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FileUploadCustomField } from "@/components/kanban/FileUploadCustomField";
 import type { RecusaDeCampos } from "@/hooks/kanban/useMoveCard";
 
 /**
@@ -85,6 +88,8 @@ export function CamposObrigatoriosDialog({
   isPending = false,
 }: CamposObrigatoriosDialogProps) {
   const t = useT();
+  // O campo de moeda na moeda da organização, não em real fixo.
+  const moeda = useMoedaDaOrgAtiva() ?? MOEDA_PADRAO;
   const [valores, setValores] = useState<Record<string, string>>({});
 
   // Troca de recusa zera o formulário: um diálogo reaproveitado com os valores
@@ -99,10 +104,12 @@ export function CamposObrigatoriosDialog({
 
   const valido = campos.every((campo) => {
     if (campo.tipo === "boolean") return true;
+    // Campo `file`: o valor aqui é só a CONTAGEM de anexos, para liberar o botão.
+    if (campo.tipo === "file") return Number(valores[campo.chave] ?? 0) > 0;
     const valor = (valores[campo.chave] ?? "").trim();
     if (valor.length === 0) return false;
     if (campo.tipo === "number" && Number.isNaN(Number(valor))) return false;
-    if (campo.tipo === "currency" && parseReaisToCents(valor.replace(/^R\$\s*/i, "")) === null) return false;
+    if (campo.tipo === "currency" && lerCampoDeMoeda(valor, moeda) === null) return false;
     if (campo.tipo === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)) return false;
     if (campo.tipo === "url") {
       try {
@@ -121,6 +128,9 @@ export function CamposObrigatoriosDialog({
     for (const campo of campos) {
       const bruto = valores[campo.chave] ?? "";
       const valor = bruto.trim();
+      // O anexo já foi gravado em `crm_lead_attachments` pelo upload, e é lá que
+      // o servidor confere; ele nunca vai em `custom_fields`.
+      if (campo.tipo === "file") continue;
       if (campo.tipo === "boolean") {
         customFields[campo.chave] = bruto === "true";
         continue;
@@ -130,7 +140,7 @@ export function CamposObrigatoriosDialog({
         continue;
       }
       if (campo.tipo === "currency") {
-        customFields[campo.chave] = (parseReaisToCents(valor.replace(/^R\$\s*/i, "")) ?? 0) / 100;
+        customFields[campo.chave] = (lerCampoDeMoeda(valor, moeda) ?? 0) / 100;
         continue;
       }
       if (campo.chave === CHAVE_DO_MOTIVO_DE_GANHO) {
@@ -179,6 +189,20 @@ export function CamposObrigatoriosDialog({
                 </div>
               );
             }
+            if (campo.tipo === "file") {
+              return (
+                <FileUploadCustomField
+                  key={campo.chave}
+                  fieldKey={campo.chave}
+                  label={nome}
+                  required
+                  leadId={recusa.args.leadId}
+                  onChange={(files) =>
+                    setValores((v) => ({ ...v, [campo.chave]: String(files.length) }))
+                  }
+                />
+              );
+            }
             if (
               (campo.tipo === "select" || campo.tipo === "searchable_select") &&
               campo.opcoes &&
@@ -224,7 +248,7 @@ export function CamposObrigatoriosDialog({
                   aria-label={nome}
                   type={inputHtmlParaTipo(campo.tipo)}
                   inputMode={campo.tipo === "currency" ? "decimal" : undefined}
-                  placeholder={campo.tipo === "currency" ? "R$ 1.250,00" : undefined}
+                  placeholder={campo.tipo === "currency" ? exemploDoCampoDeMoeda(moeda, 1250) : undefined}
                   value={valores[campo.chave] ?? ""}
                   onChange={(e) => setValores((v) => ({ ...v, [campo.chave]: e.target.value }))}
                 />

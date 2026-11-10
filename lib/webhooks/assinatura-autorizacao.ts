@@ -1,27 +1,30 @@
 /**
  * Qual opção da fonte exige assinatura configurada, e está sendo ligada sem ela.
  *
- * As duas figuras que dependem de PROVA DE ORIGEM têm a mesma régua, e por isso
- * moram na mesma pergunta: conceder IA a partir do formulário e ATUALIZAR o
- * card de um envio que chegou depois (#2316). As duas são integração entre
- * sistemas — o formulário HTML público, que qualquer um posta, não tem como
- * assinar, e não é por ele que um card pode ser reescrito.
+ * As figuras que dependem de PROVA DE ORIGEM têm a mesma régua, e por isso
+ * moram na mesma pergunta: conceder IA a partir do formulário, ATUALIZAR o
+ * card de um envio que chegou depois (#2316) e REAPROVEITAR o card aberto do
+ * contato (#3101). São integração entre sistemas — o formulário HTML público,
+ * que qualquer um posta, não tem como assinar, e não é por ele que um card
+ * pode ser reescrito.
  *
  * Devolver QUAL opção pediu a assinatura (e não um `true` seco) é o que permite
  * à rota dizer o motivo certo em cada caso — a mensagem genérica fazia a pessoa
  * procurar o problema na tela errada.
  */
-export type OpcaoQueExigeAssinatura = "ai" | "update_lead";
+export type OpcaoQueExigeAssinatura = "ai" | "update_lead" | "reuse_lead";
 
 export function opcaoSemAssinatura(
   atual: {
     authorize_ai_on_capture: boolean;
     update_existing_lead_on_capture?: boolean | null;
+    reuse_open_lead_on_capture?: boolean | null;
     secret_encrypted: unknown;
   },
   patch: {
     authorize_ai_on_capture?: boolean;
     update_existing_lead_on_capture?: boolean;
+    reuse_open_lead_on_capture?: boolean;
     secret?: string | null;
   },
 ): OpcaoQueExigeAssinatura | null {
@@ -40,6 +43,9 @@ export function opcaoSemAssinatura(
     patch.update_existing_lead_on_capture ?? atual.update_existing_lead_on_capture ?? false;
   if (atualiza) return "update_lead";
 
+  const reusa = patch.reuse_open_lead_on_capture ?? atual.reuse_open_lead_on_capture ?? false;
+  if (reusa) return "reuse_lead";
+
   return null;
 }
 
@@ -51,11 +57,13 @@ export function assinaturaObrigatoriaAusente(
   atual: {
     authorize_ai_on_capture: boolean;
     update_existing_lead_on_capture?: boolean | null;
+    reuse_open_lead_on_capture?: boolean | null;
     secret_encrypted: unknown;
   },
   patch: {
     authorize_ai_on_capture?: boolean;
     update_existing_lead_on_capture?: boolean;
+    reuse_open_lead_on_capture?: boolean;
     secret?: string | null;
   },
 ): boolean {

@@ -47,7 +47,15 @@ describe("o resolvedor do agente e a etapa de perda (#917)", () => {
       "lost",
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     );
-    expect(destino).toEqual({ move: false, motivo: "perda_sem_motivo", passo: "lost" });
+    // O `stageName` entrou neste retorno com a issue #3148: o aviso da Central
+    // passou a nomear a etapa do FUNIL do dono ("Perdido"), e o resolvedor é quem
+    // sabe o nome (`alvo.name`) — antes ele só existia no caminho de sucesso.
+    expect(destino).toEqual({
+      move: false,
+      motivo: "perda_sem_motivo",
+      passo: "lost",
+      stageName: "Perdido",
+    });
   });
 
   it("etapa COMUM continua movendo (a recusa não virou bloqueio geral)", () => {
@@ -155,6 +163,8 @@ describe("o negócio reaberto que conserva o motivo antigo (#917)", () => {
         const b: Record<string, unknown> = {};
         b.select = () => b;
         b.eq = () => b;
+        b.order = () => b;
+        b.limit = () => b;
         b.maybeSingle = async () => ({ data: { name: "Avaliação" }, error: null });
         b.update = () => {
           escritas.push(`update ${tabela}`);

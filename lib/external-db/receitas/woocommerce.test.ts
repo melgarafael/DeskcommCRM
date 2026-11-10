@@ -125,7 +125,7 @@ describe("receita woocommerce-produtos", () => {
 
   it("o SQL montado passa no validador com as tabelas permitidas", () => {
     const { sql } = RECEITA_WOOCOMMERCE_PRODUTOS.montar({ prefixo: "wp_" }, {}, 5);
-    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas("wp_");
+    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas({ prefixo: "wp_" });
     expect(() => validarConsultaDeReceita(sql, tabelas)).not.toThrow();
   });
 
@@ -135,7 +135,7 @@ describe("receita woocommerce-produtos", () => {
       { termos: ["camisetas", "sorvetes"], limite: 3 },
       3,
     );
-    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas("wp_");
+    const tabelas = RECEITA_WOOCOMMERCE_PRODUTOS.tabelas({ prefixo: "wp_" });
     expect(() => validarConsultaDeReceita(sql, tabelas)).not.toThrow();
     expect(sql).toContain("union all");
   });

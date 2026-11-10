@@ -26,6 +26,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
+import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
 import {
   ehNumeroInternoDeAviso,
   registrarMensagemIgnorada,
@@ -288,6 +289,7 @@ export async function ingestMetaInbound(
       media_mime: e.media?.mime ?? null,
       sent_at: e.sentAt.toISOString(),
       metadata: {
+        ...ancoraCtwaDaMensagem(atribuicao),
         ...(e.media ? { meta_media_id: e.media.id, voice: e.media.voice } : {}),
         // Nome original do anexo (#2613) — o cartão do Inbox lê esta chave.
         // Só quando há nome (a Cloud API manda `filename` só em `document`):
@@ -592,6 +594,26 @@ export async function ingestMetaAppContactSync(
   if (await ehNumeroInternoDeAviso(admin, orgId, { kind: "phone", phone: telefone, lid: null })) {
     return { status: "ignored", reason: "numero_interno_de_aviso" };
   }
+
+  // Titular apagado a pedido (LGPD) não volta pela agenda do app. A anonimização
+  // ZERA o telefone do cadastro (`phone_number = null`), então
+  // `findContactByVariants` não acha a ficha e `fn_upsert_wa_contact` — que casa
+  // contato só por `phone_number`/`wa_lid` — INSERIRIA uma ficha nova com o
+  // número e o nome da agenda. A pergunta vem antes de qualquer escrita, com a
+  // mesma régua do importador de histórico (`lib/channels/historico/rodada.ts`):
+  // na dúvida (erro ou resposta que não é sim/não) NÃO cria — falha fechada.
+  // O evento da agenda não traz LID, então a pergunta é só pelo telefone.
+  const { data: apagado, error: erroApagado } = await admin.rpc(
+    "fn_titular_apagado_a_pedido" as never,
+    { p_org: orgId, p_telefone: canonicalPhoneBR(telefone), p_lid: null } as never,
+  );
+  if (erroApagado || typeof apagado !== "boolean") {
+    return {
+      status: "failed",
+      reason: `titular_apagado: ${erroApagado?.message ?? "resposta sem booleano"}`,
+    };
+  }
+  if (apagado) return { status: "ignored", reason: "titular_apagado_a_pedido" };
 
   const existente = await findContactByVariants(admin, orgId, e.phone);
   const phone = existente?.phone_number

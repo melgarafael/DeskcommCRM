@@ -52,7 +52,13 @@ function fakeDb(seed: Record<string, Row[]>) {
     let pending: Row | null = null;
 
     const rows = (): Row[] => (tables[table] ??= []);
-    const matches = () => rows().filter((row) => filters.every(([c, v]) => row[c] === v));
+    const inFilters: [string, unknown[]][] = [];
+    const matches = () =>
+      rows().filter(
+        (row) =>
+          filters.every(([c, v]) => row[c] === v) &&
+          inFilters.every(([c, vs]) => vs.includes(row[c])),
+      );
 
     function selectRows(): Row[] {
       return matches()
@@ -99,6 +105,10 @@ function fakeDb(seed: Record<string, Row[]>) {
       select: () => builder,
       eq: (column: string, value: unknown) => {
         filters.push([column, value]);
+        return builder;
+      },
+      in: (column: string, values: unknown[]) => {
+        inFilters.push([column, values]);
         return builder;
       },
       order: (column: string, options?: { ascending?: boolean }) => {
@@ -223,10 +233,21 @@ describe("GET /api/v1/leads/[id]/clone", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.data.pipelines).toEqual([{ id: P2, name: "Suporte" }]);
+    // As etapas NÃO arquivadas do destino vêm junto (#3643), na ordem do quadro.
+    expect(body.data.pipelines).toEqual([
+      {
+        id: P2,
+        name: "Suporte",
+        stages: [
+          { id: S2_A, name: "Triagem", position: 1000, is_won: false, is_lost: false },
+          { id: S2_B, name: "Em análise", position: 2000, is_won: false, is_lost: false },
+          { id: S2_LOST, name: "Perdido", position: 9000, is_won: false, is_lost: true },
+        ],
+      },
+    ]);
   });
 
-  it("payload mínimo: nunca settings/description, só id e name", async () => {
+  it("payload mínimo: nunca settings/description, só id, name e as etapas enxutas", async () => {
     const base = seed();
     db = fakeDb({
       ...base,
@@ -242,7 +263,14 @@ describe("GET /api/v1/leads/[id]/clone", () => {
     const response = await GET(getRequest(), params);
     const body = await response.json();
 
-    expect(Object.keys(body.data.pipelines[0])).toEqual(["id", "name"]);
+    expect(Object.keys(body.data.pipelines[0])).toEqual(["id", "name", "stages"]);
+    expect(Object.keys(body.data.pipelines[0].stages[0])).toEqual([
+      "id",
+      "name",
+      "position",
+      "is_won",
+      "is_lost",
+    ]);
   });
 
   it("recusa lead inexistente na organização", async () => {
@@ -259,6 +287,24 @@ describe("GET /api/v1/leads/[id]/clone", () => {
 });
 
 describe("POST /api/v1/leads/[id]/clone", () => {
+  it("não copia a prova causal ao transferir e não a expõe na resposta", async () => {
+    const origem = seed();
+    origem.crm_leads![0]!.source_metadata = {
+      canal: "whatsapp",
+      meta_capi_lead_birth_v1: { platform: "meta_ads", ctwa_clid: "clique-antigo" },
+    };
+    db = fakeDb(origem);
+    vi.mocked(createClient).mockResolvedValue(db.client);
+    const { POST } = await import("./route");
+    const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const body = await response.json();
+    expect(response.status).toBe(201);
+    expect(body.data.lead.source_metadata).not.toHaveProperty("meta_capi_lead_birth_v1");
+    expect(body.data.origem.source_metadata).not.toHaveProperty("meta_capi_lead_birth_v1");
+    const gravada = (db.tables.crm_leads ?? []).find((lead) => lead.id === LEAD_ID);
+    expect(gravada?.source_metadata).toHaveProperty("meta_capi_lead_birth_v1");
+  });
+
   it("cria o negócio no funil destino e fecha a origem como perdida", async () => {
     const { POST } = await import("./route");
 
@@ -551,6 +597,45 @@ describe("POST /api/v1/leads/[id]/clone", () => {
     const origemIntocada = (db.tables.crm_leads ?? [])[0] as Row;
     expect(origemIntocada.status).toBe("open");
     expect(origemIntocada.pipeline_id).toBe(P1);
+  });
+
+  it("o campo de ARQUIVO exigido no destino não trava o clone (#2829)", async () => {
+    // O clone CRIA o negócio no destino, e o anexo mora em
+    // `crm_lead_attachments.lead_id` — só pode ser enviado DEPOIS que o negócio
+    // existe. Cobrar o arquivo na pré-checagem recusava a troca de funil para
+    // sempre (422 sem caminho de saída), e a #3433 já tinha fixado a regra: a
+    // criação não cobra documento, a primeira entrada é que cobra.
+    const base = seed();
+    db = fakeDb({
+      ...base,
+      crm_pipelines: (base.crm_pipelines ?? []).map((funil) =>
+        funil.id === P2
+          ? {
+              ...funil,
+              settings: {
+                fields: [
+                  {
+                    key: "voucher",
+                    label: "Voucher da emissão",
+                    type: "file",
+                    obrigatorio_em: { etapas: [S2_B] },
+                  },
+                ],
+              },
+            }
+          : funil,
+      ),
+    });
+    vi.mocked(createClient).mockResolvedValue(db.client);
+    const { POST } = await import("./route");
+
+    const response = await POST(cloneRequest({ pipeline_id: P2, stage_id: S2_B }), params);
+
+    expect(response.status).toBe(201);
+    // O negócio nasceu no destino — e sem anexo nenhum, que é o único estado
+    // possível neste instante.
+    const clone = (db.tables.crm_leads ?? []).find((linha) => linha.pipeline_id === P2) as Row;
+    expect(clone?.stage_id).toBe(S2_B);
   });
 
   it("o clone passa quando o campo exigido já vem preenchido da origem", async () => {

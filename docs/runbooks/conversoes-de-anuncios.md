@@ -1,5 +1,9 @@
 # Conversões de anúncios pelo CRM
 
+O envio causal de **LeadSubmitted por clique CTWA recebido** da Feature A tem
+[contrato, configuração, evidências e limites próprios](../features/feature-a-leadsubmitted-ctwa.md).
+Ele não substitui Purchase nem o evento de etapa Meta chamado `LeadSubmitted` descrito abaixo.
+
 ## Operação
 
 1. Em **Configurações → Conversões**, conecte a plataforma que trouxe o contato. Exceção: se a conversa do cliente passa por um canal intermediado que já liga o conjunto de dados da Meta ao número (configurado na tela do próprio provedor), a venda de um contato da Meta pode ir por esse canal quando a organização **não tem** conexão direta com a Meta — sem token nem dataset no CRM — **e** ligou a chave **Enviar vendas pelo canal da conversa** na mesma tela. A chave vem **desligada** (`organizations.settings.conversions.report_via_channel` ausente = desligado): o valor, a moeda, o telefone do cliente e a conversa só saem para o provedor do canal quando a empresa pede. Desligada, nem as conversas são lidas e a venda fica na pendência `sem_conexao` de sempre. Quem tem a conexão direta (ligada, desligada ou incompleta) segue por ela; a venda nunca sai pelos dois caminhos. Quem decide é a capacidade `reportConversion` do adapter do canal (`lib/channels/conversao-pelo-canal.ts`), não o nome do provedor.
@@ -49,6 +53,7 @@ CONFIRMADO no código desta entrega:
 ## Eventos por etapa para a Meta (0524)
 
 - Em **Configurações › Conversões**, com a conexão da Meta configurada, o cartão **O que cada etapa do funil informa à Meta** liga, por etapa aberta, um evento padrão: `LeadSubmitted`, `QualifiedLead`, `InitiateCheckout`, `AddToCart` ou `ViewContent` (lista em `lib/conversoes/regras-meta.ts`, repetida no CHECK da tabela). Ganho é a compra e perda não é conversão: nenhuma das duas aparece ali.
+- Sem conexão direta, com a chave **Enviar vendas pelo canal da conversa** ligada e a conversa num canal com a capacidade `reportConversion`, os cinco eventos saem pelo canal (`EVENTOS_DE_ETAPA_NO_CANAL` em `lib/conversoes/regras-meta.ts`). `QualifiedLead` e `ViewContent` entraram nessa lista em 27/10/2026, quando o provedor do canal passou a aceitá-los; antes ficavam na pendência `evento_fora_do_canal`. Para conferir o que o canal repassa hoje: `grep -A8 'EVENTOS_DE_ETAPA_NO_CANAL = \[' lib/conversoes/regras-meta.ts`.
 - O consumidor é `conversoes.etapa_meta` (`lib/conversoes/etapa-meta.handler.ts`), em `lead.stage_changed` e `ad_conversion.retry_requested`. Envia uma vez por negócio, sem valor, e só quando a atribuição do contato é da Meta (clique-para-WhatsApp, ou página com `utm_source` da Meta). Lead do Google ou orgânico sai como `etapa_sem_origem_meta`/`sem_atribuicao`, sem linha no livro-razão.
 - A chave no livro-razão é `MetaEtapa:<uuid da etapa>`; o nome que sai no fio fica em `ad_conversion_dispatches.meta_event_name`, e é ele que o reprocessamento usa — trocar o evento da etapa depois não rebatiza o que já foi registrado.
 - Trava de retroatividade: só movimentos depois de ligar a regra (ou de trocar etapa/evento, ou de religar) enviam. Código de evento de teste vale para estes eventos como para a compra.

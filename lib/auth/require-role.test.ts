@@ -9,7 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
-import { loadAuthUser, mfaEmDivida, orgAtivaSemPortao } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDividaEstrita, orgAtivaSemPortao } from "@/lib/auth/server";
 import { audit } from "@/lib/audit";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser, Role } from "@/lib/auth/types";
@@ -18,6 +18,7 @@ vi.mock("@/lib/auth/server", () => ({
   // Sessão sem dívida de MFA: esta suíte mede rank de papel; o gate de segundo
   // fator tem suíte própria em tests/unit/require-role-mfa.test.ts.
   mfaEmDivida: vi.fn(async () => false),
+  mfaEmDividaEstrita: vi.fn(async () => false),
   loadAuthUser: vi.fn(),
   orgAtivaSemPortao: vi.fn(),
 }));
@@ -237,8 +238,9 @@ describe("org não operante e scope do platform admin (spec cobrança §4 item 4
   });
 
   it("allowPlatformAdmin:true com full e MFA em dívida → 403 mfa_required", async () => {
+    // viewer aqui: é o poder de plataforma que autoriza, então vale a régua estrita.
     session("viewer", { platformAdmin: true });
-    vi.mocked(mfaEmDivida).mockResolvedValueOnce(true);
+    vi.mocked(mfaEmDividaEstrita).mockResolvedValueOnce(true);
     const res = await requireRole("admin", { allowPlatformAdmin: true });
     expect(res.ok).toBe(false);
     if (!res.ok) expect((await res.response.json()).error.code).toBe("mfa_required");

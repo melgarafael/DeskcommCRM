@@ -28,6 +28,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
+import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -58,9 +60,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
 
+  // 1 MB de folga para o envelope multipart e os campos de texto.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO + 1_048_576, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("O arquivo passa de 20 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+
   let formData: FormData;
   try {
-    formData = await req.formData();
+    formData = await corpo.corpo.formData();
   } catch {
     return fail("invalid_request", t("Falha ao processar o envio do arquivo."), 400, { requestId });
   }
@@ -227,6 +237,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (emitErr) {
     console.warn("[conhecimento-upload] emit_event falhou (não bloqueia):", emitErr.message);
   }
+
+  // Mesmo código da criação em JSON: para a trilha a pergunta é "quem pôs este
+  // material no acervo", não por qual das duas portas ele entrou. Metadados só
+  // com extensão e tamanho — o nome do arquivo pode carregar dado pessoal.
+  void audit({
+    action: "ai.knowledge_source_created",
+    actorUserId: authUser.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "ai_knowledge_source",
+    resourceId: ksId,
+    requestId,
+    metadata: { source_type: "documento", ext, size_bytes: file.size },
+  });
 
   const temChave = await temChaveDeEmbedding(activeOrg.orgId);
 

@@ -194,6 +194,30 @@ export function useOcupacaoDoRodape(): number {
 }
 
 /**
+ * A peça SAIU DE VISTA — a leitura que desempata o zero da medição (#3061).
+ *
+ * Um elemento em layout tem pelo menos um retângulo de cliente, mesmo de altura
+ * zero; um elemento que o CSS escondeu por `display: none` (nele ou num
+ * ancestral) não gerou caixa nenhuma e devolve lista vazia. Isso é o PRIMEIRO
+ * sinal, e é o mais forte — é geometria, não estilo declarado.
+ *
+ * O SEGUNDO sinal é o estilo computado, e ele existe por causa do jsdom: lá
+ * `getClientRects()` é sempre vazio, porque não há layout. Sem o segundo sinal,
+ * todo teste de unidade — e todo estado inicial — seria lido como "saiu de
+ * vista", e o conserto trocaria um defeito por outro: o piso declarado da peça
+ * deixaria de valer. Exigindo os DOIS, o zero só é gravado quando o navegador
+ * concorda consigo mesmo, e o jsdom continua no terreno em que sempre esteve:
+ * zero é "não houve medição", e quem responde pela reserva é o piso declarado.
+ *
+ * `visibility: hidden` NÃO entra como "saiu de vista": o elemento continua
+ * ocupando o lugar dele no layout, e reservar a faixa continua sendo o certo.
+ */
+function saiuDeVista(elemento: HTMLElement): boolean {
+  if (elemento.getClientRects().length > 0) return false;
+  return getComputedStyle(elemento).display === "none";
+}
+
+/**
  * Devolve SÓ a âncora que mede a peça — a data (distância/ocupação) fica no
  * provedor, nunca no retorno.
  *
@@ -219,10 +243,24 @@ export function usePecaDoRodape(peca: PecaDoRodape): RefObject<HTMLDivElement | 
     if (!elemento) return;
     const medir = () => {
       const altura = elemento.getBoundingClientRect().height;
-      // Zero é "não houve medição" (jsdom não faz layout, e um elemento
-      // escondido também mede zero) — nunca "a peça sumiu": a altura declarada
-      // continua valendo como piso.
-      if (altura > 0) setAlturaMedida(Math.ceil(altura));
+      if (altura > 0) {
+        setAlturaMedida(Math.ceil(altura));
+        return;
+      }
+      // ─── Zero é AMBÍGUO, e quem desempata é o navegador (#3061) ─────────────
+      //
+      // Zero é "não houve medição" no jsdom, que não faz layout; e zero é
+      // também o que o navegador devolve quando o CSS ESCONDE a peça — a barra
+      // de abas do celular é um `md:hidden`, continua no DOM e mede zero acima
+      // de `md`. Descartar o zero nos dois casos prendia a reserva na última
+      // medida positiva: quem estreitava a janela (celular girado, painel do
+      // navegador, modo responsivo) e voltava a alargá-la ficava com 54px de
+      // rodapé reservados para uma barra que não estava na tela.
+      //
+      // O zero só é gravado quando a peça SAIU DE VISTA, e isso o navegador diz
+      // por dois sinais independentes. Sem eles — sem medição — a altura
+      // declarada continua valendo como o piso de sempre.
+      if (saiuDeVista(elemento)) setAlturaMedida(0);
     };
     medir();
     if (typeof ResizeObserver === "undefined") return;

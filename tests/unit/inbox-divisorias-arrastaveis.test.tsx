@@ -164,6 +164,27 @@ describe("a regra pura — limites, piso da conversa e memória por faixa", () =
     ).toEqual({ lista: LIMITES_LISTA.max, ficha: LIMITES_FICHA.min });
   });
 
+  it("com o painel recolhido a lista alcança MAIS; aberto, o teto de hoje não muda (#3046)", () => {
+    // Mesmo pedido de arrasto (bem além do teto), mesmo container. A ÚNICA
+    // diferença é o painel do contato recolhido, que chega aqui como
+    // `temFicha: false` — recolhida, a terceira coluna é o trilho de 44px, não
+    // a ficha. Esta asserção prende a REGRA; quem prova que o layout a consulta
+    // é o caso da tela, mais abaixo.
+    const pedido = { lista: 900, ficha: 296, larguraContainer: 1040 };
+    const aberto = resolverLarguras({ ...pedido, temFicha: true });
+    const recolhido = resolverLarguras({ ...pedido, temFicha: false });
+
+    // (i) recolhido, o máximo arrastável é MAIOR — e chega ao teto próprio da
+    // lista (520), que com a ficha aberta era inalcançável.
+    expect(recolhido.lista).toBeGreaterThan(aberto.lista);
+    expect(recolhido.lista).toBe(LIMITES_LISTA.max);
+
+    // (ii) aberto, nada muda: o piso da conversa segue mandando e o valor é
+    // exatamente o de hoje.
+    expect(aberto).toEqual({ lista: 1040 - 296 - CONVERSA_MINIMA, ficha: 296 });
+    expect(1040 - aberto.lista - aberto.ficha).toBe(CONVERSA_MINIMA);
+  });
+
   it("grava e lê POR FAIXA: notebook e monitor grande não brigam pela mesma chave", () => {
     const storage = storageFalso();
     gravarLarguras(storage, "md", { lista: 500, ficha: 300 });
@@ -245,11 +266,11 @@ function janelaEm(largura: number): void {
   Object.defineProperty(window, "innerWidth", { value: largura, configurable: true, writable: true });
 }
 
-function montar() {
+function montar(props: { painelRecolhidoInicial?: boolean } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <InboxLayout />
+      <InboxLayout {...props} />
     </QueryClientProvider>,
   );
 }
@@ -414,6 +435,50 @@ describe("no layout — duas divisorias arrastáveis (#2579)", () => {
     expect(lista).toHaveAttribute("aria-valuenow", String(1040 - 296 - CONVERSA_MINIMA));
     expect(ficha).toHaveAttribute("aria-valuenow", "296");
     expect(grade().style.gridTemplateColumns).toBe("324px minmax(0,1fr) 296px");
+  });
+
+  it("recolhido o divisor da lista aproveita o espaço da ficha; aberto, o teto é o de hoje (#3046)", async () => {
+    // Recolhido: a ficha vira trilho e a alça dela some — resta só a da lista.
+    const recolhida = montar({ painelRecolhidoInicial: true });
+    const listaRecolhida = await alca(0);
+    expect(screen.queryAllByRole("separator")).toHaveLength(1);
+
+    // O MESMO arrasto (bem além do teto), nos dois estados do painel.
+    fireEvent.pointerDown(listaRecolhida, { button: 0, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 900 });
+    const maxRecolhido = Number(listaRecolhida.getAttribute("aria-valuenow"));
+    fireEvent.pointerUp(window);
+    recolhida.unmount();
+    window.localStorage.clear();
+
+    montar();
+    const listaAberta = await alca(0);
+    fireEvent.pointerDown(listaAberta, { button: 0, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 900 });
+    const maxAberto = Number(listaAberta.getAttribute("aria-valuenow"));
+    fireEvent.pointerUp(window);
+
+    // (i) o divisor CONSULTA o recolhido: o máximo arrastável é MAIOR e chega
+    // ao teto próprio da lista (520).
+    expect(maxRecolhido).toBeGreaterThan(maxAberto);
+    expect(maxRecolhido).toBe(LIMITES_LISTA.max);
+    // (ii) aberto, o valor é IDÊNTICO ao de hoje: o piso da conversa manda.
+    expect(maxAberto).toBe(1040 - 296 - CONVERSA_MINIMA);
+  });
+
+  it("a largura salva grande é limitada pelo teto do estado ATUAL do painel (#3046)", async () => {
+    // Mesma largura salva (520, esticada com o painel recolhido) nos dois estados.
+    window.localStorage.setItem(CHAVE_XL, JSON.stringify({ lista: 520, ficha: 296 }));
+
+    const aberta = montar();
+    // Aberto, o teto de hoje volta a valer: quem limita é o resolverLarguras,
+    // nunca a chave de storage.
+    expect(await alca(0)).toHaveAttribute("aria-valuenow", String(1040 - 296 - CONVERSA_MINIMA));
+    aberta.unmount();
+
+    montar({ painelRecolhidoInicial: true });
+    // Recolhido, a mesma largura salva passa inteira — o trilho liberou o espaço.
+    expect(await alca(0)).toHaveAttribute("aria-valuenow", String(LIMITES_LISTA.max));
   });
 
   it("a faixa errada não rouba a largura da outra: xl salvo não mexe no md", async () => {

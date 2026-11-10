@@ -36,6 +36,7 @@ import {
 import { Clock, MagnifyingGlass, Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 import { rotuloDoStatus, tomDoStatus } from "@/lib/followup/eventos-legiveis";
+import { statusCancelavel } from "@/lib/followup/vocabulario";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 import {
@@ -73,8 +74,9 @@ const STATUS_OPTIONS: FollowupEnrollmentStatus[] = [
 // Aqui "vivo" INCLUI o dormente, e é o oposto de LIVE_STATUSES da reatividade:
 // quem espera a data do retorno tem de aparecer na fila. Um acompanhamento que
 // some da tela por 28 dias é uma ilha — ninguém sabe que ele existe nem o
-// cancela quando a cliente já voltou por outro caminho.
-const LIVE_ENROLLMENT_STATUSES = new Set(["active", "waiting_reply", "dormente", "paused_handoff", "paused_manual", "coletando"]);
+// cancela quando a cliente já voltou por outro caminho. A lista em si mora em
+// `STATUS_CANCELAVEIS` (lib/followup/vocabulario.ts), a mesma que o dossiê e a
+// rota leem desde o #3434: três cópias à mão foi o que deixou o dossiê de fora.
 
 /**
  * O que ainda dá para desmarcar.
@@ -86,9 +88,7 @@ const LIVE_ENROLLMENT_STATUSES = new Set(["active", "waiting_reply", "dormente",
  * linha errada em silêncio.
  */
 function podeCancelar(row: FollowupQueueRow): boolean {
-  return row.source === "enrollment"
-    ? LIVE_ENROLLMENT_STATUSES.has(row.status)
-    : row.status === "agendada";
+  return row.source === "enrollment" ? statusCancelavel(row.status) : row.status === "agendada";
 }
 
 function QueueStatusBadge({ status }: { status: string }) {
@@ -201,8 +201,8 @@ export function QueueTab({ canWrite }: Props) {
         </div>
       ) : (
         <div className="rounded-md border border-border">
-          <Table>
-            <TableHeader>
+          <Table className="max-md:block">
+            <TableHeader className="max-md:hidden">
               <TableRow>
                 <TableHead>{t("Contato")}</TableHead>
                 <TableHead>{t("Fluxo / Promessa")}</TableHead>
@@ -212,12 +212,16 @@ export function QueueTab({ canWrite }: Props) {
                 {canWrite && <TableHead className="w-[100px]" />}
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-md:block">
               {rows.map((row) => {
                 const canCancel = canWrite && podeCancelar(row);
                 return (
-                  <TableRow key={`${row.source}:${row.id}`} data-testid="queue-row">
-                    <TableCell className="font-medium">
+                  <TableRow
+                    key={`${row.source}:${row.id}`}
+                    data-testid="queue-row"
+                    className="max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-1 max-md:px-3 max-md:py-2"
+                  >
+                    <TableCell className="font-medium max-md:min-w-0 max-md:flex-1 max-md:p-0">
                       {/*
                         A porta do dossiê. Só enrollment tem história para contar:
                         a promessa (`cron_jobs`) é uma linha só — um horário e um
@@ -227,7 +231,7 @@ export function QueueTab({ canWrite }: Props) {
                       {row.source === "enrollment" ? (
                         <Link
                           href={`/app/ai/followups/enrollments/${row.id}`}
-                          className="underline-offset-2 hover:underline"
+                          className="underline-offset-2 hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center"
                           data-testid="queue-abrir-dossie"
                         >
                           {row.contact.name}
@@ -236,7 +240,7 @@ export function QueueTab({ canWrite }: Props) {
                         row.contact.name
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:basis-full max-md:p-0 max-md:text-xs">
                       <div className="flex flex-col">
                         <span>{row.flow_name ?? <span className="text-text-muted">{t("Promessa")}</span>}</span>
                         {row.agent_name && (
@@ -244,17 +248,20 @@ export function QueueTab({ canWrite }: Props) {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-[280px] truncate text-sm" title={row.node_or_reason}>
+                    <TableCell
+                      className="max-w-[280px] truncate text-sm max-md:max-w-none max-md:basis-full max-md:whitespace-normal max-md:p-0 max-md:text-xs"
+                      title={row.node_or_reason}
+                    >
                       {row.node_or_reason}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:basis-full max-md:p-0 max-md:text-xs">
                       <NextFireCell iso={row.next_fire_at} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:p-0">
                       <QueueStatusBadge status={row.status} />
                     </TableCell>
                     {canWrite && (
-                      <TableCell>
+                      <TableCell className="max-md:ml-auto max-md:p-0">
                         {canCancel && (
                           <Button
                             variant="ghost"

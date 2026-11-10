@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Acompanhamento do final da conversa",
+    "subtitle": "Mesmos dados e envio nativos; intenção de leitura e geometria da viewport",
+    "output": "inbox-scroll.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "data",
+      "label": "Dados nativos"
+    },
+    {
+      "id": "ui",
+      "label": "Conversa"
+    },
+    {
+      "id": "view",
+      "label": "Leitura e viewport"
+    }
+  ],
+  "mainPath": [
+    "query",
+    "thread",
+    "scroll",
+    "viewport"
+  ],
+  "nodes": [
+    {
+      "id": "send",
+      "lane": "data",
+      "col": 0,
+      "type": "frontend",
+      "label": "useSendMessage",
+      "sublabel": "otimista e confirmação no cache nativo"
+    },
+    {
+      "id": "query",
+      "lane": "data",
+      "col": 1,
+      "type": "frontend",
+      "label": "useMessagesRealtime",
+      "sublabel": "janela mais recente e páginas antigas"
+    },
+    {
+      "id": "thread",
+      "lane": "ui",
+      "col": 2,
+      "type": "frontend",
+      "label": "ChatThread",
+      "sublabel": "mensagens, notas e passagens ordenadas"
+    },
+    {
+      "id": "scroll",
+      "lane": "ui",
+      "col": 3,
+      "type": "frontend",
+      "label": "useThreadAutoScroll",
+      "sublabel": "identidade da última mensagem; intenção anterior à pintura"
+    },
+    {
+      "id": "viewport",
+      "lane": "view",
+      "col": 4,
+      "type": "frontend",
+      "label": "Scroller + ResizeObserver",
+      "sublabel": "rolagem contida; mídia tardia e teclado móvel"
+    },
+    {
+      "id": "history",
+      "lane": "view",
+      "col": 2,
+      "type": "frontend",
+      "label": "Leitura do histórico",
+      "sublabel": "gesto interrompe acompanhamento; preserva a âncora"
+    },
+    {
+      "id": "notice",
+      "lane": "view",
+      "col": 3,
+      "type": "frontend",
+      "label": "Novas mensagens",
+      "sublabel": "aviso acessível e botão para ir ao fim"
+    }
+  ],
+  "edges": [
+    {
+      "id": "scroll-1",
+      "from": "send",
+      "to": "query",
+      "label": "cache otimista/real por conversa"
+    },
+    {
+      "id": "scroll-2",
+      "from": "query",
+      "to": "thread",
+      "label": "mesma janela pode continuar com50itens"
+    },
+    {
+      "id": "scroll-3",
+      "from": "thread",
+      "to": "scroll",
+      "label": "última identidade, contagem, páginas, busca e autor"
+    },
+    {
+      "id": "scroll-4",
+      "from": "scroll",
+      "to": "viewport",
+      "label": "destino somente enquanto acompanha ou no próprio envio"
+    },
+    {
+      "id": "scroll-5",
+      "from": "viewport",
+      "to": "scroll",
+      "label": "onScroll e resize mantêm posição e destino"
+    },
+    {
+      "id": "scroll-6",
+      "from": "history",
+      "to": "scroll",
+      "label": "roda, toque, teclado e carregar antigas"
+    },
+    {
+      "id": "scroll-7",
+      "from": "scroll",
+      "to": "history",
+      "label": "compensa a altura adicionada acima"
+    },
+    {
+      "id": "scroll-8",
+      "from": "scroll",
+      "to": "notice",
+      "label": "mensagem nova durante leitura antiga"
+    },
+    {
+      "id": "scroll-9",
+      "from": "notice",
+      "to": "scroll",
+      "label": "clique explícito retoma o final"
+    },
+    {
+      "id": "scroll-10",
+      "from": "query",
+      "to": "send",
+      "label": "mesma chave de cache da conversa"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "sky",
+      "title": "Limites",
+      "items": [
+        "Não envia mensagens, não muda canal, permissões ou realtime.",
+        "A primeira ancoragem é instantânea; novas mensagens seguem o final.",
+        "Carregar antigas preserva a posição. Leitura de histórico recebe aviso; envio próprio vai ao fim."
+      ]
+    }
+  ]
+}

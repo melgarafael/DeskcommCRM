@@ -45,6 +45,8 @@ vi.mock("@/hooks/campanhas/useCampanhas", () => ({
   useCampanha: () => ({ data: CAMPANHA, isLoading: false }),
   useEditarCampanha: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePreviaDaAudiencia: () => previa,
+  // Número por QR: o formulário mostra o campo de texto, que é o caso deste teste.
+  useModelosDaCampanha: () => ({ data: { modo: "text", modelos: [] }, isLoading: false }),
 }));
 vi.mock("@/hooks/channels/useChannelSessions", () => ({
   useChannelSessions: () => ({ data: [], isLoading: false }),

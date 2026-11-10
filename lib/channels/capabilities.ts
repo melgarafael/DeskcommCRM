@@ -30,6 +30,8 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "full",
     costPerMessage: false,
     alteraMensagemEnviada: true,
+    podeReagir: true,
+    transmissao: false,
     // É a linha que conversa com um APARELHO pareado: a agenda salva no
     // celular está lá dentro, e o `contacts/all` a devolve paginada (#2736).
     phonebook: true,
@@ -47,6 +49,8 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    podeReagir: true,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -84,6 +88,8 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "none",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    podeReagir: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -98,6 +104,12 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    podeReagir: false,
+    // MEDIDO em 16/10/2026 (2 destinatários, entregues em 1 a 3 s): o provedor
+    // cria a transmissão, recebe os telefones e manda a todos. O valor de cada
+    // variável sai LITERAL do `components` — o `variableMapping` documentado
+    // chegou ao destinatário como "{{1}}", e o nome que ele guarda é o número.
+    transmissao: true,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -121,6 +133,8 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    podeReagir: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -152,6 +166,10 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
+    // Só texto nos dois sentidos (resposta da OLX na #2927): não há reação, e
+    // não há envio em lista — o chat só existe na thread que o comprador abriu.
+    podeReagir: false,
+    transmissao: false,
   },
 };
 
@@ -175,12 +193,28 @@ export const CHANNEL_PROVIDER_WAHA: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_META: ChannelProvider = "meta_cloud";
 export const CHANNEL_PROVIDER_SOCIAL: ChannelProvider = "zernio_social";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
+/**
+ * Os canais cuja entrada responde ANTES de processar a mensagem nova — o porquê
+ * está em `./inbound.ts`, que o reexporta. Mora aqui, num módulo sem dependência,
+ * porque o piso ocioso do cron (`lib/cron/piso-ocioso.ts`) também o lê: ele
+ * pergunta se há entrada aceita a reprocessar SEM escrever o nome do canal.
+ */
+export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_ZERNIO];
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 /** Chat da OLX (issue #2927) — canal de mensagem por thread própria, só texto. */
 export const CHANNEL_PROVIDER_OLX: ChannelProvider = "olx";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
+
+/**
+ * O provider em que o NÚMERO é a conexão: pareado por QR, a linha só vira
+ * conexão quando um aparelho lê o código. A linha morta (`FAILED`/`STOPPED`)
+ * sem número, ali, é QR que ninguém leu e não ocupa a vaga do plano (#3416);
+ * nos outros provedores o número não identifica a conexão. É a mesma régua dos
+ * gatilhos `fn_trava_canais_do_plano` e `fn_vaga_ao_reviver_canal`.
+ */
+export const PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO: ChannelProvider = CHANNEL_PROVIDER_WAHA;
 
 /**
  * Os providers por onde MENSAGEM entra e sai — a única lista que responde
@@ -205,6 +239,27 @@ export const PROVIDERS_DE_MENSAGEM = [
   "datafy",
   "olx",
 ] as const satisfies readonly ProviderDeMensagem[];
+
+/**
+ * Os providers que alcançam um APARELHO: o endereço é o TELEFONE.
+ *
+ * É um recorte de `PROVIDERS_DE_MENSAGEM`, e a diferença é a das REDES SOCIAIS
+ * (`zernio_social`): o Instagram e o Facebook só falam com quem já escreveu, o
+ * contato de lá é outro endereço (handle) e não existe telefone a discar. Quem
+ * tem um número na mão e escolhe a sessão social escolheu um canal que NÃO
+ * alcança o destino — e o envio fora da janela de 24h é recusado (#3358,
+ * medido: "O canal recusou o envio. Confira a conexão em Conexões.").
+ *
+ * `satisfies` sobre o recorte declara a relação entre as duas listas: um
+ * provider que não seja de mensagem não pode entrar aqui, e um provider social
+ * que apareça nesta lista reprova em compilação, não em produção.
+ */
+export const PROVIDERS_DE_TELEFONE = [
+  "waha",
+  "meta_cloud",
+  "zernio",
+  "datafy",
+] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social">[];
 
 /**
  * `true` quando a linha de `channel_sessions` é um canal de mensagem.
@@ -254,6 +309,61 @@ void _todoProviderFoiClassificado;
 /** `true` só para provider conhecido cuja natureza não é mensagem. */
 export function canalConhecidoSemMensagem(provider: string | null | undefined): boolean {
   return (PROVIDERS_SEM_MENSAGEM as readonly string[]).includes(provider ?? "");
+}
+
+/**
+ * Como uma CAMPANHA fala por este canal: texto livre (`text`), modelo aprovado
+ * (`template`) ou não fala (`null`).
+ *
+ * Campanha é contato que a empresa inicia — quase sempre fora das 24 horas da
+ * última mensagem do cliente. Por isso a pergunta é `freeformOutsideWindow`, e
+ * não "aceita texto": o número oficial aceita texto, mas só dentro da janela.
+ * Canal que nem manda texto fora da janela nem tem modelo (as redes sociais)
+ * não serve para campanha nenhuma.
+ *
+ * Tolerante como `transportaMensagem`: provider que esta imagem não conhece
+ * responde `null` em vez de lançar — a tela de campanha lista conexões, e um
+ * throw apagaria a lista inteira.
+ */
+export function modoDeCampanhaDoCanal(provider: string | null | undefined): "text" | "template" | null {
+  if (!transportaMensagem(provider)) return null;
+  try {
+    const caps = capabilitiesOf(provider as ProviderDeMensagem);
+    if (caps.freeformOutsideWindow) return "text";
+    if (caps.requiresTemplates) return "template";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O canal corre risco de banimento por volume (número por QR)? É o que liga o
+ * aquecimento e o teto anti-ban do ritmo. Desconhecido responde `true`: no
+ * ritmo, errar para o lado de mandar devagar é o erro barato.
+ */
+export function canalTemRiscoDeBanimento(provider: string | null | undefined): boolean {
+  if (!transportaMensagem(provider)) return true;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).banRisk;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * O provedor deste número faz a transmissão (a lista inteira de uma vez, com o
+ * relatório por destinatário)? Liga a terceira velocidade da campanha.
+ * Desconhecido responde `false`: sem a certeza, a campanha fica no envio que o
+ * próprio sistema controla.
+ */
+export function canalTemTransmissao(provider: string | null | undefined): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).transmissao;
+  } catch {
+    return false;
+  }
 }
 
 export function capabilitiesOf(provider: ChannelProvider): ChannelCapabilities {

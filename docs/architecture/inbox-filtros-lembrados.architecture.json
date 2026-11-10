@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Preferências lembradas no Inbox", "subtitle": "Número e Não lidos por organização, depois da hidratação", "output": "inbox-filtros-lembrados.html", "quality_profile": "standard" },
+  "lanes": [{ "id": "navegador", "label": "Navegador" }, { "id": "inbox", "label": "Inbox" }, { "id": "dados", "label": "Dados" }],
+  "mainPath": ["memoria", "layout", "consulta"],
+  "nodes": [
+    { "id": "memoria", "lane": "navegador", "col": 0, "type": "database", "label": "localStorage", "sublabel": "chave única, entradas por organização" },
+    { "id": "layout", "lane": "inbox", "col": 1, "type": "frontend", "label": "InboxLayout", "sublabel": "estado restaurado e organização correspondem antes de gravar" },
+    { "id": "filtro", "lane": "inbox", "col": 2, "type": "frontend", "label": "InboxFilters", "sublabel": "número removido continua visível; carregando não invalida" },
+    { "id": "consulta", "lane": "dados", "col": 3, "type": "api", "label": "GET /api/v1/conversations", "sublabel": "número e unread da organização ativa" }
+  ],
+  "edges": [
+    { "id": "ler", "from": "memoria", "to": "layout", "label": "lerFiltrosLembrados depois da hidratação" },
+    { "id": "mostrar", "from": "layout", "to": "filtro", "label": "preferência do contexto atual" },
+    { "id": "escolher", "from": "filtro", "to": "layout", "label": "escolher ou desligar" },
+    { "id": "gravar", "from": "layout", "to": "memoria", "label": "gravarFiltrosLembrados sem tocar nas outras organizações" },
+    { "id": "consultar", "from": "layout", "to": "consulta", "label": "useConversationsRealtime com os filtros atuais" }
+  ]
+}

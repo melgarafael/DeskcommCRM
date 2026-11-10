@@ -22,7 +22,7 @@ import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
  * `channel-adapter-olx.test.ts` (contrato pendente) e a nota no adapter.
  */
 const OLX = "olx" as const;
-const MIGRATION = "supabase/migrations/20261022140000_0727_canal_olx.sql";
+const MIGRATION = "supabase/migrations/20261110151328_9317_canal_olx.sql";
 
 describe("canal olx — vocabulário e seam", () => {
   it("declara o perfil auto-restrito do chat: só texto, sem definição e sem janela", () => {

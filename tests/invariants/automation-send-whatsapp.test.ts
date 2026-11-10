@@ -49,7 +49,7 @@ type RowResult = {
   error: { message: string; code?: string } | null;
 };
 
-type FilterOp = "eq" | "in";
+type FilterOp = "eq" | "in" | "gt";
 interface Filter {
   op: FilterOp;
   col: string;
@@ -64,7 +64,16 @@ const EMBED_TABLE: Record<string, string> = {
 
 /**
  * Double mínimo de um PostgrestQueryBuilder: select (com embed PostgREST-style
- * `alias:fk_col(cols)`) / insert / update, eq/in, order/limit, maybeSingle/single.
+ * `alias:fk_col(cols)`) / insert / update, eq/in/gt, order/limit, maybeSingle/single.
+ *
+ * `gt` entrou com a fatia #3286: a leitura de compromissos
+ * (`protecaoAgendaSupabase`) pagina por KEYSET (`.order("id").limit(500)` +
+ * `.gt("id", after)`) para não confiar no `max_rows` do PostgREST, e o dublê
+ * não conhecia o método — a página não-vazia chamava `query.gt` inexistente, o
+ * `catch` da produção devolvia `leitura_indisponivel` e a ação terminava
+ * `failed` por um motivo que não era o do teste. Só apareceu quando um caso
+ * passou a rodar a ação com compromisso SEMEADO no banco (nenhum caso anterior
+ * chegava à segunda página).
  */
 class FakeQuery implements PromiseLike<QResult> {
   private mode: "select" | "update" | "insert" | null = null;
@@ -111,6 +120,11 @@ class FakeQuery implements PromiseLike<QResult> {
     return this;
   }
 
+  gt(col: string, val: unknown): this {
+    this.filters.push({ op: "gt", col, val });
+    return this;
+  }
+
   order(col: string, opts: { ascending: boolean }): this {
     this.orderCol = col;
     this.orderAsc = opts.ascending;
@@ -152,6 +166,7 @@ class FakeQuery implements PromiseLike<QResult> {
         const vals = (f.val as unknown[]).map(sqlLiteral).join(", ");
         return `${prefix}${f.col} in (${vals})`;
       }
+      if (f.op === "gt") return `${prefix}${f.col} > ${sqlLiteral(f.val)}`;
       return `${prefix}${f.col} = ${sqlLiteral(f.val)}`;
     });
     return ` where ${clauses.join(" and ")}`;
@@ -256,6 +271,36 @@ class FakeQuery implements PromiseLike<QResult> {
   }
 }
 
+/**
+ * O DUBLE DEVOLVE `code`, COMO O POSTGREST DEVOLVE.
+ *
+ * O `error` montado a partir do stderr do psql só trazia `message`, e isso
+ * mudava o DESFECHO medido: `serviceForEvent` (lib/atendimento/origem.ts:114)
+ * engole `PT409`/`40001` como origem obsoleta, e sem o `code` a recusa
+ * `service_event_origin_unsupported` subia crua — o run terminava `failed`
+ * com o texto do psql em vez do `service_boundary_stale` que a produção
+ * mostra (é o desfecho que a #4018 mediu em Atividade). A tabela espelha o
+ * `using errcode` de `fn_service_event_origin`; dublê sem `code` mede um
+ * produto que não existe.
+ */
+const ERRCODE_DA_RESOLUCAO: Record<string, string> = {
+  // Na definição vigente de `fn_service_event_origin`, `service_stale` e
+  // `service_origin_cycle` também saem com PT409 (0540); `serviceForEvent`
+  // ainda aceita `40001`, o código antigo, e trata os dois do mesmo jeito.
+  service_event_origin_unsupported: "PT409",
+  service_origin_cycle: "PT409",
+  service_stale: "PT409",
+  service_event_not_found: "P0002",
+  service_scope_mismatch: "23503",
+  service_channel_mismatch: "23503",
+};
+
+function erroDaResolucao(error: unknown): { message: string; code?: string } {
+  const texto = String(error);
+  const nome = Object.keys(ERRCODE_DA_RESOLUCAO).find((n) => texto.includes(n));
+  return { message: texto, ...(nome ? { code: ERRCODE_DA_RESOLUCAO[nome] } : {}) };
+}
+
 interface EmitEventParams {
   p_event_type: string;
   p_entity_kind: string;
@@ -278,7 +323,7 @@ function fakeAdminClient(): SupabaseClient {
                 : `public.fn_service_event_origin(${sqlLiteral(params.p_org)}::uuid,${sqlLiteral(params.p_event)}::uuid,${sqlLiteral(params.p_contact)}::uuid,${sqlLiteral(params.p_session)}::uuid)`;
             return { data: JSON.parse(sql(`select ${expression};`)), error: null };
           } catch (error) {
-            return { data: null, error: { message: String(error) } };
+            return { data: null, error: erroDaResolucao(error) };
           }
         }
         if (name === "fn_service_begin") {
@@ -756,5 +801,275 @@ describe("send_whatsapp_message — gatilhos de aniversário e de agenda (#2326)
       ) as { conversation_id?: string };
       expect(fronteira.conversation_id, `appointment.${tipo} não resolveu a conversa`).toBeTruthy();
     }
+  });
+});
+
+/**
+ * #3286 — a ação de WhatsApp disparada pelo gatilho de DATA DO FUNIL
+ * (`lead.date_field_due`, entidade `crm_lead`) nunca enviava, e é o MESMO
+ * defeito do #2326 num tipo que ficou de fora do conserto da 0551: o evento
+ * nasce pelo cron `app/api/v1/cron/lead-date-field-due` sem `service_origin`
+ * (correto — origem é campo do servidor), e o par `(tipo, entidade)` não estava
+ * na tabela que as duas pontas leem (`fn_service_event_contact`). O evento
+ * nascia sem carimbo E `fn_service_event_origin` recusava o tipo com
+ * `service_event_origin_unsupported` (40001) — que `serviceForEvent` engole
+ * como origem obsoleta —, então o run terminava `failed` com
+ * `service_boundary_stale`.
+ *
+ * O caso 11 exercita a AÇÃO inteira (carimbo + `serviceForAutomation` +
+ * `sendMessageHandler`); o 12 mede a tabela de pares direto, e é ele quem prova
+ * que o par novo entrou SEM afrouxar os que já funcionavam (`contact.birthday`,
+ * `contact.tag_added`, `appointment.created`) nem os desconhecidos.
+ *
+ * Sem a linha da migration 0743, o caso 11 termina `failed` e o 12 acusa
+ * `suportado=false` no par novo.
+ */
+describe("send_whatsapp_message — gatilho de data do funil (#3286)", () => {
+  // Namespace próprio (44444444-), ao lado do que o arquivo já usa.
+  const PIPELINE_ID = "44444444-8888-4000-8000-000000000001";
+  const STAGE_ID = "44444444-8888-4000-8000-000000000002";
+  const LEAD_ID = "44444444-8888-4000-8000-000000000003";
+  const COMPROMISSO_ID = "44444444-5555-4000-8000-000000000003";
+  /**
+   * Contato PRÓPRIO desta fatia, de propósito: o caso 10 semeia um compromisso
+   * ATIVO para o contato do arquivo, e um compromisso ativo faz a proteção da
+   * agenda adiar a cobrança (`AgendaDeferredError`) — o que mascararia a medida
+   * (o desfecho seria `failed` por outro motivo). O contato desta fatia não tem
+   * compromisso ativo nenhum, então o que o caso 11 mede é a fronteira de
+   * SERVIÇO, que é o defeito da issue.
+   */
+  const CONTACT_T11 = "44444444-9999-4000-8000-000000000001";
+
+  /** Semeia o contato, o funil + negócio e o compromisso usado como par de controle. */
+  function semearNegocio(): void {
+    sql(`
+      insert into public.contacts (id, organization_id, display_name, name, phone_number, is_blocked)
+        values ('${CONTACT_T11}', '${GOV_ORG}', 'Contato T11 (data do funil)', 'Ana', '+5511977770001', false)
+        on conflict (id) do nothing;
+      insert into public.crm_pipelines (id, organization_id, name, slug)
+        values ('${PIPELINE_ID}', '${GOV_ORG}', 'Funil T11', 'funil-t11')
+        on conflict (id) do nothing;
+      insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position)
+        values ('${STAGE_ID}', '${GOV_ORG}', '${PIPELINE_ID}', 'Véspera do embarque', 'vespera-t11', 1000)
+        on conflict (id) do nothing;
+      insert into public.crm_leads (id, organization_id, pipeline_id, stage_id, contact_id, title, custom_fields)
+        values ('${LEAD_ID}', '${GOV_ORG}', '${PIPELINE_ID}', '${STAGE_ID}', '${CONTACT_T11}', 'Negócio T11', '{"data_inicio":"2026-07-18"}'::jsonb)
+        on conflict (id) do nothing;
+      -- Compromisso do contato do ARQUIVO (não do contato desta fatia): serve de
+      -- par calendar_appointment para o caso 12 sem entrar na proteção da agenda
+      -- do contato medido no caso 11.
+      insert into public.calendar_appointments (id, organization_id, contact_id, title, starts_at, ends_at)
+        values ('${COMPROMISSO_ID}', '${GOV_ORG}', '${CONTACT_ID}', 'Compromisso T11 (controle)',
+                now() + interval '30 days', now() + interval '30 days 1 hour')
+        on conflict (id) do nothing;
+    `);
+  }
+
+  /** `(tipo, entidade) → contato` como o banco resolve — a MESMA tabela das duas pontas. */
+  function par(
+    tipo: string,
+    kind: string,
+    id: string,
+  ): { suportado: boolean; contact_id: string | null } {
+    return rows(
+      `select suportado, contact_id from public.fn_service_event_contact(
+         '${GOV_ORG}'::uuid, ${sqlString(tipo)}, ${sqlString(kind)}, ${sqlString(id)}::uuid)`,
+    )[0] as { suportado: boolean; contact_id: string | null };
+  }
+
+  it("11. lead.date_field_due sem origem: emit_event carimba e a ação envia (não morre em service_boundary_stale)", async () => {
+    // 13:00Z = 10:00 em São Paulo: dentro da janela do canal.
+    vi.setSystemTime(new Date("2026-07-17T13:00:00Z"));
+    semearNegocio();
+    await ensureConversation(admin, GOV_ORG, CONTACT_T11, SESSION_ID);
+
+    // O cron emite SEM `service_origin` — o carimbo é responsabilidade do servidor.
+    const eventoId = emitirSemOrigem("lead.date_field_due", "crm_lead", LEAD_ID, {
+      rule_id: RULE_ID,
+      pipeline_id: PIPELINE_ID,
+      campo: "data_inicio",
+      dias: 1,
+      local_date: new Date("2026-07-17T13:00:00Z").toISOString().slice(0, 10),
+      date: "2026-07-18",
+    });
+
+    // O carimbo resolveu o par novo: o evento nasce COM origem.
+    const carimbo = rows(
+      `select payload->'service_origin'->>'kind' as kind from public.event_log where id = '${eventoId}'`,
+    );
+    expect(carimbo[0]?.kind, "o emit_event não carimbou o par novo").toBe("command");
+
+    const executor = getAction("send_whatsapp_message")!;
+    const result = await executor.execute(
+      baseCtx({
+        event: { id: eventoId } as unknown as EventRow,
+        context: {
+          contact: {
+            id: CONTACT_T11,
+            is_blocked: false,
+            phone_number: "+5511977770001",
+            name: "Ana",
+          },
+        },
+      }),
+      { channel_session_id: SESSION_ID, template: "Falta 1 dia, {{contact.name}}!" },
+    );
+
+    // O desfecho do defeito era `failed` com `service_boundary_stale`.
+    expect(result.status, JSON.stringify(result)).toBe("postponed");
+    expect(result.detail?.reason).toBe("waha_not_configured");
+    const mensagemId = String(result.detail?.message_id);
+    expect(mensagemId).toBeTruthy();
+    const encontradas = rows(
+      `select body, direction, contact_id from public.messages where id = '${mensagemId}'`,
+    );
+    expect(encontradas.length).toBe(1);
+    expect(encontradas[0]!.body).toBe("Falta 1 dia, Ana!");
+    expect(encontradas[0]!.direction).toBe("outbound");
+    expect(encontradas[0]!.contact_id).toBe(CONTACT_T11);
+  });
+
+  it("12. o par (tipo, entidade) reconhece o novo e mantém os antigos — desconhecido segue recusado", () => {
+    semearNegocio();
+
+    // O NOVO: o gatilho de data do funil, entidade crm_lead.
+    expect(par("lead.date_field_due", "crm_lead", LEAD_ID)).toMatchObject({
+      suportado: true,
+      contact_id: CONTACT_T11,
+    });
+
+    // Os que já funcionavam seguem reconhecidos (nenhum foi afrouxado nem perdido).
+    expect(par("contact.birthday", "contact", CONTACT_T11)).toMatchObject({
+      suportado: true,
+      contact_id: CONTACT_T11,
+    });
+    expect(par("contact.tag_added", "contact", CONTACT_T11)).toMatchObject({
+      suportado: true,
+      contact_id: CONTACT_T11,
+    });
+    expect(par("appointment.created", "calendar_appointment", COMPROMISSO_ID)).toMatchObject({
+      suportado: true,
+      contact_id: CONTACT_ID,
+    });
+    expect(par("lead.created", "crm_lead", LEAD_ID)).toMatchObject({
+      suportado: true,
+      contact_id: CONTACT_T11,
+    });
+
+    // E o reconhecimento NÃO foi afrouxado: tipo desconhecido e `entity_kind`
+    // incompatível continuam recusados (o ramo `else` da função).
+    expect(par("lead.date_field_due", "contact", CONTACT_T11).suportado).toBe(false);
+    expect(par("lead.silent_for", "crm_lead", LEAD_ID).suportado).toBe(false);
+  });
+});
+
+/**
+ * #4018 — a ação de WhatsApp disparada pelo gatilho "lead parado N dias na
+ * mesma etapa" (`lead.stage_stale`, entidade `crm_lead`). É a MESMA classe do
+ * #3286, e a migration 0743 deixou este tipo nomeado como pendente: o evento
+ * nasce pela varredura `app/api/v1/cron/lead-time-triggers` sem
+ * `service_origin` (correto — origem é campo do servidor) e o par
+ * `(tipo, entidade)` não estava na tabela que as duas pontas leem
+ * (`fn_service_event_contact`). O run terminava `partial`, com a ação de envio
+ * em `failed`/`service_boundary_stale`.
+ *
+ * O caso 13 exercita a AÇÃO inteira (carimbo + `serviceForAutomation` +
+ * `sendMessageHandler`) — é o desfecho que a issue mede em Atividade. Sem a
+ * linha da 9206, ele termina `failed` com `service_boundary_stale`.
+ *
+ * ⚠️ O AGRAVANTE que a issue aponta fica FORA desta onda, de propósito: o laço
+ * de ações do motor (`lib/automation/engine.ts:740-777`) faz `continue` depois
+ * de uma ação falhar, então o `add_tag` que vem depois do envio marca o contato
+ * como se a mensagem tivesse ido. Isso é decisão de desenho separada e este
+ * caso NÃO a exercita.
+ */
+describe("send_whatsapp_message — gatilho de etapa parada (#4018)", () => {
+  const PIPELINE_4018 = "44444444-bbbb-4000-8000-000000000001";
+  const STAGE_4018 = "44444444-bbbb-4000-8000-000000000002";
+  const LEAD_4018 = "44444444-bbbb-4000-8000-000000000003";
+  /** Contato PRÓPRIO: sem compromisso ativo, para a proteção da agenda não mascarar a medida. */
+  const CONTACT_4018 = "44444444-cccc-4000-8000-000000000001";
+
+  function semearNegocioParado(): void {
+    sql(`
+      insert into public.contacts (id, organization_id, display_name, name, phone_number, is_blocked)
+        values ('${CONTACT_4018}', '${GOV_ORG}', 'Contato #4018 (etapa parada)', 'Ana', '+5511955550123', false)
+        on conflict (id) do nothing;
+      insert into public.crm_pipelines (id, organization_id, name, slug)
+        values ('${PIPELINE_4018}', '${GOV_ORG}', 'Funil #4018', 'funil-4018')
+        on conflict (id) do nothing;
+      insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position)
+        values ('${STAGE_4018}', '${GOV_ORG}', '${PIPELINE_4018}', 'Parado há 3 dias', 'parado-4018', 1000)
+        on conflict (id) do nothing;
+      insert into public.crm_leads (id, organization_id, pipeline_id, stage_id, contact_id, title)
+        values ('${LEAD_4018}', '${GOV_ORG}', '${PIPELINE_4018}', '${STAGE_4018}', '${CONTACT_4018}', 'Negócio #4018')
+        on conflict (id) do nothing;
+    `);
+  }
+
+  it("13. lead.stage_stale sem origem: emit_event carimba e a ação envia (não morre em service_boundary_stale)", async () => {
+    // 13:00Z = 10:00 em São Paulo: dentro da janela do canal.
+    vi.setSystemTime(new Date("2026-07-17T13:00:00Z"));
+    semearNegocioParado();
+    const conversa = await ensureConversation(admin, GOV_ORG, CONTACT_4018, SESSION_ID);
+
+    // A varredura emite SEM `service_origin` — o carimbo é do servidor.
+    const eventoId = emitirSemOrigem("lead.stage_stale", "crm_lead", LEAD_4018, {
+      rule_id: RULE_ID,
+      dias: 3,
+      ancora: new Date("2026-07-14T13:00:00Z").toISOString(),
+      etapa_desde: new Date("2026-07-14T13:00:00Z").toISOString(),
+    });
+
+    const executor = getAction("send_whatsapp_message")!;
+    const result = await executor.execute(
+      baseCtx({
+        event: { id: eventoId } as unknown as EventRow,
+        context: {
+          contact: {
+            id: CONTACT_4018,
+            is_blocked: false,
+            phone_number: "+5511955550123",
+            name: "Ana",
+          },
+        },
+      }),
+      { channel_session_id: SESSION_ID, template: "Seu negócio está parado há 3 dias, {{contact.name}}!" },
+    );
+
+    // O desfecho do defeito era `failed` com `service_boundary_stale`.
+    expect(result.status, JSON.stringify(result)).not.toBe("failed");
+    expect(result.detail?.reason).toBe("waha_not_configured");
+
+    // O carimbo GRAVADO (valor, não existência).
+    const carimbo = rows(
+      `select payload->'service_origin'->>'kind' as kind,
+              payload->'service_origin'->'observed'->>'contact_id' as contact_id,
+              payload->'service_origin'->'observed'->>'default_session_id' as session_id
+         from public.event_log where id = '${eventoId}'`,
+    )[0] as { kind: string; contact_id: string; session_id: string };
+    expect(carimbo?.kind, "o emit_event não carimbou o par novo").toBe("command");
+    expect(carimbo?.contact_id).toBe(CONTACT_4018);
+    expect(carimbo?.session_id).toBe(SESSION_ID);
+    // O carimbo aponta a conversa que a ação vai usar.
+    expect(
+      rows(
+        `select 1 from public.event_log e
+          where e.id = '${eventoId}'
+            and e.payload->'service_origin'->'observed'->'destinations' @> jsonb_build_array(
+              jsonb_build_object('channel_session_id', '${SESSION_ID}',
+                'observed', jsonb_build_object('conversation_id', '${conversa}')))`,
+      ).length,
+      "o carimbo não aponta a conversa do contato",
+    ).toBe(1);
+
+    const mensagemId = String(result.detail?.message_id);
+    expect(mensagemId).toBeTruthy();
+    const encontradas = rows(
+      `select body, direction, contact_id from public.messages where id = '${mensagemId}'`,
+    );
+    expect(encontradas.length).toBe(1);
+    expect(encontradas[0]!.direction).toBe("outbound");
+    expect(encontradas[0]!.contact_id).toBe(CONTACT_4018);
   });
 });

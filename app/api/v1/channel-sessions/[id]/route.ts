@@ -27,6 +27,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { CHANNEL_PROVIDER_SOCIAL, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
+import { PARTNER_CHANNEL_PROVIDER, desfazerNoProvedor } from "@/lib/channels/connect";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 import { desfazerWebhookDoNumero } from "@/lib/channels/meta/webhook-override";
@@ -337,7 +338,7 @@ export async function DELETE(
   const { data: session } = await supabase
     .from("channel_sessions")
     .select(
-      "id, provider, waha_session_name, display_name, phone_number, meta_phone_number_id, meta_token_encrypted",
+      "id, provider, waha_session_name, display_name, phone_number, meta_phone_number_id, meta_token_encrypted, zernio_credencial_da_instalacao",
     )
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id)
@@ -368,6 +369,7 @@ export async function DELETE(
    * estava fora do ar e a exclusão seguiu em best-effort.
    */
   let socialWebhook: "apagada" | "sem_integracao" | "falhou" | "nao_social" = "nao_social";
+  let parceiro: "desfeito" | "nada_a_desfazer" | "sem_credencial" | "falhou" | "nao_parceiro" = "nao_parceiro";
 
   if (session.provider === CHANNEL_PROVIDER_WAHA) {
     const waha = getWahaClient();
@@ -417,6 +419,45 @@ export async function DELETE(
     // DEPOIS de apagar a assinatura, que pode ter sido achada pela URL dele.
     // (`meta_token_encrypted` não entra aqui de propósito: a linha social não
     // usa essa coluna — a credencial que autoriza a chamada vive na integração.)
+    patch.webhook_path_token = randomUUID().replace(/-/g, "");
+  } else if (session.provider === PARTNER_CHANNEL_PROVIDER) {
+    // ─── O QUE A INSTALAÇÃO FEZ NO PROVEDOR PARCEIRO NÃO FICA ÓRFÃO ──────────
+    //
+    // A conexão por um clique pôs o perfil da organização no webhook ÚNICO da
+    // instalação e conectou o número na conta DELA; a por chave própria pode ter
+    // tido o webhook do número registrado pela rota. `desfazerNoProvedor` tira o
+    // perfil do filtro (o webhook segue entregando as outras conexões) e
+    // desconecta o número — senão ele seguiria na fatura do provedor da
+    // instalação depois de sair do CRM —, ou apaga a assinatura do número na
+    // chave própria. Webhook colado à mão não é tocado.
+    //
+    // Antes do patch, que gira o token. Na chave própria é best-effort como o
+    // ramo social: provedor fora do ar vai para o log e para a auditoria
+    // (`parceiro`), e NÃO desfaz a exclusão que o operador pediu — o número é
+    // da conta da organização. Na conexão por um clique o número está na conta
+    // (e na fatura) da INSTALAÇÃO: arquivar ou apagar a linha assim mesmo
+    // levaria embora o único registro de que ele ainda está lá, e nada voltaria
+    // a desconectá-lo. Ali a exclusão falha fechada, como o ramo do WAHA, e a
+    // linha fica para o operador excluir de novo.
+    try {
+      parceiro = await desfazerNoProvedor(createAdminClient(), activeOrg.orgId, id);
+    } catch (err) {
+      parceiro = "falhou";
+      logger.warn("Falha ao desfazer a conexão no provedor parceiro", {
+        requestId,
+        channel_session_id: id,
+        organization_id: activeOrg.orgId,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+      if (session.zernio_credencial_da_instalacao === true) {
+        return fail(
+          "upstream_unavailable",
+          t("O provedor não confirmou a remoção do número. A conexão continua aqui: tente excluir de novo em alguns minutos."),
+          502,
+          { requestId },
+        );
+      }
+    }
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
   } else {
     // ─── O OVERRIDE NÃO FICA ÓRFÃO NA META (issue #1334) ─────────────────────
@@ -498,15 +539,25 @@ export async function DELETE(
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
   }
 
+  // A linha da conexão pela instalação só é arquivada ou apagada pelo service
+  // role (gatilho da migration 9093): por fora desta rota, o número ficaria na
+  // conta da instalação sem passar por `desfazerNoProvedor`. A credencial do
+  // número oficial (`meta_token_encrypted`, zerada acima) também só é gravada
+  // pelo service role (migration 9104). O filtro de organização abaixo é o
+  // mesmo nos dois clientes, resolvido da sessão.
+  const escritor =
+    session.zernio_credencial_da_instalacao === true || "meta_token_encrypted" in patch
+      ? createAdminClient()
+      : supabase;
   if (arquivar) {
-    const { error: archErr } = await supabase
+    const { error: archErr } = await escritor
       .from("channel_sessions")
       .update(patch)
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
     if (archErr) return fail("internal_error", archErr.message, 500, { requestId });
   } else {
-    const { error: delErr } = await supabase
+    const { error: delErr } = await escritor
       .from("channel_sessions")
       .delete()
       .eq("organization_id", activeOrg.orgId)
@@ -568,6 +619,7 @@ export async function DELETE(
       avisos_fechados: avisosFechados,
       webhook_override: webhookOverride,
       social_webhook: socialWebhook,
+      parceiro,
       ...impact.history,
       ...impact.configuration,
     },

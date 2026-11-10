@@ -14,6 +14,8 @@ const CONTACT_ID = "11111111-1111-4111-8111-111111111111";
 interface MundoOpts {
   /** Linhas que a query de crm_proposals devolve. `undefined` = a query lança. */
   propostas?: Array<Record<string, unknown>>;
+  /** Linhas que a query do histórico devolve (#2729). */
+  historico?: Array<Record<string, unknown>>;
 }
 
 function montarDb(opts: MundoOpts = {}) {
@@ -31,7 +33,7 @@ function montarDb(opts: MundoOpts = {}) {
         };
       }
       if (sql.includes("crm_lead_activities")) return { rows: [] };
-      if (sql.includes("from messages")) return { rows: [] };
+      if (sql.includes("from messages")) return { rows: opts.historico ?? [] };
       if (sql.includes("from demandas")) return { rows: [] };
       if (sql.includes("from crm_proposals")) {
         if (opts.propostas === undefined) throw new Error("relation crm_proposals does not exist");
@@ -84,5 +86,78 @@ describe("getLeadContext — last_proposal (N7)", () => {
       expect(r.context.last_proposal).toBeNull();
       expect(r.context.contact).toBeDefined();
     }
+  });
+});
+
+// ─── #2729 — quem escreveu cada mensagem do grupo ────────────────────────────
+//
+// O dado mora em `messages.metadata.group_sender` desde a entrada dos grupos, e
+// o turno simplesmente não o lia: num grupo de três pessoas o modelo recebia
+// todas as falas sem autor. Aqui a régua é o MAPEAMENTO (metadata → `sender`);
+// a consulta de verdade é medida contra o banco em
+// `tests/invariants/historico-do-grupo-no-atendimento.test.ts`.
+describe("getLeadContext — remetente do grupo (#2729)", () => {
+  const linha = (o: Record<string, unknown>): Record<string, unknown> => ({
+    type: "text",
+    body: "oi",
+    media_url: null,
+    media_storage_path: null,
+    media_mime: null,
+    media_derived_text: null,
+    sent_at: new Date("2026-10-20T12:00:00Z"),
+    metadata: null,
+    ...o,
+  });
+
+  it("recebida com group_sender chega com `sender` (nome e telefone, sem lid)", async () => {
+    const { db } = montarDb({
+      propostas: [],
+      historico: [
+        linha({
+          direction: "inbound",
+          body: "bom dia",
+          metadata: {
+            raw_type: "chat",
+            group_sender: { name: "Dona", phone: "+5511999990000", lid: "123456789012345" },
+          },
+        }),
+        linha({ direction: "outbound", body: "bom dia!", metadata: { raw_type: "chat" } }),
+      ],
+    });
+    const r = await getLeadContext(db as never, {} as never, INPUT, KNOBS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // A ordem é a da consulta (mais nova primeiro, o chamador inverte); o que
+    // este caso mede é o MAPEAMENTO, então procura por direção.
+    const recebida = r.context.messages.find((m) => m.direction === "inbound");
+    expect(recebida).toMatchObject({ sender: { name: "Dona", phone: "+5511999990000" } });
+    // `lid` é identificador interno do WhatsApp: não vai ao prompt.
+    expect(JSON.stringify(r.context)).not.toContain("123456789012345");
+    // A enviada é nossa — não tem autor participante para nomear.
+    expect(r.context.messages.find((m) => m.direction === "outbound")).not.toHaveProperty("sender");
+  });
+
+  it("controle 1:1: sem group_sender, nenhuma mensagem ganha `sender`", async () => {
+    const { db } = montarDb({
+      propostas: [],
+      historico: [linha({ direction: "inbound", body: "bom dia" })],
+    });
+    const r = await getLeadContext(db as never, {} as never, INPUT, KNOBS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.context.messages[0]).not.toHaveProperty("sender");
+  });
+
+  it("group_sender fora do formato não derruba o turno: a mensagem entra sem autor", async () => {
+    const { db } = montarDb({
+      propostas: [],
+      historico: [
+        linha({ direction: "inbound", metadata: { group_sender: { name: "", phone: "not-a-phone" } } }),
+      ],
+    });
+    const r = await getLeadContext(db as never, {} as never, INPUT, KNOBS);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.context.messages[0]).not.toHaveProperty("sender");
   });
 });

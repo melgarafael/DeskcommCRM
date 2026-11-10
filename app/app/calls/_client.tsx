@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { useT } from "@/hooks/i18n/useT";
 import { useCallsQuery, useDialCall, type CallRow } from "@/hooks/calls/useCallsQuery";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -72,6 +73,8 @@ function counterpartLabel(call: CallRow): string {
 
 function DialerDialog() {
   const t = useT();
+  // O exemplo do número é do país da organização, não « +55 » em duro.
+  const telefoneExemplo = useTelefoneExemplo();
   const [open, setOpen] = useState(false);
   const [toNumber, setToNumber] = useState("");
   const dial = useDialCall();
@@ -107,7 +110,7 @@ function DialerDialog() {
             <Input
               id="dialer-number"
               type="tel"
-              placeholder="+55 32 98479-3302"
+              placeholder={telefoneExemplo}
               value={toNumber}
               onChange={(e) => setToNumber(e.target.value)}
               autoFocus

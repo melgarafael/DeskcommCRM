@@ -8,9 +8,13 @@ import { alineasDoArt15Visiveis, art15DoControlador } from "@/lib/legal/art15";
 import { moedaServidaOu } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { Art15Form } from "./_art15";
+import { CatalogoDaEmpresaForm } from "./_catalogo";
 import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
+import { InboxDaEmpresaForm } from "./_inbox";
 import { TenantForm } from "./_form";
 import { InterfaceDaEmpresaForm } from "./_interface";
+import { camposDoNegocioDosFunis } from "@/lib/leads/compras-do-contato";
+import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +52,15 @@ export default async function TenantSettingsPage() {
     )
     .eq("id", activeOrg.orgId)
     .maybeSingle();
+
+  // Os campos do NEGÓCIO dos funis — a lista que a empresa escolhe para a linha
+  // de "Últimas compras" (issue #3179). Leitura só de apresentação; a RLS decide
+  // o que aparece. Vazia quando não há funil com campos.
+  const { data: funis } = await supabase
+    .from("crm_pipelines")
+    .select("settings")
+    .eq("organization_id", activeOrg.orgId);
+  const camposDeCompra = camposDoNegocioDosFunis(funis ?? []);
 
   const row = (data ?? null) as OrgRow | null;
   const idioma = user.idioma;
@@ -102,6 +115,13 @@ export default async function TenantSettingsPage() {
         <InterfaceDaEmpresaForm
           initial={row.interface_settings}
           role={activeOrg.role}
+          camposDeCompra={camposDeCompra}
+        />
+      )}
+      {row && <InboxDaEmpresaForm initial={row.interface_settings} />}
+      {row && (
+        <CatalogoDaEmpresaForm
+          inicial={capacidadesLigadas(row.settings, []).includes("apresentacao_do_catalogo")}
         />
       )}
       {row && <ZonaDePerigoDaOrganizacao displayName={row.display_name} />}

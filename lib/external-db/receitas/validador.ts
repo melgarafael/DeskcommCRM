@@ -28,10 +28,12 @@ const PROIBIDOS_PALAVRA: ReadonlyArray<{ nome: string; regex: RegExp }> = [
   { nome: "OUTFILE", regex: /\bOUTFILE\b/i },
 ];
 
-/** Tabelas que aparecem após FROM ou JOIN (case-insensitive, com ou without as). */
+/** Tabelas que aparecem após FROM ou JOIN, em qualquer nível (incluindo
+ * subconsulta no SELECT e EXISTS/WHERE). Aceita ou não crase ao redor do nome;
+ * o lookahead (?!\w) evita casar dentro de um nome maior. */
 function tabelasDoSql(sql: string): string[] {
   const achadas: string[] = [];
-  const re = /\b(?:from|join)\s+([`"']?)([a-zA-Z0-9_]+)\1\b/gi;
+  const re = /\b(?:from|join)\s+([`"']?)([a-zA-Z0-9_]+)\1(?!\w)/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(sql)) !== null) {
     achadas.push(m[2]!);

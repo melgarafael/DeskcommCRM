@@ -576,27 +576,155 @@ function ehPalavraIsolada(normalizado: string): boolean {
 }
 
 /**
- * É pedido de descadastro INEQUÍVOCO? Só este autoriza gravar `is_blocked` —
- * ver o cabeçalho deste arquivo sobre por que o ambíguo não entra aqui.
+ * ─── A ASSINATURA DA ATENDENTE NA PRIMEIRA LINHA (#3078, ajustada no #3158) ──
+ *
+ * Num WhatsApp Business com vários atendentes, a assinatura é prefixada ao
+ * texto — a mensagem chega assim:
+ *
+ *   *Amanda Nobre:*
+ *   PARAR
+ *
+ * A decisão lia o texto INTEIRO: `*amanda nobre:*\nparar` faz `ehPalavraIsolada`
+ * colar as letras ("amandanobreparar", fora do conjunto) e nenhuma frase de
+ * `FRASES_DE_OPT_OUT` casa — o pedido se perdia. Efeito medido no relato
+ * (1.85.0): o contato não era bloqueado, o card não ia para perdido e a IA
+ * respondia — quem pediu para sair seguia recebendo prospecção (risco de
+ * denúncia do número e de LGPD, art. 18).
+ *
+ * O recorte NÃO é regra nova: a assinatura muda o TEXTO analisado, e o pedido
+ * continua julgado pela MESMA régua — palavra sozinha ou frase de
+ * `FRASES_DE_OPT_OUT`. Nenhuma palavra duvidosa vira inequívoca aqui, e o
+ * limiar que grava `is_blocked` não se move.
+ *
+ * ─── O AJUSTE DO #3158: a marca da assinatura é o NEGRITO + DOIS PONTOS ──────
+ *
+ * A primeira versão aceitava também a forma SEM asteriscos (`Nome:` com até 4
+ * palavras) e julgava SÓ o recortado. Medido pelo mantenedor com 28 frases (o
+ * mesmo corpus desta seção de teste), os dois detalhes erravam dos dois lados:
+ *
+ *   `Consulta de amanhã:` + `cancelar`   → bloqueava (rótulo curto lido como
+ *   `Pedido 123:` + `cancelar`              assinatura; o resto vira a palavra
+ *   `Sua mensagem:` + `PARAR`               isolada e o contato é silenciado
+ *   `Dúvida:`/`Remédio:` + `parar?`         para sempre por um rótulo)
+ *   `*Não quero mais receber*` + `obrigado` → NÃO bloqueava (a primeira linha É
+ *   `*Pare de me mandar mensagem*` + `chato`   o pedido e o recorte a jogava
+ *   `Não quero mais receber:` + `obrigado`     fora, sobrando só "obrigado")
+ *
+ * São 9 frases × as duas funções = 18 resultados que mudavam de veredito contra
+ * a `main` (medido, ver o comentário do PR #3158). Duas decisões desfazem as 18:
+ *
+ *   1. só o NEGRITO do WhatsApp Business é assinatura, e ele termina em dois
+ *      pontos — `*Amanda Nobre:*`, `*Amanda Nobre*:`. Sem asteriscos, `Nome:` é
+ *      um rótulo qualquer ("Consulta de amanhã:") e deixa de ser assinatura; a
+ *      forma sem dois pontos (`*Não quero mais receber*`) é uma FRASE em
+ *      negrito, não um nome — ela nem chega a ser recortada;
+ *   2. quem julga é sempre o par: o texto ORIGINAL **ou** o recortado, e basta
+ *      um dos dois bloquear. É o item 2 que sustenta o item 1 — sem ele, jogar
+ *      fora a primeira linha apagaria o pedido que VIVE nela.
+ *
+ * Limites declarados (não são silêncio, são escolha):
+ *   - um rótulo em negrito com dois pontos (`*Remédio:*` + `parar?`) continua
+ *     sendo lido como assinatura e bloqueia. Estruturalmente é idêntico a um
+ *     nome em negrito (`*Ana:*`); separar os dois exigiria um dicionário de
+ *     nomes próprios. Custo aceito: prefere-se o bloqueio (falso positivo) à
+ *     perda do pedido de quem assina — os dois erros estão medidos nesta seção;
+ *   - a primeira linha em negrito SEM dois pontos (`*Amanda Nobre*` + `PARAR`)
+ *     e o rótulo sem asteriscos (`Amanda Nobre:` + `PARAR`) deixam de ser
+ *     assinatura. Quando o que vem depois é uma FRASE de pedido, nada se perde
+ *     (o texto original é julgado também); o que se perde é só a palavra
+ *     solta depois de um rótulo sem a marca de assinatura. É a troca que
+ *     desfaz os 5 falsos positivos: a assinatura real do relato tem o negrito.
  */
-export function ehPedidoDeOptOut(texto: string | null | undefined): boolean {
-  if (!texto) return false;
+
+/**
+ * A primeira linha é uma ASSINATURA de atendente?
+ *
+ * A marca é o NEGRITO do WhatsApp Business MAIS os dois pontos do rótulo, com
+ * a linha INTEIRA (nada antes, nada depois — o chamador já passou `trim`):
+ *   `*Amanda Nobre:*` / `*Amanda Nobre*:` — dois pontos dentro ou fora dos
+ *     asteriscos. É a forma que a issue #3078 descreve e a que o relato traz;
+ *   `*Dra. Amanda Nobre:*` — o ponto de abreviação do nome não atrapalha: o que
+ *     se exige é o `:` do rótulo, não a ausência de `.`.
+ *
+ * Ficam de fora, de propósito (#3158):
+ *   - `Nome:` SEM asteriscos — era aqui que "Consulta de amanhã:" e "Dúvida:"
+ *     viravam assinatura e o contato era silenciado por um rótulo;
+ *   - `*Não quero mais receber*` — negrito SEM dois pontos: é uma frase em
+ *     negrito, e recortá-la comia o próprio pedido.
+ */
+function ehAssinaturaDaAtendente(linha: string): boolean {
+  if (linha === "") return false;
+  return /^\*[^*\n]+:\*:?$/u.test(linha) || /^\*[^*\n]+\*:$/u.test(linha);
+}
+
+/**
+ * O texto SEM a assinatura da atendente na primeira linha — pura e pequena,
+ * para rodar na ENTRADA de toda decisão que hoje olha o texto cru.
+ *
+ * Limites do recorte, medidos com os casos de `opt-out-deteccao.test.ts`:
+ *   - só recorta quando a primeira linha INTEIRA é uma assinatura E existe
+ *     texto DEPOIS dela. Mensagem de UMA linha só é preservada — é o que
+ *     mantém `*PARAR:*` sozinho bloqueando (recortar devolveria vazio e o
+ *     pedido morreria), e o que protege uma mensagem legítima de duas linhas
+ *     cujo começo não é assinatura (`Bom dia\nvamos falar amanha`);
+ *   - o RESTO é devolvido intacto: o recorte não decide nada, só tira o ruído
+ *     da frente;
+ *   - o texto ORIGINAL continua sendo julgado junto com o recortado (#3158):
+ *     quem decide é `ehPedidoDeOptOut`/`ehOptOutProvavel`, e eles olham os dois.
+ */
+export function semAssinaturaDaAtendente(texto: string): string {
+  const quebra = texto.indexOf("\n");
+  if (quebra === -1) return texto;
+  const resto = texto.slice(quebra + 1);
+  if (resto.trim() === "") return texto;
+  return ehAssinaturaDaAtendente(texto.slice(0, quebra).trim()) ? resto : texto;
+}
+
+/**
+ * A régua de UM texto: a palavra sozinha ou uma frase de `FRASES_DE_OPT_OUT`.
+ * É a mesma régua de sempre — não sabe nada sobre assinatura.
+ */
+function ehPedidoInequivoco(texto: string): boolean {
   const normalizado = normalizarTexto(texto.trim());
   if (normalizado === "") return false;
   if (ehPalavraIsolada(normalizado)) return true;
   return FRASES_DE_OPT_OUT.some((re) => re.test(normalizado));
 }
 
+/** A régua do AMBÍGUO sobre um texto — o irmão conservador de cima. */
+function ehSinalAmbiguo(texto: string): boolean {
+  const normalizado = normalizarTexto(texto.trim());
+  if (normalizado === "") return false;
+  return FRASES_AMBIGUAS_DE_OPT_OUT.some((re) => re.test(normalizado));
+}
+
+/**
+ * É pedido de descadastro INEQUÍVOCO? Só este autoriza gravar `is_blocked` —
+ * ver o cabeçalho deste arquivo sobre por que o ambíguo não entra aqui.
+ *
+ * Julga os DOIS textos e basta UM bloquear (#3158):
+ *   - o ORIGINAL, para o pedido que VIVE na primeira linha em negrito
+ *     (`*Não quero mais receber*` + `obrigado`) — o recorte o apagaria;
+ *   - o RECORTADO, para o pedido que vem depois da assinatura
+ *     (`*Amanda Nobre:*` + `PARAR`) — o texto cru cola as letras e não casa
+ *     nada.
+ * O `ou` é obrigatório: cada texto cobre o erro do outro, e é ele que permite
+ * estreitar o que conta como assinatura sem perder pedido nenhum.
+ */
+export function ehPedidoDeOptOut(texto: string | null | undefined): boolean {
+  if (!texto) return false;
+  return ehPedidoInequivoco(texto) || ehPedidoInequivoco(semAssinaturaDaAtendente(texto.trim()));
+}
+
 /**
  * É pedido de descadastro INEQUÍVOCO **ou** sinal ambíguo de que a pessoa quer
  * parar? Sinal conservador do runtime: para de responder e escala; o bloqueio
- * real fica com o humano.
+ * real fica com o humano. Mesmo par de textos de `ehPedidoDeOptOut` (#3158).
  */
 export function ehOptOutProvavel(texto: string | null | undefined): boolean {
   if (!texto) return false;
   if (ehPedidoDeOptOut(texto)) return true;
-  const normalizado = normalizarTexto(texto.trim());
-  return FRASES_AMBIGUAS_DE_OPT_OUT.some((re) => re.test(normalizado));
+  return ehSinalAmbiguo(texto) || ehSinalAmbiguo(semAssinaturaDaAtendente(texto.trim()));
 }
 
 /**

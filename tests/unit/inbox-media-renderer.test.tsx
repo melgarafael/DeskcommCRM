@@ -57,7 +57,7 @@ describe("MediaRenderer", () => {
   });
   it("document (e tipos desconhecidos) → DocumentCard", () => {
     render(<MediaRenderer agora={UM_DIA_DEPOIS} message={msg({ type: "document", media_mime: "application/pdf" })} />);
-    expect(screen.getByRole("link", { name: /baixar pdf/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /baixar documento pdf/i })).toBeInTheDocument();
   });
 });
 

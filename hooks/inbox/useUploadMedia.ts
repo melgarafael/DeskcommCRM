@@ -30,9 +30,12 @@ export function useUploadMedia() {
       file: File | Blob;
       filename?: string;
       destino?: DestinoDoUpload;
+      /** Gravação do composer: o servidor converte para opus (F2, o AAC do iPhone). */
+      notaDeVoz?: boolean;
     }) => {
       const form = new FormData();
       form.append("file", args.file, args.filename ?? (args.file instanceof File ? args.file.name : "audio"));
+      if (args.notaDeVoz) form.append("nota_de_voz", "1");
       const rota = args.destino === "nota" ? "notes/media" : "media";
       const res = await fetch(`/api/v1/conversations/${args.conversationId}/${rota}`, {
         method: "POST",

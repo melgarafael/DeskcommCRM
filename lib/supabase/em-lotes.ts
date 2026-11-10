@@ -17,14 +17,45 @@
  */
 export const IDS_POR_LOTE = 100;
 
+/**
+ * Peso de um valor dentro de `in.("a","b")` depois de codificado na URL. Serve
+ * para lista de valores que NÃO são uuid (ex.: `external_id` de mensagem do
+ * WhatsApp, 30 a 70 caracteres e com `@`): 100 deles passam do teto de 8.192 B
+ * de URL do Kong 2.8.1, que responde 414.
+ */
+function pesoNaUrl(id: string): number {
+  return encodeURIComponent(`"${id}",`).length;
+}
+
 export async function buscaEmLotes<T>(
   ids: readonly string[],
   consulta: (lote: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  opcoes: {
+    /** Teto, em bytes já codificados, dos valores de um lote. Além do teto de contagem. */
+    bytesPorLote?: number;
+  } = {},
 ): Promise<{ data: T[]; error: { message: string } | null }> {
   if (ids.length === 0) return { data: [], error: null };
   const lotes: string[][] = [];
-  for (let i = 0; i < ids.length; i += IDS_POR_LOTE) {
-    lotes.push(ids.slice(i, i + IDS_POR_LOTE));
+  if (opcoes.bytesPorLote === undefined) {
+    for (let i = 0; i < ids.length; i += IDS_POR_LOTE) {
+      lotes.push(ids.slice(i, i + IDS_POR_LOTE));
+    }
+  } else {
+    let atual: string[] = [];
+    let bytes = 0;
+    for (const id of ids) {
+      const peso = pesoNaUrl(id);
+      // Um valor sozinho maior que o orçamento ainda vai, num lote só dele.
+      if (atual.length > 0 && (bytes + peso > opcoes.bytesPorLote || atual.length >= IDS_POR_LOTE)) {
+        lotes.push(atual);
+        atual = [];
+        bytes = 0;
+      }
+      atual.push(id);
+      bytes += peso;
+    }
+    if (atual.length > 0) lotes.push(atual);
   }
   const respostas = await Promise.all(lotes.map((lote) => consulta(lote)));
   const data: T[] = [];

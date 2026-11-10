@@ -63,6 +63,9 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 // Busca o acervo por conta própria e não é o alvo desta fatia: fica fora da
 // conta para os GETs do resumo serem os únicos observáveis.
 vi.mock("@/components/contacts/RoteirosDoContato", () => ({ RoteirosDoContato: () => null }));
+// O bloco Carteira (#3026) busca a própria rota; o dublê de `get` deste arquivo
+// devolve o resumo do painel para TODA URL, então o cartão sai da cena aqui.
+vi.mock("@/components/contacts/CartaoDaCarteira", () => ({ CartaoDaCarteira: () => null }));
 
 // O Select do Radix pede estas APIs do navegador, que o jsdom não implementa.
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -111,8 +114,18 @@ function resumo(leads: Linha[]) {
   return { data: { leads, orders: [], activities: [], demandas: [], fatos: [], historico: [] } };
 }
 
-/** `GET /api/v1/leads/[id]/clone` — a lista JÁ vem sem o funil atual (a rota o exclui). */
-const DESTINOS = [{ id: "p-2", name: "Funil Destino" }];
+/**
+ * `GET /api/v1/leads/[id]/clone` — a lista JÁ vem sem o funil atual (a rota o
+ * exclui) e, desde a #3643, com as etapas de cada destino: é delas que sai o
+ * seletor de "Etapa de entrada".
+ */
+const DESTINOS = [
+  {
+    id: "p-2",
+    name: "Funil Destino",
+    stages: [{ id: "s-2", name: "Novo", position: 1000, is_won: false, is_lost: false }],
+  },
+];
 
 function implementarLeituras(leadsAtuais: () => Linha[]) {
   get.mockImplementation(async (url: string) =>

@@ -19,6 +19,7 @@ casar, carregue o guia antes de agir — a pessoa pode não saber que ele existe
   (rode `bash .agents/skills/deskcomm-contribuir/scripts/quem-sou.sh` primeiro: se disser
   `mantenedor`, este guia fica quieto)
 - criar extensão, plugin, módulo ou tema de nicho; "isto é núcleo ou extensão?" → `deskcomm-extensao`
+- atualizar aulas, traduções e capturas do curso visual após mudanças do CRM → `deskcomm-curso`
 
 Escrevendo código aqui: `deskcomm-doutrina` (as regras que mais custam) e `sistema-vivo` (o gate
 de arquitetura). A doutrina completa é o `CLAUDE.md` da raiz; o contrato portável é o `AGENTS.md`.

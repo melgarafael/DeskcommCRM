@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "synthetic": true,
+  "environment_id": "qa-3475-01a178b3",
+  "build": {
+    "sha": "20f335eaede5c423a0fcc902d79eaabb103ea342",
+    "id": "cyznjcUkNaQa9Fn5H6iU4"
+  },
+  "started_at": "2026-10-26T18:28:43.488Z",
+  "updated_at": "2026-10-26T18:34:09.055Z",
+  "complete": false,
+  "core_complete": false,
+  "scenarios": [
+    {
+      "scenario": "dossie",
+      "state": "passed",
+      "checks": [
+        "viewer sem escrita; outra organização recebe 404",
+        "dormente: clique pela fila, estado/timeline imediatos, PG e reload, tick sem despertar",
+        "coletando: clique pela fila, estado/timeline imediatos, PG e reload, tick sem despertar"
+      ]
+    },
+    {
+      "scenario": "inbox",
+      "state": "passed",
+      "checks": [
+        "Parar no Inbox: cancelled/evento persistidos; reload e tick não devolvem a espera"
+      ]
+    },
+    {
+      "scenario": "pausa",
+      "state": "passed",
+      "checks": [
+        "transporte real e banco: em nome de pausa por cinco minutos, token puro não pausa, sem escopo recusa",
+        "prazo real expirou e a tela voltou ao automático sem alterar o carimbo"
+      ]
+    },
+    {
+      "scenario": "assinatura",
+      "state": "not_run",
+      "checks": []
+    },
+    {
+      "scenario": "avisos",
+      "state": "not_run",
+      "checks": []
+    },
+    {
+      "scenario": "ack",
+      "state": "passed",
+      "checks": [
+        "envio real UI/receiver; HMAC inválido recusa; read→ACK2/1/-1 preserva estado e horas em PG/Inbox/reload",
+        "sent→erro→ACK1 continua failed; ACK2 confirma entrega/leitura, erro atrasado não rebaixa, Inbox/reload concordam",
+        "sent→erro→ACK1 continua failed; ACK3 confirma entrega/leitura, erro atrasado não rebaixa, Inbox/reload concordam",
+        "ACK autenticado da org A para id externo existente só na org B não altera a outra organização",
+        "Bolha invisível não medida: subprova invisibleAgentTool permanece not_run; ACKs não implicam aceite dessa guarda."
+      ]
+    }
+  ],
+  "subproofs": {
+    "pushTransport": {
+      "state": "not_run",
+      "reason": "Envelope criptográfico não recebido; UI/decisão/job são medidos separadamente."
+    },
+    "invisibleAgentTool": {
+      "state": "not_run",
+      "reason": "A guarda requer observar um inbound_turn real chamando send_message com Cf e recebendo corpo_vazio; API comum e ausência no sandbox não provam isso."
+    }
+  },
+  "transport_receipts": [
+    {
+      "id": "qa-3475-4fb02447-9dbe-4213-a404-907ad7da81e3",
+      "session": "qa3475-default",
+      "text_sha256": "831c5ed3932ccdd9dcd9f2fcff67d3d2b1f409bddba5d6b31f6c0107b3bc98e2"
+    },
+    {
+      "id": "qa-3475-e01deb5f-d733-495b-be33-57e3053c81ba",
+      "session": "qa3475-default",
+      "text_sha256": "ec7430554d4c8e21ce3adb49d725bb69b65ae71fc0d930d921780c5530955e8a"
+    },
+    {
+      "id": "qa-3475-5fce3ea3-31d2-4c25-8631-98c9e0f09e8c",
+      "session": "qa3475-default",
+      "text_sha256": "bac2a26ab60204808557007896513d5f065045bb983992025675983fc4577050"
+    },
+    {
+      "id": "qa-3475-51852dc1-a53a-458a-8af9-b97f16711542",
+      "session": "qa3475-default",
+      "text_sha256": "ba27998c2c5ff64988d02b52159ea8c68b5e072f0cf9bb491eda92dcd7d6ce54"
+    },
+    {
+      "id": "qa-3475-3ea13018-6d6a-4862-ad5c-cd22fe07908e",
+      "session": "qa3475-default",
+      "text_sha256": "1789533b5b7317e57a5b1e8208b107a3ceb976f2f9cdada026fe28a4303347da"
+    }
+  ],
+  "limits": [
+    "Nenhuma prova de instalação/build: a bancada é fornecida pelo coordenador.",
+    "Somente os cenários passed foram executados e medidos; subprovas not_run continuam explícitas mesmo com RC 0.",
+    "Sem trace/HAR, para não persistir bearer, senha ou cabeçalhos de sessão."
+  ]
+}

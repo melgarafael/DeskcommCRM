@@ -9,6 +9,7 @@ import {
   motivoDoVeto,
   sugestaoParaMostrar,
 } from "@/lib/agent-engine/agent/sugestao-de-resposta";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 
 /**
  * Os dois defeitos medidos em produção em 2026-09-12, na tela de atendimento.
@@ -166,6 +167,46 @@ describe("o código do veto vira a causa em linguagem de quem opera", () => {
     }
   });
 
+  /**
+   * `causa` vai no aviso de versão barrada (doc 234), sobre uma sugestão que
+   * está sendo OFERECIDA: frase curta, sem instrução e sem ponto (a moldura põe
+   * o seu). Quem não barra versão nenhuma não tem causa — um veto novo sem ela
+   * sumiria do aviso em silêncio, por isso a lista dos sem-causa é fechada.
+   */
+  it("só os vetos de envio têm causa, e a causa não manda agir", () => {
+    const semCausa = CODIGOS_DE_VETO_CONHECIDOS.filter((c) => !motivoDoVeto(c)!.causa);
+    expect(semCausa.sort()).toEqual(
+      ["generation_failed", "max_steps_exhausted", "no_candidate", "output_truncated", "unknown_preview_tool"],
+    );
+    for (const codigo of CODIGOS_DE_VETO_CONHECIDOS) {
+      const causa = motivoDoVeto(codigo)!.causa;
+      if (!causa) continue;
+      expect(causa, codigo).not.toMatch(/gere de novo|nada foi enviado|confira|ajuste|\.$/i);
+      // A tela passa a causa por `t(motivo.causa)`, forma que a guarda do
+      // espanhol não resolve: a cobertura no dicionário é cobrada aqui.
+      expect(DICIONARIO[causa]?.es, `sem espanhol para a causa de ${codigo}`).toBeTruthy();
+    }
+  });
+
+  /**
+   * A CONFERÊNCIA DE AFIRMAÇÃO DE FATO (#2231) tem duas causas que se parecem
+   * e não são a mesma: o material CONTRADIZ o que a resposta dizia, ou o
+   * material simplesmente não apoia. Quem atende age igual nos dois casos, mas
+   * a frase não pode ser a mesma — e, até aqui, nenhum teste comparava as duas.
+   * Medido: invertendo os dois corpos em `motivoDoVeto`, os 24 casos da base
+   * seguiam verdes.
+   */
+  it("⛔ a afirmação CONTRADITA e a SEM APOIO não podem trocar de frase", () => {
+    const contradita = motivoDoVeto("factual_claim_contradicted")!;
+    const semApoio = motivoDoVeto("factual_claim_unsupported")!;
+
+    expect(contradita.texto).not.toBe(semApoio.texto);
+    expect(contradita.texto).toMatch(/CONTRADIZ/);
+    expect(contradita.texto).not.toMatch(/sem apoio/);
+    expect(semApoio.texto).toMatch(/sem apoio/);
+    expect(semApoio.texto).not.toMatch(/CONTRADIZ/);
+  });
+
   it("as causas DEFINITIVAS (opt-out, LGPD) não fingem ter ação local", () => {
     expect(motivoDoVeto("contato_bloqueado")!.acionavel).toBe(false);
     expect(motivoDoVeto("lgpd_anonymized")!.acionavel).toBe(false);
@@ -195,12 +236,24 @@ describe("o código do veto vira a causa em linguagem de quem opera", () => {
     expect(motivo.texto).toMatch(/gere de novo/);
     expect(motivo.texto).not.toMatch(/configura|falhou|erro/i);
     // O código é contrato do motor: é o impedimento que a prévia grava quando o
-    // agente não propôs resposta. Se o nome mudar lá, este caso deixa de valer.
+    // agente não propôs resposta. Ele deixou de nascer no closure do turno
+    // (#3093): a decisão do desfecho saiu para o módulo puro
+    // `desfecho-da-previa.ts`, e é lá que o nome passa a valer. O motor continua
+    // sendo quem pergunta — sem a chamada, o código não chega à prévia.
     const motor = fs.readFileSync(
       path.join(__dirname, "../../lib/agent-engine/agent/inbound-turn.ts"),
       "utf8",
     );
-    expect(motor).toMatch(/code: 'no_candidate'/);
+    const desfecho = fs.readFileSync(
+      path.join(__dirname, "../../lib/agent-engine/agent/desfecho-da-previa.ts"),
+      "utf8",
+    );
+    expect(motor).toMatch(/desfechoSemCandidato\(\{/);
+    expect(desfecho).toMatch(/code: 'no_candidate'/);
+    // #3093: truncamento e teto de passos NÃO podem voltar a cair aqui — é o
+    // defeito que esta suíte existe para não deixar renascer.
+    expect(desfecho).toMatch(/code: 'output_truncated'/);
+    expect(desfecho).toMatch(/code: 'max_steps_exhausted'/);
   });
 
   it("CONTROLE: código desconhecido e ausente devolvem null — o genérico fica", () => {

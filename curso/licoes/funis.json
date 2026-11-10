@@ -1,0 +1,1860 @@
+{
+  "id": "funis",
+  "titulo": "Funis",
+  "tela": "/app/kanban",
+  "resumo": "Onde você acompanha cada negócio da empresa num quadro: cada cliente é um cartão que anda pelas etapas, do primeiro contato até ganhar ou perder.",
+  "licoes": [
+    {
+      "id": "conhecendo-os-funis",
+      "titulo": "Conhecendo a tela de Funis",
+      "objetivo": "Reconhecer a lista de funis, os botões do topo e abrir o quadro de um funil.",
+      "papel": "admin",
+      "busca": [
+        "funis",
+        "funil de vendas",
+        "kanban",
+        "quadro de clientes",
+        "pipeline",
+        "onde ficam os negócios"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista de funis",
+          "texto": "Um funil é o caminho que um cliente percorre até fechar com você, dividido em etapas. Esta tela lista os funis da empresa. A Clínica Bem Viver tem um: \"Pacientes\". O selo \"Padrão\" marca o funil onde entra, sozinho, quem manda a primeira mensagem pelo WhatsApp da clínica (com o WhatsApp conectado).",
+          "rota": "/app/kanban",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-testid^='funil-']:has-text('Pacientes')"
+              },
+              "rotulo": "Um funil da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Padrão",
+                "exato": true
+              },
+              "rotulo": "Funil padrão",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Os botões do topo",
+          "texto": "\"Novo funil\" cria outro funil, por exemplo um só para pilates ou para odontologia. \"Importar planilha\" traz de uma vez uma lista de clientes que você já tem, num arquivo CSV: cada linha vira um cartão na primeira etapa do funil escolhido. Ao lado de cada funil ficam \"Renomear\" e \"Arquivar\"; você usa esses botões na última lição.",
+          "dica": "Só quem é gerente ou administrador vê \"Novo funil\", \"Renomear\" e \"Arquivar\". O atendente vê a lista e importa planilhas.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo funil",
+                "exato": true
+              },
+              "rotulo": "Criar outro funil",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Importar planilha",
+                "exato": true
+              },
+              "rotulo": "Trazer clientes de uma planilha",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A janela de importar planilha",
+          "texto": "Escolha em \"Funil de destino\" para onde os clientes vão e clique em \"Escolher o arquivo CSV\". CSV é um formato de planilha: no Excel, use Arquivo › Salvar como › CSV; no Google Planilhas, Arquivo › Fazer download › CSV. \"Baixar planilha modelo\" baixa um exemplo com as colunas certas. No fim, a janela mostra quantos cartões foram criados, as colunas que ela não reconheceu e as linhas recusadas, com o motivo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Importar planilha",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Funil de destino"
+              },
+              "rotulo": "Para qual funil",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "escolher-planilha"
+              },
+              "rotulo": "Escolher o arquivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "modelo-de-leads"
+              },
+              "rotulo": "Exemplo pronto",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Abrindo o quadro do funil",
+          "texto": "Feche a janela e clique no nome do funil para abrir o quadro dele. É no quadro que você trabalha no dia a dia: ele mostra todos os clientes do funil, etapa por etapa.",
+          "dica": "O texto miúdo embaixo da lista lembra que, hoje, todo contato novo entra pelo funil padrão. Para mandar quem já é cliente para um funil separado, ligue \"Clientes pela agenda\" em Configurações › Tipos de agendamento. O link \"Abrir Tipos de agendamento\", ali mesmo, leva até lá.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[data-testid^='abrir-']:has-text('Pacientes')"
+              },
+              "rotulo": "Clique para abrir o quadro",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[data-testid^='abrir-']:has-text('Pacientes')"
+          }
+        }
+      ]
+    },
+    {
+      "id": "lendo-o-quadro",
+      "titulo": "Lendo o quadro do funil",
+      "objetivo": "Entender as colunas, os números do topo de cada etapa e o que cada cartão mostra.",
+      "papel": "admin",
+      "busca": [
+        "quadro",
+        "colunas do funil",
+        "etapas",
+        "cartão do cliente",
+        "valor do negócio",
+        "quanto tenho em cada etapa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Cada coluna é uma etapa",
+          "texto": "O quadro tem uma coluna para cada etapa do funil, na ordem em que o cliente avança. Cada cartão é um negócio com um cliente. No topo da coluna aparecem o nome da etapa, quantos cartões ela tem e a soma do valor desses cartões.",
+          "dica": "Gerentes e administradores renomeiam uma etapa clicando no nome dela, no topo da coluna.",
+          "rota": "/app/kanban",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[data-testid^='abrir-']:has-text('Pacientes')"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-etapa-do-quadro]:has(input[aria-label='Nome da etapa «Primeiro contato»']) [data-cabecalho-da-etapa]"
+              },
+              "rotulo": "Etapa, quantidade e soma",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-etapa-do-quadro]:has(input[aria-label='Nome da etapa «Consulta agendada»'])"
+              },
+              "rotulo": "Outra etapa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que o cartão mostra",
+          "texto": "Em cima fica o título do negócio e, logo abaixo, o valor. A linha com o balão é a última mensagem da conversa com esse cliente: clicar nela abre a conversa na Inbox. O número verde no fim dessa linha conta as mensagens que ninguém leu ainda. Depois vêm o telefone do contato, quem é o responsável e há quanto tempo o cartão está nesta etapa (\"3h\" são três horas).",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              },
+              "rotulo": "Título do negócio",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "a[href^='/app/inbox?id=']",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                  "exato": true
+                }
+              },
+              "rotulo": "Última mensagem",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "3h em Primeiro contato",
+                "exato": true
+              },
+              "rotulo": "Tempo nesta etapa",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quem cuida de cada negócio",
+          "texto": "O círculo com iniciais mostra o responsável. Círculo cheio é uma pessoa da equipe, como Ana Ribeiro. Círculo vazado, só com o contorno, é um agente de IA, como a Bia. O círculo tracejado com \"Sem responsável\", como no cartão da Mariana, avisa que ninguém está cuidando daquele negócio.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[title='Ana Ribeiro']",
+                "literal": true,
+                "dentro": {
+                  "role": "group",
+                  "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                  "exato": true
+                }
+              },
+              "rotulo": "Uma pessoa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[title^='Bia']",
+                "literal": true,
+                "dentro": {
+                  "role": "group",
+                  "nome": "Lead: Pacote de pilates — Camila Rocha",
+                  "exato": true
+                }
+              },
+              "rotulo": "Agente de IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[aria-label='Sem responsável']",
+                "dentro": {
+                  "css": "[role='group']:has(button:text-is('Primeira consulta nutricional — Mariana'))"
+                }
+              },
+              "rotulo": "Ninguém cuidando",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Negócio esfriando",
+          "texto": "Quando um negócio fica parado, sem conversa nem mudança, por mais tempo que o normal da etapa (sem ajuste, um dia), o cartão ganha uma faixa laranja do lado esquerdo e o aviso \"Sem resposta há…\" logo abaixo do valor. O rodapé deixa de mostrar o tempo na etapa. É o mesmo aviso da tela Radar. Se já existe um retorno agendado com o cliente, o cartão não ganha o aviso. Aqui, a avaliação do Sérgio está parada há quatro dias: é hora de procurar esse cliente.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Sem resposta há 4 dias",
+                "exato": true,
+                "dentro": {
+                  "role": "group",
+                  "nome": "Lead: Avaliação odontológica — Sérgio Tavares",
+                  "exato": true
+                }
+              },
+              "rotulo": "O aviso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "em Consulta agendada",
+                "exato": true,
+                "dentro": {
+                  "role": "group",
+                  "nome": "Lead: Avaliação odontológica — Sérgio Tavares",
+                  "exato": true
+                }
+              },
+              "rotulo": "Sem o tempo na etapa",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "As etapas de ganho e de perda",
+          "texto": "Role o quadro para o lado para ver as outras etapas. Neste funil, \"Em tratamento\", a terceira coluna, é a etapa de ganho: o cartão que chega nela conta como negócio fechado. \"Cancelado\", a última coluna, é a etapa de perda. As colunas que dizem \"vazio\" ainda não têm nenhum cartão. No topo das etapas de ganho e de perda aparece também o valor \"ponderado\": na de ganho ele é igual à soma, porque o negócio já fechou; na de perda é zero.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "[data-etapa-do-quadro]:has(input[aria-label='Nome da etapa «Cancelado»'])"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Implante dentário — Ricardo Nunes",
+                "exato": true
+              },
+              "rotulo": "Negócio perdido",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Quadro ou calendário",
+          "texto": "No alto, \"Quadro\" e \"Calendário\" trocam o jeito de ver o mesmo funil. O calendário espalha os cartões pelos dias de um campo de data que você cria no funil, como a data da avaliação (a data de fechamento previsto não entra). Este funil ainda não tem campo de data, então o calendário avisa isso. Os campos se criam em CRM › \"Ver tudo em CRM\" › \"Etapas do funil\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "visao-calendario"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div:has(> [data-testid='visao-quadro'])"
+              },
+              "rotulo": "Quadro ou calendário",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Este funil não tem campo de data para montar o calendário."
+              },
+              "rotulo": "Falta um campo de data",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "achando-um-negocio",
+      "titulo": "Achando o negócio certo",
+      "objetivo": "Usar a busca e os filtros do quadro para ver só os cartões que interessam.",
+      "papel": "admin",
+      "busca": [
+        "buscar cliente no funil",
+        "filtro",
+        "filtrar por responsável",
+        "negócios perdidos",
+        "atrasados",
+        "etiqueta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A barra de filtros",
+          "texto": "Acima das colunas fica a barra de filtros. A caixa de busca procura no título e na descrição dos negócios. Os botões ao lado filtram por responsável, por situação (\"Status\") e por etiqueta (\"Tag\"). \"Apenas atrasados\" mostra só os negócios abertos com data de fechamento prevista que já passou.",
+          "rota": "/app/kanban",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[data-testid^='abrir-']:has-text('Pacientes')"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "placeholder": "Buscar por título…"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar por título…"
+              },
+              "rotulo": "Busca",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Responsável: Todos",
+                "exato": true
+              },
+              "rotulo": "Por responsável",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Status: Todos",
+                "exato": true
+              },
+              "rotulo": "Por situação",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Tag: todas",
+                "exato": true
+              },
+              "rotulo": "Por etiqueta",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "label:has-text('Apenas atrasados')"
+              },
+              "rotulo": "Só os atrasados",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Buscando pelo nome",
+          "texto": "Digite parte do título, por exemplo \"pilates\". O quadro passa a mostrar só os cartões que combinam com o que você digitou. O botão \"Limpar filtros\" aparece no fim da barra e desfaz tudo de uma vez.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar por título…"
+              },
+              "valor": "pilates"
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar por título…"
+              },
+              "rotulo": "O que você digitou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Pacote de pilates — Camila Rocha",
+                "exato": true
+              },
+              "rotulo": "O que combina",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar filtros",
+                "exato": true
+              },
+              "rotulo": "Desfazer filtros",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Filtrando por responsável",
+          "texto": "Limpe a busca e abra \"Responsável\". \"Sem responsável\" mostra os negócios que ninguém pegou; \"Eu\" mostra os seus. Abaixo vêm as outras pessoas da equipe e os agentes de IA. Escolha \"Ana Ribeiro\" para ver só a carteira dela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar filtros",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 600
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Responsável: Todos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "menu"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Ana Ribeiro",
+                "regex": true
+              },
+              "rotulo": "Escolha a Ana",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "menuitem",
+            "nome": "Ana Ribeiro",
+            "regex": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Só a carteira da Ana",
+          "texto": "Agora o quadro mostra só os negócios da Ana, e o botão passa a dizer \"Responsável: Ana Ribeiro\". O número no topo de cada coluna e a soma do valor também passam a contar só o que está visível.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Ana Ribeiro",
+                "regex": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Responsável: Ana Ribeiro",
+                "exato": true
+              },
+              "rotulo": "Filtro ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              },
+              "rotulo": "Negócio da Ana",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Vendo os negócios perdidos",
+          "texto": "Em \"Status\", \"Perdidos\" mostra só os negócios que não fecharam; eles ficam na etapa de perda, \"Cancelado\", no fim do quadro. Com esse filtro ligado aparece o botão \"Motivo\", que separa as perdas pelo motivo escolhido na hora de perder, como \"Preço\". Ao lado pode aparecer \"Categoria\", que agrupa as perdas por quem causou: o cliente, a própria clínica (\"Nós\"), a concorrência ou a falta de resposta. É um jeito rápido de ver por que os clientes desistem.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Responsável: Ana Ribeiro",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Todos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 600
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Status: Todos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Perdidos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "[role=group][aria-label='Lead: Implante dentário — Ricardo Nunes']"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Motivo: Todos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "menu"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "menu"
+              },
+              "rotulo": "Motivos das perdas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "button:has-text('Status: Perdidos')"
+              },
+              "rotulo": "Só os perdidos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[role=group][aria-label='Lead: Implante dentário — Ricardo Nunes']"
+              },
+              "rotulo": "Negócio perdido",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Negócios atrasados",
+          "texto": "Marque \"Apenas atrasados\" para ver os negócios abertos cuja data de fechamento prevista já passou. Aqui aparece a avaliação do Sérgio, que ficou de confirmar a data e sumiu: é o cliente para procurar hoje.",
+          "dica": "Os filtros ficam guardados no endereço da página. Se você copiar o endereço e mandar para alguém da equipe, a pessoa abre o quadro já filtrado.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar filtros",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 600
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Apenas atrasados"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Avaliação odontológica — Sérgio Tavares",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has-text('Apenas atrasados')"
+              },
+              "rotulo": "Filtro de atrasados",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Avaliação odontológica — Sérgio Tavares",
+                "exato": true
+              },
+              "rotulo": "Negócio atrasado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "novo-negocio",
+      "titulo": "Criando um negócio novo",
+      "objetivo": "Pôr um cliente no funil à mão, ligado ao contato dele.",
+      "papel": "admin",
+      "busca": [
+        "novo lead",
+        "criar negócio",
+        "adicionar cliente no funil",
+        "novo cartão",
+        "cadastrar oportunidade"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão \"Novo Lead\"",
+          "texto": "Quando um cliente chega por telefone ou no balcão, você mesmo cria o cartão dele. Clique em \"Novo Lead\", no alto do quadro. O sistema chama cada negócio de \"lead\".",
+          "rota": "/app/kanban",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[data-testid^='abrir-']:has-text('Pacientes')"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Novo Lead",
+                "exato": true
+              },
+              "rotulo": "Criar um negócio",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Novo Lead",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolha o contato",
+          "texto": "Comece pelo contato: digite o nome ou o telefone e clique na pessoa certa. Se ela ainda não está cadastrada, \"Criar contato\" cadastra ali mesmo. Um negócio sem contato não recebe WhatsApp nem entra nas automações.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Novo Lead",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Procure pelo nome ou telefone"
+              },
+              "valor": "Beatriz"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Beatriz Nogueira",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Procure pelo nome ou telefone"
+              },
+              "rotulo": "Procure a pessoa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Beatriz Nogueira",
+                "regex": true
+              },
+              "rotulo": "Clique no contato",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar contato",
+                "exato": true
+              },
+              "rotulo": "Ou cadastre um novo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Beatriz Nogueira",
+            "regex": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Preencha o negócio",
+          "texto": "Ao escolher o contato, o título vem com o nome dele; troque por algo que diga o que está sendo negociado. Em \"Etapa\" já vem a primeira etapa do funil. Preencha o \"Valor\" e, se quiser, a data de \"Fechamento previsto\" e etiquetas em \"Tags\", separadas por vírgula. Se quiser falar com o cliente logo depois, \"Salvar e iniciar conversa\" cria o negócio e abre a conversa com o contato.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Beatriz Nogueira",
+                "regex": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Título",
+                "exato": true
+              },
+              "valor": "Limpeza e avaliação odontológica — Beatriz Nogueira"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Valor (R$)",
+                "exato": true
+              },
+              "valor": "250"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Tags (separadas por vírgula)",
+                "exato": true
+              },
+              "valor": "odontologia"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Título",
+                "exato": true
+              },
+              "rotulo": "O que está sendo negociado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Valor (R$)",
+                "exato": true
+              },
+              "rotulo": "Quanto vale",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Tags (separadas por vírgula)",
+                "exato": true
+              },
+              "rotulo": "Etiquetas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar e iniciar conversa",
+                "exato": true
+              },
+              "rotulo": "Criar e já abrir a conversa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar lead",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O cartão novo no quadro",
+          "texto": "Clique em \"Criar lead\". O cartão aparece na etapa escolhida, com o valor, o telefone e a última conversa do contato. O quadro desce sozinho até o cartão novo; os outros continuam lá em cima. Como a Beatriz ainda não tem ninguém fixo cuidando dela, ele nasce \"Sem responsável\". Para escolher quem cuida, use o menu do cartão, que você conhece na próxima lição.",
+          "dica": "Se o contato já tem um negócio aberto neste funil, ao clicar em \"Criar lead\" a janela avisa e mostra o link para o que já existe. Aí você escolhe entre \"Não criar\" e \"Criar mesmo assim\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar lead",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Limpeza e avaliação odontológica — Beatriz Nogueira",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Limpeza e avaliação odontológica — Beatriz Nogueira",
+                "exato": true
+              },
+              "rotulo": "Negócio criado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mover-e-fechar",
+      "titulo": "Andar com o negócio: mover, ganhar e perder",
+      "objetivo": "Mudar o cartão de etapa, trocar o responsável e fechar o negócio como ganho ou perdido, um por um ou vários de uma vez.",
+      "papel": "admin",
+      "busca": [
+        "mover cartão de etapa",
+        "arrastar",
+        "marcar como ganho",
+        "marcar como perdido",
+        "motivo da perda",
+        "trocar responsável",
+        "selecionar vários"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Arrastar muda a etapa",
+          "texto": "Para mudar um negócio de etapa, segure o cartão e arraste até a coluna nova. Para os outros comandos, passe o mouse no cartão: aparecem os três pontinhos no canto de cima. Clique neles para abrir o menu do cartão.",
+          "rota": "/app/kanban",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[data-testid^='abrir-']:has-text('Pacientes')"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ações do lead",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                  "exato": true
+                }
+              },
+              "rotulo": "Menu do cartão",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Ações do lead",
+            "dentro": {
+              "role": "group",
+              "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+              "exato": true
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O menu do cartão",
+          "texto": "\"Editar\" muda título, valor, descrição e data prevista. \"Responsável\" passa o negócio para outra pessoa ou para um agente de IA. \"Marcar como ganho\" e \"Marcar como perdido\" fecham o negócio. \"Levar para outro funil\" recria o negócio em outro funil e fecha este como perdido; com um funil só, a janela avisa que não há para onde levar. \"Excluir\" apaga o cartão, mas o contato e as conversas continuam.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ações do lead",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                  "exato": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "menu"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "menu"
+              },
+              "rotulo": "Comandos do cartão",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "menuitem",
+            "nome": "Marcar como perdido",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Perder com motivo",
+          "texto": "\"Marcar como perdido\" sempre pede o motivo. Escolha o que aconteceu, aqui \"Sem resposta do cliente\", e clique em \"Confirmar\". O cartão vai para a etapa de perda do funil. Os motivos ficam guardados e depois aparecem no filtro \"Motivo\".",
+          "dica": "A lista que vem pronta traz motivos de loja, como \"Produto indisponível\". Para usar motivos com as palavras da sua clínica, cadastre a lista na tela \"Etapas do funil\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Marcar como perdido",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "radio",
+                "nome": "Sem resposta do cliente",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "radio",
+                "nome": "Sem resposta do cliente",
+                "exato": true
+              },
+              "rotulo": "O motivo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              },
+              "rotulo": "Confirmar a perda",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Confirmar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Ganhar o negócio",
+          "texto": "Quando o cliente fecha, abra o menu do cartão (aqui, o da Juliana) e clique em \"Marcar como ganho\". O cartão vai para a etapa de ganho do funil, aqui \"Em tratamento\", e conta como negócio fechado. Sem ajuste no funil, se depois ele voltar para uma etapa aberta, o negócio é reaberto.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Clareamento dental — Juliana Castro",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ações do lead",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Lead: Clareamento dental — Juliana Castro",
+                  "exato": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "menu"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Marcar como ganho",
+                "exato": true
+              },
+              "rotulo": "Fechou!",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[role=group][aria-label='Lead: Clareamento dental — Juliana Castro']"
+              },
+              "rotulo": "Cartão da Juliana",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "menuitem",
+            "nome": "Marcar como ganho",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "O cartão foi para a etapa de ganho",
+          "texto": "O cartão da Juliana saiu de \"Consulta agendada\" e agora está em \"Em tratamento\", a etapa de ganho. O da avaliação do Roberto, que você marcou como perdido, foi para \"Cancelado\", no fim do quadro.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "menuitem",
+                "nome": "Marcar como ganho",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Clareamento dental — Juliana Castro",
+                "exato": true
+              },
+              "rotulo": "Negócio ganho",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Selecionar vários cartões",
+          "texto": "Para mexer em vários negócios de uma vez, passe o mouse no cartão e marque a caixinha ao lado do título. Para marcar a etapa inteira, use a caixinha que aparece no topo da coluna. Segurar Ctrl (Cmd no Mac) e clicar no cartão também marca.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Selecionar: Pacote de pilates — Camila Rocha",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Selecionar: Consulta nutricional — Pedro Henrique Lima",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 600
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Selecionar: Pacote de pilates — Camila Rocha",
+                "exato": true
+              },
+              "rotulo": "Caixinha do cartão",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Selecionar todos em Primeiro contato",
+                "exato": true
+              },
+              "rotulo": "A etapa inteira",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p7",
+          "titulo": "A barra de ações em grupo",
+          "texto": "Com cartões marcados, aparece uma barra embaixo. \"Mover para…\" muda todos de etapa, \"Responsável…\" passa todos para alguém, \"Tag…\" põe uma etiqueta, \"Marcar como perdido…\" fecha todos com um motivo e \"Excluir\" apaga. \"Cancelar\", ou a tecla Esc, desmarca tudo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-lote-selecionados]"
+              },
+              "rotulo": "Ações para os marcados",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "\"Responsável…\" só aparece para gerentes e administradores."
+        }
+      ]
+    },
+    {
+      "id": "ficha-do-negocio",
+      "titulo": "A ficha do negócio",
+      "objetivo": "Abrir um cartão e usar a ficha: conversa, contato, dados do negócio, tarefas e histórico.",
+      "papel": "admin",
+      "busca": [
+        "abrir cartão",
+        "detalhes do negócio",
+        "ficha do lead",
+        "histórico do negócio",
+        "editar valor",
+        "tarefas do cliente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Clique no cartão",
+          "texto": "Clique no título do cartão para abrir a ficha do negócio, que desliza pela direita. Vamos abrir a avaliação do Roberto.",
+          "rota": "/app/kanban",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[data-testid^='abrir-']:has-text('Pacientes')"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "group",
+                "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              },
+              "rotulo": "Clique no título",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Avaliação de fisioterapia — Roberto Almeida",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O topo da ficha",
+          "texto": "No topo ficam o título, o valor, a etapa e o responsável. Logo abaixo, \"Abrir conversa no Inbox\" leva direto para a conversa com esse cliente, com a última mensagem à mostra. \"Editar campos\" pula para os dados do negócio.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Avaliação de fisioterapia — Roberto Almeida",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "O negócio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir conversa no Inbox",
+                "regex": true
+              },
+              "rotulo": "Ir para a conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar campos",
+                "exato": true
+              },
+              "rotulo": "Ir para os dados",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os dados do contato",
+          "texto": "A parte \"Contato\" mostra telefone e e-mail de quem está negociando; a aba \"Links\" guarda Instagram, site e outros endereços. \"Abrir no WhatsApp\" abre o WhatsApp do seu computador ou celular, fora do sistema: para a conversa ficar guardada aqui, prefira \"Abrir conversa no Inbox\". \"Ver ficha completa do contato\" leva para a tela do contato. Em \"Pessoas relacionadas\", \"Adicionar participante\" liga outras pessoas ao negócio, como quem paga.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[role=dialog] section[data-secao='contato']"
+              },
+              "rotulo": "Quem é o cliente",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Editar os dados do negócio",
+          "texto": "Em \"Dados do negócio\" você corrige título, descrição, valor, data de fechamento prevista e etiquetas. Troque o valor e clique em \"Salvar\". A ficha continua aberta, para você ver a mudança entrar no histórico.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Valor (R$)",
+                "exato": true
+              },
+              "valor": "220,00"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Valor (R$)",
+                "exato": true
+              },
+              "rotulo": "Novo valor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true,
+            "dentro": {
+              "role": "dialog"
+            }
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Tarefas e histórico",
+          "texto": "Em \"Tarefas\", \"Nova tarefa\" anota o próximo passo combinado com o cliente, com prazo e responsável. A \"Linha do tempo\", no fim da ficha, registra tudo o que aconteceu com o negócio: aqui já aparece \"Dados do negócio alterados\", avisando que o valor mudou agora há pouco.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "[role=dialog] section[data-secao='linha-do-tempo']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova tarefa",
+                "exato": true
+              },
+              "rotulo": "Anotar o próximo passo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[role=dialog] section[data-secao='linha-do-tempo']"
+              },
+              "rotulo": "O que aconteceu",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "organizar-funis",
+      "titulo": "Criar, renomear e arquivar funis",
+      "objetivo": "Criar um funil novo, mudar o nome dele, arquivar e excluir um funil que não serve mais.",
+      "papel": "admin",
+      "busca": [
+        "criar funil",
+        "novo funil",
+        "renomear funil",
+        "arquivar funil",
+        "excluir funil",
+        "funis arquivados"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Dê um nome ao funil",
+          "texto": "Clique em \"Novo funil\" e escreva o nome, por exemplo \"Pilates\". Depois clique em \"Criar funil\". O funil novo já nasce com quatro etapas: \"Novo\", \"Em andamento\", \"Ganho\" e \"Perdido\". Você troca os nomes delas na tela \"Etapas do funil\".",
+          "rota": "/app/kanban",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "novo-funil"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "nome-do-novo-funil"
+              },
+              "valor": "Pilates"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "nome-do-novo-funil"
+              },
+              "rotulo": "Nome do funil",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "confirmar-novo-funil"
+              },
+              "rotulo": "Criar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "confirmar-novo-funil"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O funil novo na lista",
+          "texto": "O funil aparece no fim da lista. As setinhas à esquerda mudam a ordem dos funis. \"Tornar padrão\" faz quem escreve pela primeira vez no WhatsApp da clínica entrar por este funil, no lugar do atual; só use quando quiser mesmo trocar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "confirmar-novo-funil"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "li[data-testid^='funil-']:has-text('Pilates')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-testid^='funil-']:has-text('Pilates')"
+              },
+              "rotulo": "Funil criado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Tornar padrão",
+                "exato": true
+              },
+              "rotulo": "Trocar o funil padrão",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Renomear",
+          "texto": "Clique em \"Renomear\" na linha do funil, mude o nome e aperte Enter (ou clique em \"Salvar\"). O nome muda na lista e no quadro.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Renomear",
+                "exato": true,
+                "dentro": {
+                  "css": "li[data-testid^='funil-']:has-text('Pilates')"
+                }
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Novo nome de «Pilates»",
+                "exato": true
+              },
+              "valor": "Pilates em grupo"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Novo nome de «Pilates»",
+                "exato": true
+              },
+              "rotulo": "Nome novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Arquivar",
+          "texto": "\"Arquivar\" tira o funil da lista e ele para de receber negócios novos, mas nada é apagado. A pergunta aparece logo abaixo do funil. \"Excluir de vez\" só funciona em funil que não tem nenhum negócio, nem aberto nem encerrado; se tiver, o sistema recusa e explica por quê.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "li[data-testid^='funil-']:has-text('Pilates em grupo')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Arquivar",
+                "exato": true,
+                "dentro": {
+                  "css": "li[data-testid^='funil-']:has-text('Pilates em grupo')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid^='arquivar-painel-']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='arquivar-painel-']"
+              },
+              "rotulo": "Confirmar o arquivamento",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Arquivar",
+            "exato": true,
+            "dentro": {
+              "css": "[data-testid^='arquivar-painel-']"
+            }
+          },
+          "dica": "Não dá para arquivar o funil padrão, nem um funil que é o único da lista. Para arquivar o padrão, antes torne outro funil padrão."
+        },
+        {
+          "id": "p5",
+          "titulo": "A gaveta dos arquivados",
+          "texto": "O funil arquivado vai para \"Funis arquivados\", embaixo da lista. Clique para abrir a gaveta. \"Tirar do arquivo\" traz o funil de volta para a lista; \"Excluir de vez\" apaga e libera o nome.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Arquivar",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='arquivar-painel-']"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "arquivados-abrir"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "arquivados-abrir"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "arquivados-explicacao"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "arquivados"
+              },
+              "rotulo": "Funis arquivados",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir de vez",
+                "exato": true,
+                "dentro": {
+                  "testid": "arquivados"
+                }
+              },
+              "rotulo": "Apagar de vez",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Excluir de vez",
+            "exato": true,
+            "dentro": {
+              "testid": "arquivados"
+            }
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Excluir de vez",
+          "texto": "Antes de apagar, o sistema pergunta de novo, porque não tem volta: o funil e as etapas dele somem. Clique em \"Excluir de vez\" para confirmar, ou \"Cancelar\" para desistir.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir de vez",
+                "exato": true,
+                "dentro": {
+                  "testid": "arquivados"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Confirmar a exclusão",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Excluir de vez",
+            "exato": true,
+            "dentro": {
+              "role": "alertdialog"
+            }
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "De volta ao começo",
+          "texto": "Pronto: o funil de teste sumiu e a lista voltou a ter só \"Pacientes\". Quando não sobra nenhum funil arquivado, a gaveta \"Funis arquivados\" também some.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir de vez",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-testid^='funil-']:has-text('Pacientes')"
+              },
+              "rotulo": "Só o funil em uso",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

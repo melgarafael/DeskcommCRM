@@ -54,7 +54,19 @@ function banco() {
 
   h.from.mockImplementation((tabela: string) => {
     if (tabela === "message_templates") {
+      // A leitura da PRIMEIRA da lista (a criação nasce um passo acima dela).
+      const leitura = {
+        select: () => leitura,
+        eq: () => leitura,
+        order: () => leitura,
+        limit: () => leitura,
+        maybeSingle: async () => {
+          const [primeira] = [...templates].sort((a, b) => Number(a.ordem) - Number(b.ordem));
+          return { data: primeira ? { ordem: primeira.ordem } : null, error: null };
+        },
+      };
       return {
+        ...leitura,
         insert: (linha: Linha) => ({
           select: () => ({
             single: async () => {

@@ -63,7 +63,7 @@ export function MediaRenderer({
         agora - new Date(message.created_at).getTime() < TETO_AVISO_TRANSCREVENDO_MS;
       return (
         <div className="flex flex-col gap-2">
-          <AudioPlayer messageId={message.id} isOutbound={isOutbound} />
+          <AudioPlayer messageId={message.id} isOutbound={isOutbound} mime={message.media_mime} />
           {texto ? (
             <>
               <span

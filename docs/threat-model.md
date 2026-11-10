@@ -38,9 +38,10 @@ São conclusões de leitura de código.
 | `/api/v1/webhooks/waha` (global, sem token) | só rede interna: requisição com marca de proxy de borda recebe 404 (`chegouPelaBorda`, `lib/http/ip-do-cliente.ts` — régua de cabeçalho, válida nos proxies do kit: Caddy, Traefik, Nginx Proxy Manager, túnel da Cloudflare); depois, o mesmo HMAC. Com a porta do app publicada direto, a camada que vale é a assinatura do remetente (`/admin/sistema`) | ❌ |
 | `/api/v1/webhooks/in/:token` | path token + assinatura opcional | ✅ 60/min por token |
 | `/api/v1/webhooks/nuvemshop/*` | HMAC | ❌ |
-| `/api/v1/webhooks/cobranca/:provedor` | Stripe: `Stripe-Signature` (HMAC com horário). Asaas: token estático em `asaas-access-token` (sha256 + `timingSafeEqual`); o corpo é só ponteiro e a decisão vem da releitura. Token vazado: o dono gera outro em Admin › Cobrança › Conexão, "Testar e conectar" de novo | ✅ recusas 120/min por IP; Asaas, avisos válidos de cliente desconhecido 120/min por provedor, chave global (acima, 200 sem gravar) |
+| `/api/v1/webhooks/cobranca/:provedor` | Stripe: `Stripe-Signature` (HMAC com horário). Asaas: token estático em `asaas-access-token` (sha256 + `timingSafeEqual`); o corpo é só ponteiro e a decisão vem da releitura. Token vazado: o dono gera outro em Admin › Cobrança › Conexão, "Testar e conectar" de novo | ✅ recusas 120/min por IP; Asaas, avisos válidos sem empresa identificada (cliente desconhecido ou leitura que falhou) 120/min por provedor, chave global (acima, 200 sem gravar) |
 | `/api/v1/cron/*` (9 rotas) | `Bearer INTERNAL_CRON_SECRET\|INTERNAL_SECRET`, **fail-closed** | ❌ |
 | `/api/mcp` | `Bearer tok_...` validado contra `api_tokens` (hash SHA256) | ❌ |
+| `/api/v1/mcp-oauth/iniciar/:state` e `/api/v1/mcp-oauth/callback/:servidor` (OAuth por contato, 9095) | o `state` de `mcp_oauth_pedidos`: 256 bits, uso único (consumido por UPDATE condicional ANTES da troca do `code`), 10 min, amarrado a organização, servidor, contato e conversa; o `code` só vira token com o `code_verifier` cifrado daquela linha (PKCE S256). O endereço de retorno é um por servidor e tem de ser o do pedido; o `iss` (RFC 9207), quando vem, tem de ser o emissor dele. Nada da URL escolhe tenant | ✅ 30/min por IP |
 | `/403`, `/404`, `/500`, `/503`, `/admin/forbidden` | — | ❌ |
 
 **Leitura:** a autenticação de cada superfície está bem construída — HMAC com
@@ -281,6 +282,8 @@ Superfície nova, toda atrás de sessão + `requireRole("admin")` + `requireSupp
 
 Controles: a coluna `receitas` fica FORA da view `external_db_connections_safe` (só `receitas_count` exposta); o prefixo das tabelas entra no SQL quotado com crase (nunca cru); todo valor vai por placeholder `?`; o validador `validarConsultaDeReceita` é a segunda trava (SELECT-only, sem `;`/`--`/`INTO`/`SLEEP(`/etc.); o rastro da execução resume `linhas` (nunca o conteúdo — regra de escopo da D8).
 
+A receita `wordpress-conteudo` (R2) pode ler, além de `posts`/`postmeta`, as **tabelas de categoria** do WordPress (`terms`, `term_taxonomy`, `term_relationships`) — e só quando o administrador mapeou alguma categoria. Elas passam pela MESMA lista de fontes liberadas (`tabelaLiberada`/`colunasLiberadas`, em `lib/external-db/fontes.ts`), então o administrador precisa liberá-las como qualquer outra tabela: quem não libera, recebe `fonte_nao_liberada` e a consulta não roda. O conteúdo dos termos é dado de terceiro (o autor do site), e ele chega ao agente como NOME de categoria — o mesmo regime do resto da receita: o rastro guarda contagens, nunca o conteúdo.
+
 **Conclusão honesta:** os *mecanismos* de segurança deste projeto são acima da média para
 um CRM open-source — HMAC em tempo constante em toda borda, fail-closed nos crons, hash de
 bearer, RLS com helper central, guard de SSRF testado, LGPD implementada de verdade,
@@ -291,6 +294,21 @@ falha de desenho aqui; há uma camada ausente, e ela é a mais barata de todas a
 construídas.
 
 ---
+
+## 4.6 Servidores MCP por agente e OAuth por contato (migration 9095)
+
+Superfície nova. Guia: [`integracao/mcp-oauth-por-contato.md`](integracao/mcp-oauth-por-contato.md).
+
+| Superfície | Controle | Teste |
+|---|---|---|
+| Rotas públicas `iniciar/:state` e `callback` | `state` de uso único, expira em 10 min, amarrado ao contato e à conversa; consumo antes da troca; `error=` do AS só depois de consumir; página de desfecho sem dado sensível, sem script, `no-store` e `no-referrer`; rate limit por IP | `lib/mcp/servidor-externo/do-agente/oauth-por-contato.test.ts` |
+| Tokens de terceiro (`contato_mcp_credenciais`), chave e `client_secret` (`ai_agent_mcp_servers`), `code_verifier` (`mcp_oauth_pedidos`) | AES-256-GCM com `AI_CRED_AES_KEY`; tabelas server-side only (RLS sem policy, nenhum GRANT para `anon`/`authenticated`); filtro manual por `organization_id` + `servidor_id` + `contact_id` do turno; token nunca em log, auditoria, `event_log` ou resposta de ferramenta | `tests/invariants/servidores-mcp-por-agente-server-side.test.ts` + marcador de token no teste unitário |
+| Saída para o terceiro (MCP, descoberta, DCR, token, revogação) | o mesmo `fetchDeSaida`: prova textual, DNS sem faixa privada, `redirect: "manual"` dentro da allowlist dos hosts descobertos; S256 obrigatório no cadastro | idem |
+| Link enviado pelo canal | é o link curto da instalação (não expõe parâmetro do OAuth). **Risco residual aceito:** quem tiver o link nos 10 minutos e o login do terceiro vincula a PRÓPRIA conta àquele contato — o mesmo modelo de qualquer "entrar com" enviado por mensagem. O link é de uso único e só serve ao contato e à conversa que o gerou | — |
+| Escrita delegada | desligada por padrão; só `oauth_por_contato`, só ferramenta marcada Escrita pelo admin, só com o token do contato do turno; passa por `wrapMcpTool` (auditoria, papel, escopo) | idem |
+
+**Não feito nesta fatia (declarado):** o callback não reabre o turno; o `state` é guardado em
+claro como chave primária (o `code_verifier` é que prova a posse, e está cifrado).
 
 ## 4. Perguntas para o responsável
 

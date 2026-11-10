@@ -95,6 +95,22 @@ export const edgeBranchIdSchema = z
   });
 
 /**
+ * O horário em que uma espera fixa pode terminar (`wait.ate_o_horario`).
+ *
+ * ⚠️ FROUXO AQUI DE PROPÓSITO, como `lead_date.key` mais abaixo: o rascunho é
+ * validado só estruturalmente e o painel grava a cada clique. Exigir aqui "fim
+ * depois do início" faria o painel recusar o estado intermediário (quem troca
+ * 08:00 por 18:00 passa por um horário torto) e a tela mostraria um valor que
+ * não foi gravado. Quem exige um horário que dá para obedecer é o publish
+ * (`horario_da_espera_invalido` em `validate-publish.ts`).
+ */
+export const horarioDaEsperaSchema = z.strictObject({
+  start: z.string().max(5),
+  end: z.string().max(5),
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7),
+});
+
+/**
  * Wait node configuration schema.
  * Supports two modes:
  * - fixed: absolute wait duration in milliseconds (5 min to 90 days)
@@ -124,6 +140,16 @@ export const waitConfigSchema = z
        * do alcance da reatividade e libera o slot único anti-spam.
        */
       immune_to_reply: z.boolean().optional(),
+      /**
+       * A espera só TERMINA dentro deste horário (dias + horas, no fuso da
+       * organização). Se a duração vencer fora dele — de noite, no domingo —, a
+       * espera continua até a próxima abertura. Ver `espera-no-horario.ts`.
+       *
+       * Opcional: os grafos publicados não têm a chave e seguem válidos byte a
+       * byte. Só em `fixed`, como `immune_to_reply`: a espera adaptativa é a IA
+       * escolhendo dentro de uma faixa, e o `strictObject` dela recusa a chave.
+       */
+      ate_o_horario: horarioDaEsperaSchema.optional(),
     }),
     z.strictObject({
       mode: z.literal('smart'),
@@ -250,7 +276,8 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
     mode: z.literal('text'),
     body: z.string().min(1).max(4000),
     /**
-     * #2734 — MÍDIA OPCIONAL (imagem ou PDF) por URL. Presente, o `body` vira a
+     * #2734 — MÍDIA OPCIONAL (imagem, vídeo, áudio ou documento, #2972) por URL.
+     * Presente, o `body` vira a
      * LEGENDA. Opcional de propósito: os grafos publicados não têm a chave e
      * continuam válidos byte a byte (o `strictObject` só recusa o que ELE não
      * conhece; um campo novo e opcional é aceito pelos antigos).
@@ -454,11 +481,31 @@ export const collectConfigSchema = z
     options: z.array(z.string().min(1).max(80)).max(20).optional(),
     /** Texto sugerido da pergunta; o agente pode reescrever (checklist guiado pela IA). */
     question: z.string().max(400).optional(),
+    /**
+     * ONDE A RESPOSTA É GRAVADA (#3363): `contato` em `contacts.custom_fields`
+     * (o caminho de sempre) ou `negocio` no card aberto do contato
+     * (`crm_leads.custom_fields`) — que é o que o card da tela, os campos
+     * obrigatórios da etapa do funil e as automações por data do funil leem.
+     *
+     * A AUSÊNCIA é `contato`, e é o que todo grafo existente tem: sem `.default()`
+     * de propósito (a mesma escolha do `escopo` do #2791, com o padrão invertido
+     * — aqui o comportamento legado é o contato). Sem default, `safeParse` devolve
+     * o grafo byte a byte e editar uma pergunta não reescreve a chave à toa.
+     *
+     * Com `negocio`, a régua "já respondido não se repergunta" vale só DENTRO do
+     * negócio atual: o valor é lido do card, então um novo negócio pergunta de
+     * novo. Um contato sem card aberto não tem onde gravar — a pergunta segue
+     * pendente até o teto de tentativas.
+     */
+    destino: z.enum(['contato', 'negocio']).optional(),
   })
   .refine((c) => c.type !== 'select' || (c.options?.length ?? 0) > 0, {
     message: 'tipo "select" exige ao menos uma opção',
     path: ['options'],
   });
+
+/** O destino da gravação de UMA pergunta (#3363) — ausência no grafo = `contato`. */
+export type DestinoDaResposta = NonNullable<z.infer<typeof collectConfigSchema>['destino']>;
 
 /**
  * Skill node (`skill`) — puxa uma skill instalada em paralelo ao passo do fluxo.
@@ -700,9 +747,32 @@ export const flowSettingsSchema = z.strictObject({
   /**
    * Palavras/expressões que LIGAM este fluxo: quando a mensagem do cliente
    * contém uma delas, o MOTOR inicia o fluxo (entrada por gatilho, sem depender
-   * do modelo). Vazio/ausente = o fluxo só começa por `flow_start` ou roteador.
+   * do modelo). Vazio/ausente = este fluxo só começa por `etapas_do_funil`, pelo
+   * roteador ou encadeado no fim de outro — `flow_start` não existe no código,
+   * e citá-lo aqui prometia uma entrada que ninguém podia configurar.
    */
   gatilhos: z.array(z.string().min(1).max(60)).max(30).optional(),
+  /**
+   * As ETAPAS DO FUNIL que LIGAM este roteiro: quando o card do contato está
+   * numa delas, o MOTOR começa o roteiro no próximo turno daquela conversa —
+   * a entrada por etapa, irmã da palavra-gatilho, e sem depender da mensagem.
+   *
+   * ⚠️ POR QUE AQUI (no `settings` do grafo) E NÃO EM `trigger_config`. Para o
+   * follow-up, a entrada por etapa mora no gatilho (`kind: 'stage_change'`,
+   * `lib/followup/gatilho-etapa.ts`, event-driven). No roteiro de atendimento
+   * isso é impossível por construção: o CHECK
+   * `followup_flow_pointers_roteiro_so_manual` (0394) obriga
+   * `trigger_config->>'kind' = 'manual'` na superfície `atendimento`, e o
+   * publicador devolve 422 a qualquer outro kind. O `settings` é o lugar do
+   * vocabulário do roteiro (é onde já vivem `gatilhos`, `expira_em_horas` e
+   * `pode_recomecar`), é versionado junto do grafo e passa pelo schema.
+   *
+   * O id é o da ETAPA (`crm_stages.id`) — o mesmo que `crm_leads.stage_id`, que
+   * é o que o turno lê. A etapa já identifica o funil, então não há par
+   * (funil, etapa) a guardar; o nome do funil existe na tela, para distinguir
+   * etapas homônimas de funis diferentes. Vazio/ausente = nenhuma etapa liga.
+   */
+  etapas_do_funil: z.array(z.string().min(1).max(64)).max(30).optional(),
   /**
    * Em quantas horas SEM mensagem do cliente o roteiro em andamento expira
    * (0397, `fn_encerrar_roteiros_vencidos`). Ausente = 72 h. Sem prazo, um

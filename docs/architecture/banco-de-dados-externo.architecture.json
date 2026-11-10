@@ -224,9 +224,41 @@
       "id": "instanciaReceita",
       "lane": "nucleo",
       "label": "receitas/*.ts",
-      "sublabel": "DefinicaoDeReceita, registro, validador, instancias (Zod central)",
+      "sublabel": "DefinicaoDeReceita, registro, validador, instancias (Zod central) · tabelas e colunas saem dos FIXOS (a receita só pede as tabelas de categoria quando há categoria mapeada)",
       "type": "lib",
       "dot": "blue"
+    },
+    {
+      "id": "precoReceita",
+      "lane": "nucleo",
+      "label": "preco.ts",
+      "sublabel": "converte preço de texto (650.000,00 / 650,000.00 / 480000) em número no SQL da receita · sem preço vira NULL, nunca 0",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "taxonomiaReceita",
+      "lane": "nucleo",
+      "label": "taxonomia.ts",
+      "sublabel": "as 3 tabelas de categoria do WordPress (terms, term_taxonomy, term_relationships) · saída por group_concat (post com 2 termos sai 1 vez) · filtro por exists · nível filho/raiz",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "modelosReceita",
+      "lane": "nucleo",
+      "label": "modelos-wordpress.ts",
+      "sublabel": "o MODELO \"Imóveis\" e o \"Em branco\" · só configuração que pré-preenche a tela · o nicho NÃO mora na receita",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "errosReceita",
+      "lane": "nucleo",
+      "label": "erros.ts",
+      "sublabel": "ErroDeFiltroDesconhecido · filtro que a instância não tem é ERRO legível, nunca silêncio (devolver a lista inteira mentiria sobre o filtro)",
+      "type": "lib",
+      "dot": "red"
     },
     {
       "id": "toolReceita",
@@ -521,6 +553,54 @@
       "from": "apiReceitas",
       "to": "receitasCount",
       "label": "contagem exposta pela API"
+    },
+    {
+      "id": "e61",
+      "from": "instanciaReceita",
+      "to": "precoReceita",
+      "label": "a receita do WordPress monta o CASE do preço"
+    },
+    {
+      "id": "e62",
+      "from": "precoReceita",
+      "to": "instanciaReceita",
+      "label": "o CASE entra no SQL da receita (sem novo placeholder)"
+    },
+    {
+      "id": "e63",
+      "from": "instanciaReceita",
+      "to": "taxonomiaReceita",
+      "label": "a receita do WordPress lê a categoria do site"
+    },
+    {
+      "id": "e64",
+      "from": "taxonomiaReceita",
+      "to": "instanciaReceita",
+      "label": "a subconsulta (group_concat) e o exists entram no SQL da receita"
+    },
+    {
+      "id": "e65",
+      "from": "modelosReceita",
+      "to": "instanciaReceita",
+      "label": "o modelo \"Imóveis\" preenche a configuração que a tela grava"
+    },
+    {
+      "id": "e68",
+      "from": "apiReceitas",
+      "to": "modelosReceita",
+      "label": "a tela aplica o modelo ao escolher a receita"
+    },
+    {
+      "id": "e66",
+      "from": "instanciaReceita",
+      "to": "errosReceita",
+      "label": "filtro que a instância não tem: erro legível, nunca silêncio"
+    },
+    {
+      "id": "e67",
+      "from": "errosReceita",
+      "to": "toolReceita",
+      "label": "a tool devolve o erro com a lista dos filtros que a instância aceita"
     }
   ],
   "cards": [

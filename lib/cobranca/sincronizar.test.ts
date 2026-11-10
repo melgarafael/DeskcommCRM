@@ -4,8 +4,9 @@ import { argumentos, bancoFalso, filtros, operacao, type BancoFalso, type Cadeia
 
 import type { AdaptadorDeCobranca, Situacao } from "@/lib/cobranca/provedores/contrato";
 
-const h = vi.hoisted(() => ({ audit: vi.fn() }));
+const h = vi.hoisted(() => ({ audit: vi.fn(), invalidarOrg: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/auth/cache-curto", () => ({ invalidarOrg: h.invalidarOrg }));
 vi.mock("@/lib/cobranca/provedores", () => ({
   adaptador: () => {
     throw new Error("use deps.adaptador no teste");
@@ -234,6 +235,8 @@ describe("sincronizar", () => {
     expect(filtros(fechou!)).toEqual([["eq", "organization_id", ORG], ["eq", "kind", "cobranca"], ["is", "ref_kind", null], ["eq", "status", "open"]]);
     expect(rpcs("fn_reativar_organizacao")[0]?.args).toEqual({ p_org: ORG, p_kind_exigido: "cobranca", p_ator: null });
     expect(acoes()).toEqual(["cobranca.estado_mudou", "cobranca.org_reativada"]);
+    // O snapshot de autorização em cache cai junto — no processo onde a régua roda.
+    expect(h.invalidarOrg).toHaveBeenCalledWith(ORG);
   });
 
   it("limite passado, aviso final de 49 h e leitura fresca: suspende, registra 'suspensa' e audita", async () => {
@@ -244,6 +247,7 @@ describe("sincronizar", () => {
     expect(rpcs("fn_suspender_organizacao")).toEqual([]);
     expect(rpcs("fn_cobranca_registrar_aviso")[0]?.args).toMatchObject({ p_aviso: "suspensa", p_severidade: "critical" });
     expect(acoes()).toContain("cobranca.org_suspensa");
+    expect(h.invalidarOrg).toHaveBeenCalledWith(ORG);
   });
 
   it("⭐ pagou entre a decisão e a suspensão (a função SQL recusa): nada de suspensa, de audit nem de e-mail", async () => {
@@ -415,12 +419,11 @@ describe("sincronizar — entrada paga (plano sem dias de teste)", () => {
     expect(m.linha).toMatchObject({ pagamento_inicial_pendente: true });
   });
 
-  it("o lembrete de quem aguarda a entrada não fala em teste grátis: nunca houve teste", async () => {
+  it("quem aguarda a entrada não recebe aviso de suspensão por inadimplência", async () => {
     ler.mockResolvedValue(situacao({ existe: false, jaPagou: false, assinaturasVivas: 1, proximoVencimento: null, statusBruto: "ACTIVE:sem_pagamento" }));
     await rodar();
-    const aviso = rpcs("fn_cobranca_registrar_aviso")[0]?.args;
-    expect(aviso).toMatchObject({ p_aviso: "suspensa" });
-    expect(`${aviso?.p_titulo} ${aviso?.p_corpo}`).not.toContain("teste grátis");
+    expect(rpcs("fn_cobranca_registrar_aviso")).toEqual([]);
+    expect(enviarAviso).not.toHaveBeenCalled();
   });
 
   it("pagamento confirmado: a entrada deixa de estar pendente e o acesso volta", async () => {
@@ -437,4 +440,37 @@ describe("sincronizar — entrada paga (plano sem dias de teste)", () => {
     expect(r).not.toMatchObject({ acao: "reativar" });
     expect(rpcs("fn_reativar_organizacao")).toEqual([]);
   });
+});
+
+describe("primeiro pagamento pendente não é inadimplência", () => {
+  it("cron/retry sem provedor mantém bloqueio e não envia aviso nem altera a dívida", async () => {
+    m.linha = { ...LINHA, estado: "trial", pagamento_inicial_pendente: true, periodo_pago_desde: null,
+      provedor: null, provedor_cliente_id: null, provedor_assinatura_id: null, assinaturas_vivas: 0, trial_ate: ha(1) };
+    m.org = { ...m.org, status: "suspended", suspended_kind: "cobranca" };
+    await rodar(); await rodar();
+    expect(enviarAviso).not.toHaveBeenCalled();
+    expect(rpcs("fn_cobranca_registrar_aviso")).toEqual([]);
+    expect(rpcs("fn_reativar_organizacao")).toEqual([]);
+    expect(m.linha.estado).toBe("trial");
+  });
+  it("cadastro com fatura pendente no Asaas também não manda lembrete em retries", async () => {
+    m.linha = { ...LINHA, estado: "em_atraso", pagamento_inicial_pendente: true, periodo_pago_desde: null,
+      trial_ate: ha(1), vencida_desde: ha(1), ultimo_aviso: null, ultimo_aviso_em: null };
+    m.org = { ...m.org, status: "suspended", suspended_kind: "cobranca" };
+    ler.mockResolvedValue(situacao({ existe: false, jaPagou: false, emAtraso: false, periodoPagoDesde: null }));
+    await rodar(); await rodar();
+    expect(enviarAviso).not.toHaveBeenCalled();
+    expect(rpcs("fn_cobranca_registrar_aviso")).toEqual([]);
+    expect(rpcs("fn_reativar_organizacao")).toEqual([]);
+  });
+});
+
+it("inadimplência real já suspensa envia uma vez quando a deduplicação concede o aviso", async () => {
+  m.linha = { ...LINHA, estado: "em_atraso", pagamento_inicial_pendente: false, periodo_pago_desde: ha(24 * 40),
+    provedor: null, provedor_cliente_id: null, vencida_desde: ha(24 * 10), ultimo_aviso: null, ultimo_aviso_em: null };
+  m.org = { ...m.org, status: "suspended", suspended_kind: "cobranca" };
+  await rodar(); m.avisoGanho = false; await rodar();
+  expect(enviarAviso).toHaveBeenCalledOnce();
+  expect(rpcs("fn_cobranca_registrar_aviso")).toHaveLength(2);
+  expect(rpcs("fn_reativar_organizacao")).toEqual([]);
 });

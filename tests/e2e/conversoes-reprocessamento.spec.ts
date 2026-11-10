@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { createClient } from "@supabase/supabase-js";
-import type { Database, Json } from "@/lib/database.types";
+import type { Database } from "@/lib/database.types";
 import { expect, test } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
@@ -137,11 +137,15 @@ test("regras de etapa da Meta: sem conexão direta, aparecem quando a venda sai 
     .eq("id", org)
     .single();
   if (erroOrg) throw erroOrg;
-  const original = (linhaOrg.settings ?? {}) as Record<string, unknown>;
-  const comAChave = (ligada: boolean): Json => ({
-    ...original,
+  const original = linhaOrg.settings ?? {};
+  const objeto = typeof original === "object" && !Array.isArray(original) ? original : {};
+  const conversoes = objeto.conversions;
+  const comAChave = (ligada: boolean) => ({
+    ...objeto,
     conversions: {
-      ...((original.conversions as Record<string, unknown> | undefined) ?? {}),
+      ...(conversoes && typeof conversoes === "object" && !Array.isArray(conversoes)
+        ? conversoes
+        : {}),
       report_via_channel: ligada,
     },
   });
@@ -169,7 +173,10 @@ test("regras de etapa da Meta: sem conexão direta, aparecem quando a venda sai 
 
     // Chave desligada e sem conexão direta: o evento de etapa não tem destino,
     // e a seção não aparece.
-    const { error: e1 } = await admin.from("organizations").update({ settings: comAChave(false) }).eq("id", org);
+    const { error: e1 } = await admin
+      .from("organizations")
+      .update({ settings: comAChave(false) })
+      .eq("id", org);
     if (e1) throw e1;
     await page.goto("/app/settings/conversoes");
     await expect(page.getByRole("heading", { name: "Conversões", exact: true })).toBeVisible();
@@ -177,7 +184,10 @@ test("regras de etapa da Meta: sem conexão direta, aparecem quando a venda sai 
 
     // Chave ligada: o evento de etapa sai pelo canal, e quem opera precisa ver
     // e editar o que cada etapa envia.
-    const { error: e2 } = await admin.from("organizations").update({ settings: comAChave(true) }).eq("id", org);
+    const { error: e2 } = await admin
+      .from("organizations")
+      .update({ settings: comAChave(true) })
+      .eq("id", org);
     if (e2) throw e2;
     await page.reload();
     await expect(titulo).toBeVisible();
@@ -188,7 +198,7 @@ test("regras de etapa da Meta: sem conexão direta, aparecem quando a venda sai 
       fullPage: true,
     });
   } finally {
-    await admin.from("organizations").update({ settings: original as Json }).eq("id", org);
+    await admin.from("organizations").update({ settings: original }).eq("id", org);
     await admin.from("crm_stages").delete().eq("organization_id", org).eq("id", stage);
     await admin.from("crm_pipelines").delete().eq("organization_id", org).eq("id", pipeline);
   }

@@ -137,6 +137,10 @@ export interface ResultadoDaRetencao {
   avisos_de_caso_apagados: number;
   lotes_avisos_de_caso: number;
   avisos_de_caso_tem_resto: boolean;
+  /** O registro de entrega do aviso de agendamento no WhatsApp do dono (0753). */
+  avisos_de_agendamento_apagados: number;
+  lotes_avisos_de_agendamento: number;
+  avisos_de_agendamento_tem_resto: boolean;
   /** O candidato de prospecção nativa vencido (migration 0408, issue #1313). */
   prospeccao_apagada: number;
   lotes_prospeccao: number;
@@ -194,6 +198,20 @@ export interface ResultadoDaRetencao {
   lotes_checkpoints: number;
   checkpoints_tem_resto: boolean;
   retencao_checkpoints_dias: number;
+  /**
+   * O traço do turno vencido (migration 9021, issue #3201) — uma linha por
+   * execução do agente, e a poda de MAIOR volume da rodada depois da telemetria.
+   *
+   * Sem janela própria de propósito: a issue #3201 deixou aberta a escolha
+   * ("variável nova ou a janela da telemetria?") e a resposta é a segunda — o
+   * traço É telemetria da IA. `retencao_traco_dias` está no relatório porque
+   * quem lê a rodada precisa ver o prazo que foi APLICADO, e não deduzi-lo do
+   * nome de outra poda.
+   */
+  tracos_apagados: number;
+  lotes_tracos: number;
+  tracos_tem_resto: boolean;
+  retencao_traco_dias: number;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
   retencao_espelho_dias: number;
@@ -228,13 +246,15 @@ export interface PodaDb {
       | "fn_expurgar_conversa_do_caso_vencida"
       | "fn_expurgar_passagens_vencidas"
       | "fn_expurgar_avisos_de_caso_vencidos"
+      | "fn_expurgar_avisos_de_agendamento_vencidos"
       | "fn_expurgar_prospeccao_vencida"
       | "fn_expurgar_observacoes_do_jev"
       | "fn_expurgar_candidatos_do_golden"
       | "fn_expurgar_telemetria_de_ia_vencida"
       | "fn_expurgar_ritmo_de_envio_vencido"
       | "fn_expurgar_copias_enviadas_vencidas"
-      | "fn_expurgar_checkpoints_superados",
+      | "fn_expurgar_checkpoints_superados"
+      | "fn_expurgar_traco_do_turno_vencido",
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
   /**
@@ -295,13 +315,15 @@ async function drenar(
     | "fn_expurgar_conversa_do_caso_vencida"
     | "fn_expurgar_passagens_vencidas"
     | "fn_expurgar_avisos_de_caso_vencidos"
+    | "fn_expurgar_avisos_de_agendamento_vencidos"
     | "fn_expurgar_prospeccao_vencida"
     | "fn_expurgar_observacoes_do_jev"
     | "fn_expurgar_candidatos_do_golden"
     | "fn_expurgar_telemetria_de_ia_vencida"
     | "fn_expurgar_ritmo_de_envio_vencido"
     | "fn_expurgar_copias_enviadas_vencidas"
-    | "fn_expurgar_checkpoints_superados",
+    | "fn_expurgar_checkpoints_superados"
+    | "fn_expurgar_traco_do_turno_vencido",
   dias: number,
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
   let apagadas = 0;
@@ -595,6 +617,10 @@ export async function podarHistorico(
   // poda aqui é volume de operação — e é a poda de horizonte mais curto das
   // sete, porque a única pergunta que a linha responde é de semanas.
   const avisosDeCaso = await executarDreno(falhas, "fn_expurgar_avisos_de_caso_vencidos", () => drenar(db, "fn_expurgar_avisos_de_caso_vencidos", avisoDeCaso.dias), zerado);
+  // A do aviso de agendamento (0753) é a mesma pergunta de semanas sobre o
+  // mesmo canal, e por isso segue o MESMO knob e o mesmo piso do aviso de caso:
+  // dois knobs para "o aviso saiu?" seriam dois números para o operador errar.
+  const avisosDeAgendamento = await executarDreno(falhas, "fn_expurgar_avisos_de_agendamento_vencidos", () => drenar(db, "fn_expurgar_avisos_de_agendamento_vencidos", avisoDeCaso.dias), zerado);
   // Oitava poda: o candidato de prospecção nativa vencido (migration 0408,
   // issue #1313). Padrão 365 / piso 90 — decisão do dono, alinhada ao
   // horizonte da conversa do caso e da captação. O piso mora no CORPO da
@@ -629,6 +655,14 @@ export async function podarHistorico(
   // livro-razão de idempotência dos gatilhos de tempo, e podá-lo reenviaria
   // WhatsApp.
   const telemetriaDrenada = await executarDreno(falhas, "fn_expurgar_telemetria_de_ia_vencida", () => drenar(db, "fn_expurgar_telemetria_de_ia_vencida", telemetriaDeIa.dias), zerado);
+  // O traço do turno (migration 9021, issue #3201): a tabela que a 0721 passou a
+  // alimentar uma vez por execução do agente e que não aparecia em poda nenhuma.
+  // Vai com `telemetriaDeIa.dias` DE PROPÓSITO — um traço é telemetria da IA, e
+  // o preço de escolher a janela compartilhada (não dá para guardá-lo por mais
+  // tempo que as chamadas de LLM sem separar depois) está escrito no cabeçalho
+  // da migration 9021. O piso de 100 continua no CORPO da função: trocar o knob
+  // por "1" aqui não apaga investigação de turno com menos de 100 dias.
+  const tracosDrenados = await executarDreno(falhas, "fn_expurgar_traco_do_turno_vencido", () => drenar(db, "fn_expurgar_traco_do_turno_vencido", telemetriaDeIa.dias), zerado);
   const ritmoDrenado = await executarDreno(falhas, "fn_expurgar_ritmo_de_envio_vencido", () => drenar(db, "fn_expurgar_ritmo_de_envio_vencido", ritmoDeEnvio.dias), zerado);
   const copiasDrenadas = await executarDreno(falhas, "fn_expurgar_copias_enviadas_vencidas", () => drenar(db, "fn_expurgar_copias_enviadas_vencidas", copiasEnviadas.dias), zerado);
   const checkpointsDrenados = await executarDreno(falhas, "fn_expurgar_checkpoints_superados", () => drenar(db, "fn_expurgar_checkpoints_superados", checkpoints.dias), zerado);
@@ -641,6 +675,7 @@ export async function podarHistorico(
     conversa_do_caso_apagada: conversas.apagadas,
     passagens_apagadas: passagens.apagadas,
     avisos_de_caso_apagados: avisosDeCaso.apagadas,
+    avisos_de_agendamento_apagados: avisosDeAgendamento.apagadas,
     prospeccao_apagada: prospeccaoDrenada.apagadas,
     observacoes_do_jev_apagadas: observacoesDrenadas.apagadas,
     candidatos_do_golden_apagados: candidatosDrenados.apagadas,
@@ -650,6 +685,7 @@ export async function podarHistorico(
     lotes_conversa_do_caso: conversas.lotes,
     lotes_passagens: passagens.lotes,
     lotes_avisos_de_caso: avisosDeCaso.lotes,
+    lotes_avisos_de_agendamento: avisosDeAgendamento.lotes,
     lotes_prospeccao: prospeccaoDrenada.lotes,
     lotes_observacoes_do_jev: observacoesDrenadas.lotes,
     lotes_candidatos_do_golden: candidatosDrenados.lotes,
@@ -659,6 +695,7 @@ export async function podarHistorico(
     conversa_do_caso_tem_resto: conversas.temResto,
     passagens_tem_resto: passagens.temResto,
     avisos_de_caso_tem_resto: avisosDeCaso.temResto,
+    avisos_de_agendamento_tem_resto: avisosDeAgendamento.temResto,
     prospeccao_tem_resto: prospeccaoDrenada.temResto,
     observacoes_do_jev_tem_resto: observacoesDrenadas.temResto,
     rascunhos_apagados: rascunhosDrenados.apagadas,
@@ -673,6 +710,10 @@ export async function podarHistorico(
     lotes_telemetria_de_ia: telemetriaDrenada.lotes,
     telemetria_de_ia_tem_resto: telemetriaDrenada.temResto,
     retencao_telemetria_de_ia_dias: telemetriaDeIa.dias,
+    tracos_apagados: tracosDrenados.apagadas,
+    lotes_tracos: tracosDrenados.lotes,
+    tracos_tem_resto: tracosDrenados.temResto,
+    retencao_traco_dias: telemetriaDeIa.dias,
     ritmo_de_envio_apagado: ritmoDrenado.apagadas,
     lotes_ritmo_de_envio: ritmoDrenado.lotes,
     ritmo_de_envio_tem_resto: ritmoDrenado.temResto,
@@ -745,6 +786,8 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     // apagaria linhas e não deixaria registro — e o CLAUDE.md
     // manda auditar QUANDO HÁ EFEITO, nunca parar de auditar.
     resultado.avisos_de_caso_apagados > 0 ||
+    // A do aviso de agendamento, pela mesma razão.
+    resultado.avisos_de_agendamento_apagados > 0 ||
     // A oitava, pela MESMA razão das sete anteriores: uma rodada que só podou
     // candidato de prospecção vencido apagaria linhas e não deixaria registro.
     // Esta é a poda de dado de PESSOA que nunca falou com a empresa (0408) —
@@ -774,7 +817,13 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     resultado.telemetria_de_ia_apagada > 0 ||
     resultado.ritmo_de_envio_apagado > 0 ||
     resultado.copias_enviadas_apagadas > 0 ||
-    resultado.checkpoints_apagados > 0
+    resultado.checkpoints_apagados > 0 ||
+    // A do traço do turno (9021), pela mesma razão das anteriores: uma rodada
+    // que só apagou traço de turno apagaria linhas e não deixaria registro.
+    // A linha é metadado (nome de ferramenta, ids, erro truncado) — não é texto
+    // de cliente —, mas é a trilha do que o agente FEZ: silêncio aqui seria
+    // encolhimento de auditoria, não de telemetria.
+    resultado.tracos_apagados > 0
   );
 }
 

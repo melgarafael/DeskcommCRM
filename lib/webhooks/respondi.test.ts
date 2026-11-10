@@ -9,7 +9,7 @@ import {
   respondiLeadTitle,
   type RespondiPayload,
 } from "@/lib/webhooks/respondi";
-import { mapInboundPayload } from "@/lib/webhooks/inbound";
+import { extrairAtribuicaoDoInbound, mapInboundPayload } from "@/lib/webhooks/inbound";
 
 /**
  * Fixture sanitizada, mesma FORMA do payload real capturado de
@@ -227,5 +227,36 @@ describe("buildContactConsentDenial", () => {
     expect({ ...recusa, marketing: { ...marketingSemCarimbo, source: null, version: null } }).toEqual(
       defaultDaColuna,
     );
+  });
+});
+
+/**
+ * Issue #3149, ponta 1: o Respondi não tem campo nativo para o clique, então o
+ * formulário de um anúncio pergunta `fbclid`/`gclid` como qualquer outra pergunta
+ * — e a resposta era gravada como campo do card (`respondi_q_fbclid`), sem
+ * chegar nunca à atribuição do contato.
+ */
+describe("chaves de anúncio do Respondi", () => {
+  const comPergunta = (titulo: string, valor: string): RespondiPayload => ({
+    ...FIXTURE,
+    respondent: {
+      ...FIXTURE.respondent,
+      answers: { ...FIXTURE.respondent.answers, [titulo]: valor },
+    },
+  });
+
+  it("a pergunta `fbclid` vira atribuição, não campo do card", () => {
+    const m = mapRespondiPayload(comPergunta("fbclid", "IwAR1abc"));
+    expect(m.source_metadata.fbclid).toBe("IwAR1abc");
+    expect(m.custom_fields.respondi_q_fbclid).toBeUndefined();
+
+    const atribuicao = extrairAtribuicaoDoInbound(m.source_metadata);
+    expect(atribuicao?.plataforma).toBe("meta_ads");
+    expect(atribuicao?.sourceId).toBe("IwAR1abc");
+  });
+
+  it("CONTROLE: formulário sem pergunta de anúncio não inventa atribuição", () => {
+    const m = mapRespondiPayload(FIXTURE);
+    expect(extrairAtribuicaoDoInbound(m.source_metadata)).toBeNull();
   });
 });

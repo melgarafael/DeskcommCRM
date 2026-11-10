@@ -38,7 +38,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { linhaDoEspelho } from "./linha-do-espelho";
 import { missingSlots } from "./meta/build-components";
 import { bindingState } from "./meta/template-binding";
-import { deriveTemplateContract } from "./meta/template-contract";
+import { deriveTemplateContract, type TemplateContract } from "./meta/template-contract";
 
 export interface PedidoDeDefinicao {
   organizationId: string;
@@ -64,11 +64,15 @@ export interface PedidoDeDefinicao {
  * vazio (sync nunca rodou) barraria todo envio de modelo numa instalação que
  * está com tudo certo do lado da plataforma. Recusar o que não se sabe é pior
  * que deixar o provedor responder — ele é a autoridade, não este espelho.
+ *
+ * Devolve o CONTRATO conferido (ou `null` quando não há o que conferir): o
+ * transporte que precisa ordenar os valores — modelo nomeado, variável do
+ * cabeçalho, sufixo de link de botão — lê a ordem dele, e não de novo do banco.
  */
 export async function conferirDefinicao(
   db: SupabaseClient,
   pedido: PedidoDeDefinicao,
-): Promise<void> {
+): Promise<TemplateContract | null> {
   if (!pedido.name || !pedido.language) {
     throw new Error("template_incompleto: nome e idioma são obrigatórios em type=template");
   }
@@ -84,7 +88,7 @@ export async function conferirDefinicao(
 
   // Falha de leitura não é definição inválida. Barrar aqui trocaria um envio
   // que ia dar certo por um erro nosso.
-  if (error) return;
+  if (error) return null;
 
   const linha = data as {
     name: string;
@@ -96,7 +100,7 @@ export async function conferirDefinicao(
   } | null;
 
   // Não espelhada: deixa passar. Ver o cabeçalho.
-  if (!linha) return;
+  if (!linha) return null;
 
   const estado = bindingState(
     {
@@ -136,4 +140,5 @@ export async function conferirDefinicao(
       `template_missing_values: "${pedido.name}" espera ${faltando.length} valor(es) — falta: ${nomes}`,
     );
   }
+  return contrato;
 }

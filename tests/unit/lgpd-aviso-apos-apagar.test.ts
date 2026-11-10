@@ -152,6 +152,6 @@ describe("a ordem no worker: ler o endereço ANTES de apagar, avisar DEPOIS", ()
     // Brasil, e o caso do lado brasileiro
     // (`tests/invariants/lgpd-aviso-do-artigo-12-so-fora-do-brasil.test.ts`)
     // fica vermelho.
-    expect(fonte).toContain("const avisaTitular = perfil.codigo !== PAIS_PADRAO;");
+    expect(fonte).toContain("const avisaTitular = exclusaoForaDoBrasil(req.request_type, perfil.codigo);");
   });
 });

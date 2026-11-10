@@ -44,6 +44,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
 /** Todo motivo de recusa que as DUAS actions sabem devolver. */
 type CodigoDeRecusa =
@@ -57,7 +58,7 @@ type CodigoDeRecusa =
  * Uma frase por código, e não "Não deu para salvar" para todos, porque os
  * motivos levam a consertos diferentes: `endpoint_inseguro` é o operador
  * trocando o endereço, `forbidden_role` é ele chamando quem é o dono, e
- * `mfa_required` é ele refazendo o login. Um texto genérico mandaria os três
+ * `mfa_required` é ele informando o código (a tela leva ao desafio). Um texto genérico mandaria os três
  * tentarem de novo — o único que não conserta nenhum dos três.
  */
 export const MENSAGEM_DA_RECUSA: Record<CodigoDeRecusa, string> = {
@@ -93,6 +94,12 @@ export function CadastroDoServidorMcpExterno() {
   );
   const [pendente, iniciar] = useTransition();
 
+  /** A recusa em frase; a do código leva ao desafio, que entrar de novo não traria. */
+  function recusar(codigo: CodigoDeRecusa) {
+    if (codigo === "mfa_required") irAoDesafioDeMfa();
+    setErro(t(MENSAGEM_DA_RECUSA[codigo]));
+  }
+
   /** Zera o retrato da rodada anterior — nenhuma frase antiga sobrevive a um clique. */
   function limparRetrato() {
     setErro(null);
@@ -113,7 +120,7 @@ export function CadastroDoServidorMcpExterno() {
     iniciar(async () => {
       const r = await definirServidorMcpExterno({ endpoint, chave });
       if (!r.ok) {
-        setErro(t(MENSAGEM_DA_RECUSA[r.error]));
+        recusar(r.error);
         return;
       }
       // A ÚNICA janela em que a chave é mostrada — e só o fim dela (ver o
@@ -132,7 +139,7 @@ export function CadastroDoServidorMcpExterno() {
       // salvar, com o mesmo gate de permissão e a mesma trilha de auditoria.
       const r = await definirServidorMcpExterno({ endpoint: "", chave: "" });
       if (!r.ok) {
-        setErro(t(MENSAGEM_DA_RECUSA[r.error]));
+        recusar(r.error);
         return;
       }
       setEndpoint("");
@@ -146,7 +153,7 @@ export function CadastroDoServidorMcpExterno() {
     iniciar(async () => {
       const r = await listarFerramentasMcpExternas();
       if (!r.ok) {
-        setErro(t(MENSAGEM_DA_RECUSA[r.error]));
+        recusar(r.error);
         return;
       }
       setTeste({

@@ -8,7 +8,10 @@ import { safeNext } from "@/lib/auth/safe-next";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createClient } from "@/lib/supabase/server";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
+import { confiarNesteDispositivo, DIAS_DE_CONFIANCA } from "@/lib/auth/dispositivo-confiavel";
+import { mfaBloqueadoPorFalhas, registrarFalhaDeMfa } from "@/lib/auth/rate-limit";
 
 export type VerifyMfaResult =
   | { ok: false; error: "mfa_invalid" }
@@ -27,7 +30,7 @@ const MAX_ATTEMPTS = 3;
  * Note: per-cookie counter is MVP. Hardening = Upstash Redis sliding window
  * keyed on user_id + IP.
  */
-export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaResult> {
+export async function verifyMfa(code: string, next?: string, confiar = false): Promise<VerifyMfaResult> {
   const supabase = await createClient();
   const hdrs = await headers();
   const requestId = hdrs.get("x-request-id");
@@ -52,7 +55,7 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
     const parsed = parseInt(raw, 10);
     if (!Number.isNaN(parsed)) attempts = parsed;
   }
-  if (attempts >= MAX_ATTEMPTS) {
+  if (attempts >= MAX_ATTEMPTS || (await mfaBloqueadoPorFalhas(user.id))) {
     return { ok: false, error: "mfa_locked", retry_in_seconds: ATTEMPT_TTL_SECONDS };
   }
 
@@ -75,6 +78,7 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
   });
 
   if (verifyErr) {
+    await registrarFalhaDeMfa(user.id);
     const newAttempts = attempts + 1;
     store.set(ATTEMPT_COOKIE, String(newAttempts), {
       httpOnly: true,
@@ -108,6 +112,33 @@ export async function verifyMfa(code: string, next?: string): Promise<VerifyMfaR
     ip,
     userAgent,
   });
+
+  // O código já foi provado e a sessão já é aal2: falhar em LEMBRAR o navegador
+  // não pode virar falha de login. Sem a linha, o próximo login só pede o código.
+  const lembrou =
+    confiar &&
+    (await confiarNesteDispositivo(user.id, totp.id, userAgent).then(
+      () => true,
+      (e: unknown) => {
+        logger.error("mfa_dispositivo_confiavel_falhou", {
+          userId: user.id,
+          message: e instanceof Error ? e.message : String(e),
+        });
+        return false;
+      },
+    ));
+  if (lembrou) {
+    await audit({
+      action: "auth.mfa_device_trusted",
+      actorUserId: user.id,
+      resourceType: "user",
+      resourceId: user.id,
+      metadata: { dias: DIAS_DE_CONFIANCA },
+      requestId,
+      ip,
+      userAgent,
+    });
+  }
 
   redirect(safeNext(next, "/app"));
 }

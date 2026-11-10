@@ -155,7 +155,7 @@ export const MOTIVO_LEGIVEL: Record<string, string> = {
   reprocessamento_solicitado: "Reprocessamento agendado. Acompanhe o resultado nesta tela.",
   nova_tentativa_agendada: "Falha temporária. Uma nova tentativa foi agendada automaticamente.",
   evento_de_teste:
-    "Evento recebido em modo de teste. Desative o teste antes de reportar a venda real.",
+    "Evento recebido em modo de teste. Desative o teste antes de reportar conversões reais.",
   sem_valor:
     "A venda fechou sem valor preenchido. A Meta exige valor e moeda em uma compra — preencha o valor do negócio e use o botão de reprocessamento. No Google, você também pode escolher enviar a venda sem valor em \"Valor do negócio\".",
   sem_conexao:

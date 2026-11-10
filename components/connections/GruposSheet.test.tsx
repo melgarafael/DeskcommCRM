@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GruposSheet } from "./GruposSheet";
 
@@ -370,5 +370,87 @@ describe("GruposSheet", () => {
     await waitFor(() =>
       expect(screen.getByText(/Falhou em "A" depois de desligar 0/i)).toBeInTheDocument(),
     );
+  });
+
+  // ── #2729 — a chave POR GRUPO "Permitir que a IA responda neste grupo" ────
+  //
+  // Duas chaves lado a lado sem parecer uma: a de CIMA é quem entra na inbox
+  // (e mexe no filtro do WhatsApp — por isso a confirmação de volume), a de
+  // BAIXO é só a IA responder. Por isso ela só existe em grupo já LIGADO: em
+  // grupo fora da fila não há mensagem nenhuma para a IA responder.
+  it("#2729: a chave da IA só existe em grupo LIGADO, e vem no estado do servidor", async () => {
+    fetchMock.mockReturnValueOnce(
+      resposta([
+        { chatId: "1@g.us", subject: "A", enabled: true, enabledAt: "x", presente: true, iaResponde: true },
+        { chatId: "2@g.us", subject: "B", enabled: false, enabledAt: null, presente: true, iaResponde: false },
+      ]),
+    );
+    render(<GruposSheet channelId="s1" onClose={() => {}} />);
+    await screen.findByText("A");
+
+    const linhaLigado = screen.getByText("A").closest("li")!;
+    const linhaDesligado = screen.getByText("B").closest("li")!;
+    const chaveLigado = within(linhaLigado).getByRole("switch", {
+      name: /Permitir que a IA responda neste grupo/i,
+    });
+    expect(chaveLigado).toBeChecked();
+
+    expect(
+      within(linhaDesligado).queryByRole("switch", { name: /Permitir que a IA responda neste grupo/i }),
+    ).not.toBeInTheDocument();
+
+    // A descrição do topo já não promete a calos total da regra antiga.
+    expect(screen.getByText(/A IA só responde em grupo quando você liberar/i)).toBeInTheDocument();
+  });
+
+  it("#2729: acionar a chave manda { ia_responde } na rota de grupos e não toca no filtro", async () => {
+    fetchMock.mockReturnValueOnce(
+      resposta([{ chatId: "1@g.us", subject: "A", enabled: true, enabledAt: "x", presente: true, iaResponde: false }]),
+    );
+    render(<GruposSheet channelId="s1" onClose={() => {}} />);
+    await screen.findByText("A");
+    const chave = within(screen.getByText("A").closest("li")!).getByRole("switch", {
+      name: /Permitir que a IA responda neste grupo/i,
+    });
+    expect(chave).not.toBeChecked();
+
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") return resposta({});
+      return resposta([{ chatId: "1@g.us", subject: "A", enabled: true, enabledAt: "x", presente: true, iaResponde: true }]);
+    });
+
+    fireEvent.click(chave);
+    await waitFor(() => expect(chave).toBeChecked());
+
+    const put = fetchMock.mock.calls.find((call: unknown[]) => (call[1] as RequestInit | undefined)?.method === "PUT");
+    expect(put).toBeDefined();
+    expect(String(put![0])).toContain("/groups");
+    // Nem o endpoint do filtro do WhatsApp, nem o body `enabled` da outra chave.
+    expect(String(put![0])).not.toContain("/intake");
+    expect(JSON.parse(String((put![1] as RequestInit).body))).toEqual({
+      group_chat_id: "1@g.us",
+      subject: "A",
+      ia_responde: true,
+    });
+  });
+
+  it("#2729: recusa da rota (grupo fora da fila) mostra o erro e mantém a chave como estava", async () => {
+    fetchMock.mockReturnValueOnce(
+      resposta([{ chatId: "1@g.us", subject: "A", enabled: true, enabledAt: "x", presente: true, iaResponde: false }]),
+    );
+    render(<GruposSheet channelId="s1" onClose={() => {}} />);
+    await screen.findByText("A");
+    const chave = within(screen.getByText("A").closest("li")!).getByRole("switch", {
+      name: /Permitir que a IA responda neste grupo/i,
+    });
+
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") return resposta({ code: "grupo_desligado", message: "x" }, 409);
+      return resposta([{ chatId: "1@g.us", subject: "A", enabled: true, enabledAt: "x", presente: true, iaResponde: false }]);
+    });
+
+    fireEvent.click(chave);
+    expect(await screen.findByText(/Não foi possível salvar/i)).toBeInTheDocument();
+    expect(chave).not.toBeChecked();
   });
 });

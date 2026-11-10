@@ -126,6 +126,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     modo: url.searchParams.get("modo") ?? undefined,
     source: url.searchParams.get("source") ?? undefined,
     pessoais: url.searchParams.get("pessoais") ?? undefined,
+    blocked: url.searchParams.get("blocked") ?? undefined,
     cursor: url.searchParams.get("cursor") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
     order_by: url.searchParams.get("order_by") ?? undefined,
@@ -193,7 +194,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       supabase,
       {
         organization_id: activeOrg.orgId,
-        actor: { type: "user", id: user.id },
+        // O PAPEL vai junto porque a criação no "Só os seus" decide por ele:
+        // só Atendente ganha a conversa do contato novo (#3479). É a mesma
+        // forma que as rotas de conversa já usam no `actor`.
+        actor: { type: "user", id: user.id, role: activeOrg.role },
         requestId,
         idioma: user.idioma,
       },

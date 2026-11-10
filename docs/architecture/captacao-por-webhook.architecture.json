@@ -160,7 +160,7 @@
       "col": 2,
       "type": "lib",
       "label": "renderTemplate",
-      "sublabel": "{{servico}} resolve lead.custom_fields.servico"
+      "sublabel": "campos do contexto; texto de reserva entre aspas só quando falta o dado"
     },
     {
       "id": "ia",

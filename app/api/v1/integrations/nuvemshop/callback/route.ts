@@ -174,6 +174,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .eq("organization_id", state.orgId)
     .eq("provider", "nuvemshop");
 
+  // CARGA INICIAL DO CATÁLOGO. Sem ela, a loja recém-conectada só ganhava
+  // material quando alguém editasse um produto — e o acervo do agente ficava
+  // vazio enquanto a tela dizia "conectado". O worker trata este evento
+  // listando a loja inteira, que é o único modo que `pedacosDeCatalogo` tem.
+  const { error: backfillErr } = await admin.rpc("emit_event", {
+    p_event_type: "nuvemshop.product_synced",
+    p_entity_kind: "nuvemshop_integration",
+    p_entity_id: null,
+    p_payload: { catalogo_inteiro: true, store_id: storeId },
+    p_metadata: { origem: "conexao" },
+    p_organization_id: state.orgId,
+  });
+  if (backfillErr) {
+    // Não derruba a conexão: ela está feita, e o catálogo pode ser
+    // sincronizado depois. O que não pode é a falha passar em silêncio.
+    console.error("[nuvemshop.callback] carga inicial não enfileirada", backfillErr.message);
+  }
+
   await audit({
     actorUserId: state.userId,
     actorAuthSessionId: state.authSessionId,

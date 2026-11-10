@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import {
   useCreatePhoneNumber,
   usePhoneNumbers,
@@ -70,6 +71,7 @@ const ROUTING_LABELS: Record<RoutingMode, string> = {
  */
 export function TelefoniaClient() {
   const t = useT();
+  const telefoneExemplo = useTelefoneExemplo();
   const { data: numbers, isLoading } = usePhoneNumbers();
   const { data: voiceAgents } = useVoiceAgents();
   const createMut = useCreatePhoneNumber();
@@ -145,7 +147,7 @@ export function TelefoniaClient() {
             <div className="space-y-1">
               <Label>{t("Número (E.164)")}</Label>
               <Input
-                placeholder="+555130562494"
+                placeholder={telefoneExemplo}
                 value={form.number}
                 onChange={(e) => setForm((f) => ({ ...f, number: e.target.value }))}
               />

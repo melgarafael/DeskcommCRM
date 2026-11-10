@@ -1,0 +1,421 @@
+{
+  "id": "admin-cadastro",
+  "titulo": "Cadastro (Admin)",
+  "tela": "/admin/cadastro",
+  "resumo": "Onde quem instalou o sistema decide quem pode criar conta: qualquer pessoa, só quem recebeu convite, ou quem você aprovar um por um.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Cadastro",
+      "objetivo": "Saber o que a tela de Cadastro controla e como ela vem quando o sistema é instalado.",
+      "papel": "admin",
+      "busca": [
+        "quem pode criar conta",
+        "cadastro aberto",
+        "fechar cadastro",
+        "novas contas no sistema",
+        "criar conta",
+        "admin cadastro"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "No Admin, o item \"Cadastro\" do menu abre a tela que decide quem pode criar uma conta neste sistema. A regra vale para o servidor inteiro, não para uma empresa só. Por isso ela fica no Admin, e só quem administra a instalação vê esta tela.",
+          "rota": "/admin/cadastro",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Cadastro",
+                "exato": true
+              },
+              "rotulo": "Cadastro no menu do Admin",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Cadastro",
+                "exato": true
+              },
+              "rotulo": "Quem pode criar conta",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "A faixa amarela \"Sem SMTP configurado\", no alto, é um aviso geral do Admin: o envio de e-mails ainda não está configurado. O item \"E-mail\" do menu leva ao ajuste."
+        },
+        {
+          "id": "p2",
+          "titulo": "As duas chaves",
+          "texto": "A tela tem duas chaves. \"Cadastro apenas por convite\" fecha a porta: só entra quem foi convidado. \"Cadastro com aprovação\" deixa a pessoa criar a conta, mas a empresa dela só é aberta depois que você aprovar. Com as duas desligadas, como vem na instalação, qualquer pessoa pode criar uma conta e abrir a própria empresa. Quem já tem conta continua entrando normalmente, seja qual for a escolha.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='so-convite'])"
+              },
+              "rotulo": "Só com convite",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='com-aprovacao'])"
+              },
+              "rotulo": "Você aprova cada empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Salva na hora, e fica registrado",
+          "texto": "Não há botão de salvar: a escolha vale assim que você clica na chave, e dá para voltar atrás com outro clique. Cada troca fica registrada no item \"Audit\" do menu, com data e hora e o e-mail (parcialmente escondido) de quem trocou. A tela de Audit é técnica e está em inglês: a troca aparece como \"platform.signup_mode_updated\", e, abrindo o registro, o quadro \"Metadata\" mostra o modo de antes em \"de\" e o de depois em \"para\". É ali que se descobre por que, de repente, ninguém mais consegue criar conta.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Cadastro apenas por convite",
+                "exato": true
+              },
+              "rotulo": "Clicou, salvou",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Audit",
+                "exato": true
+              },
+              "rotulo": "Histórico das trocas",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "so-convite",
+      "titulo": "Deixar entrar só quem foi convidado",
+      "objetivo": "Fechar o cadastro para que só entre quem recebeu convite, e reabrir quando quiser.",
+      "papel": "admin",
+      "busca": [
+        "fechar cadastro",
+        "só por convite",
+        "impedir que estranhos criem conta",
+        "bloquear novas contas",
+        "cadastro fechado",
+        "convite obrigatório"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Ligar o convite obrigatório",
+          "texto": "Para fechar a porta, clique na chave \"Cadastro apenas por convite\". Faça isso quando o sistema for só da sua clínica e você não quer que um desconhecido crie conta e abra uma empresa no seu servidor.",
+          "rota": "/admin/cadastro",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Cadastro apenas por convite",
+                "exato": true
+              },
+              "rotulo": "Clique para ligar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "switch",
+            "nome": "Cadastro apenas por convite",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que muda com a chave ligada",
+          "texto": "Ligada, a chave fica colorida e o texto muda: quem abrir a tela de cadastro sem convite vê o aviso \"Cadastro apenas por convite\" e um botão \"Entrar\", que leva ao login, no lugar do formulário. A chave \"Cadastro com aprovação\" fica apagada, porque não há ninguém sem convite para aprovar. O quadro amarelo de baixo lembra que isso vale até para você: se um dia precisar de uma conta nova, ela também terá de vir por convite.",
+          "dica": "Convide as pessoas pela tela \"Equipe\", em Configurações, antes de precisar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Cadastro apenas por convite",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "a única porta de entrada é o convite",
+                "exato": false
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='so-convite'])"
+              },
+              "rotulo": "Ligado: só com convite",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "a única porta de entrada é o convite",
+                "exato": false
+              },
+              "rotulo": "Vale até para você",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O aviso do servidor",
+          "texto": "Logo depois da troca, pode aparecer no alto o aviso \"A troca de modo ainda não chegou ao servidor.\". O sistema já segue a regra nova, mas o serviço que guarda as senhas e cria as contas continua com a regra antiga, e esta tela só avisa: não corrige sozinha. Na instalação comum, com tudo num servidor só, o aviso mostra um comando para rodar no servidor, e a troca chega lá na próxima atualização. Quando o banco de dados fica num serviço separado, como nesta foto, atualização nenhuma resolve: é preciso trocar a opção à mão no painel do Supabase, e o aviso diz onde. Os termos técnicos que aparecem no quadro (como \"GoTrue\" e \"DISABLE_SIGNUP\") são para quem cuida do servidor.",
+          "dica": "Se você não mexe no servidor, mande a foto deste aviso para quem instalou o sistema para você.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div[role='status']:has(p:text-is('A troca de modo ainda não chegou ao servidor.'))"
+              },
+              "rotulo": "Falta aplicar no servidor",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Reabrir o cadastro",
+          "texto": "Para voltar a aceitar qualquer pessoa, clique de novo na chave. Ela desliga, o texto volta a dizer \"Desligado: qualquer pessoa pode criar uma conta e abrir a própria empresa\" e os quadros amarelos somem. A chave \"Cadastro com aprovação\" volta a poder ser ligada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Cadastro apenas por convite",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Desligado: qualquer pessoa pode criar uma conta",
+                "exato": false
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='so-convite'])"
+              },
+              "rotulo": "Desligado: cadastro aberto",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "com-aprovacao",
+      "titulo": "Aprovar quem quer abrir uma empresa",
+      "objetivo": "Ligar o cadastro com aprovação e decidir, pedido por pedido, quem pode abrir uma empresa no sistema.",
+      "papel": "admin",
+      "busca": [
+        "aprovar cadastro",
+        "pedidos de empresa nova",
+        "aprovar nova empresa",
+        "recusar cadastro",
+        "fila de aprovação",
+        "quem pediu para entrar"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Ligar a aprovação",
+          "texto": "Se você hospeda o sistema para várias clínicas e quer escolher quem entra, clique na chave \"Cadastro com aprovação\". Com ela ligada, a pessoa cria a conta normalmente, mas no lugar de abrir a empresa ela envia um pedido, e o pedido espera por você nesta tela. O sistema não avisa quando chega pedido novo: passe por aqui de tempos em tempos.",
+          "rota": "/admin/cadastro",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Cadastro com aprovação",
+                "exato": true
+              },
+              "rotulo": "Clique para ligar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "switch",
+            "nome": "Cadastro com aprovação",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A fila de pedidos",
+          "texto": "Com a chave ligada, aparece o quadro \"Pedidos aguardando aprovação\". Cada linha é um pedido: em cima, o nome da empresa que a pessoa quer abrir; embaixo, o e-mail dela. O pedido mais antigo fica no alto. Aqui há três clínicas esperando.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Cadastro com aprovação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Pedidos aguardando aprovação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='com-aprovacao'])"
+              },
+              "rotulo": "Ligado: você aprova",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-surface:has(> div > div:text-is('Pedidos aguardando aprovação'))"
+              },
+              "rotulo": "Pedidos esperando você",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Aprovar ou recusar",
+          "texto": "\"Aprovar\" cria a empresa com o nome do pedido e torna quem pediu administrador dela. \"Recusar\" fecha a porta para aquela conta enquanto a aprovação estiver ligada: ela vê o aviso \"Pedido não aprovado\" e não consegue pedir outra vez. Se ela tiver um convite, ainda pode entrar pelo link do convite. Nos dois casos o sistema não avisa a pessoa: combine com ela. Se foi aprovada, basta entrar de novo para começar a usar.",
+          "dica": "Só dá para aprovar quem já confirmou o e-mail. Se a conta não confirmou, a tela avisa e o pedido continua na fila.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(p:text-is('Nutrir Nutrição Clínica'))"
+              },
+              "rotulo": "Um pedido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Aprovar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.border.p-4:has(p:text-is('Nutrir Nutrição Clínica'))"
+                }
+              },
+              "rotulo": "Cria a empresa",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Recusar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.border.p-4:has(p:text-is('Nutrir Nutrição Clínica'))"
+                }
+              },
+              "rotulo": "Nega de vez",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Depois de decidir",
+          "texto": "Assim que você decide, o pedido sai da fila. Aqui o pedido da \"OdontoVita Sorrisos\" foi recusado e sumiu da lista; ficaram os outros dois. Cada aprovação e cada recusa fica registrada no item \"Audit\" do menu.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Recusar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.border.p-4:has(p:text-is('OdontoVita Sorrisos'))"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 3000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-surface:has(> div > div:text-is('Pedidos aguardando aprovação'))"
+              },
+              "rotulo": "Sobraram dois pedidos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Desligar a aprovação",
+          "texto": "Clique de novo na chave para voltar ao cadastro aberto. Atenção: a partir daí, quem estava esperando aprovação, e até quem você recusou, pode abrir a própria empresa sozinho na próxima vez que entrar, sem passar por você. A fila some desta tela, mas os pedidos não decididos continuam guardados: se você ligar a chave outra vez, eles voltam a aparecer.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Cadastro com aprovação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Desligado: quem cria conta abre a própria empresa na hora",
+                "exato": false
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='com-aprovacao'])"
+              },
+              "rotulo": "Desligado: cadastro aberto",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

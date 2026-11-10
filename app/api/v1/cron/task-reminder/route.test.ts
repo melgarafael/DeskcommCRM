@@ -15,7 +15,14 @@ import { describe, expect, it } from "vitest";
 
 import { preferenciaPadraoDeLembrete } from "@/lib/tarefas/preferencia-de-lembrete";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
-import { avisoDaCentral, chaveDoAviso, janelaDaVarredura, lembretesDaRodada, type TarefaLida } from "./route";
+import {
+  avisoDaCentral,
+  chaveDoAviso,
+  janelaDaVarredura,
+  lembretesDaRodada,
+  ocasiaoDaTarefa,
+  type TarefaLida,
+} from "./route";
 
 const AGORA = new Date("2026-10-13T12:00:00.000Z");
 const MIN = 60_000;
@@ -153,9 +160,9 @@ describe("lembretesDaRodada — o que nunca vira aviso", () => {
     expect(r).toEqual([]);
   });
 
-  it("o par já avisado não repete — é a trava que o item da Central grava", () => {
+  it("a ocasião já avisada não repete — é a trava que o item da Central grava", () => {
     const t = tarefa({ due_date: new Date(AGORA.getTime() + 5 * MIN).toISOString() });
-    const jaAvisados = new Set([chaveDoAviso("task_due", t.id)]);
+    const jaAvisados = new Set([chaveDoAviso(ocasiaoDaTarefa(t, "task_due"))]);
     expect(lembretesDaRodada({ membrosAtivos: EQUIPE, tarefas: [t], preferencias: SEM_PREF, jaAvisados }, AGORA)).toEqual([]);
   });
 
@@ -167,7 +174,7 @@ describe("lembretesDaRodada — o que nunca vira aviso", () => {
       { membrosAtivos: EQUIPE,
         tarefas: [t],
         preferencias: new Map([["pessoa-1", pref({ task_overdue: true })]]),
-        jaAvisados: new Set([chaveDoAviso("task_due", t.id)]),
+        jaAvisados: new Set([chaveDoAviso(ocasiaoDaTarefa(t, "task_due"))]),
       },
       AGORA,
     );
@@ -203,16 +210,23 @@ describe("a rota escreve na ORGANIZAÇÃO DA TAREFA, e com o par que a trava lê
     expect(fonte).toContain("ref_id: tarefa.id");
   });
 
-  it("a trava lê o MESMO par que a escrita grava (kind + ref_id)", () => {
-    // Sem esta asserção, trocar `chaveDoAviso` na escrita e não na leitura
-    // faria a rodada reenviar para sempre sem erro nenhum — o defeito que a
-    // trava existe para impedir, nascendo calado.
+  it("a trava lê a MESMA ocasião que a escrita grava (categoria + tarefa + responsável + prazo)", () => {
+    // Sem esta asserção, trocar a chave na escrita e não na leitura faria a
+    // rodada reenviar para sempre sem erro nenhum — o defeito que a trava
+    // existe para impedir, nascendo calado. Desde a #3639 a chave é a OCASIÃO,
+    // e a conta mora numa função só (`chaveDoAviso`), usada pelos dois lados.
     expect(fonte).toContain("chaveDoAviso(");
     expect(fonte.match(/chaveDoAviso\(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(fonte).toContain("para_user_id, task_reminder_due_at");
+    expect(fonte).toContain("task_reminder_due_at: prazoDaOcasiao(tarefa.due_date)");
   });
 
   it("o push vai ao RESPONSÁVEL, e não à organização", () => {
     expect(fonte).toContain("enviarPushAoUsuario(tarefa.organization_id, responsavel");
+  });
+
+  it("o toque no push abre as tarefas do responsável", () => {
+    expect(fonte).toContain("href: HREF_MINHAS_TAREFAS");
   });
 
   it("audit só quando houve efeito", () => {
@@ -337,5 +351,26 @@ describe("avisoDaCentral — o aviso de prazo é do RESPONSÁVEL (doc 162, migra
   it("a rodada grava pela função, e não por um insert à mão que perderia o dono", () => {
     const fonte = readFileSync(join(__dirname, "route.ts"), "utf8");
     expect(fonte).toMatch(/\.from\("agent_inbox_items"\)\s*\.insert\(avisoDaCentral\(/);
+  });
+});
+
+describe("o lembrete por telefone pede o canal que alcança o aparelho (#3358)", () => {
+  const fonte = readFileSync(join(__dirname, "route.ts"), "utf8");
+
+  it("a porta que escolhe a sessão recebe a preferência por telefone", () => {
+    // O destino DESTE envio é um TELEFONE: o número que a pessoa deixou, casado
+    // com `contacts.phone_number`. Sem a preferência, a porta devolvia a sessão
+    // WORKING mais ANTIGA da organização — e numa organização que conectou o
+    // Instagram antes do WhatsApp essa é a social, que não alcança telefone
+    // nenhum: o lembrete ia para o Instagram e era recusado pela janela de 24h.
+    expect(fonte).toContain(
+      "sessaoProntaParaEnvio(admin, tarefa.organization_id, { preferirTelefone: true })",
+    );
+  });
+
+  it("a sessão escolhida é a MESMA que vai para `ensureConversation`", () => {
+    // A preferência só vale se chegar ao envio: é este `canalId` que abre a
+    // conversa e por onde o texto sai.
+    expect(fonte).toContain("ensureConversation(admin, tarefa.organization_id, contatoId, canalId)");
   });
 });

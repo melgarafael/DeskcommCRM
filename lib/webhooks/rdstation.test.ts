@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { isRdStationPayload, mapRdStationPayload } from "@/lib/webhooks/rdstation";
-import { mapInboundPayload } from "@/lib/webhooks/inbound";
+import { extrairAtribuicaoDoInbound, mapInboundPayload } from "@/lib/webhooks/inbound";
 import { isRespondiPayload } from "@/lib/webhooks/respondi";
 
 /**
@@ -222,5 +222,44 @@ describe("compatibilidade — o genérico e o Respondi seguem intactos", () => {
 
   it("RD NÃO é Respondi", () => {
     expect(isRespondiPayload(rdEnvelope())).toBe(false);
+  });
+});
+
+/**
+ * Issue #3149, ponta 1: o envelope do RD tem três lugares para um campo do
+ * formulário, e um formulário montado num anúncio manda o clique em qualquer um
+ * deles. Sem ler os três, o lead entra sem atribuição e a falha é silenciosa.
+ */
+describe("chaves de anúncio do envelope do RD Station", () => {
+  /** O clique no item do lead ou na conversão, onde o RD de verdade costuma pôr. */
+  function envelopeComAnuncio(chave: string, valor: string, onde: "lead" | "conversao") {
+    const env = rdEnvelope();
+    const lead = (env.leads as Array<Record<string, unknown>>)[0]!;
+    if (onde === "lead") {
+      lead[chave] = valor;
+    } else {
+      const ultima = lead.last_conversion as { content: Record<string, unknown> };
+      ultima.content[chave] = valor;
+    }
+    return env;
+  }
+
+  it.each(["lead", "conversao"] as const)(
+    "o `fbclid` que veio no %s vira atribuição, não campo do card",
+    (onde) => {
+      const m = mapRdStationPayload(envelopeComAnuncio("fbclid", "IwAR1abc", onde));
+      expect(m.source_metadata.fbclid).toBe("IwAR1abc");
+      expect(m.custom_fields.fbclid).toBeUndefined();
+
+      const atribuicao = extrairAtribuicaoDoInbound(m.source_metadata);
+      expect(atribuicao?.plataforma).toBe("meta_ads");
+      expect(atribuicao?.sourceId).toBe("IwAR1abc");
+    },
+  );
+
+  it("CONTROLE: envelope sem chave de anúncio não inventa atribuição", () => {
+    const m = mapRdStationPayload(rdEnvelope());
+    expect(m.source_metadata).toEqual({});
+    expect(extrairAtribuicaoDoInbound(m.source_metadata)).toBeNull();
   });
 });

@@ -39,6 +39,7 @@
  */
 import type { AvisoDb, CanalDoAviso, PacingDoAviso, TransporteDoAviso } from "./aviso-ao-suporte";
 import { mascara } from "./aviso-ao-suporte";
+import type { ModeloDoAviso } from "./modelo-do-aviso";
 import { montarAvisoDeTeste } from "./texto-do-aviso";
 import { urlPublicaUsavel } from "./url-publica";
 import type { ErroDaEntregaDeAviso } from "./vocabulario-do-aviso";
@@ -52,7 +53,10 @@ import type { ErroDaEntregaDeAviso } from "./vocabulario-do-aviso";
  * CHAVES deste objeto, não a ausência de uma linha.
  */
 export interface DepsDoAvisoDeTeste {
-  db: Pick<AvisoDb, "carregaCanal" | "marcaDaOrganizacao" | "destinoEhDaPropriaOrganizacao">;
+  db: Pick<
+    AvisoDb,
+    "carregaCanal" | "marcaDaOrganizacao" | "destinoEhDaPropriaOrganizacao" | "carregaModeloDoAviso"
+  >;
   transporte: TransporteDoAviso;
   pacing: PacingDoAviso;
   clock: () => Date;
@@ -98,6 +102,20 @@ export async function enviarAvisoDeTeste(
     telefone: string;
     /** A opção de responder casos por este número, como está SALVA. */
     respostaWhatsappHabilitada?: boolean;
+    /**
+     * O modelo aprovado SALVO na configuração (migration 9094). Só é lido quando
+     * a conexão não manda texto livre — é com ele que o teste prova o caminho
+     * que o aviso real vai usar.
+     */
+    modeloId?: string | null;
+    /**
+     * O texto de OUTRO aviso que reusa esta mesma fila de condições — hoje, o
+     * aviso de agendamento (`lib/agenda/aviso-de-agendamento.ts`). Esse texto
+     * não leva link, então o passo 9 (endereço público) não se aplica a ele:
+     * recusar por falta de domínio um aviso que não mostra domínio seria um
+     * "não" sem razão.
+     */
+    corpo?: (marca: Awaited<ReturnType<AvisoDb["marcaDaOrganizacao"]>>) => string;
   },
 ): Promise<ResultadoDoAvisoDeTeste> {
   const agora = deps.clock();
@@ -114,14 +132,29 @@ export async function enviarAvisoDeTeste(
   }
   if (!canal || canal.archived_at) return recusa("canal_arquivado");
   if (canal.desativado) return recusa("canal_desativado");
-  if (!canal.aceitaMensagemLivre) return recusa("canal_nao_aceita_aviso_livre");
+  // A mesma regra do motor: a conexão que só manda modelo serve com o modelo
+  // aprovado escolhido, e o teste confere que ele ainda serve AGORA.
+  let modelo: ModeloDoAviso | null = null;
+  if (!canal.aceitaMensagemLivre) {
+    if (entrada.modeloId && deps.db.carregaModeloDoAviso) {
+      let avaliacao: Awaited<ReturnType<NonNullable<AvisoDb["carregaModeloDoAviso"]>>>;
+      try {
+        avaliacao = await deps.db.carregaModeloDoAviso(orgId, channelSessionId, entrada.modeloId);
+      } catch {
+        return recusa("indeterminado");
+      }
+      if (!avaliacao.ok && avaliacao.motivo === "indeterminado") return recusa("indeterminado");
+      modelo = avaliacao.ok ? avaliacao.modelo : null;
+    }
+    if (!modelo) return recusa("canal_nao_aceita_aviso_livre");
+  }
   // No motor, canal parado vira `retry` por até ~30 min. Aqui não: há alguém
   // esperando a resposta na tela, e "vou tentar de novo em 5 minutos" não é
   // resposta para quem clicou um botão chamado "enviar agora".
   if (canal.status !== "WORKING") return recusa("canal_desconectado");
 
   // ── 9. O link precisa abrir no celular de outra pessoa ───────────────────
-  if (!urlPublicaUsavel(deps.urlPublica)) return recusa("sem_endereco_publico");
+  if (!entrada.corpo && !urlPublicaUsavel(deps.urlPublica)) return recusa("sem_endereco_publico");
 
   // ── 10. O transporte desta instalação está de pé? ────────────────────────
   if (!(await deps.transporte.configurado(orgId, canal))) return recusa("transporte_ausente");
@@ -152,7 +185,7 @@ export async function enviarAvisoDeTeste(
 
   // ── 13. O texto ──────────────────────────────────────────────────────────
   const marca = await deps.db.marcaDaOrganizacao(orgId);
-  const body = montarAvisoDeTeste({
+  const body = entrada.corpo ? entrada.corpo(marca) : montarAvisoDeTeste({
     marca: marca.nome,
     idioma: marca.idioma,
     link: `${deps.urlPublica.replace(/\/+$/, "")}/app/ai/cases`,
@@ -162,7 +195,9 @@ export async function enviarAvisoDeTeste(
   // ── 14. O transporte ─────────────────────────────────────────────────────
   let externalId: string | null = null;
   try {
-    const resposta = await deps.transporte.envia(orgId, canal, to, body);
+    const resposta = modelo
+      ? await deps.transporte.envia(orgId, canal, to, body, { modelo })
+      : await deps.transporte.envia(orgId, canal, to, body);
     externalId = resposta.externalId;
   } catch (err) {
     const causa = err instanceof Error ? err.message : String(err);

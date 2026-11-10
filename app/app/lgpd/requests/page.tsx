@@ -22,7 +22,7 @@ export default async function LgpdRequestsPage() {
   const t = (texto: string) => traduzir(texto, idioma);
 
   return (
-    <div className="flex h-full flex-col gap-6 p-6">
+    <div className="flex h-full flex-col gap-6 md:p-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">{t("Solicitações LGPD")}</h1>
         <p className="text-sm text-muted-foreground">

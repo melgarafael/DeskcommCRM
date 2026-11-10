@@ -2,6 +2,7 @@ import { isIP } from "node:net";
 import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "@/lib/env";
 import { getSmtpConfig, type SmtpConfig } from "@/lib/email/config";
+import { remetenteComNome } from "@/lib/email/remetente";
 
 interface SendArgs {
   to: string | string[];
@@ -11,6 +12,7 @@ interface SendArgs {
   replyTo?: string;
   fromName?: string;
   tags?: { name: string; value: string }[];
+  headers?: Record<string, string>;
 }
 export type EmailDeliveryError =
   "not_configured" | "send_failed" | "rate_limited" | "sender_rejected";
@@ -33,8 +35,7 @@ export function isSmtpConfigured(config: SmtpConfig): boolean {
 
 export function formatFromAddress(config: SmtpConfig, override?: string): string | null {
   if (!config.fromEmail) return null;
-  const name = (override ?? config.fromName).replace(/[<>"\r\n]/g, "").trim();
-  return name ? `${name} <${config.fromEmail}>` : config.fromEmail;
+  return remetenteComNome(config.fromEmail, override ?? config.fromName);
 }
 /** A URL já é validada por lib/env; em desenvolvimento mantemos o padrão local. */
 function smtpClientName(): string | undefined {
@@ -82,6 +83,7 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
       html: args.html,
       text: args.text,
       replyTo: args.replyTo,
+      headers: args.headers,
     });
     return { ok: true, id: result.messageId };
   } catch (error) {

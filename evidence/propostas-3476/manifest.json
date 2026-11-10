@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "pull_request": 3476,
+  "head_sha": "0a52385384baf59f9bc0135789c91168bf9f91bc",
+  "checkout_sha": "111bbf7581aeedca43a5525692683a9259b51b81",
+  "run": {
+    "id": 40400799649,
+    "url": "https://github.com/melgarafael/DeskcommCRM/actions/runs/40400799649"
+  },
+  "job": {
+    "id": 121847899398,
+    "url": "https://github.com/melgarafael/DeskcommCRM/actions/runs/40400799649/job/121847899398",
+    "conclusion": "success",
+    "tests_passed_total": 42,
+    "test_summary": "42 passed (16.5m)"
+  },
+  "artifact": {
+    "id": 12690158434,
+    "name": "evidencia-parte-7",
+    "digest": "sha256:c1b4d03a3ce25e6aa84b6715748ed9ced21948d5a7d5f841b66ff21e885ca4fc"
+  },
+  "production_and_test_paths_equal_checkout_to_head": [
+    "app",
+    "components",
+    "lib",
+    "hooks",
+    "workers",
+    "proxy.ts",
+    "next.config.ts",
+    "package.json",
+    "pnpm-lock.yaml",
+    "postcss.config.mjs",
+    "tsconfig.json",
+    "playwright.config.ts",
+    "supabase/baseline.sql",
+    "supabase/config.toml",
+    "tests/e2e/propostas-de-campos-do-card.spec.ts",
+    "tests/e2e/helpers",
+    "tests/pg-como-supabase.ts",
+    "scripts/seed-e2e-credentials.ts",
+    "scripts/seed-e2e-agente-mcp.ts",
+    "scripts/lib/env-de-teste.ts",
+    ".github/workflows/e2e.yml"
+  ],
+  "cases_passed_log": [
+    "2026-10-26T21:33:43.4395413Z   ✓  28 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:149:5 › manager confere origem, salva o número mostrado e descarta o outro campo (7.4s)",
+    "2026-10-26T21:33:49.7189691Z   ✓  29 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:170:5 › correção digitada é confirmada pelo formulário real (6.3s)",
+    "2026-10-26T21:33:55.0435014Z   ✓  30 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:180:5 › viewer lê a proposta, sem ação na tela nem autorização para decidir (5.3s)",
+    "2026-10-26T21:34:01.2007253Z   ✓  31 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:195:5 › revisão antiga recebe 409 após outra pessoa decidir e preserva o card (6.1s)",
+    "2026-10-26T21:34:05.0260093Z   ✓  32 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:229:5 › duas decisões que leram pending disputam a mesma linha: só uma grava (3.8s)",
+    "2026-10-26T21:34:08.8323279Z   ✓  33 [chromium] › tests/e2e/propostas-de-campos-do-card.spec.ts:256:5 › expiração vence entre a leitura e a gravação da confirmação (3.7s)"
+  ],
+  "screenshots": [
+    {
+      "path": "evidence/propostas-3476/01-revisao-sintetica.png",
+      "sha256": "8cf39e0c7dc8b0180a546ad049a9213e1835093291211ab6ca810cefe1072be5",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "path": "evidence/propostas-3476/02-decidida-sintetica.png",
+      "sha256": "42aecfe89dceeb0c36d06d191d09346763810d95c753fad62e4191d8d683ceb6",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "path": "evidence/propostas-3476/03-leitura-sintetica.png",
+      "sha256": "20e53790eb112c38281b63a181d8f43ce4d7293aa34b793065bc08c4d800f64a",
+      "width": 1280,
+      "height": 720
+    }
+  ],
+  "baseline_sha256": "04651de6660552895f88858ae8ffc608c90f4272be77a896ae733db0c4a98345",
+  "types": {
+    "cli": "2.122.0",
+    "raw_sha256": "91675e73e22d49b7797665339e297bf23de08acb497b7281436acf786d10dda5",
+    "formatted_sha256": "adc0c8497856db006965d127fb9cbeebecf3fa72c64fa48390bc193b16e7cca3",
+    "scope": "Saída usada no head0a5238538; a geração integrada abaixo a substitui no candidato final."
+  },
+  "post_run_product_delta": "Nesta contribuição: catch de erro inesperado retorna fail JSON500. Depois também entrou origin/main63dfc0fda, incluindo0793. Os três componentes de revisão/dossiê/formulário abaixo mantêm os blobs da provaUI; o candidato integrado exige novamente os cinco checks.",
+  "post_run_test_delta": "A captura02 passa a rolar até o campoMedida antes da imagem. A imagem preservada neste manifesto ainda mostra o topo do formulário.",
+  "unexpected_error_unit_proof": {
+    "file": "tests/unit/api-fila-de-campos-do-negocio.test.ts",
+    "red": {
+      "failed": 1,
+      "passed": 15,
+      "exit": 1
+    },
+    "green": {
+      "passed": 16,
+      "exit": 0
+    }
+  },
+  "baseline_scope": "baseline_sha256 identifica somente a execução UI no head0a5238538.",
+  "component_ui_blobs_equal_after_integration": [
+    {
+      "path": "components/kanban/RevisaoDoDocumento.tsx",
+      "ui_source_blob": "acd89f9036c2690802db3ccae54575f05abdc3a4",
+      "integrated_index_blob": "acd89f9036c2690802db3ccae54575f05abdc3a4"
+    },
+    {
+      "path": "components/kanban/LeadDossier.tsx",
+      "ui_source_blob": "21d2fd297a9e8eb6cef603ebd9f12ee08ddb68a5",
+      "integrated_index_blob": "21d2fd297a9e8eb6cef603ebd9f12ee08ddb68a5"
+    },
+    {
+      "path": "components/kanban/LeadFieldsForm.tsx",
+      "ui_source_blob": "384d648e645632481386f49b973b46e511171bed",
+      "integrated_index_blob": "384d648e645632481386f49b973b46e511171bed"
+    }
+  ],
+  "integrated_candidate_typegen": {
+    "head_before_merge": "b6471fa38378c3a862b640c932522919c954de8c",
+    "main_merge_head": "63dfc0fdabd02cf1450dfae4ba680fbeb7cff8c3",
+    "index_tree_before_typegen": "f68bd98aab2658f9e51876f5646dee4b6f7912c4",
+    "baseline_sha256": "1807cf2be3195d1f642adbc151af35079bb8fa50d1b876a701cad905d2c67197",
+    "prelude_sha256": "62afc1fa29248f8c5d9318b882489894aab92adb1d6716d7b2e39e4e06d3eb3c",
+    "postgres": "17.11",
+    "image_id": "sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d",
+    "memory_limit_bytes": 1073741824,
+    "cpu_limit": 1,
+    "cli": "2.122.0",
+    "fresh_container": "codex3476-types-01a178b3",
+    "port_localhost": 57502,
+    "prelude": "extraído sem alterações do bloco canônico de scripts/test-db.sh",
+    "baseline_install_on_error_stop": true,
+    "baseline_update_on_error_stop": true,
+    "raw_sha256_pass1": "09839121c61af8d5788da5c2dcd095eddb8e99933f83d0ddadbb615a37f413e5",
+    "raw_sha256_pass2": "09839121c61af8d5788da5c2dcd095eddb8e99933f83d0ddadbb615a37f413e5",
+    "formatted_sha256": "d629f5f97ddd145211e43041949852069aa065553242a19c66a53408adf318ea",
+    "public_tables": 206,
+    "public_functions": 248,
+    "delta_generated": "Somente a assinatura de fn_go_live_solta_numero_formado, adicionada pela0793 da main. Nenhum tipo editado à mão.",
+    "new_function_acl": {
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_role_execute": false
+    },
+    "own_container_removed": true,
+    "no_next_or_full_supabase_stack": true
+  }
+}

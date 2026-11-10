@@ -31,6 +31,32 @@ export const instanciaDeReceitaSchemaItem = z
   .strict();
 
 /**
+ * Erro de "fixos" inválidos.
+ *
+ * Carrega os motivos pelo CAMINHO do campo (`fieldErrors`), para a tela mostrar
+ * a mensagem do Zod em português — legível por quem opera — em vez de um
+ * "Campos inválidos." genérico. A mensagem continua no `message` (com o
+ * prefixo `fixos_invalidos:`) para o log e para quem lê o erro cru.
+ *
+ * O caminho é o INTEIRO ("taxonomias.bairro.taxonomia", "situacao.campo"), não
+ * o último pedaço: com o pedaço, "taxonomia" e "campo" viravam o mesmo rótulo
+ * na tela, e ninguém sabia o que corrigir.
+ */
+export class ErroDeFixosInvalidos extends Error {
+  /** Os motivos pelo caminho do campo (o mesmo formato que a rota devolve no 422). */
+  readonly fieldErrors: Record<string, string[]>;
+
+  constructor(receitaId: string, fieldErrors: Record<string, string[]>) {
+    const motivo = Object.entries(fieldErrors)
+      .map(([campo, mensagens]) => `${campo}: ${mensagens.join("; ")}`)
+      .join("; ");
+    super(`fixos_invalidos:${receitaId}: ${motivo}`);
+    this.name = "ErroDeFixosInvalidos";
+    this.fieldErrors = fieldErrors;
+  }
+}
+
+/**
  * Valida `fixos` contra o `parametrosFixos` da receita. Lança se não bater.
  * Chamado pela rota de gravação antes de gravar no banco.
  */
@@ -40,10 +66,15 @@ export function validarFixosDaReceita(receitaId: string, fixos: unknown): void {
   const parseado = receita.parametrosFixos.safeParse(fixos);
   if (!parseado.success) {
     // Motivo legível (as mensagens do Zod da receita já são em português), não o JSON cru do Zod.
-    const motivo = parseado.error.issues
-      .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
-      .join("; ");
-    throw new Error(`fixos_invalidos:${receitaId}: ${motivo}`);
+    const fieldErrors: Record<string, string[]> = {};
+    for (const issue of parseado.error.issues) {
+      // O CAMINHO inteiro, com ponto: "categorias.0.taxonomia" diz ONDE
+      // falhou; "taxonomia" não diz nada. O ÍNDICE da lista entra também:
+      // sem ele, dois campos da mesma lista caíam no mesmo rótulo.
+      const chave = issue.path.map((p) => String(p)).join(".");
+      (fieldErrors[chave || "fixos"] ??= []).push(issue.message);
+    }
+    throw new ErroDeFixosInvalidos(receitaId, fieldErrors);
   }
 }
 

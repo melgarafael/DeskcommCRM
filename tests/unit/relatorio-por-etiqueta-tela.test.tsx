@@ -162,6 +162,31 @@ describe("relatório por etiqueta na tela", () => {
     );
   });
 
+  it("no celular a linha vira cartão: cada número leva o nome da coluna, e o link da etiqueta tem 44px", async () => {
+    // ADR-0006, F4. O cabeçalho some abaixo de `md`; o nome da coluna viaja na
+    // célula (`data-rotulo`), que o CSS desenha antes do número. O jsdom não
+    // aplica media query: o que se prende é o contrato — o rótulo é o texto do
+    // cabeçalho da mesma coluna, e tudo do cartão mora atrás de `max-md:`.
+    responder(COM_DADOS);
+    montar();
+    const tabela = await screen.findByTestId("tabela-por-etiqueta");
+
+    const cabecalhos = Array.from(tabela.querySelectorAll("thead th")).map((th) => th.textContent);
+    const [linha] = screen.getAllByTestId("linha-de-etiqueta");
+    const rotulos = Array.from(linha!.querySelectorAll("td"))
+      .map((td) => td.getAttribute("data-rotulo"))
+      .filter((r) => r !== null);
+    expect(rotulos).toEqual(["Conversas", "Abertas", "Resolvidas", "Espera média"]);
+    expect(rotulos).toEqual(cabecalhos.slice(1, 5));
+
+    const classes = (el: Element) => (el.getAttribute("class") ?? "").split(/\s+/);
+    expect(classes(tabela.querySelector("thead")!)).toContain("max-md:hidden");
+    expect(classes(linha!)).toContain("max-md:grid");
+    // O link de texto vira alvo de dedo só no celular.
+    const link = screen.getAllByTestId("link-de-etiqueta")[0]!;
+    expect(classes(link)).toEqual(expect.arrayContaining(["max-md:inline-flex", "max-md:min-h-11"]));
+  });
+
   it("erro da rota não vaza número nenhum: a tela diz que falhou", async () => {
     vi.mocked(apiClient.get).mockRejectedValue(new Error("boom"));
     montar();

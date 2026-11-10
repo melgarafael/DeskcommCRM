@@ -11,6 +11,7 @@ import type { FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import type { RFNode, RFNodeData } from "@/lib/followup/graph-mappers";
 import { Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
+import { etapasPorFunil, nomeDaEtapa, useEtapasDeGatilho } from "@/hooks/followup/useEtapasDeGatilho";
 
 import { ActionForm } from "./forms/ActionForm";
 import { ClassifyForm } from "./forms/ClassifyForm";
@@ -270,6 +271,22 @@ function ConfiguracoesDoRoteiro({
   const atual = { max_tentativas_pergunta: settings?.max_tentativas_pergunta ?? 3, ...settings };
   const [gatilhos, setGatilhos] = useState((settings?.gatilhos ?? []).join(", "));
   const gravar = (patch: Partial<NonNullable<FlowGraph["settings"]>>) => onSettingsChange?.({ ...atual, ...patch });
+  // #2630 — AS ETAPAS DO FUNIL. O seletor mostra «Etapa · Funil» (o funil viaja
+  // no texto do item, como no gatilho de etapa: dois funis já bastam para quatro
+  // etapas homônimas) e o `settings` guarda o id da etapa, que é o que
+  // `crm_leads.stage_id` traz no turno.
+  const { etapas, carregando: etapasCarregando, falhou: etapasFalhou } = useEtapasDeGatilho();
+  const funis = etapasPorFunil(etapas);
+  const etapasDoFunil = settings?.etapas_do_funil ?? [];
+  const alternarEtapa = (stageId: string) => {
+    const lista = etapasDoFunil.includes(stageId)
+      ? etapasDoFunil.filter((id) => id !== stageId)
+      : [...etapasDoFunil, stageId].slice(0, 30);
+    const { etapas_do_funil: _anterior, ...resto } = atual;
+    // Sem nenhuma etapa marcada a chave SAI do grafo (volta ao padrão), como as
+    // palavras-gatilho: guardar `[]` só encheria o jsonb de nada.
+    onSettingsChange?.(lista.length > 0 ? { ...resto, etapas_do_funil: lista } : resto);
+  };
   const inteiro = (valor: string, min: number, max: number): number | null => {
     const n = Number(valor);
     return Number.isInteger(n) && n >= min && n <= max ? n : null;
@@ -279,7 +296,7 @@ function ConfiguracoesDoRoteiro({
     <div className="space-y-4" data-testid="configuracoes-do-roteiro">
       <p className="text-sm text-text-muted">
         {t(
-          "O roteiro começa quando a mensagem do cliente tem uma palavra-gatilho, ou quando um roteador de intenção o aponta.",
+          "O roteiro começa quando a mensagem do cliente tem uma palavra-gatilho, quando um roteador de intenção o aponta ou quando o card do cliente entra numa etapa escolhida abaixo — uma vez por entrada na etapa, e não enquanto ele fica lá.",
         )}
       </p>
       <div className="space-y-2">
@@ -298,6 +315,42 @@ function ConfiguracoesDoRoteiro({
             onSettingsChange?.(lista.length > 0 ? { ...resto, gatilhos: lista } : resto);
           }}
         />
+      </div>
+      <div className="space-y-2 border-t border-border pt-4" data-testid="roteiro-etapas-do-funil">
+        <p className="text-sm font-medium text-text">{t("Começar quando o card entrar na etapa")}</p>
+        <p className="text-xs text-text-muted">
+          {t(
+            "Marque as etapas do funil em que este roteiro deve começar sozinho. Vale do próximo turno da conversa daquele cliente em diante — não é instantâneo. Os cards que já estão na etapa quando você a marca também começam, na próxima mensagem do cliente.",
+          )}
+        </p>
+        {etapasCarregando && <p className="text-xs text-text-muted">{t("Carregando etapas…")}</p>}
+        {!etapasCarregando && etapasFalhou && (
+          <p role="alert" className="text-xs text-error-fg">
+            {t("Não foi possível carregar as etapas do funil. Recarregue a página para escolher uma etapa.")}
+          </p>
+        )}
+        {!etapasCarregando && !etapasFalhou && etapas.length === 0 && (
+          <p className="text-xs text-text-muted">
+            {t("Nenhuma etapa ativa encontrada — crie o funil antes de escolher uma etapa aqui.")}
+          </p>
+        )}
+        <div className="max-h-56 space-y-3 overflow-y-auto">
+          {funis.map((funil) => (
+            <div key={funil.id} className="space-y-1">
+              <p className="text-xs font-medium text-text">{funil.nome}</p>
+              {funil.etapas.map((etapa) => (
+                <label key={etapa.stageId} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={etapasDoFunil.includes(etapa.stageId)}
+                    onChange={() => alternarEtapa(etapa.stageId)}
+                  />
+                  {nomeDaEtapa(etapa)}
+                </label>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
       <div className="space-y-2">
         <Label htmlFor="roteiro-tentativas">{t("Máximo de tentativas por pergunta")}</Label>

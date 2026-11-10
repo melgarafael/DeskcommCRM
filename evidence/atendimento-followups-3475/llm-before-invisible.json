@@ -1,0 +1,112 @@
+[
+  {
+    "id": "chatcmpl_272cabd4-d678-4744-8e49-f00a9484a43e",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "e7dada0ed29dd93cbade6555565b8a92fe0864e290761f58e98535d7d7a77016",
+    "at": "2026-10-26T18:45:47.364Z"
+  },
+  {
+    "id": "chatcmpl_a5f018f9-8044-43b5-ad12-b2c667441a5f",
+    "path": "/v1/chat/completions",
+    "model": "anthropic/claude-haiku-4-5",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "2b5138ed259d011c8e01e001bd7dc0b23654382c2090cd6d85a4f448a66c671c",
+    "at": "2026-10-26T19:00:46.969Z"
+  },
+  {
+    "id": "chatcmpl_6c679bf6-fb69-4eb8-8dd9-d70e8398150e",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "526260d425f5d53438b935fa23a275b8d364dae8b2316600b7df12ca05d855bb",
+    "at": "2026-10-26T19:00:47.465Z"
+  },
+  {
+    "id": "chatcmpl_e9c0b922-885f-4f73-99a7-e356052ceae9",
+    "path": "/v1/chat/completions",
+    "model": "anthropic/claude-haiku-4-5",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "2b5138ed259d011c8e01e001bd7dc0b23654382c2090cd6d85a4f448a66c671c",
+    "at": "2026-10-26T19:05:44.294Z"
+  },
+  {
+    "id": "chatcmpl_142e306c-9bfa-4c94-94c7-848a6da17976",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "4dc78617b82286cc044fb01b59218f55d389f784fd6c741824a56090bbb55e25",
+    "at": "2026-10-26T19:05:44.430Z"
+  },
+  {
+    "id": "chatcmpl_54569dbb-495f-437b-a3ec-e28a1ec1d4cf",
+    "path": "/v1/chat/completions",
+    "model": "anthropic/claude-haiku-4-5",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "2b5138ed259d011c8e01e001bd7dc0b23654382c2090cd6d85a4f448a66c671c",
+    "at": "2026-10-26T19:05:47.742Z"
+  },
+  {
+    "id": "chatcmpl_fca959e8-2e22-452a-8480-9d400047c9f6",
+    "path": "/v1/chat/completions",
+    "model": "anthropic/claude-haiku-4-5",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "308a0e88b6ea4ea2d701146a4ed8abf9f57fbd4215d796b5e39282fa2c30dcb7",
+    "at": "2026-10-26T19:05:49.248Z"
+  },
+  {
+    "id": "chatcmpl_0d5e4e58-a6a5-4886-b55e-37149926b76a",
+    "path": "/v1/chat/completions",
+    "model": "anthropic/claude-haiku-4-5",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "e3511f8052239a3fe5dbceb23e46a3cb22f01cb7b1c0999c8a9a233c7c1c6aba",
+    "at": "2026-10-26T19:05:54.539Z"
+  },
+  {
+    "id": "chatcmpl_49c20000-c3b0-46aa-a705-5c3b3472a52b",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "dcfc5632a4e228a7f60762074b6c16ec3ba01505d643eda9c40b52c5a7dffa65",
+    "at": "2026-10-26T19:09:43.900Z"
+  },
+  {
+    "id": "chatcmpl_98c24a94-957a-4605-bbec-1ec723d65022",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "request_sha256": "d7cbaf377fa0ddb69174c89900d294b06bd9206b658274f342ca43d175a00b5c",
+    "at": "2026-10-26T19:09:44.419Z"
+  }
+]

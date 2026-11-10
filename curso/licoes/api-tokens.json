@@ -1,0 +1,506 @@
+{
+  "id": "api-tokens",
+  "titulo": "API Tokens",
+  "tela": "/app/settings/api-tokens",
+  "resumo": "Onde você cria as chaves que deixam outro sistema (uma agenda online, um prontuário, um assistente de IA) conversar com o seu CRM, escolhe o que cada chave pode fazer e desliga a que não usa mais.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de API Tokens",
+      "objetivo": "Achar a tela de API Tokens e ler a lista de chaves: o nome, o começo da chave, o que cada uma pode fazer, se está ligada e até quando vale.",
+      "papel": "admin",
+      "busca": [
+        "api tokens",
+        "chave de integração",
+        "ligar outro sistema ao crm",
+        "integrar agenda online",
+        "token de acesso",
+        "conectar assistente de ia"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde ficam as chaves",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Dados e acesso\" fica o cartão \"API Tokens\". Clique nele.",
+          "dica": "Só o administrador da empresa vê este cartão. Quem tem outro cargo e tenta abrir a tela recebe um aviso de acesso negado.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/api-tokens']"
+              },
+              "rotulo": "API Tokens",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/api-tokens']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma chave para cada sistema",
+          "texto": "Um token é uma chave. Você entrega a chave a outro sistema, como a agenda online do site ou um assistente de IA, e ele passa a ler e gravar no seu CRM sem ninguém digitar nada. Cada linha da lista é uma chave. A frase do topo avisa: a chave completa aparece uma única vez, no momento em que você cria.",
+          "dica": "Crie uma chave para cada sistema. Assim, se um deles parar de ser usado, você desliga só a chave dele.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/api-tokens']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "cell",
+                "nome": "Agenda online do site",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^Tokens server-to-server",
+                "regex": true
+              },
+              "rotulo": "A chave aparece uma vez só",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "table"
+              },
+              "rotulo": "Suas chaves",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Nome, começo da chave e permissões",
+          "texto": "Em \"Nome\" fica o apelido que você deu à chave. Em \"Prefixo\" aparece só o começo dela: o sistema não guarda a chave inteira, então este pedaço serve para você conferir qual chave um sistema está usando. Em \"Escopos\" estão as permissões da chave, com o nome curto de cada uma. O assistente de IA, por exemplo, pode ler o CRM (\"mcp:read\"), agir nele (\"mcp:write\") e age com poder de gerente (\"role:manager\").",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "Assistente de IA da recepção",
+                "exato": true
+              },
+              "rotulo": "Apelido da chave",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "dsk_b31e09d4…",
+                "exato": true
+              },
+              "rotulo": "Começo da chave",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "td:has(> div > :text-is('role:manager'))",
+                "n": 0
+              },
+              "rotulo": "O que ela pode fazer",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Ligada, desligada e validade",
+          "texto": "A coluna \"Status\" diz se a chave funciona: \"Ativo\" quer dizer ligada, \"Revogado\" quer dizer desligada para sempre. A coluna \"Expira\" mostra a data em que a chave deixa de valer sozinha. Um traço (\"—\") quer dizer que ela não tem data para vencer: vale até alguém revogar.",
+          "dica": "Depois da data de \"Expira\", o sistema recusa a chave, mas a coluna \"Status\" continua mostrando \"Ativo\". Confira sempre as duas colunas juntas.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Ativo",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text('Agenda online do site')"
+                }
+              },
+              "rotulo": "Ligada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "n": 4,
+                "dentro": {
+                  "css": "tr:has-text('Agenda online do site')"
+                }
+              },
+              "rotulo": "Vale até esta data",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "—",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text('Assistente de IA da recepção')"
+                }
+              },
+              "rotulo": "Sem data para vencer",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Revogado",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text('Planilha de pacientes (antiga)')"
+                }
+              },
+              "rotulo": "Desligada",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "criar-um-token",
+      "titulo": "Criar uma chave para outro sistema",
+      "objetivo": "Criar uma chave com nome, permissões e validade, e guardar a chave completa antes de fechar a janela.",
+      "papel": "admin",
+      "busca": [
+        "criar token",
+        "gerar chave de api",
+        "integrar prontuário com o crm",
+        "nova chave de integração",
+        "copiar token",
+        "permissões do token"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Começar uma chave nova",
+          "texto": "Neste exemplo, o prontuário eletrônico da clínica vai consultar a lista de pacientes do CRM. Ele precisa de uma chave. Clique em \"Criar token\", no alto da tela.",
+          "rota": "/app/settings/api-tokens",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "cell",
+                "nome": "Agenda online do site",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar token",
+                "exato": true
+              },
+              "rotulo": "Criar uma chave",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar token",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Dê um nome que diga de quem é",
+          "texto": "Abre a janela \"Criar novo token\". Em \"Nome\", escreva para qual sistema é a chave, aqui \"Prontuário eletrônico da clínica\". O nome precisa ter pelo menos 2 letras. É ele que vai te dizer, meses depois, se a chave ainda está em uso.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar token",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Criar novo token",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "valor": "Prontuário eletrônico da clínica"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "rotulo": "Para qual sistema é",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Marque só o que o sistema precisa",
+          "texto": "Em \"Escopos\" ficam as permissões. Cada botão traz o nome curto e, ao lado, o que ele libera. Clique para marcar: o botão marcado ganha uma borda colorida. O prontuário só precisa consultar os pacientes, então marque só \"mcp:read\". Apesar de a descrição falar em agentes de IA, é esta permissão que deixa qualquer sistema ler o CRM. Quanto menos permissões, menor o estrago se a chave cair em mãos erradas.",
+          "dica": "Hoje, só as permissões \"mcp:read\" (ler), \"mcp:write\" (gravar) e as de papel (\"role:…\") abrem portas de verdade. As outras, como \"contacts:read\" ou \"leads:write\", aparecem na lista, mas o CRM ainda não as confere: uma chave só com elas é recusada. Sem pelo menos um escopo marcado, o botão \"Criar\" avisa \"Selecione ao menos um escopo.\"",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "^mcp:read —",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^mcp:read —",
+                "regex": true
+              },
+              "rotulo": "Ler o CRM",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Validade e criar",
+          "texto": "Em \"Expira em (dias) — opcional\" você diz por quantos dias a chave vale, de 1 a 365. Aqui, 180. O \"365\" apagado no campo vazio é um exemplo: sem digitar nada, a chave vale até você revogar. Depois clique em \"Criar\".",
+          "dica": "Uma validade obriga a trocar a chave de tempos em tempos. Se ela vencer, o outro sistema para de conversar com o CRM até receber uma chave nova.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Expira em (dias) — opcional",
+                "exato": true
+              },
+              "valor": "180"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Expira em (dias) — opcional",
+                "exato": true
+              },
+              "rotulo": "Vale por 180 dias",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar",
+                "exato": true
+              },
+              "rotulo": "Criar a chave",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Copie a chave agora",
+          "texto": "Abre a janela \"Token criado\" com a chave completa. Clique em \"Copiar para clipboard\" e cole a chave no outro sistema, ou num lugar seguro. Esta é a única vez que ela aparece: o CRM guarda só uma impressão da chave, não a chave, e não consegue mostrá-la de novo. Se você perder, crie outra e revogue esta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Token criado",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[role='dialog'] code"
+              },
+              "rotulo": "A chave completa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar para clipboard",
+                "exato": true
+              },
+              "rotulo": "Copiar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "A chave nova na lista",
+          "texto": "Clique em \"Fechar\". A chave nova aparece no topo da lista, \"Ativo\", com as permissões que você marcou e a data em que vence. Daqui para frente, a lista mostra só o começo dela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Fechar",
+                "exato": true,
+                "n": 0
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "cell",
+                "nome": "Prontuário eletrônico da clínica",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 800
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "tr:has-text('Prontuário eletrônico da clínica')"
+              },
+              "rotulo": "A chave que você criou",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "revogar-um-token",
+      "titulo": "Desligar uma chave que não se usa mais",
+      "objetivo": "Saber quando e como revogar uma chave, o que acontece depois e como trocar uma chave sem deixar o outro sistema parado.",
+      "papel": "admin",
+      "busca": [
+        "revogar token",
+        "desligar chave de api",
+        "cancelar integração",
+        "chave vazou",
+        "trocar token",
+        "parar outro sistema de acessar o crm"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Revogar",
+          "texto": "Cada chave ligada tem o botão \"Revogar\" no fim da linha. Ele desliga a chave na hora, sem pedir confirmação, e não tem volta. A partir daí, o sistema que usava a chave é recusado e não lê nem grava mais nada no CRM. Use quando parar de usar um sistema ou quando desconfiar que a chave vazou.",
+          "dica": "Confira o nome da linha antes de clicar: como não há confirmação, um clique na linha errada desliga a integração errada.",
+          "rota": "/app/settings/api-tokens",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "cell",
+                "nome": "Agenda online do site",
+                "exato": true
+              }
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "role": "button",
+                "nome": "Revogar",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text('Agenda online do site')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Revogar",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text('Agenda online do site')"
+                }
+              },
+              "rotulo": "Desliga na hora",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Depois de revogada",
+          "texto": "A chave revogada continua na lista, com o selo \"Revogado\" e sem o botão \"Revogar\". Ela fica ali como registro de que existiu. Revogada não volta a funcionar: se o sistema precisar de acesso de novo, crie outra chave.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "tr:has-text('Planilha de pacientes (antiga)')"
+              },
+              "rotulo": "Chave desligada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Trocar uma chave sem parar nada",
+          "texto": "Para trocar a chave de um sistema, siga esta ordem: crie a chave nova em \"Criar token\", cole a chave nova no outro sistema e só então revogue a antiga. Revogando primeiro, o sistema fica sem acesso no intervalo.",
+          "dica": "Cada empresa pode ter até 50 chaves ligadas ao mesmo tempo. Chaves revogadas ou vencidas não contam. Se aparecer o aviso de limite, revogue as que não usa mais.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar token",
+                "exato": true
+              },
+              "rotulo": "Crie a nova",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Revogar",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text('Agenda online do site')"
+                }
+              },
+              "rotulo": "Depois revogue a antiga",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

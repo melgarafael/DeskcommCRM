@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-10-26T19:34:56.066947+00:00",
+  "origin_main": "028b40c118af6346c759186a40a67bdcf3748b63",
+  "branch_ahead_behind_before_commit": "0\t0",
+  "source_heads": {
+    "3455": "7570790e509fbef08228cbd708ff056e439fdb06",
+    "3407": "e4c0d54a633c75fc52ccb7f3bc9de8c1b6284b26",
+    "3430": "d13b501e3333a23893382bf3d7ec0879220663ec",
+    "3424": "a4dcd819a16ee4ed879fcc369d59d56d82943a58",
+    "3426": "2b23a2bf3c4a77f0022fded449f128c24ecf2591",
+    "3469": "a5fc1f0b559aef310df90d327733f052a69436aa"
+  },
+  "all_source_heads_are_ancestors": true,
+  "github_states": "six source PRs CLOSED by coordinator; heads unchanged",
+  "served_product_sha": "20f335eaede5c423a0fcc902d79eaabb103ea342"
+}

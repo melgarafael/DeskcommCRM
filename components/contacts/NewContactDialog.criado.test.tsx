@@ -44,7 +44,7 @@ const CONTATO = {
   email: null,
   email_normalized: null,
   phone_number: "+5511999998888",
-  cpf_hash: null,
+  cpf_available: false,
   birthdate: null,
   is_blocked: false,
   is_personal: false,
@@ -81,13 +81,20 @@ function envolver(ui: ReactNode) {
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(
-      async () =>
-        new Response(JSON.stringify(CORPO_DA_ROTA), {
-          status: 201,
+    vi.fn(async (url: unknown) => {
+      // O diálogo passou a sugerir etiquetas: a rota do vocabulário devolve a
+      // lista crua (`{ data: string[] }`) e responde ANTES do corpo do POST.
+      if (String(url).includes("/api/v1/contact-tags")) {
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
           headers: { "content-type": "application/json" },
-        }),
-    ),
+        });
+      }
+      return new Response(JSON.stringify(CORPO_DA_ROTA), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    }),
   );
 });
 

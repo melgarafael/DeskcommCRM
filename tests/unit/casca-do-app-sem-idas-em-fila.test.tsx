@@ -168,6 +168,7 @@ describe("a casca do /app dispara juntas as leituras independentes", () => {
       }),
       resolveActiveOrg: async () => ({ orgId: ORG_ID, role: "admin", interface_settings: null }),
       isMfaEnrolled: async () => true,
+      exigirProvaDeMfa: async () => {},
       requiresMfa: async () => false,
     }));
 

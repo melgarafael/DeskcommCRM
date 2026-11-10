@@ -71,14 +71,15 @@ function reimporta(csv: string): {
 }
 
 describe("o CSV espelha as colunas que o importer aceita", () => {
-  it("⭐ o cabeçalho é exatamente name, display_name, email, phone_number, cpf, tags", () => {
-    expect(CABECALHO_DO_CSV).toBe("name,display_name,email,phone_number,cpf,tags");
+  it("⭐ o cabeçalho espelha os campos aceitos na importação, incluindo nascimento", () => {
+    expect(CABECALHO_DO_CSV).toBe("name,display_name,email,phone_number,cpf,birthdate,tags");
     expect(COLUNAS_DO_CSV).toEqual([
       "name",
       "display_name",
       "email",
       "phone_number",
       "cpf",
+      "birthdate",
       "tags",
     ]);
 
@@ -112,6 +113,26 @@ describe("o CSV espelha as colunas que o importer aceita", () => {
       display_name: "Ateliê da Praça",
       email: "atelie@exemplo.com.br",
     });
+  });
+
+  it.each(["1990-05-23", "2000-02-29"])(
+    "preserva o nascimento %s ao exportar e reimportar, como data de calendário",
+    (birthdate) => {
+      const contato = { ...BASE[0]!, birthdate };
+
+      const { linhas } = reimporta(csvDosContatos([contato]));
+
+      expect(linhas[0]!.birthdate).toBe(birthdate);
+    },
+  );
+
+  it("mantém a coluna de nascimento vazia quando a ficha não tem a data", () => {
+    const contato = { ...BASE[0]!, birthdate: null };
+
+    const { indices, linhas } = reimporta(csvDosContatos([contato]));
+
+    expect(indices.birthdate).toBeDefined();
+    expect(linhas[0]!.birthdate).toBeUndefined();
   });
 
   it("as etiquetas saem com `;`, que é o separador que `mapLinha` divide", () => {

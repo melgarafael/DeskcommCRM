@@ -19,8 +19,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
 import type { AuditAction } from "@/lib/audit/actions";
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { textoDoAviso, type TextoDoAviso } from "@/lib/cobranca/avisos";
 import { toleranciaDias } from "@/lib/cobranca/configuracao";
+import { primeiroPagamentoPendente } from "@/lib/cobranca/contratacao";
 import { enviarAvisoAosAdmins } from "@/lib/cobranca/emails";
 import { aplicarLeitura } from "@/lib/cobranca/estado";
 import { SEM_TROCA } from "@/lib/cobranca/prorata";
@@ -382,7 +384,7 @@ export async function aplicarRegua(
       ultimoAviso: linha.ultimo_aviso,
       ultimoAvisoEm: emData(linha.ultimo_aviso_em),
       relidaEm: emData(linha.relida_em),
-      entradaPendente: linha.pagamento_inicial_pendente === true,
+      entradaPendente: primeiroPagamentoPendente(linha),
     },
     { status: org.status, suspendedKind: org.suspended_kind },
     agora,
@@ -423,6 +425,12 @@ export async function aplicarRegua(
         p_ator: null,
       });
       if (error) throw new Error(`cobranca: reativação falhou (${error.code ?? "sem_codigo"})`);
+      // O estado da empresa mora no snapshot de autorização em cache (30 s), que
+      // é memória do PROCESSO (`lib/auth/cache-curto.ts`). Isto só vale na hora
+      // quando a régua roda no app: "Já paguei", cancelar, cron/cobranca,
+      // admin/cobranca/conexao. Pelo webhook do provedor ela roda no worker
+      // (`sinal.handler` via event_log), e lá o teto do app segue sendo o TTL.
+      invalidarOrg(orgId);
       if (!mudou(data)) return "nada";
       auditar("cobranca.org_reativada", orgId, { motivo: "pagamento_confirmado" });
       await enviar(admin, { id: orgId, idioma }, textoDoAviso("liberada", { ...contexto, data: null, origem: "atraso" }), null);
@@ -436,6 +444,7 @@ export async function aplicarRegua(
         p_motivo: MOTIVO_DA_SUSPENSAO,
       });
       if (error) throw new Error(`cobranca: suspensão falhou (${error.code ?? "sem_codigo"})`);
+      invalidarOrg(orgId);
       if (!mudou(data)) return "nada";
       auditar("cobranca.org_suspensa", orgId, { debito_desde: acao.debitoDesde.toISOString() });
       // A origem importa aqui: quem foi suspenso no fim do teste grátis não tem

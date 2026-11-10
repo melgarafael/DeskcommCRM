@@ -18,6 +18,7 @@
  *  3. **Não usa jargão.** Nada de "escopo" nem de nome de coluna: o dono do
  *     negócio lê "mexer em negócio", que é o que de fato acontece.
  */
+import Link from "next/link";
 import * as React from "react";
 
 import { Card } from "@/components/ui/card";
@@ -135,7 +136,18 @@ export function FunisDoAgente({ funis, value, onChange, cobertura, disabled = fa
           {mudosMarcados.length === 1
             ? `${t("Você marcou")} ${mudosMarcados[0]}${t(", mas ninguém disse ao assistente o que cada etapa desse funil significa — ele vai atender e deixar os negócios parados onde estão.")}`
             : `${t("Você marcou")} ${mudosMarcados.length} ${t("funis em que ninguém disse ao assistente o que cada etapa significa — ele vai atender e deixar os negócios parados onde estão.")}`}{" "}
-          {t(" Isso se configura em Configurações › Funis.")}
+          {/* O caminho é o do menu (`lib/navigation/catalogo.ts`): a tela das
+              etapas mora no CRM desde a reorganização da navegação, e o texto
+              antigo ("Configurações › Funis") mandava para um lugar que não existe. */}
+          {t("Isso se configura em")}{" "}
+          <Link
+            href="/app/settings/tenant/pipelines"
+            className="underline underline-offset-2"
+            data-testid="agente-funis-mudos-caminho"
+          >
+            {`CRM › ${t("Ver tudo em CRM")} › ${t("Etapas do funil")}`}
+          </Link>
+          .
         </p>
       ) : null}
 

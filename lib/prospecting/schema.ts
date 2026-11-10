@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
 import type { PreviaSalva } from "@/lib/prospecting/previa";
+import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 
 /**
  * Os dois números do RITMO da campanha, com os mesmos limites no início e no
@@ -21,6 +22,49 @@ export const ofertasDaCampanhaSchema = z
   .max(3)
   .default(["site"]);
 export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
+
+/**
+ * Rótulos de tela de cada oferta. Fonte única: a tela da campanha (com `t()`), o
+ * contexto que o agente lê em cada turno e a ferramenta de auditoria usam estes
+ * mesmos textos, para os três lugares não divergirem.
+ */
+export const ROTULOS_DAS_OFERTAS = {
+  site: "Site profissional",
+  automacao_crm: "Automação do atendimento (CRM)",
+  automacao_n8n: "Automações e integrações (N8N)",
+} as const satisfies Record<OfertaDaCampanha, string>;
+
+/**
+ * Etiquetas que a campanha põe no CONTATO antes da primeira mensagem (spec 27). Até 5, na
+ * mesma forma que o CRM guarda (`normalizarTags`). Sem `.default()`: configuração gravada
+ * antes desta chave existir continua SEM a chave, e a comparação de `activateCampaign`
+ * segue igual para ela. Lista vazia (ou só de espaços) = nenhuma etiqueta.
+ */
+export const CONTACT_TAGS_MAXIMO = 5;
+const contactTagsSchema = z
+  .array(z.string().max(TAMANHO_MAXIMO_DA_TAG))
+  .max(CONTACT_TAGS_MAXIMO)
+  .transform((tags) => normalizarTags(tags));
+
+/**
+ * Por que o texto do campo de etiquetas não pode ser gravado; `null` quando pode. Existe para a
+ * tela AVISAR em vez de cortar: `normalizarTags` corta em 40 caracteres, e a etiqueta cortada
+ * nunca casaria com a da skill; a sexta, se a tela a descartasse, sumiria sem ninguém saber.
+ */
+export function problemaNasEtiquetas(texto: string): "demais" | "longa" | null {
+  const partes = texto.split(",").map((parte) => parte.trim());
+  if (partes.some((parte) => parte.length > TAMANHO_MAXIMO_DA_TAG)) return "longa";
+  return normalizarTags(partes).length > CONTACT_TAGS_MAXIMO ? "demais" : null;
+}
+
+/**
+ * As etiquetas que o nicho da busca sugere, ou nenhuma quando ele não cabe. O nicho aceita 120
+ * caracteres e a etiqueta 40: cortar geraria uma etiqueta que nunca casa com a skill, e devolver
+ * lista inválida prenderia o Iniciar por um texto que o operador não digitou.
+ */
+export function etiquetasDoNicho(nicho: string): string[] {
+  return problemaNasEtiquetas(nicho) === null ? normalizarTags(nicho.split(",")) : [];
+}
 
 export const campaignConfigSchema = z
   .object({
@@ -48,6 +92,8 @@ export const campaignConfigSchema = z
     // O padrão é `first_message`: configuração gravada antes desta chave existir segue
     // igual, sem ninguém editar nada.
     exit_offer: z.enum(["first_message", "second_message"]).default("first_message"),
+    // Etiquetas do contato na abordagem (spec 27). Ausente = a campanha não etiqueta ninguém.
+    contact_tags: contactTagsSchema.optional(),
   })
   .strict();
 export const searchSchema = z
@@ -105,6 +151,16 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
       selected: z.boolean(),
     })
     .strict(),
+  // Trocar as etiquetas de contato DEPOIS de iniciada, com a campanha pausada (spec 27). Só vale
+  // para os contatos criados dali em diante; quem já foi abordado não é reescrito. Mesma régua
+  // de `adjust_pace`: lista vazia é um ajuste válido (tira as etiquetas), campo a mais é 422.
+  z
+    .object({
+      action: z.literal("adjust_tags"),
+      id: z.string().uuid(),
+      contact_tags: contactTagsSchema,
+    })
+    .strict(),
   z.object({ action: z.literal("discard_unselected"), id: z.string().uuid() }).strict(),
   // Reanálise manual da auditoria (spec 24): reescreve `data.site` na hora.
   // Fechada a token (fora de ACOES_ABERTAS_AO_TOKEN): exige sessão.
@@ -128,10 +184,63 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
   // campanha AGORA, em vez de esperar o tick. Fechada a token: quem dispara
   // gasta rede e é uma pessoa revisando a fila.
   z.object({ action: z.literal("verificar_sites"), id: z.string().uuid() }).strict(),
+  // "Completar fichas" (spec 26 §3.3): acrescenta à ficha dos contatos JÁ EXISTENTES
+  // da campanha o link que falta (o que a pessoa digitou fica). Fechada a token:
+  // escreve no CRM, e quem decide é uma pessoa com sessão.
+  z.object({ action: z.literal("completar_fichas"), id: z.string().uuid() }).strict(),
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;
 export type SearchInput = z.infer<typeof searchSchema>;
+/**
+ * O que a campanha importada de planilha guarda em `prospecting_campaigns.search` (jsonb).
+ * `avaliar_site`/`gerar_previa` são as mesmas chaves da busca (`opcoesDoPreparo`); `name` e
+ * `niche` são os que o resto da esteira lê. NÃO guarda o nome do arquivo (pode conter nome
+ * de pessoa) nem linha de dado. `origem_da_lista` é o "de onde veio esta lista" da LGPD.
+ */
+export interface BuscaDaPlanilha {
+  /**
+   * Marca a campanha como IMPORTADA (#3724) — não houve busca no Maps nem engine. O nome é
+   * `importacao` e não `planilha` porque a origem que a esteira lê é o fato de a lista ter
+   * vindo de fora: o formato (csv/xlsx) é detalhe do arquivo, não da campanha.
+   */
+  origem: "importacao";
+  name: string;
+  niche: string;
+  arquivo_bytes: number;
+  linhas: number;
+  origem_da_lista: string;
+  avaliar_site: boolean;
+  gerar_previa: boolean;
+}
+const CAIXA_DO_FORMULARIO = z
+  .enum(["true", "false"])
+  .default("true")
+  .transform((v) => v === "true");
+/**
+ * Os campos de TEXTO do formulário multipart da importação (o arquivo vai à parte). Estrito:
+ * campo a mais — `organization_id` inclusive — é 422, nada daqui vira organização.
+ * `gerar_previa` só vale com `avaliar_site` (sem veredito do site não há em que ancorá-la).
+ */
+export const importarPlanilhaCamposSchema = z
+  .object({
+    request_id: z.string().uuid(),
+    name: z.string().trim().min(2).max(120),
+    niche: z.string().trim().min(2).max(120),
+    origem_da_lista: z.string().trim().min(3).max(500),
+    avaliar_site: CAIXA_DO_FORMULARIO,
+    gerar_previa: CAIXA_DO_FORMULARIO,
+    // `previa` só CONFERE: devolve o que entra e o que fica de fora (com o motivo de cada
+    // linha) e não cria campanha nenhuma. Ausente = importar, que é o que o formulário
+    // envia por padrão.
+    previa: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((v) => v === "true"),
+  })
+  .strict()
+  .transform((c) => ({ ...c, gerar_previa: c.avaliar_site && c.gerar_previa }));
+export type ImportarPlanilhaCampos = z.output<typeof importarPlanilhaCamposSchema>;
 /** Motivo gravado quando o operador desmarca uma empresa na preparação da campanha. */
 export const RAZAO_NAO_SELECIONADA = "Não selecionada pelo operador.";
 /**
@@ -141,6 +250,15 @@ export const RAZAO_NAO_SELECIONADA = "Não selecionada pelo operador.";
  */
 export function razaoDeAbordarSelecionado(selected: boolean): string | null {
   return selected ? null : RAZAO_NAO_SELECIONADA;
+}
+/**
+ * O que fica gravado em `prospecting_candidates.data.whatsapp` (`lib/prospecting/whatsapp.ts`).
+ * Mora AQUI, e não lá, de propósito: a tela importa este arquivo, e trazer o módulo da
+ * consulta para o grafo dela puxaria o seam inteiro de canais para o bundle do navegador.
+ */
+export interface VereditoWhatsapp {
+  existe: boolean;
+  verificado_em: string;
 }
 export interface Prospect {
   key: string;
@@ -162,9 +280,39 @@ export interface Prospect {
    * vencida, o envio escreve do zero.
    */
   previa?: PreviaSalva | null;
+  /**
+   * O telefone tem WhatsApp? Resposta do canal (`numeroTemConta`, via
+   * `lib/prospecting/whatsapp.ts`). Ausente = ainda não conferido (ou não há
+   * conexão capaz de conferir); `existe: false` tira a empresa da abordagem.
+   */
+  whatsapp?: VereditoWhatsapp | null;
 }
 
-/** The existing Maps integrations normalize Brazilian numbers; never guess a foreign country. */
+/**
+ * Telefone do candidato em E.164, ou `null`.
+ *
+ * O provedor de Mapas devolve o número como a empresa o publicou: brasileiro sem
+ * código de país (`(11) 99999-0000`), brasileiro em E.164 (`+55 11 99999-0000`) ou
+ * estrangeiro em E.164 (`+351 912 345 678`). O defeito #3080 mediu o custo de
+ * recusar o terceiro caso: três buscas em Portugal, 59 empresas achadas e nenhuma
+ * abordável, porque todo número que não fosse `+55` virava `null`.
+ *
+ * Sem `+` o país não está no dado, e adivinhar continua fora: só o ramo brasileiro
+ * (10 ou 11 dígitos) prefixa `55`, como antes. Com `+` e OUTRO código de país, o
+ * país está escrito no próprio número — passa, nos 8 a 15 dígitos que o E.164
+ * admite. `55` fica de fora desse ramo de propósito: brasileiro truncado (com `+`,
+ * mas curto demais) não vira estrangeiro. Qualquer outra coisa segue `null`.
+ */
+export function normalizeProspectPhone(raw: string): string | null {
+  let digits = raw.replace(/\D/g, "");
+  if (!raw.startsWith("+") && [10, 11].includes(digits.length)) digits = `55${digits}`;
+  if (/^55\d{10,11}$/.test(digits)) return `+${digits}`;
+  if (raw.startsWith("+") && /^\d{8,15}$/.test(digits) && !digits.startsWith("55")) {
+    return `+${digits}`;
+  }
+  return null;
+}
+
 export function normalizeProspect(item: Record<string, unknown>): Prospect | null {
   const str = (key: string, limit = 500) =>
     typeof item[key] === "string" ? (item[key] as string).trim().slice(0, limit) : null;
@@ -173,9 +321,7 @@ export function normalizeProspect(item: Record<string, unknown>): Prospect | nul
   if (!name || !place || item.permanentlyClosed === true || item.temporarilyClosed === true)
     return null;
   const raw = str("phoneUnformatted") || str("phone") || "";
-  let digits = raw.replace(/\D/g, "");
-  if (!raw.startsWith("+") && [10, 11].includes(digits.length)) digits = `55${digits}`;
-  const phone = /^55\d{10,11}$/.test(digits) ? `+${digits}` : null;
+  const phone = normalizeProspectPhone(raw);
   const urls = (key: string) =>
     Array.isArray(item[key])
       ? (item[key] as unknown[])
@@ -209,11 +355,13 @@ export function safePublicLink(value: string | null): string | undefined {
 /** Public business context shared by prospecting and the Inbox; no raw provider payload. */
 export const siteEnrichmentSchema = z.object({
   ver: z.literal(1),
-  classe: z.enum(["agregador", "sem-site", "site-ok", "site-ruim", "ssl-invalido", "fora-do-ar"]),
+  classe: z.enum(["agregador", "sem-site", "site-ok", "site-ruim", "ssl-invalido", "fora-do-ar", "nao-medido"]),
   problemas: z.array(z.string().max(60)).max(20),
   checklist: z.object({
     tem: z.array(z.string().max(30)).max(12),
     falta: z.array(z.string().max(30)).max(12),
+    // Página montada por JavaScript: o checklist não pôde ser medido (#3723).
+    inconclusivo: z.boolean().optional(),
   }),
   final_url: z.string().max(500).nullable(),
   http_status: z.number().int().min(100).max(599).nullable(),

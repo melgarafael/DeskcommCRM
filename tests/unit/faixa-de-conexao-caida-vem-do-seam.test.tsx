@@ -31,6 +31,12 @@ import type { ReactElement, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const adminClient = { marcador: "admin-client-do-teste" };
+/**
+ * O cliente da SESSÃO. É ele que carrega a régua de acesso a canal: a policy de
+ * `channel_sessions` só vale para o que é pedido com a identidade do usuário, e
+ * por isso o layout tem de entregar ESTE ao seam (#3088).
+ */
+const clienteDaSessao = { marcador: "cliente-da-sessao-do-teste" };
 const conexoesDoSeam = [
   { id: "sess-1", apelido: "Vendas", status: "FAILED" },
   { id: "sess-2", apelido: "Suporte", status: "SCAN_QR_CODE" },
@@ -41,6 +47,7 @@ vi.mock("@/lib/channels/health", () => ({
   listarConexoesCaidas: (...args: unknown[]) => listarConexoesCaidas(...(args as [])),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => adminClient }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => clienteDaSessao }));
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: async () => ({
     id: "user-1",
@@ -51,6 +58,7 @@ vi.mock("@/lib/auth/server", () => ({
   }),
   resolveActiveOrg: async () => ({ orgId: "org-1", role: "admin", interface_settings: null }),
   isMfaEnrolled: async () => true,
+  exigirProvaDeMfa: async () => {},
   requiresMfa: async () => false,
 }));
 vi.mock("@/lib/auth/vinculo-revogado", () => ({ acessoFoiRevogado: async () => false }));
@@ -120,13 +128,17 @@ describe("a faixa de conexão caída", () => {
     expect(faixa!.props.caidas).toBe(conexoesDoSeam);
   });
 
-  it("pergunta ao seam com o cliente admin e a organização ativa", async () => {
+  it("pergunta ao seam com o cliente da SESSÃO e a organização ativa", async () => {
     const { default: AppLayout } = await import("@/app/app/layout");
     await AppLayout({ children: null });
 
     expect(listarConexoesCaidas).toHaveBeenCalledTimes(1);
     // A organização vem do seam de autenticação (cookie validado), nunca do
-    // corpo da requisição — e o cliente é o admin, porque a consulta cruza RLS.
-    expect(listarConexoesCaidas).toHaveBeenCalledWith(adminClient, "org-1");
+    // corpo da requisição — e o cliente é o da SESSÃO, não o de serviço: é a
+    // identidade dele que faz a policy de `channel_sessions` valer. A policy
+    // nativa é por organização; este caso prende a escolha do cliente, sem
+    // afirmar uma restrição real por atendente na instalação do relato #3088.
+    expect(listarConexoesCaidas).toHaveBeenCalledWith(clienteDaSessao, "org-1");
+    expect(listarConexoesCaidas).not.toHaveBeenCalledWith(adminClient, "org-1");
   });
 });

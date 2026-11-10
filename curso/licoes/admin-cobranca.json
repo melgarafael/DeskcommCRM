@@ -1,0 +1,638 @@
+{
+  "id": "admin-cobranca",
+  "titulo": "Cobrança (Admin)",
+  "tela": "/admin/cobranca",
+  "resumo": "Onde quem revende o sistema cobra as empresas clientes: conecta a conta de pagamento, cria os planos, define quantos dias de atraso tolerar e acompanha quem está em dia.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Cobrança",
+      "objetivo": "Achar a Cobrança no Admin e ler a Visão geral: o que falta para a primeira cobrança, se a cobrança está funcionando e o que precisa de atenção.",
+      "papel": "admin",
+      "busca": [
+        "cobrança dos clientes",
+        "cobrar as empresas",
+        "mensalidade dos clientes",
+        "planos e faturas",
+        "revenda do sistema",
+        "assinatura das empresas",
+        "admin cobrança"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "No Admin, o item \"Cobrança\" do menu abre a cobrança das empresas que usam o seu sistema. Aqui você cria os planos que vende, conecta a conta que recebe os pagamentos e acompanha quem está em dia.",
+          "dica": "O item só aparece depois que você liga 'Cobrança dos seus clientes' em 'Recursos opcionais', aqui no Admin. Desligado, o endereço mostra página não encontrada.",
+          "rota": "/admin/cobranca",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Cobrança",
+                "exato": true
+              },
+              "rotulo": "Cobrança no menu do Admin",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A tela e as abas",
+          "texto": "O título é \"Cobrança dos seus clientes\". Empresa sem plano é isenta: não paga e não tem limites. A tela tem cinco abas: \"Visão geral\", \"Conexão\", \"Régua\", \"Planos\" e \"Clientes\". Ela abre na \"Visão geral\", que você vê nesta lição.",
+          "rota": "/admin/cobranca",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Cobrança dos seus clientes",
+                "exato": true
+              },
+              "rotulo": "Cobrança dos seus clientes",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "As cinco abas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O aviso de modo de teste",
+          "texto": "Enquanto a conta de pagamento estiver conectada com a chave de teste, esta faixa de aviso, em tom de areia, aparece no alto de todas as abas. Ela avisa que as empresas reais ainda não conseguem pagar. Em modo de teste, nenhum pagamento é de verdade: serve para você conferir que tudo funciona antes de cobrar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Modo de teste: suas empresas reais ainda não conseguem pagar."
+              },
+              "rotulo": "Ainda em modo de teste",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O que falta para a primeira cobrança",
+          "texto": "O cartão 'Primeira cobrança: o que falta' é a sua lista de tarefas. Passo feito aparece riscado, com um tique. Passo que falta vem com a explicação de como fazer. O próximo passo pendente ganha o link 'Fazer agora' quando há um lugar certo para resolvê-lo. Aqui falta configurar o envio de e-mail e, por último, trocar para a chave de produção. A faixa amarela \"Sem SMTP configurado\", no alto, é um aviso geral do Admin: o envio de e-mails ainda não está configurado. O item \"E-mail\" do menu leva ao ajuste.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": ":has(> h2:text-is(\"Primeira cobrança: o que falta\"))"
+              },
+              "rotulo": "Sua lista de tarefas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Fazer agora",
+                "exato": true
+              },
+              "rotulo": "Leva ao próximo passo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A cobrança está funcionando?",
+          "texto": "O cartão 'Situação da cobrança' diz se a cobrança está viva. O selo mostra se você está em 'MODO DE TESTE' ou em 'PRODUÇÃO'. 'Último aviso do provedor' é a última vez que a empresa de pagamento mandou um aviso, como um pagamento ou uma assinatura nova. 'Última leitura bem-sucedida' é a última vez que o sistema conferiu as assinaturas sozinho, o que ele faz a cada 6 horas. Se essa leitura passar de 7 horas, a linha fica vermelha: a conferência automática parou, e quem cuida do seu servidor precisa olhar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": ":has(> div > h2:text-is(\"Situação da cobrança\"))"
+              },
+              "rotulo": "A cobrança está viva?",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Problemas para resolver",
+          "texto": "Quando algo precisa de você, aparece o cartão \"Problemas para resolver\", com o que fazer em cada caso. Aqui uma empresa tem duas assinaturas ativas e pagaria em dobro: cancele uma delas no painel da empresa de pagamento. Sem problema nenhum, o cartão não aparece.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "region",
+                "nome": "Problemas para resolver",
+                "exato": true
+              },
+              "rotulo": "O que precisa de você",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "conexao",
+      "titulo": "Conectando a conta de pagamento",
+      "objetivo": "Escolher entre Asaas e Stripe e entender o que acontece ao colar a chave e clicar em \"Testar e conectar\".",
+      "papel": "admin",
+      "busca": [
+        "conectar stripe",
+        "conectar asaas",
+        "chave de api pagamento",
+        "receber por pix",
+        "trocar chave de teste para produção",
+        "provedor de pagamento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A aba Conexão",
+          "texto": "Na aba \"Conexão\" você liga o sistema à empresa que recebe os pagamentos por você. O selo ao lado de \"Provedor de pagamento\" mostra o modo atual. \"Chave conectada\" mostra só os 4 últimos caracteres da chave guardada: o resto fica escondido, por segurança.",
+          "rota": "/admin/cobranca?aba=conexao",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": ":has(> h2:text-is(\"Provedor de pagamento\"))"
+              },
+              "rotulo": "Conta de pagamento e o modo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Chave conectada:"
+              },
+              "rotulo": "Só os 4 últimos aparecem",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Asaas ou Stripe?",
+          "texto": "No campo 'Provedor' você escolhe com quem vai receber. Com o Asaas, todo mês a empresa recebe a cobrança e paga por Pix, boleto ou cartão, informando o CPF ou CNPJ. É o recomendado se seus clientes estão no Brasil. Com a Stripe, o cartão é cobrado sozinho todo mês e não há Pix. O boleto só aparece se você ligá-lo no painel da Stripe. Ao escolher Asaas, o campo da chave passa a pedir a 'Chave de API do Asaas'.",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Provedor",
+                "exato": true
+              },
+              "opcao": "Asaas"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Provedor",
+                "exato": true
+              },
+              "rotulo": "Escolha o provedor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Chave de API do Asaas",
+                "exato": true
+              },
+              "rotulo": "Onde colar a chave",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Colar a chave e conectar",
+          "texto": "Com a Stripe escolhida de novo em 'Provedor', cole a chave que você copiou no painel dela (Desenvolvedores › Chaves de API) e clique em 'Testar e conectar'. O sistema confere a chave com o provedor antes de guardar qualquer coisa. Se ela for aceita, ele cadastra o aviso de pagamento e guarda a chave protegida. Comece pela chave de teste. Trocar para a chave de produção é o que faz a cobrança valer de verdade: se alguma empresa assinou em teste, o sistema pede confirmação no botão 'Publicar mesmo assim', porque ela volta para o teste grátis.",
+          "dica": "O botão só acende com a chave colada e com o sistema num endereço https: sem https, a tela avisa e o botão fica travado. No Asaas, às vezes o aviso de pagamento precisa ser cadastrado à mão: a tela mostra a URL, o token e os eventos para copiar.",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Provedor",
+                "exato": true
+              },
+              "opcao": "Stripe"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Chave secreta",
+                "exato": true
+              },
+              "valor": "sk_test_51CursoBemViverTeste"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Chave secreta",
+                "exato": true
+              },
+              "rotulo": "Chave colada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Testar e conectar",
+                "exato": true
+              },
+              "rotulo": "Confere e conecta",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "planos",
+      "titulo": "Criando e cuidando dos planos",
+      "objetivo": "Ler a lista de planos, montar um plano novo e usar os botões de cada plano.",
+      "papel": "admin",
+      "busca": [
+        "criar plano",
+        "preço do plano",
+        "teste grátis",
+        "plano do cadastro",
+        "plano negociado com desconto",
+        "arquivar plano",
+        "limite de usuários do plano"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista de planos",
+          "texto": "A aba \"Planos\" lista o que você vende. Cada plano mostra o preço, os dias de teste grátis e os limites: pessoas, números conectados e gasto com IA por mês. O selo \"Plano do cadastro\" marca o plano que quem se cadastra sozinho ganha, com teste grátis. O selo \"Só você atribui\" marca um plano negociado: as empresas não o veem, só você o coloca nelas.",
+          "rota": "/admin/cobranca?aba=planos",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text(\"Essencial\")"
+              },
+              "rotulo": "Plano do cadastro",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li:has-text(\"Rede Parceira (negociado)\")"
+              },
+              "rotulo": "Plano negociado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Montando um plano novo",
+          "texto": "No formulário 'Novo plano', dê um nome, o preço e o 'Intervalo de cobrança' ('Mensal' ou 'Anual'). Em 'Dias de teste grátis', 0 quer dizer entrada paga: a empresa fica suspensa até o primeiro pagamento. Os limites são opcionais e campo vazio é sem limite. O teto de IA é em dólar. Ao clicar em 'Salvar plano', ele entra na lista e aparece 'Plano salvo.'.",
+          "dica": "O preço mínimo é R$ 5,00 e o teste grátis vai de 0 a 90 dias.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome do plano",
+                "exato": true
+              },
+              "valor": "Fisioterapia Mensal"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Preço (R$)",
+                "exato": true
+              },
+              "valor": "297,00"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Dias de teste grátis",
+                "exato": true
+              },
+              "valor": "7"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Máximo de pessoas",
+                "exato": true
+              },
+              "valor": "4"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Máximo de números conectados",
+                "exato": true
+              },
+              "valor": "1"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "form",
+                "nome": "Novo plano",
+                "exato": true
+              },
+              "rotulo": "Plano novo preenchido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar plano",
+                "exato": true
+              },
+              "rotulo": "Cria o plano",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os botões de cada plano",
+          "texto": "Cada plano tem os seus botões. 'Usar no cadastro' faz dele o plano de quem se cadastra. Só um plano tem esse papel: antes, clique em 'Tirar do cadastro' no plano atual. 'Esconder das empresas' o transforma em plano negociado. 'Arquivar' tira o plano do cadastro e da troca, mas quem já assina continua nele. Depois que alguém assina, o preço e o intervalo não mudam mais: o sistema recusa ao salvar. Para mudar, arquive e crie outro.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Usar no cadastro",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text(\"Profissional\")",
+                  "literal": true
+                }
+              },
+              "rotulo": "Plano de quem se cadastra",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Esconder das empresas",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text(\"Profissional\")",
+                  "literal": true
+                }
+              },
+              "rotulo": "Vira plano negociado",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Arquivar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text(\"Profissional\")",
+                  "literal": true
+                }
+              },
+              "rotulo": "Para de vender",
+              "tipo": "numero"
+            }
+          ],
+          "rota": "/admin/cobranca?aba=planos"
+        },
+        {
+          "id": "p4",
+          "titulo": "Editando um plano",
+          "texto": "\"Editar\" leva o plano para o formulário, que vira \"Editar plano\". Nome, limites e dias de teste podem mudar sempre, e o limite novo já vale para quem assina. Clique em \"Salvar alterações\" para gravar, ou em \"Cancelar edição\" para desistir.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text(\"Profissional\")",
+                  "literal": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "form",
+                "nome": "Editar plano",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "form",
+                "nome": "Editar plano",
+                "exato": true
+              },
+              "rotulo": "Plano Profissional aberto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar edição",
+                "exato": true
+              },
+              "rotulo": "Desistir sem gravar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "regua",
+      "titulo": "A régua de atraso",
+      "objetivo": "Definir quantos dias de atraso tolerar antes de suspender uma empresa, e ler o calendário de avisos.",
+      "papel": "admin",
+      "busca": [
+        "dias de tolerância",
+        "suspender empresa que não pagou",
+        "cliente atrasado",
+        "aviso de pagamento atrasado",
+        "régua de cobrança",
+        "prazo para pagar"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O calendário do atraso",
+          "texto": "A aba 'Régua' diz o que acontece com uma empresa que não pagou. 'Dias de tolerância' é quanto tempo ela tem antes de ser suspensa. A lista abaixo mostra o calendário: no dia 0 sai o primeiro aviso com o link para pagar, depois vem o aviso final e, por fim, a suspensão. Os avisos aparecem dentro do sistema da empresa e, se o envio de e-mail estiver configurado, chegam também por e-mail. Quando o pagamento é confirmado, a empresa volta a funcionar sozinha.",
+          "rota": "/admin/cobranca?aba=regua",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Dias de tolerância",
+                "exato": true
+              },
+              "rotulo": "Dias até suspender",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "ol:has-text(\"Dia 0\")"
+              },
+              "rotulo": "O calendário de avisos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Mudando a tolerância",
+          "texto": "Troque o número e o calendário se ajusta na hora, antes mesmo de salvar. Com 10 dias, o aviso final sai no dia 8 e a suspensão vem no dia 10. Vale de 5 a 30 dias. Clique em \"Salvar régua\" para gravar. A tolerância vale para pagamento atrasado: o teste grátis que acaba sem pagamento suspende a empresa 48 horas depois do aviso final.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Dias de tolerância",
+                "exato": true
+              },
+              "valor": "10"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "ol:has-text(\"Dia 0\")"
+              },
+              "rotulo": "Calendário com 10 dias",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar régua",
+                "exato": true
+              },
+              "rotulo": "Grava a régua",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "clientes",
+      "titulo": "Acompanhando quem paga",
+      "objetivo": "Ler a situação de cada empresa na aba Clientes, mandar o link de pagamento a quem atrasou e abrir o painel da empresa.",
+      "papel": "admin",
+      "busca": [
+        "empresa em atraso",
+        "quem não pagou",
+        "link de pagamento",
+        "próximo vencimento",
+        "situação da assinatura",
+        "dar prazo para pagar",
+        "tornar empresa isenta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista de clientes",
+          "texto": "A aba 'Clientes' lista as empresas que têm plano. Para cada uma você vê o plano, a 'Situação' ('Teste grátis', 'Em dia', 'Em atraso' ou 'Cancelada') e o 'Próximo vencimento' (no teste grátis, o dia em que o teste acaba). A 'Última leitura' é a última vez que o sistema conferiu o pagamento, e a coluna 'Problema' mostra o que deu errado nessa conferência. Empresa sem plano não aparece aqui: ela é isenta.",
+          "rota": "/admin/cobranca?aba=clientes",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "table"
+              },
+              "rotulo": "Empresas com plano",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma empresa em atraso",
+          "texto": "A FisioVida está \"Em atraso\": a coluna \"Em atraso desde\" mostra, em vermelho, desde quando ela deve. O botão \"Copiar link de pagamento\" copia o link da cobrança em aberto para você mandar pelo WhatsApp. Assim você recupera o pagamento sem esperar a régua.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "tr:has-text(\"FisioVida Reabilitação\")"
+              },
+              "rotulo": "Empresa em atraso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar link de pagamento",
+                "exato": true
+              },
+              "rotulo": "Link para mandar à empresa",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Troca de plano agendada",
+          "texto": "Quando a coluna \"Plano\" mostra uma seta, como \"Essencial → Profissional\", a empresa vai trocar de plano. O novo plano vale a partir da próxima cobrança paga.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Essencial → Profissional",
+                "exato": true
+              },
+              "rotulo": "Troca agendada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Abrir o painel da empresa",
+          "texto": "'Abrir' leva ao painel da empresa, em Tenants. No cartão 'Cobrança' você troca o plano dela, dá um prazo de até 60 dias ('Dar prazo') ou a deixa sem cobrança ('Tornar isenta'). Para isentar quem ainda tem assinatura no provedor, cancele a assinatura lá antes. Para empresa que não está em dia, 'Gerar link de pagamento' cria um link novo para você mandar a ela. Se ela foi suspensa por falta de pagamento, dar prazo a reativa na hora.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir",
+                "exato": true,
+                "dentro": {
+                  "css": "tr:has-text(\"FisioVida Reabilitação\")"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "div[aria-labelledby='cobranca-do-tenant']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div[aria-labelledby='cobranca-do-tenant']"
+              },
+              "rotulo": "Cobrança desta empresa",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "Para dar prazo, escolha a data primeiro: o botão \"Dar prazo\" só acende depois."
+        }
+      ]
+    }
+  ]
+}

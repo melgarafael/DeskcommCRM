@@ -38,10 +38,9 @@
  * ajuste, e a divergência seria invisível — os dois "aplicam o plano", só que
  * um deles duplica tarefa.
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import type { Db } from "@/lib/db";
 import {
   criarTarefaInterna,
   recusaDeConfiguracao,
@@ -49,6 +48,8 @@ import {
   type ContatoDoPedido,
   type LeadDoPedido,
 } from "@/lib/tarefas/criar-tarefa";
+import { insereAtividadeDoLead } from "@/lib/tarefas/atividade";
+import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
 
 /** Um passo, já normalizado: `ordem` SEMPRE preenchida com a posição final. */
@@ -80,9 +81,9 @@ export interface PlanoDeTarefas {
  */
 const passoSchema = z.object({
   ordem: z.number().int().min(1).max(500).optional(),
-  titulo: z.string().trim().min(1).max(200),
-  descricao: z.string().max(1000).nullish(),
-  vence_em_dias: z.number().int().min(0).max(365),
+  titulo: z.string().trim().min(1).max(LIMITES_DO_PLANO.tituloDoPasso),
+  descricao: z.string().max(LIMITES_DO_PLANO.descricaoDoPasso).nullish(),
+  vence_em_dias: z.number().int().min(0).max(LIMITES_DO_PLANO.venceEmDias),
   prioridade: z.enum(PRIORIDADES_DA_TAREFA).default("medium"),
   atribuir_a: z
     .union([z.literal("dono_do_lead"), z.object({ usuario_id: z.string().uuid() })])
@@ -91,9 +92,9 @@ const passoSchema = z.object({
 
 export const planoSchema = z.object({
   id: z.string().trim().min(1).max(64),
-  nome: z.string().trim().min(1).max(120),
-  descricao: z.string().max(300).nullish(),
-  passos: z.array(passoSchema).min(1).max(30),
+  nome: z.string().trim().min(1).max(LIMITES_DO_PLANO.nome),
+  descricao: z.string().max(LIMITES_DO_PLANO.descricao).nullish(),
+  passos: z.array(passoSchema).min(1).max(LIMITES_DO_PLANO.passos),
 });
 
 /**
@@ -106,7 +107,7 @@ export const planoSchema = z.object({
  * seria invisível — os dois "validam o plano", só que um deixa passar o que o
  * outro ignora.
  */
-export const planosSchema = z.array(planoSchema).max(50);
+export const planosSchema = z.array(planoSchema).max(LIMITES_DO_PLANO.planos);
 
 /**
  * Lê `organizations.settings` e devolve SÓ os planos válidos, na ordem em que
@@ -192,18 +193,24 @@ export interface PedidoDeAplicacao {
  * leu, e a ordem é metade do contrato de um plano.
  */
 export async function aplicarPlanoDeTarefas(
-  db: SupabaseClient,
+  db: Db,
   pedido: PedidoDeAplicacao,
 ): Promise<ResultadoDaAplicacao> {
   const { organizationId, leadId, planoId, origem, requestId, agora } = pedido;
   if (!leadId) return { ok: false, codigo: "sem_alvo" };
 
-  const { data: organizacao, error: erroOrg } = await db
-    .from("organizations")
-    .select("settings")
-    .eq("id", organizationId)
-    .maybeSingle();
-  if (erroOrg) return { ok: false, codigo: "falha", erro: erroOrg.message };
+  let organizacao: { settings?: unknown } | null;
+  try {
+    organizacao = await db.queryOne<{ settings?: unknown }>(
+      `select settings
+         from organizations
+        where id = $1
+        limit 1`,
+      [organizationId],
+    );
+  } catch (err) {
+    return { ok: false, codigo: "falha", erro: mensagemDoErro(err) };
+  }
 
   const plano = lePlanosDoSettings((organizacao as { settings?: unknown } | null)?.settings).find(
     (p) => p.id === planoId,
@@ -227,26 +234,14 @@ export async function aplicarPlanoDeTarefas(
   // `titulo_vazio`): o código que volta é o MESMO que voltaria antes, só que
   // sem nada gravado. `recusaDeConfiguracao` é a própria regra de
   // `criarTarefaInterna` — as duas portas não podem divergir.
-  const negocio = await db
-    .from("crm_leads")
-    .select("id, title, contact_id, owner_user_id")
-    .eq("id", leadId)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  if (negocio.error) return { ok: false, codigo: "falha", erro: negocio.error.message };
-  const lead = negocio.data as LeadDoPedido | null;
+  const negocio = await lerNegocioDoPlano(db, organizationId, leadId);
+  if (negocio.erro) return { ok: false, codigo: "falha", erro: negocio.erro };
+  const lead = negocio.lead;
   if (!lead) return { ok: false, codigo: "sem_alvo" };
 
   const contactId = lead.contact_id ?? null;
-  const contato: ContatoDoPedido | null = contactId
-    ? (((
-        await db
-          .from("contacts")
-          .select("id, name, display_name")
-          .eq("id", contactId)
-          .eq("organization_id", organizationId)
-          .maybeSingle()
-      ).data as ContatoDoPedido | null) ?? null)
+  const contato = contactId
+    ? await lerContatoDoPlano(db, organizationId, contactId)
     : null;
 
   for (const passo of plano.passos) {
@@ -272,7 +267,7 @@ export async function aplicarPlanoDeTarefas(
     tarefa_ids.push(resultado.tarefa_id);
   }
 
-  const gravada = await emitLeadActivity(db, {
+  const gravada = await insereAtividadeDoLead(db, {
     organizationId,
     leadId,
     type: "task_plan_applied",
@@ -303,23 +298,81 @@ export async function aplicarPlanoDeTarefas(
  * UM negócio é curta, não vale operador Postgres por causa dela.
  */
 async function jaFoiAplicado(
-  db: SupabaseClient,
+  db: Db,
   organizationId: string,
   leadId: string,
   planoId: string,
 ): Promise<{ ja: boolean; erro?: string }> {
-  const { data, error } = await db
-    .from("crm_lead_activities")
-    .select("payload")
-    .eq("organization_id", organizationId)
-    .eq("lead_id", leadId)
-    .eq("type", "task_plan_applied")
-    .limit(200);
+  let linhas: Array<{ payload?: { plano_id?: unknown } }>;
+  try {
+    linhas = await db.query<{ payload?: { plano_id?: unknown } }>(
+      `select payload
+         from crm_lead_activities
+        where organization_id = $1
+          and lead_id = $2
+          and type = $3
+        limit 200`,
+      [organizationId, leadId, "task_plan_applied"],
+    );
+  } catch (err) {
+    return { ja: false, erro: mensagemDoErro(err) };
+  }
 
-  if (error) return { ja: false, erro: error.message };
-
-  const ja = (data ?? []).some(
-    (linha) => (linha as { payload?: { plano_id?: unknown } }).payload?.plano_id === planoId,
-  );
+  const ja = linhas.some((linha) => linha.payload?.plano_id === planoId);
   return { ja };
+}
+
+/** Mensagem crua do driver — o `erro` que o operador vê no `detail` da ação. */
+function mensagemDoErro(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * O negócio do plano, na organização do pedido.
+ *
+ * Erro de leitura é `falha` (infra) — aqui o PostgREST ANTIGO também
+ * distinguia, ao contrário da leitura tolerante de `criar-tarefa.ts`.
+ */
+async function lerNegocioDoPlano(
+  db: Db,
+  organizationId: string,
+  leadId: string,
+): Promise<{ lead: LeadDoPedido | null; erro?: string }> {
+  try {
+    const lead = await db.queryOne<LeadDoPedido>(
+      `select id, title, contact_id, owner_user_id
+         from crm_leads
+        where id = $1
+          and organization_id = $2
+        limit 1`,
+      [leadId, organizationId],
+    );
+    return { lead };
+  } catch (err) {
+    return { lead: null, erro: mensagemDoErro(err) };
+  }
+}
+
+/**
+ * O contato do negócio. Erro é tolerado (vira `null`), como era com o
+ * `.maybeSingle()` — o contato só serve para interpolar `{{contact.name}}`, e
+ * um contato ilegível recusa o passo por `titulo_vazio`, nunca grava torto.
+ */
+async function lerContatoDoPlano(
+  db: Db,
+  organizationId: string,
+  contactId: string,
+): Promise<ContatoDoPedido | null> {
+  try {
+    return await db.queryOne<ContatoDoPedido>(
+      `select id, name, display_name
+         from contacts
+        where id = $1
+          and organization_id = $2
+        limit 1`,
+      [contactId, organizationId],
+    );
+  } catch {
+    return null;
+  }
 }

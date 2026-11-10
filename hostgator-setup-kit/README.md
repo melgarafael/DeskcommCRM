@@ -67,6 +67,10 @@ Para criar só o projeto, sem instalar, o script também roda sozinho:
 bash supabase-provision.sh "Nome do Projeto" sa-east-1 >> .env
 ```
 
+O segundo argumento (ou `SUPABASE_REGION`) é a região do projeto: use a **mais próxima da VPS** —
+`sa-east-1` no Brasil, `us-east-1` ou `eu-central-1` nos EUA/Europa. Ela **não muda depois** de
+criado o projeto.
+
 O script cria o projeto, **espera o banco ficar `ACTIVE_HEALTHY`** (projeto novo não
 nasce pronto), busca as chaves e **descobre o host do pooler testando conexão real** em
 vez de adivinhar. Imprime as 4 linhas prontas para colar no `.env`.
@@ -168,6 +172,13 @@ entrega WhatsApp ou restauração de dados: essas jornadas exigem teste real.
 > `restore.sh` conta as tabelas de `public` e, se o banco já tem as tabelas do sistema, **para
 > com mensagem própria** — nada é alterado e o `psql` nem é chamado. Ou seja: hoje ele **não**
 > volta o backup por cima da instalação que está em uso (isso está em aberto na issue #2120).
+>
+> Antes de restaurar, o kit verifica a integridade do `.sql.gz` e dos snapshots `.tgz`
+> presentes que usará (WhatsApp e, no single-server, Storage). Se algum estiver corrompido
+> ou cortado, para antes de alterar banco ou volumes. Essa conferência não garante que a
+> escrita vá funcionar: se a extração falhar depois, o comando sai com erro e informa que
+> o banco já foi restaurado. Confira o destino antes de reiniciar; repetir o script não
+> restaura por cima do banco populado. Snapshots ausentes continuam opcionais.
 >
 > O caminho que funciona hoje é restaurar num **projeto Supabase novo, em que o instalador
 > ainda não rodou** (o instalador cria as tabelas, e aí o restore recusa), e depois apontar a

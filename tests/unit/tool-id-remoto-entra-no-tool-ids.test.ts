@@ -26,6 +26,7 @@ vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(async () => estado.usuario),
   resolveActiveOrg: vi.fn(async () => estado.org),
   mfaEmDivida: vi.fn(async () => false),
+  mfaEmDividaEstrita: vi.fn(async () => false),
   sessionAal: vi.fn(async () => "aal2"),
 }));
 vi.mock("@/lib/mcp/servidor-externo/carregar", () => ({

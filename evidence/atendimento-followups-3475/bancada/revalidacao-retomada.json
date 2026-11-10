@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "synthetic": true,
+  "recorded_at": "2026-10-26T20:45:02Z",
+  "reviewed_head": "b6504197729e4ceadb679151ead8eb10e4149e71",
+  "served_product_sha": "20f335eaede5c423a0fcc902d79eaabb103ea342",
+  "served_build_id": "cyznjcUkNaQa9Fn5H6iU4",
+  "review": {
+    "six_scenarios_match_original_reports_and_build": true,
+    "invisible_tool_result_observed_in_preserved_http_receipts": true,
+    "all_six_original_heads_are_ancestors": true,
+    "all_six_source_prs_remain_closed_with_original_heads": true,
+    "new_ui_execution": false,
+    "new_build_or_stack": false,
+    "product_changes_after_served_sha": false,
+    "limits": [
+      "Esta retomada revalida arquivos e recibos preservados; não reexecuta as jornadas com a bancada já encerrada.",
+      "Os quatro avisos continuam limitados a INSERT/Realtime/toast/decisão/job; não há envelope Push recebido nem quatro turnos completos de IA.",
+      "A recusa da bolha invisível foi observada antes do HTTP400 intencional do provider; não prova reescrita autônoma."
+    ]
+  },
+  "resource_recheck": {
+    "measured_at": "2026-10-26T20:42:25Z",
+    "host": "vps-teste",
+    "load_average": [0.11, 0.30, 1.43],
+    "mem_available_mib": 6243,
+    "disk_available_gib_reported_by_df": 70,
+    "course_containers_running": 7,
+    "containers_and_volumes_with_owned_prefix_remaining": 0,
+    "owned_listeners_remaining": 0,
+    "ports_checked": [3475, 39751, 39752, 39753, 57391, 57392],
+    "owned_pids_absent": [2752355, 2752368, 3171263],
+    "mutation_performed": false
+  },
+  "ci_review": {
+    "head": "b6504197729e4ceadb679151ead8eb10e4149e71",
+    "verify_part_7": {
+      "url": "https://github.com/melgarafael/DeskcommCRM/actions/runs/40389060936/job/121804952038",
+      "state": "failure",
+      "cause": "evidencia-citada: 28 PNGs sem citação canônica e dois links relativos não reconhecidos no README do lote",
+      "tests_passed": 3330,
+      "tests_failed": 2,
+      "documentary_fix": "Índice com caminho completo e finalidade de cada captura, preservando os limites das tentativas antigas.",
+      "directed_verification": {
+        "command": "pnpm exec vitest run tests/unit/evidencia-citada.test.ts --maxWorkers=1",
+        "before": {"exit_code": 1, "passed": 68, "failed": 2},
+        "after": {"exit_code": 0, "passed": 70, "failed": 0},
+        "tests_or_allowlists_modified": false
+      }
+    },
+    "e2e_part_6": {
+      "url": "https://github.com/melgarafael/DeskcommCRM/actions/runs/40389060840/job/121805190746",
+      "state": "failure",
+      "failed_step_number": 22,
+      "failed_step": "Instalar o ffmpeg e sondar os encoders (áudio no celular, F2)",
+      "cause": "Três tentativas de 180 segundos na instalação apt; download de libcodec2-1.2 parado no mirror Azure.",
+      "playwright_step_number": 28,
+      "playwright_step_state": "skipped",
+      "build_and_baseline_state": "passed",
+      "installer_changed_by_this_batch": false,
+      "rerun_performed_by_this_review": false
+    }
+  },
+  "remote_state": {
+    "pr": 3475,
+    "state": "OPEN",
+    "draft": true,
+    "main_sha_measured": "6c3ec346476cb1fae260dd2ce85d707b2a0e2d87",
+    "merge_ready_or_comments_changed": false
+  }
+}

@@ -142,7 +142,10 @@ async function revogarPlatformAdmin(userId: string, razao: string): Promise<void
 }
 
 async function resetSystemVersion(): Promise<void> {
-  const { error: delError } = await admin.from("system_update_runs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  const { error: delError } = await admin
+    .from("system_update_runs")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
   if (delError) throw new Error(`delete system_update_runs: ${delError.message}`);
 
   const { error: updError } = await admin
@@ -150,6 +153,8 @@ async function resetSystemVersion(): Promise<void> {
     .update({
       current_version: "1.0.0",
       current_sha: "abc1234",
+      // Estado legado limpo: não herdar confirmação/capacidade de outro caso.
+      runtime_confirmation: null,
       off_release: false,
       latest_version: "",
       changelog_raw: "",
@@ -171,7 +176,8 @@ async function main(): Promise<void> {
       "creds.users.dono ausente — rode `pnpm exec tsx scripts/seed-e2e-credentials.ts` primeiro " +
         "(o quinto usuário do seed base é quem vira dono do servidor)",
     );
-  if (!adminUser) throw new Error("creds.users.admin ausente — rode seed-e2e-credentials.ts primeiro");
+  if (!adminUser)
+    throw new Error("creds.users.admin ausente — rode seed-e2e-credentials.ts primeiro");
 
   await ensurePlatformAdmin(donoUser.id);
   await revogarPlatformAdmin(

@@ -1,0 +1,181 @@
+{
+  "synthetic": true,
+  "build": {
+    "sha": "20f335eaede5c423a0fcc902d79eaabb103ea342",
+    "id": "cyznjcUkNaQa9Fn5H6iU4"
+  },
+  "cases": [
+    {
+      "name": "invisible",
+      "contact_id": "3f56fcb6-60dd-4e78-af48-2811529d454a",
+      "conversation_id": "1c208478-ae1f-455a-aa21-4e4301a5f7c4",
+      "message_id": "79d86a2a-76a8-448d-aea2-3e7d8b132506",
+      "job_id": "cb0ad8da-da7a-4440-99e9-c76f0a8604e2",
+      "errorName": "AI_APICallError",
+      "outbound": [],
+      "trace": [
+        {
+          "id": "40731d42-072d-4ddd-a660-4e8a3c9ca023",
+          "status": "failed",
+          "is_dry_run": false,
+          "messages_sent": 0,
+          "ferramentas": [
+            {
+              "erro": "O texto da mensagem ficou vazio. Escreva a resposta de verdade e chame send_message de novo.",
+              "nome": "send_message",
+              "estado": "falhou",
+              "duracao_ms": 1
+            }
+          ]
+        }
+      ],
+      "http_receipts": []
+    }
+  ],
+  "provider_calls": [
+    {
+      "id": "chatcmpl_7c8ab4d7-c719-4bb3-afa9-00c9bf0b7ba6",
+      "path": "/v1/chat/completions",
+      "model": "anthropic/claude-haiku-4-5",
+      "stream": false,
+      "tools": [],
+      "invisible": true,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "4e1679b2fba7e7c39e35c299e73bd2b9a6dd2fdec96b22f558f58708b9f3d1f4",
+      "at": "2026-10-26T19:16:38.751Z"
+    },
+    {
+      "id": "chatcmpl_cd779de5-86f8-4b6d-a4de-6f8ad1935c5f",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [],
+      "invisible": true,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "347f68a67b1ffcffddac9af3a5865c3d46913caf60e9b7054be482f6fa4f240a",
+      "at": "2026-10-26T19:17:55.766Z"
+    },
+    {
+      "id": "chatcmpl_9dfa4049-c99a-4a12-9299-598407d37aeb",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [],
+      "invisible": true,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": null,
+      "tool_result_content": [],
+      "tool_schemas": [],
+      "tool_result_codes": [],
+      "request_sha256": "d5d0b70dfd7a87baa569be91602bc4059f84444396e0055118942392316b1c17",
+      "at": "2026-10-26T19:17:55.767Z"
+    },
+    {
+      "id": "chatcmpl_f1b08581-3ed1-429d-899f-d1a43970500b",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [
+        "crm_move_lead_stage",
+        "get_lead_context",
+        "get_lead_note",
+        "request_human_handoff",
+        "save_lead_note",
+        "schedule_followup",
+        "send_message",
+        "update_lead_state"
+      ],
+      "invisible": true,
+      "corpo_vazio_observado": false,
+      "tool_body_codepoints": [
+        8206
+      ],
+      "tool_result_content": [],
+      "tool_schemas": [
+        {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "corpo da mensagem, no idioma da conversa com o lead, pronto para envio"
+            },
+            "produto_codigo": {
+              "description": "código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: as fotos dele vão junto, e o texto vira a legenda da primeira",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "tool_result_codes": [],
+      "request_sha256": "90c79b2566f8289d12e4b760bb2f2b72be159265ef2e552cef642424e2ca0ddc",
+      "at": "2026-10-26T19:17:55.803Z"
+    },
+    {
+      "id": "chatcmpl_0564b217-28f4-4241-940c-e1fbaca00f2c",
+      "path": "/v1/chat/completions",
+      "model": "openai/gpt-4o-mini",
+      "stream": false,
+      "tools": [
+        "crm_move_lead_stage",
+        "get_lead_context",
+        "get_lead_note",
+        "request_human_handoff",
+        "save_lead_note",
+        "schedule_followup",
+        "send_message",
+        "update_lead_state"
+      ],
+      "invisible": true,
+      "corpo_vazio_observado": true,
+      "tool_body_codepoints": null,
+      "tool_result_content": [
+        "{\"ok\":false,\"error\":{\"code\":\"corpo_vazio\",\"message\":\"O texto da mensagem ficou vazio. Escreva a resposta de verdade e chame send_message de novo.\"}}"
+      ],
+      "tool_schemas": [
+        {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "corpo da mensagem, no idioma da conversa com o lead, pronto para envio"
+            },
+            "produto_codigo": {
+              "description": "código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: as fotos dele vão junto, e o texto vira a legenda da primeira",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "tool_result_codes": [
+        "corpo_vazio"
+      ],
+      "request_sha256": "b3b4b0ac896afcc5a4752658c0f79aa5df09fe889fb02299c2be9a14e542a8de",
+      "at": "2026-10-26T19:17:55.814Z"
+    }
+  ],
+  "limits": [
+    "HTTP provider controlado; não é modelo externo nem WhatsApp real.",
+    "A tentativa invisível é encerrada intencionalmente por HTTP400 do provider APÓS receber corpo_vazio; mede a guarda real, não recuperação do modelo.",
+    "Handler, lease, fronteira e liquidação são os mesmos do worker, executados uma vez sem iniciar os outros loops."
+  ]
+}

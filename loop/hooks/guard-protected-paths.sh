@@ -3,8 +3,13 @@
 # armado por loop/setup-claude-guard.mjs). Bloqueia (exit 2; stderr volta ao modelo
 # como ensino):
 #   - Edit/Write em plan/features.json (mutação só via node loop/update-feature.ts)
-#   - Edit/Write em tests/invariants/* quando o arquivo JÁ existe (arquivo novo passa)
 #   - comandos Bash que deletem testes ou a suíte de invariantes
+#
+# Edit/Write em tests/invariants/** NÃO é mais bloqueado: o congelamento do diretório
+# foi aposentado junto com o fim do épico (o eval virou a suíte geral de invariantes,
+# 526 arquivos atrás do check `invariants`). A proteção de DELEÇÃO continua, e é a
+# mesma do hook de commit `loop/hooks/guard-invariants.sh` — aqui ela pega o `rm`
+# antes de virar comando, lá ela pega o `D` que chegou ao índice.
 set -euo pipefail
 
 input=$(cat)
@@ -22,13 +27,6 @@ case "$tool" in
     case "$path" in
       *plan/features.json)
         deny "plan/features.json não se edita com Edit/Write — mutação de passes/verification só via 'node loop/update-feature.ts'."
-        ;;
-      *tests/invariants/*)
-        # Arquivo pré-existente é congelado; escrita de arquivo NOVO passa
-        # (G1-03 e fases seguintes criam invariantes).
-        if [ -f "$path" ]; then
-          deny "tests/invariants/** é congelado — invariante existente não se edita (flip legítimo de test.fails: sessão humana com DESKCOMM_GOV_INVARIANTS_EDIT=1 no commit)."
-        fi
         ;;
     esac
     ;;

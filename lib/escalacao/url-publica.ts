@@ -73,3 +73,12 @@ export function urlPublicaUsavel(bruto: string | null | undefined): boolean {
 export function linkDoCaso(base: string, caseId: string): string {
   return `${base.replace(/\/+$/, "")}/app/ai/cases?caso=${caseId}`;
 }
+
+/**
+ * O endereço do negócio para quem está FORA do navegador (#2642). Aponta para
+ * `/app/leads/<id>`, a URL estável do lead: o funil fica de fora de propósito,
+ * porque o lead muda de funil e a página resolve o quadro certo na hora.
+ */
+export function linkDoNegocio(base: string, leadId: string): string {
+  return `${base.replace(/\/+$/, "")}/app/leads/${leadId}`;
+}

@@ -61,7 +61,7 @@ describe("concurrency: só nos jobs pesados", () => {
   });
 
   it.each(Object.entries(PESADOS).flatMap(([a, js]) => js.map((j) => [a, j])))(
-    "%s::%s tem grupo por PR e só cancela em pull_request (publish-image: também na main)",
+    "%s::%s isola PR/ref e cancela revisões substituídas de PR/main",
     (arq, job) => {
       const bloco = blocoDoJob(ler(arq), job);
       expect(bloco).toMatch(/^ {4}concurrency:\n {6}group: .*github\.event\.pull_request\.number \|\| github\.ref/m);
@@ -71,11 +71,16 @@ describe("concurrency: só nos jobs pesados", () => {
       expect(bloco).toContain(
         "${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}",
       );
+      // Só os testes ganham a proteção adicional de rerun da main. A política
+      // de publicação permanece com seu contrato e controle próprios.
+      if (arq !== "publish-image.yml") {
+        expect(bloco).toContain(
+          "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}",
+        );
+      }
       const cancela = bloco.match(/^ {6}cancel-in-progress: (.*)$/m)?.[1];
       expect(cancela).toBe(
-        arq === "publish-image.yml"
-          ? "${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}"
-          : "${{ github.event_name == 'pull_request' }}",
+        "${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}",
       );
     },
   );

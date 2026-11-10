@@ -7,11 +7,13 @@
  *   const input = await validateRequest(createLeadSchema, req);
  */
 export * from "./_validate";
+export * from "./agenda";
 export * from "./health";
 export * from "./leads";
 export * from "./contacts";
 export * from "./team";
 export * from "./onboarding";
 export * from "./messaging";
+export * from "./participantes-do-atendimento";
 export * from "./routing";
 export * from "./webhooks";

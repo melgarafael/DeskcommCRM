@@ -153,10 +153,12 @@ describe("excluir contato com turno de follow-up (#1862)", () => {
   beforeAll(() => semear());
 
   it("(b) o DELETE DIRETO do turno de follow-up continua recusado para auth.uid()", () => {
-    // A 42501 não afrouxa: quem tem sessão não apaga job de follow-up por conta
-    // própria. Se isto deixar de falhar, a guarda virou porta aberta.
-    const doTurno = stderrDe(GOV_AGENT_A, `delete from public.job_queue where id = '${TURNO_A}';`);
-    expect(doTurno).toContain("followup_job_internal");
+    // A sessão continua sem poder apagar o turno. A ACL agora recusa ANTES
+    // do trigger: o SQLSTATE é 42501, com origem distinta da recusa antiga.
+    const doTurno = stderrDe(GOV_AGENT_A, `\\set VERBOSITY verbose
+delete from public.job_queue where id = '${TURNO_A}';`);
+    expect(doTurno).toContain("42501");
+    expect(doTurno).toContain("permission denied for table job_queue");
 
     // O outro alvo: o evento interno (idempotency_key 'nó:1'). Desde a 0490
     // (#1915) a trilha não tem policy de DELETE para a sessão, então a recusa

@@ -102,7 +102,7 @@ export async function enviarAvisoAosAdmins(
     const para = await emailsDosAdmins(admin, org.id);
     if (para.length === 0) return;
     const t = (s: string) => traduzir(s, org.idioma);
-    const marca = await marcaDaSaida(org.id);
+    const marca = await marcaDaSaida(org.id, { semMemo: true });
     const email = buildEmailDaCobranca({
       titulo: texto.titulo,
       corpo: texto.corpo,
@@ -126,7 +126,7 @@ export async function avisarTrocaDeChave(admin: SupabaseClient, o: { antigo: str
     if (error) throw new Error(`donos ilegíveis (${error.code ?? "sem_codigo"})`);
     const para = await emailsDe(admin, ((data ?? []) as Array<{ user_id: string }>).map((l) => l.user_id));
     if (para.length === 0) return;
-    const marca = await marcaDaSaida(null);
+    const marca = await marcaDaSaida(null, { semMemo: true });
     const titulo = o.antigo
       ? `A chave de cobrança da instalação foi trocada (…${o.antigo} → …${o.novo})`
       : `A chave de cobrança da instalação foi conectada (…${o.novo})`;

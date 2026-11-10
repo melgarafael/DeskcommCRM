@@ -188,6 +188,14 @@ async function entrar(page: Page, f: Fixture) {
 }
 
 const painel = (page: Page) => page.locator('section[aria-label="Assistência do agente"]');
+/**
+ * O MESMO gesto nas duas superfícies (issue #3027): sem rascunho, o bloco não é
+ * montado e quem oferece a sugestão é o botão de ícone do compositor; com
+ * rascunho, é o botão de texto do bloco. Nunca os dois — daí um localizador de
+ * página servir aos dois estados.
+ */
+const botaoSugerir = (page: Page) =>
+  page.getByRole("button", { name: "Sugerir resposta", exact: true });
 
 test.afterAll(async () => {
   for (const org of orgs) {
@@ -213,7 +221,7 @@ test("rejeitar tira a sugestão da tela e diz que rejeitou; sem agente publicado
     const gerada = page.waitForResponse(
       (r) => r.url().endsWith("/draft-reply") && r.request().method() === "POST",
     );
-    await painel(page).getByRole("button", { name: "Sugerir resposta", exact: true }).click();
+    await botaoSugerir(page).click();
     const resposta = await gerada;
     expect(resposta.status(), await resposta.text()).toBe(200);
     // 20s, e não os 5s do padrão: entre o 200 do POST e o rótulo na tela há o
@@ -238,25 +246,34 @@ test("rejeitar tira a sugestão da tela e diz que rejeitou; sem agente publicado
       .fill("Muito formal para esta cliente.");
     await painel(page).getByRole("button", { name: "Rejeitar", exact: true }).click();
 
+    // A confirmação vem PRIMEIRO nesta ordem de propósito: ela é um toast, que
+    // some sozinho — esperar antes por outros elementos poderia encontrá-lo já
+    // dispensado, e o vermelho seria do relógio, não da tela.
     await expect(
-      painel(page).getByLabel("Resposta sugerida"),
-      "cliquei em Rejeitar e o texto recusado continua na tela",
-    ).toHaveCount(0, { timeout: 20_000 });
-    await expect(
-      painel(page).getByRole("button", { name: "Rejeitar", exact: true }),
-      "a sugestão rejeitada continua oferecendo os botões de decisão",
-    ).toHaveCount(0);
-    await expect(
-      painel(page).getByText("Assistência do agente", { exact: true }),
-      "o painel não voltou ao estado neutro",
-    ).toBeVisible();
-    // E a confirmação FICA — sem ela, Rejeitar apenas esvaziaria a tela em
-    // silêncio, que é o outro meio-conserto que este PR evitou.
-    await expect(
-      painel(page).getByText("Sugestão rejeitada. O feedback será usado na próxima sugestão.", {
+      page.getByText("Sugestão rejeitada. O feedback será usado na próxima sugestão.", {
         exact: true,
       }),
       "a tela esvaziou sem dizer que a sugestão foi rejeitada",
+    ).toBeVisible({ timeout: 20_000 });
+
+    await expect(
+      page.getByLabel("Resposta sugerida"),
+      "cliquei em Rejeitar e o texto recusado continua na tela",
+    ).toHaveCount(0, { timeout: 20_000 });
+    await expect(
+      page.getByRole("button", { name: "Rejeitar", exact: true }),
+      "a sugestão rejeitada continua oferecendo os botões de decisão",
+    ).toHaveCount(0);
+    // E o BLOCO INTEIRO sai com ela (issue #3027): sem rascunho, a faixa volta a
+    // ser só o botão de ícone do compositor — nada de borda, título e botão de
+    // texto ocupando 2-3 linhas do histórico o tempo todo.
+    await expect(
+      painel(page),
+      "o bloco 'Assistência do agente' continuou ocupando a faixa sem rascunho",
+    ).toHaveCount(0, { timeout: 20_000 });
+    await expect(
+      botaoSugerir(page),
+      "sem rascunho tem de sobrar o botão de ícone do compositor",
     ).toBeVisible();
     expect(
       (
@@ -283,7 +300,7 @@ test("rejeitar tira a sugestão da tela e diz que rejeitou; sem agente publicado
     const falhou = page.waitForResponse(
       (r) => r.url().endsWith("/draft-reply") && r.request().method() === "POST",
     );
-    await painel(page).getByRole("button", { name: "Sugerir resposta", exact: true }).click();
+    await botaoSugerir(page).click();
     const recusa = await falhou;
     expect(recusa.status()).toBe(422);
     expect((await recusa.json()).error.code).toBe("reply_no_agent");

@@ -172,9 +172,9 @@ describe("remetente", () => {
     );
     expect(sujo).not.toContain("\r");
     expect(sujo).not.toContain("\n");
-    // `<`, `>`, `"` e as quebras somem; o resto do texto fica, colado — o que
-    // importa é que não sobrou cabeçalho nenhum para o SMTP interpretar.
-    expect(sujo).toBe("Acme evil@x.comBcc: vitima@y.com <nao-responda@revenda.com.br>");
+    // `<`, `>` e `"` somem, a quebra vira espaço, e o que sobra vai entre aspas:
+    // é um nome só, sem cabeçalho nenhum para o SMTP interpretar.
+    expect(sujo).toBe('"Acme evil@x.com Bcc: vitima@y.com" <nao-responda@revenda.com.br>');
   });
 
   it("ENDEREÇO com caractere de cabeçalho é recusado — ele virou entrada de tela na 0341", async () => {
@@ -301,9 +301,9 @@ describe("remetente — SMTP", () => {
     const sujo = formatFromAddress(config, 'Acme" <evil@x.com>\r\nBcc: vitima@y.com');
     expect(sujo).not.toContain("\r");
     expect(sujo).not.toContain("\n");
-    // `<`, `>`, `"` e as quebras somem; o resto do texto fica, colado — o que
-    // importa é que não sobrou cabeçalho nenhum para o SMTP interpretar.
-    expect(sujo).toBe("Acme evil@x.comBcc: vitima@y.com <nao-responda@revenda.com.br>");
+    // `<`, `>` e `"` somem, a quebra vira espaço, e o que sobra vai entre aspas:
+    // é um nome só, sem cabeçalho nenhum para o SMTP interpretar.
+    expect(sujo).toBe('"Acme evil@x.com Bcc: vitima@y.com" <nao-responda@revenda.com.br>');
   });
 });
 

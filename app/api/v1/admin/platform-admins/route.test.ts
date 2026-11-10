@@ -14,7 +14,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * estado real. Só 404/user_not_found é ausência de verdade (grant órfão).
  */
 
-vi.mock("@/lib/auth/requirePlatformAdmin", () => ({
+vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>()),
   requirePlatformAdmin: vi.fn(),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));

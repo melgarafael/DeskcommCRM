@@ -27,6 +27,10 @@ interface Resposta {
   error: { message: string } | null;
 }
 interface Cenario {
+  /** Os `update` em `crm_leads`, na ordem (#3461: a posição de entrada). */
+  escritas?: unknown[];
+  /** O primeiro card da etapa de destino, lido para pôr o que chega no topo. */
+  topo?: Resposta;
   lead: Resposta;
   etapaDestino: Resposta;
   update: Resposta;
@@ -61,16 +65,24 @@ function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
       const b = {
         _update: false,
         _select: false,
+        _topo: false,
         _eqKeys: [] as string[],
         _slugVal: undefined as string | undefined,
         select: () => {
           b._select = true;
           return b;
         },
-        update: () => {
+        update: (payload?: unknown) => {
           b._update = true;
+          if (tabela === "crm_leads") c.escritas?.push(payload);
           return b;
         },
+        // A leitura do topo da etapa de destino (#3461): `.order().limit()`.
+        order: () => {
+          b._topo = true;
+          return b;
+        },
+        limit: () => b,
         eq: (key: string, val?: unknown) => {
           b._eqKeys.push(key);
           if (key === "slug" && typeof val === "string") b._slugVal = val;
@@ -79,6 +91,7 @@ function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
         maybeSingle: () => {
           if (tabela === "crm_pipelines")
             return Promise.resolve(c.funil ?? { data: ETAPA_ORIGEM, error: null });
+          if (tabela === "crm_leads" && b._topo) return Promise.resolve(c.topo ?? { data: null, error: null });
           if (tabela === "crm_leads") return Promise.resolve(c.lead);
           if (b._eqKeys.includes("slug")) {
             if (c.etapaPorSlug && b._slugVal) return Promise.resolve(c.etapaPorSlug(b._slugVal));
@@ -116,6 +129,13 @@ async function moverObservando(c: Cenario, transicao: "pending" | "confirmed" = 
 
 describe("moverLeadParaEtapaDeAgendamento", () => {
   beforeEach(() => vi.mocked(emitLeadActivity).mockClear());
+
+  it("o card CHEGA no topo da etapa de destino (#3461)", async () => {
+    const escritas: unknown[] = [];
+    const r = await mover(cenario({ escritas, topo: { data: { position_in_stage: -3000 }, error: null } }));
+    expect(r).toMatchObject({ moveu: true });
+    expect(escritas).toEqual([expect.objectContaining({ position_in_stage: -4000 })]);
+  });
 
   it("caminho feliz: confirmado move para 'agendado' e emite atividade + evento", async () => {
     const { r, eventos } = await moverObservando(cenario(), "confirmed");

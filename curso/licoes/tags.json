@@ -1,0 +1,1073 @@
+{
+  "id": "tags",
+  "titulo": "Tags",
+  "tela": "/app/settings/tags",
+  "resumo": "Onde você arruma as etiquetas da empresa: vê onde cada uma é usada, dá cor, corrige o nome, junta as repetidas e tira as que não servem mais.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Tags",
+      "objetivo": "Achar a tela de Tags e entender o que cada número da lista diz sobre uma etiqueta.",
+      "papel": "admin",
+      "busca": [
+        "tags",
+        "etiquetas",
+        "onde ficam as etiquetas",
+        "lista de etiquetas",
+        "quantos clientes têm a etiqueta",
+        "marcadores dos clientes",
+        "organizar etiquetas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica",
+          "texto": "Clique em \"Configurações\", no rodapé do menu lateral, para abrir a lista de todas as configurações. \"Tags\" fica no grupo \"Sua empresa\". Clique no cartão para abrir a tela.",
+          "dica": "Só gerente e administrador abrem esta tela. Um atendente que tentar entrar recebe a página de acesso negado.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Tags O vocabulário",
+                "regex": true
+              },
+              "rotulo": "Abrir Tags",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Tags O vocabulário",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Todas as etiquetas num lugar só",
+          "texto": "Etiquetas são as marcas que ficam nos clientes, nos negócios do funil e nas conversas, como \"convenio\" ou \"particular\". Esta tela reúne todas as da empresa, em ordem alfabética: as que a equipe coloca à mão, as que as regras automáticas colocam e as que você cadastrou. Cada linha é uma etiqueta. Acima da lista aparece quantas existem e em que página você está; cada página mostra até 100.",
+          "rota": "/app/settings/tags",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar etiquetas"
+              },
+              "rotulo": "Procurar uma etiqueta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "etiquetas · Página",
+                "regex": true
+              },
+              "rotulo": "Quantas existem",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "table"
+              },
+              "rotulo": "Uma linha por etiqueta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Onde cada etiqueta está",
+          "texto": "Os números de cada linha dizem onde a etiqueta aparece. \"Contatos\" conta os clientes que têm a etiqueta, \"Leads\" conta os negócios do funil e \"Conversas\" conta as conversas da Inbox. Aqui, \"convenio\" está em 3 clientes e em nenhum negócio ou conversa.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Contatos",
+                "exato": true
+              },
+              "rotulo": "Clientes",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Leads",
+                "exato": true
+              },
+              "rotulo": "Negócios do funil",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Conversas",
+                "exato": true
+              },
+              "rotulo": "Conversas da Inbox",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^convenio ",
+                "regex": true
+              },
+              "rotulo": "convenio",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "A coluna que evita surpresa",
+          "texto": "\"Regras de agente\" conta quantas regras automáticas da empresa têm a ação de colocar essa etiqueta, ligadas ou desligadas. Aqui, \"aguardando-exame\" tem 1. Enquanto uma regra dessas estiver ligada, ela coloca a etiqueta de novo toda vez que rodar, mesmo que você tenha tirado de todo mundo. Olhe esta coluna antes de mexer numa etiqueta.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "td:nth-child(5)",
+                "dentro": {
+                  "role": "row",
+                  "nome": "^aguardando-exame ",
+                  "regex": true
+                }
+              },
+              "rotulo": "Regras de agente: 1",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Cor, selo e botões",
+          "texto": "As etiquetas coloridas, como \"convenio\", já foram cadastradas com uma cor. O selo \"em uso, fora do vocabulário\", como em \"Fisio\", marca as que estão em uso (em clientes, negócios, conversas ou numa regra) mas nunca foram cadastradas: alguém ou alguma regra escreveu, e pronto. No fim de cada linha ficam os botões \"Cor\", \"Renomear\", \"Juntar\" e \"Excluir\". Cada um abre um quadro logo abaixo da lista, e as próximas lições mostram um por um.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "convenio",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^convenio ",
+                  "regex": true
+                }
+              },
+              "rotulo": "Etiqueta com cor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "td:first-child",
+                "dentro": {
+                  "role": "row",
+                  "nome": "^Fisio ",
+                  "regex": true
+                }
+              },
+              "rotulo": "Ainda não cadastrada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "td:last-child",
+                "dentro": {
+                  "role": "row",
+                  "nome": "^convenio ",
+                  "regex": true
+                }
+              },
+              "rotulo": "O que dá para fazer",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dar-cor",
+      "titulo": "Dar cor a uma etiqueta",
+      "objetivo": "Escolher a cor de uma etiqueta para achá-la de longe nas listas e nos filtros.",
+      "papel": "admin",
+      "busca": [
+        "cor da etiqueta",
+        "mudar cor da tag",
+        "pintar etiqueta",
+        "etiqueta colorida",
+        "destacar etiqueta",
+        "etiqueta cinza"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Uma etiqueta sem cor",
+          "texto": "A etiqueta \"pos-operatorio\" está cinza e com o selo \"em uso, fora do vocabulário\". Uma cor ajuda a equipe a achar esses pacientes de longe. Clique em \"Cor\" na linha dela.",
+          "rota": "/app/settings/tags",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^pos-operatorio ",
+                "regex": true
+              },
+              "rotulo": "pos-operatorio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cor",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^pos-operatorio ",
+                  "regex": true
+                }
+              },
+              "rotulo": "Cor",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Cor",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "^pos-operatorio ",
+              "regex": true
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Oito cores para escolher",
+          "texto": "Abaixo da lista abre o quadro da cor. São oito bolinhas de cor fixas, escolhidas para serem fáceis de distinguir e de ler. Na ordem: amarelo, âmbar, vermelho, verde-água, azul, índigo, roxo e cinza. Quem usa leitor de tela ouve o nome de cada uma. \"Sem cor\" tira a cor da etiqueta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cor",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^pos-operatorio ",
+                  "regex": true
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.flex-wrap:has(> button[aria-label='Vermelho'])"
+              },
+              "rotulo": "As oito cores",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Sem cor",
+                "exato": true
+              },
+              "rotulo": "Tirar a cor",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Vermelho",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Veja antes de salvar",
+          "texto": "Clique numa bolinha, como a vermelha (a terceira). A \"Prévia\" mostra na hora como a etiqueta vai ficar, antes de salvar. Gostou? Clique em \"Confirmar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cor",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^pos-operatorio ",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Vermelho",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.flex-wrap:has(> button[aria-label='Vermelho'])"
+              },
+              "rotulo": "Vermelha escolhida",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div:has(> span:text-is('Prévia:'))"
+              },
+              "rotulo": "Prévia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              },
+              "rotulo": "Salvar a cor",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Confirmar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Pronto, colorida",
+          "texto": "A etiqueta ficou vermelha e o selo \"em uso, fora do vocabulário\" sumiu: dar cor também cadastra a etiqueta. A nova cor aparece onde a etiqueta aparece, como nas listas de conversas e de clientes e nos filtros.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cor",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^pos-operatorio ",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Vermelho",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 3000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^pos-operatorio ",
+                "regex": true
+              },
+              "rotulo": "Agora em vermelho",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "renomear",
+      "titulo": "Corrigir o nome de uma etiqueta",
+      "objetivo": "Renomear uma etiqueta em todos os clientes e nas regras automáticas de uma vez só.",
+      "papel": "admin",
+      "busca": [
+        "renomear etiqueta",
+        "mudar nome da tag",
+        "corrigir nome da etiqueta",
+        "etiqueta escrita errada",
+        "trocar nome da etiqueta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Um nome feio de ler",
+          "texto": "A etiqueta \"aguardando-exame\" foi escrita com hífen e está em 2 clientes. Ela também tem 1 regra automática que a coloca sozinha. Para escrever do jeito certo, clique em \"Renomear\" na linha dela.",
+          "rota": "/app/settings/tags",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^aguardando-exame ",
+                "regex": true
+              },
+              "rotulo": "aguardando-exame",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Renomear",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^aguardando-exame ",
+                  "regex": true
+                }
+              },
+              "rotulo": "Renomear",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Renomear",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "^aguardando-exame ",
+              "regex": true
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Digite o novo nome",
+          "texto": "No quadro que abre abaixo da lista, escreva o nome novo no campo \"Novo nome\", aqui \"Aguardando exame\". Depois clique em \"Confirmar\".",
+          "dica": "Se o nome digitado já for de outra etiqueta, a tela avisa antes: confirmar vai juntar as duas numa só.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Renomear",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^aguardando-exame ",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Novo nome",
+                "exato": true
+              },
+              "valor": "Aguardando exame"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Novo nome",
+                "exato": true
+              },
+              "rotulo": "Novo nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              },
+              "rotulo": "Aplicar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Confirmar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Trocado em todo lugar",
+          "texto": "A linha agora se chama \"Aguardando exame\" e continua com os 2 clientes. A troca vale para todos os clientes, negócios e conversas que tinham a etiqueta. E a regra automática também passou a escrever o nome novo, então o nome antigo não volta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Renomear",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^aguardando-exame ",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Novo nome",
+                "exato": true
+              },
+              "valor": "Aguardando exame"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 3000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^Aguardando exame ",
+                "regex": true
+              },
+              "rotulo": "Nome novo, mesmos clientes e regra",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "juntar-repetidas",
+      "titulo": "Juntar etiquetas repetidas",
+      "objetivo": "Achar duas etiquetas que querem dizer a mesma coisa e transformar as duas numa só.",
+      "papel": "admin",
+      "busca": [
+        "etiquetas repetidas",
+        "juntar etiquetas",
+        "tag duplicada",
+        "duas etiquetas iguais",
+        "unir tags",
+        "mesclar etiquetas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Procure por um pedaço do nome",
+          "texto": "Etiqueta repetida acontece: cada pessoa escreve de um jeito. Para achar as parecidas, digite um pedaço do nome no campo \"Buscar etiquetas\", aqui \"fisio\", e clique em \"Buscar\".",
+          "rota": "/app/settings/tags",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar etiquetas"
+              },
+              "valor": "fisio"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar etiquetas"
+              },
+              "rotulo": "Um pedaço do nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Buscar",
+                "exato": true
+              },
+              "rotulo": "Buscar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Buscar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Duas grafias, uma ideia",
+          "texto": "A busca achou \"Fisio\" e \"fisioterapia\". As duas querem dizer a mesma coisa, mas para o sistema são etiquetas diferentes: um filtro por \"fisioterapia\" deixa de fora quem foi marcado com \"Fisio\". Fique com a mais clara, \"fisioterapia\", e clique em \"Juntar\" na linha de \"Fisio\".",
+          "rota": "/app/settings/tags?page=1&busca=fisio",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^Fisio ",
+                "regex": true
+              },
+              "rotulo": "Fisio",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^fisioterapia ",
+                "regex": true
+              },
+              "rotulo": "fisioterapia",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Juntar",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^Fisio ",
+                  "regex": true
+                }
+              },
+              "rotulo": "Juntar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Juntar",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "^Fisio ",
+              "regex": true
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Diga qual etiqueta fica",
+          "texto": "No quadro que abre, escreva em \"Etiqueta de destino\" o nome exato da etiqueta que fica, \"fisioterapia\". Juntar só aceita uma etiqueta que já existe: se o nome não existir, a tela avisa e não deixa confirmar. Depois clique em \"Confirmar\".",
+          "rota": "/app/settings/tags?page=1&busca=fisio",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Juntar",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^Fisio ",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Etiqueta de destino"
+              },
+              "valor": "fisioterapia"
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Etiqueta de destino"
+              },
+              "rotulo": "A etiqueta que fica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              },
+              "rotulo": "Juntar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Confirmar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Agora é uma só",
+          "texto": "\"Fisio\" sumiu da lista. Os 2 clientes que tinham \"Fisio\" passaram a ter \"fisioterapia\", que agora está em 4 clientes e manteve a cor roxa. Se alguma regra automática escrevesse \"Fisio\", ela também passaria a escrever \"fisioterapia\".",
+          "rota": "/app/settings/tags?page=1&busca=fisio",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Juntar",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^Fisio ",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Etiqueta de destino"
+              },
+              "valor": "fisioterapia"
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 3000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^fisioterapia ",
+                "regex": true
+              },
+              "rotulo": "Uma etiqueta só",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "excluir",
+      "titulo": "Excluir uma etiqueta",
+      "objetivo": "Tirar de todos os clientes uma etiqueta que não serve mais, sem ser pego de surpresa por uma regra automática.",
+      "papel": "admin",
+      "busca": [
+        "excluir etiqueta",
+        "apagar tag",
+        "remover etiqueta de todos",
+        "etiqueta que não uso mais",
+        "tirar etiqueta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Uma campanha que acabou",
+          "texto": "A etiqueta \"promo-julho\" marcou quem veio por uma promoção que já terminou. Ela está em 2 clientes e nenhuma regra a coloca (a coluna \"Regras de agente\" mostra 0). Para tirá-la de todo mundo, use \"Excluir\" na linha dela.",
+          "rota": "/app/settings/tags",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "^promo-julho ",
+                "regex": true
+              },
+              "rotulo": "promo-julho",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^promo-julho ",
+                  "regex": true
+                }
+              },
+              "rotulo": "Excluir",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Excluir",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "^promo-julho ",
+              "regex": true
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Confira o que sai",
+          "texto": "O quadro diz exatamente de onde a etiqueta vai sair: 2 clientes, nenhum negócio e nenhuma conversa. Excluir não tem volta, por isso o botão \"Confirmar\" fica vermelho. Os clientes continuam lá: só a etiqueta sai deles.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^promo-julho ",
+                  "regex": true
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "contato(s),",
+                "dentro": {
+                  "css": "div.rounded-lg:has(> p strong)"
+                }
+              },
+              "rotulo": "O que vai sair",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              },
+              "rotulo": "Excluir de vez",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Confirmar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Saiu da lista",
+          "texto": "Depois de confirmar, \"promo-julho\" some da lista: a contagem no alto passa de 13 para 12 etiquetas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^promo-julho ",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 3000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "etiquetas · Página",
+                "regex": true
+              },
+              "rotulo": "Uma etiqueta a menos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Quando uma regra ainda escreve",
+          "texto": "Agora veja \"Excluir\" na \"aguardando-exame\". O quadro mostra um aviso amarelo: 1 regra automática ainda tem a ação de colocar essa etiqueta. Excluir aqui não apaga a regra: se ela estiver ligada, vai colocar a etiqueta de volta da próxima vez que rodar. Nesse caso, clique em \"Cancelar\" e mude a regra primeiro, em \"Webhooks\", na aba \"Automações\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "^aguardando-exame ",
+                  "regex": true
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "regra(s) de agente continuam",
+                "dentro": {
+                  "css": "div.rounded-lg:has(> p strong)"
+                }
+              },
+              "rotulo": "Uma regra ainda escreve",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contato-interno",
+      "titulo": "Etiquetas de contato interno",
+      "objetivo": "Marcar etiquetas de quem não é cliente (equipe, família, fornecedor) para não virar negócio no funil nem receber resposta da IA.",
+      "papel": "admin",
+      "busca": [
+        "contato interno",
+        "fornecedor no funil",
+        "equipe no whatsapp",
+        "IA não responder família",
+        "não virar card",
+        "contato que não é cliente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quem não é cliente",
+          "texto": "No mesmo WhatsApp também escrevem pessoas que não são clientes: equipe, sócio, família, fornecedor. No fim da tela fica o quadro \"Etiquetas de contato interno\". O contato marcado com uma dessas etiquetas não vira negócio no funil e não recebe resposta da IA. A conversa continua normal na Inbox, e você pode responder à mão. Numa instalação nova o campo vem vazio: \"interno\", \"equipe\" e \"familia\" em cinza são só um exemplo.",
+          "rota": "/app/settings/tags",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg:has(> form textarea)"
+              },
+              "rotulo": "Etiquetas de contato interno",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma etiqueta por linha",
+          "texto": "Escreva no campo as etiquetas que marcam quem não é cliente, uma por linha. Aqui a clínica usa \"fornecedor\", que já está na \"Distribuidora Vida Natural\", e \"equipe\". Depois clique em \"Salvar\".",
+          "dica": "Deixe o campo em branco para nenhum contato ser tratado como interno.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Etiquetas de contato interno",
+                "exato": true
+              },
+              "valor": "Fornecedor\nequipe"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Etiquetas de contato interno",
+                "exato": true
+              },
+              "rotulo": "Uma por linha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Lista salva",
+          "texto": "Depois de salvar, a lista volta arrumada: tudo em letras minúsculas e sem repetição, por isso \"Fornecedor\" virou \"fornecedor\". Maiúsculas não fazem diferença na hora de reconhecer a etiqueta no contato.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "role": "textbox",
+                "nome": "Etiquetas de contato interno",
+                "exato": true
+              },
+              "valor": "Fornecedor\nequipe"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "textbox",
+                "nome": "Etiquetas de contato interno",
+                "exato": true
+              },
+              "rotulo": "Lista gravada",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

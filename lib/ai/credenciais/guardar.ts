@@ -21,7 +21,7 @@
 import { audit } from "@/lib/audit";
 import { bufToBytea, encryptKey } from "@/lib/crypto/aes_gcm";
 import { PROVEDOR_POR_ASSINATURA, type ProvedorComChave } from "@/lib/ai/pontos/provedores";
-import { validateProviderKey } from "@/lib/ai/provider-validators";
+import { validateProviderKey, type ServiceProvider } from "@/lib/ai/provider-validators";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 export type ResultadoDeGuardar =
@@ -61,7 +61,7 @@ export interface PedidoDeGuardar {
   admin: ReturnType<typeof createAdminClient>;
   orgId: string;
   userId: string;
-  provider: ProvedorComChave;
+  provider: ProvedorComChave | ServiceProvider;
   label: string;
   /** Plaintext. Vive só no escopo desta chamada — nunca persistido nem logado. */
   apiKey: string;
@@ -81,7 +81,7 @@ export interface PedidoDeGuardar {
  * diferentes (ou, pior, um caminho que gravasse plaintext) divergiria em
  * silêncio, e o ajuste que divergisse seria o de segurança.
  */
-function colunasCifradas(apiKey: string, provider: ProvedorComChave) {
+function colunasCifradas(apiKey: string, provider: ProvedorComChave | ServiceProvider) {
   const encrypted = encryptKey(apiKey);
   const last4 = provider === PROVEDOR_POR_ASSINATURA ? ultimo4DoLogin(apiKey) : encrypted.last4;
   return {
@@ -217,11 +217,18 @@ export interface PedidoDeRotacionar {
   /** `null` só na renovação automática do login por assinatura: a coluna é uuid. */
   userId: string | null;
   credentialId: string;
-  provider: ProvedorComChave;
+  provider: ProvedorComChave | ServiceProvider;
   /** Presente = trocar a chave. Ausente = manter a atual. Plaintext: nunca logado. */
   apiKey?: string;
   /** Presente = trocar o rótulo. Ausente = manter. */
   label?: string;
+  /**
+   * Só para a assinatura: a renovação automática do token é a MESMA conta, então a lista
+   * de modelos continua valendo. Sem isto, cada renovação apagava `models_available` e todo
+   * "Publicar" seguinte respondia `model_not_found`. Reconectar (conta que pode ser outra)
+   * não passa este campo e continua zerando a lista.
+   */
+  manterModelos?: boolean;
   requestId?: string;
 }
 
@@ -251,7 +258,7 @@ export async function rotacionarCredencial(
       // renovação acabou de confirmar (item 4).
       patch.validated_at = new Date().toISOString();
       patch.validation_error = null;
-      patch.models_available = null;
+      if (!p.manterModelos) patch.models_available = null;
     } else {
       // Chave nova = veredito antigo deixa de valer. Sem zerar, a tela mostraria
       // "Validada" (e os modelos da chave anterior) sobre uma chave que ninguém
@@ -329,7 +336,7 @@ async function validarEmSegundoPlano(
   admin: ReturnType<typeof createAdminClient>,
   credentialId: string,
   organizationId: string,
-  provider: ProvedorComChave,
+  provider: ProvedorComChave | ServiceProvider,
   apiKey: string,
 ): Promise<void> {
   // O RAMO DO LOGIN POR ASSINATURA (#1672, item 3): não existe endpoint de

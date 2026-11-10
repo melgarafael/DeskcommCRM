@@ -59,7 +59,7 @@ export async function avisarTitularAposApagamento(
   try {
     const [perfil, marca] = await Promise.all([
       perfilDaOrganizacao(admin, pedido.organizationId),
-      marcaDaSaida(pedido.organizationId),
+      marcaDaSaida(pedido.organizationId, { semMemo: true }),
     ]);
 
     const { messageId } = await sendAvisoArt12(

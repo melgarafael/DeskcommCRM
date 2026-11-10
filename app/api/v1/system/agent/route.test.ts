@@ -1,10 +1,13 @@
+import { confirmedRuntime } from "@/tests/helpers/runtime-confirmation";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
-vi.mock("@/lib/env", () => ({ env: { INTERNAL_SECRET: "segredo-de-teste", INTERNAL_CRON_SECRET: "" } }));
+vi.mock("@/lib/env", () => ({
+  env: { INTERNAL_SECRET: "segredo-de-teste", INTERNAL_CRON_SECRET: "" },
+}));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
 const RUN_ID = "33333333-3333-4333-8333-333333333333";
@@ -44,6 +47,10 @@ let rodadaWriteError: { message: string } | null;
  * realmente aconteceu quando a ordem entre elas importa).
  */
 let updates: Array<{ table: string } & Record<string, unknown>>;
+/** Toda linha que a rota INSERE — hoje só a da volta automática (#2757). */
+let inserts: Array<{ table: string } & Record<string, unknown>>;
+/** Erro a devolver no INSERT deste caso. */
+let insertError: { message: string } | null;
 
 function lastUpdate(table: string) {
   return [...updates].reverse().find((u) => u.table === table) ?? null;
@@ -58,6 +65,8 @@ beforeEach(() => {
   updateErrorByTable = {};
   rodadaWriteError = null;
   updates = [];
+  inserts = [];
+  insertError = null;
 
   vi.mocked(createAdminClient).mockReturnValue({
     from: (table: string) => {
@@ -74,11 +83,14 @@ beforeEach(() => {
             order: () => ({ limit: () => ({ maybeSingle }) }),
           }),
         }),
-        update: (patch: Record<string, unknown>) => ({
-          eq: async () => {
-            // A escrita da RODADA DO BANCO é reconhecível pelas próprias colunas:
-            // o caso que mede "coluna cosmética não derruba o desfecho" precisa
-            // derrubar SÓ ela, e deixar a que fecha o run passar.
+        // A volta automática (#2757) é a única escrita da rota que não é
+        // `update`: ela CRIA a linha do run, porque ninguém pediu nada.
+        insert: (patch: Record<string, unknown>) => {
+          if (!insertError) inserts.push({ table, ...patch });
+          return { error: insertError };
+        },
+        update: (patch: Record<string, unknown>) => {
+          const aplicar = async () => {
             const soARodada =
               "disputa_de_banco" in patch ||
               "retentativas_do_banco" in patch ||
@@ -86,9 +98,17 @@ beforeEach(() => {
             const error =
               (soARodada ? rodadaWriteError : null) ?? updateErrorByTable[table] ?? null;
             if (!error) updates.push({ table, ...patch });
-            return { error };
-          },
-        }),
+            return { error, data: runRow?.status === "dispatched" ? { id: runRow.id } : null };
+          };
+          const query = {
+            eq: () => query,
+            select: () => query,
+            maybeSingle: aplicar,
+            then: (resolve: (value: Awaited<ReturnType<typeof aplicar>>) => unknown) =>
+              aplicar().then(resolve),
+          };
+          return query;
+        },
       };
     },
   } as never);
@@ -129,11 +149,42 @@ describe("POST /api/v1/system/agent", () => {
   });
 
   it("heartbeat responde a ordem pendente e devolve o run", async () => {
-    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    runRow = {
+      id: RUN_ID,
+      status: "dispatched",
+      dispatched_at: new Date().toISOString(),
+      to_version: "v1.1.0",
+    };
     const { POST } = await import("./route");
     const body = await (await POST(req(HEARTBEAT))).json();
     expect(body.data.update_requested).toBe(true);
     expect(body.data.run_id).toBe(RUN_ID);
+  });
+
+  it("o heartbeat entrega o ALVO do run — um 'voltar' não é a última release (#2757)", async () => {
+    // O agente instala o `to_version` do run, e não a última publicada: num
+    // pedido de volta (#2757) o alvo é a versão ANTERIOR, e quem seguisse a
+    // última release estaria reinstalando a release que acabou de quebrar.
+    // Sem este campo na resposta, o agente não tem como saber qual é o alvo.
+    runRow = {
+      id: RUN_ID,
+      status: "dispatched",
+      dispatched_at: new Date().toISOString(),
+      to_version: "v1.0.0",
+    };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.to_version).toBe("v1.0.0");
+  });
+
+  it("run sem to_version (rota anterior a #2757) devolve alvo vazio, nunca a última release", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.update_requested).toBe(true);
+    // Vazio é o sinal para o agente cair no de sempre (`--to <última release>`),
+    // e não uma tentativa de adivinhar o alvo a partir do ambiente.
+    expect(body.data.to_version).toBe("");
   });
 
   it("o run em 'dispatched' basta como pedido — nenhum flag em system_version porteia", async () => {
@@ -170,7 +221,9 @@ describe("POST /api/v1/system/agent", () => {
 
   it("heartbeat grava has_known_release quando o host nunca viu tag publicada", async () => {
     const { POST } = await import("./route");
-    const res = await POST(req({ ...HEARTBEAT, off_release: true, latest_version: "", has_known_release: false }));
+    const res = await POST(
+      req({ ...HEARTBEAT, off_release: true, latest_version: "", has_known_release: false }),
+    );
     expect(res.status).toBe(200);
     expect(lastUpdate("system_version")).toMatchObject({ has_known_release: false });
   });
@@ -204,7 +257,10 @@ describe("POST /api/v1/system/agent", () => {
     const { POST } = await import("./route");
     const res = await POST(req({ kind: "run_progress", run_id: RUN_ID, step: "banco" }));
     expect(res.status).toBe(200);
-    expect(lastUpdate("system_update_runs")).toMatchObject({ table: "system_update_runs", last_step: "banco" });
+    expect(lastUpdate("system_update_runs")).toMatchObject({
+      table: "system_update_runs",
+      last_step: "banco",
+    });
     expect(lastUpdate("system_update_runs")?.status).toBeUndefined();
   });
 
@@ -220,9 +276,14 @@ describe("POST /api/v1/system/agent", () => {
     const { audit } = await import("@/lib/audit");
     runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
     const { POST } = await import("./route");
-    const res = await POST(req({ kind: "run_result", run_id: RUN_ID, status: "success", log_tail: "ok" }));
+    const res = await POST(
+      req({ kind: "run_result", run_id: RUN_ID, status: "success", log_tail: "ok" }),
+    );
     expect(res.status).toBe(200);
-    expect(lastUpdate("system_update_runs")).toMatchObject({ table: "system_update_runs", status: "success" });
+    expect(lastUpdate("system_update_runs")).toMatchObject({
+      table: "system_update_runs",
+      status: "success",
+    });
     expect(lastUpdate("system_update_runs")?.finished_at).toBeTruthy();
     // Fechar o run É o fim do pedido: não existe segundo estado para limpar.
     expect(lastUpdate("system_version")).toBeNull();
@@ -294,7 +355,9 @@ describe("POST /api/v1/system/agent", () => {
     // desistiria de reportar um desfecho que aconteceu de verdade.
     runReadError = { message: "conexão caiu" };
     const { POST } = await import("./route");
-    const res = await POST(req({ kind: "run_result", run_id: RUN_ID, status: "success", log_tail: "ok" }));
+    const res = await POST(
+      req({ kind: "run_result", run_id: RUN_ID, status: "success", log_tail: "ok" }),
+    );
     expect(res.status).toBe(500);
     expect(updates).toEqual([]);
   });
@@ -312,7 +375,9 @@ describe("POST /api/v1/system/agent", () => {
     runRow = { id: RUN_ID, status: "dispatched", dispatched_at: new Date().toISOString() };
     updateErrorByTable.system_update_runs = { message: "conexão caiu" };
     const { POST } = await import("./route");
-    const res = await POST(req({ kind: "run_result", run_id: RUN_ID, status: "success", log_tail: "ok" }));
+    const res = await POST(
+      req({ kind: "run_result", run_id: RUN_ID, status: "success", log_tail: "ok" }),
+    );
     expect(res.status).toBe(500);
     // Pior caso vira "pedido pendente com run ainda dispatched" (detectável e
     // auto-curável no próximo heartbeat) — nunca um run órfão invisível.
@@ -323,7 +388,9 @@ describe("POST /api/v1/system/agent", () => {
   it("recusa reescrever um run que já terminou", async () => {
     runRow = { id: RUN_ID, status: "success", dispatched_at: new Date().toISOString() };
     const { POST } = await import("./route");
-    const res = await POST(req({ kind: "run_result", run_id: RUN_ID, status: "failed", log_tail: "" }));
+    const res = await POST(
+      req({ kind: "run_result", run_id: RUN_ID, status: "failed", log_tail: "" }),
+    );
     expect(res.status).toBe(409);
     expect(updates).toEqual([]);
   });
@@ -332,4 +399,230 @@ describe("POST /api/v1/system/agent", () => {
     const { POST } = await import("./route");
     expect((await POST(req({ kind: "sei-la" }))).status).toBe(422);
   });
+});
+
+/**
+ * #2757 (ajuste 3): a volta que o AGENTE fez sozinho tem de chegar ao painel.
+ *
+ * Até aqui ela só existia no `.update-agent.log` da VPS: quem abria a tela via
+ * a versão mudar e não tinha como saber o que houve. O agente manda o fato por
+ * esta rota — o mesmo canal do heartbeat e do run_result — e a rota grava uma
+ * linha de run JÁ FECHADA (`failed_rolled_back`), com as duas versões, a hora e
+ * o motivo. `requested_by` fica NULO de propósito: é a marca de "ninguém pediu
+ * isto" que a tela usa para dizer "voltou sozinho".
+ *
+ * #3271 acrescenta o DESFECHO: o mesmo recado passa a dizer se a volta
+ * TERMINOU (`ok`), e a rota escreve `failed` quando não terminou. Sem isso a
+ * tela tratava os dois desfechos como um só — afirmava "é a que está no ar
+ * agora" e escondia a saída de um clique justamente na volta que falhou.
+ */
+describe("POST /api/v1/system/agent — a volta automática (#2757)", () => {
+  /** O recado do agente: o desfecho vai no CAMPO `ok`, medido do `update.sh`. */
+  const VOLTA = {
+    kind: "rollback",
+    returned_to: "1.4.2",
+    failed_version: "1.5.0",
+    ok: true,
+    reason: "o site não respondeu em 2 healthchecks seguidos logo depois da atualização",
+  };
+
+  it("⭐ grava a volta como run fechado: para onde voltou, de onde, a hora e o motivo", async () => {
+    const { POST } = await import("./route");
+    const res = await POST(req(VOLTA));
+
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      table: "system_update_runs",
+      status: "failed_rolled_back",
+      // `from_version` = onde o sistema ESTÁ (a volta); `to_version` = a que falhou.
+      from_version: "1.4.2",
+      to_version: "1.5.0",
+      log_tail: VOLTA.reason,
+      // A marca de "ninguém pediu": sem ela a tela diria "Voltei", e não "voltou sozinho".
+      requested_by: null,
+    });
+    // A hora é do servidor (a mesma máquina do host) e sai nos DOIS carimbos:
+    // `dispatched_at` põe esta linha como a mais recente no que a tela lê, e
+    // `finished_at` é a hora que o aviso mostra.
+    // `noUncheckedIndexedAccess`: `inserts[0]` é `Linha | undefined` para o TS. O guarda
+    // transforma o `toHaveLength(1)` acima em estreitamento de tipo de verdade (e não em
+    // `as any`): se a rota não gravou nada, o teste falha aqui, com nome.
+    const linhaDaVolta = inserts[0];
+    if (!linhaDaVolta) throw new Error("a rota não gravou a linha do run da volta automática");
+    expect(linhaDaVolta.finished_at).toBeTruthy();
+    expect(linhaDaVolta.dispatched_at).toEqual(linhaDaVolta.finished_at);
+    // Nada de fechar run alheio nem de sujar o estado da versão.
+    expect(updates).toEqual([]);
+  });
+
+  it("audita a volta como fim de atualização, dizendo que foi automática", async () => {
+    const { audit } = await import("@/lib/audit");
+    const { POST } = await import("./route");
+    await POST(req(VOLTA));
+
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "system.update_finished",
+        metadata: expect.objectContaining({
+          volta_automatica: true,
+          de: "1.5.0",
+          para: "1.4.2",
+        }),
+      }),
+    );
+  });
+
+  it("⭐ volta que NÃO terminou (ok:false) fecha como `failed` — e a auditoria conta o mesmo desfecho", async () => {
+    // O desfecho é lido do CAMPO, e não do texto do `reason`: o motivo termina
+    // com o código da volta ("… código 7"), mas parsear frase não é contrato —
+    // e foi justamente por o código existir só no texto que a tela tratava
+    // igual a volta que terminou e a que falhou (#3271). `failed` é o
+    // vocabulário que ela já sabe ler como "não sei em que versão o sistema
+    // está": é ele que a faz parar de afirmar "é a que está no ar agora" e
+    // manter o botão de voltar.
+    const { audit } = await import("@/lib/audit");
+    const { POST } = await import("./route");
+    const res = await POST(
+      req({ ...VOLTA, ok: false, reason: `${VOLTA.reason} (a volta terminou com código 7)` }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      status: "failed",
+      // As duas versões continuam nomeando o MESMO fato: de onde se tentou
+      // sair e para onde a volta foi.
+      from_version: "1.4.2",
+      to_version: "1.5.0",
+      requested_by: null,
+    });
+    expect(inserts[0]?.status).not.toBe("failed_rolled_back");
+    // A auditoria não pode contar a história antiga enquanto a linha do run
+    // conta a nova.
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ status: "failed", volta_automatica: true }),
+      }),
+    );
+  });
+
+  it("volta de agente ANTERIOR a este contrato (sem `ok`) fecha como `failed`: sem prova de que terminou, a tela não afirma", async () => {
+    // O container do app atualiza antes do script do host — o mesmo bootstrap
+    // que faz o `compare_failed` ser opcional. Então o recado velho chega à
+    // rota nova. Ausente é "ninguém mediu o desfecho", e o lado conservador é
+    // NÃO afirmar que a versão anterior está no ar: afirmar sem prova é o
+    // defeito medido na issue, e a leitura pessimista erra para o lado em que a
+    // tela oferece a saída (o botão de voltar), nunca para o de tranquilizar.
+    const recadoAntigo = {
+      kind: "rollback",
+      returned_to: "1.4.2",
+      failed_version: "1.5.0",
+      reason: "o site não respondeu em 2 healthchecks seguidos logo depois da atualização",
+    };
+    const { POST } = await import("./route");
+    const res = await POST(req(recadoAntigo));
+
+    expect(res.status).toBe(200);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({ status: "failed" });
+  });
+
+  it("recusa volta sem a versão de origem (o aviso diria 'voltou para a undefined')", async () => {
+    const { POST } = await import("./route");
+    const res = await POST(req({ ...VOLTA, returned_to: "" }));
+    expect(res.status).toBe(422);
+    expect(inserts).toEqual([]);
+  });
+
+  it("quando o banco recusa a linha → 500, e o agente fica sabendo (nada de 200 otimista)", async () => {
+    insertError = { message: "conexão caiu" };
+    const { POST } = await import("./route");
+    const res = await POST(req(VOLTA));
+    expect(res.status).toBe(500);
+  });
+});
+
+describe("runtime confirmation on the authenticated heartbeat", () => {
+  it("persists bounded observations and clears evidence on an old heartbeat", async () => {
+    const { POST } = await import("./route");
+    const snapshot = confirmedRuntime();
+    expect((await POST(req({ ...HEARTBEAT, runtime_confirmation: snapshot }))).status).toBe(200);
+    expect(lastUpdate("system_version")?.runtime_confirmation).toEqual({
+      ...snapshot,
+      supports_forced_update: false,
+    });
+    expect((await POST(req(HEARTBEAT))).status).toBe(200);
+    expect(lastUpdate("system_version")?.runtime_confirmation).toBeNull();
+  });
+  it("does not store malformed observations or accept them without the host secret", async () => {
+    const { POST } = await import("./route");
+    expect((await POST(req({ ...HEARTBEAT, runtime_confirmation: { schema: 1 } }))).status).toBe(
+      422,
+    );
+    expect(
+      (await POST(req({ ...HEARTBEAT, runtime_confirmation: confirmedRuntime() }, "wrong"))).status,
+    ).toBe(401);
+    expect(updates).toEqual([]);
+  });
+});
+
+describe("força limitada ao código do agente em execução", () => {
+  it("entrega a intenção booleana persistida no run", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", to_version: "v1.0.0", force_requested: true };
+    const { POST } = await import("./route");
+    const body = await (
+      await POST(
+        req({
+          ...HEARTBEAT,
+          supports_forced_update: true,
+          runtime_confirmation: confirmedRuntime(),
+        }),
+      )
+    ).json();
+    expect(body.data.force_requested).toBe(true);
+  });
+
+  it("pedido antigo sem booleano mantém false", async () => {
+    runRow = { id: RUN_ID, status: "dispatched", to_version: "v1.0.0" };
+    const { POST } = await import("./route");
+    const body = await (await POST(req(HEARTBEAT))).json();
+    expect(body.data.force_requested).toBe(false);
+  });
+
+  it("o helper novo não concede capacidade ao agente antigo que não a anuncia", async () => {
+    const { confirmedRuntime } = await import("@/tests/helpers/runtime-confirmation");
+    const { POST } = await import("./route");
+    const response = await POST(
+      req({
+        ...HEARTBEAT,
+        runtime_confirmation: { ...confirmedRuntime(), supports_forced_update: true },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(lastUpdate("system_version")?.runtime_confirmation).toMatchObject({
+      supports_forced_update: false,
+    });
+  });
+
+  it("o anúncio explícito do próprio agente chega à observação persistida", async () => {
+    const { confirmedRuntime } = await import("@/tests/helpers/runtime-confirmation");
+    const { POST } = await import("./route");
+    const response = await POST(
+      req({ ...HEARTBEAT, supports_forced_update: true, runtime_confirmation: confirmedRuntime() }),
+    );
+    expect(response.status).toBe(200);
+    expect(lastUpdate("system_version")?.runtime_confirmation).toMatchObject({
+      supports_forced_update: true,
+    });
+  });
+});
+
+it("não entrega força já enfileirada ao agente que perdeu a capacidade", async () => {
+  runRow = { id: RUN_ID, status: "dispatched", to_version: "v1.0.0", force_requested: true };
+  const { POST } = await import("./route");
+  const response = await POST(req(HEARTBEAT));
+  expect(response.status).toBe(200);
+  expect((await response.json()).data.update_requested).toBe(false);
+  expect(lastUpdate("system_update_runs")).toMatchObject({ status: "failed" });
 });

@@ -1,0 +1,207 @@
+{
+  "id": "provedores",
+  "titulo": "Provedores",
+  "tela": "/app/ai/providers",
+  "resumo": "Onde você vê qual inteligência artificial atende cada parte do sistema, troca o modelo de uma parte e liga o Jev, a IA das decisões rápidas.",
+  "licoes": [
+    {
+      "id": "provedores-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Provedores",
+      "objetivo": "Achar a tela, entender o que é o modelo padrão e como a tela agrupa as partes do sistema que usam IA.",
+      "papel": "manager",
+      "busca": [
+        "provedor de ia",
+        "qual ia o sistema usa",
+        "trocar o modelo",
+        "modelo padrão",
+        "claude ou gpt",
+        "onde configuro a inteligência artificial"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Provedores não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Montar o agente\" está o cartão \"Provedores\". O caminho completo é: Agente de IA › Ver tudo em IA › Provedores.",
+          "dica": "Só gerente ou administrador vê este cartão. Para os outros papéis, o endereço da tela leva à página \"403 — Sem permissão\".",
+          "destaques": [
+            { "alvo": { "role": "link", "nome": "Ver tudo em IA", "exato": true }, "rotulo": "Ver tudo em IA", "tipo": "numero" },
+            { "alvo": { "role": "link", "nome": "^Provedores ", "regex": true }, "rotulo": "Abrir os Provedores", "tipo": "caixa" }
+          ],
+          "clicar": { "role": "link", "nome": "^Provedores ", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve a tela",
+          "rota": "/app/ai/providers",
+          "texto": "O sistema usa inteligência artificial em vários lugares: para responder o cliente, para perceber se ele está irritado, para resumir uma conversa longa e outros. Cada empresa de IA é um provedor, como a Anthropic (Claude) ou a OpenAI (GPT). Esta tela mostra qual provedor e qual modelo atende cada lugar, e deixa trocar.",
+          "dica": "Se aparecer um aviso amarelo no alto, a empresa ainda não cadastrou a chave da própria IA. O link \"Cadastrar uma chave\" leva à tela Credenciais.",
+          "antes": [{ "acao": "aguardar", "alvo": { "testid": "cartao-do-padrao" } }],
+          "destaques": [
+            { "alvo": { "role": "heading", "nome": "Provedores de IA", "exato": true }, "rotulo": "Provedores de IA", "tipo": "seta" },
+            { "alvo": { "testid": "cartao-do-padrao" }, "rotulo": "O modelo padrão", "tipo": "caixa" }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O modelo padrão",
+          "texto": "O \"Modelo padrão\" vale para toda parte que ninguém configurou à parte. A frase do cartão diz quantas partes seguem o padrão hoje. Em \"Provedor\" fica a empresa de IA, e em \"Modelo\", qual modelo dela. Trocar aqui muda todas essas partes de uma vez.",
+          "dica": "Só o administrador vê o botão \"Salvar padrão\". O gerente vê o que está em uso, mas não troca.",
+          "destaques": [
+            { "alvo": { "testid": "padrao-provider" }, "rotulo": "Provedor", "tipo": "numero" },
+            { "alvo": { "testid": "padrao-modelo" }, "rotulo": "Modelo", "tipo": "numero" }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "As partes, agrupadas pelo que fazem",
+          "texto": "Mais abaixo, as partes que usam IA vêm em grupos, pelo que cada uma faz: \"Atender o cliente\", \"Entender a conversa\", \"Proteger a operação\" e outros. Cada grupo diz, em \"Usando:\", quais modelos atendem as partes dele. Se uma parte precisa de atenção, aparece uma frase em amarelo. \"Configuração avançada\" abre o grupo para ver cada parte sozinha.",
+          "antes": [
+            { "acao": "rolar", "alvo": { "testid": "papel-atender" } },
+            { "acao": "esperar", "ms": 500 }
+          ],
+          "destaques": [
+            { "alvo": { "testid": "papel-atender" }, "rotulo": "Um grupo", "tipo": "caixa" },
+            { "alvo": { "testid": "avancado-atender" }, "rotulo": "Ver parte por parte", "tipo": "seta" }
+          ],
+          "clicar": { "testid": "avancado-atender" }
+        }
+      ]
+    },
+    {
+      "id": "provedores-trocar-a-ia-de-uma-parte",
+      "titulo": "Trocar a IA de uma parte do sistema",
+      "objetivo": "Abrir uma parte, entender o que acontece se ela falhar e escolher outro provedor, modelo e chave só para ela.",
+      "papel": "admin",
+      "busca": [
+        "modelo diferente para uma tarefa",
+        "trocar o modelo de uma parte",
+        "configuração avançada da ia",
+        "se falhar",
+        "modelo mais barato"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir uma parte",
+          "rota": "/app/ai/providers",
+          "texto": "No grupo \"Entender a conversa\", clique em \"Configuração avançada\". Cada parte vira um cartão. Este é \"Medir o clima da conversa\", a parte que percebe se o cliente está satisfeito ou irritado. À direita ficam o modelo que atende hoje e de onde veio essa escolha.",
+          "antes": [
+            { "acao": "aguardar", "alvo": { "testid": "papel-entender" } },
+            { "acao": "rolar", "alvo": { "testid": "avancado-entender" } },
+            { "acao": "click", "alvo": { "testid": "avancado-entender" } },
+            { "acao": "aguardar", "alvo": { "testid": "ponto-sentiment_classify" } },
+            { "acao": "rolar", "alvo": { "testid": "ponto-sentiment_classify" } }
+          ],
+          "destaques": [
+            { "alvo": { "testid": "ponto-sentiment_classify" }, "rotulo": "Medir o clima da conversa", "tipo": "caixa" },
+            { "alvo": { "testid": "origem-sentiment_classify" }, "rotulo": "De onde vem a escolha", "tipo": "seta" }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que acontece se falhar",
+          "texto": "A faixa cinza \"Se falhar:\" conta o que você vai notar no dia a dia se esta parte parar. Aqui: cliente irritado deixa de ser passado para uma pessoa. É o que ajuda a decidir se vale pôr um modelo mais forte ou se um mais barato dá conta.",
+          "destaques": [
+            { "alvo": { "texto": "Se falhar:", "exato": true, "dentro": { "testid": "ponto-sentiment_classify" } }, "rotulo": "Se falhar", "tipo": "seta" }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher provedor, modelo e chave",
+          "texto": "Em \"Provedor\", escolha a empresa de IA. Em \"Modelo\", o modelo dela. Em \"Chave\", qual das chaves cadastradas em Credenciais paga esta parte: em branco, vale a chave da instalação. Depois, clique em \"Salvar\". A troca vale só para esta parte; as outras continuam como estavam.",
+          "dica": "Se a lista de modelos daquele provedor ainda não foi baixada, \"Modelo\" vira um campo de texto: escreva o nome do modelo como o provedor o chama.",
+          "destaques": [
+            { "alvo": { "testid": "provider-sentiment_classify" }, "rotulo": "Provedor", "tipo": "numero" },
+            { "alvo": { "testid": "modelo-sentiment_classify" }, "rotulo": "Modelo", "tipo": "numero" },
+            { "alvo": { "testid": "chave-sentiment_classify" }, "rotulo": "Chave", "tipo": "numero" },
+            { "alvo": { "testid": "salvar-sentiment_classify" }, "rotulo": "Salvar", "tipo": "seta" }
+          ],
+          "clicar": { "testid": "salvar-sentiment_classify" }
+        },
+        {
+          "id": "p4",
+          "titulo": "A resposta ao cliente vem do agente",
+          "texto": "No grupo \"Atender o cliente\", a parte \"Responder o cliente\" não tem os campos de troca. Ela usa o modelo escolhido no próprio agente, na versão publicada dele. Para trocar, clique em \"Configurar no agente\".",
+          "antes": [
+            { "acao": "rolar", "alvo": { "testid": "avancado-atender" } },
+            { "acao": "click", "alvo": { "testid": "avancado-atender" } },
+            { "acao": "aguardar", "alvo": { "testid": "ponto-agent_turn" } },
+            { "acao": "rolar", "alvo": { "testid": "ponto-agent_turn" } }
+          ],
+          "destaques": [
+            { "alvo": { "testid": "ponto-agent_turn" }, "rotulo": "Responder o cliente", "tipo": "caixa" },
+            { "alvo": { "role": "link", "nome": "Configurar no agente", "exato": true, "dentro": { "testid": "ponto-agent_turn" } }, "rotulo": "Trocar no agente", "tipo": "seta" }
+          ],
+          "clicar": { "role": "link", "nome": "Configurar no agente", "exato": true, "dentro": { "testid": "ponto-agent_turn" } }
+        }
+      ]
+    },
+    {
+      "id": "provedores-ligar-o-jev",
+      "titulo": "Ligar o Jev, a IA das decisões rápidas",
+      "objetivo": "Entender o que o Jev faz, de onde pegar a chave dele e como colá-la no sistema.",
+      "papel": "admin",
+      "busca": [
+        "jev",
+        "typesafe",
+        "cliente irritado",
+        "decisões rápidas",
+        "chave do jev",
+        "ligar o jev"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O cartão do Jev",
+          "rota": "/app/ai/providers",
+          "texto": "O Jev não conversa com o cliente. Ele só toma decisões pequenas e rápidas, como perceber se o cliente está irritado, geralmente em menos de um segundo, e trabalha junto com a sua IA principal. O selo no canto diz a situação: aqui, \"Desligado\". O aviso amarelo vale para clínicas: as mensagens que o Jev lê podem ter dado de saúde, que a LGPD trata como sensível.",
+          "antes": [
+            { "acao": "aguardar", "alvo": { "testid": "cartao-do-jev" } },
+            { "acao": "rolar", "alvo": { "testid": "cartao-do-jev" } }
+          ],
+          "destaques": [
+            { "alvo": { "texto": "Desligado", "exato": true, "dentro": { "testid": "cartao-do-jev" } }, "rotulo": "Situação", "tipo": "seta" },
+            { "alvo": { "testid": "jev-aviso-area-saude" }, "rotulo": "Dado de saúde", "tipo": "caixa" }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "De onde o Jev responde",
+          "texto": "Em \"De onde o Jev responde\", escolha o caminho. \"TypeSafe AI (chave própria)\" usa uma conta só para o Jev, na TypeSafe. \"OpenRouter\" reaproveita a chave da OpenRouter que a empresa já usa na conversa, sem segunda conta. A frase embaixo explica o caminho escolhido.",
+          "destaques": [
+            { "alvo": { "rotulo": "De onde o Jev responde", "exato": true }, "rotulo": "Escolher o caminho", "tipo": "caixa" },
+            { "alvo": { "testid": "jev-origem-typesafe" }, "rotulo": "O que isso quer dizer", "tipo": "seta" }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Pegar a chave",
+          "texto": "O Jev é pago à parte, numa conta da TypeSafe AI: cada mensagem medida custa uma fração de centavo de dólar, cobrada lá. Clique em \"Pegar a chave na TypeSafe\", crie a conta, ponha crédito e copie a chave. Ela começa com \"apikey_\".",
+          "destaques": [
+            { "alvo": { "role": "link", "nome": "Pegar a chave na TypeSafe", "exato": true }, "rotulo": "Abrir a TypeSafe", "tipo": "seta" },
+            { "alvo": { "testid": "jev-como-pegar-a-chave" }, "rotulo": "Como funciona a cobrança", "tipo": "caixa" }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Colar a chave",
+          "texto": "De volta aqui, clique em \"Colar a chave\". Abre o mesmo formulário da tela Credenciais, já com \"Jev (TypeSafe AI)\" escolhido em \"Provedor\". Dê um nome e cole a chave em \"Chave\"; ela aparece como bolinhas. Clique em \"Salvar e validar\": o sistema guarda a chave e confere com a TypeSafe se ela vale.",
+          "dica": "Com a chave conferida, aparece \"Ligar o Jev\". Ele começa só observando: a sua IA de sempre continua decidindo, e o cartão mostra quantas vezes os dois concordaram antes de você deixar o Jev decidir.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Colar a chave", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "dialog", "nome": "Adicionar credencial", "exato": true } },
+            { "acao": "fill", "alvo": { "rotulo": "Nome", "exato": true, "dentro": { "role": "dialog", "nome": "Adicionar credencial", "exato": true } }, "valor": "Jev da clínica" },
+            { "acao": "fill", "alvo": { "rotulo": "Chave", "exato": true, "dentro": { "role": "dialog", "nome": "Adicionar credencial", "exato": true } }, "valor": "apikey_exemplo-do-curso-nao-vale-0000" }
+          ],
+          "destaques": [
+            { "alvo": { "rotulo": "Provedor", "exato": true, "dentro": { "role": "dialog", "nome": "Adicionar credencial", "exato": true } }, "rotulo": "Jev já escolhido", "tipo": "numero" },
+            { "alvo": { "rotulo": "Chave", "exato": true, "dentro": { "role": "dialog", "nome": "Adicionar credencial", "exato": true } }, "rotulo": "Cole a chave", "tipo": "numero" },
+            { "alvo": { "role": "button", "nome": "Salvar e validar", "exato": true }, "rotulo": "Salvar e conferir", "tipo": "seta" }
+          ],
+          "clicar": { "role": "button", "nome": "Salvar e validar", "exato": true }
+        }
+      ]
+    }
+  ]
+}

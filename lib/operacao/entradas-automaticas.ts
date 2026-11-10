@@ -45,6 +45,8 @@ export interface FonteVisivel {
   authorize_ai_on_capture: boolean;
   /** Opção do #2316 — o que a tela usa para pintar o switch da fonte. */
   update_existing_lead_on_capture: boolean;
+  /** Opção do #3101 — reusar o card aberto do contato no funil da fonte. */
+  reuse_open_lead_on_capture: boolean;
   kind: string;
   path_token: string;
   default_pipeline_id: string;
@@ -70,7 +72,8 @@ export interface FonteVisivel {
 const COLUNAS =
   "id, organization_id, name, is_active, kind, path_token, default_pipeline_id, default_stage_id, " +
   "redirect_to, field_map, form_fields, last_received_at, secret_encrypted, created_at, updated_at, " +
-  "last_change_actor_kind, last_change_at, authorize_ai_on_capture, update_existing_lead_on_capture";
+  "last_change_actor_kind, last_change_at, authorize_ai_on_capture, update_existing_lead_on_capture, " +
+  "reuse_open_lead_on_capture";
 
 function semSegredo(linha: Record<string, unknown>): FonteVisivel {
   const { secret_encrypted, ...resto } = linha;

@@ -1,0 +1,431 @@
+{
+  "id": "propostas",
+  "titulo": "Propostas",
+  "tela": "/app/settings/tenant/proposals",
+  "resumo": "Onde você liga as propostas comerciais da sua empresa e define o prazo de validade, as condições de pagamento e o aviso que a equipe recebe quando a IA prepara uma proposta.",
+  "licoes": [
+    {
+      "id": "ligar-as-propostas",
+      "titulo": "Ligar as propostas da clínica",
+      "objetivo": "Encontrar a tela de Propostas em Configurações e ligar as propostas comerciais para a sua empresa.",
+      "papel": "admin",
+      "busca": [
+        "ligar propostas",
+        "ativar proposta comercial",
+        "orçamento para cliente",
+        "onde fica propostas",
+        "configurar propostas",
+        "mandar orçamento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Propostas mora em Configurações",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" está o cartão \"Propostas\". É ali que você decide se a sua empresa usa propostas comerciais: orçamentos que você monta, revisa e manda para o cliente aceitar.",
+          "dica": "Só gerente ou administrador vê este cartão. Se ele não aparece, peça a quem administra o servidor para ligar \"Propostas comerciais\" em Admin › Sistema.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Propostas Configure",
+                "regex": true
+              },
+              "rotulo": "Configurar propostas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Propostas Configure",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A chave que liga tudo",
+          "texto": "A tela começa com a chave \"Ligar propostas comerciais para esta organização\". Ela vem desligada. Enquanto estiver assim, o cartão \"Propostas\" não aparece em \"Ver tudo em CRM\" e ninguém da equipe consegue criar uma proposta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^Propostas Configure",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar propostas comerciais para esta organização",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar propostas comerciais para esta organização",
+                "exato": true
+              },
+              "rotulo": "Desligada",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "switch",
+            "nome": "Ligar propostas comerciais para esta organização",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Ligar e salvar",
+          "texto": "Clique na chave para ligá-la. Ela muda de cor, mas nada foi gravado ainda: a mudança só vale depois que você clica em \"Salvar\", no fim da tela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar propostas comerciais para esta organização",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar propostas comerciais para esta organização",
+                "exato": true
+              },
+              "rotulo": "Ligada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Grava a mudança",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Propostas ligadas",
+          "texto": "Depois de salvar, aparece no alto o link \"Modelos de proposta\". Ele é o sinal de que a mudança foi gravada, porque a tela não mostra mensagem de confirmação. É a mesma tela do cartão \"Modelos de proposta\" em Configurações: lá você escolhe e personaliza os modelos que dão a cara das suas propostas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "link",
+                "nome": "Modelos de proposta",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Modelos de proposta",
+                "exato": true
+              },
+              "rotulo": "Aparece depois de salvar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Onde ficam as propostas no dia a dia",
+          "texto": "Com as propostas ligadas, o cartão \"Propostas\" passa a aparecer em \"Ver tudo em CRM\", na parte \"Fechar a venda\". É por ele que você e a equipe criam, revisam e enviam as propostas. O envio vai pelo WhatsApp, na conversa que o paciente já tem com a clínica, então é preciso ter um número de WhatsApp conectado.",
+          "rota": "/app/crm",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Propostas Rascunhe",
+                "regex": true
+              },
+              "rotulo": "Suas propostas",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "validade-e-condicoes",
+      "titulo": "Validade e condições padrão",
+      "objetivo": "Definir a validade que a IA usa ao rascunhar propostas e o texto de condições de pagamento que entra nas propostas sem você digitar de novo.",
+      "papel": "admin",
+      "busca": [
+        "validade da proposta",
+        "prazo do orçamento",
+        "condições de pagamento padrão",
+        "parcelamento na proposta",
+        "texto padrão da proposta",
+        "quantos dias vale o orçamento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os dois campos de padrão",
+          "texto": "Logo abaixo da chave ficam dois campos que valem para todas as propostas da empresa: \"Validade padrão (dias)\" e \"Condições padrão\". A validade vem com 15 dias e as condições vêm em branco.",
+          "rota": "/app/settings/tenant/proposals",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar propostas comerciais para esta organização",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "link",
+                "nome": "Modelos de proposta",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Validade padrão (dias)",
+                "exato": true
+              },
+              "rotulo": "Prazo da proposta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Condições padrão",
+                "exato": true
+              },
+              "rotulo": "Texto de condições",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Quantos dias a proposta vale",
+          "texto": "Em \"Validade padrão (dias)\", digite por quantos dias o paciente pode aceitar a proposta, de 1 a 365. Aqui a clínica usa 10 dias. Esse número vale para as propostas que a IA rascunha. Quando você cria uma proposta à mão, confira o campo \"Validade da proposta\": lá a data já vem com 15 dias.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Validade padrão (dias)",
+                "exato": true
+              },
+              "valor": "10"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Validade padrão (dias)",
+                "exato": true
+              },
+              "rotulo": "10 dias",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "As condições que se repetem",
+          "texto": "Em \"Condições padrão\", escreva o que vale para quase todo orçamento: formas de pagamento, desconto à vista, prazo dos pacotes. Esse texto entra nas propostas que a IA rascunha e também nas que você cria sem preencher o campo \"Condições de pagamento / Observações\".",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Condições padrão",
+                "exato": true
+              },
+              "valor": "Pagamento em até 3x sem juros no cartão ou 5% de desconto no Pix.\nPacotes de fisioterapia valem por 90 dias a partir da primeira sessão.\nRemarcações com até 24 horas de antecedência, sem custo."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Condições padrão",
+                "exato": true
+              },
+              "rotulo": "Condições da clínica",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Salvar",
+          "texto": "Clique em \"Salvar\". Enquanto grava, o botão mostra \"Salvando…\" e depois volta a \"Salvar\", sem mensagem de confirmação. Se a validade estiver fora de 1 a 365 dias, nada é gravado e aparece o aviso \"Campos inválidos.\". As propostas que já existem não mudam: os novos padrões valem para as próximas.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Grava os padrões",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "aviso-da-ia",
+      "titulo": "Aviso quando a IA prepara uma proposta",
+      "objetivo": "Entender o aviso no WhatsApp da equipe quando a IA rascunha uma proposta, e saber desligá-lo.",
+      "papel": "admin",
+      "busca": [
+        "aviso de proposta no whatsapp",
+        "ia fez proposta",
+        "notificação de orçamento",
+        "desligar aviso da proposta",
+        "rascunho da ia",
+        "revisar proposta da ia"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O aviso para a equipe",
+          "texto": "A última chave é \"Avisar no WhatsApp da equipe quando a IA rascunhar uma proposta\". Ela vem ligada. Quando a IA prepara uma proposta, a equipe recebe no WhatsApp o título, o primeiro nome do paciente e um link para revisar e enviar. O paciente não recebe nada: a proposta só vai para ele depois que alguém da equipe revisar.",
+          "rota": "/app/settings/tenant/proposals",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ligar propostas comerciais para esta organização",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "link",
+                "nome": "Modelos de proposta",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Avisar no WhatsApp da equipe quando a IA rascunhar uma proposta",
+                "exato": true
+              },
+              "rotulo": "Aviso ligado",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Para onde o aviso vai",
+          "texto": "O aviso usa o número escolhido na tela \"Aviso no WhatsApp\", em \"Ver tudo em IA\" (não é o \"Aviso de agendamento\" de Configurações, e só o administrador abre essa tela). Se esse aviso não estiver configurado e ligado lá, ou se o número estiver desconectado, nada é enviado, mesmo com esta chave ligada.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Usa o número configurado em Aviso no WhatsApp"
+              },
+              "rotulo": "Depende do Aviso no WhatsApp",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Desligar o aviso",
+          "texto": "Prefere conferir as propostas da IA só pela tela? Clique na chave para desligá-la e depois em \"Salvar\". As propostas continuam sendo rascunhadas e continuam aparecendo em \"Alertas\" como prontas para revisão; só a mensagem no WhatsApp da equipe deixa de ser enviada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Avisar no WhatsApp da equipe quando a IA rascunhar uma proposta",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Avisar no WhatsApp da equipe quando a IA rascunhar uma proposta",
+                "exato": true
+              },
+              "rotulo": "Desligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Grava a mudança",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true
+          }
+        }
+      ]
+    }
+  ]
+}

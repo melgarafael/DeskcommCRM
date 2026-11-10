@@ -1,3 +1,5 @@
+import { semConteudoVisivel } from "./conteudo-visivel";
+
 /**
  * Quebra o texto da resposta em "bolhas" curtas (Onda 4). Puro. Usado no send
  * do agente quando split_messages está on; o pacing anti-ban espaça cada bolha.
@@ -21,18 +23,20 @@
  */
 export function splitIntoBubbles(text: string, maxChars: number): string[] {
   const trimmed = (text ?? "").trim();
-  if (trimmed === "") return [];
+  // Vazio, ou só com caractere invisível (spec 28): não há bolha a mandar.
+  if (semConteudoVisivel(trimmed)) return [];
 
   const bubbles: string[] = [];
   for (const para of trimmed.split(/\n{2,}/)) {
     const p = para.trim();
-    if (p === "") continue;
+    if (p === "" || semConteudoVisivel(p)) continue;
     if (p.length <= maxChars) {
       bubbles.push(p);
       continue;
     }
     // Parágrafo que estoura: sentenças (palavra como último recurso), juntando
-    // as vizinhas DESTE parágrafo enquanto couberem.
+    // as vizinhas DESTE parágrafo enquanto couberem. Pedaço só invisível não
+    // vira unidade: sozinho sairia como bolha em branco.
     const units: string[] = [];
     for (const sentence of splitSentences(p)) {
       if (sentence.length <= maxChars) units.push(sentence);
@@ -40,6 +44,7 @@ export function splitIntoBubbles(text: string, maxChars: number): string[] {
     }
     let cur = "";
     for (const u of units) {
+      if (semConteudoVisivel(u)) continue;
       const joined = cur === "" ? u : `${cur} ${u}`;
       if (joined.length <= maxChars) {
         cur = joined;

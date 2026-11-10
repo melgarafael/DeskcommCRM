@@ -40,23 +40,31 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { canonicalTagsDoFunil } from "@/lib/contacts/etiquetas";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { ROLE_RANK, roleAtLeast } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
+import { JuntarComOutraFicha } from "@/components/contacts/JuntarComOutraFicha";
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
+import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
 import { DialButton } from "@/components/voice/DialButton";
+import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
+import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
+import { linksParaExibir } from "@/lib/leads/links-de-contato";
 
 interface Props {
   contactId: string;
   /** Painéis de módulo de dados que declaram referência a contato. Resolvido no servidor. */
   paineisDeModulo?: { modulo: string; objeto: string }[];
+  /** Módulo opcional `mcp_por_agente` ligado (doc 252). Ausente = desligado. */
+  acessosMcp?: boolean;
 }
 
 /**
@@ -77,7 +85,7 @@ function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null
   );
 }
 
-export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) {
+export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMcp = false }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -93,6 +101,10 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   const canonicalTags = canonicalTagsDoFunil(pipelineQuery.data?.pipeline.settings ?? null);
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
+  // Juntar com outra ficha (spec 31, PR A): gestor, mesmo gate da fusão. Fica
+  // antes dos early returns pelo mesmo motivo dos hooks acima.
+  const podeJuntar = roleAtLeast(activeOrg?.role, "manager");
+  const [juntarOpen, setJuntarOpen] = useState(false);
   // Desfazer o descadastro é o override da regra W-02 — só admin, e auditado.
   // O hook fica ANTES dos early returns: chamá-lo depois mudaria a ordem dos
   // hooks entre renderizações e o React reprova.
@@ -142,6 +154,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   }
 
   const contact = q.data.data;
+  const linksDoContato = linksParaExibir(contact.custom_fields);
   const isAdmin =
     (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
   // Gerente e dono marcam/desmarcam pessoal (spec 21, decisão 1, D3) — e este
@@ -207,6 +220,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
             {/* Selo lido da COLUNA, nunca da etiqueta (critério 5): editar
                 etiquetas não apaga o selo — mesma regra do "Bloqueado" acima. */}
             {contact.is_personal && <Badge variant="secondary">{t("Pessoal")}</Badge>}
+            {/* O TIPO DO CONTATO (issue 3005, fatia 1): selo lido da COLUNA
+                (`contacts.contact_type`), mesma regra dos de cima — a etiqueta
+                `fornecedor` é de trabalho e removível; o selo não. Só o
+                fornecedor aparece: cliente é o padrão da coluna. */}
+            {contact.contact_type === "fornecedor" && (
+              <Badge variant="secondary">{t("Fornecedor")}</Badge>
+            )}
             {/* A marca PERMANENTE (issue 2379): lida da COLUNA, mesma régua do
                 "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
                 continua a verdade mesmo quando a conversa já voltou ao automático. */}
@@ -350,6 +370,16 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
               </Button>
             )}
             <DialButton contactId={contactId} hasPhone={!!contact.phone_number} />
+            {podeJuntar && (
+              <Button
+                variant="outline"
+                onClick={() => setJuntarOpen(true)}
+                className="shrink-0"
+                data-testid="juntar-com-outra-ficha"
+              >
+                <span>{t("Juntar com outra ficha")}</span>
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
               <PencilSimple size={16} weight="bold" aria-hidden />
               <span>{t("Editar")}</span>
@@ -404,12 +434,23 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 <dt className="text-xs uppercase text-muted-foreground">Email</dt>
                 <dd className="mt-1">{contact.email ?? "—"}</dd>
               </div>
-              <div>
-                <dt className="text-xs uppercase text-muted-foreground">{t("Telefone")}</dt>
-                <dd className="mt-1">
-                  {contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}
-                </dd>
-              </div>
+              {/*
+                Os telefones da ficha (Spec 31). Sem extra, a linha segue como hoje
+                ("Telefone", com o tipo ao lado); com extra, "Telefones" lista o
+                principal e os extras. Quem tem papel `agent` ou acima edita aqui.
+              */}
+              <TelefonesDaFicha
+                contato={contact}
+                podeEditar={Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent)}
+              />
+              {linksDoContato.length > 0 && (
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">{t("Links")}</dt>
+                  <dd className="mt-1">
+                    <ListaDeLinks links={linksDoContato} />
+                  </dd>
+                </div>
+              )}
               {/*
                 A data gravada pelo "Editar contato" (e pela proposta aprovada),
                 enxergada aqui — é ela que o cron `contact-birthdays` lê para
@@ -426,6 +467,16 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                   {contact.birthdate ? contact.birthdate.split("-").reverse().join("/") : "—"}
                 </dd>
               </div>
+              {(contact.zip_code || contact.street || contact.city || contact.state) && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs uppercase text-muted-foreground">{t("Endereço")}</dt>
+                  <dd className="mt-1">
+                    {[contact.street, contact.number, contact.complement, contact.district, contact.city, contact.state, contact.zip_code]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </dd>
+                </div>
+              )}
               {/*
                 A origem sai do `source_metadata` quando ele tem algo melhor a
                 dizer, e cai na coluna `source` quando não tem. Antes esta linha
@@ -438,6 +489,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 <dd className="mt-1">
                   {origem.origem === ORIGEM_AGENDA_DO_CELULAR ? t("Agenda do celular") : origem.origem}
                 </dd>
+                {origem.inferidaPorHorario && (
+                  <dd className="mt-1 text-sm text-muted-foreground">
+                    {t(
+                      "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.",
+                    )}
+                  </dd>
+                )}
               </div>
               <NivelDaOrigem rotulo={t("Campanha")} valor={origem.campanha} />
               <NivelDaOrigem rotulo={t("Conjunto")} valor={origem.conjunto} />
@@ -501,18 +559,27 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           </Card>
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
               geral, junto dos dados que dizem "quem é esta pessoa" — quem atende
-              responde a pergunta antes de prometer o negócio, e o gerente muda o
-              dono aqui (o seletor só aparece para `manager`+; o gate real é o da
-              rota `PATCH /contacts/[id]/carteira`). Só de `agent` para cima: é
-              o piso do GET da carteira, e o `viewer` receberia 403. */}
+              responde a pergunta antes de prometer o negócio, e o seletor de dono
+              aparece para quem o servidor autoriza NAQUELE cliente: `manager`+ e o
+              Atendente que atende o cliente (#3746). Quem decide é o `pode_alterar`
+              do GET, não o papel lido aqui. Só de `agent` para cima: é o piso do
+              GET da carteira, e o `viewer` receberia 403. */}
           {activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
             <div className="mt-4">
-              <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg.role} />
+              <CartaoDaCarteira contactId={contactId} />
             </div>
           )}
           <div className="mt-4">
             <RoteirosDoContato contactId={contactId} />
           </div>
+          {/* AS ÚLTIMAS COMPRAS (issue #3179): a MESMA seção do painel do Inbox,
+              na ficha do contato — negócios ganhos em todos os funis, com data,
+              título, valor, campos escolhidos pela organização e atalho. */}
+          {!contact.is_anonymized && (
+            <div className="mt-4">
+              <UltimasComprasDoContato contactId={contactId} />
+            </div>
+          )}
           {/*
             O que os módulos de dados instalados guardam sobre esta pessoa. A lista vem do servidor e
             é vazia quando não há módulo com ficha de contato — então quem não instalou nada não vê
@@ -534,7 +601,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
         </TabsContent>
 
         {isAdmin && (
-          <TabsContent value="lgpd" className="mt-4">
+          <TabsContent value="lgpd" className="mt-4 space-y-4">
+            {/* Acessos OAuth do contato a servidores MCP externos (9095). */}
+            {acessosMcp && <AcessosMcpDoContato contactId={contactId} />}
             <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">{t("Direito ao esquecimento (LGPD)")}</h2>
@@ -573,6 +642,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
         canonicalTags={canonicalTags}
       />
       <AnonymizeDialog contactId={contactId} open={anonOpen} onOpenChange={setAnonOpen} />
+      {podeJuntar && (
+        <JuntarComOutraFicha
+          contatoAtual={contact}
+          open={juntarOpen}
+          onOpenChange={setJuntarOpen}
+        />
+      )}
     </div>
   );
 }
