@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { lerIntencaoDoCadastro } from "@/lib/cobranca/contratacao";
 import { invalidarUsuario } from "@/lib/auth/cache-curto";
+import { logger } from "@/lib/logger";
 import {
   CHAVE_FUSO_DO_CADASTRO,
   CHAVE_IDIOMA_DO_CADASTRO,
@@ -116,8 +117,13 @@ export async function ensureTenantForUser(
   // Só um recibo assinado do servidor pode reservar o UUID da primeira empresa.
   // Metadata editável sozinha conserva o provisionamento nativo sem auto-checkout.
   const planoDoCadastro = user.user_metadata?.cobranca_plan_id;
+  // Leitura que falha não derruba o cadastro: a empresa nasce sem o UUID
+  // reservado, e a pessoa continua o pagamento pelo caminho manual.
   const intencao = typeof planoDoCadastro === "string"
-    ? await lerIntencaoDoCadastro(admin, user.id, planoDoCadastro)
+    ? await lerIntencaoDoCadastro(admin, user.id, planoDoCadastro).catch((e: unknown) => {
+      logger.warn("signup_provisioning.intencao_indisponivel", { userId: user.id, erro: e instanceof Error ? e.message : "desconhecido" });
+      return null;
+    })
     : null;
 
   // Idioma, fuso e moeda de quem está chegando. Em `pt-BR` o perfil é só

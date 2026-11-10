@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { argumentos, bancoFalso, operacao, valorDoFiltro, type BancoFalso } from "@/tests/helpers/banco-falso-da-cobranca";
 import { criarIntencaoDeContratacao } from "@/lib/cobranca/intencao-assinada";
 
-const h = vi.hoisted(() => ({ banco: undefined as unknown as BancoFalso, audit: vi.fn() }));
+const h = vi.hoisted(() => ({ banco: undefined as unknown as BancoFalso, audit: vi.fn(), warn: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/logger", () => ({ logger: { warn: h.warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 import { ensureTenantForUser } from "./provision";
 
 const U = "11111111-1111-4111-8111-111111111111", P = "22222222-2222-4222-8222-222222222222";
@@ -17,6 +18,7 @@ let reservada: { created_by: string } | null;
 let vinculosDaReservada: Array<{ user_id: string; revoked_at: string | null }>;
 /** Quantas inserções de empresa colidem antes de passar (Infinity = todas). */
 let colisoes: number;
+let auditoriaFalha: boolean;
 const user = () => ({ id: U, email: "pessoa@example.test", user_metadata: { org_name: "Empresa fictícia", cobranca_plan_id: P, organization_id: "campo-editavel-ignorado" } });
 const insercoes = () => h.banco.cadeias.filter(c => c.tabela === "organizations" && operacao(c) === "insert")
   .map(c => argumentos(c, "insert")?.[0] as Record<string, unknown>);
@@ -24,9 +26,11 @@ const insercoes = () => h.banco.cadeias.filter(c => c.tabela === "organizations"
 beforeEach(() => {
   vi.clearAllMocks(); vi.stubEnv("INTERNAL_SECRET", "segredo-controlado-so-para-qa");
   recibo = criarIntencaoDeContratacao(U, P); vinculo = null; colisao = false;
-  reservada = null; vinculosDaReservada = []; colisoes = Infinity;
+  reservada = null; vinculosDaReservada = []; colisoes = Infinity; auditoriaFalha = false;
   h.banco = bancoFalso(c => {
-    if (c.tabela === "api_audit_log") return { data: { metadata: { contratacao: recibo } } };
+    if (c.tabela === "api_audit_log") {
+      return auditoriaFalha ? { data: null, error: { code: "57014", message: "timeout" } } : { data: { metadata: { contratacao: recibo } } };
+    }
     if (c.tabela === "user_organizations" && operacao(c) === "select") {
       if (valorDoFiltro(c, "eq", "organization_id")) return { data: vinculosDaReservada };
       return { data: vinculo ? { organization_id: vinculo } : null };
@@ -55,6 +59,12 @@ describe("primeira empresa da intenção assinada", () => {
     recibo = null;
     expect(await ensureTenantForUser(user())).toEqual({ provisioned: true, organizationId: NATIVA });
     expect(insercoes()[0]).not.toHaveProperty("id");
+  });
+  it("leitura da intenção que falha não derruba o cadastro: empresa com UUID nativo, e o log registra", async () => {
+    auditoriaFalha = true;
+    expect(await ensureTenantForUser(user())).toEqual({ provisioned: true, organizationId: NATIVA });
+    expect(insercoes()[0]).not.toHaveProperty("id");
+    expect(h.warn).toHaveBeenCalledWith("signup_provisioning.intencao_indisponivel", expect.objectContaining({ userId: U }));
   });
   it("adulterar o UUID do recibo não altera o UUID da empresa", async () => {
     recibo!.organization_id = NATIVA;
