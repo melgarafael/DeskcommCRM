@@ -31,11 +31,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
   useAvisoDeAgendamento,
+  useGruposDaConexao,
   useSalvarAvisoDeAgendamento,
   useTestarAvisoDeAgendamento,
 } from "@/hooks/agenda/useAvisoDeAgendamento";
 import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { useT } from "@/hooks/i18n/useT";
+import {
+  SEM_GRUPO,
+  conexaoQueEnviaDoRascunho,
+  mudarRascunhoDoAviso,
+  numeroPareceDeForaDoBrasil,
+  oQueFaltaParaLigar,
+  type RascunhoDoAvisoDeAgendamento,
+} from "@/lib/agenda/rascunho-do-aviso-de-agendamento";
 import type { EstadoDaTelaDoAvisoDeAgendamento } from "@/lib/agenda/tela-do-aviso-de-agendamento";
 import {
   FRASE_DO_STATUS_DE_AGENDAMENTO,
@@ -55,21 +64,17 @@ const TITULO_DO_EVENTO: Record<string, string> = {
   "appointment.cancelled": "Cancelado",
 };
 
-interface Rascunho {
-  usaNumeroDoCaso: boolean;
-  canal: string;
-  telefone: string;
-  ligado: boolean;
-}
+type Rascunho = RascunhoDoAvisoDeAgendamento;
 
 function rascunhoDoEstado(estado: EstadoDaTelaDoAvisoDeAgendamento): Rascunho {
   if (!estado.config) {
-    return { usaNumeroDoCaso: estado.aviso_de_caso !== null, canal: "", telefone: "", ligado: false };
+    return { usaNumeroDoCaso: estado.aviso_de_caso !== null, canal: "", telefone: "", grupo: SEM_GRUPO, ligado: false };
   }
   return {
     usaNumeroDoCaso: estado.config.usa_numero_do_aviso_de_caso,
     canal: estado.config.channel_session_id ?? "",
     telefone: estado.config.telefone ?? "",
+    grupo: estado.config.grupo ?? SEM_GRUPO,
     ligado: estado.config.ligado,
   };
 }
@@ -125,16 +130,27 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
   const temAvisoDeCaso = estado.aviso_de_caso !== null;
   const usaCaso = rascunho.usaNumeroDoCaso && temAvisoDeCaso;
   const telefoneOk = telefoneDeAvisoValido(rascunho.telefone);
-  const destinoOk = usaCaso || (oferecidas.some((c) => c.id === rascunho.canal) && telefoneOk);
+  const falta = oQueFaltaParaLigar({
+    usaNumeroDoCaso: usaCaso,
+    conexaoOferecida: oferecidas.some((c) => c.id === rascunho.canal),
+    telefoneOk,
+  });
+  const destinoOk = falta === null;
   const podeSalvar = destinoOk && !salvar.isPending;
   const jaSalvo = estado.config !== null;
   const conexaoDoCaso = estado.conexoes.find((c) => c.id === estado.aviso_de_caso?.channel_session_id);
+  const conexaoQueEnvia = conexaoQueEnviaDoRascunho(rascunho, estado.aviso_de_caso);
+  const grupos = useGruposDaConexao(conexaoQueEnvia);
+  // Trocar a conexão que envia zera o grupo: ele era da conexão anterior (R1, issue #1).
+  const mudar = (mudanca: Partial<Rascunho>) =>
+    setRascunho((r) => mudarRascunhoDoAviso(r, mudanca, estado.aviso_de_caso));
 
   async function enviar(confirma: boolean) {
     try {
       await salvar.mutateAsync({
         usa_numero_do_aviso_de_caso: usaCaso,
         ...(usaCaso ? {} : { channel_session_id: rascunho.canal, telefone: rascunho.telefone }),
+        grupo: rascunho.grupo === SEM_GRUPO ? null : rascunho.grupo,
         ligado: rascunho.ligado,
         ...(confirma ? { confirma_contato: true } : {}),
       });
@@ -149,21 +165,29 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
     }
   }
 
+  const fraseDoMotivo = (codigo: string | undefined) =>
+    codigo === "espacamento"
+      ? t(FRASE_DO_ESPACAMENTO)
+      : codigo && codigo in FRASE_DO_ERRO_DO_AVISO
+        ? t(FRASE_DO_ERRO_DO_AVISO[codigo as keyof typeof FRASE_DO_ERRO_DO_AVISO])
+        : t("O aviso de teste não saiu.");
+
   async function mandarTeste() {
     try {
       const r = await testar.mutateAsync();
       if (r.enviado) {
-        toast.success(t("Aviso de teste enviado. Confira o WhatsApp desse número."));
-        return;
+        toast.success(
+          r.grupo?.enviado
+            ? t("Aviso de teste enviado ao número e ao grupo. Confira o WhatsApp.")
+            : t("Aviso de teste enviado. Confira o WhatsApp desse número."),
+        );
+      } else {
+        toast.error(fraseDoMotivo(r.codigo));
+        if (r.grupo?.enviado) toast.success(t("Aviso de teste enviado ao grupo. Confira o WhatsApp."));
       }
-      const codigo = r.codigo;
-      toast.error(
-        codigo === "espacamento"
-          ? t(FRASE_DO_ESPACAMENTO)
-          : codigo && codigo in FRASE_DO_ERRO_DO_AVISO
-            ? t(FRASE_DO_ERRO_DO_AVISO[codigo as keyof typeof FRASE_DO_ERRO_DO_AVISO])
-            : t("O aviso de teste não saiu."),
-      );
+      if (r.grupo && !r.grupo.enviado) {
+        toast.error(`${t("O teste não chegou ao grupo.")} ${fraseDoMotivo(r.grupo.codigo)}`);
+      }
     } catch (erro) {
       toast.error(erro instanceof ApiError ? erro.message : t("Não foi possível mandar o teste agora."));
     }
@@ -176,7 +200,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
           id="usa-numero-do-caso"
           checked={usaCaso}
           disabled={!temAvisoDeCaso || salvar.isPending}
-          onCheckedChange={(v) => setRascunho((r) => ({ ...r, usaNumeroDoCaso: v }))}
+          onCheckedChange={(v) => mudar({ usaNumeroDoCaso: v })}
           aria-label={t("Usar o mesmo número do aviso de caso")}
         />
         <div className="space-y-1">
@@ -199,7 +223,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
             <Label htmlFor="conexao">{t("Conexão que envia os avisos")}</Label>
             <Select
               value={rascunho.canal}
-              onValueChange={(v) => setRascunho((r) => ({ ...r, canal: v }))}
+              onValueChange={(v) => mudar({ canal: v })}
               disabled={oferecidas.length === 0}
             >
               <SelectTrigger id="conexao" className="w-full sm:w-96">
@@ -239,9 +263,47 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
                 {t("Esse número ainda não está completo.")}
               </p>
             ) : null}
+            {numeroPareceDeForaDoBrasil(rascunho.telefone, telefoneExemplo) ? (
+              <p className="text-xs text-warning-fg" data-testid="telefone-fora-do-brasil">
+                {t("Esse número não começa com +55. Ele é de fora do Brasil? Se for, pode seguir; se não, comece por +55 e o DDD.")}
+              </p>
+            ) : null}
           </div>
         </>
       ) : null}
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="grupo">{t("Grupo do WhatsApp que também recebe os avisos")}</Label>
+        <Select
+          value={rascunho.grupo}
+          onValueChange={(v) => setRascunho((r) => ({ ...r, grupo: v }))}
+          disabled={!conexaoQueEnvia || grupos.isLoading}
+        >
+          <SelectTrigger id="grupo" className="w-full sm:w-96" data-testid="grupo-do-aviso">
+            <SelectValue placeholder={t("Nenhum grupo")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEM_GRUPO}>{t("Nenhum grupo")}</SelectItem>
+            {(grupos.data ?? [])
+              .filter((g) => g.presente || g.chatId === rascunho.grupo)
+              .map((g) => (
+                <SelectItem key={g.chatId} value={g.chatId}>
+                  {g.subject ?? g.chatId}
+                </SelectItem>
+              ))}
+            {rascunho.grupo !== SEM_GRUPO &&
+            rascunho.grupo === estado.config?.grupo &&
+            !grupos.data?.some((g) => g.chatId === rascunho.grupo) ? (
+              <SelectItem value={rascunho.grupo}>{t("Grupo salvo")}</SelectItem>
+            ) : null}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {grupos.isError
+            ? t("Não foi possível listar os grupos desta conexão agora. Confira se ela está conectada.")
+            : t("Opcional. A equipe vê no grupo os mesmos avisos e o resumo das 7h, sem ninguém repassar.")}
+        </p>
+      </div>
 
       <div className="flex items-start gap-3 rounded-lg border p-3">
         <Switch
@@ -260,6 +322,15 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
               "Chega o primeiro nome do cliente, o serviço, o dia e a hora, quem atende e de onde veio: IA, equipe ou Google Agenda.",
             )}
           </p>
+          {falta ? (
+            <p className="text-xs text-warning-fg" data-testid="o-que-falta-para-ligar">
+              {falta === "conexao_e_numero"
+                ? t("Para ligar, escolha a conexão que envia e preencha o número que recebe os avisos.")
+                : falta === "conexao"
+                  ? t("Para ligar, escolha a conexão que envia os avisos.")
+                  : t("Para ligar, preencha o número completo que recebe os avisos.")}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -291,10 +362,20 @@ function FormularioDoAviso({ estado }: { estado: EstadoDaTelaDoAvisoDeAgendament
           <PaperPlaneTilt className="mr-2 h-4 w-4" />
           {testar.isPending ? t("Enviando…") : t("Enviar teste")}
         </Button>
-        {testar.data?.enviado ? (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        {testar.data?.enviado || testar.data?.grupo?.enviado ? (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" data-testid="teste-enviado-para">
             <CheckCircle className="h-4 w-4" weight="duotone" />
-            {t("Enviado para")} {testar.data.destinoMascarado}
+            {[
+              testar.data.enviado ? `${t("Enviado para")} ${testar.data.destinoMascarado ?? ""}` : null,
+              testar.data.grupo?.enviado
+                ? `${testar.data.enviado ? t("e para o grupo") : t("Enviado para o grupo")} ${
+                    grupos.data?.find((g) => g.chatId === estado.config?.grupo)?.subject ?? ""
+                  }`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .trim()}
           </span>
         ) : null}
       </div>

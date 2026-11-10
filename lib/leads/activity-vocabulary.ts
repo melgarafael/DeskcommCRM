@@ -35,6 +35,19 @@ export type ActivityType =
   | "lead_edited"
   | "lead_cooled"
   | "lead_reactivated"
+  /**
+   * O NEGÓCIO PERDIDO VOLTOU A ABERTO (#4076) — a mensagem do contato chegou
+   * dentro da janela de `settings.reabrir_perdido_dias` e o MESMO card voltou
+   * para a etapa de onde saiu, com descrição, campos e motivo intactos.
+   *
+   * Não é `lead_created`: nada nasceu, e um evento de criação por reabertura
+   * inflaria a contagem de cards do funil — justamente o número que a issue
+   * relata estar sujo. Também não é `lead_reactivated` (risco de silêncio,
+   * "voltou a ter movimento"): aqui o negócio estava PERDIDO e mudou de
+   * `status`, e quem lê a timeline precisa saber que foi a mensagem do cliente
+   * — e não uma pessoa arrastando o card — que o trouxe de volta.
+   */
+  | "lead_reopened"
   | "reactivation_accepted"
   | "reactivation_dismissed"
   | "reactivation_expired"
@@ -240,9 +253,11 @@ export type ActivityType =
    * nome do arquivo, tipo. A leitura da IA não entra no vocabulário porque a
    * própria fila é a memória dela, com trecho e decisão por proposta.
    */
-  | "document_attached";
+  | "document_attached"
+  | "cold_call_result";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
+  cold_call_result: "Ligação de cold call",
   lead_created: "Entrou no funil",
   stage_changed: "Mudou de estágio",
   agent_move_corrected: "Correção do que o assistente tinha feito",
@@ -270,6 +285,9 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // usuário concluiria que a timeline está incompleta, não que o negócio esfriou.
   lead_cooled: "Negócio esfriou",
   lead_reactivated: "Negócio voltou a andar",
+  // #4076: "perdido", e não "encerrado" — o gatilho também reabre ganho, mas
+  // ESTA linha só existe para o caminho da mensagem, que trata perda.
+  lead_reopened: "Negócio perdido reaberto",
   // As três decisões sobre a proposta de reativação. VENCER é uma delas: a
   // ausência de decisão humana é informação sobre o negócio, e a proposta some
   // do card justamente para não simular atenção — a timeline é onde isso fica
@@ -456,6 +474,7 @@ const NOME_DO_CAMPO: Record<string, string> = {
   tags: "as tags",
   custom_fields: "os campos personalizados",
   lost_reason: "o motivo da perda",
+  contact_id: "o contato",
 };
 
 /**

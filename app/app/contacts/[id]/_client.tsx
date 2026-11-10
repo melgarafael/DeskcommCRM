@@ -53,14 +53,18 @@ import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
 import { DialButton } from "@/components/voice/DialButton";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
+import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 
 interface Props {
   contactId: string;
   /** Painéis de módulo de dados que declaram referência a contato. Resolvido no servidor. */
   paineisDeModulo?: { modulo: string; objeto: string }[];
+  /** Módulo opcional `mcp_por_agente` ligado (doc 252). Ausente = desligado. */
+  acessosMcp?: boolean;
 }
 
 /**
@@ -81,7 +85,7 @@ function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null
   );
 }
 
-export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) {
+export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMcp = false }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -430,12 +434,15 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 <dt className="text-xs uppercase text-muted-foreground">Email</dt>
                 <dd className="mt-1">{contact.email ?? "—"}</dd>
               </div>
-              <div>
-                <dt className="text-xs uppercase text-muted-foreground">{t("Telefone")}</dt>
-                <dd className="mt-1">
-                  {contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}
-                </dd>
-              </div>
+              {/*
+                Os telefones da ficha (Spec 31). Sem extra, a linha segue como hoje
+                ("Telefone", com o tipo ao lado); com extra, "Telefones" lista o
+                principal e os extras. Quem tem papel `agent` ou acima edita aqui.
+              */}
+              <TelefonesDaFicha
+                contato={contact}
+                podeEditar={Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent)}
+              />
               {linksDoContato.length > 0 && (
                 <div>
                   <dt className="text-xs uppercase text-muted-foreground">{t("Links")}</dt>
@@ -460,6 +467,16 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                   {contact.birthdate ? contact.birthdate.split("-").reverse().join("/") : "—"}
                 </dd>
               </div>
+              {(contact.zip_code || contact.street || contact.city || contact.state) && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs uppercase text-muted-foreground">{t("Endereço")}</dt>
+                  <dd className="mt-1">
+                    {[contact.street, contact.number, contact.complement, contact.district, contact.city, contact.state, contact.zip_code]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </dd>
+                </div>
+              )}
               {/*
                 A origem sai do `source_metadata` quando ele tem algo melhor a
                 dizer, e cai na coluna `source` quando não tem. Antes esta linha
@@ -472,6 +489,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 <dd className="mt-1">
                   {origem.origem === ORIGEM_AGENDA_DO_CELULAR ? t("Agenda do celular") : origem.origem}
                 </dd>
+                {origem.inferidaPorHorario && (
+                  <dd className="mt-1 text-sm text-muted-foreground">
+                    {t(
+                      "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.",
+                    )}
+                  </dd>
+                )}
               </div>
               <NivelDaOrigem rotulo={t("Campanha")} valor={origem.campanha} />
               <NivelDaOrigem rotulo={t("Conjunto")} valor={origem.conjunto} />
@@ -535,13 +559,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           </Card>
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
               geral, junto dos dados que dizem "quem é esta pessoa" — quem atende
-              responde a pergunta antes de prometer o negócio, e o gerente muda o
-              dono aqui (o seletor só aparece para `manager`+; o gate real é o da
-              rota `PATCH /contacts/[id]/carteira`). Só de `agent` para cima: é
-              o piso do GET da carteira, e o `viewer` receberia 403. */}
+              responde a pergunta antes de prometer o negócio, e o seletor de dono
+              aparece para quem o servidor autoriza NAQUELE cliente: `manager`+ e o
+              Atendente que atende o cliente (#3746). Quem decide é o `pode_alterar`
+              do GET, não o papel lido aqui. Só de `agent` para cima: é o piso do
+              GET da carteira, e o `viewer` receberia 403. */}
           {activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
             <div className="mt-4">
-              <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg.role} />
+              <CartaoDaCarteira contactId={contactId} />
             </div>
           )}
           <div className="mt-4">
@@ -576,7 +601,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
         </TabsContent>
 
         {isAdmin && (
-          <TabsContent value="lgpd" className="mt-4">
+          <TabsContent value="lgpd" className="mt-4 space-y-4">
+            {/* Acessos OAuth do contato a servidores MCP externos (9095). */}
+            {acessosMcp && <AcessosMcpDoContato contactId={contactId} />}
             <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">{t("Direito ao esquecimento (LGPD)")}</h2>

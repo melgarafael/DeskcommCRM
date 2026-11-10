@@ -129,9 +129,31 @@ describe("crm_assign_conversation", () => {
           p_reason: "transfer",
           p_expected_assignee: null,
           p_enforce_expected: true,
+          p_source_job_id: null,
         },
       },
     ]);
+  });
+
+  it("dentro do turno, informa o job de origem (é o que impede a revogação do próprio turno)", async () => {
+    const cap = makeCap();
+    const ctx = makeCtx(convAssigned(null), cap);
+    // `sourceJobId` é do RUNTIME: o modelo não escreve este campo, e é por isso
+    // que ele pode poupar o job da revogação sem abrir porta para a IA.
+    await crmAssignConversation.handler(
+      { conversation_id: CONV, to_user_id: USER_A, reason: "transfer" },
+      { ...ctx, sourceJobId: "job-do-turno" },
+    );
+    expect(cap.rpc[0]!.args.p_source_job_id).toBe("job-do-turno");
+  });
+
+  it("fora do turno (rota MCP, Inbox), não informa origem: nulo", async () => {
+    const cap = makeCap();
+    await crmAssignConversation.handler(
+      { conversation_id: CONV, to_user_id: USER_A, reason: "transfer" },
+      makeCtx(convAssigned(null), cap),
+    );
+    expect(cap.rpc[0]!.args.p_source_job_id).toBeNull();
   });
 
   it("corrida: 2 assigns idênticos ⇒ optimistic lock deixa 1 evento (2º idempotente)", async () => {

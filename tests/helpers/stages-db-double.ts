@@ -41,6 +41,25 @@ export interface StageRow {
   expected_duration_hours: number | null;
 }
 
+/**
+ * Grafo publicável de follow-up (#3603) — o mínimo que passa no `flowGraphSchema`.
+ * `gatilho: false` tira o nó de gatilho (o motor não arma); `pedeIA: true` põe uma
+ * mensagem de IA (o motor só arma se algum agente publicado com follow-up ligado
+ * tiver o fluxo).
+ */
+export function grafoDeFluxo({ gatilho = true, pedeIA = false }: { gatilho?: boolean; pedeIA?: boolean } = {}) {
+  const pos = { x: 0, y: 0 };
+  const nodes: Array<Record<string, unknown>> = [];
+  if (gatilho) nodes.push({ id: "inicio", type: "trigger", label: "Início", position: pos, config: {} });
+  nodes.push(
+    pedeIA
+      ? { id: "toque", type: "action", label: "Toque", position: pos, config: { mode: "ai_message", prompt_hint: "Retome a proposta" } }
+      : { id: "toque", type: "action", label: "Toque", position: pos, config: { mode: "text", body: "Oi!" } },
+  );
+  nodes.push({ id: "fim", type: "end", label: "Fim", position: pos, config: { outcome: "converted" } });
+  return { nodes, edges: [] };
+}
+
 export function etapa(over: Partial<StageRow> & { id: string; name: string }): StageRow {
   return {
     slug: over.id,
@@ -173,6 +192,17 @@ export interface DbOpts {
   /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
   readError?: (table: string, filtros: Array<[string, unknown]>) => { code: string; message: string } | null;
   /**
+   * Fluxos de follow-up da org (issue #3603) — é deles que sai a lista read-only
+   * de «quais fluxos disparam ao entrar nesta etapa». O `trigger_config` vai
+   * cru, como no banco: quem decide se ele arma alguma coisa é o código da rota,
+   * não o dublê.
+   */
+  pointers?: Array<Record<string, unknown>>;
+  /** `followup_flow_versions` — o grafo da versão ativa decide se há nó de gatilho e se o fluxo pede IA. */
+  flowVersions?: Array<Record<string, unknown>>;
+  /** `ai_agent_versions` — o `followup` da versão publicada diz quais fluxos o agente arma. */
+  agentVersions?: Array<Record<string, unknown>>;
+  /**
    * O `max_rows` do PostgREST (1000 em `supabase/config.toml`): corta TODA
    * leitura nesse tamanho, sem erro, por maior que seja o `.limit`/`.range`.
    * Ausente = sem corte, que é o que os testes que não falam de volume querem.
@@ -210,6 +240,14 @@ export interface Registro {
   escritas: Escrita[];
   eventos: string[];
   rpcs: Array<{ nome: string; args: unknown }>;
+  /**
+   * As tabelas LIDAS, na ordem — uma entrada por consulta emitida.
+   *
+   * Existe para medir N+1: a lista de fluxos por etapa (#3603) tem de custar UMA
+   * consulta por requisição, não uma por etapa. Contar `createClient().from`
+   * fora daqui mediria o dublê, não o handler.
+   */
+  leituras: string[];
   /** As tabelas DEPOIS das escritas — é aqui que se confere que os negócios andaram. */
   tabelas: {
     crm_pipelines: Linha[];
@@ -219,6 +257,9 @@ export interface Registro {
     webhook_sources: Linha[];
     automation_rules: Linha[];
     contacts: Linha[];
+    followup_flow_pointers: Linha[];
+    followup_flow_versions: Linha[];
+    ai_agent_versions: Linha[];
   };
 }
 
@@ -270,6 +311,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
     escritas: [],
     eventos: [],
     rpcs: [],
+    leituras: [],
     tabelas: {
       crm_pipelines: (opts.pipelines ?? [
         { id: PIPE, name: "Pedidos", organization_id: opts.pipelineOrg ?? ORG_ID },
@@ -280,6 +322,9 @@ export function makeDb(opts: DbOpts = {}): Registro {
       webhook_sources: (opts.webhookSources ?? []) as Linha[],
       automation_rules: (opts.automationRules ?? []) as Linha[],
       contacts: (opts.contacts ?? []) as Linha[],
+      followup_flow_pointers: (opts.pointers ?? []) as Linha[],
+      followup_flow_versions: (opts.flowVersions ?? []) as Linha[],
+      ai_agent_versions: (opts.agentVersions ?? []) as Linha[],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
@@ -447,6 +492,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
       // atividades do arquivamento sumir com a suíte verde.
       const erroDeLeitura = opts.readError?.(table, filtros) ?? null;
       if (erroDeLeitura) return { data: null, error: erroDeLeitura, count: null };
+      registro.leituras.push(table);
       if (head) return { data: null, error: null, count: casam().length };
       if (contar) return { data: lidos(), error: null, count: casam().length };
       return { data: lidos(), error: null, count: null };

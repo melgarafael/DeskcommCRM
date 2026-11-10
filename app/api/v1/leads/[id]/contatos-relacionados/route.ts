@@ -48,6 +48,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,7 @@ interface LinhaDeContato {
   display_name: string | null;
   is_merged_into: string | null;
   is_anonymized: boolean;
+  phone_number?: string | null;
 }
 
 /** O que a tela recebe por pessoa: a âncora, o nome, o papel e o estado LGPD. */
@@ -81,6 +83,15 @@ export interface ContatoRelacionado {
   nome: string | null;
   papel: string | null;
   anonimizado: boolean;
+  /**
+   * O número da pessoa e a conversa mais recente dela (#3669): com o comprador
+   * e o fixo da loja na mesma lista, o número É o que distingue um do outro, e
+   * a conversa é o atalho que a vendedora procura. AUSENTES quando não há
+   * (sem telefone, anonimizado, nenhuma conversa) — nunca uma string vazia que
+   * a tela teria de adivinhar.
+   */
+  telefone?: string;
+  conversa_id?: string;
 }
 
 /**
@@ -139,7 +150,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const { data: contatos, error: contatosErr } = await supabase
     .from("contacts")
-    .select("id, organization_id, name, display_name, is_merged_into, is_anonymized")
+    .select("id, organization_id, name, display_name, is_merged_into, is_anonymized, phone_number")
     .in("id", alvos);
   if (contatosErr) return fail("internal_error", contatosErr.message, 500, { requestId });
 
@@ -160,7 +171,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     if (ponteiros.length === 0) break;
     const { data: vencedores, error: vencedoresErr } = await supabase
       .from("contacts")
-      .select("id, organization_id, name, display_name, is_merged_into, is_anonymized")
+      .select("id, organization_id, name, display_name, is_merged_into, is_anonymized, phone_number")
       .in("id", ponteiros);
     if (vencedoresErr) return fail("internal_error", vencedoresErr.message, 500, { requestId });
     const novos = (vencedores ?? []) as unknown as LinhaDeContato[];
@@ -184,12 +195,48 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     if (contato.organization_id !== orgId) continue;
     if (vistos.has(contato.id)) continue;
     vistos.add(contato.id);
+    const anonimizado = contato.is_anonymized === true;
     resultado.push({
       contact_id: contato.id,
       nome: nomeDoContato(contato),
       papel: papelDo(link.metadata),
-      anonimizado: contato.is_anonymized === true,
+      anonimizado,
+      // A cascata LGPD já redigiu o número do anonimizado; a rota não o
+      // mostra nem assim, para não depender da redação ter rodado.
+      ...(!anonimizado && contato.phone_number ? { telefone: contato.phone_number } : {}),
     });
+  }
+
+  // A CONVERSA de cada pessoa, a mais recente (mesma ordem do quadro, rota
+  // `pipelines/[id]/board`). Uma consulta para a lista inteira, com o filtro de
+  // organização explícito. Falhar aqui não derruba a lista: as pessoas e os
+  // números continuam sendo a resposta, só sem o atalho — e o motivo vai para o
+  // log, não some.
+  if (resultado.length > 0) {
+    const { data: conversas, error: conversasErr } = await supabase
+      .from("conversations")
+      .select("id, contact_id, last_message_at")
+      .eq("organization_id", orgId)
+      .in(
+        "contact_id",
+        resultado.map((p) => p.contact_id),
+      )
+      .order("last_message_at", { ascending: false, nullsFirst: false });
+    if (conversasErr) {
+      logger.warn("contatos-relacionados: conversas não lidas", {
+        requestId,
+        error: conversasErr.message,
+      });
+    } else {
+      const conversaDe = new Map<string, string>();
+      for (const c of (conversas ?? []) as unknown as { id: string; contact_id: string }[]) {
+        if (!conversaDe.has(c.contact_id)) conversaDe.set(c.contact_id, c.id);
+      }
+      for (const pessoa of resultado) {
+        const conversa = conversaDe.get(pessoa.contact_id);
+        if (conversa) pessoa.conversa_id = conversa;
+      }
+    }
   }
 
   return ok(resultado, { requestId });

@@ -1,8 +1,24 @@
 # Runbook — “meu Supabase estourou a cota”
 
 Para quem roda o DeskcommCRM numa VPS com Supabase (em especial o **plano free**,
-cuja cota de egress é de 5 GB/mês) e recebeu aviso de consumo, throttling ou
-cobrança. Também serve para quem só quer saber **quanto o sistema parado custa**.
+cuja cota de egress é de 5 GB/mês e a de log ingerido, 1 GB por ciclo — §5) e
+recebeu aviso de consumo, throttling ou cobrança. Também serve para quem só quer
+saber **quanto o sistema parado custa**.
+
+## Antes de rodar — a pasta e o `psql`
+
+Tudo abaixo roda **na VPS, por SSH**, de dentro da pasta da instalação, e o
+`psql` é o do contêiner: a VPS instalada pelo kit não traz cliente de Postgres
+no host. Rode este bloco uma vez na sessão e os comandos seguintes funcionam
+copiando e colando. O porquê de cada linha está em
+[`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
+
+```bash
+P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
+if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
+psql_vps() { bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && psql_run "$@"' _ "$@"; }
+psql_vps -c 'select 1'   # tem de responder 1
+```
 
 ## 1. Meça antes de mexer
 
@@ -14,7 +30,7 @@ seu volume e os seus ajustes mudam a conta. Rode isto, não confie na memória:
 docker compose -f docker-compose.prod.yml logs worker | grep 'agent-engine pronto' | tail -1
 
 # Quem mais fala com o banco, ordenado por número de chamadas:
-psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select calls, rows, left(query, 70) as consulta
      from pg_stat_statements order by calls desc limit 10;"
 
@@ -28,14 +44,15 @@ No painel do Supabase o número oficial está em **Settings → Usage**. É ele 
 vale para cobrança; `/proc/net/dev` mede o contêiner e serve para atribuir a
 origem.
 
-## 2. Os dois intervalos que governam o custo do worker
+## 2. Os três intervalos que governam o custo do worker
 
-Ambos vivem no `.env`, são opcionais, e o worker imprime os valores em vigor na
+Todos vivem no `.env`, são opcionais, e o worker imprime os valores em vigor na
 linha `agent-engine pronto` do log.
 
 | chave | default | o que faz |
 |---|---|---|
-| `QUEUE_POLL_INTERVAL_MS` | `2000` | **Teto de espera.** Com a fila vazia, é quanto o worker dorme entre uma consulta e a próxima. Com job agendado, ele acorda no vencimento e este valor só limita a soneca. |
+| `QUEUE_POLL_INTERVAL_MS` | `2000` | **Piso da espera ociosa.** Com a fila vazia, é quanto o worker dorme entre uma consulta e a próxima; com o recuo ligado (abaixo), o valor dobra a cada rodada ociosa até o teto. Com job agendado, ele acorda no vencimento e este valor só limita a soneca. |
+| `QUEUE_IDLE_MAX_INTERVAL_MS` | vazio (desligado) | **Teto do recuo com a fila vazia.** Desligado, a instalação parada consulta o banco a cada piso — 3.880 consultas em 2h19 (~28/min) medidas na issue #3688. Com `60000`, cai para ~1/min. Mensagem de cliente acorda a fila na hora; a resposta da equipe a um caso da IA e os disparos agendados pelo cron podem esperar até o teto. |
 | `QUEUE_CLAIM_RETRY_INTERVAL_MS` | `250` | Ritmo do *“havia trabalho e eu não peguei”* — todas as vagas de `QUEUE_MAX_CONCURRENCY` ocupadas, ou outro turno rodando para o mesmo contato. |
 
 **Não passe `QUEUE_POLL_INTERVAL_MS` de 10000.** A conexão ociosa do pool expira
@@ -43,6 +60,11 @@ em 10 s; acima disso cada rodada volta a pagar TCP+TLS+startup, e o intervalo
 maior passa a gastar **mais** do que economiza. O worker avisa no boot se você
 cruzar essa linha. Ele também não deve chegar perto de `INBOUND_DEBOUNCE_MS`
 (8000), senão o laço dorme através da janela de coalescência.
+
+O teto do recuo (`QUEUE_IDLE_MAX_INTERVAL_MS`) fica **acima** dos 10 s de
+propósito e não cai na mesma regra: depois de um sono longo a rodada reconecta
+(499 B medidos contra 66 B), mas 1 rodada/min a 499 B continua ~4× mais barata
+que 30 rodadas/min a 66 B. O que não vale é encurtar o **piso**.
 
 Depois de editar o `.env`:
 
@@ -76,7 +98,7 @@ nelas de propósito. Se o seu aperto for de espaço e não de tráfego, comece
 medindo — o ranking abaixo diz qual delas (se alguma) é o seu problema:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select relname, pg_size_pretty(pg_total_relation_size(c.oid)) as tamanho
      from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r'
@@ -90,7 +112,7 @@ e apaga **em lotes** — nunca num DELETE só, que travaria a tabela pelo tempo
 inteiro da varredura. O que ele apagou na última rodada:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select created_at, metadata from api_audit_log
     where action = 'retention.sweep_run' order by created_at desc limit 5;"
 ```
@@ -169,19 +191,142 @@ daquela tabela, rode para cada tabela que o ranking de §4 apontou (por exemplo
 cada vez:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c "vacuum (full, analyze) public.<tabela>;"
+psql_vps -c "vacuum (full, analyze) public.<tabela>;"
 ```
 
 Quanto está morto e ainda não foi reaproveitado, antes de decidir:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select relname, n_live_tup, n_dead_tup, last_autovacuum
      from pg_stat_user_tables
     where relname in ('job_queue','api_audit_log','send_ledger','before_send_traces');"
 ```
 
-## 5. Se ainda não fechar
+## 5. Log ingestion é outra cota — o aviso “Log Ingestion Exceeded”
+
+Se o aviso que chegou no e-mail de cobrança ou no banner do painel diz **“Log
+Ingestion Exceeded”**, o aperto não é egress (§3) nem disco (§4): é o **volume de
+log** que o Supabase ingeriu no ciclo. É a cota que estoura com o sistema
+parado — e a que quase ninguém procura, porque o texto do aviso não aparece em
+lugar nenhum do sistema.
+
+### 5.1. O que a cota é
+
+No plano free a cota incluída é de **1 GB de log ingerido por ciclo**, e o
+excedente **não é cobrado**: a linha do free na tabela de preços é “Not billed”, e
+o caminho para quem passa do teto é a restrição do §5.2, não a fatura
+([*Manage Logs Ingest usage*](https://supabase.com/docs/guides/platform/manage-your-usage/logs-ingest),
+lida em 06/11/2026).
+
+O que conta é o que o Supabase **ingere** de todos os serviços do projeto —
+Postgres, API gateway, Auth, Storage, Realtime, Edge Functions —, medido por byte.
+Não é o que o seu contêiner escreve no `docker logs`. O número oficial está em
+**Settings → Usage**, na linha “Logs Ingest”.
+
+**A cobrança deste item ainda não começou.** A mesma página avisa que há uma
+carência até o início de 2027 antes de a fatura valer, e o painel de uma
+instalação no free mostra o mesmo texto (“Billing starts after the grace period
+ends in early 2027”). Ou seja: a cota existe e é ela que dispara o aviso, mas o
+excedente hoje não vira dinheiro — e isso muda sozinho. Confira a data na página
+antes de contar com a carência.
+
+### 5.2. O que o aviso significa, e por que a segunda vez é pior
+
+O aviso não corta nada na hora. O caminho tem ordem, e a ordem é a informação:
+
+| passo | o que acontece |
+|---|---|
+| 1. aviso | notificação no e-mail de cobrança da organização; o consumo acima da cota aparece no painel de uso |
+| 2. carência | período antes de qualquer restrição — é a janela para corrigir sem queda |
+| 3. Fair Use Policy | passada a carência, a restrição vem por serviço: **projeto pausado**, **banco em somente leitura**, novos projetos bloqueados e **402** para toda requisição à API. Vale para todos os projetos da organização |
+
+**O segundo estouro não tem carência.** Depois que a carência termina, o painel
+continua mostrando o aviso mesmo se o consumo voltar para baixo — é o registro de
+que a organização já estourou. Estourando de novo, a restrição entra **sem** nova
+carência; o aviso só some depois de vários ciclos abaixo do teto. A restrição por
+cota cai sozinha quando a cota se renova no início do ciclo seguinte (com um
+atraso curto depois da virada) ou na hora, se a organização passa para um plano
+pago. ([*Billing FAQ — Fair Use Policy*](https://supabase.com/docs/guides/platform/billing-faq#fair-use-policy),
+lida em 06/11/2026)
+
+### 5.3. O que consome
+
+O log cresce com o **número de chamadas**, não com o tamanho da resposta: cada
+requisição que chega ao PostgREST, ao Auth e ao Realtime vira linha ingerida.
+Duas medições do projeto, em instalações diferentes:
+
+- **#2235** — um ciclo fechou com **99 GB contra o 1 GB do free**: pico de
+  ~15 GB/dia entre 12 e 17/09 e, depois, **~0,3–0,5 GB/dia** em regime, sem
+  ninguém mexer no sistema.
+- **#4103** (relato da comunidade, 01–05/11) — **0,74 GB de 1 GB em cinco dias**,
+  entre ~100 e ~164 MB por dia, numa instalação do kit com pouco volume de
+  atendimento.
+
+O que produz essas chamadas, na ordem em que costuma aparecer:
+
+- **A fila ociosa.** Com `QUEUE_IDLE_MAX_INTERVAL_MS` desligado — o default da
+  §2 —, a instalação parada consulta o banco a cada piso: 3.880 consultas em 2h19
+  (~28/min), medido na **#3688**. Com `60000`, cai para ~1/min.
+- **Cron duplicado.** O `event-log-drain` é chamado pelo contêiner `scheduler` (de
+  minuto em minuto) **e** pelo crontab do host que o kit provisiona; na **#2235**,
+  ~62% das chamadas `service_role` ao PostgREST eram da `event_log`. Confira as
+  duas entradas antes de acusar o worker.
+- **Painel aberto.** Telas com refetch de 5 s (painel de atualização, detalhe do
+  compromisso, revisão de resposta) chamam PostgREST e `getUser` em laço: na
+  **#2235**, ~264 req/min com abas abertas contra ~85–91/min com todas fechadas.
+  Aba esquecida é chamada que continua com ninguém usando o sistema.
+
+### 5.4. O que fazer — e o que não resolve
+
+Meça antes (§1) e ataque a origem que a medição apontar:
+
+- Ligue o recuo da fila: `QUEUE_IDLE_MAX_INTERVAL_MS=60000` no `.env` e
+  `up -d worker` (§2).
+- Confira o `event-log-drain` no contêiner e no crontab do host (§5.3).
+- Feche as abas do painel que ficam abertas o dia inteiro — o intervalo de refetch
+  é do produto, não do `.env`.
+- Espere **um ou dois dias** e olhe a tendência no painel de uso e no Logs
+  Explorer antes de concluir: o volume varia de dia para dia, e uma leitura
+  isolada engana (é o mesmo conselho da doc oficial).
+
+**O que não resolve:** ajustar a retenção ou rodar `VACUUM` (§4) não muda uma
+linha de log ingerido — é outra cota, e nenhuma tabela encolhe por causa dela.
+Também não basta pausar o projeto para “limpar” o consumo: pausar ou apagar para
+de acumular, mas o que já foi ingerido no ciclo continua contando até a virada.
+
+## 6. Quando o compute Nano do plano grátis não basta
+
+O sintoma não é lentidão, é indisponibilidade: o projeto fica fora do ar **sem ninguém usando**, toda chamada a
+`/rest/v1` responde `522` ou `503 PGRST002`, e o `/api/v1/health` diz `supabase: down` com
+`reason: projeto_indisponivel`.
+
+**O que foi medido, e em quantas instalações.** Uma instalação, em 29/10, no compute Nano (0,5 GB): ~6 h fora do ar,
+que só voltou com *Restart project*. O schema tinha 213 tabelas, 584 funções, 684 policies, 759 índices e 222
+triggers; a introspecção do schema cache do PostgREST leva ~722 ms com o banco saudável, contra o `statement_timeout`
+de 8 s do papel `authenticator`. Naquela instalação, a Nano entrou em swap, esgotou o *Disk IO Budget*, e essa
+consulta passou do teto: o cache se perdeu e o PostgREST ficou em laço. **Não está medido** se a Nano falha assim
+em toda instalação: o plano grátis continua sendo o caminho documentado de instalação.
+
+**Se acontecer com você:** *Restart project* devolve o serviço. Se voltar a cair parado, subir o compute para
+**Micro (1 GB)** é o próximo passo a testar: dá o dobro de memória à introspecção. **Não está medido que resolva:**
+na instalação medida (29/10), quem devolveu o serviço foi o *Restart project*. Antes de trocar, confirme que é este ramo e não o
+replay do gateway: `postgrest-replay-do-gateway.md` (seção "Outro ramo: falta de memória/IO") e
+`supabase-compute-insuficiente-free.md`.
+
+**Micro só existe em plano pago, e assinar não troca o compute.** O plano grátis roda o Nano e o Micro é dos planos
+pagos, então este passo são dois atos: assinar um plano pago e depois trocar o compute do projeto. O projeto que veio
+do grátis pode continuar no Nano (0,5 GB) dentro do plano pago, cobrado pelo preço do Micro, até você trocar. O
+Supabase não troca sozinho porque a troca causa uma queda, em geral de menos de 2 minutos segundo a doc
+([*Compute and Disk*](https://supabase.com/docs/guides/platform/compute-and-disk)).
+
+O plano e os US$ 10/mês em créditos de compute são da organização, não de cada projeto: o crédito cobre um projeto no
+Micro, e cada projeto a mais soma o compute dele. **Exemplo lido na doc oficial em 05/11/2026**, não orçamento: Pro
+US$ 25/mês + Micro US$ 0,01344/h (~US$ 10/mês) − US$ 10 de crédito ≈ **US$ 25/mês** com um projeto; com dois projetos
+no Micro, ≈ **US$ 35/mês**. Preço e crédito mudam; confira os valores e o que o crédito cobre em
+<https://supabase.com/docs/guides/platform/manage-your-usage/compute> antes de trocar o compute.
+
+## 7. Se ainda não fechar
 
 Abra uma issue com: a saída dos três comandos da seção 1, a janela de tempo que
 elas cobrem, e o painel **Usage** do Supabase no mesmo período. Medição sem a

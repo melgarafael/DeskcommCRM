@@ -60,8 +60,10 @@ describe("elo 2 — alguém acorda o worker", () => {
   it("nos DOIS caminhos de inserção — thread conhecida e âncora", () => {
     // A ingestão resolve a conversa por dois caminhos, e o primeiro é o mais
     // comum. Emitir só no segundo deixaria a maioria das mídias sem bytes.
+    // A terceira chamada é a retomada do reprocessamento: o worker pula o que já
+    // está gravado (`already stored`), então repetir o pedido não baixa de novo.
     const chamadas = [...INGEST.matchAll(/await pedirPersistenciaDaMidia\(/g)];
-    expect(chamadas.length, "faltou o pedido em um dos caminhos").toBe(2);
+    expect(chamadas.length, "faltou o pedido em um dos caminhos").toBe(3);
   });
 
   it("NÃO pede persistência para mensagem sem anexo", () => {

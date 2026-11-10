@@ -66,7 +66,7 @@ const CONTATO = {
   email: null,
   email_normalized: null,
   phone_number: "+5511987654321",
-  cpf_hash: null,
+  cpf_available: false,
   birthdate: null,
   is_blocked: false,
   is_personal: false,

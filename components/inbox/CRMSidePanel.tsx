@@ -96,6 +96,8 @@ interface LeadRow {
   field_defs: CustomFieldDef[];
   funil_nome: string | null;
   etapa_nome: string | null;
+  /** Etiquetas do NEGÓCIO (`crm_leads.tags`) — só leitura aqui; ver `EtiquetasDoNegocio`. */
+  tags?: string[] | null;
   stage_id?: string;
   /** As etapas ativas do funil, na ordem do quadro (rota crm-summary). */
   etapas_do_funil?: Array<{ id: string; name: string; is_won: boolean; is_lost: boolean }>;
@@ -352,8 +354,10 @@ function SemLista({
 /**
  * Só os campos do funil, no lugar onde a conversa acontece.
  *
- * Título, valor e tags já têm casa no dossiê. Quem atende descobre o dado
+ * Título e valor já têm casa no dossiê. Quem atende descobre o dado
  * customizado (CPF, plano, endereço) aqui — e tinha de ir no Kanban gravar.
+ * As tags do negócio aparecem aqui só para LER (`EtiquetasDoNegocio`); editar
+ * continua no dossiê.
  */
 /**
  * O banco guarda `open`/`won`/`lost`; a tela mostrava a palavra crua (#943).
@@ -395,6 +399,29 @@ function ondeEstaOLead(l: LeadRow): string {
  * spec de tela com `getBoundingClientRect`.
  */
 const CLASSES_DE_ONDE_ESTA = "line-clamp-2 text-muted-foreground";
+
+/**
+ * As tags do NEGÓCIO, só leitura, junto de funil e etapa.
+ *
+ * O painel mostrava as tags do contato e as da conversa, e as do negócio não
+ * apareciam em lugar nenhum da conversa: quem atendia procurava a etiqueta que
+ * uma automação ou um fluxo de acompanhamento lê (a condição de etiqueta lê
+ * `crm_leads.tags`) e concluía que ela não existia. Sem editor aqui de
+ * propósito: três editores de tag no mesmo painel confundem mais do que
+ * ajudam, e o do negócio já existe no dossiê.
+ */
+function EtiquetasDoNegocio({ tags }: { tags: string[] | null | undefined }) {
+  const t = useT();
+  if (!tags || tags.length === 0) return null;
+  return (
+    <div data-testid="inbox-lead-tags" className="flex flex-wrap items-center gap-1 pt-0.5">
+      <span className="text-[10px] text-muted-foreground">{t("Tags do negócio")}:</span>
+      {tags.map((tag) => (
+        <ChipDeEtiqueta key={tag} tag={tag} className="h-4 px-1.5 text-[10px]" />
+      ))}
+    </div>
+  );
+}
 
 function InboxLeadEditor({
   leads,
@@ -462,6 +489,7 @@ function InboxLeadEditor({
                       </span>
                     )}
                   </div>
+                  <EtiquetasDoNegocio tags={l.tags} />
                 </button>
               </li>
             );
@@ -481,6 +509,7 @@ function InboxLeadEditor({
           <p className={CLASSES_DE_ONDE_ESTA} title={ondeEstaOLead(ativo)}>
             {ondeEstaOLead(ativo)}
           </p>
+          <EtiquetasDoNegocio tags={ativo.tags} />
         </div>
       )}
       <EtapaDoNegocio key={`etapa-${ativo.id}`} lead={ativo} onMovido={onSalvo} />
@@ -576,6 +605,7 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
         open={perdendo}
         onOpenChange={setPerdendo}
         leadId={lead.id}
+        leadLabel={lead.title}
         pipelineId={lead.pipeline_id}
         onPerdido={onMovido}
         motivos={lead.motivos_de_perda}
@@ -778,9 +808,9 @@ export function CRMSidePanel({
   const podeLevarParaOutroFunil = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   // O MESMO piso da ficha do contato para o bloco da carteira (#2591): `agent`+
   // é quem LÊ a carteira (o GET da rota cobra `requireRole("agent")`), e o
-  // `viewer` receberia 403. Escrever é outra régua (`manager`+) e mora dentro do
-  // `CartaoDaCarteira`, que só desenha o seletor para `manager`+. Aqui só se
-  // decide se o bloco existe — nunca se oferece um botão que o servidor recusaria.
+  // `viewer` receberia 403. Escrever é outra régua — e ela NÃO é decidida aqui:
+  // quem responde "posso mudar a carteira DESTE cliente?" é o servidor, no
+  // `pode_alterar` do GET, e o `CartaoDaCarteira` lê essa resposta (#3746).
   const podeVerCarteira = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -1026,7 +1056,7 @@ export function CRMSidePanel({
    *
    * O `NewLeadDialog` fica FORA do mapa, montado sempre, porque o botão que o
    * abre mora no módulo Contato: se ele morasse junto do enriquecimento,
-   * esconder "Sobre a empresa" faria o "Novo Lead" parar de abrir qualquer
+   * esconder "Sobre a empresa" faria o "Novo negócio" parar de abrir qualquer
    * coisa — defeito que só apareceria na lateral de quem configurou.
    */
   const conteudo: Record<IdModuloDaLateral, ReactNode> = {
@@ -1073,7 +1103,7 @@ export function CRMSidePanel({
               onClick={() => setLeadDialogOpen(true)}
             >
               <Users size={12} className="mr-1" weight="regular" aria-hidden />
-              {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo Lead")}
+              {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo negócio")}
             </Button>
             {contactId && (
               <Button asChild size="sm" variant="ghost" className="h-11 px-2 text-xs lg:h-7">
@@ -1132,7 +1162,7 @@ export function CRMSidePanel({
        não vê o bloco em vez de levar 403. */
     carteira: contactId && podeVerCarteira ? (
       <section data-testid="inbox-bloco-carteira">
-        <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg?.role ?? null} />
+        <CartaoDaCarteira contactId={contactId} />
       </section>
     ) : null,
 
@@ -1244,13 +1274,23 @@ export function CRMSidePanel({
     ),
 
     /* O FOLLOW-UP NA CONVERSA (#3178): a seção se AUTO-OCULTA quando não há
-       enrollment vivo nem fluxo ativo. Iniciar e parar são `manager`+ no
-       servidor (`requireRole("manager")` no POST e no cancel). */
+       enrollment vivo nem fluxo ativo.
+
+       INICIAR (#3746): o Atendente inscreve o cliente que ele atende. O piso e
+       o escopo de posse são do SERVIDOR (`lib/carteira/posse.ts`), e a seção lê
+       o resultado no `meta.pode_inscrever` do próprio GET — não há comparação de
+       papel aqui.
+
+       PARAR: o `POST .../[id]/cancel` continua `manager`+ — fora do recorte do
+       #3746 —, e é a única régua de papel que sobra neste bloco. Ela é dita como
+       tal, e não esconde a leitura de quem não pode parar. */
     followup: contactId && !contact?.is_anonymized ? (
       <>
         <FollowupDoContato
           contactId={contactId}
-          podeEscrever={
+          conversationId={conversation?.id ?? null}
+          somenteLeitura={Boolean(user.support)}
+          podeParar={
             !readonly && ((user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "manager"))
           }
         />
@@ -1280,7 +1320,7 @@ export function CRMSidePanel({
     leads: (
       <section data-testid="inbox-campos-lead">
         <h3 className="text-xs font-semibold text-text">
-          {t("Leads recentes")}
+          {t("Negócios recentes")}
         </h3>
         {sectionsLoading ? (
           <Skeleton className="mt-2 h-14 w-full" />
@@ -1294,7 +1334,11 @@ export function CRMSidePanel({
             onTrocouDeNegocio={aoTrocarDeNegocio}
           /></fieldset>
         ) : (
-          <SemLista vazio="Sem leads." erro={erro} onTentarDeNovo={() => setTentativa((n) => n + 1)} />
+          <SemLista
+            vazio={t("Sem negócios.")}
+            erro={erro}
+            onTentarDeNovo={() => setTentativa((n) => n + 1)}
+          />
         )}
       </section>
     ),

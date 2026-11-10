@@ -17,7 +17,19 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const patchSchema = z.object({ status: z.enum(["archived", "active"]) });
+/**
+ * #2369 — a validade também se ajusta por aqui (renovar a programação da
+ * semana, tirar o prazo de um aprendizado que virou regra permanente). Um
+ * campo só continua valendo: `status`, `valid_until` ou os dois.
+ */
+const patchSchema = z
+  .object({
+    status: z.enum(["archived", "active"]).optional(),
+    valid_until: z.string().date().nullable().optional(),
+  })
+  .refine((v) => v.status !== undefined || v.valid_until !== undefined, {
+    message: "informe status ou valid_until",
+  });
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -39,19 +51,28 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return fail("validation_failed", t("status inválido."), 422, {
+    return fail("validation_failed", t("Informe um status ou uma data de validade válidos."), 422, {
       requestId,
       details: parsed.error.flatten(),
     });
   }
 
+  // Só o que veio no corpo é gravado: `valid_until: undefined` no UPDATE do
+  // PostgREST não apaga a data, mas confiar nisso deixaria a intenção refém de
+  // detalhe da biblioteca — e "apagar o prazo" precisa ser `null` explícito.
+  const alteracoes: { status?: string; valid_until?: string | null; updated_at: string } = {
+    updated_at: new Date().toISOString(),
+  };
+  if (parsed.data.status !== undefined) alteracoes.status = parsed.data.status;
+  if (parsed.data.valid_until !== undefined) alteracoes.valid_until = parsed.data.valid_until;
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("org_memory_entries")
-    .update({ status: parsed.data.status, updated_at: new Date().toISOString() })
+    .update(alteracoes)
     .eq("id", id)
     .eq("organization_id", org.orgId)
-    .select("id, status")
+    .select("id, status, valid_until")
     .single();
   if (error || !data) {
     return fail("not_found", t("Entrada de memória não encontrada nesta organização."), 404, {
@@ -66,8 +87,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     resourceType: "org_memory_entries",
     resourceId: id,
     requestId,
-    metadata: { status: parsed.data.status },
+    metadata: { status: parsed.data.status ?? null, valid_until: parsed.data.valid_until ?? null },
   });
 
-  return ok({ id: data.id, status: data.status }, { requestId });
+  return ok({ id: data.id, status: data.status, valid_until: data.valid_until }, { requestId });
 }

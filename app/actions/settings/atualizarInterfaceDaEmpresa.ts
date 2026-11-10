@@ -9,6 +9,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import {
   interfaceSettingsSchema,
@@ -129,11 +130,18 @@ async function gravarInterface(
   if (erroLeitura) return { ok: false, error: "internal_error" };
   const novo = mesclar(atual?.interface_settings);
 
+  // #3696: `interface_settings` da empresa viaja DENTRO do snapshot de
+  // permissões de CADA membro (o menu lateral inteiro sai dele) — e o cache
+  // curto é por usuário. `invalidarOrg` é o único jeito de derrubar o menu de
+  // todos de uma vez. Antes e depois da escrita: antes, para a tela que já está
+  // aberta não regravar o valor velho no meio do UPDATE; depois, para o commit.
+  invalidarOrg(orgId);
   const { error } = await supabase
     .from("organizations")
     .update({ interface_settings: novo })
     .eq("id", orgId);
   if (error) return { ok: false, error: "internal_error" };
+  invalidarOrg(orgId);
 
   await audit({
     action: "org.interface_changed",

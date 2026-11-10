@@ -19,6 +19,20 @@ import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { audit, hashEmail } from "@/lib/audit";
 import { authRateLimited, AUTH_LIMITS } from "@/lib/auth/rate-limit";
 import { env } from "@/lib/env";
+import {
+  CHAVE_FUSO_DO_CADASTRO,
+  CHAVE_IDIOMA_DO_CADASTRO,
+  pistasParaGuardar,
+} from "@/lib/auth/perfil-da-empresa-nova";
+
+/** As pistas saneadas, nas chaves que o provisionamento lê. */
+function metadadosDasPistas(pistas: { idioma?: string; fuso?: string } | undefined): Record<string, string> {
+  const limpas = pistasParaGuardar(pistas ?? {});
+  return {
+    ...(limpas.idioma ? { [CHAVE_IDIOMA_DO_CADASTRO]: limpas.idioma } : {}),
+    ...(limpas.fuso ? { [CHAVE_FUSO_DO_CADASTRO]: limpas.fuso } : {}),
+  };
+}
 
 export type SignUpResult =
   | {
@@ -88,6 +102,13 @@ export async function signUp(
    * token com o e-mail que o provedor de auth confirmou.
    */
   inviteToken?: string,
+  /**
+   * O idioma em que a tela de cadastro foi desenhada e o fuso do navegador.
+   * Viajam no `user_metadata` até `/auth/confirm`, onde a empresa NASCE com eles
+   * (`lib/auth/perfil-da-empresa-nova.ts`). São pistas, não autoridade: só
+   * idioma servido e fuso que o `Intl` reconhece passam do saneamento.
+   */
+  pistas?: { idioma?: string; fuso?: string },
 ): Promise<SignUpResult> {
   const temConvite = typeof inviteToken === "string" && inviteToken.trim() !== "";
   const parsed = temConvite
@@ -238,7 +259,11 @@ export async function signUp(
             invite_token: convite,
             full_name: (parsed.data as SignupComConviteInput).full_name,
           }
-        : { org_name: (parsed.data as SignupInput).org_name, ...(planoEscolhido ? { cobranca_plan_id: planoEscolhido } : {}) },
+        : {
+            org_name: (parsed.data as SignupInput).org_name,
+            ...(planoEscolhido ? { cobranca_plan_id: planoEscolhido } : {}),
+            ...metadadosDasPistas(pistas),
+          },
     },
   });
 
