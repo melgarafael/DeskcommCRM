@@ -394,6 +394,21 @@ export const DICIONARIO: Traducoes = {
   "Esta automação está configurada para rodar no máximo uma vez por contato, e este contato já passou por ela. Nada foi enviado agora e nada será.": {
     es: "Esta automatización está configurada para ejecutarse como máximo una vez por contacto, y este contacto ya pasó por ella. No se envió nada ahora y nada se enviará.",
   },
+  // #2974, fatia 2 — o INTERVALO mínimo por contato: o campo da gaveta, a frase
+  // que explica o campo desabilitado e a frase da aba Atividade quando é a
+  // janela (e não o "uma vez") que barrou o contato.
+  "Não repetir para o mesmo contato por (horas)": {
+    es: "No repetir para el mismo contacto durante (horas)",
+  },
+  "Desligue “rodar no máximo uma vez por contato” para usar um intervalo.": {
+    es: "Desactive «ejecutar como máximo una vez por contacto» para usar un intervalo.",
+  },
+  "Deixe vazio para não ter intervalo. Com um número, a automação não repete para o mesmo contato antes de passar esse tanto de horas (1 a 720, ou seja até 30 dias). O contador é por contato e por automação, e sobrevive a reinício.": {
+    es: "Déjelo vacío para no tener intervalo. Con un número, la automatización no se repite para el mismo contacto antes de que pasen esas horas (1 a 720, o sea hasta 30 días). El contador es por contacto y por automatización, y sobrevive a un reinicio.",
+  },
+  "Esta automação não repete para o mesmo contato dentro do intervalo configurado, e este contato passou por ela há menos tempo que isso. Nada foi enviado agora; ela volta a valer quando a janela terminar.": {
+    es: "Esta automatización no se repite para el mismo contacto dentro del intervalo configurado, y este contacto pasó por ella hace menos tiempo que eso. No se envió nada ahora; vuelve a aplicarse cuando termine la ventana.",
+  },
   "Há um ajuste proporcional esperando pagamento. Escolher outro plano cancela esse ajuste.": { es: "Hay un ajuste proporcional esperando el pago. Elegir otro plan cancela ese ajuste." },
   "Estamos preparando o ajuste proporcional. Aguarde alguns segundos e tente novamente.": { es: "Estamos preparando el ajuste proporcional. Espera unos segundos e inténtalo de nuevo." },
   "Estamos preparando o ajuste proporcional. Aguarde alguns segundos.": { es: "Estamos preparando el ajuste proporcional. Espera unos segundos." },
