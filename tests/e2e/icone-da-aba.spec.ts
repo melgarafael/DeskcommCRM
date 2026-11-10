@@ -148,9 +148,9 @@ test.describe("o ícone da aba subido em /admin/marca chega à aba", () => {
         mimeType: "image/png",
         buffer: PNG_DO_ICONE,
       });
-      const resposta = await escrita;
-      expect(resposta.status(), "a rota do ícone recusou o que a tela subiu").toBe(200);
-      const corpoDaSubida = (await resposta.json()) as { data?: { logo_url?: string | null } };
+      const respostaDaSubida = await escrita;
+      expect(respostaDaSubida.status(), "a rota do ícone recusou o que a tela subiu").toBe(200);
+      const corpoDaSubida = (await respostaDaSubida.json()) as { data?: { logo_url?: string | null } };
       const urlGravada = corpoDaSubida.data?.logo_url ?? null;
       expect(
         urlGravada,
