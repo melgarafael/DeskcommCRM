@@ -49,7 +49,14 @@ import type { SendMessageInput } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { EVENTO_REENVIO_DESACELERADO, reenvioDesaceleradoAtende } from "./reenvio-desacelerado";
+import {
+  EVENTO_REENVIO_DESACELERADO,
+  MAX_REENVIOS,
+  reenvioDesaceleradoAtende,
+  TETO_DA_ESPERA_DA_FILA_MS,
+} from "./reenvio-desacelerado";
+
+export { MAX_REENVIOS, TETO_DA_ESPERA_DA_FILA_MS };
 
 const CONSUMER_KEY = "messages.reenvio_desacelerado";
 export const ESPERA_PADRAO_MS = 60_000;
@@ -59,11 +66,8 @@ export const ESPERA_MAXIMA_MS = 5 * 60_000;
 export const ESPERA_DA_FILA_MS = 15_000;
 /** Quanto a mensagem do agente espera o turno que ainda é dono dela. */
 export const ESPERA_DO_TURNO_MS = 30_000;
-export const MAX_REENVIOS = 4;
 /** A mensagem da frente só segura a de trás se foi escrita há pouco — uma presa há dias não trava a conversa. */
 const JANELA_DA_FILA_MS = 30 * 60_000;
-/** E a de trás não espera a da frente para sempre: passado isto desde o pedido, segue sozinha. */
-export const TETO_DA_ESPERA_DA_FILA_MS = 10 * 60_000;
 
 const TIPOS_DE_MIDIA = new Set(["image", "audio", "video", "document"]);
 

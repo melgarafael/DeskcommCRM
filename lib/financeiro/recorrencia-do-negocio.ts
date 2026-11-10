@@ -35,7 +35,7 @@
  *
  * Antes de escrever, a função procura o molde do negócio. A garantia de
  * verdade é o índice único parcial `recurring_entries_org_lead_uidx`
- * (migration 9246): dois arrastos simultâneos passam pela mesma leitura, um
+ * (migration 9316): dois arrastos simultâneos passam pela mesma leitura, um
  * grava e o outro recebe `23505` — tratado como `ja_existia`, o mesmo desfecho
  * do cron quando o índice de competência pega.
  *

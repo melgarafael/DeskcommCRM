@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { countAs, sql } from "./gov-helpers";
 
 /**
- * A RECORRÊNCIA DO NEGÓCIO NO BANCO (#3602, fatias 3 e 4) — migration 9246.
+ * A RECORRÊNCIA DO NEGÓCIO NO BANCO (#3602, fatias 3 e 4) — migration 9316.
  *
  * ## O que este arquivo prende
  *
@@ -118,7 +118,7 @@ function inserirMolde(
   `;
 }
 
-describe("recurring_entries.crm_lead_id — a coluna de origem (9246)", () => {
+describe("recurring_entries.crm_lead_id — a coluna de origem (9316)", () => {
   it("existe, é nullable e a FK é on delete set null", () => {
     expect(
       sql(`

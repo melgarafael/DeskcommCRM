@@ -16,7 +16,7 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { enderecoDaUltimaRecebida, respondePelaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
-import { samePhone } from "@/lib/channels/phone-variants";
+import { mesmoTelefoneNaLista } from "@/lib/channels/phone-variants";
 import { ehContatoPessoal } from "@/lib/contacts/contato-pessoal";
 import { createClient } from "@/lib/supabase/server";
 
@@ -115,8 +115,9 @@ export async function GET(_req: NextRequest, ctx: Context): Promise<Response> {
       // Só vale o número que a ficha AINDA tem: logo depois de "Tornar principal", de uma
       // fusão ou da remoção de um extra, a última mensagem pode ter vindo de um número que já
       // saiu da ficha, e a tela não pode anunciar um telefone que a ficha não tem.
-      const dono = [principal.phone_number, ...extras.map((e) => e.phone_number)].find(
-        (n): n is string => Boolean(n) && samePhone(n as string, `+${digitos}`),
+      const dono = mesmoTelefoneNaLista(
+        [principal.phone_number, ...extras.map((e) => e.phone_number)],
+        `+${digitos}`,
       );
       if (dono) {
         phoneNumber = dono;
