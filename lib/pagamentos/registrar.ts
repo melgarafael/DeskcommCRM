@@ -34,7 +34,8 @@ import { VALOR_MAXIMO_CENTS, type ProvedorDeRecebimento, type SituacaoDoRecebime
 export interface Recebimento {
   id: string;
   organization_id: string;
-  conversation_id: string;
+  /** Nulo quando a conversa foi apagada depois do registro: o recebimento fica (migration 9312). */
+  conversation_id: string | null;
   lead_id: string | null;
   provedor: string;
   external_id: string | null;

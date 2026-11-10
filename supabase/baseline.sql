@@ -78420,21 +78420,29 @@ notify pgrst, 'reload schema';
 -- ═══ `lead_id` NULO É ESTADO LEGÍTIMO ═══
 --
 -- Nem todo recebimento se prende a um negócio (cliente avulso, conversa sem
--- card). O aviso continua valendo — marca `paga` e não move nada. `on delete set
--- null` porque apagar o negócio não pode apagar o pagamento que a pessoa fez.
+-- card). O aviso continua valendo — marca `paga` e não move nada.
+--
+-- ═══ APAGAR A CONVERSA OU O NEGÓCIO NÃO APAGA O RECEBIMENTO ═══
+--
+-- `conversation_id` e `lead_id` são `on delete set null`. Apagar o contato
+-- (`fn_apagar_contato_com_historico` apaga as conversas dele) ou o negócio
+-- deixa o recebimento na organização, com valor, status e `pago_em`
+-- preservados, e o vínculo nulo — o mesmo critério do `orders.contact_id`.
+-- Recebimento sem conversa é lido por quem enxerga a organização (a policy de
+-- leitura abaixo); com conversa, também pelo escopo dela.
 --
 -- ═══ LGPD ═══
 --
 -- A linha NÃO guarda nada que identifique o titular: sem nome, telefone,
--- e-mail, CPF nem corpo de mensagem. É o fato comercial — o mesmo critério do
--- `orders` (valor e status preservados, identidade zerada).
+-- e-mail, CPF nem corpo de mensagem. É o fato comercial.
 
 create table if not exists public.pagamento_recebimentos (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
 
-  -- Onde o recebimento foi REGISTRADO: a conversa que a atendente vê.
-  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  -- Onde o recebimento foi REGISTRADO: a conversa que a atendente vê. Nulo
+  -- quando a conversa foi apagada: o recebimento fica.
+  conversation_id uuid references public.conversations(id) on delete set null,
 
   -- O negócio que o aviso de "pago" pode mover. Nulo quando não há card aberto.
   lead_id uuid references public.crm_leads(id) on delete set null,
@@ -78554,18 +78562,21 @@ revoke all on public.pagamento_recebimentos from authenticated;
 grant select on public.pagamento_recebimentos to authenticated;
 grant select, insert, update, delete on public.pagamento_recebimentos to service_role;
 
--- Leitura: quem enxerga a organização. O `exists` na conversa roda sob a RLS de
--- `conversations`, então o escopo de visibilidade do atendimento vale aqui sem
--- uma segunda régua.
+-- Leitura: quem enxerga a organização. Com conversa, o `exists` roda sob a RLS
+-- de `conversations`, então o escopo de visibilidade do atendimento vale aqui
+-- sem uma segunda régua. Sem conversa (ela foi apagada), só a organização.
 drop policy if exists tenant_isolation_pagamento_recebimentos_select on public.pagamento_recebimentos;
 create policy tenant_isolation_pagamento_recebimentos_select on public.pagamento_recebimentos
   for select to authenticated
   using (
     organization_id in (select public.fn_user_org_ids())
-      and exists (
-        select 1 from public.conversations c
-         where c.id = pagamento_recebimentos.conversation_id
-           and c.organization_id = pagamento_recebimentos.organization_id
+      and (
+        pagamento_recebimentos.conversation_id is null
+        or exists (
+          select 1 from public.conversations c
+           where c.id = pagamento_recebimentos.conversation_id
+             and c.organization_id = pagamento_recebimentos.organization_id
+        )
       )
   );
 
