@@ -10,6 +10,10 @@ const h = vi.hoisted(() => ({
   ligado: true,
   permitido: true,
   baldes: [] as string[],
+  /** O que o balde de recusas já contou nesta janela (a consulta sem contar). */
+  recusasNaJanela: 0,
+  espiados: [] as string[],
+  modulosLidos: 0,
   aviso: vi.fn(),
   erro: vi.fn(),
   banco: undefined as unknown as BancoFalso,
@@ -20,11 +24,20 @@ vi.mock("@/lib/audit", () => ({
     h.auditorias.push(entrada);
   },
 }));
-vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.ligado }));
+vi.mock("@/lib/instalacao/modulos", () => ({
+  moduloLigado: async () => {
+    h.modulosLidos += 1;
+    return h.ligado;
+  },
+}));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({
   checkRateLimit: async (balde: string) => {
     h.baldes.push(balde);
     return { allowed: h.permitido };
+  },
+  peekRateLimit: async (balde: string) => {
+    h.espiados.push(balde);
+    return h.recusasNaJanela;
   },
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
@@ -133,6 +146,9 @@ beforeEach(() => {
   h.ligado = true;
   h.permitido = true;
   h.baldes = [];
+  h.recusasNaJanela = 0;
+  h.espiados = [];
+  h.modulosLidos = 0;
   h.auditorias = [];
   m = {
     linha: pendente(),
@@ -247,6 +263,25 @@ describe("webhook do pagamento do cliente final", () => {
       expect(r.status).toBe(429);
       expect(r.headers.get("Retry-After")).toBe("60");
       expect(h.baldes).toEqual(["pagamento-webhook-recusado:10.0.0.1"]);
+    });
+
+    it("⭐ balde de recusas já estourado: 429 ANTES de ler o módulo e o recebimento", async () => {
+      h.recusasNaJanela = 120;
+      const r = await entregar();
+      expect(r.status).toBe(429);
+      expect(r.headers.get("Retry-After")).toBe("60");
+      expect(h.espiados).toEqual(["pagamento-webhook-recusado:10.0.0.1"]);
+      expect(h.modulosLidos).toBe(0);
+      expect(h.banco.cadeias).toEqual([]);
+      // Consultar não conta: só a recusa conta.
+      expect(h.baldes).toEqual([]);
+    });
+
+    it("aviso válido não conta no balde (só é consultado)", async () => {
+      const r = await entregar();
+      expect(r.status).toBe(200);
+      expect(h.espiados).toHaveLength(1);
+      expect(h.baldes).toEqual([]);
     });
 
     it("⭐ o log da recusa não leva o segredo nem a URL", async () => {
