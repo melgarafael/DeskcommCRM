@@ -4383,7 +4383,7 @@ e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nat
 [Registro da prova](ofertas-da-campanha.md). CNPJ já foi
 entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.
 
-## J67 — Módulo conectado: instalar, desligar e ligar de novo `[P0]` (2026-11-04)
+## J68 — Módulo conectado: instalar, desligar e ligar de novo `[P0]` (2026-11-04)
 
 Specs: nenhuma spec de tela escrita ainda. Cobertura hoje: `tests/invariants/extensoes-conectado.test.ts`
 e `tests/invariants/extensoes-interruptor.test.ts` (banco, `pnpm test:db`, CI `invariants`) e
@@ -4398,19 +4398,19 @@ com uma entrada `connected` que traz `service_origin` em `https://` (loopback s�
 
 **Bloqueio conhecido antes da execução.** O catálogo de laboratório (`experiments/extensoes/catalog/catalog.py`)
 ainda não admite o perfil `connected`: `validate_manifest` recusa todo `profile` diferente de `"declarative"`
-(linha 168) e `entry_from_manifest` (linha 353) não grava `service_origin`. Até isso mudar, o caso J67.1 não
+(linha 168) e `entry_from_manifest` (linha 353) não grava `service_origin`. Até isso mudar, o caso J68.1 não
 roda, e os casos seguintes ficam como especificação.
 
 | Caso | Prioridade | Prova prevista | Resultado |
 |---|---|---|---|
-| J67.1 | Admitir um catálogo de laboratório com entrada `connected` e `service_origin` | P0 | Catálogo exportado com `profile: connected` e `service_origin`; a admissão pela UI aceita; banco com a entrada e a origem | **NÃO EXECUTADO** — bloqueado pelo laboratório (ver acima) |
-| J67.2 | Instalar pela UI em `/admin/extensoes` | P0 | A instalação aparece com perfil `connected`, revisão 1, sem `disabled_at`; banco com recibo `install` concluído | **NÃO EXECUTADO** |
-| J67.3 | Cartão do módulo conectado instalado | P0 | O cartão mostra o botão Desligar e a nota "Desligar não desinstala: o módulo continua instalado e pode ser ligado de novo." Não há aviso de instalação próprio nesta fase | **NÃO EXECUTADO** |
-| J67.4 | Desligar | P0 | Toast "Módulo desligado nesta instalação."; o cartão mostra "Desligado nesta instalação" com a data e o botão passa a Ligar; banco com `disabled_at` e `disabled_by` preenchidos, revisão +1 e `api_audit_log` com `extension.switched` | **NÃO EXECUTADO** |
-| J67.5 | Ligar de novo | P0 | Toast "Módulo ligado de novo nesta instalação."; o aviso some; `disabled_at` e `disabled_by` voltam a nulo; revisão +1 | **NÃO EXECUTADO** |
-| J67.6 | Recibo repetido e revisão velha | P1 | A repetição devolve `applied_now` falso sem mexer na revisão; uma revisão velha recarrega a tela e não anuncia sucesso | **CI `invariants`** (banco) e teste de componente escritos; **NÃO EXECUTADO** na tela |
-| J67.7 | Sem módulo conectado instalado | P0 | A tela de extensões é a de hoje: nenhum botão Ligar ou Desligar, nenhuma nota de interruptor | teste de componente escrito; **NÃO EXECUTADO** na tela |
-| J67.8 | Remover um módulo conectado desligado e reinstalar | P0 | Reinstalar reaproveita a mesma linha, zera `removed_at` e mantém `disabled_at`: a instalação volta DESLIGADA; os vínculos das organizações não voltam ativos | **NÃO EXECUTADO.** Verificado só por leitura: `fn_extensions_finish_install` faz `update ... removed_at=null` e não toca em `disabled_at`; nenhum teste cobre este caminho |
+| J68.1 | Admitir um catálogo de laboratório com entrada `connected` e `service_origin` | P0 | Catálogo exportado com `profile: connected` e `service_origin`; a admissão pela UI aceita; banco com a entrada e a origem | **NÃO EXECUTADO** — bloqueado pelo laboratório (ver acima) |
+| J68.2 | Instalar pela UI em `/admin/extensoes` | P0 | A instalação aparece com perfil `connected`, revisão 1, sem `disabled_at`; banco com recibo `install` concluído | **NÃO EXECUTADO** |
+| J68.3 | Cartão do módulo conectado instalado | P0 | O cartão mostra o botão Desligar e a nota "Desligar não desinstala: o módulo continua instalado e pode ser ligado de novo." Não há aviso de instalação próprio nesta fase | **NÃO EXECUTADO** |
+| J68.4 | Desligar | P0 | Toast "Módulo desligado nesta instalação."; o cartão mostra "Desligado nesta instalação" com a data e o botão passa a Ligar; banco com `disabled_at` e `disabled_by` preenchidos, revisão +1 e `api_audit_log` com `extension.switched` | **NÃO EXECUTADO** |
+| J68.5 | Ligar de novo | P0 | Toast "Módulo ligado de novo nesta instalação."; o aviso some; `disabled_at` e `disabled_by` voltam a nulo; revisão +1 | **NÃO EXECUTADO** |
+| J68.6 | Recibo repetido e revisão velha | P1 | A repetição devolve `applied_now` falso sem mexer na revisão; uma revisão velha recarrega a tela e não anuncia sucesso | **CI `invariants`** (banco) e teste de componente escritos; **NÃO EXECUTADO** na tela |
+| J68.7 | Sem módulo conectado instalado | P0 | A tela de extensões é a de hoje: nenhum botão Ligar ou Desligar, nenhuma nota de interruptor | teste de componente escrito; **NÃO EXECUTADO** na tela |
+| J68.8 | Remover um módulo conectado desligado e reinstalar | P0 | Reinstalar reaproveita a mesma linha, zera `removed_at` e mantém `disabled_at`: a instalação volta DESLIGADA; os vínculos das organizações não voltam ativos | **NÃO EXECUTADO.** Verificado só por leitura: `fn_extensions_finish_install` faz `update ... removed_at=null` e não toca em `disabled_at`; nenhum teste cobre este caminho |
 
 **Comportamento declarado.** Reinstalar um módulo removido que estava desligado volta **desligado**. É a escolha do
 lado seguro: quem administra a instalação liga de novo, de propósito.
