@@ -17,6 +17,8 @@ const cena = vi.hoisted(() => ({
   semOrgAtiva: false,
   cobranca: false,
   inicial: true,
+  falhaNoPrimeiroPagamento: false,
+  logWarn: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -50,6 +52,7 @@ vi.mock("@/lib/supabase/admin", () => ({
     from: (tabela: string) => tabela === "cobranca_assinaturas" ? ({
       select: () => ({ eq: (_coluna: string, id: string) => ({ maybeSingle: async () => {
         expect(id).toBe(cena.B);
+        if (cena.falhaNoPrimeiroPagamento) return { data: null, error: { code: "57014", message: "timeout" } };
         return { data: { estado: "inadimplente", pagamento_inicial_pendente: cena.inicial, periodo_pago_desde: cena.inicial ? null : "2026-01-01T00:00:00Z" }, error: null };
       } }) }),
     }) : ({
@@ -62,6 +65,7 @@ vi.mock("@/lib/supabase/admin", () => ({
     }),
   }),
 }));
+vi.mock("@/lib/logger", () => ({ logger: { warn: cena.logWarn, error: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => cena.cobranca }));
 vi.mock("@/lib/cobranca/hub", async (original) => ({
   ...await original<typeof Hub>(),
@@ -101,6 +105,8 @@ beforeEach(() => {
   cena.semOrgAtiva = false;
   cena.cobranca = false;
   cena.inicial = true;
+  cena.falhaNoPrimeiroPagamento = false;
+  cena.logWarn.mockClear();
 });
 
 describe("/account-suspended: o hub de quem está numa empresa suspensa", () => {
@@ -117,6 +123,14 @@ describe("/account-suspended: o hub de quem está numa empresa suspensa", () => 
     await montar();
     expect(screen.getByRole("heading", { name: "Aguardando primeiro pagamento" })).toBeVisible();
     expect(screen.queryByRole("link", { name: "Continuar para pagamento" })).toBeNull();
+  });
+
+  it("leitura do primeiro pagamento que falha não derruba o hub: segue como conta suspensa, com LGPD, e loga", async () => {
+    cena.cobranca = true; cena.falhaNoPrimeiroPagamento = true;
+    await montar();
+    expect(screen.getByRole("heading", { name: "Conta suspensa" })).toBeVisible();
+    expect(screen.getByTestId("lgpd-lista")).toBeVisible();
+    expect(cena.logWarn).toHaveBeenCalledWith("account_suspended.primeiro_pagamento_indisponivel", expect.objectContaining({ code: "57014" }));
   });
 
   it("o retorno do provedor segue para conferir, sem reiniciar checkout automaticamente", async () => {

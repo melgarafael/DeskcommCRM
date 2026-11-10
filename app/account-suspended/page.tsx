@@ -17,6 +17,7 @@ import { CAMINHO_DA_CONTRATACAO, podeContinuarContratacao, primeiroPagamentoPend
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
+import { logger } from "@/lib/logger";
 import { ehOperante, tipoDaSuspensao } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -99,8 +100,12 @@ export default async function AccountSuspendedPage({
     ? await admin.from("cobranca_assinaturas")
       .select("estado, pagamento_inicial_pendente, periodo_pago_desde").eq("organization_id", ativa.orgId).maybeSingle()
     : null;
-  if (inicial?.error) throw new Error("account_suspended_primeiro_pagamento_indisponivel");
-  const primeiroPagamento = primeiroPagamentoPendente(inicial?.data ?? null);
+  // Leitura que falha NÃO derruba o hub (Sair, suporte e LGPD moram aqui): segue
+  // como "conta suspensa", que é o que a tela mostrava antes de saber da compra.
+  if (inicial?.error) {
+    logger.warn("account_suspended.primeiro_pagamento_indisponivel", { organizationId: ativa.orgId, code: inicial.error.code });
+  }
+  const primeiroPagamento = inicial?.error ? false : primeiroPagamentoPendente(inicial?.data ?? null);
   const podeContratar = podeContinuarContratacao(user, ativa.role);
   if (primeiroPagamento && podeContratar && !pedidoValido && ajuda !== "1") {
     redirect(`${CAMINHO_DA_CONTRATACAO}${voltou === "1" ? "?voltou=1&retomar=1" : ""}`);
