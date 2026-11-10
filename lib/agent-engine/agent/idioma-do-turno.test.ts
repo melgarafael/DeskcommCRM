@@ -102,6 +102,22 @@ describe("o system do turno no idioma da organização", () => {
     expect(sistema).toContain("## Idioma de la conversación");
   });
 
+  it("es: o bloco do MODO ASSISTIDO vai inteiro — as frases que definem o modo, não só a última", () => {
+    const [bloco = ""] = blocosNoIdioma([blocoDoModoDePrevia("assisted")], "es");
+    // As três frases que fazem do modo o que ele é: rascunho em nome do
+    // atendente, primeira pessoa, e não falar como IA nem propor transferência.
+    expect(bloco).toContain("MODO ASISTIDO");
+    expect(bloco).toContain("BORRADOR");
+    expect(bloco).toContain("en su nombre");
+    expect(bloco).toContain("primera persona");
+    expect(bloco).toContain("No hables como asistente ni como IA");
+    expect(bloco).toContain("no propongas pasar la atención");
+    expect(bloco).toContain("Propón el mensaje con send_message.");
+    // E nada do texto em português sobra.
+    expect(bloco).not.toContain("MODO ASSISTIDO");
+    expect(bloco).not.toContain("RASCUNHO");
+  });
+
   it("pt-BR: cada bloco é o texto de hoje, byte a byte (controle)", () => {
     expect(personaNeutra("pt-BR")).toBe(PERSONA_NEUTRA);
     expect(instrucaoDaConsultaInterna("pt-BR")).toBe(INSTRUCAO_DA_CONSULTA_INTERNA);
