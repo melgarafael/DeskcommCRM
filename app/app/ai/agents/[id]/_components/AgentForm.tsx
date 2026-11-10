@@ -68,6 +68,7 @@ import type { SkillDisponivel } from "@/lib/ai/skills/skills-do-agente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
+import { FraseDoAviso } from "./FraseDoAviso";
 import { ServidorExternoNoAtendimento } from "./ServidorExternoNoAtendimento";
 import { ServidoresMcpDoAgente } from "./ServidoresMcpDoAgente";
 import {
@@ -1657,6 +1658,19 @@ export function AgentForm(props: Props) {
               disabled={disabled}
             />
           </Card>
+
+          {/* A FRASE que o cliente lê quando a conversa é passada para uma pessoa
+              (#3725; tela no #3816). Salva em `ai_agents.config.aviso_de_handoff`
+              — a chave que o `agentConfigPatchSchema` descartava, e por isso só se
+              configurava por SQL. Só em edição, como o cartão dos comandos do
+              celular: sem agente gravado não há id para o PATCH. */}
+          {isEdit && (
+            <FraseDoAviso
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).aviso_de_handoff}
+              disabled={disabled}
+            />
+          )}
 
           {/* O OUTRO caminho para uma pessoa: o clima fechado
               (`ai.sentiment_alert`, em `workers/ai-sentiment-worker.ts`).
