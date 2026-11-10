@@ -54,6 +54,13 @@ export default async function RouterEditorPage({ params }: { params: Promise<{ i
 
   if (!routerRow) notFound();
 
+  // #4340 — o número deste roteador pode ter sido remoto/arquivado: ele some da
+  // lista de canais oferecíveis (`listSelectableChannels` filtra
+  // `archived_at`). A tela já escrevia "Número removido", mas o roteador
+  // seguia "ativo" e o operador não sabia que aquele número não roteia mais
+  // nada — nem que as conversas do número NOVO caem no agente principal.
+  const numeroRemovido = !channelSessions.some((c) => c.id === routerRow.channel_session_id);
+
   // Só os modelos que esta organização consegue usar de fato — ver a razão em
   // lib/ai/classifier-models.
   const classifierModels = await listClassifierModels(supabase, activeOrg.orgId, {
@@ -62,7 +69,12 @@ export default async function RouterEditorPage({ params }: { params: Promise<{ i
   });
 
   const initialState: RouterDetailState = {
-    router: routerRow as RouterDetailState["router"],
+    // Estado EFETIVO: número removido não está roteando, por mais que a linha
+    // de `ai_routers` diga `is_active`.
+    router: {
+      ...(routerRow as RouterDetailState["router"]),
+      is_active: numeroRemovido ? false : routerRow.is_active,
+    },
     members: (memberRows ?? []) as RouterDetailState["members"],
   };
 
@@ -76,6 +88,7 @@ export default async function RouterEditorPage({ params }: { params: Promise<{ i
         agents={agents}
         channelSessions={channelSessions}
         classifierModels={classifierModels}
+        numeroRemovido={numeroRemovido}
       />
     </div>
   );

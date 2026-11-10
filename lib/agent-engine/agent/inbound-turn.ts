@@ -2870,7 +2870,31 @@ async function executarTurnoDoAgente(
   // A guarda é de TELEMETRIA e degrada ABERTO: se a leitura falhar, `false` e a
   // gravação acontece como antes — nunca se perde a linha por causa dela.
   let decisaoJaGravada = false;
-  if (!preview && routed.routerId !== null) {
+  // #4340 — O NÚMERO SEM ROTEADOR TAMBÉM É UMA DECISÃO DE ROTEAMENTO.
+  //
+  // Quando o agente troca de número, o roteador fica no número arquivado e o
+  // número novo nasce SEM roteador. `resolveTurnAgent` então devolve
+  // `routerId: null` + `outcome: 'no_router'` e o turno segue no agente
+  // publicado do número (o principal) — que é o comportamento certo. O errado
+  // era este `if` antigo (`routed.routerId !== null`): sem roteador, NADA era
+  // gravado, e o painel contava os turnos do número novo como se não houvesse
+  // turno nenhum. Ninguém enxergava o defeito que o cliente reclamou.
+  //
+  // O desfecho é `no_match` porque o CHECK de `outcome` aceita um vocabulário
+  // FECHADO (classified, sticky, reclassified, fallback, no_match,
+  // classifier_failed, transferred) e esta fatia não tem migration. O
+  // discriminador de "número sem roteador" é `router_id is null`: todo
+  // `no_match` de um roteador de verdade carrega o `router_id` dele, porque o
+  // caminho do roteador só grava com ele carregado. `origem` não serve para
+  // isso — o CHECK aceita só 'classificador' e 'acao' — nem `motivo`, fechado
+  // nos três motivos de transferência.
+  // Sem `channel_session_id` não há número a apontar: não se inventa decisão.
+  const numeroSemRoteador =
+    !preview &&
+    routed.routerId === null &&
+    routed.outcome === 'no_router' &&
+    input.channelSessionId !== '';
+  if (!preview && (routed.routerId !== null || numeroSemRoteador)) {
     try {
       decisaoJaGravada = await decisaoDeRoteamentoDoJobJaGravada(
         pool,
@@ -2884,7 +2908,11 @@ async function executarTurnoDoAgente(
       });
     }
     try {
-      if (agentConfig !== null) {
+      // A conversa só ganha agente ativo quando houve ROTEADOR: no número sem
+      // roteador o agente principal não é escolha de intenção, e gravar o
+      // sticky dele aqui inventaria estado para o dia em que o número ganhar
+      // um roteador (#4340).
+      if (agentConfig !== null && routed.routerId !== null) {
         await pool.query(
           `update conversations
            set active_ai_agent_id = $3, active_intent = $4, active_agent_set_at = now()
@@ -2898,6 +2926,16 @@ async function executarTurnoDoAgente(
       // `origem_da_escolha = 'jev'`); o único leitor desta tabela
       // (`app/api/v1/ai/evolution`) conta roteamento, não quem o fez.
       if (!decisaoJaGravada) {
+        // UM aviso POR TURNO — dentro da guarda do job, então nem a reexecução
+        // do turno reagendado repete a linha (nunca por mensagem): o operador
+        // vê "este número não tem roteador" uma vez, com o agente que assumiu.
+        if (numeroSemRoteador) {
+          runLog.warn('número sem roteador — o turno segue no agente principal (#4340)', {
+            conversation_id: input.conversationId,
+            channel_session_id: input.channelSessionId,
+            agent_id: agentConfig?.agentId ?? null,
+          });
+        }
         await pool.query(
           `insert into ai_router_decisions
            (organization_id, router_id, conversation_id, intent_name, confidence, agent_id, outcome, job_id)
@@ -2909,7 +2947,10 @@ async function executarTurnoDoAgente(
             routed.intentName,
             routed.confidence,
             agentConfig?.agentId ?? null,
-            routed.outcome,
+            // Número sem roteador: não houve nada para casar, e o turno seguiu
+            // no agente principal. `no_match` é o desfecho honesto do
+            // vocabulário fechado — `router_id` nulo diz o motivo.
+            numeroSemRoteador ? 'no_match' : routed.outcome,
             liveJob().id,
           ],
         );

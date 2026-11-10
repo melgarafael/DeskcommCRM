@@ -31,7 +31,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { ArrowRight, CaretLeft, Info, Plus, Trash } from "@/lib/ui/icons";
+import { ArrowRight, CaretLeft, Info, Plus, Trash, Warning } from "@/lib/ui/icons";
 import { randomId } from "@/lib/random-id";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import {
@@ -64,6 +64,13 @@ interface Props {
   channelSessions: ChannelSessionLite[];
   /** Só os modelos que esta organização consegue usar — ver lib/ai/classifier-models. */
   classifierModels: ClassifierModelOption[];
+  /**
+   * #4340 — o `channel_session` deste roteador saiu da lista de canais
+   * oferecíveis (arquivado/removido). O `page.tsx` já entrega o roteador com
+   * `is_active: false`; esta flag existe para a tela DIZER o motivo, em vez de
+   * só parecer um roteador desligado por escolha do operador.
+   */
+  numeroRemovido?: boolean;
 }
 
 interface DraftMember extends RouterMemberInput {
@@ -121,6 +128,7 @@ export function RouterEditorClient({
   agents,
   channelSessions,
   classifierModels,
+  numeroRemovido = false,
 }: Props) {
   const t = useT();
   const nextRouter = useNextRouter();
@@ -348,6 +356,22 @@ export function RouterEditorClient({
           </Button>
         )}
       </div>
+
+      {numeroRemovido && (
+        <Card
+          className="flex flex-col gap-1 border-amber-500/40 bg-amber-500/5 p-4"
+          data-testid="numero-removido"
+        >
+          <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <Warning size={16} aria-hidden /> {t("Este roteador aponta para um número removido")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Nenhuma conversa chega neste roteador: o número foi removido do WhatsApp. As conversas do número novo caem no agente principal dele, sem roteador decidindo a intenção — crie um roteador para o número novo.",
+            )}
+          </p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="space-y-4">

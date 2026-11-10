@@ -4434,6 +4434,18 @@ export const DICIONARIO: Traducoes = {
     },
   "Criar meu primeiro roteador": { es: "Crear mi primer enrutador" },
   "Número removido": { es: "Número eliminado" },
+  "Números sem roteador": { es: "Números sin enrutador" },
+  "As conversas destes números caem no agente principal do número — nenhum roteador decide a intenção delas, então elas não aparecem como roteadas. Crie um roteador para cada número que deve escolher o agente pelo que o cliente quer.":
+    {
+      es: "Las conversaciones de estos números caen en el agente principal del número: ningún enrutador decide su intención, así que no aparecen como enrutadas. Crea un enrutador para cada número que deba elegir el agente según lo que quiera el cliente.",
+    },
+  "Este roteador aponta para um número removido": {
+    es: "Este enrutador apunta a un número eliminado",
+  },
+  "Nenhuma conversa chega neste roteador: o número foi removido do WhatsApp. As conversas do número novo caem no agente principal dele, sem roteador decidindo a intenção — crie um roteador para o número novo.":
+    {
+      es: "A este enrutador no llega ninguna conversación: el número se eliminó de WhatsApp. Las conversaciones del número nuevo caen en su agente principal, sin enrutador que decida la intención. Crea un enrutador para el número nuevo.",
+    },
   "Sem intenções configuradas": { es: "Sin intenciones configuradas" },
   "intenção": { es: "intención" },
   "intenções": { es: "intenciones" },
