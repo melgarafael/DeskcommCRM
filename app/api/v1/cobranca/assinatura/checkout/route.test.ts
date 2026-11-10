@@ -119,6 +119,7 @@ describe("checkout da assinatura", () => {
     h.intencao.mockRejectedValue(new Error("rede"));
     expect((await assinar({ continuar_cadastro: true })).status).toBe(503);
     expect(updates()).toEqual([]);
+    expect(h.logWarn).toHaveBeenCalledWith("cobranca.checkout.intencao_indisponivel", expect.objectContaining({ organizationId: ORG, erro: "rede" }));
   });
   it("chave desligada: 404; empresa isenta: 404; nenhum provedor conectado: 409 com frase para leigo", async () => {
     h.ligada = false;

@@ -58,7 +58,8 @@ export async function POST(req: NextRequest) {
       if (!intencao) return fail("state_conflict", "Confira seu plano e continue para o pagamento.", 409, { requestId });
       chaveDaIntencao = intencao.id;
       planoDaIntencao = intencao.planoId;
-    } catch {
+    } catch (e) {
+      logger.warn("cobranca.checkout.intencao_indisponivel", { requestId, organizationId: authz.org.orgId, erro: e instanceof Error ? e.message : "desconhecido" });
       return fail("unavailable", "Não foi possível retomar sua contratação. Tente novamente.", 503, { requestId });
     }
   }
