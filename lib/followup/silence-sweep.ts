@@ -203,6 +203,18 @@ export interface SilenceSweepDb {
    */
   loadSilentContactIds(orgId: string, cutoffIso: string, segments: string[], desdeIso?: string): Promise<string[]>;
   /**
+   * Abre a janela em que a leitura de conversas do silêncio pode ser
+   * compartilhada entre ponteiros (#4311). `runSilenceSweep` abre antes do laço
+   * e fecha no fim; FORA da janela, `loadSilentContactIds` lê o banco de agora
+   * a cada chamada — duas chamadas diretas têm de enxergar a mudança feita
+   * entre elas (contrato medido por `tests/e2e/encerramento-atendimento`).
+   *
+   * OPCIONAIS pela mesma razão dos demais: os falsos de teste implementam só o
+   * que medem; ausentes = sem cache, que é o comportamento de sempre.
+   */
+  iniciarVarreduraDaLeitura?(): void;
+  encerrarVarreduraDaLeitura?(): void;
+  /**
    * Canal (`conversations.channel_session_id`) da conversa que produziu o
    * silêncio de cada contato — a MESMA que o `insertEnrollment` vai pinar
    * (`origins`), nunca "a última do contato" (#3852).
@@ -391,6 +403,11 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     return hit;
   };
 
+  // #4311: a leitura de conversas do silêncio não depende do ponteiro, só da
+  // organização — dentro DESTA varredura ela sai uma vez por org. O cache morre
+  // no fim do laço: fora dele, cada chamada lê o banco de agora.
+  db.iniciarVarreduraDaLeitura?.();
+
   for (const pointer of pointers) {
     try {
       const trigger = await db.loadTriggerNode(pointer.organization_id, pointer.active_version_id);
@@ -541,6 +558,8 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     }
   }
 
+  db.encerrarVarreduraDaLeitura?.();
+
   return summary;
 }
 
@@ -593,7 +612,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
   // #3852: número da conversa que produziu o silêncio, por contato — lido na
   // MESMA consulta de `loadSilentContactIds`, servido sem ida nova ao banco.
   const canalDoContato = new Map<string, string>();
-  // #4311 — as conversas da organização, UMA leitura por varredura.
+  // #4311 — as conversas da organização, UMA leitura por VARREDURA.
   //
   // Esta é a consulta mais pesada do tick (embeds de `messages`, `contacts`,
   // `sessao` e `organizations(settings)` — o `settings` da org vem repetido em
@@ -601,16 +620,23 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
   // silêncio, o teto e os segmentos são aplicados em memória, logo abaixo.
   // Antes, cada um dos ponteiros da mesma org repetia a leitura inteira: 29
   // ponteiros × ~110 conversas, um tick por minuto → ~1.700 requisições/hora,
-  // e o egress do Supabase estourou (402 por ~14 h). O adapter é criado por
-  // tick (`cron/followup-flow-worker` e `lib/relogio/executar`), então este
-  // mapa vive exatamente a varredura a que pertence.
+  // e o egress do Supabase estourou (402 por ~14 h).
+  //
+  // O cache vale SÓ dentro da janela aberta por `iniciarVarreduraDaLeitura`
+  // (#4311, correção): a 1ª versão memoizava no adapter e, com isso, duas
+  // chamadas diretas a `loadSilentContactIds` passavam a ver o retrato da
+  // primeira — quebrou `tests/e2e/encerramento-atendimento` ("silêncio consulta
+  // proveniência real": grava a mensagem, chama de novo e recebia o resultado
+  // velho). Fora da janela, cada chamada lê o banco de agora.
   //
   // O `catch` desfaz a memoização de uma leitura que FALHOU: cada ponteiro
   // sempre teve a sua chance de tentar de novo (uma falha transitória do
   // PostgREST não pode calar os outros ponteiros da mesma org), e o resumo
   // continua contando `pointers_failed` por ponteiro.
-  const conversasPorOrg = new Map<string, Promise<LinhaDaConversa[]>>();
+  let varreduraDaLeituraAberta = false;
+  let conversasPorOrg = new Map<string, Promise<LinhaDaConversa[]>>();
   const carregarConversas = (orgId: string): Promise<LinhaDaConversa[]> => {
+    if (!varreduraDaLeituraAberta) return consultarConversasDoSilencio(admin, orgId);
     const emCache = conversasPorOrg.get(orgId);
     if (emCache) return emCache;
     const leitura = consultarConversasDoSilencio(admin, orgId);
@@ -621,6 +647,14 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
     return leitura;
   };
   return {
+    iniciarVarreduraDaLeitura() {
+      varreduraDaLeituraAberta = true;
+      conversasPorOrg = new Map();
+    },
+    encerrarVarreduraDaLeitura() {
+      varreduraDaLeituraAberta = false;
+      conversasPorOrg = new Map();
+    },
     async loadActiveSilencePointers() {
       const { data, error } = await admin
         .from("followup_flow_pointers")

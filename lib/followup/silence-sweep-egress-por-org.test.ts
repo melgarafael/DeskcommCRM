@@ -174,29 +174,54 @@ function montarDb(pointers: unknown[], conversas: unknown[] = CONVERSAS) {
 }
 
 describe("#4311 — consulta de conversas: uma por organização, nunca uma por ponteiro", () => {
-  it("5 ponteiros da MESMA organização leem as conversas UMA vez (antes: 5)", async () => {
+  it("dentro da janela da varredura: 5 ponteiros da MESMA organização leem as conversas UMA vez (antes: 5)", async () => {
     const { admin, consultas } = fakeAdmin({ conversations: CONVERSAS });
     const db = createSupabaseSilenceSweepDb(admin);
+    db.iniciarVarreduraDaLeitura!();
 
     for (const id of ["p1", "p2", "p3", "p4", "p5"]) {
       await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
       expect(id).toBeTruthy();
     }
+    db.encerrarVarreduraDaLeitura!();
 
     expect(consultas("conversations")).toBe(1);
   });
 
-  it("ponteiros de DUAS organizações: uma leitura por organização (2 no total)", async () => {
+  it("dentro da janela: ponteiros de DUAS organizações leem uma vez por organização (2 no total)", async () => {
+    const { admin, consultas } = fakeAdmin({ conversations: CONVERSAS });
+    const db = createSupabaseSilenceSweepDb(admin);
+    db.iniciarVarreduraDaLeitura!();
+
+    await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
+    await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
+    await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
+    await db.loadSilentContactIds(ORG_B, CUTOFF, [], undefined);
+    await db.loadSilentContactIds(ORG_B, CUTOFF, [], undefined);
+    db.encerrarVarreduraDaLeitura!();
+
+    expect(consultas("conversations")).toBe(2);
+  });
+
+  it("FORA da janela cada chamada lê o banco de agora — o contrato que o e2e mede", async () => {
+    // Regressão que o e2e pegou: com o cache preso ao adapter, a 2ª chamada
+    // recebia o retrato da 1ª — o teste do #4311 "silêncio consulta proveniência
+    // real" grava a mensagem entre as duas chamadas e via o resultado velho.
     const { admin, consultas } = fakeAdmin({ conversations: CONVERSAS });
     const db = createSupabaseSilenceSweepDb(admin);
 
     await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
     await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
-    await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
-    await db.loadSilentContactIds(ORG_B, CUTOFF, [], undefined);
-    await db.loadSilentContactIds(ORG_B, CUTOFF, [], undefined);
 
     expect(consultas("conversations")).toBe(2);
+
+    // E depois de uma varredura a janela fechou: volta a ler sempre.
+    db.iniciarVarreduraDaLeitura!();
+    await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
+    await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
+    db.encerrarVarreduraDaLeitura!();
+    await db.loadSilentContactIds(ORG, CUTOFF, [], undefined);
+    expect(consultas("conversations")).toBe(4);
   });
 
   it("a varredura de 5 ponteiros da mesma org inscreve exatamente os MESMOS efeitos de antes, sem pular ponteiro", async () => {
