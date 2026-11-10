@@ -118,6 +118,18 @@ export interface LeadRow {
   value_cents?: number;
   currency?: string;
   custom_fields?: Record<string, unknown> | null;
+  /**
+   * Fatia 1 do #3945 — as colunas do DONO e da recorrência, que o card desenha e
+   * a rota do quadro entrega no `select("*")`. Declaradas aqui (e não num `as`
+   * no teste) para o caso do payload medir o handler: sem elas, o dublê apagaria
+   * justamente os campos cuja entrega o teste prova.
+   */
+  owner_kind?: "user" | "ai" | null;
+  owner_user_id?: string | null;
+  owner_agent_id?: string | null;
+  recurring_value_cents?: number | null;
+  recurring_period?: string | null;
+  tags?: string[];
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {
@@ -187,6 +199,12 @@ export interface DbOpts {
    * precisa declarar que ele existe e de quem é.
    */
   contacts?: Array<Record<string, unknown>>;
+  /**
+   * Conversas — a última mensagem do card sai delas (fatia 1 do #3945): a rota
+   * do quadro lê `last_message_preview`/`last_message_at` por contato. Sem esta
+   * fonte, o caso do card mediria um quadro em que ninguém nunca escreveu.
+   */
+  conversations?: Array<Record<string, unknown>>;
   /** Erro do banco na n-ésima escrita (1-based), como o PostgREST devolveria. */
   writeError?: (n: number, table: string) => { code: string; message: string } | null;
   /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
@@ -272,6 +290,7 @@ export interface Registro {
     webhook_sources: Linha[];
     automation_rules: Linha[];
     contacts: Linha[];
+    conversations: Linha[];
     followup_flow_pointers: Linha[];
     followup_flow_versions: Linha[];
     ai_agent_versions: Linha[];
@@ -340,6 +359,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
       webhook_sources: (opts.webhookSources ?? []) as Linha[],
       automation_rules: (opts.automationRules ?? []) as Linha[],
       contacts: (opts.contacts ?? []) as Linha[],
+      conversations: (opts.conversations ?? []) as Linha[],
       followup_flow_pointers: (opts.pointers ?? []) as Linha[],
       followup_flow_versions: (opts.flowVersions ?? []) as Linha[],
       ai_agent_versions: (opts.agentVersions ?? []) as Linha[],
@@ -368,6 +388,13 @@ export function makeDb(opts: DbOpts = {}): Registro {
      * Postgres é ISO-8601 em UTC, e ISO ordena lexicograficamente.
      */
     const intervalos: Array<{ coluna: string; op: "gte" | "lte"; valor: string }> = [];
+    /**
+     * Os `.not(...)` encadeados — o caso real é o `next_action IS NOT NULL` da
+     * leitura de `lead_state` no quadro. Ausente do dublê até a fatia 1 do
+     * #3945: sem ela, medir o payload com lead que TEM contato estourava no
+     * dublê antes de chegar ao card.
+     */
+    const exclusoes: Array<{ coluna: string; op: "is" | "eq"; valor: unknown }> = [];
     const pertinencias: Array<[string, unknown[]]> = [];
     const negacoes: Array<[string, unknown]> = [];
     const disjuncoes: Clausula[][] = [];
@@ -403,6 +430,17 @@ export function makeDb(opts: DbOpts = {}): Registro {
         // filtros — a mesma combinação do PostgREST.
         .filter((r) =>
           disjuncoes.every((clausulas) => clausulas.some((clausula) => casa(r, clausula))),
+        )
+        // `NOT (col IS NULL)` mantém só quem tem valor; `NOT (col = v)` segue o
+        // SQL e NÃO inclui o NULL (comparação com NULL não é verdadeira).
+        .filter((r) =>
+          exclusoes.every(({ coluna, op, valor }) => {
+            const v = valorDaColuna(r, coluna);
+            if (op === "is") {
+              return valor === null ? v !== null && v !== undefined : v !== valor;
+            }
+            return v !== null && v !== undefined && v !== valor;
+          }),
         )
         .filter((r) =>
           intervalos.every(({ coluna, op, valor }) => {
@@ -584,6 +622,14 @@ export function makeDb(opts: DbOpts = {}): Registro {
        */
       neq: (c: string, v: unknown) => {
         negacoes.push([c, v]);
+        return b;
+      },
+      /** `.not(col, "is"|"eq", v)` — a negação do `.is`/`.eq`, como no PostgREST. */
+      not: (c: string, op: string, v: unknown) => {
+        if (op !== "is" && op !== "eq") {
+          throw new Error(`dublê: .not(${c}, "${op}", ...) não suportado`);
+        }
+        exclusoes.push({ coluna: c, op, valor: v });
         return b;
       },
       limit: (n: number) => {
