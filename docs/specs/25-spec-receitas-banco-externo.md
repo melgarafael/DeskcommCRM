@@ -33,7 +33,7 @@ caminho único e vira o modo avançado; o padrão passa a ser a receita pronta
 |---|---|---|
 | C1 | O dialeto real de cada família. ACF e JetEngine mudam entre versões: nomes de `meta_key`, formato de relacionamento (ID solto vs. serializado), tabelas próprias de relação. **NÃO MEDIDO**. | Integração contra cópia real de WP+ACF e WP+JetEngine (versões fixadas): roda cada receita e confere linhas, fotos e taxonomias. Receita que não passou aqui não é liberada. |
 | C2 | Quanto custa uma resposta de receita em tokens (linhas × colunas × fotos). **NÃO MEDIDO** — INFERIDO que 3–4 imóveis com foto estouram o contexto se vierem inteiros. | Mede tokens por resposta em cada receita e fixa o teto de itens e de bytes por item a partir do medido. |
-| C3 | O que o envio aceita por imagem via URL (tipo, tamanho, tempo). **NÃO MEDIDO**. | Envio real pelo adapter com as URLs das receitas (jpg/png/webp, até o teto da D7); registra aceito/recusado e o tempo. |
+| C3 | O que o envio aceita por imagem via URL (tipo, tamanho, tempo). **MEDIDO em 10/11/2026** no número conectado por QR Code: jpg, png e webp aceitos, do pequeno a 99,7% do teto (ver "C3 medido" na R4). O canal oficial da Meta segue sem medir. | Envio real pelo adapter com as URLs das receitas (jpg/png/webp, até o teto da D7); registra aceito/recusado e o tempo. |
 | C4 | Quantos itens por turno não irritam (2? 3?). O braço "4" está fora: exigiria mudar o knob de envios. **NÃO MEDIDO**. | Prova em par com gente de verdade: 2 e 3 itens; registra qual volume gerou resposta vs. silêncio. O desenho da prova resolve antes o orçamento de envios (I4 da revisão): a prova mede irritação, não o teto. |
 | C5 | Por quanto tempo o rastro da execução guarda o resultado da receita e com que redação. **NÃO MEDIDO**. | Lê `lib/ai/runtime/serialize.ts:53-66` + retenção configurada; o achado vira regra explícita na D8. |
 | C6 | Se URL de foto pode virar SSRF (foto apontando para IP interno). **NÃO MEDIDO**. | Teste com URL de foto para host interno: o envio deve recusar antes do fetch. |
@@ -506,14 +506,42 @@ Não há decisão do dono sobre elas; o que este texto atribuía a ele não tinh
   `descreverSemQuery` cobre só o log, e essa tabela não tem expurgo por tempo.
 - Nenhuma migration, tela ou variável de ambiente nova.
 
+### C3 medido em 10/11/2026
+Seis envios reais, um por formato e tamanho, num número de teste nosso conectado por
+QR Code (WAHA 2026.7.2), para o próprio número. O código é o do head `b572115882` do
+PR #3276, chamado direto, sem o modelo e sem o handler de mensagens:
+`baixarImagemSegura` → `guardarImagemNaConversa` → URL assinada de 600 s (a mesma do
+handler) → `wahaAdapter.send` com `wahaSendPlanFor('image')`. As imagens são neutras
+(gradiente com ruído), servidas por https público (túnel da Cloudflare) a partir da
+máquina de testes, com o content-type de cada formato.
+
+| Caso | Bytes | Download pelo CRM | Guarda no Storage | Canal (o gateway baixa e o WhatsApp aceita) | Total | Desfecho |
+|---|---|---|---|---|---|---|
+| jpg pequena (800×600) | 115.039 | 105 ms | 20 ms | 1.701 ms | 1.832 ms | aceita |
+| png pequena (800×600) | 875.052 | 226 ms | 38 ms | 1.489 ms | 1.758 ms | aceita |
+| webp pequena (800×600) | 99.084 | 88 ms | 23 ms | 1.066 ms | 1.183 ms | aceita |
+| jpg grande (3132×2349) | 5.227.303 | 1.241 ms | 62 ms | 3.569 ms | 4.883 ms | aceita |
+| png grande (1613×1210) | 5.189.292 | 1.625 ms | 46 ms | 2.338 ms | 4.014 ms | aceita |
+| webp grande (3216×2412) | 5.186.192 | 1.278 ms | 51 ms | 2.850 ms | 4.184 ms | aceita |
+
+- **Nenhuma recusa.** A maior foto tem 99,7% do teto de 5 MB (5.242.880 bytes).
+- **"Aceita"** quer dizer: o gateway devolveu o id da mensagem, e o WhatsApp confirmou o
+  recebimento no servidor (ack `SERVER`) já na primeira consulta, 3 s depois do envio.
+  Os seis ficaram registrados como `imageMessage` com o tipo original (`image/jpeg`,
+  `image/png`, `image/webp`): o webp sai como foto, não como figurinha.
+- O gateway baixou cada URL assinada uma vez, inteira (log do servidor de teste).
+- O pior total foi 4,9 s, abaixo do timeout de download (8 s), que vale só para a ida
+  à fonte. O tempo do canal depende da rede entre o gateway e o Storage; aqui eles
+  estavam em máquinas diferentes, ligadas pela internet.
+
 ### NÃO MEDIDO
-- C3: tipos, tamanhos e tempos aceitos no envio real por WhatsApp. O autor mediu um
-  envio real, um jpg de `gstatic.com`, recebido no celular, antes da regra de
-  procedência; o resto da matriz não. Png, webp, tamanhos perto do teto e o tempo de
-  cada um seguem abertos, e a ordem de entrega exige o C3 verde para a R4.
+- C3 no canal oficial da Meta: a medição acima cobre só o número conectado por QR Code.
+- Entrega no aparelho de outra pessoa (ack `DEVICE`): o destinatário foi o próprio
+  número, que não gera esse recibo.
 - C4: volume de itens por turno com fotos (continua na prova com gente).
-- Que o `lookup` fixado funciona com outros CDNs (TLS e SNI): medido só contra
-  `www.gstatic.com`, em download real, sem pool (`agent: false`).
+- Que o `lookup` fixado funciona com outros CDNs (TLS e SNI): medido contra
+  `www.gstatic.com` e, na medição do C3, contra a Cloudflare (`trycloudflare.com`),
+  em download real, sem pool (`agent: false`).
 - Se o gateway bloqueia algo que o CRM já baixou: não sabemos, porque o gateway
   não recebe mais a URL.
 
