@@ -36,6 +36,7 @@ import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
+import { recusaDoAgente } from "./recusa-do-agente";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
 import {
@@ -591,13 +592,25 @@ export async function validateConfig(db: pg.PoolClient, org: string, input: Camp
     )
   ).rows[0];
   if (!agent) throw new ProspectingError("Escolha um agente publicado e em operação automática.");
-  if (
-    !agent.tool_ids?.includes("crm_move_lead_stage") ||
-    !agent.pipeline_ids?.includes(config.pipeline_id)
-  )
-    throw new ProspectingError(
-      "Publique o agente com a ferramenta de mover negócios e acesso ao funil escolhido.",
-    );
+  // A FRASE DIZ QUAL CAPACIDADE FALTA, e onde marcá-la (#4118): "mover etapa" se
+  // liga na aba de conversa, o funil da campanha na aba "Organiza o sistema".
+  // O código cru (`faltando`) fica no log — é o que a investigação precisa; a
+  // tela precisa do rótulo e do lugar do conserto.
+  const recusa = recusaDoAgente({
+    toolIds: agent.tool_ids,
+    pipelineIds: agent.pipeline_ids,
+    pipelineId: config.pipeline_id,
+  });
+  if (recusa) {
+    logger.warn("prospecção: o agente publicado não atende à campanha", {
+      org,
+      agentId: config.agent_id,
+      pipelineId: config.pipeline_id,
+      codigo: recusa.codigo,
+      faltando: recusa.faltando,
+    });
+    throw new ProspectingError(recusa.mensagem);
+  }
   const channel = (
     await db.query<{ provider: ChannelProvider; status: string }>(
       "select provider,status from channel_sessions where organization_id=$1 and id=$2 and archived_at is null",

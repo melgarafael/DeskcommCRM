@@ -20439,6 +20439,22 @@ export const DICIONARIO: Traducoes = {
   "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
   "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
   "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
+
+  // ─── a recusa diz QUAL capacidade falta, não "publique tudo" (#4118) ───
+  "O agente publicado não pode mover oportunidade de etapa. Ligue 'Mover oportunidade de etapa' na aba Conversa com o cliente e publique o agente de novo.": {
+    es: "El agente publicado no puede mover la oportunidad de etapa. Activa 'Mover oportunidad de etapa' en la pestaña Conversación con el cliente y vuelve a publicar el agente.",
+  },
+  "O agente publicado não tem acesso ao funil desta campanha. Marque o funil em Agente › Organiza o sistema › 'Em que negócios ele pode mexer' e publique o agente de novo.": {
+    es: "El agente publicado no tiene acceso al embudo de esta campaña. Marca el embudo en Agente › Organiza el sistema › 'En qué negocios puede intervenir' y vuelve a publicar el agente.",
+  },
+  "O agente publicado não pode mover oportunidade de etapa e não tem acesso ao funil desta campanha. Ligue 'Mover oportunidade de etapa' na aba Conversa com o cliente, marque o funil em Organiza o sistema › 'Em que negócios ele pode mexer' e publique o agente de novo.": {
+    es: "El agente publicado no puede mover la oportunidad de etapa y no tiene acceso al embudo de esta campaña. Activa 'Mover oportunidad de etapa' en la pestaña Conversación con el cliente, marca el embudo en Organiza el sistema › 'En qué negocios puede intervenir' y publica el agente de nuevo.",
+  },
+
+  // ─── a agenda do celular: o 400 é o store desligado, não a conexão (#4102) ───
+  "Para ler a agenda, ligue 'Guardar o histórico anterior à vinculação' na conexão deste número (Conexões) e tente de novo.": {
+    es: "Para leer la agenda, activa 'Guardar el historial anterior al vínculo' en la conexión de este número (Conexiones) y vuelve a intentarlo.",
+  },
 };
 
 

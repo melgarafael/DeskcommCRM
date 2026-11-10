@@ -16,6 +16,8 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getAdapter } from "@/lib/channels";
+import { ErroDaLeituraDaAgenda } from "@/lib/channels/erro-da-leitura-da-agenda";
+import { logger } from "@/lib/logger";
 import { requireRole } from "@/lib/auth/require-role";
 import { criarDepsDeAgenda, sincronizarAgendaDoCelular } from "@/lib/contacts/agenda-do-celular";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -244,5 +246,37 @@ describe("POST /api/v1/contacts/import/agenda", () => {
     const body = (await r.json()) as { error: { code: string; message: string } };
     expect(body.error.code).toBe("channel_unavailable");
     expect(body.error.message).not.toContain("503");
+  });
+
+  /**
+   * O 400 do `GET /api/contacts/all` NÃO é a conexão fora do ar (#4102).
+   *
+   * No NOWEB sem store o transporte responde 400 — e o 400 é o pedido de ligar
+   * "Guardar o histórico anterior à vinculação". A frase antiga ("o WhatsApp
+   * não respondeu, confira se ele está conectado") mandava a pessoa reconectar
+   * um número que estava funcionando; quem resolveu o caso da comunidade
+   * achou a opção sozinho, noutra tela.
+   *
+   * A causa chega como `ErroDaLeituraDaAgenda` com o status no CAMPO (é o que
+   * `listarAgendaDoAparelho` lança): quem não é a fronteira do canal não
+   * escreve o código cru do transporte, e por isso o dublê aqui não repete a
+   * grafia — o formato da mensagem é trancado no teste do próprio cliente.
+   */
+  it("o status 400 aponta a opção de importação, e não culpa a conexão", async () => {
+    vi.mocked(sincronizarAgendaDoCelular).mockRejectedValue(
+      new ErroDaLeituraDaAgenda(400, "leitura da agenda recusada: HTTP 400"),
+    );
+    const r = await POST(requisicao({ channel_session_id: CANAL }));
+
+    expect(r.status).toBe(502);
+    const body = (await r.json()) as { error: { code: string; message: string } };
+    expect(body.error.message).toContain("Guardar o histórico anterior à vinculação");
+    expect(body.error.message).toContain("Conexões");
+    expect(body.error.message).not.toContain("não respondeu");
+    // A telemetria continua com a causa crua: é ela que diz qual status o
+    // transporte devolveu — e a frase, para quem clica.
+    const aviso = vi.mocked(logger.warn).mock.calls.at(-1);
+    expect(JSON.stringify(aviso)).toContain("HTTP 400");
+    expect(JSON.stringify(aviso)).toContain("acervo_desligado");
   });
 });

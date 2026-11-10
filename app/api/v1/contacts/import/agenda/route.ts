@@ -39,6 +39,7 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { criarDepsDeAgenda, sincronizarAgendaDoCelular } from "@/lib/contacts/agenda-do-celular";
+import { recusaDaAgenda } from "@/lib/contacts/recusa-da-agenda";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -145,15 +146,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     // frase de saída da rota de grupos — aponta para a conexão e nunca vaza
     // status/corpo do provedor (mesma doutrina do cabeçalho do cliente do
     // transporte: o erro de lá carrega só o status HTTP).
+    //
+    // A EXCEÇÃO é o 400 do `GET /api/contacts/all` (#4102): ele não é a conexão
+    // fora do ar, é o store da sessão desligado — no NOWEB sem "Guardar o
+    // histórico" o transporte recusa a leitura da agenda. A frase aponta a opção
+    // e a tela de Conexões; o código cru continua no log, ao lado do motivo.
+    const recusa = recusaDaAgenda(err);
     logger.warn("sync-agenda: o transporte do canal não respondeu", {
       requestId,
       causa: err instanceof Error ? err.message.slice(0, 160) : String(err),
+      codigo: recusa.codigo,
     });
-    return fail(
-      "channel_unavailable",
-      "O WhatsApp deste número não respondeu. Confira se ele está conectado e tente de novo.",
-      502,
-      { requestId },
-    );
+    return fail("channel_unavailable", recusa.mensagem, 502, { requestId });
   }
 }
