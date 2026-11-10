@@ -21,6 +21,13 @@
  * `fn_atrito_metrics` na MESMA janela, então este payload os repete em vez de
  * recalcular: mesma fonte, mesmo denominador, zero SQL novo. Se a RPC falhar,
  * a contra-métrica vem `null` com a razão escrita — nunca some e nunca vira 0.
+ *
+ * ─── As duas parcelas do período (fatia 2, item 1, da #3602) ────────────────
+ * `valores_do_periodo` devolve "vendido único" (`value_cents`) e "recorrência
+ * nova mensal" (`recurring_value_cents` dos ganhos da janela) SEPARADOS, mais a
+ * contagem de negócios com recorrência. É aditivo: org que não usa recorrência
+ * recebe zero nos dois e nada mais muda. Nunca existe um campo com a soma das
+ * duas — a régua mora em `lib/metrics/valores-do-periodo.ts`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -36,21 +43,13 @@ import {
   type LeadDaJanela,
   montarRelatorioDeFunil,
 } from "@/lib/metrics/funil";
+import { separarValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
+import { lerPaginado } from "@/lib/supabase/pagina";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-/**
- * Teto de CADA uma das três leituras: até 5 páginas de 1000, acima disso a
- * resposta diz `truncado: true`. PAGINADO, não `.limit(5000)`: o PostgREST
- * corta toda resposta em `max_rows` (1000, `supabase/config.toml`) sem erro
- * nenhum — um `.limit` maior que isso devolve 1000 linhas caladas, sem
- * `.order()` ainda por cima de um pedaço arbitrário, e o `truncado` nunca
- * ligava. Mesma régua da `win-rates` e da `reports/tags`.
- */
-const TAMANHO_DA_PAGINA = 1000;
-const PAGINAS_MAXIMAS = 5;
 
 const querySchema = z.object({
   from: z.string().datetime({ offset: true }).optional(),
@@ -73,6 +72,9 @@ interface LeadCru {
   currency: string | null;
   created_at: string;
   closed_at: string | null;
+  /** A mensalidade do negócio (fatia 1 da #3602) — a segunda parcela do período. */
+  recurring_value_cents: number | null;
+  recurring_period: string | null;
 }
 
 /** Número do jsonb vira `null` se não for número de verdade — nunca NaN. */
@@ -109,46 +111,6 @@ function lerContraMetrica(dado: unknown, motivo: string | null): unknown {
       "fn_atrito_metrics (mesma janela; a rota /api/v1/metrics/atrito mede o restante do índice)",
     nota: "Doutrina §3.3: a taxa de conversão é publicada junto do custo de empurrá-la — turnos até o desfecho e opt-outs.",
   };
-}
-
-/**
- * Lê UMA tabela paginando, até o fim ou até o teto de `PAGINAS_MAXIMAS`.
- *
- * O fim é provado pelo `count` exato da primeira página ou por página VAZIA —
- * nunca por página curta (`lib/agenda/protecao-followup.ts`): com `max_rows`
- * menor que a página, página curta não é fim. Quando o laço esgota as páginas
- * sem provar o fim, `truncado` sai `true` e a resposta avisa.
- *
- * Recebe uma FUNÇÃO que monta a consulta, não a consulta pronta, porque o
- * builder do supabase-js acumula os parâmetros e não pode receber `.range()`
- * duas vezes. A ordem descendente (`<coluna da janela>`, depois `id`) é o que
- * garante que o pedaço seja sempre o mais RECENTE — sem `.order()`, o PostgREST
- * devolve um pedaço arbitrário que muda de uma chamada para outra.
- */
-async function lerPaginado<T>(
-  pagina: (
-    inicio: number,
-    fim: number,
-    contar: boolean,
-  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null; count: number | null }>,
-): Promise<{ linhas: T[]; truncado: boolean; erro: string | null }> {
-  const linhas: T[] = [];
-  let total: number | null = null;
-  for (let i = 0; i < PAGINAS_MAXIMAS; i++) {
-    const { data, error, count } = await pagina(
-      linhas.length,
-      linhas.length + TAMANHO_DA_PAGINA - 1,
-      i === 0,
-    );
-    if (error) return { linhas, truncado: false, erro: error.message };
-    if (i === 0) total = count;
-    const lote = data ?? [];
-    linhas.push(...lote);
-    if (lote.length === 0 || (total !== null && linhas.length >= total)) {
-      return { linhas, truncado: false, erro: null };
-    }
-  }
-  return { linhas, truncado: true, erro: null };
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -217,7 +179,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       supabase
         .from("crm_leads")
         .select(
-          "id, pipeline_id, stage_id, status, source, value_cents, currency, created_at, closed_at",
+          "id, pipeline_id, stage_id, status, source, value_cents, currency, created_at, closed_at, recurring_value_cents, recurring_period",
           contar ? { count: "exact" } : undefined,
         )
         .eq("organization_id", orgId)
@@ -231,7 +193,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       supabase
         .from("crm_leads")
         .select(
-          "id, pipeline_id, stage_id, status, source, value_cents, currency, created_at, closed_at",
+          "id, pipeline_id, stage_id, status, source, value_cents, currency, created_at, closed_at, recurring_value_cents, recurring_period",
           contar ? { count: "exact" } : undefined,
         )
         .eq("organization_id", orgId)
@@ -339,5 +301,30 @@ export async function GET(req: NextRequest): Promise<Response> {
   const truncado =
     leituraDeAtividades.truncado || leituraDeCriados.truncado || leituraDeEncerrados.truncado;
 
-  return ok({ ...relatorio, contra_metrica: contraMetrica, truncado }, { requestId });
+  // ─── As DUAS parcelas do período (fatia 2, item 1, da #3602) ──────────────
+  //
+  // O funil somava `value_cents` (na matriz por origem) e não conhecia
+  // `recurring_value_cents`: para quem vende setup + mensalidade, o painel
+  // mostrava só o setup e a recorrência nova do mês não aparecia em número
+  // nenhum. O bloco abaixo lê os ganhos da janela — os MESMOS que a leitura de
+  // encerrados já trouxe, sem consulta nova — e devolve "vendido único" e
+  // "recorrência nova (mensal)" lado a lado. Nunca somados: cada um no seu
+  // campo, e `unico.centavos`/`recorrente_mensal.centavos` ficam `null` quando
+  // a janela mistura moedas (aí vale `por_moeda`).
+  const valoresDoPeriodo = separarValoresDoPeriodo({
+    negocios: leituraDeEncerrados.linhas,
+    janela: { from: de, to: ate },
+    moedaDaOrganizacao: activeOrg.currency ?? null,
+    truncado: leituraDeEncerrados.truncado,
+  });
+
+  return ok(
+    {
+      ...relatorio,
+      contra_metrica: contraMetrica,
+      truncado,
+      valores_do_periodo: valoresDoPeriodo,
+    },
+    { requestId },
+  );
 }

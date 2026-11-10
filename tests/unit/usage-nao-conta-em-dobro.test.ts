@@ -27,7 +27,8 @@ describe("a rota de uso lê UMA tabela de telemetria", () => {
   // lugar junto — agora ela mora no corpo da função.
   const corpoDaFuncao = (() => {
     const baseline = readFileSync("supabase/baseline.sql", "utf8");
-    const inicio = baseline.search(/^create or replace function public\.fn_uso_de_ia\(/m);
+    // A ÚLTIMA definição é a que o banco instala (0586 e depois 9097, no apêndice).
+    const inicio = baseline.lastIndexOf("create or replace function public.fn_uso_de_ia(");
     return inicio === -1 ? "" : baseline.slice(inicio, baseline.indexOf("$$;", inicio));
   })();
 

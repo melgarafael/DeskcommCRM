@@ -205,7 +205,7 @@ export async function loadPacingState(
               order by sent_at desc limit 1) as last_sent_at,
             (select count(*) from pacing_ledger
               where organization_id = $1 and channel_session_id = $2
-                and sent_at >= $3) as sent_today`,
+                and sent_at >= $3 and not resposta) as sent_today`,
     [tenantId, channelSessionId, dayStart],
   );
   const row = rows[0];
@@ -216,16 +216,50 @@ export async function loadPacingState(
   };
 }
 
-/** Registra um envio efetivado — chamado pela cadeia de envio (F2-13) após o accept do CRM. */
+/**
+ * Os envios de uma TRANSMISSÃO (migration 0712) no mesmo livro: a lista sai
+ * pelo provedor de uma vez, e o número precisa contar cada mensagem para o ritmo
+ * do agente e das outras campanhas — uma linha por mensagem, como `recordSend`.
+ *
+ * Idempotente por `lote`: o id de cada linha deriva dele e da posição, então
+ * repetir não soma, e repetir com mais só completa. O envio e o livro não são a
+ * mesma transação, e quem repete é quem acompanha a transmissão.
+ */
+export async function recordSends(
+  db: Queryable,
+  tenantId: string,
+  channelSessionId: string,
+  sentAt: Date,
+  quantas: number,
+  lote: string,
+): Promise<void> {
+  if (quantas <= 0) return;
+  await db.query(
+    `insert into pacing_ledger (id, organization_id, channel_session_id, sent_at)
+     select md5($5::text || ':' || n)::uuid, $1::uuid, $2::uuid, $3::timestamptz
+       from generate_series(1, $4::int) n
+     on conflict (id) do nothing`,
+    [tenantId, channelSessionId, sentAt, quantas, lote],
+  );
+}
+
+/**
+ * Registra um envio efetivado — chamado pela cadeia de envio (F2-13) após o accept do CRM.
+ *
+ * `resposta: true` marca a linha como resposta a quem escreveu: ela segue valendo
+ * para o espaçamento (`lastSentAt`), mas não gasta o teto do dia (`sentToday`),
+ * que mede só quantas pessoas o número aborda. Omitir = disparo (conta).
+ */
 export async function recordSend(
   db: Queryable,
   tenantId: string,
   channelSessionId: string,
   sentAt: Date = new Date(),
+  opts: { resposta?: boolean } = {},
 ): Promise<void> {
   await db.query(
-    `insert into pacing_ledger (organization_id, channel_session_id, sent_at)
-     values ($1, $2, $3)`,
-    [tenantId, channelSessionId, sentAt],
+    `insert into pacing_ledger (organization_id, channel_session_id, sent_at, resposta)
+     values ($1, $2, $3, $4)`,
+    [tenantId, channelSessionId, sentAt, opts.resposta === true],
   );
 }

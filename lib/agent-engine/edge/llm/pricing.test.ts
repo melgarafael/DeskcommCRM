@@ -82,9 +82,12 @@ describe("costCents — cada tarifa isolada, por modelo", () => {
     ["gpt-4o-mini", 15, 60, 7.5, 15, 15],
     ["gpt-4o", 250, 1000, 125, 250, 250],
     ["gpt-4o-2024-05-13", 500, 1500, 500, 500, 500],
-    // Linha 6 (conferida em 11/10/2026): leitura de cache a 0.05× só no gpt-6.1-sol.
+    // Linha 6 (conferida em 11/10/2026; Terra em 27/10/2026): leitura de cache a
+    // 0.05× só no gpt-6.1-sol e no gpt-6.1-terra.
     ["gpt-6-astra", 1000, 5000, 100, 1250, 1250],
     ["gpt-6.1-sol", 200, 1000, 10, 250, 250],
+    // Terra: helpers usam 1M de entrada (>272k), logo entrada/cache estão na faixa longa.
+    ["gpt-6.1-terra", 200, 500, 10, 250, 250],
     ["gpt-6-luna", 10, 50, 1, 12.5, 12.5],
     ["gpt-5.6-terra", 200, 1200, 20, 250, 250],
     ["gpt-5.6-sol", 400, 2000, 40, 500, 500],

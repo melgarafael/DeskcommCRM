@@ -25,7 +25,7 @@ function capturando(modelId: string) {
 }
 
 describe("amostragem não sai para os GPT-6", () => {
-  it.each(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"])(
+  it.each(["gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra"])(
     "%s: generateText e generateObject",
     async (id) => {
       const { model, corpos } = capturando(id);

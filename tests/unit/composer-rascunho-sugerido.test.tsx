@@ -15,6 +15,8 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
+  useGruposDeRespostas: () => ({ data: [] }),
   useMessageTemplates: () => ({ data: [], isLoading: false }),
 }));
 vi.mock("@/hooks/inbox/useDraftReply", () => ({

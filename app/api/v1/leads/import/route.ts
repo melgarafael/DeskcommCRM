@@ -28,9 +28,11 @@ import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
+import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { lerPlanilhaDeLeads, type ErroDaLinha } from "@/lib/leads/planilha";
@@ -59,9 +61,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const orgId = authz.org.orgId;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
+  // 64 KB de folga para o envelope multipart; o tamanho do CSV é conferido abaixo.
+  const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+  });
+  if (!corpo.ok) return corpo.response;
+
   let form: FormData;
   try {
-    form = await req.formData();
+    form = await corpo.corpo.formData();
   } catch {
     return fail("validation_failed", t("Envie o arquivo como multipart/form-data."), 422, {
       requestId,
@@ -210,8 +220,18 @@ export async function POST(req: NextRequest): Promise<Response> {
             .limit(1)
             .maybeSingle();
 
+          // Sem principal com o número, a ficha que o tem como EXTRA é o contato:
+          // o negócio entra nela, e não se tenta um insert que o banco recusaria.
+          const donaDoExtra = existente
+            ? null
+            : ((await contatosDonosDosExtras(supabase, orgId, [linha.telefone])).get(
+                canonicalPhoneBR(linha.telefone),
+              ) ?? null);
+
           if (existente) {
             contactId = (existente as { id: string }).id;
+          } else if (donaDoExtra) {
+            contactId = donaDoExtra;
           } else {
             const { data: criado, error: erroContato } = await supabase
               .from("contacts")

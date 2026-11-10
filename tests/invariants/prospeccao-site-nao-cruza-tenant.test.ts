@@ -40,7 +40,8 @@ function siteGravado(classe: string) {
   return {
     ver: 1,
     classe,
-    problemas: [],
+    // `fora-do-ar` sem `dns-morto` é lido como `nao-medido` (#3723): a prova de queda vai junto.
+    problemas: classe === "fora-do-ar" ? ["dns-morto"] : [],
     checklist: { tem: [], falta: [] },
     final_url: null,
     http_status: null,

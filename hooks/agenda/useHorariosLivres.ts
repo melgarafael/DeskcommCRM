@@ -37,6 +37,16 @@ export interface HorariosLivresFiltro {
   /** ISO-8601. */
   de: string;
   ate: string;
+  /**
+   * A duração ESCOLHIDA na marcação, em minutos (#3709) — ausente, a do tipo.
+   *
+   * ⚠️ Ela precisa entrar na CHAVE da consulta (o objeto inteiro é a
+   * `queryKey`), e por isso é campo do filtro: trocar 30 por 90 muda os
+   * horários oferecidos, e sem isso o React Query serviria a lista antiga — o
+   * mesmo horário que já não cabe. Quem calcula é o motor, no servidor; aqui
+   * só viaja.
+   */
+  duracao_minutos?: number;
 }
 
 /**
@@ -55,6 +65,7 @@ export function useHorariosLivres(filtro: HorariosLivresFiltro | null) {
         ate: filtro!.ate,
       });
       if (filtro!.owner_user_id) qs.set("owner_user_id", filtro!.owner_user_id);
+      if (filtro!.duracao_minutos) qs.set("duracao_minutos", String(filtro!.duracao_minutos));
       try {
         const r = await apiClient.get<{ data: HorariosLivresResposta }>(
           `/api/v1/agenda/horarios-livres?${qs.toString()}`,

@@ -226,3 +226,75 @@ test("com o site aberto, o aviso NOVO que pede gente toca; o antigo não", async
   await expect.poll(async () => (await medir()).bipes, { timeout: 75_000, intervals: [2_000] }).toBeGreaterThan(0);
   expect((await medir()).arquivos, "o som da passagem não toca de novo").toHaveLength(1);
 });
+
+// O gatilho real emite o evento e o Realtime entrega um primeiro UPDATE sem
+// histórico na aba. O teste não injeta callback, payload de socket nem toast.
+test("atribuição, ganho e perda sem histórico chegam do banco e aparecem no app", async ({ page }) => {
+  test.setTimeout(180_000);
+  const evidencia = path.join(process.cwd(), "evidence", "atendimento-cercas");
+  fs.mkdirSync(evidencia, { recursive: true });
+  async function inserir(tabela: string, valores: Record<string, unknown>): Promise<string> {
+    const r = await db.from(tabela).insert(valores).select("id").single();
+    if (r.error) throw r.error;
+    return r.data.id as string;
+  }
+  const funil = await inserir("crm_pipelines", { organization_id: orgId, name: "Avisos sem histórico", slug: `avisos-${randomUUID().replaceAll("-", "")}` });
+  const etapas = {
+    open: await inserir("crm_stages", { organization_id: orgId, pipeline_id: funil, name: "Entrada", slug: "entrada", position: 1 }),
+    won: await inserir("crm_stages", { organization_id: orgId, pipeline_id: funil, name: "Ganho", slug: "ganho", position: 2, is_won: true }),
+    lost: await inserir("crm_stages", { organization_id: orgId, pipeline_id: funil, name: "Perda", slug: "perda", position: 3, is_lost: true }),
+  };
+  const criados: string[] = [];
+  await entrar(page, "manager");
+  try {
+    for (const [status, titulo] of [["open", "Lead atribuído a você"], ["won", "Lead ganho"], ["lost", "Lead perdido"]] as const) {
+      const nome = `Primeira mudança ${status} ${randomUUID().slice(0, 8)}`;
+      const lead = await inserir("crm_leads", {
+        organization_id: orgId, pipeline_id: funil, stage_id: etapas.open, title: nome,
+        owner_user_id: null, status: "open",
+      });
+      criados.push(lead);
+      // O socket do documento anterior não pode confirmar a nova navegação.
+      await page.goto("about:blank");
+      // Espera o phx_reply do canal exato; um socket aberto não prova assinatura.
+      let canalAssinado = false;
+      page.on("websocket", socket => {
+        socket.on("framereceived", frame => {
+          try {
+            const msg = JSON.parse(String(frame.payload)) as unknown;
+            const topico = Array.isArray(msg) ? msg[2] : (msg as { topic?: unknown }).topic;
+            const evento = Array.isArray(msg) ? msg[3] : (msg as { event?: unknown }).event;
+            const payload = (Array.isArray(msg) ? msg[4] : (msg as { payload?: unknown }).payload) as { status?: string } | undefined;
+            if (typeof topico === "string" && topico.includes(`alerts-leads-${orgId}`) && evento === "phx_reply" && payload?.status === "ok") canalAssinado = true;
+          } catch { /* frame sem JSON não é a confirmação esperada */ }
+        });
+      });
+      await page.goto(`/app/pipelines/${funil}`);
+      await expect(page.getByText(nome, { exact: true }).first()).toBeVisible({ timeout: ESPERA });
+      await expect.poll(() => canalAssinado, { timeout: ESPERA }).toBe(true);
+      const consulta = page.waitForResponse(r => r.url().endsWith(`/leads/${lead}/eventos`) && r.request().method() === "GET");
+      const mudanca = await db.from("crm_leads").update({
+        owner_user_id: usuarios.manager.id, owner_kind: "user", stage_id: etapas[status],
+        ...(status === "lost" ? { lost_reason: "other" } : {}),
+      }).eq("organization_id", orgId).eq("id", lead).select("updated_at,status,closed_at").single();
+      expect(mudanca.error).toBeNull();
+      expect(mudanca.data?.status).toBe(status);
+      if (status === "open") expect(mudanca.data?.closed_at).toBeNull();
+      else expect(mudanca.data?.closed_at).toEqual(expect.any(String));
+      const resposta = await consulta;
+      expect(resposta.status()).toBe(200);
+      const corpo = await resposta.json() as { data: { eventos: { event_type: string; created_at: string }[] } };
+      const esperado = status === "open" ? "lead.assigned" : `lead.${status}`;
+      expect(corpo.data.eventos.some(e => e.event_type === esperado)).toBe(true);
+      // A decisão aplicada pelo browser também comprova a igualdade entre os
+      // carimbos reais dos dois transportes, inclusive a precisão do Postgres.
+      const aviso = page.locator("[data-sonner-toast]").filter({ hasText: titulo }).filter({ hasText: nome });
+      await expect(aviso).toBeVisible({ timeout: ESPERA });
+      await page.screenshot({ path: path.join(evidencia, `aviso-${status}-sem-historico.png`), fullPage: true });
+    }
+  } finally {
+    if (criados.length) expect((await db.from("crm_leads").delete().eq("organization_id", orgId).in("id", criados)).error).toBeNull();
+    expect((await db.from("crm_stages").delete().eq("organization_id", orgId).eq("pipeline_id", funil)).error).toBeNull();
+    expect((await db.from("crm_pipelines").delete().eq("organization_id", orgId).eq("id", funil)).error).toBeNull();
+  }
+});

@@ -165,6 +165,10 @@ export function applyFilters(
   // deixava de excluí-lo). A mesma conta que o resto do produto usa.
   const today = diaDeHojeLocal();
   const search = f.search?.trim().toLowerCase() ?? "";
+  // "(11) 99999-8888" tem de achar o "+5511999998888" gravado: busca feita só de
+  // dígitos e pontuação de telefone compara por dígitos. Texto com letra não
+  // entra aqui, senão "Pedido 2" casaria todo telefone com um 2.
+  const buscaDeTelefone = /^[\d\s()+.-]+$/.test(search) ? search.replace(/\D/g, "") : "";
   // Fora do `filter`: a escolha de E/OU é do filtro, não do card, e calculá-la a
   // cada linha pagaria uma normalização por card — a lista do funil é pequena
   // hoje e não precisa de um laço que cresce com ela.
@@ -220,7 +224,8 @@ export function applyFilters(
     if (!passaMarcador(l)) return false;
     if (
       search &&
-      !`${l.title} ${l.description ?? ""}`.toLowerCase().includes(search)
+      !`${l.title} ${l.description ?? ""} ${l.contact_phone ?? ""}`.toLowerCase().includes(search) &&
+      !(buscaDeTelefone && (l.contact_phone ?? "").replace(/\D/g, "").includes(buscaDeTelefone))
     )
       return false;
     // O LIMITE DE VALOR SÓ SE COMPARA COM A MOEDA EM QUE FOI ESCRITO (#1531).

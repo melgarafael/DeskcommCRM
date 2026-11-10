@@ -8,9 +8,10 @@
  * cosmético: é o número que faz o teto de orçamento da organização disparar na
  * hora certa, ou não disparar.
  *
- * Este cron busca o catálogo público (sem chave — o endpoint de modelos da
- * OpenRouter é aberto), traduz e concilia. A regra da conciliação vive em
- * `lib/ai/catalogo/sincronizar.ts`; aqui é só borda e I/O.
+ * Este cron concilia a OpenRouter e descobre modelos nativos da OpenAI e
+ * Anthropic pelo catálogo público Models.dev. Não exige chave de IA e não
+ * muda modelos escolhidos pela organização. Fontes falham independentemente;
+ * falha de qualquer uma é reportada ao scheduler, sem desfazer a outra.
  *
  * O que ele deliberadamente NÃO faz:
  *
@@ -38,6 +39,8 @@ import type { NextRequest } from "next/server";
 
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { fail, ok } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
+import { FONTE_MODELS_DEV, sincronizarModelosNativos } from "@/lib/ai/catalogo/models-dev";
 import {
   FONTE_OPENROUTER,
   traduzirCatalogo,
@@ -142,7 +145,37 @@ async function handler(req: NextRequest): Promise<Response> {
     return fail("unauthorized", "cron secret ausente ou inválido", 401, { requestId });
   }
   try {
-    const resultado = await sincronizarCatalogo(createAdminClient(), buscarDaOpenRouter);
+    const admin = createAdminClient();
+    const [openrouter, nativos] = await Promise.allSettled([
+      sincronizarCatalogo(admin, buscarDaOpenRouter),
+      sincronizarModelosNativos(admin),
+    ]);
+    if (nativos.status === "fulfilled") {
+      logger.info("[sync-model-catalog] modelos nativos", {
+        ...nativos.value,
+        request_id: requestId,
+      });
+      if (nativos.value.gravados > 0) {
+        void audit({
+          action: "ai_models.synced",
+          resourceType: "ai_models",
+          requestId,
+          bypassedRls: true,
+          metadata: nativos.value,
+        });
+      }
+    }
+    if (nativos.status === "rejected") {
+      void audit({
+        action: "ai_models.sync_failed",
+        resourceType: "ai_models",
+        requestId,
+        metadata: { fonte: FONTE_MODELS_DEV, erro: String(nativos.reason).slice(0, 500) },
+      });
+      throw nativos.reason;
+    }
+    if (openrouter.status === "rejected") throw openrouter.reason;
+    const resultado = { ...openrouter.value, nativos: nativos.value };
     logger.info("[sync-model-catalog] concluído", { ...resultado, request_id: requestId });
     return ok(resultado, { requestId });
   } catch (err) {
@@ -155,10 +188,7 @@ async function handler(req: NextRequest): Promise<Response> {
         conhecidos: err.conhecidos,
         request_id: requestId,
       });
-      return ok(
-        { fonte: FONTE_OPENROUTER, recusado: true, motivo: err.message },
-        { requestId },
-      );
+      return ok({ fonte: FONTE_OPENROUTER, recusado: true, motivo: err.message }, { requestId });
     }
     const detalhe = err instanceof Error ? err.message : String(err);
     logger.error("[sync-model-catalog] falhou", { error: detalhe, request_id: requestId });

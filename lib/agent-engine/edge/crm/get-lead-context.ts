@@ -18,16 +18,11 @@ import { isoLocalComOffset } from '@/lib/tempo/agora';
 import { logger } from '@/lib/logger';
 import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
 import { lerRemetenteDeGrupo } from '@/lib/messaging/remetente-de-grupo';
+import { frameMediaBody, INICIO_DA_MOLDURA_DE_MIDIA, MARCADOR_IMAGEM_NAO_VISTA } from './moldura-de-midia';
 
-/**
- * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
- * entre 3,5 e 4; dividir por menos SUPERESTIMA tokens — erra pro lado seguro).
- */
-export const CHARS_PER_TOKEN = 3.5;
-
-export function countPayloadTokens(serialized: string): number {
-  return Math.ceil(serialized.length / CHARS_PER_TOKEN);
-}
+// A régua mora num módulo folha para a tela usar a mesma conta (ver o cabeçalho de lá).
+import { countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
+export { CHARS_PER_TOKEN, countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
 
 /** Knobs do payload (env LEAD_CONTEXT_*; defaults documentados no .env.example). */
 export interface LeadContextKnobs {
@@ -35,6 +30,13 @@ export interface LeadContextKnobs {
   historyLimit: number;
   /** Teto do payload serializado, contado por countPayloadTokens (default 1000). */
   maxTokens: number;
+  /**
+   * O agente que vai ler vê imagens (`image_vision_enabled`, 9108)? `false` troca
+   * toda foto do histórico por `MARCADOR_IMAGEM_NAO_VISTA` — mesmo quando a
+   * descrição existe porque outro agente da empresa a pediu. Ausente = vê (quem
+   * lê sem agente: follow-up, classificador).
+   */
+  verImagens?: boolean;
 }
 
 /** Uma mensagem do histórico, já curada. */
@@ -115,10 +117,11 @@ export interface LeadContext {
    * O mesmo valor de `lead_id`, com o nome verdadeiro (issue #509).
    *
    * OPCIONAL no tipo, e não por preguiça: exigir o campo obrigaria a editar
-   * fixtures em `tests/invariants/**`, que é CONGELADO pelo hook de governança
-   * (`loop/hooks/freeze-invariants.sh` — invariante existente não se edita). A
-   * produção sempre o preenche; quem constrói contexto à mão num teste não
-   * precisa dele.
+   * fixtures em todo `tests/invariants/**` que monta contexto à mão. Na época em
+   * que nasceu, o diretório era congelado pelo hook de governança — hoje editar é
+   * livre (`loop/hooks/guard-invariants.sh`), e o opcional continua valendo pelo
+   * motivo que sobra: a produção sempre o preenche; quem constrói contexto à mão
+   * num teste não precisa dele.
    */
   contact_id?: string;
   contact: {
@@ -217,6 +220,7 @@ function paraDecisao(row: DecisionRow): UltimaDecisaoHumana | null {
 }
 
 interface HistoryRow {
+  id?: string;
   direction: 'inbound' | 'outbound';
   type: string;
   body: string | null;
@@ -227,6 +231,36 @@ interface HistoryRow {
   sent_at: Date;
   /** #2729: `group_sender` do ingest de grupo — a única fonte de quem falou. */
   metadata: Record<string, unknown> | null;
+  /** O último modelo aprovado da conversa, trazido de FORA da janela — ver `MODELO_FIXADO_DIAS`. */
+  fixado?: boolean;
+}
+
+/**
+ * ─── O ÚLTIMO MODELO APROVADO QUE O CLIENTE RECEBEU ENTRA NO HISTÓRICO ──────
+ *
+ * O histórico é a janela do ATENDIMENTO atual (inbound da demanda corrente,
+ * outbound desde `service_started_at`), cortada nas últimas `historyLimit`
+ * mensagens. Um modelo aprovado com uma oferta — mandado por campanha, por
+ * fluxo de acompanhamento ou por gente — pode cair fora dos dois cortes:
+ *
+ *   - o cliente responde dias depois (o botão do modelo: "Sim, quero"), quando o
+ *     atendimento anterior já fechou: a resposta abre um atendimento novo, e o
+ *     modelo é de antes do `service_started_at`;
+ *   - a conversa seguiu depois da oferta e ela passou das últimas N mensagens.
+ *
+ * Nos dois casos o agente respondia ao "sim" sem saber a que o cliente disse
+ * sim — medido: a oferta com desconto foi aceita e o agente confirmou o preço
+ * cheio, e ainda se apresentou de novo. O último modelo enviado nos últimos
+ * `MODELO_FIXADO_DIAS` dias entra então na MESMA consulta (sem leitura nova em
+ * voo), marcado `fixado`, e é o último a cair no orçamento de tokens. Uma
+ * mensagem a mais, no máximo; quando ele já está na janela, nada muda.
+ */
+const MODELO_FIXADO_DIAS = 30;
+
+/** Ordem cronológica, sem a cópia fixada de um modelo que já está na janela. */
+export function historicoComOModeloFixado(linhasDaMaisNova: HistoryRow[]): HistoryRow[] {
+  const naJanela = new Set(linhasDaMaisNova.filter((l) => !l.fixado && l.id).map((l) => l.id));
+  return linhasDaMaisNova.filter((l) => !(l.fixado && l.id && naJanela.has(l.id))).reverse();
 }
 
 export async function getLeadContext(
@@ -278,20 +312,32 @@ export async function getLeadContext(
       conversationId
         ? db
             .query<HistoryRow>(
-              `select direction, type, body, media_url, media_storage_path, media_mime,
-                      media_derived_text, sent_at, metadata
-               from messages
-               where organization_id = $1 and conversation_id = $2
-                 and direction in ('inbound', 'outbound')
-                 and exists(select 1 from conversations c where c.organization_id=$1 and c.id=$2
-                   and ((messages.direction='inbound' and messages.service_revision=c.service_revision
-                     and messages.demanda_id is not distinct from c.current_demanda_id)
-                     or (messages.direction='outbound' and messages.sent_at >= c.service_started_at)))
-               order by sent_at desc, id desc
-               limit $3`,
-              [input.tenantId, conversationId, knobs.historyLimit],
+              `select * from (
+                (select id, direction, type, body, media_url, media_storage_path, media_mime,
+                        media_derived_text, sent_at, metadata, false as fixado
+                 from messages
+                 where organization_id = $1 and conversation_id = $2
+                   and direction in ('inbound', 'outbound')
+                   and exists(select 1 from conversations c where c.organization_id=$1 and c.id=$2
+                     and ((messages.direction='inbound' and messages.service_revision=c.service_revision
+                       and messages.demanda_id is not distinct from c.current_demanda_id)
+                       or (messages.direction='outbound' and messages.sent_at >= c.service_started_at)))
+                 order by sent_at desc, id desc
+                 limit $3)
+                union all
+                (select id, direction, type, body, media_url, media_storage_path, media_mime,
+                        media_derived_text, sent_at, metadata, true as fixado
+                 from messages
+                 where organization_id = $1 and conversation_id = $2
+                   and direction = 'outbound' and type = 'template'
+                   and sent_at >= now() - make_interval(days => $4::int)
+                 order by sent_at desc, id desc
+                 limit 1)
+               ) h
+               order by sent_at desc, id desc`,
+              [input.tenantId, conversationId, knobs.historyLimit, MODELO_FIXADO_DIAS],
             )
-            .then((r) => r.rows.reverse())
+            .then((r) => historicoComOModeloFixado(r.rows))
         : Promise.resolve<HistoryRow[]>([]),
       db.query<{ desfecho: string }>(
         `select distinct d.desfecho from demandas d join demanda_conversas dc on dc.demanda_id=d.id and dc.organization_id=d.organization_id
@@ -393,6 +439,7 @@ export async function getLeadContext(
     history,
     knobs.maxTokens,
     input.fuso,
+    knobs.verImagens ?? true,
   );
   return { ok: true, context, tokenCount: countPayloadTokens(JSON.stringify(context)), lgpd };
 }
@@ -404,6 +451,8 @@ export interface CorpoDaMensagemRow {
   media_url: string | null;
   media_storage_path: string | null;
   media_derived_text: string | null;
+  /** Ausente = recebida (a linha do job só lê inbound). Decide o aviso de imagem não vista. */
+  direction?: string;
 }
 
 /**
@@ -425,7 +474,16 @@ export interface CorpoDaMensagemRow {
  * `@internal` só na intenção de não espalhar a receita: quem lê uma linha de
  * `messages` para o prompt passa por aqui, senão a composição volta a divergir.
  */
-export function corpoDaMensagem(m: CorpoDaMensagemRow): string {
+export function corpoDaMensagem(m: CorpoDaMensagemRow, verImagens = true): string {
+  // Agente que não vê imagens (9108): o aviso, nunca a descrição nem o `[image]`
+  // cru. Com `[documento]` o agente já inventou o conteúdo de um PDF que nunca
+  // leu (17/09, ver `MARCADOR_NAO_LIDA`); o aviso diz que chegou e que ele não viu.
+  // Só na foto que o CLIENTE mandou: na que nós mandamos, a legenda é nossa, e
+  // rotulá-la "do cliente" atribuiria a ele o que dissemos.
+  if (!verImagens && m.type === 'image' && m.direction !== 'outbound') {
+    const legenda = (m.body ?? '').trim();
+    return legenda === '' ? MARCADOR_IMAGEM_NAO_VISTA : `${MARCADOR_IMAGEM_NAO_VISTA}\nLegenda do cliente: ${legenda}`;
+  }
   const hasMedia = Boolean(m.media_storage_path || m.media_url);
   const derived = m.media_derived_text;
   // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
@@ -438,7 +496,8 @@ export function corpoDaMensagem(m: CorpoDaMensagemRow): string {
 
 /**
  * Encaixa o payload no orçamento (determinístico):
- *   1. mensagens mais ANTIGAS caem primeiro;
+ *   1. mensagens mais ANTIGAS caem primeiro — menos o modelo fixado
+ *      (`MODELO_FIXADO_DIAS`), que é o último a cair;
  *   2. restando uma única mensagem que ainda estoura, o corpo é cortado ao meio
  *      repetidamente até caber. Nunca erro fatal.
  */
@@ -447,13 +506,14 @@ function fitToBudget(
   history: HistoryRow[],
   maxTokens: number,
   fuso: string,
+  verImagens = true,
 ): LeadContext {
   let messages: LeadContextMessage[] = history.map((m) => {
     const hasMedia = Boolean(m.media_storage_path || m.media_url);
     // A composição do corpo é UMA só, exportada logo acima: a linha canônica do
     // job passa pela mesma função. Duas receitas para a mesma linha foi o defeito
     // da #617 — o histórico mostrava o texto do áudio e a abertura dizia vazio.
-    const body = corpoDaMensagem(m);
+    const body = corpoDaMensagem(m, verImagens);
     // #2729 — quem falou, quando há mais de uma pessoa na conversa. Só o
     // recebido de grupo traz `group_sender` (o ingest grava só nesse sentido);
     // nas demais linhas o campo fica AUSENTE, e o prompt não ganha ruído.
@@ -474,45 +534,24 @@ function fitToBudget(
   const over = (msgs: LeadContextMessage[]): boolean =>
     countPayloadTokens(JSON.stringify(build(msgs))) > maxTokens;
 
-  while (messages.length > 1 && over(messages)) {
-    messages = messages.slice(1);
+  // O modelo fixado (sempre o mais antigo, quando veio de fora da janela) é o
+  // último a cair: é dele que sai o preço que o cliente está aceitando.
+  const fixado = history[0]?.fixado === true;
+  while (messages.length > (fixado ? 2 : 1) && over(messages)) {
+    messages = fixado ? [messages[0]!, ...messages.slice(2)] : messages.slice(1);
   }
+  if (fixado && messages.length === 2 && over(messages)) messages = messages.slice(1);
   while (messages.length === 1 && messages[0]!.body.length > 0 && over(messages)) {
     messages = [{ ...messages[0]!, body: messages[0]!.body.slice(0, Math.floor(messages[0]!.body.length / 2)) }];
   }
   return build(messages);
 }
 
-/** Substantivo pt-br por tipo de mídia (p/ o enquadramento do derivado). */
-const MEDIA_NOUN: Record<string, string> = {
-  image: 'uma imagem',
-  video: 'um vídeo',
-  audio: 'um áudio',
-  document: 'um documento (PDF)',
-  sticker: 'uma figurinha',
-};
 
-/** Como toda mídia enquadrada começa — `textoDoClienteNaUltimaMensagem` a reconhece por ela. */
-const INICIO_DA_MOLDURA_DE_MIDIA = '[Mídia do cliente:';
-
-/**
- * Enquadra o derivado de mídia como PERCEPÇÃO do agente (Onda 3, ajuste pós-prova).
- * Sem isto, o modelo via a transcrição/descrição mas respondia "não consigo ver
- * mídia" por reflexo. O enquadramento diz explicitamente: o conteúdo já foi
- * processado; trate como se tivesse visto/ouvido; nunca negue a mídia. Legenda do
- * cliente (se houver) e conteúdo derivado coexistem. @internal exposto p/ teste.
- */
-export function frameMediaBody(type: string, caption: string | null, derived: string): string {
-  const noun = MEDIA_NOUN[type] ?? 'uma mídia';
-  const parts = [
-    `${INICIO_DA_MOLDURA_DE_MIDIA} ele enviou ${noun} e o sistema já processou o conteúdo pra você. ` +
-      `Trate o texto abaixo como se você mesma tivesse visto/ouvido — NUNCA responda que não ` +
-      `consegue ver/ouvir mídia. Comente ou use o conteúdo naturalmente.]`,
-  ];
-  if (caption && caption.trim() !== '') parts.push(`Legenda do cliente: ${caption.trim()}`);
-  parts.push(`Conteúdo: ${derived}`);
-  return parts.join('\n');
-}
+// A moldura e o seu desembrulho moram juntos em `moldura-de-midia.ts` (o cartão
+// da passagem precisa ler a mesma moldura de volta). Reexportado aqui porque é
+// por este módulo que o motor e os testes sempre a importaram.
+export { frameMediaBody, MARCADOR_IMAGEM_NAO_VISTA };
 
 /**
  * O que o CLIENTE digitou na última mensagem dele, e nada que o sistema compôs

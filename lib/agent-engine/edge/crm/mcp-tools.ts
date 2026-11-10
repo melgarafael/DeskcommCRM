@@ -26,9 +26,14 @@ import {
 import { escolhasRemotas } from '@/lib/mcp/servidor-externo/ids';
 import { getToolByName } from '@/lib/mcp/tools';
 import { ehLeituraRemota } from '@/lib/mcp/tools/externo';
+import { carregarServidoresDoAgenteNoTurno } from '@/lib/mcp/servidor-externo/do-agente/carregar';
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from '@/lib/ai/runtime/tools';
 import { mintEphemeralToken, revokeEphemeralToken } from '@/lib/ai/runtime/mcp_token';
-import { IDS_DO_HARNESS, motivoDoHarness } from '@/lib/mcp/tools/ferramentas-do-harness';
+import {
+  COBERTA_PELA_NATIVA,
+  IDS_DO_HARNESS,
+  motivoDoHarness,
+} from '@/lib/mcp/tools/ferramentas-do-harness';
 import type { McpAuthResult } from '@/lib/mcp/auth';
 import type { McpContext } from '@/lib/mcp/types';
 import { modulosLigados } from '@/lib/instalacao/modulos';
@@ -38,6 +43,7 @@ import { filtrarToolsComCallbackDesabilitado } from '@/lib/followup/callback-pol
 import type { Logger } from '../../obs/logger';
 import type { CrmEdgeConfig } from './mcp-client';
 import type { PublishedAgentConfig } from '../../agent/agent-config';
+import type { EfeitoDasEscrituras } from '@/lib/ai/runtime/efeito-das-escritas';
 
 /**
  * Tools do catálogo que jamais entram num turno do engine (ver doc acima).
@@ -57,6 +63,12 @@ export interface McpTurnTools {
   tools: Record<string, Tool>;
   /** ids efetivamente montados (para o log do turno — auditável). */
   toolIds: string[];
+  /**
+   * Capacidades ligadas que ficaram FORA porque a nativa do turno faz o mesmo
+   * (`COBERTA_PELA_NATIVA`). A capacidade continua no turno, pela nativa — por
+   * isso quem conta "o turno tem ferramenta do catálogo?" (a projeção) as soma.
+   */
+  cobertasPelaNativa: string[];
   /** revoga o token efêmero — chamar no fim do turno (caminho feliz). */
   cleanup: () => Promise<void>;
   /**
@@ -90,6 +102,18 @@ export function leiturasRemotasMontadas(
   return nomes;
 }
 
+/**
+ * O que conta como "o turno tem ferramenta do catálogo" para `turnoProjeta`: as
+ * montadas E as cobertas pela nativa. Sem as cobertas, o corte armaria a projeção
+ * do contexto (sem os ids) num agente cuja capacidade continua no turno pela
+ * nativa — e a variante do retorno usa justamente o `lead_id` do contexto.
+ */
+export function idsDoCatalogoQueContamParaAProjecao(
+  mcp: Pick<McpTurnTools, 'toolIds' | 'cobertasPelaNativa'>,
+): string[] {
+  return [...mcp.toolIds, ...mcp.cobertasPelaNativa];
+}
+
 export async function buildMcpTurnTools(
   cfg: CrmEdgeConfig,
   /**
@@ -106,7 +130,24 @@ export async function buildMcpTurnTools(
   },
   agentConfig: PublishedAgentConfig,
   log: Logger,
-  options?: { readOnly: boolean },
+  options?: {
+    readOnly: boolean;
+    /**
+     * O PREDICADO ÚNICO do efeito do turno (#3333): esta função é quem alimenta, porque é
+     * a ponte que executa a escrita e decide o desfecho. Quem lê é o gate
+     * `registro_sem_efeito` — o turno passa o MESMO coletor para os dois lados.
+     *
+     * Ausente = ninguém pergunta (operador, chamador antigo): nenhum desfecho é registrado,
+     * e o gate fica desarmado. Nunca o contrário.
+     */
+    efeitos?: EfeitoDasEscrituras;
+    /**
+     * As ferramentas NATIVAS que este turno tem. A do catálogo que uma delas
+     * cobre (`COBERTA_PELA_NATIVA`) não é montada. Ausente = nenhuma (Operador,
+     * chamador antigo): nada sai, o comportamento de antes.
+     */
+    nativasDoTurno?: readonly string[];
+  },
 ): Promise<McpTurnTools | null> {
   const callbackFiltered = filtrarToolsComCallbackDesabilitado(
     agentConfig.toolIds,
@@ -124,6 +165,16 @@ export async function buildMcpTurnTools(
       blocked_tool_ids: blocked,
       motivos: blocked.map((id) => motivoDoHarness(id)),
     });
+  }
+  // O early-return abaixo continua sobre `allowed` sem o corte: a ponte injeta as
+  // ferramentas de proposta mesmo com a lista vazia, e o corte não pode mudar isso.
+  const nativas = new Set(options?.nativasDoTurno ?? []);
+  const cobertas = allowed.filter((id) => {
+    const c = COBERTA_PELA_NATIVA[id];
+    return c !== undefined && nativas.has(c.nativa);
+  });
+  if (cobertas.length > 0) {
+    log.info('capacidades do catálogo cobertas pela nativa — fora do turno', { cobertas });
   }
   if (allowed.length === 0) {
     return null;
@@ -196,11 +247,24 @@ export async function buildMcpTurnTools(
     },
   );
 
+  // Servidores MCP DO AGENTE (migration 9095) — mesma carga do runtime nativo.
+  const servidoresDoAgente = await carregarServidoresDoAgenteNoTurno(
+    cfg.supabase,
+    ids.organizationId,
+    agentConfig.agentId,
+    allowed,
+    {
+      ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}),
+      ...(ids.conversationId ? { conversaDoTurno: ids.conversationId } : {}),
+      ...(agentConfig.mcpExternoNoAtendimento === true ? { noAtendimento: true } : {}),
+    },
+  );
+
   const tools = pickToolsFromMcp({
     supabase: cfg.supabase,
     ctx,
     auth,
-    toolIds: allowed,
+    toolIds: allowed.filter((id) => !cobertas.includes(id)),
     handoffToolEnabled: false,
     proposalAiDraftEnabled: agentConfig.proposalAiDraftEnabled,
     handoffSignal,
@@ -214,12 +278,15 @@ export async function buildMcpTurnTools(
     capacidadesLigadas: await capacidadesDaOrganizacao(cfg.supabase, ids.organizationId),
     ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}),
     ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
+    ...(servidoresDoAgente.length > 0 ? { servidoresDoAgente } : {}),
+    ...(options?.efeitos ? { efeitos: options.efeitos } : {}),
   });
 
   return {
     tools,
     toolIds: Object.keys(tools),
     leiturasRemotas: leiturasRemotasMontadas(allowed, servidorExterno, tools),
+    cobertasPelaNativa: cobertas,
     // ponytail: revoke só no caminho feliz — em crash do turno o token expira
     // pelo TTL curto do mint (mesmo tradeoff aceito pelo runtime nativo no grace).
     cleanup: async () => {

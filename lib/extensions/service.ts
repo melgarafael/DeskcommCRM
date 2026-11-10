@@ -576,7 +576,32 @@ export async function loadCrmExtensions(organizationId: string): Promise<Extensi
     .eq("enabled", true)
     .limit(8);
   dbFailure(result.error);
-  const ids = z.array(z.object({ installation_id: uuid })).parse(result.data ?? []);
+  const ativos = z.array(z.object({ installation_id: uuid })).parse(result.data ?? []);
+  // Sem ordem explícita o banco devolve pela chave (uuid aleatório) e uma trilha "Fase 1..8"
+  // aparece embaralhada. O hub segue a ordem de instalação, que é a ordem do catálogo.
+  // `authenticated` não lê extension_installations; a data vem pelo admin, só para os ids
+  // que o RLS da sessão já liberou.
+  const datas = ativos.length
+    ? await createAdminClient()
+        .from("extension_installations")
+        .select("id,installed_at")
+        .in(
+          "id",
+          ativos.map((item) => item.installation_id),
+        )
+    : { data: [], error: null };
+  dbFailure(datas.error);
+  const instaladaEm = new Map(
+    z
+      .array(z.object({ id: uuid, installed_at: z.string() }))
+      .parse(datas.data ?? [])
+      .map((linha) => [linha.id, Date.parse(linha.installed_at)]),
+  );
+  const ids = [...ativos].sort(
+    (a, b) =>
+      (instaladaEm.get(a.installation_id) ?? Infinity) - (instaladaEm.get(b.installation_id) ?? Infinity) ||
+      a.installation_id.localeCompare(b.installation_id),
+  );
   const guias = await Promise.allSettled(
     ids.map((item) => loadExtensionGuide(organizationId, item.installation_id)),
   );

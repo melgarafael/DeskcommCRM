@@ -471,20 +471,29 @@ function tipoTs(declarado: string): { ts: string; nulo: boolean } {
   if (semNulo.length === 0) {
     throw new Error(`extrator de tipo: \`${bruto}\` não tem tipo nenhum além de null.`);
   }
-  if (semNulo.length > 1) {
+  // Mesma regra de `alargaIdentificador`: uma união alarga quando TODO membro
+  // alarga ao MESMO primitivo (`ProvedorComChave | ServiceProvider` → string).
+  // Membro que o extrator não sabe ler LANÇA; primitivos diferentes LANÇAM.
+  const tipos = new Set(semNulo.map(alargaMembroDoCampo));
+  if (tipos.size > 1) {
     throw new Error(
-      `extrator de tipo: \`${bruto}\` é união de tipos diferentes — não sei alargar ` +
-        `sem chutar. Ensine o extrator.`,
+      `extrator de tipo: \`${bruto}\` é união de tipos diferentes ` +
+        `(${[...tipos].join(", ")}) — não sei alargar sem chutar. Ensine o extrator.`,
     );
   }
-  let um = semNulo[0]!.replace(/^\(|\)$/g, "").trim();
+  return { ts: [...tipos][0]!, nulo };
+}
+
+/** Um membro não-nulo do tipo declarado no campo → primitivo, com `[]` preservado. */
+function alargaMembroDoCampo(membro: string): string {
+  let um = membro.replace(/^\(|\)$/g, "").trim();
   let array = false;
   if (um.endsWith("[]")) {
     array = true;
     um = um.slice(0, -2).trim();
   }
   const base = /^(string|number|boolean)$/.test(um) ? um : alargaIdentificador(um);
-  return { ts: array ? `${base}[]` : base, nulo };
+  return array ? `${base}[]` : base;
 }
 
 // ---------------------------------------------------------------------------
@@ -510,6 +519,17 @@ function sitesComCastDesconhecido(simbolo: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
+
+describe("extrator de tipo: união no campo", () => {
+  it("alarga quando todo membro alarga ao mesmo primitivo", () => {
+    expect(tipoTs("ProvedorComChave | ServiceProvider")).toEqual({ ts: "string", nulo: false });
+  });
+
+  it("LANÇA quando os membros alargam a primitivos diferentes", () => {
+    // Sem este caso, ensinar a união viraria aceitar qualquer união.
+    expect(() => tipoTs("string | number")).toThrow(/união de tipos diferentes/);
+  });
+});
 
 describe("tipo de coluna: banco × TypeScript", () => {
   it("a lista de coberturas não pode vir vazia", () => {

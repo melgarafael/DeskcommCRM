@@ -168,12 +168,14 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     ? await originFromAutomationEvent(ctx, contactId)
     : null;
 
+  const metadata: Record<string, unknown> = {};
+  if (ctx.ruleId) metadata.caused_by_rule = ctx.ruleId;
   await ctx.admin.rpc("emit_event", {
     p_event_type: target.event,
     p_entity_kind: target.kind,
     p_entity_id: target.id,
     p_payload: { added_tags: added, tags: merged, service_origin: serviceOrigin },
-    p_metadata: { caused_by_rule: ctx.ruleId },
+    p_metadata: metadata,
     p_organization_id: ctx.organizationId,
   });
   return { type: "add_tag", status: "success", detail: { added } };

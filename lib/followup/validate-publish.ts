@@ -8,6 +8,7 @@ import type { ModelosDaConta } from './modelos-citados';
 import { recusaDeMotivoForaDoVocabulario } from '../leads/motivo-da-perda';
 import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
 import { CUSTO_NO_MOTOR, TETO_DE_PASSOS_DO_MOTOR } from './custo-no-motor';
+import { horarioDaEsperaValido } from './espera-no-horario';
 
 /**
  * Structural publish validator for follow-up flow graphs.
@@ -54,6 +55,10 @@ export const PUBLISH_ERROR_CODES = [
   // Regra de data (item 14): sem o campo do negócio ela não tem o que comparar
   // e responderia `false` para sempre, sem dizer por quê.
   'campo_de_data_ausente',
+  // Espera com horário (`ate_o_horario`): início depois do fim, nenhum dia ou
+  // hora torta — o motor não teria como obedecer e terminaria a espera na
+  // duração crua, calado (`espera-no-horario.ts` falha aberta).
+  'horario_da_espera_invalido',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -1134,6 +1139,21 @@ export function validateFlowForPublish(
         message: `Nó "${node.id}" é imune à resposta e precisa de pelo menos 24h de espera.`,
       });
     }
+  }
+
+  // Espera com horário: o rascunho aceita o horário torto (o painel grava a cada
+  // clique — ver `horarioDaEsperaSchema`), a publicação não. Um horário que não
+  // dá para obedecer viraria "sem horário" no motor, e o toque sairia de
+  // madrugada com a tela dizendo o contrário.
+  for (const node of [...nodes].sort(byId)) {
+    if (node.type !== 'wait' || node.config.mode !== 'fixed') continue;
+    const horario = node.config.ate_o_horario;
+    if (horario === undefined || horarioDaEsperaValido(horario)) continue;
+    errors.push({
+      node_id: node.id,
+      code: 'horario_da_espera_invalido',
+      message: `Nó "${node.id}": o horário da espera precisa de pelo menos um dia e de um início antes do fim.`,
+    });
   }
 
   // Cobertura por ramo — SÓ no modo 'per_check'. É deliberado que o modo

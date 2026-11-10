@@ -1,3 +1,5 @@
+import { sufixoDoMembro } from "@/lib/users/rotulo-do-atendente";
+
 /** Rótulos de apresentação da agenda. Nunca altera o ID ou o responsável. */
 export function textoDeIdentidade(valor: unknown): string | null {
   return typeof valor === "string" && valor.trim() ? valor.trim() : null;
@@ -16,7 +18,7 @@ export function identidadeDoResponsavel(
   t: TraduzirIdentidade = (texto) => texto,
 ): IdentidadeDaAgenda {
   if (indisponivel || !usuario) {
-    return { full_name: null, display_label: `${t("Identidade indisponível")} · ${id}` };
+    return { full_name: null, display_label: `${t("Identidade indisponível")} · ${sufixoDoMembro(id)}` };
   }
   const metadata = usuario.user_metadata;
   const nome = textoDeIdentidade(
@@ -27,7 +29,7 @@ export function identidadeDoResponsavel(
   const email = textoDeIdentidade(usuario.email);
   return {
     full_name: nome,
-    display_label: nome ?? email ?? `${t("Sem nome ou e-mail")} · ${id}`,
+    display_label: nome ?? email ?? `${t("Sem nome ou e-mail")} · ${sufixoDoMembro(id)}`,
   };
 }
 
@@ -39,5 +41,5 @@ export function rotuloDoResponsavel(
   t: TraduzirIdentidade = (texto) => texto,
 ): string {
   return textoDeIdentidade(nome) ?? textoDeIdentidade(rotulo)
-    ?? `${t("Identidade indisponível")} · ${id}`;
+    ?? `${t("Identidade indisponível")} · ${sufixoDoMembro(id)}`;
 }

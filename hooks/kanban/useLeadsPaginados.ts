@@ -29,6 +29,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
 import { apiClient } from "@/lib/api/client";
+import { type FiltrosDaLista, paramsDosFiltrosDaLista } from "@/lib/kanban/filtros-da-lista";
 import type { Lead } from "@/lib/types/leads";
 
 /** O tamanho de página padrão — o mesmo que a rota usa quando não vem `per_page`. */
@@ -58,7 +59,11 @@ type RespostaDaRota = {
  * voltar para a página 1 mostraria a 2 do cache, e avançar pediria refetch de
  * uma página que já estava na mão.
  *
- * ⚠️ ELA MORA DEBAIXO DA CHAVE DO QUADRO (`["board", pipelineId, "lista", n]`).
+ * O FILTRO também faz parte dela (`paramsDosFiltrosDaLista`, em ordem fixa): a
+ * página 1 de "Responsável: Ana" e a página 1 sem filtro são respostas
+ * diferentes, e com a mesma chave a troca de filtro mostraria a anterior.
+ *
+ * ⚠️ ELA MORA DEBAIXO DA CHAVE DO QUADRO (`["board", pipelineId, "lista", n, filtro]`).
  * Toda escrita no funil — Novo Lead, editar pela ficha, ganhar, perder, mover,
  * etiqueta, proposta, tarefa — invalida `["board", pipelineId]` ou `["board"]`,
  * e o `invalidateQueries` casa por PREFIXO: com a página debaixo do quadro, a
@@ -73,21 +78,28 @@ type RespostaDaRota = {
  * tem de excluir o `"lista"`. A Lista se atualizar na escrita é vigiado em
  * `tests/unit/lista-se-atualiza-na-escrita.test.tsx`.
  */
-export function chaveDosLeadsPaginados(pipelineId: string | null, pagina: number) {
-  return [...chaveDoQuadro(pipelineId), "lista", pagina] as const;
+export function chaveDosLeadsPaginados(
+  pipelineId: string | null,
+  pagina: number,
+  filtros: FiltrosDaLista = {},
+) {
+  return [...chaveDoQuadro(pipelineId), "lista", pagina, paramsDosFiltrosDaLista(filtros)] as const;
 }
 
 export function useLeadsPaginados(
   pipelineId: string | null,
   pagina: number,
+  filtros: FiltrosDaLista = {},
   porPagina: number = LEADS_POR_PAGINA,
 ) {
+  const doFiltro = paramsDosFiltrosDaLista(filtros);
   return useQuery({
-    queryKey: chaveDosLeadsPaginados(pipelineId, pagina),
+    queryKey: chaveDosLeadsPaginados(pipelineId, pagina, filtros),
     enabled: !!pipelineId,
     queryFn: async (): Promise<PaginaDeLeads> => {
       const res = await apiClient.get<RespostaDaRota>(
-        `/api/v1/pipelines/${pipelineId}/leads?page=${pagina}&per_page=${porPagina}`,
+        `/api/v1/pipelines/${pipelineId}/leads?page=${pagina}&per_page=${porPagina}` +
+          (doFiltro ? `&${doFiltro}` : ""),
       );
       const leads = res?.data ?? [];
       const meta = res?.meta ?? {};

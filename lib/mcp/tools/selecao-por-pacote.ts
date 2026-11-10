@@ -157,9 +157,17 @@ export function ligarPacote(
   for (const name of capacidadesAutomaticasDoPacote(catalogo, pacote)) {
     atual.add(name);
   }
+  // Id que NÃO é do catálogo compilado sobrevive ao pacote. Hoje é a escolha de
+  // ferramenta do servidor MCP externo (`mcp_externo:*`, #3586): ela mora no
+  // mesmo `tool_ids`, mas quem a oferece é o servidor da instalação, não o
+  // catálogo — e ligar "Atender e responder" não é declaração de que o
+  // administrador desmarcou o ERP. Sem isto, um clique num pacote apagava a
+  // escolha remota em silêncio.
+  const doCatalogo = new Set(catalogo.map((c) => c.name));
+  const foraDoCatalogo = selecionadas.filter((n) => !doCatalogo.has(n));
   // Ordem do catálogo, não ordem de clique: a lista salva vira diff de versão
   // do agente, e diff que muda de ordem a cada clique é diff ilegível.
-  return catalogo.map((c) => c.name).filter((n) => atual.has(n));
+  return [...catalogo.map((c) => c.name).filter((n) => atual.has(n)), ...foraDoCatalogo];
 }
 
 /**

@@ -19,7 +19,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 
-import { test, expect, type BrowserContext } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type BrowserContext } from "./helpers/test";
 import {
   assinaturaDe, criarPessoa, db, drenarAte, entrar, fotografarChaves, inserir, restaurarChaves, type FotoDasChaves,
 } from "./helpers/cobranca";
@@ -117,6 +117,7 @@ test("[P0] Asaas: conectar, assinar com CPF/CNPJ, pagar com Pix e cancelar mante
 
     // ── 2. O documento de quem paga: preenchido, conferido, sem máscara ─────
     const ctxB = await browser.newContext();
+    ctxB.on("page", esperarARevelacaoNasCargas);
     contextos.push(ctxB);
     const pB = await ctxB.newPage();
     pB.setDefaultTimeout(20_000);

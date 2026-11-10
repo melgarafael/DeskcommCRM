@@ -44,6 +44,16 @@ import {
 } from "@/lib/mcp/servidor-externo/chamada";
 import type { EscolhaRemota } from "@/lib/mcp/servidor-externo/ids";
 import { hostDoEndpoint, type ServidorMcpExterno } from "@/lib/mcp/servidor-externo/registro";
+import type {
+  ServidorDoAgenteNoTurno,
+  ServidorDoAgenteProntoNoTurno,
+} from "@/lib/mcp/servidor-externo/do-agente/carregar";
+import { parametroDoDesafio } from "@/lib/mcp/servidor-externo/do-agente/oauth";
+import { TIMEOUT_DA_CHAMADA_NO_TURNO_MS } from "@/lib/mcp/servidor-externo/tempos-do-turno";
+import {
+  nomeDaFerramentaDeAcesso,
+  nomeParaOModelo,
+} from "@/lib/mcp/servidor-externo/do-agente/registro";
 import type { McpToolDefinition } from "@/lib/mcp/types";
 import { logger } from "@/lib/logger";
 
@@ -161,11 +171,14 @@ export function definirFerramentasRemotas(
       requiresRole: "agent",
       requiresScope: ehLeitura ? "mcp:read" : "mcp:write",
       handler: async (input) => {
+        // O ORÇAMENTO DO TURNO, aqui e não no cliente: a mesma chamada feita
+        // pelo cadastro ("Testar conexão") pode esperar 15 s, quem está na
+        // conversa não. Ver `tempos-do-turno.ts`.
         const resultado = await chamarFerramentaRemota(
           servidor,
           ferramenta.name,
           (input ?? {}) as Record<string, unknown>,
-          opcoes,
+          { ...opcoes, timeoutMs: opcoes?.timeoutMs ?? TIMEOUT_DA_CHAMADA_NO_TURNO_MS },
         );
         return resultado.dados === undefined
           ? { texto: resultado.texto }
@@ -175,4 +188,157 @@ export function definirFerramentasRemotas(
   }
 
   return definicoes;
+}
+
+// ─── Servidores MCP DO AGENTE (migration 9095) ───────────────────────────────
+
+/**
+ * As remotas escolhidas de UM servidor do agente, com o nome NAMESPACED que o
+ * modelo vê (`<slug>__<nome>`) — dois servidores anunciando `buscar_pedido`
+ * viram duas ferramentas distintas, e nenhuma colide com o catálogo compilado.
+ *
+ * ── Classificação ───────────────────────────────────────────────────────────
+ *
+ * Leitura: as duas metades de sempre (marca `leitura` do admin + `readOnlyHint`
+ * do servidor). Escrita DELEGADA (`escritaDelegadaAoContato`): só quando o
+ * cadastro ligou `escrita_delegada`, o servidor é `oauth_por_contato`, a
+ * credencial montada é do CONTATO DO TURNO e o admin marcou `escrita`. Fora
+ * disso a escrita monta como sempre, para a ponte recusá-la em turno com
+ * contato (`escrita_sem_escopo_do_turno`).
+ *
+ * ── Falhas de autorização na chamada ────────────────────────────────────────
+ *
+ * 401 com token do contato: renova UMA vez e repete; caiu de novo, devolve ao
+ * modelo a orientação de pedir acesso (nunca o motivo técnico do terceiro).
+ * 403 `insufficient_scope`: orienta o step-up por `solicitar_acesso_<slug>`,
+ * com os escopos exigidos (limitados aos do cadastro na hora de gerar o link).
+ */
+export function definirFerramentasDoServidorDoAgente(
+  montado: ServidorDoAgenteProntoNoTurno,
+  nomesOcupados: ReadonlySet<string>,
+  escolhas: readonly EscolhaRemota[],
+  contatoDoTurno: string | undefined,
+): McpToolDefinition[] {
+  const { servidor } = montado;
+  const anunciadas = new Map(montado.ferramentas.map((f) => [f.name, f]));
+  const oauth = servidor.modo === "oauth_por_contato";
+  const credencialDoContato = oauth && contatoDoTurno !== undefined && montado.contato === contatoDoTurno;
+  const definicoes: McpToolDefinition[] = [];
+
+  for (const escolha of escolhas) {
+    const ferramenta = anunciadas.get(escolha.nome);
+    const nome = nomeParaOModelo(servidor.slug, escolha.nome);
+    if (!ferramenta || !nome) {
+      logger.warn("ferramenta escolhida do servidor MCP do agente nao montou", {
+        servidor_id: servidor.id,
+        ferramenta: escolha.nome,
+        motivo: !ferramenta ? "nao_anunciada" : "nome_fora_do_protocolo",
+      });
+      continue;
+    }
+    if (nomesOcupados.has(nome)) continue;
+
+    const ehLeitura = escolha.leitura && ferramenta.somenteLeitura === true;
+    const delegada = !ehLeitura && !escolha.leitura && servidor.escritaDelegada && credencialDoContato;
+
+    definicoes.push({
+      name: nome,
+      description: `${ferramenta.description ?? ferramenta.name} (servidor MCP externo "${servidor.nome}")`,
+      inputSchema: shapeDaFerramenta(ferramenta),
+      category: ehLeitura ? "read" : "write",
+      requiresRole: "agent",
+      requiresScope: ehLeitura ? "mcp:read" : "mcp:write",
+      ...(delegada ? { escritaDelegadaAoContato: true as const } : {}),
+      handler: async (input) => {
+        const argumentos = (input ?? {}) as Record<string, unknown>;
+        let desafio: { status: number; texto: string | null } | null = null;
+        const chamar = () =>
+          chamarFerramentaRemota(montado.chamavel, ferramenta.name, argumentos, {
+            fetch: montado.fetch,
+            timeoutMs: TIMEOUT_DA_CHAMADA_NO_TURNO_MS,
+            ...(montado.cabecalhos ? { cabecalhos: montado.cabecalhos } : {}),
+            aoRecusar: (status, texto) => {
+              desafio = { status, texto };
+            },
+          });
+        try {
+          const r = await chamar();
+          return r.dados === undefined ? { texto: r.texto } : { texto: r.texto, dados: r.dados };
+        } catch (err) {
+          const recusa = desafio as { status: number; texto: string | null } | null;
+          if (oauth && recusa?.status === 401 && montado.renovarAcesso) {
+            desafio = null;
+            if (await montado.renovarAcesso()) {
+              try {
+                const r = await chamar();
+                return r.dados === undefined ? { texto: r.texto } : { texto: r.texto, dados: r.dados };
+              } catch {
+                // cai para a orientação abaixo
+              }
+            }
+            return {
+              texto:
+                `O acesso do cliente a "${servidor.nome}" não vale mais. Use a ferramenta ` +
+                `${nomeDaFerramentaDeAcesso(servidor.slug)} para gerar um novo link de autorização e envie ao cliente.`,
+            };
+          }
+          if (oauth && recusa?.status === 403 && parametroDoDesafio(recusa.texto, "error") === "insufficient_scope") {
+            const escopos = parametroDoDesafio(recusa.texto, "scope") ?? "";
+            return {
+              texto:
+                `O acesso que o cliente deu a "${servidor.nome}" não cobre esta ação. Use a ferramenta ` +
+                `${nomeDaFerramentaDeAcesso(servidor.slug)}` +
+                (escopos ? ` com escopos ["${escopos.split(/\s+/).join('", "')}"]` : "") +
+                " para pedir o acesso ampliado e envie o link ao cliente.",
+            };
+          }
+          throw err;
+        }
+      },
+    });
+  }
+  return definicoes;
+}
+
+/**
+ * A ferramenta SINTÉTICA `solicitar_acesso_<slug>` de um servidor
+ * `oauth_por_contato`, montada só em turno com contato.
+ *
+ * `category: "read"` de propósito: ela não escreve em registro do CRM nem no
+ * terceiro — cria um pedido de autorização de uso único AMARRADO ao contato e
+ * à conversa do turno (que vêm do runtime, não de argumento) e devolve o link.
+ * O único argumento é `escopos` (step-up), e ele é limitado aos escopos do
+ * cadastro por `escoposDoPedido`. O link é o curto da instalação; o modelo o
+ * envia pelo fluxo normal de resposta, com os guardrails de sempre.
+ */
+export function ferramentaDeSolicitarAcesso(
+  montado: ServidorDoAgenteNoTurno,
+): McpToolDefinition | null {
+  const pedirAcesso = montado.pedirAcesso;
+  if (!pedirAcesso) return null;
+  const { servidor } = montado;
+  const jaAutorizado = montado.estado === "pronto";
+  return {
+    name: nomeDaFerramentaDeAcesso(servidor.slug),
+    description: jaAutorizado
+      ? `Gera um link para o cliente AMPLIAR o acesso que deu a "${servidor.nome}" (use só quando uma ferramenta desse servidor disser que o acesso não cobre a ação). Envie o link ao cliente e explique que ele vai entrar na conta dele em "${servidor.nome}".`
+      : `O cliente ainda não autorizou o acesso à conta dele em "${servidor.nome}", e por isso as ferramentas desse servidor não estão disponíveis. Esta ferramenta gera um link de autorização (vale 10 minutos, uso único). Envie o link ao cliente, explique que ele vai entrar na conta dele em "${servidor.nome}" para autorizar, e que depois ele pode voltar a esta conversa.`,
+    inputSchema: {
+      escopos: z.array(z.string().max(128)).max(20).optional(),
+    },
+    category: "read",
+    requiresRole: "agent",
+    requiresScope: "mcp:read",
+    handler: async (input) => {
+      const escopos = (input as { escopos?: string[] } | undefined)?.escopos;
+      const pedido = await pedirAcesso(escopos);
+      if (!pedido) {
+        return { texto: `Não foi possível gerar o link de autorização de "${servidor.nome}" agora. Siga a conversa sem esse acesso.` };
+      }
+      return {
+        texto: `Link de autorização (vale 10 minutos, uso único): ${pedido.link}`,
+        dados: { link: pedido.link, expira_em: pedido.expiraEm.toISOString() },
+      };
+    },
+  };
 }

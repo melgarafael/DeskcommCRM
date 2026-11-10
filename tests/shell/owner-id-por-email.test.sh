@@ -63,7 +63,7 @@ u() {  # u <uuid> <email>
 }
 printf '{"users":['
 # A ORDEM importa e é o miolo do caso: o GoTrue devolve por data de cadastro, e
-# o `head -1` só erra quando o INTRUSO vem antes do alvo. Com o alvo em primeiro
+# o \`head -1\` só erra quando o INTRUSO vem antes do alvo. Com o alvo em primeiro
 # lugar, um casamento ingênuo acerta por sorte e o teste não vigia nada —
 # medido: nesta ordem invertida a sabotagem passava verde.
 u $MARIANA    "mariana@empresa.com"
