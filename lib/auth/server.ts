@@ -8,7 +8,16 @@ import { combinarInterfaces } from "@/lib/navigation/interface";
  * intentional here because we resolve the user from the validated JWT first
  * and then filter by `user_id` (a trusted source).
  */
+import type { SupportContext } from "@/lib/impersonate/support";
 import { readSupportContext } from "@/lib/impersonate/support";
+import {
+  comCacheCurto,
+  etiquetaDeOrg,
+  etiquetaDeSessao,
+  etiquetaDeUsuario,
+  sessaoDosCookies,
+  type SessaoDosCookies,
+} from "@/lib/auth/cache-curto";
 import { cookies, headers } from "next/headers";
 import { agindoPeloPoderDePlataforma } from "@/lib/auth/poder-de-plataforma";
 import { redirect } from "next/navigation";
@@ -137,23 +146,239 @@ export function ehSessaoAusente(error: { name?: string } | null | undefined): bo
 }
 
 /**
- * O `getUser()` da requisição: UMA ida ao servidor de autenticação, partilhada
- * por `loadAuthUser` e `isMfaEnrolled`.
- *
- * Cada tela de `/app` pedia o usuário ao GoTrue duas vezes — uma aqui, outra
- * dentro do `listFactors()` do auth-js, que chama `getUser()` pela rede e só
- * filtra `user.factors`. A resposta é a mesma; a segunda ida era uma espera a
- * mais (e uma linha a mais no log do Supabase) em toda tela.
- *
- * O CLIENTE vai junto com a resposta, e não por enfeite: se o `getUser`
- * renovou o token, é este cliente que tem o token novo — as consultas de
- * `loadAuthUser` precisam sair dele, como sempre saíram.
+ * A sessão que os cookies da requisição identificam — `null` quando não há
+ * requisição (script, job) ou quando o cookie não é reconhecível. Nesses casos a
+ * requisição segue o caminho direto, sem chave de cache.
  */
+async function sessaoDosCookiesDaIrequisicao(): Promise<SessaoDosCookies | null> {
+  try {
+    return sessaoDosCookies((await cookies()).getAll());
+  } catch {
+    // `cookies()` lança fora de escopo de requisição. Antes do #3696 este
+    // caminho nem tocava o cookie de sessão; quem chama `loadAuthUser` de um
+    // script continua funcionando, só não reaproveita nada.
+    return null;
+  }
+}
+
 const sessaoDaRequisicao = cache(async () => {
   const supabase = await createClient();
-  const resposta = await supabase.auth.getUser();
-  return { supabase, resposta };
+  const sessao = await sessaoDosCookiesDaIrequisicao();
+  /**
+   * CACHE ENTRE REQUISIÇÕES DO `getUser()` — é a maior linha do log do
+   * Supabase na issue #3696 (18,6 mil `/auth/v1/user` em ~17 h), porque toda
+   * navegação valida o mesmo token de novo.
+   *
+   * Duas travas, ambas de segurança:
+   *  - a chave é o HASH dos cookies de sessão: token rotacionado, chave nova.
+   *    Sem cookie, não há chave e a requisição segue o caminho direto;
+   *  - o `exp` do JWT é o teto (`ate`), com margem. Servir um usuário em cache
+   *    para um token vencido faria as consultas RLS seguintes levarem 401 — o
+   *    cache devolveria "autenticado" com credencial morta. Sem `exp` legível,
+   *    NÃO se cacheia (fail-open para o caminho de hoje).
+   *
+   * Só o SUCESSO é guardado: `error` é incidente, não estado — e `user: null`
+   * com erro é justamente o caso que não pode virar resposta reaproveitada.
+   */
+  const resposta =
+    sessao && sessao.expiraEm !== null
+      ? await comCacheCurto({
+          chave: `sessao:${sessao.chave}`,
+          etiquetas: [etiquetaDeSessao(sessao.chave)],
+          // A identidade também derruba a sessão: `invalidarUsuario` (sair de
+          // todos os aparelhos, MFA novo, revogação) alcança as OUTRAS sessões
+          // da pessoa, cujo cookie esta requisição não conhece.
+          etiquetasDoValor: (r) => (r.data?.user ? [etiquetaDeUsuario(r.data.user.id)] : []),
+          ate: sessao.expiraEm,
+          guardar: (r) => !r.error && !!r.data?.user,
+          carregar: () => supabase.auth.getUser(),
+        })
+      : await supabase.auth.getUser();
+  return { supabase, resposta, sessao };
 });
+
+interface PermissoesResolvidas {
+  paRow: { user_id: string; scope: string | null } | null;
+  memberships: UserOrgMembership[];
+}
+
+/**
+ * As duas consultas de permissão mais a normalização das memberships — o
+ * corpo que `loadAuthUser` sempre teve, extraído para caber inteiro atrás do
+ * cache curto.
+ *
+ * A lista de memberships decide QUAL ORGANIZAÇÃO FICA ATIVA para quem não tem
+ * o cookie `active_org` — `resolveActiveOrg` pega `organizations[0]` —, e por
+ * isso a ordenação não é enfeite: ver o comentário do `order` abaixo.
+ */
+async function lerPermissoes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<PermissoesResolvidas> {
+  // Platform admin e Org memberships consultados em paralelo no Supabase:
+  // elimina round-trip sequencial a cada requisição.
+  const [
+    { data: paRow, error: paErro },
+    { data: rawMemberships, error: membErro },
+  ] = await Promise.all([
+      supabase
+        .from("platform_admins")
+        .select("user_id, scope, revoked_at")
+        .eq("user_id", userId)
+        .is("revoked_at", null)
+        .maybeSingle(),
+      supabase
+        .from("user_organizations")
+        .select(
+          // Dois embeds do MESMO `organizations`, como manda o PostgREST quando a
+          // mesma relação aparece duas vezes: `organizations(...)` continua sendo
+          // o que a membership sempre trouxe (nome, IDIOMA e FUSO da empresa — o
+          // idioma decide a tela inteira e não pode depender de um embed que a
+          // issue #1341 acabou de engordar), e o alias traz só as portas da EMPRESA.
+          // `timezone` veio do main (fuso da organização nas listas, #1290) e convive
+          // com o alias: um embed por relação, sem renomear o que já existia.
+          "organization_id, role, interface_settings, accepted_at, organizations!user_organizations_organization_id_fkey(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations!user_organizations_organization_id_fkey(interface_settings)",
+        )
+        .eq("user_id", userId)
+        .is("revoked_at", null)
+        .order("accepted_at", { ascending: true, nullsFirst: true })
+        .order("organization_id", { ascending: true }),
+    ]);
+
+  /**
+   * FALHA ALTO, não baixo.
+   *
+   * Antes, o erro destas duas queries era descartado e `rawMemberships` nulo virava
+   * `[]` — ou seja, "usuário sem organização". O resultado é que uma instabilidade do
+   * banco chega ao operador como **"você não pertence a nenhuma organização"**: as
+   * telas de admin somem, as rotas devolvem 403, e nada indica que a causa é
+   * infraestrutura.
+   *
+   * Medido em 2026-07-30: com o PostgREST devolvendo `name resolution failed` depois
+   * de um restart do Docker, TODOS os cards de admin sumiram do hub de configurações.
+   * Custou seis diagnósticos errados — build velho, processo velho, cache, filtro de
+   * papel — antes de alguém olhar a causa real.
+   *
+   * Degradar permissão em silêncio é o pior desfecho possível num caminho de auth:
+   * parece uma decisão de autorização e é um defeito de infra. Melhor estourar e
+   * mostrar erro do que renderizar uma UI mentirosa.
+   *
+   * ⚠️ E é por isso que este `throw` fica DENTRO do cache curto e não fora dele: o
+   * `comCacheCurto` não guarda o que estourou. Um erro cacheado por 30 s viraria 30 s
+   * de "todas as telas de admin sumiram" — o mesmo incidente, agora com prazo de
+   * validade.
+   */
+  if (paErro || membErro) {
+    const detalhe = (paErro ?? membErro)!;
+    logger.error("[auth] não foi possível resolver permissões do usuário", {
+      user_id: userId,
+      onde: paErro ? "platform_admins" : "user_organizations",
+      code: detalhe.code,
+      message: detalhe.message,
+    });
+    throw new Error(
+      `auth_permissions_unavailable: ${detalhe.message} — permissões não puderam ser ` +
+        `resolvidas; a sessão NÃO foi rebaixada por decisão de autorização.`,
+    );
+  }
+
+  const rows = (rawMemberships ?? []) as RawMembershipRow[];
+  const memberships: UserOrgMembership[] = rows.map((row) => {
+    const orgs = row.organizations;
+    const org = Array.isArray(orgs) ? (orgs[0] ?? null) : orgs;
+    const empresas = row.interface_da_empresa;
+    const empresa = Array.isArray(empresas) ? (empresas[0] ?? null) : empresas;
+    return {
+      organization_id: row.organization_id,
+      organization_name: org?.display_name ?? "—",
+      role: row.role as Role,
+      // EMPRESA ∩ VÍNCULO (migration 0367): a empresa escolhe o universo de
+      // portas da instalação, o vínculo escolhe menos dentro dele. Até aqui o
+      // vínculo decidia sozinho, então a escolha da empresa não existia.
+      interface_settings: combinarInterfaces(empresa?.interface_settings, row.interface_settings),
+      locale: org?.locale ?? null,
+      timezone: org?.timezone ?? null,
+      currency: org?.currency ?? null,
+      country: org?.country ?? null,
+      org_status: org?.status ?? null,
+      suspended_kind: org?.suspended_kind ?? null,
+    };
+  });
+
+  return { paRow: (paRow ?? null) as PermissoesResolvidas["paRow"], memberships };
+}
+
+/**
+ * O snapshot de PERMISSÕES da pessoa atravessando requisições por até 30 s
+ * (#3696): `platform_admins` + `user_organizations` eram ~14 mil consultas em
+ * ~17 h de uso, repetidas a cada navegação.
+ *
+ * ⚠️ A INVALIDAÇÃO É A CONDIÇÃO DE EXISTIR. Toda escrita de vínculo (revogar,
+ * reativar, trocar papel, mexer na interface do membro, aceitar convite), toda
+ * mudança de estado da organização (suspender/reativar) e toda sessão de
+ * acompanhamento começada ou encerrada chamam `invalidarUsuario`/
+ * `invalidarOrg` no mesmo gesto. Quem escrever um caminho NOVO de vínculo
+ * precisa fazer o mesmo — a cerca
+ * `tests/unit/acesso-revogado-nao-espera-o-cache.test.ts` percorre estes
+ * arquivos e reprova quem esquecer.
+ *
+ * ⚠️ E O PODER DE PLATAFORMA POSITIVO NÃO É CACHEADO (`guardar`). Um grant só
+ * nasce e só morre por SQL direto — a rota de `platform_admins` é 405 por
+ * projeto (Spec 01 §3.4 T-04) —, logo não existe invalidação confiável para
+ * ele. Guardar a AUSÊNCIA é seguro por construção: um "não é admin" obsoleto
+ * só pode NEGAR, nunca conceder. O preço é o platform admin pagar as duas
+ * consultas a cada requisição; o ganho é não existir janela em que um grant
+ * revogado por DBA continue valendo.
+ */
+const permissoesDoUsuario = cache(
+  async (
+    userId: string,
+    supabase: Awaited<ReturnType<typeof createClient>>,
+  ): Promise<PermissoesResolvidas> =>
+    comCacheCurto({
+      chave: `permissoes:${userId}`,
+      etiquetas: [etiquetaDeUsuario(userId)],
+      // As orgs só se conhecem DEPOIS da consulta, e é por elas que a
+      // suspensão de uma empresa (que muda `org_status` de todos os membros)
+      // derruba o snapshot de cada um com um `invalidarOrg` só.
+      etiquetasDoValor: (p) => p.memberships.map((m) => etiquetaDeOrg(m.organization_id)),
+      guardar: (p) => p.paRow === null,
+      carregar: () => lerPermissoes(supabase, userId),
+    }),
+);
+
+/**
+ * O contexto de acompanhamento administrativo (`fn_support_context`), também
+ * curto — 6,4 mil chamadas em ~17 h no relato da issue.
+ *
+ * A chave leva a SESSÃO junto do usuário, e não só o usuário: a RPC resolve
+ * `auth.session_id`, então o mesmo admin em duas sessões (uma acompanhando,
+ * outra não) tem dois contextos diferentes. Sem a chave de sessão, o cache
+ * misturaria os dois — exatamente o tipo de vazamento que um cache de
+ * autorização não pode ter.
+ *
+ * Invalidado por identidade (`invalidarUsuario`, no início e no fim do
+ * acompanhamento) e por sessão (`invalidarSessao`, na saída).
+ */
+const suporteDaSessao = cache(
+  async (
+    userId: string,
+    sessao: SessaoDosCookies | null,
+    supabase: Awaited<ReturnType<typeof createClient>>,
+  ): Promise<SupportContext | null> => {
+    // Sem cookie de sessão reconhecível não há chave — e sem chave não se
+    // cacheia nada. Caminho direto, como antes do #3696.
+    if (!sessao) return readSupportContext(supabase);
+    return comCacheCurto({
+      chave: `suporte:${userId}:${sessao.chave}`,
+      etiquetas: [etiquetaDeUsuario(userId), etiquetaDeSessao(sessao.chave)],
+      // Só a AUSÊNCIA, pela mesma regra do poder de plataforma: um acompanhamento
+      // ativo pode vencer pelo relógio ou cair por SQL, sem invalidação possível.
+      guardar: (contexto) => contexto === null,
+      carregar: () => readSupportContext(supabase),
+    });
+  },
+);
 
 export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   const {
@@ -162,6 +387,7 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
       data: { user },
       error,
     },
+    sessao,
   } = await sessaoDaRequisicao();
   // ⚠️ O `error` era DESCARTADO — nem chegava a ser desestruturado —, e aqui
   // `user: null` é tão ambíguo quanto o `data: null` que a query logo abaixo
@@ -202,105 +428,21 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   }
   if (!user) return null;
 
-  // Platform admin e Org memberships consultados em paralelo no Supabase:
-  // elimina round-trip sequencial a cada requisição.
-  // ⚠️ `ORDER BY` NÃO É ENFEITE AQUI: esta lista decide QUAL ORGANIZAÇÃO FICA
-  // ATIVA para quem não tem o cookie `active_org` — `resolveActiveOrg` pega
-  // `organizations[0]`. Sem ordenação, "a primeira" é o que o Postgres devolver.
+  // Permissões e contexto de acompanhamento em PARALELO, como estavam no lote
+  // de antes — o que mudou (#3696) é que cada um deles agora atravessa a
+  // requisição: ver `permissoesDoUsuario` e `suporteDaSessao`.
   //
-  // O contexto de acompanhamento entra no MESMO lote: a RPC depende só do JWT,
-  // que já foi validado pelo `getUser` acima, e não do resultado das duas
-  // consultas. Em fila, ela somava mais uma ida ao banco a TODA tela de `/app`.
-  // A falha dela continua lançando, e DEPOIS da checagem das permissões, como
-  // antes: por isso ela é capturada aqui e relançada lá embaixo.
-  const [
-    { data: paRow, error: paErro },
-    { data: rawMemberships, error: membErro },
-    leituraDoSuporte,
-  ] = await Promise.all([
-      supabase
-        .from("platform_admins")
-        .select("user_id, scope, revoked_at")
-        .eq("user_id", user.id)
-        .is("revoked_at", null)
-        .maybeSingle(),
-      supabase
-        .from("user_organizations")
-        .select(
-          // Dois embeds do MESMO `organizations`, como manda o PostgREST quando a
-          // mesma relação aparece duas vezes: `organizations(...)` continua sendo
-          // o que a membership sempre trouxe (nome, IDIOMA e FUSO da empresa — o
-          // idioma decide a tela inteira e não pode depender de um embed que a
-          // issue #1341 acabou de engordar), e o alias traz só as portas da EMPRESA.
-          // `timezone` veio do main (fuso da organização nas listas, #1290) e convive
-          // com o alias: um embed por relação, sem renomear o que já existia.
-          "organization_id, role, interface_settings, accepted_at, organizations!user_organizations_organization_id_fkey(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations!user_organizations_organization_id_fkey(interface_settings)",
-        )
-        .eq("user_id", user.id)
-        .is("revoked_at", null)
-        .order("accepted_at", { ascending: true, nullsFirst: true })
-        .order("organization_id", { ascending: true }),
-      readSupportContext(supabase).then(
-        (contexto) => ({ ok: true as const, contexto }),
-        (erro: unknown) => ({ ok: false as const, erro }),
-      ),
-    ]);
+  // A precedência dos erros é a MESMA: falha de permissão estoura primeiro
+  // (vem do `Promise.all`) e a do acompanhamento é relançada logo abaixo.
+  const [permissoes, leituraDoSuporte] = await Promise.all([
+    permissoesDoUsuario(user.id, supabase),
+    suporteDaSessao(user.id, sessao, supabase).then(
+      (contexto) => ({ ok: true as const, contexto }),
+      (erro: unknown) => ({ ok: false as const, erro }),
+    ),
+  ]);
 
-  /**
-   * FALHA ALTO, não baixo.
-   *
-   * Antes, o erro destas duas queries era descartado e `rawMemberships` nulo virava
-   * `[]` — ou seja, "usuário sem organização". O resultado é que uma instabilidade do
-   * banco chega ao operador como **"você não pertence a nenhuma organização"**: as
-   * telas de admin somem, as rotas devolvem 403, e nada indica que a causa é
-   * infraestrutura.
-   *
-   * Medido em 2026-07-30: com o PostgREST devolvendo `name resolution failed` depois
-   * de um restart do Docker, TODOS os cards de admin sumiram do hub de configurações.
-   * Custou seis diagnósticos errados — build velho, processo velho, cache, filtro de
-   * papel — antes de alguém olhar a causa real.
-   *
-   * Degradar permissão em silêncio é o pior desfecho possível num caminho de auth:
-   * parece uma decisão de autorização e é um defeito de infra. Melhor estourar e
-   * mostrar erro do que renderizar uma UI mentirosa.
-   */
-  if (paErro || membErro) {
-    const detalhe = (paErro ?? membErro)!;
-    logger.error("[auth] não foi possível resolver permissões do usuário", {
-      user_id: user.id,
-      onde: paErro ? "platform_admins" : "user_organizations",
-      code: detalhe.code,
-      message: detalhe.message,
-    });
-    throw new Error(
-      `auth_permissions_unavailable: ${detalhe.message} — permissões não puderam ser ` +
-        `resolvidas; a sessão NÃO foi rebaixada por decisão de autorização.`,
-    );
-  }
-
-  const rows = (rawMemberships ?? []) as RawMembershipRow[];
-  const memberships: UserOrgMembership[] = rows.map((row) => {
-    const orgs = row.organizations;
-    const org = Array.isArray(orgs) ? (orgs[0] ?? null) : orgs;
-    const empresas = row.interface_da_empresa;
-    const empresa = Array.isArray(empresas) ? (empresas[0] ?? null) : empresas;
-    return {
-      organization_id: row.organization_id,
-      organization_name: org?.display_name ?? "—",
-      role: row.role as Role,
-      // EMPRESA ∩ VÍNCULO (migration 0367): a empresa escolhe o universo de
-      // portas da instalação, o vínculo escolhe menos dentro dele. Até aqui o
-      // vínculo decidia sozinho, então a escolha da empresa não existia.
-      interface_settings: combinarInterfaces(empresa?.interface_settings, row.interface_settings),
-      locale: org?.locale ?? null,
-      timezone: org?.timezone ?? null,
-      currency: org?.currency ?? null,
-      country: org?.country ?? null,
-      org_status: org?.status ?? null,
-      suspended_kind: org?.suspended_kind ?? null,
-    };
-  });
-
+  const { paRow, memberships } = permissoes;
   if (!leituraDoSuporte.ok) throw leituraDoSuporte.erro;
   const support = leituraDoSuporte.contexto;
   const fullName = (user.user_metadata?.full_name as string | undefined) ?? null;

@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
+import { MENSAGEM_DE_CNPJ_INVALIDO } from "@/lib/crm-b2b/normalize";
+
 import { processCompaniesPeopleImport } from "./import-process";
 
 vi.mock("@/lib/crm-b2b/enrich", () => ({ enrichCompanyFromBrasilApi: vi.fn() }));
@@ -82,7 +84,7 @@ describe("importação distingue CNPJ inválido de ausente (#3497)", () => {
     for (const { dados } of linhas) {
       expect(dados).toMatchObject({
         status: "failed",
-        error: "CNPJ inválido.",
+        error: MENSAGEM_DE_CNPJ_INVALIDO,
         company_id: null,
         person_id: null,
         contact_id: null,
@@ -113,6 +115,38 @@ describe("importação distingue CNPJ inválido de ausente (#3497)", () => {
       organization_id: "11111111-1111-4111-8111-111111111111",
       cnpj: "11222333000181",
       normalized_cnpj: "11222333000181",
+    });
+  });
+
+  /**
+   * A planilha é a porta por onde o documento errado entra em lote: uma coluna
+   * inteira copiada de um sistema antigo. Ela confere pela MESMA régua do
+   * cadastro (`normalizeCnpj` → `isValidCnpj`), então o alfanumérico da Receita
+   * passa e o DV trocado reprova a linha com o motivo escrito (#3495).
+   */
+  it("CNPJ alfanumérico da Receita entra normalizado em maiúsculas", async () => {
+    const { resultado, escritas } = await importar([
+      ["Empresa Alfa", "12.abc.345/01de-35", "", ""],
+    ]);
+    expect(resultado.successful_rows).toBe(1);
+    const empresas = escritas.filter((e) => e.tabela === "companies");
+    expect(empresas).toHaveLength(1);
+    expect(empresas[0]!.dados).toMatchObject({
+      cnpj: "12ABC34501DE35",
+      normalized_cnpj: "12ABC34501DE35",
+    });
+  });
+
+  it("CNPJ alfanumérico com o DV errado falha a linha sem criar empresa", async () => {
+    const { resultado, escritas } = await importar([["Empresa Alfa", "12ABC34501DE36", "", ""]]);
+    expect(resultado.failed_rows).toBe(1);
+    expect(escritas.filter((e) => e.tabela === "companies")).toEqual([]);
+    const linhas = escritas.filter((e) => e.tabela === "import_rows" && e.operacao === "update");
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]!.dados).toMatchObject({
+      status: "failed",
+      error:
+        "CNPJ inválido: confira as 12 posições (dígitos ou letras) e os 2 dígitos verificadores.",
     });
   });
 });

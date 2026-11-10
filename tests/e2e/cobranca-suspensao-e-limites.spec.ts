@@ -28,7 +28,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
-import { test, expect, type BrowserContext, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type BrowserContext, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
 const credenciais = credenciaisSupabaseDeTeste();
@@ -161,6 +161,7 @@ test("o dono cria o plano, os limites valem pela tela, e prazo e desligar a chav
 
     // ── 3. A admin de B: faixa, e o convite recusado antes do e-mail ────────
     const ctxB = await browser.newContext();
+    ctxB.on("page", esperarARevelacaoNasCargas);
     contextos.push(ctxB);
     const pB = await ctxB.newPage();
     pB.setDefaultTimeout(20_000);

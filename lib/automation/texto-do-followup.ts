@@ -21,6 +21,8 @@
  */
 import type pg from "pg";
 
+import { anexarCamposDoFunil } from "./campos-do-render";
+import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { MARCACAO, renderTemplate } from "./template";
 
 /**
@@ -81,5 +83,23 @@ export async function contextoDoContato(
   const contexto: Record<string, unknown> = {};
   if (contatos.rows[0]) contexto.contact = contatos.rows[0];
   if (negocios.rows[0]) contexto.lead = negocios.rows[0];
+
+  // O rótulo das opções (#3605): a linha do negócio guarda o CÓDIGO
+  // (`paris-franca`) e o funil guarda o que o cliente deve ler. Uma leitura a
+  // mais, e só quando há campo personalizado preenchido — sem ela o follow-up
+  // mandaria o código enquanto a automação manda o rótulo, para o mesmo campo.
+  const lead = negocios.rows[0];
+  const temCampos =
+    !!lead?.custom_fields &&
+    typeof lead.custom_fields === "object" &&
+    Object.keys(lead.custom_fields as Record<string, unknown>).length > 0;
+  if (temCampos && typeof lead?.pipeline_id === "string") {
+    const { rows } = await pool.query<{ settings: Record<string, unknown> | null }>(
+      `select settings from crm_pipelines where organization_id = $1 and id = $2 limit 1`,
+      [organizationId, lead.pipeline_id],
+    );
+    anexarCamposDoFunil(contexto, camposDoFunil(rows[0]?.settings ?? null));
+  }
+
   return contexto;
 }

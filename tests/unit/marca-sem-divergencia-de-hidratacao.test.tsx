@@ -54,7 +54,7 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
 import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/app/ai/agents" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/app/ai/agents", useRouter: () => ({ prefetch: vi.fn() }) }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({ toggleSidebar: vi.fn() }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
 // Buscam estado do servidor e não falam de marca — fora do que se mede aqui.
@@ -65,6 +65,9 @@ vi.mock("@/components/connections/ConnectionHealthDot", () => ({
 // número não é o objeto destes casos (o dele mora em contador-de-casos.test.tsx).
 vi.mock("@/components/shell/ContadorDeCasos", () => ({ ContadorDeCasos: () => null }));
 vi.mock("@/components/shell/ContadorDaFila", () => ({ ContadorDaFila: () => null }));
+// O de tarefas lê a lista pelo React Query, e sem provider ele lança: o número
+// dele mora em contador-de-tarefas.test.tsx.
+vi.mock("@/components/shell/ContadorDeTarefas", () => ({ ContadorDeTarefas: () => null }));
 vi.mock("@/components/shell/VersionFooter", () => ({ VersionFooter: () => null }));
 
 const usuario = {

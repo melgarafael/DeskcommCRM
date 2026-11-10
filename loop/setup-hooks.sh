@@ -6,7 +6,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 git config core.hooksPath loop/hooks
 chmod +x loop/hooks/*
-echo "ok: core.hooksPath=loop/hooks (pre-commit: features + migration-triple + freeze-invariants; pre-push: gate de fase)"
+echo "ok: core.hooksPath=loop/hooks (pre-commit: features + migration-triple + guard-invariants; pre-push: gate de fase)"
 
 missing=0
 if ! command -v jq >/dev/null 2>&1; then

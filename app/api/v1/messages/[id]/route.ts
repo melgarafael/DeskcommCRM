@@ -18,6 +18,7 @@ import {
 import { traduzir } from "@/lib/i18n/dicionario";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { createClient } from "@/lib/supabase/server";
+import { enderecoDaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 
 export const dynamic = "force-dynamic";
 
@@ -85,13 +86,22 @@ async function alterar(req: NextRequest, ctx: Ctx, acao: "edit" | "revoke"): Pro
     return fail("channel_unavailable", t("WhatsApp indisponível no momento."), 503, { requestId });
   }
 
+  // Ficha com telefone extra: o endereço é o da última mensagem recebida (o
+  // número que a pessoa escreveu). A porta de canal decide quem tem isso.
+  const ultimoRecebidoChatId = await enderecoDaUltimaRecebida(supabase, {
+    provider: session?.provider,
+    isGroup: conversation.is_group,
+    organizationId: authz.org.orgId,
+    conversationId: conversation.id,
+    contactId: conversation.contact_id,
+  });
   const alvo = {
     organizationId: authz.org.orgId,
     sessionRef,
     externalId: message.external_id,
     recipient: adapter.resolveRecipient({
       isGroup: false, groupChatId: null, phoneNumber: contact?.phone_number,
-      waIdentity: contact?.wa_identity, waLid: contact?.wa_lid,
+      waIdentity: contact?.wa_identity, waLid: contact?.wa_lid, ultimoRecebidoChatId,
     }),
   };
   try {

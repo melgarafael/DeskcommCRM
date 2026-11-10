@@ -186,3 +186,32 @@ describe("LGPD: anonimizar o contato alcança pessoa, vínculo e planilha", () =
     ).toBe("Globo LTDA|contato@globo.invariant.test");
   });
 });
+
+/**
+ * O CNPJ alfanumérico da Receita na COLUNA (#3495). O código passou a aceitar as
+ * 12 posições de dígito ou letra + 2 dígitos verificadores; se o CHECK continuasse
+ * `^\d{14}$`, o documento legítimo morreria no INSERT com 500 — por isso a régua
+ * de banco entra nesta suíte, e não só no teste de texto do schema.
+ */
+describe("normalized_cnpj aceita o CNPJ alfanumérico da Receita (#3495)", () => {
+  const inserir = (nome: string, documento: string) =>
+    sql(`insert into public.companies (organization_id, trade_name, normalized_cnpj)
+           values ('${GOV_ORG}', '${nome}', '${documento}');`);
+
+  it("aceita as 12 posições alfanuméricas em MAIÚSCULA + os 2 dígitos", () => {
+    expect(() => inserir("Alfa", "12ABC34501DE35")).not.toThrow();
+    expect(
+      lastLine(sql(`select count(*) from public.companies where normalized_cnpj = '12ABC34501DE35';`)),
+    ).toBe("1");
+  });
+
+  it("recusa a forma minúscula: a coluna guarda a única forma canônica", () => {
+    expect(() => inserir("Alfa minúscula", "12abc34501de35")).toThrow(
+      /companies_normalized_cnpj_digits/,
+    );
+  });
+
+  it("continua recusando 13 posições — o CHECK segue sendo cerca de formato", () => {
+    expect(() => inserir("Curta", "12ABC34501DE3")).toThrow(/companies_normalized_cnpj_digits/);
+  });
+});

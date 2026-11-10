@@ -34,6 +34,7 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
+import { ehFalhaDoBanco } from "@/lib/ai/agents/falha-do-banco";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
@@ -44,6 +45,30 @@ import { LlmConteudoBloqueadoError } from "@/lib/agent-engine/edge/llm/conteudo-
 export const dynamic = "force-dynamic";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A frase que a tela diz quando a falha é do PROVEDOR (chave recusada, modelo
+ * fora de `enabled_models`, cota, endereço próprio sem chave) — ou quando não
+ * dá para provar de onde veio. É a frase de antes do #4020, e ela continua
+ * certa para esse caso: o que estava errado era usá-la para tudo.
+ */
+const MENSAGEM_GENERICA =
+  "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.";
+
+/**
+ * Código de wire da falha de banco. Declarado em `lib/api/errors.ts`: `fail()`
+ * aceita qualquer string, então só é contrato se estiver na lista.
+ */
+const MENSAGEM_BANCO_CODIGO = "preview_banco_indisponivel";
+
+/**
+ * A frase para quando o banco não atendeu. Ela precisa NEGAR a orientação da
+ * genérica ("não é modelo nem credencial"), senão quem lê refaz o que já fez —
+ * foi exatamente esse o atrito do #4020 — e apontar onde está o erro cru, que
+ * continua sendo o log do app (mesmo marcador de sempre).
+ */
+const MENSAGEM_BANCO =
+  "Não foi possível executar o teste: o banco de dados não respondeu (indisponibilidade ou tempo esgotado). Modelo e credencial do agente não têm relação com esta falha — tente de novo em instantes. O motivo exato fica no log do app, em [ai.test].";
 
 type Ctx = { params: Promise<{ id: string; vid: string }> };
 
@@ -174,6 +199,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       runId: runRow.id,
       sampleMessage: parsed.data.sample_message,
       sampleContact: parsed.data.sample_contact,
+      sampleTags: parsed.data.sample_tags,
       channelId: version.channel_session_id,
     });
     const finalText = result.candidates.map((c) => c.body).join("\n\n");
@@ -215,6 +241,14 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     // problema INDIAGNOSTICÁVEL: o teste falhava, a tela dizia uma frase
     // genérica sobre modelo e credencial, e a causa real não existia em lugar
     // nenhum — nem no log, nem na linha do run, nem na resposta.
+    //
+    // #4020 — e a frase genérica não podia ser a resposta para TUDO. Ela manda
+    // conferir modelo, credencial e materiais, e é a orientação certa quando a
+    // falha é do provedor; quando o banco não responde (`Query read timeout`),
+    // ela manda a pessoa reinstalar uma credencial que está boa. Duas
+    // instalações fizeram exatamente isso. O erro cru continua indo para o log
+    // e para a linha do run (quem depura precisa dele); o que muda é a
+    // TRADUÇÃO para a tela, e ela só afirma "banco" com prova.
     const mensagem = err instanceof Error ? err.message : String(err);
     logger.error("[ai.test] o teste do agente falhou", {
       request_id: requestId,
@@ -224,21 +258,36 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       organization_id: organizationId,
       error: mensagem,
     });
+    const falhaDoBanco = ehFalhaDoBanco(err);
     await atualizarRun(admin, organizationId, runRow.id, requestId, {
       status: "failed",
       completed_at: new Date().toISOString(),
       latency_ms: Date.now() - startedAt.getTime(),
-      error_code: "preview_failed",
-      // Guardado na linha para quem for diagnosticar depois; a resposta ao
-      // operador segue genérica, porque o texto do erro é técnico.
+      // O código guardado diz a NATUREZA da falha para quem for diagnosticar
+      // depois; antes era sempre `preview_failed`, o que fazia um timeout de
+      // banco parecer problema de configuração de agente também na tabela.
+      error_code: falhaDoBanco ? "preview_banco_indisponivel" : "preview_failed",
+      // Guardado na linha para quem for diagnosticar depois. A tela NUNCA lê
+      // este texto: ela recebe a frase da causa (a de banco ou a genérica),
+      // porque `message` de driver pode carregar host, usuário e SQL.
       error_message: mensagem.slice(0, 2000),
     });
-    return fail(
-      "preview_failed",
-      err instanceof LlmConteudoBloqueadoError ? err.message : t("Não foi possível executar o teste. Confira modelo, credencial e materiais do agente."),
-      422,
-      { requestId },
-    );
+    if (err instanceof LlmConteudoBloqueadoError) {
+      // Recusa nossa, com texto próprio e sem detalhe interno — não é caso de
+      // banco nem de credencial, e a frase já é a explicação.
+      return fail("preview_failed", err.message, 422, { requestId });
+    }
+    if (falhaDoBanco) {
+      // 502, não 422: não há nada para a pessoa corrigir na configuração do
+      // agente — a dependência é que não atendeu. E 502, não 503:
+      // `lib/api/client.ts` repete sozinho todo POST que recebe 503
+      // (RETRYABLE_STATUSES), e esta rota não é idempotente — cada repetição
+      // cria um run e roda o turno inteiro, inclusive o modelo pago (#783).
+      // 502 é o mesmo "a dependência não respondeu" de `channel_unavailable`
+      // e `wacalls_error`, e o cliente não o repete.
+      return fail(MENSAGEM_BANCO_CODIGO, t(MENSAGEM_BANCO), 502, { requestId });
+    }
+    return fail("preview_failed", t(MENSAGEM_GENERICA), 422, { requestId });
   }
 
   void audit({

@@ -30,6 +30,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "full",
     costPerMessage: false,
     alteraMensagemEnviada: true,
+    transmissao: false,
     // É a linha que conversa com um APARELHO pareado: a agenda salva no
     // celular está lá dentro, e o `contacts/all` a devolve paginada (#2736).
     phonebook: true,
@@ -47,6 +48,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -84,6 +86,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "none",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -98,6 +101,11 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    // MEDIDO em 16/10/2026 (2 destinatários, entregues em 1 a 3 s): o provedor
+    // cria a transmissão, recebe os telefones e manda a todos. O valor de cada
+    // variável sai LITERAL do `components` — o `variableMapping` documentado
+    // chegou ao destinatário como "{{1}}", e o nome que ele guarda é o número.
+    transmissao: true,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -121,6 +129,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -147,10 +156,26 @@ export const CHANNEL_PROVIDER_WAHA: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_META: ChannelProvider = "meta_cloud";
 export const CHANNEL_PROVIDER_SOCIAL: ChannelProvider = "zernio_social";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
+/**
+ * Os canais cuja entrada responde ANTES de processar a mensagem nova — o porquê
+ * está em `./inbound.ts`, que o reexporta. Mora aqui, num módulo sem dependência,
+ * porque o piso ocioso do cron (`lib/cron/piso-ocioso.ts`) também o lê: ele
+ * pergunta se há entrada aceita a reprocessar SEM escrever o nome do canal.
+ */
+export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_ZERNIO];
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
+
+/**
+ * O provider em que o NÚMERO é a conexão: pareado por QR, a linha só vira
+ * conexão quando um aparelho lê o código. A linha morta (`FAILED`/`STOPPED`)
+ * sem número, ali, é QR que ninguém leu e não ocupa a vaga do plano (#3416);
+ * nos outros provedores o número não identifica a conexão. É a mesma régua dos
+ * gatilhos `fn_trava_canais_do_plano` e `fn_vaga_ao_reviver_canal`.
+ */
+export const PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO: ChannelProvider = CHANNEL_PROVIDER_WAHA;
 
 /**
  * Os providers por onde MENSAGEM entra e sai — a única lista que responde
@@ -283,6 +308,21 @@ export function canalTemRiscoDeBanimento(provider: string | null | undefined): b
     return capabilitiesOf(provider as ProviderDeMensagem).banRisk;
   } catch {
     return true;
+  }
+}
+
+/**
+ * O provedor deste número faz a transmissão (a lista inteira de uma vez, com o
+ * relatório por destinatário)? Liga a terceira velocidade da campanha.
+ * Desconhecido responde `false`: sem a certeza, a campanha fica no envio que o
+ * próprio sistema controla.
+ */
+export function canalTemTransmissao(provider: string | null | undefined): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).transmissao;
+  } catch {
+    return false;
   }
 }
 

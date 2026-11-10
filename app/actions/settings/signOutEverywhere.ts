@@ -3,9 +3,15 @@
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  invalidarSessao,
+  invalidarUsuario,
+  sessaoDosCookies,
+  type SessaoDosCookies,
+} from "@/lib/auth/cache-curto";
 import { audit } from "@/lib/audit";
 import { encerrarPushDeTodosOsAparelhos } from "@/lib/notifications/encerrar-push-de-todos-os-aparelhos";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { logger } from "@/lib/logger";
 import { esquecerDispositivosConfiaveis } from "@/lib/auth/dispositivo-confiavel";
 
@@ -35,7 +41,19 @@ export async function signOutEverywhere(): Promise<void> {
     );
   }
 
+  let sessao: SessaoDosCookies | null = null;
+  try {
+    sessao = sessaoDosCookies((await cookies()).getAll());
+  } catch {
+    // Fora de escopo de requisição não há cookie para esquecer; a saída acontece
+    // e o cache da pessoa cai pelo `invalidarUsuario` abaixo.
+  }
   await supabase.auth.signOut({ scope: "global" });
+
+  // #3696: vale para todas as sessões da pessoa — por isso a invalidação é por
+  // IDENTIDADE, e não só pela sessão que clicou.
+  if (user) invalidarUsuario(user.id);
+  if (sessao) invalidarSessao(sessao.chave);
 
   if (user) {
     await audit({

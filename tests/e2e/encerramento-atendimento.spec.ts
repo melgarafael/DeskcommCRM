@@ -3,8 +3,9 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { trocarIdiomaPelaTela } from "./helpers/idioma";
 import { MedidorDeHops } from "./helpers/medir-hops";
 
 const credentials = credenciaisSupabaseDeTeste();
@@ -72,6 +73,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
 }) => {
   test.setTimeout(180_000);
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  context.on("page", esperarARevelacaoNasCargas);
   const page = await context.newPage();
   // Medição por elo da rajada do inbox (#2399) — inerte sem E2E_MEDIR_HOPS=1.
   const medidor = new MedidorDeHops(page);
@@ -199,7 +201,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     // longo — se ele quebrar a fileira ou sumir, é aqui que aparece. Cabe nesta
     // spec, e não numa nova, porque o painel já está montado neste ponto: spec
     // nova custaria mais um login e mais um seed ao relógio do CI.
-    await expect(page.getByRole("button", { name: "Novo Lead", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Novo negócio", exact: true })).toBeVisible();
     // Fechar não é mais `window.confirm()` (bloqueado em iframe, ignora o
     // tema) — é o `AlertDialog` da casa. O botão que abre e o que confirma
     // têm o MESMO rótulo "Fechar"; o segundo clique escopado ao
@@ -298,9 +300,8 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
     await page.screenshot({ path: `${evidence}/task4-caso-obsoleto-aviso.png`, fullPage: true });
     await abrirConversa(page, conversation);
     await expect(page.getByTestId("inbox-memoria")).toContainText("Histórico encerrado", PRAZO_DA_RECARGA);
-    const language = await db.auth.admin.updateUserById(user, { user_metadata: { locale: "es" } });
-    if (language.error) throw language.error;
-    await page.reload();
+    // Pela tela: o idioma viaja no cache curto da autorização (#3696), e quem invalida é o `trocarIdioma`.
+    await trocarIdiomaPelaTela(page, "es");
     await expect(page.getByTestId("inbox-memoria")).toContainText("Historial cerrado — sin tareas pendientes", PRAZO_DA_RECARGA);
     await expect(page.getByTestId("inbox-memoria")).toContainText("Resuelto");
     await page.screenshot({ path: `${evidence}/task4-historico-es.png`, fullPage: true });

@@ -1,122 +1,29 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Gauge,
-  ChatsCircle,
-  Buildings,
-  ClipboardText,
-  Scales,
-  Warning,
-  ChartBar,
-  Users,
-  ShieldCheck,
-  CalendarBlank,
-  Palette,
-  Key,
-  EnvelopeSimple,
-  Gear,
-  Plugs,
-  WebhooksLogo,
-  ArrowRight,
-  Lock,
-  PuzzlePiece,
-  Stack,
-  Receipt,
-} from "@/lib/ui/icons";
-import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
+import { ArrowRight } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
 import { marcaEhADoProduto } from "@/lib/branding";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
 import { useT } from "@/hooks/i18n/useT";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
+import { destinosDoAdmin } from "@/lib/admin/navegacao";
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: PhosphorIcon;
-  /** Só aparece com este módulo da instalação ligado (spec da cobrança §9). */
-  modulo?: ModuloOpcional;
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { href: "/admin/dashboard", label: "Dashboard", icon: Gauge },
-  { href: "/admin/inbox", label: "Inbox", icon: ChatsCircle },
-  { href: "/admin/tenants", label: "Tenants", icon: Buildings },
-  { href: "/admin/audit", label: "Audit", icon: ClipboardText },
-  { href: "/admin/lgpd", label: "LGPD", icon: Scales },
-  { href: "/admin/incidents", label: "Incidents", icon: Warning },
-  { href: "/admin/usage", label: "Usage", icon: ChartBar },
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/platform-admins", label: "Platform Admins", icon: ShieldCheck },
-  // A porta da tela de marca. Ela NÃO entra em `lib/navigation/registry.ts`:
-  // aquele registro descreve a navegação do tenant (`app/app/**`) e o teste de
-  // completude que o vigia varre só aquela raiz. O admin de plataforma tem
-  // navegação própria, e é esta lista.
-  { href: "/admin/marca", label: "Marca", icon: Palette },
-  // A porta da tela do app OAuth do Google — mesma razão da de cima: é
-  // configuração da INSTALAÇÃO, e /admin tem navegação própria.
-  { href: "/admin/google", label: "Google Agenda", icon: CalendarBlank },
-  // A porta da tela do App da Meta (chave secreta e token de verificação do
-  // webhook) — mesma razão da de cima: é da INSTALAÇÃO. O rótulo é o da aba de
-  // Conexões, para quem vem de lá reconhecer o mesmo nome.
-  { href: "/admin/meta", label: "API Oficial (Meta)", icon: WebhooksLogo },
-  // A porta da tela que decide quem pode criar conta nesta instalação — mesma
-  // razão das duas de cima: é configuração da INSTALAÇÃO, e /admin tem
-  // navegação própria (o registro de `lib/navigation/` cobre só `app/app/**`).
-  { href: "/admin/cadastro", label: "Cadastro", icon: Key },
-  // A porta da tela do servidor de e-mail (SMTP) — mesma razão das de cima: um
-  // servidor de e-mail manda o e-mail de todas as empresas desta VPS, então é
-  // configuração da INSTALAÇÃO, e /admin tem navegação própria (o registro de
-  // `lib/navigation/` cobre só `app/app/**`). O rótulo é "E-mail" e não "SMTP"
-  // porque quem instala não precisa conhecer a sigla para achar a tela.
-  { href: "/admin/email", label: "E-mail", icon: EnvelopeSimple },
-  // A porta da tela do COMPORTAMENTO da instalação (issue #1034) — mesma razão
-  // das três de cima: são chaves da INSTALAÇÃO, e /admin tem navegação própria.
-  //
-  // Rótulo "Recursos opcionais", e não mais "Comportamento" (doc 80): era aqui
-  // que se ligavam os módulos, e o mantenedor procurou onde ligar recursos sem
-  // achar — "Comportamento" não sugere "ligar recursos". A tela agora junta os
-  // módulos, as chaves de comportamento e o que depende do servidor.
-  { href: "/admin/sistema", label: "Recursos opcionais", icon: Gear },
-  // A porta da tela que libera endereços da rede interna (decisão 22-d, #1004).
-  // Mesma razão das de cima: o objeto é a MÁQUINA, não uma empresa — e a
-  // decisão pede explicitamente que o lugar onde o dono controla seja visível.
-  // Sem esta linha a tela existiria e só se chegaria nela digitando a URL.
-  { href: "/admin/destinos-internos", label: "Destinos internos", icon: Plugs },
-  // A porta das CREDENCIAIS da instalação (migration 0341): a chave do serviço
-  // de e-mail, o remetente, os contatos — o que antes só se trocava por SSH.
-  //
-  // ⚠️ RÓTULO E ÍCONE ESCOLHIDOS CONTRA A VIZINHA DE CIMA. A tela
-  // "Comportamento" (/admin/sistema, issue #1034) nasceu em paralelo e usa
-  // `Gear`. Uma segunda engrenagem chamada "Configuração" ao lado dela deixaria
-  // o operador sem saber qual abrir — "comportamento" e "configuração" são quase
-  // sinônimos para quem não programa. "Credenciais" diz o que tem lá dentro, e
-  // o cadeado diz que é algo guardado.
-  { href: "/admin/configuracao", label: "Credenciais", icon: Lock },
-  // A PORTA QUE FALTAVA. O catálogo de extensões é da INSTALAÇÃO
-  // (`extension_catalogs` não tem `organization_id`), mas a única tela que o
-  // mostrava vivia no menu da EMPRESA — o dono do servidor precisava entrar
-  // numa organização qualquer para ver de onde vêm as extensões do servidor
-  // dele. Mesma divisão errada que o DEC-009 achou no e-mail.
-  //
-  // `PuzzlePiece` é o mesmo ícone da entrada de Extensões no menu da empresa
-  // (`lib/navigation/catalogo.ts`), de propósito: são duas vistas do mesmo
-  // assunto, e ícones diferentes fariam parecer dois assuntos.
-  { href: "/admin/extensoes", label: "Extensões", icon: PuzzlePiece },
-  // A PORTA QUE FALTAVA (achado da revisão do PR #1578): a tela existia e as
-  // rotas de honorários já apontavam o operador para cá na mensagem de erro
-  // ("instale em Configurações da instalação › Módulos"), mas só se chegava
-  // digitando a URL — a mesma classe de defeito que a entrada de cima corrigiu
-  // para Extensões, só que `tests/unit/navegacao-completude.test.ts` não cobre
-  // `/admin/**`, então nada acusava.
-  { href: "/admin/modulos", label: "Módulos", icon: Stack },
-  // A porta da cobrança do revendedor (spec §9, §13): a tela só existe com a
-  // chave `cobranca` ligada — desligada, `/admin/cobranca` responde 404 e o
-  // menu do dono segue igual.
-  { href: "/admin/cobranca", label: "Cobrança", icon: Receipt, modulo: "cobranca" },
-];
+/**
+ * Menu do administrador da instalação.
+ *
+ * A LISTA não mora mais aqui: saiu para `lib/admin/navegacao.ts` quando a busca
+ * (⌘K) do painel virou seu segundo consumidor. Duas cópias divergem no primeiro
+ * item novo que alguém esquece de duplicar — e a busca passaria a levar a telas
+ * que o menu não mostra.
+ *
+ * Ela continua fora de `lib/navigation/registry.ts` de propósito: aquele
+ * registro descreve a navegação do TENANT (`app/app/**`) e o teste de
+ * completude que o vigia varre só aquela raiz. O administrador de plataforma
+ * tem navegação própria. Quem vigia a completude DESTA lista é
+ * `tests/unit/admin-navegacao-completude.test.ts`.
+ */
 
 interface AdminSidebarProps {
   userEmail: string;
@@ -137,6 +44,7 @@ export function AdminSidebar({ userEmail, variant = "desktop", modulosLigados = 
   // injetar a marca do BANCO as duas divergem — o nome renderizado no SSR não
   // batia com o hidratado, que é hydration mismatch. Ver `lib/branding/contexto.tsx`.
   const marca = useMarcaDaInstalacao();
+  const destinos = destinosDoAdmin(modulosLigados);
 
   return (
     <aside
@@ -158,7 +66,7 @@ export function AdminSidebar({ userEmail, variant = "desktop", modulosLigados = 
         </div>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-2" aria-label={t("Navegação plataforma")}>
-        {NAV_ITEMS.filter((item) => !item.modulo || modulosLigados.includes(item.modulo)).map((item) => {
+        {destinos.map((item) => {
           const isActive =
             pathname === item.href || pathname.startsWith(item.href + "/");
           const Icon = item.icon;

@@ -275,6 +275,42 @@ describe("drainEventLog — evento preso volta para a fila, e a volta conta", ()
     expect(iSeleciona).toBeGreaterThan(iReclama);
   });
 
+  it("varredura desligada num tick não deixa o preso fora da fila para sempre (#3693)", async () => {
+    // O laço do worker passou a varrer `processing` no MÁXIMO 1×/min: a consulta
+    // procura linhas de 10 min atrás, e repeti-la a cada 2s era tráfego ao
+    // PostgREST sem chance de achar nada novo. O risco do atalho é o oposto —
+    // o evento preso nunca mais ser procurado. Este caso mede os dois lados.
+    dispatch.mockResolvedValue([{ consumer_key: "k", status: "ok" }]);
+
+    function buscaDeProcessing(chamadas: Chamada[]) {
+      return chamadas.filter(
+        (c) =>
+          c.tabela === "event_log" &&
+          c.op === "select" &&
+          c.filtros.some(([tipo, col, val]) => tipo === "eq" && col === "status" && val === "processing"),
+      );
+    }
+
+    const semVarredura = dublarAdmin([], null, [PRESO]);
+    const resumo = await drainEventLog(semVarredura.admin as never, { varrerPresos: false });
+
+    expect(
+      buscaDeProcessing(semVarredura.chamadas),
+      "o tick que pulou a varredura consultou `processing` mesmo assim",
+    ).toHaveLength(0);
+    expect(reclamacoes(semVarredura.chamadas)).toHaveLength(0);
+    expect(resumo.dead).toBe(0);
+
+    // O tick seguinte, com a varredura de volta (o default é varrer), recupera o
+    // MESMO evento — varredura menos frequente é atraso, não abandono.
+    const depois = dublarAdmin([], null, [PRESO]);
+    await drainEventLog(depois.admin as never);
+
+    const [volta] = reclamacoes(depois.chamadas);
+    expect(volta, "o preso nunca mais foi procurado depois de um tick sem varredura").toBeDefined();
+    expect(volta!.filtros).toContainEqual(["eq", "id", "p1"]);
+  });
+
   it("sem evento preso, nada é reclamado (controle)", async () => {
     dispatch.mockResolvedValue([{ consumer_key: "k", status: "ok" }]);
     const { admin, chamadas } = dublarAdmin([]);

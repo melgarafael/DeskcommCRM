@@ -1,0 +1,201 @@
+{
+  "id": "uso-e-orcamento",
+  "titulo": "Uso e orçamento",
+  "tela": "/app/ai/usage",
+  "resumo": "Quanto a inteligência artificial custou, quantas vezes trabalhou, quanto demorou e qual é o teto de gasto do mês.",
+  "licoes": [
+    {
+      "id": "uso-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Uso e orçamento",
+      "objetivo": "Achar a tela e ler o orçamento do mês, os seis números do período e os gráficos por dia.",
+      "papel": "manager",
+      "busca": [
+        "quanto a ia gastou",
+        "custo da ia",
+        "gasto com inteligência artificial",
+        "orçamento de ia",
+        "consumo da ia",
+        "quantas vezes a ia respondeu"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Uso e orçamento não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" está o cartão \"Uso e orçamento\". O caminho completo é: Agente de IA › Ver tudo em IA › Uso e orçamento.",
+          "dica": "Só gerente ou administrador vê este cartão. Para os outros papéis, o endereço da tela leva à página \"403 — Sem permissão\".",
+          "destaques": [
+            { "alvo": { "role": "link", "nome": "Ver tudo em IA", "exato": true }, "rotulo": "Ver tudo em IA", "tipo": "numero" },
+            { "alvo": { "role": "link", "nome": "^Uso e orçamento ", "regex": true }, "rotulo": "Abrir Uso e orçamento", "tipo": "caixa" }
+          ],
+          "clicar": { "role": "link", "nome": "^Uso e orçamento ", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "O orçamento do mês",
+          "rota": "/app/ai/usage",
+          "texto": "No alto fica o \"Orçamento mensal de IA\": quanto a IA já gastou neste mês e quanto falta para o limite. A barra enche conforme o gasto: fica amarela quando passa do ponto de aviso e vermelha quando chega no limite. Ao lado, a frase diz o que acontece no limite. Os valores são em dólar, porque é a moeda em que o provedor de IA cobra.",
+          "dica": "Aqui a Clínica Bem Viver pediu um aviso ao passar de 80% de US$ 15,00 por mês. A IA não para sozinha: ela só avisa.",
+          "antes": [{ "acao": "aguardar", "alvo": { "texto": "Custo no período", "exato": true } }],
+          "destaques": [
+            { "alvo": { "role": "heading", "nome": "Orçamento mensal de IA", "exato": true }, "rotulo": "Orçamento do mês", "tipo": "seta" },
+            { "alvo": { "role": "progressbar" }, "rotulo": "Quanto já foi gasto", "tipo": "caixa" }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Custo, chamadas e turnos",
+          "texto": "Embaixo vêm seis números dos últimos 30 dias. \"Custo no período\" é quanto a IA custou. \"Chamadas de IA\" conta cada vez que o sistema perguntou algo a uma IA. \"Turnos do agente\" conta as respostas que o agente deu ao cliente. Uma resposta pode fazer várias chamadas, como responder e, junto, medir o clima da conversa. Por isso há mais chamadas que turnos.",
+          "destaques": [
+            { "alvo": { "texto": "Custo no período", "exato": true }, "rotulo": "Custo", "tipo": "numero" },
+            { "alvo": { "texto": "Chamadas de IA", "exato": true }, "rotulo": "Chamadas", "tipo": "numero" },
+            { "alvo": { "texto": "Turnos do agente", "exato": true }, "rotulo": "Turnos", "tipo": "numero" }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Cache, passagem para uma pessoa e tempo",
+          "texto": "\"Taxa de cache\" diz quanto do texto enviado à IA já estava guardado de antes, o que custa bem menos. \"Passaram para uma pessoa\" mostra quantas vezes a IA chamou alguém da equipe; quanto mais alto, mais ela precisou de ajuda. \"Tempo de uma chamada à IA\" é o pior caso comum, e a frase embaixo diz em quanto tempo a maioria responde.",
+          "destaques": [
+            { "alvo": { "texto": "Taxa de cache", "exato": true }, "rotulo": "Cache", "tipo": "numero" },
+            { "alvo": { "texto": "Passaram para uma pessoa", "exato": true }, "rotulo": "Passaram para uma pessoa", "tipo": "numero" },
+            { "alvo": { "texto": "Tempo de uma chamada à IA", "exato": true }, "rotulo": "Tempo", "tipo": "numero" }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Os gráficos por dia",
+          "texto": "Mais abaixo, os mesmos números aparecem dia a dia: quanto gastou, quanto texto a IA leu e escreveu, quanto demorou e quanto foi para uma pessoa. Passe o mouse sobre um dia para ver o valor exato. Um dia muito acima dos outros é o primeiro lugar para olhar.",
+          "antes": [
+            { "acao": "rolar", "alvo": { "role": "heading", "nome": "Quanto gastou por dia (US$)", "exato": true } },
+            { "acao": "esperar", "ms": 800 }
+          ],
+          "destaques": [
+            { "alvo": { "role": "heading", "nome": "Quanto gastou por dia (US$)", "exato": true }, "rotulo": "Gasto por dia", "tipo": "seta" },
+            { "alvo": { "role": "heading", "nome": "Volume de texto processado por dia", "exato": true }, "rotulo": "Texto por dia", "tipo": "seta" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "uso-filtrar",
+      "titulo": "Filtrar por agente, tipo de uso e período",
+      "objetivo": "Ver só uma parte do gasto: um agente, um tipo de uso ou um intervalo de datas.",
+      "papel": "manager",
+      "busca": [
+        "filtrar o uso da ia",
+        "gasto de um agente",
+        "gasto por período",
+        "tipo de uso",
+        "uso do mês passado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os filtros",
+          "rota": "/app/ai/usage",
+          "texto": "Acima dos números ficam os filtros. \"Agente\" mostra só o uso de um agente. \"Tipo de uso\" mostra só um tipo de trabalho da IA. \"De\" e \"Até\" escolhem as datas; em branco, valem os últimos 30 dias. O período vai até 90 dias.",
+          "antes": [{ "acao": "aguardar", "alvo": { "texto": "Custo no período", "exato": true } }],
+          "destaques": [
+            { "alvo": { "css": "div.space-y-1:has(> label:text-is('Agente')) button[role='combobox']" }, "rotulo": "Agente", "tipo": "numero" },
+            { "alvo": { "css": "div.space-y-1:has(> label:text-is('Tipo de uso')) button[role='combobox']" }, "rotulo": "Tipo de uso", "tipo": "numero" },
+            { "alvo": { "rotulo": "De", "exato": true }, "rotulo": "De", "tipo": "numero" },
+            { "alvo": { "rotulo": "Até", "exato": true }, "rotulo": "Até", "tipo": "numero" }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Os tipos de uso",
+          "texto": "Clique em \"Tipo de uso\". A lista mostra só os tipos que aconteceram no período. Na Clínica Bem Viver são quatro: \"Responder o cliente\", \"Medir o clima da conversa\", \"Identificar a etapa do lead\" e \"Fechar o atendimento\".",
+          "antes": [
+            { "acao": "click", "alvo": { "css": "div.space-y-1:has(> label:text-is('Tipo de uso')) button[role='combobox']" } },
+            { "acao": "aguardar", "alvo": { "role": "listbox" } }
+          ],
+          "destaques": [{ "alvo": { "role": "listbox" }, "rotulo": "Tipos de uso", "tipo": "caixa" }],
+          "clicar": { "role": "option", "nome": "Responder o cliente", "exato": true }
+        },
+        {
+          "id": "p3",
+          "titulo": "Os números do filtro",
+          "texto": "Escolhemos \"Responder o cliente\". Os números e os gráficos passam a contar só as respostas ao cliente, que são a maior parte do custo. Para voltar a ver tudo, escolha \"Todas\" em \"Tipo de uso\".",
+          "dica": "O endereço da página guarda os filtros. Dá para salvar o link nos favoritos e abrir a mesma visão depois.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "option", "nome": "Responder o cliente", "exato": true } },
+            { "acao": "esperar", "ms": 1500 },
+            { "acao": "aguardar", "alvo": { "texto": "Custo no período", "exato": true } }
+          ],
+          "destaques": [
+            { "alvo": { "css": "div.space-y-1:has(> label:text-is('Tipo de uso')) button[role='combobox']" }, "rotulo": "Filtro ligado", "tipo": "seta" },
+            { "alvo": { "texto": "Custo no período", "exato": true }, "rotulo": "Só as respostas", "tipo": "numero" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "uso-definir-o-limite",
+      "titulo": "Definir o limite de gasto do mês",
+      "objetivo": "Escolher o que acontece quando o gasto chega no limite: só acompanhar, avisar ou parar a IA.",
+      "papel": "admin",
+      "busca": [
+        "limite de gasto da ia",
+        "teto do mês",
+        "parar a ia por gasto",
+        "aviso de gasto",
+        "editar limite"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Editar o limite",
+          "rota": "/app/ai/usage",
+          "texto": "Só o administrador muda o orçamento. No cartão \"Orçamento mensal de IA\", clique em \"Editar limite\".",
+          "antes": [{ "acao": "aguardar", "alvo": { "role": "button", "nome": "Editar limite", "exato": true } }],
+          "destaques": [{ "alvo": { "role": "button", "nome": "Editar limite", "exato": true }, "rotulo": "Editar limite", "tipo": "seta" }],
+          "clicar": { "role": "button", "nome": "Editar limite", "exato": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Três jeitos de cuidar do gasto",
+          "texto": "\"Só acompanhar\": a IA nunca para por gasto, e você só vê o número. \"Me avisar\": ao passar da porcentagem escolhida, chega um aviso na Central de avisos, e a IA continua respondendo. \"Parar a IA\": ao chegar no limite, as conversas vão para a fila de atendimento humano. Ninguém fica sem resposta, mas alguém da equipe precisa responder.",
+          "dica": "\"Parar a IA\" só fica liberado depois de salvar \"Me avisar\" uma vez.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Editar limite", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "dialog", "nome": "Orçamento de IA", "exato": true } }
+          ],
+          "destaques": [
+            { "alvo": { "testid": "opcao-orcamento-off" }, "rotulo": "Só acompanhar", "tipo": "numero" },
+            { "alvo": { "testid": "opcao-orcamento-avisar" }, "rotulo": "Avisar", "tipo": "numero" },
+            { "alvo": { "testid": "opcao-orcamento-bloquear" }, "rotulo": "Parar a IA", "tipo": "numero" }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O valor e o ponto de aviso",
+          "texto": "Em \"Limite mensal (US$)\", escreva o teto do mês em dólar. Aqui a clínica sobe de US$ 15 para US$ 25. Em \"Avisar ao chegar em (% do limite)\", escolha quando o aviso chega, de 50% a 99%. O texto das opções acima muda junto com o valor.",
+          "antes": [
+            { "acao": "fill", "alvo": { "rotulo": "Limite mensal (US$)", "exato": true }, "valor": "25" }
+          ],
+          "destaques": [
+            { "alvo": { "rotulo": "Limite mensal (US$)", "exato": true }, "rotulo": "Teto do mês", "tipo": "caixa" },
+            { "alvo": { "rotulo": "Avisar ao chegar em (% do limite)", "exato": true }, "rotulo": "Ponto de aviso", "tipo": "caixa" }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Parar a IA no limite",
+          "texto": "Ao escolher \"Parar a IA\", aparece um quadro amarelo: a parada só começa a valer 72 horas depois de salvar. É o tempo de o aviso chegar antes que alguma conversa pare. Quem precisa da parada já pode marcar \"Começar a valer agora, sem esperar as 72 horas\". Por fim, clique em \"Salvar\".",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "opcao-orcamento-bloquear" } },
+            { "acao": "aguardar", "alvo": { "texto": "Começar a valer agora, sem esperar as 72 horas", "exato": true } }
+          ],
+          "destaques": [
+            { "alvo": { "testid": "opcao-orcamento-bloquear" }, "rotulo": "Parar a IA", "tipo": "caixa" },
+            { "alvo": { "texto": "Começar a valer agora, sem esperar as 72 horas", "exato": true }, "rotulo": "Sem esperar", "tipo": "seta" },
+            { "alvo": { "role": "button", "nome": "Salvar", "exato": true, "dentro": { "role": "dialog", "nome": "Orçamento de IA", "exato": true } }, "rotulo": "Salvar", "tipo": "seta" }
+          ],
+          "clicar": { "role": "button", "nome": "Salvar", "exato": true, "dentro": { "role": "dialog", "nome": "Orçamento de IA", "exato": true } }
+        }
+      ]
+    }
+  ]
+}

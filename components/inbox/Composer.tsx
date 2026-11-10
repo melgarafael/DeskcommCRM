@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
 } from "react";
 import { PaperPlaneTilt } from "@/lib/ui/icons";
@@ -28,7 +29,7 @@ import {
 import { resolveSlash, TemplateMenu } from "@/components/inbox/composer/TemplateMenu";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useCreateNote } from "@/hooks/inbox/useCreateNote";
-import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
+import { useGruposDeRespostas, useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
@@ -47,13 +48,20 @@ import {
 } from "@/lib/inbox/rascunho-sugerido";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
+import { avisoDaContinua } from "@/lib/channels/numero-do-atendente";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { mimeDaMidia, type MidiaDeTemplate } from "@/lib/templates/midias";
-import { embutirMencoes, podarMencoes, type MencaoEscolhida } from "@/lib/notifications/mentions";
+import {
+  embutirMencoes,
+  podarMencoes,
+  podarMencoesDaEdicao,
+  type MencaoEscolhida,
+} from "@/lib/notifications/mentions";
 import { cn } from "@/lib/utils";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
 import { type Recurso } from "@/lib/inbox/recursos";
+import { lerRespostaRapidaGravada } from "@/lib/inbox/resposta-rapida";
 import type { Message } from "@/lib/types/messaging";
 
 export interface ComposerHandle {
@@ -149,6 +157,15 @@ interface Props {
    * de auth só por causa de uma preferência de tela.
    */
   usuarioId?: string | null;
+  /**
+   * Abre OUTRA conversa do mesmo contato (#3732).
+   *
+   * A recusa do envio pode dizer que a conversa continua em outra conversa —
+   * a do número de quem está respondendo. Sem esta porta a pessoa leria a frase
+   * e teria que procurar a conversa na lista; com ela, a caixa de resposta trava
+   * e o botão leva direto para lá.
+   */
+  onAbrirConversa?: (id: string) => void;
 }
 
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
@@ -169,6 +186,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     onCancelarResposta,
     rascunho = null,
     usuarioId = null,
+    onAbrirConversa,
   },
   ref,
 ) {
@@ -187,6 +205,23 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * prévia e retry — em vez de um caminho próprio que perdia a imagem.
    */
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  /**
+   * O ARRASTE DE ARQUIVO POR CIMA DO COMPOSITOR (#3708) — o realce, e o
+   * CONTADOR que o sustenta.
+   *
+   * `arrastandoArquivo` é o que desenha. `arrasteEmCurso` existe porque
+   * `dragenter`/`dragleave` disparam também ao passar sobre os FILHOS (o campo,
+   * os botões, a faixa de citação): com um booleano solto, cada filho sob o
+   * ponteiro apagava o realce e ele piscava o caminho inteiro — o mesmo defeito
+   * que o campo de arquivo do card do funil tem hoje. Contar entradas e saídas
+   * deixa o realce aceso enquanto o ponteiro estiver dentro, e só apaga quando o
+   * contador volta a zero.
+   *
+   * `useRef` e não estado: o contador não desenha nada. Quem desenha é o
+   * booleano, e um contador em estado re-renderizaria a cada filho atravessado.
+   */
+  const [arrastandoArquivo, setArrastandoArquivo] = useState(false);
+  const arrasteEmCurso = useRef(0);
   /**
    * O texto da resposta rápida escolhida, guardado como LEGENDA.
    *
@@ -221,6 +256,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * (`@Ana Lima`); o id entra só quando o corpo sai da tela (`embutirMencoes`),
    * porque ninguém lê `@[Ana Lima](mencao:2f9c…)` enquanto escreve.
    *
+   * A lista é DERIVADA do campo, não um histórico do que já foi clicado
+   * (#2463): cada escolha guarda a posição em que foi escrita, e a primeira
+   * edição à mão que apagar aquele `@Nome` tira a pessoa da lista
+   * (`podarMencoesDaEdicao`). Quem apagou o trecho não avisa mais ninguém.
+   *
    * `mencaoDispensada` (Esc) e `mencaoIndice` (setas) são o mesmo desenho do
    * slash-menu de sempre, para os dois menus não disputarem a mesma tecla.
    */
@@ -228,6 +268,21 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [mencoes, setMencoes] = useState<MencaoEscolhida[]>([]);
   const [mencaoDispensada, setMencaoDispensada] = useState(false);
   const [mencaoIndice, setMencaoIndice] = useState(0);
+  /**
+   * A CONVERSA QUE CONTINUA (#3732) — a recusa do envio com destino.
+   *
+   * Guarda a conversa em que a recusa aconteceu junto com o aviso: o compositor
+   * NÃO é remontado ao trocar de conversa sem rascunho (a `key` do
+   * `InboxLayout`), e um aviso da conversa anterior travaria a caixa da
+   * seguinte. Com o id aqui, a faixa só vale para a conversa que a produziu.
+   */
+  const [continua, setContinua] = useState<{
+    conversationId: string;
+    conversaId: string;
+    modelo: string;
+    nome: string | null;
+  } | null>(null);
+  const continuaAqui = continua?.conversationId === conversationId ? continua : null;
   useEffect(() => {
     onDraftChange?.(text, mode);
   }, [text, mode, onDraftChange]);
@@ -236,6 +291,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const upload = useUploadMedia();
   const createNote = useCreateNote();
   const templates = useMessageTemplates();
+  // Os GRUPOS (#3245) — vazio é o caso de quem nunca criou grupo, e aí a barra
+  // e o slash-menu são exatamente os de antes.
+  const grupos = useGruposDeRespostas();
   const slash = resolveSlash(text);
   // O Esc/escolha vale só para o `/` em curso: saiu do `/` por QUALQUER caminho
   // (digitado ou escrito pelo `applyTemplate`, inclusive o clique da barra com o
@@ -295,11 +353,24 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // até a API voltar impedia digitar a próxima mensagem com o campo ainda cheio.
   // `aguardandoAssumir` (#3012) entra AQUI, no mesmo lugar: um termo a mais na
   // trava de sempre, nunca um desabilitar paralelo que pudesse divergir dela.
-  const isDisabled = disabled || !!blockedReason || upload.isPending || aguardandoAssumir;
+  const isDisabled =
+    disabled || !!blockedReason || upload.isPending || aguardandoAssumir || continuaAqui !== null;
   // A janela só alcança o que SAI. Em modo nota o composer segue liberado: a
   // nota interna nunca chega ao cliente, e é onde o atendente registra por que
   // a conversa esfriou — barrá-la tira exatamente o que ainda dá para fazer.
   const respostaBarrada = isDisabled || (mode === "reply" && !!janelaFechada);
+
+  /**
+   * O QUE O DROP ACEITA — a MESMA guarda do Ctrl+V e do botão de anexar (#3708).
+   *
+   * `respostaBarrada` é o `disabled` do `AttachMenu` e a primeira condição do
+   * `onPaste`; `pendingFiles.length > 0` é a outra — a colagem também recusa
+   * enquanto a prévia está aberta, porque um segundo anexo substituiria em
+   * silêncio o que o operador já escolheu. Um `drop` com regra própria seria a
+   * forma mais fácil de furar o bloqueio até assumir (#3012): o botão
+   * `disabled` não impede um arquivo de ser solto em cima do compositor.
+   */
+  const aceitaArquivoArrastado = !respostaBarrada && pendingFiles.length === 0;
 
   /**
    * O RASCUNHO QUE JÁ ESTÁ NO CAMPO (#3354).
@@ -342,11 +413,28 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   // (`respostaBarrada`) NÃO recebe o curinga — ver acima.
   const envioBarrado = respostaBarrada || !!motivoCuringa;
 
-  /** Escolhe o arquivo e MARCA o modo da escolha (ver `pendingEm`). */
-  function escolherArquivo(file: File) {
-    setPendingFiles([file]);
+  /**
+   * Escolhe os arquivos e MARCA o modo da escolha (ver `pendingEm`).
+   *
+   * UMA função para os três gestos — o clique do "+", a imagem colada e o
+   * arquivo arrastado (#3708). É por ela que a fila de anexos do #2526 recebe,
+   * e é isso que mantém limite de tamanho, tipo aceito, prévia, legenda e retry
+   * idênticos nos três: um segundo caminho de upload divergiria no dia em que um
+   * dos dois mudasse (foi o que o #3151 já pagou uma vez).
+   *
+   * Lista e não arquivo solto porque o `drop` pode trazer vários de uma vez e a
+   * fila já sabe enviá-los em sequência com a legenda no primeiro que a aceita.
+   */
+  function escolherArquivos(files: File[]) {
+    if (!files.length) return;
+    setPendingFiles(files);
     setLegendaInicial(null);
     setPendingEm(mode);
+  }
+
+  /** A escolha de UM arquivo — o menu "+" e a imagem colada chamam por aqui. */
+  function escolherArquivo(file: File) {
+    escolherArquivos([file]);
   }
 
   function autoresize() {
@@ -361,14 +449,22 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * na hora de salvar (`embutirMencoes`), porque é o nome que quem digita lê.
    *
    * A posição vem do `gatilho`, não do fim do texto: o `@` pode estar no meio
-   * da frase, e o que se troca é do `@` até o cursor.
+   * da frase, e o que se troca é do `@` até o cursor. Ela também é GUARDADA na
+   * escolha (`inicio`): com duas pessoas de rótulo idêntico é a única coisa que
+   * distingue a menção apagada da que ficou (#2463, resíduo a).
    */
   function escolherMencao(opcao: OpcaoDeMencao): void {
     const gatilhoAqui = resolverMencao(text, caret);
     if (!gatilhoAqui) return;
     const inserido = `@${opcao.rotulo} `;
-    setText(text.slice(0, gatilhoAqui.start) + inserido + text.slice(caret));
-    setMencoes((atual) => [...atual, { id: opcao.membro.user_id, nome: opcao.rotulo }]);
+    const novo = text.slice(0, gatilhoAqui.start) + inserido + text.slice(caret);
+    setText(novo);
+    setMencoes((atual) => [
+      // A inserção desloca o que já estava à direita dela — a mesma conta da
+      // edição à mão, feita uma vez só (`podarMencoesDaEdicao`).
+      ...podarMencoesDaEdicao(text, novo, atual),
+      { id: opcao.membro.user_id, nome: opcao.rotulo, inicio: gatilhoAqui.start },
+    ]);
     const pos = gatilhoAqui.start + inserido.length;
     setCaret(pos);
     setMencaoIndice(0);
@@ -425,7 +521,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             // `embutirMencoes` pareia ocorrência e escolha por ordem.
             const restaurado = restaurar(taRef.current?.value ?? "");
             setMencoes((atual) =>
-              podarMencoes(restaurado, [...mencoesEnviadas, ...atual.filter((m) => !mencoesEnviadas.includes(m))]),
+              podarMencoes(restaurado, [
+                // Sem `inicio`: o texto restaurado passou pelas edições feitas
+                // DURANTE o envio, e a posição guardada não acompanha esse
+                // texto. Sem posição a poda volta a decidir por presença e a
+                // ordem é a de escolha — o contrato de antes da #2463.
+                ...mencoesEnviadas.map(({ id, nome }) => ({ id, nome })),
+                ...atual.filter((m) => !mencoesEnviadas.includes(m)),
+              ]),
             );
           },
           // Só depois de gravar, e só as escolhas DESTA nota — a lista pode já
@@ -451,11 +554,22 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           // próxima frase sair citando algo que o atendente já respondeu.
           onCancelarResposta?.();
           consumirRascunhoEnviado();
+          // #3732: a trava da conversa que continua cai quando o envio volta a
+          // ser aceito (o número mudou, ou alguém mexeu na conversa).
+          setContinua(null);
           requestAnimationFrame(() => autoresize());
         },
         // Do upstream, e fica: sem isto o texto some quando o envio falha, e
         // quem escreveu um parágrafo o perde sem ter como recuperá-lo.
-        onError: restoreOnError,
+        //
+        // #3732: e quando a recusa é "esta conversa está no número de outro
+        // atendente", a faixa diz PARA ONDE IR e trava a caixa — a frase
+        // sozinha mandava transferir uma conversa que já é de quem está aqui.
+        onError: (erro) => {
+          restoreOnError();
+          const aviso = erro instanceof ApiError ? avisoDaContinua(erro.code, erro.details) : null;
+          if (aviso) setContinua({ conversationId, ...aviso });
+        },
       },
     );
   }
@@ -490,6 +604,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    */
   function escreverNoCampo(conteudo: string, focar = true) {
     setText(conteudo);
+    // Substituir o campo também mexe no texto das menções: o que sumiu sai da
+    // lista aqui, e o que sobrou (ou deslizou) fica com a posição certa. Sem
+    // isto a lista voltaria a ser um histórico do que já foi clicado (#2463).
+    setMencoes((atual) => podarMencoesDaEdicao(text, conteudo, atual));
     const ta = taRef.current;
     if (!ta) return;
     requestAnimationFrame(() => {
@@ -551,8 +669,27 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * Baixar os bytes NA ESCOLHA (e não na hora de enviar) é o que permite
    * preview: sem o Blob não há o que mostrar, e o operador só poderia aprovar
    * às cegas.
+   *
+   * COMBINAÇÕES (#3009) não abriram caminho nenhum: imagem e áudio entram na
+   * MESMA fila, na ordem gravada, e o texto vira legenda do primeiro anexo que
+   * a aceita (imagem sim, áudio não — #3151). Era o que faltava para existir
+   * texto+áudio e imagem+áudio: o áudio deixou de ser um modo do cadastro, e
+   * não precisou de transporte próprio aqui.
    */
   async function applyTemplate(template: Recurso) {
+    // A RÉGUA, antes de qualquer efeito (#3009): uma resposta rápida sem
+    // conteúdo nenhum (corpo em branco e nenhuma mídia) escreveria string vazia
+    // no campo e deixaria o operador achando que escolheu algo. O motivo é da
+    // régua — o mesmo que a barra mostra no `title` do botão e que o cadastro
+    // recusa ao salvar; aqui ele vira aviso, porque o clique não pode acontecer
+    // e sair em silêncio.
+    const leitura = lerRespostaRapidaGravada(template);
+    if (!leitura.ok) {
+      setMenuDismissed(true);
+      toast.error(t(leitura.motivo));
+      return;
+    }
+
     const payload = payloadDeUso(template, contato);
     setMenuDismissed(true);
 
@@ -699,6 +836,77 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     escolherArquivo(imagem);
   }
 
+  /**
+   * O ARRASTE CARREGA ARQUIVO? (#3708)
+   *
+   * Arrastar texto selecionado, um link ou um trecho de dentro da própria
+   * página também dispara `dragenter`/`dragover`/`drop` aqui — sem esta
+   * pergunta, soltar uma frase em cima do compositor abriria uma prévia vazia
+   * (ou pior, `preventDefault` no `dragover` impediria o `drop` de texto de
+   * fazer o que o navegador faria). `types` só lista o que o arraste carrega,
+   * nunca o conteúdo: é a checagem certa e a única disponível antes do drop.
+   */
+  function trazArquivo(e: DragEvent<HTMLElement>): boolean {
+    return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+  }
+
+  /**
+   * O `preventDefault` daqui é o que impede o navegador de ABRIR o arquivo —
+   * trocando a conversa por um PDF na mesma aba, sem volta. Ele vale MESMO com
+   * a caixa bloqueada: navegar para fora do atendimento é pior que recusar o
+   * anexo, e a recusa silenciosa já é a regra do botão desabilitado.
+   */
+  function onDragOver(e: DragEvent<HTMLDivElement>) {
+    if (!trazArquivo(e)) return;
+    e.preventDefault();
+    // O cursor diz o que o drop vai fazer antes de o operador soltar: "copiar"
+    // com a caixa livre, "proibido" com ela travada (até assumir, janela
+    // fechada, prévia já aberta).
+    e.dataTransfer.dropEffect = aceitaArquivoArrastado ? "copy" : "none";
+  }
+
+  function onDragEnter(e: DragEvent<HTMLDivElement>) {
+    if (!trazArquivo(e) || !aceitaArquivoArrastado) return;
+    e.preventDefault();
+    arrasteEmCurso.current += 1;
+    setArrastandoArquivo(true);
+  }
+
+  /**
+   * `dragleave` sem pergunta de tipo DE PROPÓSITO: alguns navegadores entregam
+   * `types` vazio na saída, e um `return` cedo ali deixaria o realce preso na
+   * tela. Descontar sempre é seguro — entrar só conta quando houve arquivo, e o
+   * piso em zero impede que uma saída a mais (arraste que começou fora daqui)
+   * derrube o contador abaixo do que a próxima entrada vai somar.
+   */
+  function onDragLeave(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    arrasteEmCurso.current = Math.max(0, arrasteEmCurso.current - 1);
+    if (arrasteEmCurso.current === 0) setArrastandoArquivo(false);
+  }
+
+  /**
+   * SOLTOU — e o arquivo cai na MESMA fila de anexos do botão (#3708).
+   *
+   * Nada de envio aqui: `escolherArquivos` abre a prévia, como o clique, e quem
+   * sobe o byte é o `enviarAnexos` de sempre. É o que mantém canal, janela,
+   * limite de tamanho e retry iguais aos do "+", e o que faz o drop respeitar
+   * `aceitaArquivoArrastado` em vez de furar o bloqueio por uma porta nova.
+   *
+   * `stopPropagation`: se um dia a tela da conversa também ouvir `drop`, o
+   * arquivo solto no campo não pode ser tratado duas vezes — e soltar sobre uma
+   * mensagem da lista continua sem anexar em conversa nenhuma.
+   */
+  function onDrop(e: DragEvent<HTMLDivElement>) {
+    if (!trazArquivo(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    arrasteEmCurso.current = 0;
+    setArrastandoArquivo(false);
+    if (!aceitaArquivoArrastado) return;
+    escolherArquivos(Array.from(e.dataTransfer?.files ?? []));
+  }
+
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Escape" && menuOpen) {
       setMenuDismissed(true);
@@ -762,11 +970,53 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   return (
     <>
       <div
+        data-testid="composer"
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
         className={cn(
           "relative border-t border-border bg-background px-3 py-2",
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
       >
+        {/* O REALCE DO ARRASTE (#3708) — a única coisa que o operador vê antes
+            de soltar o arquivo. Sem ele, o gesto não tem confirmação nenhuma:
+            solta, a prévia abre, mas ninguém sabia que aquele espaço aceitava
+            arquivo. `pointer-events-none` porque a camada cobre justamente a
+            área que precisa receber o `drop`; com eventos, ela interceptaria os
+            `dragleave` dos filhos e o contador nunca fecharia. */}
+        {arrastandoArquivo && (
+          <div
+            data-testid="arraste-de-arquivo"
+            className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-sm border-2 border-dashed border-primary bg-primary/10 px-3 text-center text-xs font-medium text-primary"
+          >
+            {t("Solte o arquivo para anexar")}
+          </div>
+        )}
+        {/* A CONVERSA CONTINUA EM OUTRO NÚMERO (#3732) — a faixa que diz PARA
+            ONDE IR. Ela nasce da recusa do envio (409 do número de outro
+            atendente) e só aparece quando o servidor apontou a conversa que
+            continua: a frase de antes mandava transferir uma conversa que já é
+            de quem está tentando responder. Com a faixa de pé, a caixa fica
+            travada (é o `isDisabled` de sempre) e o botão leva à conversa nova,
+            onde a resposta sai. */}
+        {continuaAqui && (
+          <div
+            role="status"
+            data-testid="conversa-continua-em-outro-numero"
+            className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-sm border border-warning/40 bg-warning-bg px-3 py-2 text-xs"
+          >
+            <span>{t(continuaAqui.modelo).replace("{nome}", continuaAqui.nome ?? "")}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onAbrirConversa?.(continuaAqui.conversaId)}
+            >
+              {t("Abrir a conversa")}
+            </Button>
+          </div>
+        )}
         {/* O BLOCO DA ASSISTÊNCIA SÓ COM SUGESTÃO (issue #3027): sem rascunho
             para mostrar, ele não é montado e não ocupa faixa nenhuma; o botão de
             ícone (`DraftReplyButton`), que é o mesmo gesto, fica na linha de
@@ -785,6 +1035,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           open={menuOpen}
           query={slash.query}
           templates={templates.data ?? []}
+          grupos={grupos.data ?? []}
           onPick={applyTemplate}
           onClose={() => setMenuDismissed(true)}
         />
@@ -914,6 +1165,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         {mode === "reply" && (
           <BarraDeRecursos
             recursos={templates.data ?? []}
+            grupos={grupos.data ?? []}
             disabled={respostaBarrada || rascunhoNoCampo}
             dica={
               rascunhoNoCampo
@@ -951,6 +1203,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               const end = ta.selectionEnd ?? text.length;
               const next = text.slice(0, start) + emoji + text.slice(end);
               setText(next);
+              // O emoji entra no meio do texto e desloca o que está à direita
+              // dele — as menções andam junto (#2463).
+              setMencoes((atual) => podarMencoesDaEdicao(text, next, atual));
               requestAnimationFrame(() => {
                 ta.focus();
                 ta.selectionStart = ta.selectionEnd = start + emoji.length;
@@ -993,12 +1248,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               // A escolha que sumiu do texto sai da lista AGORA (#2463): com
               // duas pessoas de mesmo rótulo, a escolha apagada roubava o
               // `@Nome` da próxima e a nota notificava quem não foi mencionado.
+              // A régua é a posição guardada em cada escolha, não a presença do
+              // rótulo — "apagar a primeira de duas `@Ana Lima`" deixa a lista
+              // com a SEGUNDA, e é a ela que o aviso vai.
               //
               // Só na edição À MÃO, de propósito: o envio limpa o campo sem
               // passar por aqui, e é isso que mantém as menções valendo para o
               // retry depois de uma falha. Quem digita DURANTE o envio poda as
               // escolhas aqui — o `onError` da nota devolve as que foram enviadas.
-              setMencoes((atual) => podarMencoes(e.target.value, atual));
+              setMencoes((atual) => podarMencoesDaEdicao(text, e.target.value, atual));
               // Sumiu o `@` (apagou, ou o Enter escolheu): o Esc de uma vez
               // não pode travar a lista da PRÓXIMA menção.
               if (!resolverMencao(e.target.value, pos)) setMencaoDispensada(false);

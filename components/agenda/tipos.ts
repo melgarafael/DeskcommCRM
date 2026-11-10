@@ -61,6 +61,8 @@ export type Agendamento = {
   quemSeraAtendido?: string;
   /** Quem atende — é dele a cor do bloco. */
   responsavelId: string;
+  /** Pessoas da equipe convidadas: o compromisso também é da agenda delas (#4006). */
+  convidadosDaEquipe?: string[];
   /** ISO-8601. */
   comeca: string;
   termina: string;

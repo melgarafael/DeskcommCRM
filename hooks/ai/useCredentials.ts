@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { PROVEDORES, ProvedorComChave } from "@/lib/ai/pontos/provedores";
+import type { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 
 /**
  * Derivado de `lib/ai/pontos/provedores.ts` — a lista única desde a migration
@@ -11,14 +12,18 @@ import type { PROVEDORES, ProvedorComChave } from "@/lib/ai/pontos/provedores";
  */
 export type Provider = (typeof PROVEDORES)[number]["id"];
 
+/** Irmão de `Provider`, para quem não conversa com o cliente (voz, hoje). */
+export type ServiceProvider = (typeof PROVEDORES_DE_SERVICO)[number]["id"];
+
 export interface CredentialRow {
   id: string;
   organization_id: string;
   /**
-   * A união, não `Provider`: a linha pode ser a chave do Jev, que não conversa.
-   * `Provider` segue sendo só quem conversa — é o que o agente escolhe.
+   * A união, não `Provider`: a linha pode ser a chave do Jev, que não conversa,
+   * ou a de um serviço de voz. `Provider` segue sendo só quem conversa — é o que
+   * o agente escolhe.
    */
-  provider: ProvedorComChave;
+  provider: ProvedorComChave | ServiceProvider;
   label: string;
   // `ai_provider_credentials.api_key_last4` é `text NOT NULL` no baseline: os
   // quatro dígitos são gravados junto com a chave e nunca somem. Declarar

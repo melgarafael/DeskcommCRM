@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import {
+  destinoDoAvisoEhDeMembroDaEquipe,
   ehNumeroInternoDeAviso,
   lerNumeroInternoDeAviso,
   registrarMensagemIgnorada,
@@ -23,6 +24,7 @@ export type ComandoDeRespostaDoSuporte = {
   caseId: string;
   action: "resolved" | "need_lead_info";
   body: string;
+  updateEventId?: string;
 };
 
 /** O formato é explícito para que uma mensagem não resolva o caso errado. */
@@ -34,12 +36,16 @@ export function parseComandoDeRespostaDoSuporte(
   if (!m) return null;
   const caseId = CasoId.safeParse(m[2]);
   const action = m[1]?.toUpperCase();
-  const body = m[3]?.trim() ?? "";
+  const restante = m[3]?.trim() ?? "";
+  const ciclo = /^ATUALIZACAO\s+([0-9a-f-]{36})\s+([\s\S]+)$/i.exec(restante);
+  if (/^ATUALIZACAO(?:\s|$)/i.test(restante) && (!ciclo || !CasoId.safeParse(ciclo[1]).success)) return null;
+  const body = ciclo ? ciclo[2]!.trim() : restante;
   if (!caseId.success || !action || body.length === 0 || body.length > 4000) return null;
   return {
     caseId: caseId.data,
     action: action === "PERGUNTAR" ? "need_lead_info" : "resolved",
     body,
+    ...(ciclo ? { updateEventId: ciclo[1] } : {}),
   };
 }
 
@@ -92,6 +98,31 @@ export async function consumirComResultado(
   const phone = entrada.identidade.phone ??
     (entrada.identidade.kind === "lid" ? config.destino : null);
 
+  const comando = entrada.direction === "inbound"
+    ? parseComandoDeRespostaDoSuporte(entrada.texto)
+    : null;
+
+  // ── O MEMBRO DA EQUIPE QUE TAMBÉM É CLIENTE (#3900) ─────────────────────
+  //
+  // Em `destino_modo = 'responsavel'` o destino do aviso é o WhatsApp PESSOAL de
+  // quem atende — e essa pessoa pode ser cliente da própria empresa (agência em
+  // que a equipe viaja pela agência). Cortar a mensagem dela é o defeito da
+  // issue: ela viaja, escreve como cliente, e a mensagem não chega ao CRM.
+  //
+  // A exceção é ESTREITA de propósito, e são três condições:
+  //   · só ENTRADA — o eco do aviso que acabou de sair continua cortado, senão
+  //     cada aviso criaria uma conversa com o próprio destinatário;
+  //   · só quando NÃO há comando reconhecível — `RESPONDER`/`PERGUNTAR` do
+  //     número do aviso continuam sendo resposta de caso, como antes;
+  //   · só quando o destino é o WhatsApp de um membro ATIVO — cliente comum
+  //     segue cortado, e é o caso de todo mundo em modo `fixo`.
+  //
+  // A mensagem que passa não é "quase perdida": ela segue o caminho normal do
+  // ingestor, vira contato e conversa como a de qualquer cliente.
+  if (entrada.direction === "inbound" && !comando && destinoDoAvisoEhDeMembroDaEquipe(config)) {
+    return { consumed: false, result: null };
+  }
+
   // Comando só vale na conexão que ENVIA os avisos. Fora dela (o número de
   // vendas, por exemplo) a mensagem segue o corte de antes: ignorada e contada,
   // sem RPC e sem resposta — uma confirmação ali gastaria o ritmo anti-banimento
@@ -104,9 +135,6 @@ export async function consumirComResultado(
     return { consumed: true, result: null };
   }
 
-  const comando = entrada.direction === "inbound"
-    ? parseComandoDeRespostaDoSuporte(entrada.texto)
-    : null;
   if (!comando || !phone || !entrada.externalId) {
     await registrarMensagemIgnorada(admin, entrada.organizationId, {
       direction: entrada.direction,
@@ -135,6 +163,7 @@ export async function consumirComResultado(
       p_action: comando.action,
       p_body: comando.body,
       p_message_key: `${entrada.channelSessionId}:${entrada.externalId}`,
+      p_update_event: comando.updateEventId ?? null,
     } as never);
     data = resposta.data;
     error = resposta.error;

@@ -346,12 +346,37 @@ async function medirODescontoDoRodape(page: Page) {
  * menos 600 ms desde a última mudança. O `ResizeObserver` avisa o hook no quadro
  * seguinte ao `setViewportSize`, então medir antes disso mediria o estado
  * ANTERIOR à transição — falso vermelho numa direção e falso verde na outra.
+ *
+ * ═══ As duas condições que seguram a promessa acima ══════════════════════════
+ *
+ * A memória é de UMA chamada. O contador mora em `window` e sobrevive de uma
+ * espera para a outra na mesma página; sem o `delete`, a segunda chamada herdava
+ * `__quieto >= 3` e um `__desde` antigo, e se a primeira leitura chegasse antes
+ * de o React gravar a mudança ela voltava na hora, a 6 ms de espera medidos no
+ * trace do run 42278874462.
+ *
+ * E o que se observa inclui o `padding-bottom` calculado, porque ele muda DEPOIS
+ * da variável e do atributo. `contextOptions.reducedMotion` é `reduce` na suíte, e
+ * o bloco de `prefers-reduced-motion` de `app/globals.css` dá `transition-duration:
+ * 0.01ms` a todo elemento, com a `transition-property` padrão (`all`): o `<main>`
+ * abre uma transição de verdade e o valor calculado só troca quando ela termina.
+ * Medido: variável `0px`, atributo `0`, `style` vazio e `padding-bottom` ainda
+ * `54px`, com `getAnimations().length > 0`, e `24px` até 35 ms depois. Com
+ * `reducedMotion: no-preference` o `padding-bottom` já vale `24px` nesse instante.
  */
 async function esperarORodapeAcomodar(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    delete (window as unknown as { __rodape?: string }).__rodape;
+  });
   await page.waitForFunction(
     () => {
       const janela = window as unknown as { __rodape?: string; __quieto?: number; __desde?: number };
-      const agora = document.documentElement.style.getPropertyValue("--rodape-ocupado").trim();
+      const principal = document.querySelector<HTMLElement>("main");
+      const agora = [
+        document.documentElement.style.getPropertyValue("--rodape-ocupado").trim(),
+        principal?.dataset.rodapeOcupado ?? "",
+        principal ? getComputedStyle(principal).paddingBottom : "",
+      ].join("|");
       if (janela.__rodape !== agora) {
         janela.__rodape = agora;
         janela.__quieto = 0;
@@ -600,6 +625,11 @@ test("ao alargar a janela SEM recarregar, a barra que sai de vista devolve o rod
   await esperarORodapeAcomodar(page);
 
   const largo = await medirODescontoDoRodape(page);
+  // As quatro medidas das duas larguras no log do run: é o número que o artefato
+  // da issue cita (variável, atributo, `padding-bottom` calculado e a altura da
+  // barra). Antes das asserções, para o vermelho também dizer QUANTO foi medido.
+  // eslint-disable-next-line no-console
+  console.log(`[rodape-3061] estreito=${JSON.stringify(estreito)} largo=${JSON.stringify(largo)}`);
   // A barra saiu de vista: a medida dela é zero e o hook tem de gravar esse zero.
   expect(largo.alturaDaBarra).toBe(0);
   expect(
@@ -609,10 +639,4 @@ test("ao alargar a janela SEM recarregar, a barra que sai de vista devolve o rod
   expect(largo.atributo, "o <main> continua descontando a barra que sumiu").toBe("0");
   // E o que a pessoa vê: o piso do `p-6` da casca, não os 54px da barra.
   expect(largo.descontado).toBe(24);
-
-  // As quatro medidas das duas larguras no log do run: é o número que o artefato
-  // da issue cita (variável, atributo, `padding-bottom` calculado e a altura da
-  // barra), e sem ele o verde não diria QUANTO foi medido.
-  // eslint-disable-next-line no-console
-  console.log(`[rodape-3061] estreito=${JSON.stringify(estreito)} largo=${JSON.stringify(largo)}`);
 });

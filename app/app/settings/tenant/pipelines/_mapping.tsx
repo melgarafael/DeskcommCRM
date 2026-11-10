@@ -245,7 +245,7 @@ export function AgentMappingSection({
 
   return (
     <div
-      className="space-y-4"
+      className="scroll-mt-20 space-y-4"
       id={ancoraDoMapeamento(pipelineId)}
       data-testid={`mapeamento-${pipelineId}`}
     >

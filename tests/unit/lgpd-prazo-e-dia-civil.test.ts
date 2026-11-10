@@ -797,7 +797,11 @@ function leDueAt(arquivo: string): string[] {
   return readFileSync(join(RAIZ, arquivo), "utf8")
     .split(/\r?\n/)
     .map((linha, i) => ({ linha: i + 1, texto: linha }))
-    .filter((l) => /due_at/.test(l.texto))
+    // Palavra inteira: `task_reminder_due_at` (9038) é o prazo da TAREFA que
+    // motivou um lembrete, não o prazo legal do titular, e o casamento por
+    // substring o puxava para cá. Nenhum outro identificador cola letra em
+    // `due_at` nas AREAS — a varredura continua achando os mesmos consumidores.
+    .filter((l) => /\bdue_at\b/.test(l.texto))
     .map((l) => `${l.linha}: ${l.texto.trim()}`);
 }
 

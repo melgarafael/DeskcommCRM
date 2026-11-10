@@ -18,6 +18,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { previewFrom } from "@/app/api/v1/messages/_handler";
 import { POST as ocultar, DELETE as restaurar } from "@/app/api/v1/messages/[id]/hide/route";
 import { DELETE as apagar } from "@/app/api/v1/messages/[id]/route";
+import { CHAVE_DAS_MENCOES, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
+import type { RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
+import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const MSG = "22222222-2222-4222-8222-222222222222";
@@ -49,6 +52,7 @@ vi.mock("@/lib/channels", () => ({
 /** O que a rota escreveu em `conversations`, com os filtros do compare-and-set. */
 let escritas: { payload: unknown; filtros: [string, unknown][] }[] = [];
 let mensagem: Record<string, unknown> = {};
+let conversaEhGrupo = false;
 
 function consulta(tabela: string) {
   let op = "select";
@@ -56,7 +60,7 @@ function consulta(tabela: string) {
   const filtros: [string, unknown][] = [];
   const linha = (): unknown => {
     if (tabela === "messages") return op === "update" ? { id: MSG } : mensagem;
-    if (tabela === "conversations") return { id: CONV, contact_id: "c", is_group: false, channel_session_id: SESSION };
+    if (tabela === "conversations") return { id: CONV, contact_id: "c", is_group: conversaEhGrupo, channel_session_id: SESSION };
     if (tabela === "channel_sessions") return { id: SESSION, provider: "waha", archived_at: null };
     return { phone_number: "+5531999998888", wa_identity: null, wa_lid: null };
   };
@@ -91,6 +95,7 @@ const params = { params: Promise.resolve({ id: MSG }) };
 
 beforeEach(() => {
   escritas = [];
+  conversaEhGrupo = false;
 });
 
 describe("envio pelo CRM grava a mesma prévia que a ingestão", () => {
@@ -147,5 +152,60 @@ describe("apagar casa a prévia que o envio pelo CRM gravou", () => {
     const gravada = previewFrom({ type: "image", media_storage_path: "org/x.jpg" });
     expect(w?.filtros).toContainEqual(["last_message_preview", gravada]);
     expect(gravada).toBe("Imagem");
+  });
+});
+
+/**
+ * #3566 — em grupo, a ingestão grava a prévia com a menção RESOLVIDA (`@Maria`),
+ * e não com o identificador cru que o corpo guarda (`@75235009282237`). O filtro
+ * do compare-and-set tem de usar a mesma régua, senão não acha a linha.
+ */
+describe("em grupo, ocultar e restaurar casam a prévia gravada com o nome do mencionado", () => {
+  const LID = "75235009282237";
+  const mencoes: RemetenteDeGrupo[] = [{ name: "Maria", phone: "+5531988887777", lid: LID }];
+  const corpo = `oi @${LID}, tudo certo?`;
+  // O que a ingestão de grupo grava (`lib/grupos/ingest.ts`), pela régua de produção.
+  const gravada = previaDaMensagem(textoComMencoesResolvidas(corpo, mencoes), "text");
+
+  beforeEach(() => {
+    conversaEhGrupo = true;
+    mensagem = {
+      id: MSG, organization_id: ORG, conversation_id: CONV, direction: "inbound",
+      body: corpo, type: "text", metadata: { [CHAVE_DAS_MENCOES]: mencoes }, revoked_at: null,
+    };
+  });
+
+  it("a prévia gravada leva o nome, não o LID", () => {
+    expect(gravada).toBe("oi @Maria, tudo certo?");
+  });
+
+  it("ocultar procura a prévia com o nome", async () => {
+    const r = await ocultar(pedido("POST"), params);
+    expect(r.status).toBe(200);
+    const w = escritas.at(-1);
+    expect(w?.payload).toEqual({ last_message_preview: "Mensagem ocultada no CRM" });
+    expect(w?.filtros).toContainEqual(["last_message_preview", gravada]);
+  });
+
+  it("restaurar devolve a prévia com o nome, nunca o LID cru", async () => {
+    const r = await restaurar(pedido("DELETE"), params);
+    expect(r.status).toBe(200);
+    const w = escritas.at(-1);
+    expect(w?.payload).toEqual({ last_message_preview: gravada });
+    expect(w?.filtros).toContainEqual(["last_message_preview", "Mensagem ocultada no CRM"]);
+  });
+
+  it("editar e apagar não alcançam conversa de grupo: 404 antes de qualquer escrita na prévia", async () => {
+    // Se um dia a rota passar a aceitar grupo, o compare-and-set dela precisa
+    // da mesma régua das menções que a de ocultar usa — este caso é o aviso.
+    mensagem = {
+      id: MSG, organization_id: ORG, conversation_id: CONV, channel_session_id: SESSION,
+      external_id: "true_x@g.us_ABC", direction: "outbound", type: "text", status: "sent",
+      body: corpo, sent_via: "user", sent_by_user_id: USER, sent_at: new Date().toISOString(),
+      revoked_at: null,
+    };
+    const r = await apagar(pedido("DELETE"), params);
+    expect(r.status).toBe(404);
+    expect(escritas).toEqual([]);
   });
 });
