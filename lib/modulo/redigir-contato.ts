@@ -49,7 +49,6 @@ const CHAVES_DO_OBJETO_DO_CONTATO: ReadonlySet<string> = new Set(["contacts", "c
 const CAMPOS_SOLTOS_DE_CONTATO: ReadonlySet<string> = new Set([
   "contact_name",
   "contact_display_name",
-  "contact_address_book_name",
   "contact_phone",
   "contact_email",
   "contact_links",
@@ -66,10 +65,11 @@ const CHAVES_DE_NOME: ReadonlySet<string> = new Set([
   "name",
   "display_name",
   "full_name",
+  // O nome da agenda do celular vem no objeto do contato das conversas (tela da equipe): aqui ele só é
+  // usado para FILTRAR o texto livre e sai junto com o objeto, nunca é devolvido ao módulo.
   "address_book_name",
   "contact_name",
   "contact_display_name",
-  "contact_address_book_name",
 ]);
 const CHAVES_DE_TELEFONE: ReadonlySet<string> = new Set(["phone_number", "phone", "phone_e164", "contact_phone"]);
 const CHAVES_DE_EMAIL: ReadonlySet<string> = new Set(["email", "contact_email"]);

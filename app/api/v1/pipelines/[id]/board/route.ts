@@ -373,21 +373,28 @@ async function withMarcadoresDoContato(
   const { data, error } = await buscaEmLotes(contactIds, (lote) =>
     supabase
       .from("contacts")
-      .select(
-        lerNome
-          ? "id, tags, phone_number, email, custom_fields, is_anonymized, name, display_name, address_book_name"
-          : "id, tags, phone_number, email, custom_fields, is_anonymized",
-      )
+      .select("id, tags, phone_number, email, custom_fields, is_anonymized")
       .eq("organization_id", organizationId)
       .in("id", lote),
   );
   if (error) return { leads: leadsDoQuadro, error: error.message };
 
   const linhas = (data ?? []) as Array<{ id: string; tags: string[] | null } & LinhaDoContatoNoQuadro>;
-  const comDados = anexarDadosDoContato(leadsDoQuadro, linhas);
-  const leads = lerNome
-    ? anexarNomeDoContato(comDados, linhas as unknown as NomeDoContatoNoQuadro[])
-    : comDados;
+  let leads = anexarDadosDoContato(leadsDoQuadro, linhas);
+
+  // Só módulo sem `contatos`: uma leitura À PARTE do nome, que serve ao filtro de texto livre e é
+  // anulada na resposta. A consulta de cima fica igual para sessão e módulo com `contatos`.
+  if (lerNome) {
+    const nomes = await buscaEmLotes(contactIds, (lote) =>
+      supabase
+        .from("contacts")
+        .select("id, name, display_name, is_anonymized")
+        .eq("organization_id", organizationId)
+        .in("id", lote),
+    );
+    if (nomes.error) return { leads: leadsDoQuadro, error: nomes.error.message };
+    leads = anexarNomeDoContato(leads, (nomes.data ?? []) as NomeDoContatoNoQuadro[]);
+  }
 
   const porContato = new Map<string, string[]>();
   for (const row of linhas) {
