@@ -435,7 +435,9 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
       return;
     }
 
-    // Modo assistido NÃO barra o Operador: ele não tem ferramenta de envio. Só a pausa barra.
+    // Modo assistido NÃO barra o Operador; só a pausa barra. O que o assistido
+    // garante é na MÃO: `maoDoOperador` tira dela, no assistido, toda ferramenta
+    // que faz algo sair (`saiSemAprovacao`) — mesmo que esteja em `operator_tool_ids`.
     if (agentConfig.pausedAt) return;
     if (agentConfig.operationRevision)
       setExecutionAgentOperation({

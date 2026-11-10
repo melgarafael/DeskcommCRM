@@ -38,6 +38,8 @@
  * seguinte deixaria o assistente respondendo depois de o lead pedir um humano,
  * num caminho que a Meta fiscaliza.
  */
+import { catalogEntry } from '@/lib/mcp/tools/catalogo';
+import { PREFIXO_TOOL_ID_MCP_EXTERNO, lerToolIdRemoto } from '@/lib/mcp/servidor-externo/ids';
 
 /**
  * Ferramenta nativa do Conversador → as do catálogo que fazem a mesma coisa.
@@ -149,6 +151,34 @@ export function capacidadesEntreguesAoOperador(input: {
 export const FORA_DO_OPERADOR: readonly string[] = ['crm_draft_proposal', 'crm_preparar_proposta'];
 
 /**
+ * Retorno agendado: o catálogo os marca `atencao` ("agendar não fala com ninguém
+ * agora"), mas cada um é a decisão de falar com o cliente DEPOIS — e o fluxo
+ * configurado tem envios próprios de texto fixo (`lib/followup/engine.ts`).
+ * Não há marca no catálogo para "agenda uma saída", por isso a lista explícita.
+ */
+const RETORNO_QUE_FALA_COM_O_CLIENTE: readonly string[] = [
+  'crm_schedule_followup',
+  'crm_enroll_followup_flow',
+];
+
+/**
+ * A ferramenta faz algo SAIR sem aprovação humana? Lê as marcas que já existem:
+ * remota é escrita salvo marca `leitura` no id (`lib/mcp/servidor-externo/ids.ts`);
+ * do catálogo, `risco: 'critico'` ("sai do sistema ou não volta atrás — como
+ * falar com o cliente de verdade", `pacotes.ts`) e o retorno agendado acima.
+ * Id que não se reconhece conta como saída: falha fechado.
+ */
+export function saiSemAprovacao(id: string): boolean {
+  if (id.startsWith(PREFIXO_TOOL_ID_MCP_EXTERNO)) return lerToolIdRemoto(id)?.leitura !== true;
+  const entrada = catalogEntry(id);
+  return (
+    entrada === undefined ||
+    entrada.risco === 'critico' ||
+    RETORNO_QUE_FALA_COM_O_CLIENTE.includes(id)
+  );
+}
+
+/**
  * A configuração com que a MÃO do Operador é montada: a lista dele
  * (`operator_tool_ids`) no lugar da do Conversador, sem o que é
  * `FORA_DO_OPERADOR`, e sem o acréscimo automático da proposta.
@@ -156,13 +186,20 @@ export const FORA_DO_OPERADOR: readonly string[] = ['crm_draft_proposal', 'crm_p
  * `proposalAiDraftEnabled: false` não é redundante com o filtro: a chave manda
  * nos dois sentidos em `pickToolsFromMcp` — com ela ligada, a ferramenta é
  * ACRESCENTADA mesmo fora da lista. O filtro sozinho não bastaria.
+ *
+ * MODO ASSISTIDO: nada sai para o cliente sem aprovação, nem pelo Operador. A
+ * lista dele é configurável, então a regra mora aqui, e não no prompt nem na
+ * tela: sem `saiSemAprovacao`, independente do que foi marcado.
  */
-export function maoDoOperador<T extends { operatorToolIds: readonly string[] }>(
-  cfg: T,
-): T & { toolIds: string[]; proposalAiDraftEnabled: false } {
+export function maoDoOperador<
+  T extends { operatorToolIds: readonly string[]; operationMode?: 'automatic' | 'assisted' },
+>(cfg: T): T & { toolIds: string[]; proposalAiDraftEnabled: false } {
+  const assistido = cfg.operationMode === 'assisted';
   return {
     ...cfg,
-    toolIds: cfg.operatorToolIds.filter((t) => !FORA_DO_OPERADOR.includes(t)),
+    toolIds: cfg.operatorToolIds.filter(
+      (t) => !FORA_DO_OPERADOR.includes(t) && !(assistido && saiSemAprovacao(t)),
+    ),
     proposalAiDraftEnabled: false,
   };
 }

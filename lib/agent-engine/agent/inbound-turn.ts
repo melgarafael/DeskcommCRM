@@ -1769,7 +1769,8 @@ export function decidirSeEnfileiraOperador(input: {
 /**
  * MODO ASSISTIDO — o Conversador só gera rascunho e o turno saía sem Operador, então o
  * card ficava parado no funil. Enfileira `operator_turn` com o MESMO agente que gerou o
- * rascunho. O Operador não tem ferramenta de envio: isto nunca manda mensagem.
+ * rascunho. Isto nunca manda mensagem: no assistido, `maoDoOperador` tira da mão
+ * do Operador toda ferramenta que faz algo sair (`saiSemAprovacao`).
  * Mesma `sourceEventId` do turno (dedup no retry). Nunca lança.
  */
 export async function enfileirarOperadorNoAssistido(
