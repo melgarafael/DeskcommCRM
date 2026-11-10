@@ -1055,6 +1055,12 @@ export const DICIONARIO: Traducoes = {
   "Dados públicos coletados na busca; podem ter mudado.": { es: "Datos públicos recopilados en la búsqueda; pueden haber cambiado." },
 
   "Mensagens rápidas": { es: "Mensajes rápidos" },
+  "Reagir com {emoji}": { es: "Reaccionar con {emoji}" },
+  "Mais emojis": { es: "Más emojis" },
+  "Escolha uma reação": { es: "Elige una reacción" },
+  "Este canal não permite reações.": { es: "Este canal no permite reacciones." },
+  "O WhatsApp recusou a reação.": { es: "WhatsApp rechazó la reacción." },
+  "Reação enviada, mas histórico não atualizado.": { es: "Reacción enviada, pero el historial no se actualizó." },
   "Voltar às conversas": { es: "Volver a las conversaciones" },
   "Minimizar mensagens": { es: "Minimizar mensajes" },
   "conversas não lidas": { es: "conversaciones no leídas" },

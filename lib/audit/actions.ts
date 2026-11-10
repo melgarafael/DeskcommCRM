@@ -1536,6 +1536,9 @@ export const AUDIT_ACTIONS = [
   // valor — nunca o link: a trilha é append-only e a cascata de LGPD não a alcança.
   "pagamento.link_registrado",
   "pagamento.confirmado",
+  // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
+  // o evento, não o conteúdo — mesma regra de message.edited/revoked.
+  "message.reaction_sent",
   // Um módulo conectado conversou com o modelo de IA da organização (Spec 33): gasta o orçamento
   // dela. UMA linha por turno que chegou ao modelo, e só com efeito (recusa de autorização e teto
   // de gasto atingido não auditam). metadata só com contagens e a pessoa que clicava: nunca o texto
