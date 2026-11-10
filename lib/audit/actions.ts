@@ -1520,6 +1520,9 @@ export const AUDIT_ACTIONS = [
   // valor — nunca o link: a trilha é append-only e a cascata de LGPD não a alcança.
   "pagamento.link_registrado",
   "pagamento.confirmado",
+  // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
+  // o evento, não o conteúdo — mesma regra de message.edited/revoked.
+  "message.reaction_sent",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
