@@ -33,6 +33,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { env } from "@/lib/env";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
@@ -59,9 +60,6 @@ interface Contexto {
 export async function POST(req: NextRequest, ctx: Contexto) {
   const requestId = randomUUID();
   const { id: conversationId } = await ctx.params;
-  if (!z.string().uuid().safeParse(conversationId).success) {
-    return fail("validation_failed", "Conversa inválida.", 400, { requestId });
-  }
 
   // O acompanhamento administrativo é LEITURA por desenho: registrar pagamento
   // em nome do cliente durante um suporte é escrita, e a guarda de efeito vem
@@ -71,6 +69,13 @@ export async function POST(req: NextRequest, ctx: Contexto) {
 
   const authz = await requireRole("agent", { requestId, resource: "pagamento_recebimentos" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+
+  // Depois da autorização: quem não pode registrar recebe a recusa do papel,
+  // não a validação do id.
+  if (!z.string().uuid().safeParse(conversationId).success) {
+    return fail("validation_failed", t("Conversa inválida."), 400, { requestId });
+  }
 
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "link_de_pagamento"))) {
@@ -79,7 +84,7 @@ export async function POST(req: NextRequest, ctx: Contexto) {
 
   const corpo = corpoSchema.safeParse(await req.json().catch(() => ({})));
   if (!corpo.success) {
-    return fail("validation_failed", "Pedido inválido.", 400, {
+    return fail("validation_failed", t("Pedido inválido."), 400, {
       requestId,
       details: corpo.error.flatten(),
     });
@@ -90,7 +95,7 @@ export async function POST(req: NextRequest, ctx: Contexto) {
   // recebimento ficaria pendente para sempre com cara de que vai confirmar.
   const base = env.NEXT_PUBLIC_APP_URL ?? "";
   if (urlDoAviso(base, d.provedor, "00000000-0000-4000-8000-000000000000", "x") === null) {
-    return fail("unavailable", "Esta instalação não tem um endereço público https para receber o aviso de pagamento.", 503, {
+    return fail("unavailable", t("Esta instalação não tem um endereço público https para receber o aviso de pagamento."), 503, {
       requestId,
       details: { falta: "NEXT_PUBLIC_APP_URL" },
     });
@@ -112,9 +117,9 @@ export async function POST(req: NextRequest, ctx: Contexto) {
       organization_id: authz.org.orgId,
       codigo: erroDaLeitura.code ?? null,
     });
-    return fail("internal_error", "Não foi possível ler a conversa.", 500, { requestId });
+    return fail("internal_error", t("Não foi possível ler a conversa."), 500, { requestId });
   }
-  if (!visivel) return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+  if (!visivel) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   const r = await registrarRecebimento(admin, {
     organizationId: authz.org.orgId,
@@ -159,7 +164,7 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     );
   }
 
-  return fail(r.code, r.message, r.status, {
+  return fail(r.code, t(r.message), r.status, {
     requestId,
     ...(r.details === undefined ? {} : { details: r.details }),
   });

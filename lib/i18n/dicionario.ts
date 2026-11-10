@@ -19819,6 +19819,12 @@ export const DICIONARIO: Traducoes = {
   "Reservas de lugar": { es: "Reserva de lugares" },
   "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.": { es: "La agenda reserva un lugar, como mesa, palco o cancha, con capacidad en personas." },
   "Link de pagamento na conversa": { es: "Enlace de pago en la conversación" },
+  // #3509: as recusas da rota que registra o recebimento na conversa.
+  "Pedido inválido.": { es: "Solicitud inválida." },
+  "Esta instalação não tem um endereço público https para receber o aviso de pagamento.": { es: "Esta instalación no tiene una dirección pública https para recibir el aviso de pago." },
+  "Não foi possível ler a conversa.": { es: "No fue posible leer la conversación." },
+  "Não foi possível registrar o pagamento.": { es: "No fue posible registrar el pago." },
+  "O valor precisa ser maior que zero e caber no teto.": { es: "El valor debe ser mayor que cero y caber en el tope." },
   "O valor a cobrar é registrado numa conversa pela API, em /api/v1/conversations/[id]/pagamentos (uma integração; ainda não há botão na tela), e a resposta traz um endereço para colar no link de pagamento; quando o cliente paga, o provedor avisa e o negócio vai para ganho.": {
     es: "El valor a cobrar se registra en una conversación por la API, en /api/v1/conversations/[id]/pagamentos (una integración; todavía no hay botón en la pantalla), y la respuesta trae una dirección para pegar en el enlace de pago; cuando el cliente paga, el proveedor avisa y el negocio pasa a ganado.",
   },

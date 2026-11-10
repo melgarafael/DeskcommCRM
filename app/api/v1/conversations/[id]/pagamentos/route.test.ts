@@ -5,6 +5,7 @@ import { bancoFalso, type BancoFalso, type Resposta } from "@/tests/helpers/banc
 
 const h = vi.hoisted(() => ({
   autorizado: true,
+  idioma: "pt-BR" as string,
   ligado: true,
   base: "https://crm.exemplo.com.br",
   chamadas: [] as unknown[],
@@ -20,7 +21,7 @@ vi.mock("@/lib/auth/require-role", () => ({
     h.autorizado
       ? {
           ok: true,
-          user: { id: "cccccccc-0000-4000-8000-0000000000ee" },
+          user: { id: "cccccccc-0000-4000-8000-0000000000ee", idioma: h.idioma },
           org: { orgId: "cccccccc-0000-4000-8000-000000000001", role: "agent" },
         }
       : { ok: false, response: new Response("{}", { status: 403 }) },
@@ -85,6 +86,7 @@ const sucesso = {
 beforeEach(() => {
   vi.clearAllMocks();
   h.autorizado = true;
+  h.idioma = "pt-BR";
   h.ligado = true;
   h.base = "https://crm.exemplo.com.br";
   h.chamadas = [];
@@ -186,6 +188,20 @@ describe("POST /api/v1/conversations/[id]/pagamentos", () => {
     h.leituraDaSessao = { error: { code: "XX000", message: "queda" } };
     expect((await pedir()).status).toBe(500);
     expect(h.chamadas).toEqual([]);
+  });
+
+  it("⭐ as mensagens de erro saem no idioma de quem pede", async () => {
+    h.idioma = "es";
+    const mensagem = async (r: Response) => ((await r.json()) as { error: { message: string } }).error.message;
+
+    h.leituraDaSessao = { data: null };
+    expect(await mensagem(await pedir())).toBe("Conversación no encontrada.");
+
+    h.leituraDaSessao = { data: { id: CONV } };
+    expect(await mensagem(await pedir({ provedor: "infinitepay", valor_cents: 15000, moeda: "USD" }))).toBe("Solicitud inválida.");
+
+    h.resultado = { ok: false, code: "internal_error", message: "Não foi possível registrar o pagamento.", status: 500 };
+    expect(await mensagem(await pedir())).toBe("No fue posible registrar el pago.");
   });
 
   it("recusa do registro (conversa de outra empresa): repassa o 404", async () => {
