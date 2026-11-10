@@ -20450,11 +20450,6 @@ export const DICIONARIO: Traducoes = {
   "O agente publicado não pode mover oportunidade de etapa e não tem acesso ao funil desta campanha. Ligue 'Mover oportunidade de etapa' na aba Conversa com o cliente, marque o funil em Organiza o sistema › 'Em que negócios ele pode mexer' e publique o agente de novo.": {
     es: "El agente publicado no puede mover la oportunidad de etapa y no tiene acceso al embudo de esta campaña. Activa 'Mover oportunidad de etapa' en la pestaña Conversación con el cliente, marca el embudo en Organiza el sistema › 'En qué negocios puede intervenir' y publica el agente de nuevo.",
   },
-
-  // ─── a agenda do celular: o 400 é o store desligado, não a conexão (#4102) ───
-  "Para ler a agenda, ligue 'Guardar o histórico anterior à vinculação' na conexão deste número (Conexões) e tente de novo.": {
-    es: "Para leer la agenda, activa 'Guardar el historial anterior al vínculo' en la conexión de este número (Conexiones) y vuelve a intentarlo.",
-  },
 };
 
 

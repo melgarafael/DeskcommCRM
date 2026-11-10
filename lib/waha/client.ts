@@ -7,7 +7,6 @@
  */
 import { z } from "zod";
 import { describeWahaServer, type WahaServerCapabilities } from "@/lib/channels/waha-server";
-import { ErroDaLeituraDaAgenda } from "@/lib/channels/erro-da-leitura-da-agenda";
 
 import { logger } from "@/lib/logger";
 import { wahaPayloadSchema, type WahaPayload } from "@/lib/waha/envelope";
@@ -1137,15 +1136,12 @@ export class WahaClient {
    * junto em TODA chamada — é o que torna "página seguinte" uma pergunta com
    * resposta.
    *
-   * ─── O caso NOWEB sem store, que NÃO vem vazio ─────────────────────────────
+   * ─── O caso NOWEB sem store, que vem vazio e não é erro ────────────────────
    *
    * No NOWEB (o engine padrão do kit) este endpoint só enxerga o que o store
    * da sessão guardou (`noweb.store.enabled` — a opção "Guardar histórico" da
-   * conexão). Este comentário supunha que, sem ele, a resposta seria `[]`.
-   * MEDIDO na #4102: o WAHA devolve **400**, que vira `waha_contacts_all_400`
-   * e sobe como exceção. Lista vazia continua sendo desfecho legítimo (agenda
-   * sem contato), mas NÃO é o que acontece quando o store está desligado — por
-   * isso quem chama precisa separar os dois (`lib/contacts/recusa-da-agenda.ts`).
+   * conexão). Sem ele a resposta é `[]`: lista vazia é um desfecho legítimo e
+   * quem chama decide o que comunicar; HTTP errado continua sendo exceção.
    */
   async listarAgendaDoAparelho(
     session: string,
@@ -1160,7 +1156,7 @@ export class WahaClient {
     const res = await this.fetchComTeto(url, {
       headers: { "X-Api-Key": this.apiKey, Accept: "application/json" },
     });
-    if (!res.ok) throw new ErroDaLeituraDaAgenda(res.status, `waha_contacts_all_${res.status}`);
+    if (!res.ok) throw new Error(`waha_contacts_all_${res.status}`);
     const bruto: unknown = await res.json().catch(() => null);
     if (!Array.isArray(bruto)) return [];
     const contatos: ContatoDoAparelho[] = [];
