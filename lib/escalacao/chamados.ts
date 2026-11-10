@@ -149,6 +149,8 @@ export interface EventoDoChamado {
   human_action: string | null;
   body: string | null;
   source: string | null;
+  /** `metadata->>fora_da_fronteira`: "true" quando a resposta do cliente chegou fora do atendimento atual. */
+  fora_da_fronteira: string | null;
   created_at: string;
 }
 
@@ -345,7 +347,7 @@ export async function lerChamado(
 
   const { data: events, error: eventsErr } = await supabase
     .from("agent_case_events")
-    .select("id, kind, actor_kind, actor_user_id, human_action, body, source:metadata->>source, created_at")
+    .select("id, kind, actor_kind, actor_user_id, human_action, body, source:metadata->>source, fora_da_fronteira:metadata->>fora_da_fronteira, created_at")
     .eq("organization_id", organizationId)
     .eq("case_id", caseId)
     .order("created_at", { ascending: true });

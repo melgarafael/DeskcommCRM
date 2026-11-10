@@ -37,11 +37,16 @@ export function urlDoHub(): string {
   return `${(env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "")}/cobranca/volta?para=hub`;
 }
 
+export function urlDaContratacao(): string {
+  return `${(env.NEXT_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "")}/cobranca/volta?para=contratacao`;
+}
+
 /**
  * O destino da ponte `app/cobranca/volta`. Nada da query é refletido: só a
  * PRESENÇA de `voltou` e o valor exato `hub` escolhem entre destinos fixos.
  */
 export function destinoDaVolta(params: URLSearchParams): string {
-  const base = params.get("para") === "hub" ? "/account-suspended" : "/app/settings/billing";
-  return params.has("voltou") ? `${base}?voltou=1` : base;
+  const base = params.get("para") === "contratacao" ? "/cobranca/contratar?retomar=1"
+    : params.get("para") === "hub" ? "/account-suspended" : "/app/settings/billing";
+  return params.has("voltou") ? `${base}${base.includes("?") ? "&" : "?"}voltou=1` : base;
 }

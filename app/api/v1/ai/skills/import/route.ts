@@ -18,6 +18,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSkillsPool } from "@/lib/ai/skills/db";
@@ -48,18 +49,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   const teto = await tetoDeEscritaDoToken(authz, "ai_skills", requestId);
   if (teto) return teto;
 
-  // Guard against large uploads before buffering into memory. `parseSkillPackage`'s
-  // ≤5MB check is authoritative (defense in depth); this header check cheaply rejects
-  // the obvious large-body case before `req.formData()` materializes it in RAM.
+  // `parseSkillPackage`'s ≤5MB check is authoritative (defense in depth); this
+  // keeps the body itself under the multipart envelope, with or without Content-Length.
   const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 6MB: teto do envelope multipart (5MB skill + overhead)
-  const contentLength = Number(req.headers.get("content-length") ?? "0");
-  if (contentLength > MAX_UPLOAD_BYTES) {
-    return fail("skill_upload_too_large", t("O arquivo enviado é grande demais (máx. 5 MB por skill)."), 413, { requestId });
-  }
+  const corpo = await lerCorpoComTeto(req, MAX_UPLOAD_BYTES, {
+    requestId,
+    idioma: authz.idioma,
+    codigo: "skill_upload_too_large",
+    acimaDoTeto: t("O arquivo enviado é grande demais (máx. 5 MB por skill)."),
+  });
+  if (!corpo.ok) return corpo.response;
 
   let formData: FormData;
   try {
-    formData = await req.formData();
+    formData = await corpo.corpo.formData();
   } catch {
     return fail("invalid_request", t("Falha ao processar multipart/form-data."), 400, { requestId });
   }

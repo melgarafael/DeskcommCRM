@@ -27,6 +27,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
@@ -77,13 +78,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (convErr) return fail("internal_error", t("Erro ao validar conversa."), 500, { requestId });
   if (!conv) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
-  // Guard de DoS: rejeita pelo Content-Length ANTES de bufferizar o corpo.
-  const declared = Number(req.headers.get("content-length") ?? 0);
-  if (declared > MAX_MEDIA_BYTES + 1_048_576) {
-    return fail("payload_too_large", t("Arquivo acima de 50MB."), 413, { requestId });
-  }
-
-  const form = await req.formData().catch(() => null);
+  // Guard de DoS: o corpo nunca passa do teto, nem sem Content-Length.
+  const corpo = await lerCorpoComTeto(req, MAX_MEDIA_BYTES + 1_048_576, {
+    requestId,
+    idioma: authz.idioma ?? IDIOMA_PADRAO,
+    acimaDoTeto: t("Arquivo acima de 50MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
     return fail("validation_failed", t("Campo 'file' (multipart) obrigatório."), 422, { requestId });

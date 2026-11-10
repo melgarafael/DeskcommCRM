@@ -14,6 +14,16 @@ const FONTE_INBOUND = fs.readFileSync(
   path.join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"),
   "utf8",
 );
+/**
+ * O tamanho da janela é folga, não contrato: ele existe para o `moverParaHandoff…`
+ * estar NA MESMA região do `openedCaseThisTurn = true` (ou seja, depois do
+ * auto-abre-caso), não para medir distância entre linhas. A janela era 1800 desde
+ * a Wave 4; a #3725 pôs, entre o `openCase` e o `moverParaHandoff…`, a guarda
+ * `podeAbrirCasoNoFailsafe` (sem pedido explícito do cliente nem promessa
+ * explícita de humano, o caso não abre) e o `summary` da conversa. O que a
+ * asserção afirma não mudou: o caso aberto pelo fail-safe move o lead.
+ */
+const JANELA_DO_FAILSAFE = 2600;
 const FONTE_INGEST = fs.readFileSync(path.join(process.cwd(), "lib/waha/ingest.ts"), "utf8");
 
 describe("fiação — casePromiseGate recebe o nome do gerente do tenant", () => {
@@ -31,7 +41,7 @@ describe("fiação — caso humano aberto move o lead pra etapa de handoff", () 
   it("o fail-safe do case_promise (auto-abre-caso) chama moverParaHandoffBestEffort", () => {
     const i = FONTE_INBOUND.indexOf("chain.status === 'vetoed' && chain.code === 'case_promise_without_case'");
     expect(i).toBeGreaterThan(-1);
-    const janela = FONTE_INBOUND.slice(i, i + 1800);
+    const janela = FONTE_INBOUND.slice(i, i + JANELA_DO_FAILSAFE);
     expect(janela).toMatch(/openedCaseThisTurn = true;\s*\n\s*moverParaHandoffBestEffort\(/);
   });
 

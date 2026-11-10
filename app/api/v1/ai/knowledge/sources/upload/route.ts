@@ -29,6 +29,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -66,9 +67,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (teto) return teto;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
+  // 1 MB de folga para o envelope multipart e os campos de texto.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO + 1_048_576, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: t("O arquivo passa de 20 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+
   let formData: FormData;
   try {
-    formData = await req.formData();
+    formData = await corpo.corpo.formData();
   } catch {
     return fail("invalid_request", t("Falha ao processar o envio do arquivo."), 400, { requestId });
   }

@@ -43,6 +43,7 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { chaveDoCodigo, lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
@@ -97,9 +98,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const orgId = authz.organizationId;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
+  // 64 KB de folga para o envelope multipart; o tamanho do CSV é conferido abaixo.
+  const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+  });
+  if (!corpo.ok) return corpo.response;
+
   let arquivo: File;
   try {
-    const form = await req.formData();
+    const form = await corpo.corpo.formData();
     const f = form.get("file");
     if (!(f instanceof File)) throw new Error("sem arquivo");
     arquivo = f;

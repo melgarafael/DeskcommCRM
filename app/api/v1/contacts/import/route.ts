@@ -23,6 +23,7 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { camposCpfParaGravar } from "@/lib/contacts/cpf";
 import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
@@ -84,9 +85,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const doc = perfil.documento;
   const schemaDoPais = contactCreateSchemaDoPais(perfil);
 
+  // 64 KB de folga para o envelope multipart; o file.size abaixo é o check do CSV.
+  const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: user.idioma,
+    acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+  });
+  if (!corpo.ok) return corpo.response;
+
   let file: File;
   try {
-    const form = await req.formData();
+    const form = await corpo.corpo.formData();
     const f = form.get("file");
     if (!(f instanceof File)) throw new Error("sem arquivo");
     file = f;
