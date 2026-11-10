@@ -1,7 +1,9 @@
 ---
-impacto: capacidade_nova
+impacto: nada_mudou
 secao: adicionado
-titulo: Ouvidoria recebe o relato pelo WhatsApp e só confirma o protocolo depois de gravar
+titulo: Ouvidoria, segunda parte: o relato pelo WhatsApp, com protocolo só depois de gravar, ainda sem instalação
 ---
 
-O relato de ouvidoria passa a entrar pelo próprio WhatsApp: o canal recebe o texto e os anexos, apresenta um resumo do que entendeu e só devolve o protocolo depois que a manifestação está gravada — quem escreve não recebe número de protocolo de um registro que falhou. A manifestação nasce com protocolo gerado no servidor, sem criar cartão no funil de vendas, e fica fora do alcance de quem não é administrador da organização: a leitura é uma ação própria, que confere o papel antes de devolver o conteúdo, e a conversa de acompanhamento não lê o relato sigiloso. O módulo é ativado por organização e desligado por padrão; a tela de gestão, o histórico e a notificação por e-mail vêm nas fatias seguintes. Contribuição de @webtecnica (#3611).
+O módulo de **Ouvidoria** ganha a conversa pelo WhatsApp: quem escreve pedindo a ouvidoria tem o relato juntado em quantas mensagens precisar, recebe um resumo para confirmar e só recebe o número de protocolo depois que a manifestação está gravada — se a gravação falha, a pessoa é avisada de que nada foi registrado e pode confirmar de novo. A conversa da ouvidoria não abre cartão no funil, não entra em campanha nem em follow-up e não acorda o agente de IA. O módulo ainda **não aparece em Módulos** e não pode ser instalado: volta para a lista junto com a tela de gestão, numa parte seguinte. Nada muda para quem opera a VPS, e nada a fazer.
+
+Contribuição original de @webtecnica, PR #3632; adaptação ao molde dos módulos em commits separados.

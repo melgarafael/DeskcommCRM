@@ -60,7 +60,7 @@ import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
 import { lerPessoalDoContato } from "@/lib/contacts/contato-pessoal";
-import { atenderOuvidoriaNoWhatsApp, portasDaOuvidoria } from "@/lib/ouvidoria/whatsapp";
+import { moduloQueAssumeAEntrada } from "@/lib/modulos/desvios-da-entrada";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
@@ -176,20 +176,11 @@ export async function aplicarEfeitosPosEntrada(
     });
     return;
   }
-  // ── OUVIDORIA (#3611, fatia 2) · ANTES de a conversa virar demanda ───────
+  // ── MÓDULO OPCIONAL que assume a mensagem · ANTES de virar demanda ───────
   //
-  // O ponto exato importa: este é o último instante em que dá para DESVIAR da
-  // criação do card. Depois de `abrirDemanda` a manifestação já virou
-  // oportunidade no funil — e a #3611 existe justamente porque reclamação não é
-  // oportunidade de venda.
-  //
-  // O desvio também pula campanha, follow-up e o despacho do agente: o relato
-  // não é conversa comercial, e acordar a IA nela faria a empresa tentar vender
-  // para quem está reclamando — por cima do fluxo da Ouvidoria.
-  //
-  // Módulo DESLIGADO devolve `tratado: false` e tudo abaixo roda como hoje: é o
-  // controle de que esta fatia não sequestrou a ingestão.
-  if (await desviarParaOuvidoria(admin, entrada)) return;
+  // É o último instante em que dá para não criar o card. Módulo desligado (ou
+  // mensagem que não é dele) devolve `null`, e tudo abaixo roda como sempre.
+  if (await desviadaPorModulo(admin, entrada)) return;
 
   await guardarOrigemDaPagina(admin, entrada);
   await abrirDemanda(admin, entrada);
@@ -211,56 +202,35 @@ export async function aplicarEfeitosPosEntrada(
 }
 
 /**
- * 2a · A conversa é da OUVIDORIA? (#3611, fatia 2)
+ * 2a · Algum módulo opcional assume esta mensagem? (`lib/modulos/desvios-da-entrada.ts`)
  *
- * Roda antes de `abrirDemanda` porque é o último instante em que dá para não
- * criar o card: a manifestação não é oportunidade de venda, e o funil é lugar
- * de venda. A régua inteira (módulo ligado, canal, rascunho, pedido explícito,
- * resumo, confirmação SÓ depois da gravação) mora em
- * `lib/ouvidoria/whatsapp.ts`; aqui só se decide parar ou seguir.
- *
- * NUNCA lança: a mensagem já está gravada e uma exceção daqui viraria 500 para
- * o provedor e tempestade de reentregas. Se o módulo não conseguir responder
- * nada, o `tratado` dele continua valendo — o que não pode acontecer é uma
- * reclamação virar card por causa de um erro nosso.
+ * NUNCA lança: a mensagem já está gravada. Falha aqui segue o caminho de sempre —
+ * sem saber se a mensagem é de um módulo, parar a ingestão inteira seria pior do
+ * que o card.
  */
-async function desviarParaOuvidoria(admin: Admin, entrada: EntradaDeMensagem): Promise<boolean> {
-  const paraOuvidoria = {
-    organizationId: entrada.organizationId,
-    conversationId: entrada.conversationId,
-    contactId: entrada.contactId,
-    messageId: entrada.messageId,
-    texto: entrada.texto,
-  };
-
+async function desviadaPorModulo(admin: Admin, entrada: EntradaDeMensagem): Promise<boolean> {
   try {
-    const atendimento = await atenderOuvidoriaNoWhatsApp(
-      admin as unknown as Parameters<typeof atenderOuvidoriaNoWhatsApp>[0],
-      paraOuvidoria,
-      portasDaOuvidoria(
-        admin as unknown as Parameters<typeof portasDaOuvidoria>[0],
-        paraOuvidoria,
-      ),
-    );
+    const desvio = await moduloQueAssumeAEntrada(admin, {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      texto: entrada.texto,
+    });
+    if (!desvio) return false;
 
-    if (!atendimento.tratado) return false;
-
-    // O log é o rastro de que a mensagem NÃO sumiu: ela foi tratada pela
-    // Ouvidoria, e é por isso que não há card.
-    logger.info("[pos-entrada] efeitos pulados: conversa da Ouvidoria", {
+    // O rastro de que a mensagem NÃO sumiu: um módulo a tratou, e é por isso
+    // que não há card.
+    logger.info("[pos-entrada] efeitos pulados: um módulo opcional assumiu a mensagem", {
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
       origem: entrada.origem,
-      motivo: atendimento.motivo,
-      ...(atendimento.manifestacao ? { protocolo: atendimento.manifestacao.protocolo } : {}),
+      modulo: desvio.modulo,
+      motivo: desvio.motivo,
     });
     return true;
   } catch (err) {
-    // `atenderOuvidoriaNoWhatsApp` já não lança; esta é a rede para o que está
-    // FORA dele (um cliente de banco quebrado, por exemplo). Aqui a escolha é
-    // seguir o caminho de hoje: sem saber que a mensagem é da Ouvidoria, parar
-    // a ingestão inteira seria pior do que o card.
-    logger.error("[pos-entrada] desvio para a Ouvidoria falhou (a mensagem entra assim mesmo)", {
+    logger.error("[pos-entrada] desvio por módulo falhou (a mensagem entra assim mesmo)", {
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",

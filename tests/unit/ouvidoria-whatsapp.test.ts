@@ -24,6 +24,9 @@
  * `ouvidoria_manifestacoes` e compara com o texto enviado, em vez de confiar no
  * retorno da função.
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -31,6 +34,15 @@ vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
+// O módulo da INSTALAÇÃO (`modulos_instalados`): o dublê de banco não serve essa
+// tabela. `moduloLigado` é a chave que o registro confere; `moduloLigadoComMemo`
+// é a que a lista de desvios da ingestão confere. A leitura real é medida em
+// `lib/instalacao/modulos.test.ts`.
+const { moduloLigado, moduloLigadoComMemo } = vi.hoisted(() => ({
+  moduloLigado: vi.fn(),
+  moduloLigadoComMemo: vi.fn(),
+}));
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado, moduloLigadoComMemo }));
 vi.mock("@/lib/leads/encerramento", () => ({
   encerraDemanda: vi.fn(async () => ({ lead: {}, jaEstava: false })),
 }));
@@ -82,6 +94,7 @@ import {
   type RascunhoDaOuvidoria,
 } from "@/lib/ouvidoria/whatsapp";
 import { garantirLeadDaConversa } from "@/lib/leads/nascimento-do-lead";
+import { DESVIOS_DA_ENTRADA } from "@/lib/modulos/desvios-da-entrada";
 import { TEXTO_MAXIMO } from "@/lib/ouvidoria/registro";
 import { ORG_ID, makeDb } from "@/tests/helpers/stages-db-double";
 
@@ -157,6 +170,8 @@ function portas(registro: Db, coletor: Array<{ texto: string; chave: string }>):
 beforeEach(() => {
   vi.clearAllMocks();
   enviados.length = 0;
+  moduloLigado.mockResolvedValue(true);
+  moduloLigadoComMemo.mockResolvedValue(true);
 });
 
 // ---------------------------------------------------------------------------
@@ -559,5 +574,27 @@ describe("desvio na ingestão (#3611, fatia 2)", () => {
     expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
     // Nenhuma resposta automática sai de uma organização que não ligou o módulo.
     expect(enviados).toHaveLength(0);
+  });
+
+  it("⭐ módulo NÃO instalado: a chave da empresa ligada não desvia nada (card no funil)", async () => {
+    moduloLigadoComMemo.mockResolvedValue(false);
+    const registro = db();
+
+    await aplicarEfeitosPosEntrada(
+      registro.client as unknown as Parameters<typeof aplicarEfeitosPosEntrada>[0],
+      entradaDaIngestao(),
+    );
+
+    expect(moduloLigadoComMemo).toHaveBeenCalledWith(registro.client, "ouvidoria");
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
+    expect(enviados).toHaveLength(0);
+    // Sem o módulo o fluxo não roda: nenhum rascunho é escrito na conversa.
+    expect(registro.escritas.filter((e) => e.table === "conversations")).toHaveLength(0);
+  });
+
+  it("o núcleo da ingestão não nomeia módulo: o desvio entra pela lista de módulos", () => {
+    const fonte = readFileSync(resolve(__dirname, "../../lib/channels/pos-entrada.ts"), "utf8");
+    expect(fonte).not.toMatch(/ouvidoria/i);
+    expect(DESVIOS_DA_ENTRADA.map((d) => d.modulo)).toContain("ouvidoria");
   });
 });
