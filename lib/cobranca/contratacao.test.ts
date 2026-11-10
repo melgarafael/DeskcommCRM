@@ -11,10 +11,12 @@ const AGORA = Date.parse("2026-10-27T12:00:00Z");
 let org: Record<string, unknown>;
 let assinatura: Record<string, unknown>;
 let audit: Record<string, unknown> | null;
+/** Linhas de cadastro mais novas que `audit`, na ordem em que o banco as devolve. */
+let maisNovas: Array<Record<string, unknown>>;
 let erro = false;
 function banco() {
   return bancoFalso((c) => ({
-    data: c.tabela === "organizations" ? org : c.tabela === "cobranca_assinaturas" ? assinatura : audit,
+    data: c.tabela === "organizations" ? org : c.tabela === "cobranca_assinaturas" ? assinatura : audit ? [...maisNovas, audit] : null,
     error: erro ? { message: "indisponível" } : null,
   }));
 }
@@ -24,6 +26,7 @@ beforeEach(() => {
   assinatura = { plano_id: PLANO, estado: "trial", pagamento_inicial_pendente: true, periodo_pago_desde: null };
   audit = { id: "44444444-4444-4444-8444-444444444444", created_at: new Date(AGORA - 120_000).toISOString(), metadata: { contratacao: criarIntencaoDeContratacao(USER, PLANO, AGORA - 120_000) } };
   ORG = (audit.metadata as { contratacao: { organization_id: string } }).contratacao.organization_id;
+  maisNovas = [];
   erro = false;
 });
 describe("intenção auditada de continuar o cadastro", () => {
@@ -79,6 +82,17 @@ describe("intenção auditada de continuar o cadastro", () => {
   it.each([AGORA + 1, AGORA - VALIDADE_DA_INTENCAO_MS - 1])("recibo fora da janela (%s) não cria checkout", async (data) => {
     audit!.metadata = { contratacao: criarIntencaoDeContratacao(USER, PLANO, data) };
     expect(await lerIntencaoDeContratacao(banco().cliente as unknown as SupabaseClient, USER, ORG, AGORA)).toBeNull();
+  });
+  it("a intenção é a mais nova VÁLIDA: uma linha mais nova que não verifica não encobre a válida", async () => {
+    const valida = (audit!.metadata as { contratacao: Record<string, unknown> }).contratacao;
+    const outra = criarIntencaoDeContratacao(USER, PLANO, AGORA - 60_000)!;
+    maisNovas = [{ id: "55555555-5555-4555-8555-555555555555", created_at: new Date(AGORA - 60_000).toISOString(),
+      metadata: { contratacao: { ...outra, assinatura: "0".repeat(64) } } }];
+    const db = banco();
+    expect(await lerIntencaoDeContratacao(db.cliente as unknown as SupabaseClient, USER, ORG, AGORA)).toEqual({ id: valida.nonce, planoId: PLANO });
+    const prova = db.cadeias[2]!;
+    expect(prova.passos).toContainEqual({ metodo: "lte", args: ["created_at", new Date(AGORA).toISOString()] });
+    expect(prova.passos).toContainEqual({ metodo: "limit", args: [5] });
   });
   it("falha de leitura fecha o caminho, sem inventar intenção", async () => {
     erro = true;

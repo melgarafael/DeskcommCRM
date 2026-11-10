@@ -50,7 +50,14 @@ export async function lerIntencaoDeContratacao(
   return { id: checked.nonce, planoId: checked.plano_id };
 }
 
-/** Provisionamento lê a intenção assinada, nunca um UUID de user_metadata. */
+/** Quantas linhas de cadastro, das mais novas, a leitura confere. */
+const LINHAS_DE_INTENCAO_CONFERIDAS = 5;
+
+/**
+ * Provisionamento lê a intenção assinada, nunca um UUID de user_metadata. A
+ * intenção é a mais nova VÁLIDA dentro da janela (até `agora`): uma linha mais
+ * nova que não verifica não encobre a válida logo atrás dela.
+ */
 export async function lerIntencaoDoCadastro(
   db: SupabaseClient, userId: string, planoId: string, agora = Date.now(),
 ) {
@@ -60,7 +67,12 @@ export async function lerIntencaoDoCadastro(
     .eq("metadata->contratacao->>plano_id", planoId)
     .eq("metadata->contratacao->>versao", "1")
     .gte("created_at", new Date(agora - VALIDADE_DA_INTENCAO_MS).toISOString())
-    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    .lte("created_at", new Date(agora).toISOString())
+    .order("created_at", { ascending: false }).limit(LINHAS_DE_INTENCAO_CONFERIDAS);
   if (error) throw new Error("contratacao: intenção indisponível");
-  return verificarIntencaoDeContratacao(data?.metadata?.contratacao, userId, planoId, agora);
+  for (const linha of (data ?? []) as Array<{ metadata?: { contratacao?: unknown } | null }>) {
+    const valida = verificarIntencaoDeContratacao(linha.metadata?.contratacao, userId, planoId, agora);
+    if (valida) return valida;
+  }
+  return null;
 }

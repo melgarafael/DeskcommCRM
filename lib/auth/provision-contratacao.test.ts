@@ -29,7 +29,7 @@ beforeEach(() => {
   reservada = null; vinculosDaReservada = []; colisoes = Infinity; auditoriaFalha = false;
   h.banco = bancoFalso(c => {
     if (c.tabela === "api_audit_log") {
-      return auditoriaFalha ? { data: null, error: { code: "57014", message: "timeout" } } : { data: { metadata: { contratacao: recibo } } };
+      return auditoriaFalha ? { data: null, error: { code: "57014", message: "timeout" } } : { data: [{ metadata: { contratacao: recibo } }] };
     }
     if (c.tabela === "user_organizations" && operacao(c) === "select") {
       if (valorDoFiltro(c, "eq", "organization_id")) return { data: vinculosDaReservada };
