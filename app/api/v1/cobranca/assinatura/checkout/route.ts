@@ -50,13 +50,11 @@ export async function POST(req: NextRequest) {
   const corpo = corpoSchema.safeParse(await req.json().catch(() => ({})));
   if (!corpo.success) return fail("validation_failed", "Pedido inválido.", 400, { requestId, details: corpo.error.flatten() });
 
-  let chaveDaIntencao: string | null = null;
   let planoDaIntencao: string | undefined;
   if (corpo.data.continuar_cadastro === true) {
     try {
       const intencao = await lerIntencaoDeContratacao(admin, authz.user.id, authz.org.orgId);
       if (!intencao) return fail("state_conflict", "Confira seu plano e continue para o pagamento.", 409, { requestId });
-      chaveDaIntencao = intencao.id;
       planoDaIntencao = intencao.planoId;
     } catch (e) {
       logger.warn("cobranca.checkout.intencao_indisponivel", { requestId, organizationId: authz.org.orgId, erro: e instanceof Error ? e.message : "desconhecido" });
@@ -81,7 +79,10 @@ export async function POST(req: NextRequest) {
     orgId: authz.org.orgId,
     documentoBruto: corpo.data.documento,
     email,
-    chaveIdempotencia: chaveDaIntencao ?? chave ?? randomUUID(),
+    // A intenção só PROVA o direito de continuar; a chave é a do clique
+    // (`lib/api/client.ts`). Fixar o nonce reaproveitaria por 7 dias a sessão
+    // de checkout que o provedor já expirou.
+    chaveIdempotencia: chave ?? randomUUID(),
     urlDeVolta: corpo.data.volta === "contratacao" ? urlDaContratacao() : corpo.data.volta === "hub" ? urlDoHub() : urlDoPainelDaEmpresa(),
     actorUserId: authz.user.id,
     requestId,

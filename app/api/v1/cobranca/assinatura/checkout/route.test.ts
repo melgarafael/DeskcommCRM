@@ -45,6 +45,7 @@ import { POST } from "./route";
 
 const ORG = "ffffffff-0000-4000-8000-000000000001";
 const CHAVE = "3f1c2d4e-0000-4000-8000-000000000001";
+const NONCE = "9a8b7c6d-0000-4000-8000-000000000002";
 const EM_TESTE = {
   plano_id: "plano-a", estado: "trial", trial_ate: "2026-10-20T00:00:00.000Z", provedor: null, provedor_cliente_id: null,
   checkout_url: null, checkout_expira_em: null,
@@ -88,11 +89,21 @@ beforeEach(() => {
 });
 
 describe("checkout da assinatura", () => {
-  it("continuação automática revalida intenção e usa recibo estável da mesma pessoa/org", async () => {
-    h.intencao.mockResolvedValue({ id: CHAVE, planoId: "plano-a" });
+  it("continuação automática revalida intenção e usa a chave do clique, nunca o nonce da intenção", async () => {
+    h.intencao.mockResolvedValue({ id: NONCE, planoId: "plano-a" });
     expect((await assinar({ continuar_cadastro: true, volta: "contratacao" })).status).toBe(200);
     expect(h.intencao).toHaveBeenCalledWith(h.banco.cliente, "admin-1", ORG);
     expect(h.ad.iniciarAssinatura).toHaveBeenCalledWith(expect.objectContaining({ chaveIdempotencia: CHAVE, urlDeVolta: expect.stringMatching(/para=contratacao$/) }));
+  });
+  it("continuação automática sem Idempotency-Key gera chave nova, não o nonce da intenção", async () => {
+    h.intencao.mockResolvedValue({ id: NONCE, planoId: "plano-a" });
+    const res = await POST(new NextRequest("http://localhost/api/v1/cobranca/assinatura/checkout", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ continuar_cadastro: true }),
+    }));
+    expect(res.status).toBe(200);
+    const chave = (h.ad.iniciarAssinatura.mock.calls[0][0] as { chaveIdempotencia: string }).chaveIdempotencia;
+    expect(chave).toMatch(/^[0-9a-f-]{36}$/);
+    expect(chave).not.toBe(NONCE);
   });
   it("sem prova de intenção não reserva nem chama gateway automaticamente", async () => {
     expect((await assinar({ continuar_cadastro: true })).status).toBe(409);
