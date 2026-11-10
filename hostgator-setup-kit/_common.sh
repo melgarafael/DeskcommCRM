@@ -3253,12 +3253,89 @@ trocar_segredo_do_cron_vazado() {
   return 0
 }
 
-# Ativa (idempotente) o cron do agente de atualização: a cada 5 minutos ele
-# avisa o app da versão instalada e, se alguém clicou em "Atualizar agora" na
-# tela, roda o update.sh sozinho. É o que faz o botão da tela existir de
-# verdade — sem cron, a tela mostra "atualização automática indisponível" pra
-# sempre. Chamada por install.sh e update.sh (bloco 7) — re-rodar não duplica
-# a linha do crontab.
+# ── Horário do cron do agente: configurável, com o padrão de HOJE (#4334) ────
+# O horário vivia fixo em `*/5 * * * *` dentro de `setup_update_agent_cron`, e
+# o `update.sh` chama essa função em TODA atualização (bloco 0, antes de decidir
+# a versão). Editar a linha no crontab à mão, portanto, não se sustentava: a
+# atualização seguinte apagava a linha `:agent` e gravava a fixa de novo.
+#
+# O efeito medido por quem reportou (@angelusbr): quem opera em horário
+# comercial não consegue atualizar de madrugada — a instalação fica ~5 min em
+# manutenção no meio do expediente (clique 09:01, início 09:05, fim 09:10).
+#
+# `AGENT_CRON_SCHEDULE` (`.env`, lida pelo `load_env` como as outras) muda só o
+# HORÁRIO. Ausente ou vazia = o padrão de sempre, byte a byte.
+AGENT_CRON_PADRAO='*/5 * * * *'
+
+# Puro (sem `crontab`, sem aviso, sem tocar em disco): imprime o horário
+# normalizado e devolve 0, ou devolve 1 SEM IMPRIMIR NADA. O "sem imprimir
+# nada" é o contrato da falha fechada: quem chama usa o padrão, nunca o valor
+# recusado — valor recusado não pode virar linha de crontab.
+horario_do_agente_normalizado() {  # horario_do_agente_normalizado <valor>
+  local valor="${1-}" campo saida=""
+  local -a campos=()
+
+  # Quebra de linha FORA, antes de tudo: a linha do crontab é UMA string, e um
+  # `\n` dentro dela injeta uma SEGUNDA tarefa. O `cron_merge` remove as linhas
+  # desta instalação pelo marcador — não a intrusa —, então ela ficaria
+  # agendada para sempre, sem ninguém saber de onde veio. CR também sai: não
+  # injeta linha, mas iria colado no último campo e o cron leria o campo errado
+  # (é o que sobra de um `.env` editado no Windows).
+  case "$valor" in
+    '' | *$'\n'* | *$'\r'*) return 1 ;;
+  esac
+
+  # Separa por branco e exige CINCO campos. `read -a` colapsa espaço/tab
+  # repetidos, e o normalizado sai com UM espaço entre campos — é ele que vai
+  # para o crontab, nunca o texto cru.
+  IFS=$' \t' read -r -a campos <<<"$valor" || true
+  [ "${#campos[@]}" -eq 5 ] || return 1
+
+  for campo in "${campos[@]}"; do
+    # Alfabeto do cron e SÓ ele: dígitos, `*`, `,`, `-` e `/`. Qualquer outro
+    # caractere (`;`, crase, `$`, aspas, espaço interno) recusa o valor
+    # inteiro — o horário não é lugar de expressão de shell.
+    case "$campo" in
+      *[!0123456789*,/-]*) return 1 ;;
+    esac
+    [ -n "$saida" ] && saida="$saida "
+    saida="$saida$campo"
+  done
+
+  printf '%s\n' "$saida"
+}
+
+# Horário efetivo da linha do agente: o configurado quando válido, o PADRÃO
+# quando ausente ou recusado. Recusa é em voz alta (o dono precisa saber que a
+# variável dele não está valendo) e falha fechada (o cron continua rodando no
+# horário de sempre; nunca fica sem linha, nunca grava lixo).
+horario_do_agente() {  # horario_do_agente [valor]
+  local bruto="${1-}" normalizado="" exibicao
+  if [ -n "$bruto" ]; then
+    if normalizado="$(horario_do_agente_normalizado "$bruto")"; then
+      printf '%s\n' "$normalizado"
+      return 0
+    fi
+    # O valor recusado vai para a mensagem SEM os caracteres de controle: um
+    # aviso de três linhas por causa de um `\n` esconderia o próprio motivo da
+    # recusa.
+    exibicao="$(printf '%s' "$bruto" | tr '\n\r\t' '   ')"
+    # ⚠️ `>&2` OBRIGATÓRIO: esta função imprime o HORÁRIO na stdout, e quem a
+    # chama faz `horario="$(horario_do_agente ...)"`. Um aviso na stdout seria
+    # capturado junto e viraria parte da linha do crontab — medido: o crontab
+    # ganhava uma linha com a mensagem de erro colada no horário padrão. Falha
+    # fechada que vaza pelo cano não é falha fechada.
+    c_ylw "$(t "⚠ AGENT_CRON_SCHEDULE recusado ({1}) — mantenho o padrão {2}. Use 5 campos, só dígitos, *, vírgula, hífen e barra (ex.: */5 2-5 * * *)." "$exibicao" "$AGENT_CRON_PADRAO")" >&2
+  fi
+  printf '%s\n' "$AGENT_CRON_PADRAO"
+}
+
+# Ativa (idempotente) o cron do agente de atualização: a cada 5 minutos (ou no
+# horário de `AGENT_CRON_SCHEDULE`) ele avisa o app da versão instalada e, se
+# alguém clicou em "Atualizar agora" na tela, roda o update.sh sozinho. É o que
+# faz o botão da tela existir de verdade — sem cron, a tela mostra
+# "atualização automática indisponível" pra sempre. Chamada por install.sh e
+# update.sh (bloco 7) — re-rodar não duplica a linha do crontab.
 setup_update_agent_cron() {
   command -v crontab >/dev/null 2>&1 || { c_ylw "$(t "⚠ 'crontab' não encontrado — o botão de atualizar pela tela não vai funcionar.")"; return 0; }
   local secret="${INTERNAL_CRON_SECRET:-${INTERNAL_SECRET:-}}"
@@ -3273,11 +3350,22 @@ setup_update_agent_cron() {
   # instalação da linha de uma vizinha, que roda o mesmo agent.sh em outra pasta.
   local legado="cd ${PROJECT_DIR} && bash hostgator-setup-kit/agent.sh"
   local marcador; marcador="$(cron_tag agent)"
-  local cron_line="*/5 * * * * ${legado} >/dev/null 2>&1 ${marcador}"
+  # O HORÁRIO sai da variável (padrão quando ausente/inválida) — #4334. Só o
+  # horário muda: o comando, o redirecionamento e o marcador seguem iguais, e a
+  # linha do drain (outra função, outro marcador) não é tocada aqui.
+  local horario
+  horario="$(horario_do_agente "${AGENT_CRON_SCHEDULE:-}")"
+  local cron_line="${horario} ${legado} >/dev/null 2>&1 ${marcador}"
   # Mesmo motivo do drain acima, e é por isso que o conserto é nos DOIS: a
   # primeira instalação passa pelos dois blocos na mesma rodada.
   ( { crontab -l 2>/dev/null || true; } | cron_merge "$marcador" "$legado" "$cron_line" ) | crontab -
-  c_grn "$(t "✓ atualização pela tela ativa (agente a cada 5 minutos)")"
+  # A mensagem diz o horário que foi gravado de verdade: com a variável no
+  # `.env`, "a cada 5 minutos" seria mentira na cara de quem configurou.
+  if [ "$horario" = "$AGENT_CRON_PADRAO" ]; then
+    c_grn "$(t "✓ atualização pela tela ativa (agente a cada 5 minutos)")"
+  else
+    c_grn "$(t "✓ atualização pela tela ativa (agente no horário {1})" "$horario")"
+  fi
 }
 
 # Garante a chave de cifra dos segredos (webhooks/Nuvemshop) e a semeia no
