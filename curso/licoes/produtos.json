@@ -1,0 +1,784 @@
+{
+  "id": "produtos",
+  "titulo": "Produtos",
+  "tela": "/app/products",
+  "resumo": "A lista do que a empresa vende, com preço e estoque: é nela que o atendente de IA procura o valor quando um cliente pergunta quanto custa.",
+  "licoes": [
+    {
+      "id": "produtos-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Produtos",
+      "objetivo": "Achar o catálogo, entender para que ele serve e o que cada linha mostra.",
+      "papel": "admin",
+      "busca": [
+        "produtos",
+        "catálogo",
+        "lista de preços",
+        "tabela de preços",
+        "cadastro de produtos",
+        "estoque",
+        "preço que a IA responde"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Produtos não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"Preparar a venda\" está o cartão \"Produtos\". O caminho completo é: CRM › Ver tudo em CRM › Produtos.",
+          "dica": "Com o \"Perfil de interface\" \"Simplificada\", o cartão não aparece; quem administra escolhe as áreas visíveis em Configurações › Organização. Quem é atendente ou só tem permissão de leitura vê o catálogo, mas não consegue alterar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em CRM",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Produtos ",
+                "regex": true
+              },
+              "rotulo": "Abrir o catálogo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Produtos ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve o catálogo",
+          "rota": "/app/products",
+          "texto": "Produtos é a lista do que a clínica vende, cada um com o seu preço. Entram aqui serviços, como uma consulta ou um pacote de sessões, e itens de prateleira, como um suplemento. Quando um cliente pergunta \"quanto custa?\" no WhatsApp, o atendente de IA procura o produto nesta lista e responde com o preço cadastrado, em vez de chutar um valor.",
+          "dica": "O atendente de IA só consulta esta lista quando a ferramenta \"Procurar produto na loja\" está ligada no agente, em \"Agentes\". Com o catálogo vazio, ele responde que não encontrou o produto.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Produtos",
+                "exato": true
+              },
+              "rotulo": "O catálogo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "lista-produtos"
+              },
+              "rotulo": "Tudo o que a clínica vende",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que cada linha mostra",
+          "texto": "Cada linha é um produto. Em cima vem o nome. Embaixo vêm o código, a marca (quando tem) e o estoque. \"12 em estoque\" é quantas unidades a clínica tem. \"Sem controle de estoque\" quer dizer que ninguém conta unidades daquele item, como num pacote de sessões: ele sempre conta como disponível. À direita fica o preço de venda. Se o produto tem foto, a primeira aparece pequena no começo da linha.",
+          "dica": "Com \"0 em estoque\", o produto continua na lista, mas o atendente de IA é avisado de que ele está em falta.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "produto-NUT-WHEY"
+              },
+              "rotulo": "Com estoque e foto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "produto-PIL-10"
+              },
+              "rotulo": "Sem controle de estoque",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "produto-NUT-OMEGA3"
+              },
+              "rotulo": "Estoque zerado",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Os comandos do alto da tela",
+          "texto": "No alto ficam os comandos. A caixa de busca procura um produto. \"Novo produto\" abre o formulário para cadastrar um item. \"Importar planilha\" traz vários produtos de uma vez, de um arquivo. \"Baixar planilha modelo\" baixa um exemplo de planilha com as colunas certas.",
+          "dica": "Os botões de cadastrar e alterar só aparecem para gerente ou administrador. Quem é atendente vê a lista e a busca, sem os botões.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "busca-produto"
+              },
+              "rotulo": "Procurar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "novo-produto"
+              },
+              "rotulo": "Cadastrar um",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "importar-planilha"
+              },
+              "rotulo": "Trazer de um arquivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "modelo-planilha"
+              },
+              "rotulo": "Exemplo de planilha",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Procurar um produto",
+          "rota": "/app/products?busca=nutri",
+          "texto": "Digite um pedaço do nome, do código, da marca ou da categoria. Aqui, \"nutri\" achou a consulta nutricional pelo nome e os dois suplementos pela marca NutriVida. Embaixo da lista, \"1–3 de 3\" diz quantos produtos a busca achou. A tela mostra 50 produtos por vez; quando há mais, aparecem os botões \"Página anterior\" e \"Próxima página\".",
+          "dica": "Com uma letra só, a tela não mostra nada: a busca começa a partir de 2. Para voltar a ver tudo, apague o que escreveu.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "busca-produto"
+              },
+              "rotulo": "O que você digitou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "lista-produtos"
+              },
+              "rotulo": "Só o que combina",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "contagem-produtos"
+              },
+              "rotulo": "Quantos achou",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "produtos-cadastrar",
+      "titulo": "Cadastrar um produto",
+      "objetivo": "Pôr um produto novo no catálogo, com preço e estoque, para o atendente de IA poder responder o valor.",
+      "papel": "admin",
+      "busca": [
+        "cadastrar produto",
+        "novo produto",
+        "adicionar produto",
+        "colocar preço",
+        "controlar estoque",
+        "código do produto",
+        "preço de custo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o formulário",
+          "rota": "/app/products",
+          "texto": "A clínica começou a vender faixas elásticas para os exercícios da fisioterapia. Para pôr um produto novo no catálogo, clique em \"Novo produto\". O formulário abre logo abaixo, em cima da lista.",
+          "dica": "Só gerente ou administrador vê o botão \"Novo produto\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "novo-produto"
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "novo-produto"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Código e nome",
+          "texto": "\"Código\" é a identificação do produto na clínica, como a etiqueta da prateleira. Ele não pode se repetir: se já existir um produto com o mesmo código, a tela avisa e não salva. \"Nome\" é como o produto aparece na lista e para o atendente de IA. Escreva do jeito que um cliente pediria. Código e Nome são obrigatórios: sem eles a tela avisa e não salva.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "novo-produto"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "form-produto"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "produto-codigo"
+              },
+              "valor": "FIS-FAIXA"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "produto-nome"
+              },
+              "valor": "Faixa elástica de exercício média"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "produto-codigo"
+              },
+              "rotulo": "Código",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "produto-nome"
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Marca, categoria e preço",
+          "texto": "\"Marca\" e \"Categoria\" são opcionais e ajudam a achar o produto na busca. Em \"Preço de venda\", escreva o valor do jeito que você já escreve, como 39,90 ou 1.299,90. Esse campo é obrigatório: sem um preço que dê para ler, a tela avisa \"Preço inválido\" e não salva. \"Custo\" é quanto o produto custa para a clínica. Ele é opcional e não aparece para o cliente.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Marca"
+              },
+              "valor": "MoveFit"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Categoria"
+              },
+              "valor": "Fisioterapia"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "produto-preco"
+              },
+              "valor": "39,90"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Custo"
+              },
+              "valor": "18,50"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Marca"
+              },
+              "rotulo": "Opcional",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "rotulo": "Categoria"
+              },
+              "rotulo": "Opcional",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "produto-preco"
+              },
+              "rotulo": "O que o cliente paga",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Custo"
+              },
+              "rotulo": "Quanto custa para a clínica",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Estoque",
+          "texto": "A caixa \"Controlar estoque deste produto\" já vem marcada. Deixe marcada para itens de prateleira e escreva em \"Quantidade\" quantas unidades a clínica tem; aqui são 15. Desmarque para serviços e itens feitos sob encomenda, como uma consulta ou uma palmilha sob medida. Desmarcada, o campo \"Quantidade\" some e o produto sempre conta como disponível para o atendente de IA.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Quantidade"
+              },
+              "valor": "15"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has([data-testid='produto-controla-estoque'])"
+              },
+              "rotulo": "Conta as unidades",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Quantidade"
+              },
+              "rotulo": "Quantas tem",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar",
+          "texto": "Confira tudo e clique em \"Salvar produto\". Repare que o botão que antes dizia \"Novo produto\" agora diz \"Cancelar\": ele fecha o formulário sem salvar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "novo-produto"
+              },
+              "rotulo": "Fechar sem salvar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "salvar-produto"
+              },
+              "rotulo": "Guardar o produto",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar-produto"
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "O produto entrou na lista",
+          "texto": "O formulário fecha e a faixa elástica aparece na lista, em ordem alfabética, com o código, a marca, as 15 unidades em estoque e o preço. A partir de agora, o atendente de IA já consegue encontrá-la quando um cliente perguntar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-produto"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "produto-FIS-FAIXA"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "produto-FIS-FAIXA"
+              },
+              "rotulo": "Produto novo",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "produtos-editar-e-desativar",
+      "titulo": "Corrigir um produto e tirá-lo de venda",
+      "objetivo": "Mudar o preço, o estoque ou a descrição de um produto e desativar o que a clínica parou de vender.",
+      "papel": "admin",
+      "busca": [
+        "mudar preço",
+        "alterar preço",
+        "editar produto",
+        "atualizar estoque",
+        "descrição do produto",
+        "desativar produto",
+        "parar de vender",
+        "reativar produto"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a edição",
+          "rota": "/app/products",
+          "texto": "Chegou um lote novo de escovas ortodônticas, e o fornecedor aumentou o preço. Para atualizar o produto, clique em \"Editar\" na linha dele.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "editar-ODO-ESC"
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "editar-ODO-ESC"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Trocar o preço e o estoque",
+          "texto": "O formulário abre embaixo da linha, já preenchido com o que está cadastrado. Troque o que mudou: aqui, o preço passou para 27,90 e a quantidade para 50. A edição tem um campo que o cadastro não tem, a \"Descrição\". Escreva nela o que os clientes costumam perguntar. O atendente de IA recebe a descrição junto com o preço quando procura o produto.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "editar-ODO-ESC"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "edicao-ODO-ESC"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "edicao-preco"
+              },
+              "valor": "27,90"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "edicao-quantidade"
+              },
+              "valor": "50"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "edicao-descricao"
+              },
+              "rotulo": "O que o cliente quer saber",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "edicao-preco"
+              },
+              "rotulo": "Preço novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "edicao-quantidade"
+              },
+              "rotulo": "Estoque novo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Salvar as alterações",
+          "texto": "Clique em \"Salvar alterações\". Se você não mudou nada, a tela avisa \"Nada para alterar.\" e não grava. \"Cancelar\" fecha o formulário sem gravar.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "salvar-edicao"
+              },
+              "rotulo": "Gravar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "fechar-edicao"
+              },
+              "rotulo": "Fechar sem gravar",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar-edicao"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Produto atualizado",
+          "texto": "O formulário fecha e a linha já mostra o preço novo e as 50 unidades em estoque. Na próxima vez que um cliente perguntar, o atendente de IA responde com o preço novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-edicao"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "27,90",
+                "dentro": {
+                  "testid": "produto-ODO-ESC"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "produto-ODO-ESC"
+              },
+              "rotulo": "Preço e estoque novos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Desativar o que saiu de venda",
+          "texto": "O fornecedor parou de fabricar o ômega 3 que a clínica vendia. A tela não tem botão de apagar produto: clique em \"Desativar\". O produto continua guardado, mas sai da venda, porque o atendente de IA só procura entre os produtos ativos.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "alternar-NUT-OMEGA3"
+              },
+              "rotulo": "Tirar de venda",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "alternar-NUT-OMEGA3"
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Riscado, no fim da lista",
+          "texto": "O nome fica riscado e o produto vai para o fim da lista, junto com os outros desativados. O botão da linha passa a dizer \"Reativar\": é por ele que o produto volta a ser vendido.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "alternar-NUT-OMEGA3"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Reativar",
+                "exato": true,
+                "dentro": {
+                  "testid": "produto-NUT-OMEGA3"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "produto-NUT-OMEGA3"
+              },
+              "rotulo": "Desativado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Reativar",
+                "exato": true,
+                "dentro": {
+                  "testid": "produto-NUT-OMEGA3"
+                }
+              },
+              "rotulo": "Volta a vender",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "produtos-fotos-e-planilha",
+      "titulo": "Fotos e planilha",
+      "objetivo": "Pôr fotos num produto e trazer o catálogo inteiro de uma planilha.",
+      "papel": "admin",
+      "busca": [
+        "foto do produto",
+        "imagem do produto",
+        "importar planilha",
+        "importar produtos",
+        "planilha modelo",
+        "excel",
+        "csv",
+        "atualizar preços de uma vez"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir as fotos de um produto",
+          "rota": "/app/products",
+          "texto": "O número entre parênteses no botão \"Fotos\" diz quantas fotos o produto tem. Clique em \"Fotos (2)\" na linha do whey para ver as dele.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "abrir-fotos-NUT-WHEY"
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "abrir-fotos-NUT-WHEY"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A primeira foto é a capa",
+          "texto": "As fotos abrem embaixo da linha. A primeira é a capa: é ela que aparece pequena na lista. Quando o atendente de IA apresenta um produto com foto, ele pode mandar as fotos junto, e elas vão nesta ordem. As setas mudam a foto de lugar e o \"✕\" remove a foto.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "abrir-fotos-NUT-WHEY"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "fotos-NUT-WHEY"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "adicionar-foto"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "foto-do-produto",
+                "n": 0
+              },
+              "rotulo": "Capa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Mover a foto para a direita",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Mudar de lugar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover a foto",
+                "exato": true,
+                "n": 1
+              },
+              "rotulo": "Remover",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Adicionar uma foto",
+          "texto": "\"Adicionar foto\" abre o seu computador para você escolher a imagem. Vale foto JPG ou PNG de até 5 MB. Cada produto guarda no máximo 5 fotos; com 5, o botão fica apagado.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "adicionar-foto"
+              },
+              "rotulo": "Escolher a imagem",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Trazer os produtos de uma planilha",
+          "rota": "/app/products",
+          "texto": "Se a clínica já tem os produtos numa planilha, não precisa cadastrar um por um. Clique em \"Baixar planilha modelo\" para ver as colunas que a tela entende: código, nome, marca, categoria, preço, custo e estoque. Só nome e preço são obrigatórios. A tela também reconhece nomes parecidos, como \"SKU\", \"valor\" ou \"qtd\". No Excel, use \"Salvar como\" e escolha \"CSV UTF-8\". Depois clique em \"Importar planilha\" e escolha o arquivo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "modelo-planilha"
+              },
+              "rotulo": "Comece por aqui",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "importar-planilha"
+              },
+              "rotulo": "Enviar o arquivo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Importar de novo atualiza",
+          "texto": "O código liga cada linha da planilha a um produto. Importar de novo um código que já existe atualiza aquele produto, sem criar outro. Se a planilha não tem coluna de código, o nome faz esse papel. A importação não mexe na descrição, nas fotos nem em quem está desativado. Todo o resto do produto passa a ser o que está na planilha: coluna que falta ou célula vazia apaga a marca, a categoria e o custo, e sem a coluna de estoque o produto deixa de controlar estoque. Para corrigir só os preços, baixe a planilha completa, troque os preços e importe de volta com todas as colunas.",
+          "dica": "No fim, a tela mostra um resumo: quantos produtos entraram, quantos foram atualizados e quais linhas não entraram, com o motivo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "NUT-WHEY",
+                "dentro": {
+                  "testid": "produto-NUT-WHEY"
+                }
+              },
+              "rotulo": "O código liga a planilha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "importar-planilha"
+              },
+              "rotulo": "Importar de novo",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

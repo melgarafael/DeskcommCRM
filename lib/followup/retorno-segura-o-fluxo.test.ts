@@ -1,7 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
-import { FOLGA_DEPOIS_DO_RETORNO_MS } from "./retorno-segura-o-fluxo";
+import {
+  folgaDepoisDoRetorno,
+  PISO_DA_FOLGA_DEPOIS_DO_RETORNO_MS,
+  reavaliarDepoisDoRetorno,
+} from "./retorno-segura-o-fluxo";
 import { createSupabaseSilenceSweepDb } from "./silence-sweep";
 
 /**
@@ -20,7 +24,8 @@ import { createSupabaseSilenceSweepDb } from "./silence-sweep";
  * ## A regra, a mesma dos dois lados
  *
  * `retorno-segura-o-fluxo.ts` já segura a inscrição que JÁ ESTAVA andando até
- * `FOLGA_DEPOIS_DO_RETORNO_MS` (1 dia) depois do retorno. O que faltava era a
+ * a folga do fluxo (`folgaDepoisDoRetorno`: o gatilho do próprio fluxo, nunca
+ * menos que 4 h) depois do retorno. O que faltava era a
  * mesma folga valer para a inscrição NOVA: o corte de silêncio que a varredura
  * respeita passa a incluir o retorno RECÉM-EXECUTADO, lido da mesma linha de
  * `cron_jobs` que sabe quando ele saiu (`enabled=false`, `last_error` nulo — o
@@ -30,13 +35,15 @@ import { createSupabaseSilenceSweepDb } from "./silence-sweep";
  * ## O que este arquivo prova
  *
  * A régua de produção (`createSupabaseSilenceSweepDb(...).loadContatosComRetornoVivo`,
- * sobre o PostgREST): o contato com retorno disparado há 2 h entra no corte; o
- * vivo continua entrando; o disparado há 30 h sai (a folga venceu); a linha
+ * sobre o PostgREST), para um fluxo de 1 h (folga de 4 h, o piso): o contato com
+ * retorno disparado há 2 h entra no corte; o vivo continua entrando; o disparado
+ * há 5 h sai (a folga venceu); a linha
  * desabilitada ANTES da hora (cancelada por opt-out/handoff, que o scheduler faz
  * sem `cancelled_at`) não conta como retorno saído; e a régua que o Postgres
  * recebe — `kind='at'`, `job_kind='followup_turn'`, `enabled=false`, sem
  * `cancelled_at`, sem `last_error`, sem turno de passo de fluxo, com
- * `next_run_at` na janela de um dia.
+ * `next_run_at` na janela da folga do fluxo. E a folga em si: 40 min (o fluxo
+ * da #2907) e 1 h esperam 4 h; 3 dias esperam 3 dias.
  *
  * ## O que NÃO prova
  *
@@ -74,27 +81,30 @@ function fakeAdmin(respostas: Linha[][]) {
 }
 
 const AGORA = Date.now();
-/** `next_run_at` relativo ao agora do teste — a folga é de 1 dia, então 2 h e 30 h são longe das bordas. */
+/** `next_run_at` relativo ao agora do teste — 2 h e 5 h ficam longe da borda de 4 h. */
 const quando = (deslocamentoMs: number) => new Date(AGORA - deslocamentoMs).toISOString();
 
 const HORA = 3_600_000;
+const DIA = 24 * HORA;
+/** Fluxo de silêncio de 1 h: a folga é o piso de 4 h. */
+const FOLGA_FLUXO_DE_1H = folgaDepoisDoRetorno(60);
 
 describe("o retorno já executado segura a inscrição NOVA (issue #2907)", () => {
-  it("⭐ disparado há 2 h ainda segura; vivo segura; fora da folga e ainda não vencido NÃO seguram", async () => {
+  it("⭐ fluxo de 1 h: disparado há 2 h ainda segura; vivo segura; depois de 4 h não segura", async () => {
     const { admin } = fakeAdmin([
       // 1ª consulta: retornos VIVOS (agendados, `enabled=true`).
       [{ contact_id: "c-vivo", next_run_at: quando(-6 * HORA) }],
       // 2ª consulta: retornos já DISPARADOS. O fake devolve tudo — quem corta a
-      // janela de um dia é a régua; o Postgres já corta antes (ver o teste seguinte).
+      // janela da folga é a régua; o Postgres já corta antes (ver o teste seguinte).
       [
         { contact_id: "c-recente", next_run_at: quando(2 * HORA) },
-        { contact_id: "c-antigo", next_run_at: quando(30 * HORA) },
+        { contact_id: "c-antigo", next_run_at: quando(5 * HORA) },
         { contact_id: "c-desabilitado-antes-da-hora", next_run_at: quando(-3 * HORA) },
         { contact_id: null, next_run_at: quando(1 * HORA) },
       ],
     ]);
 
-    const segura = await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org-1");
+    const segura = await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org-1", FOLGA_FLUXO_DE_1H);
 
     expect(segura.has("c-vivo")).toBe(true);
     expect(segura.has("c-recente")).toBe(true);
@@ -103,13 +113,13 @@ describe("o retorno já executado segura a inscrição NOVA (issue #2907)", () =
     expect(segura.size).toBe(2);
   });
 
-  it("a régua que o Postgres recebe: um dia de janela, e só o one-shot de retorno já disparado", async () => {
+  it("a régua que o Postgres recebe: a folga do fluxo como janela, e só o one-shot de retorno já disparado", async () => {
     const { admin, consultas } = fakeAdmin([
       [],
       [{ contact_id: "c-recente", next_run_at: quando(2 * HORA) }],
     ]);
 
-    await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org-1");
+    await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org-1", FOLGA_FLUXO_DE_1H);
 
     expect(consultas).toHaveLength(2);
     const chamadas = consultas[1]!;
@@ -130,7 +140,7 @@ describe("o retorno já executado segura a inscrição NOVA (issue #2907)", () =
     const corte = chamadas.find((c) => c.metodo === "gt" && c.args[0] === "next_run_at");
     expect(corte, "a consulta precisa cortar o retorno disparado fora da folga").toBeDefined();
     const limite = Date.parse(String(corte!.args[1]));
-    expect(Math.abs(AGORA - FOLGA_DEPOIS_DO_RETORNO_MS - limite)).toBeLessThan(30_000);
+    expect(Math.abs(AGORA - 4 * HORA - limite)).toBeLessThan(30_000);
 
     const naoVencido = chamadas.find((c) => c.metodo === "lte" && c.args[0] === "next_run_at");
     expect(naoVencido, "retorno ainda no futuro não saiu — não pode segurar").toBeDefined();
@@ -139,7 +149,34 @@ describe("o retorno já executado segura a inscrição NOVA (issue #2907)", () =
 
   it("controle: sem retorno nenhum, ninguém é segurado", async () => {
     const { admin } = fakeAdmin([[], []]);
-    const segura = await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org-1");
+    const segura = await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo("org-1", FOLGA_FLUXO_DE_1H);
     expect(segura.size).toBe(0);
+  });
+});
+
+describe("a folga segue o gatilho do fluxo, com piso de 4 h (PR #3692)", () => {
+  it("⭐ 40 min (o fluxo da #2907) espera 4 h; 1 h espera 4 h; 3 dias esperam 3 dias", () => {
+    expect(PISO_DA_FOLGA_DEPOIS_DO_RETORNO_MS).toBe(4 * HORA);
+    expect(folgaDepoisDoRetorno(40)).toBe(4 * HORA);
+    expect(folgaDepoisDoRetorno(60)).toBe(4 * HORA);
+    expect(folgaDepoisDoRetorno(3 * 24 * 60)).toBe(3 * DIA);
+  });
+
+  it("a inscrição que já andava solta na mesma conta, a partir do retorno", () => {
+    const retorno = "2026-09-30T12:00:00.000Z";
+    expect(reavaliarDepoisDoRetorno(retorno, 40)).toBe("2026-09-30T16:00:00.000Z");
+    expect(reavaliarDepoisDoRetorno(retorno, 60)).toBe("2026-09-30T16:00:00.000Z");
+    expect(reavaliarDepoisDoRetorno(retorno, 3 * 24 * 60)).toBe("2026-10-03T12:00:00.000Z");
+  });
+
+  it("fluxo de 3 dias: o retorno disparado há 2 dias ainda segura a inscrição nova", async () => {
+    const { admin, consultas } = fakeAdmin([[], [{ contact_id: "c-dois-dias", next_run_at: quando(2 * DIA) }]]);
+    const segura = await createSupabaseSilenceSweepDb(admin).loadContatosComRetornoVivo(
+      "org-1",
+      folgaDepoisDoRetorno(3 * 24 * 60),
+    );
+    expect(segura.has("c-dois-dias")).toBe(true);
+    const corte = consultas[1]!.find((c) => c.metodo === "gt" && c.args[0] === "next_run_at");
+    expect(Math.abs(AGORA - 3 * DIA - Date.parse(String(corte!.args[1])))).toBeLessThan(30_000);
   });
 });

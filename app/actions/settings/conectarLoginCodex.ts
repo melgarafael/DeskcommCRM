@@ -6,6 +6,12 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 
 import { desconectarLoginCodex, guardarLoginCodex, lerLoginCodex } from "@/lib/ai/credenciais/login-codex";
+import { fecharAvisoDaAssinatura } from "@/lib/ai/credenciais/aviso-da-assinatura";
+import {
+  FalhaAoListarModelosDaAssinatura,
+  listarModelosDaAssinatura,
+} from "@/lib/ai/catalogo/modelos-da-assinatura";
+import { logger } from "@/lib/logger";
 import { lerOuCriarHostIdSiwc } from "@/lib/ai/credenciais/host-siwc";
 import {
   CLIENTE_DINAMICO_SIWC,
@@ -172,6 +178,25 @@ export async function conectarLoginCodex(
     tokens,
   });
   if (!gravado.ok) return { ok: false, error: gravado.motivo };
+
+  // ─── A CONTA VOLTOU: O AVISO FECHA E O PUBLISH NÃO QUEBRA (#3371, 2 e 6) ──
+  //
+  // Este é o caminho do botão "Reconectar" — o mesmo da Central de avisos. Duas
+  // coisas acontecem aqui, e as duas são best-effort: o login JÁ está gravado, e
+  // falhar depois dele não pode transformar um sucesso em erro na tela.
+  //
+  //   * o aviso `assinatura_desconectada` fecha sozinho, sem clique de ninguém;
+  //   * `models_available` é preenchido JÁ, com a listagem que o seletor usa —
+  //     sem isso o primeiro "Publicar" respondia `422 model_not_found`, que foi
+  //     o que o cliente Obralivre viu logo depois de religar a conta.
+  await fecharAvisoDaAssinatura(admin, activeOrg.orgId).catch(() => "falhou");
+  await listarModelosDaAssinatura(activeOrg.orgId).catch((erro) => {
+    logger.warn("[ai.credentials] a conta voltou, mas a listagem de modelos falhou", {
+      organizationId: activeOrg.orgId,
+      motivo: erro instanceof FalhaAoListarModelosDaAssinatura ? erro.motivo : "desconhecido",
+    });
+    return null;
+  });
 
   const hdrs = await headers();
   await audit({

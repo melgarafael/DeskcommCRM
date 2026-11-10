@@ -22,9 +22,11 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { camposCpfParaGravar } from "@/lib/contacts/cpf";
+import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   CSV_MAX_BYTES,
@@ -36,6 +38,7 @@ import {
 } from "@/lib/contacts/csv";
 import { contactCreateSchemaDoPais } from "@/lib/schemas";
 import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
+import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { createClient } from "@/lib/supabase/server";
 
@@ -75,9 +78,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const doc = perfil.documento;
   const schemaDoPais = contactCreateSchemaDoPais(perfil);
 
+  // 64 KB de folga para o envelope multipart; o file.size abaixo é o check do CSV.
+  const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: user.idioma,
+    acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+  });
+  if (!corpo.ok) return corpo.response;
+
   let file: File;
   try {
-    const form = await req.formData();
+    const form = await corpo.corpo.formData();
     const f = form.get("file");
     if (!(f instanceof File)) throw new Error("sem arquivo");
     file = f;
@@ -182,7 +193,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // ─── Pré-filtro de duplicados contra o banco (uma query por identificador) ──
   //
-  // Os índices únicos são parciais (excluem mesclados/anonimizados), então a
+  // Os índices únicos são parciais (excluem mesclados), então a
   // busca espelha o WHERE do índice — filtrar pelo que o índice não cobre
   // produziria "duplicado" imaginário.
   const phones = candidatos
@@ -199,6 +210,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .from("contacts")
       .select("phone_number")
       .eq("organization_id", orgId)
+      .is("is_merged_into", null)
       .not("phone_number", "is", null)
       .in("phone_number", lookup);
     for (const r of data ?? []) {
@@ -206,12 +218,19 @@ export async function POST(req: NextRequest): Promise<Response> {
         existentes.add(`tel:${v}`);
       }
     }
+    // Número que é EXTRA de uma ficha viva já é contato da org: conta como
+    // duplicado aqui, em vez de chegar ao insert e cair no 23505 do banco.
+    const donosDosExtras = await contatosDonosDosExtras(supabase, orgId, lookup);
+    for (const numero of donosDosExtras.keys()) {
+      for (const v of phoneLookupVariants(numero)) existentes.add(`tel:${v}`);
+    }
   }
   if (emails.length > 0) {
     const { data } = await supabase
       .from("contacts")
       .select("email_normalized")
       .eq("organization_id", orgId)
+      .is("is_merged_into", null)
       .in("email_normalized", emails.map((e) => e.toLowerCase()));
     for (const r of data ?? []) existentes.add(`email:${(r as { email_normalized: string }).email_normalized}`);
   }
@@ -274,6 +293,33 @@ export async function POST(req: NextRequest): Promise<Response> {
     imported += 1;
     if (phone) existentes.add(`tel:${phone}`);
     if (email) existentes.add(`email:${email.toLowerCase()}`);
+
+    // ── CRIAR CONTATO ABRE CONVERSA? AQUI, NÃO (#3718) ─────────────────────
+    //
+    // A criação unitária abre a conversa do contato novo; esta porta não abre, e
+    // isso é REGRA, não esquecimento. A decisão é uma só e mora em
+    // `lib/contacts/conversa-ao-criar.ts` — as duas portas chamam a MESMA
+    // função e só declaram qual porta são; aqui o desfecho é `porta_nao_abre`.
+    //
+    // O preço, medido: o arquivo aceita até `CSV_MAX_DATA_ROWS` (500) contatos.
+    // Abrir conversa para todos seria, por linha, `sessaoProntaParaEnvio` (1–2
+    // SELECT em `channel_sessions`) + RPC `fn_service_begin` (advisory lock +
+    // SELECT em `contacts` + SELECT … FOR NO KEY UPDATE em `conversations` +
+    // SELECT em `channel_sessions` + INSERT em `conversations`) — ~2.500
+    // statements neste request, que já faz 500 INSERTs e 500 `emit_event`. E o
+    // que sobra não é o custo: é a caixa de entrada com 500 conversas `open`
+    // que ninguém pediu e ninguém vai atender.
+    //
+    // A chamada é por linha de propósito (uma porta, um lugar para a regra), mas
+    // ela responde ANTES de qualquer leitura: zero consulta ao banco por este
+    // caminho, medido em `./route.test.ts`.
+    await abrirConversaDoContatoNovo(supabase, {
+      porta: "importacao_csv",
+      organizationId: orgId,
+      contactId: (criado as { id: string }).id,
+      phoneNumber: phone ?? null,
+      requestId,
+    });
 
     // Mesmo evento do create unitário — quem consome `contact.created`
     // (workers, métricas) trata importado e manual igual.

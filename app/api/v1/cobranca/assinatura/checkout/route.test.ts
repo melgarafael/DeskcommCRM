@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as RequestIdLogado from "@/lib/log/request-id-logado";
 import { argumentos, bancoFalso, filtros, operacao, type BancoFalso, type Cadeia, type Resposta } from "@/tests/helpers/banco-falso-da-cobranca";
 
 const h = vi.hoisted(() => ({
@@ -21,7 +22,17 @@ vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.ligada 
 vi.mock("@/lib/cobranca/configuracao", () => ({ provedorDaInstalacao: async () => h.provedor }));
 vi.mock("@/lib/cobranca/provedores", () => ({ adaptador: () => h.ad, modoDoProvedor: async () => "teste" }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
-vi.mock("@/lib/logger", () => ({ logger: { error: h.logError, warn: h.logWarn, info: vi.fn(), debug: vi.fn() } }));
+// O dublê registra o requestId como o logger real faz (lib/logger.ts): sem isso o
+// fail() não sabe que a rota já logou e grava uma 2ª linha que em produção não existe.
+vi.mock("@/lib/logger", async () => {
+  const { registrarRequestIdLogado } = await vi.importActual<typeof RequestIdLogado>("@/lib/log/request-id-logado");
+  return {
+    logger: {
+      error: (...args: [string, Record<string, unknown>?]) => { registrarRequestIdLogado(args[1]); h.logError(...args); },
+      warn: h.logWarn, info: vi.fn(), debug: vi.fn(),
+    },
+  };
+});
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: async () => ({ allowed: h.taxaOk }) }));

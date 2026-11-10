@@ -39,6 +39,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { NextRequest } from "next/server";
+import { isDeepStrictEqual } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
@@ -70,7 +71,12 @@ vi.mock("@/hooks/inbox/useMessageTemplates", async () => {
   const real = await vi.importActual<typeof import("@/hooks/inbox/useMessageTemplates")>(
     "@/hooks/inbox/useMessageTemplates",
   );
-  return { ...real, useMessageTemplates: () => ({ data: h.listaDaTela, isLoading: false }) };
+  return {
+    ...real,
+    useMessageTemplates: () => ({ data: h.listaDaTela, isLoading: false }),
+    // Sem grupo (#3245): a tela é a lista plana, que é o caminho medido aqui.
+    useGruposDeRespostas: () => ({ data: [] }),
+  };
 });
 vi.mock("@hello-pangea/dnd", () => ({
   DragDropContext: ({
@@ -171,7 +177,9 @@ function banco() {
     let teto = Number.POSITIVE_INFINITY;
 
     const casam = (base: Linha[]) =>
-      base.filter((l) => filtros.every(([coluna, valor]) => l[coluna as keyof Linha] === valor));
+      base.filter((l) => filtros.every(([coluna, valor]) => coluna === "midias"
+        ? isDeepStrictEqual(l.midias, JSON.parse(String(valor)))
+        : l[coluna as keyof Linha] === valor));
 
     /** O efeito da consulta: escrita (insert/update) ou leitura ordenada. */
     const executar = (): Array<Record<string, unknown>> => {
@@ -227,7 +235,10 @@ function banco() {
         teto = n;
         return builder;
       },
-      maybeSingle: async () => ({ data: executar()[0] ?? null, error: null }),
+      maybeSingle: async () => {
+        const linhas = executar();
+        return { data: linhas[0] ?? null, error: null, count: linhas.length };
+      },
       single: async () => {
         const primeira = executar()[0];
         return primeira

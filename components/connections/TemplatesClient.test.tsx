@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 const mutateAsync = vi.fn();
@@ -45,7 +46,17 @@ vi.mock("@/hooks/channels/useTemplates", () => ({
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { TemplatesClient } from "./TemplatesClient";
+import { TemplatesClient as TemplatesClientSemProvider } from "./TemplatesClient";
+
+// A tela passou a usar `useQueryClient`/`useMutation` direto (criar/editar/apagar,
+// #3635): sem o provider ela nem monta. Um cliente por render, como na tela real.
+function TemplatesClient() {
+  return (
+    <QueryClientProvider client={new QueryClient()}>
+      <TemplatesClientSemProvider />
+    </QueryClientProvider>
+  );
+}
 
 describe("TemplatesClient — link da mídia salvo no modelo", () => {
   beforeEach(() => {

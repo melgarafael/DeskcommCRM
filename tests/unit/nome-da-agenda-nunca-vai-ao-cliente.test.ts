@@ -124,6 +124,13 @@ const QUEM_LE_A_AGENDA: Record<string, string> = {
   "lib/lgpd/export-collector.ts":
     "o acesso do TITULAR (LGPD Art. 18 II, data.json): é dado pessoal dele, apagado na anonimização — não é mensagem, é o que ele pediu",
   "app/api/v1/lgpd/requests/[id]/preview/route.ts": "a prévia do export que a equipe confere antes de entregar",
+  "lib/contacts/duplicados.ts":
+    "a varredura de duplicados lê o nome da agenda para sugerir fichas parecidas (Spec 31); não monta mensagem",
+  "app/api/v1/contacts/duplicates/route.ts": "select da tela Duplicados (tela da equipe)",
+  "app/api/v1/contacts/compare/route.ts": "a comparação lado a lado da tela Duplicados (tela da equipe)",
+  "hooks/contacts/useContactDuplicates.ts": "tipo da lista de duplicados (tela da equipe)",
+  "hooks/contacts/useCompararFichas.ts": "tipo da comparação lado a lado (tela da equipe)",
+  "components/contacts/ComparacaoDeFichas.tsx": "a comparação mostra o nome da agenda à equipe, ao lado do nome da ficha",
 };
 
 function arquivos(dir: string): string[] {

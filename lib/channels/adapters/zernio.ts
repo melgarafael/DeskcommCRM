@@ -44,6 +44,8 @@ import type { TemplateContract } from "../meta/template-contract";
 import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { zernioMediaFetchInit } from "../zernio/webhook";
+import { DETALHE_NAO_RECEBE, PREFIXO_ENVIO_RESTRITO } from "../defeito-do-numero";
+import { marcaDeEspera, segundosDoRetryAfter } from "../erro-da-plataforma";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -227,6 +229,7 @@ export const zernioAdapter: ChannelAdapter = {
       data?: { messageId?: string };
       error?: string;
       code?: string;
+      platformError?: { code?: number | string } | null;
     } | null;
 
     if (!res.ok || json?.success === false) {
@@ -234,6 +237,33 @@ export const zernioAdapter: ChannelAdapter = {
       // distingue "fora da janela" de "número bloqueado" de "conta suspensa", e
       // sem isso o operador vê só "falhou".
       const detalhe = json?.code ? `${json.code}: ${json.error ?? ""}` : (json?.error ?? res.statusText);
+      // ─── DESACELERAR não é falhar ─────────────────────────────────────────
+      //
+      // Dois avisos de VELOCIDADE, e nenhum diz que a mensagem está errada —
+      // por isso o código próprio, que o handler traduz em `queued` (e numa
+      // nova tentativa) em vez de `failed` quando a mensagem é da pessoa ou do
+      // agente; a que tem laço próprio (campanha, automação) segue `failed`,
+      // com este texto, e o laço dela reconhece o 429 (`ehLimiteDeVelocidade`):
+      //
+      //   - 131056 da Meta ("pace to ~10/min per recipient", changelog 28/08).
+      //     Chega como `code: "131056"` OU, na forma documentada do OpenAPI
+      //     v1.370.0, como `code: "platform_api_error"` com `platformError.code:
+      //     131056` e um `error` de texto livre. Ler só o primeiro deixava o
+      //     segundo virar `failed`;
+      //   - 429 do provedor (changelog 25/09): a conta foi limitada, e a
+      //     especificação diz "No message was sent" — tentar de novo não
+      //     duplica nada. O `Retry-After` vai carimbado (`[espera:Ns]`) para
+      //     quem reagenda respeitar.
+      const codigoDaPlataforma = String(json?.platformError?.code ?? "");
+      if (
+        res.status === 429 ||
+        String(json?.code ?? "") === "131056" ||
+        codigoDaPlataforma === "131056" ||
+        `${detalhe}`.includes("131056")
+      ) {
+        const espera = res.status === 429 ? segundosDoRetryAfter(res.headers?.get("retry-after")) : null;
+        throw new Error(`zernio_throttled: ${res.status} ${detalhe}${marcaDeEspera(espera)}`.trim());
+      }
       throw new Error(`zernio_send_failed: ${res.status} ${detalhe}`.trim());
     }
 
@@ -431,6 +461,27 @@ export const zernioAdapter: ChannelAdapter = {
    *                    publicou a sonda. Cai no `status` geral em vez de falhar:
    *                    campo ausente é ausência de informação, não más notícias.
    *   qualquer outro → NÃO sabemos. `reachable: false`, sem status.
+   *
+   * ─── De pé, mas não inteiro (27/10/2026) ───────────────────────────────────
+   *
+   * Dois campos que a sonda traz e que esta leitura ignorava — e com eles
+   * ignorados, o número aparecia `WORKING` nos dois casos:
+   *
+   *   `platformConnection.inboundWebhookSubscribed: false`
+   *                  → a Meta diz que o provedor não assina o webhook de
+   *                    mensagens deste número: ele ENVIA e não RECEBE. `null` é
+   *                    "a Meta não informou" — não é evidência: não abre aviso e
+   *                    também não fecha o que está aberto (`defeitosSemMedida`).
+   *   `messagingRestriction` (na RAIZ — medido nesta instalação: `null` quando
+   *                    não há nada) → a plataforma recusou envio deste número
+   *                    com 131042 (pagamento), 131031 (conta bloqueada) ou 368
+   *                    (política). É observado nos envios, não sondado: atrasa
+   *                    uma mensagem em cada direção, e some quando uma mensagem
+   *                    volta a ser entregue.
+   *
+   * Os dois seguem `WORKING`, com o defeito no `detail` (`DETALHE_NAO_RECEBE`,
+   * `PREFIXO_ENVIO_RESTRITO`): barrar o envio seria pior, e quem avisa é a regra
+   * de `../health.ts`. O porquê inteiro está em `../defeito-do-numero.ts`.
    */
   async checkHealth(
     input: ChannelTenantScope & { sessionRef: string },
@@ -474,10 +525,40 @@ export const zernioAdapter: ChannelAdapter = {
         status?: string;
         phoneStatus?: string | null;
         metaError?: { code?: number; subcode?: number; message?: string } | null;
+        inboundWebhookSubscribed?: boolean | null;
       } | null;
+      messagingRestriction?: { code?: number | null; subcode?: number | null } | null;
     } | null;
 
     const elo = json?.platformConnection;
+
+    // De pé, mas não inteiro: o detalhe diz o quê, e o status continua WORKING.
+    // Não receber vem antes: é o defeito que ninguém vê — o envio segue saindo.
+    const restricao = json?.messagingRestriction;
+    const restricaoCodigo =
+      restricao && typeof restricao === "object"
+        ? (restricao.code ?? restricao.subcode ?? "desconhecido")
+        : null;
+    const dePe = (): ChannelHealth => {
+      if (elo?.inboundWebhookSubscribed === false) {
+        return { reachable: true, status: "WORKING", detail: DETALHE_NAO_RECEBE };
+      }
+      if (restricaoCodigo !== null) {
+        return { reachable: true, status: "WORKING", detail: `${PREFIXO_ENVIO_RESTRITO}${restricaoCodigo}` };
+      }
+      // Sem defeito à vista não é número inteiro: só `true` descarta o defeito de
+      // recebimento, e só a chave presente (mesmo `null`) descarta a restrição.
+      const defeitosSemMedida = [
+        ...(elo?.inboundWebhookSubscribed === true ? [] : (["nao_recebe"] as const)),
+        ...(restricao === undefined ? (["envio_restrito"] as const) : []),
+      ];
+      return {
+        reachable: true,
+        status: "WORKING",
+        detail: null,
+        ...(defeitosSemMedida.length > 0 ? { defeitosSemMedida } : {}),
+      };
+    };
 
     if (elo?.status === "disconnected") {
       const e = elo.metaError;
@@ -489,14 +570,12 @@ export const zernioAdapter: ChannelAdapter = {
     if (elo?.status === "unknown") {
       return { reachable: false, status: null, detail: "sonda_do_elo_meta_inconclusiva" };
     }
-    if (elo?.status === "connected") {
-      return { reachable: true, status: "WORKING", detail: null };
-    }
+    if (elo?.status === "connected") return dePe();
 
     // Sem `platformConnection`: decide pelo veredito geral da conta.
     return json?.status === "error"
       ? { reachable: true, status: "FAILED", detail: "conta_em_erro" }
-      : { reachable: true, status: "WORKING", detail: null };
+      : dePe();
   },
 
   /** Gestão das definições aprovadas — ver `../zernio/templates.ts`. */
@@ -509,5 +588,8 @@ export const zernioAdapter: ChannelAdapter = {
     notConfigured: "zernio_not_configured",
     sendFailed: "zernio_error",
     unknownError: "zernio_unknown",
+    // O pedido de DESACELERAR (131056 da plataforma, 429 do provedor). Código
+    // próprio porque o desfecho é outro — ver o ramo de `send` acima.
+    throttled: "zernio_throttled",
   },
 };

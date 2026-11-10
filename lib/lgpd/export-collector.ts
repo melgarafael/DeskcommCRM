@@ -43,6 +43,17 @@ export interface ContactSnapshot {
    * Brasil o arquivo fica guardado sem ser enviado, e o PDF não lê este campo.
    */
   address_book_name: string | null;
+  /**
+   * Endereço da pessoa física (issue #3494). A anonimização o apaga
+   * (`trg_contato_anonimizado_esquece_o_endereco`), então o titular o recebe.
+   */
+  zip_code: string | null;
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
   email: string | null;
   phone_number: string | null;
   cpf_present: boolean;
@@ -58,6 +69,12 @@ export interface ContactSnapshot {
   /** Primeiro atendimento marcado. Sobrevive à anonimização: é registro de operação. */
   first_service_at: string | null;
   /**
+   * Os telefones EXTRAS da ficha (Spec 31, B1), com o `lid` do WhatsApp de cada
+   * número. Ausente quando a ficha não tem extra: o `data.json` dela sai como saía
+   * antes (a chave só aparece quando há o que entregar).
+   */
+  additional_phones?: ContactPhoneSnapshot[];
+  /**
    * Campos personalizados — onde os roteiros de atendimento gravam o que o
    * cliente respondeu (CPF inclusive). A anonimização já os zera; sem esta
    * linha o titular pedia acesso e não recebia o que o roteiro coletou.
@@ -67,6 +84,18 @@ export interface ContactSnapshot {
   campos_legiveis: CampoLegivel[];
   /** Um roteiro guardou o CPF nos campos (texto, não a coluna cifrada). */
   cpf_informado_na_conversa: boolean;
+}
+
+/** Um telefone extra da ficha, como o titular o recebe (Spec 31, B1). */
+export interface ContactPhoneSnapshot {
+  phone_number: string;
+  tipo: string;
+  whatsapp: string;
+  rotulo: string | null;
+  origem: string;
+  /** O `lid` do WhatsApp DAQUELE número: é o que casa a mensagem de grupo dele. */
+  wa_lid: string | null;
+  created_at: string;
 }
 
 export interface ConsentRow {
@@ -166,6 +195,22 @@ export interface LeadFieldProposalRow {
  * compromissos e a próxima ação são texto que o modelo escreveu SOBRE a pessoa,
  * e o que se apaga a pedido do titular é o que se entrega a pedido dele.
  */
+/**
+ * Os acessos que o titular deu a servidores MCP externos (OAuth por contato,
+ * migration 9095): os pedidos de autorização (apagados na anonimização) e as
+ * credenciais. Entra o QUE ele autorizou, a quem e quando — nunca o token, o
+ * `code_verifier` nem o `state`, que são segredo e não dado dele.
+ */
+export interface AcessoMcpRow {
+  servidor_id: string;
+  escopos: string[];
+  criado_em: string | null;
+  expira_em?: string | null;
+  usado_em?: string | null;
+  ultimo_uso_em?: string | null;
+  revogado_em?: string | null;
+}
+
 export interface CheckpointRow {
   id: string;
   rolling_summary: string;
@@ -221,6 +266,36 @@ export interface AppointmentRow {
   google_pending_write?: Json | null;
   meeting_url?: string | null;
   meeting_state?: string;
+}
+
+/**
+ * O "quero encaixe" do titular na lista de espera (`calendar_waitlist`, módulo
+ * opcional). Entra porque a seção de LGPD do módulo apaga `observacoes` na
+ * anonimização: a redação e o export são as duas pontas da mesma regra.
+ *
+ * `janelas`, `antecedencia_minima_horas`, `urgencia` e `status` a redação
+ * PRESERVA (parâmetro de operação, não identificação) e ainda assim entram: "eu
+ * pedi encaixe para tal semana, com tal urgência, e fui atendido" é informação a
+ * respeito dele. `owner_user_id` e `created_by_user_id` ficam de fora: são a
+ * equipe, não ele.
+ */
+export interface WaitlistRow {
+  id: string;
+  event_type_id: string;
+  status: string;
+  urgencia: number;
+  janelas: Json;
+  antecedencia_minima_horas: number;
+  valido_ate: string | null;
+  consentimento_em: string;
+  consentimento_origem: string;
+  oferta_appointment_id: string | null;
+  oferta_expira_em: string | null;
+  ofertada_em: string | null;
+  observacoes: string | null;
+  created_by_kind: string;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -696,11 +771,24 @@ export interface ExportPayload {
    */
   honorarios_contratos: HonorariosContratoRow[];
   honorarios_parcelas: HonorariosParcelaRow[];
+  /** Módulo opcional; o coletor atual inclui vazio se não instalado. Payloads antigos podem não conter a seção. */
+  cadencias_inscricoes?: { id: string; cadence_id: string; lead_id: string; status: string; motivo_parada: string | null; rastreio_consentido: boolean; consentimento_em: string | null; emails_enviados: number; aberturas: number; created_at: string; concluida_em: string | null; parada_em: string | null }[];
+  cadencias_eventos?: { id: string; enrollment_id: string; tipo: string; created_at: string }[];
   lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
+  /** Opcionais: payload gerado antes da 9095 não os tem. */
+  mcp_pedidos_de_acesso?: AcessoMcpRow[];
+  mcp_acessos?: AcessoMcpRow[];
   appointments: AppointmentRow[];
+  /**
+   * A inscrição do titular na lista de espera (módulo opcional). Ausente quando
+   * vazia — a cópia de quem nunca pediu encaixe não ganha uma chave a mais —,
+   * e nunca ausente de propósito: quem tem inscrição precisa receber a linha
+   * cujo `observacoes` a anonimização apaga.
+   */
+  calendar_waitlist?: WaitlistRow[];
   sales: SaleRow[];
   proposals: ProposalRow[];
   tasks: TaskRow[];
@@ -1137,7 +1225,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("contacts")
       .select(
-        "id, name, display_name, address_book_name, email, phone_number, wa_lid, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
+        "id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, phone_number, wa_lid, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
       )
       .eq("organization_id", organizationId)
       .eq("id", contactId)
@@ -1192,6 +1280,13 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         name: data.name ?? null,
         display_name: data.display_name ?? null,
         address_book_name: data.address_book_name ?? null,
+        zip_code: data.zip_code ?? null,
+        street: data.street ?? null,
+        number: data.number ?? null,
+        complement: data.complement ?? null,
+        district: data.district ?? null,
+        city: data.city ?? null,
+        state: data.state ?? null,
         email: data.email ?? null,
         phone_number: data.phone_number ?? null,
         cpf_present: Boolean(data.cpf_encrypted),
@@ -1211,6 +1306,35 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       };
     }
   }
+
+  // (9043) Os telefones extras da ficha, com o `lid` de cada número. Vêm ANTES da
+  // busca de mensagens de grupo, que casa pelo número e pelo `lid` de cada um. A
+  // consulta filtra organização e ficha: o cliente é o administrador (sem RLS).
+  let telefonesExtras: ContactPhoneSnapshot[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("contact_phones")
+      .select("phone_number, tipo, whatsapp, rotulo, origem, wa_lid, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: true });
+    if (error) {
+      logger.warn("[lgpd-export-worker] contact phones load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    }
+    telefonesExtras = (data ?? []).map((t) => ({
+      phone_number: t.phone_number,
+      tipo: t.tipo,
+      whatsapp: t.whatsapp,
+      rotulo: t.rotulo ?? null,
+      origem: t.origem,
+      wa_lid: t.wa_lid ?? null,
+      created_at: t.created_at,
+    }));
+  }
+  if (contact && telefonesExtras.length > 0) contact.additional_phones = telefonesExtras;
 
   // No `consents` table in current schema; legal basis is in contacts.consent JSONB.
   const consents: ConsentRow[] = [];
@@ -1476,6 +1600,35 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // ADR-0002/D8: ausência do módulo é vazia; qualquer outra falha é explícita.
+  let cadenciasInstaladas = false;
+  let cadencias_inscricoes: NonNullable<ExportPayload["cadencias_inscricoes"]> = [];
+  let cadencias_eventos: NonNullable<ExportPayload["cadencias_eventos"]> = [];
+  if (contactId) {
+    // O registro, não o cache de schema do PostgREST, diz se o módulo existe.
+    // Suspenso também exporta: privacidade nunca depende do recurso ligado.
+    const { data: moduloCadencias, error: erroModulo } = await admin.from("modulos_instalados").select("modulo").eq("modulo", "cadencias").maybeSingle();
+    if (erroModulo) throw new Error("cadencias_export_module_read_failed");
+    if (moduloCadencias) {
+      cadenciasInstaladas = true;
+      const { data: inscricoesCadencia, error: erroCadencias } = await admin.from("email_cadence_enrollments")
+        .select("id, cadence_id, lead_id, status, motivo_parada, rastreio_consentido, consentimento_em, emails_enviados, aberturas, created_at, concluida_em, parada_em")
+        .eq("organization_id", organizationId).eq("contact_id", contactId).order("created_at", { ascending: false }).limit(500);
+      if (erroCadencias) throw new Error("cadencias_export_load_failed");
+      if (inscricoesCadencia) {
+        conferirTeto("cadencias_inscricoes", inscricoesCadencia, 500);
+        cadencias_inscricoes = inscricoesCadencia;
+        const ids = inscricoesCadencia.map((i) => i.id);
+        if (ids.length > 0) {
+          const { data: eventos, error: erroEventos } = await admin.from("email_cadence_events").select("id, enrollment_id, tipo, created_at")
+            .eq("organization_id", organizationId).in("enrollment_id", ids).order("created_at", { ascending: false }).limit(500);
+          if (erroEventos) throw new Error("cadencias_events_export_load_failed");
+          if (eventos) { conferirTeto("cadencias_eventos", eventos, 500); cadencias_eventos = eventos; }
+        }
+      }
+    }
+  }
+
   // Orders (contact_id when available, otherwise external_customer_id).
   let orders: OrderRow[] = [];
   {
@@ -1554,6 +1707,51 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Acessos a servidores MCP externos (OAuth por contato, 9095). A anonimização
+  // APAGA os pedidos e revoga as credenciais: o que se apaga a pedido dele é o
+  // que se entrega a pedido dele. Só metadado — nenhuma coluna cifrada.
+  let mcpPedidos: AcessoMcpRow[] = [];
+  let mcpAcessos: AcessoMcpRow[] = [];
+  if (contactId) {
+    const pedidos = await admin
+      .from("mcp_oauth_pedidos")
+      .select("servidor_id, escopos, created_at, expira_em, usado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (pedidos.error) {
+      logger.warn("[lgpd-export-worker] mcp_oauth_pedidos load failed", { request_id: requestId, error: pedidos.error.message });
+    } else if (pedidos.data) {
+      conferirTeto("mcp_pedidos_de_acesso", pedidos.data, 500);
+      mcpPedidos = (pedidos.data as Array<Record<string, unknown>>).map((l) => ({
+        servidor_id: String(l.servidor_id),
+        escopos: (l.escopos as string[]) ?? [],
+        criado_em: (l.created_at as string) ?? null,
+        expira_em: (l.expira_em as string) ?? null,
+        usado_em: (l.usado_em as string) ?? null,
+      }));
+    }
+    const acessos = await admin
+      .from("contato_mcp_credenciais")
+      .select("servidor_id, escopos, criado_em, ultimo_uso_em, revogado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .limit(500);
+    if (acessos.error) {
+      logger.warn("[lgpd-export-worker] contato_mcp_credenciais load failed", { request_id: requestId, error: acessos.error.message });
+    } else if (acessos.data) {
+      conferirTeto("mcp_acessos", acessos.data, 500);
+      mcpAcessos = (acessos.data as Array<Record<string, unknown>>).map((l) => ({
+        servidor_id: String(l.servidor_id),
+        escopos: (l.escopos as string[]) ?? [],
+        criado_em: (l.criado_em as string) ?? null,
+        ultimo_uso_em: (l.ultimo_uso_em as string) ?? null,
+        revogado_em: (l.revogado_em as string) ?? null,
+      }));
+    }
+  }
+
   // Agenda — contact_id direto em calendar_appointments.
   //
   // ⚠️ ESTA METADE FALTAVA, e a outra tinha gate. A migration 0184 declarou esta
@@ -1581,6 +1779,31 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("appointments", data, 500);
       appointments = data;
+    }
+  }
+
+  // Lista de espera — módulo opcional (ADR-0002 D8). Onde ele não foi instalado a
+  // tabela não existe (42P01/PGRST205) e o bloco sai vazio. Qualquer outro erro
+  // lança: o worker tenta de novo, e o titular nunca recebe como completo um
+  // arquivo sem a inscrição cujo texto a anonimização apaga.
+  let calendar_waitlist: WaitlistRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("calendar_waitlist")
+      .select(
+        "id, event_type_id, status, urgencia, janelas, antecedencia_minima_horas, valido_ate, consentimento_em, consentimento_origem, oferta_appointment_id, oferta_expira_em, ofertada_em, observacoes, created_by_kind, created_at, updated_at",
+      )
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      if (error.code !== "42P01" && error.code !== "PGRST205") {
+        throw new Error(`calendar_waitlist_load_failed: ${error.message}`);
+      }
+    } else if (data) {
+      conferirTeto("calendar_waitlist", data, 500);
+      calendar_waitlist = data;
     }
   }
 
@@ -1818,10 +2041,22 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // Duas consultas (telefone, lid) em vez de um `or` sobre caminho JSON: cada
   // uma é um filtro simples, e a união por id desfaz a mensagem que casa as duas.
   const porId = new Map<string, MessageRow>();
-  const telefones = contact?.phone_number ? phoneLookupVariants(contact.phone_number) : [];
+  // (9043) O principal E os extras, cada um com as variantes do nono dígito; e o
+  // `lid` do principal junto com o de cada extra. Sem extra, é a busca de antes.
+  const telefones = [
+    ...new Set([
+      ...(contact?.phone_number ? phoneLookupVariants(contact.phone_number) : []),
+      ...telefonesExtras.flatMap((t) => phoneLookupVariants(t.phone_number)),
+    ]),
+  ];
+  const lids = [
+    ...new Set(
+      [contactLid, ...telefonesExtras.map((t) => t.wa_lid)].filter((l): l is string => Boolean(l)),
+    ),
+  ];
   const buscas = [
     telefones.length > 0 ? { campo: "metadata->group_sender->>phone", valores: telefones } : null,
-    contactLid ? { campo: "metadata->group_sender->>lid", valores: [contactLid] } : null,
+    lids.length > 0 ? { campo: "metadata->group_sender->>lid", valores: lids } : null,
   ];
   for (const busca of buscas) {
     if (!busca) continue;
@@ -2395,10 +2630,16 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     lead_field_proposals,
     honorarios_contratos,
     honorarios_parcelas,
+    // O módulo ausente não altera o contrato do arquivo legado. Instalado
+    // (inclusive suspenso), entrega suas seções, mesmo sem linhas do titular.
+    ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
     orders,
     activities,
     checkpoints,
+    mcp_pedidos_de_acesso: mcpPedidos,
+    mcp_acessos: mcpAcessos,
     appointments,
+    ...(calendar_waitlist.length > 0 ? { calendar_waitlist } : {}),
     sales,
     proposals,
     tasks,
@@ -2595,6 +2836,8 @@ function emptyPayload(
     orders: [],
     activities: [],
     checkpoints: [],
+    mcp_pedidos_de_acesso: [],
+    mcp_acessos: [],
     appointments: [],
     sales: [],
     proposals: [],

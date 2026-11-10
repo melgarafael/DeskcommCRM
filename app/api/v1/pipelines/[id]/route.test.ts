@@ -174,6 +174,29 @@ describe("PATCH /api/v1/pipelines/[id]", () => {
     expect((await PATCH(reqPatch({}), ctx())).status).toBe(422);
   });
 
+  /**
+   * OS ATALHOS DO CARD NÃO ENTRAM POR AQUI (issue #3487) — e a recusa é 422.
+   *
+   * A porta de escrita do `settings` do funil é UMA (`updatePipelineConfig`,
+   * validada por `pipelineConfigPatchSchema`, que recusa `javascript:`). Esta
+   * rota é `.strict()` e não conhece a chave: um cliente que tente gravar o
+   * atalho por aqui recebe 422 e **nenhuma escrita** — o que fecha a segunda
+   * porta em vez de abrir uma paralela, que é como dois caminhos divergem.
+   */
+  it("tentar gravar `atalhos` por esta rota → 422 e nenhuma escrita", async () => {
+    authOk();
+    const db = makeDb({ pipelines: doisFunis() });
+    const { PATCH } = await import("./route");
+    const res = await PATCH(
+      reqPatch({
+        atalhos: [{ rotulo: "Armadilha", icone: "link", url: "javascript:alert(1)" }],
+      }),
+      ctx(),
+    );
+    expect(res.status).toBe(422);
+    expect(db.escritas).toEqual([]);
+  });
+
   it("emite audit pipeline.updated", async () => {
     authOk();
     makeDb({ pipelines: doisFunis() });

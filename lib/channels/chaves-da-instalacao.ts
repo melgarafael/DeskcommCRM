@@ -18,7 +18,8 @@ export interface ChaveDeCanal {
   readonly chave: string;
   readonly rotulo: string;
   readonly explicacao: string;
-  readonly comoTrocar: string;
+  /** Presente = só se troca no arquivo de instalação (`diagnostico`). Ausente = a tela edita. */
+  readonly comoTrocar?: string;
 }
 
 /**
@@ -44,5 +45,14 @@ export const CHAVES_DE_CANAL_DA_INSTALACAO: readonly ChaveDeCanal[] = [
       "Garante que as mensagens que chegam vieram mesmo do WhatsApp, e não de um impostor.",
     comoTrocar:
       "Mesma situação da senha de acesso: o programa do WhatsApp guarda a outra metade. Os dois trocam juntos, no arquivo de instalação.",
+  },
+  {
+    // Editável pela tela: quem lê é `chaveDaInstalacao()` (lib/channels/zernio/
+    // credentials.ts), pelo resolvedor, a cada chamada — não há par em outro
+    // contêiner. Vazia, a conexão por um clique some da tela de Conexões.
+    chave: "ZERNIO_PLATFORM_API_KEY",
+    rotulo: "Chave da conta da instalação no provedor parceiro",
+    explicacao:
+      "Com ela, cada empresa conecta o número oficial do WhatsApp com um clique, sem ter conta no provedor. Os números ficam na conta da instalação e entram na fatura dela.",
   },
 ] as const;

@@ -139,6 +139,10 @@ vi.mock("@/lib/agent-engine/edge/llm/providers", () => ({
     anthropic: factoryMock,
     google: factoryMock,
   }),
+  // A escada lê estes dois para o degrau OpenRouter (#3382); o mock tem de
+  // exportá-los, senão o import do worker morre antes de qualquer caso.
+  OPENROUTER_ENDPOINT: "https://openrouter.ai/api/v1",
+  cabecalhosDeAtribuicaoOpenRouter: () => undefined,
 }));
 
 // Num roteador `visaoEmVigor` consultaria o catálogo no banco; aqui a pergunta

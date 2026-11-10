@@ -32,6 +32,9 @@ vi.mock('@/lib/agent-engine/agent/agent-config', async (importOriginal) => ({
   ...await importOriginal<Record<string, unknown>>(),
   loadPublishedAgentConfigById: mocks.byId, loadPublishedAgentConfig: mocks.bySession,
   loadConversationAgentConfig: mocks.conversationAgent,
+  // #3722: a escolha do agente do número passa por aqui; o dublê deriva do
+  // `bySession` acima, sem público.
+  escolherAgenteDoNumero: async (...a: unknown[]) => ({ config: await (mocks.bySession as (...x: unknown[]) => unknown)(...a), motivo: 'primeiro_da_fila' }),
 }));
 vi.mock('@/lib/agent-engine/agent/reply-drafts', () => ({ generateReplyDraft: mocks.draft }));
 vi.mock('@/lib/atendimento/fronteira-server', () => ({

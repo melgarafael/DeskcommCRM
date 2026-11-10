@@ -6,6 +6,7 @@ import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 
@@ -184,6 +185,11 @@ async function confirmar({
     return redirectTo(viaTokenHash ? "/login?error=link_invalido" : "/login?error=template_padrao");
   }
 
+  // Entrar de novo é o jeito que a pessoa tem de "atualizar" o que vê. O cache
+  // curto de autorização só é derrubado por quem escreve PELO APP; vínculo
+  // gravado por fora (seed, worker, SQL) esperaria o TTL. Um MISS por login.
+  invalidarUsuario(usuario.id);
+
   if (sessaoPreservada) {
     // O link falhou — isso continua sendo fato e continua auditado. O que muda
     // é o desfecho: seguimos com a sessão que já existia, e o `formato` mais o
@@ -274,7 +280,12 @@ async function confirmar({
   if (modo === "com_aprovacao") return redirectTo("/get-started");
 
   try {
-    await ensureTenantForUser(usuario);
+    // O idioma e o fuso de quem se cadastrou já vêm no `user_metadata` (gravados
+    // pelo `signUp`); o `Accept-Language` deste clique é a pista de reserva para
+    // contas criadas antes de o cadastro guardá-los.
+    await ensureTenantForUser(usuario, {
+      pistas: { acceptLanguage: request.headers.get("accept-language") },
+    });
   } catch (e) {
     await audit({
       action: "auth.signup_provision_failed",

@@ -163,6 +163,8 @@ describe("o negócio reaberto que conserva o motivo antigo (#917)", () => {
         const b: Record<string, unknown> = {};
         b.select = () => b;
         b.eq = () => b;
+        b.order = () => b;
+        b.limit = () => b;
         b.maybeSingle = async () => ({ data: { name: "Avaliação" }, error: null });
         b.update = () => {
           escritas.push(`update ${tabela}`);

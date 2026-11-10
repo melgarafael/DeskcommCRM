@@ -59,6 +59,8 @@ export interface LoadedRouter {
   minConfidence: number;
   contextMessageCount?: number;
   fallbackAgentId: string | null;
+  /** Regras administrativas por remetente; validadas antes de escolher o agente. */
+  senderRoutes?: unknown;
   members: RouterMember[];
 }
 
@@ -139,6 +141,7 @@ export async function loadActiveRouter(
     minConfidence,
     contextMessageCount,
     fallbackAgentId: router.fallback_agent_id,
+    senderRoutes: (router.config ?? {}).sender_routes,
     members: memberRows.map((m) => ({
       agentId: m.agent_id,
       intentName: m.intent_name,

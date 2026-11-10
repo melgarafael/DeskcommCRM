@@ -17,9 +17,18 @@ import type { MidiaDeTemplate } from "@/lib/templates/midias";
 export function useUploadTemplateMedia() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { templateId: string; file: File }): Promise<MidiaDeTemplate[]> => {
+    mutationFn: async (args: {
+      templateId: string;
+      file: File;
+      midiasEsperadas?: readonly MidiaDeTemplate[];
+      substituirAudio?: string;
+    }): Promise<MidiaDeTemplate[]> => {
       const form = new FormData();
       form.append("file", args.file, args.file.name);
+      if (args.midiasEsperadas !== undefined) {
+        form.append("midias_esperadas", JSON.stringify(args.midiasEsperadas));
+      }
+      if (args.substituirAudio !== undefined) form.append("substituir_audio", args.substituirAudio);
       const res = await fetch(`/api/v1/message-templates/${args.templateId}/midias`, {
         method: "POST",
         body: form,

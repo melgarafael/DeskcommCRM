@@ -30,7 +30,14 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.role }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn() } }));
-vi.mock("@/lib/channels/graph-parceiro/credentials", () => ({ canalGraphParceiroLigado: h.ligado }));
+vi.mock("@/lib/channels/graph-parceiro/credentials", () => ({
+  canalGraphParceiroLigado: h.ligado,
+  // O binding do parceiro importa estas duas desde a #3635 (o cliente Graph
+  // virou compartilhado). O caminho deste teste passa pelo adapter dublado, então
+  // elas só precisam EXISTIR — mas `vi.mock` reprova import nomeado ausente.
+  resolveGraphPartnerCreds: async () => null,
+  graphPartnerGraphBase: () => "https://graph.facebook.com/v22.0",
+}));
 vi.mock("@/lib/channels/graph-parceiro/session", () => ({ findGraphPartnerSession: h.find }));
 vi.mock("@/lib/channels", async (original) => ({
   ...(await original<typeof Canais>()),

@@ -8,6 +8,8 @@
  * Never log secrets, raw tokens, message bodies, CPF, or phone numbers.
  */
 
+import { registrarRequestIdLogado } from "@/lib/log/request-id-logado";
+
 export type LogContext = Record<string, unknown>;
 
 function fmt(level: string, msg: string, ctx?: LogContext): string {
@@ -21,14 +23,17 @@ function fmt(level: string, msg: string, ctx?: LogContext): string {
 
 export const logger = {
   info(msg: string, ctx?: LogContext): void {
+    registrarRequestIdLogado(ctx);
     // eslint-disable-next-line no-console
     console.log(fmt("info", msg, ctx));
   },
   warn(msg: string, ctx?: LogContext): void {
+    registrarRequestIdLogado(ctx);
     // eslint-disable-next-line no-console
     console.warn(fmt("warn", msg, ctx));
   },
   error(msg: string, ctx?: LogContext): void {
+    registrarRequestIdLogado(ctx);
     // eslint-disable-next-line no-console
     console.error(fmt("error", msg, ctx));
   },

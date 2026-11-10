@@ -25,6 +25,8 @@ export interface AgentVersionRow {
   handoff_tool_enabled: boolean;
   /** Passagem por ASSUNTO JURÍDICO ligada nesta versão (#2156). Padrão: `true`. */
   handoff_legal_enabled: boolean;
+  /** O agente vê as fotos que o cliente envia (9108). Ligado por padrão. */
+  image_vision_enabled: boolean;
   proposal_ai_draft_enabled: boolean;
   cases_enabled: boolean;
   operator_enabled: boolean;
@@ -32,15 +34,20 @@ export interface AgentVersionRow {
   operator_tool_ids: string[];
   pipeline_ids: string[];
   knowledge_source_ids: string[];
+  /** Skills que esta versão usa (9107). `null` = todas; `[]` = nenhuma. */
+  skill_names: string[] | null;
   split_messages: boolean;
   split_max_chars: number;
   inbound_debounce_ms: number | null;
+  reply_min_interval_ms: number | null;
   followup: {
     enabled: boolean;
     flow_pointer_ids: string[];
     callback_enabled?: boolean;
     send_window?: { start: string; end: string; weekdays: number[] } | null;
   };
+  voz_enabled: boolean;
+  voz_quando: "nunca" | "espelhar" | "sempre";
   status: "draft" | "published" | "superseded" | "archived";
   published_at: string | null;
   superseded_at: string | null;

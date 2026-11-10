@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 
 import { MetaDoMesPanel, type MetaDaEmpresa } from "@/app/app/metrics/_components/MetaDoMesPanel";
+import type { ValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
 
 afterEach(cleanup);
 
@@ -38,6 +39,34 @@ const EMPRESA: MetaDaEmpresa = {
 
 function comIdioma(no: ReactNode, locale: "pt-BR" | "es" = "pt-BR") {
   return render(createElement(IdiomaProvider, { locale, children: no }));
+}
+
+/**
+ * As duas parcelas como a rota as devolve (fatia 2, item 1, da #3602).
+ * `negocios_com_recorrencia: 0` é o caso da maioria das organizações — e é o
+ * que NÃO pode mudar o painel.
+ */
+function valores(parcial: Partial<ValoresDoPeriodo> = {}): ValoresDoPeriodo {
+  return {
+    base: "Negócios GANHOS com `closed_at` dentro da janela.",
+    moeda: "BRL",
+    moeda_mista: false,
+    unico: { centavos: 300_000, negocios: 2 },
+    recorrente_mensal: { centavos: 50_000, negocios: 1 },
+    negocios_com_recorrencia: 1,
+    por_moeda: [
+      {
+        moeda: "BRL",
+        unico_centavos: 300_000,
+        recorrente_mensal_centavos: 50_000,
+        negocios: 2,
+        negocios_com_recorrencia: 1,
+      },
+    ],
+    truncado: false,
+    nota: null,
+    ...parcial,
+  };
 }
 
 function renderizar(props: Partial<Parameters<typeof MetaDoMesPanel>[0]> = {}) {
@@ -119,6 +148,91 @@ describe("MetaDoMesPanel", () => {
       metas: [{ ...EMPRESA, escopo: "funil", pipeline_id: "f1", pipeline_nome: "Comercial" }],
     });
     expect(container.textContent).toContain("Comercial");
+  });
+
+  // ─── As duas parcelas do período (fatia 2, item 1, da #3602) ──────────────
+
+  it("com recorrência: mostra vendido único e recorrência nova lado a lado, nunca somados", () => {
+    const { container } = renderizar({ valores: valores() });
+    expect(container.querySelector('[data-valores="periodo"]')).not.toBeNull();
+    expect(container.querySelector('[data-valores="unico"]')?.textContent).toContain("3.000,00");
+    expect(
+      container.querySelector('[data-valores="recorrente-mensal"]')?.textContent,
+    ).toContain("500,00");
+    expect(container.textContent).toContain("Vendido único");
+    expect(container.textContent).toContain("Recorrência nova (mensal)");
+    expect(container.textContent).toContain("1 negócio com recorrência");
+    // A fronteira: 3.500 não existe em lugar nenhum do painel.
+    expect(container.textContent).not.toContain("3.500");
+    expect(container.textContent).not.toContain("NaN");
+  });
+
+  it("organização sem recorrência: nada muda — o bloco das parcelas nem aparece", () => {
+    const { container } = renderizar({
+      valores: valores({
+        unico: { centavos: 300_000, negocios: 1 },
+        recorrente_mensal: { centavos: 0, negocios: 0 },
+        negocios_com_recorrencia: 0,
+        por_moeda: [
+          {
+            moeda: "BRL",
+            unico_centavos: 300_000,
+            recorrente_mensal_centavos: 0,
+            negocios: 1,
+            negocios_com_recorrencia: 0,
+          },
+        ],
+      }),
+    });
+    expect(container.querySelector('[data-valores="periodo"]')).toBeNull();
+    expect(container.textContent).not.toContain("Recorrência nova");
+  });
+
+  it("sem o bloco na resposta (org antiga): o painel é exatamente o de antes", () => {
+    const { container } = renderizar({ valores: null });
+    expect(container.querySelector('[data-valores="periodo"]')).toBeNull();
+    expect(container.querySelector('[data-meta="percentual"]')?.textContent).toBe("30%");
+  });
+
+  it("leitura parcial: declara que as parcelas são um piso", () => {
+    const { container } = renderizar({ valores: valores({ truncado: true }) });
+    expect(container.querySelector('[data-valores="piso"]')?.textContent).toContain(
+      "Leitura parcial",
+    );
+  });
+
+  it("moeda diferente: uma linha por moeda, porque moeda não soma", () => {
+    const { container } = renderizar({
+      valores: valores({
+        moeda: null,
+        moeda_mista: true,
+        unico: { centavos: null, negocios: 2 },
+        recorrente_mensal: { centavos: null, negocios: 2 },
+        negocios_com_recorrencia: 2,
+        por_moeda: [
+          {
+            moeda: "BRL",
+            unico_centavos: 300_000,
+            recorrente_mensal_centavos: 50_000,
+            negocios: 1,
+            negocios_com_recorrencia: 1,
+          },
+          {
+            moeda: "USD",
+            unico_centavos: 100_000,
+            recorrente_mensal_centavos: 20_000,
+            negocios: 1,
+            negocios_com_recorrencia: 1,
+          },
+        ],
+      }),
+    });
+    const linhas = container.querySelectorAll('[data-valores="moeda"]');
+    expect(linhas).toHaveLength(2);
+    expect(linhas[0]?.textContent).toContain("3.000,00");
+    // Cada moeda no SEU formato: dólar sai `$1,000.00`, não `1.000,00`.
+    expect(linhas[1]?.textContent).toContain("$1,000.00");
+    expect(container.textContent).not.toContain("NaN");
   });
 
   it("fala espanhol", () => {

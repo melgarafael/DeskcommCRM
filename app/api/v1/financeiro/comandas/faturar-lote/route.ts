@@ -27,6 +27,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import { percentualDoItem } from "@/lib/financeiro/comissao-do-item";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: agendamentos, error } = await supabase
     .from("calendar_appointments")
     .select(
-      "id, title, contact_id, event_type_id, status, calendar_event_types(name, default_price_cents)",
+      "id, title, contact_id, event_type_id, owner_user_id, status, calendar_event_types(name, default_price_cents)",
     )
     .in("id", lido.data.appointment_ids)
     .in("status", ["confirmed", "completed"]);
@@ -133,7 +134,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    // 2. o item, com o preço do catálogo e a descrição congelada.
+    // 2. o item, com o preço do catálogo e a descrição congelada. Atendente e
+    // percentual entram aqui: sem eles `fn_finalizar_comanda` não gera comissão.
+    // O atendente é o DONO do agendamento, nunca quem roda o lote (a recepção
+    // levaria a comissão do serviço que outro prestou). Sem dono, sem comissão.
     const { error: erroItem } = await supabase.from("sale_items").insert({
       organization_id: org,
       sale_id: comanda.id,
@@ -142,6 +146,11 @@ export async function POST(req: NextRequest): Promise<Response> {
       quantity: 1,
       unit_price_cents: preco,
       total_cents: preco,
+      attendant_user_id: ag.owner_user_id,
+      commission_percent: await percentualDoItem(supabase, org, {
+        attendantUserId: ag.owner_user_id,
+        eventTypeId: ag.event_type_id,
+      }),
     });
 
     if (erroItem) {

@@ -7,7 +7,7 @@
  * conversa mostrava o negócio ("Funil · Etapa") e não deixava mudá-lo.
  *
  * Esta spec dirige a TELA: abre a conversa, usa o seletor "Etapa do funil" do
- * bloco "Leads recentes" e prova no banco que o negócio mudou de etapa pelo MESMO
+ * bloco "Negócios recentes" e prova no banco que o negócio mudou de etapa pelo MESMO
  * caminho do quadro (atividade `stage_changed` gravada). A etapa de perda é
  * oferecida, mas não move direto: ela abre a janela de motivo (issue #2871).
  */

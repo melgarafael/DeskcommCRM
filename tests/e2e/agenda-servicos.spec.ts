@@ -121,7 +121,9 @@ test("painel configura, bloqueia e reserva três pessoas pela conversa; publica�
   await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: info.outputPath("programacao-mobile.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2)).toBe(true);
   await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(`/app/inbox?id=${f.conversation}`);
-  await page.getByRole("button", { name: "Reservar serviço", exact: true }).click();
+  // #3003: "Reservar serviço" saiu da barra e virou item do menu ⋯.
+  await page.getByTestId("menu-de-acoes").click();
+  await page.getByRole("menuitem", { name: "Reservar serviço", exact: true }).click();
   const sheet = page.getByRole("dialog"); await sheet.getByLabel("Data", { exact: true }).fill(day);
   await sheet.getByRole("button", { name: "Consultar horários", exact: true }).click();
   await sheet.getByRole("button", { name: /14:00.*Sem limite automático/ }).click();

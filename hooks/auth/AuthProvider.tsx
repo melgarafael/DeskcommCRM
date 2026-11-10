@@ -122,6 +122,15 @@ export function useActiveOrg(): ActiveOrg | null {
 }
 
 /**
+ * Os módulos opcionais ligados, para a tela decidir o que OFERECER. Não lança
+ * fora do provider: devolve vazio, e o que depende de módulo fica escondido —
+ * oferecer a menos é o lado seguro (#3881).
+ */
+export function useModulosLigados(): readonly string[] {
+  return useContext(Ctx)?.activeOrg?.modulos_ligados ?? [];
+}
+
+/**
  * Permission gate based on role rank. Action mapping is intentionally
  * minimal here — feature-specific gates can extend with custom logic.
  */
@@ -203,6 +212,17 @@ export function usePermission(action: string): boolean {
  */
 export function usePaisDaOrgAtiva(): string | null {
   return useContext(Ctx)?.activeOrg?.country ?? null;
+}
+
+/**
+ * O idioma padrão da organização ativa (`organizations.locale`, o que o
+ * instalador grava), tolerante como o leitor de país: fora do provider, `null`.
+ * NÃO é o idioma da interface (`useIdioma`), que segue a preferência de quem opera.
+ */
+export function useLocaleDaOrgAtiva(): string | null {
+  const ctx = useContext(Ctx);
+  const orgId = ctx?.activeOrg?.orgId;
+  return ctx?.user.organizations?.find((m) => m.organization_id === orgId)?.locale ?? null;
 }
 
 /**

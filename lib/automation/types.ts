@@ -32,6 +32,14 @@ export interface ActionCtx {
    * id. Opcional pelo mesmo motivo de `actionIndex`.
    */
   ruleActions?: ReadonlyArray<{ type: string; config?: Record<string, unknown> }>;
+  /**
+   * Na pré-checagem: o envio avisa que a agenda o faria PULAR (`nao_enviar`
+   * com compromisso). O motor congela essa decisão se outra regra adiar o
+   * evento — ver `registrarAdiamento` em engine.ts.
+   */
+  anotarPuloPelaAgenda?: (appointmentId: string | null) => void;
+  /** Na execução: a decisão de pular congelada na primeira avaliação do evento. */
+  puloCongeladoPelaAgenda?: { appointment_id: string | null };
 }
 
 export interface ActionExecutor {

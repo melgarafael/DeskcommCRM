@@ -3,6 +3,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { lerIntencaoDoCadastro } from "@/lib/cobranca/contratacao";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
+import {
+  CHAVE_FUSO_DO_CADASTRO,
+  CHAVE_IDIOMA_DO_CADASTRO,
+  perfilDaEmpresaNova,
+  type PistasDoCadastro,
+} from "@/lib/auth/perfil-da-empresa-nova";
 
 /** Normaliza o nome da empresa para um slug candidato (citext unique no DB). */
 export function slugify(name: string): string {
@@ -30,6 +37,14 @@ type ProvisionUser = {
  */
 type ProvisionOptions = {
   source?: "signup" | "recovery";
+  /**
+   * De onde a pessoa está chegando — idioma da tela, fuso do navegador e o
+   * `Accept-Language`. O cadastro por e-mail as guarda no `user_metadata`
+   * (`signUp`); a entrada com Google as traz na URL de volta. As do metadado
+   * vencem as daqui, porque foram gravadas no momento em que a pessoa leu a tela.
+   * Ver `lib/auth/perfil-da-empresa-nova.ts`.
+   */
+  pistas?: PistasDoCadastro;
 };
 
 /**
@@ -105,6 +120,22 @@ export async function ensureTenantForUser(
     ? await lerIntencaoDoCadastro(admin, user.id, planoDoCadastro)
     : null;
 
+  // Idioma, fuso e moeda de quem está chegando. Em `pt-BR` o perfil é só
+  // `{ locale: "pt-BR" }`, o mesmo valor do default da coluna: a empresa
+  // brasileira nasce exatamente como nascia.
+  const meta = user.user_metadata ?? {};
+  const perfil = perfilDaEmpresaNova({
+    idioma:
+      (typeof meta[CHAVE_IDIOMA_DO_CADASTRO] === "string" ? (meta[CHAVE_IDIOMA_DO_CADASTRO] as string) : null) ??
+      options.pistas?.idioma ??
+      null,
+    fuso:
+      (typeof meta[CHAVE_FUSO_DO_CADASTRO] === "string" ? (meta[CHAVE_FUSO_DO_CADASTRO] as string) : null) ??
+      options.pistas?.fuso ??
+      null,
+    acceptLanguage: options.pistas?.acceptLanguage ?? null,
+  });
+
   // ponytail: check-then-insert tem janela de corrida se o mesmo link for
   // confirmado 2x em paralelo (pior caso: org duplicada órfã). Advisory lock
   // por user_id se isso aparecer na prática.
@@ -120,6 +151,7 @@ export async function ensureTenantForUser(
         legal_name: orgName,
         status: "active",
         created_by: user.id,
+        ...perfil,
         ...(typeof user.user_metadata?.cobranca_plan_id === "string" ? { settings: { cobranca_signup_plan_id: user.user_metadata.cobranca_plan_id } } : {}),
       })
       .select("id, slug")
@@ -142,6 +174,10 @@ export async function ensureTenantForUser(
     throw new Error(`signup provisioning: membership insert failed: ${memberError.message}`);
   }
 
+  // #3696: vínculo novo não pode conviver com um snapshot em cache que diz
+  // "sem organização" (a tela de cadastro já chamou `loadAuthUser` antes).
+  invalidarUsuario(user.id);
+
   void audit({
     action:
       options.source === "recovery" ? "tenant.created_by_recovery" : "tenant.created_by_signup",
@@ -150,7 +186,7 @@ export async function ensureTenantForUser(
     resourceType: "organization",
     resourceId: org.id,
     bypassedRls: true,
-    metadata: { slug: org.slug },
+    metadata: { slug: org.slug, ...perfil },
   });
 
   return { provisioned: true, organizationId: org.id };
@@ -324,6 +360,10 @@ export async function provisionExternalTenant(
     throw new Error(`provisioning: membership insert failed: ${memberError.message}`);
   }
 
+  // #3696: idem — o dono pode ter sessão aberta enquanto o provisionamento de
+  // fora o vincula à empresa recém-criada.
+  invalidarUsuario(ownerId);
+
   // Ator NULO: quem criou foi um sistema de fora, com o segredo da instalação
   // (decisão do dono, doc 40, 19/09). O dono é dado da linha, não o autor da
   // ação — creditá-lo afirmaria que uma pessoa fez o que uma máquina fez.
@@ -423,6 +463,9 @@ async function garantirAdminDaOrganizacao(
   // Sobrou só `23505`: já havia linha (revogada, rebaixada, ou corrida com
   // outra chamada). Nada mudou — e o que não teve efeito não audita.
   if (error) return;
+
+  // #3696: o conserto do vínculo também é escrita de permissão.
+  invalidarUsuario(p.ownerId);
 
   // O conserto DEIXA RASTRO. Sem esta linha, a organização que nasceu de uma
   // tentativa partida não tem registro nenhum do que a completou: a

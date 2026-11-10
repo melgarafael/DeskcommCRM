@@ -134,12 +134,22 @@ function donoValido(owner: unknown): string | null {
  * idêntica ao peer vence, para dois cadastros duplicados não sortearem.
  */
 const CONTATO_DO_PEER = (org: string, peer: string, variantes: string) => `
+  coalesce(
   (select id from contacts
     where organization_id = ${org}
       and (phone_number = any(${variantes}::text[]) or wa_lid = ${peer})
       and is_merged_into is null
     order by (phone_number = '+' || ${peer}) desc
-    limit 1)`;
+    limit 1),
+  -- Sem principal com o número: a ficha que o tem como EXTRA (\`contact_phones\`).
+  -- As variantes servem de chave sem risco: extra é sempre na forma canônica
+  -- (CHECK da tabela), então a grafia sem o nono nunca casa extra nenhum.
+  (select cp.contact_id from contact_phones cp
+     join contacts c on c.id = cp.contact_id and c.organization_id = cp.organization_id
+    where cp.organization_id = ${org}
+      and cp.phone_number = any(${variantes}::text[])
+      and c.is_merged_into is null
+    limit 1))`;
 
 /** `5511999999999@s.whatsapp.net` → `5511999999999`. JID sem o domínio. */
 function peerToPhone(jid: string): string {
