@@ -101,6 +101,18 @@ describe("#3876 — o item do ⋯ só existe para quem a rota aceita", () => {
     expect(screen.getByTestId("acao-mover-para-fila").textContent).toContain("Mover para fila");
   });
 
+  it("o separador vem junto com o item — e some junto, sem dobrar o do menu", () => {
+    const visto = comMenu(<ItemMoverParaFila encerrada={false} onAbrir={vi.fn()} />);
+    expect(screen.getByTestId("separador-mover-para-fila")).toBeTruthy();
+    visto.unmount();
+
+    // Módulo desligado é o padrão: nem item, nem separador sobrando.
+    h.modulos = [];
+    comMenu(<ItemMoverParaFila encerrada={false} onAbrir={vi.fn()} />);
+    expect(screen.queryByTestId("acao-mover-para-fila")).toBeNull();
+    expect(screen.queryByTestId("separador-mover-para-fila")).toBeNull();
+  });
+
   it("viewer NÃO vê: a rota responderia 403", () => {
     h.papel = "viewer";
     comMenu(<ItemMoverParaFila encerrada={false} onAbrir={vi.fn()} />);

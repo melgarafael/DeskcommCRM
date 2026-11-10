@@ -676,8 +676,9 @@ export function ConversationHeader({
                 (viewer, módulo desligado, conversa encerrada).
                 O export em PDF (#1982) NÃO entra aqui: o PR #4207, aberto
                 antes, é quem entrega essa tela — duas entregas da mesma fatia
-                viram dois itens no menu. */}
-            <DropdownMenuSeparator />
+                viram dois itens no menu.
+                O separador de cima vem de dentro do item: solto aqui, ele
+                dobraria com o de baixo quando o item não aparece. */}
             <ItemMoverParaFila encerrada={encerrada} onAbrir={() => setFilaAberta(true)} />
             <DropdownMenuSeparator />
             {podePausar && (

@@ -38,7 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { useDefinirFilaDaConversa } from "@/hooks/inbox/useDefinirFilaDaConversa";
@@ -89,6 +89,10 @@ interface ItemProps {
 /**
  * O item do menu ⋯. Devolve `null` quando a rota recusaria — ver
  * `podeMoverParaFila`. Os hooks rodam ANTES do retorno, como manda a ordem.
+ *
+ * O separador de cima viaja COM o item: no menu do cabeçalho já existe um
+ * separador logo abaixo, e um segundo solto ficaria dobrado para todo mundo
+ * que não vê o item (módulo Setores desligado é o padrão).
  */
 export function ItemMoverParaFila({ onAbrir, encerrada }: ItemProps) {
   const t = useT();
@@ -105,13 +109,16 @@ export function ItemMoverParaFila({ onAbrir, encerrada }: ItemProps) {
   });
   if (!pode) return null;
   return (
-    <DropdownMenuItem
-      data-testid="acao-mover-para-fila"
-      title={t("Classifica esta conversa em outra fila de atendimento.")}
-      onSelect={() => onAbrir()}
-    >
-      <span className="inline-flex items-center gap-2">{t("Mover para fila")}</span>
-    </DropdownMenuItem>
+    <>
+      <DropdownMenuSeparator data-testid="separador-mover-para-fila" />
+      <DropdownMenuItem
+        data-testid="acao-mover-para-fila"
+        title={t("Classifica esta conversa em outra fila de atendimento.")}
+        onSelect={() => onAbrir()}
+      >
+        <span className="inline-flex items-center gap-2">{t("Mover para fila")}</span>
+      </DropdownMenuItem>
+    </>
   );
 }
 
