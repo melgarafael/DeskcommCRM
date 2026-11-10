@@ -15,12 +15,12 @@ describe("vocabulario das areas (modulo conectado, F1)", () => {
     }
   });
 
-  it("as permissoes de area sao exatamente o produto area x modo (18 no total)", () => {
+  it("as permissoes de area sao exatamente o produto area x modo (24 no total)", () => {
     const deArea = EXTENSION_PERMISSIONS.filter(ehPermissaoDeArea);
     const produto = EXTENSION_AREAS.flatMap((area) =>
       MODOS.map((modo) => permissaoDaArea(area, modo)),
     );
-    expect(deArea).toHaveLength(18);
+    expect(deArea).toHaveLength(24);
     expect([...deArea].sort()).toEqual([...produto].sort());
   });
 

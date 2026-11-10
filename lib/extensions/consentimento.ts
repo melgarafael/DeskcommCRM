@@ -16,7 +16,7 @@ import { ExtensionServiceError } from "./http";
  *
  * A organização diz quais das áreas que o pacote DECLAROU o módulo pode alcançar. Quem confere tudo
  * é `fn_extensions_set_consent` (ator administra a organização, instalação `connected` e ativada,
- * área declarada, `configuracao`/`agentes_ia` só por `admin`, revisão otimista). Esta camada só traduz
+ * área declarada, `configuracao`/`agentes_ia`/`financeiro` só por `admin`, revisão otimista). Esta camada só traduz
  * o erro do banco, audita e devolve o estado novo.
  *
  * Sem recibo e sem `Idempotency-Key`, de propósito: a função não tem livro de operações. O que protege

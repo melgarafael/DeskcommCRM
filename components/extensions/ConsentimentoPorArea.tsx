@@ -53,7 +53,7 @@ export function ConsentimentoPorArea({
 
   // Primeira vez (nada consentido ainda): a tela PROPÕE o que o pacote pede, menos as áreas sensíveis,
   // e o botão é "Consentir". Proposta é só a tela: nada é liberado até a pessoa clicar, e quem decide a
-  // cada chamada continua sendo o servidor. As sensíveis (configuração e agentes de IA) ficam
+  // cada chamada continua sendo o servidor. As sensíveis (configuração, agentes de IA e financeiro) ficam
   // desmarcadas: quem administra marca de propósito.
   const primeiraVez = gravadas.length === 0;
   const proposta = declaradas.filter((area) => !ehAreaSensivel(area));
@@ -129,7 +129,7 @@ export function ConsentimentoPorArea({
               data-testid={`extension-consent-sensitive-${extension.id}`}
             >
               {t(
-                "Configuração e agentes de IA são áreas sensíveis: mexem no funcionamento da organização e do atendimento. Libere só para um módulo em que você confia.",
+                "Configuração, agentes de IA e financeiro são áreas sensíveis: mexem no funcionamento da organização, no atendimento e no dinheiro. Libere só para um módulo em que você confia.",
               )}
             </p>
           ) : null}

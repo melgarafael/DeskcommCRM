@@ -23,6 +23,8 @@ const orgB = "c0ae0000-0000-4000-8000-0000000000b6";
 const SERVICO = "https://servico.consentimento.test";
 const CONFIG = { density: "comfortable", show_description: true };
 const DECLARADAS = ["area.contatos.leitura", "area.contatos.escrita", "area.configuracao.leitura", "area.agentes_ia.escrita"];
+// As três áreas da migration 9316 (tarefas, etiquetas, financeiro).
+const DECLARADAS_NOVAS = ["area.tarefas.escrita", "area.etiquetas.leitura", "area.financeiro.leitura", "area.financeiro.escrita"];
 let seq = 0;
 const origem = () => `https://consentimento-${++seq}.invariant.test`;
 
@@ -366,6 +368,15 @@ describe("recusas", () => {
     expect((await vinculo(orgB, inst))?.consented_areas).toEqual([]);
   });
 
+  it("área fora do vocabulário (area.inexistente.leitura): PT409 extension_area_not_declared, nada é gravado", async () => {
+    const inst = await instalarEAtivar();
+
+    const e = await erroDe(consentir(dono, orgA, inst, ["area.inexistente.leitura"]));
+
+    expect(e).toMatchObject({ code: "PT409", message: "extension_area_not_declared" });
+    expect((await vinculo(orgA, inst))?.consented_areas).toEqual([]);
+  });
+
   it("consentir na A não muda a B", async () => {
     const inst = await instalarConectado();
     await ativar(orgA, inst);
@@ -399,6 +410,58 @@ describe("recusas", () => {
     const e = await erroDe(consentir(dono, orgA, randomUUID(), [], 0));
 
     expect(e.message).toBe("extension_installation_not_found");
+  });
+});
+
+describe("as áreas tarefas, etiquetas e financeiro (migration 9316)", () => {
+  it("o pacote pode declará-las, e um admin da organização consente tarefas.escrita, etiquetas e financeiro", async () => {
+    const inst = await instalarEAtivar(DECLARADAS_NOVAS);
+
+    await consentir(outroAdmin, orgA, inst, ["area.financeiro.leitura", "area.tarefas.escrita", "area.etiquetas.leitura"]);
+
+    expect((await vinculo(orgA, inst))?.consented_areas).toEqual([
+      "area.etiquetas.leitura",
+      "area.financeiro.leitura",
+      "area.tarefas.escrita",
+    ]);
+  });
+
+  it.each([
+    ["viewer", viewer],
+    ["agent", agente],
+    ["manager", gerente],
+  ])("%s não consente financeiro (quem não administra a organização é recusado na porta)", async (_papel, ator) => {
+    const inst = await instalarEAtivar(DECLARADAS_NOVAS);
+
+    for (const area of ["area.financeiro.leitura", "area.financeiro.escrita"]) {
+      const e = await erroDe(consentir(ator, orgA, inst, [area]));
+      expect(e.message).toBe("extension_forbidden");
+    }
+    expect((await vinculo(orgA, inst))?.consented_areas).toEqual([]);
+  });
+
+  it("financeiro não declarada pelo pacote: PT409 extension_area_not_declared, mesmo para admin", async () => {
+    const inst = await instalarEAtivar(); // DECLARADAS não tem financeiro
+
+    const e = await erroDe(consentir(dono, orgA, inst, ["area.financeiro.leitura"]));
+
+    expect(e).toMatchObject({ code: "PT409", message: "extension_area_not_declared" });
+  });
+
+  it("o CHECK aceita as seis permissões novas direto na tabela", async () => {
+    const inst = await instalarEAtivar();
+    const novas = [
+      "area.tarefas.leitura", "area.tarefas.escrita",
+      "area.etiquetas.leitura", "area.etiquetas.escrita",
+      "area.financeiro.leitura", "area.financeiro.escrita",
+    ];
+
+    await query(
+      "update public.organization_extensions set consented_areas = $3::text[] where organization_id = $1 and installation_id = $2",
+      [orgA, inst, novas],
+    );
+
+    expect((await vinculo(orgA, inst))?.consented_areas).toEqual(novas);
   });
 });
 
@@ -445,7 +508,7 @@ describe("o vocabulário do banco é o do TypeScript", () => {
     const inst = await instalarEAtivar();
 
     const e = await erroDe(
-      query("update public.organization_extensions set consented_areas = array['area.financeiro.escrita'] where organization_id = $1 and installation_id = $2", [
+      query("update public.organization_extensions set consented_areas = array['area.inexistente.escrita'] where organization_id = $1 and installation_id = $2", [
         orgA,
         inst,
       ]),

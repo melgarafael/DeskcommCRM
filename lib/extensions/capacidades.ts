@@ -36,7 +36,7 @@ export const EXTENSION_PERMISSIONS = [
   // um pacote de dados não pede porta de navegação, e dar-lhe uma que ele não usa só para caber na
   // validação seria mentir para quem lê a tela (ADR-0005, D4).
   "dados.proprios",
-  // As áreas do CRM que um módulo CONECTADO pode ler ou alterar (spec 33, F1). A lista de
+  // As áreas do CRM que um módulo CONECTADO pode ler ou alterar (spec 33, F1; tarefas, etiquetas e financeiro na migration 9316). A lista de
   // áreas e o significado de cada permissão moram em `areas.ts`; o SIGNIFICADO no host é da F3,
   // e nesta fatia nada consome estas permissões. Escritas em extenso porque `z.enum` precisa do
   // tipo literal. Mesma ordem em `experiments/extensoes/catalog/catalog.py` (PERMISSOES).
@@ -58,6 +58,12 @@ export const EXTENSION_PERMISSIONS = [
   "area.configuracao.escrita",
   "area.analise.leitura",
   "area.analise.escrita",
+  "area.tarefas.leitura",
+  "area.tarefas.escrita",
+  "area.etiquetas.leitura",
+  "area.etiquetas.escrita",
+  "area.financeiro.leitura",
+  "area.financeiro.escrita",
 ] as const;
 export type ExtensionPermission = (typeof EXTENSION_PERMISSIONS)[number];
 

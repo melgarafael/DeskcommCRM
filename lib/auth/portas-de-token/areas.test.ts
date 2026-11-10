@@ -7,8 +7,10 @@ import {
   PORTAS_SEM_AREA_NA_ESCRITA,
   PORTAS_SEM_AREA_POR_DESENHO,
   PREFIXOS_DO_MAPA,
+  PREFIXOS_DO_MAPA_DE_ESCRITA,
   areaDaPorta,
   estaSemAreaPorDesenho,
+  leituraExigeAreaContatos,
 } from "./areas";
 
 const B = "/api/v1/";
@@ -65,18 +67,83 @@ describe("areaDaPorta: casos concretos", () => {
     ["metrics/funil", "GET", "analise", "leitura"],
     ["reports/financeiro", "GET", "analise", "leitura"],
     ["financeiro/lancamentos", "GET", "analise", "leitura"],
-    ["financeiro/lancamentos", "POST", null, null],
-    ["financeiro/lancamentos/[id]", "DELETE", null, null],
+    ["financeiro/lancamentos", "POST", "financeiro", "escrita"],
+    ["financeiro/lancamentos/[id]", "PATCH", "financeiro", "escrita"],
+    ["financeiro/lancamentos/[id]", "DELETE", "financeiro", "escrita"],
     ["financeiro/catalogo/[tipo]", "GET", "catalogo", "leitura"],
-    ["financeiro/catalogo/[tipo]", "POST", null, null],
-    ["financeiro/comandas", "GET", null, null],
+    ["financeiro/catalogo/[tipo]", "POST", "financeiro", "escrita"],
+    ["financeiro/catalogo/[tipo]", "PATCH", "financeiro", "escrita"],
+    ["financeiro/catalogo/[tipo]", "DELETE", "financeiro", "escrita"],
     ["honorarios/contratos", "GET", "analise", "leitura"],
-    ["honorarios/contratos", "POST", null, null],
+    ["honorarios/contratos", "POST", "financeiro", "escrita"],
+    ["honorarios/contratos/[id]/parcelas", "GET", "analise", "leitura"],
+    ["honorarios/contratos/[id]/parcelas", "POST", "financeiro", "escrita"],
     ["automation-rules", "GET", "funis", "leitura"],
     ["automation-rules", "POST", null, null],
     ["modulos/[modulo]/[objeto]", "GET", null, null],
     ["campaigns/[id]/metrics", "GET", null, null],
     ["channel-sessions/[id]", "GET", null, null],
+
+    // --- areas novas (migration 9316): tarefas, etiquetas, financeiro e as rotas que estavam fora do mapa.
+    ["tasks", "GET", "tarefas", "leitura"],
+    ["tasks", "POST", "tarefas", "escrita"],
+    ["tasks/[id]", "PATCH", "tarefas", "escrita"],
+    ["tasks/[id]", "DELETE", "tarefas", "escrita"],
+    ["demandas/[id]", "PATCH", "tarefas", "escrita"],
+    ["contact-tags", "GET", "etiquetas", "leitura"],
+    ["conversation-tags", "GET", "etiquetas", "leitura"],
+    ["financeiro/comandas", "GET", "financeiro", "leitura"],
+    ["financeiro/comandas", "POST", "financeiro", "escrita"],
+    ["financeiro/comandas/pendentes", "GET", "financeiro", "leitura"],
+    ["financeiro/comandas/[id]", "GET", "financeiro", "leitura"],
+    ["financeiro/comandas/[id]", "PATCH", "financeiro", "escrita"],
+    ["financeiro/comandas/[id]/itens", "POST", "financeiro", "escrita"],
+    ["financeiro/comandas/[id]/itens/[itemId]", "DELETE", "financeiro", "escrita"],
+    ["financeiro/fidelidade", "GET", "financeiro", "leitura"],
+    ["financeiro/fidelidade", "POST", "financeiro", "escrita"],
+    // dinheiro que nao se desfaz e hoje nem aceita token: sem area em qualquer metodo
+    ["financeiro/comandas/[id]/finalizar", "POST", null, null],
+    ["financeiro/comandas/[id]/estornar", "POST", null, null],
+    ["financeiro/comandas/faturar-lote", "POST", null, null],
+    ["honorarios/parcelas/[id]/pagar", "POST", null, null],
+    ["people", "GET", "contatos", "leitura"],
+    ["people", "POST", "contatos", "escrita"],
+    ["people/[id]", "GET", "contatos", "leitura"],
+    ["people/[id]", "PATCH", "contatos", "escrita"],
+    ["company-people", "POST", "contatos", "escrita"],
+    ["company-people/[id]", "PATCH", "contatos", "escrita"],
+    ["campaign-templates", "GET", "configuracao", "leitura"],
+    ["campaign-templates", "POST", "configuracao", "escrita"],
+    ["campaign-templates/[id]", "PATCH", "configuracao", "escrita"],
+    ["campaign-templates/[id]", "DELETE", "configuracao", "escrita"],
+    ["message-template-groups", "GET", "configuracao", "leitura"],
+    ["message-template-groups", "POST", "configuracao", "escrita"],
+    ["message-template-groups/[id]", "PATCH", "configuracao", "escrita"],
+    ["message-template-groups/[id]/ordem", "PUT", "configuracao", "escrita"],
+    ["channel-schedules", "GET", "configuracao", "leitura"],
+    ["channel-schedules", "POST", "configuracao", "escrita"],
+    ["channel-schedules/[id]", "PATCH", "configuracao", "escrita"],
+    ["channel-schedules/[id]", "DELETE", "configuracao", "escrita"],
+    ["ads/meta/accounts", "GET", "analise", "leitura"],
+    ["ads/meta/campaigns", "GET", "analise", "leitura"],
+    ["ads/meta/accounts", "POST", null, null], // so leitura
+    ["ads/meta/campaigns", "DELETE", null, null],
+    ["calls", "GET", "conversas", "leitura"],
+    ["calls", "POST", null, null], // ligar para o cliente e falar com o cliente
+    ["messages/[id]/media", "GET", "conversas", "leitura"],
+    ["messages/[id]/media", "POST", null, null], // so leitura
+    ["phone-numbers", "GET", "configuracao", "leitura"],
+    ["phone-numbers", "POST", null, null], // mexe na conexao do canal
+    ["phone-numbers/[id]", "PATCH", null, null],
+    // sem area por decisao, com motivo escrito em `areas.ts`
+    ["campaign-suppressions", "GET", null, null],
+    ["campaign-suppressions", "POST", null, null],
+    ["campaign-suppressions/[id]", "DELETE", null, null],
+    ["audit", "GET", null, null],
+    ["audit/export", "GET", null, null],
+    ["imports", "GET", null, null],
+    ["imports", "POST", null, null],
+    ["imports/[id]", "GET", null, null],
   ];
 
   for (const [caminho, metodo, area, modo] of casos) {
@@ -94,7 +161,9 @@ describe("areaDaPorta: lado seguro", () => {
     expect(areaDaPorta(`${B}coisa-nova/[id]`, "POST")).toBeNull();
   });
   it("prefixo por segmento, nao por texto: contact-tags nao e contacts", () => {
-    expect(areaDaPorta(`${B}contact-tags`, "GET")).toBeNull();
+    // `contact-tags` tem a area propria (etiquetas), nunca a de `contacts`.
+    expect(areaDaPorta(`${B}contact-tags`, "GET")).toEqual({ area: "etiquetas", modo: "leitura" });
+    expect(areaDaPorta(`${B}contact-tagsx`, "GET")).toBeNull();
     expect(areaDaPorta(`${B}contactsx`, "GET")).toBeNull();
   });
   it("formato fora de /api/v1 e metodo desconhecido recusam", () => {
@@ -139,6 +208,16 @@ describe("a lista sem area tem precedencia e nunca ganha area", () => {
     "lgpd/export",
     "mcp",
     "auth/login",
+    "financeiro/comandas/[id]/finalizar",
+    "financeiro/comandas/[id]/estornar",
+    "financeiro/comandas/faturar-lote",
+    "honorarios/parcelas/[id]/pagar",
+    "campaign-suppressions",
+    "campaign-suppressions/[id]",
+    "audit",
+    "audit/export",
+    "imports",
+    "imports/[id]",
   ];
   for (const caminho of NUNCA) {
     it(`${caminho}: nenhum metodo ganha area`, () => {
@@ -181,10 +260,38 @@ describe("a lista sem area tem precedencia e nunca ganha area", () => {
     }
   });
 
-  it("o mapa usa so as 9 areas do vocabulario", () => {
-    for (const [, area] of PREFIXOS_DO_MAPA) {
+  it("o mapa usa so as 12 areas do vocabulario", () => {
+    expect(EXTENSION_AREAS).toHaveLength(12);
+    for (const [, area] of [...PREFIXOS_DO_MAPA, ...PREFIXOS_DO_MAPA_DE_ESCRITA]) {
       expect(EXTENSION_AREAS).toContain(area);
     }
+  });
+
+  it("o mapa de escrita so vale na escrita: a leitura da mesma porta segue na area do mapa geral", () => {
+    for (const [prefixo] of PREFIXOS_DO_MAPA_DE_ESCRITA) {
+      const leitura = areaDaPorta(B + prefixo, "GET");
+      const escrita = areaDaPorta(B + prefixo, "POST");
+      expect(escrita?.area, prefixo).toBe("financeiro");
+      expect(leitura?.area, prefixo).not.toBe("financeiro");
+    }
+  });
+
+  it("cada uma das tres areas novas tem ao menos uma porta no mapa", () => {
+    const usadas = new Set<string>(
+      [...PREFIXOS_DO_MAPA, ...PREFIXOS_DO_MAPA_DE_ESCRITA].map(([, area]) => area),
+    );
+    for (const area of ["tarefas", "etiquetas", "financeiro"]) {
+      expect(usadas.has(area), area).toBe(true);
+    }
+  });
+
+  it("leitura que traz o contato exige tambem `contatos`: fidelidade, chamadas e arquivo de mensagem", () => {
+    expect(leituraExigeAreaContatos(`${B}financeiro/fidelidade`, "GET")).toBe(true);
+    expect(leituraExigeAreaContatos(`${B}calls`, "GET")).toBe(true);
+    expect(leituraExigeAreaContatos(`${B}messages/[id]/media`, "GET")).toBe(true);
+    // a escrita nao e leitura; e uma leitura de financeiro sem contato embutido nao exige
+    expect(leituraExigeAreaContatos(`${B}financeiro/fidelidade`, "POST")).toBe(false);
+    expect(leituraExigeAreaContatos(`${B}financeiro/comandas`, "GET")).toBe(false);
   });
 });
 

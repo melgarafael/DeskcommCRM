@@ -151,10 +151,35 @@ no audit. Nasce a variante `module` em `Actor`, para a auditoria dizer qual mód
 É a decisão D4 da ADR, aplicada num ponto só, `resolveAuthDual`.
 
 **Consentimento por área.** A tela de ativação lista as áreas em frases legíveis, e a organização
-pode aceitar menos do que o pacote pede. Lista inicial: `contatos`, `negocios`, `conversas`, `agenda`,
-`funis`, `agentes_ia`, `catalogo`, `configuracao`, `analise`. Cada área tem leitura e escrita
-separadas. Toda rota convertida declara sua área. Rota sem área recusa token de módulo, e um teste
-varre isso.
+pode aceitar menos do que o pacote pede. São **12 áreas**: `contatos`, `negocios`, `conversas`,
+`agenda`, `funis`, `agentes_ia`, `catalogo`, `configuracao`, `analise` e, desde a migration 9316
+(10/11/2026), `tarefas`, `etiquetas` e `financeiro`. Cada área tem leitura e escrita separadas (24
+permissões `area.<área>.<leitura|escrita>`). Toda rota convertida declara sua área. Rota sem área
+recusa token de módulo, e um teste varre isso.
+
+**As três áreas novas** (frases da tela de consentimento em `lib/extensions/portas-legiveis.ts`):
+
+| Área | Frase | Sensível? | Rotas (`app/api/v1/...`) |
+|---|---|---|---|
+| `tarefas` | "Ver e mudar tarefas e demandas." | não | `tasks`, `tasks/[id]` (leitura e escrita); `demandas/[id]` PATCH (escrita) |
+| `etiquetas` | "Ver as etiquetas." | não | `contact-tags`, `conversation-tags` (GET) |
+| `financeiro` | "Ver e mudar comandas, fidelidade e lançamentos financeiros." | **sim** (só quem administra a organização consente; não vem pré-marcada na tela) | `financeiro/comandas` (GET, POST), `financeiro/comandas/[id]` (GET, PATCH), `financeiro/comandas/[id]/itens` (POST), `financeiro/comandas/[id]/itens/[itemId]` (DELETE), `financeiro/comandas/pendentes` (GET), `financeiro/fidelidade` (GET, POST); a ESCRITA de `financeiro/catalogo/[tipo]`, `financeiro/lancamentos`, `financeiro/lancamentos/[id]`, `honorarios/contratos` e `honorarios/contratos/[id]/parcelas` |
+
+A leitura de `financeiro/catalogo/[tipo]` continua em `catalogo`, e a de `financeiro/lancamentos` e de
+`honorarios/*` continua em `analise`: o mapa tem uma entrada que vale só para escrita
+(`MAPA_DE_ESCRITA` em `lib/auth/portas-de-token/areas.ts`).
+
+**Outras rotas que saíram da lista "fora do mapa"** (10/11/2026): `people`, `people/[id]`,
+`company-people`, `company-people/[id]` em `contatos` (leitura e escrita); `campaign-templates`,
+`campaign-templates/[id]`, `message-template-groups` (e todas as subrotas, inclusive `[id]/ordem`),
+`channel-schedules`, `channel-schedules/[id]` em `configuracao` (leitura e escrita);
+`ads/meta/accounts` e `ads/meta/campaigns` em `analise` (só leitura); `calls` GET e
+`messages/[id]/media` GET em `conversas` (só leitura); `phone-numbers` e `phone-numbers/[id]` GET em
+`configuracao` (só leitura). A escrita de `calls` (ligar para o cliente é falar com o cliente) e a de
+`phone-numbers` (mexe na conexão do canal) continuam sem área.
+
+**Leitura que traz o contato exige também `contatos`**, como agenda e follow-ups já faziam
+(`LEITURAS_COM_CONTATO_EMBUTIDO`): `financeiro/fidelidade` GET, `calls` GET e `messages/[id]/media` GET.
 
 **Nunca há área** para credencial, token, LGPD, cobrança, webhook, administração da instalação,
 extensões e envio de mensagem (D6). Além dos prefixos que já saem do recorte, ficam fora, por nome:
@@ -181,6 +206,11 @@ extensões e envio de mensagem (D6). Além dos prefixos que já saem do recorte,
 | `team/[user_id]`, `team/[user_id]/reactivate`, `team/[user_id]/interface` | acesso e perfil de pessoa da equipe |
 | `settings/art15`, `contacts/[id]` DELETE, `contacts/export`, `conversations/[id]/export`, `audit/export` | LGPD e exportação de dado pessoal |
 | `modulos`, `modulos/instalar` | administração de extensões |
+| `campaign-suppressions`, `campaign-suppressions/[id]` | tirar alguém da lista faz a campanha voltar a escrever para quem pediu para parar |
+| `audit`, `audit/export` | a auditoria mostra tudo de todos |
+| `imports`, `imports/[id]` | entrada de contatos em massa, não se desfaz |
+| `financeiro/comandas/[id]/finalizar`, `financeiro/comandas/[id]/estornar`, `financeiro/comandas/faturar-lote`, `honorarios/parcelas/[id]/pagar` | mexem com dinheiro, não se desfazem, e hoje nem aceitam token de integração |
+| `ai/budget`, `ai/voz`, `ai/knowledge/reindex-all` (escrita), `contacts/merge` (escrita), `automation-rules` (escrita) | gastam dinheiro da organização ou não se desfazem; a escrita de `automation-rules` só tem área na leitura |
 
 **Só de sessão por desenho**, porque o sujeito é a própria pessoa logada: `attendants/presence`,
 `notifications/push`, `conversations/[id]/claim|release|mark-read`, `prospecting/agents/*` e
@@ -189,8 +219,8 @@ extensões e envio de mensagem (D6). Além dos prefixos que já saem do recorte,
 **Ainda sem token**, porque a função do banco recusa quem não tem sessão (`auth.uid()` nulo): o PATCH de
 `settings/routing/channels` (`fn_set_channel_routing`) e de `agenda/configuracao` (`fn_agenda_settings`),
 `financeiro/comandas/[id]/finalizar|estornar`, `financeiro/comandas/faturar-lote` e
-`honorarios/parcelas/[id]/pagar`. Liberar exige uma variante da função que receba o ator, numa fatia
-própria com migration.
+`honorarios/parcelas/[id]/pagar` (estas quatro ficam sem área também por decisão, ver a tabela acima).
+Liberar exige uma variante da função que receba o ator, numa fatia própria com migration.
 
 O módulo pode gravar **rascunho** por `conversations/[id]/drafts`; quem envia é a pessoa.
 
@@ -384,9 +414,10 @@ o motivo. Cada uma vale até a revisão do PR que a implementa, e o mantenedor p
 4. **Depois da revogação, por 30 dias, vale um token que só lê eventos.** Sem ele, um módulo desativado
    nunca fica sabendo de uma anonimização. A outra saída seria o módulo apagar tudo da organização ao
    ser desativado, o que perde dado numa desativação por engano.
-5. **`configuracao` e `agentes_ia` só podem ser consentidas por quem administra a organização,** e a
-   doutrina de extensões registra isso. Essas áreas mudam operação do núcleo, mesmo com credencial,
-   acesso de pessoas e envio fora.
+5. **`configuracao`, `agentes_ia` e `financeiro` só podem ser consentidas por quem administra a
+   organização,** e a doutrina de extensões registra isso. Essas áreas mudam operação do núcleo (ou o
+   dinheiro dela), mesmo com credencial, acesso de pessoas e envio fora. `financeiro` entrou na regra
+   em 10/11/2026 (migration 9316) e não vem pré-marcada na tela de consentimento.
 6. **A prova de aceite da O2 é um serviço de exemplo no repositório,** rodando no CI. A ADR pede "um
    módulo de pagamento real", mas o pagamento está indo para o núcleo: a #3509 é uma issue aberta, e
    o PR #3590 está em andamento.

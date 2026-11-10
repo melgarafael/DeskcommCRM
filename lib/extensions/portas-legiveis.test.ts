@@ -102,21 +102,40 @@ describe("frases do consentimento por área (módulo conectado, F3)", () => {
     p.startsWith("area."),
   );
 
-  it("as 18 permissões de área têm frase própria, não vazia e diferente entre si", () => {
-    expect(permissoesDeArea).toHaveLength(18);
+  it("as 24 permissões de área têm frase própria, não vazia e diferente entre si", () => {
+    expect(permissoesDeArea).toHaveLength(24);
     const frases = permissoesDeArea.map((p) => fraseDaPermissaoDeArea(p));
     expect(frases.every((frase) => frase.length > 10)).toBe(true);
-    expect(new Set(frases).size).toBe(18);
+    expect(new Set(frases).size).toBe(24);
   });
 
-  it("só configuração e agentes de IA são sensíveis", () => {
+  it("só configuração, agentes de IA e financeiro são sensíveis", () => {
     const sensiveis = permissoesDeArea.filter(ehAreaSensivel).sort();
     expect(sensiveis).toEqual([
       "area.agentes_ia.escrita",
       "area.agentes_ia.leitura",
       "area.configuracao.escrita",
       "area.configuracao.leitura",
+      "area.financeiro.escrita",
+      "area.financeiro.leitura",
     ]);
+    // Tarefas e etiquetas NÃO são sensíveis: não mexem no dinheiro nem no funcionamento da organização.
+    expect(ehAreaSensivel("area.tarefas.escrita")).toBe(false);
+    expect(ehAreaSensivel("area.etiquetas.leitura")).toBe(false);
+  });
+
+  it("as frases das três áreas novas dizem o que o módulo passa a poder fazer", () => {
+    expect(fraseDaPermissaoDeArea("area.tarefas.escrita")).toBe("Ver e mudar tarefas e demandas.");
+    expect(fraseDaPermissaoDeArea("area.etiquetas.leitura")).toBe("Ver as etiquetas.");
+    expect(fraseDaPermissaoDeArea("area.financeiro.escrita")).toBe(
+      "Ver e mudar comandas, fidelidade e lançamentos financeiros.",
+    );
+  });
+
+  it("a frase da lista nomeia as áreas novas em Lê/Altera", () => {
+    expect(portasLegiveis(["area.financeiro.leitura", "area.tarefas.leitura", "area.tarefas.escrita"])).toBe(
+      "Lê Financeiro e Tarefas. Altera Tarefas.",
+    );
   });
 
   it("traduz cada frase pelo tradutor recebido (literais cobertos pelo dicionário)", () => {
