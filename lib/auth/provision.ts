@@ -242,7 +242,8 @@ async function empresaDoIdReservado(
   }
   const lista = vinculos ?? [];
   if (lista.length === 0) return { tipo: "adotar", org: { id: org.id, slug: org.slug } };
-  if (lista.length === 1 && lista[0].user_id === userId && lista[0].revoked_at === null) return { tipo: "ja_vinculada" };
+  const [unico] = lista;
+  if (lista.length === 1 && unico?.user_id === userId && unico.revoked_at === null) return { tipo: "ja_vinculada" };
   return { tipo: "de_outro" };
 }
 
