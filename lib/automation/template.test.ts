@@ -109,4 +109,9 @@ describe('renderTemplate: texto de reserva {{variavel|"reserva"}}', () => {
   it("o nome da agenda continua só da equipe, mesmo com reserva", () => {
     expect(renderTemplate('{{contact.address_book_name|"x"}}', { contact: { address_book_name: "Fulano Interno" } })).toBe("");
   });
+
+  it("as colunas de CPF do contato não saem em mensagem", () => {
+    expect(renderTemplate("[{{contact.cpf_hash}}]", { contact: { cpf_hash: "valor-interno" } })).toBe("[]");
+    expect(renderTemplate("[{{ contact.cpf_encrypted }}]", { contact: { cpf_encrypted: "valor-interno" } })).toBe("[]");
+  });
 });

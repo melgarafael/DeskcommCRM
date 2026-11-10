@@ -15,6 +15,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 export type Regra = {
   id: string;
@@ -69,7 +70,7 @@ export function RegrasDeComissao({
 
   const nomeDaPessoa = (id: string) => {
     const p = pessoas.find((x) => x.user_id === id);
-    return p?.full_name ?? t("alguém");
+    return p ? rotuloDoMembro(p, t) : t("alguém");
   };
   const nomeDoServico = (id: string) => servicos.find((x) => x.id === id)?.name ?? t("um serviço");
 
@@ -113,7 +114,7 @@ export function RegrasDeComissao({
             <option value="">{t("Qualquer pessoa")}</option>
             {pessoas.map((p) => (
               <option key={p.user_id} value={p.user_id}>
-                {p.full_name ?? t("Sem nome")}
+                {rotuloDoMembro(p, t)}
               </option>
             ))}
           </select>

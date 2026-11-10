@@ -6,6 +6,7 @@ import { audit } from "@/lib/audit";
 import { escritaDeAdminOuRecusa } from "@/lib/auth/escritaDeAdminOuRecusa";
 import { invalidarMarcaDaInstalacao } from "@/lib/branding/instalacao";
 import { normalizarHex } from "@/lib/branding/rampa";
+import { respostaParaOperador } from "@/lib/erros/para-operador";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { platformBrandingSchema, type PlatformBrandingInput } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -124,7 +125,13 @@ export async function updateBranding(
     // e nada seria gravado. É o mesmo modo de falha que a issue #144 mediu em
     // `organizations`, e a única defesa é não escrever a query que o permite.
     .upsert({ id: 1, ...valores }, { onConflict: "id" });
-  if (error) return { ok: false, error: error.message };
+  // #3747: `platform_branding_accent_hex` e `_accent_dark_hex` têm frase própria
+  // no mapeador (a cor precisa ser hexadecimal); o cru fica no log.
+  if (error) {
+    return respostaParaOperador(error, {
+      contexto: "[marca] falha ao gravar a marca da instalação",
+    });
+  }
 
   // No MESMO processo que renderiza (na VPS há um processo de app só), então a
   // troca aparece no próximo render sem esperar o TTL.

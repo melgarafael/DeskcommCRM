@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 import type { RoutingMode } from "@/lib/schemas/routing";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 export interface ChannelRoutingSettings {
   channels: Array<{
@@ -27,7 +28,7 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
   const policies = results[2].data ?? [];
   const responsibles = results[3].data ?? [];
   const ids = members.map((m) => String(m.user_id));
-  const names = await nomesDosAtendentes(ids);
+  const names = await nomesDosAtendentes(org, ids);
   return {
     channels: channels.map((c) => {
       const policy = policies.find((p) => p.channel_session_id === c.id);
@@ -38,6 +39,6 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
         mode: !policy ? "legacy_unconfigured" : user_ids.length ? "restricted" : "restricted_empty",
         distribution_mode, default_assignee_user_id };
     }),
-    members: ids.map((id) => ({ id, name: names.get(id) ?? "Atendente sem nome" })),
+    members: ids.map((id) => ({ id, name: rotuloDoMembro({ full_name: names.get(id), user_id: id }) })),
   };
 }

@@ -39,6 +39,7 @@ import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import { criarIngestDeGrupoDb, gravarMensagemDeGrupo } from "@/lib/grupos/ingest";
 import type { RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
+import { corpoDaLocalizacao, lerLocalizacao, type Localizacao } from "@/lib/messaging/localizacao";
 import { semAssinatura } from "@/lib/messaging/assinatura";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
@@ -533,6 +534,8 @@ const NOWEB_MESSAGE_KEY_TYPE: Record<string, string> = {
 
 export function resolveMessageType(p: WahaPayload): string {
   if (p.type) return mapWahaMessageType(p.type);
+  // NOWEB não manda `type`: o pino se reconhece pelas coordenadas legíveis.
+  if (localizacaoDoPayload(p)) return "location";
   const msg = p._data?.message;
   if (msg && typeof msg === "object") {
     for (const [key, mapped] of Object.entries(NOWEB_MESSAGE_KEY_TYPE)) {
@@ -554,8 +557,44 @@ export function notifyNameOf(p: WahaPayload): string | null {
   return p._data?.notifyName ?? p._data?.pushName ?? null;
 }
 
+/**
+ * A LOCALIZAÇÃO (pino) da mensagem, ou null.
+ *
+ * O WAHA entrega o pino com `body` VAZIO e as coordenadas em `location`
+ * (`WALocation`); o NOWEB também as deixa em `_data.message.locationMessage`
+ * (`degreesLatitude`/`degreesLongitude`, como o Baileys). Sem ler nenhum dos
+ * dois, a guarda de "mensagem sem corpo nem mídia" descartava o pino — nas DUAS
+ * direções, sem log: o cliente mandava a localização e a conversa não a mostrava;
+ * o dono mandava do celular e ela sumia do CRM (medido numa instalação real em
+ * 02/11/2026: em 30 dias, nenhum pino gravado pelo número pareado, 22 pelo oficial).
+ *
+ * A leitura e a validação são as de todo canal (`lib/messaging/localizacao.ts`):
+ * fora da faixa da Terra, ou (0, 0), é null.
+ */
+export function localizacaoDoPayload(p: WahaPayload): Localizacao | null {
+  const direta = lerLocalizacao(p.location);
+  if (direta) return direta;
+  const msg = p._data?.message;
+  if (!msg || typeof msg !== "object") return null;
+  const m = msg as { locationMessage?: unknown; liveLocationMessage?: unknown };
+  const pino = m.locationMessage ?? m.liveLocationMessage;
+  if (!pino || typeof pino !== "object") return null;
+  const o = pino as Record<string, unknown>;
+  return lerLocalizacao({
+    latitude: o.degreesLatitude,
+    longitude: o.degreesLongitude,
+    name: o.name,
+    address: o.address,
+  });
+}
+
 /** Corpo textual: WAHA nem sempre preenche `body` em cartões de contato NOWEB. */
 export function bodyOf(p: WahaPayload): string | null {
+  // O pino vira o corpo legível de todo canal (nome/endereço + link do mapa) —
+  // é o que o agente lê e a prévia da lista mostra. Antes de `p.body`: no WEBJS
+  // o `body` de uma localização é a miniatura em base64, não texto.
+  const pino = localizacaoDoPayload(p);
+  if (pino) return corpoDaLocalizacao(pino);
   if (p.body) return p.body;
   const msg = p._data?.message;
   if (!msg || typeof msg !== "object") return null;
@@ -1214,6 +1253,9 @@ async function handleInbound(
       metadata: {
         raw_type: p.type,
         ack_name: p.ackName,
+        // O pino em `metadata.location` é o que a tela desenha (`LocationCard`) e o
+        // que `localizacaoDaMensagem` lê — a mesma chave do canal oficial.
+        ...(localizacaoDoPayload(p) ? { location: localizacaoDoPayload(p) } : {}),
         // O texto citado só entra quando NÃO há ponteiro: com a linha
         // resolvida, a citada no banco é a fonte da verdade — uma edição
         // posterior mudaria o que a tela mostra, e a cópia ficaria velha.
@@ -1520,7 +1562,8 @@ async function handleOutboundFromUserPhone(
   // como `fromMe`, e só o dedup por `external_id` a reconhece como nossa.
   const grupo = grupoDoEnvio(p, chatId);
   if (!p.id) return;
-  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+  // O pino não tem `body` nem mídia: sem a terceira condição ele era descartado aqui.
+  if (!p.body && !localizacaoDoPayload(p) && !mediaUrlOf(p) && !p.hasMedia) return;
   // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o
   // defeito do #108 — mensagem que o dono digitou no celular sem `to`, sem id
   // composto e sem `from`. Se voltar a acontecer por um formato novo, agora sai
@@ -1668,6 +1711,8 @@ async function handleOutboundFromUserPhone(
       metadata: {
         raw_type: p.type,
         fromMe: true,
+        // O pino que o dono mandou do celular: mesma chave do inbound.
+        ...(localizacaoDoPayload(p) ? { location: localizacaoDoPayload(p) } : {}),
         // Mesmo critério do inbound: cópia do texto só quando não há ponteiro.
         ...(citacao?.texto && !citadaId ? { reply_to_body: citacao.texto } : {}),
         // Mesma regra do inbound (#2613): nome só quando há nome.

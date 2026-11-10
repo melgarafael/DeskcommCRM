@@ -10,6 +10,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { useHorariosLivres } from "@/hooks/agenda/useHorariosLivres";
 import { useRemarcarAgendamento } from "@/hooks/agenda/useRemarcarAgendamento";
+import type { FechamentoDaGrade } from "@/lib/agenda/fechamentos-na-grade";
 import type { MotivoDaGradeTravada } from "@/lib/agenda/grade-interativa";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +48,7 @@ export function AgendaInterativa({
   fuso,
   pessoas,
   agendamentos,
+  fechamentos,
   recorte,
   tipos,
   tipo,
@@ -66,6 +68,8 @@ export function AgendaInterativa({
   fuso: string;
   pessoas: Pessoa[];
   agendamentos: Agendamento[];
+  /** As faixas de "Dias fora da rotina", repassadas à grade como vieram. */
+  fechamentos?: FechamentoDaGrade[];
   /** A MESMA janela que a grade desenha — vem de quem já a calcula, sem recontá-la. */
   recorte: { de: string; ate: string };
   /**
@@ -268,7 +272,7 @@ export function AgendaInterativa({
           data-testid="motivo-da-grade"
           data-motivo={motivo}
           role="status"
-          className="rounded-sm border border-border bg-surface-sunken px-3 py-2 text-xs leading-4 text-text-muted"
+          className="rounded-sm border border-border bg-surface-elevated px-3 py-2 text-xs leading-4 text-text-muted"
         >
           {motivo === "sem-jornada" ? (
             <>
@@ -345,6 +349,7 @@ export function AgendaInterativa({
         fuso={fuso}
         pessoas={pessoas}
         agendamentos={desenhados}
+        fechamentos={fechamentos}
         onAbrirAgendamento={onAbrirAgendamento}
         className="min-h-0 flex-1"
         interacao={

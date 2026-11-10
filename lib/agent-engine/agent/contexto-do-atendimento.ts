@@ -220,7 +220,7 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
       where a.organization_id=$1 and a.contact_id=$2 and a.conversation_id=$3 and not a.service_block order by a.updated_at desc,a.id limit 9) x) as agenda,
     (select coalesce(jsonb_agg(x),'[]') from (select id,organization_id,contact_id,next_run_at,enabled,cancelled_at,payload->>'promise' as promise,payload->>'reason' as reason,created_at,updated_at from cron_jobs where organization_id=$1 and contact_id=$2 and job_kind='followup_turn' and payload->>'conversation_id'=$3::text order by updated_at desc,id limit 9) x) as retornos,
     (select coalesce(jsonb_agg(x),'[]') from (select ac.id,ac.organization_id,c.contact_id,ac.status,
-      (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='human_replied' and human_action='need_lead_info' and actor_kind='human' and actor_user_id is not null order by created_at desc,id limit 1) as human_ask,
+      case when public.fn_caso_na_fronteira_atual($1,ac.id) then (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='human_replied' and human_action='need_lead_info' and actor_kind='human' and actor_user_id is not null order by created_at desc,id limit 1) end as human_ask,
       (select body from agent_case_events where organization_id=$1 and case_id=ac.id and kind='lead_provided' and actor_kind='lead' order by created_at desc,id limit 1) as lead_update,
       ac.created_at,ac.updated_at from agent_cases ac join conversations c on c.id=ac.conversation_id and c.organization_id=ac.organization_id where ac.organization_id=$1 and c.contact_id=$2 and c.id=$3 and ac.status in ('awaiting_lead','awaiting_human') order by ac.updated_at desc,ac.id limit 9) x) as caso,
     (select jsonb_build_object('id',j.id,'organization_id',j.organization_id,'contact_id',j.contact_id,'kind',j.kind,'status',j.status,'created_at',j.created_at,
@@ -242,7 +242,17 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
       from catalog_products where organization_id=$1 and codigo=any($7::text[])) as produtos,
     (select coalesce(jsonb_agg(x),'[]') from (
       select 'documento' as id,p.organization_id,v.content as body,v.created_at from org_memory_pointers p join org_memory_versions v on v.id=p.version_id and v.organization_id=p.organization_id where p.organization_id=$1
-      union all select e.id::text,e.organization_id,e.title || E'\n' || e.body,e.created_at from org_memory_entries e where e.organization_id=$1 and e.status='active' order by created_at desc limit 9) x) as auxiliares,
+      union all select e.id::text,e.organization_id,e.title || E'\n' || e.body,e.created_at from org_memory_entries e
+        where e.organization_id=$1 and e.status='active'
+          -- #2369 — aprendizado com prazo: vencido não é contexto. "Hoje" no fuso
+          -- da organização (o JOIN com pg_timezone_names recusa IANA inválido sem
+          -- levantar erro; sem fuso aproveitável cai no padrão do produto, que é o
+          -- mesmo FUSO_PADRAO de fusoUtilizavel). Data de calendário: vale até o
+          -- fim do último dia, como o valid_until de proposta.
+          and (e.valid_until is null or e.valid_until >= (now() at time zone coalesce(
+                (select o.timezone from organizations o join pg_timezone_names z on z.name=o.timezone where o.id=$1),
+                'America/Sao_Paulo'))::date)
+        order by created_at desc limit 9) x) as auxiliares,
     (select jsonb_build_object('jev',settings->'jev','timezone',timezone,
       'promise_table',(select version_id from promise_table_pointers where organization_id=$1),
       'bindings',(select jsonb_agg(jsonb_build_object('purpose',purpose,'provider',provider,'model',model_id,'credential',credential_id,'enabled',is_enabled,'base',base_url) order by purpose) from ai_purpose_bindings where organization_id=$1 and purpose in ('promise_semantic','human_return_confirmation')),

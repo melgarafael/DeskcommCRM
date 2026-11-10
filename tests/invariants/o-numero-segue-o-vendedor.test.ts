@@ -68,6 +68,11 @@ const CONTATO_DA_IA = "ffffffff-4444-4000-8000-000000000006";
 const CONTATO_DA_PREVIA = "ffffffff-4444-4000-8000-000000000007";
 const CONTATO_DA_IA_ABERTA = "ffffffff-4444-4000-8000-000000000008";
 const CONTATO_PARADO = "ffffffff-4444-4000-8000-000000000009";
+// #3732: o contato do retorno A→B→A e o da conversa que a terceira pessoa assumiu.
+const CONTATO_DO_RETORNO = "ffffffff-4444-4000-8000-000000000010";
+const CONTATO_ASSUMIDO_NO_MEIO = "ffffffff-4444-4000-8000-000000000011";
+// #3732 + doc 237 (3-B): a conversa no número novo que a IA está atendendo.
+const CONTATO_DA_IA_NO_RETORNO = "ffffffff-4444-4000-8000-000000000012";
 
 /** Chama a RPC como a rota chama: `service_role`. */
 function transfere(conversa: string, para: string | null, motivo = "transfer"): void {
@@ -185,7 +190,10 @@ describe("#3642 — a conversa segue o número do vendedor novo", () => {
         ('${CONTATO_DA_IA}', '${ORG}', 'Contato Da IA'),
         ('${CONTATO_DA_PREVIA}', '${ORG}', 'Contato Da Previa'),
         ('${CONTATO_DA_IA_ABERTA}', '${ORG}', 'Contato Da IA Aberta'),
-        ('${CONTATO_PARADO}', '${ORG}', 'Contato Parado')
+        ('${CONTATO_PARADO}', '${ORG}', 'Contato Parado'),
+        ('${CONTATO_DO_RETORNO}', '${ORG}', 'Contato Do Retorno'),
+        ('${CONTATO_ASSUMIDO_NO_MEIO}', '${ORG}', 'Contato Assumido No Meio'),
+        ('${CONTATO_DA_IA_NO_RETORNO}', '${ORG}', 'Contato Da IA No Retorno')
       on conflict (id) do update
         set carteira_user_id = null, carteira_origem = null, carteira_definida_em = null;
     `);
@@ -266,8 +274,9 @@ describe("#3642 — a conversa segue o número do vendedor novo", () => {
 
   it("o contato já tem conversa no número do vendedor novo: o dono muda e o número não", () => {
     // A conversa anterior do contato NO NÚMERO DE B é o que impede o re-apontamento.
+    // Dona: a terceira pessoa — é o caso em que a conversa de lá NÃO é adotada.
     const jaExiste = conversaNova(
-      "ffffffff-5555-4000-8000-000000000005", CONTATO, SESSAO_B, null);
+      "ffffffff-5555-4000-8000-000000000005", CONTATO, SESSAO_B, VENDEDOR_C);
     const conversa = conversaNova(
       "ffffffff-5555-4000-8000-000000000006", CONTATO, SESSAO_A, VENDEDOR_A);
 
@@ -275,8 +284,76 @@ describe("#3642 — a conversa segue o número do vendedor novo", () => {
 
     expect(donoDe(conversa)).toBe(VENDEDOR_B);
     expect(sessaoDe(conversa)).toBe(SESSAO_A);
-    // E a conversa que já estava lá não foi tocada.
+    // E a conversa que já estava lá, e já era de outra pessoa, não foi tomada.
     expect(sessaoDe(jaExiste)).toBe(SESSAO_B);
+    expect(donoDe(jaExiste)).toBe(VENDEDOR_C);
+  });
+
+  /**
+   * #3732 — o caso A→B→A que o @hudson-souza-mkt mediu no #3658.
+   *
+   * Medido no baseline da 9054 (psql, org de teste): a conversa antiga C1 volta
+   * para A no número de B e o envio de A dá 409 — "transfira para você", o que
+   * já foi feito —, enquanto a conversa C2, no número de A, fica com outra
+   * pessoa. Depois da 9054, C2 passa para A (é onde ele responde) e C1 continua
+   * presa no número de B: ela está no nome dele e o aviso do envio aponta a C2.
+   */
+  it("A→B→A: a conversa que ficou no número de A passa para A (e a antiga, presa, é do A)", () => {
+    const antiga = conversaNova(
+      "ffffffff-5555-4000-8000-000000000020", CONTATO_DO_RETORNO, SESSAO_A, VENDEDOR_A);
+    transfere(antiga, VENDEDOR_B);
+    expect(sessaoDe(antiga)).toBe(SESSAO_B);
+
+    // O cliente volta a escrever no número de A: nasce a conversa nova ali, e ela
+    // ficou com o dono anterior (B) — o caso "ficou com outra pessoa".
+    const nova = conversaNova(
+      "ffffffff-5555-4000-8000-000000000021", CONTATO_DO_RETORNO, SESSAO_A, VENDEDOR_B);
+
+    transfere(antiga, VENDEDOR_A);
+
+    // A conversa NOVA está no número de A e passa para A…
+    expect(donoDe(nova)).toBe(VENDEDOR_A);
+    expect(sessaoDe(nova)).toBe(SESSAO_A);
+    // …e a antiga fica no nome dele, presa no número de B (o número não pode ter
+    // duas conversas do mesmo contato).
+    expect(donoDe(antiga)).toBe(VENDEDOR_A);
+    expect(sessaoDe(antiga)).toBe(SESSAO_B);
+  });
+
+  it("#3732, CONTROLE: a conversa no número novo que uma TERCEIRA pessoa assumiu não é tomada", () => {
+    const antiga = conversaNova(
+      "ffffffff-5555-4000-8000-000000000022", CONTATO_ASSUMIDO_NO_MEIO, SESSAO_A, VENDEDOR_A);
+    transfere(antiga, VENDEDOR_B);
+    const daTerceira = conversaNova(
+      "ffffffff-5555-4000-8000-000000000023", CONTATO_ASSUMIDO_NO_MEIO, SESSAO_A, VENDEDOR_C);
+
+    transfere(antiga, VENDEDOR_A);
+
+    // Quem assumiu no meio continua com ela, e o número dela não muda.
+    expect(donoDe(daTerceira)).toBe(VENDEDOR_C);
+    expect(sessaoDe(daTerceira)).toBe(SESSAO_A);
+  });
+
+  it("#3732, doc 237 3-B: a conversa no número novo que a IA está atendendo NÃO é adotada", () => {
+    // Sem dono, aberta e com a IA ativa: `comando_da_conversa` diz 'automatico'.
+    // A adoção a atribuiria e gravaria `bot_silenced_until = 'infinity'` — a IA
+    // calada sem prazo, o que a 3-B proíbe também na troca de carteira.
+    const antiga = conversaNova(
+      "ffffffff-5555-4000-8000-000000000024", CONTATO_DA_IA_NO_RETORNO, SESSAO_A, VENDEDOR_A);
+    transfere(antiga, VENDEDOR_B);
+    const daIa = conversaNova(
+      "ffffffff-5555-4000-8000-000000000025", CONTATO_DA_IA_NO_RETORNO, SESSAO_A, null, "open");
+    expect(
+      lastLine(sql(`select public.comando_da_conversa(c) from public.conversations c where id = '${daIa}';`)),
+    ).toBe("automatico");
+
+    transfere(antiga, VENDEDOR_A);
+
+    expect(donoDe(antiga)).toBe(VENDEDOR_A);
+    expect(donoDe(daIa)).toBe("NULL");
+    expect(
+      lastLine(sql(`select coalesce(bot_silenced_until::text, 'NULL') from public.conversations where id = '${daIa}';`)),
+    ).toBe("NULL");
   });
 
   it("trocar a CARTEIRA leva as conversas abertas do dono anterior para o novo — e o número junto", () => {

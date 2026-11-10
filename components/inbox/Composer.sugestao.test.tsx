@@ -81,6 +81,7 @@ vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
 vi.mock("@/lib/inbox/clipboard-image", () => ({ imagemDoClipboard: () => null }));
 vi.mock("@/lib/notifications/mentions", () => ({
   embutirMencoes: (body: string) => body,
+  podarMencoesDaEdicao: vi.fn((_antes: string, _depois: string, m: unknown) => m),
   podarMencoes: (_texto: string, m: unknown) => m,
   resolverMencao: () => null,
 }));

@@ -94,6 +94,18 @@ test.describe("Prospecção a partir da própria planilha (spec 30)", () => {
     await page.locator("#prospecting-lista-nicho").fill("padarias");
     await page.locator("#prospecting-lista-origem").fill("clientes da feira QA");
 
+    // 0. a conferência (#3724): mostra o que entra e o que fica de fora, e NÃO cria campanha.
+    await page.getByRole("button", { name: "Conferir a lista antes de importar" }).click();
+    await expect(page.getByText("3 entram · 2 ficam de fora", { exact: true })).toBeVisible();
+    await expect(page.getByText("Linha 5: Sem telefone.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Nada foi importado ainda", { exact: false })).toBeVisible();
+    const { count: campanhasNaPrevia } = await admin
+      .from("prospecting_campaigns")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgDoTeste())
+      .eq("name", NOME_CAMPANHA);
+    expect(campanhasNaPrevia).toBe(0);
+
     // Não depende da chave do provedor: o botão está habilitado numa instalação sem ela.
     const importar = page.getByRole("button", { name: "Importar planilha" });
     await expect(importar).toBeEnabled();
@@ -101,12 +113,12 @@ test.describe("Prospecção a partir da própria planilha (spec 30)", () => {
 
     // 1. o resumo, com valores exatos.
     await expect(page.getByText("5 linhas · 3 entraram", { exact: false })).toBeVisible();
-    await expect(page.getByText("2 recusadas", { exact: false })).toBeVisible();
+    await expect(page.getByText("2 ficam de fora", { exact: false })).toBeVisible();
 
     // 2. as recusadas, cada uma com o número da linha como a planilha mostra.
-    await expect(page.getByText("Linha 5: Sem telefone válido.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Linha 5: Sem telefone.", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Linha 6: Telefone repetido na planilha (linha 2).", { exact: true }),
+      page.getByText("Linha 6: Telefone repetido na planilha. (linha 2)", { exact: true }),
     ).toBeVisible();
 
     // 3. a campanha nova, com o rótulo "Planilha" e as 3 empresas na lista.

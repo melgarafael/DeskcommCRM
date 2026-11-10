@@ -22,13 +22,15 @@
  *
  * ⚠️ **Isto vale para a COBRANÇA REPETIDA, que é o que este cron faz — e deixou
  * de valer para o produto inteiro** (migration 0292). O WhatsApp da equipe
- * passou a ser avisado na ABERTURA do caso, uma vez, por opt-in de quem
+ * passou a ser avisado na ABERTURA do caso e na resposta do cliente ao pedido
+ * da equipe (migration 9240), nunca em repetição por tempo, por opt-in de quem
  * administra (`config_aviso_de_caso`, tela `/app/ai/cases/avisos`). Decisão do
  * dono do produto: quem toca uma empresa não fica com o CRM aberto o dia todo,
  * fica com o WhatsApp aberto.
  *
  * Os dois NÃO se sobrepõem, e é por isso que este cron continua só na Central:
- * o aviso no WhatsApp sai uma vez, na abertura; a insistência sobre o caso que
+ * o aviso no WhatsApp sai na abertura e, desde a migration 9240, uma vez por
+ * resposta do cliente ao que a equipe perguntou; a insistência sobre o caso que
  * ninguém abriu é daqui, tem teto de três e mora no sino. Mandar a cobrança
  * repetida por mensagem gastaria o número da organização três vezes por caso
  * esquecido — e o `followup_attempts` que segura o teto não protege um canal

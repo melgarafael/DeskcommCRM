@@ -26,9 +26,18 @@ import {
 } from "./catalogo";
 
 describe("conta", () => {
-  it("nasce em caixa e BRL quando não se diz nada", () => {
+  it("nasce em caixa e sem saldo quando não se diz nada — e SEM moeda", () => {
     const r = contaSchema.parse({ name: "Caixa" });
-    expect(r).toMatchObject({ kind: "cash", currency: "BRL", opening_balance_cents: 0 });
+    expect(r).toMatchObject({ kind: "cash", opening_balance_cents: 0 });
+    // A moeda saiu do schema no #3379: quem a resolve é o SERVIDOR
+    // (`moedaDaOrganizacao`), a partir de `organizations.currency`. Um default
+    // aqui era o defeito — a conta de organização em dólar nascia em real sem
+    // ninguém ter escrito isso.
+    expect(r).not.toHaveProperty("currency");
+  });
+
+  it("descarta a moeda que vier no corpo", () => {
+    expect(contaSchema.parse({ name: "Caixa", currency: "EUR" })).not.toHaveProperty("currency");
   });
 
   it("aceita saldo inicial NEGATIVO — e isso é deliberado", () => {

@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { audit } from "@/lib/audit";
+import { respostaParaOperador } from "@/lib/erros/para-operador";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { IDIOMAS, type Idioma } from "@/lib/i18n/idiomas";
 import { createClient } from "@/lib/supabase/server";
@@ -41,7 +42,13 @@ export async function trocarIdioma(
   const { error } = await supabase.auth.updateUser({ data: { locale: idioma } });
   // #3696: o `getUser` vai para o cache curto; outra sessão da pessoa leria o metadata velho.
   invalidarUsuario(authUser.id);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    // #3747: o toast leva a frase do operador; o texto do GoTrue fica no log.
+    return respostaParaOperador(error, {
+      contexto: "[idioma] falha ao gravar a preferência de idioma",
+      idioma: authUser.idioma,
+    });
+  }
 
   const hdrs = await headers();
   const activeOrg = await resolveActiveOrg(authUser);

@@ -112,7 +112,11 @@ async function avisa(payload: unknown) {
   await waitFor(() => expect(toastFalso).toHaveBeenCalled());
   return toastFalso.mock.calls.at(-1)! as [
     string,
-    { description?: string; action?: { label: string; onClick: () => void } },
+    {
+      description?: string;
+      action?: { label: string; onClick: () => void };
+      style?: { borderLeft?: string };
+    },
   ];
 }
 
@@ -123,6 +127,32 @@ beforeEach(() => {
 });
 
 describe("aviso de mensagem nova — quem mandou", () => {
+  it("a marca do canal vem do veredito da rota, sem um pedido a mais à conversa", async () => {
+    fetchFalso.mockImplementation(async (url: string) => {
+      if (url.includes("/aviso-de-mensagem")) {
+        return resposta(true, { data: { avisar: true, conteudo: "nome", canal: "instagram" } });
+      }
+      if (url.includes("/avatar")) return resposta(false);
+      return resposta(true, { data: { display_name: "Maria Souza" } });
+    });
+
+    const [, opcoes] = await avisa(mensagem());
+
+    expect(opcoes.style?.borderLeft).toBe("3px solid var(--color-canal-instagram)");
+    expect(fetchFalso).not.toHaveBeenCalledWith("/api/v1/conversations/conv-1", expect.anything());
+  });
+
+  it("veredito fora do ar: o aviso sai mesmo assim, com a marca neutra", async () => {
+    fetchFalso.mockImplementation(async (url: string) => {
+      if (url.includes("/aviso-de-mensagem") || url.includes("/avatar")) return resposta(false);
+      return resposta(true, { data: { display_name: "Maria Souza" } });
+    });
+
+    const [, opcoes] = await avisa(mensagem());
+
+    expect(opcoes.style?.borderLeft).toBe("3px solid var(--color-text-muted)");
+  });
+
   it("mostra o nome que a ROTA autenticada devolveu, e não o literal de sempre", async () => {
     fetchFalso.mockImplementation(async (url: string) => {
       if (url.includes("/avatar")) return resposta(false);

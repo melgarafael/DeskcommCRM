@@ -430,6 +430,13 @@ const PARES: Array<{
   },
   {
     tabela: "entregas_de_aviso_de_agendamento",
+    coluna: "alvo",
+    // Migration 9060: o número do dono ou o grupo da equipe.
+    arquivo: "lib/agenda/vocabulario-do-aviso-de-agendamento.ts",
+    simbolo: "ALVOS_DA_ENTREGA_DE_AGENDAMENTO",
+  },
+  {
+    tabela: "entregas_de_aviso_de_agendamento",
     coluna: "evento",
     // Migration 0707: os três eventos da agenda que o aviso escuta. Coluna
     // `null`-ável (o resumo não tem evento), CHECK na forma `IS NULL OR`.
@@ -486,6 +493,13 @@ const PARES: Array<{
     coluna: "estado",
     arquivo: "lib/cobranca/vocabulario.ts",
     simbolo: "ESTADOS_DA_ASSINATURA",
+  },
+  {
+    // Migration 9312 (#3509): o estado do recebimento do cliente final.
+    tabela: "pagamento_recebimentos",
+    coluna: "status",
+    arquivo: "lib/pagamentos/vocabulario.ts",
+    simbolo: "SITUACOES_DO_RECEBIMENTO",
   },
   {
     tabela: "cobranca_assinaturas",
@@ -546,8 +560,9 @@ const PARES: Array<{
   {
     tabela: "campaigns",
     coluna: "velocidade",
-    // lib/campanhas/tipos.ts → VELOCIDADES_DA_CAMPANHA. Migration 0711: o
-    // despacho escolhe rajada ou uma-por-rodada por esta coluna.
+    // lib/campanhas/tipos.ts → VELOCIDADES_DA_CAMPANHA. Migrations 0711 e
+    // 0712: o despacho escolhe rajada, uma-por-rodada ou a transmissão do
+    // provedor por esta coluna.
     arquivo: "lib/campanhas/tipos.ts",
     simbolo: "VELOCIDADES_DA_CAMPANHA",
   },

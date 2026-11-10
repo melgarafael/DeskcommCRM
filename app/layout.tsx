@@ -26,6 +26,7 @@ import { logger } from "@/lib/logger";
 import { ThemeProvider } from "@/lib/theme";
 import { Providers } from "./providers";
 import { PublicEnvScript } from "./public-env-script";
+import { EstiloDoTemaDaPlataforma } from "./tema-da-plataforma";
 import "./globals.css";
 
 // Fontes versionadas em app/fonts/ (origem e licença no README de lá): o
@@ -341,6 +342,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         {/* Primeiro de tudo: a cor da instalação, antes do CSS e do script de tema. */}
         <EstiloDaMarca />
+        {/* O tema da plataforma (#3790) entre a marca e o CSS personalizado: a
+            marca dá a cor de ação, o tema as superfícies, e o CSS do operador
+            fala por último. Ver `app/tema-da-plataforma.tsx`. */}
+        <EstiloDoTemaDaPlataforma />
         <EstiloCssPersonalizado />
         {/* Config pública do Supabase + marca resolvida, em runtime (imagem
             genérica self-host). */}

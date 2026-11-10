@@ -8,10 +8,10 @@
  * atendendo o cliente e a tela não.** Por isso nenhuma linha do inbox conseguia
  * dizer com quem a pessoa está falando.
  *
- * ## Por que não dá para reusar `resolveUserNames` direto na rota
+ * ## Por que o nome não sai do client do request
  *
- * Ele funciona no MCP porque o `ctx.supabase` de lá é `createAdminClient()`. A
- * rota de conversas usa o client do REQUEST (anon key + JWT do usuário), e
+ * No MCP o `ctx.supabase` já é `createAdminClient()` (por isso existe
+ * `nomesDosAtendentesCom`, que recebe o client). A rota de conversas usa o client do REQUEST (anon key + JWT do usuário), e
  * `supabase.auth.admin.getUserById` fala com o endpoint admin do GoTrue, que
  * responde **403 `not_admin`** para esse token. Medido: o supabase-js **não
  * lança** nesse caso — devolve `{ data: { user: null }, error }` —, então o
@@ -35,9 +35,18 @@
  * continua dizendo que há um responsável — o `assigned_to_user_id` é a verdade; o
  * nome é a cortesia.
  *
+ * ## Só membros da organização ganham nome
+ *
+ * O nome só se resolve para quem tem ou teve vínculo em `user_organizations`
+ * com a `orgId` do chamador — uma consulta só, para todos os ids. Sem filtro de `revoked_at` de propósito: quem saiu da equipe segue
+ * com o nome no histórico que escreveu. Id sem vínculo, ou vínculo que não pôde
+ * ser lido, fica sem nome (o chamador já trata a ausência).
+ *
  * LGPD: expõe SÓ `full_name`. Nunca e-mail, telefone, `user_metadata` inteiro ou
  * qualquer outro dado do usuário — o mesmo mínimo que `team/assignable` expõe.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -50,6 +59,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * faz isso em `conversation_notes.created_by_name`), não aumentar o paralelismo.
  */
 export async function nomesDosAtendentes(
+  orgId: string,
   userIds: Array<string | null | undefined>,
 ): Promise<Map<string, string | null>> {
   const unicos = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
@@ -65,9 +75,26 @@ export async function nomesDosAtendentes(
     return new Map();
   }
 
-  const admin = createAdminClient();
+  return nomesDosAtendentesCom(createAdminClient(), orgId, unicos);
+}
+
+/**
+ * O mesmo, com o admin client de quem chama — o MCP já recebe um no contexto
+ * (`ctx.supabase`). A regra de vínculo é a mesma: não há segundo caminho para
+ * o nome de uma pessoa.
+ */
+export async function nomesDosAtendentesCom(
+  admin: SupabaseClient,
+  orgId: string,
+  userIds: Array<string | null | undefined>,
+): Promise<Map<string, string | null>> {
+  const unicos = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
+  if (unicos.length === 0) return new Map();
+  const membros = await membrosDaOrganizacao(admin, orgId, unicos);
+
   const pares = await Promise.all(
     unicos.map(async (id): Promise<readonly [string, string | null]> => {
+      if (!membros.has(id)) return [id, null] as const;
       try {
         const { data, error } = await admin.auth.admin.getUserById(id);
         if (error) {
@@ -88,4 +115,32 @@ export async function nomesDosAtendentes(
     }),
   );
   return new Map(pares);
+}
+
+/**
+ * Quais destes ids têm (ou tiveram) vínculo com a organização. Falha → conjunto
+ * vazio (ninguém ganha nome). Exportada para o leitor que expõe mais que o nome
+ * (métricas por atendente devolvem também o e-mail): a regra de vínculo é esta.
+ */
+export async function membrosDaOrganizacao(
+  admin: SupabaseClient,
+  orgId: string,
+  ids: string[],
+): Promise<Set<string>> {
+  try {
+    // `organization_id` filtrado À MÃO: o admin bypassa a RLS.
+    const { data, error } = await admin
+      .from("user_organizations")
+      .select("user_id")
+      .eq("organization_id", orgId)
+      .in("user_id", ids);
+    if (error) throw new Error(error.message);
+    return new Set((data ?? []).map((v) => String(v.user_id)));
+  } catch (err) {
+    logger.warn("[nome-do-atendente] vínculos não lidos: nenhum nome resolvido", {
+      organizationId: orgId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+    return new Set();
+  }
 }

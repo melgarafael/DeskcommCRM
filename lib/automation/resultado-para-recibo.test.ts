@@ -92,6 +92,15 @@ describe("recibo técnico de automação não guarda a frase do provedor", () =>
     for (const exemplo of exemplos) expect(resultadoParaRecibo(exemplo)).toEqual(exemplo);
   });
 
+  it("motivo de set_lead_date_field chega ao recibo com o próprio código", () => {
+    const pulado: ActionResultDetail = {
+      type: "set_lead_date_field",
+      status: "skipped",
+      detail: { reason: "sem_negocio_aberto" },
+    };
+    expect(resultadoParaRecibo(pulado).detail?.reason).toBe("sem_negocio_aberto");
+  });
+
   it("falha lançada preserva código conhecido e classe, sem ler a mensagem", () => {
     const erro = Object.assign(new TypeError(PESSOAL), { code: "ECONNREFUSED" });
     expect(falhaDeExecucaoParaRecibo("call_webhook", erro)).toEqual({
@@ -143,4 +152,20 @@ describe("recibo técnico de automação não guarda a frase do provedor", () =>
     });
     expect(resultadoParaRecibo(seguro)).toEqual(seguro);
   });
+
+  it.each(["carteira_nao_passou", "conversas_nao_passaram"])(
+    "a passagem parcial do assign_owner (%s) grava o código, e não a mensagem do banco",
+    (codigo) => {
+      const seguro = resultadoParaRecibo({
+        type: "assign_owner",
+        status: "failed",
+        error: codigo,
+        detail: { user_id: "dono-sintetico", carteira: "falhou", erro: `conversa x: ${PESSOAL}` },
+      });
+      // O código fica: é ele que a Atividade traduz na frase da falha parcial.
+      expect(seguro.error).toBe(codigo);
+      expect(seguro.detail).toMatchObject({ user_id: "dono-sintetico", carteira: "falhou", erro: codigo });
+      expect(JSON.stringify(seguro)).not.toContain(PESSOAL);
+    },
+  );
 });

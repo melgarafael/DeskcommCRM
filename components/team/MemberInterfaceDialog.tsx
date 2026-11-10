@@ -22,6 +22,7 @@ import {
 } from "@/lib/navigation/interface";
 import type { Role } from "@/lib/auth/types";
 import type { TeamMember } from "@/hooks/team/useTeamMembers";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 export function MemberInterfaceDialog({
   member,
   onClose,
@@ -48,7 +49,7 @@ export function MemberInterfaceDialog({
     <Dialog open onOpenChange={(open) => !open && !save.isPending && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t("Interface de")} {member.full_name ?? member.email ?? t("membro")}</DialogTitle>
+          <DialogTitle>{t("Interface de")} {rotuloDoMembro(member, t)}</DialogTitle>
           <DialogDescription>{t("A alteração vale apenas nesta organização e aparece para o membro sem sair da conta.")}</DialogDescription>
         </DialogHeader>
         {lerInterface(member.interface_settings).needsAdjustment && (

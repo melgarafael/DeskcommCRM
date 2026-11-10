@@ -23,6 +23,12 @@ vi.mock("@/hooks/contacts/useUpdateContact", () => ({ useUpdateContact: () => us
 vi.mock("@/hooks/tags/useDefinirCorDaEtiqueta", () => ({
   useDefinirCorDaEtiqueta: () => ({ definirCor: vi.fn(async () => true) }),
 }));
+/* A ficha pergunta ao vocabulário curado o que o texto digitado casaria (#3144),
+   e essa leitura é react-query. Este fixture monta o diálogo sem provider e o
+   assunto aqui é o endereço, então a leitura é dublada como em `padrao`. */
+vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
+  useContactTagVocabulary: () => ({ data: [], isError: false }),
+}));
 const { mutateAsync, useUpdate } = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   useUpdate: { mutateAsync: vi.fn(), isPending: false },

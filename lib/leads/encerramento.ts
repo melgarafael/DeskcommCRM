@@ -24,6 +24,7 @@ import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { posicaoDeEntradaNaEtapa } from "@/lib/kanban/entrada-na-etapa";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import {
@@ -62,6 +63,13 @@ export interface EncerraDemandaInput {
   razaoNaTimeline?: string;
   /** Acrescentado ao `payload` da linha (ex.: para onde o negócio foi). */
   payloadNaTimeline?: Record<string, unknown>;
+  /**
+   * Para quem fecha SEM intenção humana (o aviso de pago do provedor): só fecha
+   * negócio ainda aberto e na etapa lida, e a condição vai no PRÓPRIO update.
+   * Se alguém encerrou ou mexeu no card nesse meio-tempo, 409 `state_conflict`
+   * e nada é escrito — a decisão humana vence. Os caminhos humanos não usam.
+   */
+  travaOtimista?: boolean;
 }
 
 export interface DemandaEncerrada {
@@ -83,10 +91,20 @@ function actorAuditPayload(actor: Actor): {
   };
 }
 
+function conflitoDeEstado(ctx: HandlerCtx): ApiError {
+  return new ApiError(
+    409,
+    "state_conflict",
+    undefined,
+    ctx.requestId,
+    traduzir("O negócio mudou enquanto era encerrado.", ctx.idioma ?? "pt-BR"),
+  );
+}
+
 /**
  * Fecha o negócio movendo-o para o estágio terminal do funil.
  *
- * ⚠️ SEM TRAVA OTIMISTA, de propósito (o comportamento que já existia): encerrar
+ * ⚠️ SEM TRAVA OTIMISTA por padrão (o comportamento que já existia): encerrar
  * é intenção explícita, e recusar porque o card se mexeu entre o clique e o
  * commit obrigaria a pessoa a repetir uma decisão que ela já tomou. O `status` e
  * o `closed_at` são do trigger `fn_crm_lead_close_on_stage` — não se escreve
@@ -135,6 +153,9 @@ export async function encerraDemanda(
   if ((lead as { status: string }).status === input.desfecho) {
     return { lead: lead as Record<string, unknown>, jaEstava: true };
   }
+  if (input.travaOtimista && (lead as { status: string }).status !== "open") {
+    throw conflitoDeEstado(ctx);
+  }
 
   const colunaTerminal = input.desfecho === "won" ? "is_won" : "is_lost";
   const { data: stage, error: stErr } = await supabase
@@ -167,17 +188,19 @@ export async function encerraDemanda(
   }
 
   const terminalStageId = (stage as { id: string }).id;
-  const { data: maxPosition, error: maxPositionErr } = await supabase
+  // O card que CHEGA à etapa de ganho/perda entra no TOPO (#3461), a mesma
+  // regra da criação e do move sem posição: lê-se o PRIMEIRO da etapa.
+  const { data: primeiraPosicao, error: primeiraPosicaoErr } = await supabase
     .from("crm_leads")
     .select("position_in_stage")
     .eq("organization_id", ctx.organization_id)
     .eq("stage_id", terminalStageId)
-    .order("position_in_stage", { ascending: false })
+    .order("position_in_stage", { ascending: true })
     .limit(1)
     .maybeSingle();
 
-  if (maxPositionErr) {
-    throw new ApiError(500, "internal_error", undefined, ctx.requestId, maxPositionErr.message);
+  if (primeiraPosicaoErr) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, primeiraPosicaoErr.message);
   }
 
   // ── OS CAMPOS OBRIGATÓRIOS E O MOTIVO DE GANHO (issue #1536) ────────────────
@@ -240,10 +263,9 @@ export async function encerraDemanda(
     }
   }
 
-  const nextPosition =
-    maxPosition?.position_in_stage === null || maxPosition?.position_in_stage === undefined
-      ? 1000
-      : Number(maxPosition.position_in_stage) + 1000;
+  const nextPosition = posicaoDeEntradaNaEtapa(
+    primeiraPosicao?.position_in_stage == null ? null : Number(primeiraPosicao.position_in_stage),
+  );
   const patch: Record<string, unknown> = {
     stage_id: terminalStageId,
     position_in_stage: nextPosition,
@@ -257,11 +279,14 @@ export async function encerraDemanda(
     patch.won_reason = input.motivo.trim();
   }
 
-  const { error: updErr } = await supabase
+  const escrita = supabase
     .from("crm_leads")
     .update(patch)
     .eq("id", input.leadId)
     .eq("organization_id", ctx.organization_id);
+  const { data: alcancadas, error: updErr } = input.travaOtimista
+    ? await escrita.eq("status", "open").eq("stage_id", (lead as { stage_id: string }).stage_id).select("id")
+    : await escrita;
 
   if (updErr) {
     // Rede de segurança (#917) — mesma dos outros três caminhos (arrasto, lote,
@@ -276,6 +301,9 @@ export async function encerraDemanda(
       throw new ApiError(422, recusa.codigo, undefined, ctx.requestId, recusa.mensagem);
     }
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
+  }
+  if (input.travaOtimista && (alcancadas ?? []).length === 0) {
+    throw conflitoDeEstado(ctx);
   }
 
   const { data: fresh } = await supabase

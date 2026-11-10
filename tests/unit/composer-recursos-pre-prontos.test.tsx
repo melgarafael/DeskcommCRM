@@ -471,3 +471,84 @@ describe("Composer + recursos pré-prontos: o rascunho que já está no campo (#
     expect(botao).toHaveAttribute("title", DICA_DE_SEMPRE);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * O CLIQUE INJETA — E O QUE ACONTECE DEPOIS DO CLIQUE (#2833).
+ *
+ * Os casos (a), (b) e (d) provam o instante do clique. Estes três prendem o que
+ * a issue chama de "funcionando como um rascunho", e que nenhum caso anterior
+ * olhava:
+ *
+ *   (e) DIGITAR POR CIMA — depois de injetado, o texto é do operador: ele
+ *       edita, e o que sai no Enviar é o EDITADO, não o corpo do recurso. Sem
+ *       isto, um compositor que "injetasse" e guardasse o corpo original na
+ *       frente mandaria o texto do cadastro por cima do ajuste do atendente.
+ *   (k) ÁUDIO CANCELADO — desistir da prévia não sobe byte nenhum e não deixa
+ *       fila presa; o recurso pode ser escolhido de novo. É a metade "sem
+ *       enviar" do critério, do lado de quem desiste.
+ *   (l) CONTROLE — o `/` e a barra entregam a MESMA string para o mesmo
+ *       contato: os dois passam pelo `payloadDeUso`. Se a barra tivesse
+ *       interpolação própria, este caso seria o único a separar as duas.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+describe("Composer + recursos: o clique injeta, e o operador decide o resto (#2833)", () => {
+  function campo() {
+    return screen.getByLabelText(/mensagem/i) as HTMLTextAreaElement;
+  }
+
+  it("(e) digitar por cima do texto injetado: o Enviar leva o texto EDITADO, e nada sai antes", () => {
+    renderComposer();
+
+    fireEvent.click(screen.getByRole("button", { name: /boas vindas/i }));
+    expect(campo().value).toBe("Oi Ana, tudo bem?");
+
+    // O atendente completa a frase como faria escrevendo do zero.
+    const editado = `${campo().value} O horário é 14h.`;
+    fireEvent.change(campo(), { target: { value: editado } });
+    expect(campo().value).toBe(editado);
+    // Editar não é enviar: quem manda é o botão, um clique humano depois.
+    expect(sendMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    // O corpo é o do CAMPO, não o do recurso: o ajuste do operador é o que sai.
+    expect(sendMock.mock.calls[0]?.[0]).toMatchObject({ body: editado, type: "text" });
+  });
+
+  it("(k) áudio: cancelar a prévia não envia, não sobe byte e libera a próxima escolha", async () => {
+    renderComposer();
+
+    fireEvent.click(screen.getByRole("button", { name: /áudio preço/i }));
+    const fila = await screen.findByRole("dialog");
+    fireEvent.click(within(fila).getByRole("button", { name: "Cancelar" }));
+
+    // Desistir fecha a prévia sem mandar nada — nem mensagem, nem upload.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+
+    // E a fila não ficou presa: o mesmo recurso abre de novo.
+    fireEvent.click(screen.getByRole("button", { name: /áudio preço/i }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("(l) ⭐ controle: o `/` e a barra entregam o MESMO texto para o mesmo contato", () => {
+    renderComposer();
+
+    fireEvent.click(screen.getByRole("button", { name: /boas vindas/i }));
+    const pelaBarra = campo().value;
+
+    // Mesmo recurso pelo atalho `/`, com o campo limpo antes.
+    fireEvent.change(campo(), { target: { value: "" } });
+    fireEvent.change(campo(), { target: { value: "/boas" } });
+    fireEvent.click(within(screen.getByRole("listbox")).getByText("Boas vindas"));
+    const peloMenu = campo().value;
+
+    // Um caminho só de interpolação: `{{primeiro_nome}}` virou "Ana" nos dois,
+    // e a barra não tem regra própria que possa divergir do `/`.
+    expect(pelaBarra).toBe("Oi Ana, tudo bem?");
+    expect(peloMenu).toBe(pelaBarra);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+});
