@@ -178,7 +178,7 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   link_de_pagamento: {
     nome: "Link de pagamento na conversa",
     oQueFaz:
-      "A atendente registra na conversa o valor a cobrar e recebe um endereço para colar no link de pagamento; quando o cliente paga, o provedor avisa e o negócio vai para ganho.",
+      "O valor a cobrar é registrado numa conversa pela API, em /api/v1/conversations/[id]/pagamentos (uma integração; ainda não há botão na tela), e a resposta traz um endereço para colar no link de pagamento; quando o cliente paga, o provedor avisa e o negócio vai para ganho.",
   },
 };
 
