@@ -64,8 +64,11 @@ export interface FalhasDeLeitura {
 
 interface Props {
   initialState: OrgMemoryState;
-  /** O que a página não conseguiu LER — distinto de "não existe nada". */
-  falhasDeLeitura: FalhasDeLeitura;
+  /**
+   * O que a página não conseguiu LER — distinto de "não existe nada".
+   * Opcional: quem não informa falha não tem falha.
+   */
+  falhasDeLeitura?: FalhasDeLeitura;
   /** `YYYY-MM-DD` no fuso da organização — a régua de "vencida" do runtime. */
   hoje: string;
   /** O limite do aviso de peso desta organização (`limiteDoPesoDaMemoria`). */
@@ -284,7 +287,15 @@ function formatDate(iso: string, idioma: string): string {
   });
 }
 
-export function OrgMemoryClient({ initialState, falhasDeLeitura, hoje, limiteDoAviso, podeEditarOLimite }: Props) {
+const SEM_FALHA_DE_LEITURA: FalhasDeLeitura = { documento: false, versoes: false, aprendizados: false };
+
+export function OrgMemoryClient({
+  initialState,
+  falhasDeLeitura = SEM_FALHA_DE_LEITURA,
+  hoje,
+  limiteDoAviso,
+  podeEditarOLimite,
+}: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   // Exaustivo por tipo: uma origem nova no CHECK sem rótulo aqui para de compilar,
@@ -306,9 +317,7 @@ export function OrgMemoryClient({ initialState, falhasDeLeitura, hoje, limiteDoA
   // de entrada), quem manda é a releitura: sem isto o aviso ficava na tela para
   // sempre, e uma lista vazia de verdade seguia dizendo "não consegui ler".
   const releuComSucesso = isFetchedAfterMount && !isError;
-  const daPagina: FalhasDeLeitura = releuComSucesso
-    ? { documento: false, versoes: false, aprendizados: false }
-    : falhasDeLeitura;
+  const daPagina = releuComSucesso ? SEM_FALHA_DE_LEITURA : falhasDeLeitura;
   const falhaDoDocumento = falhouTudo || daPagina.documento;
   const falhaDasVersoes = falhouTudo || daPagina.versoes;
   const falhaDosAprendizados = falhouTudo || daPagina.aprendizados;
