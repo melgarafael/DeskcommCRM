@@ -699,62 +699,170 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   // Nasceu neste request? O INSERT já grava o consentimento com a forma certa;
   // a reconciliação abaixo existe só para quem JÁ era contato.
   let contatoNasceuAqui = false;
-  if (mapped.phone) {
-    /** O que os dois caminhos (telefone e e-mail) devolvem — um tipo só. */
-    type ContatoAchado = { data: { id: string; name: string | null } | null };
 
-    // ⚠️ QUAL GRAFIA VENCE é decidido por `escolherContatoCanonico`, e não pelo
-    // banco. Isto era `.in(variantes).limit(1)` SEM `order by`: com as duas
-    // grafias do mesmo celular ainda vivas — estado que a migration `0198`
-    // admite ao chamar o próprio passo 3 de "piso de segurança para o unique" —
-    // o Postgres devolvia qualquer uma das duas. A resposta do cliente entrava
-    // no cadastro errado, o follow-up não a reconhecia, e a mesma pergunta saía
-    // de novo.
-    const selectActiveByPhone = async (): Promise<ContatoAchado> => ({
-      data: await encontrarContatoPorTelefoneComNome(
-        admin,
-        source.organization_id,
-        mapped.phone!,
-      ),
+  /** O que os dois caminhos (telefone e e-mail) devolvem — um tipo só. */
+  type ContatoAchado = { data: { id: string; name: string | null } | null };
+
+  // Os dois índices de busca ficam FORA do `if (mapped.phone)` porque o e-mail
+  // também é identificador de contato (#3719). Antes desta divisão o bloco
+  // inteiro só existia com telefone, e um formulário que coleta nome e e-mail
+  // criava o card com `contact_id = null` — a pessoa não aparecia em Contatos.
+
+  // ⚠️ QUAL GRAFIA VENCE é decidido por `escolherContatoCanonico`, e não pelo
+  // banco. Isto era `.in(variantes).limit(1)` SEM `order by`: com as duas
+  // grafias do mesmo celular ainda vivas — estado que a migration `0198`
+  // admite ao chamar o próprio passo 3 de "piso de segurança para o unique" —
+  // o Postgres devolvia qualquer uma das duas. A resposta do cliente entrava
+  // no cadastro errado, o follow-up não a reconhecia, e a mesma pergunta saía
+  // de novo.
+  const selectActiveByPhone = async (): Promise<ContatoAchado> => ({
+    data: mapped.phone
+      ? await encontrarContatoPorTelefoneComNome(admin, source.organization_id, mapped.phone)
+      : null,
+  });
+
+  // uniq_contacts_org_email (baseline.sql) é um SEGUNDO índice único parcial,
+  // independente de uniq_contacts_org_phone — um INSERT pode colidir nele
+  // mesmo com telefone inédito (mesma pessoa manda e-mail repetido, telefone
+  // novo). email_normalized é coluna GERADA (`lower(trim(email))`), então a
+  // comparação replica exatamente essa normalização — não `email` bruto.
+  const selectActiveByEmail = (): PromiseLike<ContatoAchado> | null => {
+    if (!mapped.email) return null;
+    return admin
+      .from("contacts")
+      .select("id, name")
+      .eq("organization_id", source.organization_id)
+      .eq("email_normalized", mapped.email.trim().toLowerCase())
+      .is("is_merged_into", null)
+      .maybeSingle();
+  };
+
+  /**
+   * O ENVIO COMPLETA O CONTATO QUE REAPROVEITA (#3719).
+   *
+   * A captação só sabia preencher contato na hora de CRIÁ-LO. Quem chegava
+   * depois — o segundo formulário da mesma pessoa, o contato que a tela ou a
+   * importação criou antes — era reaproveitado e ficava como estava: o
+   * telefone do envio era DESCARTADO quando o vencedor vinha pelo índice de
+   * e-mail, e o card novo caía num contato sem número. Daí para frente nada
+   * que dependa de WhatsApp (envio pelo CRM, agente de IA, follow-up,
+   * confirmação de agendamento) funcionava para esse lead.
+   *
+   * As quatro guardas são o desenho, não zelo:
+   *
+   *  - `is(coluna, null)`: só o que FALTA é preenchido. Um número existente
+   *    nunca é trocado por outro do formulário — quem digitou o número na tela
+   *    sabe mais do que o campo de uma landing page.
+   *  - `organization_id`: mesma régua do resto da rota. Telefone e e-mail são
+   *    únicos POR ORGANIZAÇÃO; sem este filtro o UPDATE alcançaria a ficha de
+   *    outro tenant, que é o pior erro possível aqui.
+   *  - `is_personal = false` e `is_anonymized = false`: contato marcado como
+   *    pessoal está FORA da operação — o card dele é recusado logo adiante
+   *    (`createLeadHandler`), e completar a ficha antes disso deixaria o
+   *    contato pessoal alterado por uma captação que nem entrou. Anonimizado
+   *    é titular de LGPD: nada de formulário volta a preencher a ficha dele.
+   *  - o erro NÃO é engolido em silêncio: `23505` significa que o valor já é
+   *    de OUTRO contato ativo da mesma organização (os dois índices únicos
+   *    parciais de `contacts`) — a captação segue com o vínculo que já tinha,
+   *    ninguém é sobrescrito, e o desfecho fica no log com o código.
+   */
+  const completarDoEnvio = async (
+    contato: string,
+    coluna: "phone_number" | "email",
+    valor: string,
+  ): Promise<boolean> => {
+    const { data: gravado, error: erroDeGravacao } = await admin
+      .from("contacts")
+      .update({ [coluna]: valor })
+      .eq("id", contato)
+      .eq("organization_id", source.organization_id)
+      .eq("is_personal", false)
+      .eq("is_anonymized", false)
+      .is(coluna, null)
+      .select("id")
+      .maybeSingle();
+    if (erroDeGravacao) {
+      logger.error("[webhooks.inbound] contact fill failed", {
+        webhookSourceId: source.id,
+        organizationId: source.organization_id,
+        contactId: contato,
+        column: coluna,
+        errorCode: erroDeGravacao.code,
+        errorMessage: erroDeGravacao.message,
+      });
+      return false;
+    }
+    // `null` = o contato já tinha valor e a guarda `is(coluna, null)` não casou
+    // nenhuma linha. Não houve transição, então não há evento a emitir.
+    return Boolean(gravado);
+  };
+
+  /**
+   * O CONTATO GANHOU TELEFONE POR ESTE ENVIO — e a automação precisa saber.
+   *
+   * `contact.phone_added` é a transição que as regras com esse gatilho esperam
+   * (`lib/schemas/webhooks.ts`), com a MESMA forma do PATCH de contato
+   * (`app/api/v1/contacts/_handler.ts`, bloco do #2812): emitido DEPOIS da
+   * gravação, porque a guarda `checarGuardasDeContato` mata com `no_phone`
+   * quem chega sem número — emitir antes entregaria à regra um contato ainda
+   * vazio, e o defeito seria mudo (sem erro, sem log, sem run).
+   */
+  const completarTelefoneDoEnvio = async (contato: string): Promise<void> => {
+    if (!mapped.phone) return;
+    if (!(await completarDoEnvio(contato, "phone_number", mapped.phone))) return;
+    const { error: erroDoEvento } = await admin.rpc("emit_event", {
+      p_event_type: "contact.phone_added",
+      p_entity_kind: "contact",
+      p_entity_id: contato,
+      p_payload: { phone_number: mapped.phone },
+      p_metadata: { request_id: requestId },
+      p_organization_id: source.organization_id,
     });
+    if (erroDoEvento) {
+      logger.error("[webhooks.inbound] emit_event contact.phone_added failed", {
+        webhookSourceId: source.id,
+        organizationId: source.organization_id,
+        contactId: contato,
+        errorMessage: erroDoEvento.message,
+      });
+    }
+  };
 
-    // uniq_contacts_org_email (baseline.sql) é um SEGUNDO índice único parcial,
-    // independente de uniq_contacts_org_phone — um INSERT pode colidir nele
-    // mesmo com telefone inédito (mesma pessoa manda e-mail repetido, telefone
-    // novo). email_normalized é coluna GERADA (`lower(trim(email))`), então a
-    // comparação replica exatamente essa normalização — não `email` bruto.
-    const selectActiveByEmail = (): PromiseLike<ContatoAchado> | null => {
-      if (!mapped.email) return null;
-      return admin
-        .from("contacts")
-        .select("id, name")
-        .eq("organization_id", source.organization_id)
-        .eq("email_normalized", mapped.email.trim().toLowerCase())
-        .is("is_merged_into", null)
-        .maybeSingle();
-    };
+  // Consentimento explícito só quando o Respondi confirmou concessão — recusa
+  // NUNCA vira concessão por omissão. E a recusa é GRAVADA, não omitida: o
+  // DEFAULT da coluna já é `granted_at: null`, então omitir deixava "nunca
+  // perguntamos" e "disse não" com a mesma forma no banco, e quem lê para
+  // decidir envio não tinha como separar os dois (ver
+  // buildContactConsentDenial). Vale para os DOIS INSERTs abaixo.
+  // O TENANT É DECLARADO ONDE A LINHA NASCE, não escondido no helper: a régua
+  // de R1 (`tests/unit/admin-client-exige-filtro-de-tenant.test.ts`) lê a
+  // cadeia e a declaração do payload, e um `camposDoContatoNovo(…)` dentro do
+  // `insert` é opaco para ela — foi assim que os dois INSERTs abaixo passaram a
+  // criar contato em tabela tenant-aware sem `organization_id` visível.
+  const camposDoContatoNovo = (nome: string) => ({
+    name: nome,
+    email: mapped.email,
+    source: "webhook",
+    source_metadata: { ...mapped.source_metadata, webhook_source_id: source.id },
+    ...(consentDoEnvio ? { consent: consentDoEnvio } : {}),
+  });
 
+  if (mapped.phone) {
     const { data: existing } = await selectActiveByPhone();
     if (existing) {
       contactId = existing.id as string;
       existingContactName = existing.name as string | null;
+      // Achado pelo TELEFONE: ele é o identificador e manda. O e-mail do envio
+      // só completa a ficha se ela não tiver nenhum — e nunca troca o que já
+      // existe.
+      if (mapped.email) await completarDoEnvio(contactId, "email", mapped.email);
     } else {
       const { data: created, error: insertErr } = await admin
         .from("contacts")
         .insert({
           organization_id: source.organization_id,
-          name: mapped.name ?? mapped.phone,
+          ...camposDoContatoNovo(mapped.name ?? mapped.phone),
           phone_number: mapped.phone,
-          email: mapped.email,
-          source: "webhook",
-          source_metadata: { ...mapped.source_metadata, webhook_source_id: source.id },
-          // Consentimento explícito só quando o Respondi confirmou concessão —
-          // recusa NUNCA vira concessão por omissão. E a recusa agora é
-          // GRAVADA, não omitida: o DEFAULT da coluna já é `granted_at: null`,
-          // então omitir deixava "nunca perguntamos" e "disse não" com a mesma
-          // forma no banco, e quem lê para decidir envio não tinha como separar
-          // os dois (ver buildContactConsentDenial).
-          ...(consentDoEnvio ? { consent: consentDoEnvio } : {}),
         })
         .select("id")
         .maybeSingle();
@@ -771,12 +879,62 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
           if (winnerByPhone) {
             contactId = winnerByPhone.id as string;
             existingContactName = winnerByPhone.name as string | null;
+            if (mapped.email) await completarDoEnvio(contactId, "email", mapped.email);
           } else {
             const byEmail = selectActiveByEmail();
             const { data: winnerByEmail } = byEmail ? await byEmail : { data: null };
             contactId = (winnerByEmail?.id as string | undefined) ?? undefined;
             existingContactName = (winnerByEmail?.name as string | null | undefined) ?? undefined;
+            // ⭐ O SEGUNDO DEFEITO DO #3719 ESTAVA AQUI. O vencedor veio pelo
+            // índice de E-MAIL, e o telefone DESTE envio era inédito: sem a
+            // linha abaixo ele era descartado, e o card novo ficava ligado a
+            // um contato sem número — justamente o lead que pediu material e
+            // depois preencheu o formulário de orçamento com o mesmo e-mail.
+            if (contactId) await completarTelefoneDoEnvio(contactId);
           }
+        } else {
+          logger.error("[webhooks.inbound] contact insert failed", {
+            webhookSourceId: source.id,
+            organizationId: source.organization_id,
+            errorCode: insertErr.code,
+            errorMessage: insertErr.message,
+          });
+        }
+      } else {
+        contactId = (created?.id as string | undefined) ?? undefined;
+        contatoNasceuAqui = contactId !== undefined;
+      }
+    }
+  } else if (mapped.email) {
+    // Sem telefone, o E-MAIL é o único identificador do envio — e é o caso
+    // mais comum de uma isca (material, newsletter, e-book). Antes disto o
+    // bloco inteiro de contato era pulado e o card nascia com
+    // `contact_id = null`: a pessoa não aparecia em Contatos, não entrava em
+    // segmentação e não tinha histórico unificado.
+    const byEmail = selectActiveByEmail();
+    const { data: existing } = byEmail ? await byEmail : { data: null };
+    if (existing) {
+      contactId = existing.id as string;
+      existingContactName = existing.name as string | null;
+    } else {
+      const { data: created, error: insertErr } = await admin
+        .from("contacts")
+        .insert({
+          organization_id: source.organization_id,
+          ...camposDoContatoNovo(mapped.name ?? mapped.email),
+        })
+        .select("id")
+        .maybeSingle();
+      if (insertErr) {
+        if (insertErr.code === "23505") {
+          // Dois envios simultâneos do mesmo e-mail sem telefone: o índice
+          // uniq_contacts_org_email derruba o segundo INSERT e o contato do
+          // primeiro é o vencedor — o card não pode ficar sem contato por
+          // causa de uma corrida.
+          const concorrente = selectActiveByEmail();
+          const { data: winner } = concorrente ? await concorrente : { data: null };
+          contactId = (winner?.id as string | undefined) ?? undefined;
+          existingContactName = (winner?.name as string | null | undefined) ?? undefined;
         } else {
           logger.error("[webhooks.inbound] contact insert failed", {
             webhookSourceId: source.id,

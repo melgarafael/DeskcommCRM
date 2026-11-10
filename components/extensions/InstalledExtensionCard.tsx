@@ -27,12 +27,14 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
+import { configuracaoAoSalvar } from "@/lib/extensions/configuracao-da-tela";
 import {
   localize,
   type ExtensionConfiguration,
   type ExtensionManifest,
 } from "@/lib/extensions/manifest";
 import { portasLegiveis } from "@/lib/extensions/portas-legiveis";
+import type { PaletaDeTema } from "@/lib/extensions/tema";
 import type { InstalledExtensionView } from "@/lib/extensions/view";
 import { BookOpen, CircleNotch, Lightbulb, ListChecks } from "@/lib/ui/icons";
 
@@ -43,6 +45,26 @@ const ICONS: Record<ExtensionManifest["display"]["icon"], typeof ListChecks> = {
   BookOpen,
   Lightbulb,
 };
+
+/**
+ * O nome de cada paleta na tela. Cada `t()` é LITERAL de propósito: passado por
+ * variável, o rótulo escaparia do gate de espanhol (`tests/unit/
+ * i18n-espanhol-cobre-a-tela.test.ts`), que só enxerga chave escrita no código.
+ */
+function rotuloDaPaleta(paleta: PaletaDeTema, t: (chave: string) => string): string {
+  switch (paleta) {
+    case "sage":
+      return t("Sálvia");
+    case "clay":
+      return t("Argila");
+    case "mist":
+      return t("Névoa");
+    case "plum":
+      return t("Ameixa");
+    case "olive":
+      return t("Oliva");
+  }
+}
 
 export function InstalledExtensionCard({
   extension,
@@ -95,16 +117,45 @@ export function InstalledExtensionCard({
     extension.configuration.density,
   );
   const [showDescription, setShowDescription] = useState(extension.configuration.show_description);
+  const paletaOferecida = extension.theme_palette;
+  /**
+   * A paleta que está VALENDO: só é a gravada quando ela é a que o manifesto
+   * declara — é essa a igualdade que o gancho do tema exige (`temaAplicavel`).
+   * Paleta gravada de outra versão do pacote aparece como "Nenhuma", porque é
+   * isso que a tela do produto está pintando hoje; ela continua GRAVADA e não
+   * some por um salvamento de densidade (ver `configuracaoAoSalvar`).
+   */
+  const paletaEfetiva =
+    paletaOferecida !== null && extension.configuration.theme === paletaOferecida
+      ? paletaOferecida
+      : null;
+  const [theme, setTheme] = useState<PaletaDeTema | null>(paletaEfetiva);
   const changed =
     enabled !== extension.enabled ||
     density !== extension.configuration.density ||
-    showDescription !== extension.configuration.show_description;
+    showDescription !== extension.configuration.show_description ||
+    // Só conta como mudança quando a tela EDITA o tema: extensão sem tema no manifesto
+    // não tem campo, e o que está gravado não pode virar "alteração pendente".
+    (paletaOferecida !== null && theme !== paletaEfetiva);
 
   async function save() {
-    await onConfigure(extension, enabled, {
-      density,
-      show_description: showDescription,
-    });
+    // O merge é a regra do cartão (issue #3792): o corpo do PUT leva o que está gravado
+    // e sobrepõe o que esta tela edita, para salvar a densidade não apagar o tema que a
+    // organização ligou pela API.
+    await onConfigure(
+      extension,
+      enabled,
+      configuracaoAoSalvar(
+        extension.configuration,
+        {
+          density,
+          show_description: showDescription,
+          // Campo intocado não vira escrita: `undefined` é "não editei".
+          theme: theme === paletaEfetiva ? undefined : { escolha: theme },
+        },
+        paletaOferecida,
+      ),
+    );
   }
 
   const title = localize(extension.display.title, locale).text;
@@ -290,6 +341,38 @@ export function InstalledExtensionCard({
                 onCheckedChange={setShowDescription}
               />
             </div>
+            {paletaOferecida !== null ? (
+              // A paleta vem do MANIFESTO desta versão (`theme_palette`), não de uma
+              // lista fixa: o gancho só aplica a paleta que o pacote declarou
+              // (`temaAplicavel`), então oferecer outra seria prometer o que o host
+              // recusa. Extensão sem `contributions.theme` não recebe o campo.
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor={`theme-${extension.id}`}>{t("Paleta da extensão")}</Label>
+                <Select
+                  value={theme ?? "none"}
+                  disabled={actionsDisabled}
+                  onValueChange={(value) =>
+                    setTheme(value === "none" ? null : (value as PaletaDeTema))
+                  }
+                >
+                  <SelectTrigger
+                    id={`theme-${extension.id}`}
+                    data-testid={`extension-theme-${extension.id}`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t("Nenhuma (padrão do produto)")}</SelectItem>
+                    <SelectItem value={paletaOferecida} data-testid={`extension-theme-${extension.id}-${paletaOferecida}`}>
+                      {rotuloDaPaleta(paletaOferecida, t)}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {t("Pinta o produto com as cores desta extensão, só nesta organização.")}
+                </p>
+              </div>
+            ) : null}
           </div>
           {feedback ? (
             <p role="status" className="text-xs text-muted-foreground">

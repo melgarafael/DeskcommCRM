@@ -105,9 +105,9 @@ async function enviarAsInscricoes(
   return { sent, gone };
 }
 
-export type DestinoDoPush = { soUsuario?: string; papelMinimo?: Role };
+export type DestinoDoPush = { soUsuario?: string; papelMinimo?: Role; excetoUsuario?: string };
 
-/** Push às inscrições da organização — ou só às de `soUsuario`, e só a quem alcança `papelMinimo`. */
+/** Push às inscrições da organização — ou só às de `soUsuario` (sem as de `excetoUsuario`), e só a quem alcança `papelMinimo`. */
 export async function enviarPushDaOrg(
   organizationId: string,
   payload: PushPayload,
@@ -126,7 +126,12 @@ export async function enviarPushDaOrg(
     logger.warn("push_subscriptions_list_failed", { detail: error.message });
     return NADA;
   }
-  return enviarAsInscricoes(admin, organizationId, (data ?? []) as Inscricao[], payload, quem.papelMinimo);
+  // `excetoUsuario` existe para não repetir o aviso a quem já recebeu um texto
+  // PRÓPRIO no mesmo evento (o dono do negócio ganho, que tem a soma dele).
+  const linhas = quem.excetoUsuario
+    ? ((data ?? []) as Inscricao[]).filter((l) => l.user_id !== quem.excetoUsuario)
+    : ((data ?? []) as Inscricao[]);
+  return enviarAsInscricoes(admin, organizationId, linhas, payload, quem.papelMinimo);
 }
 
 export async function enviarPushAoUsuario(
@@ -167,4 +172,93 @@ export async function enviarPushAQuemVeAConversa(
   const visiveis: Inscricao[] = data ?? [];
   const linhas = visiveis.filter((l) => !soUsuarios || soUsuarios.includes(l.user_id));
   return enviarAsInscricoes(admin, organizationId, linhas, payload);
+}
+
+/** A inscrição de quem vê o negócio, com a LARGURA do que a pessoa vê. */
+type InscricaoQueVeONegocio = Inscricao & { ampla: boolean };
+
+/**
+ * Os textos do push da etapa que avisa, um por régua de visibilidade — o mesmo
+ * aviso, com o número que cada pessoa veria na tela.
+ */
+export type TextosDaEtapa = {
+  /** Quem vê a organização inteira (gestão): o valor e a soma do dia. */
+  ampla: PushPayload;
+  /** Quem vê só a própria carteira: o valor, sem a soma do dia — ela é da organização. */
+  daCarteira: PushPayload;
+  /** Quem NÃO vê o negócio: a frase de antes, sem valor nenhum. */
+  semValor: PushPayload;
+};
+
+/**
+ * Push da etapa que avisa, decidido por DESTINATÁRIO (#3981).
+ *
+ * O aviso vai à mesma audiência de sempre (todo membro ativo que alcança
+ * `papelMinimo`), mas não com o mesmo texto: quem decide é `fn_can_view_lead`,
+ * avaliada por inscrito em `fn_push_inscricoes_que_veem_o_negocio` — a régua de
+ * negócio que a RLS de `crm_leads` já usa. Nenhuma cópia dela mora aqui.
+ *
+ *   - quem VÊ o negócio e vê a organização inteira (gestão) → `ampla`, com o
+ *     valor e a soma do dia, que é um número da organização;
+ *   - quem VÊ o negócio mas só a própria carteira (o dono fora do «Todos veem
+ *     tudo») → `daCarteira`, com o valor do negócio e sem a soma do dia. A soma
+ *     organizacional que ele não veria na tela não vai no bolso dele;
+ *   - quem NÃO vê o negócio → `semValor`, a frase fixa de antes. O aviso
+ *     continua chegando (alguém precisa atender), sem a carteira alheia.
+ *
+ * Falha ao perguntar quem vê: o aviso sai como antes da #3981 — `semValor` para
+ * todos, valor para ninguém. Na dúvida o push diz menos, nunca mais.
+ */
+export async function enviarPushDaEtapaAQuemVeONegocio(
+  organizationId: string,
+  leadId: string,
+  textos: TextosDaEtapa,
+  papelMinimo: Role,
+  admin: Admin = createAdminClient(),
+): Promise<{ sent: number; gone: number }> {
+  if (!vapidPronto()) return NADA;
+  const { data, error } = await admin.rpc("fn_push_inscricoes_que_veem_o_negocio", {
+    p_org: organizationId,
+    p_lead: leadId,
+  });
+  if (error) {
+    logger.warn("push_inscricoes_que_veem_o_negocio_falhou", { detail: error.message });
+    return enviarPushDaOrg(organizationId, textos.semValor, { papelMinimo }, admin);
+  }
+  const veem = (data ?? []) as InscricaoQueVeONegocio[];
+  const daGestao = await enviarAsInscricoes(
+    admin,
+    organizationId,
+    veem.filter((l) => l.ampla),
+    textos.ampla,
+    papelMinimo,
+  );
+  const daCarteira = await enviarAsInscricoes(
+    admin,
+    organizationId,
+    veem.filter((l) => !l.ampla),
+    textos.daCarteira,
+    papelMinimo,
+  );
+
+  // O resto da audiência: quem não vê o negócio. A lista sai da MESMA tabela de
+  // inscrições e é só o complemento de quem viu — nunca uma segunda régua.
+  const { data: todas, error: erroDaLista } = await admin
+    .from("push_subscriptions")
+    .select("id, user_id, endpoint, p256dh, auth")
+    .eq("organization_id", organizationId);
+  if (erroDaLista) {
+    // Sem saber quem sobrou, o aviso não sai para eles — a direção segura é a
+    // que não manda valor a ninguém; os de cima já receberam o texto certo.
+    logger.warn("push_subscriptions_list_failed", { detail: erroDaLista.message });
+    return { sent: daGestao.sent + daCarteira.sent, gone: daGestao.gone + daCarteira.gone };
+  }
+  const idsQueVeem = new Set(veem.map((l) => l.user_id));
+  const naoVeem = ((todas ?? []) as Inscricao[]).filter((l) => !idsQueVeem.has(l.user_id));
+  const fixo = await enviarAsInscricoes(admin, organizationId, naoVeem, textos.semValor, papelMinimo);
+
+  return {
+    sent: daGestao.sent + daCarteira.sent + fixo.sent,
+    gone: daGestao.gone + daCarteira.gone + fixo.gone,
+  };
 }

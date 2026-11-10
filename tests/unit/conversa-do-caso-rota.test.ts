@@ -28,6 +28,7 @@ import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
 import { LlmNotConfiguredError } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { resolveOrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
 import { resolverPersona } from "@/lib/agent-engine/agent/conversa-do-caso/persona";
+import { MARCADOR_IMAGEM_NAO_VISTA } from "@/lib/agent-engine/edge/crm/get-lead-context";
 import type { ResultadoDaBusca } from "@/lib/ai/knowledge/busca";
 import type { Citation } from "@/lib/ai/citations/types";
 
@@ -123,7 +124,7 @@ function sessaoComVisibilidade(visiveis: string[], mensagens: unknown[] = []) {
  * O pool, respondendo por FORMA de consulta. Registra tudo que foi executado —
  * é como os casos de "zero linhas novas em X" medem EFEITO e não chamada.
  */
-function poolFalso(over: { caso?: Record<string, unknown> | null; contato?: Record<string, unknown>; jaPerguntou?: number; inserirLanca?: { code: string } } = {}) {
+function poolFalso(over: { caso?: Record<string, unknown> | null; contato?: Record<string, unknown>; jaPerguntou?: number; inserirLanca?: { code: string }; mensagens?: unknown[] } = {}) {
   const queries: Array<{ sql: string; params: unknown[] }> = [];
   const caso =
     over.caso === undefined
@@ -155,6 +156,7 @@ function poolFalso(over: { caso?: Record<string, unknown> | null; contato?: Reco
     }
     if (/from agent_case_chat_messages/.test(sql)) return { rows: [] };
     if (/from organizations/.test(sql)) return { rows: [{ timezone: "America/Sao_Paulo" }] };
+    if (/depois_da_abertura/.test(sql)) return { rows: over.mensagens ?? [] };
     return { rows: [] };
   });
   vi.mocked(getRequestPool).mockReturnValue({ query } as unknown as ReturnType<typeof getRequestPool>);
@@ -322,6 +324,32 @@ describe("POST — o caminho feliz e a falha do modelo", () => {
     const insertAi = pool.queries.find((q) => /insert into agent_case_chat_messages/.test(q.sql) && /'ai'/.test(q.sql));
     expect(insertAi, "a linha `ai` não foi gravada — a falha virou silêncio").toBeTruthy();
     expect(insertAi!.params).toContain("llm_not_configured");
+  });
+});
+
+describe("POST — a foto do cliente segue a opção do agente do caso (9108)", () => {
+  const comprovante = {
+    direction: "inbound", type: "image", body: null, media_url: "u", media_storage_path: "p",
+    media_derived_text: "Comprovante Pix de R$ 350,00", sent_at: new Date("2026-03-11T12:00:00Z"), depois_da_abertura: true,
+  };
+  const blocoEnviado = () => (vi.mocked(responderSobreOCaso).mock.calls[0]![2] as { blocoDeDados: string }).blocoDeDados;
+
+  it("agente do caso com a opção DESLIGADA: a IA lê o aviso, nunca a descrição nem o [image] cru", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ mensagens: [comprovante] });
+    const agente = { agentId: AGENT_ID, agentName: "Ana", systemPrompt: "x", historyMessageWindow: 20, imageVisionEnabled: false };
+    vi.mocked(resolverPersona).mockResolvedValueOnce({ fonte: "agente_do_caso", agente, nome: "Ana" } as never);
+    expect((await POST(pedido(CORPO_OK), { params: Promise.resolve({ id: CASE_ID }) })).status).toBe(200);
+    expect(blocoEnviado()).toContain(MARCADOR_IMAGEM_NAO_VISTA);
+    expect(blocoEnviado()).not.toContain("R$ 350");
+  });
+
+  it("controle: a persona padrão da organização (agente arquivado, pausado, sem agente) vê a descrição", async () => {
+    sessaoComVisibilidade([CONV_ID]);
+    poolFalso({ mensagens: [comprovante] });
+    expect((await POST(pedido(CORPO_OK), { params: Promise.resolve({ id: CASE_ID }) })).status).toBe(200);
+    expect(blocoEnviado()).toContain("R$ 350");
+    expect(blocoEnviado()).not.toContain(MARCADOR_IMAGEM_NAO_VISTA);
   });
 });
 

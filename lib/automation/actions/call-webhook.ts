@@ -28,6 +28,7 @@ import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 
 const TIMEOUT_MS = 10_000;
 const RETRY_DELAYS_MS = [1_000, 5_000]; // total 3 tentativas
@@ -306,10 +307,10 @@ function localDoCompromisso(appointment: unknown): Record<string, unknown> | und
  *
  * O id vem do COMPROMISSO já hidratado pelo motor (`context.appointment`) —
  * nenhuma consulta nova no caminho padrão. O NOME é que não viaja no payload:
- * ele mora em `auth.users.user_metadata`, então só é buscado aqui, dentro de
- * `try` — sem service role (ou num teste sem rede) o corpo sai com o id, que
- * já responde "de quem era", em vez da entrega inteira falhar por causa de um
- * apelido.
+ * ele mora em `auth.users.user_metadata`, então só é buscado aqui, por
+ * `nomeDeUsuario`, que nunca lança e só nomeia quem tem ou teve vínculo com a
+ * organização da regra. Sem nome, o corpo sai com o id, que já responde "de
+ * quem era", em vez da entrega inteira falhar por causa de um apelido.
  */
 async function responsavelPublico(
   ctx: ActionCtx,
@@ -326,20 +327,17 @@ async function responsavelPublico(
   return responsavelDoNegocio(ctx);
 }
 
-/** O nome do usuário, melhor esforço — nunca é motivo para a entrega falhar. */
+/**
+ * O nome do usuário, melhor esforço — nunca é motivo para a entrega falhar.
+ * Só sai para quem tem ou teve vínculo com a organização da regra (a mesma
+ * regra de `nomesDosAtendentes`, que nunca lança).
+ */
 async function nomeDeUsuario(
   ctx: ActionCtx,
   ownerId: string,
 ): Promise<{ name: string } | Record<string, never>> {
-  try {
-    const { data } = await ctx.admin.auth.admin.getUserById(ownerId);
-    const metadata = data?.user?.user_metadata as { full_name?: unknown } | undefined;
-    const nome =
-      typeof metadata?.full_name === "string" && metadata.full_name ? metadata.full_name : null;
-    return nome ? { name: nome } : {};
-  } catch {
-    return {};
-  }
+  const nome = (await nomesDosAtendentesCom(ctx.admin, ctx.organizationId, [ownerId])).get(ownerId);
+  return typeof nome === "string" && nome ? { name: nome } : {};
 }
 
 /**
@@ -352,7 +350,7 @@ async function nomeDeUsuario(
  * `{kind, id, name?}`: `kind` é o `owner_kind` GRAVADO no lead (`user`/`ai`),
  * sem tradução — é o vocabulário do banco, e inventar outro faria o integrador
  * casar um valor que o próprio sistema não produz. SEM email: a doutrina do
- * repo (cabeçalho de `lib/mcp/tools/_users.ts`) é expor só o nome do usuário,
+ * repo (cabeçalho de `lib/users/nome-do-atendente.ts`) é expor só o nome do usuário,
  * nunca o email — quem integra mapeia pelo id, como já faz no compromisso.
  * Nome vem melhor esforço: `full_name` do `auth.users` para dono humano,
  * `ai_agents.name` para dono IA; sem lookup o corpo sai com `kind` + `id` em

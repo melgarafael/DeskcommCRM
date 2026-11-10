@@ -18,6 +18,9 @@ import * as queue from "@/lib/agent-engine/queue/queue";
 import { seedGov } from "./gov-helpers";
 import { replyFixture } from "../support/autonomia-fixture";
 
+// O provider só reporta estes términos; "interrupted" é do SDK (ai >= 7.0.156), não do provider.
+type TerminoDoProvider = Exclude<FinishReason, "interrupted">;
+
 /**
  * PROPOSTA SOB PEDIDO — "Sugerir resposta" propõe um texto quando o turno
  * automático calaria (#3281), pelo caminho REAL das duas pontas.
@@ -79,7 +82,7 @@ const USO = {
   inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
   outputTokens: { total: 1, text: 1, reasoning: 0 },
 };
-const calado = (finishReason: FinishReason = "stop") => ({
+const calado = (finishReason: TerminoDoProvider = "stop") => ({
   content: [{ type: "text" as const, text: "" }],
   finishReason: { unified: finishReason, raw: undefined },
   usage: USO,
@@ -113,7 +116,7 @@ interface CenarioDoModelo {
   textoSolto?: boolean;
   antesDoSilencio?: () => Promise<void>;
   chamadasComFerramentas?: string[];
-  finishReason?: FinishReason;
+  finishReason?: TerminoDoProvider;
 }
 
 function modelo(prompts: string[], cenario: CenarioDoModelo) {
@@ -407,7 +410,7 @@ describe("Sugerir resposta propõe quando o agente automático calaria (#3281)",
     });
   });
 
-  it.each<FinishReason>(["content-filter", "error", "other"])(
+  it.each<TerminoDoProvider>(["content-filter", "error", "other"])(
     "término vazio %s não recebe pedido humano nem outra chamada com ferramentas",
     async (finishReason) => {
       const f = await fixtureAutomática();

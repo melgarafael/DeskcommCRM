@@ -3,6 +3,8 @@ import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/repli
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
 import type { JobClaim } from '../../queue/claim';
 import { assertAgendaEffectPg } from '@/lib/agenda/efeito';
+import { AgendaPuladoError } from '@/lib/agenda/escolha-no-envio';
+import { escolhaDoFluxoPg } from '@/lib/agenda/escolha-no-envio-leitura';
 import { AgendaDeferredError } from '@/lib/agenda/protecao-followup';
 import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
 import { requireCurrentAutonomousTurn, requireCurrentServiceBoundary } from '@/lib/atendimento/fronteira-server';
@@ -27,6 +29,7 @@ import { parseServiceBoundary } from '@/lib/atendimento/fronteira';
  */
 import { sendWithLedger, pgSendLedger, type SendOutcome } from './send-ledger';
 import { registrarCustoDeVoz, resolverCaminhoDeVoz, VozLedgerTerminalError } from './send-voice';
+import type { FormatoDaVoz } from '@/lib/ai/voz/formato';
 import { logger } from '@/lib/logger';
 export type { SendOutcome, SendLedgerStatus } from './send-ledger';
 
@@ -84,6 +87,8 @@ export interface SendMessageInput {
     apiKey: string;
     voiceId: string;
     modelId?: string;
+    /** mp3 ou ogg/opus — o que o canal da conversa entrega como nota de voz (`lib/ai/voz/formato.ts`). */
+    formato?: FormatoDaVoz;
     /**
      * Grava os bytes no Storage e devolve o path — ver `send-voice.ts`.
      *
@@ -97,21 +102,21 @@ export interface SendMessageInput {
   /**
    * Presente = o envio sai como MÍDIA e o `body` é a LEGENDA.
    *
-   * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem
+   * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem ou o áudio
    * que já mora na pasta da conversa (`whatsapp-media/...`, foto de produto — assinada
    * curta por quem conhece o provider), e `url` é a mídia de um passo automático
    * (#2734, ampliada pelo #2972 para áudio, vídeo e documento), que o operador
    * aponta direto e o handler confere antes de buscar.
    */
   media?:
-    | { storagePath: string; mime: string }
+    | { kind?: 'audio' | 'image'; storagePath: string; mime: string }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
 }
 
 /**
- * O corpo que o handler de mensagens recebe: texto, template ou imagem da
+ * O corpo que o handler de mensagens recebe: texto, template ou mídia da
  * conversa. Exportado para o teste — o tipo decide o caminho no handler, e um
- * `type` errado manda a foto como texto sem ninguém ver.
+ * `type` errado degrada áudio ou imagem sem ninguém ver.
  */
 export function corpoDoEnvio(
   input: SendMessageInput,
@@ -141,7 +146,7 @@ export function corpoDoEnvio(
               media_mime: input.media.mime,
             }
           : {
-              type: 'image' as const,
+              type: input.media.kind ?? 'image',
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
             }
@@ -185,6 +190,15 @@ export async function sendTurnMessage(
     locked_by: input.jobClaim?.worker_id ?? null,
     claim_acquired_at: input.jobClaim?.acquired_at,
   });
+  // #3813 — a escolha do FLUXO ("Quando o contato tiver horário marcado") vale
+  // também aqui: este é o único ponto de envio do worker `pg`, e sem a escolha
+  // no contexto a guarda abaixo leria o padrão (`adiar`) e desfaria o que o
+  // fluxo publicou — um fluxo em `enviar` seguiria sendo segurado, e um em
+  // `nao_enviar` seguiria adiando em vez de registrar o pulo.
+  const enrollmentDoJob =
+    typeof sourceJobs[0]?.payload.followup_enrollment_id === 'string'
+      ? sourceJobs[0].payload.followup_enrollment_id
+      : undefined;
   const proactiveContext =
     sourceJobs[0]?.kind === 'followup_turn' && input.leadId
       ? {
@@ -192,14 +206,14 @@ export async function sendTurnMessage(
           contactId: input.leadId,
           jobId: input.jobId,
           jobClaim: input.jobClaim,
-          enrollmentId:
-            typeof sourceJobs[0].payload.followup_enrollment_id === 'string'
-              ? sourceJobs[0].payload.followup_enrollment_id
-              : undefined,
+          enrollmentId: enrollmentDoJob,
           nodeId:
             typeof sourceJobs[0].payload.node_id === 'string'
               ? sourceJobs[0].payload.node_id
               : undefined,
+          ...(enrollmentDoJob
+            ? { escolhaNoEnvio: await escolhaDoFluxoPg(db, input.tenantId, enrollmentDoJob) }
+            : {}),
         }
       : undefined;
   if (proactiveContext) await assertAgendaEffectPg(db, proactiveContext);
@@ -239,7 +253,12 @@ export async function sendTurnMessage(
         store: pgSendLedger(db),
         identidade: { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, seq: input.seq },
         textoFalado: input.body,
-        voz: { apiKey: input.voz.apiKey, voiceId: input.voz.voiceId, modelId: input.voz.modelId },
+        voz: {
+          apiKey: input.voz.apiKey,
+          voiceId: input.voz.voiceId,
+          modelId: input.voz.modelId,
+          ...(input.voz.formato ? { formato: input.voz.formato } : {}),
+        },
         upload: input.voz.upload,
       });
       vozResolvida = { mediaStoragePath: r.mediaStoragePath, mimeType: r.mimeType };
@@ -304,7 +323,16 @@ export async function sendTurnMessage(
         corpoDoEnvio(input, idempotencyKey, vozResolvida),
       );
     } catch (err) {
-      if (err instanceof AgendaDeferredError || err instanceof StaleServiceBoundaryError) throw err;
+      // #3813 — o PULO por compromisso não é falha de transporte: quem chama
+      // registra `skipped` com o motivo. Convertê-lo em `CrmTransportError`
+      // ("handler indisponível") mentiria sobre a causa e mandaria o turno
+      // re-tentar um envio que o fluxo decidiu não fazer.
+      if (
+        err instanceof AgendaPuladoError ||
+        err instanceof AgendaDeferredError ||
+        err instanceof StaleServiceBoundaryError
+      )
+        throw err;
       if (err instanceof ApiError && err.status === 403) {
         throw err;
       }

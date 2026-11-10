@@ -25,7 +25,7 @@ import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
 import { conferirCamposPersonalizados } from "../conferencia-de-campos";
 import { proporCamposDoNegocio } from "@/lib/leads/proposta-de-campos-por-documento";
 import { audit } from "@/lib/audit";
-import { resolveUserNames } from "./_users";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import type { McpContext, McpToolDefinition } from "../types";
 import { ApiError } from "@/lib/api/types";
 
@@ -137,8 +137,9 @@ async function enrichLeads(
 ): Promise<Array<Record<string, unknown>>> {
   if (leads.length === 0) return leads;
 
-  const names = await resolveUserNames(
+  const names = await nomesDosAtendentesCom(
     ctx.supabase,
+    ctx.organizationId,
     leads.map((l) => l.owner_user_id as string | null),
   );
 

@@ -121,6 +121,7 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Empresas e pessoas (venda para empresas)",
     oQueFaz: "Cadastro de empresas por CNPJ, das pessoas que decidem nelas e importação de planilha.",
   },
+  cadencias: { nome: "Cadências de e-mail", oQueFaz: "Sequências de e-mail opcionais por negócio, com descadastro e rastreio autorizado." },
   honorarios: {
     nome: "Honorários",
     oQueFaz: "Contratos de honorários com parcelas e o controle do que já foi pago.",
@@ -131,6 +132,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   financeiro: {
     nome: "Comandas",
     oQueFaz: "A comanda do atendimento: itens, forma de pagamento, comissões e fidelidade.",
+  },
+  lista_de_espera: {
+    nome: "Lista de espera da agenda",
+    oQueFaz: "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.",
   },
   cobranca: {
     nome: "Cobrança dos seus clientes",
@@ -143,7 +148,32 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   },
   setores: {
     nome: "Setores de atendimento",
-    oQueFaz: "Agrupa os atendentes da Equipe por área e filtra a aba Atendimento por setor. Não muda quem recebe as conversas.",
+    oQueFaz:
+      "Agrupa os atendentes da Equipe por área e distribui as conversas que têm setor definido entre quem atende aquela área, dentro do horário do setor. Conversa sem setor continua indo pelo número, como antes.",
+  },
+  avisos: {
+    nome: "Avisos para a equipe",
+    oQueFaz: "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.",
+  },  conferir_whatsapp: {
+    nome: "Conferir WhatsApp na prospecção",
+    oQueFaz: "Antes de abordar, pergunta ao WhatsApp se o telefone da empresa achada tem conta, e tira da abordagem quem não tem.",
+  },
+  mcp_por_agente: {
+    nome: "Ferramentas externas por agente",
+    oQueFaz:
+      "Cada agente conecta os próprios servidores de ferramentas externas, e o cliente pode autorizar, pela conversa, o acesso à conta dele num sistema de terceiro.",
+  },
+  cold_call: {
+    nome: "Cold Call (fila de ligações)",
+    oQueFaz: "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.",
+  },
+  painel_atendimento: {
+    nome: "Painel de atendimento",
+    oQueFaz: "Uma tela com três colunas, por número: quem espera resposta, quem está em atendimento e quem foi atendido hoje.",
+  },
+  reservas_de_lugar: {
+    nome: "Reservas de lugar",
+    oQueFaz: "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.",
   },
 };
 
@@ -361,6 +391,7 @@ const DO_SERVIDOR: RecursoOpcional[] = [
 ];
 
 const DA_EMPRESA: RecursoOpcional[] = [
+  { id: "cadencias_da_empresa", nome: "Cadências de e-mail da empresa", oQueFaz: "Sequências opcionais com inscrição manual e descadastro, usando o e-mail da instalação.", nivel: "organizacao", padrao: "desligado", quemDecide: "admin", href: "/app/settings/cadencias", modulo: "cadencias", capacidade: "cadencias", ler: (f) => f.settings === null || f.modulos === null ? "nao_lido" : capacidadesLigadas(f.settings, f.modulos).includes("cadencias") ? "ligado" : "desligado" },
   {
     id: "conversa_fica_com_quem_atendeu",
     nome: "A conversa fica com quem atendeu",
@@ -492,6 +523,16 @@ const DA_EMPRESA: RecursoOpcional[] = [
     href: "/app/settings/tenant/agenda",
     // Mesma régua do banco (`fn_colegas_podem_mexer_na_agenda`): só o `false` explícito desliga.
     ler: peloSettings((s) => s.colegas_podem_mexer_na_agenda !== false),
+  },
+  {
+    id: "conta_de_email_da_empresa",
+    nome: "Conta de e-mail da empresa",
+    oQueFaz:
+      "Os e-mails das automações saem pela conta Resend da empresa, com o endereço dela. Convites, recuperação de senha e LGPD continuam no envio do sistema.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/marca",
   },
   {
     id: "aviso_no_whatsapp",
@@ -640,6 +681,18 @@ const DA_EMPRESA: RecursoOpcional[] = [
     href: "/app/settings/voip-trunk",
     capacidade: "telefonia",
     ler: (f) => (f.telefonia === null ? "nao_lido" : f.telefonia ? "ligado" : "desligado"),
+  },
+  {
+    id: "apresentacao_do_catalogo",
+    nome: "Apresentação do catálogo pela IA",
+    oQueFaz:
+      "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/tenant",
+    capacidade: "apresentacao_do_catalogo",
+    ler: peloSettings((s) => capacidadesLigadas(s, []).includes("apresentacao_do_catalogo")),
   },
   {
     id: "propostas_da_empresa",

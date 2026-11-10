@@ -330,11 +330,19 @@ describe("o formulário completo — idioma, cabeçalho e botões", () => {
     expect(c.find((x) => x.type === "BUTTONS")?.buttons).toHaveLength(LIMITE_BOTOES);
   });
 
-  it("a tela respeita os limites de tamanho da plataforma", () => {
-    // Passar do limite é recusa, e a recusa não diz que o problema era o tamanho.
+  it("a tela CONTA os limites e BLOQUEIA o envio — não corta o texto em silêncio", () => {
+    // Passar do limite é recusa, e a recusa não diz que o problema era o
+    // tamanho. Antes o `onChange` cortava em LIMITE_CORPO: quem colava 1500
+    // caracteres via o campo parar no meio da palavra, sem saber por quê.
+    // Desde a #3635 o texto entra INTEIRO, o contador mostra o estouro e o
+    // envio fica bloqueado com a mensagem do campo culpado — a régua é a mesma
+    // que a rota usa (`lib/channels/limites-do-modelo.ts`).
     const fonte = telaDoModelo();
-    expect(fonte).toMatch(/slice\(0, LIMITE_CORPO\)/);
-    expect(fonte).toMatch(/slice\(0, LIMITE_RODAPE\)/);
+    expect(fonte, "o corte silencioso voltou").not.toMatch(/slice\(0, LIMITE_/);
+    expect(fonte).toMatch(/problemasDoModelo\(/);
+    expect(fonte).toMatch(/data-contador/);
+    expect(fonte).toMatch(/const temProblema = problemas\.length > 0;/);
+    expect(fonte).toMatch(/disabled=\{[^}]*\|\| temProblema\}/);
     expect(LIMITE_CORPO).toBe(1024);
     expect(LIMITE_RODAPE).toBe(60);
   });

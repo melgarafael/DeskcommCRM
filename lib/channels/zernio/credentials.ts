@@ -30,14 +30,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
+import { valorDaInstalacao } from "@/lib/instalacao/config";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 export interface ZernioCredentials {
   accountId: string;
   apiKey: string;
   baseUrl: string;
-  /** De onde veio — aparece no log de diagnóstico, nunca no payload. */
-  source: "session" | "env";
+  /**
+   * De onde veio — aparece no log de diagnóstico, nunca no payload.
+   * `installation` = a conta do provedor DA INSTALAÇÃO (conexão por um clique).
+   */
+  source: "session" | "installation" | "env";
 }
 
 /** A chave da busca. `organizationId` NÃO é decoração: ver o cabeçalho. */
@@ -75,6 +79,20 @@ export function zernioBaseUrl(): string {
 }
 
 /**
+ * A chave da conta do provedor DA INSTALAÇÃO — a que conecta números com um
+ * clique (`lib/channels/conexao-um-clique.ts`). `null` = não configurada, e a
+ * tela mostra só a conexão por chave própria.
+ *
+ * Lida pelo resolvedor a cada chamada, nunca guardada em memória: trocá-la na
+ * tela vale na hora para todas as sessões que apontam para ela, inclusive no
+ * worker, que é outro processo.
+ */
+export async function chaveDaInstalacao(): Promise<string | null> {
+  const { valor } = await valorDaInstalacao("ZERNIO_PLATFORM_API_KEY");
+  return valor?.trim() || null;
+}
+
+/**
  * Credencial do ambiente. `null` quando não configurada — o chamador trata como
  * canal não conectado (noop), nunca como erro.
  */
@@ -109,7 +127,7 @@ export async function zernioCredsForAccountId(
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("zernio_account_id, zernio_token_encrypted")
+      .select("zernio_account_id, zernio_token_encrypted, zernio_credencial_da_instalacao")
       .eq("organization_id", organizationId)
       .eq("zernio_account_id", accountId);
   const { data, error } = await queryTolerantToMissingArchived(
@@ -122,8 +140,24 @@ export async function zernioCredsForAccountId(
     );
   }
 
-  const cifrado = data?.zernio_token_encrypted;
-  if (!data || !cifrado) return null;
+  if (!data) return null;
+
+  // Ponteiro, não cópia (migration 9093): a sessão conectada por um clique fala
+  // pela chave da instalação, resolvida agora. Sem ela configurada, `null` — o
+  // mesmo "sem chave gravada" de sempre, e o chamador cai no env.
+  if (data.zernio_credencial_da_instalacao === true) {
+    const daInstalacao = await chaveDaInstalacao();
+    if (!daInstalacao) return null;
+    return {
+      accountId: data.zernio_account_id as string,
+      apiKey: daInstalacao,
+      baseUrl: zernioBaseUrl(),
+      source: "installation",
+    };
+  }
+
+  const cifrado = data.zernio_token_encrypted;
+  if (!cifrado) return null;
 
   const apiKey = await decryptWebhookSecret(admin, cifrado as unknown as string);
   // Decifra que falha devolve null: a chave (GUC) pode não estar configurada

@@ -11,12 +11,14 @@ import {
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
 import {
+  esquemaDoModelo,
   ICONES_DE_ATALHO,
   MAX_ATALHOS,
   motivoDaRecusaDoModelo,
   TAMANHO_MAXIMO_DO_ROTULO,
   type AtalhoDoCard,
   type IconeDeAtalho,
+  type ModoDeDiscagem,
   type RecusaDoModelo,
 } from "@/lib/leads/atalhos-do-card";
 import { Plus, Trash } from "@/lib/ui/icons";
@@ -172,6 +174,39 @@ export function EditorDeAtalhos({
               aria-invalid={recusa !== null}
               onChange={(e) => trocar(i, { url: e.target.value })}
             />
+            {/*
+              A FORMA do telefone (2ª fatia da #3487) só faz sentido em `tel:`.
+              Num `https://…?fone={{telefone}}` o número é DADO, não alvo de
+              discagem, e tirar o `55` ali gravaria no ERP um telefone que não
+              é o do contato. Por isso o campo aparece condicionado ao esquema
+              do modelo, e não como coluna fixa de toda linha.
+
+              O padrão é `completo` (o E.164 de sempre): a linha que já estava
+              gravada continua discando como antes até alguém escolher.
+            */}
+            {esquemaDoModelo(atalho.url) === "tel:" && (
+              <div className="flex flex-wrap items-center gap-2 lg:col-span-4">
+                <Select
+                  value={atalho.discagem ?? "completo"}
+                  disabled={!podeEditar}
+                  onValueChange={(modo) => trocar(i, { discagem: modo as ModoDeDiscagem })}
+                >
+                  <SelectTrigger
+                    aria-label={`${t("Discagem do atalho")} ${i + 1}`}
+                    className="w-64 text-xs"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="completo">{t("Com o código do país")}</SelectItem>
+                    <SelectItem value="sem_pais">{t("Sem o código do país (DDD + número)")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground">
+                  {t("Sem o código do país é o que o PABX costuma discar: DDD + número.")}
+                </span>
+              </div>
+            )}
             <button
               type="button"
               aria-label={`${t("Remover atalho")} ${atalho.rotulo || i + 1}`}

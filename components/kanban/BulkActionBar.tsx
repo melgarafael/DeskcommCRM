@@ -126,9 +126,11 @@ export function BulkActionBar({
   // heurística que erra ("Negociação" → "Negociaçãos"), e a contagem já diz
   // tudo que o plural diria: "12 selecionados" não fica pior que "12 Pacientes
   // selecionados", e nunca fica errado.
+  // O card é o NEGÓCIO (`vocab.deal`: "Pedido" no e-commerce), não a pessoa
+  // (`vocab.lead`: "Cliente") — o resto do funil já chama o card de negócio (#3811).
   const rotuloDaContagem =
     selectedIds.length === 1
-      ? `1 ${vocab.lead} ${t("selecionado")}`
+      ? `1 ${t(vocab.deal)} ${t("selecionado")}`
       : `${selectedIds.length} ${t("selecionados")}`;
 
   const runMove = (stageId: string) => {
@@ -365,7 +367,7 @@ export function BulkActionBar({
           <DialogHeader>
             <DialogTitle>
               {selectedIds.length === 1
-                ? `${t("Excluir")} 1 ${vocab.lead}?`
+                ? `${t("Excluir")} 1 ${t(vocab.deal)}?`
                 : `${t("Excluir")} ${selectedIds.length} ${t("selecionados")}?`}
             </DialogTitle>
             <DialogDescription>

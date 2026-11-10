@@ -17,7 +17,7 @@ import type {
   PatchConversationInput,
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
-import { normalizarTermoDeBusca } from "@/lib/inbox/termo-de-busca";
+import { normalizarTermoDeBusca, termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
 import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
@@ -234,6 +234,7 @@ export async function listConversationsHandler(
   if (q.exclude_finished) {
     query = query.not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
   }
+  if (q.closed_since) query = query.gte("service_closed_at", q.closed_since);
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
   // Canal desativado nunca entra na inbox (quarentena): exclui as conversas
   // dele aqui e nos badges, mantendo o acesso direto por id para auditoria e
@@ -413,10 +414,33 @@ export async function listConversationsHandler(
     const pareceTelefone = somenteDigitos.length >= 4;
 
     const camposDoContato = [
-      `display_name.ilike.*${s}*`,
-      `name.ilike.*${s}*`,
-      // O nome da agenda do celular (#2439): a lista o mostra, a busca o acha.
-      `address_book_name.ilike.*${s}*`,
+      // ─── O NOME DO CONTATO CASA SEM ACENTO (#3918) ────────────────────────
+      //
+      // Aqui havia `display_name.ilike.*s*`, `name.ilike.*s*` e
+      // `address_book_name.ilike.*s*`, e os três tinham o mesmo buraco: `ILIKE`
+      // dobra a CAIXA, não o ACENTO. `lower('Á') = 'á'`, que não é `'a'` — quem
+      // digita "Andreia" não acha "Andréia", e quem digita "Andréia" não acha
+      // quem foi cadastrado sem acento. No Brasil as duas grafias convivem, e o
+      // atendente digita rápido, sem acento: o cliente parece não existir.
+      //
+      // A correção precisa dos DOIS lados normalizados, e é por isso que ela não
+      // caberia só aqui: limpar o termo e comparar com a coluna crua continua
+      // devolvendo zero. O lado do banco é a coluna GERADA
+      // `contacts.busca_sem_acento` — `lower(public.f_unaccent(display_name,
+      // name, address_book_name))`, com índice `pg_trgm` (migration 9098) —, e o
+      // lado do termo é `termoSemAcento`, que é a mesma régua em TypeScript.
+      // As duas são comparadas por `tests/invariants/busca-do-inbox-ignora-acento.test.ts`.
+      //
+      // Por que `like` e não `ilike`: a coluna já é minúscula. `like` sobre ela
+      // com o termo minúsculo dá o mesmo resultado sem depender de o plano
+      // dobrar caixa em cima de uma coluna gerada — e o índice GIN de trigrama
+      // serve os dois operadores.
+      //
+      // O nome da agenda do celular (#2439) continua entrando: ele é a terceira
+      // parte da coluna gerada, e a lista o mostra — a busca tem de achá-lo.
+      `busca_sem_acento.like.*${termoSemAcento(s)}*`,
+      // O telefone tem OUTRO caminho: dígitos não têm acento, e o número é
+      // comparado só por dígitos (o `somenteDigitos` descarta o resto).
       ...(pareceTelefone ? [`phone_number.ilike.*${somenteDigitos}*`] : []),
     ].join(",");
 

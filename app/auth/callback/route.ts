@@ -272,7 +272,17 @@ export async function GET(request: NextRequest) {
   if (modo === "com_aprovacao") return await paraTelaAutenticada("/get-started");
 
   try {
-    await ensureTenantForUser(usuario, { source: "signup" });
+    // A volta do Google não traz nada nosso além da URL: o idioma da tela e o
+    // fuso do navegador vieram nela (`urlDeRetornoDoGoogle`), e são só PISTAS —
+    // `perfilDaEmpresaNova` aceita apenas idioma servido e fuso que existe.
+    await ensureTenantForUser(usuario, {
+      source: "signup",
+      pistas: {
+        idioma: url.searchParams.get("idioma"),
+        fuso: url.searchParams.get("fuso"),
+        acceptLanguage: request.headers.get("accept-language"),
+      },
+    });
   } catch (e) {
     await audit({
       action: "auth.signup_provision_failed",

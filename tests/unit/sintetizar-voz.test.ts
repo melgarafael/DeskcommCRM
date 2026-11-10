@@ -65,3 +65,34 @@ describe("sintetizarVoz", () => {
     ).rejects.toThrow(/synthesis_401/);
   });
 });
+
+describe("sintetizarVoz em ogg/opus — a nota de voz do canal oficial", () => {
+  /** O começo real de um arquivo OGG/Opus, como a ElevenLabs devolveu (medido em 02/11/2026). */
+  const OGG = [..."OggS"].map((c) => c.charCodeAt(0)).concat([0, 2, 0, 0]);
+
+  it("pede `output_format=opus_48000_32`, e etiqueta o áudio como audio/ogg;codecs=opus (não o audio/opus da resposta)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respostaDeAudio(OGG, "audio/opus"));
+    const r = await sintetizarVoz({ apiKey: "sk", voiceId: "v1", texto: "hola", formato: "ogg_opus" }, fetchMock);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toMatch(/\/v1\/text-to-speech\/v1\?output_format=opus_48000_32$/);
+    expect((init.headers as Record<string, string>).accept).toBe("*/*");
+    // O canal oficial lista `audio/ogg (OPUS codecs only)` — a etiqueta da
+    // ElevenLabs (`audio/opus`) gravada no Storage faria a plataforma recusar.
+    expect(r.mimeType).toBe("audio/ogg;codecs=opus");
+    expect(r.caracteres).toBe(4);
+  });
+
+  it("áudio que NÃO é OGG lança — o envio cai para texto, em vez de mandar anexo ou falhar no canal", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respostaDeAudio([0xff, 0xfb, 0x90, 0x00], "audio/mpeg"));
+    await expect(
+      sintetizarVoz({ apiKey: "sk", voiceId: "v1", texto: "hola", formato: "ogg_opus" }, fetchMock),
+    ).rejects.toThrow("synthesis_formato_inesperado");
+  });
+
+  it("sem formato, segue o mp3 de sempre — sem query na URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respostaDeAudio([1, 2, 3, 4]));
+    await sintetizarVoz({ apiKey: "sk", voiceId: "v1", texto: "hola" }, fetchMock);
+    expect(String(fetchMock.mock.calls[0]![0])).not.toContain("output_format");
+  });
+});
+

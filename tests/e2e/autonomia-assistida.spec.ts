@@ -527,10 +527,18 @@ test("pedido humano recupera o silêncio inicial e a aprovação mantém o veto 
     );
     await panel(page).getByRole("button", { name: "Aprovar e enviar" }).click();
     expect((await approvedAgain).status()).toBe(200);
-    // Entrada sintética explícita do controle de ritmo, pelo writer real.
-    // Não é uma segunda entregaHTTP: simula o consumo concorrente de cota
-    // após a aprovação, sem alterar a revisão ou contornar sua checagem.
+    // Entradas sintéticas explícitas do controle de ritmo, pelo writer real.
+    // Não são entregas HTTP: simulam o consumo concorrente de cota após a
+    // aprovação — dois DISPAROS esgotam o limite de 2 do número.
     await recordSend(pool, f.org, f.channel, new Date());
+    await recordSend(pool, f.org, f.channel, new Date());
+    // Decisão 246 (A): a RESPOSTA não é barrada pelo teto do dia, mas a janela
+    // de resposta segue vetando. Janela de 1h, 12h longe de agora (em UTC):
+    // exclui a hora atual e a seguinte, sem depender de quando o teste roda.
+    await pool.query(
+      "update channel_knobs set timezone='UTC', resposta_start_hour=(extract(hour from now() at time zone 'UTC')::int+12)%24, resposta_end_hour=(extract(hour from now() at time zone 'UTC')::int+12)%24+1 where organization_id=$1 and channel_session_id=$2",
+      [f.org, f.channel],
+    );
     await deliver(f, second, pool, "approved");
     const veto = await pool.query<{
       status: string; error_code: string; job_status: string; reagendado: boolean;
@@ -539,7 +547,7 @@ test("pedido humano recupera o silêncio inicial e a aprovação mantém o veto 
       [f.org, second],
     );
     expect(veto.rows).toEqual([
-      { status: "approved", error_code: "daily_cap", job_status: "pending", reagendado: true },
+      { status: "approved", error_code: "outside_window", job_status: "pending", reagendado: true },
     ]);
     expect(channel.bodies).toHaveLength(1);
     const after = await pool.query<{ n: number }>(
@@ -547,11 +555,24 @@ test("pedido humano recupera o silêncio inicial e a aprovação mantém o veto 
       [f.org, f.conversation],
     );
     expect(after.rows).toEqual([{ n: 1 }]);
+    // Janela aberta de novo (null = a de disparo, 0h-24h) com o teto ainda
+    // estourado: a resposta aprovada SAI — é a decisão 246 (A).
+    await pool.query(
+      "update channel_knobs set resposta_start_hour=null, resposta_end_hour=null where organization_id=$1 and channel_session_id=$2",
+      [f.org, f.channel],
+    );
+    const disparos = await pool.query<{ n: number }>(
+      "select count(*)::int n from pacing_ledger where organization_id=$1 and channel_session_id=$2 and not resposta",
+      [f.org, f.channel],
+    );
+    expect(disparos.rows).toEqual([{ n: 2 }]);
+    await deliver(f, second, pool, "sent");
+    expect(channel.bodies).toHaveLength(2);
     writeFileSync(info.outputPath("pedido-humano-recibo.json"), JSON.stringify({
       generation_calls_before_approval: calls[0]?.n,
       sends_before_approval: before.rows[0]?.n,
       delivered_after_review: channel.bodies.length,
-      synthetic_concurrent_pacing_entries: 1,
+      synthetic_concurrent_pacing_entries: 2,
       later_approval: veto.rows[0],
       provider: "roteirizado pelo conteúdo da conversa; sem modelo externo",
       delivery: "consumidor, cadeia, ledger e HTTP locais reais",

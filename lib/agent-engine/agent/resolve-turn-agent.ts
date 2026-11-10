@@ -76,8 +76,14 @@ import {
   loadPublishedAgentConfigById,
   type EscolhaDoNumero,
   type PublishedAgentConfig,
+  type RastroDoPublico,
 } from './agent-config';
 import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
+import {
+  carregarFatosDoCrmDoContato,
+  temFatosDoCrm,
+  type LeituraDosFatosDoCrm,
+} from './fatos-do-crm-do-contato';
 import { corpoDaMensagem, type CorpoDaMensagemRow } from '../edge/crm/get-lead-context';
 
 
@@ -119,6 +125,13 @@ export interface TurnAgentResolution {
    * issue, em que o genérico assumia calado.
    */
   silencioPeloPublico?: boolean;
+  /**
+   * O RASTRO da decisão do público neste turno (#3722): a fila de candidatos do
+   * número, a posição de cada um e a regra que o liberou ou barrou. Só existe
+   * quando alguém declarou público — é o que permite responder "por que o
+   * agente de vendas não respondeu este cliente?" sem abrir o banco.
+   */
+  rastroDoPublico?: RastroDoPublico;
 }
 
 export interface ResolveTurnAgentDeps {
@@ -135,6 +148,12 @@ export interface ResolveTurnAgentDeps {
    */
   escolherAgenteDoNumero?: typeof escolherAgenteDoNumero;
   classifyIntent?: typeof classifyIntent;
+  /**
+   * Os fatos do CRM que o classificador recebe (#3917). Default: a leitura real
+   * (`fatos-do-crm-do-contato.ts`), que NUNCA lança e devolve o motivo quando
+   * não há dado.
+   */
+  carregarFatosDoCrmDoContato?: typeof carregarFatosDoCrmDoContato;
   /** O Jev ao lado do classificador (`lib/ai/decisao/roteador.ts`). */
   consultarJev?: typeof consultarJevNoRoteador;
   /** Chave e `fetch` do Jev — dublês só no teste. Default: a chave da organização e o egress com allowlist. */
@@ -256,7 +275,39 @@ export async function resolveTurnAgent(
   /** O agente do número para ESTE contato, com o motivo (público incluído). */
   const agenteDoNumero = (): Promise<EscolhaDoNumero> =>
     _escolherDoNumero(db, input.tenantId, input.channelSessionId, input.leadId);
+  /**
+   * O rastro do público (#3722), registrado UMA vez por turno e devolvido na
+   * resolução.
+   *
+   * O log leva a FILA com a decisão de cada candidato — não uma frase solta:
+   * "o vendedor barrou por `exclude_tags: cliente ativo`, o suporte liberou".
+   * Leva só o item DECLARADO na config (nunca a lista de etiquetas do contato:
+   * `fields` do logger não carrega dado do lead) e nada quando nenhum agente do
+   * número declarou público — quem não usa o recurso não paga uma linha por
+   * turno.
+   */
+  const rastroDoPublico = (escolha: EscolhaDoNumero): Pick<TurnAgentResolution, 'rastroDoPublico'> => {
+    const rastro = escolha.rastro;
+    if (rastro === undefined) return {};
+    deps.log.info('público do agente: quem foi considerado no número (#3722)', {
+      tenantId: input.tenantId,
+      conversationId: input.conversationId,
+      contactId: input.leadId,
+      escolhido: rastro.escolhidoAgentId,
+      contatoAvaliado: rastro.contatoAvaliado,
+      candidatos: rastro.candidatos.map((c) => ({
+        agente: c.agentName,
+        posicao: c.posicao,
+        pausado: c.pausado,
+        sem_publico: c.semPublico,
+        regra: c.decisao?.regra ?? 'nao_avaliado',
+        valor: c.decisao?.valor ?? null,
+      })),
+    });
+    return { rastroDoPublico: rastro };
+  };
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
+  const _carregarFatosDoCrm = deps.carregarFatosDoCrmDoContato ?? carregarFatosDoCrmDoContato;
   const _consultarJev = deps.consultarJev ?? consultarJevNoRoteador;
 
   // As duas marcas decidem o `catch`: sem o roteador carregado não se sabe se
@@ -319,6 +370,7 @@ export async function resolveTurnAgent(
         confidence: null,
         outcome: 'no_router',
         ...(escolha.motivo === 'publico_barrou' ? { silencioPeloPublico: true } : {}),
+        ...rastroDoPublico(escolha),
       };
     }
 
@@ -340,7 +392,15 @@ export async function resolveTurnAgent(
             outcome,
             contactId: input.leadId,
           });
-          return { config: null, routerId: router.id, intentName: null, confidence, outcome, silencioPeloPublico: true };
+          return {
+            config: null,
+            routerId: router.id,
+            intentName: null,
+            confidence,
+            outcome,
+            silencioPeloPublico: true,
+            ...rastroDoPublico(escolha),
+          };
         }
         if (escolha.config === null) {
           deps.log.warn('resolve-turn-agent: router sem fallback e sessão sem agente publicado — turno cai no genérico', {
@@ -348,7 +408,14 @@ export async function resolveTurnAgent(
             outcome,
           });
         }
-        return { config: escolha.config, routerId: router.id, intentName: null, confidence, outcome };
+        return {
+          config: escolha.config,
+          routerId: router.id,
+          intentName: null,
+          confidence,
+          outcome,
+          ...rastroDoPublico(escolha),
+        };
       }
       const config = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
       if (config === null) {
@@ -443,11 +510,45 @@ export async function resolveTurnAgent(
     // Sob demanda, só há esta chamada se o Jev não trouxer intenção confiável.
     const modo = await (jev.modo ?? Promise.resolve('comparacao'));
     const estadoLido = await jev.estado;
-    const classificar = () => _classifyIntent(
-      db, llmCfg,
-      { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal!, recentMessages },
-      { log: deps.log },
-    );
+    /**
+     * Os fatos do CRM do contato (#3917), lidos no TURNO e não dentro do
+     * classificador: a consulta só acontece quando há mensagem inbound e um
+     * roteador de verdade, e quem já decidiu (Jev confiável) não a paga.
+     *
+     * O log leva CONTAGENS, nunca a lista: funil/etapa/etiqueta são config da
+     * empresa e podem ir para o prompt, mas o rastro do turno não carrega dado
+     * do contato (`fields` do logger, disciplina do #3722). Falha da leitura
+     * não muda o roteamento — vira uma linha de aviso com o motivo.
+     */
+    const fatosParaOClassificador = async (): Promise<LeituraDosFatosDoCrm> => {
+      const leitura = await _carregarFatosDoCrm(db, input.tenantId, input.leadId);
+      if (leitura.motivo !== null) {
+        deps.log.warn('classificador: sem fatos do CRM — turno classifica só com o texto (#3917)', {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          contactId: input.leadId,
+          motivo: leitura.motivo,
+        });
+      } else if (temFatosDoCrm(leitura.fatos)) {
+        deps.log.info('classificador: fatos do CRM do contato no contexto (#3917)', {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          contactId: input.leadId,
+          funis: leitura.fatos.funis.length,
+          etapas: leitura.fatos.funis.reduce((total, f) => total + f.etapas.length, 0),
+          etiquetas: leitura.fatos.etiquetas.length,
+        });
+      }
+      return leitura;
+    };
+    const classificar = async () => {
+      const leitura = await fatosParaOClassificador();
+      return _classifyIntent(
+        db, llmCfg,
+        { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, router, signal: input.signal!, recentMessages, fatosDoCrm: leitura.fatos },
+        { log: deps.log },
+      );
+    };
     // Decisão B (doc 89): o Jev só roteia sozinho onde a empresa tem a IA de
     // sempre, a reserva dele. Sem ela, vale a regra de hoje (R2): comparação,
     // e a escolha do Jev só vale com a IA de sempre tendo respondido. A pergunta

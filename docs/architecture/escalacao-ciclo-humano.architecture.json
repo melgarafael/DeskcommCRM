@@ -432,7 +432,7 @@
       "col": 5,
       "type": "ui",
       "label": "/app/ai/cases/avisos",
-      "sublabel": "liga o aviso, prova por envio real e diz os 11 estados em que ele não sai"
+      "sublabel": "liga o aviso, prova por envio real e diz os 12 estados em que ele não sai"
     },
     {
       "id": "avisoSuporteRota",
@@ -649,6 +649,22 @@
       "type": "worker",
       "label": "cron case-stale-watcher (1o braco)",
       "sublabel": "fn_casos_parados_para_lembrar: o aviso N vence em espera_desde + N x intervalo; o relogio e o teto valem por espera (trg_caso_marca_inicio_da_espera)"
+    },
+    {
+      "id": "retornoCasoOutbox",
+      "lane": "dados",
+      "col": 5,
+      "type": "database",
+      "label": "event_log ai.case_updated",
+      "sublabel": "lead_provided + transição + outbox atômicos; identidade por atualização"
+    },
+    {
+      "id": "modeloDoAviso",
+      "lane": "regra",
+      "col": 5,
+      "type": "lib",
+      "label": "lib/escalacao/modelo-do-aviso.ts",
+      "sublabel": "o modelo aprovado que leva o aviso pelo número oficial (9094) — uma variável só, o texto numa linha"
     }
   ],
   "edges": [
@@ -1502,6 +1518,45 @@
       "from": "casoCobranca",
       "to": "central",
       "label": "abre o aviso case_stale — um aberto por caso; o último diz que é o último"
+    },
+    {
+      "id": "retornoCaso1",
+      "from": "maquina",
+      "to": "retornoCasoOutbox",
+      "label": "provide_case_update vinculado à pergunta do turno"
+    },
+    {
+      "id": "retornoCaso2",
+      "from": "retornoCasoOutbox",
+      "to": "avisoSuporteMotor",
+      "label": "revalida ciclo, configuração e fronteira; claim com CAS"
+    },
+    {
+      "id": "retornoCaso3",
+      "from": "avisoSuporteMotor",
+      "to": "avisoSuporteRegistro",
+      "label": "recibo por atualização, preservando a abertura"
+    },
+    {
+      "id": "retornoCaso4",
+      "from": "avisoSuporteTexto",
+      "to": "reply",
+      "label": "comando ATUALIZACAO exige ciclo enviado; evento e job humanos canônicos"
+    },
+    {
+      "from": "avisoSuporteRota",
+      "to": "modeloDoAviso",
+      "label": "confere o modelo escolhido antes do RPC"
+    },
+    {
+      "from": "avisoSuporteMotor",
+      "to": "modeloDoAviso",
+      "label": "o número oficial avisa DENTRO do modelo, conferido no envio"
+    },
+    {
+      "from": "modeloDoAviso",
+      "to": "avisoSuporteRegistro",
+      "label": "lê config_aviso_de_caso.modelo_id"
     }
   ],
   "cards": [

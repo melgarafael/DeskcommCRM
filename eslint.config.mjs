@@ -29,6 +29,17 @@ export default defineConfig([
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/consistent-type-imports": ["warn", { prefer: "type-imports" }],
+      // `no-console` fica em `warn`, e não em `error`: a conta que sustenta isso
+      // foi medida na issue #297. `npx eslint . -f json` na main de 03/11/2026
+      // (eslint 10.13.0, o do lockfile) dá 652 avisos e 0 erros; 223 deles são
+      // desta regra, em 52 arquivos, e todos fora do bundle — `scripts/` 152,
+      // `tests/` 48, `evidence/` 20, `loop/` 3 — isto é, CLI e teste, onde o
+      // stdout É a saída. Nenhuma ocorrência em `app/`, `components/` ou `lib/`,
+      // que é o que a regra existe para proteger. Promover a `error` — ou pôr
+      // `--max-warnings 0` no passo `Lint` de `.github/workflows/ci.yml` -
+      // reprovaria a main hoje, pelo motivo errado; o passivo é anterior e
+      // mora fora do produto. Quando chegar a zero, a trava vale, e o lugar
+      // dela é aquele passo.
       "no-console": ["warn", { allow: ["warn", "error", "info"] }],
       // react-hooks 7 introduziu esta regra como error; o padrão setState-em-
       // effect é pré-existente em 14 componentes — warn até o mutirão de refactor.

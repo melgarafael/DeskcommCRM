@@ -51,7 +51,12 @@ import { ApiError } from "@/lib/api/types";
 import { avisoDaContinua } from "@/lib/channels/numero-do-atendente";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { mimeDaMidia, type MidiaDeTemplate } from "@/lib/templates/midias";
-import { embutirMencoes, podarMencoes, type MencaoEscolhida } from "@/lib/notifications/mentions";
+import {
+  embutirMencoes,
+  podarMencoes,
+  podarMencoesDaEdicao,
+  type MencaoEscolhida,
+} from "@/lib/notifications/mentions";
 import { cn } from "@/lib/utils";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
@@ -251,6 +256,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * (`@Ana Lima`); o id entra só quando o corpo sai da tela (`embutirMencoes`),
    * porque ninguém lê `@[Ana Lima](mencao:2f9c…)` enquanto escreve.
    *
+   * A lista é DERIVADA do campo, não um histórico do que já foi clicado
+   * (#2463): cada escolha guarda a posição em que foi escrita, e a primeira
+   * edição à mão que apagar aquele `@Nome` tira a pessoa da lista
+   * (`podarMencoesDaEdicao`). Quem apagou o trecho não avisa mais ninguém.
+   *
    * `mencaoDispensada` (Esc) e `mencaoIndice` (setas) são o mesmo desenho do
    * slash-menu de sempre, para os dois menus não disputarem a mesma tecla.
    */
@@ -439,14 +449,22 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * na hora de salvar (`embutirMencoes`), porque é o nome que quem digita lê.
    *
    * A posição vem do `gatilho`, não do fim do texto: o `@` pode estar no meio
-   * da frase, e o que se troca é do `@` até o cursor.
+   * da frase, e o que se troca é do `@` até o cursor. Ela também é GUARDADA na
+   * escolha (`inicio`): com duas pessoas de rótulo idêntico é a única coisa que
+   * distingue a menção apagada da que ficou (#2463, resíduo a).
    */
   function escolherMencao(opcao: OpcaoDeMencao): void {
     const gatilhoAqui = resolverMencao(text, caret);
     if (!gatilhoAqui) return;
     const inserido = `@${opcao.rotulo} `;
-    setText(text.slice(0, gatilhoAqui.start) + inserido + text.slice(caret));
-    setMencoes((atual) => [...atual, { id: opcao.membro.user_id, nome: opcao.rotulo }]);
+    const novo = text.slice(0, gatilhoAqui.start) + inserido + text.slice(caret);
+    setText(novo);
+    setMencoes((atual) => [
+      // A inserção desloca o que já estava à direita dela — a mesma conta da
+      // edição à mão, feita uma vez só (`podarMencoesDaEdicao`).
+      ...podarMencoesDaEdicao(text, novo, atual),
+      { id: opcao.membro.user_id, nome: opcao.rotulo, inicio: gatilhoAqui.start },
+    ]);
     const pos = gatilhoAqui.start + inserido.length;
     setCaret(pos);
     setMencaoIndice(0);
@@ -503,7 +521,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             // `embutirMencoes` pareia ocorrência e escolha por ordem.
             const restaurado = restaurar(taRef.current?.value ?? "");
             setMencoes((atual) =>
-              podarMencoes(restaurado, [...mencoesEnviadas, ...atual.filter((m) => !mencoesEnviadas.includes(m))]),
+              podarMencoes(restaurado, [
+                // Sem `inicio`: o texto restaurado passou pelas edições feitas
+                // DURANTE o envio, e a posição guardada não acompanha esse
+                // texto. Sem posição a poda volta a decidir por presença e a
+                // ordem é a de escolha — o contrato de antes da #2463.
+                ...mencoesEnviadas.map(({ id, nome }) => ({ id, nome })),
+                ...atual.filter((m) => !mencoesEnviadas.includes(m)),
+              ]),
             );
           },
           // Só depois de gravar, e só as escolhas DESTA nota — a lista pode já
@@ -579,6 +604,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    */
   function escreverNoCampo(conteudo: string, focar = true) {
     setText(conteudo);
+    // Substituir o campo também mexe no texto das menções: o que sumiu sai da
+    // lista aqui, e o que sobrou (ou deslizou) fica com a posição certa. Sem
+    // isto a lista voltaria a ser um histórico do que já foi clicado (#2463).
+    setMencoes((atual) => podarMencoesDaEdicao(text, conteudo, atual));
     const ta = taRef.current;
     if (!ta) return;
     requestAnimationFrame(() => {
@@ -1174,6 +1203,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               const end = ta.selectionEnd ?? text.length;
               const next = text.slice(0, start) + emoji + text.slice(end);
               setText(next);
+              // O emoji entra no meio do texto e desloca o que está à direita
+              // dele — as menções andam junto (#2463).
+              setMencoes((atual) => podarMencoesDaEdicao(text, next, atual));
               requestAnimationFrame(() => {
                 ta.focus();
                 ta.selectionStart = ta.selectionEnd = start + emoji.length;
@@ -1216,12 +1248,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               // A escolha que sumiu do texto sai da lista AGORA (#2463): com
               // duas pessoas de mesmo rótulo, a escolha apagada roubava o
               // `@Nome` da próxima e a nota notificava quem não foi mencionado.
+              // A régua é a posição guardada em cada escolha, não a presença do
+              // rótulo — "apagar a primeira de duas `@Ana Lima`" deixa a lista
+              // com a SEGUNDA, e é a ela que o aviso vai.
               //
               // Só na edição À MÃO, de propósito: o envio limpa o campo sem
               // passar por aqui, e é isso que mantém as menções valendo para o
               // retry depois de uma falha. Quem digita DURANTE o envio poda as
               // escolhas aqui — o `onError` da nota devolve as que foram enviadas.
-              setMencoes((atual) => podarMencoes(e.target.value, atual));
+              setMencoes((atual) => podarMencoesDaEdicao(text, e.target.value, atual));
               // Sumiu o `@` (apagou, ou o Enter escolheu): o Esc de uma vez
               // não pode travar a lista da PRÓXIMA menção.
               if (!resolverMencao(e.target.value, pos)) setMencaoDispensada(false);

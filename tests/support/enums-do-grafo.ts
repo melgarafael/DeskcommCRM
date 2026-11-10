@@ -70,7 +70,16 @@ export function enumsDoFollowup(): EnumDoGrafo[] {
  * usuário pode ter digitado no nome do fluxo ou numa etiqueta, e barrá-lo
  * transformaria a varredura num gerador de falso vermelho. Ele é coberto pelo
  * invariante de tradução, que é onde a pergunta certa é feita.
+ *
+ * `contato` (#3363) entra na mesma classe de razão e com a mesma prova: a
+ * palavra já é português corrente nos rótulos do construtor — o PRÓPRIO painel
+ * do gatilho escreve "por contato" (`TriggerConfigControl`, "Quantas vezes no
+ * máximo, por contato"), e barrá-lo fazia a varredura apontar aquele rótulo
+ * como vazamento de wire. O valor `contato` do enum não escapa cru: a tela o
+ * mostra como "Ficha do contato" (`CollectForm`) e o invariante
+ * `lib/followup/vocabulario.test.ts` cobre a tradução — e aqui, como em
+ * `custom`, a pergunta certa é a de tradução, não a de palavra isolada.
  */
 export const VALORES_DE_WIRE_NA_TELA_PROIBIDOS = [
   ...new Set(enumsDoFollowup().flatMap((e) => e.valores)),
-].filter((v) => v !== "custom");
+].filter((v) => v !== "custom" && v !== "contato");

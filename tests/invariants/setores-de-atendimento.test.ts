@@ -119,12 +119,15 @@ describe("setores de atendimento (0801)", () => {
     await expect(criarSetor(org, "   ")).rejects.toMatchObject({ code: "23514" });
   });
 
-  it("um setor por atendente, e setor de outra org é recusado pela FK composta", async () => {
+  it("o mesmo vínculo não se repete (N setores por atendente desde a 9062), e setor de outra org é recusado pela FK composta", async () => {
     const suporte = await criarSetor(org, "Suporte");
     const comercial = await criarSetor(org, "Comercial");
     const deFora = await criarSetor(OUTRA_ORG, "Financeiro");
 
     await query("insert into attendant_sector_members(organization_id,sector_id,user_id) values($1,$2,$3)", [org, suporte, ana]);
+    // 9062 (doc 248 = A): a pessoa pode atender várias filas — a segunda entra…
+    await query("insert into attendant_sector_members(organization_id,sector_id,user_id) values($1,$2,$3)", [org, comercial, ana]);
+    // …mas o MESMO vínculo duas vezes continua recusado pela PK.
     await expect(
       query("insert into attendant_sector_members(organization_id,sector_id,user_id) values($1,$2,$3)", [org, comercial, ana]),
     ).rejects.toMatchObject({ code: "23505" });

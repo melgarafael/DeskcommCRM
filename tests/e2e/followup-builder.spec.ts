@@ -1137,3 +1137,95 @@ test.describe("followup flow builder — controle de gatilho na PublishBar (Task
     }
   });
 });
+
+test.describe("followup flow builder — espera só termina em horário comercial", () => {
+  /**
+   * O horário da espera (`wait.ate_o_horario`) pela tela, como quem monta o
+   * fluxo: liga, escolhe dias e horas, salva, recarrega — e muda a duração DEPOIS,
+   * que é o clique que apagava os campos sem controle no painel. A prova final é
+   * a API: o rascunho gravado tem o horário inteiro.
+   */
+  test("liga o horário na espera, salva, recarrega e muda a duração sem perder o horário", async ({ page }) => {
+    await login(page, creds.users.manager!.email);
+    const evidencia = path.join(process.cwd(), "evidence", "espera-so-em-horario-comercial");
+    fs.mkdirSync(evidencia, { recursive: true });
+
+    const createRes = await page.request.post("/api/v1/ai/followup-flows", {
+      data: { name: `E2E Espera horário ${Date.now()}` },
+    });
+    expect(createRes.status()).toBe(201);
+    const { data: flow } = (await createRes.json()) as { data: { id: string } };
+
+    try {
+      await page.goto(`/app/ai/followups/${flow.id}`);
+      await expect(page.locator(".react-flow")).toBeVisible();
+      // O rascunho só é gravado com dois nós ou mais (`flowGraphSchema`): início,
+      // espera e fim, como um fluxo de verdade.
+      await page.getByTestId("palette-add-trigger").click();
+      await page.getByTestId("palette-add-wait").click();
+      await page.getByTestId("palette-add-end").click();
+
+      const card = page.locator('[data-testid^="node-card-wait-"]');
+      await card.click();
+      const panel = page.getByTestId("node-config-panel");
+      await expect(panel).toBeVisible();
+      const duracao = panel.getByLabel("Duração (minutos)");
+      await duracao.fill("1440");
+      await duracao.blur();
+
+      const chave = panel.getByRole("switch", { name: "Só terminar a espera em horário comercial" });
+      await expect(chave).not.toBeChecked();
+      await chave.click();
+      await expect(chave).toBeChecked();
+      await panel.getByLabel("Início").fill("10:00");
+      await panel.getByLabel("Fim").fill("16:00");
+      // O padrão é segunda a sexta; o sábado entra com um clique.
+      const sabado = panel.getByRole("button", { name: "Sáb", exact: true });
+      await expect(sabado).toHaveAttribute("aria-pressed", "false");
+      await sabado.click();
+      await expect(sabado).toHaveAttribute("aria-pressed", "true");
+      await expect(panel.getByRole("button", { name: "Dom", exact: true })).toHaveAttribute("aria-pressed", "false");
+
+      // O card diz o que o motor vai fazer — sem isto, "1440 min" prometia o toque à mesma hora.
+      await expect(card).toContainText("1440 min");
+      await expect(card).toContainText("só em horário comercial");
+      await page.screenshot({ path: path.join(evidencia, "01-horario-ligado.png"), fullPage: true });
+
+      const salvar = page.getByRole("button", { name: "Salvar", exact: true });
+      await salvar.click();
+      await expect(salvar).toBeDisabled();
+
+      // Recarrega: o painel volta com o horário que foi gravado, não com o padrão.
+      await page.reload();
+      await expect(page.locator(".react-flow")).toBeVisible();
+      await page.locator('[data-testid^="node-card-wait-"]').click();
+      const painel2 = page.getByTestId("node-config-panel");
+      await expect(painel2.getByRole("switch", { name: "Só terminar a espera em horário comercial" })).toBeChecked();
+      await expect(painel2.getByLabel("Início")).toHaveValue("10:00");
+      await expect(painel2.getByLabel("Fim")).toHaveValue("16:00");
+      await expect(painel2.getByRole("button", { name: "Sáb", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await page.screenshot({ path: path.join(evidencia, "02-recarregado.png"), fullPage: true });
+
+      // O clique que apagava: mudar a duração com o horário ligado.
+      const duracao2 = painel2.getByLabel("Duração (minutos)");
+      await duracao2.fill("2880");
+      await duracao2.blur();
+      await page.getByRole("button", { name: "Salvar", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Salvar", exact: true })).toBeDisabled();
+
+      const getRes = await page.request.get(`/api/v1/ai/followup-flows/${flow.id}`);
+      expect(getRes.status()).toBe(200);
+      const { data: persisted } = (await getRes.json()) as {
+        data: { draft_graph: { nodes: Array<{ type: string; config: Record<string, unknown> }> } };
+      };
+      const espera = persisted.draft_graph.nodes.find((n) => n.type === "wait");
+      expect(espera?.config).toEqual({
+        mode: "fixed",
+        duration_ms: 2880 * 60_000,
+        ate_o_horario: { start: "10:00", end: "16:00", weekdays: [1, 2, 3, 4, 5, 6] },
+      });
+    } finally {
+      await page.request.post(`/api/v1/ai/followup-flows/${flow.id}/disable`, { data: {} });
+    }
+  });
+});

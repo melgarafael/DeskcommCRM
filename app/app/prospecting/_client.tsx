@@ -10,15 +10,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
+  OFERTAS_DA_CAMPANHA,
+  ROTULOS_DAS_OFERTAS,
   campaignConfigSchema,
+  etiquetasDoNicho,
+  problemaNasEtiquetas,
   safePublicLink,
   type CampaignConfig,
   type Prospect,
 } from "@/lib/prospecting/schema";
+import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
@@ -50,6 +56,12 @@ type Campaign = {
   skipped_count: number;
   cost_usd: string | null;
   next_send_at: string;
+  /**
+   * O NÚMERO desta campanha (#3896). Duas campanhas em conexões diferentes
+   * rodam juntas, então a conexão deixa de ser dedutível: sem ela no cartão,
+   * duas campanhas "Em andamento" parecem a mesma coisa repetida.
+   */
+  channel_session_id: string | null;
 };
 type Candidate = {
   id: string;
@@ -271,6 +283,10 @@ export function ProspectingClient() {
   const searchAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A campanha que ocupa o número (409 `prospecting_channel_busy`, #3896). Só
+  // aparece enquanto o aviso na tela for o DELA — `aviso` amarra os dois, e
+  // qualquer outro `setError` a esconde sem precisar limpá-la em cada caminho.
+  const [ocupante, setOcupante] = useState<{ id: string; aviso: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [settings, setSettings] = useState(false);
@@ -301,6 +317,10 @@ export function ProspectingClient() {
     total: number;
   } | null>(null);
   const [recusadasDaImportacao, setRecusadasDaImportacao] = useState<RecusadaDaLinha[]>([]);
+  // O texto digitado no campo de etiquetas, cru: a lista normalizada não pode ser o valor do
+  // campo, senão a vírgula que o operador acabou de digitar some e ele não consegue pôr a segunda.
+  // Um texto por campanha: guardar um só apagaria o aviso de A ao digitar em B e voltar.
+  const [tagsDigitadas, setTagsDigitadas] = useState<Record<string, string>>({});
   const [campaignDrafts, setCampaignDrafts] = useState<Record<string, CampaignConfig>>({});
   const [manualCampaigns, setManualCampaigns] = useState<Record<string, boolean>>({});
   const [createdAgents, setCreatedAgents] = useState<{ id: string; name: string }[]>([]);
@@ -319,7 +339,21 @@ export function ProspectingClient() {
   } | null>(null);
   const campaign = data?.campaigns.find((c) => c.id === selected) ?? data?.campaigns[0];
   // A stored config is frozen by activation; unsaved choices belong to one campaign.
-  const config = campaign?.config ?? (campaign && campaignDrafts[campaign.id]) ?? emptyConfig;
+  const configGuardada =
+    campaign?.config ?? (campaign && campaignDrafts[campaign.id]) ?? emptyConfig;
+  // Campanha ainda sem configuração gravada: as etiquetas do contato vêm pré-preenchidas com o
+  // nicho da busca (spec 27), e é esse valor que o "Iniciar" manda. Campanha já gravada fica
+  // como está, e um rascunho que o operador já mexeu também.
+  const config: CampaignConfig =
+    campaign && !campaign.config && configGuardada.contact_tags === undefined
+      ? {
+          ...configGuardada,
+          contact_tags: etiquetasDoNicho(campaign.search?.niche ?? ""),
+        }
+      : configGuardada;
+  const textoDasEtiquetas =
+    (campaign && tagsDigitadas[campaign.id]) ?? (config.contact_tags ?? []).join(", ");
+  const etiquetasComProblema = problemaNasEtiquetas(textoDasEtiquetas);
   // "Configurada" é a campanha que TEM agente escolhido. Config parcial salva
   // pelo meio (instrução/qualificação sem agente) NÃO trava a etapa 2: medido na
   // VPS, 3 rascunhos assim ficavam sem como ser iniciados.
@@ -383,11 +417,31 @@ export function ProspectingClient() {
       setNotice(typeof message === "function" ? message(resposta) : message);
       return true;
     } catch (e) {
+      if (e instanceof ApiError && e.code === "prospecting_channel_busy") {
+        const quem = e.details as { campaign_id?: unknown; campaign_name?: unknown } | undefined;
+        const nome = typeof quem?.campaign_name === "string" ? quem.campaign_name : null;
+        const aviso = nome
+          ? `${t("Este número já está em outra campanha em andamento.")} ${t("Em uso por")} "${nome}".`
+          : t("Este número já está em outra campanha em andamento.");
+        setError(aviso);
+        if (typeof quem?.campaign_id === "string") setOcupante({ id: quem.campaign_id, aviso });
+        return false;
+      }
       setError(e instanceof Error ? e.message : t("Não foi possível concluir a operação."));
       return false;
     } finally {
       setBusy(false);
     }
+  }
+  function abrirCampanha(id: string) {
+    setSelected(id);
+    setNotice(null);
+    // O aviso geral não pertence a uma campanha: trocar de
+    // campanha limpa o que era da anterior.
+    setError(null);
+    // A confirmação de exclusão vale para UMA campanha: ao trocar, ela some.
+    setConfirmandoExclusao(false);
+    setMostrarDesmarcadas(false);
   }
   const update = <K extends keyof CampaignConfig>(field: K, value: CampaignConfig[K]) =>
     setConfig((c) => ({ ...c, [field]: value }));
@@ -612,6 +666,9 @@ export function ProspectingClient() {
   const criaSoNoEnvio = campaign?.config?.funnel_entry === "on_send";
   /** Linha que a caixa pode alterar agora. Espelha as regras do servidor (`selecionarNaFila`). */
   const marcavel = (c: Candidate) => {
+    // Sem WhatsApp (`lib/prospecting/whatsapp.ts`): quem tirou foi o produto, não o
+    // operador — a caixa não a devolve, e o servidor a recusaria ao iniciar.
+    if (c.data.whatsapp?.existe === false) return false;
     if (noRascunho) return true;
     if (c.status === "queued") return true;
     return (
@@ -642,6 +699,13 @@ export function ProspectingClient() {
   const marcadas = candidates.filter((c) => c.selected !== false);
   const opcoes = opcoesDoPreparo(campaign?.search);
   const sitesVerificados = marcadas.length - pendentesDeSite;
+  // WhatsApp (`lib/prospecting/whatsapp.ts`): sobre TODAS as que têm telefone — quem não
+  // tem WhatsApp sai da seleção, e é justamente ela que a conta precisa mostrar. Só
+  // aparece com algum veredito: sem conexão capaz, ou com o módulo `conferir_whatsapp`
+  // desligado (o padrão), "0 de N" ficaria parado para sempre.
+  const comTelefone = candidates.filter((c) => !!c.data.phone);
+  const whatsappVerificados = comTelefone.filter((c) => c.data.whatsapp != null).length;
+  const semWhatsapp = comTelefone.filter((c) => c.data.whatsapp?.existe === false).length;
   const previasProntas = marcadas.filter((c) => previaValida(c.data)).length;
   /**
    * O que o botão "Excluir desmarcadas" realmente apaga. Espelha o `where` do servidor: sem
@@ -701,6 +765,13 @@ export function ProspectingClient() {
             (query.error instanceof Error
               ? query.error.message
               : t("Falha ao carregar a prospecção."))}
+          {error && ocupante?.aviso === error && (
+            <div className="mt-2">
+              <Button variant="outline" size="sm" onClick={() => abrirCampanha(ocupante.id)}>
+                {t("Abrir essa campanha")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
       {notice && (
@@ -1137,16 +1208,7 @@ export function ProspectingClient() {
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => {
-                    setSelected(c.id);
-                    setNotice(null);
-                    // O aviso geral não pertence a uma campanha: trocar de
-                    // campanha limpa o que era da anterior.
-                    setError(null);
-                    // A confirmação de exclusão vale para UMA campanha: ao trocar, ela some.
-                    setConfirmandoExclusao(false);
-                    setMostrarDesmarcadas(false);
-                  }}
+                  onClick={() => abrirCampanha(c.id)}
                   className={`w-full rounded-lg border p-3 text-left ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
                 >
                   <span className="block text-sm font-medium">{c.name}</span>
@@ -1183,6 +1245,17 @@ export function ProspectingClient() {
                       {campaign.cost_usd !== null
                         ? ` · US$ ${Number(campaign.cost_usd).toFixed(2)}`
                         : ""}
+                      {(() => {
+                        // A CONEXÃO no cartão (#3896): com uma campanha por
+                        // número, "Em andamento" sozinho não diz por onde ela
+                        // fala — e é a conexão que o operador escolhe na
+                        // próxima.
+                        if (!campaign.channel_session_id) return "";
+                        const c = data?.channels.find((x) => x.id === campaign.channel_session_id);
+                        return c
+                          ? ` · ${c.display_name ?? c.phone_number ?? c.id}`
+                          : ` · ${t("Conexão removida.")}`;
+                      })()}
                     </p>
                   </div>
                   <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
@@ -1586,12 +1659,8 @@ export function ProspectingClient() {
                                     "A auditoria do site escolhe o melhor argumento por empresa, nesta ordem.",
                                   )}
                                 </p>
-                                {(
-                                  [
-                                    ["site", t("Site profissional")],
-                                    ["automacao_crm", t("Automação do atendimento (CRM)")],
-                                    ["automacao_n8n", t("Automações e integrações (N8N)")],
-                                  ] as const
+                                {OFERTAS_DA_CAMPANHA.map(
+                                  (valor) => [valor, t(ROTULOS_DAS_OFERTAS[valor])] as const,
                                 ).map(([valor, rotulo]) => (
                                   <label key={valor} className="flex items-start gap-2 text-sm">
                                     <input
@@ -1729,6 +1798,38 @@ export function ProspectingClient() {
                             )}
                           </fieldset>
                           <div>
+                            <Label htmlFor="prospecting-contact-tags">
+                              {t("Etiquetas do contato")}
+                            </Label>
+                            <Input
+                              id="prospecting-contact-tags"
+                              value={textoDasEtiquetas}
+                              aria-invalid={etiquetasComProblema !== null}
+                              onChange={(e) => {
+                                if (!campaign) return;
+                                setTagsDigitadas((atuais) => ({
+                                  ...atuais,
+                                  [campaign.id]: e.target.value,
+                                }));
+                                update("contact_tags", normalizarTags(e.target.value.split(",")));
+                              }}
+                              className="mt-1"
+                              placeholder={t("Ex.: estetica, clinicas")}
+                            />
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {t(
+                                "As skills com estas etiquetas entram desde a primeira resposta. Separe por vírgula, até 5. Vem preenchida com o nicho da busca quando ele cabe; pode trocar.",
+                              )}
+                            </p>
+                            {etiquetasComProblema && (
+                              <p className="mt-1 text-xs text-destructive" role="alert">
+                                {etiquetasComProblema === "demais"
+                                  ? t("São no máximo 5 etiquetas. Apague as que sobraram para iniciar.")
+                                  : t("Cada etiqueta tem até 40 caracteres. Encurte a mais longa para iniciar.")}
+                              </p>
+                            )}
+                          </div>
+                          <div>
                             <Label htmlFor="prospecting-basis">
                               {t("Referência da avaliação de legítimo interesse")}
                             </Label>
@@ -1762,7 +1863,8 @@ export function ProspectingClient() {
                           disabled={
                             busy ||
                             !agents.length ||
-                            !data?.channels.some((c) => c.status === "WORKING")
+                            !data?.channels.some((c) => c.status === "WORKING") ||
+                            etiquetasComProblema !== null
                           }
                         >
                           {t("Iniciar abordagens com IA")}
@@ -1794,6 +1896,20 @@ export function ProspectingClient() {
                             <>
                               {" · "}
                               {t("Prévias:")} {previasProntas} {t("de")} {marcadas.length}
+                            </>
+                          )}
+                          {whatsappVerificados > 0 && (
+                            <>
+                              {" · "}
+                              {t("WhatsApp verificado:")} {whatsappVerificados} {t("de")}{" "}
+                              {comTelefone.length}
+                              {semWhatsapp > 0 && (
+                                <>
+                                  {" ("}
+                                  {semWhatsapp} {t("sem WhatsApp, fora da abordagem")}
+                                  {")"}
+                                </>
+                              )}
                             </>
                           )}
                         </p>
@@ -2000,6 +2116,14 @@ export function ProspectingClient() {
                                 {c.data.category}
                               </p>
                               <p className="mt-1 text-xs">{c.data.phone ?? t("Sem telefone")}</p>
+                              {c.data.phone && c.data.whatsapp?.existe === true && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {t("Tem WhatsApp")}
+                                </p>
+                              )}
+                              {c.data.phone && c.data.whatsapp?.existe === false && (
+                                <p className="mt-1 text-xs font-medium">{t("Sem WhatsApp")}</p>
+                              )}
                             </td>
                             <td className="max-w-64 p-4 align-top">
                               <p className="text-xs text-muted-foreground">{c.data.address}</p>
@@ -2025,7 +2149,7 @@ export function ProspectingClient() {
                             <td className="max-w-64 p-4 align-top">
                               <Badge variant="outline">{t(labels[c.progress] ?? c.progress)}</Badge>
                               {c.error && (
-                                <p className="mt-2 text-xs text-muted-foreground">{c.error}</p>
+                                <p className="mt-2 text-xs text-muted-foreground">{t(c.error)}</p>
                               )}
                               {c.message_status && (
                                 <p className="mt-1 text-xs text-muted-foreground">

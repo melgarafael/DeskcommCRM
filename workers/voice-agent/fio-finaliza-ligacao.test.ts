@@ -24,12 +24,13 @@ vi.mock("@/lib/supabase/admin", () => ({
         select: () => consulta,
         update: () => consulta,
         eq: () => consulta,
+        in: () => consulta,
         single: async () => ({
           data: { id: "chamada-1", organization_id: "org-1", contact_id: "contato-1" },
           error: null,
         }),
         maybeSingle: async () => ({ data: { status: "active" }, error: null }),
-        then: (ok: (r: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(ok),
+        then: (ok: (r: unknown) => unknown) => Promise.resolve({ data: [{ id: "chamada-1" }], error: null }).then(ok),
       };
       void tabela;
       return consulta;
