@@ -132,6 +132,17 @@ describe("listarAgendaDoAparelho", () => {
     ).resolves.not.toContain("segredo");
   });
 
+  it("400 do store desligado sai com o status CRU — é o que a classificação lê (#4102)", async () => {
+    // O transporte responde 400 quando `noweb.store.enabled` está desligado
+    // (no CRM, "Guardar o histórico anterior à vinculação"). O cliente não
+    // interpreta — entrega `waha_contacts_all_400`, e quem sabe que 400 aqui
+    // significa "ligue a opção" é `lib/channels/agenda-do-aparelho-falha.ts`.
+    resposta = { status: 400, corpo: { message: "Enable store to use this endpoint" } };
+    await expect(cliente().listarAgendaDoAparelho("s1", { limit: 100, offset: 0 })).rejects.toThrow(
+      "waha_contacts_all_400",
+    );
+  });
+
   it("anda página a página sem repetir o offset", async () => {
     resposta = { status: 200, corpo: [contato()] };
     await cliente().listarAgendaDoAparelho("s1", { limit: 100, offset: 0 });

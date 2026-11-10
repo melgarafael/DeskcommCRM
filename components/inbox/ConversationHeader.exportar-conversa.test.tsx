@@ -65,6 +65,13 @@ vi.mock("@/hooks/contacts/usePersonalContact", () => ({
 vi.mock("@/hooks/ai/useAutomaticoAtivo", () => ({
   useAutomaticoAtivo: () => ({ data: true }),
 }));
+// Desde a Spec 31 (B2) o cabeçalho consulta o número da resposta por uma query
+// (`useQuery`), e este arquivo não monta `QueryClientProvider` — mesmo
+// tratamento do `ConversationHeader.acoes.test.tsx`: sem resposta, o aviso de
+// "a resposta sai por" não aparece, e o item de export não depende dele.
+vi.mock("@/hooks/inbox/useEnderecoDaResposta", () => ({
+  useEnderecoDaResposta: () => ({ data: undefined }),
+}));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));

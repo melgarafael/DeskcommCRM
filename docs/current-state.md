@@ -105,8 +105,11 @@ correspondentes localizados no repo):
   Guia: `docs/integracao/mcp-oauth-por-contato.md`.
 - **Status do WhatsApp por integração** — módulo opcional `status_whatsapp`, desligado de fábrica
   (liga em `/admin/sistema`). A ferramenta MCP `crm_publish_whatsapp_status` publica imagem por
-  `publishStatus` do canal. **Incompleto:** nenhuma publicação real foi medida; a regra do acervo
-  (`todos` exige "Guardar histórico", a lista não) foi lida na fonte da tag do kit.
+  `publishStatus` do canal. Medido em 10/11/2026 num número de teste real (WAHA NOWEB): a lista de
+  1 contato publicou em 1,5 s e `todos`, com "Guardar histórico" ligado, em 0,8 s; com o histórico
+  desligado, `todos` é recusado (`acervo_desligado`) sem chegar ao canal (prova do #3463).
+  **Incompleto:** a lista com o histórico DESLIGADO não foi medida no canal real (a sessão de teste
+  já o tinha ligado), e ninguém viu o Status num aparelho: a API do canal não lista o próprio Status.
 - **LGPD** — export e redact via workers, anonimização em cascata, consentimento auditado.
 - **Self-host** — `hostgator-setup-kit`, `baseline.sql` auto-curativo, runbook de produção.
 - **Webhooks & automação** — captação + regras QUANDO/SE/ENTÃO + gatilhos externos.

@@ -134,7 +134,7 @@ describe("POST /api/v1/ai/skills/import", () => {
 
     const { POST } = await import("./route");
     const res = await POST(
-      postReq(
+      await postReq(
         makeZip({
           "humanizer-main/SKILL.md": validSkillMd,
           "humanizer-main/README.md": "# humanizer",
@@ -154,7 +154,7 @@ describe("POST /api/v1/ai/skills/import", () => {
     mockAuthzOk();
     const { POST } = await import("./route");
     const res = await POST(
-      postReq(
+      await postReq(
         makeZip({
           "humanizer-main/SKILL.md": validSkillMd,
           "outra-skill/SKILL.md": validSkillMd,
