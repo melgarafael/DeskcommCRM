@@ -20308,6 +20308,10 @@ export const DICIONARIO: Traducoes = {
     {
       es: "El mensaje sale en el momento, aunque haya una cita agendada. Sirve para el posatención y el cumpleaños, que pierden sentido si esperan.",
     },
+  "Vale para todos os fluxos de follow-up deste agente. Cada passo de automação tem a escolha própria.":
+    {
+      es: "Vale para todos los flujos de seguimiento de este agente. Cada paso de automatización tiene su propia elección.",
+    },
   "Não enviar": { es: "No enviar" },
   "A mensagem não sai e o pulo fica registrado na Atividade com o motivo “contato com horário marcado”, para a equipe saber que a automação passou.":
     {
