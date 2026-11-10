@@ -26,4 +26,6 @@ export const TEXTOS_CONTRATACAO = {
   "O plano mudou. Confira a escolha antes de continuar para o pagamento.": { es: "El plan cambió. Revisa la elección antes de continuar al pago." },
   "Confira seu plano e continue para o pagamento.": { es: "Revisa tu plan y continúa al pago." },
   "Não foi possível retomar sua contratação. Tente novamente.": { es: "No se pudo retomar tu contratación. Inténtalo de nuevo." },
+  "Não foi possível carregar sua contratação agora. Tente de novo em instantes; seu plano está preservado.": { es: "No se pudo cargar tu contratación ahora. Inténtalo de nuevo en unos instantes; tu plan se mantiene." },
+  "Tentar de novo": { es: "Intentar de nuevo" },
 };
