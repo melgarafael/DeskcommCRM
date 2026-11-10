@@ -13179,6 +13179,7 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível consultar o acervo.": { es: "No fue posible consultar el acervo." },
   "Este acervo ainda não tem material publicado.": { es: "Este acervo todavía no tiene material publicado." },
   "A base não tem essa informação.": { es: "La base no tiene esa información." },
+  "Abrir o material de origem": { es: "Abrir el material de origen" },
   "Há algo parecido no acervo, mas ainda abaixo do limiar — tente outras palavras.": { es: "Hay algo parecido en el acervo, pero todavía bajo el umbral: prueba con otras palabras." },
   // ─── Acervo: a listagem (app/app/ai/knowledge/sources/_client.tsx) ───
   //
