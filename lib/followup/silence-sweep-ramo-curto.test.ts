@@ -213,13 +213,6 @@ describe("runSilenceSweep — ramo curto não re-enrola a cada tique (#529)", ()
     expect(cenario.inscricoes).toHaveLength(2);
     expect(total.enrolled).toBe(2);
     expect(total.skipped_cooldown).toBeGreaterThan(60);
-
-    console.log(
-      `[#529] com a guarda, ${JANELA_MINUTOS} tiques (threshold ${THRESHOLD_MINUTOS} min, ` +
-        `ramo de ${DURACAO_DO_RAMO_MINUTOS} min): inscrições=${cenario.inscricoes.length} ` +
-        `enrolled=${total.enrolled} skipped_cooldown=${total.skipped_cooldown} ` +
-        `skipped_existing=${total.skipped_existing}`,
-    );
   });
 
   it("⭐ a guarda é só ESPAÇO, não bloqueio: passado o threshold, reinscreve", async () => {
@@ -233,12 +226,6 @@ describe("runSilenceSweep — ramo curto não re-enrola a cada tique (#529)", ()
     const minuto = noTique.findIndex((s, indice) => indice > 0 && s.enrolled === 1);
     expect(minuto).toBeGreaterThan(DURACAO_DO_RAMO_MINUTOS + THRESHOLD_MINUTOS);
     expect(cenario.inscricoes).toHaveLength(2);
-
-    console.log(
-      `[#529] reinscrição legítima no tique ${minuto} ` +
-        `(ramo ${DURACAO_DO_RAMO_MINUTOS} min + threshold ${THRESHOLD_MINUTOS} min); ` +
-        `total de inscrições na janela=${cenario.inscricoes.length}`,
-    );
   });
 
   it("CONTROLE: sem a guarda, o mesmo ramo curto vira uma inscrição a cada ~4 min (o custo do #529)", async () => {
@@ -263,10 +250,5 @@ describe("runSilenceSweep — ramo curto não re-enrola a cada tique (#529)", ()
     // guarda, `skipped_cooldown` é zero e todo tique livre vira INSERT.
     expect(sem.total.skipped_cooldown).toBe(0);
     expect(sem.total.enrolled).toBe(semGuarda.inscricoes.length);
-
-    console.log(
-      `[#529] custo medido em ${JANELA_MINUTOS} tiques — sem guarda: ` +
-        `${semGuarda.inscricoes.length} inscrições; com guarda: ${comGuarda.inscricoes.length}`,
-    );
   });
 });
