@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { mensagemDeErroDoTelefone } from "@/components/contacts/TelefonesDaFicha";
+import { mensagemDeErro } from "@/components/contacts/TelefonesDaFicha";
 import { ApiError } from "@/lib/api/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
@@ -27,14 +27,19 @@ describe("a tela mostra a frase da API para número inválido", () => {
     const erro = new ApiError(422, "invalid_phone", undefined, "req-1", frase);
 
     // Sabotagem: devolver o texto fixo aqui é o defeito medido na tela.
-    expect(mensagemDeErroDoTelefone(erro, t)).toBe(frase);
-    expect(mensagemDeErroDoTelefone(erro, t)).not.toContain("DDD");
+    expect(mensagemDeErro(erro, t)).toBe(frase);
+    expect(mensagemDeErro(erro, t)).not.toContain("DDD");
   });
 
-  it("o resto dos códigos que a tela conhece continua literal e traduzível", () => {
-    const emUso = new ApiError(409, "phone_in_use", undefined, "req-2", "veio da API");
-    expect(mensagemDeErroDoTelefone(emUso, t)).toBe("Este número já está em outra ficha.");
-    const inesperado = mensagemDeErroDoTelefone(new Error("boom"), t);
+  it("o resto dos códigos: frase do servidor primeiro, literal local como recurso", () => {
+    // Lei da main (e884d7694): a mensagem do SERVIDOR vem primeiro, porque é ela
+    // que conhece o país; o texto literal da tela só entra quando a resposta não
+    // traz frase nenhuma (ou traz só o código).
+    const emUsoComFrase = new ApiError(409, "phone_in_use", undefined, "req-2", "veio da API");
+    expect(mensagemDeErro(emUsoComFrase, t)).toBe("veio da API");
+    const emUsoSemFrase = new ApiError(409, "phone_in_use", undefined, "req-3");
+    expect(mensagemDeErro(emUsoSemFrase, t)).toBe("Este número já está em outra ficha.");
+    const inesperado = mensagemDeErro(new Error("boom"), t);
     expect(inesperado).toBe("Erro inesperado. Tente novamente.");
   });
 });

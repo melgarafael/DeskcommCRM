@@ -214,6 +214,11 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
      lib/automation/engine.ts, no run que registra a decisão de não rodar. */
   uma_vez_por_contato:
     "Esta automação está configurada para rodar no máximo uma vez por contato, e este contato já passou por ela. Nada foi enviado agora e nada será.",
+  /* #2974, fatia 2 — a MESMA decisão do motor, pela outra régua: a regra tem um
+     intervalo mínimo por contato e este contato passou por ela há menos tempo
+     que isso. Nasce em lib/automation/engine.ts, no run do bloqueio. */
+  intervalo_por_contato:
+    "Esta automação não repete para o mesmo contato dentro do intervalo configurado, e este contato passou por ela há menos tempo que isso. Nada foi enviado agora; ela volta a valer quando a janela terminar.",
   // #1528 — o motor pula atribuir/mover nos gatilhos do trigger (laço).
   acao_fecharia_laco:
     "Neste gatilho esta ação não roda: atribuir responsável ou mover o lead dispararia a automação de novo, sem fim. Abra a automação e tire a ação.",
