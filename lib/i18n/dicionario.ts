@@ -4303,6 +4303,16 @@ export const DICIONARIO: Traducoes = {
       es: "Necesita una credencial de ElevenLabs registrada y una voz elegida en Agente de IA → Proveedores. Sin los dos, el agente sigue respondiendo en texto — activar esto no rompe nada.",
     },
   "Quando falar": { es: "Cuándo hablar" },
+  "Voz deste agente": { es: "Voz de este agente" },
+  "Qual voz este agente usa": { es: "Qué voz usa este agente" },
+  "Voz da organização": { es: "Voz de la organización" },
+  "Só vale com “Enviar nota de voz” ligado. Sem escolha própria, o agente fala com a voz da organização.":
+    {
+      es: "Solo vale con “Enviar nota de voz” activado. Sin elección propia, el agente habla con la voz de la organización.",
+    },
+  "Voz deste agente: passa a usar a voz da organização.":
+    { es: "Voz de este agente: pasa a usar la voz de la organización." },
+  "Voz deste agente salva:": { es: "Voz de este agente guardada:" },
   "Só quando o cliente mandar áudio": { es: "Solo cuando el cliente envíe audio" },
   "Nunca (desligado, sem apagar a configuração)": {
     es: "Nunca (desactivado, sin borrar la configuración)",

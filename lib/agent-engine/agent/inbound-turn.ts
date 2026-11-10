@@ -3200,6 +3200,9 @@ async function executarTurnoDoAgente(
           agentId: agentConfig.agentId,
           vozEnabled: agentConfig.vozEnabled,
           vozQuando: agentConfig.vozQuando,
+          // Voz por agente (#4228): sem chave no agente, `null` e a resolução cai
+          // na voz da organização — o comportamento de antes, byte a byte.
+          vozVoiceId: agentConfig.vozVoiceId ?? null,
           voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
           inboundType:
             input.inboundMessageId === undefined
