@@ -444,7 +444,7 @@
     },
     {
       "titulo": "Por que o lead da Meta é da página, e a página é a do token",
-      "texto": "O App da Meta tem uma URL de destino só para o objeto página, então a mesma URL recebe os leads de todas as páginas da instalação. Quem decide a empresa do lead é a página gravada na fonte, e ela só se grava conferida pelo próprio token (GET /me), por quem administra. Lead que a Meta avisa e não entra aparece em Leads recebidos com o motivo, na organização da página dona; o de página sem dona fica só no log."
+      "texto": "O App da Meta tem uma URL de destino só para o objeto página, então a mesma URL recebe os leads de todas as páginas da instalação. Quem decide a empresa do lead é a página gravada na fonte, e ela só se grava conferida pelo próprio token (GET /me), por quem administra. Com a fonte do endereço ativa, lead que a Meta avisa e não entra aparece em Leads recebidos com o motivo, na organização da página dona; o de página sem dona fica só no log. Com a fonte do endereço pausada, a rota responde 404 antes de ler o corpo e nada é gravado."
     }
   ]
 }

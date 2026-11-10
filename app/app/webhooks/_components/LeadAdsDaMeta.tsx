@@ -197,7 +197,7 @@ export function LeadAdsDaMeta({ source }: { source: WebhookSourceRow }) {
       </div>
       <p className="text-xs text-muted-foreground">
         {t(
-          "Desligada, o padrão. O aviso da Meta chega sem as respostas; ligada, buscamos nome, telefone, e-mail e as demais respostas com o token da página. Lead que a Meta avisar e não entrar aparece em Leads recebidos, com o motivo.",
+          "Desligada, o padrão. O aviso da Meta chega sem as respostas; ligada, buscamos nome, telefone, e-mail e as demais respostas com o token da página. Com a fonte ativa, lead que a Meta avisar e não entrar aparece em Leads recebidos, com o motivo; com a fonte pausada, a Meta recebe recusa e o aviso não é lido.",
         )}
       </p>
     </section>
