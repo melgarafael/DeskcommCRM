@@ -4396,17 +4396,18 @@ Ambiente previsto: banco fresco aplicado do `supabase/baseline.sql` (não das `m
 `scripts/bootstrap-owner.ts`, envs opcionais ausentes (sem `RESEND_API_KEY`), e um catálogo de laboratório
 com uma entrada `connected` que traz `service_origin` em `https://` (loopback só com a política de laboratório ligada).
 
-**Bloqueio conhecido antes da execução.** O catálogo de laboratório (`experiments/extensoes/catalog/catalog.py`)
-ainda não admite o perfil `connected`: `validate_manifest` recusa todo `profile` diferente de `"declarative"`
-(linha 168) e `entry_from_manifest` (linha 353) não grava `service_origin`. Até isso mudar, o caso J68.1 não
-roda, e os casos seguintes ficam como especificação.
+**O bloqueio do laboratório caiu.** O catálogo de laboratório (`experiments/extensoes/catalog/catalog.py`) agora
+admite o perfil `connected` (`publish --service-origin`, que grava `service_origin` na entrada do catálogo) e serve
+o módulo de ensaio (`serve --modulo-de-ensaio`, `modulo_de_ensaio.py`). Os casos J68.1, J68.2 e J68.4 são percorridos
+pela tela em `tests/e2e/modulo-conectado.spec.ts` (ver J73). Escrito, **não executado nesta máquina**: o veredito é o
+e2e do PR (parte 7).
 
 | Caso | Prioridade | Prova prevista | Resultado |
 |---|---|---|---|
-| J68.1 | Admitir um catálogo de laboratório com entrada `connected` e `service_origin` | P0 | Catálogo exportado com `profile: connected` e `service_origin`; a admissão pela UI aceita; banco com a entrada e a origem | **NÃO EXECUTADO** — bloqueado pelo laboratório (ver acima) |
-| J68.2 | Instalar pela UI em `/admin/extensoes` | P0 | A instalação aparece com perfil `connected`, revisão 1, sem `disabled_at`; banco com recibo `install` concluído | **NÃO EXECUTADO** |
+| J68.1 | Admitir um catálogo de laboratório com entrada `connected` e `service_origin` | P0 | Catálogo exportado com `profile: connected` e `service_origin`; a admissão pela UI aceita; banco com a entrada e a origem | **coberto por e2e** (`modulo-conectado.spec.ts`, passo 2, parte 7 do `e2e.yml`); **NÃO EXECUTADO** nesta máquina |
+| J68.2 | Instalar pela UI em `/admin/extensoes` | P0 | A instalação aparece com perfil `connected`, revisão 1, sem `disabled_at`; banco com recibo `install` concluído | **coberto por e2e** (passo 2: instalação pelo catálogo até o cartão aparecer; o recibo no banco não é lido); **NÃO EXECUTADO** nesta máquina |
 | J68.3 | Cartão do módulo conectado instalado | P0 | O cartão mostra o botão Desligar e a nota "Desligar não desinstala: o módulo continua instalado e pode ser ligado de novo." Não há aviso de instalação próprio nesta fase | **NÃO EXECUTADO** |
-| J68.4 | Desligar | P0 | Toast "Módulo desligado nesta instalação."; o cartão mostra "Desligado nesta instalação" com a data e o botão passa a Ligar; banco com `disabled_at` e `disabled_by` preenchidos, revisão +1 e `api_audit_log` com `extension.switched` | **NÃO EXECUTADO** |
+| J68.4 | Desligar | P0 | Toast "Módulo desligado nesta instalação."; o cartão mostra "Desligado nesta instalação" com a data e o botão passa a Ligar; banco com `disabled_at` e `disabled_by` preenchidos, revisão +1 e `api_audit_log` com `extension.switched` | **coberto por e2e em parte** (passo 6: o clique em Desligar, o toast e o efeito na tela, grupo e rota somem; o cartão "Desligado nesta instalação", `disabled_by` e a auditoria não são lidos); **NÃO EXECUTADO** nesta máquina |
 | J68.5 | Ligar de novo | P0 | Toast "Módulo ligado de novo nesta instalação."; o aviso some; `disabled_at` e `disabled_by` voltam a nulo; revisão +1 | **NÃO EXECUTADO** |
 | J68.6 | Recibo repetido e revisão velha | P1 | A repetição devolve `applied_now` falso sem mexer na revisão; uma revisão velha recarrega a tela e não anuncia sucesso | **CI `invariants`** (banco) e teste de componente escritos; **NÃO EXECUTADO** na tela |
 | J68.7 | Sem módulo conectado instalado | P0 | A tela de extensões é a de hoje: nenhum botão Ligar ou Desligar, nenhuma nota de interruptor | teste de componente escrito; **NÃO EXECUTADO** na tela |
@@ -4529,20 +4530,20 @@ sirva `/embed`, uma pessoa `viewer`, uma `admin`, e duas organizações.
 
 | Caso | Nome | Prioridade | Prova prevista | Resultado |
 |---|---|---|---|---|
-| J70.1 | Mensagem de outra origem | P0 | Uma mensagem vinda de origem diferente da do serviço é ignorada em silêncio: nada responde, nada navega, nenhum erro na tela | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J70.2 | Mensagem de outra janela, mesma origem | P0 | Uma mensagem da mesma origem do serviço, mas de outra janela (outra aba ou outro iframe), é ignorada | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J70.3 | `module:navigate` com id que não existe | P0 | O módulo pede uma tela inexistente: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J70.4 | `module:navigate` para tela que a pessoa não vê | P0 | Um `viewer` que o módulo manda para uma tela de administração: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J70.5 | `module:navigate` com endereço no lugar de id | P0 | O módulo manda um `href` ou endereço externo em vez do id: ignorado | **CI** (unit, `ponte.test.ts`) escrito; **NÃO EXECUTADO** |
-| J70.6 | Módulo que nunca manda `module:ready` | P0 | Em 10 s aparece "O serviço deste módulo não respondeu"; menu, topo e o resto do CRM seguem funcionando | **CI** (unit, relógio simulado) escrito; **NÃO EXECUTADO** |
-| J70.7 | Módulo desativado, removido, fora da faixa `host_api` ou sem `service_origin` | P0 | Não aparece no menu nem no ⌘K, e `/app/m/<slug>` responde 404 | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J70.8 | Pessoa sai da organização ou troca de organização com a tela aberta | P0 | O pedido de JWT novo é recusado (F3) e o iframe recebe `host:error`; a tela do módulo não ganha poder novo | **CI** (unit do Quadro e da rota de contexto) escrito; **NÃO EXECUTADO** |
-| J70.9 | Sem módulo, o CRM é o de antes | P0 | Sem nenhum módulo conectado: nenhum grupo "Módulos", nenhum item no ⌘K, nenhum botão no topo | **CI** (unit, comparação com a saída sem o parâmetro) escrito; **NÃO EXECUTADO** |
-| J70.10 | Pedidos de JWT em sequência | P1 | Dois `module:request-jwt` em menos de 30 s: o segundo recebe `host:error` com `rate_limited` | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J70.11 | Nada com poder na URL do iframe | P0 | O endereço do iframe leva só `organization` e `installation`; nenhum JWT, token ou segredo | **CI** (unit e cerca) escritos; **NÃO EXECUTADO** |
-| J70.12 | Painel lateral | P1 | O botão no topo abre o painel com o mesmo quadro; um módulo por vez; `Esc` fecha; com um só módulo o botão abre direto; com vários abre a escolha; sem módulo o botão não existe | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J70.13 | Painel em tela estreita | P2 | Abaixo de 768 px abrir leva à página `/app/m/<slug>`, sem painel | **CI** (unit, consulta de largura simulada) escrito; **NÃO EXECUTADO** |
-| J70.14 | Módulo que o painel não conhece | P1 | A ação `moduloParaOPainel` com slug de outra organização ou inexistente devolve nada; o painel mostra o aviso | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.1 | Mensagem de outra origem | P0 | Uma mensagem vinda de origem diferente da do serviço é ignorada em silêncio: nada responde, nada navega, nenhum erro na tela | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.2 | Mensagem de outra janela, mesma origem | P0 | Uma mensagem da mesma origem do serviço, mas de outra janela (outra aba ou outro iframe), é ignorada | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.3 | `module:navigate` com id que não existe | P0 | O módulo pede uma tela inexistente: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.4 | `module:navigate` para tela que a pessoa não vê | P0 | Um `viewer` que o módulo manda para uma tela de administração: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.5 | `module:navigate` com endereço no lugar de id | P0 | O módulo manda um `href` ou endereço externo em vez do id: ignorado | **CI** (unit, `ponte.test.ts`) escrito; **NÃO EXECUTADO** |
+| J71.6 | Módulo que nunca manda `module:ready` | P0 | Em 10 s aparece "O serviço deste módulo não respondeu"; menu, topo e o resto do CRM seguem funcionando | **CI** (unit, relógio simulado) escrito; **coberto por e2e** (`modulo-conectado.spec.ts`, passo 5: serviço parado de verdade, aviso em até 25 s, `/app/inbox` abre); **NÃO EXECUTADO** nesta máquina |
+| J71.7 | Módulo desativado, removido, fora da faixa `host_api` ou sem `service_origin` | P0 | Não aparece no menu nem no ⌘K, e `/app/m/<slug>` responde 404 | **CI** (unit) escrito; **coberto por e2e em parte** (passo 6: módulo desligado pelo interruptor, `/app/m/<slug>` dá não encontrado; desativado, removido, faixa e sem origem seguem só por unit); **NÃO EXECUTADO** nesta máquina |
+| J71.8 | Pessoa sai da organização ou troca de organização com a tela aberta | P0 | O pedido de JWT novo é recusado (F3) e o iframe recebe `host:error`; a tela do módulo não ganha poder novo | **CI** (unit do Quadro e da rota de contexto) escrito; **NÃO EXECUTADO** |
+| J71.9 | Sem módulo, o CRM é o de antes | P0 | Sem nenhum módulo conectado: nenhum grupo "Módulos", nenhum item no ⌘K, nenhum botão no topo | **CI** (unit, comparação com a saída sem o parâmetro) escrito; **coberto por e2e** (passo 1: organização sem módulo, sem grupo "Módulos" e `/app/m/qualquer` dá não encontrado; ⌘K e botão do topo não são olhados); **NÃO EXECUTADO** nesta máquina |
+| J71.10 | Pedidos de JWT em sequência | P1 | Dois `module:request-jwt` em menos de 30 s: o segundo recebe `host:error` com `rate_limited` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.11 | Nada com poder na URL do iframe | P0 | O endereço do iframe leva só `organization` e `installation`; nenhum JWT, token ou segredo | **CI** (unit e cerca) escritos; **NÃO EXECUTADO** |
+| J71.12 | Painel lateral | P1 | O botão no topo abre o painel com o mesmo quadro; um módulo por vez; `Esc` fecha; com um só módulo o botão abre direto; com vários abre a escolha; sem módulo o botão não existe | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.13 | Painel em tela estreita | P2 | Abaixo de 768 px abrir leva à página `/app/m/<slug>`, sem painel | **CI** (unit, consulta de largura simulada) escrito; **NÃO EXECUTADO** |
+| J71.14 | Módulo que o painel não conhece | P1 | A ação `moduloParaOPainel` com slug de outra organização ou inexistente devolve nada; o painel mostra o aviso | **CI** (unit) escrito; **NÃO EXECUTADO** |
 
 **Comportamento declarado.** O CRM é dono da moldura; o módulo é dono do conteúdo, numa origem diferente
 da do CRM. Só passam seis mensagens combinadas, e só da origem e da janela certas. O painel lateral não
@@ -4599,3 +4600,39 @@ real apague os dados ao receber `contact_anonymized` (isso é do módulo, fora d
 a anonimização e a leitura (o plano promete "na próxima busca", não um prazo); o volume da tabela de
 eventos (não há expurgo nesta fase, D5); e a coluna de CI foi montada a partir dos nomes e da intenção
 dos testes das tarefas anteriores, sem reler cada teste caso a caso nesta tarefa.
+
+## J73 — Módulo conectado: a prova de aceite pela tela `[P0]` (2026-11-10)
+
+Spec: `tests/e2e/modulo-conectado.spec.ts` (uma jornada, seis passos), na `SPECS_PARTE_7` do `e2e.yml`, com a fixture
+`tests/e2e/fixtures/modulo-conectado.ts`. Evidência: `evidence/modulo-conectado-e2e/` (um screenshot por passo, gravado
+pela própria spec).
+
+Estado: **escrita, coberta por e2e no CI do PR, NÃO EXECUTADA nesta máquina** (a regra do projeto é teste só no GitHub). Nada
+abaixo foi visto rodando; os números e textos vêm da leitura do código.
+
+Ambiente: banco fresco do `baseline.sql` + as contas das specs de extensão (dono admin e plataforma, `viewer` da mesma
+organização), o laboratório de extensões na porta 56331 servindo, no MESMO processo, o catálogo e o módulo de ensaio
+(`lab/modulo-de-ensaio-<id>`, áreas `tarefas` leitura e escrita e `conversas` leitura). A chave do JWT de contexto
+(`MODULE_JWT_PRIVATE_KEY`) é gerada por um passo do `e2e.yml` (só na parte 7) e a spec falha alto sem ela. O segredo da
+instalação nasce no CRM, pelo botão "Gerar segredo", e a spec o entrega uma vez ao serviço de ensaio; nada fixo no repositório.
+O módulo vive num iframe real de outra "página" do mesmo laboratório, pede o JWT por `postMessage`, busca o token por HMAC e
+chama `/api/v1/tasks`; a página dele mostra o status HTTP e o código de erro, que é o que a spec lê.
+
+| Caso | Nome | Prioridade | Prova | Resultado |
+|---|---|---|---|---|
+| J73.1 | Zero módulos | P0 | Organização sem módulo: o menu não tem o grupo "Módulos" e `/app/m/qualquer` mostra "404 — Página não encontrada" | **coberto por e2e** (passo 1); **NÃO EXECUTADO** nesta máquina |
+| J73.2 | Instalar, ativar, consentir, abrir | P0 | O admin admite o catálogo, instala, gera o segredo, ativa, consente (a proposta traz `tarefas` e `conversas`), o grupo aparece, o iframe carrega e "Listar tarefas" mostra 200 | **coberto por e2e** (passo 2); **NÃO EXECUTADO** nesta máquina |
+| J73.3 | Viewer lê, não grava | P0 | A pessoa `viewer` da mesma organização: "Listar tarefas" 200; "Criar tarefa" 403 com `forbidden_role`. O admin, no mesmo botão, recebe 201 | **coberto por e2e** (passo 3); **NÃO EXECUTADO** nesta máquina |
+| J73.4 | Área retirada | P0 | O admin desmarca `tarefas` e salva; na tela do módulo, "Listar tarefas" mostra 403 com `module_area_not_granted` | **coberto por e2e** (passo 4); **NÃO EXECUTADO** nesta máquina |
+| J73.5 | Serviço fora do ar | P0 | Com o processo do laboratório parado, `/app/m/<slug>` mostra "O serviço deste módulo não respondeu" (10 s, folga de 25 s) e `/app/inbox` abre | **coberto por e2e** (passo 5); **NÃO EXECUTADO** nesta máquina |
+| J73.6 | Desligar | P0 | O interruptor desliga: o grupo "Módulos" some e `/app/m/<slug>` mostra "404 — Página não encontrada" | **coberto por e2e** (passo 6); **NÃO EXECUTADO** nesta máquina |
+| J73.7 | Atualizar com o serviço fora | P0 | O `update.sh` termina com sucesso sem chamar a origem do módulo, rota de extensões nem tabela do módulo | **coberto por shell** (`tests/shell/atualizar-com-modulo-conectado-fora.test.sh`, `pnpm test:shell`); **NÃO EXECUTADO** nesta máquina |
+
+**Não provado.** Que o passo 2 acha os controles do cartão do módulo conectado como previsto (nenhuma execução; o
+cartão e o fluxo de ativação foram lidos, não vistos); o formato exato do corpo de `GET /api/v1/tasks` (o campo "Tarefas na
+lista" da página de ensaio é opcional e a spec não o lê); o espaçamento de 30 s do JWT (a spec recarrega a página a cada
+leitura, o que reinicia a janela); o caso 7 não tem módulo instalado de verdade, porque o `update.sh` não lê o banco: ele
+prova o lado que o script tem como falhar (alcançar o serviço) e o texto dos scripts do kit é varrido por
+`tests/unit/atualizar-nao-depende-de-modulo-conectado.test.ts`; e o serviço parado é o MESMO processo do catálogo, porque a
+política de laboratório do host só aceita `http` em loopback na origem do catálogo, então o passo 5 também tira o catálogo
+do ar (o que não importa depois de instalado).
