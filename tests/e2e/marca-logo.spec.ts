@@ -72,7 +72,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
 
-import { test, expect, type Page, type Browser, type Locator } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page, type Browser, type Locator } from "./helpers/test";
 
 import { generateTotp, msUntilNextTotpWindow } from "./utils/totp";
 import { TAMANHO_MAXIMO_DO_LOGO } from "@/lib/branding/logo";
@@ -591,6 +591,7 @@ async function barraMostraLogoDe(
 async function logoDoLogin(browser: Browser): Promise<LogoNaTela | null> {
   // Contexto NOVO e sem sessão: é o estado de quem acabou de receber o endereço.
   const contexto = await browser.newContext();
+  contexto.on("page", esperarARevelacaoNasCargas);
   try {
     const pagina = await contexto.newPage();
     await pagina.goto("/login");
@@ -625,6 +626,7 @@ async function provarTamanhosNaFachada(browser: Browser): Promise<void> {
         viewport: { width: larguraDaTela, height: 900 },
         colorScheme: tema,
       });
+      contexto.on("page", esperarARevelacaoNasCargas);
       try {
         await contexto.addInitScript(
           (valor) => localStorage.setItem("deskcomm-theme", valor),
@@ -753,6 +755,7 @@ test.describe("o logo subido pela tela chega à tela", () => {
     await expect(page.getByText("CSS personalizado salvo.")).toBeVisible({ timeout: 15_000 });
 
     const visitante = await browser.newContext();
+    visitante.on("page", esperarARevelacaoNasCargas);
     try {
       const paginaLogin = await visitante.newPage();
       await paginaLogin.goto("/login");
@@ -807,6 +810,7 @@ test.describe("o logo subido pela tela chega à tela", () => {
       await expect(page.getByText("Marca salva.")).toBeVisible({ timeout: 15_000 });
 
       const visitante = await browser.newContext();
+      visitante.on("page", esperarARevelacaoNasCargas);
       try {
         const login = await visitante.newPage();
         await login.goto("/login");
@@ -933,6 +937,7 @@ test.describe("o logo subido pela tela chega à tela", () => {
     baixou(fachada!, "tela de acesso");
 
     const contexto = await browser.newContext();
+    contexto.on("page", esperarARevelacaoNasCargas);
     const pagina = await contexto.newPage();
     await pagina.goto("/login");
     await pagina.screenshot({ path: evidencia("3-login-deslogado.png"), fullPage: true });
@@ -958,6 +963,7 @@ test.describe("o logo subido pela tela chega à tela", () => {
     // são dois logins, e um contexto com dois `loginComTotp` em sequência passaria
     // por um `/login` já autenticado.
     const ctxInstalacao = await browser.newContext();
+    ctxInstalacao.on("page", esperarARevelacaoNasCargas);
     const paginaInstalacao = await ctxInstalacao.newPage();
     try {
       await entrarNaCamada(paginaInstalacao, "instalacao");
@@ -1067,6 +1073,7 @@ test.describe("o logo subido pela tela chega à tela", () => {
     // A de baixo era o que o caso (1) tivesse deixado — e é a razão de este caso
     // poder reprovar junto com ele.
     const ctxInstalacao = await browser.newContext();
+    ctxInstalacao.on("page", esperarARevelacaoNasCargas);
     const paginaInstalacao = await ctxInstalacao.newPage();
     try {
       await entrarNaCamada(paginaInstalacao, "instalacao");
@@ -1317,6 +1324,7 @@ test.describe("o logo subido pela tela chega à tela", () => {
     // esta linha a restauração viraria vermelho por relógio, não por defeito.
     test.setTimeout(120_000);
     const contexto = await browser.newContext();
+    contexto.on("page", esperarARevelacaoNasCargas);
     try {
       const pagina = await contexto.newPage();
       await loginComTotp(pagina, creds.users.dono!.email, creds.dono_totp!.secret);

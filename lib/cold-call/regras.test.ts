@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   aceitaResultadoDaLigacao,
   caminhoDaLigacao,
+  comMotivosDoColdCall,
   comoTerminou,
   configDoFunil,
   linhasDoRoteiro,
@@ -11,6 +12,7 @@ import {
   roteiroPadrao,
   RESULTADOS,
   ETAPAS_DO_COLD_CALL,
+  MOTIVOS_DE_PERDA_DO_COLD_CALL,
 } from "./regras";
 
 const ROTEIRO_PADRAO = roteiroPadrao("pt-BR");
@@ -204,5 +206,24 @@ describe("resultado de ligação só para quem recebe ligação", () => {
     expect(aceitaResultadoDaLigacao("anonimizado")).toBe(false);
     expect(aceitaResultadoDaLigacao(null)).toBe(true);
     expect(aceitaResultadoDaLigacao(undefined)).toBe(true);
+  });
+});
+
+describe("comMotivosDoColdCall", () => {
+  it("funil sem lista ganha os três motivos dos resultados que encerram", () => {
+    expect(comMotivosDoColdCall({ cold_call: { ativo: true } })).toEqual({
+      cold_call: { ativo: true },
+      lost_reasons: ["Não tem interesse", "Número errado", "Tirado da fila"],
+    });
+  });
+
+  it("acrescenta só o que falta, e lê o rótulo nos dois formatos", () => {
+    expect(comMotivosDoColdCall({ lost_reasons: ["Preço", { label: "Número errado" }] })).toEqual({
+      lost_reasons: ["Preço", { label: "Número errado" }, "Não tem interesse", "Tirado da fila"],
+    });
+  });
+
+  it("nada a fazer devolve null", () => {
+    expect(comMotivosDoColdCall({ lost_reasons: [...MOTIVOS_DE_PERDA_DO_COLD_CALL] })).toBeNull();
   });
 });

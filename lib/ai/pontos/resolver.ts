@@ -62,6 +62,11 @@ export type OrigemDaEscolha =
    * consequência de negócio da falha num atendimento que seguiu normal.
    */
   | "economico_coberto_pela_reserva"
+  /**
+   * O fechamento do turno recusado duas vezes no modelo escolhido para o ponto:
+   * a 3ª chamada foi ao modelo do agente, por cima do binding (`fecharOTurno`).
+   */
+  | "reserva_de_formato"
   | "padrao_da_organizacao"
   /** O Jev mediu e a nota dele decidiu. Também a linha de falha do clima sem reserva (ver Execuções). */
   | "jev"
@@ -96,6 +101,8 @@ export const EXPLICACAO_DA_ORIGEM: Record<OrigemDaEscolha, string> = {
   // existe, e "nada se perdeu" seria falso quando a reserva também cai.
   economico_coberto_pela_reserva:
     "O modelo econômico não respondeu; a chamada foi repetida no modelo de antes, e o resultado dessa repetição aparece numa linha própria.",
+  reserva_de_formato:
+    "O modelo escolhido para este ponto devolveu o resultado fora do formato duas vezes; a chamada foi repetida no modelo do agente.",
   padrao_da_organizacao: "Usando o padrão da organização.",
   fixo_do_produto: "O produto resolve este ponto sozinho — não há modelo a escolher.",
   // Duas origens, uma por desfecho: a frase única ("se ele está em observação,
@@ -344,7 +351,9 @@ export const PONTOS_QUE_HERDAM_DO_AGENTE: ReadonlySet<string> = new Set([
  *  - `promise_semantic`: guardrail de compliance sem `catch` no envio; trocar o
  *    modelo dele exige golden set e reserva testados antes.
  *  - `checkpoint`, `compaction`, `flush`: são a memória do lead; um modelo
- *    fraco degrada a continuidade sem erro nenhum.
+ *    fraco degrada a continuidade sem erro nenhum. O fechamento já tem reserva
+ *    de formato (`fecharOTurno`); entra aqui só com a avaliação aprovada
+ *    (`scripts/avaliar-fechamento.ts`).
  *  - `intent_router`: decide QUAL agente atende — erro ali é cliente com o
  *    agente errado, e a tela do roteador já oferece a escolha.
  *  - `sentiment_classify`: já nasce no modelo econômico (`DEFAULT_CLASSIFIER_MODEL`).

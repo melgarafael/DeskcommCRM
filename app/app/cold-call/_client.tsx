@@ -186,6 +186,11 @@ export function SeletorDoResultado({
   );
 }
 
+/** Quem não recebe ligação chega sem telefone (a rota não manda): a tela diz "Não ligar", não "Sem telefone". */
+function telefoneNaTela(lead: Lead, t: (texto: string) => string): string {
+  return lead.nao_ligar ? t("Não ligar") : (lead.telefone ?? t("Sem telefone"));
+}
+
 function FotoDoLead({ lead, tamanho = "size-8" }: { lead: Lead; tamanho?: string }) {
   return (
     <Avatar className={cn("shrink-0", tamanho)}>
@@ -540,7 +545,7 @@ function Fila({
                           <span>
                             <span className="block">{lead.titulo}</span>
                             <span className="block text-xs font-normal tabular-nums text-text-muted">
-                              {lead.telefone ?? t("Sem telefone")}
+                              {telefoneNaTela(lead, t)}
                             </span>
                           </span>
                         </button>
@@ -923,7 +928,7 @@ function Sessao({
                 <p className="truncate font-bold text-text" title={lead.titulo}>
                   {lead.titulo}
                 </p>
-                <p className="text-sm tabular-nums text-text-muted">{lead.telefone ?? t("Sem telefone")}</p>
+                <p className="text-sm tabular-nums text-text-muted">{telefoneNaTela(lead, t)}</p>
               </div>
             </div>
             <span
@@ -1025,7 +1030,7 @@ function Sessao({
                 {lead.titulo}
               </h2>
               <p className="flex items-center gap-1 text-xs tabular-nums text-text-muted">
-                <Phone size={12} aria-hidden /> {lead.telefone ?? t("Sem telefone")}
+                <Phone size={12} aria-hidden /> {telefoneNaTela(lead, t)}
               </p>
             </div>
           </header>
@@ -1109,7 +1114,7 @@ function Sessao({
                 <div className="min-w-0">
                   <p className="text-sm font-semibold leading-snug text-text">{lead.titulo}</p>
                   <p className="mt-0.5 flex items-center gap-1 text-xs tabular-nums text-text-muted">
-                    <Phone size={12} aria-hidden /> {lead.telefone ?? t("Sem telefone")}
+                    <Phone size={12} aria-hidden /> {telefoneNaTela(lead, t)}
                   </p>
                 </div>
               </div>

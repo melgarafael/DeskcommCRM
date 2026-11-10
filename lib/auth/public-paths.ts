@@ -81,6 +81,14 @@ export const PUBLIC_PATHS: RegExp[] = [
   // Ancorados com `$` de propósito — `/^\/api\/v1\/agenda\/google\// deixaria
   // qualquer sub-path futuro nascer público de carona.
   /^\/api\/v1\/agenda\/google\/callback$/,
+  // OAuth POR CONTATO de servidor MCP externo (migration 9095). Quem chega é o
+  // navegador do CLIENTE FINAL — nunca teve sessão nossa. A autoridade é o
+  // `state` de `mcp_oauth_pedidos` (256 bits, uso único, 10 min, amarrado a
+  // organização/servidor/contato/conversa), conferido DENTRO das rotas; nada
+  // da URL escolhe tenant. `iniciar` aceita um segmento só, em forma de state;
+  // `callback` um só, em forma de UUID (o servidor, conferido contra o state).
+  /^\/api\/v1\/mcp-oauth\/callback\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  /^\/api\/v1\/mcp-oauth\/iniciar\/[A-Za-z0-9_-]{43}$/,
   // Volta do consentimento do Google Ads. Mesma natureza das duas linhas
   // acima: a identidade vem do `state` assinado
   // (`lib/plataformas-de-anuncio/google/estado.ts`), não da sessão — quem

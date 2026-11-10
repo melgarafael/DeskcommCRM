@@ -46,7 +46,7 @@ vi.mock("@/lib/auth/server", () => ({
   resolveActiveOrg: vi.fn(async () => null),
 }));
 vi.mock("@/lib/users/com-nome-do-atendente", () => ({
-  comNomeDoAtendente: vi.fn(async (linhas: unknown[]) => linhas),
+  comNomeDoAtendente: vi.fn(async (_orgId: string, linhas: unknown[]) => linhas),
 }));
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";

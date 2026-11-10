@@ -345,11 +345,35 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     painelEm: "/app/prospecting",
   },
   {
+    modulo: "mcp_por_agente",
+    id: "modulo-mcp-por-agente",
+    rotulo: "Ferramentas externas por agente",
+    descricao:
+      "Ligado, a tela de cada agente ganha a seção Servidores MCP, para conectar sistemas de terceiros com chave fixa ou com o login de cada cliente, que autoriza a própria conta por um link na conversa. Desligado, a seção some, o agente deixa de usar esses servidores e os links de autorização param de abrir; o que já foi cadastrado fica guardado.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma seção na tela de cada agente, em",
+    painelEm: "/app/ai/agents",
+  },
+  {
     modulo: "cold_call",
     id: "modulo-cold-call",
     rotulo: "Cold Call (fila de ligações)",
     descricao:
       "Ligado, cada empresa ganha no CRM a tela Cold Call: um funil próprio, a importação da lista e a ligação para um lead por vez, pelo canal de voz quando ele está pareado ou pelo discador do aparelho. Quem pediu para não ser incomodado, contato pessoal e contato anonimizado não recebem ligação. Desligado, a tela e o menu somem.",
+  },
+  {
+    modulo: "painel_atendimento",
+    id: "modulo-painel-atendimento",
+    rotulo: "Painel de atendimento",
+    descricao:
+      "Ligado, cada empresa ganha em Análise a tela Painel de atendimento: quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número, com o que cada pessoa já vê no Inbox. Desligado, a tela e o menu somem, e nenhuma conversa muda.",
+  },
+  {
+    modulo: "reservas_de_lugar",
+    id: "modulo-reservas-de-lugar",
+    rotulo: "Reservas de lugar",
+    descricao:
+      "Ligado, cada empresa pode cadastrar na agenda um lugar, como mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: por enquanto o lugar é cadastrado e reservado pela API, em /api/v1/agenda/servicos.",
   },
 ];
 

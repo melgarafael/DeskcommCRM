@@ -15,9 +15,12 @@
  */
 import type pg from 'pg';
 
+import { lerFraseDoAvisoConfigurada } from '@/lib/escalacao/frase-do-aviso-configurada';
+
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
+import { lerModoDeConhecimento } from './modo-de-conhecimento';
 import {
   avaliarPublico,
   carregarFatosDoContato,
@@ -57,8 +60,19 @@ export interface PublishedAgentConfig {
   splitMaxChars: number;
   /** Janela de rajada inbound (ms) configurada na versão. `null` = usa a env. */
   inboundDebounceMs: number | null;
+  /** Intervalo mínimo (ms) entre uma resposta da IA e a próxima à mesma conversa. `null` = sem intervalo. */
+  replyMinIntervalMs: number | null;
   /** input multimodal (imagem/áudio/pdf) habilitado no turno (Onda 3). */
   multimodalInput: boolean;
+  /**
+   * O agente vê as fotos que o cliente envia (`ai_agent_versions.image_vision_enabled`,
+   * migration 9108, padrão LIGADO). Desligado, a foto entra no turno como o aviso
+   * `MARCADOR_IMAGEM_NAO_VISTA` (nem a descrição nem a imagem nativa), e ele deixa de
+   * contar como leitor em `haLeitorDaDescricao` (a régua do dreno quando o agente da
+   * conversa não vê). Opcional porque nasce depois das fixtures que montam este
+   * tipo à mão; quem consome lê com `?? true`, o comportamento de antes.
+   */
+  imageVisionEnabled?: boolean;
   /** tools open_human_case/provide_case_update habilitadas no turno (spec 15). */
   casesEnabled: boolean;
   /** JSON versionado com `followup.callback_enabled` e os fluxos normais. */
@@ -70,6 +84,24 @@ export interface PublishedAgentConfig {
    * Vazio = NENHUM: a ferramenta de busca some do turno.
    */
   knowledgeSourceIds: string[];
+  /**
+   * Skills que ESTE agente usa (`ai_agent_versions.skill_names`, migration 9107).
+   * `null` = todas as da organização e da plataforma (o comportamento de antes, e
+   * o default de toda versão); `[]` = nenhuma. Resolvido em `skillsDoAgente`.
+   *
+   * O clone sem a coluna não chega aqui com `undefined`: o SELECT abaixo a nomeia,
+   * e sem ela falharia com 42703. Quem garante a coluna é a ORDEM do `update.sh`
+   * (`reaplicar_baseline` antes do `pull`/`up` da imagem nova), como para
+   * `knowledge_source_ids` e `voz_*`. O `?? null` do mapeamento é só tipagem.
+   */
+  skillNames: string[] | null;
+  /**
+   * Como o agente lê a base de conhecimento (#4133), de `ai_agents.config`:
+   * `busca` (default, o caminho de sempre: `search_knowledge` + embedding) ou
+   * `leitura_direta` (índice no contexto + `ler_documento`, sem provedor de
+   * embedding). Ausente/torto = `busca`; ver `lerModoDeConhecimento`.
+   */
+  knowledgeMode?: 'busca' | 'leitura_direta';
   /**
    * LEGADO: a KB ativa do agente (`ai_agents.active_kb_version_id`).
    *
@@ -126,6 +158,14 @@ export interface PublishedAgentConfig {
    */
   avisoForaDoHorario?: string | null;
   /**
+   * A frase que o cliente lê quando a IA sai de campo (#3725), escrita pelo
+   * tenant em `ai_agents.config.aviso_de_handoff`. `null` = sem frase própria:
+   * sai o padrão do produto (curto e humano) de `textoDoAviso`. Lida por
+   * `lerFraseDoAvisoConfigurada`, que também recusa frase vazia/absurda — um
+   * aviso de passagem inválido não pode virar silêncio.
+   */
+  fraseDoAviso?: string | null;
+  /**
    * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
    * externo também carrega em turno com contato, com a identidade dele em
    * cabeçalho. Opcional porque nasce depois das fixtures; ausente = desligado.
@@ -166,7 +206,9 @@ interface Row {
   split_messages: boolean;
   split_max_chars: number;
   inbound_debounce_ms: number | null;
+  reply_min_interval_ms: number | null;
   multimodal_input: boolean;
+  image_vision_enabled: boolean | null;
   cases_enabled: boolean;
   followup: unknown;
   tool_ids: string[] | null;
@@ -177,6 +219,7 @@ interface Row {
   operator_tool_ids: string[] | null;
   pipeline_ids: string[] | null;
   knowledge_source_ids: string[] | null;
+  skill_names: string[] | null;
   trigger_config: unknown;
   version_created_by: string | null;
   agent_created_by: string | null;
@@ -201,7 +244,9 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.split_messages,
             v.split_max_chars,
             v.inbound_debounce_ms,
+            v.reply_min_interval_ms,
             v.multimodal_input,
+            v.image_vision_enabled,
             v.cases_enabled,
             v.followup,
             v.tool_ids,
@@ -212,6 +257,7 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.operator_tool_ids,
             v.pipeline_ids,
             v.knowledge_source_ids,
+            v.skill_names,
             v.voz_enabled,
             v.voz_quando,
             v.trigger_config,
@@ -225,6 +271,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     mcp_externo_no_atendimento?: unknown;
+    aviso_de_handoff?: unknown;
+    aviso_de_passagem?: unknown;
+    handoff_notice?: unknown;
   };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
@@ -264,13 +313,22 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     splitMessages: r.split_messages,
     splitMaxChars: r.split_max_chars,
     inboundDebounceMs: r.inbound_debounce_ms ?? null,
+    replyMinIntervalMs: r.reply_min_interval_ms ?? null,
     multimodalInput: r.multimodal_input,
+    // `?? true`: só tipagem — a coluna é NOT NULL default true, e quem a garante
+    // num clone é a ORDEM do `update.sh` (baseline antes da imagem nova), como
+    // para `skill_names`.
+    imageVisionEnabled: r.image_vision_enabled ?? true,
     casesEnabled: r.cases_enabled,
     followup: r.followup,
     toolIds: r.tool_ids ?? [],
     // `?? []` cobre o clone sem a 0181: sem a coluna, o agente cai no ponteiro
     // legado abaixo em vez de ficar sem material nenhum.
     knowledgeSourceIds: r.knowledge_source_ids ?? [],
+    // `?? 'busca'` (dentro de `lerModoDeConhecimento`): o modo novo (#4133) não
+    // se liga por acidente — config ausente/torta mantém o caminho de sempre.
+    knowledgeMode: lerModoDeConhecimento(r.config),
+    skillNames: r.skill_names ?? null,
     activeKbVersionId: r.active_kb_version_id,
     ragTopK,
     ragSimilarityThreshold,
@@ -289,6 +347,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    // #3725: `null` = sem frase própria, sai o padrão do produto. A leitura
+    // valida tamanho e conteúdo (ver `frase-do-aviso-configurada.ts`).
+    fraseDoAviso: lerFraseDoAvisoConfigurada(r.config),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`

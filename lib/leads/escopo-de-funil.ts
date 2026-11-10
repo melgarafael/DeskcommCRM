@@ -143,6 +143,10 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   crm_add_case_note: "sem_funil",
   crm_close_human_case: "sem_funil",
   crm_assign_conversation: "sem_funil",
+  // #3881: escolhe a FILA da conversa (`sector_id`), não o negócio. Não lê nem
+  // grava `crm_leads`, então a classificação é "não se aplica" — declarada,
+  // porque ausência aqui é recusa por vacuidade (`ferramenta_nao_classificada`).
+  crm_set_conversation_sector: "sem_funil",
   crm_resume_ai_attendance: "sem_funil",
   crm_save_org_memory: "sem_funil",
   crm_propose_contact_field: "sem_funil",

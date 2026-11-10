@@ -40,6 +40,28 @@ export const RESULTADOS = {
 
 export type ResultadoDaLigacao = keyof typeof RESULTADOS;
 
+/**
+ * O rótulo de cada resultado que encerra o lead é o motivo da perda gravado. O banco só aceita
+ * motivo canônico ou listado em `settings.lost_reasons` do funil
+ * (`fn_validate_lost_reason_required`), então o funil precisa listar estes.
+ */
+export const MOTIVOS_DE_PERDA_DO_COLD_CALL: readonly string[] = Object.values(RESULTADOS).flatMap((r) =>
+  "perde" in r ? [r.rotulo] : [],
+);
+
+/**
+ * `settings` com os motivos do Cold Call que faltam acrescentados ao fim de `lost_reasons`, ou
+ * `null` se nenhum falta. O que já está na lista fica como está, texto ou `{ label }`.
+ */
+export function comMotivosDoColdCall(settings: unknown): Record<string, unknown> | null {
+  const base =
+    settings && typeof settings === "object" && !Array.isArray(settings) ? (settings as Record<string, unknown>) : {};
+  const atuais: unknown[] = Array.isArray(base.lost_reasons) ? base.lost_reasons : [];
+  const rotulos = new Set(atuais.map((e) => (typeof e === "string" ? e : (e as { label?: unknown } | null)?.label)));
+  const faltam = MOTIVOS_DE_PERDA_DO_COLD_CALL.filter((m) => !rotulos.has(m));
+  return faltam.length ? { ...base, lost_reasons: [...atuais, ...faltam] } : null;
+}
+
 /** O que aparece como botão depois da ligação. "Tirado da fila" é gesto da lista, não resultado de ligação. */
 export const RESULTADOS_DA_LIGACAO: readonly ResultadoDaLigacao[] = [
   "nao_atendeu",

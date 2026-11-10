@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { frameMediaBody, falaDoClienteSemMoldura } from "@/lib/agent-engine/edge/crm/moldura-de-midia";
+import {
+  frameMediaBody,
+  falaDoClienteSemMoldura,
+  MARCADOR_IMAGEM_NAO_VISTA,
+} from "@/lib/agent-engine/edge/crm/moldura-de-midia";
 import { montarBriefingDaPassagem } from "@/lib/escalacao/briefing-da-passagem";
 
 /**
@@ -45,6 +49,12 @@ describe("falaDoClienteSemMoldura", () => {
     const fala = falaDoClienteSemMoldura(cortado);
     expect(fala).toBe("[áudio]");
     expect(fala).not.toContain(INSTRUCAO);
+  });
+
+  it("foto para o agente que não vê imagens: o rótulo é [imagem], com a legenda dele", () => {
+    // O motor escreve a legenda depois do marcador (`corpoDaMensagem`, get-lead-context.ts).
+    expect(falaDoClienteSemMoldura(`${MARCADOR_IMAGEM_NAO_VISTA}\nLegenda do cliente: x`)).toBe("[imagem] x");
+    expect(falaDoClienteSemMoldura(MARCADOR_IMAGEM_NAO_VISTA)).toBe("[imagem]");
   });
 
   it("texto que não é mídia passa intacto, inclusive o que fala de mídia", () => {

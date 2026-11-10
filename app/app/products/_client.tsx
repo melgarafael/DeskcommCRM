@@ -223,6 +223,7 @@ export function ProdutosClient({
   buscaInicial,
   urlsDasFotos,
   podeEditar,
+  apresentacaoLigada = false,
   textos,
 }: {
   /** A página atual, já filtrada no servidor (ver `lib/catalogo/busca-da-tela.ts`). */
@@ -234,6 +235,7 @@ export function ProdutosClient({
   buscaInicial: string;
   urlsDasFotos: Record<string, string>;
   podeEditar: boolean;
+  apresentacaoLigada?: boolean;
   textos: Textos;
 }) {
   const t = useT();
@@ -573,7 +575,17 @@ export function ProdutosClient({
             const capa = p.fotos?.[0] ? urlsDasFotos[p.fotos[0]] : undefined;
             return (
             <li key={p.id} data-testid={`produto-${p.codigo}`}>
-            <div className="flex items-center gap-4 p-3">
+            {/*
+              A linha não cabia em 375 px: preço (shrink-0) + os três botões de
+              ação somam mais que a largura útil, e a coluna do nome — `flex-1`
+              com `min-w-0` — encolhia até 0 px, levando o nome junto. Abaixo de
+              `md` a linha passa a quebrar: nome e preço em cima, ações embaixo,
+              ancoradas à direita e com `flex-wrap` próprio se ainda faltar
+              espaço. Tudo em `max-md:` — de `md` para cima a lista é a de sempre.
+            */}
+            <div
+              className="flex items-center gap-4 p-3 max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-1"
+            >
               {capa ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={capa} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
@@ -596,7 +608,13 @@ export function ProdutosClient({
                 {formatCents(p.preco_cents, p.moeda)}
               </span>
               {podeEditar ? (
-                <>
+                // Grupo próprio para as ações: sozinhas elas não cabem ao lado do
+                // preço em 375 px, e como itens soltos da linha quebravam em
+                // qualquer lugar. Aqui elas descem juntas (w-full abaixo de `md`)
+                // e, se nem assim couberem, quebram entre si em vez de vazar.
+                <div
+                  className="flex items-center gap-4 max-md:w-full max-md:flex-wrap max-md:justify-end max-md:gap-x-2 max-md:gap-y-1"
+                >
                   <Button
                     variant="ghost"
                     size="sm"
@@ -623,7 +641,7 @@ export function ProdutosClient({
                   >
                     {t(p.ativo ? "Desativar" : "Reativar")}
                   </Button>
-                </>
+                </div>
               ) : null}
             </div>
             {podeEditar && fotosAbertas === p.id ? (
@@ -633,7 +651,13 @@ export function ProdutosClient({
               // `key` porque o painel fica na MESMA posição do DOM ao trocar de
               // produto: sem ela o React reaproveita o estado e o formulário
               // abriria preenchido com o produto anterior.
-              <EdicaoDoProduto key={p.id} produto={p} aoFechar={() => setEditando(null)} />
+              <EdicaoDoProduto
+                key={p.id}
+                produto={p}
+                urlsDasFotos={urlsDasFotos}
+                apresentacaoLigada={apresentacaoLigada}
+                aoFechar={() => setEditando(null)}
+              />
             ) : null}
             </li>
             );

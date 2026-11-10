@@ -125,7 +125,14 @@ export async function buildNotesIndexBlock(
   leadId: string,
   budgetTokens: number,
 ): Promise<string> {
-  const entries = await getLeadNotesIndex(db, tenantId, leadId);
+  return renderNotesIndexBlock(await getLeadNotesIndex(db, tenantId, leadId), budgetTokens);
+}
+
+/**
+ * O bloco do índice a partir das entradas já lidas — a MESMA receita do turno real,
+ * reusada pela prévia quando as notas dela passam do teto inline (preview.ts).
+ */
+export function renderNotesIndexBlock(entries: LeadNoteIndexEntry[], budgetTokens: number): string {
   const rendered = renderNotesIndex(entries);
   if (entries.length > 0 && estimateIndexTokens(entries) > budgetTokens) {
     return (

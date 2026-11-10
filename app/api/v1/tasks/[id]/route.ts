@@ -149,6 +149,23 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
 
   const tarefa = data as unknown as Tarefa;
 
+  /*
+   * A TRANSIÇÃO, quando houve uma (#4028).
+   *
+   * O `campos` dizia QUAIS campos mudaram, não PARA ONDE. Para o quadro isso é
+   * o registro que importa: arrastar o cartão é a única ação da tela de Tarefas
+   * que muda o estado da linha, e sem `de`/`para` o audit responderia "alguém
+   * tocou nesta tarefa" a quem perguntasse "quem a concluiu, e quando". O
+   * QUANDO é o `created_at` da própria linha de audit; o QUEM é o ator.
+   *
+   * Só entra quando `status` veio no corpo: editar o título não pode gravar uma
+   * transição que não existiu (`de: "pending", para: "pending"`).
+   */
+  const transicao =
+    parsed.data.status !== undefined
+      ? { de: (antes as { status?: string } | null)?.status ?? null, para: tarefa.status }
+      : {};
+
   await audit({
     organizationId: authz.org.orgId,
     actorUserId: authz.user.id,
@@ -156,7 +173,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     resourceType: "crm_tasks",
     resourceId: tarefa.id,
     requestId,
-    metadata: { campos: Object.keys(parsed.data) },
+    metadata: { campos: Object.keys(parsed.data), ...transicao },
   });
 
   const fechouAgora =

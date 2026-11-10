@@ -20,6 +20,15 @@
 > free tier) — simples e com backup gerenciado. Supabase self-hosted também
 > funciona, mas não é coberto por este guia.
 
+### A região do projeto Supabase
+
+Crie o projeto na região **mais próxima da VPS que roda o compose** — VPS no Brasil → `South America
+(São Paulo)`; nos EUA ou na Europa, a região do Supabase mais perto dela (`us-east-1`,
+`eu-central-1`). O app, o worker do agente e o WAHA consultam o banco a cada tela e a cada mensagem:
+banco e VPS em continentes diferentes somam dezenas de milissegundos por ida e volta, em toda
+operação. **A região não se troca depois de criado o projeto** — mudar exige criar outro projeto e
+migrar os dados.
+
 ## 1. Clonar e configurar
 
 ```bash
