@@ -34,6 +34,8 @@ export interface JobRow {
   kind: JobKind;
   source_event_id: string | null;
   payload: Record<string, unknown>;
+  /** Estado interno da apresentação; JSON externo/legado não é autoridade. */
+  catalog_presentation_snapshot?: unknown;
   status: JobStatus;
   priority: number;
   run_after: Date;

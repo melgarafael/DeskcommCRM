@@ -116,10 +116,34 @@ export async function hasOpenCaseForContact(
 
 export interface CaseAwaitingLead {
   id: string;
+  eventId: string;
+  title: string;
   /** O que o HUMANO pediu ao lead (body do evento need_lead_info mais recente) —
    * NÃO `agent_cases.blocker` (motivo original da IA travar; `markAwaitingLead`
-   * nunca o atualiza — usá-lo aqui daria ao modelo a pergunta ERRADA). */
-  ask: string;
+   * nunca o atualiza — usá-lo aqui daria ao modelo a pergunta ERRADA).
+   * `null` = o pedido é de outro atendimento (`fn_caso_na_fronteira_atual`) e não
+   * vai ao modelo; o caso segue achável para a resposta do cliente ficar nele. */
+  ask: string | null;
+}
+
+/** O sufixo do turno com o caso que espera o cliente. Pedido de outro atendimento não entra no texto. */
+export function blocoDoCasoAguardandoCliente(caso: CaseAwaitingLead | null): string {
+  if (caso === null) return '';
+  if (caso.ask === null) {
+    return (
+      `## Caso aberto de um atendimento anterior deste cliente\n` +
+      `Há um caso aberto (case_id: ${caso.id}), sobre "${caso.title}", que esperava uma informação dele em um atendimento anterior. ` +
+      `Aquele pedido não vale para a conversa de agora: não retome nem cobre nada desse caso. ` +
+      `Só se a mensagem dele trouxer por conta própria informação sobre esse assunto, chame provide_case_update com este case_id e a informação recebida — ` +
+      `NÃO diga que já repassou/avisou o responsável sem chamar a tool.`
+    );
+  }
+  return (
+    `## Caso aguardando resposta deste cliente\n` +
+    `Há um caso aberto (case_id: ${caso.id}) esperando uma informação dele: "${caso.ask}". ` +
+    `Se a mensagem dele responde a isso, chame provide_case_update com este case_id e a informação recebida — ` +
+    `NÃO diga que já repassou/avisou o responsável sem chamar a tool.`
+  );
 }
 
 /**
@@ -136,12 +160,13 @@ export async function getCaseAwaitingLead(
   conversationId: string,
 ): Promise<CaseAwaitingLead | null> {
   const { rows } = await db.query<CaseAwaitingLead>(
-    `select c.id, e.body as ask
+    `select c.id, e.id as "eventId", c.title,
+            case when public.fn_caso_na_fronteira_atual(c.organization_id, c.id) then e.body end as ask
        from agent_cases c
        join lateral (
-         select body from agent_case_events
-          where case_id = c.id and kind = 'human_replied' and human_action = 'need_lead_info'
-          order by created_at desc
+         select id, body from agent_case_events
+          where organization_id = c.organization_id and case_id = c.id and kind = 'human_replied' and human_action = 'need_lead_info'
+          order by created_at desc, id desc
           limit 1
        ) e on true
       where c.organization_id = $1 and c.conversation_id = $2 and c.status = 'awaiting_lead'
@@ -178,14 +203,14 @@ export const FRASE_AO_CLIENTE_EM_PEDIDO_SOBRE_CASO_ABERTO =
  *
  * ## Por que INSTRUÇÃO, e não reenvio do aviso (issue #3097)
  *
- * O autor aceitava as duas saídas. O reenvio do aviso à equipe (opção a) esbarra
- * no MESMO controle de repetição do aviso inicial — a `unique (organization_id,
- * case_id, destino)` de `entregas_de_aviso_de_caso` (migration 0292, replicada
- * aqui no `reivindicaEntrega` de `lib/escalacao/aviso-ao-suporte.ts`). Com a
- * entrega do caso já `enviado`, o reenvio cai em `ja_resolvido:enviado`: nenhuma
- * linha nasce e ninguém é avisado justamente no cenário do relato. Fazer o
- * segundo pedido avisar exigiria OUTRA chave de entrega — coluna nova, decisão
- * do mantenedor, e o próprio goal manda preferir a instrução nesse caso.
+ * O autor aceitava as duas saídas. Quando #3097 foi fechada, o reenvio do aviso à
+ * equipe (opção a) esbarrava na `unique (organization_id, case_id, destino)` de
+ * `entregas_de_aviso_de_caso` (migration 0292): com a entrega já `enviado`, nenhuma
+ * linha nascia. A migration 9240 trocou essa chave por dois índices parciais, um
+ * da abertura e um por `update_event_id`, para o retorno do cliente. A chave
+ * deixou de ser o impedimento: `agent_noted` segue sem aviso porque o que falta
+ * para o segundo pedido avisar é a decisão de produto do #3097, e a instrução
+ * continua sendo a saída vigente.
  *
  * ## O que a instrução faz
  *
@@ -294,7 +319,9 @@ export async function openCase(
   return { ok: true, caseId };
 }
 
-export type ProvideCaseUpdateResult = { ok: true } | { ok: false; error: { code: string; message: string } };
+export type ProvideCaseUpdateResult =
+  | { ok: true; foraDaFronteira: boolean }
+  | { ok: false; error: { code: string; message: string } };
 
 /**
  * awaiting_lead -> awaiting_human (o lead respondeu o que o humano pediu) +
@@ -309,24 +336,59 @@ export type ProvideCaseUpdateResult = { ok: true } | { ok: false; error: { code:
 export async function provideCaseUpdate(
   db: pg.Pool,
   ids: CaseIds,
-  input: { caseId: string; info: string },
+  input: { caseId: string; info: string; requestEventId?: string; clientMessageId?: string; sourceJobId?: string },
 ): Promise<ProvideCaseUpdateResult> {
-  const { rows } = await db.query<{ case_id: string }>(
-    `with updated as (
-       update agent_cases
+  await guardServiceEffect();
+  // A transição, o fato persistido e a outbox são um único efeito atômico.
+  // O id do pedido vem da fotografia do turno, nunca da saída do modelo.
+  // A fronteira do atendimento não barra esta escrita: ela decide o aviso e o
+  // comando (`fn_ler_retorno_de_caso`), nunca se a resposta do cliente fica no
+  // caso. Com ela vencida (conversa reaberta, próximo passo da demanda mudou), o
+  // caso volta a `awaiting_human` sem aviso, o evento fica marcado para a tela e
+  // o comando da abertura é recusado, porque não é o da última informação; a
+  // equipe responde pela tela do caso.
+  const { rows } = await db.query<{ case_id: string; fora_da_fronteira: boolean }>(
+    `with request as (
+       select id from agent_case_events
+        where organization_id = $1 and case_id = $2
+          and kind = 'human_replied' and human_action = 'need_lead_info'
+        order by created_at desc, id desc limit 1
+     ), updated as (
+       update agent_cases ac
           set status = 'awaiting_human', updated_at = now()
         where organization_id = $1 and id = $2 and status = 'awaiting_lead'
           and conversation_id = $4
+          and exists (select 1 from request where $5::uuid is null or id = $5)
+          and ($6::uuid is null or exists (
+            select 1 from messages m join conversations c on c.organization_id=m.organization_id and c.id=m.conversation_id
+            where m.organization_id=$1 and m.conversation_id=$4 and m.id=$6 and m.direction='inbound'
+              and m.contact_id=c.contact_id and m.service_revision=c.service_revision
+              and ($7::uuid is null or exists(select 1 from job_queue j where j.organization_id=$1
+                and j.contact_id=c.contact_id and j.id=$7 and j.kind='inbound_turn'
+                and j.payload->>'inbound_message_id'=m.id::text))))
         returning id
-     )
-     insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
-     select $1, id, 'lead_provided', 'lead', $3
-       from updated
-     returning case_id`,
-    [ids.tenantId, input.caseId, input.info, ids.conversationId],
+     ), provided as (
+       insert into agent_case_events (organization_id, case_id, kind, actor_kind, body, metadata)
+       select $1, id, 'lead_provided', 'lead', $3,
+              jsonb_build_object('request_event_id', (select id from request), 'client_message_id', $6::uuid, 'source_job_id', $7::uuid,
+                'fora_da_fronteira', not public.fn_caso_na_fronteira_atual($1, id))
+         from updated returning id, case_id, (metadata->>'fora_da_fronteira')::boolean as fora_da_fronteira
+     ), queued as (
+       insert into event_log (organization_id, event_type, entity_kind, entity_id, payload)
+       select $1, 'ai.case_updated', 'agent_case', p.case_id,
+              jsonb_build_object('case_id', p.case_id, 'case_event_id', p.id,
+                'conversation_id', c.id, 'contact_id', c.contact_id,
+                'config_revision', cfg.updated_at::text)
+         from provided p
+         join conversations c on c.organization_id = $1 and c.id = $4
+         left join config_aviso_de_caso cfg on cfg.organization_id = $1
+       returning entity_id as case_id
+     ) select q.case_id, p.fora_da_fronteira from queued q join provided p on p.case_id = q.case_id`,
+    [ids.tenantId, input.caseId, input.info, ids.conversationId, input.requestEventId ?? null, input.clientMessageId ?? null, input.sourceJobId ?? null],
   );
 
-  if (rows.length === 0) {
+  const registrado = rows[0];
+  if (registrado === undefined) {
     return {
       ok: false,
       error: {
@@ -335,7 +397,7 @@ export async function provideCaseUpdate(
       },
     };
   }
-  return { ok: true };
+  return { ok: true, foraDaFronteira: registrado.fora_da_fronteira };
 }
 
 /**

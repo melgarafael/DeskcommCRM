@@ -70,6 +70,19 @@ export const ApiErrorCodes = {
   // nenhum Bearer a alcança — o proxy devolve 401 antes. Se um dia ela passar a
   // aceitar token, este comentário ganha o integrador de volta.
   agenda_listagem_alvo_nao_e_lead: "agenda_listagem_alvo_nao_e_lead",
+  /**
+   * O dia pedido não EXISTE no calendário (`2026-02-31`, `2026-13-01`), e não
+   * apenas está mal escrito (#3221).
+   *
+   * Código próprio, e não o `validation_error` de sempre, porque o consumidor
+   * desta rota — a camada "Datas dos negócios" da Agenda — precisa distinguir
+   * "o cliente chamou errado" de "o dia pedido não existe": a forma está certa
+   * (`YYYY-MM-DD`), o filtro iria para o banco e voltaria vazio, e a grade
+   * diria "ninguém embarca neste período" para uma data que ninguém digitou.
+   * Com o código próprio, a tela mostra o motivo e esquece a escolha, como já
+   * faz com `campo_nao_e_data`.
+   */
+  data_de_calendario_invalida: "data_de_calendario_invalida",
 
   // 409 — conflito
   idempotency_conflict: "idempotency_conflict",
