@@ -421,7 +421,7 @@ function OndeAparece({
     if (!foraDoMenu) return null;
     const painel = painelEm ? caminhoDaPorta(painelEm) : null;
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-muted-foreground wrap-anywhere">
         {foraDoMenu}
         {painel ? (
           <>
@@ -438,7 +438,7 @@ function OndeAparece({
   }
 
   return (
-    <p className="text-sm text-muted-foreground">
+    <p className="text-sm text-muted-foreground wrap-anywhere">
       {t(ligado ? "Aparece no menu em:" : "Ao ligar, aparece no menu em:")}{" "}
       {portas.map((porta, i) => (
         <span key={porta.href}>
@@ -518,7 +518,10 @@ export function FormularioDeModulos({
       <CardContent className="space-y-4">
         {MODULOS_NA_TELA.filter((m) => !escondidos.includes(m.modulo)).map((m) => (
           <div key={m.modulo} className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <div className="space-y-1">
+            {/* `min-w-0`: sem ele a coluna de texto não encolhe abaixo da palavra
+                mais longa (um caminho de API não quebra) e empurra o interruptor
+                para fora do cartão no celular. */}
+            <div className="min-w-0 space-y-1">
               <Label htmlFor={m.id} className="text-base">
                 {t(m.rotulo)}
               </Label>
