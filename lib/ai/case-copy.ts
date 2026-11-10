@@ -156,7 +156,10 @@ const HUMAN_ACTION_LABEL: Record<CaseHumanAction, string> = {
 
 /** Traduz um evento da timeline pra uma frase pt-br — nunca o enum cru. */
 export function caseEventLabel(
-  event: Pick<CaseEvent, "kind" | "actor_kind" | "human_action"> & { source?: string | null },
+  event: Pick<CaseEvent, "kind" | "actor_kind" | "human_action"> & {
+    source?: string | null;
+    fora_da_fronteira?: string | null;
+  },
 ): string {
   if (event.kind === "opened" && event.actor_kind === "system") {
     return "O sistema abriu o caso automaticamente";
@@ -168,6 +171,9 @@ export function caseEventLabel(
   }
   if (event.kind === "human_replied" && event.human_action) {
     return HUMAN_ACTION_LABEL[event.human_action];
+  }
+  if (event.kind === "lead_provided" && event.fora_da_fronteira === "true") {
+    return "O cliente respondeu fora do atendimento atual (sem aviso no WhatsApp)";
   }
   return EVENT_LABEL[event.kind] ?? "Atualização do caso";
 }

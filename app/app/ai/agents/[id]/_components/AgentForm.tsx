@@ -50,7 +50,8 @@ import {
   NOME_DE_AGENTE_EM_USO,
   RASCUNHO_SALVO_NOME_NAO_MUDOU,
 } from "@/lib/ai/agents/nome-repetido";
-import { ToolPicker } from "./ToolPicker";
+import { ToolPicker, useCatalogoDeFerramentas } from "./ToolPicker";
+import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
 import { LimiarDeSentimento } from "./LimiarDeSentimento";
@@ -68,6 +69,7 @@ import type { SkillDisponivel } from "@/lib/ai/skills/skills-do-agente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
+import { FraseDoAviso } from "./FraseDoAviso";
 import { ServidorExternoNoAtendimento } from "./ServidorExternoNoAtendimento";
 import { ServidoresMcpDoAgente } from "./ServidoresMcpDoAgente";
 import {
@@ -489,6 +491,20 @@ export function AgentForm(props: Props) {
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  /**
+   * A chegada pelo link «Abrir o agente» da tela de Casos (`#cases_enabled`, #3975).
+   * O catálogo de capacidades carrega depois e empurra o interruptor para baixo
+   * de onde o navegador rolou: medido, fora da tela em 1280. SÓ NA MONTAGEM, como
+   * a chegada ao funil: o hash fica na URL depois de salvar.
+   */
+  const [chegada, setChegada] = React.useState<Chegada | null>(null);
+  React.useEffect(() => {
+    if (window.location.hash === "#cases_enabled") {
+      setChegada({ ancora: "cases_enabled", scrollY: window.scrollY });
+    }
+  }, []);
+  const terminarChegada = React.useCallback(() => setChegada(null), []);
+  const catalogoChegando = useCatalogoDeFerramentas().isFetching;
   /**
    * Qual papel está aberto. Estado LOCAL e não rota: trocar de papel não é
    * navegação — o rascunho é um só, e uma URL por papel faria o usuário achar
@@ -1654,6 +1670,19 @@ export function AgentForm(props: Props) {
             />
           </Card>
 
+          {/* A FRASE que o cliente lê quando a conversa é passada para uma pessoa
+              (#3725; tela no #3816). Salva em `ai_agents.config.aviso_de_handoff`
+              — a chave que o `agentConfigPatchSchema` descartava, e por isso só se
+              configurava por SQL. Só em edição, como o cartão dos comandos do
+              celular: sem agente gravado não há id para o PATCH. */}
+          {isEdit && (
+            <FraseDoAviso
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).aviso_de_handoff}
+              disabled={disabled}
+            />
+          )}
+
           {/* O OUTRO caminho para uma pessoa: o clima fechado
               (`ai.sentiment_alert`, em `workers/ai-sentiment-worker.ts`).
               Mesma chave que o worker já lia, agora com porta pública — issue
@@ -1673,6 +1702,7 @@ export function AgentForm(props: Props) {
             <div className="flex items-center gap-2">
               <Switch
                 id="cases_enabled"
+                className="scroll-mt-28"
                 checked={form.cases_enabled}
                 onCheckedChange={(v) => patch({ cases_enabled: v })}
                 disabled={disabled}
@@ -1805,6 +1835,10 @@ export function AgentForm(props: Props) {
           )}
         </div>
       </div>
+
+      {chegada && (
+        <RolagemDeChegada {...chegada} esperando={catalogoChegando} aoTerminar={terminarChegada} />
+      )}
 
       {/* Publish dialog */}
       {isEdit && props.draft ? (
