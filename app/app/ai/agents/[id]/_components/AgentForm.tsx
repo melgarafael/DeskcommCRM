@@ -68,6 +68,7 @@ import type { SkillDisponivel } from "@/lib/ai/skills/skills-do-agente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
+import { FraseDoAviso } from "./FraseDoAviso";
 import { ServidorExternoNoAtendimento } from "./ServidorExternoNoAtendimento";
 import { ServidoresMcpDoAgente } from "./ServidoresMcpDoAgente";
 import {
@@ -1024,13 +1025,42 @@ export function AgentForm(props: Props) {
           negócio, não de falar com cliente — a mesma separação que a spec 16
           impôs no resto da tela. */}
       {papel === "operacao" ? (
-        <FunisDoAgente
-          funis={funis}
-          cobertura={props.cobertura}
-          value={form.pipeline_ids}
-          onChange={(ids) => patch({ pipeline_ids: ids })}
-          disabled={disabled}
-        />
+        <>
+          {/*
+            O PACOTE LIGADO SEM FUNIL MARCADO (issue #4118, saída 3).
+
+            A ferramenta "Mover oportunidade de etapa" sozinha não move nada: quem
+            diz DE QUAIS funis o agente pode mexer é a caixa abaixo. Quem liga
+            "Vender e mover o funil" e não marca nenhum funil publica um agente que
+            conversa e não organiza — e só descobre na hora de iniciar a campanha,
+            com uma recusa em outra tela.
+
+            AVISO, não bloqueio: é uma configuração legítima (agente que só
+            conversa), e travar o Publicar por causa dela seria transformar uma
+            escolha em erro. Por isso este parágrafo não entra em
+            `publishBlockReason` nem em `isValid` — ele informa e some sozinho
+            quando a primeira caixa é marcada.
+          */}
+          {form.operator_tool_ids.includes("crm_move_lead_stage") &&
+          form.pipeline_ids.length === 0 ? (
+            <p
+              data-testid="aviso-vender-sem-funil"
+              role="status"
+              className="rounded-md border border-dashed border-amber-500/40 p-3 text-xs text-amber-700 dark:text-amber-400"
+            >
+              {t(
+                'O pacote "Vender e mover o funil" está ligado, mas nenhum funil está marcado logo abaixo: o agente não vai poder mover negócio de funil nenhum, e uma campanha de Prospecção não inicia com ele assim. Não é bloqueio — dá para salvar e publicar agora e marcar o funil depois.',
+              )}
+            </p>
+          ) : null}
+          <FunisDoAgente
+            funis={funis}
+            cobertura={props.cobertura}
+            value={form.pipeline_ids}
+            onChange={(ids) => patch({ pipeline_ids: ids })}
+            disabled={disabled}
+          />
+        </>
       ) : null}
 
       {/* Two-column grid */}
@@ -1657,6 +1687,19 @@ export function AgentForm(props: Props) {
               disabled={disabled}
             />
           </Card>
+
+          {/* A FRASE que o cliente lê quando a conversa é passada para uma pessoa
+              (#3725; tela no #3816). Salva em `ai_agents.config.aviso_de_handoff`
+              — a chave que o `agentConfigPatchSchema` descartava, e por isso só se
+              configurava por SQL. Só em edição, como o cartão dos comandos do
+              celular: sem agente gravado não há id para o PATCH. */}
+          {isEdit && (
+            <FraseDoAviso
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).aviso_de_handoff}
+              disabled={disabled}
+            />
+          )}
 
           {/* O OUTRO caminho para uma pessoa: o clima fechado
               (`ai.sentiment_alert`, em `workers/ai-sentiment-worker.ts`).

@@ -133,6 +133,10 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
 
   // ---- não têm funil, e isso é declarado ----
   crm_send_whatsapp_message: "sem_funil",
+  // O Status do WhatsApp não toca negócio nenhum: é publicação de mídia no
+  // canal. Declarado (e não ausente) porque a régua de vacuidade recusa a
+  // ferramenta nova que ninguém classificou.
+  crm_publish_whatsapp_status: "sem_funil",
   // Abre conversa nova (contato pode nem ter negócio ainda) e manda a primeira
   // mensagem — não recebe `lead_id` nem `pipeline_id`. Como as de configuração
   // logo abaixo, a barreira dela é OUTRA: `requiresRole: manager` +

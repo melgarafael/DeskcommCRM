@@ -60,6 +60,7 @@ import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
 import { lerPessoalDoContato } from "@/lib/contacts/contato-pessoal";
+import { moduloQueAssumeAEntrada } from "@/lib/modulos/desvios-da-entrada";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
@@ -175,6 +176,12 @@ export async function aplicarEfeitosPosEntrada(
     });
     return;
   }
+  // ── MÓDULO OPCIONAL que assume a mensagem · ANTES de virar demanda ───────
+  //
+  // É o último instante em que dá para não criar o card. Módulo desligado (ou
+  // mensagem que não é dele) devolve `null`, e tudo abaixo roda como sempre.
+  if (await desviadaPorModulo(admin, entrada)) return;
+
   await guardarOrigemDaPagina(admin, entrada);
   await abrirDemanda(admin, entrada);
   await avaliarCampanha(admin, entrada);
@@ -192,6 +199,44 @@ export async function aplicarEfeitosPosEntrada(
   // o agente fala (o "cliente voltou" é previsto por `deveCederTurnoAoRetorno`
   // nas duas ordens), e cada evento drenado aqui atrasava o pedido do turno.
   await drenarEventosDoInbound(admin, sinal);
+}
+
+/**
+ * 2a · Algum módulo opcional assume esta mensagem? (`lib/modulos/desvios-da-entrada.ts`)
+ *
+ * NUNCA lança: a mensagem já está gravada. Falha aqui segue o caminho de sempre —
+ * sem saber se a mensagem é de um módulo, parar a ingestão inteira seria pior do
+ * que o card.
+ */
+async function desviadaPorModulo(admin: Admin, entrada: EntradaDeMensagem): Promise<boolean> {
+  try {
+    const desvio = await moduloQueAssumeAEntrada(admin, {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      texto: entrada.texto,
+    });
+    if (!desvio) return false;
+
+    // O rastro de que a mensagem NÃO sumiu: um módulo a tratou, e é por isso
+    // que não há card.
+    logger.info("[pos-entrada] efeitos pulados: um módulo opcional assumiu a mensagem", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      origem: entrada.origem,
+      modulo: desvio.modulo,
+      motivo: desvio.motivo,
+    });
+    return true;
+  } catch (err) {
+    logger.error("[pos-entrada] desvio por módulo falhou (a mensagem entra assim mesmo)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+    return false;
+  }
 }
 
 /**
