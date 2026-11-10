@@ -113,9 +113,10 @@ export async function confirmarPagamento(
     return { ok: true, efeito: "duplicado", status: recebimento.status };
   }
 
-  // O valor é a única conferência de CONTEÚDO que um aviso sem assinatura deixa
-  // fazer: quem tiver a URL não consegue, além do segredo, acertar o valor
-  // errado. Aviso sem valor não prova nada e não marca.
+  // A conferência do valor pega DIVERGÊNCIA entre o link criado no provedor e o
+  // valor registrado aqui (link de outro valor, dígito trocado): o recebimento
+  // não vira pago por um valor que ninguém registrou. Ela não segura quem tem a
+  // URL — o valor não é segredo. Aviso sem valor não marca.
   if (entrada.valorAvisadoCents !== recebimento.valor_cents) {
     logger.warn("[pagamentos.confirmar] valor do aviso diverge do registrado; nada marcado", {
       organization_id: recebimento.organization_id,

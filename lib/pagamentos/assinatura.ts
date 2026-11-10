@@ -19,8 +19,11 @@
  * - o segredo é DESTE recebimento, não da instalação nem da empresa: a URL de
  *   um pagamento não abre o de mais ninguém;
  * - só o hash fica no banco; o texto é mostrado uma vez, no registro;
- * - o valor do aviso tem de bater com o registrado (`lib/pagamentos/confirmar.ts`);
  * - a confirmação é compare-and-set e auditada.
+ *
+ * A conferência do valor (`lib/pagamentos/confirmar.ts`) NÃO entra nesta lista:
+ * ela pega divergência entre o link criado no provedor e o valor registrado
+ * aqui, e não segura quem tem a URL — o valor não é segredo.
  *
  * Um provedor que mande o segredo em cabeçalho (`X-Webhook-Token`) usa o mesmo
  * segredo. ⚠️ FAIL CLOSED: cabeçalho presente e errado NÃO cai para a URL —
