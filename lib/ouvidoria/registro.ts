@@ -53,6 +53,7 @@ import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import { ouvidoriaLigada } from "@/lib/schemas/settings";
 
@@ -208,6 +209,10 @@ export async function registrarManifestacao(
   // validação que vale é esta, e ela recusa `protocolo`/`status` de fora.
   const lido = manifestacaoSchema.safeParse(entrada);
   if (!lido.success) return { ok: false, erro: "validacao" };
+
+  // O módulo da INSTALAÇÃO antes da chave da EMPRESA: sem `fn_ouvidoria_provisionar`
+  // a tabela não existe, e a chave ligada levaria o insert a um erro de banco.
+  if (!(await moduloLigado(deps.supabase, "ouvidoria"))) return { ok: false, erro: "modulo_desligado" };
 
   const ativacao = await moduloAceitaRegistro(deps);
   if (ativacao.falhou) return { ok: false, erro: "erro_ao_gravar" };

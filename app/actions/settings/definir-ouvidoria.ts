@@ -21,6 +21,10 @@
  * dado sensível é o mesmo papel que pode LER o que entrou (a RLS da 9040 exige
  * `admin`). Deixar o Gerente ligar criaria a promessa de um módulo que ele
  * próprio não consegue abrir.
+ *
+ * ⚠️ LIGAR exige o módulo INSTALADO (`modulos_instalados`, `/admin/modulos`): sem
+ * ele a tabela não existe e `ativa: true` seria uma promessa sem efeito.
+ * DESLIGAR segue livre, para nenhuma empresa ficar presa com a chave ligada.
  */
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -29,6 +33,7 @@ import { audit } from "@/lib/audit";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { supportWriteError } from "@/lib/impersonate/support";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import { OUVIDORIA_CHAVE } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -41,7 +46,7 @@ export type ResultadoDaOuvidoria =
   | { ok: true }
   | {
       ok: false;
-      error: "validation_failed" | "unauthenticated" | "forbidden_tenant" | "forbidden_role" | "mfa_required" | "erro_ao_gravar";
+      error: "validation_failed" | "unauthenticated" | "forbidden_tenant" | "forbidden_role" | "mfa_required" | "modulo_nao_instalado" | "erro_ao_gravar";
     };
 
 export async function definirOuvidoriaDaEmpresa(
@@ -60,6 +65,9 @@ export async function definirOuvidoriaDaEmpresa(
   if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
 
   const admin = createAdminClient();
+  if (lido.data.ativa && !(await moduloLigado(admin, "ouvidoria"))) {
+    return { ok: false, error: "modulo_nao_instalado" };
+  }
 
   const { data: atual, error: erroLeitura } = await admin
     .from("organizations")

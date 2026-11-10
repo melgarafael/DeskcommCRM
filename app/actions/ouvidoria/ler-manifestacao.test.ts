@@ -15,8 +15,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn(), resolveActiveOrg: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
+const { moduloLigado } = vi.hoisted(() => ({ moduloLigado: vi.fn() }));
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado }));
 
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { createClient } from "@/lib/supabase/server";
 import { OUTRA_ORG, ORG_ID, USER_ID, makeDb } from "@/tests/helpers/stages-db-double";
 
 const MANIFESTACAO = {
@@ -42,6 +46,7 @@ function sessao(role: "admin" | "manager" | "agent" | "viewer") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  moduloLigado.mockResolvedValue(true);
 });
 
 describe("lerManifestacaoDaOuvidoria", () => {
@@ -130,5 +135,20 @@ describe("lerManifestacaoDaOuvidoria", () => {
       ok: false,
       error: "not_found",
     });
+  });
+
+  it("⭐ módulo NÃO instalado na instalação: not_found, sem ler a tabela", async () => {
+    sessao("admin");
+    moduloLigado.mockResolvedValue(false);
+    makeDb({ manifestacoes: [MANIFESTACAO] });
+    vi.mocked(createClient).mockClear();
+    const { lerManifestacaoDaOuvidoria } = await import("./ler-manifestacao");
+
+    await expect(lerManifestacaoDaOuvidoria(MANIFESTACAO.id)).resolves.toEqual({
+      ok: false,
+      error: "not_found",
+    });
+    expect(moduloLigado).toHaveBeenCalledWith(expect.anything(), "ouvidoria");
+    expect(createClient).not.toHaveBeenCalled();
   });
 });
