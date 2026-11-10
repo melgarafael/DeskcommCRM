@@ -30,38 +30,6 @@ export interface LinhaDoContatoNoQuadro {
  * com três chaves nulas em todo card. Negócio sem contato (ou contato que não
  * veio na leitura) passa intacto — o card dele não pode sumir.
  */
-/** Nome do contato como o quadro o lê, só para o filtro de texto livre do módulo sem `contatos`. */
-export interface NomeDoContatoNoQuadro {
-  id: string;
-  name?: string | null;
-  display_name?: string | null;
-  address_book_name?: string | null;
-  is_anonymized?: boolean | null;
-}
-
-/**
- * Anexa o NOME do contato ao lead (`contact_name`, `contact_display_name`, `contact_address_book_name`).
- * Só a rota do quadro chama, e só quando quem chama é módulo sem `contatos`: o `redigirContatoParaModulo`
- * coleta esses campos para filtrar o título e depois os anula. Sessão e módulo com `contatos` não passam aqui.
- */
-export function anexarNomeDoContato(leads: Lead[], contatos: NomeDoContatoNoQuadro[]): Lead[] {
-  const porContato = new Map<string, Partial<Lead>>();
-  for (const c of contatos) {
-    if (c.is_anonymized) continue;
-    const dados: Partial<Lead> = {
-      ...(c.name ? { contact_name: c.name } : {}),
-      ...(c.display_name ? { contact_display_name: c.display_name } : {}),
-      ...(c.address_book_name ? { contact_address_book_name: c.address_book_name } : {}),
-    };
-    if (Object.keys(dados).length > 0) porContato.set(c.id, dados);
-  }
-  if (porContato.size === 0) return leads;
-  return leads.map((lead) => {
-    const dados = lead.contact_id ? porContato.get(lead.contact_id) : undefined;
-    return dados ? { ...lead, ...dados } : lead;
-  });
-}
-
 export function anexarDadosDoContato(leads: Lead[], contatos: LinhaDoContatoNoQuadro[]): Lead[] {
   const porContato = new Map<string, DadosDoContato>();
   for (const contato of contatos) {
@@ -76,6 +44,38 @@ export function anexarDadosDoContato(leads: Lead[], contatos: LinhaDoContatoNoQu
   }
   if (porContato.size === 0) return leads;
 
+  return leads.map((lead) => {
+    const dados = lead.contact_id ? porContato.get(lead.contact_id) : undefined;
+    return dados ? { ...lead, ...dados } : lead;
+  });
+}
+
+/** Nome do contato como o quadro o lê, só para o filtro de texto livre do módulo sem `contatos`. */
+export interface NomeDoContatoNoQuadro {
+  id: string;
+  name?: string | null;
+  display_name?: string | null;
+  is_anonymized?: boolean | null;
+}
+
+/**
+ * Anexa o NOME do contato ao lead (`contact_name`, `contact_display_name`). Só a rota do quadro chama, e
+ * só quando quem chama é módulo sem `contatos`, numa leitura à parte: o `redigirContatoParaModulo` coleta
+ * esses campos para filtrar o título e depois os anula. Sessão e módulo com `contatos` não passam aqui.
+ * O nome da agenda do celular (`address_book_name`) NÃO entra: só as telas da equipe o leem
+ * (`tests/unit/nome-da-agenda-nunca-vai-ao-cliente.test.ts`).
+ */
+export function anexarNomeDoContato(leads: Lead[], contatos: NomeDoContatoNoQuadro[]): Lead[] {
+  const porContato = new Map<string, Partial<Lead>>();
+  for (const c of contatos) {
+    if (c.is_anonymized) continue;
+    const dados: Partial<Lead> = {
+      ...(c.name ? { contact_name: c.name } : {}),
+      ...(c.display_name ? { contact_display_name: c.display_name } : {}),
+    };
+    if (Object.keys(dados).length > 0) porContato.set(c.id, dados);
+  }
+  if (porContato.size === 0) return leads;
   return leads.map((lead) => {
     const dados = lead.contact_id ? porContato.get(lead.contact_id) : undefined;
     return dados ? { ...lead, ...dados } : lead;

@@ -152,7 +152,6 @@ export interface Lead {
    */
   contact_name?: string;
   contact_display_name?: string;
-  contact_address_book_name?: string;
   /**
    * Derivado (não é coluna): os marcadores das CONVERSAS do contato deste
    * negócio — a terceira caixa, "Tags da conversa" no painel do Inbox, onde a
