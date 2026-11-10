@@ -17,6 +17,7 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import {
@@ -111,15 +112,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const orgId = authz.organizationId;
 
-  // Recusa pelo Content-Length declarado ANTES de bufferizar o corpo (como as
-  // rotas de foto do catálogo e de mídia da conversa); o `arquivo.size` abaixo
-  // continua sendo o check autoritativo. A folga cobre o envelope multipart.
-  const declarado = Number(req.headers.get("content-length") ?? 0);
-  if (declarado > TAMANHO_MAXIMO_DO_SOM + 64 * 1024) {
-    return fail("payload_too_large", t("O som pode ter no máximo 1 MB."), 413, { requestId });
-  }
-
-  const form = await req.formData().catch(() => null);
+  // O `arquivo.size` abaixo continua sendo o check autoritativo. A folga cobre
+  // o envelope multipart.
+  const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DO_SOM + 64 * 1024, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: t("O som pode ter no máximo 1 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   const tipo = form?.get("tipo");
   const arquivo = form?.get("arquivo");
   if (!ehTipo(tipo) || !(arquivo instanceof File)) {

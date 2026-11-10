@@ -21,6 +21,7 @@ import { z } from "zod";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
@@ -65,33 +66,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { organizationId } = authz;
   const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
-  const declarado = Number(req.headers.get("content-length") ?? "0");
-  if (declarado > TAMANHO_MAXIMO_DO_ARQUIVO) {
-    return fail(
-      "payload_too_large",
-      t("Arquivo grande demais para um fluxo (máximo de 512 KB)."),
-      413,
-      {
-        requestId,
-      },
-    );
-  }
+  const envio = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DO_ARQUIVO, {
+    requestId,
+    idioma: authz.idioma,
+    acimaDoTeto: t("Arquivo grande demais para um fluxo (máximo de 512 KB)."),
+  });
+  if (!envio.ok) return envio.response;
 
   let texto: string;
   try {
-    texto = await req.text();
+    texto = await envio.corpo.text();
   } catch {
     return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
-  }
-  if (texto.length > TAMANHO_MAXIMO_DO_ARQUIVO) {
-    return fail(
-      "payload_too_large",
-      t("Arquivo grande demais para um fluxo (máximo de 512 KB)."),
-      413,
-      {
-        requestId,
-      },
-    );
   }
 
   let raw: unknown;

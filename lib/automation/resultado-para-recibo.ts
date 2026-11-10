@@ -24,6 +24,7 @@ const CODIGOS_DAS_ACOES = new Set([
   "config_invalida",
   "consent_declined",
   "contact_blocked",
+  "conta_de_email_indisponivel",
   "continuacao_exige_outro_funil",
   "conversas_nao_passaram",
   "cross_pipeline_move_not_allowed",

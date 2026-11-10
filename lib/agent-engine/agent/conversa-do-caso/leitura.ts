@@ -73,9 +73,11 @@ export async function lerEventosDoCaso(
     human_action: string | null;
     body: string | null;
     source: string | null;
+    fora_da_fronteira: string | null;
     created_at: Date;
   }>(
-    `select kind, actor_kind, human_action, body, metadata->>'source' as source, created_at
+    `select kind, actor_kind, human_action, body, metadata->>'source' as source,
+            metadata->>'fora_da_fronteira' as fora_da_fronteira, created_at
        from agent_case_events
       where organization_id = $1 and case_id = $2
       order by created_at asc
@@ -90,6 +92,7 @@ export async function lerEventosDoCaso(
       actor_kind: r.actor_kind,
       human_action: r.human_action,
       source: r.source,
+      fora_da_fronteira: r.fora_da_fronteira,
     } as Parameters<typeof caseEventLabel>[0]),
     quando: new Date(r.created_at).toISOString(),
     corpo: r.body,
