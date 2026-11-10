@@ -4,19 +4,15 @@
  *
  * ─── A ordem das guardas é a entrega ────────────────────────────────────────
  *
- * 1. Provedor fora da lista → 404.
- * 2. Balde de recusas do IP já estourado → 429, ANTES de qualquer leitura (o
- *    módulo e o recebimento são leituras de banco). O balde é consultado sem
- *    contar; só a recusa do passo 5 conta, então aviso válido nunca entra nele.
- * 3. Módulo `link_de_pagamento` desligado → 404, sem ler o corpo.
- * 4. Corpo grande demais → 413, antes de ler o corpo inteiro.
- * 5. PROVA DE ORIGEM → 401 (e conta uma recusa no balde; a que estoura → 429).
- *    O recebimento é achado pelo id que vem NA URL (`?r=`), lido por nome, e o
- *    segredo (`?t=` ou `X-Webhook-Token`) é conferido contra o hash DAQUELE
- *    recebimento. Recebimento inexistente responde igual a segredo errado: não
- *    confirmamos o que existe. Não há segredo da instalação: cada recebimento
- *    tem o seu (`lib/pagamentos/assinatura.ts`).
- * 6. Só então o corpo é interpretado, e o único efeito é `confirmarPagamento`,
+ * 1. Provedor fora da lista, ou módulo `link_de_pagamento` desligado → 404.
+ * 2. Corpo grande demais → 413, antes de ler o corpo inteiro.
+ * 3. PROVA DE ORIGEM → 401. O recebimento é achado pelo id que vem NA URL
+ *    (`?r=`), lido por nome, e o segredo (`?t=` ou `X-Webhook-Token`) é
+ *    conferido contra o hash DAQUELE recebimento. Recebimento inexistente
+ *    responde igual a segredo errado: não confirmamos o que existe. Não há
+ *    segredo da instalação: cada recebimento tem o seu (`lib/pagamentos/assinatura.ts`).
+ * 4. Rosca de recusas por IP (o balde de quem não se autenticou) → 429.
+ * 5. Só então o corpo é interpretado, e o único efeito é `confirmarPagamento`,
  *    que confere o VALOR e é compare-and-set.
  *
  * ─── O que o aviso NÃO faz ──────────────────────────────────────────────────
@@ -47,7 +43,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
@@ -121,11 +117,6 @@ export async function POST(req: NextRequest, ctx: Contexto) {
   }
   const provedor = bruto;
 
-  // O balde é o IP de quem NÃO se autenticou. Sem proxy à frente, é um balde
-  // só — e só recusas o enchem, então não bloqueia ninguém de verdade.
-  const balde = `pagamento-webhook-recusado:${ipDoCliente(req.headers) ?? "sem-proxy"}`;
-  if ((await peekRateLimit(balde, 60)) >= RECUSAS_POR_MINUTO) return muitasRecusas(requestId);
-
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "link_de_pagamento"))) {
     return fail("not_found", "Not found", 404, { requestId });
@@ -152,8 +143,16 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     ? verificarOrigem(req.headers, req.nextUrl.searchParams.get(PARAMETRO_DO_TOKEN_NA_URL), lido.recebimento.aviso_token_hash)
     : ({ ok: false, motivo: "token_invalido" } as const);
   if (!veredito.ok || !lido.recebimento) {
-    const taxa = await checkRateLimit(balde, RECUSAS_POR_MINUTO, 60);
-    if (!taxa.allowed) return muitasRecusas(requestId);
+    // O balde é o IP de quem NÃO se autenticou. Sem proxy à frente, é um balde
+    // só — e só recusas o dividem, então não bloqueia ninguém de verdade.
+    const balde = ipDoCliente(req.headers) ?? "sem-proxy";
+    const taxa = await checkRateLimit(`pagamento-webhook-recusado:${balde}`, RECUSAS_POR_MINUTO, 60);
+    if (!taxa.allowed) {
+      return fail("rate_limited", "Muitos avisos recusados seguidos.", 429, {
+        requestId,
+        headers: { "Retry-After": "60" },
+      });
+    }
     // Nem corpo, nem URL, nem cabeçalho no log: a URL leva o segredo. O motivo
     // é tudo o que o dono precisa.
     logger.warn("[pagamentos.webhook] aviso recusado", {
@@ -271,13 +270,6 @@ export async function POST(req: NextRequest, ctx: Contexto) {
     },
     { requestId },
   );
-}
-
-function muitasRecusas(requestId: string) {
-  return fail("rate_limited", "Muitos avisos recusados seguidos.", 429, {
-    requestId,
-    headers: { "Retry-After": "60" },
-  });
 }
 
 function normalizar(evento: string): string {
