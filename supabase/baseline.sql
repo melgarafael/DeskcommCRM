@@ -60777,6 +60777,38 @@ $$;
 revoke execute on function public.fn_titular_apagado_a_pedido(uuid, text, text) from public, anon, authenticated;
 grant execute on function public.fn_titular_apagado_a_pedido(uuid, text, text) to service_role;
 
+-- Espelho da 9222. A MESMA pergunta, para o LOTE de telefones que a agenda do
+-- app entrega num webhook só (`smb_app_state_sync` → vários contatos). Devolve o
+-- subconjunto dos telefones recebidos que tem marca de apagamento a pedido.
+-- Existe porque a unitária acima responde um número por chamada, e chamá-la
+-- dentro do laço era um round-trip por contato — N+1 num caminho que recebe
+-- lote. A régua é a MESMA da unitária: `fn_telefone_variantes` e o mesmo HMAC
+-- contra o sal da linha; por isso as duas não podem divergir. Cria função:
+-- mora ACIMA da VARREDURA anon.
+create or replace function public.fn_titulares_apagados_a_pedido(
+  p_org uuid,
+  p_telefones text[]
+)
+returns text[] language sql stable
+set search_path = public, extensions, pg_temp as $$
+  select coalesce(array_agg(t.telefone), '{}'::text[])
+    from unnest(coalesce(p_telefones, '{}'::text[])) as t(telefone)
+   where t.telefone is not null
+     and exists (
+       select 1
+         from public.lgpd_marcas_de_apagamento m
+        where m.organization_id = p_org
+          and m.marca_telefone is not null
+          and exists (
+            select 1
+              from unnest(public.fn_telefone_variantes(t.telefone)) as v(digitos)
+             where m.marca_telefone = hmac(convert_to(v.digitos, 'UTF8'), m.sal, 'sha256')
+          )
+     );
+$$;
+revoke execute on function public.fn_titulares_apagados_a_pedido(uuid, text[]) from public, anon, authenticated;
+grant execute on function public.fn_titulares_apagados_a_pedido(uuid, text[]) to service_role;
+
 notify pgrst, 'reload schema';
 
 -- ---- user_recovery_codes: lida e gravada só pelo servidor (migration 0755) ----
