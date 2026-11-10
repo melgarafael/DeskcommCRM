@@ -7845,6 +7845,18 @@ export const DICIONARIO: Traducoes = {
   "O WhatsApp deste número não respondeu. Confira se ele está conectado e tente de novo.": {
     es: "WhatsApp de este número no respondió. Verifica que esté conectado e inténtalo de nuevo.",
   },
+  "A agenda do celular não pode ser lida: ligue a opção 'Guardar o histórico anterior à vinculação' em Conexões e conecte o número de novo. Sem essa opção o aparelho não entrega a agenda.": {
+    es: "La agenda del celular no se puede leer: activa la opción 'Guardar el historial anterior a la vinculación' en Conexiones y conecta el número de nuevo. Sin esa opción el aparato no entrega la agenda.",
+  },
+  "O WhatsApp recusou a sessão deste número. Reconecte-o em Conexões e tente de novo.": {
+    es: "WhatsApp rechazó la sesión de este número. Reconéctalo en Conexiones e inténtalo de nuevo.",
+  },
+  "O serviço do WhatsApp deste número falhou. Tente de novo em instantes.": {
+    es: "El servicio de WhatsApp de este número falló. Inténtalo de nuevo en unos instantes.",
+  },
+  "Não foi possível ler a agenda do celular agora. Tente de novo em instantes.": {
+    es: "No se pudo leer la agenda del celular ahora. Inténtalo de nuevo en unos instantes.",
+  },
   "O WhatsApp não confirmou a mudança. Nada foi alterado; tente de novo.": {
     es: "WhatsApp no confirmó el cambio. No se alteró nada; inténtalo de nuevo.",
   },
