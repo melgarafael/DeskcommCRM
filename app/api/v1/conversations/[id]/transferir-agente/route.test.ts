@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import type pg from "pg";
 
+import { loadPublishedAgentConfigById, type PublishedAgentConfig } from "@/lib/agent-engine/agent/agent-config";
+import { agenteDaCampanhaDaConversa } from "@/lib/agent-engine/agent/agente-da-campanha";
+import { loadActiveRouter, type LoadedRouter } from "@/lib/agent-engine/agent/router-config";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
@@ -19,6 +22,9 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/agent-engine/agent/router-config", () => ({ loadActiveRouter: vi.fn() }));
+vi.mock("@/lib/agent-engine/agent/agente-da-campanha", () => ({ agenteDaCampanhaDaConversa: vi.fn() }));
+vi.mock("@/lib/agent-engine/agent/agent-config", () => ({ loadPublishedAgentConfigById: vi.fn() }));
 
 /**
  * POST /api/v1/conversations/[id]/transferir-agente — a passagem EXPLÍCITA de
@@ -26,10 +32,12 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
  *
  * O que este arquivo mede:
  *  - 403: sem permissão de escrita (viewer), NADA é lido e NADA é escrito — a
- *    primeira coisa que a rota faz é autorizar;
+ *    primeira coisa que a rota faz é autorizar, antes até de validar o id;
+ *  - o motivo não vem do corpo: a rota grava `pedido_do_operador`;
  *  - 200: com permissão, o sticky da conversa vira o agente de destino e a
  *    linha de `ai_router_decisions` nasce com `transferred` + `origem = 'acao'`;
- *  - 404/422/409 das recusas da ação, sem escrita quando recusa.
+ *  - 404/422/409 das recusas da ação (inclusive número sem roteador), sem
+ *    escrita quando recusa.
  *
  * O que NÃO mede: o banco real (o statement atômico é provado pelo próprio SQL,
  * em `lib/agent-engine/agent/transferir-agente.test.ts`) e a policy de RLS — o
@@ -76,16 +84,35 @@ interface Escrita {
 
 function poolFake(opcoes: {
   conversa?: { channel_session_id: string | null; active_ai_agent_id: string | null } | null;
-  sessaoDoDestino?: string | null;
-  roteador?: { router_id: string; intent_name: string | null } | null;
+  destinoPublicado?: boolean;
+  roteador?: LoadedRouter | null;
 } = {}) {
   const conversa =
     opcoes.conversa === undefined
       ? { channel_session_id: SESSAO, active_ai_agent_id: AGENTE_ANTERIOR }
       : opcoes.conversa;
-  const sessaoDoDestino = opcoes.sessaoDoDestino === undefined ? SESSAO : opcoes.sessaoDoDestino;
   const roteador =
-    opcoes.roteador === undefined ? { router_id: ROUTER, intent_name: "automacao" } : opcoes.roteador;
+    opcoes.roteador === undefined
+      ? {
+          id: ROUTER,
+          name: "Roteador",
+          classifierModel: null,
+          classifierProvider: null,
+          sticky: true,
+          minConfidence: 0.6,
+          fallbackAgentId: null,
+          members: [
+            { agentId: AGENTE_ANTERIOR, intentName: "vendas", intentDescription: "quer comprar", examples: [] },
+            { agentId: AGENTE_DESTINO, intentName: "automacao", intentDescription: "quer automatizar", examples: [] },
+          ],
+        }
+      : opcoes.roteador;
+  vi.mocked(loadActiveRouter).mockResolvedValue(roteador);
+  vi.mocked(agenteDaCampanhaDaConversa).mockResolvedValue(null);
+  const publicado: Partial<PublishedAgentConfig> = { agentId: AGENTE_DESTINO, pausedAt: null };
+  vi.mocked(loadPublishedAgentConfigById).mockResolvedValue(
+    opcoes.destinoPublicado === false ? null : (publicado as PublishedAgentConfig),
+  );
   const escritas: Escrita[] = [];
   const db = {
     async query(sql: string, params: unknown[] = []) {
@@ -95,15 +122,6 @@ function poolFake(opcoes: {
       }
       if (/from conversations\s+where organization_id = \$1 and id = \$2/i.test(sql)) {
         return { rows: conversa === null ? [] : [conversa], rowCount: 0 };
-      }
-      if (/join ai_agent_versions v on v\.id = a\.published_version_id/i.test(sql)) {
-        return {
-          rows: sessaoDoDestino === null ? [] : [{ channel_session_id: sessaoDoDestino }],
-          rowCount: 0,
-        };
-      }
-      if (/from ai_routers r/i.test(sql)) {
-        return { rows: roteador === null ? [] : [roteador], rowCount: 0 };
       }
       throw new Error(`pool dublê sem resposta para: ${sql.slice(0, 80)}`);
     },
@@ -146,6 +164,30 @@ describe("POST /api/v1/conversations/[id]/transferir-agente", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 
+  it("403 antes de 400: sem permissão, o id inválido nem é olhado", async () => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: { code: "forbidden_role" } }, { status: 403 }),
+    } as never);
+
+    const res = await POST(requisicao({ agente_id: AGENTE_DESTINO }), {
+      params: Promise.resolve({ id: "nao-e-uuid" }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("400: id inválido, com permissão", async () => {
+    vi.mocked(requireRole).mockResolvedValue(authzOk as never);
+
+    const res = await POST(requisicao({ agente_id: AGENTE_DESTINO }), {
+      params: Promise.resolve({ id: "nao-e-uuid" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
   it("200: a conversa passa para o agente X e a decisão é registrada com origem ação", async () => {
     vi.mocked(requireRole).mockResolvedValue(authzOk as never);
     const sessao = clienteDeSessao(true);
@@ -153,10 +195,7 @@ describe("POST /api/v1/conversations/[id]/transferir-agente", () => {
     const pool = poolFake();
     vi.mocked(getRequestPool).mockReturnValue(pool.db);
 
-    const res = await POST(
-      requisicao({ agente_id: AGENTE_DESTINO, motivo: "pedido_do_operador" }),
-      ctx,
-    );
+    const res = await POST(requisicao({ agente_id: AGENTE_DESTINO }), ctx);
     const corpo = await res.json();
 
     expect(res.status).toBe(200);
@@ -195,24 +234,24 @@ describe("POST /api/v1/conversations/[id]/transferir-agente", () => {
     expect(pool.escritas).toHaveLength(0);
   });
 
-  it("409: agente de outro número — recusa com código próprio e NADA muda", async () => {
+  it("409: número sem roteador — recusa com código próprio e NADA muda", async () => {
     vi.mocked(requireRole).mockResolvedValue(authzOk as never);
     vi.mocked(createClient).mockResolvedValue(clienteDeSessao(true).client as never);
-    const pool = poolFake({ sessaoDoDestino: "aaaaaaaa-8888-4000-8000-000000000002" });
+    const pool = poolFake({ roteador: null });
     vi.mocked(getRequestPool).mockReturnValue(pool.db);
 
     const res = await POST(requisicao({ agente_id: AGENTE_DESTINO }), ctx);
     const corpo = await res.json();
 
     expect(res.status).toBe(409);
-    expect(corpo.error.code).toBe("agente_de_outro_numero");
+    expect(corpo.error.code).toBe("sem_roteador");
     expect(pool.escritas).toHaveLength(0);
   });
 
   it("422: agente inexistente/fora da organização — recusa e NADA muda", async () => {
     vi.mocked(requireRole).mockResolvedValue(authzOk as never);
     vi.mocked(createClient).mockResolvedValue(clienteDeSessao(true).client as never);
-    const pool = poolFake({ sessaoDoDestino: null });
+    const pool = poolFake({ destinoPublicado: false });
     vi.mocked(getRequestPool).mockReturnValue(pool.db);
 
     const res = await POST(requisicao({ agente_id: AGENTE_DESTINO }), ctx);
@@ -223,18 +262,16 @@ describe("POST /api/v1/conversations/[id]/transferir-agente", () => {
     expect(pool.escritas).toHaveLength(0);
   });
 
-  it("422: motivo fora do vocabulário fechado não passa (nem chega ao banco)", async () => {
+  it("422: o corpo não escolhe o motivo — nem um do vocabulário, nem pedido_do_agente", async () => {
     vi.mocked(requireRole).mockResolvedValue(authzOk as never);
     vi.mocked(createClient).mockResolvedValue(clienteDeSessao(true).client as never);
     const pool = poolFake();
     vi.mocked(getRequestPool).mockReturnValue(pool.db);
 
-    const res = await POST(
-      requisicao({ agente_id: AGENTE_DESTINO, motivo: "porque eu quis" }),
-      ctx,
-    );
-
-    expect(res.status).toBe(422);
+    for (const motivo of ["pedido_do_agente", "pedido_do_operador", "porque eu quis"]) {
+      const res = await POST(requisicao({ agente_id: AGENTE_DESTINO, motivo }), ctx);
+      expect(res.status).toBe(422);
+    }
     expect(pool.escritas).toHaveLength(0);
   });
 });

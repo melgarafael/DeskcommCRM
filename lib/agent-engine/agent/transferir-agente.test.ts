@@ -2,11 +2,17 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type pg from 'pg';
+import type { z } from 'zod';
 
+import { loadPublishedAgentConfigById, type PublishedAgentConfig } from './agent-config';
+import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
 import { classifyIntent } from './intent-classifier';
+import { loadActiveRouter, type LoadedRouter } from './router-config';
 import {
+  CODIGOS_DE_RECUSA_DA_TRANSFERENCIA,
   MOTIVOS_DA_TRANSFERENCIA_DE_AGENTE,
   TransferenciaDeAgenteRecusada,
+  ferramentaDePassagemEntreAgentes,
   transferirAgenteDaConversa,
 } from './transferir-agente';
 
@@ -14,6 +20,11 @@ import {
 // módulo da ação não importa o classificador (asserção estrutural mais abaixo),
 // e se alguém "só confirmar a intenção" aqui dentro, este espião acusa.
 vi.mock('./intent-classifier', () => ({ classifyIntent: vi.fn() }));
+// As três leituras que o TURNO faz (roteador, agente da campanha, agente por id)
+// são as mesmas que a ação faz — dubladas aqui, com o formato de produção.
+vi.mock('./router-config', () => ({ loadActiveRouter: vi.fn() }));
+vi.mock('./agente-da-campanha', () => ({ agenteDaCampanhaDaConversa: vi.fn() }));
+vi.mock('./agent-config', () => ({ loadPublishedAgentConfigById: vi.fn() }));
 
 /**
  * A passagem EXPLÍCITA de um agente de IA para outro, no mesmo número (#3770).
@@ -22,10 +33,15 @@ vi.mock('./intent-classifier', () => ({ classifyIntent: vi.fn() }));
  *  - com destino válido, a conversa fica com o agente X e a decisão entra em
  *    `ai_router_decisions` com desfecho `transferred` e `origem = 'acao'` —
  *    NUNCA `reclassified`, que é o desfecho do classificador;
- *  - destino inexistente/arquivado/sem versão publicada, de outro número, ou
- *    fora do roteador do número: erro claro e NADA escrito;
- *  - a passagem não chama classificador (dublê intacto + o módulo não importa o
- *    classificador).
+ *  - onde o turno seguinte ignoraria a passagem (sem roteador, sticky desligado,
+ *    roteador por remetente, conversa de campanha), recusa com código próprio e
+ *    NADA escrito;
+ *  - destino inexistente, pausado ou fora do roteador: erro claro e NADA escrito;
+ *    destino membro do roteador publicado em OUTRO número: passa (o turno carrega
+ *    o membro pelo id);
+ *  - a ferramenta `transfer_to_agent` só existe onde a passagem vale, só oferece
+ *    os outros membros e devolve recusa como resultado;
+ *  - a passagem não chama classificador.
  *
  * O que ele NÃO mede: o efeito no banco real (o `update` + `insert` atômico do
  * statement). Este arquivo dubla o pool; o statement é provado pelo próprio SQL
@@ -35,9 +51,10 @@ vi.mock('./intent-classifier', () => ({ classifyIntent: vi.fn() }));
 const ORG = 'aaaaaaaa-0000-4000-8000-000000000001';
 const CONVERSA = 'aaaaaaaa-1111-4000-8000-000000000001';
 const SESSAO = 'aaaaaaaa-8888-4000-8000-000000000001';
-const OUTRA_SESSAO = 'aaaaaaaa-8888-4000-8000-000000000002';
 const AGENTE_ANTERIOR = 'aaaaaaaa-2222-4000-8000-000000000001';
 const AGENTE_DESTINO = 'aaaaaaaa-2222-4000-8000-000000000002';
+const AGENTE_TERCEIRO = 'aaaaaaaa-2222-4000-8000-000000000003';
+const AGENTE_CAMPANHA = 'aaaaaaaa-2222-4000-8000-000000000009';
 const ROUTER = 'aaaaaaaa-4444-4000-8000-000000000001';
 const USUARIO = 'aaaaaaaa-3333-4000-8000-000000000003';
 
@@ -46,19 +63,47 @@ interface Escrita {
   params: unknown[];
 }
 
+function roteador(extra: Partial<LoadedRouter> = {}): LoadedRouter {
+  return {
+    id: ROUTER,
+    name: 'Roteador',
+    classifierModel: null,
+    classifierProvider: null,
+    sticky: true,
+    minConfidence: 0.6,
+    fallbackAgentId: null,
+    members: [
+      { agentId: AGENTE_ANTERIOR, intentName: 'vendas', intentDescription: 'quer comprar', examples: [] },
+      { agentId: AGENTE_DESTINO, intentName: 'automacao', intentDescription: 'quer automatizar', examples: [] },
+      { agentId: AGENTE_TERCEIRO, intentName: 'suporte', intentDescription: 'tem um problema', examples: [] },
+    ],
+    ...extra,
+  };
+}
+
+/** O agente publicado como `loadPublishedAgentConfigById` o devolve (só o que a ação lê). */
+function publicado(agentId: string, pausedAt: string | null = null): PublishedAgentConfig {
+  const parcial: Partial<PublishedAgentConfig> = { agentId, pausedAt };
+  return parcial as PublishedAgentConfig;
+}
+
 interface Cenario {
   conversa: { channel_session_id: string | null; active_ai_agent_id: string | null } | null;
-  /** `channel_session_id` da versão publicada do destino; `null` = destino inexistente. */
-  sessaoDoDestino: string | null;
-  /** Roteador ativo do número: `null` = sem roteador; `intent_name: null` = não é membro. */
-  roteador: { router_id: string; intent_name: string | null } | null;
+  roteador: LoadedRouter | null;
+  /** Agentes que `loadPublishedAgentConfigById` encontra (id → pausado em). */
+  publicados: Record<string, string | null>;
+  agenteDaCampanha?: string | null;
   /** O `update` da CTE não casa com linha (conversa sumiu entre a leitura e a escrita). */
   updateSemLinha?: boolean;
 }
 
-function poolFake(cenario: Cenario): { db: pg.Pool; escritas: Escrita[]; leituras: string[] } {
+function poolFake(cenario: Cenario): { db: pg.Pool; escritas: Escrita[] } {
   const escritas: Escrita[] = [];
-  const leituras: string[] = [];
+  vi.mocked(loadActiveRouter).mockResolvedValue(cenario.roteador);
+  vi.mocked(agenteDaCampanhaDaConversa).mockResolvedValue(cenario.agenteDaCampanha ?? null);
+  vi.mocked(loadPublishedAgentConfigById).mockImplementation(async (_db, _org, id) =>
+    id in cenario.publicados ? publicado(id, cenario.publicados[id] ?? null) : null,
+  );
   const db = {
     async query(sql: string, params: unknown[] = []) {
       if (/insert into ai_router_decisions/i.test(sql)) {
@@ -66,33 +111,18 @@ function poolFake(cenario: Cenario): { db: pg.Pool; escritas: Escrita[]; leitura
         return { rows: [], rowCount: cenario.updateSemLinha === true ? 0 : 1 };
       }
       if (/from conversations\s+where organization_id = \$1 and id = \$2/i.test(sql)) {
-        leituras.push('conversa');
         return { rows: cenario.conversa === null ? [] : [cenario.conversa], rowCount: 0 };
-      }
-      if (/join ai_agent_versions v on v\.id = a\.published_version_id/i.test(sql)) {
-        leituras.push('destino');
-        return {
-          rows:
-            cenario.sessaoDoDestino === null
-              ? []
-              : [{ channel_session_id: cenario.sessaoDoDestino }],
-          rowCount: 0,
-        };
-      }
-      if (/from ai_routers r/i.test(sql)) {
-        leituras.push('roteador');
-        return { rows: cenario.roteador === null ? [] : [cenario.roteador], rowCount: 0 };
       }
       throw new Error(`pool dublê sem resposta para: ${sql.slice(0, 80)}`);
     },
   } as unknown as pg.Pool;
-  return { db, escritas, leituras };
+  return { db, escritas };
 }
 
 const CENARIO_OK: Cenario = {
   conversa: { channel_session_id: SESSAO, active_ai_agent_id: AGENTE_ANTERIOR },
-  sessaoDoDestino: SESSAO,
-  roteador: { router_id: ROUTER, intent_name: 'automacao' },
+  roteador: roteador(),
+  publicados: { [AGENTE_DESTINO]: null, [AGENTE_TERCEIRO]: null, [AGENTE_ANTERIOR]: null },
 };
 
 const ENTRADA = {
@@ -103,6 +133,14 @@ const ENTRADA = {
   solicitadoPor: USUARIO,
   jobId: 'job-1',
 };
+
+async function recusa(cenario: Cenario, codigo: string): Promise<void> {
+  const p = poolFake(cenario);
+  const erro = await transferirAgenteDaConversa(p.db, ENTRADA).catch((e: unknown) => e);
+  expect(erro).toBeInstanceOf(TransferenciaDeAgenteRecusada);
+  expect(erro).toMatchObject({ codigo });
+  expect(p.escritas).toHaveLength(0);
+}
 
 describe('transferirAgenteDaConversa — a passagem que não depende do classificador', () => {
   beforeEach(() => {
@@ -160,66 +198,92 @@ describe('transferirAgenteDaConversa — a passagem que não depende do classifi
     expect(MOTIVOS_DA_TRANSFERENCIA_DE_AGENTE).toContain(params[7]);
   });
 
-  it('sem roteador no número: transfere e as colunas do roteador ficam nulas', async () => {
-    const p = poolFake({ ...CENARIO_OK, roteador: null });
-    const resultado = await transferirAgenteDaConversa(p.db, ENTRADA);
-
-    expect(resultado.routerId).toBeNull();
-    expect(resultado.intentName).toBeNull();
-    expect(p.escritas[0]!.params[4]).toBeNull();
-    expect(p.escritas[0]!.params[3]).toBeNull();
+  it('número sem roteador: recusa (o turno usaria o agente do número) e NADA muda', async () => {
+    await recusa({ ...CENARIO_OK, roteador: null }, 'sem_roteador');
   });
 
-  it('agente inexistente (ou de outra organização): erro claro e NADA muda', async () => {
-    const p = poolFake({ ...CENARIO_OK, sessaoDoDestino: null });
-
-    await expect(transferirAgenteDaConversa(p.db, ENTRADA)).rejects.toMatchObject({
-      name: 'TransferenciaDeAgenteRecusada',
-      codigo: 'agente_inexistente',
-    });
-    await expect(transferirAgenteDaConversa(p.db, ENTRADA)).rejects.toBeInstanceOf(
-      TransferenciaDeAgenteRecusada,
+  it('conversa sem número: recusa como sem roteador e nem procura roteador', async () => {
+    vi.mocked(loadActiveRouter).mockClear();
+    await recusa(
+      { ...CENARIO_OK, conversa: { channel_session_id: null, active_ai_agent_id: AGENTE_ANTERIOR } },
+      'sem_roteador',
     );
-    expect(p.escritas).toHaveLength(0);
+    expect(loadActiveRouter).not.toHaveBeenCalled();
   });
 
-  it('agente de outro número: recusa com erro próprio e NADA muda', async () => {
-    const p = poolFake({ ...CENARIO_OK, sessaoDoDestino: OUTRA_SESSAO });
-
-    await expect(transferirAgenteDaConversa(p.db, ENTRADA)).rejects.toMatchObject({
-      codigo: 'agente_de_outro_numero',
-    });
-    expect(p.escritas).toHaveLength(0);
+  it('roteador com sticky desligado: recusa e NADA muda', async () => {
+    await recusa({ ...CENARIO_OK, roteador: roteador({ sticky: false }) }, 'roteador_sem_sticky');
   });
 
-  it('número com roteador e destino fora dos membros: recusa e NADA muda', async () => {
-    const p = poolFake({ ...CENARIO_OK, roteador: { router_id: ROUTER, intent_name: null } });
+  it('roteador por regras de remetente: recusa e NADA muda', async () => {
+    await recusa(
+      { ...CENARIO_OK, roteador: roteador({ senderRoutes: [{ telefone: '5511999990000' }] }) },
+      'roteador_por_remetente',
+    );
+  });
 
-    await expect(transferirAgenteDaConversa(p.db, ENTRADA)).rejects.toMatchObject({
-      codigo: 'agente_fora_do_roteador',
-    });
-    expect(p.escritas).toHaveLength(0);
+  it('roteador com lista de remetentes VAZIA não está no modo por remetente: passa', async () => {
+    const p = poolFake({ ...CENARIO_OK, roteador: roteador({ senderRoutes: [] }) });
+    await transferirAgenteDaConversa(p.db, ENTRADA);
+    expect(p.escritas).toHaveLength(1);
+  });
+
+  it('conversa nascida de campanha com agente publicado: recusa e NADA muda', async () => {
+    await recusa(
+      {
+        ...CENARIO_OK,
+        agenteDaCampanha: AGENTE_CAMPANHA,
+        publicados: { ...CENARIO_OK.publicados, [AGENTE_CAMPANHA]: null },
+      },
+      'conversa_de_campanha',
+    );
+  });
+
+  it('campanha com agente SEM versão publicada: o turno segue pela régua do número, e a passagem vale', async () => {
+    const p = poolFake({ ...CENARIO_OK, agenteDaCampanha: AGENTE_CAMPANHA });
+    await transferirAgenteDaConversa(p.db, ENTRADA);
+    expect(p.escritas).toHaveLength(1);
+  });
+
+  it('agente inexistente (ou de outra organização, ou sem versão publicada): erro claro e NADA muda', async () => {
+    await recusa({ ...CENARIO_OK, publicados: {} }, 'agente_inexistente');
+  });
+
+  it('agente de destino pausado: recusa (o turno sairia calado) e NADA muda', async () => {
+    await recusa(
+      { ...CENARIO_OK, publicados: { [AGENTE_DESTINO]: '2026-11-10T12:00:00Z' } },
+      'agente_pausado',
+    );
+  });
+
+  it('membro do roteador publicado em OUTRO número: passa — o turno carrega o membro pelo id', async () => {
+    // `loadPublishedAgentConfigById` não olha o número; a ação também não.
+    const p = poolFake(CENARIO_OK);
+    const resultado = await transferirAgenteDaConversa(p.db, ENTRADA);
+    expect(resultado.agenteDestinoId).toBe(AGENTE_DESTINO);
+    expect(loadPublishedAgentConfigById).toHaveBeenCalledWith(p.db, ORG, AGENTE_DESTINO);
+    expect(p.escritas).toHaveLength(1);
+  });
+
+  it('agente publicado que não é membro do roteador: recusa e NADA muda', async () => {
+    await recusa(
+      {
+        ...CENARIO_OK,
+        roteador: roteador({ members: roteador().members.filter((m) => m.agentId !== AGENTE_DESTINO) }),
+      },
+      'agente_fora_do_roteador',
+    );
   });
 
   it('conversa inexistente na organização: recusa e NADA muda', async () => {
-    const p = poolFake({ ...CENARIO_OK, conversa: null });
-
-    await expect(transferirAgenteDaConversa(p.db, ENTRADA)).rejects.toMatchObject({
-      codigo: 'conversa_nao_encontrada',
-    });
-    expect(p.escritas).toHaveLength(0);
+    await recusa({ ...CENARIO_OK, conversa: null }, 'conversa_nao_encontrada');
   });
 
   it('a conversa já está com o agente: recusa sem reescrever o sticky', async () => {
-    const p = poolFake({
-      ...CENARIO_OK,
-      conversa: { channel_session_id: SESSAO, active_ai_agent_id: AGENTE_DESTINO },
-    });
-
-    await expect(transferirAgenteDaConversa(p.db, ENTRADA)).rejects.toMatchObject({
-      codigo: 'ja_esta_no_agente',
-    });
-    expect(p.escritas).toHaveLength(0);
+    await recusa(
+      { ...CENARIO_OK, conversa: { channel_session_id: SESSAO, active_ai_agent_id: AGENTE_DESTINO } },
+      'ja_esta_no_agente',
+    );
   });
 
   it('conversa que sumiu entre a leitura e a escrita: erro claro, sem trilha órfã', async () => {
@@ -228,6 +292,10 @@ describe('transferirAgenteDaConversa — a passagem que não depende do classifi
     await expect(transferirAgenteDaConversa(p.db, ENTRADA)).rejects.toMatchObject({
       codigo: 'conversa_nao_encontrada',
     });
+  });
+
+  it('o vocabulário de recusa não tem mais a checagem por número', () => {
+    expect(CODIGOS_DE_RECUSA_DA_TRANSFERENCIA).not.toContain('agente_de_outro_numero');
   });
 
   it('NÃO chama o classificador — a passagem não custa modelo nenhum', async () => {
@@ -248,5 +316,80 @@ describe('transferirAgenteDaConversa — a passagem que não depende do classifi
     expect(fonte).not.toMatch(/\bclassifyIntent\b/);
     expect(fonte).not.toMatch(/\bresolveTurnAgent\b/);
     expect(fonte).not.toMatch(/\bconsultarJevNoRoteador\b/);
+  });
+});
+
+describe('ferramenta transfer_to_agent — o consumidor com motivo pedido_do_agente', () => {
+  const CTX = {
+    organizationId: ORG,
+    conversationId: CONVERSA,
+    channelSessionId: SESSAO,
+    agenteAtualId: AGENTE_ANTERIOR,
+    jobId: 'job-9',
+    noteRunError: vi.fn(),
+  };
+  const OPCOES = { toolCallId: 't1', messages: [] } as never;
+
+  it('só é oferecida onde a passagem vale', async () => {
+    for (const cenario of [
+      { ...CENARIO_OK, roteador: null },
+      { ...CENARIO_OK, roteador: roteador({ sticky: false }) },
+      { ...CENARIO_OK, roteador: roteador({ senderRoutes: [{ telefone: '5511999990000' }] }) },
+      {
+        ...CENARIO_OK,
+        agenteDaCampanha: AGENTE_CAMPANHA,
+        publicados: { ...CENARIO_OK.publicados, [AGENTE_CAMPANHA]: null },
+      },
+    ]) {
+      const p = poolFake(cenario);
+      expect(await ferramentaDePassagemEntreAgentes(p.db, CTX)).toBeNull();
+    }
+  });
+
+  it('não é oferecida quando o único membro é o próprio agente em turno', async () => {
+    const p = poolFake({
+      ...CENARIO_OK,
+      roteador: roteador({ members: roteador().members.filter((m) => m.agentId === AGENTE_ANTERIOR) }),
+    });
+    expect(await ferramentaDePassagemEntreAgentes(p.db, CTX)).toBeNull();
+  });
+
+  it('o destino é um enum dos OUTROS membros do roteador', async () => {
+    const p = poolFake(CENARIO_OK);
+    const ferramenta = await ferramentaDePassagemEntreAgentes(p.db, CTX);
+    expect(ferramenta).not.toBeNull();
+    const schema = ferramenta!.inputSchema as z.ZodType;
+    expect(schema.safeParse({ destino: 'automacao' }).success).toBe(true);
+    expect(schema.safeParse({ destino: 'suporte' }).success).toBe(true);
+    expect(schema.safeParse({ destino: 'vendas' }).success).toBe(false);
+    expect(schema.safeParse({ destino: AGENTE_DESTINO }).success).toBe(false);
+  });
+
+  it('passa a conversa com motivo pedido_do_agente, sem pessoa, com o job do turno e origem ação', async () => {
+    const p = poolFake(CENARIO_OK);
+    const ferramenta = await ferramentaDePassagemEntreAgentes(p.db, CTX);
+    const resultado = await ferramenta!.execute!({ destino: 'automacao' }, OPCOES);
+
+    expect(resultado).toMatchObject({ ok: true, status: 'transferida' });
+    expect(p.escritas).toHaveLength(1);
+    const { sql, params } = p.escritas[0]!;
+    expect(sql).toContain("'acao'");
+    expect(params[2]).toBe(AGENTE_DESTINO);
+    expect(params[5]).toBe('job-9');
+    expect(params[7]).toBe('pedido_do_agente');
+    expect(params[8]).toBeNull();
+  });
+
+  it('recusa vira resultado da ferramenta, não exceção — e nada é escrito', async () => {
+    const p = poolFake(CENARIO_OK);
+    const ferramenta = await ferramentaDePassagemEntreAgentes(p.db, CTX);
+    // O destino é pausado depois de a ferramenta ser montada.
+    vi.mocked(loadPublishedAgentConfigById).mockResolvedValue(publicado(AGENTE_DESTINO, '2026-11-10T12:00:00Z'));
+
+    const resultado = await ferramenta!.execute!({ destino: 'automacao' }, OPCOES);
+
+    expect(resultado).toMatchObject({ ok: false, error: { code: 'agente_pausado' } });
+    expect(p.escritas).toHaveLength(0);
+    expect(CTX.noteRunError).not.toHaveBeenCalled();
   });
 });

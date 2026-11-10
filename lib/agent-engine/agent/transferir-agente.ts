@@ -33,19 +33,33 @@
  * e o contrato da tabela desde a 0085 é "sem PII — o texto do lead nunca entra
  * aqui". Um motivo em prosa escrito pelo modelo seria exatamente isso.
  *
- * ─── A fronteira do número (declarada, não contornada) ─────────────────────
+ * ─── Onde a passagem vale — e a fronteira do número ────────────────────────
  *
- * A passagem entre NÚMEROS DIFERENTES é outra coisa e continua impossível por
- * aqui (#3770, fora de escopo): `serviceForAutomation`
- * (`lib/atendimento/origem-automacao.ts`) e `fn_service_event_origin` recusam
- * `channel_session_id` diferente do da conversa, e esta ação não toca nessa
- * trava. O que ela faz é RECUSAR com erro claro o destino que não atende neste
- * número — `agente_de_outro_numero` —, em vez de gravar um sticky que o próximo
- * turno ignoraria em silêncio.
+ * O sticky gravado aqui só é lido pelo turno seguinte quando o número tem
+ * roteador ativo com sticky, fora do modo de regras por remetente, e a conversa
+ * não nasceu de campanha com agente publicado: em cada um desses casos o turno
+ * escolhe o agente por outra régua ANTES de olhar o agente fixo da conversa
+ * (`resolve-turn-agent.ts`). Fora disso a ação RECUSA com código próprio
+ * (`sem_roteador`, `roteador_sem_sticky`, `roteador_por_remetente`,
+ * `conversa_de_campanha`), em vez de responder "feito" e o turno ignorar.
+ *
+ * A fronteira entre números é "membro do roteador ativo deste número": o turno
+ * carrega o membro pelo id, sem olhar em que número ele está publicado, então
+ * qualquer membro desse roteador atende aqui. A passagem para um agente que não
+ * é membro (inclusive o de outro número) é recusada — `agente_fora_do_roteador`.
+ * A origem de serviço (`serviceForAutomation`, `fn_service_event_origin`) segue
+ * recusando `channel_session_id` diferente do da conversa; esta ação não toca
+ * nessa trava.
  */
 import type pg from 'pg';
+import { z } from 'zod';
 
 import { logger } from '@/lib/logger';
+
+import { tool } from '../edge/llm/run-model-call';
+import { loadPublishedAgentConfigById } from './agent-config';
+import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
+import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
 
 /**
  * POR QUE a passagem aconteceu — vocabulário FECHADO, espelhado no CHECK da
@@ -71,11 +85,19 @@ export type MotivoDaTransferenciaDeAgente =
 export const CODIGOS_DE_RECUSA_DA_TRANSFERENCIA = [
   /** A conversa não existe nesta organização. */
   'conversa_nao_encontrada',
+  /** O número da conversa não tem roteador ativo: o turno escolhe o agente do número. */
+  'sem_roteador',
+  /** O roteador não guarda o agente da conversa (sticky desligado). */
+  'roteador_sem_sticky',
+  /** O roteador escolhe pelo telefone de quem escreve, antes do agente da conversa. */
+  'roteador_por_remetente',
+  /** A conversa nasceu de campanha com agente publicado: é ele quem atende. */
+  'conversa_de_campanha',
   /** O agente não existe, está arquivado, está fora da organização ou não tem versão publicada. */
   'agente_inexistente',
-  /** O agente é desta organização, mas não atende neste número. */
-  'agente_de_outro_numero',
-  /** O número tem roteador ativo e o agente não é membro dele. */
+  /** O agente está pausado: o turno sairia calado. */
+  'agente_pausado',
+  /** O agente não é membro do roteador ativo deste número. */
   'agente_fora_do_roteador',
   /** A conversa já está com esse agente — passar de novo não é uma decisão. */
   'ja_esta_no_agente',
@@ -112,9 +134,9 @@ export interface ResultadoDaTransferencia {
   /** O sticky que a conversa tinha — `null` = a conversa ainda não tinha agente ativo. */
   agenteAnteriorId: string | null;
   agenteDestinoId: string;
-  /** A intenção do membro de destino no roteador; `null` sem roteador. */
-  intentName: string | null;
-  routerId: string | null;
+  /** A intenção do membro de destino no roteador. */
+  intentName: string;
+  routerId: string;
 }
 
 interface ConversaRow {
@@ -123,21 +145,73 @@ interface ConversaRow {
 }
 
 /**
+ * O roteador está no modo de regras por remetente: o turno escolhe o agente pelo
+ * telefone de quem escreve, ANTES de olhar o agente fixo da conversa. Uma regra
+ * só: `resolve-turn-agent.ts` importa daqui.
+ */
+export function roteadorPorRemetente(router: LoadedRouter): boolean {
+  return router.senderRoutes !== undefined &&
+    (!Array.isArray(router.senderRoutes) || router.senderRoutes.length > 0);
+}
+
+/**
+ * O roteador em que a passagem VALE para esta conversa — ou a recusa que diz por
+ * que o turno seguinte não a respeitaria. A mesma pergunta para a ação e para a
+ * ferramenta do agente: a ferramenta só é oferecida quando isto não recusa.
+ *
+ * As réguas são as do turno (`resolve-turn-agent.ts`): regras por remetente,
+ * campanha e sem roteador vêm antes do sticky ali — qualquer uma delas faz o
+ * turno ignorar o agente gravado na conversa.
+ */
+export async function roteadorDaPassagem(
+  db: pg.Pool,
+  organizationId: string,
+  conversationId: string,
+  channelSessionId: string | null,
+): Promise<LoadedRouter> {
+  const router =
+    channelSessionId === null ? null : await loadActiveRouter(db, organizationId, channelSessionId);
+  if (router === null) {
+    throw new TransferenciaDeAgenteRecusada(
+      'sem_roteador',
+      'O número desta conversa não tem roteador ativo — o agente do número é quem atende.',
+    );
+  }
+  if (roteadorPorRemetente(router)) {
+    throw new TransferenciaDeAgenteRecusada(
+      'roteador_por_remetente',
+      'O roteador deste número escolhe o agente pelo telefone de quem escreve.',
+    );
+  }
+  const idDaCampanha = await agenteDaCampanhaDaConversa(db, organizationId, conversationId);
+  if (idDaCampanha !== null && (await loadPublishedAgentConfigById(db, organizationId, idDaCampanha)) !== null) {
+    throw new TransferenciaDeAgenteRecusada(
+      'conversa_de_campanha',
+      'A conversa nasceu de uma campanha com agente próprio — é ele quem atende.',
+    );
+  }
+  if (!router.sticky) {
+    throw new TransferenciaDeAgenteRecusada(
+      'roteador_sem_sticky',
+      'O roteador deste número não mantém o agente da conversa (sticky desligado).',
+    );
+  }
+  return router;
+}
+
+/**
  * Passa a conversa para outro agente de IA do MESMO número, de forma
  * determinística, e registra a decisão.
  *
- * Executa, em ordem, quatro leituras/escritas — e para na primeira que recusar,
- * sem tocar em nada:
+ * Para na primeira recusa, sem tocar em nada:
  *
  *  1. a conversa (organização + sticky atual);
- *  2. o agente de destino: existe, não está arquivado, tem versão publicada
- *     NESTE número (é `ai_agent_versions.channel_session_id` que diz em que
- *     número um agente atende);
- *  3. se o número tem roteador ativo, o destino tem que ser MEMBRO dele — um
- *     sticky que não é membro é ignorado pelo resolvedor do turno
- *     (`stickyMember` em `resolve-turn-agent.ts`), então aceitar aqui seria
- *     gravar uma passagem que não acontece;
- *  4. UM statement: o sticky muda e a linha de trilha nasce na MESMA escrita
+ *  2. o roteador em que a passagem vale (`roteadorDaPassagem`);
+ *  3. o agente de destino: existe, não está arquivado, tem versão publicada e
+ *     não está pausado — a mesma leitura que o turno faz do membro;
+ *  4. o destino é MEMBRO desse roteador — um sticky que não é membro é ignorado
+ *     pelo turno (`stickyMember` em `resolve-turn-agent.ts`);
+ *  5. UM statement: o sticky muda e a linha de trilha nasce na MESMA escrita
  *     (`with destino as (update … returning id) insert … select from destino`).
  *     Conversa que não existe na organização não casa com o `update`, e a
  *     trilha não nasce — não há como sobrar linha sem mudança.
@@ -169,63 +243,36 @@ export async function transferirAgenteDaConversa(
     );
   }
 
-  // Quem atende NESTE número: versão publicada na sessão de canal da conversa.
-  // `loadPublishedAgentConfigById` não serve aqui de propósito — ele responde
-  // "existe versão publicada?" para qualquer número, e é justamente o destino de
-  // outro número que esta ação precisa recusar (ver o cabeçalho).
-  const { rows: destinos } = await db.query<{ channel_session_id: string | null }>(
-    `select v.channel_session_id
-       from ai_agents a
-       join ai_agent_versions v on v.id = a.published_version_id
-      where a.organization_id = $1
-        and a.id = $2
-        and a.archived_at is null
-        and v.status = 'published'`,
-    [organizationId, agenteDestinoId],
+  const roteador = await roteadorDaPassagem(
+    db,
+    organizationId,
+    conversationId,
+    conversa.channel_session_id,
   );
-  const destino = destinos[0];
-  if (destino === undefined) {
+
+  const destino = await loadPublishedAgentConfigById(db, organizationId, agenteDestinoId);
+  if (destino === null) {
     throw new TransferenciaDeAgenteRecusada(
       'agente_inexistente',
       'Agente de destino não existe nesta organização ou não tem versão publicada.',
     );
   }
-  if (
-    conversa.channel_session_id !== null &&
-    destino.channel_session_id !== conversa.channel_session_id
-  ) {
-    // A passagem ENTRE números é outra issue (#3770, fora de escopo): a origem
-    // de serviço recusa `channel_session_id` diferente. Recusar aqui é o que
-    // impede um sticky que o turno ignoraria.
+  if (destino.pausedAt) {
     throw new TransferenciaDeAgenteRecusada(
-      'agente_de_outro_numero',
-      'Agente de destino não atende neste número — a passagem entre números é outra ação.',
+      'agente_pausado',
+      'O agente de destino está pausado — com ele a conversa ficaria sem resposta.',
     );
   }
 
-  // Roteador do número: com um ativo, só membro dele pode virar sticky.
-  const { rows: roteadores } = await db.query<{
-    router_id: string;
-    intent_name: string | null;
-  }>(
-    `select r.id as router_id, m.intent_name
-       from ai_routers r
-       left join ai_router_members m on m.router_id = r.id and m.agent_id = $2
-      where r.organization_id = $1
-        and r.channel_session_id = $3
-        and r.is_active
-      limit 1`,
-    [organizationId, agenteDestinoId, conversa.channel_session_id],
-  );
-  const roteador = roteadores[0] ?? null;
-  if (roteador !== null && roteador.intent_name === null) {
+  const membro = roteador.members.find((m) => m.agentId === agenteDestinoId);
+  if (membro === undefined) {
     throw new TransferenciaDeAgenteRecusada(
       'agente_fora_do_roteador',
-      'O número tem roteador ativo e o agente de destino não é um dos membros.',
+      'O agente de destino não é membro do roteador deste número.',
     );
   }
-  const routerId = roteador === null ? null : roteador.router_id;
-  const intentName = roteador === null ? null : roteador.intent_name;
+  const routerId = roteador.id;
+  const intentName = membro.intentName;
 
   // UMA escrita: o sticky e a linha de trilha nascem juntos, ou nada nasce.
   const { rowCount } = await db.query(
@@ -279,4 +326,80 @@ export async function transferirAgenteDaConversa(
     intentName,
     routerId,
   };
+}
+
+/**
+ * A ferramenta `transfer_to_agent` do agente em turno — o consumidor da ação
+ * com motivo `pedido_do_agente`.
+ *
+ * Só existe onde a passagem vale (`roteadorDaPassagem` não recusa) e só oferece
+ * os OUTROS membros desse roteador: o destino é um enum das intenções deles, e o
+ * modelo não tem como nomear um agente fora da lista. `null` = sem ferramenta
+ * neste turno. Recusa vira resultado da ferramenta (`ok: false`), nunca exceção.
+ */
+export async function ferramentaDePassagemEntreAgentes(
+  db: pg.Pool,
+  ctx: {
+    organizationId: string;
+    conversationId: string;
+    channelSessionId: string;
+    agenteAtualId: string;
+    jobId: string;
+    noteRunError: (err: Error) => void;
+  },
+) {
+  let roteador: LoadedRouter;
+  try {
+    roteador = await roteadorDaPassagem(db, ctx.organizationId, ctx.conversationId, ctx.channelSessionId);
+  } catch (err) {
+    if (err instanceof TransferenciaDeAgenteRecusada) return null;
+    throw err;
+  }
+  const destinos = roteador.members.filter((m) => m.agentId !== ctx.agenteAtualId);
+  const [primeiro, ...demais] = destinos.map((m) => m.intentName);
+  if (primeiro === undefined) return null;
+  const porIntencao = new Map<string, RouterMember>(destinos.map((m) => [m.intentName, m]));
+
+  return tool({
+    description:
+      'Passa esta conversa para outro agente de IA deste número. A partir da próxima mensagem do ' +
+      'cliente, quem responde é o agente escolhido. Use só quando o assunto é claramente de outro ' +
+      'agente da lista, e avise o cliente antes. Agentes disponíveis:\n' +
+      destinos.map((m) => `- ${m.intentName}: ${m.intentDescription}`).join('\n'),
+    inputSchema: z.object({
+      destino: z.enum([primeiro, ...demais]).describe('a intenção do agente que deve assumir a conversa'),
+    }),
+    execute: async ({ destino }: { destino: string }) => {
+      const membro = porIntencao.get(destino);
+      if (membro === undefined) {
+        return { ok: false, error: { code: 'agente_fora_do_roteador', message: 'Destino fora da lista.' } };
+      }
+      try {
+        await transferirAgenteDaConversa(db, {
+          organizationId: ctx.organizationId,
+          conversationId: ctx.conversationId,
+          agenteDestinoId: membro.agentId,
+          motivo: 'pedido_do_agente',
+          solicitadoPor: null,
+          jobId: ctx.jobId,
+        });
+        return {
+          ok: true,
+          status: 'transferida',
+          message:
+            `Conversa passada para o agente "${destino}", que responde a partir da próxima mensagem ` +
+            'do cliente. Se ainda não avisou o cliente, avise agora e encerre o turno.',
+        };
+      } catch (err) {
+        if (err instanceof TransferenciaDeAgenteRecusada) {
+          return { ok: false, error: { code: err.codigo, message: err.message } };
+        }
+        ctx.noteRunError(err instanceof Error ? err : new Error(String(err)));
+        return {
+          ok: false,
+          error: { code: 'internal_error', message: 'erro interno ao passar a conversa — siga atendendo.' },
+        };
+      }
+    },
+  });
 }

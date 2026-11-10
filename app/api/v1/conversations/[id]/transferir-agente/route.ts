@@ -19,11 +19,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * ─── O que esta rota NÃO faz (declarado, não esquecido) ────────────────────
  *
- * Passagem entre NÚMEROS diferentes continua impossível: a origem de serviço
- * (`serviceForAutomation`, `fn_service_event_origin`) recusa `channel_session_id`
- * diferente do da conversa, e esta ação não toca nessa trava. O destino que não
- * atende neste número é RECUSADO com 409 (`agente_de_outro_numero`), nunca
- * gravado como sticky que o turno seguinte ignoraria.
+ * A fronteira entre números é "membro do roteador ativo deste número": o destino
+ * que não é membro é RECUSADO com 409 (`agente_fora_do_roteador`). Onde o turno
+ * seguinte não respeitaria a passagem (sem roteador, sticky desligado, roteador
+ * por remetente, conversa de campanha) a recusa também é 409, com o código da
+ * régua — nunca um "feito" que o turno ignoraria.
  *
  * ─── Auth ──────────────────────────────────────────────────────────────────
  *
@@ -40,9 +40,9 @@ import { z } from "zod";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import {
-  MOTIVOS_DA_TRANSFERENCIA_DE_AGENTE,
   TransferenciaDeAgenteRecusada,
   transferirAgenteDaConversa,
+  type CodigoDeRecusaDaTransferencia,
 } from "@/lib/agent-engine/agent/transferir-agente";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
@@ -58,21 +58,24 @@ interface RouteCtx {
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Só o destino vem do corpo. O motivo é FIXO: quem chama esta rota é uma
+// pessoa (`pedido_do_operador`); `pedido_do_agente` é da ferramenta do agente em
+// turno, e o corpo não escolhe o que a trilha diz sobre quem pediu.
 const corpoSchema = z
   .object({
     agente_id: z.string().uuid(),
-    // O motivo é vocabulário FECHADO (`transferir-agente.ts`), nunca texto
-    // livre: a linha de trilha é lida por toda a organização e a tabela tem
-    // contrato de "sem PII" desde a 0085.
-    motivo: z.enum(MOTIVOS_DA_TRANSFERENCIA_DE_AGENTE).default("pedido_do_operador"),
   })
   .strict();
 
 /** Recusa da ação → status HTTP. Recusa não é falha: cada uma tem o seu. */
-const STATUS_DA_RECUSA: Record<string, number> = {
+const STATUS_DA_RECUSA: Record<CodigoDeRecusaDaTransferencia, number> = {
   conversa_nao_encontrada: 404,
   agente_inexistente: 422,
-  agente_de_outro_numero: 409,
+  sem_roteador: 409,
+  roteador_sem_sticky: 409,
+  roteador_por_remetente: 409,
+  conversa_de_campanha: 409,
+  agente_pausado: 409,
   agente_fora_do_roteador: 409,
   ja_esta_no_agente: 409,
 };
@@ -82,15 +85,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const { id } = await ctx.params;
-  if (!UUID_RX.test(id)) {
-    return fail("invalid_request", "id inválido.", 400, { requestId });
-  }
-
+  // Autorização ANTES de validar o id: quem não pode transferir recebe 403, e
+  // não descobre nada pelo formato do id.
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
+
+  const { id } = await ctx.params;
+  if (!UUID_RX.test(id)) {
+    return fail("invalid_request", "id inválido.", 400, { requestId });
+  }
 
   let corpo: z.infer<typeof corpoSchema>;
   try {
@@ -98,7 +103,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   } catch {
     return fail(
       "invalid_request",
-      t("Informe o agente de destino (agente_id) e um motivo válido."),
+      t("Informe o agente de destino (agente_id)."),
       422,
       { requestId },
     );
@@ -122,12 +127,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       organizationId: org.orgId,
       conversationId: id,
       agenteDestinoId: corpo.agente_id,
-      motivo: corpo.motivo,
+      motivo: "pedido_do_operador",
       solicitadoPor: user.id,
     });
   } catch (err) {
     if (err instanceof TransferenciaDeAgenteRecusada) {
-      const status = STATUS_DA_RECUSA[err.codigo] ?? 422;
+      const status = STATUS_DA_RECUSA[err.codigo];
       return fail(err.codigo, t(err.message), status, { requestId });
     }
     // `getRequestPool` sem SUPABASE_DB_URL é instalação sem caminho para o
@@ -154,8 +159,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     metadata: {
       agente_anterior_id: resultado.agenteAnteriorId,
       agente_id: resultado.agenteDestinoId,
-      motivo: corpo.motivo,
-      ...(resultado.routerId ? { router_id: resultado.routerId } : {}),
+      motivo: "pedido_do_operador",
+      router_id: resultado.routerId,
     },
   });
 
