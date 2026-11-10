@@ -70,6 +70,20 @@ horário, procedimento, catálogo) que você não tem certeza, chame a function
 invente. Se a busca não achar nada, diga que vai verificar e retornar, não
 afirme um fato sem fonte.`;
 
+/**
+ * Ligação RECEBIDA: quem atende fala primeiro. Sem isto a IA ficava calada até
+ * ouvir voz — o semantic_vad só cria resposta quando detecta fala — e quem
+ * ligava ouvia silêncio, achando que ninguém tinha atendido (medido ao vivo em
+ * 03/11/2026: 36 s e 12 s de silêncio até o cliente falar "alô"). Na ligação
+ * que NÓS fazemos é o contrário: quem atende diz "alô" e a IA responde a isso,
+ * então a abertura não vale para a saída.
+ */
+const INSTRUCAO_FALA_PRIMEIRO = `
+
+Esta é uma ligação que o cliente fez para a empresa, e você acabou de atender.
+Fale primeiro, sem esperar o cliente: cumprimente e se apresente numa frase
+curta, do jeito que suas instruções acima pedem, e pergunte como pode ajudar.`;
+
 export interface AudioSocketCallContext {
   callId: string;
   organizationId: string;
@@ -85,6 +99,12 @@ export interface AudioSocketCallContext {
   apiKey?: string;
   onTranscriptTurn: (turn: { speaker: "agent" | "customer"; text: string }) => void;
   onCallEnded: () => void;
+  /**
+   * true na ligação RECEBIDA: a IA abre a conversa assim que a sessão fica
+   * pronta (ver INSTRUCAO_FALA_PRIMEIRO). Ausente ou false: espera o cliente
+   * falar, que é o certo na ligação que nós fazemos.
+   */
+  falaPrimeiro?: boolean;
   /**
    * Resolvida em PARALELO com a abertura deste WebSocket (index.ts dispara
    * os dois ao mesmo tempo, não aguarda uma coisa antes da outra) — o
@@ -267,7 +287,10 @@ export class AudioSocketCallBridge {
             type: "realtime",
             model: this.realtimeModel,
             output_modalities: ["audio"],
-            instructions: this.ctx.agentInstructions + INSTRUCAO_ENCERRAR_CHAMADA,
+            instructions:
+              this.ctx.agentInstructions +
+              INSTRUCAO_ENCERRAR_CHAMADA +
+              (this.ctx.falaPrimeiro ? INSTRUCAO_FALA_PRIMEIRO : ""),
             audio: {
               input: {
                 format: { type: "audio/pcmu" },
@@ -328,6 +351,16 @@ export class AudioSocketCallBridge {
           },
         }),
       );
+
+      // Ligação recebida: a IA abre a conversa. Vai ANTES de drenar o áudio
+      // acumulado — se a fala do cliente fosse primeiro, o VAD poderia criar
+      // uma resposta ao mesmo tempo que esta, e a API recusa a segunda
+      // ("conversation_already_has_active_response"). Se o cliente falar por
+      // cima da saudação, o semantic_vad a interrompe, como em qualquer turno.
+      if (this.ctx.falaPrimeiro) {
+        console.info(`[realtime] call=${this.ctx.callId} ligação recebida: IA abre a conversa`);
+        this.realtimeWs.send(JSON.stringify({ type: "response.create" }));
+      }
 
       // Sessão configurada — agora sim dá pra mandar áudio pra API. Drena o
       // que ficou acumulado em preOpenAudioBuffer enquanto o WS ainda abria

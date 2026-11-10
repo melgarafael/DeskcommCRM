@@ -33,6 +33,8 @@ import { AtendimentoForm } from "./_form";
 import { TelefoneDeFichaVazia } from "./_telefoneDeFichaVazia";
 import { NomeInformado } from "./_nomeInformado";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +95,7 @@ export default async function AtendimentoSettingsPage() {
 
       <AtendimentoForm
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
+        setoresLigado={await moduloLigado(createAdminClient(), "setores")}
       />
       <ChannelRoutingForm initial={channels} />
       <AssinaturaForm initial={assinaturaInicial} />

@@ -14,6 +14,7 @@
  * idempotência).
  */
 import { registerAction } from "@/lib/automation/actions";
+import { portaDaAplicacao } from "@/lib/db";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { aplicarPlanoDeTarefas } from "@/lib/tarefas/plano";
 
@@ -32,7 +33,7 @@ async function execute(
     return { type: "apply_task_plan", status: "skipped", detail: { reason: "no_target" } };
   }
 
-  const resultado = await aplicarPlanoDeTarefas(ctx.admin, {
+  const resultado = await aplicarPlanoDeTarefas(portaDaAplicacao(), {
     organizationId: ctx.organizationId,
     leadId: lead.id,
     planoId,

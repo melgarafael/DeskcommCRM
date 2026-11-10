@@ -44,12 +44,12 @@ function proximoSettings(
 }
 
 describe("config de atendimento — routing + visibilidade na mesma porta", () => {
-  it("os três modos de visibilidade do schema são os mesmos do tipo de auth", () => {
+  it("os quatro modos de visibilidade do schema são os mesmos do tipo de auth", () => {
     // As duas listas moram em arquivos diferentes por motivo real (uma valida
     // input externo, a outra tipa a sessão). Divergir significaria a tela
     // oferecer um modo que a RLS não entende — e a RLS cai no `else`, que é
     // "não vê nada".
-    const doTipo: VisibilityMode[] = ["all", "own_and_unassigned", "own"];
+    const doTipo: VisibilityMode[] = ["all", "own_and_unassigned", "own", "own_and_sector"];
     expect([...VISIBILITY_MODES]).toEqual(doTipo);
     expect(VISIBILITY_MODES).toContain(DEFAULT_VISIBILITY_MODE);
   });

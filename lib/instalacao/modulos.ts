@@ -41,8 +41,8 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores` e `avisos` ligam/desligam por uma linha em `platform_config`
- * (ver o resto deste arquivo). `honorarios` e `financeiro` são MÓDULOS DE TABELA (ADR-0002): a fonte da
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `painel_atendimento` e `reservas_de_lugar` ligam/desligam por uma linha em `platform_config`
+ * (ver o resto deste arquivo). `honorarios`, `financeiro` e `lista_de_espera` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
  * `deModuloDesligado` (catálogo de tools MCP) precisa: "este módulo, seja qual for o mecanismo
@@ -54,22 +54,31 @@ export const MODULOS_OPCIONAIS = [
   "propostas",
   "crm_b2b",
   "honorarios",
+  "cadencias",
   // #1907 item 4 — a comanda nasce em `modulos_instalados` como os honorários:
   // sem a linha `financeiro` as telas de comanda e as rotas de
   // `app/api/v1/financeiro/comandas/*` não existem para ninguém, e a
   // provisionadora (`fn_financeiro_provisionar`) só roda onde o módulo está
   // instalado. `MODULOS_DE_TABELA` abaixo é o que faz `moduloLigado` enxergá-lo.
   "financeiro",
+  // Doc 208 (A): a lista de espera da agenda. A tabela nasce só onde o módulo é
+  // instalado, e cada organização ainda escolhe os prazos antes de ligar.
+  "lista_de_espera",
   "cobranca",
   "login_codex",
   "setores",
   "avisos",
+  "conferir_whatsapp",
+  "mcp_por_agente",
+  "cold_call",
+  "painel_atendimento",
+  "reservas_de_lugar",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
 /** Os módulos de tabela do ADR-0002 dentro de `MODULOS_OPCIONAIS` — resolvidos por
  * `modulos_instalados.estado = 'ativo'`, nunca por `platform_config`. */
-const MODULOS_DE_TABELA = ["honorarios", "financeiro"] as const satisfies readonly ModuloOpcional[];
+const MODULOS_DE_TABELA = ["honorarios", "financeiro", "lista_de_espera", "cadencias"] as const satisfies readonly ModuloOpcional[];
 
 /**
  * Só os módulos por FLAG — os que a tela `/admin/sistema` liga e desliga via
@@ -87,6 +96,11 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "login_codex",
   "setores",
   "avisos",
+  "conferir_whatsapp",
+  "mcp_por_agente",
+  "cold_call",
+  "painel_atendimento",
+  "reservas_de_lugar",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -122,6 +136,30 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // push para a equipe. Muita instalação tem uma ou duas pessoas, e o recado
   // para a equipe não serve a elas. Desligado, a rota responde 404.
   avisos: "MODULO_AVISOS",
+  // #3887: a prospecção pergunta ao WhatsApp, pela conexão por QR do cliente, se
+  // cada telefone achado tem conta. É consulta em massa a partir do número do
+  // cliente, a qualquer hora e sem o aquecimento de número novo, num ritmo que
+  // ninguém mediu contra banimento. Quem aceita o risco liga; desligado, nada é
+  // consultado e a prospecção segue como antes (`lib/prospecting/whatsapp.ts`).
+  conferir_whatsapp: "MODULO_CONFERIR_WHATSAPP",
+  // Doc 252 (A): os servidores MCP POR AGENTE do #3857, com OAuth em que cada
+  // cliente autoriza a própria conta. Serve a quem vende produto conectado, não
+  // à maioria. Desligado, a seção do agente e a lista da ficha somem, as duas
+  // rotas públicas respondem 404 e o turno não monta servidor do agente.
+  mcp_por_agente: "MODULO_MCP_POR_AGENTE",
+  // #3933: a fila de ligações ativas (cold call). Discagem ativa é coisa de nicho
+  // (régua do núcleo enxuto): quem não prospecta por telefone não carrega a tela
+  // nem as rotas. Desligado, a porta some, a tela e as rotas respondem 404.
+  cold_call: "MODULO_COLD_CALL",
+  // #3403: a tela de leitura de quem atende um número só. Quem atende bem pelo
+  // Inbox não precisa dela (régua do núcleo enxuto). Desligado, a porta some e a
+  // tela responde 404.
+  painel_atendimento: "MODULO_PAINEL_DE_ATENDIMENTO",
+  // Doc 283 (A): o lugar com capacidade em pessoas do #4029 (mesa, camarote,
+  // quadra) serve a restaurante, casa de evento e quadra, não à maioria. A
+  // parte de banco entra para todos e não muda nada para quem não cria lugar;
+  // desligado, criar um lugar pela agenda responde 404.
+  reservas_de_lugar: "MODULO_RESERVAS_DE_LUGAR",
 };
 
 const LIGADO = "ligado";

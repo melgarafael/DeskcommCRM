@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # Diagnóstico rápido: estado dos containers + saúde do app (Supabase/Redis/WAHA).
+#
+# CÓDIGO DE SAÍDA: 0 só quando o app se declara `healthy` no /api/v1/health
+# (e a sonda conseguiu responder). Qualquer outro desfecho — `degraded`,
+# `unhealthy`, app mudo, JSON ilegível — sai 1, depois de imprimir o resto do
+# diagnóstico. Até o #4087 ele saía 0 sempre, então nem cron nem monitor
+# conseguiam usar isto como alarme.
 source "$(dirname "$0")/_common.sh"
 enter_project
+
+# Assume reprovado até a sonda provar o contrário (falha fechada).
+saude_app_ok=1
 
 step "Containers"
 # MEDIDO (#1955): com o resolver do Docker saturado (`dial udp 8.8.4.4:53:
@@ -23,14 +32,21 @@ step "Saúde interna do app (/api/v1/health)"
 # Mesmo prazo do `ps` acima, pelo mesmo motivo (#1955): um `docker exec` com o
 # resolver saturado travava aqui também, e este era o segundo ponto em que o
 # healthcheck ficava sem resposta nenhuma.
-out="$(com_prazo 30 docker compose $(dc_files) exec -T app node -e "
-fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(e=>{console.error(e.message);process.exit(1)})
-" 2>/dev/null || echo '')"
-if [ -n "$out" ]; then
-  printf '%s\n' "$out"
-  printf '%s' "$out" | grep -q '"status":"ok"' && c_grn "✓ app saudável" || c_ylw "⚠ algum subsistema degradado (veja o JSON acima)."
+#
+# #4087: quem responde "saudável ou não" é o status GERAL da rota, e a decisão
+# mora num lugar só (relatar_saude_do_app, _common.sh) — a mesma sonda que o
+# install.sh e o update.sh usam. Aqui havia um grep pelo status `ok` no JSON
+# cru: `ok` é o vocabulário dos CHECKS (ok|degraded|down), não o do status
+# geral (healthy|degraded|unhealthy), então `checks.redis.status` casava e a
+# linha verde saía com o BANCO FORA.
+saida="$(app_health_probe 30)"
+if [ -n "$saida" ]; then
+  case "$saida" in
+    *$'\n'*) printf '%s\n' "${saida#*$'\n'}" ;;   # o corpo, para o dono ver
+  esac
+  relatar_saude_do_app "$saida" && saude_app_ok=0
 else
-  c_ylw "⚠ app não respondeu. Logs: docker compose $(dc_files) logs --tail=50 app"
+  c_ylw "⚠ app não respondeu ao /api/v1/health. Logs: docker compose $(dc_files) logs --tail=50 app"
 fi
 
 step "Atualização pela tela (agente do host)"
@@ -198,3 +214,10 @@ else
   done <<< "$tls_dito"
   c_dim "  (a verificação de certificado continua ligada — nada foi desligado para este teste.)"
 fi
+
+# Veredito. Só aqui, no fim, para o dono ver o diagnóstico INTEIRO mesmo quando o
+# app está fora — e para o cron/monitor ter um sinal de máquina. `degraded` sai 1
+# junto com `unhealthy`: na instalação o `degraded` passa (wait_app_healthy, ele
+# quer dizer "opcional ainda não configurado"), mas um diagnóstico chamado à mão
+# não pode chamar de saudável um app com subsistema fora.
+exit "$saude_app_ok"

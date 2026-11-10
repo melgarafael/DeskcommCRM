@@ -416,6 +416,41 @@ describe("executeCallWebhook", () => {
     expect(data.owner).toEqual({ id: OWNER });
   });
 
+  it("include_owner: o nome do responsável só sai para membro da organização da regra", async () => {
+    function adminCom(membros: string[]): ActionCtx["admin"] {
+      let org: unknown = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vinculos: any = {
+        select: () => vinculos,
+        eq: (_col: string, v: unknown) => ((org = v), vinculos),
+        in: async () => ({
+          data: org === "org-1" ? membros.map((user_id) => ({ user_id })) : [],
+          error: null,
+        }),
+      };
+      return {
+        from: () => vinculos,
+        auth: {
+          admin: {
+            getUserById: async () => ({
+              data: { user: { user_metadata: { full_name: "Ana" } } },
+              error: null,
+            }),
+          },
+        },
+      } as unknown as ActionCtx["admin"];
+    }
+
+    const membro = { ...ctxDeCompromisso(), admin: adminCom([OWNER]) };
+    expect((await corpoRecebido(membro, { include_owner: true })).owner).toEqual({
+      id: OWNER,
+      name: "Ana",
+    });
+
+    const deFora = { ...ctxDeCompromisso(), admin: adminCom([]) };
+    expect((await corpoRecebido(deFora, { include_owner: true })).owner).toEqual({ id: OWNER });
+  });
+
   it("o endereço e o link saem da linha ATUAL do compromisso, não do evento", async () => {
     const ctx = ctxDeCompromisso();
     ctx.context = {

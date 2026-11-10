@@ -8,6 +8,13 @@
  * triagem do PR #2760: 5 arquivos, 49 casos, zero vermelho) — e
  * `crm_tasks.assigned_to` só tem chave estrangeira para `auth.users`: o banco
  * aceita um usuário de QUALQUER organização da instalação.
+ *
+ * ═══ A RÉGUA MUDOU DE TRANSPORTE (#3715) ═══
+ *
+ * Ela não pergunta mais ao PostgREST: a rota passa a porta de `lib/db` e a
+ * consulta é SQL. Por isso o dublê da equipe é um `Db` que anota SQL e
+ * PARÂMETROS — a organização continua sendo o primeiro parâmetro vinculado, e
+ * é isso que o teste prende.
  */
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,18 +22,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { portaDaAplicacao, type Db } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db")>()),
+  portaDaAplicacao: vi.fn(),
+}));
 vi.mock("@/lib/audit", () => ({
   audit: vi.fn(async () => undefined),
   isServiceRoleConfigured: () => true,
-}));
-vi.mock("@/lib/leads/activity-emitter", () => ({
-  emitLeadActivity: vi.fn(async () => ({ ok: true })),
 }));
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/impersonate/support")>()),
@@ -77,7 +84,7 @@ interface Resposta {
   error?: { message: string } | null;
 }
 
-/** Dublê que anota, por client, as tabelas tocadas e os filtros `eq`. */
+/** Dublê do PostgREST que anota, por client, as tabelas tocadas e os filtros `eq`. */
 function duble(respostas: Resposta[]) {
   const tabelas: string[] = [];
   const filtros: Array<[string, unknown]> = [];
@@ -99,11 +106,28 @@ function duble(respostas: Resposta[]) {
   return { client: { from }, tabelas, filtros };
 }
 
-/** A equipe (admin client) e as tarefas (client da sessão), cada uma com o seu duble. */
-function montar(equipe: Resposta, tarefas: Resposta[]) {
-  const e = duble([equipe]);
+/** A porta vista pela rota: anota SQL e parâmetros, e responde o que o caso pedir. */
+function portaFalsa(resposta: { linha?: unknown; erro?: Error } = {}) {
+  const consultas: Array<{ sql: string; parametros: readonly unknown[] }> = [];
+  const porta: Db = {
+    async query(sql, parametros = []) {
+      consultas.push({ sql, parametros });
+      return [];
+    },
+    async queryOne(sql, parametros = []) {
+      consultas.push({ sql, parametros });
+      if (resposta.erro) throw resposta.erro;
+      return (resposta.linha ?? null) as never;
+    },
+  };
+  return { porta, consultas };
+}
+
+/** A equipe (porta SQL) e as tarefas (client da sessão), cada uma com o seu dublê. */
+function montar(equipe: { linha?: unknown; erro?: Error }, tarefas: Resposta[]) {
+  const e = portaFalsa(equipe);
   const t = duble(tarefas);
-  vi.mocked(createAdminClient).mockReturnValue(e.client as never);
+  vi.mocked(portaDaAplicacao).mockReturnValue(e.porta);
   vi.mocked(createClient).mockResolvedValue(t.client as never);
   return { equipe: e, tarefas: t };
 }
@@ -133,7 +157,7 @@ beforeEach(() => {
 
 describe("POST /api/v1/tasks — responsável", () => {
   it("⭐ responsável fora da equipe é 422, e a tarefa NÃO é gravada", async () => {
-    const m = montar({ data: null }, [{ data: LINHA }]);
+    const m = montar({ linha: null }, [{ data: LINHA }]);
     const { POST } = await import("@/app/api/v1/tasks/route");
 
     const res = await POST(post({ title: "Ligar de volta", assigned_to: DE_FORA }));
@@ -143,19 +167,22 @@ describe("POST /api/v1/tasks — responsável", () => {
   });
 
   it("a equipe consultada é a da SESSÃO, e o membro é aceito", async () => {
-    const m = montar({ data: { user_id: ANA } }, [{ data: LINHA }]);
+    const m = montar({ linha: { user_id: ANA } }, [{ data: LINHA }]);
     const { POST } = await import("@/app/api/v1/tasks/route");
 
     const res = await POST(post({ title: "Ligar de volta", assigned_to: ANA }));
 
     expect(res.status).toBe(201);
-    expect(m.equipe.tabelas).toEqual(["user_organizations"]);
-    expect(m.equipe.filtros).toContainEqual(["organization_id", ORG]);
-    expect(m.equipe.filtros).toContainEqual(["user_id", ANA]);
+    expect(m.equipe.consultas).toHaveLength(1);
+    const { sql, parametros } = m.equipe.consultas[0]!;
+    expect(sql).toContain("from user_organizations");
+    // A organização da SESSÃO vai por parâmetro — é o que impede a rota de
+    // aceitar alguém de fora da equipe.
+    expect(parametros).toEqual([ORG, ANA]);
   });
 
   it("erro ao consultar a equipe é 500, nunca aceite", async () => {
-    const m = montar({ error: { message: "timeout" } }, [{ data: LINHA }]);
+    const m = montar({ erro: new Error("timeout") }, [{ data: LINHA }]);
     const { POST } = await import("@/app/api/v1/tasks/route");
 
     const res = await POST(post({ title: "Ligar de volta", assigned_to: ANA }));
@@ -165,19 +192,19 @@ describe("POST /api/v1/tasks — responsável", () => {
   });
 
   it("sem responsável, a equipe nem é consultada", async () => {
-    const m = montar({ data: null }, [{ data: { ...LINHA, assigned_to: null } }]);
+    const m = montar({ linha: null }, [{ data: { ...LINHA, assigned_to: null } }]);
     const { POST } = await import("@/app/api/v1/tasks/route");
 
     const res = await POST(post({ title: "Ligar de volta" }));
 
     expect(res.status).toBe(201);
-    expect(m.equipe.tabelas).toEqual([]);
+    expect(m.equipe.consultas).toEqual([]);
   });
 });
 
 describe("PATCH /api/v1/tasks/[id] — responsável", () => {
   it("⭐ trocar para alguém fora da equipe é 422, e a tarefa NÃO é tocada", async () => {
-    const m = montar({ data: null }, [{ data: { status: "pending" } }, { data: LINHA }]);
+    const m = montar({ linha: null }, [{ data: { status: "pending" } }, { data: LINHA }]);
     const { PATCH } = await import("@/app/api/v1/tasks/[id]/route");
 
     const res = await PATCH(patch({ assigned_to: DE_FORA }), ctx);
@@ -187,12 +214,12 @@ describe("PATCH /api/v1/tasks/[id] — responsável", () => {
   });
 
   it("editar só o título não consulta a equipe", async () => {
-    const m = montar({ data: null }, [{ data: { status: "pending" } }, { data: LINHA }]);
+    const m = montar({ linha: null }, [{ data: { status: "pending" } }, { data: LINHA }]);
     const { PATCH } = await import("@/app/api/v1/tasks/[id]/route");
 
     const res = await PATCH(patch({ title: "Ligar na sexta" }), ctx);
 
     expect(res.status).toBe(200);
-    expect(m.equipe.tabelas).toEqual([]);
+    expect(m.equipe.consultas).toEqual([]);
   });
 });

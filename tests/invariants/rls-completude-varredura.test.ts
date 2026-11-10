@@ -75,6 +75,7 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
+  { tabela: "catalog_product_presentations", razao: "tests/invariants/catalogo-apresentacoes-isolamento.test.ts — duas organizações por JWT authenticated: manager nos dois sentidos e agent leem apenas a própria apresentação; UPDATE local de manager positivo, agent e manager vizinho sem efeito; CHECK de ownership do áudio com controle positivo e negativo." },
   ...["calendar_resources", "calendar_service_schedule", "calendar_service_professionals", "calendar_service_resources", "calendar_service_calendar_sources", "calendar_service_occurrences", "calendar_service_occurrence_resources", "calendar_service_blocks"].map(tabela => ({ tabela, razao: "tests/invariants/agenda-servicos.test.ts — oito tabelas com linhas positivas no tenant próprio, JWT authenticated de duas organizações e contagem zero do vizinho; INSERT/UPDATE/DELETE diretos recusados mesmo para manager. As RPCs mantêm ator, revisão e FKs compostas." })),
   ...["attendant_sectors", "attendant_sector_members"].map(tabela => ({ tabela, razao: "tests/invariants/setores-de-atendimento.test.ts — JWT authenticated de duas organizações: cada uma lê só as próprias linhas (controle positivo nos dois lados); INSERT/DELETE diretos recusados até para manager; FK composta recusa setor de outra organização." })),
   { tabela: "jev_router_decisions", razao: "tests/invariants/jev-roteador-decisoes.test.ts — dois tenants por JWT: leitura local, zero do vizinho; anon sem leitura, authenticated sem escrita; poda com piso no banco." },
@@ -254,6 +255,27 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "orçamento, criativo e performance de quem anuncia.",
   },
   {
+    tabela: "ai_agent_mcp_servers",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda chave e client_secret cifrados dos servidores MCP do agente (9095).",
+  },
+  {
+    tabela: "mcp_oauth_pedidos",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda o state de uso único e o code_verifier cifrado do OAuth por contato (9095).",
+  },
+  {
+    tabela: "contato_mcp_credenciais",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda o access e o refresh token cifrados do CONTATO num terceiro (9095).",
+  },
+  {
     tabela: "map_provider_credentials",
     razao:
       "tests/invariants/credencial-de-mapas-e-server-side.test.ts — privilégio " +
@@ -389,6 +411,19 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "aviso é conteúdo escrito em nome do cliente e só o servidor (a rota " +
       "`app/api/v1/avisos`, com admin client) lê e grava. Migration 9059, " +
       "issue #1418.",
+  },
+  {
+    tabela: "organization_resend_accounts",
+    razao:
+      "tests/invariants/conta-resend-da-organizacao-e-server-side.test.ts (migration " +
+      "0795, #3287) — deny-all medido: RLS ligada, ZERO policies, privilégio NENHUM " +
+      "de anon/authenticated e permission denied sob set role para leitura (inclusive " +
+      "só o api_key_last4 — a chave cifrada não sai em payload nenhum), escrita e " +
+      "para o membro da própria organização com JWT authenticated; service_role " +
+      "mantém privilégio, nenhuma view expõe a tabela, e a linha semeada guarda o " +
+      "segredo em bytea com o last4 de 4 caracteres. Guarda a chave Resend que ESCREVE " +
+      "e-mail com o domínio do cliente — a correção \"natural\" de TABLES (policy de " +
+      "tenant) a exporia pelo PostgREST.",
   },
 ];
 

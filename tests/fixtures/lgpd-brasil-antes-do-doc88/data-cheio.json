@@ -20,6 +20,8 @@
   "orders": [],
   "activities": [],
   "checkpoints": [],
+  "mcp_pedidos_de_acesso": [],
+  "mcp_acessos": [],
   "appointments": [],
   "sales": [],
   "proposals": [],

@@ -91,6 +91,36 @@ describe("resolverCaminhoDeVoz", () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
+  it("retry de uma nota de voz em opus (.ogg): reusa com a etiqueta do opus, não audio/mpeg", async () => {
+    // Era `audio/mpeg` fixo no reuso — certo só enquanto toda voz era mp3. No
+    // canal oficial, um retry com a etiqueta errada faria a plataforma recusar
+    // a mídia que a primeira tentativa tinha acertado.
+    vi.mocked(sintetizarVoz).mockClear();
+    const store = storeEmMemoria({ status: "requested", media_storage_path: "org1/conv1/voz-agente-job1-1.ogg" });
+    const r = await resolverCaminhoDeVoz({
+      store,
+      identidade,
+      textoFalado: "boa tarde, tudo certo com o pedido",
+      voz: { apiKey: "sk", voiceId: "v1", formato: "ogg_opus" },
+      upload,
+    });
+    expect(r.sintetizouAgora).toBe(false);
+    expect(r.mimeType).toBe("audio/ogg;codecs=opus");
+    expect(sintetizarVoz).not.toHaveBeenCalled();
+  });
+
+  it("o retry de um mp3 continua audio/mpeg", async () => {
+    const store = storeEmMemoria({ status: "requested", media_storage_path: "ja-existe.mp3" });
+    const r = await resolverCaminhoDeVoz({
+      store,
+      identidade,
+      textoFalado: "boa tarde, tudo certo com o pedido",
+      voz: { apiKey: "sk", voiceId: "v1" },
+      upload,
+    });
+    expect(r.mimeType).toBe("audio/mpeg");
+  });
+
   it("retry com a linha requested mas SEM path (crash entre sintetizar e gravar): sintetiza agora", async () => {
     upload.mockClear();
     vi.mocked(sintetizarVoz).mockClear();
