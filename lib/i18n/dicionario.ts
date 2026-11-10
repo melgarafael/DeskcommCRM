@@ -6540,6 +6540,11 @@ export const DICIONARIO: Traducoes = {
   "Exportar CSV": { es: "Exportar CSV" },
   "Exportar": { es: "Exportar" },
   "Exportar vCard": { es: "Exportar vCard" },
+  // Exportar conversa em PDF (#1982): o item do menu ⋯ do cabeçalho da conversa.
+  "Exportar conversa": { es: "Exportar conversación" },
+  "Baixa o histórico desta conversa em PDF, datado e em ordem, para arquivar. Notas internas não entram.": {
+    es: "Descarga el historial de esta conversación en PDF, con fecha y en orden, para archivar. Las notas internas no se incluyen.",
+  },
   "Invoc. AI": { es: "Invoc. IA" },
   "Custo AI": { es: "Costo IA" },
 
