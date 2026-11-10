@@ -13398,8 +13398,9 @@ export const DICIONARIO: Traducoes = {
   "Reconectar o áudio": { es: "Reconectar el audio" },
   "Chamada de voz": { es: "Llamada de voz" },
   "Chamada de voz sem resposta": { es: "Llamada de voz sin respuesta" },
-  // #3509: a linha da timeline quando o provedor confirma o pagamento.
-  "Pagamento confirmado": { es: "Pago confirmado" },
+  // #3509: a linha da timeline quando o provedor confirma o pagamento. Diz que
+  // foi o AVISO do provedor, e não uma conferência no extrato.
+  "Pagamento confirmado pelo aviso do provedor": { es: "Pago confirmado por el aviso del proveedor" },
   "A chamada de voz não está configurada.": { es: "La llamada de voz no está configurada." },
   "Falta o endereço do serviço (": { es: "Falta la dirección del servicio (" },
   ") nas variáveis de ambiente desta instalação.": {

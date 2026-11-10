@@ -22,6 +22,9 @@
 export const PROVEDORES_DE_RECEBIMENTO = ["infinitepay"] as const;
 export type ProvedorDeRecebimento = (typeof PROVEDORES_DE_RECEBIMENTO)[number];
 
+/** O nome do provedor como a pessoa o conhece — o que a timeline escreve. */
+export const NOME_DO_PROVEDOR: Record<ProvedorDeRecebimento, string> = { infinitepay: "InfinitePay" };
+
 export function ehProvedorDeRecebimento(bruto: string): bruto is ProvedorDeRecebimento {
   return (PROVEDORES_DE_RECEBIMENTO as readonly string[]).includes(bruto);
 }

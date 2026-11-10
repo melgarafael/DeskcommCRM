@@ -44,7 +44,7 @@ import { encerraDemanda } from "@/lib/leads/encerramento";
 import { formatCents } from "@/lib/money";
 
 import { COLUNAS_DO_RECEBIMENTO, type Recebimento } from "./registrar";
-import type { SituacaoDoRecebimento } from "./vocabulario";
+import { NOME_DO_PROVEDOR, ehProvedorDeRecebimento, type SituacaoDoRecebimento } from "./vocabulario";
 
 export type MotivoDoNaoMovimento =
   | "sem_negocio"
@@ -240,6 +240,9 @@ async function registrarNaTimeline(
 ): Promise<void> {
   if (!recebimento.lead_id) return;
   const valor = formatCents(recebimento.valor_cents, recebimento.moeda);
+  const nomeDoProvedor = ehProvedorDeRecebimento(recebimento.provedor)
+    ? NOME_DO_PROVEDOR[recebimento.provedor]
+    : recebimento.provedor;
   const sufixo = movido.moveu
     ? " · negócio marcado como ganho"
     : movido.motivo === "campos_obrigatorios" && movido.detalhe
@@ -252,7 +255,8 @@ async function registrarNaTimeline(
     sourceModule: "pagamentos",
     sourceId: recebimento.id,
     actor: { type: "webhook_source", id: "pagamentos" },
-    reason: `Pagamento confirmado — ${valor}${sufixo}`,
+    // Diz QUEM confirmou: o aviso do provedor, não uma conferência no extrato.
+    reason: `Pagamento confirmado pelo aviso da ${nomeDoProvedor} — ${valor}${sufixo}`,
     payload: {
       recebimento_id: recebimento.id,
       provedor: recebimento.provedor,

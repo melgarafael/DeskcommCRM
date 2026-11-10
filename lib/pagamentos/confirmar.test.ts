@@ -135,7 +135,7 @@ describe("confirmar o pagamento", () => {
     );
     const atividades = linhas.find((l) => l.type === "payment_confirmed")!;
     expect(linhas.filter((l) => l.type === "payment_confirmed")).toHaveLength(1);
-    expect(atividades.reason).toContain("Pagamento confirmado");
+    expect(atividades.reason).toContain("Pagamento confirmado pelo aviso da InfinitePay");
     expect(atividades.payload.movimento.moveu).toBe(true);
   });
 

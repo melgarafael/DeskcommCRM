@@ -351,7 +351,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   voice_call: "Chamada de voz",
   voice_call_missed: "Chamada de voz perdida",
   voice_call_unanswered: "Chamada de voz sem resposta",
-  payment_confirmed: "Pagamento confirmado",
+  payment_confirmed: "Pagamento confirmado pelo aviso do provedor",
   task_created: "Tarefa combinada",
   task_completed: "Tarefa concluída",
   task_plan_applied: "Plano de tarefas aplicado",
