@@ -1,12 +1,12 @@
 "use server";
 
 /**
- * ESCOLHER O FUNIL E A ETAPA DA ENTRADA AUTOMÁTICA (#3603, fatia 1).
+ * LIGAR OU DESLIGAR A ENTRADA AUTOMÁTICA NO FUNIL (#3603, fatia 1).
  *
- * O que a chave decide e como ela é lida estão em
+ * Um interruptor: `{ ativa }`. O que ele liga e como é lido estão em
  * `lib/schemas/settings.ts` (`entradaAutomaticaNoFunilDeclarada`); quem APLICA é
- * `lib/leads/entrada-automatica-no-funil.ts`. Aqui só a gravação — e a
- * conferência que só o banco pode fazer.
+ * `lib/leads/entrada-automatica-no-funil.ts`. O destino do card NÃO é escolhido
+ * aqui — é o mesmo da entrada (opção (a), decidida na thread do #3616).
  *
  * ⚠️ SERVICE ROLE COM `organization_id` DE FONTE CONFIÁVEL, como
  * `definirAiDecideDaEmpresa` e `definirVendaPeloCanal`: pelo client de sessão, o
@@ -17,12 +17,6 @@
  * ⚠️ `settings` é jsonb COMPARTILHADO: ler, mesclar no nível da chave e gravar.
  * Um `update({ settings: { entrada_automatica_no_funil } })` ingênuo apagaria
  * `branding`, `conversions`, `crm` e o resto em silêncio.
- *
- * ⚠️ A VALIDAÇÃO QUE VALE É ESTA: id com forma de uuid não é funil nem etapa.
- * Gravar um `pipeline_id` de outra organização (que uma FK não pegaria, porque a
- * coluna é jsonb) faria toda conversa nova bater em `sem_funil` e o funil
- * escolhido nunca valer — falha silenciosa que só aparece dias depois, no log de
- * quem abriu a conversa. Aqui o erro chega na hora, com nome.
  */
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -35,11 +29,7 @@ import { logger } from "@/lib/logger";
 import { ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const entradaSchema = z.object({
-  ativa: z.boolean(),
-  pipeline_id: z.uuid().nullable(),
-  stage_id: z.uuid().nullable(),
-});
+const entradaSchema = z.object({ ativa: z.boolean() });
 
 export type EntradaAutomaticaNoFunilInput = z.infer<typeof entradaSchema>;
 
@@ -53,8 +43,6 @@ export type ResultadoDaEntradaAutomatica =
         | "forbidden_tenant"
         | "forbidden_role"
         | "mfa_required"
-        | "funil_invalido"
-        | "etapa_invalida"
         | "erro_ao_gravar";
     };
 
@@ -64,9 +52,6 @@ export async function definirEntradaAutomaticaNoFunil(
   // Server Action é endpoint público: o tipo do parâmetro não chega ao servidor.
   const lido = entradaSchema.safeParse(entrada);
   if (!lido.success) return { ok: false, error: "validation_failed" };
-  // Ligar sem funil é a configuração incompleta que o serviço trata como
-  // "desligado": aceitar aqui seria prometer na tela o que nada faria.
-  if (lido.data.ativa && !lido.data.pipeline_id) return { ok: false, error: "validation_failed" };
 
   const user = await loadAuthUser();
   if (!user) return { ok: false, error: "unauthenticated" };
@@ -79,46 +64,6 @@ export async function definirEntradaAutomaticaNoFunil(
   if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
 
   const admin = createAdminClient();
-
-  // O funil e a etapa, conferidos contra o banco DESTA organização.
-  if (lido.data.pipeline_id) {
-    const { data: funil, error: erroDoFunil } = await admin
-      .from("crm_pipelines")
-      .select("id")
-      .eq("organization_id", org.orgId)
-      .eq("id", lido.data.pipeline_id)
-      .eq("is_archived", false)
-      .maybeSingle();
-    if (erroDoFunil) {
-      logger.warn("[entrada-automatica] conferência do funil falhou na gravação", {
-        organization_id: org.orgId,
-        error: erroDoFunil.message,
-      });
-      return { ok: false, error: "erro_ao_gravar" };
-    }
-    if (!funil) return { ok: false, error: "funil_invalido" };
-  }
-
-  if (lido.data.pipeline_id && lido.data.stage_id) {
-    const { data: etapa, error: erroDaEtapa } = await admin
-      .from("crm_stages")
-      .select("id")
-      .eq("organization_id", org.orgId)
-      .eq("pipeline_id", lido.data.pipeline_id)
-      .eq("id", lido.data.stage_id)
-      .eq("is_archived", false)
-      .eq("is_won", false)
-      .eq("is_lost", false)
-      .maybeSingle();
-    if (erroDaEtapa) {
-      logger.warn("[entrada-automatica] conferência da etapa falhou na gravação", {
-        organization_id: org.orgId,
-        error: erroDaEtapa.message,
-      });
-      return { ok: false, error: "erro_ao_gravar" };
-    }
-    if (!etapa) return { ok: false, error: "etapa_invalida" };
-  }
 
   const { data: atual, error: erroLeitura } = await admin
     .from("organizations")
@@ -133,13 +78,7 @@ export async function definirEntradaAutomaticaNoFunil(
   >;
   const novo = {
     ...settings,
-    [ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE]: {
-      ativa: lido.data.ativa,
-      pipeline_id: lido.data.pipeline_id,
-      // Desligar NÃO apaga a etapa escolhida — a mesma decisão de
-      // `settings.entrada_do_inbox`: religar não obriga a escolher de novo.
-      stage_id: lido.data.stage_id,
-    },
+    [ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE]: { ativa: lido.data.ativa },
   };
 
   const { error } = await admin
@@ -160,7 +99,7 @@ export async function definirEntradaAutomaticaNoFunil(
     organizationId: org.orgId,
     resourceType: "organization",
     resourceId: org.orgId,
-    metadata: novo[ENTRADA_AUTOMATICA_NO_FUNIL_CHAVE] as Record<string, unknown>,
+    metadata: { ativa: lido.data.ativa },
   });
 
   // Configurações lê a chave pelo `ActiveOrg` que o layout monta: sem invalidar,

@@ -30,7 +30,7 @@ const CONVERSA = "33333333-3333-4333-8333-333333333333";
 const FUNIL = "44444444-4444-4444-8444-444444444444";
 const FUNIL_ARQUIVADO = "55555555-5555-4555-8555-555555555555";
 const ETAPA_ENTRADA = "66666666-6666-4666-8666-666666666666";
-const ETAPA_ESCOLHIDA = "77777777-7777-4777-8777-777777777777";
+const ETAPA_DA_VERSAO_ANTERIOR = "77777777-7777-4777-8777-777777777777";
 const LEAD_NOVO = "99999999-9999-4999-8999-999999999999";
 
 interface Etapa {
@@ -151,9 +151,7 @@ const admin = {
   },
 } as never;
 
-const configurada = {
-  entrada_automatica_no_funil: { ativa: true, pipeline_id: FUNIL, stage_id: ETAPA_ESCOLHIDA },
-};
+const configurada = { entrada_automatica_no_funil: { ativa: true } };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -168,7 +166,7 @@ beforeEach(() => {
       is_lost: false,
     },
     {
-      id: ETAPA_ESCOLHIDA,
+      id: ETAPA_DA_VERSAO_ANTERIOR,
       pipeline_id: FUNIL,
       position: 3,
       is_archived: false,
@@ -238,9 +236,9 @@ describe("a conversa nova entra no funil", () => {
     expect(consultadas).toEqual(["organizations"]);
   });
 
-  it("configuração DESLIGADA com funil e etapa gravados: nenhum negócio", async () => {
+  it("configuração DESLIGADA (com funil e etapa de uma versão anterior gravados): nenhum negócio", async () => {
     settingsDaOrg = {
-      entrada_automatica_no_funil: { ativa: false, pipeline_id: FUNIL, stage_id: ETAPA_ESCOLHIDA },
+      entrada_automatica_no_funil: { ativa: false, pipeline_id: FUNIL, stage_id: ETAPA_DA_VERSAO_ANTERIOR },
     };
 
     const r = await abrirNegocioDaConversaNova(admin, conversa);
@@ -250,13 +248,18 @@ describe("a conversa nova entra no funil", () => {
     expect(escritas).toHaveLength(0);
   });
 
-  it("configuração INCOMPLETA (ativa sem funil): nenhum negócio", async () => {
+  it("ligada SEM funil escolhido cria o card no destino da entrada — opção (a)", async () => {
     settingsDaOrg = { entrada_automatica_no_funil: { ativa: true, pipeline_id: null } };
 
     const r = await abrirNegocioDaConversaNova(admin, conversa);
 
-    expect(r).toEqual({ criado: false, motivo: "nao_configurado" });
-    expect(rpcs).toHaveLength(0);
+    expect(r).toEqual({
+      criado: true,
+      leadId: LEAD_NOVO,
+      pipelineId: FUNIL,
+      stageId: ETAPA_ENTRADA,
+    });
+    expect(rpcDoNascimento()?.args).toMatchObject({ p_pipeline: FUNIL });
   });
 
   it("contato que já tem negócio aberto: não duplica", async () => {
@@ -372,14 +375,33 @@ describe("a conversa nova entra no funil", () => {
   });
 });
 
+describe("os motivos do nascimento chegam inteiros a quem chama", () => {
+  // O tipo antigo era uma lista própria e um `as` escondia o que a main já
+  // devolve. Aqui o nascimento é dublado: a pergunta é só se o motivo passa.
+  it.each([
+    [{ criado: false, motivo: "pos_venda", detalhe: "comprou há 2 dias" }],
+    [{ criado: false, motivo: "contato_da_equipe" }],
+    [{ criado: false, motivo: "reaberto", detalhe: "janela de 3 dias", leadId: LEAD_NOVO }],
+  ])("%o", async (doNascimento) => {
+    vi.resetModules();
+    vi.doMock("@/lib/leads/nascimento-do-lead", () => ({
+      garantirLeadDaConversa: async () => doNascimento,
+    }));
+    settingsDaOrg = configurada;
+
+    const modulo = await import("@/lib/leads/entrada-automatica-no-funil");
+    const r = await modulo.abrirNegocioDaConversaNova(admin, conversa);
+
+    expect(r).toEqual(doNascimento);
+    vi.doUnmock("@/lib/leads/nascimento-do-lead");
+    vi.resetModules();
+  });
+});
+
 describe("a leitura do jsonb da organização", () => {
   it("ausente, vazio ou torto é DESLIGADO — nunca lança", () => {
     for (const settings of [null, undefined, {}, { entrada_automatica_no_funil: null }, "lixo", 42]) {
-      expect(entradaAutomaticaNoFunilDeclarada(settings)).toEqual({
-        ativa: false,
-        pipeline_id: null,
-        stage_id: null,
-      });
+      expect(entradaAutomaticaNoFunilDeclarada(settings)).toEqual({ ativa: false });
     }
   });
 
@@ -388,7 +410,7 @@ describe("a leitura do jsonb da organização", () => {
       entradaAutomaticaNoFunilDeclarada({
         entrada_automatica_no_funil: { ativa: "true", pipeline_id: FUNIL },
       }),
-    ).toEqual({ ativa: false, pipeline_id: FUNIL, stage_id: null });
+    ).toEqual({ ativa: false });
     expect(
       entradaAutomaticaNoFunilDeclarada({
         entrada_automatica_no_funil: { ativa: true, pipeline_id: FUNIL },
@@ -396,12 +418,12 @@ describe("a leitura do jsonb da organização", () => {
     ).toBe(true);
   });
 
-  it("identificador sem forma de uuid vira null — e o funil escolhido continua valendo", () => {
+  it("funil e etapa de uma versão anterior são ignorados: não escolhem destino nem desligam", () => {
     expect(
       entradaAutomaticaNoFunilDeclarada({
         entrada_automatica_no_funil: { ativa: true, pipeline_id: FUNIL, stage_id: "primeira" },
       }),
-    ).toEqual({ ativa: true, pipeline_id: FUNIL, stage_id: null });
+    ).toEqual({ ativa: true });
   });
 });
 
