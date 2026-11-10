@@ -119,7 +119,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_draft_proposal": { tokens: 1059, motivo: BASE },
   "crm_request_human_handoff": { tokens: 583, motivo: BASE },
   "get_lead_context": { tokens: 46, motivo: BASE },
-  "send_message": { tokens: 137, motivo: BASE },
+  "send_message": { tokens: 191, motivo: "imagem_url (Spec 25 R4): a foto por endereço, com a regra de procedência na descrição" },
   "update_lead_state": { tokens: 240, motivo: BASE },
   "schedule_followup": { tokens: 200, motivo: BASE },
   "save_lead_note": { tokens: 229, motivo: BASE },
@@ -138,8 +138,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 };
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
-// modo `leitura_direta` — nunca junto de `search_knowledge`.
-const TETO_TOTAL = 30094;
+// modo `leitura_direta` — nunca junto de `search_knowledge`; +54 com `imagem_url`
+// no `send_message` (Spec 25 R4, #3276).
+const TETO_TOTAL = 30148;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
