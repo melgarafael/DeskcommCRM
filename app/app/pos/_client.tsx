@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
 
@@ -88,6 +89,26 @@ export function POSDashboardClient() {
   return (
     <div className="flex flex-col gap-6 p-6">
       <h1 className="text-xl font-semibold text-text-primary">Punto de Venta</h1>
+
+      <nav className="flex flex-wrap gap-2">
+        {[
+          { href: "/app/pos/ventas", label: "Ventas" },
+          { href: "/app/pos/productos", label: "Productos" },
+          { href: "/app/pos/descuentos", label: "Descuentos" },
+          { href: "/app/pos/gift-cards", label: "Gift Cards" },
+          { href: "/app/pos/facturas", label: "Facturas" },
+          { href: "/app/pos/cuentas-por-cobrar", label: "Cuentas x Cobrar" },
+          { href: "/app/pos/estadisticas", label: "Estadísticas" },
+          { href: "/app/pos/comisiones", label: "Comisiones" },
+          { href: "/app/pos/gastos", label: "Gastos" },
+          { href: "/app/pos/reportes", label: "Reportes" },
+          { href: "/app/pos/configuracion", label: "Configuración" },
+        ].map((item) => (
+          <Link key={item.href} href={item.href} className="rounded-md border border-border-primary bg-surface-secondary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-primary">
+            {item.label}
+          </Link>
+        ))}
+      </nav>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
