@@ -1289,6 +1289,12 @@ export const AUDIT_ACTIONS = [
   // regra consulta o modelo.
   "settings.automation_ai_decide_updated",
 
+  // A entrada automática no funil (#3603): o interruptor
+  // `organizations.settings.entrada_automatica_no_funil.ativa` foi ligado ou
+  // desligado. A trilha responde "quem fez a conversa que o CRM abre passar a
+  // gerar (ou deixar de gerar) negócio?" — o destino é o mesmo da entrada.
+  "settings.entrada_automatica_no_funil_updated",
+
   // Planos de tarefa (#1752): a lista `settings.task_plans` mudou pela rota
   // `settings/task-plans` — mesma família de `campaign.settings_updated`.
   "task_plans.settings_updated",
