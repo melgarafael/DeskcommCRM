@@ -90,7 +90,7 @@ export function ImageMedia({ messageId, alt, src: fonte }: Props) {
                 alt={alt}
                 // `scale` inline (e não classe) porque é o valor que o teste mede
                 // e o que o navegador aplica; a transição é a classe ao lado.
-                style={{ transform: ampliada ? "scale(2)" : undefined }}
+                style={{ transform: ampliada ? "scale(2)" : undefined, transformOrigin: ampliada ? "top left" : undefined }}
                 className="max-h-[85vh] w-full rounded-lg object-contain transition-transform duration-200 motion-reduce:transition-none"
               />
             </button>
