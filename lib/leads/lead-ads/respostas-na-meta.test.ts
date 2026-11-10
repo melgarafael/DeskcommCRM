@@ -21,7 +21,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
-import { buscarRespostasDoLead, TEMPO_LIMITE_DA_BUSCA_MS } from "./respostas-na-meta";
+import { buscarRespostasDoLead, paginaDoToken, TEMPO_LIMITE_DA_BUSCA_MS } from "./respostas-na-meta";
 
 const LEADGEN = "1122334455667788";
 const TOKEN = "token-da-pagina-que-le-adultos-".padEnd(40, "x");
@@ -133,3 +133,29 @@ describe("buscarRespostasDoLead", () => {
     expect(espiao).not.toHaveBeenCalled();
   });
 });
+
+describe("paginaDoToken", () => {
+  it("devolve a página que o token lê, com o token no cabeçalho e fora da URL", async () => {
+    const { espiao, fetch } = fetchQueResponde({ id: "1029384756", name: "Clínica" });
+    expect(await paginaDoToken(TOKEN, { fetchImpl: fetch })).toEqual({ ok: true, pageId: "1029384756" });
+    const [url, init] = espiao.mock.calls[0]!;
+    expect(url).toBe(`${graphBaseUrl()}/me?fields=id`);
+    expect(url).not.toContain(TOKEN);
+    expect((init?.headers as Record<string, string>).authorization).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it("token recusado pela Meta não vira página", async () => {
+    const { fetch } = fetchQueResponde({ error: { code: 190 } }, 400);
+    expect(await paginaDoToken(TOKEN, { fetchImpl: fetch })).toEqual({
+      ok: false,
+      motivo: "recusada_pela_meta",
+      detalhe: "http_400",
+    });
+  });
+
+  it("resposta sem id numérico não vira página", async () => {
+    const { fetch } = fetchQueResponde({ id: "abc" });
+    expect((await paginaDoToken(TOKEN, { fetchImpl: fetch })).ok).toBe(false);
+  });
+});
+

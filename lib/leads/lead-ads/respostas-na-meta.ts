@@ -21,7 +21,7 @@
  * o que fazer com a falha é a rota, que a registra por nome.
  *
  * **Não decide se pode chamar.** Ligar a busca é opção da fonte, desligada por
- * padrão (migration 9081, critério da doc 235); quem lê a opção e o token
+ * padrão (migration 9320, critério da doc 235); quem lê a opção e o token
  * cifrado é a rota. Aqui chega o token já em claro, e só depois de a fonte ter
  * dito que sim.
  *
@@ -153,4 +153,42 @@ export async function buscarRespostasDoLead(
     return { ok: false, motivo: "sem_respostas", detalhe: `field_data_itens=${fieldData.length}` };
   }
   return { ok: true, respostas };
+}
+
+/** A página que um token lê — ou por que não foi possível saber. */
+export type ResultadoDaPagina =
+  | { ok: true; pageId: string }
+  | { ok: false; motivo: "tempo_esgotado" | "recusada_pela_meta" | "resposta_ilegivel"; detalhe?: string };
+
+/**
+ * A página que o token LÊ (`GET /me?fields=id`; com token de página, `/me` é a
+ * própria página).
+ *
+ * É a prova de posse que a fonte exige antes de reivindicar uma página: o lead é
+ * roteado pela página (ver a rota da porta), então declarar uma página sem o
+ * token dela desviaria os avisos de quem é dono de verdade. Quem decide o que
+ * fazer com a resposta é o PATCH da fonte; aqui só se lê. Nunca lança.
+ */
+export async function paginaDoToken(
+  token: string,
+  opcoes: { fetchImpl?: typeof fetch; tempoLimiteMs?: number } = {},
+): Promise<ResultadoDaPagina> {
+  const buscar = opcoes.fetchImpl ?? fetch;
+  const limite = opcoes.tempoLimiteMs ?? TEMPO_LIMITE_DA_BUSCA_MS;
+  let resposta: Response;
+  try {
+    resposta = await buscar(`${graphBaseUrl()}/me?fields=id`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${token.trim()}`, accept: "application/json" },
+      signal: AbortSignal.timeout(limite),
+      cache: "no-store",
+    });
+  } catch {
+    return { ok: false, motivo: "tempo_esgotado", detalhe: `${limite}ms` };
+  }
+  if (!resposta.ok) return { ok: false, motivo: "recusada_pela_meta", detalhe: `http_${resposta.status}` };
+  const corpo = (await resposta.json().catch(() => null)) as { id?: unknown } | null;
+  const id = typeof corpo?.id === "string" ? corpo.id : null;
+  if (!id || !/^\d{1,32}$/.test(id)) return { ok: false, motivo: "resposta_ilegivel", detalhe: "sem_id" };
+  return { ok: true, pageId: id };
 }

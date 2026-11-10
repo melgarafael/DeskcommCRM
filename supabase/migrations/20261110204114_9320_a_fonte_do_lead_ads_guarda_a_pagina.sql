@@ -70,4 +70,46 @@ create unique index if not exists uniq_webhook_sources_meta_page
   on public.webhook_sources (meta_page_id)
   where meta_page_id is not null;
 
+-- A página, o token e a busca do Lead Ads só mudam pelo SERVIDOR. A policy
+-- `webhook_sources_manager_write` deixa o manager escrever a linha inteira pela
+-- sessão (PostgREST), e a página decide para qual organização vai o lead de uma
+-- instalação inteira: gravada sem a conferência da rota (admin + a página que o
+-- token lê), ela tiraria os avisos da página de quem é dono. Pela sessão
+-- (`authenticated`/`anon`) estas três colunas não nascem preenchidas nem mudam;
+-- a rota grava com o cliente do servidor, já filtrando a organização.
+create or replace function public.fn_fonte_do_lead_ads_so_pelo_servidor()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.meta_page_id is not null or new.meta_page_token_encrypted is not null
+       or coalesce(new.meta_lead_retrieval, false) then
+      raise exception 'webhook_source_meta_server_only' using errcode = '42501';
+    end if;
+  elsif row(new.meta_page_id, new.meta_page_token_encrypted, new.meta_lead_retrieval)
+        is distinct from row(old.meta_page_id, old.meta_page_token_encrypted, old.meta_lead_retrieval) then
+    raise exception 'webhook_source_meta_server_only' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_fonte_do_lead_ads_so_pelo_servidor() from public, anon;
+
+-- O gatilho da função acima (criada antes da VARREDURA anon). Num bloco só: se a
+-- criação falhasse depois do `drop`, o `update.sh` (sem ON_ERROR_STOP) deixaria
+-- a coluna da página sem guarda.
+do $fonte_do_lead_ads$
+begin
+  drop trigger if exists trg_fonte_do_lead_ads_so_pelo_servidor on public.webhook_sources;
+  create trigger trg_fonte_do_lead_ads_so_pelo_servidor
+    before insert or update on public.webhook_sources
+    for each row execute function public.fn_fonte_do_lead_ads_so_pelo_servidor();
+end $fonte_do_lead_ads$;
+
 notify pgrst, 'reload schema';

@@ -760,7 +760,7 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
    */
   reuse_open_lead_on_capture: z.boolean().optional(),
   /**
-   * A PÁGINA da Meta que esta fonte representa (issue #3768, migration 9081).
+   * A PÁGINA da Meta que esta fonte representa (issue #3768, migration 9320).
    *
    * É a chave de ROTEAMENTO do aviso: a plataforma tem UMA URL de destino para o
    * objeto page, então o token do path não distingue de quem é o lead — a página
@@ -790,7 +790,7 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
    * A opção da fatia 1-bis: quando o aviso chega sem as respostas (o normal),
    * buscar as respostas na Graph API com o token da página.
    *
-   * Nasce DESLIGADA por DEFAULT na coluna (migration 9081), pelo critério da doc
+   * Nasce DESLIGADA por DEFAULT na coluna (migration 9320), pelo critério da doc
    * 235: no núcleo, desligada por padrão, quem administra liga. Ligar sem token
    * é recusado na rota do PATCH — a opção não promete o que não pode cumprir.
    */
