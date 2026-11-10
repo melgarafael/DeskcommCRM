@@ -49,6 +49,9 @@ vi.mock("@/components/kanban/ContatoDoNegocio", () => ({ ContatoDoNegocio: () =>
 vi.mock("@/components/kanban/TarefasDoNegocio", () => ({ TarefasDoNegocio: () => null }));
 vi.mock("@/components/kanban/PropostasDoNegocio", () => ({ PropostasDoNegocio: () => null }));
 vi.mock("@/components/kanban/ConversaNoDossie", () => ({ ConversaNoDossie: () => null }));
+// A seção dos números (#3669) lê react-query; este arquivo não monta
+// `QueryClientProvider`, e ela tem teste próprio (`dossie-dos-numeros.test.tsx`).
+vi.mock("@/components/kanban/ConversasDosNumeros", () => ({ ConversasDosNumeros: () => null }));
 vi.mock("@/components/kanban/ScoreSlot", () => ({ ScoreSlot: () => null }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/kanban/LeadTimeline", () => ({ LeadTimeline: () => null }));
