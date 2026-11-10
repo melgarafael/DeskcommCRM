@@ -109,6 +109,20 @@ describe("dialeto Asaas do dublê × adaptador Asaas", () => {
     const [primeira] = duble.asaas.cobrancasDe(cliente);
     expect(primeira).toMatchObject({ status: "PENDING", dueDate: hojeEmSaoPaulo(), value: 49.9 });
     expect(inicio.url).toBe(`${duble.base}/i/${primeira?.id}`);
+    expect(primeira?.callback).toEqual({ successUrl: VOLTA, autoRedirect: true });
+    const callbackAntes = { ...primeira?.callback };
+    const chamadasAntes = duble.asaas.chamadas.length;
+    const rejeitada = await fetch(`${duble.base}/v3/payments/${primeira?.id}`, {
+      method: "PUT",
+      headers: { access_token: estado.chave, "User-Agent": "ContratoDuble/1", "Content-Type": "application/json" },
+      body: JSON.stringify({ callback: { successUrl: VOLTA, autoRedirect: "true" } }),
+    });
+    expect(rejeitada.status).toBe(400);
+    expect(primeira?.callback).toEqual(callbackAntes);
+    expect(duble.asaas.cobrancasDe(cliente)).toHaveLength(1);
+    expect(duble.asaas.assinaturasDe(cliente)).toHaveLength(1);
+    expect(duble.asaas.chamadas.slice(chamadasAntes)).toHaveLength(1);
+
     // Medido no sandbox (smoke): na criação nasce UMA cobrança só; a seguinte vem depois de pago.
     expect(duble.asaas.cobrancasDe(cliente).filter((c) => c.status === "PENDING")).toHaveLength(1);
 
@@ -164,6 +178,23 @@ describe("dialeto Asaas do dublê × adaptador Asaas", () => {
     }
     const primeiro = recebidos[0];
     expect(a.verificarWebhook(primeiro?.corpo ?? "", new Headers({ "asaas-access-token": `${primeiro?.token}x` }), preparo.segredo, new Date())).toBeNull();
+  });
+
+  it("conta sem domínio cadastrado recusa o callback: a cobrança sai mesmo assim, sem volta automática e sem assinatura em dobro", async () => {
+    const a = await asaas();
+    const org = "88888888-8888-4888-8888-888888888888";
+    const cliente = await a.garantirCliente({ id: org, nome: "Loja Sem Dominio", email: "admin@semdominio.test", documento: gerarCpf() });
+    duble.asaas.contaSemDominio(true);
+    try {
+      const inicio = await a.iniciarAssinatura({ clienteRef: cliente, orgId: org, plano: ESSENCIAL, trialAte: null, urlDeVolta: VOLTA, chaveIdempotencia: "sem-dominio-1" });
+      const [primeira] = duble.asaas.cobrancasDe(cliente);
+      expect(inicio.url).toBe(`${duble.base}/i/${primeira?.id}`);
+      expect(primeira?.callback).toBeUndefined();
+      expect(duble.asaas.assinaturasDe(cliente)).toHaveLength(1);
+      expect(duble.asaas.cobrancasDe(cliente)).toHaveLength(1);
+    } finally {
+      duble.asaas.contaSemDominio(false);
+    }
   });
 
   it("⭐ reconexão: o dublê recusa URL repetida como o sandbox; a URL com ?conexao= passa, confirmar deixa um, desfazer deixa o anterior", async () => {

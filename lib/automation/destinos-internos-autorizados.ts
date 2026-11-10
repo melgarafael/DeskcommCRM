@@ -6,6 +6,7 @@ import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { semearLinhaDaInstalacao } from "@/lib/auth/politica-de-cadastro";
 
 /**
  * OS DESTINOS INTERNOS QUE O DONO DA INSTALAÇÃO AUTORIZA — decisão 22-d, #1004.
@@ -249,6 +250,9 @@ export async function gravarDestinosInternos(
   atorUserId: string,
 ): Promise<boolean> {
   try {
+    // Sem a semente, esta gravação criaria a linha com `signup_mode='aberto'`
+    // e reabriria o cadastro de quem declarou `SIGNUP_MODE=so_convite`.
+    if (!(await semearLinhaDaInstalacao())) return false;
     const { error } = await createAdminClient()
       .from("platform_settings")
       .upsert(
