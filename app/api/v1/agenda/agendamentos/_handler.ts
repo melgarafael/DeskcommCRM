@@ -34,6 +34,7 @@ import {
   type TipoDoAtendimento,
 } from "@/lib/agenda/aviso-do-compromisso";
 import { coletaOQueOcupa, horariosLivresDaOrg } from "@/lib/agenda/consulta";
+import { normalizarConvidadosDaEquipe, separarConvidadosDaEquipe } from "@/lib/agenda/convidados-da-equipe";
 import {
   DURACAO_MAXIMA_MIN,
   DURACAO_MINIMA_MIN,
@@ -67,6 +68,54 @@ import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type SB = SupabaseClient;
+
+/**
+ * OS CONVIDADOS DA EQUIPE, CONFERIDOS ANTES DE GRAVAR (#4006).
+ *
+ * A coluna é `uuid[]` e array não aceita FK: sem esta função, um id de outra
+ * organização (ou de quem saiu da empresa mês passado) gravaria sem erro e o
+ * worker de publicação o resolveria em silêncio — nenhum convite, nenhuma
+ * mensagem, o compromisso salvo e a pessoa sem ver nada. É exatamente o defeito
+ * que a issue descreve.
+ *
+ * Devolve os ids já normalizados (sem repetidos, com teto) e RECUSA o resto com
+ * 422 nomeando quem ficou de fora: a tela precisa poder dizer o que aconteceu, e
+ * "400 sem explicação" faria a pessoa tentar de novo com a mesma lista.
+ *
+ * `revoked_at is null` é a mesma régua de `usePessoasDaAgenda` — quem saiu da
+ * equipe não aparece no seletor e não vira convidado por um id antigo que
+ * estivesse salvo na tela de alguém.
+ */
+async function convidadosDaEquipeConferidos(
+  supabase: SB,
+  ctx: { organization_id: string; requestId: string },
+  ids: readonly string[] | null | undefined,
+): Promise<string[]> {
+  const pedidos = normalizarConvidadosDaEquipe(ids);
+  if (!pedidos.length) return [];
+  const { data, error } = await supabase
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", ctx.organization_id)
+    .in("user_id", pedidos)
+    .is("revoked_at", null);
+  if (error) throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  const { aceitos, recusados } = separarConvidadosDaEquipe(
+    pedidos,
+    new Set(((data ?? []) as Array<{ user_id: string }>).map((m) => String(m.user_id).toLowerCase())),
+  );
+  if (recusados.length) {
+    throw new ApiError(
+      422,
+      "convidado_fora_da_organizacao",
+      undefined,
+      ctx.requestId,
+      `Estas pessoas não fazem parte da equipe desta organização: ${recusados.join(", ")}. Tire-as da lista de convidados para salvar o compromisso.`,
+    );
+  }
+  return aceitos;
+}
+
 
 /** A recusa da coleta vira código de wire — um mapa, não `if` espalhado. */
 const CODIGO_DA_RECUSA = {
@@ -107,6 +156,19 @@ export interface MarcarInput {
    * é o worker de push.
    */
   guest_email?: string;
+  /**
+   * Convidados da EQUIPE (#4006) — ids de membros ATIVOS desta organização.
+   *
+   * Vai além do responsável (`owner_user_id`, dono do evento no Google) e do
+   * e-mail digitado: quem entra aqui passa a ver o compromisso na PRÓPRIA agenda,
+   * no Google e no CRM. O convidado NÃO vira responsável — carteira, distribuição
+   * e métricas continuam no dono (ver `calendar_appointments.team_guest_user_ids`).
+   *
+   * `[]` limpa a lista (desconvida a equipe); ausente não mexe. Id que não é
+   * membro ativo desta organização é RECUSA com 422, não descarte silencioso:
+   * a tela diria "salvo" e o convite nunca existiria.
+   */
+  team_guest_user_ids?: string[];
   participant_name?: string;
   participants?: string[];
   /**
@@ -145,6 +207,8 @@ export interface AlterarInput {
   notes?: string;
   /** Igual ao de `MarcarInput`: `""` desconvida, ausente não mexe. */
   guest_email?: string;
+  /** Igual ao de `MarcarInput`: `[]` desconvidava a equipe, ausente não mexe. */
+  team_guest_user_ids?: string[];
   /**
    * O texto do bloco na grade (#3776). Ausente não mexe; vazio é RECUSA — a
    * régua da edição, e o porquê, estão em `tituloDoCompromisso` na rota.
@@ -396,6 +460,18 @@ async function executarCriacaoDeAgendamento(
         "Neste serviço a duração é definida na agenda do serviço e não pode ser trocada na marcação.",
       );
     }
+    // A reserva de serviço não grava `team_guest_user_ids` (`fn_calendar_service_book`
+    // lista as colunas uma a uma): sem esta recusa a equipe marcada sumiria com um
+    // 201, e um id de fora da organização nem chegaria a ser conferido (#4006).
+    if (input.team_guest_user_ids?.length) {
+      throw new ApiError(
+        422,
+        "agenda_equipe_no_servico",
+        undefined,
+        ctx.requestId,
+        "Neste serviço não dá para convidar a equipe na marcação.",
+      );
+    }
     // Refresh de servidor explícito. A mutação humana abaixo continua pela sessão e pelo escritor nativo.
     await atualizarFontesDoServico(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id, tipo.id, input.owner_user_id);
     const booking = tipo.location_kind === "google_meet" ? ctx.meetingBooking : undefined;
@@ -515,6 +591,11 @@ async function executarCriacaoDeAgendamento(
     booking_claim:booking.claim,authorized_by:{kind:ctx.actor.type,id:ctx.actor.id} } : {state:"none"};
   // A consulta pode esperar rede. Revalidar o turno depois dela, antes da escrita.
   await guardServiceEffect();
+  const convidadosDaEquipe = await convidadosDaEquipeConferidos(
+    supabase,
+    ctx,
+    input.team_guest_user_ids,
+  );
   const { data: criado, error: erroInsert } = await supabase
     .from("calendar_appointments")
     .insert({
@@ -542,6 +623,9 @@ async function executarCriacaoDeAgendamento(
       // tela), e string vazia gravada seria um convidado sem e-mail — que faz o
       // Google recusar o EVENTO INTEIRO, não só o convidado.
       guest_email: input.guest_email || null,
+      // Sempre um array: a coluna é `not null default '{}'`, e mandar `null`
+      // seria trocar o default por ausência em toda marcação sem equipe.
+      team_guest_user_ids: convidadosDaEquipe,
       created_by_kind: autorParaCriacao(ctx.actor),
       created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
       source: ctx.actor.type === "user" ? "ui" : "mcp",
@@ -661,6 +745,15 @@ export async function alterarAgendamentoHandler(
   // gerada `needs_google_push` (migration 0225), que compara a revisão
   // publicável com o último aceite; notes e metadata não criam intenção.
   if (input.guest_email !== undefined) mudanca.guest_email = input.guest_email || null;
+  // Mesma régua da criação: id fora da organização é RECUSA, e `[]` desconvidava
+  // a equipe (o "tirar todo mundo" é uma edição legítima, não um campo vazio).
+  if (input.team_guest_user_ids !== undefined) {
+    mudanca.team_guest_user_ids = await convidadosDaEquipeConferidos(
+      supabase,
+      ctx,
+      input.team_guest_user_ids,
+    );
+  }
   let transicao: Transicao | null = null;
 
   if (input.starts_at) {

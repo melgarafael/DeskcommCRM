@@ -5,7 +5,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
-import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
+import {
+  resetPasswordSchema,
+  SENHA_LONGA_DEMAIS,
+  type ResetPasswordInput,
+} from "@/lib/auth/schemas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,6 +56,10 @@ export function ResetPasswordForm() {
         setServerError(t("Sessão de redefinição expirada. Peça um novo link em Recuperar senha."));
       } else if (res.error === "same_password") {
         setServerError(t("A nova senha precisa ser diferente da atual."));
+      } else if (res.error === "password_too_long") {
+        // O GoTrue recusou por tamanho depois do schema: a frase é a mesma do
+        // erro de campo, para a explicação não depender do caminho.
+        setServerError(t(SENHA_LONGA_DEMAIS));
       } else if (res.error === "validation_error") {
         setServerError(t("Dados inválidos. Confira os campos."));
       } else {
