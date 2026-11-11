@@ -63,12 +63,23 @@ vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
 vi.mock("@/hooks/inbox/usePauseAiAttendance", () => ({
   usePauseAiAttendance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+// "IA com o dono" (#3967) usa `useMutation`: sem o mock, exigiria QueryClientProvider.
+vi.mock("@/hooks/inbox/useIaComDono", () => ({
+  useIaComDono: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock("@/hooks/contacts/usePersonalContact", () => ({
   useMarkPersonalContact: () => ({ mutate: vi.fn(), isPending: false }),
   useUnmarkPersonalContact: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/ai/useAutomaticoAtivo", () => ({
   useAutomaticoAtivo: () => ({ data: estado.automaticoDaOrg }),
+}));
+// Desde a Spec 31 (B2) o cabeçalho consulta o número da resposta por uma query
+// (`useQuery`), e este arquivo não monta `QueryClientProvider`. Mockar o hook é o
+// tratamento que os outros dados do cabeçalho recebem aqui: sem resposta, o aviso
+// de "a resposta sai por" simplesmente não aparece.
+vi.mock("@/hooks/inbox/useEnderecoDaResposta", () => ({
+  useEnderecoDaResposta: () => ({ data: undefined }),
 }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));
@@ -108,6 +119,7 @@ const INVENTARIO = [
   "Marcar como pessoal",
   "Desmarcar pessoal",
   "Ver contato",
+  "Exportar conversa",
 ] as const;
 
 /**
@@ -166,6 +178,7 @@ const CENARIO_MAIS_COMPLETO: Cenario = {
     "Arquivar",
     "Marcar como pessoal",
     "Ver contato",
+    "Exportar conversa",
   ],
 };
 
@@ -182,6 +195,7 @@ const CENARIOS: Cenario[] = [
       "Arquivar",
       "Marcar como pessoal",
       "Ver contato",
+      "Exportar conversa",
     ],
   },
   CENARIO_MAIS_COMPLETO,
@@ -197,17 +211,18 @@ const CENARIOS: Cenario[] = [
       "Arquivar",
       "Marcar como pessoal",
       "Ver contato",
+      "Exportar conversa",
     ],
   },
   {
     nome: "encerrada — o par Fechar/Reabrir vira Reabrir",
     conversa: { status: "closed" },
-    esperadas: ["Assumir", "Reabrir", "Arquivar", "Marcar como pessoal", "Ver contato"],
+    esperadas: ["Assumir", "Reabrir", "Arquivar", "Marcar como pessoal", "Ver contato", "Exportar conversa"],
   },
   {
     nome: "arquivada — arquivar de novo não é gesto que exista",
     conversa: { status: "archived" },
-    esperadas: ["Assumir", "Reabrir", "Marcar como pessoal", "Ver contato"],
+    esperadas: ["Assumir", "Reabrir", "Marcar como pessoal", "Ver contato", "Exportar conversa"],
   },
   {
     nome: "contato marcado como pessoal — o par inverte",
@@ -221,6 +236,7 @@ const CENARIOS: Cenario[] = [
       "Arquivar",
       "Desmarcar pessoal",
       "Ver contato",
+      "Exportar conversa",
     ],
   },
 ];

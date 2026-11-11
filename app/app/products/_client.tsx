@@ -227,6 +227,7 @@ export function ProdutosClient({
   urlsDasFotos,
   podeEditar,
   capacidadeLigada = false,
+  apresentacaoLigada = false,
   textos,
 }: {
   /** A página atual, já filtrada no servidor (ver `lib/catalogo/busca-da-tela.ts`). */
@@ -240,6 +241,7 @@ export function ProdutosClient({
   podeEditar: boolean;
   /** A chave da empresa (`capacidade_do_produto`). Desligada, o campo não aparece. */
   capacidadeLigada?: boolean;
+  apresentacaoLigada?: boolean;
   textos: Textos;
 }) {
   const t = useT();
@@ -673,6 +675,8 @@ export function ProdutosClient({
                 key={p.id}
                 produto={p}
                 capacidadeLigada={capacidadeLigada}
+                urlsDasFotos={urlsDasFotos}
+                apresentacaoLigada={apresentacaoLigada}
                 aoFechar={() => setEditando(null)}
               />
             ) : null}

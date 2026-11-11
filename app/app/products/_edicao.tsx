@@ -16,6 +16,8 @@ import {
 } from "@/lib/catalogo/edicao-do-produto";
 import type { Produto } from "@/lib/schemas/produtos";
 
+import { CatalogProductAiPresentation } from "./_apresentacao-ia";
+
 /**
  * O FORMULÁRIO DE EDIÇÃO — o que a tela nunca teve.
  *
@@ -33,10 +35,14 @@ import type { Produto } from "@/lib/schemas/produtos";
  */
 export function EdicaoDoProduto({
   produto,
+  urlsDasFotos,
+  apresentacaoLigada = false,
   capacidadeLigada = false,
   aoFechar,
 }: {
   produto: Produto;
+  urlsDasFotos: Record<string, string>;
+  apresentacaoLigada?: boolean;
   capacidadeLigada?: boolean;
   aoFechar: () => void;
 }) {
@@ -195,6 +201,8 @@ export function EdicaoDoProduto({
           />
         </label>
       ) : null}
+
+      {apresentacaoLigada ? <CatalogProductAiPresentation product={produto} photoUrls={urlsDasFotos} /> : null}
 
       <div className="mt-4 flex items-center gap-2">
         {somenteLeitura ? null : (

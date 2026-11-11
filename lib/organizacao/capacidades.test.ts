@@ -34,6 +34,24 @@ describe("capacidadesLigadas — só o booleano true liga", () => {
   });
 });
 
+describe("capacidadesLigadas — apresentação do catálogo", () => {
+  it("settings.catalogo.apresentacao === true liga, sem depender de módulo da instalação", () => {
+    expect(capacidadesLigadas({ catalogo: { apresentacao: true } }, [])).toEqual(["apresentacao_do_catalogo"]);
+  });
+  it("nasce desligada: ausente, false, string e lixo não ligam", () => {
+    for (const s of [
+      {},
+      null,
+      { catalogo: {} },
+      { catalogo: { apresentacao: false } },
+      { catalogo: { apresentacao: "true" } },
+      { catalogo: "ligado" },
+    ]) {
+      expect(capacidadesLigadas(s, []), JSON.stringify(s)).toEqual([]);
+    }
+  });
+});
+
 /**
  * Banco falso das leituras: a linha da organização, `platform_config` e — desde a
  * #1290 — a linha de `voip_trunk_settings`. Cada tabela responde o seu, porque o

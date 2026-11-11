@@ -105,6 +105,56 @@ export function fail(
 }
 
 // -----------------------------------------------------------------------------
+// Resposta montada à mão (#4107)
+// -----------------------------------------------------------------------------
+
+/**
+ * Carimba o `X-Request-Id` numa resposta que NÃO passa por `ok()`/`fail()` —
+ * arquivo, imagem, redirect, stream, `new NextResponse(null, { status: 401 })`.
+ *
+ * O id é o MESMO que a rota grava no log e na auditoria: o `x-request-id` que o
+ * `proxy.ts` pôs na requisição (`requestIdOf`). Nada de `randomUUID()` novo aqui
+ * — dois ids para a mesma requisição é o defeito que o #3971 fechou.
+ *
+ * `Response.redirect()` devolve cabeçalhos IMUTÁVEIS; nesse caso a resposta é
+ * reconstruída com os mesmos status e cabeçalhos, mais o id. (O `body` de um
+ * redirect é sempre vazio.)
+ */
+export function comIdDaRequisicao<T extends Response>(res: T, reqOuId: Request | string | null | undefined): T {
+  // `reqOuId` pode ser um dublê de requisição sem `headers` (os testes de rota
+  // montam `{ headers: undefined }`): ler `.headers.get` às cegas derrubava a
+  // resposta inteira com TypeError. Sem cabeçalho, cai no id gerado abaixo.
+  const cabecalhos =
+    typeof reqOuId === "object" && reqOuId !== null ? reqOuId.headers : undefined;
+  const doHeader =
+    typeof reqOuId === "string" ? reqOuId : cabecalhos?.get?.("x-request-id");
+  const requestId = doHeader && doHeader.length > 0 ? doHeader : randomUUID();
+
+  // Quem já carimbou o PRÓPRIO id (o export de tenant, o `/api/mcp`) manda: ali
+  // o id foi resolvido junto com a auditoria da rota, e trocá-lo por outro
+  // desfaria justamente a correlação que este helper existe para garantir.
+  if (res.headers.has("X-Request-Id")) return res;
+
+  try {
+    res.headers.set("X-Request-Id", requestId);
+    return res;
+  } catch {
+    // Cabeçalhos IMUTÁVEIS (todo `Response.redirect` reconstruído por
+    // `NextResponse.redirect`): refazer a resposta com os mesmos status e
+    // cabeçalhos, mais o id. É um `NextResponse` — quem chama pode ainda pôr
+    // cookie na resposta (os callbacks de OAuth fazem), e um `Response` puro
+    // quebraria isso em tempo de execução sem o tsc ver.
+    const cabecalhos = new Headers(res.headers);
+    cabecalhos.set("X-Request-Id", requestId);
+    return new NextResponse(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: cabecalhos,
+    }) as unknown as T;
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Atalhos comuns
 // -----------------------------------------------------------------------------
 

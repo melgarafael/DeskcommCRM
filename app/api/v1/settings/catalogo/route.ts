@@ -1,7 +1,8 @@
 /**
- * PATCH /api/v1/settings/catalogo — liga ou desliga o campo Capacidade do catálogo
- * (`settings.catalogo.capacidade`) para esta empresa. Quem lê a chave é
- * `capacidadesLigadas()`; desligar não apaga o que já foi cadastrado.
+ * PATCH /api/v1/settings/catalogo — liga ou desliga, para esta empresa, a
+ * apresentação do catálogo pela IA (`settings.catalogo.apresentacao`) e o campo
+ * Capacidade (`settings.catalogo.capacidade`, #3472). Grava só a chave enviada.
+ * Quem lê é `capacidadesLigadas()`; desligar não apaga o que já foi cadastrado.
  *
  * Papel `admin`, o mesmo da tela que hospeda a chave (`/app/settings/tenant`).
  */
@@ -18,7 +19,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-const patchSchema = z.object({ capacidade: z.boolean() }).strict();
+const patchSchema = z
+  .object({ apresentacao: z.boolean().optional(), capacidade: z.boolean().optional() })
+  .strict()
+  .refine((corpo) => Object.keys(corpo).length > 0);
+
+const ACAO_DA_CHAVE = {
+  apresentacao: "catalogo.apresentacao_changed",
+  capacidade: "catalogo.capacidade_changed",
+} as const;
 
 export async function PATCH(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -44,7 +53,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const catalogo = settings?.catalogo;
   const novo = {
     ...(settings ?? {}),
-    catalogo: { ...(catalogo && typeof catalogo === "object" ? catalogo : {}), capacidade: parsed.data.capacidade },
+    catalogo: { ...(catalogo && typeof catalogo === "object" ? catalogo : {}), ...parsed.data },
   };
 
   // CAS do documento inteiro, como `settings/agenda-apresentacao`: escrita
@@ -61,15 +70,17 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     return fail("conflict", t("A configuração mudou. Recarregue a página e tente novamente."), 409, { requestId });
   }
 
-  void audit({
-    action: "catalogo.capacidade_changed",
-    actorUserId: authz.user.id,
-    organizationId: orgId,
-    resourceType: "organization",
-    resourceId: orgId,
-    requestId,
-    metadata: { capacidade: parsed.data.capacidade },
-  });
+  for (const [chave, valor] of Object.entries(parsed.data) as [keyof typeof ACAO_DA_CHAVE, boolean][]) {
+    void audit({
+      action: ACAO_DA_CHAVE[chave],
+      actorUserId: authz.user.id,
+      organizationId: orgId,
+      resourceType: "organization",
+      resourceId: orgId,
+      requestId,
+      metadata: { [chave]: valor },
+    });
+  }
 
   return ok(parsed.data, { requestId });
 }

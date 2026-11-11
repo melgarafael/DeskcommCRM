@@ -12,6 +12,7 @@ import { apiClient } from "@/lib/api/client";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { DefeitoDoNumero } from "./DefeitoDoNumero";
 import { ParaIntegrar } from "./ParaIntegrar";
 import { RenomearConexao } from "./RenomearConexao";
 
@@ -54,6 +55,8 @@ interface Estado {
   phone_number: string | null;
   display_name: string | null;
   status: string | null;
+  /** O defeito de um número de pé (`lib/channels/defeito-do-numero.ts`), gravado pelo vigia de saúde. */
+  status_reason?: string | null;
   has_api_key: boolean;
   webhook_url: string | null;
   /** Endpoint base do provedor — usado no painel "Para integrar". */
@@ -244,6 +247,9 @@ export function CanalParceiroClient() {
             <p className="text-xs text-muted-foreground">
               {estado?.phone_number ?? t("sem número informado")} · {estado?.status ?? "—"}
             </p>
+            <div className="mt-2 empty:hidden">
+              <DefeitoDoNumero status={estado?.status} motivo={estado?.status_reason} />
+            </div>
           </div>
         )}
 

@@ -115,6 +115,27 @@ function bancoFalso(tabelas: Record<string, Linha[]>): SupabaseClient {
       };
       return consulta;
     },
+    // O nome do responsável vem de UMA consulta a `fn_nomes_dos_membros`
+    // (#4326, fatia 3): devolve só quem tem vínculo com a org pedida, com
+    // `full_name` e e-mail — a tool recorta o nome.
+    rpc: (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") {
+        return Promise.resolve({ data: null, error: { message: "rpc inesperado" } });
+      }
+      const daOrg = (tabelas.user_organizations ?? [])
+        .filter((v) => v.organization_id === args.p_org)
+        .map((v) => String(v.user_id));
+      return Promise.resolve({
+        data: args.p_ids
+          .filter((id) => daOrg.includes(id))
+          .map((id) => ({
+            user_id: id,
+            full_name: id === ANA ? "Ana Souza" : "Beto Lima",
+            email: `${id.slice(0, 4)}@estudio.test`,
+          })),
+        error: null,
+      });
+    },
     auth: {
       admin: {
         getUserById: async (id: string) => ({

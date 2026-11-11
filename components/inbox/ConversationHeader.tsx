@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -39,6 +39,7 @@ import {
 } from "@/hooks/inbox/useCloseConversation";
 import { useResumeAiAttendance } from "@/hooks/inbox/useResumeAiAttendance";
 import { usePauseAiAttendance } from "@/hooks/inbox/usePauseAiAttendance";
+import { useIaComDono } from "@/hooks/inbox/useIaComDono";
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
@@ -46,6 +47,7 @@ import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conv
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
+import { DialogoMoverParaFila, ItemMoverParaFila } from "@/components/inbox/MoverParaFila";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { ItemReservarServico, ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
@@ -53,6 +55,7 @@ import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { useEnderecoDaResposta } from "@/hooks/inbox/useEnderecoDaResposta";
 import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
 
 interface Props {
@@ -111,6 +114,7 @@ export function ConversationHeader({
   const arquivar = useArchiveConversation();
   const retomar = useResumeAiAttendance();
   const pausar = usePauseAiAttendance();
+  const iaComDono = useIaComDono();
   // "Existe automático nesta org?" — sem isto o selo afirmava que o robô estava
   // atendendo em instalação que nunca configurou agente nenhum.
   const automaticoDaOrg = useAutomaticoAtivo();
@@ -138,6 +142,9 @@ export function ConversationHeader({
   // A folha de reserva segue o MESMO desenho do convite: o item do ⋯ só levanta
   // a bandeira, a folha mora fora do menu e o menu fecha como qualquer outro.
   const [reservaAberta, setReservaAberta] = useState(false);
+  // A FILA (#3876): o item do ⋯ só levanta a bandeira — o diálogo mora fora do
+  // menu, pelo mesmo motivo do convite acima.
+  const [filaAberta, setFilaAberta] = useState(false);
 
   const c = conversation.contacts ?? null;
   /**
@@ -205,8 +212,27 @@ export function ConversationHeader({
   // Reservar exige papel de atendente (o mesmo gate da rota); grupo não é pessoa.
   const podeReservar =
     !conversation.is_group && !!c?.id && activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
+  /**
+   * EXPORTAR CONVERSA (#1982, F1) — o MESMO gate da rota, e nada além dele.
+   *
+   * `app/api/v1/conversations/[id]/export/route.ts` abre com
+   * `requireRole("agent")` e ainda dá passagem ao admin de plataforma
+   * (`full`), exatamente como as demais rotas de `conversations/[id]`. Repetir
+   * a régua aqui é o desenho que este componente já declarou: não oferecer o
+   * que a rota recusa — um `viewer` que clica e recebe 403 num download
+   * descobre o limite DEPOIS de pedir o arquivo. É a mesma comparação de
+   * `ChatThread` (`podeEnviar`, :112), sem hook novo e sem `usePermission`.
+   */
+  const podeExportar =
+    (user.is_platform_admin && !user.support) ||
+    (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent);
   const marcarPessoal = useMarkPersonalContact(c?.id ?? "");
   const desmarcarPessoal = useUnmarkPersonalContact(c?.id ?? "");
+
+  // Para qual número a resposta sai (Spec 31, B2). Fica ANTES do retorno de
+  // leitura-só, porque a ordem dos hooks não pode mudar entre renderizações.
+  const enderecoDaResposta = useEnderecoDaResposta(conversation.id, conversation.last_inbound_at ?? null);
+  const endereco = enderecoDaResposta.data?.data ?? null;
 
   /**
    * QUEM MANDA, uma pergunta com uma resposta.
@@ -229,6 +255,10 @@ export function ConversationHeader({
     is_blocked: conversation.contacts?.is_blocked ?? null,
     is_group: conversation.is_group ?? false,
     automaticoDaOrg: automaticoDaOrg.data,
+    // O fato por NÚMERO (#4012): o mesmo que o banco já usou para rebaixar
+    // `comando_da_conversa` a `aguardando`. Ausente = cache anterior, e a
+    // regra cai no comportamento org-wide de antes.
+    automaticoDaConversa: conversation.automatico_da_conversa ?? undefined,
   };
   const { comando, automaticoAtivo, travaVigente, motivo } = comandoDaConversa(fatosDoComando);
   /**
@@ -284,6 +314,28 @@ export function ConversationHeader({
    */
   const podePausar =
     automaticoAtivo && !encerrada && conversation.assigned_to_user_id !== null;
+
+  /**
+   * O INTERRUPTOR DO MODO "IA COM O DONO" (#3967).
+   *
+   * Aparece quando a pergunta faz sentido: a conversa TEM dono humano e não está
+   * encerrada. É o único estado em que ligar o modo muda alguma coisa — sem dono
+   * não há dono a preservar, e a rota recusa (o automático já responde ali).
+   *
+   * Aparece TAMBÉM com o automático parado: "voltar com a IA sem soltar o dono"
+   * é literalmente o caso de uso da issue (a conversa foi pausada, o atendente
+   * quer a IA de apoio e não quer sair da carteira). Ligar limpa o silêncio —
+   * está no cabeçalho da rota, e é o que o botão promete.
+   *
+   * Escondido quando o CONTATO está travado/bloqueado: ali o modo não pode
+   * valer (a rota devolve 409) e um botão que só leva a erro é pior que nenhum.
+   */
+  const modoLigado = conversation.metadata?.ai_com_dono === true;
+  const podeModoIaComDono =
+    !encerrada &&
+    conversation.assigned_to_user_id !== null &&
+    fatosDoComando.force_human !== true &&
+    fatosDoComando.is_blocked !== true;
 
   if (user.support?.access_mode === "support_readonly") return <header className="flex items-center justify-between border-b p-4">
     <strong>{displayName}</strong><span className="text-sm text-muted-foreground">{STATUS_LABEL[status] ?? status} · Somente leitura</span>
@@ -377,6 +429,15 @@ export function ConversationHeader({
           // do fio, e o número continua na Ficha.
           <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground max-md:hidden">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
+          </p>
+        )}
+        {/* Contato com telefone extra: diz por qual número a resposta sai. Sem
+            extra, nada muda na tela. No canal que responde pela última mensagem
+            recebida, a resposta vai para o número por onde ela chegou; nos outros
+            segue pelo principal, e a linha não aparece. */}
+        {endereco?.has_extras && c?.phone_number && endereco.follows_last_inbound && endereco.phone_number && (
+          <p className="mt-0.5 min-w-0 truncate text-xs text-muted-foreground max-md:hidden" data-testid="resposta-sai-por">
+            {t("A resposta sai por:")} {phoneForDisplay(endereco.phone_number)}
           </p>
         )}
       </div>
@@ -635,6 +696,18 @@ export function ConversationHeader({
                 {t("Convidar")}
               </DropdownMenuItem>
             )}
+            {/* ─── A FILA (#3876) ──────────────────────────────────────────
+                Uma ação que a conversa já tinha e a tela não oferecia: o
+                `PUT /conversations/[id]/sector` (9062) estava sem consumidor.
+                Fica no ⋯ porque classificar é correção de rota, não é do dia a
+                dia. `ItemMoverParaFila` devolve `null` quando a rota recusaria
+                (viewer, módulo desligado, conversa encerrada).
+                O export em PDF (#1982) NÃO entra aqui: o PR #4207, aberto
+                antes, é quem entrega essa tela — duas entregas da mesma fatia
+                viram dois itens no menu.
+                O separador de cima vem de dentro do item: solto aqui, ele
+                dobraria com o de baixo quando o item não aparece. */}
+            <ItemMoverParaFila encerrada={encerrada} onAbrir={() => setFilaAberta(true)} />
             <DropdownMenuSeparator />
             {podePausar && (
               <DropdownMenuItem
@@ -648,6 +721,33 @@ export function ConversationHeader({
               >
                 <Pause size={16} aria-hidden className="mr-2" />
                 {pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
+              </DropdownMenuItem>
+            )}
+            {/* #3967 — "IA com o dono": um interruptor, um rótulo, dois estados.
+                A conversa ganha a IA de APOIO sem perder o dono: nada de `release`,
+                nada de rodízio, nada de fila. É o par do "Pausar o automático"
+                (que cala sem devolver) e existe porque, com dono humano, a IA
+                ficava calada por definição — e o único caminho de volta soltava
+                a conversa de quem a estava acompanhando. Clicar fecha o menu; o
+                estado ligado fica à vista no selo abaixo da barra. */}
+            {podeModoIaComDono && (
+              <DropdownMenuItem
+                role="menuitemcheckbox"
+                aria-checked={modoLigado}
+                disabled={iaComDono.isPending}
+                data-testid="ia-com-o-dono"
+                title={
+                  modoLigado
+                    ? t("Desliga a IA nesta conversa. Ela volta a ficar calada e continua sua.")
+                    : t("A IA responde esta conversa sem tirar o dono de você. Se ela passar para uma pessoa, a conversa continua com o mesmo atendente.")
+                }
+                onSelect={() =>
+                  iaComDono.mutate({ conversation_id: conversation.id, ligado: !modoLigado })
+                }
+              >
+                <Robot size={16} aria-hidden className="mr-2" />
+                {iaComDono.isPending ? t("Salvando...") : t("IA com o dono")}
+                {modoLigado && <Check size={16} aria-hidden className="ml-auto" />}
               </DropdownMenuItem>
             )}
             {!encerrada && (
@@ -708,6 +808,36 @@ export function ConversationHeader({
                 {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
               </DropdownMenuItem>
             )}
+            {/* EXPORTAR CONVERSA (#1982, F1) — o PDF do histórico desta conversa.
+                A rota já existia (`app/api/v1/conversations/[id]/export`,
+                `?formato=pdf`) e nenhuma tela a chamava: o operador não tinha
+                por onde baixar. Aqui é ÂNCORA de download, não `fetch`: o
+                browser faz o GET com o cookie da sessão e grava o arquivo com o
+                nome que o `Content-Disposition` da rota manda (`no-store`).
+                É o mesmo gesto do "Exportar CSV" da auditoria.
+
+                O QUE ENTRA: o histórico legível, datado e em ordem, para o
+                operador arquivar no caso. O QUE NÃO ENTRA: nota interna — o
+                PDF é do histórico do cliente, e a rota não lê a tabela de
+                notas. O `title` diz isso a quem está começando; o gate é o da
+                rota (`podeExportar`), então o item não aparece para `viewer`. */}
+            {podeExportar && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <a
+                    href={`/api/v1/conversations/${conversation.id}/export?formato=pdf`}
+                    download
+                    data-testid="exportar-conversa"
+                    className="flex w-full items-center gap-2"
+                    title={t("Baixa o histórico desta conversa em PDF, datado e em ordem, para arquivar. Notas internas não entram.")}
+                  >
+                    <DownloadSimple size={16} aria-hidden />
+                    {t("Exportar conversa")}
+                  </a>
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -720,6 +850,16 @@ export function ConversationHeader({
           <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
             title={t(ROTULO_DO_MOTIVO[motivo])} data-testid="badge-atendimento-humano">
             {t(ROTULO_DO_MOTIVO[motivo])}
+          </Badge>
+        )}
+        {/* O modo ligado é informação, e informação dentro de um menu deixa de ser
+            lida: sem este selo a conversa em que a IA responde ao lado do dono
+            tem a cara de qualquer outra. Com o automático calado por outro
+            motivo, quem fala é o selo de cima. */}
+        {podeModoIaComDono && modoLigado && motivo === null && (
+          <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
+            data-testid="badge-ia-com-o-dono">
+            {t("IA com o dono")}
           </Badge>
         )}
       </div>
@@ -746,6 +886,18 @@ export function ConversationHeader({
         aberto={conviteAberto}
         onAbertoChange={setConviteAberto}
       />
+      {/* O diálogo da fila, FORA do menu ⋯ — o mesmo desenho do convite acima —
+          e montado só quando abre. Aberto é o único estado em que ele existe, e
+          um diálogo fechado que consultasse setores em toda conversa seria uma
+          requisição por cabeçalho montado para quem nunca tocou no ⋯. */}
+      {filaAberta && (
+        <DialogoMoverParaFila
+          conversationId={conversation.id}
+          filaAtual={conversation.sector_id ?? null}
+          aberto
+          onAbertoChange={setFilaAberta}
+        />
+      )}
       {podeReservar && c?.id && activeOrg && (
         <ReservarServicoNaConversa
           key={`${activeOrg.orgId}:${conversation.id}`}

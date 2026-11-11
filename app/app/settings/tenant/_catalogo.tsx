@@ -9,19 +9,33 @@ import { Card } from "@/components/ui/card";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 
+type Chaves = { apresentacao: boolean; capacidade: boolean };
+
 /**
- * A chave do campo Capacidade (#3472). Vale para a empresa inteira e nasce
- * desligada: o catálogo é o mesmo para uma loja de celulares e para uma clínica.
+ * As chaves do catálogo que valem para a empresa inteira e nascem desligadas:
+ * a apresentação pela IA (#3525), porque nem toda empresa vende por sequência de
+ * texto, áudio e foto; e o campo Capacidade (#3472), porque o catálogo é o mesmo
+ * para uma loja de celulares e para uma clínica. Salvar envia só a chave que
+ * mudou, para a auditoria não registrar troca que não houve.
  */
-export function CatalogoDaEmpresaForm({ inicial }: { inicial: boolean }) {
+export function CatalogoDaEmpresaForm({ inicial }: { inicial: Chaves }) {
   const t = useT();
-  const [ligado, setLigado] = useState(inicial);
+  const [salvo, setSalvo] = useState(inicial);
+  const [chaves, setChaves] = useState(inicial);
   const [isPending, startTransition] = useTransition();
 
   function salvar() {
+    const mudou = Object.fromEntries(
+      (Object.keys(chaves) as (keyof Chaves)[]).filter((k) => chaves[k] !== salvo[k]).map((k) => [k, chaves[k]]),
+    );
+    if (Object.keys(mudou).length === 0) {
+      toast.success(t("Catálogo salvo."));
+      return;
+    }
     startTransition(async () => {
       try {
-        await apiClient.patch("/api/v1/settings/catalogo", { capacidade: ligado });
+        await apiClient.patch("/api/v1/settings/catalogo", mudou);
+        setSalvo(chaves);
         toast.success(t("Catálogo salvo."));
       } catch (e) {
         showApiError(e);
@@ -35,8 +49,25 @@ export function CatalogoDaEmpresaForm({ inicial }: { inicial: boolean }) {
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"
-          checked={ligado}
-          onChange={(e) => setLigado(e.target.checked)}
+          checked={chaves.apresentacao}
+          onChange={(e) => setChaves((c) => ({ ...c, apresentacao: e.target.checked }))}
+          className="mt-1"
+          data-testid="catalogo-apresentacao-ligada"
+        />
+        <span>
+          {t("Usar a apresentação de produtos pela IA")}
+          <span className="block text-xs text-muted-foreground">
+            {t(
+              "Cada produto pode ter uma apresentação própria, em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência. Desligar esconde a seção, mas não apaga o que já foi cadastrado.",
+            )}
+          </span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={chaves.capacidade}
+          onChange={(e) => setChaves((c) => ({ ...c, capacidade: e.target.checked }))}
           className="mt-1"
           data-testid="catalogo-capacidade-ligada"
         />

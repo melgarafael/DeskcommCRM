@@ -78,30 +78,68 @@ describe("PATCH /api/v1/settings/catalogo", () => {
     const settings = { proposals: { enabled: true }, catalogo: { outra: 1 } };
     vi.mocked(createAdminClient).mockReturnValue(banco({ settings }) as never);
 
-    const r = await patch({ capacidade: true });
+    const r = await patch({ apresentacao: true });
 
     expect(r.status).toBe(200);
-    expect(gravado).toEqual({ proposals: { enabled: true }, catalogo: { outra: 1, capacidade: true } });
+    expect(gravado).toEqual({ proposals: { enabled: true }, catalogo: { outra: 1, apresentacao: true } });
     expect(filtroDoCas).toBe(JSON.stringify(settings));
     expect(audit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "catalogo.capacidade_changed", organizationId: ORG_ID }),
+      expect.objectContaining({ action: "catalogo.apresentacao_changed", organizationId: ORG_ID }),
     );
+  });
+
+  it("desliga sem apagar o resto do bloco", async () => {
+    const settings = { catalogo: { outra: 1, apresentacao: true } };
+    vi.mocked(createAdminClient).mockReturnValue(banco({ settings }) as never);
+
+    expect((await patch({ apresentacao: false })).status).toBe(200);
+    expect(gravado).toEqual({ catalogo: { outra: 1, apresentacao: false } });
+  });
+
+  it("a chave Capacidade grava só ela e audita com a ação própria (#3472)", async () => {
+    const settings = { catalogo: { apresentacao: true } };
+    vi.mocked(createAdminClient).mockReturnValue(banco({ settings }) as never);
+
+    expect((await patch({ capacidade: true })).status).toBe(200);
+    expect(gravado).toEqual({ catalogo: { apresentacao: true, capacidade: true } });
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "catalogo.capacidade_changed", metadata: { capacidade: true } }),
+    );
+  });
+
+  it("as duas chaves no mesmo corpo gravam e auditam cada uma", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({ settings: null }) as never);
+
+    expect((await patch({ apresentacao: false, capacidade: true })).status).toBe(200);
+    expect(gravado).toEqual({ catalogo: { apresentacao: false, capacidade: true } });
+    expect(vi.mocked(audit).mock.calls.map(([e]) => e.action).sort()).toEqual([
+      "catalogo.apresentacao_changed",
+      "catalogo.capacidade_changed",
+    ]);
+  });
+
+  it("corpo sem chave nenhuma é 422, não um salvar vazio", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({ settings: {} }) as never);
+    expect((await patch({})).status).toBe(422);
+    expect(gravado).toBeNull();
   });
 
   it("escrita concorrente vira 409, sem auditar", async () => {
     vi.mocked(createAdminClient).mockReturnValue(banco({ settings: {}, outroGravou: true }) as never);
-    expect((await patch({ capacidade: true })).status).toBe(409);
+    expect((await patch({ apresentacao: true })).status).toBe(409);
     expect(audit).not.toHaveBeenCalled();
   });
 
   it("leitura que falhou não grava: settings vazio apagaria a configuração", async () => {
     vi.mocked(createAdminClient).mockReturnValue(banco({ settings: null, erroNaLeitura: true }) as never);
-    expect((await patch({ capacidade: true })).status).toBe(500);
+    expect((await patch({ apresentacao: true })).status).toBe(500);
     expect(gravado).toBeNull();
   });
 
   it("recusa o que não é booleano", async () => {
     vi.mocked(createAdminClient).mockReturnValue(banco({ settings: {} }) as never);
+    expect((await patch({ apresentacao: "true" })).status).toBe(422);
     expect((await patch({ capacidade: "true" })).status).toBe(422);
     expect(gravado).toBeNull();
   });
@@ -111,7 +149,7 @@ describe("PATCH /api/v1/settings/catalogo", () => {
       ok: false,
       response: new Response(null, { status: 403 }),
     } as never);
-    expect((await patch({ capacidade: true })).status).toBe(403);
+    expect((await patch({ apresentacao: true })).status).toBe(403);
     expect(requireRole).toHaveBeenCalledWith("admin", expect.anything());
   });
 });

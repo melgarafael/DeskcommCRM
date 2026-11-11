@@ -37,6 +37,7 @@
  */
 
 import type pg from "pg";
+import { recusaDaChamada } from "@/lib/mcp/desfecho-da-chamada";
 import type { ToolSet } from "../edge/llm/run-model-call";
 import type { Logger } from "../obs/logger";
 import type { TurnAgentResolution } from "./resolve-turn-agent";
@@ -49,6 +50,12 @@ export interface FerramentaNoTraco {
   estado: EstadoDaFerramenta;
   /** Mensagem do erro, truncada. `null` quando a chamada deu certo. */
   erro: string | null;
+  /**
+   * O CÓDIGO da recusa, quando ela tem um (`sem_destino`, `fora_da_conversa`,
+   * `reabertura_cria_novo`). Sem ele, o traço sabia que a chamada falhou mas
+   * não POR QUE — e a recusa sem efeito do #4342 aparecia como `ok`.
+   */
+  codigo?: string;
   duracao_ms: number;
   /**
    * O modelo marcou este `send_message` como a última ação do turno (knob
@@ -174,6 +181,7 @@ export function criarColetorDeFerramentas(opcoes: OpcoesDoColetor = {}): Coletor
         nome: chamada.nome,
         estado: chamada.estado,
         erro: chamada.erro === null ? null : chamada.erro.slice(0, limiteDoErro),
+        ...(chamada.codigo === undefined ? {} : { codigo: chamada.codigo }),
         duracao_ms: Math.max(0, Math.round(chamada.duracao_ms)),
         ...(chamada.encerra_turno === true ? { encerra_turno: true } : {}),
       });
@@ -187,10 +195,15 @@ export function criarColetorDeFerramentas(opcoes: OpcoesDoColetor = {}): Coletor
   };
 }
 
-/** Convenção do repo: toda tool do run devolve `{ ok: boolean, ... }`. */
-function ehResultadoDeFalha(result: unknown): boolean {
-  return typeof result === "object" && result !== null && (result as { ok?: unknown }).ok === false;
-}
+/**
+ * O ESTADO da chamada no traço usa a MESMA régua do audit e do gate
+ * `registro_sem_efeito` (#4342): `lib/mcp/desfecho-da-chamada.ts`.
+ *
+ * Antes, a régua era `{ ok: false }` — a convenção de uma família de tools, não
+ * a das ferramentas do catálogo MCP, que recusam em `{ erro, mensagem }` e
+ * `{ permitido: false, motivo }`. Resultado medido: a recusa `sem_destino` do
+ * `crm_create_lead` (nenhum negócio criado) entrava no traço como `ok`.
+ */
 
 /**
  * Bloqueio do circuit breaker é uma FALHA para quem lê o traço, mas de outra
@@ -248,15 +261,23 @@ export function envolverFerramentasComTraco(
           : {};
       try {
         const resultado = await execute(input, options);
+        // Régua ÚNICA do desfecho (`lib/mcp/desfecho-da-chamada.ts`), a mesma do
+        // audit e do gate `registro_sem_efeito`: recusa é recusa, em qualquer dos
+        // formatos do catálogo — não só `{ ok: false }`.
+        const recusa = ehBloqueioDoBreaker(resultado) ? null : recusaDaChamada(resultado);
         const estado: EstadoDaFerramenta = ehBloqueioDoBreaker(resultado)
           ? "bloqueada"
-          : ehResultadoDeFalha(resultado)
+          : recusa !== null
             ? "falhou"
             : "ok";
         coletor.registrar({
           nome,
           estado,
-          erro: estado === "ok" ? null : mensagemDoResultado(resultado),
+          erro:
+            estado === "ok"
+              ? null
+              : (recusa?.mensagem ?? mensagemDoResultado(resultado)),
+          ...(recusa?.codigo ? { codigo: recusa.codigo } : {}),
           duracao_ms: agora() - inicio,
           ...marca,
         });
@@ -321,6 +342,7 @@ export function montarTracoDoTurno(entrada: EntradaDoTraco): TracoDoTurno {
       nome: f.nome,
       estado: f.estado,
       erro: f.erro === null ? null : f.erro.slice(0, limiteDoErro),
+      ...(f.codigo === undefined ? {} : { codigo: f.codigo }),
       duracao_ms: Math.max(0, Math.round(f.duracao_ms)),
       ...(f.encerra_turno === true ? { encerra_turno: true as const } : {}),
     })),

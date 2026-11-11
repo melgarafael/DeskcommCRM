@@ -41,7 +41,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
-import { fail, ok } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { chaveDoCodigo, lerPlanilha, type ErroDaLinha } from "@/lib/catalogo/planilha";
@@ -90,9 +91,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const orgId = authz.org.orgId;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
+  // 64 KB de folga para o envelope multipart; o tamanho do CSV é conferido abaixo.
+  const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+  });
+  if (!corpo.ok) return corpo.response;
+
   let arquivo: File;
   try {
-    const form = await req.formData();
+    const form = await corpo.corpo.formData();
     const f = form.get("file");
     if (!(f instanceof File)) throw new Error("sem arquivo");
     arquivo = f;
@@ -435,11 +444,11 @@ export async function GET(): Promise<Response> {
     "PERF-212,212 VIP Men 100ml,Carolina Herrera,Perfume,449.90,280.00,7,,",
   ].join("\n");
 
-  return new Response(`﻿${modelo}\n`, {
+  return comIdDaRequisicao(new Response(`﻿${modelo}\n`, {
     headers: {
       "content-type": "text/csv; charset=utf-8",
       "content-disposition": 'attachment; filename="modelo-catalogo.csv"',
       "x-request-id": requestId,
     },
-  });
+  }), requestId);
 }
