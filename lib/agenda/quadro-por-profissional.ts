@@ -19,6 +19,20 @@
  */
 import { diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 
+/**
+ * O QUADRO SÓ EXISTE COM DOIS OU MAIS PROFISSIONAIS COM AGENDA.
+ *
+ * Decisão do dono do produto (doc 307, alternativa A): uma linha por pessoa só
+ * diz alguma coisa quando há pessoas para comparar. Para quem atende sozinho o
+ * quadro é a visão Dia deitada — um botão a mais que não serve para nada. É a
+ * mesma régua do filtro de pessoas (`FiltroDePessoas` some abaixo de dois).
+ */
+export const MINIMO_DE_PROFISSIONAIS_DO_QUADRO = 2;
+
+export function quadroDisponivel(profissionaisComAgenda: number): boolean {
+  return profissionaisComAgenda >= MINIMO_DE_PROFISSIONAIS_DO_QUADRO;
+}
+
 /** Um começo de coluna, em minutos do dia no fuso da agenda. */
 export interface ColunaDoQuadro {
   minuto: number;

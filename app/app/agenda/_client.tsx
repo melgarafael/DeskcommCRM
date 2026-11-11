@@ -30,6 +30,7 @@ import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
+import { quadroDisponivel } from "@/lib/agenda/quadro-por-profissional";
 import { diasDoRecorte, recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
 import { useVinculoDaMarcacao } from "@/lib/agenda/vinculo-da-marcacao";
@@ -311,7 +312,7 @@ export function AgendaClient({
     [busca, caminho],
   );
   const endereco = enderecoEditado ?? tipo?.localDetalhes ?? "";
-  const [visao, setVisao] = React.useState<VisaoDaAgenda>("semana");
+  const [visaoEscolhida, setVisao] = React.useState<VisaoDaAgenda>("semana");
   /**
    * No CELULAR a agenda abre no DIA, não na semana.
    *
@@ -382,6 +383,15 @@ export function AgendaClient({
   // para entender o 403 do Atendente precisa saber que ele JÁ não existe, e um
   // comentário que afirma o contrário é o defeito de novo.
   const { data: pessoas = [] } = usePessoasDaAgenda();
+
+  // O QUADRO SÓ APARECE COM DOIS OU MAIS PROFISSIONAIS COM AGENDA (doc 307). A
+  // conta sai da MESMA lista do filtro de pessoas. Se a escolha "quadro" ficar
+  // órfã — a equipe encolheu com a tela aberta, ou a lista ainda não chegou —,
+  // a tela mostra a visão padrão em vez de um quadro de uma linha só. A escolha
+  // não é apagada: quando a lista volta a ter dois, o quadro volta sozinho.
+  const temQuadro = quadroDisponivel(pessoas.length);
+  const visao: VisaoDaAgenda =
+    visaoEscolhida === "quadro" && !temQuadro ? "semana" : visaoEscolhida;
 
   // A JANELA ACOMPANHA O MÊS QUE O PAINEL MOSTRA.
   //
@@ -768,7 +778,7 @@ export function AgendaClient({
             data-testid="alternador-de-visao"
             className="flex items-center gap-0.5 rounded-md border border-border bg-surface p-0.5"
           >
-            {VISOES.map((v) => (
+            {VISOES.filter((v) => v.id !== "quadro" || temQuadro).map((v) => (
               <button
                 key={v.id}
                 type="button"

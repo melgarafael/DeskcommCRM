@@ -16,10 +16,17 @@ import {
   livresPorColuna,
   minutoNoDia,
   posicionarNaLinha,
+  quadroDisponivel,
 } from "./quadro-por-profissional";
 
 const FUSO = "America/Sao_Paulo";
 const DIA = "2026-09-16";
+
+describe("quadroDisponivel", () => {
+  it("só com dois ou mais profissionais com agenda (doc 307)", () => {
+    expect([0, 1, 2, 5].map(quadroDisponivel)).toEqual([false, false, true, true]);
+  });
+});
 
 describe("colunasDoQuadro", () => {
   it("cobre da primeira hora até o FIM da última, no passo pedido", () => {

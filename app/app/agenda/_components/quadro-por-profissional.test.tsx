@@ -235,7 +235,11 @@ function montar({
   const cliente = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  return render(arvore(cliente, agendamentos, podeMarcar));
+}
+
+function arvore(cliente: QueryClient, agendamentos: Agendamento[], podeMarcar: boolean) {
+  return (
     <QueryClientProvider client={cliente}>
       <AgendaClient
         fusoDaAgenda="America/Sao_Paulo"
@@ -248,7 +252,7 @@ function montar({
         agendamentosIniciais={agendamentos}
         podeMarcar={podeMarcar}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
 }
 
@@ -291,6 +295,53 @@ describe("Quadro por profissional — uma visão da mesma agenda", () => {
 
     expect(screen.getByTestId("linha-profissional-ana")).toBeTruthy();
     expect(screen.queryByTestId("linha-profissional-bruno")).toBeNull();
+  });
+});
+
+/**
+ * O QUADRO SÓ APARECE COM DOIS OU MAIS PROFISSIONAIS COM AGENDA — decisão do
+ * dono do produto (doc 307). Para quem atende sozinho, uma linha por pessoa é
+ * a visão Dia deitada: um botão a mais que não serve para nada. A conta sai da
+ * mesma lista do filtro de pessoas, e é medida nos dois sentidos.
+ */
+describe("Quadro por profissional — só com dois ou mais profissionais", () => {
+  it("com UM profissional, 'Quadro' não aparece no alternador — e as outras três seguem lá", () => {
+    montar({ pessoas: [ANA] });
+
+    expect(screen.queryByTestId("visao-quadro")).toBeNull();
+    expect(screen.getByTestId("visao-dia")).toBeTruthy();
+    expect(screen.getByTestId("visao-semana")).toBeTruthy();
+    expect(screen.getByTestId("visao-mes")).toBeTruthy();
+  });
+
+  it("sem NENHUM profissional na lista, 'Quadro' também não aparece", () => {
+    montar({ pessoas: [] });
+
+    expect(screen.queryByTestId("visao-quadro")).toBeNull();
+  });
+
+  it("com DOIS profissionais, 'Quadro' aparece", () => {
+    montar({ pessoas: [ANA, BRUNO] });
+
+    expect(screen.getByTestId("visao-quadro")).toBeTruthy();
+  });
+
+  it("se a equipe cai para um com o quadro aberto, a tela volta à visão padrão sem quebrar", async () => {
+    const cliente = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    estado.pessoas = [ANA, BRUNO];
+    estado.vivos = AGENDAMENTOS;
+    const { rerender } = render(arvore(cliente, AGENDAMENTOS, true));
+    await abrirQuadro();
+
+    estado.pessoas = [ANA];
+    rerender(arvore(cliente, AGENDAMENTOS, true));
+
+    expect(screen.queryByTestId("quadro-por-profissional")).toBeNull();
+    expect(screen.queryByTestId("visao-quadro")).toBeNull();
+    expect(screen.getByTestId("grade-da-agenda").getAttribute("data-visao")).toBe("semana");
+    expect(screen.getByTestId("visao-semana").getAttribute("aria-pressed")).toBe("true");
   });
 });
 
