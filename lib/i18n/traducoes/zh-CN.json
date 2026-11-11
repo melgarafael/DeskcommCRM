@@ -6025,5 +6025,8 @@
   "A apresentação do catálogo está desligada nesta empresa.": "此公司已关闭目录介绍。",
   "O áudio precisa ser OGG/Opus, WebM/Opus ou M4A válido.": "音频必须是有效的 OGG/Opus、WebM/Opus 或 M4A。",
   "Apresentação do catálogo pela IA": "AI 目录介绍",
-  "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": "每个产品都可以有文字或音频介绍（可含照片和价格），客户询问时由 AI 客服按顺序发送。"
+  "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": "每个产品都可以有文字或音频介绍（可含照片和价格），客户询问时由 AI 客服按顺序发送。",
+  "O aviso da Meta chegou sem as respostas do formulário, e a busca das respostas está desligada nesta fonte. Cole o token da página e ligue a busca para os próximos entrarem.": "Meta 的通知没有附带表单答案，且此来源的答案查询已关闭。请粘贴主页令牌并开启查询，以便后续线索进入。",
+  "A busca das respostas na Meta não deu certo: o token pode ter vencido, estar sem permissão de leads, ou a Meta não respondeu. Confira o token da página nesta fonte.": "在 Meta 查询答案失败：令牌可能已过期、没有线索权限，或 Meta 没有响应。请检查此来源的主页令牌。",
+  "A Meta avisou um lead da página desta fonte, mas a fonte está pausada. Reative-a para os próximos entrarem.": "Meta 通知了来自此来源主页的线索，但该来源已暂停。请重新启用，以便后续线索进入。"
 }
