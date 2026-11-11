@@ -111,6 +111,21 @@ function parseFrontmatter(raw: string): { name?: string; description?: string; m
   return { name, description, matcher };
 }
 
+/**
+ * Raiz do pacote: `''` para o zip que já traz o SKILL.md na raiz, ou o
+ * diretório de topo que embrulha a skill (`humanizer-main/`). Devolve a lista
+ * de candidatos quando há mais de um — ambiguidade não se adivinha.
+ */
+function raizDoPacote(entryNames: string[]): { prefixo: string } | { candidatos: string[] } {
+  if (entryNames.includes('SKILL.md')) return { prefixo: '' };
+  const candidatos = entryNames.flatMap((p) => {
+    const m = /^([^/]+)\/SKILL\.md$/.exec(p);
+    return m === null ? [] : [m[1] as string];
+  });
+  if (candidatos.length === 1) return { prefixo: `${candidatos[0]}/` };
+  return { candidatos };
+}
+
 export function parseSkillPackage(zipBytes: Uint8Array): ParseSkillResult {
   // Guard contra zip-bomb: fflate expõe o tamanho DECLARADO (do header local do zip) a este
   // filtro ANTES de inflar cada entrada — recusamos aqui, sem nunca descomprimir o conteúdo
@@ -181,7 +196,27 @@ export function parseSkillPackage(zipBytes: Uint8Array): ParseSkillResult {
     }
   }
 
-  const skillMdBytes = unzipped['SKILL.md'];
+  // Um `.zip` baixado de repositório (o "Download ZIP" do GitHub) vem embrulhado
+  // num diretório de topo — `humanizer-main/SKILL.md`. O SKILL.md está na raiz
+  // DESSE diretório, não na raiz do zip. A raiz do pacote é o embrulho quando é
+  // o ÚNICO diretório de topo com SKILL.md; com dois candidatos, escolher um
+  // seria adivinhar — a recusa continua com o MESMO code, agora nomeando-os.
+  const raiz = raizDoPacote(entryNames);
+  if ('candidatos' in raiz) {
+    if (raiz.candidatos.length === 0) {
+      return fail('skill_md_missing', 'O pacote precisa de um arquivo SKILL.md na raiz.');
+    }
+    return fail(
+      'skill_md_missing',
+      `O pacote tem SKILL.md em mais de um diretório (${raiz.candidatos.join(', ')}) — não dá para escolher por você. Envie um .zip com um diretório só.`,
+    );
+  }
+  const prefixo = raiz.prefixo;
+  /** Caminho do arquivo DENTRO da skill (sem o diretório de embrulho), ou null se está fora dele. */
+  const caminhoDaSkill = (p: string): string | null =>
+    prefixo === '' ? p : p.startsWith(prefixo) ? p.slice(prefixo.length) : null;
+
+  const skillMdBytes = unzipped[`${prefixo}SKILL.md`];
   if (skillMdBytes === undefined) {
     return fail('skill_md_missing', 'O pacote precisa de um arquivo SKILL.md na raiz.');
   }
@@ -223,28 +258,37 @@ export function parseSkillPackage(zipBytes: Uint8Array): ParseSkillResult {
 
   const files: Array<{ path: string; bytes: Uint8Array; entry: SkillManifestEntry }> = [];
   for (const p of entryNames) {
-    if (p === 'SKILL.md') continue;
+    const caminho = caminhoDaSkill(p);
+    // Num pacote embrulhado, o que ficou FORA da pasta da skill é mobília do
+    // repositório (README, LICENSE, .github/…) e não é conteúdo da skill.
+    if (caminho === null) continue;
+    if (caminho === 'SKILL.md') continue;
     const bytes = unzipped[p];
     if (bytes === undefined) continue;
 
     let kind: 'reference' | 'asset';
-    if (p.startsWith('references/')) {
+    if (caminho.startsWith('references/')) {
       kind = 'reference';
-    } else if (p.startsWith('assets/')) {
-      const ext = extensionOf(p);
+    } else if (caminho.startsWith('assets/')) {
+      const ext = extensionOf(caminho);
       if (!ASSET_EXTENSIONS.has(ext)) {
-        return fail('skill_asset_extension_invalid', `Extensão não permitida em "${p}" — use: ${[...ASSET_EXTENSIONS].join(', ')}.`);
+        return fail('skill_asset_extension_invalid', `Extensão não permitida em "${caminho}" — use: ${[...ASSET_EXTENSIONS].join(', ')}.`);
       }
       kind = 'asset';
+    } else if (prefixo !== '') {
+      // Dentro do embrulho, README/LICENSE/scripts/… são do repositório: ficam
+      // de fora do manifest em vez de recusar o pacote — o "Download ZIP" do
+      // GitHub sempre os traz. references/ e assets/ acima seguem estritos.
+      continue;
     } else {
       return fail(
         'skill_unexpected_path',
-        `Arquivo fora do esperado: "${p}" — o pacote só aceita SKILL.md, references/ e assets/.`,
+        `Arquivo fora do esperado: "${caminho}" — o pacote só aceita SKILL.md, references/ e assets/.`,
       );
     }
 
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    files.push({ path: p, bytes, entry: { path: p, size: bytes.byteLength, sha256, kind } });
+    files.push({ path: caminho, bytes, entry: { path: caminho, size: bytes.byteLength, sha256, kind } });
   }
 
   return {

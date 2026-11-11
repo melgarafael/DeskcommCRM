@@ -231,6 +231,20 @@ async function comOCliente<T>(
 }
 
 /**
+ * A ÚNICA leitura de `annotations.readOnlyHint` do repositório (#3575).
+ *
+ * `=== true` EXATAMENTE: ausente, `false` ou string são "não declarado como
+ * leitura". A declaração do servidor é metade da prova (a outra é a marca de
+ * quem administra, em `tool_ids`), então ela não pode ser afrouxada — e não
+ * pode ser reescrita em outro lugar: quem precisa da regra chama esta função.
+ */
+export function declarouSomenteLeitura(
+  annotations: { readOnlyHint?: unknown } | null | undefined,
+): boolean {
+  return annotations?.readOnlyHint === true;
+}
+
+/**
  * As ferramentas que o servidor anuncia. Nome fora do formato do protocolo é
  * descartado ali, antes de virar tool no modelo — um nome com espaço ou emoji
  * não sobreviveria ao montador de ferramentas do runtime.
@@ -256,10 +270,11 @@ export async function listarFerramentasDoServidor(
       ...(typeof ferramenta.description === "string"
         ? { description: ferramenta.description }
         : {}),
-      // `annotations.readOnlyHint === true` EXATAMENTE: ausente, `false` ou
-      // outro valor é "não declarado como leitura", que vira escrita na
-      // classificação (item 8) — a declaração do servidor não é garantia.
-      ...(ferramenta.annotations?.readOnlyHint === true ? { somenteLeitura: true } : {}),
+      // `readOnlyHint === true` EXATAMENTE (ver `declarouSomenteLeitura`):
+      // ausente, `false` ou outro valor é "não declarado como leitura", que
+      // vira escrita na classificação (item 8) — a declaração do servidor não
+      // é garantia.
+      ...(declarouSomenteLeitura(ferramenta.annotations) ? { somenteLeitura: true } : {}),
       ...(ferramenta.inputSchema ? { inputSchema: ferramenta.inputSchema } : {}),
     })) as FerramentaRemota[];
 }

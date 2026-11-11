@@ -139,6 +139,12 @@ export const AUDIT_ACTIONS = [
   // automático numa conversa não tinha rota e, portanto, não tinha ação de
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
+  // Ligar a IA numa conversa que tem dono, sem soltar o dono (#3967), é decisão
+  // auditável nos dois sentidos: quem ligou, em que conversa, e quando desligou.
+  // O par existe para que "por que a IA falou nessa conversa que é minha?"
+  // tenha resposta sem abrir o histórico inteiro.
+  "conversation.ai_with_owner_enabled",
+  "conversation.ai_with_owner_disabled",
   "conversation.tags_changed",
   // (migration 9062) Mudar a FILA de uma conversa é decisão auditável: quem
   // escolheu, de qual fila para qual, e se aquilo disparou redistribuição. Sem
@@ -197,6 +203,10 @@ export const AUDIT_ACTIONS = [
   "phone_number.created",
   "phone_number.updated",
   "ai.handoff_triggered",
+  // A pausa da IA por atendimento manual NÃO foi gravada (0 linhas / erro): a
+  // conversa pode ter ficado sem pausa e a IA falar por cima do atendente. O
+  // `metadata.motivo` nomeia corrida, conversa inexistente ou falha de escrita.
+  "ai.pausa_nao_gravada",
   "ai.reactivated_by_agent",
   "conversation.usable_for_rag_toggled",
   "rag.conversations_batch_run",
@@ -1357,6 +1367,10 @@ export const AUDIT_ACTIONS = [
   // as gravações que ela deixou passar.
   "crm.telefone_de_ficha_vazia_alterado",
   "crm.nome_informado_alterado",
+  // O admin ligou/desligou a SUGESTÃO de duplicado pelo nome (#4138). É a opção
+  // que decide se a tela de limpeza de contatos mostra "Parecidos — confira" —
+  // o ato administrativo que abriu (ou fechou) essa seção para a organização.
+  "crm.duplicados_por_nome_alterado",
   // O admin ligou/desligou o aviso das transferências para atendimento humano
   // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
   "crm.aviso_de_transferencia_alterado",
@@ -1523,6 +1537,13 @@ export const AUDIT_ACTIONS = [
   // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
   // o evento, não o conteúdo — mesma regra de message.edited/revoked.
   "message.reaction_sent",
+  // A mudança de STATUS de uma manifestação (#3611, fatia 3). O metadata leva
+  // `de`, `para`, `reabertura` e — só quando existe — o motivo da reabertura.
+  // NUNCA o texto do relato: `api_audit_log` é append-only e a cascata de LGPD
+  // não a alcança, então o dado sigiloso da ouvidoria não entra aqui. Este
+  // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
+  // aceitável: a única porta da escrita deixa rastro.
+  "ouvidoria.status_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

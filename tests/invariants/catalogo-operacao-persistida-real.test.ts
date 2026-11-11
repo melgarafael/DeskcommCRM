@@ -57,9 +57,18 @@ async function fixture(){
 type Fixture=Awaited<ReturnType<typeof fixture>>;
 function input(f:Fixture){return{organizationId:f.org,contactId:f.contact,jobId:f.job.id,claim:claimOfJob(f.job)!,agentOperation:f.operation,sendsAlreadyCounted:0,maxSendsPerTurn:10,orderedProductCodes:["A","B"]};}
 async function persisted(f:Fixture){return(await pool.query<JobRow>("select *,locked_at::text claim_acquired_at from job_queue where organization_id=$1 and id=$2",[f.org,f.job.id])).rows[0]!;}
+// O UPDATE cru roda como SERVIDOR (service_role), e não mais como a sessão de
+// quem usa o sistema: desde a migration 9243 (#4240) o gatilho
+// `trg_contacts_fusao_e_anonimizacao_so_pelo_servidor` recusa com 42501 a
+// sessão que tenta virar `is_anonymized`, antes de a barreira de concorrência
+// ser consultada. O que estes casos medem é a barreira (40001
+// `contact_redaction_busy`, a espera no mutex e o snapshot limpo), e ela vale
+// para o servidor também — mesma troca que
+// `fila-snapshot-e-lgpd-concorrencia.test.ts` recebeu no #4240 (doc 298, item 1).
+// A recusa da sessão tem caso próprio naquele arquivo.
 async function directAnonymize(client:pg.PoolClient,f:Fixture){
-  await client.query("begin;set local role authenticated;set local statement_timeout='5s'");
-  await client.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:f.user,role:"authenticated"})]);
+  await client.query("begin;set local role service_role;set local statement_timeout='5s'");
+  await client.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({role:"service_role"})]);
   return client.query("update contacts set is_anonymized=true,anonymized_at=clock_timestamp() where organization_id=$1 and id=$2 returning id",[f.org,f.contact]);
 }
 

@@ -1808,6 +1808,38 @@ function PipelineEditor({
                 )}
               </p>
             </div>
+            {/* ── NO RESUMO DA PASSAGEM (issue #4303) ────────────────────────
+                O interruptor que leva o valor deste campo ao cartão de
+                passagem para humano. Mesma disciplina de `multiple`: desmarcar
+                APAGA a chave, então o funil que ninguém tocou continua
+                idêntico ao de antes (ausente = desligado, ver o schema). Só
+                campo do NEGÓCIO: é o `crm_leads.custom_fields` que a passagem
+                lê — prometer o mesmo para campo do contato seria mentir. */}
+            {escopoDoCampo(f) === "negocio" && (
+              <div className="space-y-1 lg:col-span-4">
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("Mostrar no resumo da passagem")} — ${f.label || i + 1}`}
+                    checked={f.mostrar_no_resumo_da_passagem === true}
+                    onChange={(ev) => {
+                      const next = [...fields];
+                      const { mostrar_no_resumo_da_passagem: _apagada, ...semOpcao } = f;
+                      next[i] = ev.target.checked
+                        ? { ...f, mostrar_no_resumo_da_passagem: true }
+                        : (semOpcao as CustomFieldDef);
+                      setFields(next);
+                    }}
+                  />
+                  {t("Mostrar no resumo da passagem")}
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Quando a conversa passa para uma pessoa, o valor que este campo tem no card aparece no resumo do cartão de passagem. Desligado por padrão.",
+                  )}
+                </p>
+              </div>
+            )}
             {/* ── QUANDO ESTE CAMPO APARECE (issues #2728 e #4041) ──────────
                 A condição que a ficha do contato, o dossiê e o painel do inbox
                 leem para ESCONDER o campo: UMA condição (o de sempre) ou uma

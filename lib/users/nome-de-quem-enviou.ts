@@ -39,12 +39,14 @@
  * Enriquecer dentro do handler pagaria o lookup duas vezes em toda chamada do
  * agente. O mesmo motivo já está escrito em `lib/users/com-nome-do-atendente.ts`.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 
-import { nomesDosAtendentes } from "./nome-do-atendente";
+import { nomesDosAtendentes, nomesDosAtendentesCom } from "./nome-do-atendente";
 
 /**
  * Os valores de `sent_via` que o balão rotula como PESSOA. É a mesma lista do
@@ -55,10 +57,62 @@ import { nomesDosAtendentes } from "./nome-do-atendente";
  */
 const ROTULADAS_COMO_PESSOA: ReadonlySet<string> = new Set(["user", "crm"]);
 
+/**
+ * Esta linha pede NOME de gente? A régua é UMA e mora aqui.
+ *
+ * Recebida do cliente (`inbound`) não tem autor interno: o `sent_by_user_id` da
+ * linha é do sistema que a gravou, não de quem falou, e chamá-lo de "atendente"
+ * seria inventar autoria. IA, automação, sistema e celular idem — o rótulo que a
+ * tela desenha para elas não é nome de pessoa.
+ */
+export function mereceNomeDeQuemEnviou(
+  m: Pick<Message, "direction" | "sent_via" | "sent_by_user_id">,
+): boolean {
+  return (
+    m.direction === "outbound" &&
+    ROTULADAS_COMO_PESSOA.has(m.sent_via) &&
+    Boolean(m.sent_by_user_id)
+  );
+}
+
 export type MensagemComNomeDeQuemEnviou = Message & {
   /** `null` = não resolvido (sem service role, usuário removido, linha sem id). */
   sent_by_user_name: string | null;
 };
+
+/**
+ * O nome por ID DE MENSAGEM, para quem já tem o admin client na mão (#4077).
+ *
+ * É a mesma leitura de `comNomeDeQuemEnviou`, com o client de quem chama — o
+ * mesmo par que `nome-do-atendente.ts` já expõe (`nomesDosAtendentes` /
+ * `nomesDosAtendentesCom`). Existe porque a tool MCP
+ * `crm_get_conversation_history` recebe o admin client no contexto (`ctx.supabase`)
+ * e não pode abrir um segundo: a regra de vínculo com a organização continua
+ * sendo a de `nomesDosAtendentesCom`, uma só.
+ *
+ * Devolve um mapa `id da mensagem → nome`, com os ids DISTINTOS deduplicados:
+ * UMA consulta por página (vínculo e nome juntos), nunca por autor nem por mensagem.
+ * Quem não merece nome (cliente, IA, automação, sem id) simplesmente não entra no
+ * mapa, e o chamador projeta `null`.
+ */
+export async function nomesDeQuemEnviouCom<
+  T extends Pick<Message, "id" | "sent_via" | "sent_by_user_id" | "direction">,
+>(
+  admin: SupabaseClient,
+  orgId: string,
+  mensagens: readonly T[],
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const ids = mensagens.filter(mereceNomeDeQuemEnviou).map((m) => m.sent_by_user_id as string);
+  if (ids.length === 0) return out;
+
+  const nomes = await nomesDosAtendentesCom(admin, orgId, ids);
+  for (const m of mensagens) {
+    if (!mereceNomeDeQuemEnviou(m)) continue;
+    out.set(m.id, nomes.get(m.sent_by_user_id as string) ?? null);
+  }
+  return out;
+}
 
 /**
  * Acrescenta `sent_by_user_name` às mensagens de UMA página.
@@ -74,12 +128,7 @@ export type MensagemComNomeDeQuemEnviou = Message & {
 export async function comNomeDeQuemEnviou<
   T extends Pick<Message, "sent_via" | "sent_by_user_id" | "direction">,
 >(mensagens: T[], orgId: string): Promise<Array<T & { sent_by_user_name: string | null }>> {
-  const mereceNome = (m: T) =>
-    m.direction === "outbound" &&
-    ROTULADAS_COMO_PESSOA.has(m.sent_via) &&
-    Boolean(m.sent_by_user_id);
-
-  const ids = mensagens.filter(mereceNome).map((m) => m.sent_by_user_id);
+  const ids = mensagens.filter(mereceNomeDeQuemEnviou).map((m) => m.sent_by_user_id);
 
   const membros = ids.length > 0 ? await membrosDaOrganizacao(orgId, ids) : [];
   const nomes =
@@ -88,7 +137,9 @@ export async function comNomeDeQuemEnviou<
   return mensagens.map((m) => ({
     ...m,
     sent_by_user_name:
-      mereceNome(m) && m.sent_by_user_id ? (nomes.get(m.sent_by_user_id) ?? null) : null,
+      mereceNomeDeQuemEnviou(m) && m.sent_by_user_id
+        ? (nomes.get(m.sent_by_user_id) ?? null)
+        : null,
   }));
 }
 

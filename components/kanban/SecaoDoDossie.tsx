@@ -38,8 +38,12 @@ import { cn } from "@/lib/utils";
  */
 export const CHAVE_DAS_SECOES_RECOLHIDAS = "dossie:secoes-recolhidas";
 
-/** As três seções que o autor citou. `Tarefas` e `Propostas` ficam de fora. */
-export type IdDeSecao = "contato" | "dados-do-negocio" | "linha-do-tempo";
+/**
+ * As seções recolhíveis do dossiê. As três do autor (#3181) e, depois delas, a
+ * seção dos números do cliente (#3669), que só existe quando há relacionado.
+ * `Tarefas` e `Propostas` ficam de fora.
+ */
+export type IdDeSecao = "contato" | "numeros-do-negocio" | "dados-do-negocio" | "linha-do-tempo";
 
 function gravar(fechadas: Set<string>): void {
   try {

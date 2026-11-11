@@ -20,6 +20,7 @@ import { VALIDADE_DO_LINK_DE_MIDIA_S } from "@/lib/messaging/media/link-temporar
 import { getQueuePositions } from "@/lib/routing/queue";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
+import { nomesDeQuemEnviouCom } from "@/lib/users/nome-de-quem-enviou";
 import type { McpToolDefinition } from "../types";
 
 /**
@@ -33,12 +34,14 @@ import type { McpToolDefinition } from "../types";
 function isInQueue(c: { comando_da_conversa?: string | null }): boolean {
   // Ele decide UMA coisa: vale a pena buscar as posições de fila para esta
   // página? Por isso é liberal de propósito — pergunta "não tem dono e não
-  // acabou", que cobre tanto a org COM automático (só `aguardando` está na fila)
-  // quanto a SEM (`automatico` também está, ver `comandosDaFila`). Errar para o
-  // lado do sim custa uma consulta; errar para o não some com a posição que a IA
-  // devolve ao cliente.
+  // acabou", que cobre as três respostas que a Fila aceita em `comandosDaFila`:
+  // `aguardando`, `ninguem` (desde a #4012 o banco diz isso quando a organização
+  // não tem agente no ar) e `automatico` (a janela
+  // entre o deploy e a migration, em que o banco ainda devolve `automatico`).
+  // Errar para o lado do sim custa uma consulta; errar para o não some com a
+  // posição que a IA devolve ao cliente.
   const q = c.comando_da_conversa;
-  return q === "aguardando" || q === "automatico";
+  return q === "aguardando" || q === "ninguem" || q === "automatico";
 }
 
 const listInputShape = {
@@ -330,6 +333,7 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
   name: "crm_get_conversation_history",
   description:
     "Carrega historico de mensagens de uma conversa. Use para dar contexto ao agente sem inflar o system prompt." +
+    " Cada mensagem traz sent_by_user_id e sent_by_user_name (nome de quem da equipe enviou, quando resolvivel; vazio para cliente, IA, automacao e sistema)." +
     " Em conversa de atendimento, devolve apenas o histórico da conversa do contato desta conversa.",
   inputSchema: historyInputShape,
   category: "read",
@@ -413,6 +417,25 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
     const media = await resolverMidiasDoHistorico(result.messages, {
       comLink: !ctx.contatoDoTurno,
     });
+    // ── QUEM DA EQUIPE FALOU, E POR QUE ISSO CUSTA UMA LEITURA POR PÁGINA (#4077) ──
+    //
+    // `sent_by_user_id` já vinha na linha (`MSG_COLS`), mas a projeção abaixo o
+    // jogava fora: quem lê por token sabia que a mensagem foi de PESSOA
+    // (`sent_via`) e não sabia de qual. O nome não é coluna — mora em
+    // `auth.users`, que o PostgREST não expõe —, então sai da MESMA resolução
+    // que o balão do inbox usa (#4031), com os ids DISTINTOS da página: UMA
+    // consulta (`fn_nomes_dos_membros`, que responde vínculo e nome juntos),
+    // nunca uma por autor nem por mensagem.
+    //
+    // DUAS COISAS QUE O MAPA VAZIO DIZ. Mensagem de cliente (`inbound`), de IA,
+    // de automação, de sistema ou de celular NÃO pede nome (`mereceNomeDeQuemEnviou`):
+    // sai com `sent_by_user_id` nulo e nome nulo — vazio, não um "sistema" de
+    // mentira. E o nome só se resolve para quem tem vínculo com a organização do
+    // chamador: id de fora, usuário removido ou falha da leitura devolvem nulo, e
+    // o `sent_by_user_id` continua sendo a verdade. Nada aqui amplia o conjunto
+    // de conversas que o chamador já podia ler — é projeção sobre a página que
+    // veio do handler, depois da RLS/escopo dele.
+    const autores = await nomesDeQuemEnviouCom(ctx.supabase, ctx.organizationId, result.messages);
     return {
       messages: result.messages.map((m) => ({
         id: m.id,
@@ -429,6 +452,8 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
         media_status: media.get(m.id)?.status ?? "none",
         media_signed_url: media.get(m.id)?.signedUrl ?? null,
         sent_via: m.sent_via,
+        sent_by_user_id: m.sent_by_user_id ?? null,
+        sent_by_user_name: autores.get(m.id) ?? null,
         sent_at: m.sent_at,
         status: m.status,
       })),
