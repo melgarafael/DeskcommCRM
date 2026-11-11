@@ -17,12 +17,13 @@ const CAT = "cccccccc-3333-4333-8333-333333333333";
 const INST_1 = "dddddddd-0001-4444-8444-444444444444";
 const INST_2 = "dddddddd-0002-4444-8444-444444444444";
 
-const display = {
+// Função, não constante: o validador do catálogo recusa o MESMO objeto em dois lugares (grafo, não árvore).
+const display = () => ({
   title: { "pt-BR": "Comanda", es: "Comanda ES" },
   summary: { "pt-BR": "Resumo" },
   category: "sales",
   icon: "ListChecks",
-};
+});
 
 function entrada(name: string, serviceOrigin?: string) {
   return {
@@ -31,7 +32,7 @@ function entrada(name: string, serviceOrigin?: string) {
     version: "1.0.0",
     license: "MIT",
     host_api: { min: 2, max: 2 },
-    display,
+    display: display(),
     permissions: ["area.contatos.leitura"],
     sha256: "a".repeat(64),
     byte_length: 100,
@@ -44,7 +45,7 @@ function manifesto(over: Record<string, unknown> = {}) {
     profile: "connected",
     host_api: { min: 2, max: 2 },
     permissions: ["area.contatos.leitura"],
-    display,
+    display: display(),
     ...over,
   };
 }
