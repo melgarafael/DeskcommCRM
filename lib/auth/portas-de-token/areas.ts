@@ -128,6 +128,11 @@ const SEM_AREA: readonly EntradaSemArea[] = [
   e("financeiro/comandas"), // comandas: nenhuma área decidida
   e("financeiro/fidelidade"), // saldo e extrato de pontos: nenhuma área decidida
   e("tasks"), // tarefas: a área não nasce agora
+  // Dinheiro que não se desfaz: nenhum método ganha área, mesmo que a área do financeiro nasça um dia.
+  e("financeiro/comandas/[id]/finalizar"), // fecha a comanda e gera o recebimento
+  e("financeiro/comandas/[id]/estornar"), // devolve dinheiro
+  e("financeiro/comandas/faturar-lote"), // fatura várias comandas de uma vez
+  e("honorarios/parcelas/[id]/pagar"), // dá baixa numa parcela de honorário
   e("demandas"), // demandas: a área não nasce agora
 
   // --- 5b. Escritas que gastam dinheiro da organização ou não se desfazem: lado seguro (decisão
