@@ -1,7 +1,7 @@
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import type { MidiaDeTemplate } from "@/lib/templates/midias";
 import { VARIAVEIS_DE_NOME_DO_CONTATO } from "@/lib/variaveis/catalogo";
-import { marcacoesNoTexto, resolverVariaveis, type InstanteDoEnvio } from "@/lib/variaveis/resolvedor";
+import { resolverVariaveis, type InstanteDoEnvio } from "@/lib/variaveis/resolvedor";
 
 /**
  * Interpola variáveis de template com dados do contato da conversa (Onda 5).
@@ -31,8 +31,6 @@ export interface TemplateContact {
  */
 const VARIAVEIS_DE_NOME = VARIAVEIS_DE_NOME_DO_CONTATO;
 
-/** A marcação é lida pelo resolvedor único (`marcacoesNoTexto`), não por regex local. */
-
 /**
  * Nome completo a usar: a regra central de `nomeDoContato` — `name` (CRM) vence,
  * vazio cai no `displayName` (canal), e identificador técnico (`Contato 5431@lid`)
@@ -47,11 +45,23 @@ function nomeResolvido(contact: TemplateContact): string {
  * NENHUM dos dois nomes: o literal sobrevive à interpolação, e o operador
  * precisa saber disso antes de mandar (issue #2744). Chave desconhecida não
  * conta — `{{codigo}}` cru é comportamento esperado, não acidente de nome.
+ *
+ * A conta é a MESMA do texto que sai: quem decide se a marcação ficou sem valor
+ * é `resolverVariaveis`, e a lista `vazias` já exclui a marcação que trazia
+ * reserva (`{{primeiro_nome|"aluno"}}`). Ler as marcações por fora contaria a
+ * reserva como falta e travaria uma resposta que sai inteira.
  */
 export function faltouNomeDeContato(body: string, contact: TemplateContact): boolean {
   if (nomeResolvido(contact) !== "") return false;
-  const marcadas = marcacoesNoTexto(body);
-  return VARIAVEIS_DE_NOME.some((key) => marcadas.includes(key.toLowerCase()));
+  const { vazias } = resolverVariaveis(
+    body,
+    {
+      nome: null,
+      contact: { name: contact.name, display_name: contact.displayName },
+    },
+    { fonte: "inbox", quandoVazio: "literal" },
+  );
+  return VARIAVEIS_DE_NOME.some((key) => vazias.includes(key));
 }
 
 /**
