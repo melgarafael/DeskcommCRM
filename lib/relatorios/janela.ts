@@ -32,15 +32,27 @@ import { fusoValido } from "@/lib/reports/atividades";
 export const TZ_PADRAO = "UTC";
 
 /**
- * Teto do intervalo, em dias de calendário (os dois extremos contam).
+ * O TETO DE PERÍODO DA TELA DE FATURAMENTO — um valor e uma conta, para as duas
+ * rotas que a tela chama com o mesmo `de`/`ate`: `/reports/financeiro` (os
+ * números) e `/reports/comercial` (os rankings de negócios ganhos).
  *
- * Mesma ordem de grandeza de `/reports/financeiro` (400) e folgado em relação a
- * `/reports/tags` (90): aqui a leitura é de negócios GANHOS — uma fração da
- * base —, mas o relatório não é um "desde sempre": um ano fecha o ciclo
- * comercial e mantém a resposta abaixo do teto de páginas na maioria das
- * organizações.
+ * Enquanto cada rota tinha o seu teto (400 e 366), um período que a tela
+ * aceitava fazia os cartões aparecerem e o bloco dos rankings responder erro. O
+ * volume dos rankings segue protegido pelo teto de páginas, com `truncado`
+ * declarado — não por um teto de dias menor que o da tela.
  */
-export const DIAS_MAXIMOS = 366;
+export const JANELA_MAXIMA_DIAS = 400;
+
+/**
+ * O período passa do teto? A régua é a DISTÂNCIA entre os dois dias (`ate - de`),
+ * a mesma que `/reports/financeiro` sempre usou: de 01/01 a 05/02 do ano seguinte
+ * são 400 e passam; um dia a mais, não. Data impossível dá `NaN`, e `NaN` não
+ * passa do teto — recusar formato é trabalho do Zod de cada rota, não daqui.
+ */
+export function periodoPassaDoTeto(de: string, ate: string): boolean {
+  const dias = (Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000;
+  return dias > JANELA_MAXIMA_DIAS;
+}
 
 /**
  * O fuso pedido serve? Nome torto vai para `Intl` e levanta exceção — a entrada
@@ -49,12 +61,6 @@ export const DIAS_MAXIMOS = 366;
 export function fusoDoRelatorio(tz: string | null | undefined): string {
   const limpo = (tz ?? "").trim();
   return limpo !== "" && fusoValido(limpo) ? limpo : TZ_PADRAO;
-}
-
-/** Dias de calendário cobertos pela janela, contando os dois extremos. */
-export function diasDeJanela(de: string, ate: string): number {
-  const ms = Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`);
-  return Math.round(ms / 86_400_000) + 1;
 }
 
 /** O dia civil seguinte a `YYYY-MM-DD` (aritmética em UTC, sem fuso). */

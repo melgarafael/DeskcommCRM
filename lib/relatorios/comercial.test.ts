@@ -71,7 +71,7 @@ describe("(a) faturamento do período", () => {
     expect(relatorio.negocios_ganhos).toBe(3);
   });
 
-  it("negócio de outra moeda fica fora dos três números e é CONTADO", () => {
+  it("negócio de outra moeda fica fora dos dois rankings e é CONTADO", () => {
     const relatorio = montar([
       negocio({ id: "brl", value_cents: 10_000, contact_id: "c1", tags: ["plano"] }),
       negocio({

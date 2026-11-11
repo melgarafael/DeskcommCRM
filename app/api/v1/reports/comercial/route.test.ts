@@ -235,6 +235,31 @@ describe("GET /api/v1/reports/comercial", () => {
     expect(res.status).toBe(422);
   });
 
+  // O teto é o MESMO da rota de faturamento (400 dias entre `de` e `ate`): a tela
+  // chama as duas com o mesmo período, e os rankings não podem responder erro
+  // num período em que os cartões aparecem. Antes eram 366 aqui e 400 lá.
+  it("400 dias entre as datas é aceito — o mesmo teto da tela de Faturamento", async () => {
+    authOk();
+    makeDb([]);
+
+    const { GET } = await import("./route");
+    const res = await GET(pedir("?de=2025-01-01&ate=2026-02-05"));
+
+    expect(res.status).toBe(200);
+  });
+
+  it("401 dias entre as datas é recusado, e o teto vai dito em details", async () => {
+    authOk();
+    makeDb([]);
+
+    const { GET } = await import("./route");
+    const res = await GET(pedir("?de=2025-01-01&ate=2026-02-06"));
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as { error: { details?: { maximo_dias?: number } } };
+    expect(corpo.error.details?.maximo_dias).toBe(400);
+  });
+
   it("sem auth repassa a resposta do requireRole e não lê o banco", async () => {
     vi.mocked(requireRole).mockResolvedValue({
       ok: false,

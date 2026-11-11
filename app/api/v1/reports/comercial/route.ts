@@ -56,8 +56,9 @@
  * no banco é `[início de 'de', início do dia seguinte a 'ate')` — o `ate` entra
  * inteiro e a virada da meia-noite não conta duas vezes. Sem `de`/`ate` o
  * período é o mês corrente até hoje, e a resposta marca `padrao: true`. Teto:
- * `DIAS_MAXIMOS` (366) — acima disso é 422, não um relatório que varre a
- * história inteira.
+ * `JANELA_MAXIMA_DIAS` (400), O MESMO de `/reports/financeiro` e pela mesma
+ * conta (`periodoPassaDoTeto`) — as duas rotas respondem à mesma tela com o
+ * mesmo período, e uma não pode recusar o que a outra aceita. Acima disso é 422.
  */
 import { randomUUID } from "node:crypto";
 
@@ -68,10 +69,10 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
-  DIAS_MAXIMOS,
-  diasDeJanela,
+  JANELA_MAXIMA_DIAS,
   janelaDoRelatorio,
   periodoPadrao,
+  periodoPassaDoTeto,
 } from "@/lib/relatorios/janela";
 import {
   montarRelatorioComercial,
@@ -153,12 +154,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("validation_failed", t("A data inicial é depois da final."), 422, { requestId });
   }
 
-  const dias = diasDeJanela(deTexto, ateTexto);
-  if (dias > DIAS_MAXIMOS) {
+  if (periodoPassaDoTeto(deTexto, ateTexto)) {
     // A frase não carrega o número (template em `t()` não tem tradução): o
     // teto vai em `details`, que é dado, e a mensagem é literal traduzível.
     return fail("validation_failed", t("O período é maior do que este relatório cobre."), 422, {
-      details: { maximo_dias: DIAS_MAXIMOS },
+      details: { maximo_dias: JANELA_MAXIMA_DIAS },
       requestId,
     });
   }

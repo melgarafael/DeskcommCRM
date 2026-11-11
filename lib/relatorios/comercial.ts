@@ -1,33 +1,24 @@
 /**
  * OS DOIS RANKINGS DE NEGÓCIOS GANHOS — etiquetas que mais vendem e clientes que
- * mais compram. Moram DENTRO da tela de Faturamento (decisão do dono, doc 306):
- * este módulo NÃO devolve um total de "quanto vendemos". O número de faturamento
- * que vale é o de `fn_relatorio_financeiro`; um segundo total aqui, somado de
- * outra fonte (negócios ganhos, não comandas), seria um terceiro número parecido
- * que não bate com os outros. O item (a) abaixo descreve a régua do VALOR de cada
- * negócio, que alimenta as linhas dos rankings — não um campo da resposta.
+ * mais compram, mostrados dentro da tela de Faturamento (#4280; leitura do PR
+ * #4295 de @webtecnica).
  *
- * O texto a seguir é o contrato original da #4280 (PR #4295, @webtecnica).
+ * ─── O que este módulo responde, e o que ele NÃO responde ───────────────────
  *
- * O RELATÓRIO COMERCIAL — os TRÊS números da #4280, e só eles.
+ *   1. **quais tags representam mais vendas** (`tags`);
+ *   2. **quais clientes estão comprando** (`clientes`).
  *
- * ─── A pergunta, escrita uma vez ────────────────────────────────────────────
- *
- * O corpo da issue pede um painel que responda, no período:
- *
- *   1. **quanto vendemos** (`faturamento_centavos`);
- *   2. **quais tags representam mais vendas** (`tags`);
- *   3. **quais clientes estão comprando** (`clientes`).
- *
- * Nada além disso mora aqui: não há funil, taxa de conversão, meta, ticket
- * médio nem previsão. Número que não muda uma decisão é ruído — e a pressão para
- * "só acrescentar um gráfico" é o que transforma relatório em painel de vaidade.
+ * NÃO devolve um total de "quanto vendemos". O número de faturamento da tela é o
+ * de `fn_relatorio_financeiro` (comandas e lançamentos); um total somado aqui,
+ * de outra fonte, seria um número parecido que não bate com aquele — e o dia em
+ * que discordassem ninguém saberia qual está certo. Também não há funil, taxa de
+ * conversão, meta, ticket médio nem previsão.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * A DEFINIÇÃO DE CADA NÚMERO (é contrato, não comentário)
+ * A DEFINIÇÃO DE CADA RANKING (é contrato, não comentário)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * UNIVERSO (igual para os três números)
+ * UNIVERSO (igual para os dois rankings)
  *   `crm_leads` com `organization_id` da sessão, `status = 'won'` e `closed_at`
  *   dentro da janela `[from, to)`. `closed_at` é a DATA DA VENDA — é o carimbo
  *   que o trigger escreve junto com o `status` (`lib/conversoes/envio.handler.ts`
@@ -35,27 +26,27 @@
  *   maio e ganho em setembro é venda de setembro.
  *
  *   FICA DE FORA, e é dito:
- *   - negócio ABERTO ou PERDIDO (`status <> 'won'`) — previsão é outra fatia;
- *   - negócio ganho FORA da janela — nem no numerador, nem no denominador;
+ *   - negócio ABERTO ou PERDIDO (`status <> 'won'`) — previsão é outra pergunta;
+ *   - negócio ganho FORA da janela;
  *   - negócio ganho SEM `closed_at` — não há data para recortar; a rota CONTA
  *     quantos são e devolve em `excluidos.sem_data_de_ganho` (nunca zero mudo);
  *   - negócio em OUTRA MOEDA que não a da organização — somar dólar com real
  *     produz um número que não existe em moeda nenhuma; a rota conta quantos
  *     ficaram fora (`excluidos.outra_moeda`) e a tela declara o corte.
  *
- * (a) FATURAMENTO DO PERÍODO — `faturamento_centavos`
- *     Soma de `crm_leads.value_cents` do universo acima, na moeda da
- *     organização. `value_cents` NULO soma 0 e o negócio continua contado em
- *     `negocios_ganhos`; quantos vieram sem valor sai em `negocios_sem_valor`,
- *     porque "R$ 0,00" e "não preenchido" são fatos diferentes. Valor negativo
- *     ou não-finito entra como 0 em vez de DIMINUIR a venda (a mesma régua de
- *     `lib/metrics/valores-do-periodo.ts`).
+ * O VALOR DE CADA NEGÓCIO (o que as linhas somam em `centavos`)
+ *   `crm_leads.value_cents`, na moeda da organização. `value_cents` NULO soma 0
+ *   e o negócio continua contado em `negocios_ganhos` e nas linhas em que
+ *   aparece; quantos vieram sem valor sai em `negocios_sem_valor`, porque
+ *   "R$ 0,00" e "não preenchido" são fatos diferentes. Valor negativo ou
+ *   não-finito entra como 0 em vez de DIMINUIR a venda (a mesma régua de
+ *   `lib/metrics/valores-do-periodo.ts`).
  *
- *     NÃO soma `recurring_value_cents`: a recorrência mensal é a segunda parcela
- *     do negócio (fatia 1 da #3602) e tem painel próprio; somá-la aqui inflaria
- *     o faturamento com meses que ainda não aconteceram.
+ *   NÃO soma `recurring_value_cents`: a recorrência mensal é a segunda parcela
+ *   do negócio (fatia 1 da #3602); somá-la aqui inflaria as linhas com meses que
+ *   ainda não aconteceram.
  *
- * (b) TAG QUE MAIS VENDE — `tags`
+ * (a) TAG QUE MAIS VENDE — `tags`
  *     Agrupa por `crm_leads.tags` (as etiquetas DO NEGÓCIO — é a dimensão que a
  *     issue nomeia), normalizadas com `lower(btrim(...))`: "Cliente " e
  *     "cliente" são a mesma tag para quem digita. Cada linha traz
@@ -66,10 +57,10 @@
  *     DESEMPATE, nesta ordem: `centavos` desc → `negocios` desc → tag em ordem
  *     alfabética crescente (comparação de código, não de locale: o resultado não
  *     pode mudar com o idioma do servidor).
- *     LIMITE: 10 linhas na resposta — corte de LEITURA da lista, nunca do total
- *     (o faturamento continua somando tudo).
+ *     LIMITE: 10 linhas na resposta — corte de LEITURA da lista
+ *     (`negocios_ganhos` continua contando todos).
  *
- * (c) CLIENTE QUE MAIS COMPRA — `clientes`
+ * (b) CLIENTE QUE MAIS COMPRA — `clientes`
  *     Agrupa por `crm_leads.contact_id`. Negócio ganho SEM contato não é
  *     cliente: fica fora da lista e é contado em `negocios_sem_contato`.
  *     DESEMPATE: `centavos` desc → `negocios` desc → `contact_id` crescente
@@ -77,17 +68,18 @@
  *     renomeia um contato). LIMITE: 10 linhas.
  *
  * PERÍODO VAZIO
- *   Zero EXPLÍCITO: `faturamento_centavos: 0`, `tags: []`, `clientes: []` e
- *   `sem_dados: true` com `motivo`. Não é erro (o período sem venda é um fato
- *   legítimo) e não é uma lista de zeros fingindo ser relatório — a tela diz
- *   "não houve negócio ganho no período" em vez de desenhar barras vazias.
+ *   `tags: []`, `clientes: []`, `negocios_ganhos: 0` e `sem_dados: true` com
+ *   `motivo`. Não é erro (o período sem venda é um fato legítimo) e não é uma
+ *   lista de zeros fingindo ser relatório — a tela diz "nenhum negócio ganho no
+ *   período" em vez de desenhar tabelas vazias.
  *
  * TRUNCADO
  *   `truncado: true` significa que a leitura parou no teto de páginas: os
- *   números são PISO. A tela é obrigada a dizer isso; nunca apresentamos piso
- *   como total (é a mesma doutrina de `/reports/tags` e `/reports/financeiro`).
+ *   valores das linhas são PISO. A tela é obrigada a dizer isso; nunca
+ *   apresentamos piso como total (é a mesma doutrina de `/reports/tags` e
+ *   `/reports/financeiro`).
  *
- * Módulo PURO: recebe linhas já lidas, devolve números. Quem lê o banco é a
+ * Módulo PURO: recebe linhas já lidas, devolve os rankings. Quem lê o banco é a
  * rota (`app/api/v1/reports/comercial/route.ts`) — e é lá que mora a contagem
  * de consultas, declarada no cabeçalho dela.
  */
@@ -273,7 +265,7 @@ export function montarRelatorioComercial(entrada: {
     if (!dentroDaJanela(negocio.closed_at, entrada.janela)) continue;
 
     if (moedaDoNegocio(negocio, moeda) !== moeda) {
-      // Moeda diferente: fora dos TRÊS números, e contada para ser declarada.
+      // Moeda diferente: fora dos dois rankings, e contada para ser declarada.
       outraMoeda += 1;
       continue;
     }
@@ -376,7 +368,7 @@ function notaDoRelatorio(entrada: {
   }
   if (entrada.outraMoeda > 0) {
     partes.push(
-      `${entrada.outraMoeda} negócio(s) ganho(s) em outra moeda ficaram fora: este painel soma na moeda da empresa e não converte.`,
+      `${entrada.outraMoeda} negócio(s) ganho(s) em outra moeda ficaram fora: os rankings somam na moeda da empresa e não convertem.`,
     );
   }
   return partes.length === 0 ? null : partes.join(" ");
