@@ -74869,6 +74869,81 @@ grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 
 notify pgrst, 'reload schema';
 
+-- ---- mensagens agendadas, envio único (migration 9336) ----
+-- #3118, primeira parte (PR #4131, contribuição de @DIOGRO83). O porquê está no
+-- cabeçalho da 9336. Entra ANTES da VARREDURA anon porque cria a função do
+-- gatilho de LGPD. Idempotente: `if not exists`, `create or replace`, `drop ... if exists`.
+create table if not exists public.mensagens_agendadas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete cascade,
+  title text,
+  body text not null check (length(btrim(body)) > 0),
+  scheduled_at timestamptz not null,
+  status text not null default 'agendada'
+    check (status in ('agendada', 'encaminhada', 'falhou', 'cancelada')),
+  se_desconectado text not null default 'esperar'
+    check (se_desconectado in ('esperar', 'cancelar')),
+  motivo text,
+  message_id uuid references public.messages(id) on delete set null,
+  claimed_until timestamptz,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_mensagens_agendadas_org_contato
+  on public.mensagens_agendadas (organization_id, contact_id, scheduled_at desc);
+create index if not exists idx_mensagens_agendadas_devidas
+  on public.mensagens_agendadas (scheduled_at) where status = 'agendada';
+
+alter table public.mensagens_agendadas enable row level security;
+
+drop policy if exists mensagens_agendadas_select on public.mensagens_agendadas;
+create policy mensagens_agendadas_select on public.mensagens_agendadas
+  for select to authenticated using (
+    organization_id in (select public.fn_user_org_ids())
+    and exists (
+      select 1 from public.conversations c
+       where c.id = mensagens_agendadas.conversation_id
+         and c.organization_id = mensagens_agendadas.organization_id
+    )
+  );
+
+revoke all on public.mensagens_agendadas from public, anon, authenticated;
+grant select on public.mensagens_agendadas to authenticated;
+grant select, insert, update, delete on public.mensagens_agendadas to service_role;
+
+create or replace function public.fn_mensagens_agendadas_contato_anonimizado()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+begin
+  update public.mensagens_agendadas
+     set body = '[redigido]',
+         title = null,
+         status = case when status = 'agendada' then 'cancelada' else status end,
+         motivo = case when status = 'agendada' then 'contato_anonimizado' else motivo end,
+         claimed_until = null,
+         updated_at = now()
+   where organization_id = new.organization_id
+     and contact_id = new.id;
+  return new;
+end$$;
+
+revoke all on function public.fn_mensagens_agendadas_contato_anonimizado() from public, anon, authenticated;
+
+drop trigger if exists trg_contacts_anonimizado_mensagens_agendadas on public.contacts;
+create trigger trg_contacts_anonimizado_mensagens_agendadas
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
+  execute function public.fn_mensagens_agendadas_contato_anonimizado();
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -75703,81 +75778,6 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 -- Todo escritor da fila de remoção de arquivos é do servidor: a sessão só lê.
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
-
--- ---- mensagens agendadas, envio único (migration 9336) ----
--- #3118, primeira parte (PR #4131, contribuição de @DIOGRO83). O porquê está no
--- cabeçalho da 9336. Entra ANTES da VARREDURA anon porque cria a função do
--- gatilho de LGPD. Idempotente: `if not exists`, `create or replace`, `drop ... if exists`.
-create table if not exists public.mensagens_agendadas (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  conversation_id uuid not null references public.conversations(id) on delete cascade,
-  contact_id uuid not null references public.contacts(id) on delete cascade,
-  channel_session_id uuid not null references public.channel_sessions(id) on delete cascade,
-  title text,
-  body text not null check (length(btrim(body)) > 0),
-  scheduled_at timestamptz not null,
-  status text not null default 'agendada'
-    check (status in ('agendada', 'encaminhada', 'falhou', 'cancelada')),
-  se_desconectado text not null default 'esperar'
-    check (se_desconectado in ('esperar', 'cancelar')),
-  motivo text,
-  message_id uuid references public.messages(id) on delete set null,
-  claimed_until timestamptz,
-  created_by_user_id uuid references auth.users(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists idx_mensagens_agendadas_org_contato
-  on public.mensagens_agendadas (organization_id, contact_id, scheduled_at desc);
-create index if not exists idx_mensagens_agendadas_devidas
-  on public.mensagens_agendadas (scheduled_at) where status = 'agendada';
-
-alter table public.mensagens_agendadas enable row level security;
-
-drop policy if exists mensagens_agendadas_select on public.mensagens_agendadas;
-create policy mensagens_agendadas_select on public.mensagens_agendadas
-  for select to authenticated using (
-    organization_id in (select public.fn_user_org_ids())
-    and exists (
-      select 1 from public.conversations c
-       where c.id = mensagens_agendadas.conversation_id
-         and c.organization_id = mensagens_agendadas.organization_id
-    )
-  );
-
-revoke all on public.mensagens_agendadas from public, anon, authenticated;
-grant select on public.mensagens_agendadas to authenticated;
-grant select, insert, update, delete on public.mensagens_agendadas to service_role;
-
-create or replace function public.fn_mensagens_agendadas_contato_anonimizado()
-  returns trigger
-  language plpgsql
-  security definer
-  set search_path to 'public', 'pg_temp'
-as $$
-begin
-  update public.mensagens_agendadas
-     set body = '[redigido]',
-         title = null,
-         status = case when status = 'agendada' then 'cancelada' else status end,
-         motivo = case when status = 'agendada' then 'contato_anonimizado' else motivo end,
-         claimed_until = null,
-         updated_at = now()
-   where organization_id = new.organization_id
-     and contact_id = new.id;
-  return new;
-end$$;
-
-revoke all on function public.fn_mensagens_agendadas_contato_anonimizado() from public, anon, authenticated;
-
-drop trigger if exists trg_contacts_anonimizado_mensagens_agendadas on public.contacts;
-create trigger trg_contacts_anonimizado_mensagens_agendadas
-  after update of is_anonymized on public.contacts
-  for each row
-  when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
-  execute function public.fn_mensagens_agendadas_contato_anonimizado();
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
