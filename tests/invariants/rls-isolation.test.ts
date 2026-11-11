@@ -680,6 +680,17 @@ beforeAll(() => {
             (v_org, 'stripe', 'teste', '\\x00'::bytea, '\\x00'::bytea, '\\x00'::bytea,
              '0000', null, null, null, null);
         end if;
+
+        -- migration 9312 (#3509, degrau 1) -- o recebimento do cliente final
+        -- registrado na conversa. A semente usa v_conv (a policy de leitura confere
+        -- o par conversa/organizacao) e o estado 'pendente', unico que nao exige
+        -- pago_em nem external_id.
+        if not exists (select 1 from public.pagamento_recebimentos where organization_id = v_org) then
+          insert into public.pagamento_recebimentos
+            (organization_id, conversation_id, provedor, aviso_token_hash, valor_cents, status)
+          values (v_org, v_conv, 'infinitepay',
+                  encode(sha256(convert_to('rls-invariant-' || v_org::text, 'UTF8')), 'hex'), 15000, 'pendente');
+        end if;
       end loop;
     end
     $seed$;
@@ -903,6 +914,10 @@ export const TABLES = [
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
   // prova vive em `tests/invariants/cobranca-isolamento.test.ts`.
+  // migration 9312 (#3509, degrau 1) — o recebimento do cliente final. A
+  // leitura é org-scoped E exige o par conversa/organização. A escrita é só do
+  // servidor; quem mede isso é `pagamento-recebimentos-escrita-so-do-servidor.test.ts`.
+  "pagamento_recebimentos",
 ] as const;
 
 describe("RLS tenant isolation (fn_user_org_ids pattern)", () => {

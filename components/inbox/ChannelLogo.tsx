@@ -1,27 +1,32 @@
 "use client";
 
-import { ChatCircle, InstagramLogo, MessengerLogo, WhatsappLogo } from "@/lib/ui/icons";
 import { channelBrand } from "@/lib/channels/presentation";
+import { marcaDoCanal } from "@/lib/channels/marca-do-canal";
 import { useT } from "@/hooks/i18n/useT";
+import { ChatCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import type { ChannelSummary } from "@/hooks/inbox/useConversationsRealtime";
 
-const brands = {
-  whatsapp: { Icon: WhatsappLogo, label: "WhatsApp", color: "text-[#128c4a] dark:text-[#25d366]" },
-  instagram: { Icon: InstagramLogo, label: "Instagram", color: "text-[#c13584] dark:text-[#f472b6]" },
-  messenger: { Icon: MessengerLogo, label: "Messenger", color: "text-[#0866ff] dark:text-[#60a5fa]" },
-  unknown: { Icon: ChatCircle, label: "Canal", color: "text-muted-foreground" },
-};
-
+/**
+ * O logo da rede na lista de conversas e no cabeçalho.
+ *
+ * A tabela de cores e ícones NÃO mora mais aqui: ela é `marcaDoCanal`
+ * (`lib/channels/marca-do-canal.ts`), a mesma que o aviso de mensagem nova usa —
+ * uma rede, uma identidade (#4094). A cor vem de token do tema, então claro e
+ * escuro continuam legíveis sem par de classes por canal.
+ */
 export function ChannelLogo({ channel, size = 18, className }: {
   channel?: ChannelSummary | null;
   size?: number;
   className?: string;
 }) {
   const t = useT();
-  const { Icon, label, color } = brands[channelBrand(channel)];
-  const name = label === "Canal" ? t("Canal") : label;
-  return <span role="img" aria-label={name} title={name} className={cn("inline-flex shrink-0 items-center justify-center", color, className)}>
+  const marca = marcaDoCanal(channelBrand(channel));
+  const name = t(marca.rotulo);
+  // Sem rede conhecida, o balão genérico: este logo fica sobre o avatar, e sem
+  // ícone sobraria um disco vazio. Só o aviso sai sem logo.
+  const Icon = marca.Icone ?? ChatCircle;
+  return <span role="img" aria-label={name} title={name} style={{ color: marca.cor }} className={cn("inline-flex shrink-0 items-center justify-center", className)}>
     <Icon size={size} weight="fill" aria-hidden />
   </span>;
 }

@@ -206,6 +206,17 @@ export async function aplicaGatilhoDeEtapa(
   for (const pointer of armados) {
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
+    // #3852: este produtor NÃO passa o canal, e é deliberado. O evento
+    // `lead.stage_changed` não carrega conversa: o payload do gatilho traz só
+    // `lead_id/from_stage_id/to_stage_id` (`supabase/baseline.sql:244`), e a
+    // conversa só é resolvida DEPOIS, no INSERT (`serviceForEvent` →
+    // `fn_service_event_origin`, `supabase/baseline.sql:20571`/`20577` — que
+    // escolhe a sessão pelo snapshot do comando, não por "a última conversa").
+    // Deduzir a conversa aqui escolheria uma sessão possivelmente diferente da
+    // que o envio vai usar, e o turno resolve o agente pelo número
+    // (`agent-config.ts:430`, `v.channel_session_id = $2`): persona de um número
+    // e envio por outro. Diferença haveria, conserto não. Fica o comportamento
+    // por organização até o evento ter canal.
     const { agentId, barrado } = await decidirAgenteDoEnrollmentAutomatico(
       deps.gateDb,
       row.organization_id,

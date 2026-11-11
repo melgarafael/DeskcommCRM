@@ -130,6 +130,15 @@ export async function aplicaGatilhoDeLead(
   for (const pointer of armados) {
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
+    // #3852: sem canal, e é deliberado. `lead.created` não carrega conversa (o
+    // payload é `{lead_id, pipeline_id, stage_id, contact_id, source}` —
+    // `supabase/baseline.sql:233`), e a conversa nasce/se resolve no INSERT
+    // (`serviceForEvent` → `fn_service_event_origin`, `supabase/baseline.sql:20571`/`20577`).
+    // Deduzir a sessão aqui escolheria um número possivelmente diferente do que
+    // o envio usa — e o turno resolve o agente PELO número
+    // (`agent-config.ts:430`, `v.channel_session_id = $2`), então seria persona
+    // de um número com envio por outro. Este produtor mantém a decisão por
+    // organização até o evento ter canal.
     const { agentId, barrado } = await decidirAgenteDoEnrollmentAutomatico(
       deps.gateDb,
       row.organization_id,

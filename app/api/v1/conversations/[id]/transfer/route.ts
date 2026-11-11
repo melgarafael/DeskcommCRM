@@ -15,7 +15,6 @@ import { z } from "zod";
 
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
-import { sincronizarNegocioAbertoDoContato } from "@/lib/inbox/negocio-aberto-do-contato";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
@@ -112,20 +111,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const conv = row as unknown as Conversation;
 
-  // #3177: o negócio ABERTO do contato segue o mesmo responsável. A conversa já
-  // é do destino neste ponto; o card do funil não era, e ficava para trás (o
-  // responsável antigo, ou nenhum). Cliente da SESSÃO de propósito: quem
-  // transfere a conversa não ganha aqui nenhuma permissão que a rota de
-  // negócios já não dê — quando o banco recusa, a transferência segue de pé e o
-  // motivo fica no `metadata` da auditoria. Ver
-  // `lib/inbox/negocio-aberto-do-contato.ts` para a régua (um aberto leva; zero
-  // ou mais de um, nada é tocado).
-  const sincronia = await sincronizarNegocioAbertoDoContato(supabase, {
-    organizationId: conv.organization_id,
-    contactId: conv.contact_id,
-    toUserId: input.to_user_id,
-  });
-
+  // #4019: o negócio ABERTO do contato já acompanhou o dono novo DENTRO da
+  // `fn_conversation_assign`, na mesma transação da troca da conversa (migration
+  // 9208), dentro da permissão de quem clicou. A régua não mora mais nesta rota:
+  // se ela vivesse aqui, o MCP e a chamada direta da RPC não a teriam.
   await audit({
     action: "conversation.transferred",
     actorUserId: user.id,
@@ -136,8 +125,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     metadata: {
       to_user_id: input.to_user_id,
       ...(input.reason ? { note: input.reason } : {}),
-      negocio_aberto: sincronia.motivo,
-      ...(sincronia.leadId ? { negocio_id: sincronia.leadId } : {}),
       // O número segue o vendedor (#3642): o antigo e o novo, iguais quando a
       // conversa ficou onde estava.
       ...(numeroAnterior !== undefined
