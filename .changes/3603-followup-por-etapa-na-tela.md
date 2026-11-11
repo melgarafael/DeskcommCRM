@@ -16,4 +16,8 @@ escrever de novo. A tela lista TODAS as etapas abertas, marcadas ou não, porque
 "esta etapa não tem acompanhamento" é a informação que falta na operação; etapa
 de funil arquivado, ganha ou perdida não aparece, porque a gravação recusaria. O
 envio continua sendo do fluxo de follow-up de cada etapa, revisado por uma
-pessoa no construtor de fluxos. Contribuição de @webtecnica.
+pessoa no construtor de fluxos — e o que a tela grava passa a ser OBEDECIDO pela
+varredura do gatilho "negócio parado na mesma etapa": numa etapa com
+acompanhamento ligado, o prazo em horas da tela substitui os dias da automação e
+o modelo de mensagem viaja no evento do lembrete. Etapa sem régua continua
+exatamente como antes. Contribuição de @webtecnica.

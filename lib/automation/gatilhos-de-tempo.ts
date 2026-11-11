@@ -185,6 +185,31 @@ export function ancoraDaEtapa(
 }
 
 /**
+ * A MESMA âncora, em HORAS — o prazo da régua por etapa (#3603, fatia 4).
+ *
+ * `ancoraDaEtapa` acima é o caminho da regra (`dias`) e fica intocado: é o
+ * contrato de retrocompatibilidade desta fatia. A conta daqui é a mesma, termo a
+ * termo — `dias` é inteiro (1..3650), então `horas * 3_600_000` com
+ * `horas = dias * 24` dá exatamente o mesmo inteiro que `dias * 86_400_000` em
+ * ponto flutuante, e `gatilhos-de-tempo.test.ts` fixa a igualdade.
+ *
+ * A régua da tela promete horas (1..720). Um card de 6 h não cabe em "N dias" e
+ * chamar esta função com `dias = 0.25` faria a mesma conta por outro nome — o
+ * nome importa: quem lê a varredura precisa saber qual das duas réguas vale.
+ */
+export function ancoraDaEtapaEmHoras(
+  stageChangedAt: string | null,
+  agora: Date,
+  horas: number,
+): string | null {
+  if (!stageChangedAt) return null;
+  const entrada = Date.parse(stageChangedAt);
+  if (Number.isNaN(entrada)) return null;
+  if (agora.getTime() - entrada < horas * 3_600_000) return null;
+  return new Date(entrada).toISOString();
+}
+
+/**
  * A chave do "já disparei": regra + negócio + ÂNCORA.
  *
  * Sem a âncora a mesma regra valeria para sempre para o mesmo negócio (o defeito
@@ -201,11 +226,15 @@ export function chaveDeDisparoTemporal(regraId: string, leadId: string, ancora: 
  *
  * Devolve os pares que ainda podem emitir, na ordem de entrada — quem já foi
  * emitido (mesma âncora) some; quem mudou de âncora volta a ser elegível.
+ *
+ * Genérica no tipo do candidato porque é um FILTRO, não um reprojetor: a
+ * varredura carrega a régua da etapa no candidato (#3603, fatia 4) e um retorno
+ * com forma fixa a perderia no caminho entre a decisão e a emissão.
  */
-export function naoDisparadosTemporais(
-  candidatos: ReadonlyArray<{ leadId: string; ancora: string }>,
+export function naoDisparadosTemporais<T extends { leadId: string; ancora: string }>(
+  candidatos: ReadonlyArray<T>,
   jaEmitidos: ReadonlySet<string>,
   regraId: string,
-): Array<{ leadId: string; ancora: string }> {
+): T[] {
   return candidatos.filter((c) => !jaEmitidos.has(chaveDeDisparoTemporal(regraId, c.leadId, c.ancora)));
 }

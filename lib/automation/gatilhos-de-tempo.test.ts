@@ -5,6 +5,7 @@ import {
   GATILHO_ETAPA_PARADA,
   GATILHO_SILENCIO,
   ancoraDaEtapa,
+  ancoraDaEtapaEmHoras,
   ancoraDoSilencio,
   chaveDeDisparoTemporal,
   colunaDaDirecao,
@@ -94,6 +95,29 @@ describe("a âncora da etapa parada", () => {
   it("linha sem carimbo não vira disparo — espera o próximo carimbo", () => {
     expect(ancoraDaEtapa(null, AGORA, 7)).toBeNull();
     expect(ancoraDaEtapa("não é data", AGORA, 7)).toBeNull();
+  });
+
+  it("a régua da tela fala HORAS: 6 h não cabe em dia inteiro", () => {
+    const horas = (n: number) => new Date(AGORA.getTime() - n * 3_600_000).toISOString();
+
+    expect(ancoraDaEtapaEmHoras(horas(7), AGORA, 6)).toBe(horas(7));
+    expect(ancoraDaEtapaEmHoras(horas(5.9), AGORA, 6)).toBeNull();
+  });
+
+  it("a conta em horas é a MESMA da conta em dias — a retrocompatibilidade não pode depender de arredondamento", () => {
+    // `dias` é inteiro (1..3650): `dias*24*3_600_000` é o mesmo inteiro que
+    // `dias*86_400_000` em ponto flutuante. Se esta igualdade cair, um card no
+    // limite da janela muda de lado entre a régua e a regra.
+    for (const n of [1, 7, 30, 3650]) {
+      for (const quando of [dias(n), dias(n - 0.1), dias(n + 0.1)]) {
+        expect(ancoraDaEtapaEmHoras(quando, AGORA, n * 24)).toBe(ancoraDaEtapa(quando, AGORA, n));
+      }
+    }
+  });
+
+  it("linha sem carimbo continua sem virar disparo no caminho das horas", () => {
+    expect(ancoraDaEtapaEmHoras(null, AGORA, 6)).toBeNull();
+    expect(ancoraDaEtapaEmHoras("não é data", AGORA, 6)).toBeNull();
   });
 });
 

@@ -35,6 +35,17 @@
  * gera lembrete, pelo MESMO caminho das ações de mensagem
  * (`lib/agenda/protecao-followup.ts`). Opt-in porque há operação que quer o
  * lembrete mesmo com reunião marcada — e a recusa seria invisível.
+ *
+ * ═══ A RÉGUA POR ETAPA DA TELA (#3603, fatia 4) ═══
+ *
+ * A tela grava `settings.followup_por_etapa[stage_id] = { ativa, prazo_horas,
+ * mensagem }` — e a régua promete HORAS, enquanto a regra promete DIAS. Quando a
+ * etapa em que o card está tem régua ATIVA, o `prazo_horas` dela SUBSTITUI os
+ * `dias` da regra (para menos e para mais: é prazo, não encurtamento), e a
+ * `mensagem` viaja no payload do evento. Sem régua, ou com ela desligada, nada
+ * muda: o payload é o de hoje, chave a chave. A tradução mora em
+ * `lib/automation/regua-do-followup.ts`; o corte do SQL abaixo usa o MENOR prazo
+ * ativo só para não perder candidato — quem decide continua sendo a etapa.
  */
 import { randomUUID } from "node:crypto";
 
@@ -47,7 +58,7 @@ import { TAMANHO_DO_LOTE, TETO_POR_ORGANIZACAO } from "@/lib/automation/cron-de-
 import {
   GATILHO_ETAPA_PARADA,
   GATILHO_SILENCIO,
-  ancoraDaEtapa,
+  ancoraDaEtapaEmHoras,
   ancoraDoSilencio,
   chaveDeDisparoTemporal,
   colunaDaDirecao,
@@ -55,6 +66,11 @@ import {
   configDoSilencio,
   naoDisparadosTemporais,
 } from "@/lib/automation/gatilhos-de-tempo";
+import {
+  prazosAtivosDasEtapas,
+  reguaDoFollowup,
+  type ReguaDoFollowup,
+} from "@/lib/automation/regua-do-followup";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -68,7 +84,13 @@ type Regra = {
   trigger_config: unknown;
 };
 
-type Candidato = { leadId: string; contactId: string | null; ancora: string };
+type Candidato = {
+  leadId: string;
+  contactId: string | null;
+  ancora: string;
+  /** A régua da etapa que governou o prazo — `null` = regra (`dias`). */
+  regua: ReguaDoFollowup | null;
+};
 
 /** A mesma divisão dos crons irmãos: lotes de 50, teto por organização. */
 function emLotes<T>(itens: T[], tamanho: number): T[][] {
@@ -107,9 +129,11 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const orgsComRegra = [...new Set(todasAsRegras.map((r) => r.organization_id))];
+  // `settings` vem junto porque é dele que sai a régua por etapa (#3603, fatia
+  // 4) — uma coluna jsonb, sem consulta nova por regra.
   const { data: organizacoes } = await admin
     .from("organizations")
-    .select("id")
+    .select("id, settings")
     .in("id", orgsComRegra.slice(0, TAMANHO_DO_LOTE));
 
   let emitidos = 0;
@@ -121,6 +145,8 @@ async function handle(req: NextRequest): Promise<Response> {
 
   for (const organizacao of organizacoes ?? []) {
     const org = organizacao.id as string;
+    /** `settings` da organização — a régua por etapa mora aqui (#3603, fatia 4). */
+    const settingsDaOrganizacao = (organizacao as { settings?: unknown }).settings;
 
     for (const regra of todasAsRegras) {
       if (regra.organization_id !== org) continue;
@@ -218,7 +244,15 @@ async function handle(req: NextRequest): Promise<Response> {
               agora,
               silencio.dias,
             );
-            if (ancora) candidatos.push({ leadId: lead.id as string, contactId: lead.contact_id as string, ancora });
+            if (ancora) {
+              // Silêncio não tem régua por etapa: quem manda é a regra.
+              candidatos.push({
+                leadId: lead.id as string,
+                contactId: lead.contact_id as string,
+                ancora,
+                regua: null,
+              });
+            }
           }
 
           if (leads.length < TETO_POR_ORGANIZACAO) break;
@@ -244,13 +278,31 @@ async function handle(req: NextRequest): Promise<Response> {
           if (bloqueados) pular("agenda", bloqueados);
         }
       } else if (etapa) {
-        const corte = new Date(agora.getTime() - etapa.dias * 86_400_000).toISOString();
+        // ═══ O CORTE DO SQL É O DA RÉGUA MAIS CURTA, E O MENOR PRAZO MANDA ═══
+        //
+        // O corte é único para a página, mas a régua é POR ETAPA: um card com
+        // régua de 6 h não pode ser filtrado por `dias` (7 dias o deixariam de
+        // fora até o SQL, e nenhuma decisão em memória o traria de volta). O
+        // menor prazo ativo é o corte seguro — nunca perde candidato; quem
+        // decide o disparo, card a card, é `reguaDoFollowup` abaixo.
+        //
+        // O recorte de etapa da regra filtra quais réguas interessam: uma régua
+        // de outro funil não encurta este corte.
+        const prazosDaRegua = prazosAtivosDasEtapas(settingsDaOrganizacao).filter(
+          (prazo) => !etapa.stage_id || prazo.stageId === etapa.stage_id,
+        );
+        const menorPrazoDaRegua = prazosDaRegua.reduce(
+          (menor, prazo) => Math.min(menor, prazo.prazoHoras),
+          Number.POSITIVE_INFINITY,
+        );
+        const horasDoCorte = Math.min(etapa.dias * 24, menorPrazoDaRegua);
+        const corte = new Date(agora.getTime() - horasDoCorte * 3_600_000).toISOString();
         let cursor: string | null = null;
 
         for (;;) {
           let consulta = admin
             .from("crm_leads")
-            .select("id, contact_id, stage_changed_at")
+            .select("id, contact_id, stage_changed_at, pipeline_id, stage_id")
             .eq("organization_id", org)
             .eq("status", "open")
             .not("stage_changed_at", "is", null)
@@ -275,8 +327,30 @@ async function handle(req: NextRequest): Promise<Response> {
           }
 
           for (const lead of leads ?? []) {
-            const ancora = ancoraDaEtapa(lead.stage_changed_at as string | null, agora, etapa.dias);
-            if (ancora) candidatos.push({ leadId: lead.id as string, contactId: lead.contact_id as string | null, ancora });
+            const leitura = reguaDoFollowup(settingsDaOrganizacao, {
+              pipelineId: (lead.pipeline_id as string | null) ?? null,
+              stageId: (lead.stage_id as string | null) ?? null,
+            });
+            // Régua ligada sem prazo é configuração incompleta (a action recusa
+            // na gravação; o jsonb externo pode criar). Cai na regra e o motivo
+            // fica visível em `pulados` — sem isso, "a régua não valeu" seria
+            // indistinguível de "não tem régua".
+            if (leitura.motivo === "prazo_incompleto") pular("regua_incompleta");
+
+            const horas = leitura.regua ? leitura.regua.prazoHoras : etapa.dias * 24;
+            const ancora = ancoraDaEtapaEmHoras(
+              lead.stage_changed_at as string | null,
+              agora,
+              horas,
+            );
+            if (ancora) {
+              candidatos.push({
+                leadId: lead.id as string,
+                contactId: lead.contact_id as string | null,
+                ancora,
+                regua: leitura.regua,
+              });
+            }
           }
 
           if (!leads || leads.length < TETO_POR_ORGANIZACAO) break;
@@ -331,6 +405,19 @@ async function handle(req: NextRequest): Promise<Response> {
             rule_id: regra.id,
             dias: silencio?.dias ?? etapa?.dias ?? null,
             ancora: candidato.ancora,
+            // A régua da etapa, quando ela governou o prazo (#3603, fatia 4):
+            // o prazo em HORAS, o texto e a etapa de onde saíram. Sem régua o
+            // payload é o de hoje, chave a chave — é o contrato com o motor.
+            ...(candidato.regua
+              ? {
+                  prazo_horas: candidato.regua.prazoHoras,
+                  mensagem: candidato.regua.mensagem,
+                  etapa_da_regua: {
+                    stage_id: candidato.regua.stageId,
+                    pipeline_id: candidato.regua.pipelineId,
+                  },
+                }
+              : {}),
             ...(silencio
               ? { direcao: silencio.direcao, silencio_desde: candidato.ancora }
               : { etapa_desde: candidato.ancora }),
