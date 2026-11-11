@@ -233,6 +233,13 @@ export const PUBLIC_PATHS: RegExp[] = [
   // este caminho exato: `/api/v1/extensions/` tem irmãos de sessão (`[id]/segredo`, `install`, etc.) que
   // não podem nascer públicos de carona.
   /^\/api\/v1\/extensions\/token$/,
+  // AS ROTAS DAS FATIAS R DA SPEC 33 (configuração, operação, leitura). Mesma
+  // dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO de cada rota, com a organização saindo da
+  // linha do token. Os modelos ficam em `lib/auth/portas-de-token/`, um arquivo
+  // por fatia, no formato do caminho da pasta; `portaDeToken` monta cada um
+  // ancorado nos dois lados e com o segmento dinâmico em forma de UUID.
+  ...PORTAS_DE_TOKEN,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —
