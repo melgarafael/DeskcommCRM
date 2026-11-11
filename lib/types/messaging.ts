@@ -57,6 +57,14 @@ export interface Conversation {
    * resposta de uma versão anterior, ainda em cache do react-query, não o tem.
    */
   comando_da_conversa?: string | null;
+  /**
+   * Há agente que vai responder ESTA conversa? (migration 9331, issue #4012) —
+   * outro campo CALCULADO, e a segunda metade do mesmo fato: `comando_da_conversa`
+   * já chega rebaixado a `aguardando` quando este é `false`, mas o cabeçalho e a
+   * linha recalculam localmente (para o "devolver" simulado), e sem o fato
+   * voltariam a dizer "Automático". Ausente = "não sei" (cache anterior).
+   */
+  automatico_da_conversa?: boolean | null;
   last_handoff_at: string | null;
   /**
    * Por que o automático está parado. Diferencia o handoff formal de uma pausa

@@ -34,12 +34,16 @@ const V2 = "aaaaaaaa-0000-4000-8000-00000000d1e2";
 
 /**
  * Uma organização, sessão, dois contatos limpos e uma conversa apontando o C1 —
- * COM agente publicado.
+ * COM agente publicado NA SESSÃO da conversa.
  *
  * O agente não é enfeite: desde a issue #4012 o comando rebaixa `automatico` para
- * `ninguem` quando a organização não tem agente no ar, e o que este arquivo mede é
- * a passagem LIMPO -> travado -> limpo. Sem o agente, o "limpo" viraria `ninguem`
- * e o caso deixaria de distinguir a trava do contato do fato da organização.
+ * `ninguem` quando a organização não tem agente no ar (`fn_org_tem_automatico`) e
+ * para `aguardando` quando nenhum agente vai responder o número
+ * (`fn_automatico_da_conversa`). O que este arquivo mede é a passagem
+ * LIMPO -> travado -> limpo (#2739): sem alguém publicado na sessão, o "limpo"
+ * mediria a regra nova em vez da trava do contato. As réguas do agente têm
+ * invariante próprio: `comando-da-conversa-com-agente-no-ar.test.ts` e
+ * `comando-da-conversa-por-numero.test.ts`.
  */
 const AGENTE = "aaaaaaaa-0000-4000-8000-00000000d1a1";
 const VERSAO = "aaaaaaaa-0000-4000-8000-00000000d1a2";

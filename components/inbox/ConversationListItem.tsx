@@ -225,6 +225,9 @@ export function ConversationListItem({
     is_blocked: c?.is_blocked ?? null,
     is_group: conversation.is_group ?? false,
     automaticoDaOrg,
+    // O fato por NÚMERO (#4012) vem no próprio registro — nada de uma consulta
+    // por linha. Ausente em cache antigo, e aí a regra cai no org-wide.
+    automaticoDaConversa: conversation.automatico_da_conversa ?? undefined,
   });
   const isAi = comando.quem === "automatico";
   const dot = COR_DO_COMANDO[comando.quem] ?? COR_DO_COMANDO.ninguem;

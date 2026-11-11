@@ -95,6 +95,22 @@ export interface FatosDoComando {
    * controle decorativo, que é pior que ausência de botão.
    */
   is_blocked?: boolean | null;
+  /**
+   * HÁ AGENTE QUE VAI RESPONDER ESTA CONVERSA? — o fato por NÚMERO que o banco
+   * passou a responder na migration 9331 (`automatico_da_conversa(c)`).
+   *
+   * `undefined` = "não sei" (cache antigo, resposta de antes do campo entrar no
+   * `SELECT_COLS`): cai no comportamento de antes, que é o da org. `false` =
+   * nenhum agente publicado no número da conversa, ou o contato fora da lista
+   * de teste do canal em pré-go-live — nos dois casos NINGUÉM vai responder, e
+   * a resposta certa é `aguardando` (a Fila), não `automatico`.
+   *
+   * A pergunta é a MESMA que o dreno faz antes de gastar
+   * (`haQuemAtendaASessao`) mais o portão de pré-go-live; o espelho SQL mora em
+   * `fn_automatico_da_conversa` e é casado por
+   * `tests/invariants/comando-da-conversa-por-numero.test.ts`.
+   */
+  automaticoDaConversa?: boolean;
 }
 
 export type Comando =
@@ -319,7 +335,12 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
       : // Sem dono: quem manda depende do automático estar de pé. Calado e sem
         // dono é a conversa que o automático escalou e ninguém pegou — a fila.
         // Grupo entra junto: o automático nunca o atende, é sempre de humano.
-        grupo || silencio.vigente || travado || bloqueado
+        // `automaticoDaConversa === false` entra AQUI, e não no ramo do
+        // `ninguem`: não há agente publicado no número (ou o contato está fora
+        // da lista de teste do canal), mas a conversa continua esperando uma
+        // PESSOA — que é a fila. `ninguem` diria "a org não tem robô", que é
+        // outro fato e esconde a conversa da Fila.
+        grupo || silencio.vigente || travado || bloqueado || fatos.automaticoDaConversa === false
         ? { quem: "aguardando" }
         : fatos.automaticoDaOrg === false
           ? { quem: "ninguem" }
@@ -336,7 +357,8 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
    */
   const comandoFinal: Comando = comando;
 
-  const automaticoAtivo = !grupo && !encerrada && !travado && !bloqueado && !silencio.vigente;
+  const automaticoAtivo =
+    !grupo && !encerrada && !travado && !bloqueado && !silencio.vigente && fatos.automaticoDaConversa !== false;
 
   const motivo: MotivoDoSilencio | null = automaticoAtivo
     ? null
@@ -344,6 +366,11 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
       ? null // Grupo não é automático pausado: o automático nunca o atende.
       : encerrada
       ? null // Encerrada não é silêncio: é ausência de assunto. O estado já diz.
+      : fatos.automaticoDaConversa === false && !silencio.vigente
+        ? // Sem agente NESTE número (ou fora da lista de teste) não há
+          // automático PAUSADO a explicar: não há automático aqui. Dizer
+          // "volta em instantes" seria a mesma mentira, ao contrário.
+          null
       : bloqueado
         ? // ANTES de `travado`, de propósito: quando as duas valem, é o opt-out que
           // decide a AÇÃO — não há nenhuma. Nomear a trava menor faria a tela

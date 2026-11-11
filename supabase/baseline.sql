@@ -70521,6 +70521,233 @@ end $function$;
 revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
 grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
 
+-- ---- o comando da conversa pergunta pelo NÚMERO (migration 9331, issue #4012) ----
+-- O wrapper `comando_da_conversa(c)` deixa de dizer `automatico` para conversa
+-- que nenhum agente vai responder. A régua NÃO é nova: é a do portão do dreno
+-- (`haQuemAtendaASessao`) mais o pré-go-live do canal (`numeroPodeTestar`), que
+-- até aqui só o TypeScript do worker podia perguntar. Uma função `security
+-- definer` a leva para o PostgREST e para as funções PL/pgSQL que decidem pelo
+-- comando (carteira, passagem de conversa) — onde a mentira deixava a conversa
+-- fora da Fila e sem dono. Corpo e comentários longos na migration
+-- 20261111035227_9331; aqui vai a mesma definição, antes da varredura anon
+-- porque CRIA FUNÇÃO.
+
+-- ─── (1) a régua, numa função só ─────────────────────────────────────────────
+create or replace function public.fn_automatico_da_conversa(
+  p_organization_id    uuid,
+  p_channel_session_id uuid,
+  p_contato_id         uuid
+) returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $automatico$
+declare
+  v_quem        boolean;
+  v_metadata    jsonb;
+  v_numeros     jsonb;
+  v_variantes   text[];
+  v_numero      text;
+  v_telefone    text;
+begin
+  -- O telefone é resolvido AQUI, e não no wrapper: `comando_da_conversa` é
+  -- campo calculado de conversa e a issue #2739 proíbe subconsulta a `contacts`
+  -- por linha (o invariante `o-comando-da-conversa-le-o-bit-do-contato` mede).
+  select ct.phone_number
+    into v_telefone
+    from public.contacts ct
+   where ct.id = p_contato_id
+     and ct.organization_id = p_organization_id;
+  -- (a) HÁ QUEM ATENDA ESTE NÚMERO? Espelho de `haQuemAtendaASessao`
+  -- (lib/ai/agents/quem-atende-a-sessao.ts): agente publicado na sessão, ou
+  -- roteador ativo nela cujo fallback/membro pode EXECUTAR (versão publicada,
+  -- não arquivado, não pausado). Medir a existência da linha em
+  -- `ai_router_members` deixaria o portão aberto para roteador de membros todos
+  -- pausados — a mesma correção que o SQL do worker já carrega.
+  select
+    exists (
+      select 1
+        from public.ai_agents a
+        join public.ai_agent_versions v on v.id = a.published_version_id
+       where a.organization_id = p_organization_id
+         and a.archived_at is null
+         and a.paused_at is null
+         and v.status = 'published'
+         and v.channel_session_id = p_channel_session_id
+    )
+    or exists (
+      select 1
+        from public.ai_routers r
+       where r.organization_id = p_organization_id
+         and r.is_active
+         and r.channel_session_id = p_channel_session_id
+         and (
+           exists (
+             select 1
+               from public.ai_agents fa
+               join public.ai_agent_versions fv on fv.id = fa.published_version_id
+              where fa.id = r.fallback_agent_id
+                and fa.organization_id = p_organization_id
+                and fa.archived_at is null
+                and fa.paused_at is null
+                and fv.status = 'published'
+           )
+           or exists (
+             select 1
+               from public.ai_router_members m
+               join public.ai_agents ma on ma.id = m.agent_id
+               join public.ai_agent_versions mv on mv.id = ma.published_version_id
+              where m.router_id = r.id
+                and ma.organization_id = p_organization_id
+                and ma.archived_at is null
+                and ma.paused_at is null
+                and mv.status = 'published'
+           )
+         )
+    )
+  into v_quem;
+
+  if v_quem is not true then
+    return false;
+  end if;
+
+  -- (b) O CANAL ESTÁ EM PRÉ-GO-LIVE? Espelho de `numeroPodeTestar`
+  -- (lib/ai/elegibilidade/pre-go-live.ts): a lista do canal é a ÚNICA
+  -- autorização positiva, e o nono dígito é comparado nas duas direções por
+  -- `fn_telefone_variantes` — a mesma função que o resto do banco usa.
+  select s.metadata
+    into v_metadata
+    from public.channel_sessions s
+   where s.id = p_channel_session_id
+     and s.organization_id = p_organization_id;
+
+  -- Canal sem metadata (o legado) não tem gate: nada a perguntar.
+  if v_metadata is null then
+    return true;
+  end if;
+  if coalesce(v_metadata ->> 'ai_gate', '') <> 'allowlist' then
+    return true;
+  end if;
+  if coalesce(v_metadata ->> 'ai_gate_mode', '') <> 'pre_go_live' then
+    return true;
+  end if;
+
+  v_numeros := v_metadata -> 'ai_test_phone_numbers';
+  if v_numeros is null or jsonb_typeof(v_numeros) <> 'array' or jsonb_array_length(v_numeros) = 0 then
+    return false;
+  end if;
+  if v_telefone is null or btrim(v_telefone) = '' then
+    return false;
+  end if;
+
+  v_variantes := public.fn_telefone_variantes(v_telefone);
+  if coalesce(array_length(v_variantes, 1), 0) = 0 then
+    return false;
+  end if;
+
+  for v_numero in select jsonb_array_elements_text(v_numeros) loop
+    -- Item inválido é IGNORADO, nunca vira match permissivo — a mesma regra de
+    -- `lerNumerosDeTeste` (zod): só telefone com DDI e ao menos 8 dígitos.
+    if v_numero ~ '^\+[1-9][0-9 ()-]*$'
+       and length(regexp_replace(v_numero, '\D', '', 'g')) >= 8
+       and public.fn_telefone_variantes(v_numero) && v_variantes
+    then
+      return true;
+    end if;
+  end loop;
+
+  return false;
+end;
+$automatico$;
+
+comment on function public.fn_automatico_da_conversa(uuid, uuid, uuid)
+  is 'Há agente que vai responder ESTA conversa? Espelho SQL do portão do dreno (haQuemAtendaASessao) + pré-go-live (numeroPodeTestar). Recebe o CONTATO (não o telefone) e resolve o número por dentro, com a empresa: o wrapper comando_da_conversa não pode voltar a consultar contacts por linha (issue #2739). false = sem agente publicado no número, ou contato fora da lista de teste do canal. Issue #4012.';
+
+-- `authenticated` EXPLÍCITO: o `ALTER DEFAULT PRIVILEGES` do projeto concede
+-- EXECUTE a `authenticated` em toda função nova de `public`, e o revoke de
+-- `public` não desfaz esse grant — medido por `has_function_privilege` na
+-- varredura de definer (tests/invariants/definer-membership-varredura.test.ts).
+revoke execute on function public.fn_automatico_da_conversa(uuid, uuid, uuid) from public, anon, authenticated;
+-- A régua é INTERNA: só os wrappers `comando_da_conversa` e
+-- `automatico_da_conversa` (ambos definer) a chamam. Expor ao `authenticated`
+-- deixaria um usuário logado sondar qualquer organização por RPC — a varredura
+-- de definer (issue #3849) recusa função definer com org no argumento que não
+-- confere o pertencimento, e a saída certa aqui é não alcançar.
+grant  execute on function public.fn_automatico_da_conversa(uuid, uuid, uuid) to service_role;
+
+-- ─── (2) o comando deixa de mentir ──────────────────────────────────────────
+-- `create or replace` preserva a ACL e a forma da 0404 (parâmetro SEM NOME: com
+-- nome a PostgREST a exporia em /rpc e uma linha fabricada leria force_human de
+-- outro tenant). O corpo é o da 0482 com uma pergunta a mais: quando a regra
+-- diria `automatico`, o número ainda tem quem atenda? Se não, é `aguardando` —
+-- a Fila mostra e a carteira leva.
+create or replace function public.comando_da_conversa(public.conversations)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $comando$
+  select case
+    when base.comando = 'automatico'
+     and not public.fn_automatico_da_conversa(
+           $1.organization_id,
+           $1.channel_session_id,
+           $1.contact_id
+         )
+    then 'aguardando'
+    else base.comando
+  end
+  from (
+    select
+      public.fn_comando_da_conversa(
+        $1.status,
+        $1.assigned_to_user_id,
+        $1.bot_silenced_until,
+        -- O bit da LINHA (contato_trava_humano), não subconsulta a contacts:
+        -- a migration 0645 moveu a trava para a conversa justamente para
+        -- acabar com duas consultas por linha (issue #2739).
+        $1.contato_trava_humano,
+        false,
+        now(),
+        coalesce($1.is_group, false)
+      ) as comando
+  ) as base;
+$comando$;
+
+comment on function public.comando_da_conversa(public.conversations)
+  is 'Campo calculado exposto pelo PostgREST: ?select=comando_da_conversa e ?comando_da_conversa=in.(...). Resolve o contato e carimba now(); a regra em si é fn_comando_da_conversa, e `automatico` é rebaixado a `aguardando` quando nenhum agente vai responder este número (fn_automatico_da_conversa, issue #4012). SECURITY DEFINER desde a 0404 (issue #1571); parâmetro SEM NOME de propósito. Passa is_group desde a 0482.';
+
+revoke execute on function public.comando_da_conversa(public.conversations) from public, anon;
+grant  execute on function public.comando_da_conversa(public.conversations) to authenticated, service_role;
+
+-- ─── (3) o mesmo fato como campo calculado, para o espelho TypeScript ───────
+-- A tela não pode recalcular `automatico` por conta própria e continuar
+-- dizendo "Automático atendendo" onde o banco já respondeu `aguardando`: é a
+-- divergência de duas réguas que este PR fecha. O campo entrega o FATO (há
+-- quem atenda?) para `comandoDaConversa()` decidir junto com o resto.
+create or replace function public.automatico_da_conversa(public.conversations)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $campo$
+  select public.fn_automatico_da_conversa(
+    $1.organization_id,
+    $1.channel_session_id,
+    $1.contact_id
+  );
+$campo$;
+
+comment on function public.automatico_da_conversa(public.conversations)
+  is 'Campo calculado exposto pelo PostgREST: há agente que vai responder ESTA conversa? Alimenta o espelho TypeScript (comandoDaConversa, lib/inbox/comando-da-conversa.ts) para a tela não recalcular a mesma pergunta com outra régua. Issue #4012.';
+
+revoke execute on function public.automatico_da_conversa(public.conversations) from public, anon;
+grant  execute on function public.automatico_da_conversa(public.conversations) to authenticated, service_role;
+
+notify pgrst, 'reload schema';
 -- ---- a marca de apagamento cobre todos os telefones do contato (migration 9241) ----
 -- manifest: **A marca de apagamento cobre todos os telefones do contato.** `fn_lgpd_guardar_marca_de_apagamento` passa a gravar em `lgpd_marcas_de_apagamento` uma linha por telefone da ficha, o principal e os extras de `contact_phones`, cada uma com sal próprio, o HMAC dos dígitos e o `lid` daquele número; mesma tabela, mesma normalização, nada em claro, e `fn_titular_apagado_a_pedido` segue igual. Corpo novo, assinatura, `search_path`, `security definer`, gatilho e grants inalterados. Vale para as anonimizações feitas a partir desta versão. Idempotente; espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116). Prova em `tests/invariants/lgpd-marca-de-apagamento.test.ts`.
 --

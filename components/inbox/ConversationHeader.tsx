@@ -249,6 +249,10 @@ export function ConversationHeader({
     is_blocked: conversation.contacts?.is_blocked ?? null,
     is_group: conversation.is_group ?? false,
     automaticoDaOrg: automaticoDaOrg.data,
+    // O fato por NÚMERO (#4012): o mesmo que o banco já usou para rebaixar
+    // `comando_da_conversa` a `aguardando`. Ausente = cache anterior, e a
+    // regra cai no comportamento org-wide de antes.
+    automaticoDaConversa: conversation.automatico_da_conversa ?? undefined,
   };
   const { comando, automaticoAtivo, travaVigente, motivo } = comandoDaConversa(fatosDoComando);
   /**

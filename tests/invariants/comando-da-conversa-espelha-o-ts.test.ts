@@ -190,6 +190,9 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
     sql(`
       delete from conversations where organization_id = '${ORG}';
       delete from contacts where organization_id = '${ORG}';
+      update public.ai_agents set published_version_id = null where organization_id = '${ORG}';
+      delete from public.ai_agent_versions where organization_id = '${ORG}';
+      delete from public.ai_agents where organization_id = '${ORG}';
       delete from channel_sessions where organization_id = '${ORG}';
       delete from organizations where id = '${ORG}';
       insert into auth.users (id, email)
@@ -204,6 +207,10 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
       -- automaticoDaOrg: true que este bloco passa ao TS só é honesto se o
       -- banco disser o mesmo. Sem estas linhas o bloco mediria a divergência
       -- nova em vez do que veio medir (o bit do contato, o grupo, o dono).
+      -- A versão é publicada NA SESSÃO das conversas: a segunda metade da #4012
+      -- pergunta pelo NÚMERO (fn_automatico_da_conversa), e sem agente nesta
+      -- sessão o wrapper responderia aguardando por um fato que este bloco
+      -- também não veio medir.
       -- A ordem é agente -> versão -> ponteiro: as duas FKs se cruzam.
       insert into ai_agents (id, organization_id, name, system_prompt)
         values ('aaaaaaaa-0000-4000-8000-00000000ba01', '${ORG}', 'Espelho', 'prompt');
@@ -251,6 +258,9 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
           is_blocked: l.ib,
           is_group: l.grupo === true,
           automaticoDaOrg: true,
+          // O número do fixture tem agente publicado (ver o insert acima): o
+          // fato por número não rebaixa nenhuma das linhas abaixo.
+          automaticoDaConversa: true,
         },
         // O wrapper usa `now()` do banco; estas linhas não ficam na fronteira do
         // relógio de propósito (só `infinity`/`null`), então a comparação é estável.
