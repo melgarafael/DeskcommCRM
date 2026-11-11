@@ -11,6 +11,7 @@ import { describeWahaServer, type WahaServerCapabilities } from "@/lib/channels/
 import { logger } from "@/lib/logger";
 import { wahaPayloadSchema, type WahaPayload } from "@/lib/waha/envelope";
 import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alcance";
+import { TETO_DE_MIDIA_MS } from "@/lib/waha/teto-de-midia";
 
 /**
  * AS CONVERSAS QUE O CRM NÃO ATENDE, E POR ISSO NÃO PRECISA RECEBER.
@@ -171,22 +172,9 @@ export const CHAVES_DO_FILTRO_FIXAS = Object.fromEntries(
  */
 export const TETO_PADRAO_MS = 15_000;
 
-/**
- * Mídia tem teto MAIOR, e por um motivo medível: `lib/waha/media-send.ts:28,31`
- * manda `convert: true` em `sendVideo` e `sendVoice`. O WAHA roda ffmpeg e BAIXA
- * a URL do Storage antes de responder.
- *
- * Um teto único calibrado para `sendText` cortaria envio de áudio legítimo — o
- * conserto do timeout viraria um defeito novo, e mais difícil de ver que o
- * original, porque a mensagem simplesmente não sai.
- *
- * 180s, e não os 30s da mídia de ENTRADA: com o `proxyClientMaxBodySize` do
- * `next.config.ts`, vídeo de até 50 MB chega inteiro ao WAHA com `convert`, e
- * um envio real de 86 MB levou 69s (#4422). Um abort nosso com o WAHA ainda
- * entregando marcaria "falhou" numa mensagem que saiu. Fica abaixo dos 5 min
- * do `recover-stuck-messages`.
- */
-export const TETO_DE_MIDIA_MS = 180_000;
+// O teto de mídia mora em `./teto-de-midia`, sem dependência de servidor: o
+// navegador espera o envio de mídia por ele (`hooks/inbox/useSendMessage.ts`).
+export { TETO_DE_MIDIA_MS };
 
 /**
  * O ERRO DIZ O STATUS. NUNCA O CORPO QUE O WAHA DEVOLVEU.
