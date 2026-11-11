@@ -160,6 +160,83 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
     );
   });
 
+  it("#4424: o histórico da conversa chega ao motor, com a mensagem nova separada", async () => {
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sample_message: "e o prazo?",
+        history: [
+          { direction: "inbound", body: "quanto custa?" },
+          { direction: "outbound", body: "R$ 600." },
+        ],
+      }),
+    });
+
+    await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+
+    expect(testAgentVersion).toHaveBeenCalledWith(
+      requestPool,
+      turnDeps,
+      expect.objectContaining({
+        sampleMessage: "e o prazo?",
+        history: [
+          { direction: "inbound", body: "quanto custa?" },
+          { direction: "outbound", body: "R$ 600." },
+        ],
+      }),
+    );
+  });
+
+  it("#4424: histórico acima de 30 mensagens é recusado com 400 e frase legível", async () => {
+    vi.mocked(testAgentVersion).mockClear();
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sample_message: "oi",
+        history: Array.from({ length: 31 }, (_, i) => ({
+          direction: i % 2 === 0 ? "inbound" : "outbound",
+          body: `mensagem ${i}`,
+        })),
+      }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+    const body = (await res.json()) as { error?: { code?: string; message?: string } };
+
+    expect(res.status).toBe(400);
+    expect(body.error?.code).toBe("invalid_request");
+    expect(body.error?.message).toContain("30 mensagens");
+    expect(body.error?.message).toContain("20.000 caracteres");
+    // O limite é medido ANTES de abrir run ou chamar o motor: nada foi gasto.
+    expect(testAgentVersion).not.toHaveBeenCalled();
+  });
+
+  it("#4424: histórico acima de 20.000 caracteres é recusado com 400", async () => {
+    vi.mocked(testAgentVersion).mockClear();
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sample_message: "oi",
+        // 6 mensagens dentro do teto por mensagem (4.000), mas 24.000 no total.
+        history: Array.from({ length: 6 }, () => ({ direction: "inbound", body: "x".repeat(4000) })),
+      }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+    const body = (await res.json()) as { error?: { code?: string; message?: string } };
+
+    expect(res.status).toBe(400);
+    expect(body.error?.code).toBe("invalid_request");
+    expect(body.error?.message).toContain("20.000 caracteres");
+    expect(testAgentVersion).not.toHaveBeenCalled();
+  });
+
   it("falha do core vira checkpoint e orientação legível", async () => {
     const { POST } = await import("./route");
     const req = new NextRequest("http://localhost/x", {

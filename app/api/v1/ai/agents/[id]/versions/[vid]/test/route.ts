@@ -32,7 +32,7 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { testRunSchema } from "@/lib/ai/agents/validation";
+import { testRunSchema, LIMITE_DO_HISTORICO_EM_MENSAGENS, LIMITE_DO_HISTORICO_EM_CARACTERES } from "@/lib/ai/agents/validation";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 import { ehFalhaDoBanco } from "@/lib/ai/agents/falha-do-banco";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
@@ -136,6 +136,36 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   } catch {
     return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
+  /**
+   * #4424 — o histórico do teste é recusado ANTES de qualquer trabalho, com uma
+   * frase legível e 400 (o corpo está semanticamente errado, não malformado em
+   * um campo). Os limites são os mesmos que o schema e o painel usam: sem eles,
+   * cada turno reenviaria a conversa inteira e o custo do teste cresceria sem
+   * teto. `sample_message` não entra na conta — history é só o PASSADO.
+   */
+  const historicoPedido = (raw as { history?: unknown } | null)?.history;
+  if (Array.isArray(historicoPedido)) {
+    const caracteres = historicoPedido.reduce<number>((total, m) => {
+      const corpo =
+        m && typeof m === "object" && "body" in m && typeof m.body === "string"
+          ? m.body.trim().length
+          : 0;
+      return total + corpo;
+    }, 0);
+    if (
+      historicoPedido.length > LIMITE_DO_HISTORICO_EM_MENSAGENS ||
+      caracteres > LIMITE_DO_HISTORICO_EM_CARACTERES
+    ) {
+      return fail(
+        "invalid_request",
+        t(
+          "O histórico da conversa passou do limite: até 30 mensagens e 20.000 caracteres. Recomece a conversa para seguir.",
+        ),
+        400,
+        { requestId },
+      );
+    }
+  }
   const parsed = testRunSchema.safeParse(raw);
   if (!parsed.success) {
     return fail("validation_failed", t("Campos inválidos."), 422, {
@@ -198,6 +228,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       versionId: vid,
       runId: runRow.id,
       sampleMessage: parsed.data.sample_message,
+      history: parsed.data.history,
       sampleContact: parsed.data.sample_contact,
       sampleTags: parsed.data.sample_tags,
       channelId: version.channel_session_id,
