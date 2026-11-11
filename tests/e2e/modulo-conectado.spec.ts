@@ -210,7 +210,9 @@ test("módulo conectado: instalar, consentir, usar, recusar, cair e desligar, tu
     await page.getByTestId(`extension-enabled-${installationId}`).click();
     await page.getByTestId(`extension-save-${installationId}`).click();
     await expect(page.getByText("Configuração salva.", { exact: true })).toBeVisible();
-    await expect(page.getByTestId(`extension-consent-${installationId}-tarefas`)).toBeChecked();
+    await expect(
+      page.getByTestId(`extension-consent-${installationId}-area.tarefas.leitura`),
+    ).toBeChecked();
     await page.getByTestId(`extension-consent-save-${installationId}`).click();
     await expect(page.getByText("Áreas do módulo salvas.")).toBeVisible();
 
@@ -239,7 +241,7 @@ test("módulo conectado: instalar, consentir, usar, recusar, cair e desligar, tu
   await test.step("4. o admin retira a área tarefas e o CRM recusa na hora", async () => {
     await page.goto("/app/extensions");
     await page.getByRole("tab", { name: "Instaladas" }).click();
-    const tarefas = page.getByTestId(`extension-consent-${installationId}-tarefas`);
+    const tarefas = page.getByTestId(`extension-consent-${installationId}-area.tarefas.leitura`);
     await expect(tarefas).toBeChecked({ timeout: 30_000 });
     await tarefas.uncheck();
     await page.getByTestId(`extension-consent-save-${installationId}`).click();

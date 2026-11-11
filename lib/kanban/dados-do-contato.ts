@@ -62,7 +62,7 @@ export interface NomeDoContatoNoQuadro {
  * Anexa o NOME do contato ao lead (`contact_name`, `contact_display_name`). Só a rota do quadro chama, e
  * só quando quem chama é módulo sem `contatos`, numa leitura à parte: o `redigirContatoParaModulo` coleta
  * esses campos para filtrar o título e depois os anula. Sessão e módulo com `contatos` não passam aqui.
- * O nome da agenda do celular (`address_book_name`) NÃO entra: só as telas da equipe o leem
+ * O nome da agenda do celular NÃO entra: só as telas da equipe o leem
  * (`tests/unit/nome-da-agenda-nunca-vai-ao-cliente.test.ts`).
  */
 export function anexarNomeDoContato(leads: Lead[], contatos: NomeDoContatoNoQuadro[]): Lead[] {
