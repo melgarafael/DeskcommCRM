@@ -1,5 +1,5 @@
 /**
- * O CONTEÚDO DA CAMPANHA SEGUE O QUE O CANAL ACEITA (migrations 0710 e 9252).
+ * O CONTEÚDO DA CAMPANHA SEGUE O QUE O CANAL ACEITA (migrations 0710 e 9334).
  *
  * Número por QR manda texto livre; número oficial manda modelo aprovado; e-mail
  * manda assunto + corpo — a pergunta é da capability do canal
@@ -26,6 +26,7 @@ import {
   modoDeCampanhaDoCanal,
 } from "@/lib/channels/capabilities";
 import { estadoDaContaResend } from "@/lib/email/resend-da-organizacao";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 
 import { conferirConteudoDeEmail } from "./conteudo-de-email";
 import type { VariaveisDaCampanha } from "./modelo";
@@ -120,6 +121,18 @@ export async function decidirConteudo(
       codigo: "campanha_canal_indisponivel",
       mensagem: "Este canal não envia campanhas.",
       status: 409,
+    };
+  }
+  // Doc 305 (A): a campanha por e-mail é o módulo `campanha_por_email`, desligado
+  // de fábrica enquanto não existir o envio com descadastro. Desligado, criar ou
+  // editar uma responde 404 antes de qualquer outra conferência — esconder o
+  // rádio na tela sem recusar aqui deixaria a chave só cosmética.
+  if (modo === "email" && !(await moduloLigado(db, "campanha_por_email"))) {
+    return {
+      ok: false,
+      codigo: "campanha_email_desligada",
+      mensagem: "A campanha por e-mail está desligada nesta instalação.",
+      status: 404,
     };
   }
   if (entrada.pedido.message_mode !== undefined && entrada.pedido.message_mode !== modo) {

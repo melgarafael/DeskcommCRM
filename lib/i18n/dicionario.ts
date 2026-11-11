@@ -20134,6 +20134,12 @@ export const DICIONARIO: Traducoes = {
   "Reservas de lugar": { es: "Reserva de lugares" },
   "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.": { es: "La agenda reserva un lugar, como mesa, palco o cancha, con capacidad en personas." },
   "Link de pagamento na conversa": { es: "Enlace de pago en la conversación" },
+  // O módulo opcional da campanha por e-mail (#4289, doc 305) em /admin/sistema, em Recursos opcionais e na recusa da API.
+  "Campanha por e-mail (em construção)": { es: "Campaña por correo electrónico (en construcción)" },
+  "A nova campanha ganha a opção E-mail, com assunto, corpo e público. Esta versão ainda não envia o e-mail.": { es: "La nueva campaña gana la opción Correo, con asunto, cuerpo y público. Esta versión todavía no envía el correo." },
+  "Ligado, a tela de nova campanha ganha a opção E-mail: dá para escrever o assunto e o corpo e conferir o público. Esta versão ainda não envia o e-mail, e também não tem o descadastro nem a lista de quem pediu para não receber; a campanha criada fica guardada. Desligado, a opção não aparece e ninguém cria campanha de e-mail; as que já existem ficam guardadas.": { es: "Activado, la pantalla de nueva campaña gana la opción Correo: se puede escribir el asunto y el cuerpo y revisar el público. Esta versión todavía no envía el correo, y tampoco tiene la baja ni la lista de quienes pidieron no recibir; la campaña creada queda guardada. Desactivado, la opción no aparece y nadie crea campañas por correo; las que ya existen quedan guardadas." },
+  "Não cria porta no menu do CRM: a opção E-mail aparece dentro de Campanhas, ao criar uma nova.": { es: "No crea entrada en el menú del CRM: la opción Correo aparece dentro de Campañas, al crear una nueva." },
+  "A campanha por e-mail está desligada nesta instalação.": { es: "La campaña por correo electrónico está desactivada en esta instalación." },
   // #3509: as recusas da rota que registra o recebimento na conversa.
   "Pedido inválido.": { es: "Solicitud inválida." },
   "Esta instalação não tem um endereço público https para receber o aviso de pagamento.": { es: "Esta instalación no tiene una dirección pública https para recibir el aviso de pago." },

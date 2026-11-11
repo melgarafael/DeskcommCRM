@@ -4,7 +4,9 @@
  * modelo para conferir (ver `modelo-da-conexao.ts`).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { moduloLigado } from "@/lib/instalacao/modulos";
 
 import {
   camposDeGravacao,
@@ -14,6 +16,10 @@ import {
   lerModoDoCanal,
 } from "./conteudo-do-canal";
 import { LIMITE_DO_ASSUNTO_DO_EMAIL, LIMITE_DO_CORPO_DO_EMAIL } from "./conteudo-de-email";
+
+// Doc 305 (A): a campanha por e-mail é o módulo `campanha_por_email`. Ligado em
+// todo caso deste arquivo, menos nos que medem a chave desligada (no fim).
+vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: vi.fn(async () => true) }));
 
 const SEM_BANCO = new Proxy({} as SupabaseClient, {
   get() {
@@ -246,6 +252,51 @@ describe("decidirConteudo — campanha de E-MAIL (#3441)", () => {
         pedido: { ...EMAIL, provider_template_name: "oferta" },
       }),
     ).resolves.toMatchObject({ ok: false, codigo: "campanha_modo_do_canal" });
+  });
+});
+
+describe("decidirConteudo — a campanha por e-mail segue o módulo campanha_por_email (doc 305)", () => {
+  const pedidoDeEmail = (db: SupabaseClient) =>
+    decidirConteudo(db, {
+      organizationId: "org",
+      channelSessionId: null,
+      extras: [],
+      modoDoCanal: "email",
+      pedido: EMAIL,
+    });
+
+  it("desligado: criar ou editar é recusado com código próprio, antes de ler a conta de envio", async () => {
+    vi.mocked(moduloLigado).mockClear();
+    vi.mocked(moduloLigado).mockResolvedValueOnce(false);
+    // SEM_BANCO estoura em qualquer leitura: a recusa vem antes da conta Resend.
+    const r = await pedidoDeEmail(SEM_BANCO);
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_email_desligada", status: 404 });
+    expect(vi.mocked(moduloLigado).mock.calls[0]![1]).toBe("campanha_por_email");
+  });
+
+  it("desligado: a recusa vem antes da conferência de modo — a resposta não descreve o e-mail", async () => {
+    vi.mocked(moduloLigado).mockResolvedValueOnce(false);
+    const r = await decidirConteudo(SEM_BANCO, {
+      organizationId: "org",
+      channelSessionId: null,
+      extras: [],
+      modoDoCanal: "email",
+      pedido: { message_mode: "text", message_body: "Oi" },
+    });
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_email_desligada" });
+  });
+
+  it("ligado: a campanha de e-mail é aceita como no restante deste arquivo", async () => {
+    vi.mocked(moduloLigado).mockResolvedValueOnce(true);
+    const r = await pedidoDeEmail(bancoDaContaResend("conectada"));
+    expect(r).toMatchObject({ ok: true, modo: "email", colunas: { message_mode: "email" } });
+  });
+
+  it("campanha de WhatsApp não pergunta pelo módulo, ligado ou não", async () => {
+    vi.mocked(moduloLigado).mockClear();
+    const r = await decidirConteudo(SEM_BANCO, { ...base, modoDoCanal: "text", pedido: { message_body: "Oi" } });
+    expect(r).toMatchObject({ ok: true, modo: "text" });
+    expect(moduloLigado).not.toHaveBeenCalled();
   });
 });
 

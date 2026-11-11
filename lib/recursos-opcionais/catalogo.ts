@@ -189,6 +189,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     oQueFaz:
       "O valor a cobrar é registrado numa conversa pela API, em /api/v1/conversations/[id]/pagamentos (uma integração; ainda não há botão na tela), e a resposta traz um endereço para colar no link de pagamento; quando o cliente paga, o provedor avisa e o negócio vai para ganho.",
   },
+  campanha_por_email: {
+    nome: "Campanha por e-mail (em construção)",
+    oQueFaz: "A nova campanha ganha a opção E-mail, com assunto, corpo e público. Esta versão ainda não envia o e-mail.",
+  },
 };
 
 /**

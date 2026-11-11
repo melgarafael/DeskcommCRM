@@ -391,6 +391,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
       "Ligado, a atendente registra numa conversa o valor a cobrar e recebe um endereço de aviso, que ela cola como URL do Webhook ao criar o link de pagamento na InfinitePay. Quando o cliente paga, o aviso marca o recebimento como pago e leva o negócio para a etapa de ganho, se o valor bater com o registrado. Desligado, ninguém registra recebimento e os avisos são recusados; os recebimentos já registrados ficam guardados.",
     foraDoMenu: "Não cria porta no menu do CRM: por enquanto o recebimento é registrado pela API, em /api/v1/conversations/[id]/pagamentos.",
   },
+  {
+    modulo: "campanha_por_email",
+    id: "modulo-campanha-por-email",
+    rotulo: "Campanha por e-mail (em construção)",
+    descricao:
+      "Ligado, a tela de nova campanha ganha a opção E-mail: dá para escrever o assunto e o corpo e conferir o público. Esta versão ainda não envia o e-mail, e também não tem o descadastro nem a lista de quem pediu para não receber; a campanha criada fica guardada. Desligado, a opção não aparece e ninguém cria campanha de e-mail; as que já existem ficam guardadas.",
+    foraDoMenu: "Não cria porta no menu do CRM: a opção E-mail aparece dentro de Campanhas, ao criar uma nova.",
+  },
 ];
 
 /**

@@ -45,7 +45,7 @@ import {
   type Velocidade,
 } from "../_components/VelocidadeDaCampanha";
 
-export function NovaCampanha() {
+export function NovaCampanha({ emailLigado = false }: { emailLigado?: boolean }) {
   const t = useT();
   const router = useRouter();
   const canais = useChannelSessions();
@@ -207,6 +207,10 @@ export function NovaCampanha() {
             placeholder={t("Ex.: Reativação de clientes parados")}
           />
         </div>
+        {/* Doc 305 (A): a escolha do canal só existe com o módulo
+            `campanha_por_email` ligado. Desligado, a campanha é de WhatsApp e o
+            servidor recusa a de e-mail (`campanha_email_desligada`). */}
+        {emailLigado && (
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium">{t("Por onde a campanha fala")}</legend>
           <label className="flex items-center gap-2 text-sm">
@@ -235,6 +239,7 @@ export function NovaCampanha() {
             </p>
           )}
         </fieldset>
+        )}
 
         {!canalDeEmail && (
         <div className="space-y-2">
