@@ -25,16 +25,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { Signpost, Plus } from "@/lib/ui/icons";
+import { Signpost, Plus, Warning } from "@/lib/ui/icons";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { useRouters, useCreateRouter, type RouterListItem } from "@/hooks/ai/useRouters";
 import type { ChannelSessionLite } from "../agents/[id]/_components/AgentForm";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { useT } from "@/hooks/i18n/useT";
+import type { NumeroSemRoteador } from "./estado-dos-numeros";
 
 interface Props {
   initialState: { routers: RouterListItem[] };
   channelSessions: ChannelSessionLite[];
+  /**
+   * #4340 — números que recebem conversas e NÃO têm roteador nenhum. A leitura
+   * do servidor os calcula (`estado-dos-numeros.ts`); aqui eles ganham o
+   * aviso. Antes desta fatia o número novo, depois da troca, não aparecia em
+   * lugar nenhum e as conversas dele caíam no agente principal em silêncio.
+   */
+  numerosSemRoteador?: NumeroSemRoteador[];
 }
 
 function channelLabel(
@@ -47,7 +55,7 @@ function channelLabel(
   return s.phone_number ? `${s.display_name} · ${s.phone_number}` : s.display_name;
 }
 
-export function RoutersClient({ initialState, channelSessions }: Props) {
+export function RoutersClient({ initialState, channelSessions, numerosSemRoteador = [] }: Props) {
   const t = useT();
   const { data } = useRouters(initialState);
   const routers = data?.routers ?? [];
@@ -105,6 +113,24 @@ export function RoutersClient({ initialState, channelSessions }: Props) {
             </li>
           ))}
         </ul>
+      )}
+
+      {numerosSemRoteador.length > 0 && (
+        <Card className="flex flex-col gap-2 border-amber-500/40 bg-amber-500/5 p-4" data-testid="numeros-sem-roteador">
+          <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <Warning size={16} aria-hidden /> {t("Números sem roteador")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "As conversas destes números caem no agente principal do número — nenhum roteador decide a intenção delas, então elas não aparecem como roteadas. Crie um roteador para cada número que deve escolher o agente pelo que o cliente quer.",
+            )}
+          </p>
+          <ul className="flex flex-col gap-1 text-sm">
+            {numerosSemRoteador.map((numero) => (
+              <li key={numero.id}>{numero.rotulo}</li>
+            ))}
+          </ul>
+        </Card>
       )}
 
       <CreateRouterDialog

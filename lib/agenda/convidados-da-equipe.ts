@@ -65,6 +65,42 @@ export function separarConvidadosDaEquipe(
 }
 
 /**
+ * A lista que VAI no corpo do PATCH: `undefined` quando não houve edição.
+ *
+ * A rota distingue campo AUSENTE (não mexe) de `[]` (tira todo mundo) — e a
+ * tela de remarcação manda `starts_at`/`guest_email` em todo salvamento. Se a
+ * equipe fosse junto por omissão, remarcar desconvidaria a equipe inteira, com
+ * um PATCH 200 e nenhum aviso: exatamente o defeito mudo que a #4006 descreve
+ * ("quem participa e não é o responsável não vê o compromisso").
+ *
+ * Compara como CONJUNTO: a ordem dos chips na tela não é informação, e trocar
+ * dois convidados de lugar não é edição.
+ *
+ * `pessoasDaOrganizacao` são os ids que a tela consegue MOSTRAR (a lista de
+ * pessoas ativas, já carregada). Quem saiu da organização continua gravado no
+ * compromisso, mas não aparece como opção — a pessoa não tem como tirá-lo — e
+ * a rota recusa a lista inteira com 422 `convidado_fora_da_organizacao`. Por
+ * isso, quando HOUVE edição, o id que a tela não mostra não é reenviado. Sem
+ * edição nada muda: continua `undefined`, e o compromisso fica como está.
+ * Lista ausente ou vazia (ainda carregando) não filtra nada.
+ */
+export function equipeParaSalvar(
+  anteriores: readonly string[] | null | undefined,
+  escolhidos: readonly string[] | null | undefined,
+  pessoasDaOrganizacao?: readonly string[],
+): string[] | undefined {
+  const antes = normalizarConvidadosDaEquipe(anteriores);
+  const depois = normalizarConvidadosDaEquipe(escolhidos);
+  if (antes.length === depois.length) {
+    const conjunto = new Set(antes);
+    if (depois.every((id) => conjunto.has(id))) return undefined;
+  }
+  if (!pessoasDaOrganizacao || pessoasDaOrganizacao.length === 0) return depois;
+  const presentes = new Set(pessoasDaOrganizacao);
+  return depois.filter((id) => presentes.has(id));
+}
+
+/**
  * A agenda de uma pessoa é o que ela atende E aquilo a que foi chamada: a mesma
  * regra do recorte `?owner_user_id=` em `lib/agenda/consulta.ts`, para a tela e a
  * rota não discordarem de quem aparece.

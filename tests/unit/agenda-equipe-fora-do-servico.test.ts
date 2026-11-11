@@ -65,7 +65,11 @@ describe("#4006 · a equipe fica de fora do tipo de serviço", () => {
   const tela = readFileSync("app/app/agenda/_client.tsx", "utf8");
 
   it("a tela não mostra os botões de convidado num serviço", () => {
-    expect(tela).toContain('{!remarcandoId && !tipo?.servico ? (\n              <fieldset>');
+    // A guarda é do TIPO, não do modo: desde #4006 o seletor aparece na criação
+    // E na remarcação (com a lista que o compromisso já tem), e continua sumindo
+    // no serviço nos dois caminhos. `remarcandoId` saiu da condição quando a
+    // edição passou a ter equipe — o que este teste protege é o `!tipo?.servico`.
+    expect(tela).toContain("{!tipo?.servico ? (\n              <fieldset>");
   });
 
   it("marcar a equipe e depois trocar para um serviço não envia a lista", () => {
