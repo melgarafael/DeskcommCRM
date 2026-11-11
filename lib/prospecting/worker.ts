@@ -25,7 +25,7 @@ import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consu
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { assertProspectingContinuation, assertProspectingDelivery } from "./guard";
-import { instrucaoDeAbordagemFria, montarDadosDeAbordagem, estrategiaDoCandidato } from "./estrategia-site";
+import { entradasDaAbordagem, estrategiaDoCandidato } from "./estrategia-site";
 import {
   INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN,
   LIMITE_TENTATIVAS,
@@ -351,7 +351,9 @@ export async function sendNextCandidate(
     // de outro agente (a do padrão da organização), o envio escreve do zero.
     const personalizacao = await personalizacaoDaOrganizacao(db, c.organization_id);
     const site = siteEfetivo(p.data, new Date().toISOString());
-    const estrategia = site
+    const fonte = cfg.fonte_da_abordagem ?? "estrategia";
+    // Pelo prompt do agente não há ângulo de auditoria: nem se calcula a estratégia.
+    const estrategia = site && fonte === "estrategia"
       ? estrategiaDoCandidato(p.data, site, {
           ofertas: (cfg.ofertas ?? ["site"]) as OfertaDaCampanha[],
           nicho: c.search?.niche ?? p.data.category ?? "",
@@ -361,27 +363,27 @@ export async function sendNextCandidate(
       : null;
     // Modo "saída na 2ª": a 1ª mensagem só cumprimenta, então nada de ângulo de
     // venda — nem estratégia (na instrução) nem Auditoria/Detalhe/Rascunho (nos
-    // dados), que o prompt frio deixa citar "como o motivo do contato".
-    const soCumprimenta = cfg.exit_offer !== "first_message";
+    // dados), que o prompt frio deixa citar "como o motivo do contato". Modo
+    // "prompt do agente": sem estratégia nem auditoria. A decisão mora em
+    // `entradasDaAbordagem`, a MESMA que a prévia chama.
+    const { instrucao, dados } = entradasDaAbordagem({
+      config: cfg,
+      data: p.data,
+      site,
+      estrategia,
+      voz: blocoVozVendedor(personalizacao),
+      previa: previaDoAgente(p.data, cfg.agent_id, fonte),
+    });
     const generated = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: instrucaoDeAbordagemFria(
-        cfg.instruction,
-        cfg.qualification,
-        blocoVozVendedor(personalizacao) || undefined,
-        estrategia,
-        soCumprimenta,
-      ),
+      instrucao,
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.
       origemDaAbordagem: "prospeccao_fria",
-      // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
-      dados: soCumprimenta
-        ? montarDadosDeAbordagem(p.data, null, null)
-        : montarDadosDeAbordagem(p.data, site, previaDoAgente(p.data, cfg.agent_id)),
+      dados,
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.

@@ -23,6 +23,10 @@ export const ofertasDaCampanhaSchema = z
   .default(["site"]);
 export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
 
+/** Fonte do ângulo da primeira mensagem (`config.fonte_da_abordagem`). */
+export const FONTES_DA_ABORDAGEM = ["estrategia", "agente"] as const;
+export type FonteDaAbordagem = (typeof FONTES_DA_ABORDAGEM)[number];
+
 /**
  * Rótulos de tela de cada oferta. Fonte única: a tela da campanha (com `t()`), o
  * contexto que o agente lê em cada turno e a ferramenta de auditoria usam estes
@@ -92,6 +96,12 @@ export const campaignConfigSchema = z
     // O padrão é `first_message`: configuração gravada antes desta chave existir segue
     // igual, sem ninguém editar nada.
     exit_offer: z.enum(["first_message", "second_message"]).default("first_message"),
+    // DE ONDE VEM O ÂNGULO da primeira mensagem. `estrategia`: o bloco de estratégia e a
+    // auditoria do site entram por cima do prompt do agente (o de sempre). `agente`: o
+    // prompt do agente é a referência principal, sem ângulo de auditoria — as regras de
+    // transparência da abordagem fria e a saída continuam nos dois modos. O padrão é
+    // `estrategia`: configuração gravada antes desta chave existir segue igual.
+    fonte_da_abordagem: z.enum(FONTES_DA_ABORDAGEM).default("estrategia"),
     // Etiquetas do contato na abordagem (spec 27). Ausente = a campanha não etiqueta ninguém.
     contact_tags: contactTagsSchema.optional(),
   })
@@ -149,6 +159,27 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
       id: z.string().uuid(),
       candidate_ids: z.array(z.string().uuid()).min(1).max(5000),
       selected: z.boolean(),
+    })
+    .strict(),
+  // A FONTE da abordagem (e, opcionalmente, a instrução) de uma campanha PAUSADA. Trocar a
+  // estratégia no meio do caminho não pode custar a lista: a fila fica, o texto muda a partir
+  // do próximo envio. Conexão, agente, funil e base legal continuam fixos.
+  z
+    .object({
+      action: z.literal("adjust_approach"),
+      id: z.string().uuid(),
+      fonte_da_abordagem: z.enum(FONTES_DA_ABORDAGEM),
+      instruction: z.string().trim().min(10).max(2000).optional(),
+    })
+    .strict(),
+  // Leva as empresas AINDA NÃO ABORDADAS de uma campanha pausada ou concluída para uma
+  // campanha nova em preparação — para trocar de número ou de agente sem perder a lista.
+  // `request_id` torna a repetição inofensiva (mesmo recibo, nenhuma campanha a mais).
+  z
+    .object({
+      action: z.literal("move_list"),
+      id: z.string().uuid(),
+      request_id: z.string().uuid(),
     })
     .strict(),
   // Trocar as etiquetas de contato DEPOIS de iniciada, com a campanha pausada (spec 27). Só vale
