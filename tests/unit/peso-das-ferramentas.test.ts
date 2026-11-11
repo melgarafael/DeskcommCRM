@@ -46,7 +46,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
-  "crm_get_conversation_history": { tokens: 203, motivo: BASE },
+  "crm_get_conversation_history": {
+    tokens: 240,
+    motivo:
+      "#4077: a descrição passou a dizer que cada mensagem traz o AUTOR (sent_by_user_id e sent_by_user_name) — sem isso a integração não sabia que o campo existia e atribuía a fala ao 'sistema'",
+  },
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
@@ -141,8 +145,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
 // modo `leitura_direta` — nunca junto de `search_knowledge`; +54 com `imagem_url`
 // no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
-// (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado.
-const TETO_TOTAL = 30612;
+// (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
+// descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
+// mensagem (#4077).
+const TETO_TOTAL = 30649;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
