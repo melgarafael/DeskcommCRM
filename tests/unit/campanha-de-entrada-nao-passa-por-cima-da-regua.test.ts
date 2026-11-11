@@ -49,6 +49,10 @@ const autorizadoPelaCampanha: EstadoDeElegibilidade = {
   aiOptOut: false,
   botSilencedUntil: null,
   assigneeKind: "ai",
+  // Campo novo da régua que a main ganhou ("a IA responde a conversa sem tirar o
+  // dono de quem atende"): com `iaComDono: false` o dono humano continua vetando,
+  // que é o comportamento que este teste já cobria em `assigneeKind: "user"`.
+  iaComDono: false,
   aiAuthorizedAt: new Date(AGORA.getTime() - DIA),
   preGoLiveAtivo: false,
   numeroDeTesteAutorizado: false,

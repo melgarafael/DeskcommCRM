@@ -16,7 +16,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -226,10 +226,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         nomeDoArquivo ? { download: nomeDoArquivo } : undefined,
       );
     if (!signErr && signed?.signedUrl) {
-      const response = NextResponse.redirect(
+      const response = comIdDaRequisicao(NextResponse.redirect(
         nomeDoArquivo ? urlAssinadaParaDownload(signed.signedUrl, nomeDoArquivo) : signed.signedUrl,
         302,
-      );
+      ), requestId);
       response.headers.set("X-Request-Id", requestId);
       return response;
     }
@@ -259,7 +259,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         // verdade ("não há o que servir"); 502 acusaria uma falha inexistente.
         return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
       }
-      return new Response(new Uint8Array(media.buffer), {
+      return comIdDaRequisicao(new Response(new Uint8Array(media.buffer), {
         status: 200,
         headers: {
           "Content-Type": media.mime,
@@ -271,7 +271,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
           ...(nomeDoArquivo ? { "Content-Disposition": cabecalhoDeDownload(nomeDoArquivo) } : {}),
           "X-Request-Id": requestId,
         },
-      });
+      }), requestId);
     } catch {
       return fail("bad_gateway", t("Mídia indisponível no momento."), 502, { requestId });
     }

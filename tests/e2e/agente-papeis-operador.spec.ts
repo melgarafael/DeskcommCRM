@@ -22,7 +22,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 
-import { test, expect, type Browser, type Page } from "./helpers/test";
+import { test, expect, esperarARevelacaoNasCargas, type Browser, type Page } from "./helpers/test";
 
 import { loginComoAdmin, lerCreds, type CredsE2E } from "./helpers/login-admin";
 
@@ -67,7 +67,22 @@ test.describe.configure({ mode: "serial" });
 let pagina: Page;
 
 test.beforeAll(async ({ browser }: { browser: Browser }) => {
+  /**
+   * Contexto PRÓPRIO escapa das fixtures de `helpers/test.ts` — elas embrulham
+   * a navegação das páginas que ELAS criam, e o `contexto` daqui não é o delas.
+   * Sem esta linha o `goto` volta com a cópia do servidor ainda dentro de
+   * `<div hidden id="S:N">` (a caixa do streaming SSR, #1374): o mesmo test id
+   * aparece 2x no mesmo instante e o modo estrito do Playwright reprova o
+   * `click` do `papel-operacao` — de forma INTERMITENTE, porque depende de
+   * quem chega primeiro, o script que revela a página ou o evento `load`.
+   *
+   * É a mesma espera da fixture (não uma cópia da lógica): `esperarARevelacaoNasCargas`
+   * é o que `helpers/test.ts` registra em `context.on("page", …)`, e aqui é
+   * registrado neste contexto porque é ELE que cria a página usada pela bateria.
+   * O conserto irmão, em `acervo-de-conhecimento.spec.ts`, é esta mesma linha.
+   */
   const contexto = await browser.newContext({ locale: "pt-BR" });
+  contexto.on("page", esperarARevelacaoNasCargas);
   pagina = await contexto.newPage();
   creds = await loginComoAdmin(pagina, creds);
 });
@@ -96,6 +111,26 @@ function agenteDeTeste(): string {
 /** Abre o agente semeado e vai para a aba do papel que organiza o sistema. */
 async function abrirAbaDoOperador(): Promise<void> {
   await pagina.goto(`/app/ai/agents/${agenteDeTeste()}`);
+
+  /**
+   * A prova da ESPERA, e não a esperança dela: o `goto` daqui só devolve depois
+   * que a revelação terminou (a linha do `beforeAll`), então neste instante não
+   * pode sobrar caixa do streaming SSR. Medido antes do conserto: a caixa
+   * `S:` fica no DOM ~400 ms depois do `load` em `next start`, e quem clicasse
+   * nessa janela via o mesmo test id duas vezes —"resolved to 2 elements".
+   *
+   * A leitura é UM retrato, sem retry: `toHaveCount(1)` esperaria a duplicata
+   * sumir e transformaria o defeito em verde por tempo, que é exatamente o que
+   * esta issue existe para não fazer.
+   */
+  const caixasPendentes = await pagina.evaluate(
+    () => document.querySelectorAll('div[hidden][id^="S:"]').length,
+  );
+  expect(
+    caixasPendentes,
+    "a caixa do streaming SSR sobrou depois do goto — a espera da revelação não valeu",
+  ).toBe(0);
+
   await pagina.getByTestId("papel-operacao").click();
 }
 

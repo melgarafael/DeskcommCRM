@@ -123,14 +123,14 @@ test.describe("fonte de captação — assinatura pela tela", () => {
 
       // --- a seção nasce desligada, e o botão de teste está disponível ---
       await expect(sheet.getByText("Assinatura (HMAC)")).toBeVisible();
-      await expect(sheet.getByText("Desligada")).toBeVisible();
+      await expect(sheet.getByText("Desligada", { exact: true })).toBeVisible();
       await expect(sheet.getByRole("button", { name: "Enviar lead de teste" })).toBeEnabled();
       await page.screenshot({ path: path.join(EVIDENCIA, "1-assinatura-desligada.png") });
 
       // --- gera: o valor aparece UMA vez ---
       await sheet.getByRole("button", { name: "Gerar segredo" }).click();
       await expect(sheet.getByText("Guarde agora. Ele não será mostrado de novo.")).toBeVisible();
-      await expect(sheet.getByText("Ligada")).toBeVisible();
+      await expect(sheet.getByText("Ligada", { exact: true })).toBeVisible();
 
       // O segredo LIDO DA TELA — é isto que faz esta spec provar a tela, e não
       // um valor que o teste mesmo escolheu.
@@ -182,7 +182,7 @@ test.describe("fonte de captação — assinatura pela tela", () => {
       await page.keyboard.press("Escape");
       await cardOf(page.getByText(SOURCE_NAME, { exact: true })).click();
       const reaberto = page.getByRole("dialog").filter({ hasText: SOURCE_NAME });
-      await expect(reaberto.getByText("Ligada")).toBeVisible();
+      await expect(reaberto.getByText("Ligada", { exact: true })).toBeVisible();
       await expect(reaberto.getByText(segredo)).toHaveCount(0);
       await expect(
         reaberto.getByText("Guarde agora. Ele não será mostrado de novo."),
@@ -192,7 +192,7 @@ test.describe("fonte de captação — assinatura pela tela", () => {
       // --- remover devolve a fonte ao estado sem assinatura ---
       await reaberto.getByRole("button", { name: "Remover segredo" }).click();
       await page.getByRole("button", { name: "Remover", exact: true }).click();
-      await expect(reaberto.getByText("Desligada")).toBeVisible();
+      await expect(reaberto.getByText("Desligada", { exact: true })).toBeVisible();
 
       const depoisDeRemover = await request.post(sourceUrl, {
         data: { nome: `Depois de remover ${ts}`, telefone: "11987650004" },

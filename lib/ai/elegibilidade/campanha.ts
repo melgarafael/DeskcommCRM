@@ -38,7 +38,7 @@ export const campanhaWhatsappSchema = z.object({
    * Quem atende o PRIMEIRO turno do contato que chegou por esta campanha (#4024).
    *
    * A ingestão grava este `agent_id` na CONVERSA
-   * (`conversations.campaign_entry_agent_id`, migration 9213) quando a frase
+   * (`conversations.campaign_entry_agent_id`, migration 9332) quando a frase
    * casa; o `resolve-turn-agent` o lê num degrau acima do roteador e carimba o
    * uso único (`campaign_entry_agent_claimed_at`) no primeiro turno. Da segunda
    * resposta em diante a conversa volta à régua do número — dono humano,

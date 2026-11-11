@@ -24,6 +24,12 @@ export interface WebhookSourceRow {
   field_map: Record<string, unknown>;
   form_fields: WebhookFormField[];
   has_secret: boolean;
+  /** Formulário da Meta (#3768): a página que a fonte representa. */
+  meta_page_id: string | null;
+  /** Buscar as respostas na Meta — desligada por padrão. */
+  meta_lead_retrieval: boolean;
+  /** O token da página existe? O valor nunca volta. */
+  has_meta_page_token: boolean;
   created_at: string;
   updated_at: string;
   /** Quem mexeu por último (migration 0101). `null` nas fontes anteriores a ela. */
@@ -102,6 +108,10 @@ export function useUpdateWebhookSource() {
       reuse_open_lead_on_capture?: boolean;
       secret?: string | null;
       form_fields?: WebhookFormField[];
+      /** Formulário da Meta (#3768). O token vai de ida e nunca volta, como `secret`. */
+      meta_page_id?: string | null;
+      meta_page_token?: string | null;
+      meta_lead_retrieval?: boolean;
     }) => apiClient.patch<{ data: WebhookSourceRow }>(`/api/v1/webhook-sources/${id}`, patch),
     onError: showApiError,
     onSuccess: () => {

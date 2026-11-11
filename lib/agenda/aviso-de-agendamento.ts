@@ -108,15 +108,21 @@ export interface ConfigDoAvisoDeAgendamento {
   /** O `chatId` (`…@g.us`) de um grupo da mesma conexão — destino EXTRA. */
   grupo_destino: string | null;
   ligado: boolean;
+  /**
+   * Também lembrar o dono ANTES de cada horário (migration 9326), nos degraus
+   * do tipo de atendimento. Opcional no tipo para os dublês antigos: ausente é
+   * desligado. Motor em `lib/agenda/lembrete-ao-dono.ts`.
+   */
+  lembrar_antes?: boolean;
 }
 
 /** Para onde vai cada entrega: o número e o grupo, cada um quando existe. */
-interface DestinoDoAviso {
+export interface DestinoDoAviso {
   alvo: AlvoDaEntregaDeAgendamento;
   destino: string;
 }
 
-function destinosDe(cfg: ConfigDoAvisoDeAgendamento): DestinoDoAviso[] {
+export function destinosDe(cfg: ConfigDoAvisoDeAgendamento): DestinoDoAviso[] {
   const destinos: DestinoDoAviso[] = [];
   if (cfg.telefone_destino) destinos.push({ alvo: "numero", destino: cfg.telefone_destino });
   if (cfg.grupo_destino) destinos.push({ alvo: "grupo", destino: cfg.grupo_destino });
@@ -235,7 +241,7 @@ const retry = (quando: Date, detail: string): DesfechoDoAvisoDeAgendamento => ({
  * rodada a pede para todos — e o que já saiu volta como `ja_resolvido`, sem
  * sair de novo, pela `unique` de cada entrega.
  */
-function juntaDesfechos(
+export function juntaDesfechos(
   porDestino: Array<{ alvo: AlvoDaEntregaDeAgendamento; desfecho: DesfechoDoAvisoDeAgendamento }>,
 ): DesfechoDoAvisoDeAgendamento {
   const [unico] = porDestino;
@@ -569,7 +575,7 @@ function criaCacheDeNomes(db: AvisoDeAgendamentoDb, orgId: string) {
  * O que fica de fora é o endereço público: esta mensagem não leva link, então
  * uma instalação sem domínio ainda consegue avisar o dono.
  */
-async function entrega_(
+export async function entrega_(
   deps: Omit<AvisoDeAgendamentoDeps, "origemDoDreno">,
   ctx: {
     orgId: string;
@@ -664,7 +670,7 @@ async function entrega_(
 }
 
 /** A falha DEFINITIVA: grava o desfecho e audita. `skipped`, nunca `error`. */
-async function condena(
+export async function condena(
   deps: Pick<AvisoDeAgendamentoDeps, "db" | "audita">,
   orgId: string,
   entrega: EntregaDeAgendamento,
@@ -743,7 +749,7 @@ export function createSupabaseAvisoDeAgendamentoDb(
     async carregaConfig(orgId) {
       const { data, error } = await admin
         .from("config_aviso_de_agendamento")
-        .select("organization_id, usa_numero_do_aviso_de_caso, channel_session_id, telefone_destino, grupo_destino, ligado")
+        .select("organization_id, usa_numero_do_aviso_de_caso, channel_session_id, telefone_destino, grupo_destino, ligado, lembrar_antes")
         .eq("organization_id", orgId)
         .maybeSingle();
       if (error) throw new Error(error.message);
@@ -754,6 +760,7 @@ export function createSupabaseAvisoDeAgendamentoDb(
         telefone_destino: string | null;
         grupo_destino: string | null;
         ligado: boolean;
+        lembrar_antes: boolean | null;
       } | null;
       if (!linha) return null;
       if (!linha.usa_numero_do_aviso_de_caso) {
@@ -763,6 +770,7 @@ export function createSupabaseAvisoDeAgendamentoDb(
           telefone_destino: linha.telefone_destino,
           grupo_destino: linha.grupo_destino,
           ligado: linha.ligado,
+          lembrar_antes: linha.lembrar_antes === true,
         };
       }
       // "Usar o mesmo número do aviso de caso": a conexão e o número são LIDOS
@@ -781,6 +789,7 @@ export function createSupabaseAvisoDeAgendamentoDb(
         telefone_destino: deCaso?.telefone_destino ?? null,
         grupo_destino: linha.grupo_destino,
         ligado: linha.ligado,
+        lembrar_antes: linha.lembrar_antes === true,
       };
     },
 

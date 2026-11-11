@@ -11,7 +11,7 @@ import { agenteDaCampanhaDaConversa, agenteDaCampanhaDeEntrada } from './agente-
  *
  *  1. **`organization_id = $1`** nas duas. Sem ele a leitura atravessa
  *     organizações: o turno de uma empresa responderia pelo agente de outra.
- *     A FK composta da 9213 recusa a GRAVAÇÃO, mas o degrau não pode depender
+ *     A FK composta da 9332 recusa a GRAVAÇÃO, mas o degrau não pode depender
  *     de a escrita ter sido a única porta.
  *  2. **O carimbo de uso único** da campanha de ENTRADA (`claimed_at is null`,
  *     no `update … returning`). Sem ele o degrau vale em TODO turno, e a
