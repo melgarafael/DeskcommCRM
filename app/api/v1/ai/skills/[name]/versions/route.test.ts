@@ -3,11 +3,18 @@ import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { fail } from "@/lib/api/wrappers";
 import type { AuthUser } from "@/lib/auth/types";
+import { validateBearerToken } from "@/lib/mcp/auth";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const ORG_ID = "33333333-3333-4333-8333-333333333333";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -29,6 +36,9 @@ function mockAuthzOk() {
     user,
     org: { orgId: ORG_ID, name: "Org", role: "agent" },
   });
+  vi.mocked(createClient).mockResolvedValue(adminStub() as never);
+  vi.mocked(createAdminClient).mockReturnValue(adminStub() as never);
+  vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 
 /** Admin stub: ponteiro aponta para ATUAL; versões listam ATUAL e ANTIGA. */
@@ -77,7 +87,7 @@ describe("GET /api/v1/ai/skills/[name]/versions", () => {
 
   it("marca a versão em uso e lista o histórico", async () => {
     mockAuthzOk();
-    vi.mocked(createAdminClient).mockReturnValue(adminStub() as never);
+    vi.mocked(createClient).mockResolvedValue(adminStub() as never);
     const { GET } = await import("./route");
     const res = await GET(new NextRequest("http://localhost/x"), {
       params: Promise.resolve({ name: "catalogo" }),

@@ -48,6 +48,12 @@ export interface DepsDeEtapa {
   /** Quem está agindo. NUNCA sai do input — é resolvido de fonte confiável pelo chamador. */
   actor: Actor;
   requestId: string;
+  /**
+   * Id da linha do token (`api_tokens.id`) quando a chamada veio por Bearer: vai
+   * para o `actor_api_token_id` do audit. Ausente na sessão e no MCP, e então a
+   * chave nem entra no audit.
+   */
+  actorApiTokenId?: string | null;
 }
 
 /** As colunas que a tela e as regras usam. `position` entra: a reordenação calcula em cima dela. */
@@ -220,6 +226,11 @@ async function funilDepois(
   return corpo(depois);
 }
 
+/** O token que agiu, na forma do audit — a chave só existe quando há token. */
+function tokenDoAudit(deps: DepsDeEtapa): { actorApiTokenId?: string } {
+  return deps.actorApiTokenId ? { actorApiTokenId: deps.actorApiTokenId } : {};
+}
+
 /** `actorUserId` do audit — `null` quando quem agiu não é uma pessoa. */
 function autorDoAudit(actor: Actor): { actorUserId: string | null; metadata: Record<string, unknown> } {
   if (actor.type === "user") return { actorUserId: actor.id, metadata: { actor_type: "user" } };
@@ -295,6 +306,7 @@ export async function criarEtapa(
   void audit({
     action: "pipeline.stage_created",
     actorUserId: autor.actorUserId,
+    ...tokenDoAudit(deps),
     organizationId: deps.organizationId,
     resourceType: "crm_stage",
     resourceId: stageId,
@@ -496,6 +508,7 @@ export async function atualizarEtapa(
     void audit({
       action: "pipeline.stage_updated",
       actorUserId: autor.actorUserId,
+      ...tokenDoAudit(deps),
       organizationId: deps.organizationId,
       resourceType: "crm_stage",
       resourceId: stageId,
@@ -668,6 +681,7 @@ export async function arquivarEtapa(
   void audit({
     action: "pipeline.stage_archived",
     actorUserId: autor.actorUserId,
+    ...tokenDoAudit(deps),
     organizationId: deps.organizationId,
     resourceType: "crm_stage",
     resourceId: stageId,

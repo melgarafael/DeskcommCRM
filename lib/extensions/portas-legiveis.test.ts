@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { EXTENSION_PERMISSIONS } from "./capacidades";
-import { nomeDaPorta, portasLegiveis } from "./portas-legiveis";
+import {
+  ehAreaSensivel,
+  fraseDaPermissaoDeArea,
+  nomeDaPorta,
+  portasLegiveis,
+  type PermissaoDeArea,
+} from "./portas-legiveis";
 
 /**
  * A LISTA DE PORTAS É A ÚNICA COISA QUE A PESSOA TEM PARA DECIDIR — E ELA PRECISA ESTAR INTEIRA.
@@ -12,6 +18,46 @@ import { nomeDaPorta, portasLegiveis } from "./portas-legiveis";
  * extensão que abre Conversas e Contatos, sem incluir Tarefas, caía no ramo "não recebe
  * acesso aos dados do CRM", que é o oposto do que ela faz.
  */
+describe("frase das permissões de área (módulo conectado, F1)", () => {
+  it("só leitura de contatos vira 'Lê Contatos.' e não diz que não lê", () => {
+    const frase = portasLegiveis(["area.contatos.leitura"]);
+    expect(frase).toBe("Lê Contatos.");
+    expect(frase).not.toContain("não lê seus dados");
+  });
+
+  it("leitura de contatos e agenda com escrita de agenda, na ordem que o código produz", () => {
+    const frase = portasLegiveis([
+      "area.contatos.leitura",
+      "area.agenda.leitura",
+      "area.agenda.escrita",
+    ]);
+    expect(frase).toBe("Lê Agenda e Contatos. Altera Agenda.");
+    expect(frase).not.toContain("não lê seus dados");
+  });
+
+  it("a ordem da lista de entrada não muda a frase", () => {
+    expect(
+      portasLegiveis(["area.agenda.escrita", "area.contatos.leitura", "area.agenda.leitura"]),
+    ).toBe("Lê Agenda e Contatos. Altera Agenda.");
+  });
+
+  it("áreas junto com portas de navegação: abre primeiro, depois lê e altera", () => {
+    const frase = portasLegiveis(["navigation.inbox", "area.contatos.leitura"]);
+    expect(frase).toBe("Abre Conversas. Lê Contatos.");
+    expect(frase).not.toContain("não lê seus dados");
+  });
+});
+
+describe("frases sem área continuam idênticas às de antes", () => {
+  it("uma porta de navegação mantém o texto exato com o limite", () => {
+    expect(portasLegiveis(["navigation.tasks"])).toBe("Abre Tarefas; não lê seus dados.");
+  });
+
+  it("lista vazia mantém o texto exato", () => {
+    expect(portasLegiveis([])).toBe("Não abre nenhuma tela e não lê seus dados.");
+  });
+});
+
 describe("as portas que a tela mostra", () => {
   it("toda permissão do vocabulário tem nome legível — nenhuma aparece como código", () => {
     for (const permissao of EXTENSION_PERMISSIONS) {
@@ -48,5 +94,33 @@ describe("as portas que a tela mostra", () => {
 
   it("lista vazia é dita como vazia, sem inventar alcance", () => {
     expect(portasLegiveis([])).toContain("Não abre nenhuma tela");
+  });
+});
+
+describe("frases do consentimento por área (módulo conectado, F3)", () => {
+  const permissoesDeArea = EXTENSION_PERMISSIONS.filter((p): p is PermissaoDeArea =>
+    p.startsWith("area."),
+  );
+
+  it("as 18 permissões de área têm frase própria, não vazia e diferente entre si", () => {
+    expect(permissoesDeArea).toHaveLength(18);
+    const frases = permissoesDeArea.map((p) => fraseDaPermissaoDeArea(p));
+    expect(frases.every((frase) => frase.length > 10)).toBe(true);
+    expect(new Set(frases).size).toBe(18);
+  });
+
+  it("só configuração e agentes de IA são sensíveis", () => {
+    const sensiveis = permissoesDeArea.filter(ehAreaSensivel).sort();
+    expect(sensiveis).toEqual([
+      "area.agentes_ia.escrita",
+      "area.agentes_ia.leitura",
+      "area.configuracao.escrita",
+      "area.configuracao.leitura",
+    ]);
+  });
+
+  it("traduz cada frase pelo tradutor recebido (literais cobertos pelo dicionário)", () => {
+    const marcada = fraseDaPermissaoDeArea("area.agenda.leitura", (texto) => `[${texto}]`);
+    expect(marcada).toBe("[Ver a agenda e os agendamentos.]");
   });
 });

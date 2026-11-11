@@ -8,6 +8,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail, noContent } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   MENSAGEM_CAMPO_DE_DATA_DO_CONTATO,
@@ -25,6 +26,7 @@ import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD } from "@/lib/schemas/webh
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -187,18 +189,26 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   return ok(updated, { requestId });
 }
 
-export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
   const { id } = await ctx.params;
-  const authz = await requireRole("manager", { requestId, resource: "automation_rules" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "automation_rules",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "automation_rules_item", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const activeOrg = { orgId: authz.organizationId };
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: existing, error: fetchErr } = await supabase
     .from("automation_rules")
     .select("id")
@@ -208,12 +218,19 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Regra não encontrada."), 404, { requestId });
 
-  const { error: delErr } = await supabase.from("automation_rules").delete().eq("id", id);
+  // A organização entra também no delete: no ramo do token o cliente é o admin
+  // (sem RLS), e o id da URL não basta para dizer que a regra é desta organização.
+  const { error: delErr } = await supabase
+    .from("automation_rules")
+    .delete()
+    .eq("id", id)
+    .eq("organization_id", activeOrg.orgId);
   if (delErr) return fail("internal_error", delErr.message, 500, { requestId });
 
   void audit({
     action: "automation.rule_deleted",
-    actorUserId: user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: activeOrg.orgId,
     resourceType: "automation_rule",
     resourceId: id,

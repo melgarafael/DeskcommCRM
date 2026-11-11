@@ -69,6 +69,10 @@ export const SQL_ERRORS: Readonly<Record<string, { message: string; status: numb
     message: "O responsável pela instalação removeu esta extensão de todas as organizações.",
     status: 410,
   },
+  extension_switch_not_applicable: {
+    message: "Só um módulo conectado tem o que ligar ou desligar nesta instalação.",
+    status: 409,
+  },
   extension_artifact_mismatch: {
     message:
       "O arquivo recebido não corresponde à versão admitida. Peça ao mantenedor para conferir a publicação.",
@@ -76,6 +80,22 @@ export const SQL_ERRORS: Readonly<Record<string, { message: string; status: numb
   },
   extension_revision_conflict: {
     message: "A configuração mudou em outra sessão. Recarregue antes de salvar.",
+    status: 409,
+  },
+  extension_consent_not_applicable: {
+    message: "Só um módulo conectado tem áreas para consentir.",
+    status: 409,
+  },
+  extension_not_activated: {
+    message: "Ative o módulo nesta organização antes de consentir áreas.",
+    status: 409,
+  },
+  extension_area_not_declared: {
+    message: "O módulo não declarou esta área no pacote. Ela não pode ser consentida.",
+    status: 409,
+  },
+  extension_area_requires_admin: {
+    message: "Só um administrador da organização pode consentir esta área.",
     status: 409,
   },
   extension_active_limit: {

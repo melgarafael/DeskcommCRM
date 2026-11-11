@@ -49,10 +49,12 @@ import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
 import { definirSetorDaConversa } from "@/lib/atendimento/setor-da-conversa";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import { conversationSectorSchema, validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -71,11 +73,43 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const moduloDesligado = await seSetoresDesligado(requestId);
   if (moduloDesligado) return moduloDesligado;
 
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:write",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+    const orgId = authz.organizationId;
+    const supabase = authz.supabase;
+    const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+    return responderSetorPut(supabase, orgId, id, req, requestId, t, actorUserId, authz.apiTokenId ?? null);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId; // fonte confiável (cookie validado), nunca o body
+  const orgId = authz.org.orgId;
+  const supabase = await createClient();
+  return responderSetorPut(supabase, orgId, id, req, requestId, t, authz.user.id, null);
+}
 
+async function responderSetorPut(
+  supabase: SupabaseClient,
+  orgId: string,
+  conversationId: string,
+  req: NextRequest,
+  requestId: string,
+  t: (texto: string) => string,
+  actorUserId: string | null,
+  actorApiTokenId: string | null,
+): Promise<Response> {
   let input;
   try {
     input = await validateRequest(conversationSectorSchema, req);
@@ -89,21 +123,23 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     throw err;
   }
 
-  // A escrita passa pelo cliente da SESSÃO: quem não enxerga a conversa não
-  // escolhe a fila dela (a RLS de sempre, sem exceção para esta rota), e o
-  // atendente com papel `agent` continua podendo classificar. O de serviço
-  // entra só onde ele já entrava: a lista de setores e o pedido de distribuição.
-  const supabase = await createClient();
+  // A escrita passa pelo cliente que a rota recebeu: o da SESSÃO (a RLS de sempre
+  // vale: quem não enxerga a conversa não escolhe a fila dela) ou, no ramo do
+  // token, o de serviço com o `.eq("organization_id")` dentro do helper. O de
+  // serviço entra só onde ele já entrava: a lista de setores e o pedido de
+  // distribuição.
   const resultado = await definirSetorDaConversa({
     db: supabase,
     admin: createAdminClient(),
     organizationId: orgId,
-    conversationId: id,
+    conversationId,
     sectorId: input.sector_id,
     origem: "manual",
     // Gente sempre pode corrigir a classificação — inclusive a que a IA fez.
     sobrescreverSetorManual: true,
-    ator: { tipo: "user", userId: authz.user.id },
+    ator: actorApiTokenId
+      ? { tipo: "api_token", userId: actorUserId, apiTokenId: actorApiTokenId }
+      : { tipo: "user", userId: actorUserId },
     requestId,
     // Já conferido acima, antes de autorizar: não pagamos a segunda consulta.
     moduloJaConferido: true,
@@ -135,7 +171,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // publicação em tempo real. Quando a fatia 2 (menu/IA e filtro no Inbox)
   // chegar, o evento nasce junto com quem o escuta.
 
-  return ok({ id, sector_id: resultado.para, redistribuiu: resultado.redistribuiu }, { requestId });
+  return ok({ id: conversationId, sector_id: resultado.para, redistribuiu: resultado.redistribuiu }, { requestId });
 }
 
 /** GET /api/v1/conversations/[id]/sector — a fila atual da conversa. */
@@ -146,15 +182,40 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const moduloDesligado = await seSetoresDesligado(requestId);
   if (moduloDesligado) return moduloDesligado;
 
+  const authHeader = _req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(_req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    const orgId = authz.organizationId;
+    const supabase = authz.supabase;
+    return responderSetorGet(supabase, orgId, id, requestId);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
-
   const supabase = await createClient();
+  return responderSetorGet(supabase, orgId, id, requestId);
+}
+
+async function responderSetorGet(
+  supabase: SupabaseClient,
+  orgId: string,
+  conversationId: string,
+  requestId: string,
+): Promise<Response> {
   const { data, error } = await supabase
     .from("conversations")
     .select("id, sector_id")
-    .eq("id", id)
+    .eq("id", conversationId)
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });

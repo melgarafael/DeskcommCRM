@@ -13,14 +13,15 @@
  * número de agora. `force-dynamic` aqui, `cache: "no-store"` no fetch de lá.
  *
  * Read-only ⇒ sem audit (mesma regra de `metrics/attendants`). Piso `manager`,
- * mesmo de `accounts`.
+ * mesmo de `accounts`. Sessão OU token de servidor (`mcp:read`): a organização
+ * vem da sessão ou da linha do token, nunca do query.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { lerCredencialDeLeitura } from "@/lib/plataformas-de-anuncio/credenciais-de-leitura";
 import { lerCampanhas, lerInsights } from "@/lib/plataformas-de-anuncio/meta/insights";
 import { montarTabelaDeCampanhas } from "@/lib/plataformas-de-anuncio/meta/tabela-de-campanhas";
@@ -69,9 +70,17 @@ function periodoPadrao(): { from: string; to: string } {
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "ads_insights" });
+  // Sessão de navegador OU token de servidor. O teto vale para o token mesmo na
+  // leitura: cada chamada daqui gasta duas unidades da cota da plataforma.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ads_insights",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ads_insights", requestId);
+  if (teto) return teto;
 
   const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
   if (!parsed.success) {
@@ -85,8 +94,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const de = parsed.data.from ?? padrao.from;
   const ate = parsed.data.to ?? padrao.to;
 
+  // Admin client nos dois ramos (a tabela não tem policy); a organização é a de
+  // `authz.organizationId`, da sessão ou da linha do token.
   const admin = createAdminClient();
-  const credencial = await lerCredencialDeLeitura(admin, org.orgId, "meta_ads");
+  const credencial = await lerCredencialDeLeitura(admin, authz.organizationId, "meta_ads");
   if (!credencial.ok) return respostaSemConexao(credencial.motivo, { requestId });
 
   const token = credencial.credencial.accessToken;

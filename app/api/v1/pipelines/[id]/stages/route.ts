@@ -13,9 +13,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * caminhos diferentes fariam o sistema mentir para uma das duas.
  *
  * Auth: sessão por cookie, papel manager+ (é configuração do funil, não trabalho
- * de card). `organization_id` sai do JWT — nunca do body. O client é o do
- * usuário, então a RLS vale; o filtro explícito é a convenção do repo e a rede
- * que sobra se a policy mudar.
+ * de card), OU Bearer `dsk_…` com `config:write` e papel admin (`tokenRole`).
+ * `organization_id` sai do JWT ou da linha do token — nunca do body. Na sessão o
+ * client é o do usuário, então a RLS vale; no token é o admin (sem RLS) e o
+ * filtro de organização das libs (`lerFunil` confere o funil ANTES de escrever)
+ * é a única barreira. Funil de outra organização responde 404.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -23,10 +25,10 @@ import { z } from "zod";
 
 import { respostaDeRecusa } from "@/lib/api/recusa";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { criarEtapa } from "@/lib/leads/stage-operations";
 import { anexaFluxos, carregaFluxosPorEtapa } from "@/lib/followup/fluxos-da-etapa";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -61,14 +63,22 @@ const bodySchema = z
  * dizer "quem está em Perdido". Quem escolhe etapa de NASCIMENTO é recusado
  * antes, pela regra de que card não nasce fechado.
  */
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "pipeline_stages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "pipeline_stages",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.stages", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("crm_stages")
     // A janela de esfriando, a chance de fechamento e o aviso de equipe entram
@@ -80,7 +90,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .select(
       "id, name, position, is_won, is_lost, expected_duration_hours, win_probability, avisar_na_central",
     )
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("pipeline_id", id)
     .eq("is_archived", false)
     .order("position", { ascending: true });
@@ -93,7 +103,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // derrubar uma listagem de etapas que já foi lida com sucesso.
   let fluxos: Awaited<ReturnType<typeof carregaFluxosPorEtapa>> | null = null;
   try {
-    fluxos = await carregaFluxosPorEtapa(supabase, authz.org.orgId);
+    fluxos = await carregaFluxosPorEtapa(supabase, authz.organizationId);
   } catch {
     fluxos = null;
   }
@@ -106,9 +116,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_stages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_stages",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.stages", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const { id: pipelineId } = await ctx.params;
 
@@ -127,13 +145,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
   try {
     const { funil } = await criarEtapa(
       {
-        supabase,
-        organizationId: authz.org.orgId,
-        actor: { type: "user", id: authz.user.id, role: authz.org.role },
+        supabase: authz.supabase,
+        organizationId: authz.organizationId,
+        actor: authz.actor,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
       },
       {

@@ -28,6 +28,12 @@ vi.mock("@/lib/env", () => ({
   env: { INTERNAL_SECRET: "segredo", INTERNAL_CRON_SECRET: "" },
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// A rota de horários agora importa o portão de token; o ramo de sessão não usa o cliente de sessão.
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: vi.fn(async () => {
+    throw new Error("cliente de sessão usado no ramo do token");
+  }),
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/channels/central-de-pausa", () => ({
   sincronizarAvisoDePausa: vi.fn(async () => "aberto"),

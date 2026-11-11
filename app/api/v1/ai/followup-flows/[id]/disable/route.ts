@@ -2,14 +2,20 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followup-flows/:id/disable — status='disabled' (manager+).
  * No-op ok (200, sem novo audit) se já estava disabled.
+ *
+ * Sessão OU token de integração (Spec 33, R1): o token precisa de
+ * `config:write` e papel admin (`tokenRole`). A organização sai de
+ * `authz.organizationId` (linha do token, nunca do caminho), e no ramo do
+ * token o cliente é a service role: o `organization_id` de cada consulta
+ * abaixo é a única barreira.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +24,7 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -28,17 +34,26 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: existing, error: fetchErr } = await supabase
     .from("followup_flow_pointers")
     .select("id, status")
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
@@ -51,7 +66,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .from("followup_flow_pointers")
     .update({ status: "disabled", updated_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .select("id, status, updated_at")
     .single();
   if (updErr || !updated) {
@@ -62,8 +77,9 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   void audit({
     action: "followup_flow.disabled",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "followup_flow_pointer",
     resourceId: id,
     requestId,
