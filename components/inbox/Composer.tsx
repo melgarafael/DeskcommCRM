@@ -432,7 +432,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     setPendingEm(mode);
   }
 
-  /** A escolha de UM arquivo — o menu "+" e a imagem colada chamam por aqui. */
+  /** A escolha de UM arquivo — a imagem colada chama por aqui. O menu "+"
+   * entrega a lista direto no `escolherArquivos` (#4364). */
   function escolherArquivo(file: File) {
     escolherArquivos([file]);
   }
@@ -1186,9 +1187,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               para o cliente, e nota com cartão de contato não existe. O `disabled`
               continua o de sempre: em modo nota `respostaBarrada` é só
               `isDisabled`, e a janela fechada barra a resposta, não a nota. */}
+          {/* A lista inteira da escolha, direto na função do arraste (#4364): o
+              botão deixa de ser um gesto de um arquivo só. */}
           <AttachMenu
             disabled={respostaBarrada}
-            onPick={escolherArquivo}
+            onPick={escolherArquivos}
             onPickContact={mode === "reply" ? () => setContactPickerOpen(true) : undefined}
           />
           <EmojiButton
