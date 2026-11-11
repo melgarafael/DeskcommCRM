@@ -18,6 +18,9 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/contacts/dispensar-par", () => ({ dispensarParDeContatos: vi.fn() }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: () => ({}) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// resolveAuthDual abre o cliente de sessão (cookies) depois de requireRole; a rota
+// não usa esse cliente (a gravação vai pelo pool), então é um objeto vazio.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
 
 const ORG_SESSAO = "22222222-2222-4222-8222-222222222222";
 const ORG_OUTRA = "33333333-3333-4333-8333-333333333333";

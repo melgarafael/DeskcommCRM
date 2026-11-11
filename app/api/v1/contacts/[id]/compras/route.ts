@@ -15,10 +15,13 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { montarCompras, type LeadGanhoRow } from "@/lib/leads/compras-do-contato";
 import { camposDeCompraDaInterface } from "@/lib/navigation/interface";
+import { extractBearer } from "@/lib/mcp/auth";
+import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
@@ -30,11 +33,24 @@ const COMPRA_COLS =
 const LIMITE = 20;
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: contactId } = await ctx.params;
+
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "contacts",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+    if (teto) return teto;
+    return responderCompras(authz.supabase, authz.organizationId, contactId, requestId);
+  }
 
   const supabase = await createClient();
   const {
@@ -45,8 +61,8 @@ export async function GET(
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
-  // A RLS já limita o que este usuário enxerga; a organização vem da LINHA do
-  // contato (nunca do corpo) e o filtro por ela é explícito, como no crm-summary.
+  // A organização vem da linha do contato (nunca do corpo) e o filtro por ela é
+  // explícito, como no crm-summary.
   const { data: contactScope, error: scopeError } = await supabase
     .from("contacts")
     .select("organization_id")
@@ -55,10 +71,24 @@ export async function GET(
   if (scopeError) return fail("internal_error", scopeError.message, 500, { requestId });
   if (!contactScope) return fail("not_found", "Contato não encontrado.", 404, { requestId });
 
+  return responderCompras(supabase, contactScope.organization_id, contactId, requestId);
+}
+
+/**
+ * O corpo da leitura, igual nos dois ramos (sessão e token): quem decide o
+ * cliente do banco e a organização é o portão, aqui só se lê a ficha e as
+ * compras.
+ */
+async function responderCompras(
+  supabase: SupabaseClient,
+  organizationId: string,
+  contactId: string,
+  requestId: string,
+): Promise<Response> {
   const { data: org, error: orgError } = await supabase
     .from("organizations")
     .select("interface_settings")
-    .eq("id", contactScope.organization_id)
+    .eq("id", organizationId)
     .maybeSingle();
   if (orgError) return fail("internal_error", orgError.message, 500, { requestId });
   const chaves = camposDeCompraDaInterface(org?.interface_settings);
@@ -67,7 +97,7 @@ export async function GET(
     .from("crm_leads")
     .select(COMPRA_COLS)
     .eq("contact_id", contactId)
-    .eq("organization_id", contactScope.organization_id)
+    .eq("organization_id", organizationId)
     .eq("status", "won")
     .not("closed_at", "is", null)
     .order("closed_at", { ascending: false })

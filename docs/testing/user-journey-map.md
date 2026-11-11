@@ -4383,6 +4383,87 @@ e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nat
 [Registro da prova](ofertas-da-campanha.md). CNPJ já foi
 entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.
 
+## J68 — Módulo conectado: instalar, desligar e ligar de novo `[P0]` (2026-11-04)
+
+Specs: nenhuma spec de tela escrita ainda. Cobertura hoje: `tests/invariants/extensoes-conectado.test.ts`
+e `tests/invariants/extensoes-interruptor.test.ts` (banco, `pnpm test:db`, CI `invariants`) e
+`components/extensions/ExtensionsManager.test.tsx` (tela de componente, `pnpm test:unit`, CI `verify`).
+Nenhuma delas abre `/admin/extensoes` num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do fork.
+
+Ambiente previsto: banco fresco aplicado do `supabase/baseline.sql` (não das `migrations/`) com
+`scripts/bootstrap-owner.ts`, envs opcionais ausentes (sem `RESEND_API_KEY`), e um catálogo de laboratório
+com uma entrada `connected` que traz `service_origin` em `https://` (loopback só com a política de laboratório ligada).
+
+**Bloqueio conhecido antes da execução.** O catálogo de laboratório (`experiments/extensoes/catalog/catalog.py`)
+ainda não admite o perfil `connected`: `validate_manifest` recusa todo `profile` diferente de `"declarative"`
+(linha 168) e `entry_from_manifest` (linha 353) não grava `service_origin`. Até isso mudar, o caso J68.1 não
+roda, e os casos seguintes ficam como especificação.
+
+| Caso | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|
+| J68.1 | Admitir um catálogo de laboratório com entrada `connected` e `service_origin` | P0 | Catálogo exportado com `profile: connected` e `service_origin`; a admissão pela UI aceita; banco com a entrada e a origem | **NÃO EXECUTADO** — bloqueado pelo laboratório (ver acima) |
+| J68.2 | Instalar pela UI em `/admin/extensoes` | P0 | A instalação aparece com perfil `connected`, revisão 1, sem `disabled_at`; banco com recibo `install` concluído | **NÃO EXECUTADO** |
+| J68.3 | Cartão do módulo conectado instalado | P0 | O cartão mostra o botão Desligar e a nota "Desligar não desinstala: o módulo continua instalado e pode ser ligado de novo." Não há aviso de instalação próprio nesta fase | **NÃO EXECUTADO** |
+| J68.4 | Desligar | P0 | Toast "Módulo desligado nesta instalação."; o cartão mostra "Desligado nesta instalação" com a data e o botão passa a Ligar; banco com `disabled_at` e `disabled_by` preenchidos, revisão +1 e `api_audit_log` com `extension.switched` | **NÃO EXECUTADO** |
+| J68.5 | Ligar de novo | P0 | Toast "Módulo ligado de novo nesta instalação."; o aviso some; `disabled_at` e `disabled_by` voltam a nulo; revisão +1 | **NÃO EXECUTADO** |
+| J68.6 | Recibo repetido e revisão velha | P1 | A repetição devolve `applied_now` falso sem mexer na revisão; uma revisão velha recarrega a tela e não anuncia sucesso | **CI `invariants`** (banco) e teste de componente escritos; **NÃO EXECUTADO** na tela |
+| J68.7 | Sem módulo conectado instalado | P0 | A tela de extensões é a de hoje: nenhum botão Ligar ou Desligar, nenhuma nota de interruptor | teste de componente escrito; **NÃO EXECUTADO** na tela |
+| J68.8 | Remover um módulo conectado desligado e reinstalar | P0 | Reinstalar reaproveita a mesma linha, zera `removed_at` e mantém `disabled_at`: a instalação volta DESLIGADA; os vínculos das organizações não voltam ativos | **NÃO EXECUTADO.** Verificado só por leitura: `fn_extensions_finish_install` faz `update ... removed_at=null` e não toca em `disabled_at`; nenhum teste cobre este caminho |
+
+**Comportamento declarado.** Reinstalar um módulo removido que estava desligado volta **desligado**. É a escolha do
+lado seguro: quem administra a instalação liga de novo, de propósito.
+
+**Não provado.** A tela inteira (nenhuma execução em navegador); que desligar corta o acesso do serviço (hoje o
+estado é só guardado e mostrado: a F2 e a F4 vão ler `disabled_at`); um aviso de instalação específico para o
+módulo conectado; e a chamada real ao endereço `service_origin`, que nenhuma peça da F1 faz.
+
+## J69 — Módulo conectado: segredo, busca do token e revogação `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; o laboratório local ainda não
+admite o perfil `connected` (ver J67.1), então nenhum caso abaixo roda nele. Quando J67.1 passar, os
+casos viram execução; até lá, cada linha descreve o que a tela e o banco devem fazer.
+
+Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-token-modulo.test.ts` e
+`tests/invariants/extensoes-token-modulo-funcoes.test.ts` (banco, `pnpm test:db`, CI `invariants`);
+`app/api/v1/extensions/token/route.test.ts` e `app/api/v1/extensions/[id]/segredo/route.test.ts`
+(rota, `pnpm test:unit`, CI `verify`); `lib/extensions/segredo-do-modulo.test.ts`;
+`lib/mcp/auth-ator-modulo.test.ts`; `tests/api/revogar-token-de-modulo-desativa-a-ativacao.test.ts`;
+`components/extensions/ExtensionsManager.test.tsx` e `tests/unit/tokens-lista-modulo-conectado.test.tsx`.
+Nenhuma delas abre `/admin/extensoes` nem `/app/settings/api-tokens` num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J67 (banco fresco do `supabase/baseline.sql`, `scripts/bootstrap-owner.ts`,
+envs opcionais ausentes), com `AI_CRED_AES_KEY` definida (sem ela, instalar `connected` falha antes de gravar;
+a mensagem exibida na tela ainda não foi conferida), um módulo de laboratório que assina com o segredo recebido e duas organizações
+para provar o isolamento.
+
+| Caso | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|
+| J68.1 | Instalar um módulo `connected` | P0 | A instalação aparece com perfil `connected`; banco com linha em `extension_installation_secrets` cujo `ciphertext` não é o segredo em claro | **NÃO EXECUTADO** (depende de J67.1) |
+| J68.2 | Gerar o segredo e vê-lo uma vez | P0 | Botão "Gerar segredo" no cartão abre a caixa com o segredo; fechar a caixa apaga o valor da tela; reabrir não mostra de novo; `api_audit_log` com `extension.secret_rotated` e sem o valor | **NÃO EXECUTADO** |
+| J68.3 | Gerar novo segredo | P0 | Botão "Gerar novo segredo"; os tokens vivos da instalação somem da tela de tokens; uma busca com o segredo antigo é recusada | **NÃO EXECUTADO** |
+| J68.4 | Ativar numa organização | P0 | Ativar reserva a vaga: a linha "Módulo <slug>" aparece na tela de tokens da organização. Previsto, não medido: a vaga ainda não tem texto utilizável, porque o banco guarda só um hash que ninguém conhece | **NÃO EXECUTADO** |
+| J68.5 | O módulo busca o token com a assinatura | P0 | `POST /api/v1/extensions/token` com `X-Module-*` assinados devolve `token` e `expires_at` (1 h); o token é aceito em `/api/v1` com escopo `mcp:read` e papel `viewer` | **NÃO EXECUTADO** |
+| J68.6 | Ver o token na tela de tokens | P0 | Linha "Módulo <slug>" com o prefixo, sem botão de copiar; nenhum texto do token aparece na tela | **NÃO EXECUTADO** |
+| J68.7 | Revogar na tela desativa o módulo | P0 | Botão "Revogar" na linha do módulo; a ativação daquela organização passa a desativada e o token fica revogado, na mesma transação | **NÃO EXECUTADO** |
+| J68.8 | Repetir a busca com o mesmo nonce | P1 | Segunda busca com o mesmo `X-Module-Nonce` recusa; a resposta é idêntica à de assinatura errada e à de instalação inexistente | **CI** (rota e banco) escritos; **NÃO EXECUTADO** |
+| J68.9 | Carimbo fora de ±5 min | P1 | Carimbo com 5 min exatos entra; com mais de 5 min recusa; a recusa não troca o hash da vaga | **CI** (unit e rota) escritos; **NÃO EXECUTADO** |
+| J68.10 | Desligar a instalação corta a busca | P1 | Com `disabled_at`, a busca recusa e não troca o hash; desligar revoga os tokens de todas as organizações da instalação | **CI** (banco) escrito; **NÃO EXECUTADO** |
+| J68.11 | Limite de 50 tokens vivos | P1 | Organização com 50 tokens vivos: ativar `connected` falha inteiro e `organization_extensions` não muda | **CI** (banco) escrito; **NÃO EXECUTADO** |
+| J68.12 | Duas buscas simultâneas | P1 | Duas buscas do mesmo par deixam um só token vivo; a outra recebe recusa ou o mesmo resultado | **só CI de banco** (`extensoes-token-modulo-funcoes.test.ts`); **NÃO EXECUTADO** |
+| J68.13 | Isolamento entre organizações | P0 | Token emitido para a organização A não existe para a B; a instalação ativa só na B não emite nada para a A | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** O token do módulo vale uma hora e é renovado por nova busca; não há token
+de longa duração na F2. Revogar na tela de tokens desativa a ativação daquela organização: para voltar,
+quem administra a organização ativa o módulo de novo, de propósito.
+
+**Não provado.** Nenhum caso acima foi executado num navegador; que o módulo real (fora do laboratório) consiga
+assinar e buscar; a concorrência entre buscas só é provada pelos invariantes de banco, nunca por uma
+jornada em tela; e que a autoridade do token seja limitada por área (isso é da F3, e o token da F2 só
+tem `mcp:read`).
 ## Consultas MCP no Testar e no assistido — resgate #3564 (2026-10-27)
 
 Fonte preservada: `8088f3a65e3e3cece8d7427487ec4725f9aa23e8`, de @Denispds.

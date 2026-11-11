@@ -8,6 +8,10 @@
  *
  * Este teste pinça exatamente essa escolha: o client usado é o de sessão, o
  * admin não é nem chamado, e a resposta contém só o negócio do atendente.
+ *
+ * Vale para a SESSÃO. A rota também aceita Bearer `dsk_…` (papel admin, Spec 33,
+ * R1), e então a leitura é da organização inteira pelo cliente admin: essa
+ * bateria está em `tests/unit/token-por-area/config-r1-lote3.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";

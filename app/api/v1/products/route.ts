@@ -17,8 +17,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import {
   FAIXA_ALEM_DO_FIM,
   filtroDaBuscaDoCatalogo,
@@ -30,15 +30,23 @@ import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema } from "@/lib/schemas/produtos";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "products", requestId);
+  if (teto) return teto;
 
   const params = req.nextUrl.searchParams;
   const filtro = filtroDaBuscaDoCatalogo(params.get("busca"));
@@ -60,12 +68,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     return ok([], { requestId, meta: { total: 0, pagina, por_pagina: PRODUTOS_POR_PAGINA, has_more: false } });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   let q = supabase
     .from("catalog_products")
     .select(COLUNAS_DO_PRODUTO, paginado ? { count: "exact" } : undefined)
-    .eq("organization_id", authz.org.orgId);
+    .eq("organization_id", authz.organizationId);
 
   // A régua do termo (vírgula, parêntese, `%`, termo só de pontuação) mora em
   // `filtroDaBuscaDoCatalogo` — a mesma que a tela usa.
@@ -80,7 +88,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     let contagem = supabase
       .from("catalog_products")
       .select("id", { count: "exact", head: true })
-      .eq("organization_id", authz.org.orgId);
+      .eq("organization_id", authz.organizationId);
     if (filtro) contagem = contagem.or(filtro);
     const { count: agora } = await contagem;
     return ok([], {
@@ -107,9 +115,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "products", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const parsed = produtoCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -119,9 +135,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // A moeda vem da organização, nunca do corpo — ver `moedaDaOrganizacao()`.
-  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
+  const moeda = await moedaDaOrganizacao(supabase, authz.organizationId);
 
   // `fotos` é URL de ENTRADA e NÃO é coluna: sai do corpo antes do insert, como
   // a moeda sai antes de qualquer decisão. Ver o comentário do campo em
@@ -146,7 +162,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const produtoId = urls.length > 0 ? randomUUID() : undefined;
   let caminhos: string[] | undefined;
   if (produtoId) {
-    const guardadas = await guardarFotosPorUrl({ orgId: authz.org.orgId, produtoId, urls, t });
+    const guardadas = await guardarFotosPorUrl({ orgId: authz.organizationId, produtoId, urls, t });
     if (!guardadas.ok) {
       // 422 e não 500: o corpo é que está errado (link morto, arquivo que não é
       // foto, acima de 5 MB), e quem lê é quem integrou.
@@ -165,7 +181,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       ...(produtoId ? { id: produtoId } : {}),
       ...(caminhos ? { fotos: caminhos } : {}),
       moeda,
-      organization_id: authz.org.orgId,
+      organization_id: authz.organizationId,
       origem: "manual",
     })
     .select(COLUNAS_DO_PRODUTO)
@@ -175,7 +191,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // Os arquivos já subiram e a linha não existe: sem esta limpeza, um código
     // repetido deixaria fotos órfãs no bucket pagas por ninguém.
     if (produtoId && caminhos?.length) {
-      await apagarDoBucket(authz.org.orgId, produtoId, caminhos, requestId);
+      await apagarDoBucket(authz.organizationId, produtoId, caminhos, requestId);
     }
     // 23505 = já existe produto com este código nesta organização. A recusa
     // nomeia o campo porque quem lê é quem digitou.
@@ -186,8 +202,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   await audit({
-    organizationId: authz.org.orgId,
-    actorUserId: authz.user.id,
+    organizationId: authz.organizationId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "catalog_product.created",
     resourceType: "catalog_products",
     resourceId: (data as unknown as { id: string }).id,

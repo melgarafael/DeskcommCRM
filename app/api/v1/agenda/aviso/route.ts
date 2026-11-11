@@ -24,9 +24,11 @@ import { z } from "zod";
 
 import { confereGrupoDaConexao } from "@/lib/agenda/grupo-do-aviso-de-agendamento";
 import { lerEstadoDaTelaDoAvisoDeAgendamento } from "@/lib/agenda/tela-do-aviso-de-agendamento";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { mascara } from "@/lib/escalacao/aviso-ao-suporte";
 import { limparCacheDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { criarDepsDeGrupos } from "@/lib/grupos/servico";
@@ -126,8 +128,19 @@ const RECUSAS_DO_RPC = {
   },
 } as const;
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  // Só a LEITURA aceita o token de integração (Spec 33): cada consulta da tela
+  // filtra `organization_id` e o número sai mascarado. O PUT segue de sessão:
+  // `fn_definir_aviso_de_agendamento` lê `auth.uid()`.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, { requestId, resource: RECURSO, role: "admin", scope: "mcp:read" });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "agenda_aviso", requestId);
+    if (teto) return teto;
+    return ok(await lerEstadoDaTelaDoAvisoDeAgendamento(authz.supabase, authz.organizationId), { requestId });
+  }
+
   const authz = await requireRole("admin", { requestId, resource: RECURSO });
   if (!authz.ok) return authz.response;
 

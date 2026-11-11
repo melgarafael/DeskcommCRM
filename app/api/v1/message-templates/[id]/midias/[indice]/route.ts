@@ -17,11 +17,11 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import {
   BUCKET_DAS_MIDIAS,
   mimeDaMidia,
@@ -35,12 +35,19 @@ interface RouteParams {
   params: Promise<{ id: string; indice: string }>;
 }
 
-export async function GET(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+export async function GET(req: NextRequest, { params }: RouteParams): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_templates.midia", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id, indice } = await params;
 
   const posicao = Number(indice);
@@ -48,13 +55,14 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     return fail("not_found", t("Imagem não encontrada."), 404, { requestId });
   }
 
-  const supabase = await createClient();
-  const { data: linha, error: erroLeitura } = await supabase
+  let consulta = authz.supabase
     .from("message_templates")
     .select("midias")
     .eq("id", id)
-    .eq("organization_id", org.orgId)
-    .maybeSingle();
+    .eq("organization_id", authz.organizationId);
+  // No token não há pessoa: só o compartilhado (`owner_user_id` nulo) é alcançável.
+  if (authz.via === "token") consulta = consulta.is("owner_user_id", null);
+  const { data: linha, error: erroLeitura } = await consulta.maybeSingle();
   if (erroLeitura) {
     return fail("internal_error", "Erro ao ler a imagem.", 500, { requestId });
   }
@@ -62,7 +70,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
 
   const midias = ((linha as { midias: MidiaDeTemplate[] | null }).midias ?? []) as MidiaDeTemplate[];
   const midia = midias[posicao] as MidiaDeTemplate | undefined;
-  if (!midia || !midiaPertenceAoTemplate(midia.storage_path, org.orgId, id)) {
+  if (!midia || !midiaPertenceAoTemplate(midia.storage_path, authz.organizationId, id)) {
     return fail("not_found", t("Imagem não encontrada."), 404, { requestId });
   }
 

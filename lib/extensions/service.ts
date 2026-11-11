@@ -10,7 +10,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-import { assertCatalogOrigin, downloadArtifact } from "./download";
+import { assertCatalogOrigin, assertServiceOrigin, downloadArtifact } from "./download";
 import { SQL_ERRORS } from "./erros-do-banco";
 import { causaSegura, ExtensionError } from "./errors";
 import {
@@ -26,6 +26,13 @@ import {
   ehTipoDeOperacao,
 } from "./vocabulario";
 import { ExtensionServiceError, requireExtensionPlatformFor } from "./http";
+import {
+  cifrarSegredo,
+  CODIGO_CHAVE_DE_CIFRA_AUSENTE,
+  ehChaveDeCifraAusente,
+  garantirChaveDeCifra,
+  gerarSegredo,
+} from "./segredo-do-modulo";
 import {
   checkCompatibility,
   configurationSchema,
@@ -69,6 +76,8 @@ const installationRowSchema = z.object({
   version: z.string(),
   revision: z.number().int().positive(),
   removed_at: z.string().nullable(),
+  // O interruptor do módulo `connected` (migration 9116). Ausente numa linha lida antes da migration.
+  disabled_at: z.string().nullish(),
 });
 const bindingRowSchema = z.object({
   organization_id: uuid,
@@ -129,6 +138,48 @@ function dbFailure(error: { code?: string; message?: string } | null): void {
     "Não foi possível confirmar o resultado. Consulte o histórico antes de repetir o pedido.",
     503,
   );
+}
+
+/**
+ * Módulo `connected` sem chave de cifra: a instalação não grava nada. Não está em `SQL_ERRORS`
+ * porque nenhuma função do banco levanta este código (o teste de `erros-do-banco` vigia o par).
+ */
+function erroDeChaveDeCifraAusente(error: Error): ExtensionServiceError {
+  return new ExtensionServiceError(CODIGO_CHAVE_DE_CIFRA_AUSENTE, error.message, 503);
+}
+
+/**
+ * Gera, cifra e guarda o segredo da instalação (`extension_installation_secrets`, admin client,
+ * `installation_id` explícito). Devolve `false` quando não conseguiu guardar.
+ *
+ * `ignoreDuplicates` (ON CONFLICT DO NOTHING): atualizar uma versão, ou repetir o mesmo recibo, não
+ * troca um segredo que já existe nem desfaz uma rotação. O segredo em claro nasce e morre aqui: não
+ * vai a log, a auditoria, ao recibo nem ao retorno. A exibição única é da rota de girar (tarefa 4).
+ */
+async function guardarSegredoDaInstalacao(
+  admin: ReturnType<typeof createAdminClient>,
+  installationId: string,
+): Promise<boolean> {
+  try {
+    const gravado = await admin
+      .from("extension_installation_secrets")
+      .upsert(
+        { installation_id: installationId, ciphertext: cifrarSegredo(gerarSegredo()) },
+        { onConflict: "installation_id", ignoreDuplicates: true },
+      );
+    if (gravado.error) {
+      logger.warn("[extensions] segredo do módulo não gravado", {
+        installation_id: installationId,
+        db_code: gravado.error.code ?? null,
+      });
+      return false;
+    }
+    return true;
+  } catch {
+    // Só o id da instalação: o texto do erro pode vir de quem manipulou o segredo.
+    logger.warn("[extensions] segredo do módulo não gerado", { installation_id: installationId });
+    return false;
+  }
 }
 
 function serviceError(code: keyof typeof SQL_ERRORS): ExtensionServiceError {
@@ -209,7 +260,7 @@ const OP_COLS =
   "id,kind,status,actor_id,organization_id,catalog_id,installation_id,publisher,name,version,entry,result,error_code,created_at,updated_at";
 const CATALOG_COLS = "id,origin,revision,digest,snapshot,admitted_at";
 const INSTALL_COLS =
-  "id,catalog_id,artifact_id,previous_artifact_id,publisher,name,version,revision,removed_at";
+  "id,catalog_id,artifact_id,previous_artifact_id,publisher,name,version,revision,removed_at,disabled_at";
 const ARTIFACT_COLS = "id,sha256,byte_length,manifest,document";
 const BINDING_COLS =
   "organization_id,installation_id,enabled,configuration,revision,deactivated_by_removal_at";
@@ -487,6 +538,33 @@ export async function listExtensions(user: AuthUser, org: ActiveOrg): Promise<Ex
     }
     return view;
   });
+  // Quem administra a instalação precisa saber se um módulo `connected` ainda não tem segredo
+  // (instalação com `secret_pending`): o botão vira "Gerar segredo". Só existência da linha; o
+  // texto, cifrado ou não, nunca sai daqui. Falha na leitura não derruba a lista.
+  if (canInstall) {
+    const conectadas = views.filter((view) => view.profile === "connected" && !view.removed_at);
+    if (conectadas.length > 0) {
+      try {
+        const segredos = await admin
+          .from("extension_installation_secrets")
+          .select("installation_id")
+          .in(
+            "installation_id",
+            conectadas.map((view) => view.id),
+          );
+        if (!segredos.error) {
+          const com = new Set(
+            ((segredos.data ?? []) as Array<{ installation_id: string }>).map(
+              (linha) => linha.installation_id,
+            ),
+          );
+          for (const view of conectadas) view.secret_pending = !com.has(view.id);
+        }
+      } catch {
+        // Sem a informação o botão aparece como "Gerar novo segredo", que também serve.
+      }
+    }
+  }
   return {
     organization_id: org.orgId,
     can_manage: org.role === "admin" && !user.support,
@@ -669,10 +747,17 @@ export async function admitExtensionCatalog(
   bytes: Uint8Array,
 ): Promise<ExtensionOperationView> {
   const snapshot = parseCatalog(bytes);
-  assertCatalogOrigin(snapshot.origin, {
+  const politicaDeOrigem = {
     localCatalogOrigin: env.EXTENSIONS_LOCAL_CATALOG_ORIGIN || null,
     appUrl: env.NEXT_PUBLIC_APP_URL,
-  });
+  };
+  assertCatalogOrigin(snapshot.origin, politicaDeOrigem);
+  // O endereço de serviço de módulo conectado (spec 33, F1) é a mesma regra de origem do catálogo.
+  for (const entrada of snapshot.entries) {
+    if (entrada.service_origin !== undefined) {
+      assertServiceOrigin(entrada.service_origin, politicaDeOrigem);
+    }
+  }
   const digest = createHash("sha256").update(bytes).digest("hex");
   const result = await createAdminClient().rpc("fn_extensions_admit_catalog", {
     p_actor: actorId,
@@ -801,6 +886,17 @@ export async function installExtension(
     }
     return falha;
   }
+  // Módulo `connected` guarda um segredo cifrado: sem chave de cifra a instalação NÃO é gravada.
+  // Falha aqui, antes de `fn_extensions_finish_install`: o recibo fica em preparação, quem pediu
+  // configura `AI_CRED_AES_KEY` e repete o mesmo pedido para retomá-lo.
+  if (manifest.profile === "connected") {
+    try {
+      garantirChaveDeCifra();
+    } catch (error) {
+      if (ehChaveDeCifraAusente(error)) throw erroDeChaveDeCifraAusente(error);
+      throw error;
+    }
+  }
   // Só esta transação publica. Falha de conexão daqui em diante deixa resultado
   // a reconciliar; não transforma uma confirmação possivelmente consumada em failed.
   const finished = await admin.rpc("fn_extensions_finish_install", {
@@ -813,6 +909,13 @@ export async function installExtension(
   });
   dbFailure(finished.error);
   const operation = operationView(finished.data);
+  // O segredo nasce DEPOIS de a instalação existir (precisa do `installation_id`). Se a gravação
+  // falhar, a instalação continua válida e o resultado diz `secret_pending`: a rota de girar o
+  // segredo (tarefa 4) gera o primeiro. A repetição do pedido também tenta de novo.
+  const segredoPendente =
+    manifest.profile === "connected" && operation.status === "completed" && operation.installation_id
+      ? !(await guardarSegredoDaInstalacao(admin, operation.installation_id))
+      : false;
   if (appliedSchema.parse(finished.data).applied_now) {
     await audit(
       operation.kind === "update"
@@ -840,7 +943,7 @@ export async function installExtension(
           },
     );
   }
-  return operation;
+  return segredoPendente ? { ...operation, secret_pending: true } : operation;
 }
 
 export async function cancelExtensionInstall(
@@ -983,6 +1086,40 @@ export async function removeExtension(
       },
       disabled,
     );
+  }
+  return operation;
+}
+
+/**
+ * O interruptor, por instalação, do módulo `connected` (spec 33, D8): desliga ou liga de novo sem
+ * desinstalar. Esta função só GUARDA o estado (`disabled_at`); quem o lê para negar acesso é a F2/F4.
+ * A auditoria é uma linha da instância e só quando ESTA chamada aplicou: a repetição idempotente do
+ * mesmo recibo não grava. Não há linha por organização, porque nenhum vínculo é tocado.
+ */
+export async function switchExtension(
+  actorId: string,
+  operationId: string,
+  installationId: string,
+  input: { expected_installation_revision: number; disabled: boolean },
+): Promise<ExtensionOperationView> {
+  const result = await createAdminClient().rpc("fn_extensions_set_switch", {
+    p_actor: actorId,
+    p_operation: operationId,
+    p_installation: installationId,
+    p_disabled: input.disabled,
+    p_expected_installation_revision: input.expected_installation_revision,
+  });
+  dbFailure(result.error);
+  const operation = operationView(result.data);
+  if (appliedSchema.parse(result.data).applied_now) {
+    await audit({
+      action: "extension.switched",
+      actorUserId: actorId,
+      actingAsPlatformAdmin: true,
+      resourceType: "extension_installation",
+      resourceId: installationId,
+      metadata: { operation_id: operation.id, disabled: input.disabled },
+    });
   }
   return operation;
 }

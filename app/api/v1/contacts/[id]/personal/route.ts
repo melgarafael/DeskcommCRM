@@ -4,11 +4,13 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Actor } from "@/lib/api/handlers/types";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
@@ -128,7 +130,7 @@ async function registraNaTimeline(
     leadId: string;
     tipo: "contact_marked_personal" | "contact_unmarked_personal";
     motivo: string;
-    atorUserId: string;
+    ator: Actor;
     requestId: string;
     origem: string;
   },
@@ -140,7 +142,7 @@ async function registraNaTimeline(
     type: entrada.tipo,
     sourceModule: "crm",
     sourceId: entrada.leadId,
-    actor: { type: "user", id: entrada.atorUserId },
+    actor: entrada.ator,
     reason: entrada.motivo,
     payload: { origem: entrada.origem },
   });
@@ -156,18 +158,25 @@ async function registraNaTimeline(
   }
 }
 
-export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
+export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  // Só gerente e dono marcam (spec decisão 1). Atendente recebe 403 — é ele
-  // quem NÃO pode esconder conversa da operação.
-  const authz = await requireRole("manager", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:write` e papel `manager`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   if (!z.uuid().safeParse(id).success) {
     return fail("validation_failed", t("Contato inválido."), 422, { requestId });
@@ -179,7 +188,7 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
   const { data: contato, error: leituraErro } = await admin
     .from("contacts")
     .select("id, display_name, is_personal")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (leituraErro) {
@@ -202,7 +211,7 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
     const { data, error: updateErro } = await admin
       .from("contacts")
       .update({ is_personal: true })
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("id", id)
       .select("id, display_name, is_personal")
       .maybeSingle();
@@ -215,7 +224,7 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
   }
 
   const efeitos: EfeitosDoMarcar = { ...SEM_EFEITO };
-  const orgId = authz.org.orgId;
+  const orgId = authz.organizationId;
   const agora = new Date().toISOString();
 
   // O negócio aberto é resolvido ANTES dos efeitos: a auditoria dos retornos
@@ -262,7 +271,8 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
     });
     await audit({
       action: "followup_enrollment.cancelled",
-      actorUserId: authz.user.id,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: orgId,
       resourceType: "followup_enrollment",
       resourceId: e.id,
@@ -305,7 +315,8 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
     if ((marcados ?? []).length === 0) continue; // perdeu a corrida: o cron disparou entre a leitura e a escrita.
     await audit({
       action: "followup.cancelled",
-      actorUserId: authz.user.id,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: orgId,
       resourceType: "cron_job",
       resourceId: r.id,
@@ -393,7 +404,8 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
     }
     await audit({
       action: "conversation.released",
-      actorUserId: authz.user.id,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: orgId,
       resourceType: "conversation",
       resourceId: conv.id,
@@ -402,7 +414,8 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
     });
     await audit({
       action: "conversation.closed",
-      actorUserId: authz.user.id,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: orgId,
       resourceType: "conversation",
       resourceId: conv.id,
@@ -451,7 +464,8 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
   // Os contadores de efeitos entram para a prova dizer O QUE foi desarmado.
   await audit({
     action: "contact.marked_personal",
-    actorUserId: authz.user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: orgId,
     resourceType: "contact",
     resourceId: id,
@@ -461,12 +475,12 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
 
   if (leadId) {
     await registraNaTimeline(admin, {
-      orgId: authz.org.orgId,
+      orgId: authz.organizationId,
       contactId: id,
       leadId,
       tipo: "contact_marked_personal",
       motivo: "Contato marcado como pessoal pela equipe",
-      atorUserId: authz.user.id,
+      ator: authz.actor,
       requestId,
       origem: "contacts/[id]/personal.POST",
     });
@@ -477,16 +491,25 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
   return ok({ contact: marcado, effects: efeitos }, { requestId });
 }
 
-export async function DELETE(_req: NextRequest, ctx: Context): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: Context): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("manager", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:write` e papel `manager`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   if (!z.uuid().safeParse(id).success) {
     return fail("validation_failed", t("Contato inválido."), 422, { requestId });
@@ -496,7 +519,7 @@ export async function DELETE(_req: NextRequest, ctx: Context): Promise<Response>
   const { data: contato, error: leituraErro } = await admin
     .from("contacts")
     .select("id, display_name, is_personal")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (leituraErro) {
@@ -514,7 +537,7 @@ export async function DELETE(_req: NextRequest, ctx: Context): Promise<Response>
   const { data: desmarcado, error: updateErro } = await admin
     .from("contacts")
     .update({ is_personal: false })
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .select("id, display_name, is_personal")
     .maybeSingle();
@@ -530,23 +553,24 @@ export async function DELETE(_req: NextRequest, ctx: Context): Promise<Response>
   // volta encontra o histórico inteiro.
   await audit({
     action: "contact.unmarked_personal",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "contact",
     resourceId: id,
     requestId,
     metadata: { contact_id: id, origem: "tela_do_contato" },
   });
 
-  const leadId = await negocioAbertoDoContato(admin, authz.org.orgId, id);
+  const leadId = await negocioAbertoDoContato(admin, authz.organizationId, id);
   if (leadId) {
     await registraNaTimeline(admin, {
-      orgId: authz.org.orgId,
+      orgId: authz.organizationId,
       contactId: id,
       leadId,
       tipo: "contact_unmarked_personal",
       motivo: "Marca de pessoal retirada pela equipe",
-      atorUserId: authz.user.id,
+      ator: authz.actor,
       requestId,
       origem: "contacts/[id]/personal.DELETE",
     });
