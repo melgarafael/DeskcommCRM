@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { RedesSociaisClient } from "./RedesSociaisClient";
 import { CanalGraphParceiroClient } from "./CanalGraphParceiroClient";
+import { CanalSmsClient } from "./CanalSmsClient";
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
 import { CanalVozClient } from "./CanalVozClient";
@@ -68,7 +69,9 @@ export function ConexoesShell({
           ? "telefonia"
           : abaParam === "voz"
             ? "voz"
-            : abaParam === "graph" && graphParceiro
+            : abaParam === "sms"
+              ? "sms"
+              : abaParam === "graph" && graphParceiro
               ? "graph"
               : "numeros";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
@@ -105,6 +108,7 @@ export function ConexoesShell({
         <TabsTrigger value="parceiro">{t("Provedor parceiro")}</TabsTrigger>
         <TabsTrigger value="telefonia">{t("Telefone")}</TabsTrigger>
         <TabsTrigger value="sociais">{t("Redes sociais")}</TabsTrigger>
+        <TabsTrigger value="sms">{t("SMS")}</TabsTrigger>
         <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
         {graphParceiro && <TabsTrigger value="graph">{graphParceiro.label}</TabsTrigger>}
       </TabsList>
@@ -117,6 +121,9 @@ export function ConexoesShell({
         <TelefoniaClient />
       </TabsContent>
       <TabsContent value="sociais" className="mt-0"><RedesSociaisClient /></TabsContent>
+      <TabsContent value="sms" className="mt-0">
+        <CanalSmsClient />
+      </TabsContent>
 
       <TabsContent value="voz" className="mt-0">
         <CanalVozClient wacallsConfigured={wacallsConfigured} />

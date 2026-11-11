@@ -20879,6 +20879,39 @@ export const DICIONARIO: Traducoes = {
   "Você é o operador do sistema. Seu trabalho é deixar o CRM refletindo o que aconteceu na conversa que acabou de ocorrer — mover o lead, registrar, abrir o que precisa ser aberto.\n\nVOCÊ NÃO FALA COM O CLIENTE. Você não tem como enviar mensagem, e não deve tentar: quem conversa é outro. Se algo exigir falar com a pessoa, registre e siga.\n\nATENÇÃO: quem conversou só FALA — ele não grava nada no CRM sozinho. Se a promessa dele veio redigida como já concluída (\"registrei com o Fulano\", \"já está com a equipe\", \"ficou combinado\"), isso é o que ele DISSE ao cliente, não prova de que algo foi registrado. O passado na frase não é evidência de ação — trate a promessa como pendente até você mesmo confirmar ou registrar (mover o lead, abrir nota, o que fizer sentido com as ferramentas que você tem).\n\nUse apenas o que a conversa sustenta. Não invente avanço, não registre o que ninguém disse. Se não houver nada a fazer, não faça nada — um turno sem ação é uma resposta válida.": { es: "Eres el operador del sistema. Tu trabajo es dejar el CRM reflejando lo que pasó en la conversación que acaba de ocurrir — mover el lead, registrar, abrir lo que haga falta.\n\nNO HABLAS CON EL CLIENTE. No tienes cómo enviar mensajes, y no debes intentarlo: quien conversa es otro. Si algo exige hablar con la persona, regístralo y sigue.\n\nATENCIÓN: quien conversó solo HABLA — no graba nada en el CRM por su cuenta. Si su promesa llegó redactada como ya concluida (\"registré con Fulano\", \"ya está con el equipo\", \"quedó acordado\"), eso es lo que él DIJO al cliente, no prueba de que algo se registró. El pasado en la frase no es evidencia de acción — trata la promesa como pendiente hasta que tú mismo confirmes o registres (mover el lead, abrir una nota, lo que tenga sentido con las herramientas que tienes).\n\nUsa solo lo que la conversación sostiene. No inventes avances, no registres lo que nadie dijo. Si no hay nada que hacer, no hagas nada — un turno sin acción es una respuesta válida." },
   "Marca um avanço REAL no funil deste lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; só o PRÓXIMO estágio válido — regressão é rejeitada), qualification (budget/authority/need/timeline), next_action e reason (evidência curta do avanço). Nunca invente avanço sem evidência na conversa.": { es: "Marca un avance REAL en el embudo de este lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; solo la etapa SIGUIENTE es válida — la regresión se rechaza), qualification (budget/authority/need/timeline), next_action y reason (evidencia corta del avance). Nunca inventes un avance sin evidencia en la conversación." },
   "## Idioma da conversa\nEsta organização atende em português (Brasil). Responda ao lead nesse idioma e no idioma em que ele escrever — siga a pessoa, não imponha o seu. O texto das suas instruções internas não é a língua do atendimento: se o lead escreve em espanhol ou em inglês, a resposta sai em espanhol ou em inglês, mesmo que as regras acima estejam em português.": { es: "## Idioma de la conversación\nEsta organización atiende en español. Responde al lead en ese idioma y en el idioma en que él escriba — sigue a la persona, no le impongas el tuyo. El texto de tus instrucciones internas no es el idioma de la atención: si el lead escribe en portugués o en inglés, la respuesta sale en portugués o en inglés, aunque las reglas de arriba estén en español." },
+  // ─── Canal de SMS (#4415) ───
+  "Confira os três campos: o Account SID (começa com AC), o Auth Token e o número no formato +1…": {
+    es: "Revisa los tres campos: el Account SID (empieza con AC), el Auth Token y el número en formato +1…",
+  },
+  "A conta de SMS recusou o Account SID ou o Auth Token. Copie os dois de novo do painel.": {
+    es: "La cuenta de SMS rechazó el Account SID o el Auth Token. Cópialos de nuevo del panel.",
+  },
+  "Este número não está nesta conta de SMS. Confira o número ou a conta.": {
+    es: "Este número no está en esta cuenta de SMS. Revisa el número o la cuenta.",
+  },
+  "Não foi possível falar com a conta de SMS agora. Tente de novo em instantes.": {
+    es: "No fue posible comunicarse con la cuenta de SMS ahora. Inténtalo de nuevo en unos instantes.",
+  },
+  "SMS": { es: "SMS" },
+  "Account SID": { es: "Account SID" },
+  "Auth Token": { es: "Auth Token" },
+  "Número de SMS": { es: "Número de SMS" },
+  "Conectar um número de SMS": { es: "Conectar un número de SMS" },
+  "Para atender por SMS quem não usa WhatsApp. As mensagens entram na Inbox no mesmo contato, e a IA, os follow-ups e as automações respondem por SMS.": {
+    es: "Para atender por SMS a quien no usa WhatsApp. Los mensajes entran en la Inbox en el mismo contacto, y la IA, los seguimientos y las automatizaciones responden por SMS.",
+  },
+  "Nos EUA, o número precisa estar registrado para envio comercial (A2P 10DLC) na conta de SMS antes de conectar — sem isso as operadoras bloqueiam as mensagens. Cada SMS é cobrado pela conta de SMS, por parte de 160 caracteres (70 com emoji ou acento).": {
+    es: "En EE. UU., el número debe estar registrado para envío comercial (A2P 10DLC) en la cuenta de SMS antes de conectarlo; sin eso, los operadores bloquean los mensajes. Cada SMS lo cobra la cuenta de SMS, por cada parte de 160 caracteres (70 con emoji o tilde).",
+  },
+  "A conta e o número são conferidos na conta de SMS antes de gravar.": {
+    es: "La cuenta y el número se verifican en la cuenta de SMS antes de guardar.",
+  },
+  "Não foi possível apontar o recebimento do número sozinho. No painel da conta de SMS, cole a URL abaixo em “A message comes in” do número. Sem isso o CRM envia, mas a resposta do cliente não entra.": {
+    es: "No fue posible apuntar automáticamente la recepción del número. En el panel de la cuenta de SMS, pega la URL de abajo en “A message comes in” del número. Sin eso el CRM envía, pero la respuesta del cliente no entra.",
+  },
+  "O número já foi apontado para cá ao conectar. Se ele estiver num Messaging Service, cole a URL abaixo na integração do serviço, ou escolha “Defer to sender's webhook”.": {
+    es: "El número ya se apuntó aquí al conectarlo. Si está en un Messaging Service, pega la URL de abajo en la integración del servicio, o elige “Defer to sender's webhook”.",
+  },
 };
 
 /**

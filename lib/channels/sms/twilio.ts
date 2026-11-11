@@ -182,6 +182,92 @@ export async function consultarNumero(
   return { estado: "inalcancavel", detalhe };
 }
 
+export type AchadoDoNumero =
+  | { ok: true; numeroId: string; numero: string; nome: string | null }
+  | { ok: false; motivo: "credencial" | "numero_fora_da_conta" | "inalcancavel"; detalhe: string };
+
+/**
+ * O número informado é desta conta? Devolve o id dele (`PN…`), que é o que a
+ * conexão guarda. É também a prova de que a chave vale: a busca exige
+ * autenticação, então `credencial` sai daqui quando a chave está errada.
+ */
+export async function acharNumeroNaConta(
+  creds: SmsCredentials,
+  numeroE164: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<AchadoDoNumero> {
+  if (!ACCOUNT_SID.test(creds.accountSid)) {
+    return { ok: false, motivo: "credencial", detalhe: "identificador da conta fora do formato" };
+  }
+  if (!E164.test(numeroE164)) {
+    return { ok: false, motivo: "numero_fora_da_conta", detalhe: "número fora do formato internacional" };
+  }
+  const q = new URLSearchParams({ PhoneNumber: numeroE164 });
+  let res: Response;
+  try {
+    res = await fetchImpl(`${API_BASE}/Accounts/${creds.accountSid}/IncomingPhoneNumbers.json?${q}`, {
+      method: "GET",
+      headers: { Authorization: autorizacao(creds) },
+      signal: AbortSignal.timeout(TETO_DE_ESPERA_MS),
+    });
+  } catch (err) {
+    return { ok: false, motivo: "inalcancavel", detalhe: err instanceof Error ? err.message.slice(0, 200) : "erro" };
+  }
+  const json = (await res.json().catch(() => null)) as {
+    incoming_phone_numbers?: Array<{ sid?: unknown; phone_number?: unknown; friendly_name?: unknown }>;
+    message?: unknown;
+  } | null;
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, motivo: "credencial", detalhe: `${res.status}` };
+  }
+  if (!res.ok) {
+    return { ok: false, motivo: "inalcancavel", detalhe: `${res.status} ${typeof json?.message === "string" ? json.message : ""}`.trim() };
+  }
+  const achado = (json?.incoming_phone_numbers ?? []).find(
+    (n) => typeof n.sid === "string" && NUMERO_ID.test(n.sid) && n.phone_number === numeroE164,
+  );
+  if (!achado) return { ok: false, motivo: "numero_fora_da_conta", detalhe: numeroE164 };
+  return {
+    ok: true,
+    numeroId: achado.sid as string,
+    numero: numeroE164,
+    nome: typeof achado.friendly_name === "string" ? achado.friendly_name : null,
+  };
+}
+
+/**
+ * Aponta o recebimento de SMS do número para a URL do CRM (`SmsUrl`, POST).
+ *
+ * Limite conhecido: número que está num Messaging Service (o caminho do
+ * registro A2P nos EUA) recebe pela configuração do SERVIÇO, não do número —
+ * a menos que o serviço esteja em "Defer to sender's webhook". A tela mostra a
+ * URL para quem precisar colar lá.
+ */
+export async function apontarRecebimentoDoNumero(
+  creds: SmsCredentials,
+  numeroId: string,
+  url: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true } | { ok: false; detalhe: string }> {
+  if (!ACCOUNT_SID.test(creds.accountSid) || !NUMERO_ID.test(numeroId)) {
+    return { ok: false, detalhe: "identificador fora do formato" };
+  }
+  if (!/^https:\/\//.test(url)) return { ok: false, detalhe: "a URL de recebimento precisa ser https" };
+  try {
+    const res = await fetchImpl(`${API_BASE}/Accounts/${creds.accountSid}/IncomingPhoneNumbers/${numeroId}.json`, {
+      method: "POST",
+      headers: { Authorization: autorizacao(creds), "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ SmsUrl: url, SmsMethod: "POST" }).toString(),
+      signal: AbortSignal.timeout(TETO_DE_ESPERA_MS),
+    });
+    if (res.ok) return { ok: true };
+    const json = (await res.json().catch(() => null)) as { message?: unknown } | null;
+    return { ok: false, detalhe: `${res.status} ${typeof json?.message === "string" ? json.message : ""}`.trim() };
+  } catch (err) {
+    return { ok: false, detalhe: err instanceof Error ? err.message.slice(0, 200) : "erro" };
+  }
+}
+
 /**
  * Confere que o webhook veio do fornecedor: HMAC-SHA1, com a chave da conta,
  * da URL pública EXATA seguida de cada parâmetro do formulário em ordem

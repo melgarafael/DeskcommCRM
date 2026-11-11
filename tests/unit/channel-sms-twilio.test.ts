@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  acharNumeroNaConta,
+  apontarRecebimentoDoNumero,
   assinaturaDoSmsValida,
   enviarSms,
   formularioDoWebhook,
@@ -182,5 +184,47 @@ describe("partes do SMS", () => {
 
   it("texto vazio não custa nada", () => {
     expect(partesDoSms("")).toEqual({ partes: 0, codificacao: "gsm7" });
+  });
+});
+
+describe("conexão do número", () => {
+  const NUMERO_ID = "PN" + "c".repeat(32);
+
+  it("acha o número na conta e devolve o id dele", async () => {
+    const f = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ incoming_phone_numbers: [{ sid: NUMERO_ID, phone_number: "+14155550199", friendly_name: "Loja" }] }),
+        { status: 200 },
+      ),
+    );
+    const r = await acharNumeroNaConta(CREDS, "+14155550199", f);
+    expect(r).toEqual({ ok: true, numeroId: NUMERO_ID, numero: "+14155550199", nome: "Loja" });
+    const [url] = f.mock.calls[0] as unknown as [string];
+    expect(url).toContain(`/Accounts/${CONTA}/IncomingPhoneNumbers.json?PhoneNumber=%2B14155550199`);
+  });
+
+  it("chave errada é credencial; número de outra conta é numero_fora_da_conta", async () => {
+    const recusa = vi.fn(async () => new Response(JSON.stringify({ message: "Authenticate" }), { status: 401 }));
+    expect(await acharNumeroNaConta(CREDS, "+14155550199", recusa)).toMatchObject({ ok: false, motivo: "credencial" });
+    const vazio = vi.fn(async () => new Response(JSON.stringify({ incoming_phone_numbers: [] }), { status: 200 }));
+    expect(await acharNumeroNaConta(CREDS, "+14155550199", vazio)).toMatchObject({
+      ok: false,
+      motivo: "numero_fora_da_conta",
+    });
+  });
+
+  it("aponta o recebimento do número para a URL https do CRM, por POST", async () => {
+    const f = vi.fn(async () => new Response("{}", { status: 200 }));
+    const url = "https://crm.exemplo.com/api/v1/webhooks/channel/tok12345";
+    expect(await apontarRecebimentoDoNumero(CREDS, NUMERO_ID, url, f)).toEqual({ ok: true });
+    const [destino, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(destino).toBe(`https://api.twilio.com/2010-04-01/Accounts/${CONTA}/IncomingPhoneNumbers/${NUMERO_ID}.json`);
+    expect(Object.fromEntries(new URLSearchParams(String(init.body)))).toEqual({ SmsUrl: url, SmsMethod: "POST" });
+  });
+
+  it("recusa URL sem https sem chamar o fornecedor", async () => {
+    const f = vi.fn(async () => new Response("{}", { status: 200 }));
+    expect(await apontarRecebimentoDoNumero(CREDS, NUMERO_ID, "http://localhost:3000/x", f)).toMatchObject({ ok: false });
+    expect(f).not.toHaveBeenCalled();
   });
 });
