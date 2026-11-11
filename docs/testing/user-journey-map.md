@@ -4419,7 +4419,7 @@ lado seguro: quem administra a instalação liga de novo, de propósito.
 estado é só guardado e mostrado: a F2 e a F4 vão ler `disabled_at`); um aviso de instalação específico para o
 módulo conectado; e a chamada real ao endereço `service_origin`, que nenhuma peça da F1 faz.
 
-## J68 — Módulo conectado: segredo, busca do token e revogação `[P0]` (2026-11-05)
+## J69 — Módulo conectado: segredo, busca do token e revogação `[P0]` (2026-11-05)
 
 Specs: esta jornada é **especificação**. Nenhuma execução foi feita; o laboratório local ainda não
 admite o perfil `connected` (ver J67.1), então nenhum caso abaixo roda nele. Quando J67.1 passar, os
@@ -4465,7 +4465,7 @@ assinar e buscar; a concorrência entre buscas só é provada pelos invariantes 
 jornada em tela; e que a autoridade do token seja limitada por área (isso é da F3, e o token da F2 só
 tem `mcp:read`).
 
-## J69 — Módulo conectado: consentimento por área e ator com pessoa `[P0]` (2026-11-05)
+## J70 — Módulo conectado: consentimento por área e ator com pessoa `[P0]` (2026-11-05)
 
 Specs: esta jornada é **especificação**. Nenhuma execução foi feita; o laboratório local ainda não
 admite o perfil `connected` (ver J67.1), então nenhum caso abaixo roda nele. Quando J67.1 passar, os
