@@ -74268,8 +74268,8 @@ $f$;
 
 notify pgrst, 'reload schema';
 
--- ---- "Liberar" não devolve a conversa ao rodízio (migration 9226, #3937) ----
--- Espelho da 9226. Fica ACIMA da VARREDURA anon (só recria funções, nenhuma
+-- ---- "Liberar" não devolve a conversa ao rodízio (migration 9332, #3937) ----
+-- Espelho da 9332. Fica ACIMA da VARREDURA anon (só recria funções, nenhuma
 -- tabela nova). O porquê inteiro está no cabeçalho da migration: o gatilho
 -- `trg_routing_assignment_changed` tratava "perdeu o dono" e "reabriu" como o
 -- mesmo fato, então liberar a conversa a devolvia à distribuição em ~1 min. A
@@ -74293,25 +74293,6 @@ revoke all on function public.fn_routing_assignment_changed() from public,anon,a
 drop trigger if exists trg_routing_assignment_changed on public.conversations;
 create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status on public.conversations
  for each row execute function public.fn_routing_assignment_changed();
-
--- O aviso para de prometer "a distribuição continuará tentando": com o estado
--- terminal do #3916 ele nasce justamente quando o evento FECHOU.
-create or replace function public.fn_routing_unassigned_notice(p_org uuid,p_conversation uuid,p_reason text)
-returns void language plpgsql security definer set search_path=public as $$
-begin
- if not exists(select 1 from public.conversations where organization_id=p_org and id=p_conversation and assigned_to_user_id is null
-  and status in('open','pending','claimed','ai_handling')) then return;end if;
- insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id)
- values(p_org,'routing_unassigned','warn','Uma conversa aguarda um responsável',
-  case when p_reason='invalid_channel' then 'Confira o canal de origem desta conversa nas Conexões.'
-   else 'Confira os responsáveis do canal em Configurações → Atendimento e a disponibilidade da equipe. A conversa segue na fila, sem responsável, até alguém assumir ou o cliente escrever de novo.' end,
-  'conversation',p_conversation)
- on conflict(organization_id,ref_id,kind) where kind='routing_unassigned'
- do update set status='open',body=excluded.body;
-end;
-$$;
-revoke all on function public.fn_routing_unassigned_notice(uuid,uuid,text) from public,anon,authenticated;
-grant execute on function public.fn_routing_unassigned_notice(uuid,uuid,text) to service_role;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

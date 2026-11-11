@@ -32,7 +32,7 @@
  *
  * ## As três escritas, e por que NESTA ordem
  *
- * 1. A marca em `conversations.metadata` vem PRIMEIRO. Desde a migration 9226
+ * 1. A marca em `conversations.metadata` vem PRIMEIRO. Desde a migration 9332
  *    (#3937 — decisão do mantenedor: "Liberar" não pede rodízio) o gatilho
  *    `trg_routing_assignment_changed` NÃO emite mais nada quando a conversa só
  *    perde o dono; ele emite apenas na REABERTURA (`old.status` terminal). Quem
@@ -46,7 +46,7 @@
  *    uma devolução que não aconteceu tiraria a pessoa da conversa sem devolvê-la.
  *    É a MESMA função do botão "Liberar" da tela — não há régua paralela de
  *    atribuição aqui.
- * 3. `fn_request_channel_routing` — DEPOIS da 9226 é ele quem pede o rodízio (o
+ * 3. `fn_request_channel_routing` — DEPOIS da 9332 é ele quem pede o rodízio (o
  *    gatilho do passo 2 deixou de emitir no release). Continua idempotente: o
  *    `on conflict` do índice único de evento ativo só reancora `next_attempt_at`.
  *
@@ -239,7 +239,7 @@ async function devolverAoRodizio(
   const liberada = Array.isArray(liberadas) ? liberadas[0] : liberadas;
   if (!liberada) return desfazerMarca("assignment_conflict");
 
-  // (3) Devolve a conversa AO RODÍZIO. Desde a 9226 (#3937) é ESTE passo quem
+  // (3) Devolve a conversa AO RODÍZIO. Desde a 9332 (#3937) é ESTE passo quem
   // pede — o gatilho do release deixou de emitir no unassign. O `on conflict` do
   // índice único de evento ativo mantém a chamada idempotente.
   const { error: routingErr } = await admin.rpc("fn_request_channel_routing", {
