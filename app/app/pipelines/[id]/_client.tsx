@@ -41,6 +41,7 @@ import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
+import { hrefDaPaginaDoNegocio } from "@/lib/leads/pagina-do-negocio";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { cn } from "@/lib/utils";
 
@@ -146,6 +147,18 @@ export function PipelinePageClient({
   );
   const router = useRouter();
   const pathname = usePathname();
+  /**
+   * O ENDEREÇO DA PÁGINA INTEIRA DO NEGÓCIO (#4151).
+   *
+   * Nasce AQUI porque é aqui que a URL do quadro existe: o `pathname` e a query
+   * string com o filtro (`lib/kanban/filters.ts`) — e é ela que o "Voltar" da
+   * página devolve. O quadro só recebe a função pronta: ele conhece o lead, não
+   * o endereço (ver `hrefDaPaginaDoNegocio`).
+   */
+  const hrefDoNegocio = useCallback(
+    (leadId: string) => hrefDaPaginaDoNegocio(leadId, pathname, searchParams),
+    [pathname, searchParams],
+  );
   /**
    * ⚠️ O FILTRO PEDIDO VALE ANTES DE A URL CHEGAR NELE.
    *
@@ -537,6 +550,7 @@ export function PipelinePageClient({
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
+          hrefDoNegocio={hrefDoNegocio}
           podeRenomearEtapa={!arquivado && ROLE_RANK[role] >= ROLE_RANK.manager}
           denso={cardsCompactos}
           somenteLeitura={arquivado}

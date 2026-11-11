@@ -21,6 +21,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import { RankingsDeNegociosGanhos } from "@/components/relatorios/rankings-de-negocios-ganhos";
 import { useT } from "@/hooks/i18n/useT";
 import { diaDeHojeLocal } from "@/lib/ai/pacing-knobs";
 import { apiClient } from "@/lib/api/client";
@@ -251,6 +252,14 @@ export function Faturamento({
           <Fragment key={moeda}>{bloco}</Fragment>
         );
       })}
+
+      {/*
+        Etiquetas que mais vendem e clientes que mais compram (#4280): o MESMO
+        período dos campos acima — o bloco não tem seletor próprio. Fica fora
+        dos blocos por moeda porque soma negócios ganhos na moeda da
+        organização, e não comandas; ele mesmo declara o que deixou de fora.
+      */}
+      <RankingsDeNegociosGanhos de={de} ate={ate} />
 
       <ListaDeLancamentos
         lancamentos={lancamentos.data ?? []}

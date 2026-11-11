@@ -44,6 +44,7 @@ import { renderSystemPrompt } from "@/lib/ai/render-system-prompt";
 import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
+import { donoHumanoVetaIA, lerModoIaComDono } from "@/lib/ai/elegibilidade/ia-com-dono";
 import { checkG1, checkG3, checkG4Legal, checkG4Stage } from "@/lib/ai/handoff/triggers";
 import type {
   BotContext,
@@ -780,7 +781,7 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   const { data: conv, error: convErr } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, last_inbound_at, bot_silenced_until, last_handoff_at, assignee_kind, contacts:contact_id(id, name, display_name, locale, is_blocked, is_personal, force_human, ai_opt_out)",
+      "id, organization_id, contact_id, channel_session_id, last_inbound_at, bot_silenced_until, last_handoff_at, assignee_kind, metadata, contacts:contact_id(id, name, display_name, locale, is_blocked, is_personal, force_human, ai_opt_out)",
     )
     .eq("id", input.conversationId)
     .eq("organization_id", input.organizationId)
@@ -798,6 +799,8 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
     bot_silenced_until: string | null;
     last_handoff_at: string | null;
     assignee_kind: string | null;
+    /** `conversations.metadata` — o modo "IA com o dono" (#3967) mora aqui. */
+    metadata: unknown;
     contacts: {
       id: string;
       name: string | null;
@@ -822,7 +825,15 @@ async function buildContext(input: BuildContextInput): Promise<GuardDecision> {
   if (c.contacts.ai_opt_out) return skip("ai_opt_out");
   // G3-02 — assignee de 1ª classe: humano atendendo (kind='user') veta o bot
   // deterministicamente, mesma família de guard de force_human/bot_silenced_until.
-  if (c.assignee_kind === "user") return skip("assigned_to_human");
+  //
+  // #3967: exceto no modo "IA com o dono", ligado POR CONVERSA em
+  // `conversations.metadata.ai_com_dono`. A regra é `donoHumanoVetaIA` — a MESMA
+  // que o gate puro usa —, e não uma comparação local: duas cópias divergiriam
+  // na primeira vez que alguém acrescentasse um caso, e o caso aqui é que o modo
+  // vale só com dono humano de verdade e não fura nenhuma outra trava.
+  if (donoHumanoVetaIA({ assigneeKind: c.assignee_kind, iaComDono: lerModoIaComDono(c.metadata) })) {
+    return skip("assigned_to_human");
+  }
 
   // GATE DE ELEGIBILIDADE (opt-in por canal — `metadata.ai_gate = 'allowlist'`).
   // Este worker é o caminho PRÉ-ENGINE: responde as orgs sem versão de agente

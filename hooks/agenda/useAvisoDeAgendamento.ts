@@ -49,6 +49,8 @@ export interface EntradaDoSalvarAvisoDeAgendamento {
   telefone?: string | null;
   grupo?: string | null;
   ligado: boolean;
+  /** Também lembrar antes de cada horário (migration 9326). */
+  lembrar_antes?: boolean;
   /** `true` = "eu sei que esse número é um cliente meu, e quero mesmo assim". */
   confirma_contato?: boolean;
 }
