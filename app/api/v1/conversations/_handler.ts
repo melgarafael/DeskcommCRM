@@ -91,7 +91,7 @@ const SELECT_COLS = `
   status_changed_at, service_revision, service_closed_at, service_started_at, current_demanda_id, assigned_to_user_id, assigned_to_user_name, assignee_kind, assigned_at, last_inbound_at, awaiting_since,
   last_outbound_at, last_message_at, last_message_preview,
   unread_count_for_assignee, is_group, group_chat_id, tags, metadata,
-  snooze_until, created_at, updated_at,
+  snooze_until, sector_id, created_at, updated_at,
   bot_silenced_until, last_handoff_at, last_handoff_reason,
   comando_da_conversa,
   usable_for_rag,
@@ -244,6 +244,9 @@ export async function listConversationsHandler(
   }
   if (q.closed_since) query = query.gte("service_closed_at", q.closed_since);
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
+  // A FILA (#3876). Igualdade numa coluna que existe desde a 9062 — sem `or=`,
+  // sem junção: a lista que o seletor de fila do Inbox mostra é esta.
+  if (q.sector_id) query = query.eq("sector_id", q.sector_id);
   // Canal desativado nunca entra na inbox (quarentena): exclui as conversas
   // dele aqui e nos badges, mantendo o acesso direto por id para auditoria e
   // suporte. Reativou, reaparecem sem reimportar nada.
