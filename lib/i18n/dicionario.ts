@@ -8434,6 +8434,17 @@ export const DICIONARIO: Traducoes = {
   "O atendente vê apenas o que foi direcionado a ele — nem a fila. Combine com o rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.": {
     es: "El asesor ve solo lo que se le asignó, ni siquiera la fila. Combínalo con la rotación: si nadie distribuye, nadie recibe nada y las pantallas quedan vacías.",
   },
+  // #4381 — o texto do modo diz também o que ele NÃO esconde (Contatos,
+  // empresas e pessoas seguem visíveis: `tenant_isolation_contacts_read`).
+  "Qualquer atendente abre a conversa e o negócio de qualquer colega. Contatos, empresas e pessoas continuam visíveis para a empresa toda.": {
+    es: "Cualquier asesor puede abrir la conversación y el negocio de cualquier colega. Los contactos, las empresas y las personas siguen visibles para toda la empresa.",
+  },
+  "O atendente vê a própria carteira e a fila de quem chegou agora — conversas e negócios sem dono. O que já é de um colega fica fora. Contatos, empresas e pessoas continuam visíveis para a empresa toda, mesmo os de clientes que estão com um colega.": {
+    es: "El asesor ve su propia cartera y la fila de quien acaba de llegar — conversaciones y negocios sin dueño. Lo que ya es de otro colega queda fuera. Los contactos, las empresas y las personas siguen visibles para toda la empresa, incluso los de clientes que están con un colega.",
+  },
+  "O atendente vê apenas as conversas e os negócios direcionados a ele — nem a fila. Contatos, empresas e pessoas continuam visíveis para a empresa toda: a lista de Contatos não é recortada por este modo. Combine com o rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.": {
+    es: "El asesor ve solo las conversaciones y los negocios dirigidos a él, ni siquiera la fila. Los contactos, las empresas y las personas siguen visibles para toda la empresa: la lista de Contactos no se recorta en este modo. Combínalo con la rotación: si nadie distribuye, nadie recibe nada y las pantallas quedan vacías.",
+  },
   "Os seus e os do seu setor": { es: "Los tuyos y los de tu sector" },
   "O atendente vê a própria carteira e as conversas que estão no setor dele, inclusive as que estão com um colega do mesmo setor — é o modo para cobrir férias e ausências. As conversas dos outros setores continuam fora do alcance dele.": {
     es: "El asesor ve su propia cartera y las conversaciones que están en su sector, incluidas las que tiene un colega del mismo sector: es el modo para cubrir vacaciones y ausencias. Las conversaciones de los otros sectores siguen fuera de su alcance.",
