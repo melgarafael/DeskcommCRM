@@ -66,6 +66,8 @@ const JUSTIFICADAS: Record<string, string> = {
     "o handler só confere se o contato existe na organização (`select id`); a resposta é a comanda, com `contact_id`.",
   "POST /api/v1/financeiro/fidelidade":
     "o handler só confere se o contato existe na organização (`select id`); a resposta é a linha de pontos (`id`, `points`, `reason`).",
+  "POST /api/v1/conversations/[id]/ia-com-dono":
+    "o `select` que a rota devolve não traz contato (`id, contact_id, organization_id, status, assigned_to_user_id, ...`); o contato é lido só para as marcas `force_human`, `ai_opt_out` e `is_blocked`.",
   "GET /api/v1/conversations/[id]/reply-address":
     "a rota só aceita sessão de pessoa (`requireRole`, sem entrada em `PUBLIC_PATHS`); token de módulo não autentica ali.",
 };
