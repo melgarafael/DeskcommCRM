@@ -76983,7 +76983,7 @@ do $campanha_modelo$
 begin
   alter table public.campaigns drop constraint if exists campaigns_message_mode_check;
   alter table public.campaigns
-    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template'));
+    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template', 'email'));
 
   -- Modelo sem nome ou sem idioma não sai: a plataforma identifica a definição
   -- pelos DOIS (o mesmo nome em `es` e `es_AR` são modelos diferentes).
@@ -78403,9 +78403,11 @@ begin
       channel_session_id is not null or message_mode = 'email'
     );
 
-  alter table public.campaigns drop constraint if exists campaigns_message_mode_check;
-  alter table public.campaigns
-    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template', 'email'));
+  -- `campaigns_message_mode_check` NÃO é recriada aqui: o vocabulário final
+  -- (`text`, `template`, `email`) já está no bloco único que a criou. Este
+  -- arquivo é apêndice idempotente, não diário de bordo executável — duas
+  -- reconstruções da mesma constraint deixam a tabela sem guarda entre o
+  -- primeiro `drop` e o `add` que funciona quando o `update.sh` reaplica.
 
   -- Assunto vazio não é rascunho: é um e-mail que o cliente abriria sem saber do
   -- que se trata. A tela já recusa (`conferirConteudoDeEmail`); o CHECK é a
