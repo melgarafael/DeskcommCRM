@@ -14,6 +14,8 @@ import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CANAIS_QUE_RESPONDEM_ANTES } from "@/lib/channels/capabilities";
+
 import {
   type BancoDoPortao,
   esquecerRetrato,
@@ -63,6 +65,31 @@ describe("portão do piso ocioso", () => {
     expect(sql).toContain("event_type = 'channel_session.status_changed'");
     expect(sql).toContain("payload ->> 'from_status' = 'WORKING'");
     expect(sql).toContain("kind in ('recuperacao_da_queda', 'cliente_sem_resposta_na_queda')");
+  });
+
+  it("o sinal do replay também olha a entrada aceita que respondeu antes de processar — só dos canais dela", async () => {
+    // A entrada do número oficial responde 200 ao provedor ANTES de processar e
+    // deixa a linha `received` com a marca de aceita; se o processo morrer, quem
+    // a reprocessa é a rota `webhook-replay`, que fica DEPOIS deste portão. Sem a
+    // segunda fila no sinal, o portão diria "ocioso" com a mensagem parada no
+    // arquivo — e o provedor, que recebeu 200, não reentrega.
+    const parametros: unknown[] = [];
+    const query = vi.fn(async (sql: string, p?: unknown[]) => {
+      parametros.push(sql, p);
+      return { rows: [TUDO_VAZIO], rowCount: 1 };
+    });
+    await recursoTemTrabalho("webhook_replay", 1_000, { query } as unknown as BancoDoPortao);
+    const sql = String(parametros[0] ?? "").replace(/\s+/g, " ");
+    expect(sql).toContain("status = 'error' and error_message like 'transitoria:%'");
+    expect(sql).toContain("status = 'received' and valid_signature and provider = any($1::text[])");
+    // Sem corte de idade: a linha que passou da janela de reprocessamento ainda
+    // precisa acordar o cron, que é quem a marca `dead` e avisa.
+    expect(sql).not.toContain("interval '6 hours'");
+    // O filtro de canal vem por parâmetro (o nome não sai de lib/channels/): sem
+    // ele, a captação por webhook, que grava `received` com assinatura válida e
+    // nunca fecha a linha, manteria o replay rodando a cada minuto.
+    expect(parametros[1]).toEqual([[...CANAIS_QUE_RESPONDEM_ANTES]]);
+    expect(CANAIS_QUE_RESPONDEM_ANTES.length).toBeGreaterThan(0);
   });
 
   it("uma consulta responde por todos os recursos", async () => {

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConversationHeader } from "./ConversationHeader";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
+import type { EnderecoDaResposta } from "@/hooks/inbox/useEnderecoDaResposta";
 
 /**
  * "Fechar" e "Arquivar" usavam `window.confirm()` — mesmo defeito documentado
@@ -17,6 +18,8 @@ const closeMutate = vi.hoisted(() => vi.fn());
 const arquivarMutate = vi.hoisted(() => vi.fn());
 const startCall = vi.hoisted(() => vi.fn());
 const claimMutate = vi.hoisted(() => vi.fn());
+const resposta = vi.hoisted(() => ({ endereco: undefined as EnderecoDaResposta | undefined }));
+const iaComDonoMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
@@ -38,6 +41,10 @@ vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
 vi.mock("@/hooks/inbox/usePauseAiAttendance", () => ({
   usePauseAiAttendance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+// "IA com o dono" (#3967) usa `useMutation`: sem o mock, exigiria QueryClientProvider.
+vi.mock("@/hooks/inbox/useIaComDono", () => ({
+  useIaComDono: () => ({ mutate: iaComDonoMutate, isPending: false }),
+}));
 // Spec 21, etapa 15: o cabeçalho chama os hooks de pessoal em toda
 // renderização (antes dos early returns) — sem este mock, o `useMutation` real
 // exigiria QueryClientProvider e o teste inteiro caía.
@@ -49,6 +56,13 @@ vi.mock("@/hooks/ai/useAutomaticoAtivo", () => ({
   useAutomaticoAtivo: () => ({ data: false }),
 }));
 vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
+// O número da resposta (Spec 31, B2) lê react-query; este arquivo não monta
+// `QueryClientProvider`. Sem resposta, o aviso "a resposta sai por" não aparece.
+vi.mock("@/hooks/inbox/useEnderecoDaResposta", () => ({
+  useEnderecoDaResposta: () => ({
+    data: resposta.endereco ? { data: resposta.endereco } : undefined,
+  }),
+}));
 // A faixa da carteira (#2591) lê a carteira com react-query; este arquivo mede
 // a barra de ações, não a carteira (que tem arquivo próprio).
 vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => null }));
@@ -119,6 +133,67 @@ beforeEach(() => {
   arquivarMutate.mockReset();
   startCall.mockReset();
   claimMutate.mockReset();
+  resposta.endereco = undefined;
+  iaComDonoMutate.mockReset();
+});
+
+describe("ConversationHeader — 'IA com o dono' (#3967)", () => {
+  // Abre o ⋯ antes de perguntar: com o menu fechado o `queryByTestId` devolveria
+  // null em QUALQUER estado, e os casos de ausência passariam sem medir nada.
+  it("conversa SEM dono não mostra o interruptor (não há dono a preservar)", async () => {
+    render(<ConversationHeader conversation={conversa("open")} />);
+    await abrirOMenu();
+    expect(screen.queryByTestId("ia-com-o-dono")).toBeNull();
+  });
+
+  it("conversa com dono: desligado, liga com um clique", async () => {
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    render(<ConversationHeader conversation={atual} />);
+    await abrirOMenu();
+
+    const item = screen.getByTestId("ia-com-o-dono");
+    expect(item).toHaveAttribute("role", "menuitemcheckbox");
+    expect(item).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+    fireEvent.click(item);
+    expect(iaComDonoMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", ligado: true });
+  });
+
+  it("modo ligado: marcado no menu, com selo à vista, e o clique desliga", async () => {
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
+    render(<ConversationHeader conversation={atual} />);
+    // O selo ANTES de abrir: é ele que diz o estado com o menu fechado.
+    expect(screen.getByTestId("badge-ia-com-o-dono")).toHaveTextContent("IA com o dono");
+    await abrirOMenu();
+
+    const item = screen.getByTestId("ia-com-o-dono");
+    expect(item).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(item);
+    expect(iaComDonoMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", ligado: false });
+  });
+
+  it("modo ligado com o automático calado: quem fala é o selo do motivo, não o do modo", () => {
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
+    atual.bot_silenced_until = "infinity";
+    render(<ConversationHeader conversation={atual} />);
+    expect(screen.getByTestId("badge-atendimento-humano")).toBeInTheDocument();
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+  });
+
+  it("conversa encerrada não mostra o interruptor nem o selo", async () => {
+    const atual = conversa("closed");
+    atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
+    render(<ConversationHeader conversation={atual} />);
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+    await abrirOMenu();
+    expect(screen.queryByTestId("ia-com-o-dono")).toBeNull();
+  });
 });
 
 /**
@@ -384,5 +459,50 @@ describe("ConversationHeader — fechar conversa de contato com a equipe (#3313)
       conversation_id: "conv-1",
       expected_revision: 3,
     });
+  });
+});
+
+/**
+ * A linha só existe com as três condições juntas: a ficha tem telefone extra, o
+ * canal responde pela última mensagem recebida e a rota devolveu um número.
+ * Fora disso a resposta sai pelo principal, que o cabeçalho já mostra.
+ */
+describe("ConversationHeader — por qual número a resposta sai (Spec 31, B2)", () => {
+  function comTelefone(): ConversationWithContact {
+    const atual = conversa("open");
+    atual.contacts = {
+      id: "contato-1",
+      display_name: "Raphael",
+      name: "Raphael",
+      phone_number: "+5511999990001",
+      tags: [],
+    } as unknown as ConversationWithContact["contacts"];
+    return atual;
+  }
+  const doExtra: EnderecoDaResposta = {
+    phone_number: "+5511999990002",
+    via: "ultima_recebida",
+    has_extras: true,
+    follows_last_inbound: true,
+  };
+
+  it("com extra, no canal que segue a última recebida: mostra o número do extra", () => {
+    resposta.endereco = doExtra;
+    render(<ConversationHeader conversation={comTelefone()} />);
+
+    expect(screen.getByTestId("resposta-sai-por")).toHaveTextContent(
+      "A resposta sai por: +5511999990002",
+    );
+  });
+
+  it.each<[string, Partial<EnderecoDaResposta>]>([
+    ["a ficha não tem extra", { has_extras: false }],
+    ["o canal responde pelo principal", { follows_last_inbound: false }],
+    ["a rota não devolveu número", { phone_number: null }],
+  ])("sem linha quando %s", (_, diferenca) => {
+    resposta.endereco = { ...doExtra, ...diferenca };
+    render(<ConversationHeader conversation={comTelefone()} />);
+
+    expect(screen.queryByTestId("resposta-sai-por")).toBeNull();
   });
 });

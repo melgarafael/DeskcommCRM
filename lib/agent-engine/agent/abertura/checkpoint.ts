@@ -27,10 +27,12 @@ import type { Queryable } from "../../queue/queue";
 import {
   DECLARACAO_INSTRUCTION,
   declaracaoDoTurnoSchema,
+  instrucaoDeDeclaracao,
   intencaoSchema,
   promessaSchema,
   type DeclaracaoDoTurno,
 } from "../declaracao";
+import { falaDoMotor, type Idioma } from "../idioma-do-turno";
 
 /** Conteúdo do checkpoint — o modelo devolve, o Zod valida, o Postgres guarda. */
 export const checkpointContentSchema = z.object({
@@ -80,8 +82,14 @@ export interface LeadCheckpointRow extends Omit<CheckpointContent, 'declaracao'>
  * turno em que ele esquecesse seria um lead parado em silêncio. É o mesmo
  * argumento que este arquivo já usa para o checkpoint — e sai de graça, porque
  * é a mesma chamada de modelo.
+ *
+ * O TEXTO base (`CHECKPOINT_BASE`) e a frase final (`FECHO_SEM_TEXTO_FORA`) são
+ * os pedaços que a #4260 item 1 passou a traduzir; a declaração vem de
+ * `DECLARACAO_INSTRUCTION`. A soma dos três é a constante de sempre.
  */
-export const CHECKPOINT_INSTRUCTION =
+const FECHO_SEM_TEXTO_FORA = ' Sem texto fora do JSON.';
+
+const CHECKPOINT_BASE =
   'Feche o turno AGORA. Responda SOMENTE com um JSON válido no formato ' +
   '{"commitments": string[], "objections": string[], "next_action": string|null, "rolling_summary": string} ' +
   '— compromissos assumidos, objeções do lead, próxima ação e o resumo acumulado ' +
@@ -101,9 +109,44 @@ export const CHECKPOINT_INSTRUCTION =
   // contexto do modelo.
   'Em `next_action`, escreva a ação que vem DEPOIS da resposta que você está ' +
   'esperando — nunca a pergunta que você acabou de fazer. Se o turno terminou ' +
-  'perguntando, a próxima ação é o que fazer COM a resposta quando ela chegar. ' +
-  DECLARACAO_INSTRUCTION +
-  ' Sem texto fora do JSON.';
+  'perguntando, a próxima ação é o que fazer COM a resposta quando ela chegar. ';
+
+export const CHECKPOINT_INSTRUCTION = CHECKPOINT_BASE + DECLARACAO_INSTRUCTION + FECHO_SEM_TEXTO_FORA;
+
+/**
+ * A instrução de fechamento no idioma da organização (#4260, item 1).
+ *
+ * É a última coisa que o modelo lê no turno — e era toda em português. As três
+ * partes são as mesmas da constante acima, então `pt-BR` sai IDÊNTICO a
+ * `CHECKPOINT_INSTRUCTION` (o texto de hoje). As chaves do JSON
+ * (`commitments`, `next_action`…) não mudam: `checkpointContentSchema` as lê.
+ */
+export function instrucaoDeFechamento(idioma: Idioma = 'pt-BR'): string {
+  if (idioma === 'pt-BR') return CHECKPOINT_INSTRUCTION;
+  return falaDoMotor(CHECKPOINT_BASE, idioma) + instrucaoDeDeclaracao(idioma) + falaDoMotor(FECHO_SEM_TEXTO_FORA, idioma);
+}
+
+/**
+ * As mensagens do fechamento com a PRIMEIRA pergunta no idioma da organização.
+ *
+ * O turno empilha a instrução canônica (`CHECKPOINT_INSTRUCTION`) na ordem de
+ * sempre — abertura, resposta, agenda, instrução, correção — e só DEPOIS passa
+ * por aqui. A posição e a identidade da instrução continuam as de antes (é o que
+ * `tests/unit/fechamento-do-turno-corrige-antes-de-repetir` prende lendo o
+ * fonte); o idioma entra como passada, e em `pt-BR` a lista volta como está.
+ */
+export function instrucaoDeFechamentoNoIdioma<T extends object>(
+  mensagens: readonly T[],
+  idioma: Idioma,
+): T[] {
+  if (idioma === 'pt-BR') return [...mensagens];
+  const traduzida = instrucaoDeFechamento(idioma);
+  return mensagens.map((mensagem) =>
+    (mensagem as { content?: unknown }).content === CHECKPOINT_INSTRUCTION
+      ? ({ ...mensagem, content: traduzida } as T)
+      : mensagem,
+  );
+}
 
 export async function insertCheckpoint(
   db: Queryable,

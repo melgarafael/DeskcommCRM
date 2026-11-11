@@ -158,7 +158,7 @@ describe("montarAvisoDeCaso", () => {
     });
     expect(texto).toContain("Assunto: A IA prometeu algo e travou");
     expect(texto).not.toContain("Promessa não cumprida");
-    expect(texto).toContain("(resumo escrito pela IA a partir da conversa)");
+    expect(texto).toContain("(montado automaticamente; confira na conversa)");
   });
 
   it("espanhol: as frases fixas são traduzidas", () => {
@@ -174,4 +174,17 @@ describe("montarAvisoDeCaso", () => {
     // puro de propósito, e `tests/unit/branding.test.ts` varre /deskcomm/i aqui.
     expect(montarAvisoDeCaso({ ...BASE, marca: "Zap do João" })).toContain("Zap do João");
   });
+});
+
+
+it("o retorno mostra a resposta sanitizada e os comandos do ciclo, preservando o Caso", () => {
+  const eventId = "88888888-8888-4888-8888-888888888888";
+  const texto = montarAvisoDeCaso({ ...BASE, atualizacao: { eventId, ask: "Qual opção?", info: "Primeira https://mal.example" } });
+  expect(texto).toContain("atualização do caso esperando você");
+  expect(texto).toContain("Pergunta da equipe: Qual opção?");
+  expect(texto).toContain("Nova informação do cliente: Primeira");
+  expect(texto).not.toContain("mal.example");
+  expect(texto).toContain(`RESPONDER ${BASE.caseId} ATUALIZACAO ${eventId}`);
+  expect(texto).toContain(`PERGUNTAR ${BASE.caseId} ATUALIZACAO ${eventId}`);
+  expect(montarAvisoDeCaso({ ...BASE, respostaWhatsappHabilitada: false, atualizacao: { eventId, ask: "Pergunta", info: "Resposta" } })).not.toContain("RESPONDER");
 });

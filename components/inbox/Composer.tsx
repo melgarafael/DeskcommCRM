@@ -436,7 +436,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     setPendingEm(mode);
   }
 
-  /** A escolha de UM arquivo — o menu "+" e a imagem colada chamam por aqui. */
+  /** A escolha de UM arquivo — a imagem colada chama por aqui. O menu "+"
+   * entrega a lista direto no `escolherArquivos` (#4364). */
   function escolherArquivo(file: File) {
     escolherArquivos([file]);
   }
@@ -446,6 +447,39 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
+  }
+
+  /**
+   * DEVOLVE O FOCO AO CAMPO DEPOIS DO ENVIO (#4148) — o mesmo
+   * `requestAnimationFrame` + `ta.focus()` dos outros refocos daqui
+   * (`escolherMencao`, `escreverNoCampo`, o emoji).
+   *
+   * O que tirava o foco era o CLIQUE no "Enviar", não o `setText`: o botão
+   * recebe o foco ao ser clicado, e o mesmo commit que limpa o campo troca esse
+   * botão pelo gravador (campo vazio). O nó focado sai da tela e o foco cai no
+   * `body` — o campo continua montado, mas a segunda mensagem só sai depois de
+   * um clique nele.
+   *
+   * Medido no head: enviar por Enter mantém o foco, e a assunção automática
+   * (re-render com `aguardandoAssumir` novo) não o tira — o `textarea` é o
+   * MESMO nó depois do re-render. Por isso o refoco mora aqui, no envio, e não
+   * num efeito preso à troca de dono: ele já vale para a conversa que passou a
+   * ser do atendente.
+   *
+   * As duas guardas são de cortesia com quem já levou o foco para outro lugar
+   * durante o envio (outra conversa, um diálogo): só devolve quando ele ficou
+   * órfão (`body`) ou quando ninguém o tomou.
+   */
+  function devolverFocoAoCampo() {
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      // Campo travado (janela fechada, bloqueio até assumir) não recebe foco.
+      if (!ta || ta.disabled) return;
+      const ativo = document.activeElement;
+      if (ativo && ativo !== document.body && ativo !== ta) return;
+      ta.focus();
+      autoresize();
+    });
   }
 
   /**
@@ -501,7 +535,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       mode === "note" ? embutirMencoes(legivel, mencoes) : interpolateTemplate(legivel, contato);
 
     setText("");
-    requestAnimationFrame(() => autoresize());
+    // #4148: o clique no "Enviar" deixa o foco no BOTÃO, e este mesmo commit o
+    // troca pelo gravador (campo vazio) — o foco cai no `body`. Devolvê-lo ao
+    // campo é o que permite a segunda mensagem sem clicar na caixa.
+    devolverFocoAoCampo();
 
     // Se a pessoa já começou a próxima resposta, preserve os dois textos.
     const restaurar = (current: string) => (current ? `${legivel}\n${current}` : legivel);
@@ -1190,9 +1227,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               para o cliente, e nota com cartão de contato não existe. O `disabled`
               continua o de sempre: em modo nota `respostaBarrada` é só
               `isDisabled`, e a janela fechada barra a resposta, não a nota. */}
+          {/* A lista inteira da escolha, direto na função do arraste (#4364): o
+              botão deixa de ser um gesto de um arquivo só. */}
           <AttachMenu
             disabled={respostaBarrada}
-            onPick={escolherArquivo}
+            onPick={escolherArquivos}
             onPickContact={mode === "reply" ? () => setContactPickerOpen(true) : undefined}
           />
           <EmojiButton

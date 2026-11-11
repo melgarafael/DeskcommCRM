@@ -27,7 +27,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
-import { ok, fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
@@ -60,9 +61,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const orgId = authz.org.orgId;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
+  // 64 KB de folga para o envelope multipart; o tamanho do CSV é conferido abaixo.
+  const corpo = await lerCorpoComTeto(req, CSV_MAX_BYTES + 64 * 1024, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("Arquivo maior que ") + `${Math.floor(CSV_MAX_BYTES / 1024 / 1024)}MB.`,
+  });
+  if (!corpo.ok) return corpo.response;
+
   let form: FormData;
   try {
-    form = await req.formData();
+    form = await corpo.corpo.formData();
   } catch {
     return fail("validation_failed", t("Envie o arquivo como multipart/form-data."), 422, {
       requestId,
@@ -381,11 +390,11 @@ export async function GET(): Promise<Response> {
     'Plano anual,Bruno Lima,(21) 97777-6666,,"1.200,00",site,,Veio pelo formulario',
   ].join("\n");
 
-  return new Response(`﻿${modelo}\n`, {
+  return comIdDaRequisicao(new Response(`﻿${modelo}\n`, {
     headers: {
       "content-type": "text/csv; charset=utf-8",
       "content-disposition": 'attachment; filename="modelo-leads.csv"',
       "x-request-id": requestId,
     },
-  });
+  }), requestId);
 }

@@ -9,7 +9,7 @@ import { mkdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { createClient } from "@supabase/supabase-js";
 
-import { test, expect, esperarARevelacao, type Page, type BrowserContext } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, esperarARevelacao, type Page, type BrowserContext } from "./helpers/test";
 
 function ambienteSintetico(appUrl: string | undefined) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -87,6 +87,7 @@ test("convite chega em Minhas, permite resposta e revogação retira o acesso se
     const vinculo = await db.from("user_organizations").insert({ organization_id: org, user_id: data.user.id, role: papel, accepted_at: new Date().toISOString() });
     if (vinculo.error) throw new Error(vinculo.error.message);
     const contexto = await browser.newContext({ baseURL: ambiente.appUrl, viewport: { width: 1440, height: 1000 } });
+    contexto.on("page", esperarARevelacaoNasCargas);
     contextos.push(contexto);
     const page = await contexto.newPage();
     await navegar(page, "/login");

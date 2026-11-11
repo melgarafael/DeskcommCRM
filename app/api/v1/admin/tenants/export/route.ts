@@ -39,7 +39,7 @@ import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import type { AdminTenantRow } from "@/hooks/useAdminTenants";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { normalizarIdioma, parseAcceptLanguage } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     },
   });
 
-  return new Response(corpo, {
+  return comIdDaRequisicao(new Response(corpo, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
@@ -155,5 +155,5 @@ export async function GET(req: NextRequest): Promise<Response> {
       "X-Request-Id": requestId,
       ...(truncado ? { "X-Export-Truncado": "true" } : {}),
     },
-  });
+  }), requestId);
 }
