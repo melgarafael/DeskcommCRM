@@ -19,6 +19,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Actor } from "@/lib/api/handlers/types";
 import type { EventRow } from "@/lib/event-log/dispatcher";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 
 /** As ações que falam com o cliente — a lista literal do doc 301. */
@@ -104,6 +106,16 @@ const NOME_DA_ACAO: Record<string, string> = {
 };
 
 /**
+ * A Central mostra título e corpo como foram gravados (nunca passam por `t()`
+ * na tela), então o aviso nasce no idioma da ORGANIZAÇÃO — o mesmo padrão do
+ * aviso de etapa (`lib/leads/aviso-de-etapa.handler.ts`).
+ */
+async function idiomaDaOrganizacao(admin: SupabaseClient, organizationId: string): Promise<Idioma> {
+  const { data } = await admin.from("organizations").select("locale").eq("id", organizationId).maybeSingle();
+  return normalizarIdioma((data as { locale?: string | null } | null)?.locale);
+}
+
+/**
  * Abre o aviso na Central. Fire-and-forget como os outros avisos do motor: um
  * aviso que não entra não desfaz o que a regra já fez — mas vira log de erro,
  * porque sem ele a mensagem parada fica invisível.
@@ -112,15 +124,20 @@ export async function avisarAcoesParadas(
   admin: SupabaseClient,
   entrada: { organizationId: string; ruleName: string; runId: string; tipos: readonly string[] },
 ): Promise<void> {
-  const nomes = [...new Set(entrada.tipos.map((t) => NOME_DA_ACAO[t] ?? t))].join(", ");
+  const idioma = await idiomaDaOrganizacao(admin, entrada.organizationId);
+  const nomes = [...new Set(entrada.tipos.map((t) => (NOME_DA_ACAO[t] ? traduzir(NOME_DA_ACAO[t], idioma) : t)))].join(", ");
   const { error } = await admin.from("agent_inbox_items").insert({
     organization_id: entrada.organizationId,
     kind: "other",
     severity: "warn",
-    title: "Automação esperando aprovação para falar com o cliente",
-    body:
-      `Uma ação da IA no modo assistido disparou a automação "${entrada.ruleName}", e o que fala com o cliente ficou parado (${nomes}). ` +
-      `O resto da automação já rodou. Dispare se quiser que a mensagem saia; marque como resolvido para descartar.`,
+    title: traduzir("Automação esperando aprovação para falar com o cliente", idioma),
+    body: traduzir(
+      'Uma ação da IA no modo assistido disparou a automação "{regra}", e o que fala com o cliente ficou parado ({acoes}). O resto da automação já rodou. Dispare se quiser que a mensagem saia; marque como resolvido para descartar.',
+      idioma,
+    )
+      // {acoes} antes: o nome da regra é do cliente e pode conter o marcador.
+      .replace("{acoes}", () => nomes)
+      .replace("{regra}", () => entrada.ruleName),
     ref_kind: REF_DO_AVISO_DE_PARADA,
     ref_id: entrada.runId,
   });
@@ -141,14 +158,22 @@ export async function avisarSequenciaParada(
   admin: SupabaseClient,
   entrada: { organizationId: string; leadId: string; quantas: number },
 ): Promise<void> {
+  const idioma = await idiomaDaOrganizacao(admin, entrada.organizationId);
   const { error } = await admin.from("agent_inbox_items").insert({
     organization_id: entrada.organizationId,
     kind: "other",
     severity: "warn",
-    title: "Sequência esperando aprovação para falar com o cliente",
-    body:
-      `Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em ${entrada.quantas === 1 ? "uma sequência de follow-up" : `${entrada.quantas} sequências de follow-up`}, e a inscrição ficou parada. ` +
-      `Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.`,
+    title: traduzir("Sequência esperando aprovação para falar com o cliente", idioma),
+    body: (entrada.quantas === 1
+      ? traduzir(
+          "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em uma sequência de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.",
+          idioma,
+        )
+      : traduzir(
+          "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em {quantas} sequências de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.",
+          idioma,
+        )
+    ).replace("{quantas}", String(entrada.quantas)),
     ref_kind: "lead",
     ref_id: entrada.leadId,
   });

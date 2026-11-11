@@ -9770,5 +9770,13 @@
   "Agora está fora da janela de envio deste número (ou no limite do dia). Nada foi enviado; tente depois do horário indicado.": "It is now outside this number's sending window (or at the daily limit). Nothing was sent; try again after the time shown.",
   "Disparar agora": "Send now",
   "Não foi possível disparar. O aviso continua aberto se nada saiu; leia o motivo na atividade das automações.": "Could not send. The notice stays open if nothing went out; read the reason in the automations activity.",
-  "Ver na atividade das automações": "View in automations activity"
+  "Ver na atividade das automações": "View in automations activity",
+  "Automação esperando aprovação para falar com o cliente": "Automation waiting for approval to talk to the customer",
+  "Uma ação da IA no modo assistido disparou a automação \"{regra}\", e o que fala com o cliente ficou parado ({acoes}). O resto da automação já rodou. Dispare se quiser que a mensagem saia; marque como resolvido para descartar.": "An AI action in assisted mode triggered the automation \"{regra}\", and what talks to the customer was held ({acoes}). The rest of the automation already ran. Send it if you want the message to go out; mark it as resolved to dismiss.",
+  "mensagem da IA": "AI message",
+  "sequência": "sequence",
+  "decisão da IA": "AI decision",
+  "Sequência esperando aprovação para falar com o cliente": "Sequence waiting for approval to talk to the customer",
+  "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em uma sequência de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.": "An AI action in assisted mode moved the deal to a point that enrolls the contact in a follow-up sequence, and the enrollment was held. If you want the sequence to start, enroll the contact from their panel in the conversation; mark it as resolved to dismiss.",
+  "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em {quantas} sequências de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.": "An AI action in assisted mode moved the deal to a point that enrolls the contact in {quantas} follow-up sequences, and the enrollment was held. If you want the sequences to start, enroll the contact from their panel in the conversation; mark it as resolved to dismiss."
 }

@@ -12,12 +12,19 @@ const parados = vi.hoisted(() => ({ n: 0 as number | undefined }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    from: (tabela: string) => ({
-      insert: async (linha: Record<string, unknown>) => {
-        inserts.push({ tabela, linha });
-        return { error: null };
-      },
-    }),
+    from: (tabela: string) => {
+      // O aviso lê o idioma da organização antes de gravar.
+      const q = {
+        select: () => q,
+        eq: () => q,
+        maybeSingle: async () => ({ data: tabela === "organizations" ? { locale: "pt-BR" } : null, error: null }),
+        insert: async (linha: Record<string, unknown>) => {
+          inserts.push({ tabela, linha });
+          return { error: null };
+        },
+      };
+      return q;
+    },
   }),
 }));
 vi.mock("@/lib/followup/agent-followup-gate", () => ({ createSupabaseFollowupGateDb: () => ({}) }));
