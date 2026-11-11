@@ -12,7 +12,7 @@
  * (MCP), automação e chamadas diretas de `fn_conversation_assign` — não
  * passava por régua nenhuma.
  *
- * ─── A regra (doc 178, letra B; reafirmada no doc 267, letra A) ────────────
+ * ─── A regra (doc 178, letra B; doc 267 A, revista no doc 328 (A+ estreito, #4371)) ─
  *
  *   · TRANSFERIR leva o negócio aberto do contato, dentro da permissão de quem
  *     clicou (a mesma de `crm_leads_update`), com a exceção do #4371: quando
