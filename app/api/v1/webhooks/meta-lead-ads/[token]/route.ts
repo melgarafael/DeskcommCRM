@@ -102,7 +102,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
-import { fail, ok } from "@/lib/api/wrappers";
+import { fail, ok, comIdDaRequisicao } from "@/lib/api/wrappers";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { audit } from "@/lib/audit";
 import { appDaMeta } from "@/lib/channels/meta/app";
@@ -247,10 +247,14 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse
 
   // Texto puro, sem o wrapper `{data:…}` da nossa API: a plataforma compara o
   // corpo com o desafio que enviou, e um envelope JSON reprova a URL.
-  return new NextResponse(challenge, {
-    status: 200,
-    headers: { "content-type": "text/plain" },
-  });
+  // O carimbo do X-Request-Id não toca no corpo: só acrescenta o cabeçalho (#4107).
+  return comIdDaRequisicao(
+    new NextResponse(challenge, {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    }),
+    req,
+  );
 }
 
 export async function POST(req: NextRequest, { params }: RouteCtx) {
