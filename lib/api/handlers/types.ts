@@ -86,8 +86,12 @@ export type Actor =
    * — o mesmo campo do ator `ai_agent` e pela mesma razão: o `id` deste ator é
    * a REGRA que disparou, e a assinatura `por_agente` (#3310) precisa do nome
    * de quem escreveu, não do nome de quem mandou disparar.
+   *
+   * `operation_mode` (doc 301 = B) é a marca HERDADA: a regra rodou por causa de
+   * algo que a IA fez no modo assistido, e o que ela escreve leva a mesma marca
+   * (`marcaHerdadaDoEvento` em `lib/automation/parada-no-assistido.ts`).
    */
-  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string };
+  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string; operation_mode?: "assisted" };
 
 export interface HandlerCtx {
   prospectingDelivery?: ProspectingDelivery;

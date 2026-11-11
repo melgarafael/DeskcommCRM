@@ -35,19 +35,64 @@ export const MOTIVO_PARADA_NO_ASSISTIDO = "parada_no_assistido";
 /** `ref_kind` do aviso: aponta para o run que guarda o que ficou parado. */
 export const REF_DO_AVISO_DE_PARADA = "automation_rule_run";
 
-/** O pedaço de `metadata` que o emissor acrescenta quando o ator é a IA no assistido. */
+/**
+ * O ator leva a marca? A IA no assistido, ou a regra que rodou por causa dela
+ * (marca HERDADA, `marcaHerdadaDoEvento`) — sem a herança, a regra A que só
+ * move o card emitia um evento limpo, e o que vem depois dele saía.
+ */
+function atorNoAssistido(actor: Actor): boolean {
+  return (actor.type === "ai_agent" || actor.type === "webhook_source") && actor.operation_mode === "assisted";
+}
+
+/** O pedaço de `metadata` que o emissor acrescenta quando o ator está no assistido. */
 export function marcaDoAssistido(actor: Actor): { actor_operation_mode?: "assisted" } {
-  return actor.type === "ai_agent" && actor.operation_mode === "assisted"
-    ? { actor_operation_mode: "assisted" }
-    : {};
+  return atorNoAssistido(actor) ? { actor_operation_mode: "assisted" } : {};
 }
 
-export function eventoDaIaNoAssistido(row: Pick<EventRow, "metadata">): boolean {
-  return (row.metadata as Record<string, unknown> | null | undefined)?.actor_operation_mode === "assisted";
+/**
+ * O cabeçalho que leva a marca até o GATILHO do banco. `lead.won`, `lead.lost`,
+ * `lead.reopened` e `lead.assigned` só nascem de `fn_emit_event_on_lead_change`
+ * (o `emit_event` os recusa vindos do app), e o gatilho não vê o ator — vê a
+ * requisição: o PostgREST expõe os cabeçalhos em `request.headers`. Mandar o
+ * cabeçalho só deixa a automação MAIS contida (o que fala com o cliente espera
+ * aprovação); por isso um cliente que o forje não ganha nada.
+ */
+export const CABECALHO_DO_ASSISTIDO = "x-actor-operation-mode";
+
+/** Põe o cabeçalho na escrita de `crm_leads` quando o ator está no assistido. */
+export function escritaComMarca<B extends { setHeader(nome: string, valor: string): B }>(builder: B, actor: Actor): B {
+  return atorNoAssistido(actor) ? builder.setHeader(CABECALHO_DO_ASSISTIDO, "assisted") : builder;
 }
 
-export function acaoFicaParada(row: Pick<EventRow, "metadata">, tipoDaAcao: string): boolean {
-  return eventoDaIaNoAssistido(row) && ACOES_QUE_FALAM_COM_O_CLIENTE.includes(tipoDaAcao);
+export function eventoDaIaNoAssistido(row: Pick<EventRow, "metadata"> | null | undefined): boolean {
+  return (row?.metadata as Record<string, unknown> | null | undefined)?.actor_operation_mode === "assisted";
+}
+
+/** O que a ação de uma regra herda do evento que a disparou, para pôr no ator dela. */
+export function marcaHerdadaDoEvento(row: Pick<EventRow, "metadata"> | null | undefined): { operation_mode?: "assisted" } {
+  return eventoDaIaNoAssistido(row) ? { operation_mode: "assisted" } : {};
+}
+
+/**
+ * A ação fica parada? As quatro da lista, e a `ai_decide` quando ALGUMA opção
+ * dela é uma das quatro: o `execute` da decisão chama o executor da opção
+ * escolhida direto (`actions/ai-decide.ts`), por fora deste laço.
+ */
+export function acaoFicaParada(
+  row: Pick<EventRow, "metadata">,
+  acao: { type: string; config?: Record<string, unknown> | null },
+): boolean {
+  if (!eventoDaIaNoAssistido(row)) return false;
+  if (ACOES_QUE_FALAM_COM_O_CLIENTE.includes(acao.type)) return true;
+  if (acao.type !== "ai_decide") return false;
+  const opcoes = acao.config?.opcoes;
+  return (
+    Array.isArray(opcoes) &&
+    opcoes.some((o) => {
+      const tipo = (o as { acao?: { type?: unknown } } | null)?.acao?.type;
+      return typeof tipo === "string" && ACOES_QUE_FALAM_COM_O_CLIENTE.includes(tipo);
+    })
+  );
 }
 
 const NOME_DA_ACAO: Record<string, string> = {
@@ -55,6 +100,7 @@ const NOME_DA_ACAO: Record<string, string> = {
   send_email: "e-mail",
   send_ai_message: "mensagem da IA",
   start_message_flow: "sequência",
+  ai_decide: "decisão da IA",
 };
 
 /**
@@ -80,6 +126,34 @@ export async function avisarAcoesParadas(
   });
   if (error) {
     logger.error("[automation] aviso de ação parada no assistido não entrou na Central", {
+      organization_id: entrada.organizationId,
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * O aviso da SEQUÊNCIA parada: o gatilho de follow-up por etapa ou por negócio
+ * novo não inscreveu porque a IA mexeu no modo assistido. Sem botão de disparo:
+ * quem quiser inscreve pelo painel do contato, que já faz isso.
+ */
+export async function avisarSequenciaParada(
+  admin: SupabaseClient,
+  entrada: { organizationId: string; leadId: string; quantas: number },
+): Promise<void> {
+  const { error } = await admin.from("agent_inbox_items").insert({
+    organization_id: entrada.organizationId,
+    kind: "other",
+    severity: "warn",
+    title: "Sequência esperando aprovação para falar com o cliente",
+    body:
+      `Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em ${entrada.quantas === 1 ? "uma sequência de follow-up" : `${entrada.quantas} sequências de follow-up`}, e a inscrição ficou parada. ` +
+      `Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.`,
+    ref_kind: "lead",
+    ref_id: entrada.leadId,
+  });
+  if (error) {
+    logger.error("[followup] aviso de sequência parada no assistido não entrou na Central", {
       organization_id: entrada.organizationId,
       error: error.message,
     });

@@ -1,4 +1,4 @@
-import { marcaDoAssistido } from "@/lib/automation/parada-no-assistido";
+import { escritaComMarca, marcaDoAssistido } from "@/lib/automation/parada-no-assistido";
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -307,7 +307,8 @@ function actorAuditPayload(actor: Actor): {
   if (actor.type === "webhook_source") {
     return {
       actorUserId: null,
-      metadataActor: { actor_type: "webhook_source", actor_id: actor.id },
+      // A marca HERDADA (doc 301 = B): a regra rodou por causa da IA no assistido.
+      metadataActor: { actor_type: "webhook_source", actor_id: actor.id, ...marcaDoAssistido(actor) },
     };
   }
   // TOKEN DE SERVIDOR é caso próprio, e não o `else` de `ai_agent`: sem esta
@@ -1106,13 +1107,17 @@ export async function updateLeadHandler(
     ? ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? existing.contact_id)
     : null;
   await guardServiceEffect();
-  const { data: updated, error: updErr } = await supabase
-    .from("crm_leads")
-    .update(patch)
-    .eq("organization_id", ctx.organization_id)
-    .eq("id", leadId)
-    .select(LEAD_COLS)
-    .maybeSingle();
+  // Doc 301 = B: a troca de responsável vira `lead.assigned` pelo GATILHO, e o
+  // gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
+  const { data: updated, error: updErr } = await escritaComMarca(
+    supabase
+      .from("crm_leads")
+      .update(patch)
+      .eq("organization_id", ctx.organization_id)
+      .eq("id", leadId)
+      .select(LEAD_COLS),
+    ctx.actor,
+  ).maybeSingle();
 
   const recusaNoUpdate = recusaDaGuardaDoBanco(ctx, updErr);
   if (recusaNoUpdate) throw recusaNoUpdate;
@@ -1525,21 +1530,25 @@ export async function moveLeadHandler(
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
   await guardServiceEffect();
-  const { data: updated, error: updErr } = await supabase
-    .from("crm_leads")
-    .update({
-      stage_id: input.to_stage_id,
-      position_in_stage: position,
-      updated_at: nowIso,
-      ...veredito.patch,
-      ...(stage.is_won && input.won_reason?.trim()
-        ? { won_reason: input.won_reason.trim() }
-        : {}),
-    })
-    .eq("id", leadId)
-    .eq("updated_at", lead.updated_at)
-    .select("*")
-    .maybeSingle();
+  // Doc 301 = B: etapa de ganho/perda vira `lead.won`/`lead.lost` pelo GATILHO,
+  // e o gatilho só vê a marca do assistido pelo cabeçalho (`escritaComMarca`).
+  const { data: updated, error: updErr } = await escritaComMarca(
+    supabase
+      .from("crm_leads")
+      .update({
+        stage_id: input.to_stage_id,
+        position_in_stage: position,
+        updated_at: nowIso,
+        ...veredito.patch,
+        ...(stage.is_won && input.won_reason?.trim()
+          ? { won_reason: input.won_reason.trim() }
+          : {}),
+      })
+      .eq("id", leadId)
+      .eq("updated_at", lead.updated_at)
+      .select("*"),
+    ctx.actor,
+  ).maybeSingle();
 
   if (updErr) {
     // Rede de segurança (#917) — mesma da rota de arrasto: recusa do banco por

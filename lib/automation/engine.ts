@@ -829,7 +829,7 @@ export async function runAutomationForEvent(
     let adiouAPropria = false;
     for (const action of rule.actions ?? []) {
       // A ação parada no assistido não roda agora: não pode adiar o evento inteiro.
-      if (acaoFicaParada(row, action.type)) continue;
+      if (acaoFicaParada(row, action)) continue;
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
       const until = await executor.postponeUntil(
@@ -931,7 +931,7 @@ export async function runAutomationForEvent(
       }
       // Doc 301 = B: a IA mexeu no modo assistido, e o que fala com o cliente
       // espera alguém disparar pela Central (`parada-no-assistido.ts`).
-      if (acaoFicaParada(row, action.type)) {
+      if (acaoFicaParada(row, action)) {
         results.push({ type: action.type, status: "skipped", error: MOTIVO_PARADA_NO_ASSISTIDO });
         continue;
       }
