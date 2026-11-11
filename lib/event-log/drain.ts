@@ -9,6 +9,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   avisoDeEventoMorto,
   IA_QUE_NAO_RESPONDEU,
+  MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU,
+  MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO,
   MENSAGEM_QUE_NAO_ENTROU,
 } from "@/lib/event-log/aviso-de-evento-morto";
 import { dispatchEvent, getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
@@ -97,6 +99,8 @@ export async function avisarEventoMorto(
       .eq("status", "open")
       .neq("title", IA_QUE_NAO_RESPONDEU.titulo)
       .neq("title", MENSAGEM_QUE_NAO_ENTROU.titulo)
+      .neq("title", MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU.titulo)
+      .neq("title", MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO.titulo)
       .limit(1)
       .maybeSingle();
     if (jaAberto) return;
@@ -300,13 +304,20 @@ export async function drainEventLog(
 
   let pendentes = admin
     .from("event_log")
-    // `created_at` viaja porque um consumidor não consegue distinguir "evento de
-    // agora" de "evento de três dias parado em `pending`" sem ele — e o drain
-    // leva 50 por tick sem janela de recência, então um backlog vira enxurrada
-    // de efeitos com data errada no primeiro tick depois de um deploy.
-    .select(
-      "id, organization_id, event_type, entity_kind, entity_id, payload, metadata, consumed_by, attempts, created_at",
-    )
+    // ─── A VARREDURA NÃO LEVA O CORPO DO EVENTO ────────────────────────────────
+    //
+    // `payload` e `metadata` são as colunas gordas desta tabela (JSONB com o
+    // dossiê inteiro do que disparou o evento) e o dreno carrega 50 linhas por
+    // tique para, na maioria delas, só decidir se a linha ainda interessa. Quem
+    // chega ao handler — e é quem precisa do corpo — é UMA linha por vez, e o
+    // claim abaixo (`update ... select`) já devolve a representação da linha
+    // reclamada: o corpo vem de lá, no mesmo round-trip que já existia, sem uma
+    // consulta a mais (#3878, item 3).
+    //
+    // `created_at` também vai no claim: quem monta o `EventRow` do handler
+    // continua recebendo a idade do evento (`dispatcher.ts`, "quando o evento
+    // foi emitido"), só que lida uma vez por linha processada em vez de 50.
+    .select("id, organization_id, event_type, entity_kind, entity_id, consumed_by, attempts")
     .eq("status", "pending")
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
     .in("event_type", handledTypes);
@@ -380,19 +391,31 @@ export async function drainEventLog(
     // que ele devolve não muda até esta instância soltar a linha.
     // Revalide também o prazo: outro dreno pode ter devolvido a linha a
     // `pending` com retry/backoff futuro depois da leitura do lote.
+    //
+    // E é AQUI que o corpo do evento entra (#3878, item 3): o `select` do lote
+    // não traz `payload`/`metadata`/`created_at`, e este `update ... select` —
+    // que já existia para revalidar o claim — devolve a representação da linha
+    // reclamada, ou seja, de UMA linha, a que vai ser processada agora. Zero
+    // consulta a mais, e as 49 linhas do lote que não chegam ao handler nunca
+    // pagam o JSONB delas.
     const { data: claimed } = await admin
       .from("event_log")
       .update({ status: "processing", updated_at: new Date().toISOString() })
       .eq("id", row.id)
       .eq("status", "pending")
       .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
-      .select("id, consumed_by, attempts");
-    const reclamada = claimed?.[0] as Partial<Pick<EventRow, "consumed_by" | "attempts">> | undefined;
+      .select("id, consumed_by, attempts, payload, metadata, created_at");
+    const reclamada = claimed?.[0] as Partial<
+      Pick<EventRow, "consumed_by" | "attempts" | "payload" | "metadata" | "created_at">
+    > | undefined;
     if (!reclamada) continue;
-    // ponytail: as duas colunas são NOT NULL e o `select` as pede, então no banco
+    // ponytail: as colunas são NOT NULL e o `select` as pede, então no banco
     // sempre voltam; o `??` só cobre dublês de teste que devolvem `{ id }`.
     row.consumed_by = reclamada.consumed_by ?? row.consumed_by;
     row.attempts = reclamada.attempts ?? row.attempts;
+    row.payload = (reclamada.payload ?? row.payload) as Record<string, unknown>;
+    row.metadata = (reclamada.metadata ?? row.metadata) as Record<string, unknown>;
+    if (reclamada.created_at) row.created_at = reclamada.created_at;
 
     const results = await dispatchEvent(row, {
       orgParada: parados.has(row.organization_id),

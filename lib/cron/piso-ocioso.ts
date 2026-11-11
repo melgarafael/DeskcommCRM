@@ -64,6 +64,7 @@
 import type pg from "pg";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { CANAIS_QUE_RESPONDEM_ANTES } from "@/lib/channels/capabilities";
 import { logger } from "@/lib/logger";
 
 /** Os recursos cujo cron pode ficar ocioso sem que a organização perca nada. */
@@ -81,6 +82,7 @@ export const RECURSOS_DO_CRON = [
   "propostas",
   "fila_de_soneca",
   "mensagem_presa",
+  "ligacao_presa",
   "redacao_de_storage",
   "devolucao_de_handoff",
   "devolucao_ao_rodizio",
@@ -139,7 +141,14 @@ const TETO_DA_LEITURA_MS = 2_000;
  * - os seis do #3694 são a condição EXATA da consulta que cada rota faz, ou um
  *   superconjunto dela: `webhook_events_log` sem o corte de espera de 2 min (a
  *   linha recém-arquivada nunca fica invisível) e sem o filtro de provider (o
- *   nome dele não sai de lib/channels/; mais largo é o lado seguro); `followup_enrollments` com o
+ *   nome dele não sai de lib/channels/; mais largo é o lado seguro) — nas DUAS
+ *   filas do replay: a transitória do canal por QR e a entrada aceita que
+ *   respondeu antes de processar (`received` com `valid_signature`, na janela de
+ *   6 h de `reprocessar-entradas-aceitas.ts`, sem o corte de 5 min). Esta segunda
+ *   filtra o provider, pelo parâmetro `$1` (`CANAIS_QUE_RESPONDEM_ANTES`, sem
+ *   escrever o nome): a captação por webhook e a loja também gravam `received`
+ *   com assinatura válida e nunca fecham a linha, e sem o filtro o replay
+ *   rodaria a cada minuto por 6 h depois de cada lead; `followup_enrollments` com o
  *   mesmo filtro da CTE de `fn_claim_due_followup_enrollments` (status vivo,
  *   vencido, sem lease, organização `active` — o teste do portão compara os
  *   dois); pointer `active` (o que `runSilenceSweep` varre); `followup_turn`
@@ -159,7 +168,13 @@ const TETO_DA_LEITURA_MS = 2_000;
  * com trabalho na fila é o defeito que este arquivo existe para não ter:
  *
  * - `mensagem_presa`: `sending` acima de 3 min, contra o corte de 5 min da rota
- *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada;
+ *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada. E
+ *   `queued` entre 10 min e 25 h, contra os 15 min e as 24 h da espera esquecida
+ *   (`avisarEsperaEsquecida`), sem o filtro de conexão de pé e sem o prazo por
+ *   motivo, que a rodada aplica depois: a mensagem mais velha que a janela não
+ *   acorda o cron, e por isso a instalação parada volta a dormir sozinha;
+ * - `ligacao_presa`: `starting`/`ringing` acima de 3 min, contra o corte de 5 min
+ *   da rota (`STUCK_CALL_AFTER_MS`), pela mesma folga da `mensagem_presa`;
  * - `lembrete_de_tarefa`: a janela de ±1 dia de `janelaDaVarredura`, sem o
  *   filtro de organização parada, que a rodada aplica depois;
  * - `lembrete_de_agenda`: compromisso confirmado e futuro em 30 dias — a maior
@@ -217,9 +232,16 @@ select
         or (google_event_id is not null and google_conflict is null)
         or google_conflict -> 'resolution' is not null
   ) as agenda_google_push,
-  exists (
-    select 1 from webhook_events_log
-     where status = 'error' and error_message like 'transitoria:%'
+  (
+    exists (
+      select 1 from webhook_events_log
+       where status = 'error' and error_message like 'transitoria:%'
+    )
+    or exists (
+      select 1 from webhook_events_log
+       where status = 'received' and valid_signature
+         and provider = any($1::text[])
+    )
   ) as webhook_replay,
   exists (
     select 1 from followup_enrollments e
@@ -245,11 +267,24 @@ select
     select 1 from conversations
      where snooze_until is not null and snooze_until <= now()
   ) as fila_de_soneca,
-  exists (
-    select 1 from messages
-     where direction = 'outbound' and status = 'sending'
-       and created_at < now() - interval '3 minutes'
+  (
+    exists (
+      select 1 from messages
+       where direction = 'outbound' and status = 'sending'
+         and created_at < now() - interval '3 minutes'
+    )
+    or exists (
+      select 1 from messages
+       where direction = 'outbound' and status = 'queued'
+         and created_at < now() - interval '10 minutes'
+         and created_at > now() - interval '25 hours'
+    )
   ) as mensagem_presa,
+  exists (
+    select 1 from voice_calls
+     where status in ('starting', 'ringing')
+       and created_at < now() - interval '3 minutes'
+  ) as ligacao_presa,
   exists (
     select 1 from storage_redaction_queue where status = 'pending'
   ) as redacao_de_storage,
@@ -338,7 +373,7 @@ async function lerRetrato(db?: BancoDoPortao): Promise<Record<RecursoDoCron, boo
   try {
     const banco = db ?? getRequestPool();
     const { rows } = await comTeto(
-      Promise.resolve(banco.query(SQL_DO_RETRATO)) as Promise<{ rows: unknown[] }>,
+      Promise.resolve(banco.query(SQL_DO_RETRATO, [[...CANAIS_QUE_RESPONDEM_ANTES]])) as Promise<{ rows: unknown[] }>,
       TETO_DA_LEITURA_MS,
     );
     return retratoCompleto(rows[0] as Record<string, unknown> | undefined);

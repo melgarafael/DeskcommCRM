@@ -60,6 +60,8 @@ import { urlPublicaUsavel } from "./url-publica";
 export interface EntregaNaTela {
   id: string;
   case_id: string;
+  /** `null` = aviso de abertura; preenchido = aviso de uma resposta do cliente. */
+  update_event_id: string | null;
   /** Só os quatro últimos dígitos: quem lê a lista pode ser `manager`, e o
    *  telefone do plantão não é assunto de quem só quer saber se o aviso saiu. */
   destino_mascarado: string;
@@ -243,7 +245,7 @@ async function lerEquipe(
   }
   const linhas = (data ?? []) as Array<{ user_id: string; whatsapp_e164: string | null }>;
   if (linhas.length === 0) return [];
-  const nomes = await nomesDosAtendentes(linhas.map((l) => l.user_id));
+  const nomes = await nomesDosAtendentes(orgId, linhas.map((l) => l.user_id));
   return linhas.map((l) => ({
     user_id: l.user_id,
     nome: nomes.get(l.user_id) ?? null,
@@ -415,7 +417,7 @@ async function ehAtendimentoExterno(db: SupabaseClient, orgId: string): Promise<
 async function lerEntregas(db: SupabaseClient, orgId: string): Promise<EntregaNaTela[]> {
   const { data, error } = await db
     .from("entregas_de_aviso_de_caso")
-    .select("id, case_id, destino, status, erro_codigo, tentativas, enviado_em, created_at")
+    .select("id, case_id, update_event_id, destino, status, erro_codigo, tentativas, enviado_em, created_at")
     .eq("organization_id", orgId)
     .order("created_at", { ascending: false })
     .limit(ENTREGAS_NA_LISTA);
@@ -511,6 +513,7 @@ async function lerLaco(admin: SupabaseClient, orgId: string, agora: Date): Promi
       .select("case_id, enviado_em")
       .eq("organization_id", orgId)
       .eq("status", "enviado")
+      .is("update_event_id", null)
       .in("case_id", ids),
     admin
       .from("agent_case_events")

@@ -52,6 +52,13 @@ interface Props {
   onCancel?: () => void;
   /** Confirmação externa do próprio card: preserva os outros campos em edição. */
   controle?: Ref<ControleDosCamposDoNegocio>;
+  /**
+   * A DESCRIÇÃO ALTA (#4151): na página inteira do negócio ela é o campo que se
+   * lê e se reescreve, e três linhas davam uma janela de 3,5 linhas de texto
+   * para o único campo longo do formulário. Na gaveta de 28rem o padrão continua
+   * sendo o de sempre — não é a mesma régua de espaço.
+   */
+  descricaoAlta?: boolean;
 }
 
 function centsToReais(cents: number | null | undefined): string {
@@ -73,7 +80,7 @@ function mesesComoTexto(meses: number | null | undefined): string {
  * registro justamente de quem o produziu — a funcionalidade que prova "sua ação
  * fica registrada" provaria isso para todo mundo menos para o autor.
  */
-export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCancel, controle }: Props) {
+export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCancel, controle, descricaoAlta = false }: Props) {
   const t = useT();
   const org = useActiveOrg();
   // A moeda do negócio JÁ GRAVADO vence: trocar a moeda da empresa não
@@ -210,7 +217,7 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
 
         <div className="space-y-2">
           <Label htmlFor="description">{t("Descrição")}</Label>
-          <Textarea id="description" rows={3} {...form.register("description")} />
+          <Textarea id="description" rows={descricaoAlta ? 10 : 3} {...form.register("description")} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

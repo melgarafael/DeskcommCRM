@@ -128,3 +128,104 @@ describe("#3245 — a busca do atendente ATRAVESSA os grupos", () => {
     expect(filtrarRespostas([], "prazo", GRUPOS)).toEqual([]);
   });
 });
+
+/**
+ * A BUSCA DAS RESPOSTAS RÁPIDAS IGNORA ACENTO (#4070) — nos três campos, nos
+ * dois sentidos.
+ *
+ * ─── O defeito, medido na tela ──────────────────────────────────────────────
+ *
+ * Quem digitava `/orcamento` não achava a resposta "Orçamento": o filtro fazia
+ * `title.toLowerCase().includes(q)`, e `'orçamento'.includes('orcamento')` é
+ * falso — acento é OUTRA letra para `includes`, e `toLowerCase` só resolve
+ * caixa. O atendente digitando rápido concluía que a resposta não existia.
+ *
+ * ─── O que este bloco prende, além dos dois sentidos ────────────────────────
+ *
+ * - o ATALHO (`shortcut`, o `/preco` de sempre) e o NOME DO GRUPO também são
+ *   comparados sem acento, porque é por eles que boa parte das pessoas busca;
+ * - o TÍTULO EXIBIDO continua o do cadastro, com acento — a correção é na
+ *   comparação, nunca no texto que a tela mostra;
+ * - consulta vazia devolve a lista inteira na ordem, termo que não casa devolve
+ *   vazio, e o filtro não reordena nem fatia.
+ *
+ * A regra é a do repo — `termoSemAcento` (`lib/inbox/termo-de-busca.ts`), a
+ * mesma dos outros dois pontos da família (#4071 e #4072) e a que o banco
+ * espelha em `f_unaccent` — e não um `normalize("NFD")` novo neste arquivo.
+ */
+describe("#4070 — a busca das respostas rápidas ignora acento", () => {
+  const COM_ACENTO = [
+    // a1 tem o ACENTO só no TÍTULO (sem atalho): é o caso que a issue relata.
+    { id: "a1", title: "Orçamento", body: "Segue o orçamento.", shortcut: null, grupo_id: "g-obj", owner_user_id: null },
+    { id: "a2", title: "Orcamento simples", body: "Versão sem acento.", shortcut: null, grupo_id: null, owner_user_id: null },
+    { id: "a3", title: "Prazo", body: "Chega em 5 dias.", shortcut: "prazo", grupo_id: "g-prazo", owner_user_id: null },
+  ] as const;
+
+  const GRUPOS_ACENTO = [
+    { id: "g-obj", name: "Objeção", ordem: 1000 },
+    { id: "g-prazo", name: "Fechamento", ordem: 2000 },
+  ];
+
+  const ids = (query: string) => filtrarRespostas(COM_ACENTO, query, GRUPOS_ACENTO).map((r) => r.id);
+
+  it("⭐ '/orcamento' acha a resposta 'Orçamento' — e o título exibido mantém o acento", () => {
+    const achados = filtrarRespostas(COM_ACENTO, "orcamento", GRUPOS_ACENTO);
+
+    // No RED, só a2 (título sem acento) aparecia: o título "Orçamento" da a1
+    // não casa com `orcamento` por `includes`. Aqui o que importa é que a1 está
+    // lá — e que o texto que a tela mostra continua sendo o do cadastro.
+    expect(achados.map((r) => r.id)).toContain("a1");
+    expect(achados.find((r) => r.id === "a1")!.title).toBe("Orçamento");
+  });
+
+  it("⭐ 'Orçamento' (com acento digitado) acha a resposta cadastrada SEM acento", () => {
+    expect(ids("Orçamento")).toEqual(["a1", "a2"]);
+    // E a grafia do cadastro não foi tocada: a2 continua sem acento na tela.
+    expect(filtrarRespostas(COM_ACENTO, "Orçamento", GRUPOS_ACENTO)[1]!.title).toBe("Orcamento simples");
+  });
+
+  it("caixa e acento somados: '/orcamento', '/Orçamento' e '/ORCAMENTO' caem no mesmo lugar", () => {
+    const esperado = ids("orcamento");
+    for (const grafia of ["orcamento", "Orçamento", "ORCAMENTO", "ORÇAMENTO"]) {
+      expect(ids(grafia), `"${grafia}" não achou as mesmas respostas`).toEqual(esperado);
+    }
+  });
+
+  it("o ATALHO também casa sem acento — '/orçamento' acha a resposta de atalho 'orcamento'", () => {
+    // Recorte só com o atalho: sem ele, este caso passaria pelo título e não
+    // provaria nada sobre o `shortcut`.
+    const soAtalho = [
+      { id: "s1", title: "Mensagem comercial", body: "…", shortcut: "orcamento", grupo_id: null, owner_user_id: null },
+    ] as const;
+    expect(filtrarRespostas(soAtalho, "orçamento", []).map((r) => r.id)).toEqual(["s1"]);
+    expect(filtrarRespostas(soAtalho, "ORCAMENTO", []).map((r) => r.id)).toEqual(["s1"]);
+    // E o `/` que a pessoa digita não atrapalha: quem resolve a barra é o
+    // `resolveSlash`, que entrega a consulta sem ela.
+    expect(filtrarRespostas(soAtalho, "orcamento", []).map((r) => r.id)).toEqual(["s1"]);
+  });
+
+  it("o NOME DO GRUPO também casa sem acento — 'objecao' acha o grupo 'Objeção'", () => {
+    const soGrupo = [
+      { id: "g1-item", title: "Texto qualquer", body: "…", shortcut: null, grupo_id: "g-obj", owner_user_id: null },
+    ] as const;
+    expect(filtrarRespostas(soGrupo, "objecao", GRUPOS_ACENTO).map((r) => r.id)).toEqual(["g1-item"]);
+    expect(filtrarRespostas(soGrupo, "OBJEÇÃO", GRUPOS_ACENTO).map((r) => r.id)).toEqual(["g1-item"]);
+  });
+
+  it("consulta VAZIA devolve a lista inteira, na ordem — o menu abre como antes", () => {
+    expect(ids("")).toEqual(["a1", "a2", "a3"]);
+    expect(ids("   ")).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("termo que não casa continua devolvendo VAZIO — a busca não virou 'mostra tudo'", () => {
+    expect(ids("zzz")).toEqual([]);
+    expect(ids("orcamentozzz")).toEqual([]);
+  });
+
+  it("a ORDEM é a da lista que chegou, não a do acerto", () => {
+    // "a" casa a1 e a3 (títulos) e não casa a2 ("Orcamento simples" também tem
+    // 'a'…). O que se prova: a saída segue COM_ACENTO, sem reordenar.
+    expect(ids("prazo")).toEqual(["a3"]);
+    expect(ids("o")).toEqual(["a1", "a2", "a3"]);
+  });
+});
