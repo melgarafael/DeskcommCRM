@@ -624,7 +624,7 @@ describe("POST /api/v1/products/import — a porta do catálogo de serviços (do
   async function importar(linhas: string) {
     vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", ["SOCIAL", "IP15"]) as never);
     const { POST } = await import("./route");
-    const res = await POST(pedido(csv(linhas)));
+    const res = await POST(await pedido(csv(linhas)));
     return { status: res.status, corpo: (await res.json()) as { data: Record<string, unknown> } };
   }
 
