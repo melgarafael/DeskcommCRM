@@ -57,7 +57,7 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /** O caminho da tela que lê esta chave. Revalidado na gravação. */
-const CAMINHO_DO_FOLLOWUP_POR_ETAPA = "/app/settings/entrada-e-followup";
+const CAMINHO_DO_FOLLOWUP_POR_ETAPA = "/app/settings/followup-por-etapa";
 
 const regraDaEtapaSchema = z.object({
   stage_id: z.uuid(),

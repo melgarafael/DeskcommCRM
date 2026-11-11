@@ -59,6 +59,10 @@ export {
   EnvelopeSimple,
   PaperPlaneTilt,
   Smiley,
+  Fire,
+  Voicemail,
+  Waveform,
+  XCircle,
   Check,
   Checks,
   X,
@@ -100,6 +104,7 @@ export {
   WhatsappLogo,
   InstagramLogo,
   MessengerLogo,
+  TelegramLogo,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,
@@ -157,6 +162,8 @@ export {
   GoogleLogo,
   MapPin,
   ArrowsOutSimple,
+  // Construtor de cadências — mesma família da interface.
+  Hourglass, Lightning, Minus, StopCircle, CheckSquare, ArrowLeft,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
   // atalhos do card (#3487): carrinho do app de pedidos e o link genérico.

@@ -29,6 +29,7 @@ import {
   decidirBinding,
   escolherModeloEconomico,
   EXPLICACAO_DA_ORIGEM,
+  PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL,
   PONTOS_DO_AGENTE_PUBLICADO,
   PONTOS_QUE_HERDAM_DO_AGENTE,
   type LinhaDeBinding,
@@ -213,9 +214,13 @@ export async function GET(): Promise<Response> {
       // herança é a PRESENÇA do `llmOverride`, e esta tela não tem esse sinal:
       // passar o agente para todo ponto faria a coluna "está usando" anunciar o
       // modelo do agente em ponto que nunca o herda — a mesma tela que mente,
-      // virada do avesso.
+      // virada do avesso. O follow-up (`PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL`)
+      // entra: sem escolha no painel, ele É o agente — e a tela tem de anunciar
+      // o modelo da versão publicada, não o padrão da organização.
       agentePublicado:
-        PONTOS_DO_AGENTE_PUBLICADO.has(ponto.id) || PONTOS_QUE_HERDAM_DO_AGENTE.has(ponto.id)
+        PONTOS_DO_AGENTE_PUBLICADO.has(ponto.id) ||
+        PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL.has(ponto.id) ||
+        PONTOS_QUE_HERDAM_DO_AGENTE.has(ponto.id)
           ? agentePublicado
           : null,
       // DÍVIDA, não impossibilidade. A justificativa aqui dizia "o servidor web

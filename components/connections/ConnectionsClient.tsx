@@ -61,6 +61,7 @@ import { fonteDeTemplates } from "@/lib/channels/templates-fonte";
 import { useT } from "@/hooks/i18n/useT";
 import { AgendaDePausa } from "@/components/connections/AgendaDePausa";
 import { RenomearConexao } from "./RenomearConexao";
+import { DefeitoDoNumero, numeroComDefeito } from "./DefeitoDoNumero";
 
 type Variant = "success" | "warning" | "error" | "neutral";
 
@@ -560,7 +561,11 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {list.map((c) => {
-            const info = statusInfo(c.status, t);
+            // De pé com defeito (não recebe, envio restrito): o selo deixa de
+            // dizer "Conectado", e a linha logo abaixo diz o quê.
+            const info = numeroComDefeito(c.status, c.status_reason)
+              ? { label: t("Atenção"), variant: "warning" as const }
+              : statusInfo(c.status, t);
             const pausado = canalDesativado(c.metadata);
             const policy = routing.data?.data?.channels?.find((channel) => channel.id === c.id);
             // Sem o serviço no ar a rota de exclusão falha fechado (503) para
@@ -591,6 +596,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                   <Badge variant={info.variant}>{info.label}</Badge>
                   {pausado && <Badge variant="neutral">{t("Pausado")}</Badge>}
                 </div>
+                <DefeitoDoNumero status={c.status} motivo={c.status_reason} />
                 <p className="text-[11px] text-muted-foreground">
                   {c.last_health_check_at
                     ? `${t("Verificado")} ${new Date(c.last_health_check_at).toLocaleString(tagDoIdioma)}`

@@ -10,9 +10,10 @@
  * erro/log. Duas chamadas (com e sem o prefixo) e subtração: o resultado é o
  * custo do prefixo em si, sem o overhead da mensagem mínima.
  */
-import { asSchema, type ToolSet } from 'ai';
+import type { ToolSet } from 'ai';
 
 import { allowlistedFetch, buildAllowlist } from '../egress';
+import { ESQUEMA_SEM_PADRAO_PADRAO, esquemaParaOProvedor } from './stable-prefix';
 import type { Logger } from '../../obs/logger';
 
 // Versão do PROTOCOLO da API Anthropic (header obrigatório), não de modelo —
@@ -30,6 +31,8 @@ export interface CountPrefixTokensInput {
   timeoutMs?: number | undefined;
   /** logger do evento de segurança de egress bloqueado (F4-03; opcional). */
   log?: Logger | undefined;
+  /** knob LLM_TOOL_SCHEMA_SEM_PADRAO — mede o esquema que o seam manda; ausente = o default. */
+  esquemaSemPadrao?: boolean | undefined;
 }
 
 export interface CountPrefixTokensResult {
@@ -75,14 +78,17 @@ async function countTokens(
 }
 
 /** Serializa a ToolSet no formato da API Anthropic (name/description/input_schema). */
-async function toAnthropicTools(tools: ToolSet): Promise<Array<Record<string, unknown>>> {
+async function toAnthropicTools(
+  tools: ToolSet,
+  semPadrao: boolean,
+): Promise<Array<Record<string, unknown>>> {
   const out: Array<Record<string, unknown>> = [];
   for (const name of Object.keys(tools).sort()) {
     const t = tools[name]!;
     out.push({
       name,
       ...(t.description !== undefined ? { description: t.description } : {}),
-      input_schema: await asSchema(t.inputSchema).jsonSchema,
+      input_schema: await esquemaParaOProvedor(t.inputSchema, { semPadrao }),
     });
   }
   return out;
@@ -94,7 +100,12 @@ export async function countPrefixTokens(input: CountPrefixTokensInput): Promise<
   const totalWithPrefix = await countTokens(input, {
     system: input.system,
     ...(input.tools !== undefined && Object.keys(input.tools).length > 0
-      ? { tools: await toAnthropicTools(input.tools) }
+      ? {
+          tools: await toAnthropicTools(
+            input.tools,
+            input.esquemaSemPadrao ?? ESQUEMA_SEM_PADRAO_PADRAO,
+          ),
+        }
       : {}),
     messages: [minimalMessage],
   });

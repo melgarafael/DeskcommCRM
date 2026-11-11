@@ -47,6 +47,7 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listaTiposDeAtendimento } from "@/lib/agenda/consulta";
 import { TETO_DE_LEMBRETES_EXTRAS } from "@/lib/agenda/lembretes";
+import { variaveisQueOLembretePreenche } from "@/lib/agenda/lembrete-por-modelo";
 import { transportaMensagem } from "@/lib/channels/capabilities";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -105,7 +106,23 @@ const camposDoTipo = {
    * mensagem para o telefone de um cliente é irreversível.
    */
   reminder_enabled: z.boolean().optional(),
+  /**
+   * O BLOCO DO NEGÓCIO na descrição do evento do Google (#4006, doc 272 = B).
+   *
+   * Nasce desligado (default da coluna, migration 9209) e não tem `.default()`
+   * aqui: no Google todo convidado lê a descrição, inclusive o cliente com
+   * e-mail na ficha, e atualizar o sistema não pode mandar o nome, o telefone e
+   * a etapa do funil para fora sem alguém decidir.
+   */
+  levar_dados_do_negocio: z.boolean().optional(),
   reminder_channel_session_id: z.string().uuid().nullish(),
+  /**
+   * O modelo aprovado que sai quando a janela de 24 h do cliente fechou
+   * (`lib/agenda/lembrete-por-modelo.ts`). Nulo = como antes: fora da janela o
+   * lembrete não sai e a equipe recebe o aviso. Conferido em
+   * `recusaDoModeloDoLembrete` antes de gravar.
+   */
+  reminder_meta_template_id: z.string().uuid().nullish(),
   /**
    * ⚠️ ESTA FAIXA É MAIS ESTREITA QUE O CHECK DO BANCO, E ISSO CONTRARIA O
    * PARÁGRAFO ACIMA DE PROPÓSITO.
@@ -222,6 +239,63 @@ const alterarSchema = criarSchema.partial().extend({
 const desativarSchema = z.object({ id: z.string().uuid() });
 
 /**
+ * O MODELO DO LEMBRETE FORA DA JANELA — conferido antes de gravar.
+ *
+ * Três recusas, cada uma com o que fazer, em vez do erro cru do banco:
+ *   - de outra organização (a FK composta da 9092 também recusaria, mas como 500);
+ *   - com variável que o lembrete não tem de onde preencher — o cron nunca o
+ *     mandaria, e a escolha ficaria gravada sem efeito;
+ *   - de OUTRO número que o escolhido no mesmo pedido: o modelo só sai pelo número
+ *     dono dele, e o lembrete nunca troca de número sozinho.
+ *
+ * O status (aprovado, pausado) NÃO é recusa aqui: muda depois da escolha, e quem
+ * confere na hora de mandar é o cron (`lerModeloDoLembrete`).
+ */
+async function recusaDoModeloDoLembrete(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  campos: { reminder_meta_template_id?: string | null; reminder_channel_session_id?: string | null },
+  t: (texto: string) => string,
+  requestId: string,
+): Promise<Response | null> {
+  if (!campos.reminder_meta_template_id) return null;
+  const { data: modelo, error } = await admin
+    .from("meta_templates")
+    .select("id, name, language, channel_session_id, parameter_format, components")
+    .eq("organization_id", organizationId)
+    .eq("id", campos.reminder_meta_template_id)
+    .maybeSingle();
+  if (error)
+    return fail("internal_error", t("Não foi possível consultar o modelo do lembrete."), 500, {
+      requestId,
+    });
+  if (!modelo)
+    return fail("validation_failed", t("Escolha um modelo aprovado desta organização."), 422, {
+      requestId,
+    });
+  if (variaveisQueOLembretePreenche(modelo) === null)
+    return fail(
+      "validation_failed",
+      t(
+        "Este modelo não serve para o lembrete: ele só pode ter variáveis de texto no corpo, de {{1}} a {{4}}, sem pular número.",
+      ),
+      422,
+      { requestId },
+    );
+  if (
+    campos.reminder_channel_session_id &&
+    modelo.channel_session_id !== campos.reminder_channel_session_id
+  )
+    return fail(
+      "validation_failed",
+      t("O modelo escolhido é de outro número. Escolha um modelo do número que envia os lembretes."),
+      422,
+      { requestId },
+    );
+  return null;
+}
+
+/**
  * O slug sai do NOME, e é estável depois de criado.
  *
  * A ferramenta MCP aceita `event_type_slug`, então o slug é endereço público: se
@@ -285,7 +359,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       // ligado — só como pedir que ligue. Um PATCH cego sobre um estado que a
       // leitura não conta é o mesmo controle decorativo, do outro lado.
       reminder_enabled: t.lembreteLigado,
+      levar_dados_do_negocio: t.levarDadosDoNegocio,
       reminder_channel_session_id: t.lembreteCanalId ?? null,
+      reminder_meta_template_id: t.lembreteModeloId ?? null,
       reminder_minutes_before: t.lembreteAntecedenciaMin,
       reminder_extra_offsets_minutes: t.lembreteDegrausExtras,
       reminder_body: t.lembreteMensagem,
@@ -347,6 +423,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
   }
+  const recusaDoModelo = await recusaDoModeloDoLembrete(admin, authz.organizationId, lido.data, t, requestId);
+  if (recusaDoModelo) return recusaDoModelo;
   const { service_draft, ...fields } = lido.data;
   const { data, error } = await admin
     .from("calendar_event_types")
@@ -434,6 +512,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       );
     }
   }
+  const recusaDoModelo = await recusaDoModeloDoLembrete(admin, authz.organizationId, lido.data, t, requestId);
+  if (recusaDoModelo) return recusaDoModelo;
   const { data, error } = await admin
     .from("calendar_event_types")
     .update(campos)

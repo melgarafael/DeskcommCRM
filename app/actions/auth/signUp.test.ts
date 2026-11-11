@@ -436,3 +436,45 @@ describe("signUp — convite com o cadastro público do GoTrue fechado (#1653)",
     expect(res).toEqual({ ok: false, error: "conta_ja_existe" });
   });
 });
+
+describe("signUp — o idioma e o fuso de quem se cadastra viajam até a empresa", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    signUpDoProvedor.mockReset();
+    signUpDoProvedor.mockResolvedValue({ data: { user: { id: "u-9" }, session: null }, error: null });
+    vi.mocked(headers).mockResolvedValue({
+      // Faixa PRÓPRIA de IP: os casos de cima esgotam o teto de alguns IPs da
+      // 198.51.100.0/24, e cair num deles daria `rate_limited` por sorte.
+      get: (k: string) => (k === "x-forwarded-for" ? `203.0.113.${(n % 200) + 20}` : null),
+    } as never);
+    vi.mocked(createClient).mockResolvedValue({ auth: { signUp: signUpDoProvedor } } as never);
+    vi.mocked(modoDeCadastro).mockResolvedValue("aberto");
+    // A descrição de cima liga a cobrança e não desliga: aqui ela fica fora.
+    const { moduloLigado } = await import("@/lib/instalacao/modulos");
+    vi.mocked(moduloLigado).mockResolvedValue(false);
+  });
+
+  function dadosGravados(): Record<string, unknown> {
+    const chamada = signUpDoProvedor.mock.calls[0]?.[0] as { options?: { data?: Record<string, unknown> } };
+    return chamada?.options?.data ?? {};
+  }
+
+  it("⭐ grava as pistas saneadas em chaves PRÓPRIAS (não em `locale`, que é preferência pessoal)", async () => {
+    const { signUp } = await import("./signUp");
+    const res = await signUp(entrada(), undefined, { idioma: "es", fuso: "America/Mexico_City" });
+    expect(res).toMatchObject({ ok: true });
+    const dados = dadosGravados();
+    expect(dados.idioma_do_cadastro).toBe("es");
+    expect(dados.fuso_do_cadastro).toBe("America/Mexico_City");
+    expect(dados).not.toHaveProperty("locale");
+    expect(dados).not.toHaveProperty("timezone");
+  });
+
+  it("pista adulterada não passa: idioma que o produto não serve e fuso inexistente somem", async () => {
+    const { signUp } = await import("./signUp");
+    await signUp(entrada(), undefined, { idioma: "xx-<script>", fuso: "America/Ciudad de México" });
+    const dados = dadosGravados();
+    expect(dados).not.toHaveProperty("idioma_do_cadastro");
+    expect(dados).not.toHaveProperty("fuso_do_cadastro");
+  });
+});

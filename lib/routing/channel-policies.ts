@@ -28,7 +28,7 @@ export async function loadChannelRoutingSettings(db: SupabaseClient, org: string
   const policies = results[2].data ?? [];
   const responsibles = results[3].data ?? [];
   const ids = members.map((m) => String(m.user_id));
-  const names = await nomesDosAtendentes(ids);
+  const names = await nomesDosAtendentes(org, ids);
   return {
     channels: channels.map((c) => {
       const policy = policies.find((p) => p.channel_session_id === c.id);

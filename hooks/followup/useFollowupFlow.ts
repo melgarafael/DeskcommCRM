@@ -16,6 +16,12 @@ export interface FollowupFlowDetailRow {
   active_version_id: string | null;
   draft_graph: FlowGraph | null;
   handoff_policy: "pause" | "cancel" | "allow";
+  /**
+   * #3974 — "enviar mesmo com a conversa atribuída a uma pessoa". Opção do
+   * FLUXO, independente da política de handoff (que continua valendo para a IA
+   * responder). Ausente em fluxo antigo = `false`, o comportamento de sempre.
+   */
+  send_when_assigned: boolean;
   trigger_config: Record<string, unknown>;
   /** Superfície do fluxo: decide a paleta, os controles da barra e o Fim. */
   surface: FollowupFlowSurface;
@@ -207,6 +213,33 @@ export function useUpdateHandoffPolicy(id: string) {
         prev ? { ...prev, ...updated } : prev,
       );
       toast.success(t("Política de handoff atualizada."));
+    },
+    onError: (err) => showApiError(err),
+  });
+}
+
+/**
+ * #3974 — a opção "enviar mesmo com a conversa atribuída a uma pessoa".
+ *
+ * PATCH da coluna do pointer, como a política de handoff: é uma decisão do
+ * FLUXO (esta etapa manda mesmo com o vendedor dono da conversa?), não um ajuste
+ * de tela — por isso não passa por `draft_graph` e não exige salvar o grafo.
+ */
+export function useUpdateSendWhenAssigned(id: string) {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (send_when_assigned: boolean) => {
+      const res = await apiClient.patch<SingleResponse>(`/api/v1/ai/followup-flows/${id}`, {
+        send_when_assigned,
+      });
+      return res.data;
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData<FollowupFlowDetailRow>(followupFlowQueryKey(id), (prev) =>
+        prev ? { ...prev, ...updated } : prev,
+      );
+      toast.success(t("Opção de envio com a conversa atribuída atualizada."));
     },
     onError: (err) => showApiError(err),
   });

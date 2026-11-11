@@ -147,9 +147,9 @@ function ehVazio(valor: unknown): boolean {
  *
  * `NFD` separa a letra do sinal e a faixa `\u0300-\u036f` (Marcas Diacríticas
  * Combinantes) tira só o acento. NÃO use `\p{M}` às cegas: ele comeria o
- * `U+FE0F` (variation selector) que fecha emoji como o coração, e a regra
- * deixaria de casar o que o próprio cadastro tem — armadilha já medida em
- * `lib/contacts/busca-regex.ts`.
+ * `U+FE0F` (variation selector) que fecha emoji como o coração — armadilha
+ * medida na busca de contatos da #1835 (o módulo de regex que a tratava foi
+ * aposentado na #3918, fatia 2; a lição fica).
  *
  * A pontuação vira ESPAÇO (`\p{P}`), e os espaços se juntam — decisão do dono
  * do produto (16/10, doc 161, opção D). Assim "Olá! Vi o anúncio" casa "ola, vi
@@ -178,6 +178,16 @@ function formaDaRegra(valorDaRegra: string): (valor: unknown) => string {
     ? (valor) => String(valor).toLowerCase()
     : normalizarParaContains;
 }
+
+/**
+ * As colunas de CPF no contexto da automação, que carrega a linha inteira do
+ * contato (`select("*")`). Mensagem nenhuma as renderiza (`lib/automation/template.ts`)
+ * e condição nenhuma compara o valor delas: `is_empty`/`is_not_empty` seguem valendo.
+ */
+export const COLUNAS_DE_CPF_DO_CONTATO: ReadonlySet<string> = new Set([
+  "contact.cpf_hash",
+  "contact.cpf_encrypted",
+]);
 
 export function resolveField(context: Record<string, unknown>, path: string): unknown {
   let cur: unknown = context;
@@ -501,6 +511,8 @@ function matches(
 
   // Todo o resto exige um valor presente.
   if (ausente) return false;
+  // Coluna de CPF responde só se está preenchida: nenhum comparador a alcança.
+  if (COLUNAS_DE_CPF_DO_CONTATO.has(cond.field)) return false;
 
   switch (cond.op) {
     case "eq":

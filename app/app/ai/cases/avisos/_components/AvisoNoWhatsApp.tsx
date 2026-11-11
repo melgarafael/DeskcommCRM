@@ -5,11 +5,11 @@
  *
  * ## As três coisas que esta tela faz, nesta ordem
  *
- * 1. **Diz o estado efetivo** (`AlertasDoAviso`): onze situações em que a
+ * 1. **Diz o estado efetivo** (`AlertasDoAviso`): doze situações em que a
  *    configuração é aceita e nenhum aviso chega. Elas vêm antes do formulário
  *    de propósito — ler "seus números não servem para isso" depois de preencher
  *    tudo é a definição de tela que não avisou.
- * 2. **Salva pelo RPC**, que é quem faz as sete guardas na mesma transação — e
+ * 2. **Salva pelo RPC**, que é quem faz as oito guardas na mesma transação — e
  *    **remove** pelo `DELETE`, a ação que devolve o número à ingestão normal
  *    (issue #3338). As duas são coisas diferentes de propósito: desligar o
  *    switch PRESERVA o número e ele continua interno (o que chega dele não vira
@@ -19,9 +19,12 @@
  *
  * ## O seletor filtra por CAPACIDADE, nunca por provedor
  *
- * A lista só oferece conexões com `aceitaMensagemLivre`, e essa resposta vem
- * resolvida de `lib/channels/`. Esta tela não sabe — e não pode saber — o nome
- * de nenhum provedor: `pnpm lint:channels` reprova, inclusive em comentário.
+ * A lista oferece as conexões com `aceitaMensagemLivre` e, desde a migration
+ * 9094, as que só mandam modelo mas têm um modelo aprovado que leva o aviso
+ * (`conexaoServeParaAviso`). Para essas, a tela pede o modelo — o aviso vai
+ * dentro dele. As duas respostas vêm resolvidas de `lib/channels/` e de
+ * `lib/escalacao/modelo-do-aviso.ts`. Esta tela não sabe — e não pode saber — o
+ * nome de nenhum provedor: `pnpm lint:channels` reprova, inclusive em comentário.
  *
  * ## `aviso_numero_de_cliente` é uma PERGUNTA
  *
@@ -60,7 +63,13 @@ import {
   type EstadoDoAviso,
 } from "@/hooks/ai/useAvisoDeCaso";
 import { ApiError } from "@/lib/api/types";
-import { normalizarTelefoneDeAviso, telefoneDeAvisoValido } from "@/lib/escalacao/estado-do-aviso";
+import {
+  conexaoServeParaAviso,
+  normalizarTelefoneDeAviso,
+  telefoneDeAvisoValido,
+  type ConexaoParaAviso,
+  type MembroDoAvisoNaTela,
+} from "@/lib/escalacao/estado-do-aviso";
 import { FRASE_DO_ERRO_DO_AVISO } from "@/lib/escalacao/vocabulario-do-aviso";
 import { CheckCircle, PaperPlaneTilt, WarningOctagon } from "@/lib/ui/icons";
 
@@ -88,11 +97,23 @@ const RASCUNHO_VAZIO = {
   destinoModo: "fixo" as "fixo" | "responsavel",
   /** `user_id` → WhatsApp do rascunho. Ausente = "não mexi". */
   whatsapps: {} as Record<string, string>,
+  /** O modelo aprovado que leva o aviso pela conexão que só manda modelo. */
+  modelo: "",
 };
 type Rascunho = typeof RASCUNHO_VAZIO;
 
 function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
-  if (!estado?.config) return RASCUNHO_VAZIO;
+  /**
+   * Os números da equipe são carregados SEMPRE — com e sem configuração salva.
+   *
+   * Era AQUI o defeito da #3935: no ramo `!estado.config` o rascunho voltava com
+   * `whatsapps: {}`, os campos apareciam vazios e o envio mandava `null` para
+   * cada membro — apagando do banco o WhatsApp de quem a tela nem tinha
+   * mostrado. A equipe chega no MESMO GET que a configuração; não há motivo para
+   * escondê-la só porque a configuração foi removida.
+   */
+  const whatsapps = whatsappsDoRascunho(estado);
+  if (!estado?.config) return { ...RASCUNHO_VAZIO, whatsapps };
   return {
     canal: estado.config.channel_session_id ?? "",
     telefone: estado.config.telefone,
@@ -100,7 +121,8 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
     ligado: estado.config.ligado,
     respostaWhatsappHabilitada: estado.config.resposta_whatsapp_habilitada,
     destinoModo: estado.config.destino_modo ?? "fixo",
-    whatsapps: whatsappsDoRascunho(estado),
+    whatsapps,
+    modelo: estado.config.modelo_id ?? "",
   };
 }
 
@@ -109,12 +131,50 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
  * tela — quem não cadastrou aparece com campo vazio, e salvar sem digitar nada
  * não apaga o número de ninguém.
  */
-function whatsappsDoRascunho(estado: EstadoDoAviso): Record<string, string> {
+function whatsappsDoRascunho(estado: EstadoDoAviso | undefined): Record<string, string> {
   const mapa: Record<string, string> = {};
   // `?? []`: um estado em cache de antes desta versão não tem `equipe`, e a tela
   // não pode quebrar por causa de um pacote de JS antigo no navegador de alguém.
-  for (const membro of estado.equipe ?? []) mapa[membro.user_id] = membro.whatsapp ?? "";
+  for (const membro of estado?.equipe ?? []) mapa[membro.user_id] = membro.whatsapp ?? "";
   return mapa;
+}
+
+/**
+ * O QUE VAI PARA O BANCO sobre os números da equipe.
+ *
+ * Só quem a tela MOSTROU viaja. Quem está no rascunho e está sem número vai com
+ * `null` — é a afirmação "esta pessoa não tem WhatsApp", e é como se apaga de
+ * propósito o número que a pessoa viu e limpou.
+ *
+ * Membro que o rascunho não conhece sai SEM a chave `whatsapp`: o contrato do
+ * banco lê chave ausente como "não fale deste número" e preserva o que está
+ * gravado. Inventar `null` para quem não foi exibido é o defeito da #3935 —
+ * "a tela não mostrou" não é "a pessoa apagou".
+ */
+function responsaveisDoRascunho(
+  equipe: MembroDoAvisoNaTela[],
+  whatsapps: Record<string, string>,
+): Array<{ user_id: string; whatsapp?: string | null }> {
+  return equipe
+    .filter((membro) => Object.prototype.hasOwnProperty.call(whatsapps, membro.user_id))
+    .map((membro) => {
+      const bruto = (whatsapps[membro.user_id] ?? "").trim();
+      return {
+        user_id: membro.user_id,
+        whatsapp: bruto === "" ? null : normalizarTelefoneDeAviso(bruto),
+      };
+    });
+}
+
+/**
+ * O modelo que entra quando a pessoa troca de conexão: o único, se só há um —
+ * escolher por ela o que não tem alternativa poupa um clique sem decidir nada.
+ * Trocar de conexão sempre descarta o modelo anterior: ele é DAQUELA conexão.
+ */
+function modeloAoTrocarDeConexao(conexao: ConexaoParaAviso | undefined): string {
+  if (!conexao || conexao.aceitaMensagemLivre) return "";
+  const modelos = conexao.modelos ?? [];
+  return modelos.length === 1 ? modelos[0]!.id : "";
 }
 
 export function AvisoNoWhatsApp() {
@@ -155,12 +215,13 @@ export function AvisoNoWhatsApp() {
           pessoa está digitando não é atropelado por nenhuma re-consulta. */}
       <FormularioDoAviso key={estado.config?.atualizado_em ?? "sem-configuracao"} estado={estado} />
 
-      {/* F1 da revisão: o aviso sai na ABERTURA do caso e não se repete. Sem esta
-          frase, a equipe conclui que o sistema parou de avisar quando o cliente
-          responde — e passa a não confiar no que chega. */}
+      {/* F1 da revisão: dizer quando o aviso sai e quando NÃO sai. Sem esta frase,
+          a equipe conclui que o sistema parou de avisar quando o cliente responde
+          — e passa a não confiar no que chega. Desde a migration 9240 há um aviso
+          por resposta do cliente, e a fronteira vencida é o caso em que ele não sai. */}
       <p className="text-xs text-muted-foreground">
         {t(
-          "O aviso sai quando o assistente abre o caso. Quando o cliente responde e o caso volta a esperar você, o aviso não se repete — acompanhe pela Central de alertas.",
+          "O aviso sai quando o assistente abre o caso e sai de novo quando ele registra a resposta do cliente ao que a equipe perguntou. Se a conversa foi reaberta ou o próximo passo mudou nesse meio-tempo, esse segundo aviso não sai: o caso volta a esperar você e a cobrança segue pela Central de alertas.",
         )}
       </p>
       <p className="text-xs text-muted-foreground">
@@ -197,7 +258,11 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
    */
   const [confirmarRemocao, setConfirmarRemocao] = useState(false);
 
-  const oferecidas = estado.conexoes.filter((c) => c.aceitaMensagemLivre);
+  // A conexão SALVA fica na lista mesmo quando deixou de servir (o modelo dela
+  // voltou para revisão): sem ela o seletor apareceria vazio com uma
+  // configuração gravada, e o bloco do modelo não teria onde dizer o que falta.
+  const salva = estado.config?.channel_session_id ?? null;
+  const oferecidas = estado.conexoes.filter((c) => conexaoServeParaAviso(c) || c.id === salva);
   const telefoneOk = telefoneDeAvisoValido(rascunho.telefone);
   /**
    * Os números da equipe: vazio é ACEITO (a pessoa não cadastrou, e o elo cai
@@ -208,8 +273,31 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
     (n) => n.trim() === "" || telefoneDeAvisoValido(n),
   );
   const equipe = estado.equipe ?? [];
+  /**
+   * A leitura dos números da equipe FALHOU: `equipe` está vazia por erro, não
+   * por falta de gente (o servidor declara isso em `equipe_indisponivel`).
+   *
+   * Em `responsavel` o destino é o WhatsApp de cada pessoa — configurar isso
+   * sem saber quem tem número é configurar às cegas. Aqui a tela diz o que
+   * aconteceu e não deixa salvar; o que ela NÃO faz é mandar `null` no lugar
+   * dos números que não conseguiu mostrar (#3935, falha aberta).
+   */
+  const equipeIndisponivel = estado.equipe_indisponivel === true;
+  const salvarTravadoPelaEquipe = equipeIndisponivel && rascunho.destinoModo === "responsavel";
   const comNumero = equipe.filter((m) => (rascunho.whatsapps[m.user_id] ?? "").trim() !== "").length;
-  const podeSalvar = rascunho.canal !== "" && telefoneOk && numerosDaEquipeOk && !salvar.isPending;
+  const escolhida = oferecidas.find((c) => c.id === rascunho.canal);
+  /** A conexão escolhida só manda modelo: o aviso precisa de um (migration 9094). */
+  const precisaModelo = escolhida !== undefined && !escolhida.aceitaMensagemLivre;
+  const modelosDaConexao = precisaModelo ? (escolhida.modelos ?? []) : [];
+  const modeloEscolhido = modelosDaConexao.find((m) => m.id === rascunho.modelo);
+  const modeloOk = !precisaModelo || modeloEscolhido !== undefined;
+  const podeSalvar =
+    rascunho.canal !== "" &&
+    telefoneOk &&
+    numerosDaEquipeOk &&
+    modeloOk &&
+    !salvarTravadoPelaEquipe &&
+    !salvar.isPending;
   /**
    * O switch, e por que ele NÃO é `estado.pode_ligar` sozinho nem um `||` com o
    * rascunho.
@@ -225,7 +313,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
    * rascunho precisa ter uma conexão que serve e um número completo.
    */
   const semEnderecoPublico = estado.avisos.some((a) => a.codigo === "sem_endereco_publico");
-  const canalServe = oferecidas.some((c) => c.id === rascunho.canal);
+  const canalServe = escolhida !== undefined && modeloOk;
   const podeLigar = !semEnderecoPublico && canalServe && telefoneOk;
   const jaSalvo = Boolean(estado.config?.channel_session_id);
 
@@ -238,16 +326,13 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         ligado: rascunho.ligado,
         resposta_whatsapp_habilitada: rascunho.respostaWhatsappHabilitada,
         destino_modo: rascunho.destinoModo,
-        // Todos os membros vão SEMPRE, com `null` para quem está sem número: é
-        // assim que "apague o meu" chega ao banco. Mandar só quem tem número
-        // deixaria o número antigo vivo depois de a pessoa apagá-lo na tela.
-        responsaveis: equipe.map((m) => {
-          const bruto = (rascunho.whatsapps[m.user_id] ?? "").trim();
-          return {
-            user_id: m.user_id,
-            whatsapp: bruto === "" ? null : normalizarTelefoneDeAviso(bruto),
-          };
-        }),
+        // Quem foi EXIBIDO, e só: membro fora do rascunho sai sem a chave
+        // `whatsapp` (o banco não mexe), e quem foi exibido e está vazio vai com
+        // `null` — "apague o meu" continua sendo um gesto explícito (#3935).
+        responsaveis: responsaveisDoRascunho(equipe, rascunho.whatsapps),
+        // Sempre enviado, inclusive `null`: é o que tira o modelo de uma conexão
+        // antiga quando a pessoa troca para uma de texto livre.
+        modelo_id: precisaModelo ? rascunho.modelo : null,
         ...(confirma ? { confirma_contato: true } : {}),
       });
       setConfirmarContato(null);
@@ -307,7 +392,13 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         <Label htmlFor="conexao">{t("Conexão que envia os avisos")}</Label>
         <Select
           value={rascunho.canal}
-          onValueChange={(v) => setRascunho((r) => ({ ...r, canal: v }))}
+          onValueChange={(v) =>
+            setRascunho((r) => ({
+              ...r,
+              canal: v,
+              modelo: modeloAoTrocarDeConexao(oferecidas.find((c) => c.id === v)),
+            }))
+          }
           disabled={oferecidas.length === 0}
         >
           <SelectTrigger id="conexao" className="w-full sm:w-96">
@@ -316,15 +407,58 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           <SelectContent>
             {oferecidas.map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.nome}
+                {c.aceitaMensagemLivre ? c.nome : `${c.nome} · ${t("só modelo aprovado")}`}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          {t("Só aparecem aqui os números que conseguem mandar uma mensagem a qualquer hora.")}
+          {t(
+            "Aparecem aqui os números que mandam mensagem a qualquer hora e os números oficiais que já têm um modelo aprovado com uma variável.",
+          )}
         </p>
       </div>
+
+      {precisaModelo ? (
+        <div className="flex flex-col gap-1.5" data-testid="bloco-do-modelo">
+          <Label htmlFor="modelo">{t("Modelo aprovado que leva o aviso")}</Label>
+          <Select
+            value={rascunho.modelo}
+            onValueChange={(v) => setRascunho((r) => ({ ...r, modelo: v }))}
+          >
+            <SelectTrigger id="modelo" className="w-full sm:w-96">
+              <SelectValue placeholder={t("Escolha um modelo aprovado")} />
+            </SelectTrigger>
+            <SelectContent>
+              {modelosDaConexao.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {`${m.nome} · ${m.idioma}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {modelosDaConexao.length === 0 ? (
+            <p className="text-xs text-destructive" data-testid="conexao-sem-modelo">
+              {t(
+                "Esta conexão não tem nenhum modelo aprovado com uma variável. Crie um na aba de modelos do número, em Conexões, ou escolha outra conexão.",
+              )}
+            </p>
+          ) : null}
+          {modeloEscolhido ? (
+            <p
+              className="whitespace-pre-line rounded-md border bg-muted/40 p-2 text-xs"
+              data-testid="previa-do-modelo"
+            >
+              {modeloEscolhido.corpo}
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Fora das 24 horas este número só manda modelo aprovado. O aviso vai dentro dele, numa linha só, no lugar da variável. Cada aviso é uma mensagem cobrada pela plataforma do número oficial.",
+            )}
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="telefone">{t("Número que recebe os avisos")}</Label>
@@ -389,7 +523,21 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
               "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.",
             )}
           </p>
-          {equipe.length === 0 ? (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="membro-que-tambem-e-cliente"
+          >
+            {t(
+              "A pessoa pode ser cliente da própria empresa — a equipe que viaja pela própria agência, por exemplo. Nesse caso o número ainda recebe o aviso e continua entrando no CRM: diferente de um número interno, que deixa de virar atendimento.",
+            )}
+          </p>
+          {equipeIndisponivel ? (
+            <p className="text-xs text-destructive" data-testid="equipe-indisponivel">
+              {t(
+                "Não foi possível ler os números da equipe agora. Atualize a página antes de salvar: sem eles a tela não sabe para quem os avisos vão.",
+              )}
+            </p>
+          ) : equipe.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               {t("Ainda não há outras pessoas nesta organização.")}
             </p>

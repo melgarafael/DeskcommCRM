@@ -313,22 +313,39 @@ export function criarDubleDoHandler(
       }
 
       if (tabela === "calendar_appointments") {
+        const filtros: Array<(r: LinhaDoDuble) => boolean> = [];
         const cadeia: {
           select: (colunas?: string) => typeof cadeia;
           eq: (coluna: string, valor: unknown) => typeof cadeia;
           in: (coluna: string, valores: unknown[]) => typeof cadeia;
           order: (...args: unknown[]) => typeof cadeia;
           limit: (...args: unknown[]) => typeof cadeia;
+          maybeSingle: () => Promise<{ data: LinhaDoDuble | null; error: null }>;
+          single: () => Promise<{ data: LinhaDoDuble | null; error: null }>;
           then: (
             resolve: (v: { data: LinhaDoDuble[]; error: null }) => unknown,
             reject?: (e: unknown) => unknown,
           ) => PromiseLike<unknown>;
         } = {
           select: () => cadeia,
-          eq: () => cadeia,
+          // O `eq` do pulo da agenda (#3848) lê UM compromisso por id: aqui o
+          // filtro é aplicado de verdade, senão o retrato sairia com o título
+          // de outra linha da agenda.
+          eq: (coluna: string, valor: unknown) => {
+            filtros.push((r) => r[coluna] === valor);
+            return cadeia;
+          },
           in: () => cadeia,
           order: () => cadeia,
           limit: () => cadeia,
+          maybeSingle: async () => ({
+            data: (opcoes.agenda ?? []).find((r) => filtros.every((f) => f(r))) ?? null,
+            error: null,
+          }),
+          single: async () => ({
+            data: (opcoes.agenda ?? []).find((r) => filtros.every((f) => f(r))) ?? null,
+            error: null,
+          }),
           then: (resolve, reject) =>
             Promise.resolve({ data: [...(opcoes.agenda ?? [])], error: null }).then(
               resolve,

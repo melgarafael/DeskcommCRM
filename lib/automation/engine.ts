@@ -26,8 +26,10 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { evaluateConditions, usaFatosDoContato, type Conditions } from "@/lib/automation/conditions";
 import { carregarFatosDoContato } from "@/lib/automation/fatos-do-contato";
 import { hidratarCamposDoFunil } from "@/lib/automation/campos-do-render";
+import { anexarOpcoesDoRender } from "@/lib/automation/opcoes-do-render";
 import { getAction } from "@/lib/automation/actions";
 import { falhaDeExecucaoParaRecibo, resultadosParaRecibo } from "@/lib/automation/resultado-para-recibo";
+import { horasDoIntervaloNaConfig } from "@/lib/automation/limite-por-contato";
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { regraDoEvento } from "@/lib/automation/gatilho-de-data-do-funil";
@@ -37,6 +39,7 @@ import {
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
+import { lerEscolhaNoEnvio } from "@/lib/agenda/escolha-no-envio";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
@@ -68,12 +71,34 @@ interface RuleRow {
   trigger_config?: Record<string, unknown> | null;
 }
 
+/**
+ * QUAL DAS DUAS RÉGUAS DE CONTATO BARROU a regra neste evento (#2974).
+ *
+ * É o código que vai nas ações `skipped` e no `detail` do evento consumido —
+ * dois nomes, um por régua, porque a tela precisa dizer à pessoa qual opção
+ * dela está agindo (e qual N ajustar). Um código único para as duas seria mais
+ * curto e inútil.
+ */
+type MotivoDoBloqueio = "uma_vez_por_contato" | "intervalo_por_contato";
+
 /** Hidrata o contexto avaliado pelas condições/ações a partir do entity do evento. */
 export async function buildContext(admin: SupabaseClient, row: EventRow): Promise<Record<string, unknown>> {
   const context: Record<string, unknown> = { event: row.payload };
   // Admin client bypassa RLS — todo lookup filtra organization_id do evento
   // (doutrina multi-tenant; um FK cross-org corrompido nunca vaza pro contexto).
   const org = row.organization_id;
+  // O idioma e o fuso da EMPRESA vão no contexto porque o interpolador é função
+  // pura (#4339): `{{campo|data}}` formata a data no idioma de quem lê e resolve
+  // a hora no fuso da organização. Uma leitura por evento, pela PK.
+  const { data: organizacao } = await admin
+    .from("organizations")
+    .select("locale, timezone")
+    .eq("id", org)
+    .maybeSingle();
+  anexarOpcoesDoRender(context, {
+    idioma: (organizacao as { locale?: string | null } | null)?.locale,
+    fuso: (organizacao as { timezone?: string | null } | null)?.timezone,
+  });
   // `lead` ≡ `crm_lead` para os gatilhos do trigger do banco (#1528): sem
   // isto, `lead.won`/`lead.lost`/`lead.reopened`/`lead.assigned` chegavam com a
   // entidade que o `fn_log_event` deriva e a regra rodava SEM o objeto `lead`
@@ -149,6 +174,31 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
         .eq("organization_id", org)
         .maybeSingle();
       if (contact) context.contact = contact;
+      // ── O NEGÓCIO DO CONTATO NA MENSAGEM RECEBIDA (#3974) ──────────────────
+      //
+      // Até aqui o evento de mensagem hidratava só `contact`, e a regra de
+      // "mensagem recebida" não tinha card nenhum para mover: chamada no ramo
+      // de CONTATO do `create_or_move_lead`, ela procura o negócio aberto no
+      // funil de destino e, quando não acha, CRIA um novo — ou seja, "quando o
+      // cliente responder, tira o card da etapa" era impossível de montar sem
+      // abrir um card fantasma.
+      //
+      // A escolha com VÁRIOS negócios abertos é a mesma de
+      // `negocioAbertoDoContato` (o card é do contato; o mais recente é o que a
+      // operação está tocando), mas SEM o recorte por funil: aqui não há etapa
+      // de destino que diga qual funil interessa, e inventar um seria escolher
+      // pelo usuário. Sem negócio aberto, `context.lead` simplesmente não
+      // existe — condição que dependa dele continua falsa, como antes.
+      const { data: lead } = await admin
+        .from("crm_leads")
+        .select("*")
+        .eq("organization_id", org)
+        .eq("contact_id", contactId)
+        .eq("status", "open")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lead) context.lead = ocultarProvaMetaNaResposta(lead as Record<string, unknown>);
     }
   }
   return context;
@@ -172,6 +222,7 @@ async function registrarAdiamento(
   rule: RuleRow,
   actionType: string,
   retryAt: string,
+  puladasPelaAgenda: Map<string, string | null>,
 ): Promise<void> {
   const { error } = await admin.from("automation_rule_runs").insert({
     organization_id: row.organization_id,
@@ -187,6 +238,7 @@ async function registrarAdiamento(
           retry_at: retryAt,
           explicacao:
             "A regra casou e está esperando a janela de envio do número reabrir — nada foi tentado ainda.",
+          ...(puladasPelaAgenda.size ? { pular_por_agenda: Object.fromEntries(puladasPelaAgenda) } : {}),
         },
       },
     ],
@@ -198,6 +250,48 @@ async function registrarAdiamento(
       error: error.message,
     });
   }
+}
+
+/**
+ * AS DECISÕES DE PULAR CONGELADAS NAS ESPERAS DESTE EVENTO.
+ *
+ * Quando uma regra adia o evento, a vizinha `nao_enviar` só executa na volta —
+ * e aí o compromisso pode ter passado (ou sido concluído), a agenda diz "sem
+ * compromisso" e ela ENVIARIA. Por isso a decisão de pular é tomada na
+ * pré-checagem e gravada na linha de espera (`pular_por_agenda`); na volta ela
+ * vale sem reler a agenda. Regra → `appointment_id` do compromisso que decidiu.
+ *
+ * Se a gravação da espera falhou (`registrarAdiamento` não lança), a marca não
+ * existe e a regra reavalia a agenda na volta — o comportamento de antes.
+ */
+async function pulosCongeladosNoEvento(
+  admin: SupabaseClient,
+  row: EventRow,
+): Promise<{ pulos: Map<string, string | null> } | { error: string }> {
+  let query = admin
+    .from("automation_rule_runs")
+    .select("actions_result")
+    .eq("organization_id", row.organization_id)
+    .eq("event_id", row.id)
+    .eq("status", "adiado");
+  // Nenhum run é mais velho que o evento; o limite deixa o índice por (org, created_at) trabalhar.
+  if (row.created_at) query = query.gte("created_at", row.created_at);
+  const { data, error } = await query;
+  if (error) return { error: error.message };
+  const pulos = new Map<string, string | null>();
+  for (const run of (data ?? []) as Array<{ actions_result: Array<{ detail?: { pular_por_agenda?: unknown } }> | null }>) {
+    const marca = run.actions_result?.[0]?.detail?.pular_por_agenda;
+    if (!marca || typeof marca !== "object") continue;
+    for (const [regra, compromisso] of Object.entries(marca)) {
+      pulos.set(regra, typeof compromisso === "string" ? compromisso : null);
+    }
+  }
+  return { pulos };
+}
+
+/** A regra tem um passo que escolheu "não enviar" quando há compromisso (#3813). */
+function regraPulaPelaAgenda(rule: RuleRow): boolean {
+  return (rule.actions ?? []).some((action) => lerEscolhaNoEnvio(action.config) === "nao_enviar");
 }
 
 /** O contato do evento, quando ele existe — direto ou via conversa. */
@@ -231,6 +325,31 @@ export function regraRodaUmaVezPorContato(rule: Pick<RuleRow, "trigger_config">)
 }
 
 /**
+ * O INTERVALO MÍNIMO POR CONTATO (#2974, fatia 2).
+ *
+ * `repetir_apos_horas` — inteiro de 1 a 720 (30 dias). Ausente, `null` ou valor
+ * torto = SEM intervalo, e aí vale o que já existia (a regra roda em todo evento
+ * que casa, ou uma vez por contato se aquele booleano estiver ligado).
+ *
+ * A leitura mora em `lib/automation/limite-por-contato.ts` porque a TELA lê a
+ * mesma chave: duas leituras divergem no primeiro conserto que só um lado
+ * recebe.
+ *
+ * ⚠️ QUANDO AS DUAS VIÊM, O INTERVALO VENCE (ver `barreiraPorContato`). A tela
+ * não deixa configurar as duas — o campo do intervalo desabilita com "uma vez
+ * por contato" ligado —, mas a API aceita `trigger_config` cru, e uma regra que
+ * diga as duas coisas precisa de UMA resposta. A do intervalo é a mais
+ * específica ("não repetir por N horas") e é a que continua fazendo sentido
+ * depois da janela; o desfecho registra `intervalo_por_contato`, que é como a
+ * aba Atividade mostra qual régua barrou.
+ */
+export function intervaloPorContatoHoras(
+  rule: Pick<RuleRow, "trigger_config">,
+): number | null {
+  return horasDoIntervaloNaConfig(rule.trigger_config);
+}
+
+/**
  * O contato hidratado no CONTEXTO — o do lead do evento, do compromisso, do
  * aniversário.
  *
@@ -250,9 +369,10 @@ function contatoDoContexto(context: Record<string, unknown>): string | null {
  * A pergunta vai ao BANCO, nunca a uma memória do processo — é o que faz a
  * decisão sobreviver a reinício do worker (e a decisão de um evento alcançar o
  * próximo, que chega numa execução nova). Qualquer linha da regra com este
- * `contact_id` conta: a opção é "no máximo UMA VEZ", não "até conseguir" — o
- * modo por intervalo (horas/dias) é a outra fatia da issue, e é lá que "tentar
- * de novo depois" mora.
+ * `contact_id` conta: a opção é "no máximo UMA VEZ", não "até conseguir".
+ * Quem quer "de novo depois de um tempo" usa o INTERVALO
+ * (`repetir_apos_horas`), que é a segunda fatia da issue e tem régua própria
+ * (`regraRodouNasUltimasHoras`).
  *
  * FAIL-OPEN na leitura: se a consulta falhar, a regra roda como sempre rodou.
  * Negar por erro de leitura esconderia automação legítima sem deixar rastro do
@@ -286,6 +406,63 @@ async function regraJaRodouParaOCntato(
   if (error) {
     logger.warn(
       "[automation.engine] não foi possível conferir o limite por contato — a regra segue (fail-open)",
+      { rule_id: ruleId, organization_id: organizationId, error: error.message },
+    );
+    return false;
+  }
+  return Array.isArray(data) && data.length > 0;
+}
+
+/**
+ * O INTERVALO MÍNIMO: esta regra já rodou para este contato nas últimas N horas?
+ *
+ * Mesma doutrina da pergunta de uma-vez — o BANCO é a memória, nunca o processo
+ * —, com uma diferença que decide a fatia inteira: a janela é MÓVEL, e a linha
+ * que a move é só a de uma execução que DE FATO aconteceu.
+ *
+ * ═══ Por que `status in (success, partial)` e não "qualquer linha" ═══
+ *
+ * O bloqueio por limite também grava linha (`failed`, todas as ações `skipped`).
+ * Se ela contasse, cada tentativa barrada ROLARIA a janela para frente: o
+ * contato que volta ao anúncio toda hora — exatamente o caso da issue — nunca
+ * mais receberia nada, e "não repetir por 24 h" viraria "uma vez para sempre"
+ * por um caminho que ninguém vê na tela. É a mesma armadilha que faz um
+ * `while` com `continue` não terminar.
+ *
+ * `adiado` também não conta, e por um motivo diferente: nada chegou ao cliente
+ * e o PRÓPRIO evento volta (`retry_at`) — contar a linha do adiamento barraria
+ * a retomada dela mesma.
+ *
+ * `failed` de verdade (todas as ações tentaram e falharam) não conta pelo mesmo
+ * espírito: nada saiu, e a próxima entrada do contato pode tentar de novo.
+ *
+ * FAIL-OPEN na leitura, como a de uma-vez: erro de consulta não cala automação,
+ * e o log diz que foi isso.
+ */
+async function regraRodouNasUltimasHoras(
+  admin: SupabaseClient,
+  organizationId: string,
+  ruleId: string,
+  contactId: string,
+  horas: number,
+): Promise<boolean> {
+  const desde = new Date(Date.now() - horas * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin
+    .from("automation_rule_runs")
+    // `limit(1)` + lista pelo mesmo motivo da consulta de uma-vez: o
+    // `maybeSingle` do PostgREST responde ERRO quando há mais de uma linha, e
+    // no fail-open isso devolveria "não rodou" para o caso que ele existe para
+    // barrar.
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("rule_id", ruleId)
+    .eq("contact_id", contactId)
+    .in("status", ["success", "partial"])
+    .gte("created_at", desde)
+    .limit(1);
+  if (error) {
+    logger.warn(
+      "[automation.engine] não foi possível conferir o intervalo por contato — a regra segue (fail-open)",
       { rule_id: ruleId, organization_id: organizationId, error: error.message },
     );
     return false;
@@ -353,6 +530,12 @@ async function reservarExecucaoPorContato(
 /**
  * A DECISÃO DE NÃO RODAR, gravada com a razão (#2974).
  *
+ * Duas réguas podem decidir isto — "no máximo uma vez por contato" e "não
+ * repetir por N horas" —, e `motivo` é qual delas: vai nas ações (`skipped`) e
+ * no agregador, que é o que a tela lê para dizer POR QUE a regra não rodou.
+ * Inventar um código só para as duas ("limite_por_contato") perderia a única
+ * informação de que quem montou a regra precisa para ajustar o N.
+ *
  * Mesmo desenho de `registrarAdiamento`: um run que registra o que aconteceu em
  * vez de o evento sumir sem deixar linha. Aqui nada foi tentado e nada vai
  * chegar — por isso as ações saem como `skipped` com `error:
@@ -371,11 +554,12 @@ async function registrarBloqueioPorLimite(
   row: EventRow,
   rule: RuleRow,
   contactId: string,
+  motivo: MotivoDoBloqueio,
 ): Promise<void> {
   const results: ActionResultDetail[] = (rule.actions ?? []).map((action) => ({
     type: action.type,
     status: "skipped" as const,
-    error: "uma_vez_por_contato",
+    error: motivo,
   }));
   const { error } = await admin.from("automation_rule_runs").insert({
     organization_id: row.organization_id,
@@ -439,6 +623,20 @@ async function eventoEhDeContatoPessoal(
   } catch {
     return false;
   }
+}
+
+/**
+ * O desfecho gravado no evento consumido quando a LEITURA barrou por contato.
+ *
+ * Um evento pode casar várias regras, e cada uma pode ser barrada por uma régua
+ * diferente. O `detail` é um só: quando o intervalo está entre os motivos, ele
+ * é o que sai — é a régua mais estreita, e é a que diz quando a regra volta a
+ * valer. As linhas de bloqueio (a aba Atividade) continuam dizendo, regra por
+ * regra, qual foi a de cada uma.
+ */
+function detailDoBloqueio(motivos: readonly MotivoDoBloqueio[]): string {
+  if (!motivos.length) return "no_match";
+  return motivos.includes("intervalo_por_contato") ? "intervalo_por_contato" : "uma_vez_por_contato";
 }
 
 export async function runAutomationForEvent(
@@ -541,16 +739,31 @@ export async function runAutomationForEvent(
 
   // A pergunta ao banco é feita UMA vez por regra, antes do filtro (o filtro é
   // síncrono e não pode esperar): quem já rodou para este contato está aqui.
-  const jaRodouParaOCntato = new Map<string, boolean>();
+  //
+  // ═══ QUAL DAS DUAS RÉGUAS VALE, POR REGRA (#2974) ═══
+  //
+  // O INTERVALO tem precedência: regra que diga `repetir_apos_horas` E
+  // `uma_vez_por_contato` é medida pela janela (a tela nem deixa configurar as
+  // duas; a API aceita as duas). A pergunta muda com a régua — "já rodou alguma
+  // vez?" versus "rodou nas últimas N horas?" —, e a resposta é gravada como
+  // MOTIVO, para a tela poder dizer qual delas barrou.
+  const motivoDoBloqueio = new Map<string, MotivoDoBloqueio>();
   for (const rule of matched) {
-    if (!regraRodaUmaVezPorContato(rule) || !contatoIdDoEvento) continue;
-    jaRodouParaOCntato.set(
-      rule.id,
-      await regraJaRodouParaOCntato(admin, row.organization_id, rule.id, contatoIdDoEvento),
-    );
+    if (!contatoIdDoEvento) continue;
+    const horas = intervaloPorContatoHoras(rule);
+    if (horas !== null) {
+      if (await regraRodouNasUltimasHoras(admin, row.organization_id, rule.id, contatoIdDoEvento, horas)) {
+        motivoDoBloqueio.set(rule.id, "intervalo_por_contato");
+      }
+      continue;
+    }
+    if (!regraRodaUmaVezPorContato(rule)) continue;
+    if (await regraJaRodouParaOCntato(admin, row.organization_id, rule.id, contatoIdDoEvento)) {
+      motivoDoBloqueio.set(rule.id, "uma_vez_por_contato");
+    }
   }
 
-  const barradasPeloLimite: RuleRow[] = [];
+  const barradasPeloLimite: Array<{ rule: RuleRow; motivo: MotivoDoBloqueio }> = [];
   const applicable = matched.filter((rule) => {
     const configuredSourceId = rule.trigger_config?.webhook_source_id;
     if (
@@ -561,63 +774,94 @@ export async function runAutomationForEvent(
       return false;
     }
     if (!evaluateConditions(rule.conditions ?? [], context, fatosDoContato)) return false;
-    if (regraRodaUmaVezPorContato(rule)) {
-      if (!contatoIdDoEvento) {
-        // FAIL-OPEN: sem contato resolvível a regra segue como hoje e o run
-        // grava `contact_id` nulo — que é o rastro de que a conferência não
-        // pôde ser feita.
-        logger.warn(
-          "[automation.engine] regra 'uma vez por contato' sem contato resolvível — segue como sempre (fail-open)",
-          {
-            rule_id: rule.id,
-            organization_id: row.organization_id,
-            event_id: row.id,
-            event_type: row.event_type,
-          },
-        );
-        return true;
-      }
-      if (jaRodouParaOCntato.get(rule.id) === true) {
-        barradasPeloLimite.push(rule);
-        return false;
-      }
+    const temLimite =
+      regraRodaUmaVezPorContato(rule) || intervaloPorContatoHoras(rule) !== null;
+    if (temLimite && !contatoIdDoEvento) {
+      // FAIL-OPEN: sem contato resolvível a regra segue como hoje e o run
+      // grava `contact_id` nulo — que é o rastro de que a conferência não
+      // pôde ser feita.
+      logger.warn(
+        "[automation.engine] regra com limite por contato sem contato resolvível — segue como sempre (fail-open)",
+        {
+          rule_id: rule.id,
+          organization_id: row.organization_id,
+          event_id: row.id,
+          event_type: row.event_type,
+        },
+      );
+      return true;
+    }
+    const motivo = motivoDoBloqueio.get(rule.id);
+    if (motivo) {
+      barradasPeloLimite.push({ rule, motivo });
+      return false;
     }
     return true;
   });
 
   // A decisão fica REGISTRADA, ainda que nada tenha rodado: quem montou a regra
   // precisa ver na aba Atividade que ela pulou este contato de propósito.
-  for (const rule of barradasPeloLimite) {
-    if (contatoIdDoEvento) await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento);
+  for (const { rule, motivo } of barradasPeloLimite) {
+    if (contatoIdDoEvento) await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento, motivo);
   }
 
   if (!applicable.length) {
     return {
       consumer_key: AUTOMATION_CONSUMER_KEY,
       status: "ok",
-      detail: barradasPeloLimite.length ? "uma_vez_por_contato" : "no_match",
+      detail: detailDoBloqueio(barradasPeloLimite.map((b) => b.motivo)),
     };
   }
 
   // Pré-checagem de postpone (throttle etc.): all-or-nothing ANTES de executar
   // qualquer ação — reexecução parcial no retry seria pior que atraso.
+  //
+  // O tudo-ou-nada adia também a regra `nao_enviar` vizinha, e ela não pode
+  // decidir só na volta (ver `pulosCongeladosNoEvento`): por isso, depois do
+  // primeiro adiamento, só ela ainda é consultada — as demais seguem como
+  // sempre, sem pergunta nenhuma. A regra adiada por conta própria não congela
+  // nada: sozinha, ela também reavaliaria na volta.
+  let adiamento: { rule: RuleRow; actionType: string; until: string } | null = null;
+  const puladasPelaAgenda = new Map<string, string | null>();
   for (const rule of applicable) {
+    if (adiamento && !regraPulaPelaAgenda(rule)) continue;
+    let adiouAPropria = false;
     for (const action of rule.actions ?? []) {
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
       const until = await executor.postponeUntil(
-        { admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
+        {
+          admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id,
+          anotarPuloPelaAgenda: (appointmentId) => puladasPelaAgenda.set(rule.id, appointmentId),
+        },
         action.config ?? {},
       );
       if (until) {
-        // A ESPERA É UM ESTADO, e um estado que ninguém vê é indistinguível de
-        // morte. Sem esta linha o evento sumia até a janela reabrir e a aba
-        // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
-        // nada" e "não rodou" são a mesma tela (migration 0175).
-        await registrarAdiamento(admin, row, rule, action.type, until);
-        return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: until };
+        adiouAPropria = true;
+        adiamento ??= { rule, actionType: action.type, until };
+        break;
       }
     }
+    if (adiouAPropria) puladasPelaAgenda.delete(rule.id);
+  }
+  if (adiamento) {
+    // A ESPERA É UM ESTADO, e um estado que ninguém vê é indistinguível de
+    // morte. Sem esta linha o evento sumia até a janela reabrir e a aba
+    // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
+    // nada" e "não rodou" são a mesma tela (migration 0175).
+    await registrarAdiamento(admin, row, adiamento.rule, adiamento.actionType, adiamento.until, puladasPelaAgenda);
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: adiamento.until };
+  }
+
+  // Só a regra `nao_enviar` pode ter decisão congelada; sem ela, nenhuma leitura
+  // a mais. Falha de leitura é `error` — executar às cegas poderia enviar o que
+  // a regra mandou não enviar. Vem ANTES da reserva: um `error` depois dela
+  // deixaria a chave do contato tomada, e o retry se barraria sozinho.
+  let pulosCongelados = new Map<string, string | null>();
+  if (applicable.some(regraPulaPelaAgenda)) {
+    const lidos = await pulosCongeladosNoEvento(admin, row);
+    if ("error" in lidos) return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: lidos.error };
+    pulosCongelados = lidos.pulos;
   }
 
   // ═══ A RESERVA ANTES DE EXECUTAR (#2974) ═══
@@ -634,13 +878,20 @@ export async function runAutomationForEvent(
   const barradasPelaReserva: RuleRow[] = [];
   if (contatoIdDoEvento) {
     for (const rule of applicable) {
+      // O INTERVALO não tem reserva, e é de propósito: a chave da tabela de
+      // reservas não se solta (é isso que faz "uma vez" valer), enquanto a do
+      // intervalo PRECISA soltar quando a janela termina. Quem decide ali é a
+      // leitura acima; o preço é que dois drenos simultâneos do mesmo contato
+      // podem executar os dois dentro da janela — a corrida que a reserva fecha
+      // para "uma vez" fica aberta aqui, e está declarada no PR.
+      if (intervaloPorContatoHoras(rule) !== null) continue;
       if (!regraRodaUmaVezPorContato(rule)) continue;
       if (!(await reservarExecucaoPorContato(admin, row, rule, contatoIdDoEvento))) {
         barradasPelaReserva.push(rule);
       }
     }
     for (const rule of barradasPelaReserva) {
-      await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento);
+      await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento, "uma_vez_por_contato");
     }
   }
 
@@ -689,6 +940,9 @@ export async function runAutomationForEvent(
               requestId: row.id,
               actionIndex: indiceDaAcao,
               ruleActions: rule.actions ?? [],
+              puloCongeladoPelaAgenda: pulosCongelados.has(rule.id)
+                ? { appointment_id: pulosCongelados.get(rule.id) ?? null }
+                : undefined,
             },
             action.config ?? {},
           ),

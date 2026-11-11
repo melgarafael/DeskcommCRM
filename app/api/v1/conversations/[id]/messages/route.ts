@@ -12,6 +12,7 @@ import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { listMessagesQuerySchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { comNomeDeQuemEnviou } from "@/lib/users/nome-de-quem-enviou";
 
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
 
@@ -67,7 +68,21 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       conversationId,
       qsParsed.data,
     );
-    return ok(messages, { requestId, meta: { cursor, has_more } });
+    // #4031 — O NOME DE QUEM DA EQUIPE ENVIOU, no payload.
+    //
+    // O balão não faz consulta e a página é paginada por cursor, então o nome
+    // entra AQUI: uma leitura por PÁGINA (ids distintos, deduplicados por
+    // `nomesDosAtendentes`), e não uma por mensagem. Fica na rota, e não em
+    // `listMessagesHandler`, porque o handler é o mesmo caminho das tools MCP,
+    // que leem com o admin client e resolveriam o nome duas vezes.
+    //
+    // Só os ids de mensagens que o leitor JÁ recebeu alimentam o lookup — a RLS
+    // de `messages` decidiu o que está na página antes de qualquer nome ser
+    // resolvido, e o que sai é apenas `full_name` (mesmo mínimo do export em
+    // PDF e de `team/assignable`). E só para quem é membro da org ativa: o
+    // helper confere `user_organizations` antes de ler o nome.
+    const mensagensComNome = await comNomeDeQuemEnviou(messages, activeOrg.orgId);
+    return ok(mensagensComNome, { requestId, meta: { cursor, has_more } });
   } catch (err) {
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });

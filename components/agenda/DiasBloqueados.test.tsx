@@ -26,6 +26,11 @@
  *   3. Faixa invertida não chega a sair. O CHECK do banco (`end_minute >
  *      start_minute`) devolveria 422; barrar no botão troca o erro por um
  *      botão que não deixa errar.
+ *   4. FECHAR SÓ ALGUMAS HORAS manda `is_unavailable: true` COM a faixa. Antes,
+ *      tirar uma hora do meio do dia exigia ABRIR as duas metades (a exceção
+ *      aberta substitui a jornada) — o motor sempre soube fechar um pedaço
+ *      (`tests/unit/agenda-horarios-livres.test.ts`, "indisponível NO MEIO do
+ *      dia"), só a tela não deixava.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -196,5 +201,97 @@ describe("Dias fora da rotina — fechar e abrir", () => {
       "2026-10-15",
     ]);
     expect(await screen.findByTestId("resultado-do-lote")).toHaveTextContent("1");
+  });
+});
+
+describe("Dias fora da rotina — fechar só algumas horas", () => {
+  beforeEach(() => {
+    post.mockClear();
+    jaCadastrado = [];
+  });
+
+  it("manda is_unavailable true COM a faixa escolhida, e diz que o resto do dia segue", async () => {
+    const u = userEvent.setup();
+    montar();
+
+    await u.selectOptions(screen.getByTestId("modo-do-dia"), "fechar-horas");
+    expect(screen.getByTestId("explica-fechar-horas")).toHaveTextContent("O resto do dia segue a jornada de sempre.");
+    await u.type(screen.getByLabelText("Dia"), "2026-11-03");
+    await u.clear(screen.getByLabelText("Das"));
+    await u.type(screen.getByLabelText("Das"), "14:00");
+    await u.clear(screen.getByLabelText("Até"));
+    await u.type(screen.getByLabelText("Até"), "15:30");
+    await u.type(screen.getByLabelText("Motivo (opcional)"), "Banco");
+    await u.click(screen.getByRole("button", { name: "Fechar estas horas" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    expect(corpoEnviado()).toEqual({
+      exception_date: "2026-11-03",
+      is_unavailable: true,
+      start_minute: 840,
+      end_minute: 930,
+      reason: "Banco",
+    });
+  });
+
+  it("faixa invertida também não sai ao fechar horas", async () => {
+    const u = userEvent.setup();
+    montar();
+
+    await u.selectOptions(screen.getByTestId("modo-do-dia"), "fechar-horas");
+    await u.type(screen.getByLabelText("Dia"), "2026-11-03");
+    await u.clear(screen.getByLabelText("Das"));
+    await u.type(screen.getByLabelText("Das"), "15:00");
+    await u.clear(screen.getByLabelText("Até"));
+    await u.type(screen.getByLabelText("Até"), "14:00");
+
+    expect(screen.getByRole("button", { name: "Fechar estas horas" })).toBeDisabled();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("repete toda semana pulando só a MESMA faixa já FECHADA — a aberta igual não conta", async () => {
+    jaCadastrado = [
+      // A mesma faixa, mas ABERTA: é outra coisa, não é duplicata.
+      { id: "aberta", exception_date: "2026-11-03", is_unavailable: false, start_minute: 720, end_minute: 780, reason: null },
+      // A mesma faixa FECHADA: essa sim já existe.
+      { id: "fechada", exception_date: "2026-11-10", is_unavailable: true, start_minute: 720, end_minute: 780, reason: null },
+    ];
+    const u = userEvent.setup();
+    montar();
+    await screen.findByText(/10\/11\/2026|11\/10\/2026/);
+
+    await u.selectOptions(screen.getByTestId("modo-do-dia"), "fechar-horas");
+    await u.type(screen.getByLabelText("Dia"), "2026-11-03");
+    await u.clear(screen.getByLabelText("Das"));
+    await u.type(screen.getByLabelText("Das"), "12:00");
+    await u.clear(screen.getByLabelText("Até"));
+    await u.type(screen.getByLabelText("Até"), "13:00");
+    await u.type(screen.getByLabelText("Repetir toda semana até (opcional)"), "2026-11-17");
+    await u.click(screen.getByRole("button", { name: "Fechar estas horas" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    expect(post.mock.calls.map((c) => (c[1] as { exception_date: string }).exception_date)).toEqual([
+      "2026-11-03",
+      "2026-11-17",
+    ]);
+    for (const c of post.mock.calls) {
+      expect(c[1]).toMatchObject({ is_unavailable: true, start_minute: 720, end_minute: 780 });
+    }
+  });
+
+  it("a lista diz quando a faixa está FECHADA; o dia inteiro fechado segue sem rótulo", async () => {
+    jaCadastrado = [
+      { id: "1", exception_date: "2026-11-03", is_unavailable: true, start_minute: 840, end_minute: 900, reason: "Banco" },
+      { id: "2", exception_date: "2026-11-04", is_unavailable: true, start_minute: 0, end_minute: 1440, reason: null },
+      { id: "3", exception_date: "2026-11-07", is_unavailable: false, start_minute: 840, end_minute: 900, reason: null },
+    ];
+    montar();
+
+    const itens = await screen.findAllByRole("listitem");
+    expect(itens.map((li) => li.textContent?.replace(/^[^·]*· /, "").replace(/Reabrir$/, ""))).toEqual([
+      "14:00–15:00 · fechado nessas horas · Banco",
+      "o dia todo",
+      "14:00–15:00 · aberto excepcionalmente",
+    ]);
   });
 });
