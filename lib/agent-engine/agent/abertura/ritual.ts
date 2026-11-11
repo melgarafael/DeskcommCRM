@@ -128,6 +128,15 @@ export function ritualBlocks(
    * razão dos dois acima: `json` é a saída de sempre, e só o inbound escolhe.
    */
   formatoDoHistorico: FormatoDoHistorico = 'json',
+  /**
+   * O aviso da PASSAGEM AUTOMÁTICA do roteador (#4363), já montado por
+   * `passagem-do-roteador.ts` — '' quando a conversa não trocou de agente.
+   *
+   * OPCIONAL e último pela razão dos dois acima: só o inbound o calcula (é o
+   * único turno em que o classificador pode trocar o agente), e follow-up,
+   * resposta de caso e retomada da escalação não pagam nada.
+   */
+  passagemBlock = '',
 ): string[] {
   const checkpointBlock = previous
     ? JSON.stringify({
@@ -149,6 +158,11 @@ export function ritualBlocks(
       })
     : 'sem registro — o lead está em "new"';
   return [
+    // A PASSAGEM AUTOMÁTICA DO ROTEADOR (#4363) vem PRIMEIRO: no turno em que o
+    // classificador trocou o agente, ela é o que governa a postura do turno
+    // inteiro — apresentar-se, não recomeçar, continuar o que o outro combinou.
+    // Vazia quando não houve troca, e aí não custa token nenhum.
+    ...(passagemBlock.trim() !== '' ? [passagemBlock, ''] : []),
     // O cabeçalho declara QUANDO isto foi escrito e QUEM MANDA no desacordo.
     //
     // Este é o PRIMEIRO bloco do prompt, acima do histórico — posição que um
@@ -252,6 +266,11 @@ export function buildOpeningMessage(
   origemBlock = '',
   /** Formato do histórico (`LEAD_CONTEXT_HISTORY_FORMAT`); `json` = o de sempre. */
   formatoDoHistorico: FormatoDoHistorico = 'json',
+  /**
+   * O aviso da PASSAGEM AUTOMÁTICA do roteador (#4363) — '' quando a conversa
+   * não trocou de agente. Ver `passagem-do-roteador.ts`.
+   */
+  passagemBlock = '',
 ): string {
   const entregue = (nome: string): boolean => entregues.includes(nome);
   const mensagemAtual =
@@ -298,6 +317,7 @@ export function buildOpeningMessage(
       compromissosBlock,
       origemBlock,
       formatoDoHistorico,
+      passagemBlock,
     ),
     '',
     ...mensagemAtualBlock,

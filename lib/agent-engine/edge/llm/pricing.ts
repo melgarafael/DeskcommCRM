@@ -237,7 +237,14 @@ function chaveDoModelo(model: string): string | undefined {
   // na MESMA ordem da tolerância do sufixo de data, para um id com prefixo+sufixo
   // (`anthropic/claude-sonnet-5-20250929`) casar também. O id completo segue
   // tentado PRIMEIRO: um id que a tabela conheça com barra vence o recorte.
+  //
+  // O catálogo do OpenRouter escreve a versão com PONTO (`anthropic/claude-haiku-5.5`)
+  // e a tabela indexa com HÍFEN (`claude-haiku-5-5`). Por isso as variantes com o
+  // ponto trocado por hífen entram no FIM: o id exato, o sem data e o sem prefixo
+  // continuam vencendo, e um id que a tabela já conhece COM ponto (`gpt-6.1-terra`)
+  // não é reescrito (issue #1931).
   const semPrefixo = model.includes("/") ? model.slice(model.indexOf("/") + 1) : model;
+  const comHifen = (id: string) => id.replace(/\./g, "-");
   const candidatos = [
     model,
     model.replace(/-\d{8}$/, ""),
@@ -245,6 +252,10 @@ function chaveDoModelo(model: string): string | undefined {
     semPrefixo,
     semPrefixo.replace(/-\d{8}$/, ""),
     semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, ""),
+    comHifen(semPrefixo),
+    comHifen(semPrefixo.replace(/-\d{8}$/, "")),
+    comHifen(semPrefixo.replace(/-\d{4}-\d{2}-\d{2}$/, "")),
+    comHifen(model),
   ];
   return candidatos.find((id) => USD_PER_MTOK[id] !== undefined);
 }

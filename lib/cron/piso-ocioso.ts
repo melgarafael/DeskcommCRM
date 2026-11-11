@@ -169,7 +169,11 @@ const TETO_DA_LEITURA_MS = 2_000;
  * com trabalho na fila é o defeito que este arquivo existe para não ter:
  *
  * - `mensagem_presa`: `sending` acima de 3 min, contra o corte de 5 min da rota
- *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada;
+ *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada. E
+ *   `queued` entre 10 min e 25 h, contra os 15 min e as 24 h da espera esquecida
+ *   (`avisarEsperaEsquecida`), sem o filtro de conexão de pé e sem o prazo por
+ *   motivo, que a rodada aplica depois: a mensagem mais velha que a janela não
+ *   acorda o cron, e por isso a instalação parada volta a dormir sozinha;
  * - `ligacao_presa`: `starting`/`ringing` acima de 3 min, contra o corte de 5 min
  *   da rota (`STUCK_CALL_AFTER_MS`), pela mesma folga da `mensagem_presa`;
  * - `lembrete_de_tarefa`: a janela de ±1 dia de `janelaDaVarredura`, sem o
@@ -264,10 +268,18 @@ select
     select 1 from conversations
      where snooze_until is not null and snooze_until <= now()
   ) as fila_de_soneca,
-  exists (
-    select 1 from messages
-     where direction = 'outbound' and status = 'sending'
-       and created_at < now() - interval '3 minutes'
+  (
+    exists (
+      select 1 from messages
+       where direction = 'outbound' and status = 'sending'
+         and created_at < now() - interval '3 minutes'
+    )
+    or exists (
+      select 1 from messages
+       where direction = 'outbound' and status = 'queued'
+         and created_at < now() - interval '10 minutes'
+         and created_at > now() - interval '25 hours'
+    )
   ) as mensagem_presa,
   exists (
     select 1 from voice_calls

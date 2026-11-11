@@ -104,6 +104,19 @@ function shapeDaFerramenta(ferramenta: FerramentaRemota): Record<string, z.ZodTy
 }
 
 /**
+ * LEITURA só com as duas metades do item 8 — ver o cabeçalho deste arquivo.
+ * Uma regra só para o servidor da instalação e para os servidores do agente:
+ * quem precisa saber se uma remota é leitura lê a `category` da definição que
+ * sai daqui, nunca recalcula.
+ */
+function remotaMontaComoLeitura(
+  escolha: EscolhaRemota,
+  ferramenta: Pick<FerramentaRemota, "somenteLeitura">,
+): boolean {
+  return escolha.leitura && ferramenta.somenteLeitura === true;
+}
+
+/**
  * As ferramentas remotas ESCOLHIDAS pelo agente, já convertidas.
  *
  * `nomesOcupados` é o catálogo COMPILADO inteiro (`allTools`), não só o que
@@ -145,8 +158,7 @@ export function definirFerramentasRemotas(
       continue;
     }
 
-    // LEITURA só com as duas metades do item 8 — ver o cabeçalho deste arquivo.
-    const ehLeitura = escolha.leitura && ferramenta.somenteLeitura === true;
+    const ehLeitura = remotaMontaComoLeitura(escolha, ferramenta);
 
     definicoes.push({
       name: ferramenta.name,
@@ -226,7 +238,7 @@ export function definirFerramentasDoServidorDoAgente(
     }
     if (nomesOcupados.has(nome)) continue;
 
-    const ehLeitura = escolha.leitura && ferramenta.somenteLeitura === true;
+    const ehLeitura = remotaMontaComoLeitura(escolha, ferramenta);
     const delegada = !ehLeitura && !escolha.leitura && servidor.escritaDelegada && credencialDoContato;
 
     definicoes.push({

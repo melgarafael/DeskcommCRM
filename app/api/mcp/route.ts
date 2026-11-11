@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-function jsonRpcError(code: number, message: string, status: number): Response {
+function jsonRpcError(code: number, message: string, status: number, requestId: string): Response {
   return new Response(
     JSON.stringify({
       jsonrpc: "2.0",
@@ -34,7 +34,8 @@ function jsonRpcError(code: number, message: string, status: number): Response {
     }),
     {
       status,
-      headers: { "content-type": "application/json" },
+      // #4107: o MESMO id que a rota põe na resposta de sucesso e no log.
+      headers: { "content-type": "application/json", "X-Request-Id": requestId },
     },
   );
 }
@@ -48,15 +49,15 @@ async function handle(req: NextRequest): Promise<Response> {
     auth = await validateBearerToken(req.headers.get("authorization"), { permiteOrgSuspensa: true });
   } catch (err) {
     if (err instanceof McpAuthError) {
-      return jsonRpcError(err.mcpCode, err.message, err.httpStatus);
+      return jsonRpcError(err.mcpCode, err.message, err.httpStatus, requestId);
     }
     const msg = err instanceof Error ? err.message : "auth_failed";
-    return jsonRpcError(-32603, msg, 500);
+    return jsonRpcError(-32603, msg, 500, requestId);
   }
 
   const idempotencyKey = chaveDaRequisicao(req);
   if (idempotencyKey !== null && !z.string().uuid().safeParse(idempotencyKey).success) {
-    return jsonRpcError(-32602, "Idempotency-Key deve ser UUID", 400);
+    return jsonRpcError(-32602, "Idempotency-Key deve ser UUID", 400, requestId);
   }
 
   const transport = new WebStandardStreamableHTTPServerTransport({});
@@ -76,7 +77,7 @@ async function handle(req: NextRequest): Promise<Response> {
     return response;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "transport_error";
-    return jsonRpcError(-32603, msg, 500);
+    return jsonRpcError(-32603, msg, 500, requestId);
   }
 }
 

@@ -124,6 +124,11 @@ export const AUDIT_ACTIONS = [
   "conversation.created",
   "conversation.claimed",
   "conversation.transferred",
+  // A passagem de um agente de IA para outro, pedida explicitamente (#3770).
+  // Distinta de `conversation.transferred` (que troca o DONO humano) e da
+  // `ai_router_decisions.outcome = 'reclassified'` (que é o classificador
+  // trocando o agente sozinho): aqui alguém pediu, e a trilha diz quem.
+  "conversation.ai_agent_transferred",
   "conversation.released",
   "conversation.closed",
   // O arquivamento é terminal como o fechamento, e o evento é separado de
@@ -134,6 +139,12 @@ export const AUDIT_ACTIONS = [
   // automático numa conversa não tinha rota e, portanto, não tinha ação de
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
+  // Ligar a IA numa conversa que tem dono, sem soltar o dono (#3967), é decisão
+  // auditável nos dois sentidos: quem ligou, em que conversa, e quando desligou.
+  // O par existe para que "por que a IA falou nessa conversa que é minha?"
+  // tenha resposta sem abrir o histórico inteiro.
+  "conversation.ai_with_owner_enabled",
+  "conversation.ai_with_owner_disabled",
   "conversation.tags_changed",
   // (migration 9062) Mudar a FILA de uma conversa é decisão auditável: quem
   // escolheu, de qual fila para qual, e se aquilo disparou redistribuição. Sem
@@ -192,6 +203,10 @@ export const AUDIT_ACTIONS = [
   "phone_number.created",
   "phone_number.updated",
   "ai.handoff_triggered",
+  // A pausa da IA por atendimento manual NÃO foi gravada (0 linhas / erro): a
+  // conversa pode ter ficado sem pausa e a IA falar por cima do atendente. O
+  // `metadata.motivo` nomeia corrida, conversa inexistente ou falha de escrita.
+  "ai.pausa_nao_gravada",
   "ai.reactivated_by_agent",
   "conversation.usable_for_rag_toggled",
   "rag.conversations_batch_run",
@@ -381,6 +396,7 @@ export const AUDIT_ACTIONS = [
   "attendant.availability_changed",
   "routing.config_changed",
   "proposals.config_changed",
+  "catalogo.apresentacao_changed",
   // Mudar a régua do abandono (spec 16 §5.2) muda como TODO período passa a ser
   // lido — é mutação relevante, não preferência de exibição.
   "metrics.atrito_regua_changed",
@@ -451,6 +467,14 @@ export const AUDIT_ACTIONS = [
   // linha de lugar" — o conteúdo não foi tocado nenhuma vez (é o que a issue
   // pede: preservar os cadastros).
   "template.reordered",
+  // Levar a configuração embora e aplicá-la em outra organização são atos
+  // próprios (issue #1995): o blueprint exportado é o primeiro passo de sair do
+  // produto, e o importado muda a operação inteira de uma vez. Nenhum dos dois
+  // é `template.created`, e o import NÃO emite um `template.created` por linha:
+  // o rastro dele é um `template.imported` só, com a contagem, e o autor de
+  // cada linha importada fica em `message_templates.created_by_user_id`.
+  "template.exported",
+  "template.imported",
   // GRUPOS de respostas rápidas (#3245): criar/renomear/reordenar/apagar um
   // grupo não é `template.updated` — o ato muda a ESTRUTURA da equipe (as
   // etapas que todos veem), não o texto de uma resposta. O audit responde
@@ -838,6 +862,10 @@ export const AUDIT_ACTIONS = [
   // As fotos do produto (migration 0390): subir uma, e reordenar/remover.
   "catalog_product.photo_added",
   "catalog_product.photos_updated",
+  // A apresentação usada pela IA: configuração e mídia privada permanente.
+  "catalog_product.ai_presentation_updated",
+  "catalog_product.ai_presentation_audio_uploaded",
+  "catalog_product.ai_presentation_audio_removed",
   /** A rodada da fonte de catálogo (#3587, fatia 2) — cria, atualiza e desativa em lote. */
   "catalog_products.synced_from_feed",
 
@@ -1278,6 +1306,12 @@ export const AUDIT_ACTIONS = [
   // regra consulta o modelo.
   "settings.automation_ai_decide_updated",
 
+  // A entrada automática no funil (#3603): o interruptor
+  // `organizations.settings.entrada_automatica_no_funil.ativa` foi ligado ou
+  // desligado. A trilha responde "quem fez a conversa que o CRM abre passar a
+  // gerar (ou deixar de gerar) negócio?" — o destino é o mesmo da entrada.
+  "settings.entrada_automatica_no_funil_updated",
+
   // Planos de tarefa (#1752): a lista `settings.task_plans` mudou pela rota
   // `settings/task-plans` — mesma família de `campaign.settings_updated`.
   "task_plans.settings_updated",
@@ -1335,6 +1369,10 @@ export const AUDIT_ACTIONS = [
   // as gravações que ela deixou passar.
   "crm.telefone_de_ficha_vazia_alterado",
   "crm.nome_informado_alterado",
+  // O admin ligou/desligou a SUGESTÃO de duplicado pelo nome (#4138). É a opção
+  // que decide se a tela de limpeza de contatos mostra "Parecidos — confira" —
+  // o ato administrativo que abriu (ou fechou) essa seção para a organização.
+  "crm.duplicados_por_nome_alterado",
   // O admin ligou/desligou o aviso das transferências para atendimento humano
   // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
   "crm.aviso_de_transferencia_alterado",
@@ -1422,6 +1460,8 @@ export const AUDIT_ACTIONS = [
   // cala a cobrança da organização inteira, e "quem desligou, e quando" só tem
   // resposta na trilha — a coluna guarda só o valor de agora.
   "ai.lembrete_de_caso_configurado",
+  "cadencia.created", "cadencia.updated", "cadencia.deleted", "cadencia.activated", "cadencia.paused",
+  "cadencia.lead_inscrito", "cadencia.lead_retirado", "cadencia.settings_updated", "cron.cadencia_worker",
   // Setores de atendimento (migration 0801): cadastro e vínculo atendente →
   // setor, feitos por manager+ na Equipe › Setores. O vínculo não guarda
   // histórico — "quem estava no setor que foi apagado" só a trilha responde.
@@ -1477,6 +1517,35 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  // A CONTA Resend da organização (#3287): conectar e desconectar. Códigos
+  // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
+  // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
+  // domínio os e-mails saem e onde caem os registros de entrega. A chave em si
+  // NUNCA entra no metadata; nem o endereço: só nomes dos campos e o fato da
+  // verificação, pois a trilha append-only não é lugar para identidade pessoal.
+  "org.resend_account_connected",
+  "org.resend_account_disconnected",
+  // A ativação do módulo de Ouvidoria (#3611, migration 9040) — ligar a porta
+  // que aceita manifestação confidencial, e desligá-la. Metadata leva só o
+  // booleano: o CONTEÚDO das manifestações nunca entra na trilha, que é
+  // append-only e a cascata de LGPD não alcança.
+  "settings.ouvidoria_updated",
+  // O link de pagamento do cliente final (#3509): registrar o link na conversa
+  // (`POST /conversations/[id]/pagamentos`) e o aviso do provedor que marca
+  // "pago" (`/webhooks/pagamento/[provedor]`). O metadata leva ids, provedor e
+  // valor — nunca o link: a trilha é append-only e a cascata de LGPD não a alcança.
+  "pagamento.link_registrado",
+  "pagamento.confirmado",
+  // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
+  // o evento, não o conteúdo — mesma regra de message.edited/revoked.
+  "message.reaction_sent",
+  // A mudança de STATUS de uma manifestação (#3611, fatia 3). O metadata leva
+  // `de`, `para`, `reabertura` e — só quando existe — o motivo da reabertura.
+  // NUNCA o texto do relato: `api_audit_log` é append-only e a cascata de LGPD
+  // não a alcança, então o dado sigiloso da ouvidoria não entra aqui. Este
+  // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
+  // aceitável: a única porta da escrita deixa rastro.
+  "ouvidoria.status_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
