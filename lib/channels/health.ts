@@ -172,6 +172,65 @@ function avisoDoDefeito(defeito: DefeitoDoNumero, apelido: string, idioma: Idiom
  */
 export const PREFIXO_EMPURRAO = "PUSH:";
 
+/**
+ * Quantas observações SEGUIDAS de queda antes de acreditar nela.
+ *
+ * ─── O defeito que isto existe para impedir ─────────────────────────────────
+ *
+ * Medido numa instalação real: a conexão oficial saiu de WORKING e voltou cinco
+ * minutos depois. Nesse intervalo o operador mandou duas mensagens, as duas
+ * foram para `queued` com `channel_session_not_working`, e nenhuma saiu nunca.
+ * Não houve queda de verdade: a pergunta ao provedor falhou UMA vez, e a
+ * varredura traduziu isso em queda na primeira tentativa.
+ *
+ * Uma pergunta que falha não é uma conexão caída. Com a varredura de 5 em 5
+ * minutos, exigir DUAS confirmações custa no pior caso ~5 minutos a mais para
+ * anunciar uma queda real — e evita anunciar a que não existe, que é a que
+ * derruba mensagem de cliente.
+ *
+ * ─── Por que 2, e não 3 ─────────────────────────────────────────────────────
+ *
+ * Porque o outro lado do erro também é caro: cada rodada a mais é tempo em que
+ * uma queda REAL segue sem aviso. Dois é o menor número que descarta o pisco
+ * isolado, que foi o padrão observado.
+ *
+ * A coluna `consecutive_health_fails` existe desde o desenho original e a spec
+ * descreve incrementá-la — nenhum código o fazia. Este é o consumidor que
+ * faltava; ela é zerada ao reconectar, e volta a zero em qualquer observação boa.
+ */
+export const CONFIRMACOES_PARA_QUEDA = 2;
+
+export interface JulgamentoDaQueda {
+  /** Acreditar na queda AGORA (só então o status vai ao banco e o aviso abre). */
+  confirmada: boolean;
+  /** O que gravar em `consecutive_health_fails`. */
+  contador: number;
+}
+
+/**
+ * Uma observação ruim confirma a queda, ou ainda é pisco?
+ *
+ * Observação BOA zera na hora — recuperação nunca espera confirmação: o custo de
+ * acreditar cedo numa volta é nenhum, e o de demorar é seguir barrando envio de
+ * um canal que já voltou.
+ *
+ * "Não deu para perguntar" (`reachable: false`) conta como ruim de propósito:
+ * do lado de quem atende, um provedor que não responde e um canal caído são a
+ * mesma coisa — ninguém recebe mensagem. O que muda é o texto do aviso, não se
+ * ele existe.
+ */
+export function julgarQueda(saude: SaudeObservada, contadorAtual: number): JulgamentoDaQueda {
+  const status = (saude.status ?? "").toUpperCase();
+  const ruim = !saude.reachable || (STATUS_QUE_AVISAM as readonly string[]).includes(status);
+
+  if (!ruim) return { confirmada: false, contador: 0 };
+
+  // Para no teto: a sessão caída não paga um UPDATE por rodada para um número
+  // que ninguém mais lê.
+  const contador = Math.min(contadorAtual + 1, CONFIRMACOES_PARA_QUEDA);
+  return { confirmada: contador >= CONFIRMACOES_PARA_QUEDA, contador };
+}
+
 export interface AvisoDeConexao {
   kind: "qr_rescan" | "channel_number_alert";
   severity: "warn" | "critical";

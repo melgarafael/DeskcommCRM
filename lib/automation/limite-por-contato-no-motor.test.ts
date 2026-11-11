@@ -22,7 +22,10 @@
  *   6. ⭐ DOIS DRENOS ao mesmo tempo — a corrida do ponto 1 do CR: a reserva da
  *      chave `(regra, contato)` é tomada ANTES de executar, então quem chega
  *      depois não executa e só registra o bloqueio. Sem ela, os dois drenos
- *      leem "nunca rodou" e a sequência sai duas vezes.
+ *      leem "nunca rodou" e a sequência sai duas vezes;
+ *   7. ⭐ a SEGUNDA FATIA da issue: `repetir_apos_horas` — "não repetir para o
+ *      mesmo contato por N horas" —, com relógio injetado e a janela medida no
+ *      banco (ver o bloco próprio no fim do arquivo).
  *
  * O banco é um dublê mínimo (`from().select()/insert()/update()`, `eq`,
  * `order`, `limit`, `maybeSingle`, e o `onConflict`/`ignoreDuplicates` do
@@ -33,7 +36,7 @@
  *     pnpm vitest run lib/automation/limite-por-contato-no-motor.test.ts
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 
@@ -113,9 +116,25 @@ function barreiraDeDoisDrenos() {
 
 type Linha = Record<string, unknown>;
 
+/** O filtro do PostgREST, aplicado como o banco aplicaria. */
+function casa(linha: Linha, filtro: Filtro): boolean {
+  const valor = linha[filtro.coluna];
+  if (filtro.op === "eq") return valor === filtro.valor;
+  if (filtro.op === "in") return (filtro.valor as unknown[]).includes(valor);
+  // `gte`: as datas do teste são ISO em UTC, então comparar texto é comparar
+  // instante.
+  return (
+    typeof valor === "string" &&
+    typeof filtro.valor === "string" &&
+    valor >= filtro.valor
+  );
+}
+
+type Filtro = { coluna: string; op: "eq" | "gte" | "in"; valor: unknown };
+
 function bancoFalso(tabelas: Record<string, Linha[]>) {
   function consulta(tabela: string) {
-    const filtros: Array<[string, unknown]> = [];
+    const filtros: Filtro[] = [];
     let limite: number | null = null;
     let inserindo: Linha | null = null;
     let atualizando: Linha | null = null;
@@ -130,14 +149,21 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
     let chaveUnica: string[] | null = null;
     let ignorarDuplicada = false;
     const guardadas = () => tabelas[tabela] ?? [];
-    const casadas = () => guardadas().filter((l) => filtros.every(([c, v]) => l[c] === v));
+    const casadas = () => guardadas().filter((l) => filtros.every((f) => casa(l, f)));
     async function executar() {
       if (inserindo) {
         const jaExiste =
           chaveUnica !== null &&
           guardadas().some((l) => chaveUnica!.every((c) => l[c] === inserindo![c]));
         if (jaExiste && ignorarDuplicada) return { data: [], error: null };
-        const linha = { id: `run-${guardadas().length + 1}`, ...inserindo };
+        // `created_at` tem default `now()` no banco: sem carimbá-lo aqui, a
+        // janela do intervalo (#2974 fatia 2) não teria o que comparar na linha
+        // que o PRÓPRIO motor acabou de gravar.
+        const linha = {
+          id: `run-${guardadas().length + 1}`,
+          created_at: new Date().toISOString(),
+          ...inserindo,
+        };
         (tabelas[tabela] ??= []).push(linha);
         return { data: [linha], error: null };
       }
@@ -172,7 +198,15 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
         return q;
       },
       eq: (c: string, v: unknown) => {
-        filtros.push([c, v]);
+        filtros.push({ coluna: c, op: "eq", valor: v });
+        return q;
+      },
+      gte: (c: string, v: unknown) => {
+        filtros.push({ coluna: c, op: "gte", valor: v });
+        return q;
+      },
+      in: (c: string, v: unknown[]) => {
+        filtros.push({ coluna: c, op: "in", valor: v });
         return q;
       },
       maybeSingle: async () => {
@@ -518,3 +552,177 @@ describe("contraprova sintética de texto pessoal no recibo", () => {
     expect(JSON.stringify(linha?.actions_result)).not.toContain("pessoa.sintetica@example.test");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// A SEGUNDA FATIA DO #2974 — O INTERVALO MÍNIMO POR CONTATO.
+//
+// "Não repetir para o mesmo contato por X horas" é o MESMO limite por contato
+// com outra resposta para "quando pode de novo": a de uma-vez pergunta se o
+// contato já passou por aqui ALGUMA VEZ; esta pergunta se ele passou nas
+// ÚLTIMAS N HORAS. O contador continua sendo o estado persistido
+// (`automation_rule_runs`), então a decisão sobrevive a reinício do worker.
+//
+// O RELÓGIO É INJETADO (`vi.setSystemTime` com `Date` falso, timers reais): a
+// janela é medida por `Date`, e medir 24 h de espera esperando 24 h não é teste.
+//
+// A pergunta desta fatia que o CR vai fazer: **que linha move a janela?** Só a
+// de uma execução que DE FATO aconteceu (`success`/`partial`). A linha do
+// próprio bloqueio é `failed` e não conta — se contasse, cada entrada do
+// contato rolaria a janela e o contato que volta toda hora nunca mais receberia
+// nada (o caso da issue virando "uma vez para sempre"). O caso "executa,
+// bloqueia 2 h depois, volta a executar às 25 h" prova exatamente isso.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** O instante fixo de todos os casos desta fatia. */
+const AGORA = new Date("2026-11-06T12:00:00.000Z");
+const HORA = 60 * 60 * 1000;
+
+/**
+ * Uma execução ANTERIOR desta regra para este contato, `horasAtras` horas atrás.
+ *
+ * `status` é parâmetro porque metade do desenho é sobre ele: só `success` e
+ * `partial` movem a janela; `failed` (o próprio bloqueio) e `adiado` não.
+ */
+function execucaoDeAntes(
+  horasAtras: number,
+  opcoes: { contactId?: string; status?: string } = {},
+): Linha {
+  const { contactId = CONTATO_A, status = "success" } = opcoes;
+  return {
+    id: `run-de-${horasAtras}h-${status}-${contactId.slice(0, 4)}`,
+    organization_id: ORG,
+    rule_id: REGRA,
+    event_id: null,
+    contact_id: contactId,
+    status,
+    actions_result: [],
+    created_at: new Date(AGORA.getTime() - horasAtras * HORA).toISOString(),
+  };
+}
+
+describe("o intervalo mínimo por contato: 'não repetir por N horas' (#2974)", () => {
+  beforeEach(() => {
+    // Date falso, timers REAIS: as promessas do motor (e o dublê de banco)
+    // continuam rodando no escalonador de verdade.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(AGORA);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("⭐ run do mesmo contato há 2 h com `repetir_apos_horas: 24` NÃO executa — e a decisão fica registrada", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+    tabelas.automation_rule_runs!.push(execucaoDeAntes(2));
+
+    const resultado = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    // A ação não roda dentro da janela...
+    expect(regrasQueRodaram, "a ação rodou dentro da janela de 24 h").toEqual([]);
+    // ...e o evento consumido diz POR QUE, com o nome da régua que decidiu.
+    expect(resultado).toEqual({
+      consumer_key: "automation-rules",
+      status: "ok",
+      detail: "intervalo_por_contato",
+    });
+
+    // A linha do bloqueio é o que a aba Atividade mostra.
+    const bloqueio = linhasDeExecucao(tabelas).at(-1)!;
+    expect(bloqueio.rule_id).toBe(REGRA);
+    expect(bloqueio.contact_id).toBe(CONTATO_A);
+    expect(bloqueio.status, "`skipped` conta junto de `failed` na doutrina do motor").toBe("failed");
+    expect(bloqueio.actions_result).toEqual([
+      { type: "call_webhook", status: "skipped", error: "intervalo_por_contato" },
+    ]);
+
+    // A regra NÃO rodou: o contador informativo não pode dizer que sim.
+    expect(tabelas.automation_rules![0]!.last_run_at).toBeUndefined();
+  });
+
+  it("⭐ run do mesmo contato há 25 h: a janela terminou e a regra roda normal", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+    tabelas.automation_rule_runs!.push(execucaoDeAntes(25));
+
+    const resultado = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    expect(regrasQueRodaram).toEqual([REGRA]);
+    expect(resultado.status).toBe("ok");
+    expect(resultado.detail).toBeUndefined();
+    expect(linhasDeExecucao(tabelas).at(-1)).toMatchObject({
+      contact_id: CONTATO_A,
+      status: "success",
+    });
+    expect(tabelas.automation_rules![0]!.run_count).toBe(1);
+  });
+
+  it("⭐ outro contato 2 h depois executa — o contador é por CONTATO, não por regra", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+    tabelas.automation_rule_runs!.push(execucaoDeAntes(2, { contactId: CONTATO_A }));
+
+    await runAutomationForEvent(cliente, leadCreated(LEAD_B));
+
+    expect(regrasQueRodaram, "o contador barrou um contato que nunca passou pela regra").toEqual([REGRA]);
+  });
+
+  it("⭐ a janela é medida no BANCO e no RELÓGIO: executa, bloqueia 2 h depois, volta a executar às 25 h", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+
+    await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+    expect(regrasQueRodaram, "a primeira passagem não executou").toEqual([REGRA]);
+
+    vi.setSystemTime(new Date(AGORA.getTime() + 2 * HORA));
+    const barrada = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+    expect(barrada.detail).toBe("intervalo_por_contato");
+    expect(regrasQueRodaram).toEqual([REGRA]);
+
+    // 25 h depois da EXECUÇÃO (23 h depois do bloqueio): se a linha do bloqueio
+    // contasse como execução, a janela teria rolado e este caso ficaria barrado
+    // para sempre — é o defeito que este passo mede.
+    vi.setSystemTime(new Date(AGORA.getTime() + 25 * HORA));
+    await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    expect(regrasQueRodaram, "a linha do próprio bloqueio rolou a janela").toEqual([REGRA, REGRA]);
+    expect(linhasDeExecucao(tabelas).map((l) => l.status)).toEqual(["success", "failed", "success"]);
+  });
+
+  it("⭐ com as DUAS chaves o intervalo vence — e o detalhe diz qual régua barrou", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24, uma_vez_por_contato: true }, true);
+    tabelas.automation_rule_runs!.push(execucaoDeAntes(2));
+
+    const barrada = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    expect(regrasQueRodaram).toEqual([]);
+    expect(barrada.detail, "a tela precisa saber QUAL opção barrou").toBe("intervalo_por_contato");
+
+    // A prova de que quem decidiu foi a JANELA: a chave permanente do "uma vez"
+    // não foi tomada. Se tivesse sido, a regra estaria morta para este contato.
+    expect(tabelas.automation_rule_contact_claims ?? []).toEqual([]);
+
+    // 25 h depois da execução registrada ela roda de novo — coisa que "uma vez
+    // por contato" nunca permitiria.
+    vi.setSystemTime(new Date(AGORA.getTime() + 23 * HORA));
+    await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+    expect(regrasQueRodaram).toEqual([REGRA]);
+  });
+
+  it.each([
+    ["texto", "sim"],
+    ["zero", 0],
+    ["negativo", -5],
+    ["acima do teto de 30 dias", 721],
+    ["fracionado", 1.5],
+  ] as Array<[string, unknown]>)(
+    "⭐ `repetir_apos_horas` inválido (%s) NÃO cala a regra: a régua falha ABERTA",
+    async (_nome, valor) => {
+      const { cliente, tabelas } = mundo({ repetir_apos_horas: valor }, true);
+      // Com um intervalo VÁLIDO, esta execução de 2 h atrás barraria a regra.
+      tabelas.automation_rule_runs!.push(execucaoDeAntes(2));
+
+      const resultado = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+      expect(regrasQueRodaram, "configuração quebrada calou a automação").toEqual([REGRA]);
+      expect(resultado.detail).toBeUndefined();
+    },
+  );
+});
+

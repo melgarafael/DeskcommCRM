@@ -252,6 +252,32 @@ async function limparFixtures(): Promise<void> {
   await admin.from("contacts").delete().in("id", ids);
 }
 
+/**
+ * Liga ou desliga a SUGESTÃO DE DUPLICADO PELO NOME nesta organização (#4138).
+ *
+ * Ela nasce desligada em toda organização — este spec é o do par parecido, então
+ * liga a opção no `beforeAll` e devolve o estado anterior no `afterAll`, para não
+ * deixar a organização do e2e com uma configuração que outro spec não esperava.
+ */
+async function ligarSugestaoPorNome(ligada: boolean): Promise<void> {
+  const { data, error } = await admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", creds.org_id)
+    .maybeSingle();
+  if (error) throw new Error(`organizations.settings: ${error.message}`);
+  const settings = ((data as { settings?: unknown } | null)?.settings ?? {}) as Record<string, unknown>;
+  const crm = (settings.crm ?? {}) as Record<string, unknown>;
+  const { error: erroGravar } = await admin
+    .from("organizations")
+    .update({ settings: { ...settings, crm: { ...crm, duplicados_por_nome: ligada } } })
+    .eq("id", creds.org_id);
+  if (erroGravar) throw new Error(`organizations.settings (gravar): ${erroGravar.message}`);
+}
+
+/** O estado da opção antes deste spec rodar — o `afterAll` devolve. */
+let sugestaoPorNomeAntes = false;
+
 test.describe("Contatos duplicados — juntar pela tela", () => {
   test.describe.configure({ timeout: 240_000 });
 
@@ -260,6 +286,15 @@ test.describe("Contatos duplicados — juntar pela tela", () => {
       execFileSync("npx", ["tsx", "scripts/seed-e2e-credentials.ts"], { stdio: "inherit" });
     }
     creds = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
+    // #4138: a sugestão por nome nasce DESLIGADA. Este spec é o do par parecido.
+    const { data: orgAntes } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", creds.org_id)
+      .maybeSingle();
+    const settingsAntes = ((orgAntes as { settings?: unknown } | null)?.settings ?? {}) as Record<string, unknown>;
+    sugestaoPorNomeAntes = ((settingsAntes.crm ?? {}) as Record<string, unknown>).duplicados_por_nome === true;
+    await ligarSugestaoPorNome(true);
     // Restos de uma execução anterior (worker reiniciado por vermelho) viram
     // grupos extras no diálogo e ruído na medição. Fora antes de semear.
     await limparFixtures();
@@ -323,6 +358,7 @@ test.describe("Contatos duplicados — juntar pela tela", () => {
 
   test.afterAll(async () => {
     await limparFixtures();
+    await ligarSugestaoPorNome(sugestaoPorNomeAntes);
   });
 
   test("a porta existe na tela de contatos e mostra os dois cadastros lado a lado", async ({

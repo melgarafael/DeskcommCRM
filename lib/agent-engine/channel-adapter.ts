@@ -65,7 +65,7 @@ export interface ChannelSendInput {
   /**
    * Presente = este envio é uma MÍDIA e o `body` é a legenda (pode ser vazio).
    *
-   * Duas procedências, um caminho só: `storagePath` é a imagem que já mora no
+   * Duas procedências, um caminho só: `storagePath` é a imagem ou o áudio que já mora no
    * Storage da conversa (hoje só a foto do catálogo usa — `agent/fotos-do-produto.ts`);
    * `url` é a mídia de um passo automático (#2734), apontada direto pelo operador.
    * Caminho, nunca bytes: quem assina a URL curta para o canal é o handler de
@@ -75,6 +75,11 @@ export interface ChannelSendInput {
     | {
         storagePath: string;
         mime: string;
+        /**
+         * Áudio × imagem de um arquivo que já mora na pasta da conversa (catálogo,
+         * apresentação). Ausente nas fotos do produto, que sempre foram imagem.
+         */
+        kind?: 'audio' | 'image';
         /**
          * Presente só quando o arquivo da conversa NÃO é imagem: material da
          * empresa (#4129) pode ser PDF/planilha e vai como DOCUMENTO. Ausente =

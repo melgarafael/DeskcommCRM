@@ -46,7 +46,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
-  "crm_get_conversation_history": { tokens: 203, motivo: BASE },
+  "crm_get_conversation_history": {
+    tokens: 240,
+    motivo:
+      "#4077: a descrição passou a dizer que cada mensagem traz o AUTOR (sent_by_user_id e sent_by_user_name) — sem isso a integração não sabia que o campo existia e atribuía a fala ao 'sistema'",
+  },
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
@@ -101,6 +105,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   // O peso é quase todo a descrição: é ela que ensina o integrador que o
   // arquivo NÃO é lido nem resumido. Medido na criação (2026-11-06), sem gordura.
   "crm_send_material": { tokens: 407, motivo: "material da empresa no caminho de mídia (#4129), medida na criação (2026-11-06)" },
+  "crm_publish_whatsapp_status": { tokens: 464, motivo: "ferramenta nova do módulo opcional status_whatsapp (#3463), medida na criação (2026-11-10); só é oferecida com o módulo ligado" },
   "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
   "crm_set_conversation_sector": { tokens: 383, motivo: "capacidade nova (#3881): a triagem da IA escolhe a FILA da conversa; a descrição precisa nomear os setores de exemplo e as recusas, senão o modelo tenta resolver fila com crm_assign_conversation (que é dono, não setor)" },
@@ -123,7 +128,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_draft_proposal": { tokens: 1059, motivo: BASE },
   "crm_request_human_handoff": { tokens: 583, motivo: BASE },
   "get_lead_context": { tokens: 46, motivo: BASE },
-  "send_message": { tokens: 368, motivo: "#4129 — o `material_id` (e o `.describe` que explica o anexo da empresa) entra no envio nativo; era 137 na linha de base, e o teto novo é a medição do PR, sem folga" },
+  "send_message": { tokens: 422, motivo: "Medição do merge (#4129 + Spec 25 R4): `material_id` e a descrição do anexo da empresa entram no envio nativo ANTES da `imagem_url`, cujo bloco já estava na main — 422 é o peso real dos dois, não a soma dos dois tetos" },
   "update_lead_state": { tokens: 240, motivo: BASE },
   "schedule_followup": { tokens: 200, motivo: BASE },
   "save_lead_note": { tokens: 229, motivo: BASE },
@@ -145,8 +150,13 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // modo `leitura_direta` — nunca junto de `search_knowledge`.
 // +638 com o material da empresa (#4129): 231 do `send_message` (o `material_id`
 // e a sua descrição) e 407 da capacidade de wire `crm_send_material`, que entra
-// no catálogo lido pelo integrador. Medido no merge com a main de 53bf3cad2d.
-const TETO_TOTAL = 30732;
+// no catálogo lido pelo integrador.
+// +54 com `imagem_url` no `send_message` (Spec 25 R4, #3276); +464 com
+// `crm_publish_whatsapp_status` (#3463), que só entra no catálogo com o módulo
+// `status_whatsapp` ligado; +37 na descrição de `crm_get_conversation_history`,
+// que passou a dizer o AUTOR da mensagem (#4077). O total é MEDIDO no merge com
+// a main de 9ada417a7 — os dois ganhos no `send_message` somam uma descrição só.
+const TETO_TOTAL = 31286;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

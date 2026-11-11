@@ -19,6 +19,8 @@ const TRATA = "trata";
 const CHAMADORES: Record<string, string> = {
   "app/api/v1/cron/agenda-reminder/route.ts": TRATA, // tests/unit/lembrete-pula-org-parada.test.ts
   "app/api/v1/cron/task-reminder/route.ts": TRATA, // app/api/v1/cron/task-reminder/route.test.ts (OrgNaoOperanteError no catch do WhatsApp)
+  "lib/agenda/encaixe-supabase.ts":
+    "configDaEspera já nega a org parada antes de oferecer; se a suspensão chegar no meio, o aviso devolve false e a vaga é solta, sem nada gravado como enviado",
   "lib/campanhas/rodada.ts": TRATA, // registrarExcecaoDoEnvio, tests/unit/suspensao-nao-dispara-campanha.test.ts
   "lib/prospecting/worker.ts": TRATA, // tests/unit/prospecting-worker.test.ts
   "lib/followup/enviar-texto-fixo.ts": TRATA, // lib/followup/enviar-texto-fixo.test.ts
@@ -40,6 +42,8 @@ const CHAMADORES: Record<string, string> = {
   "lib/mcp/tools/start-conversation.ts": "ferramenta MCP: o erro sobe ao cliente; o token da org parada já é recusado antes",
   "lib/inbox/encaminhar-mensagem.ts":
     "propaga o 403 org_suspended ao chamador da rota `forward`; nada é gravado — a linha do destino só nasce se o envio aceitar",
+  "lib/ouvidoria/whatsapp.ts":
+    "envio best-effort do fluxo: o 403 org_suspended (e qualquer falha de envio) vira log e o fluxo segue — sem fila, sem retentativa e sem desfecho gravado; a manifestação só nasce na confirmação",
 };
 
 const PORTA = "app/api/v1/messages/_handler.ts";

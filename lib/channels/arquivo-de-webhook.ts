@@ -51,7 +51,7 @@ const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token"]
  * recusado tinha mesmo assinatura errada, ou se o segredo é que estava errado —
  * e é assinatura, não credencial: não abre nada sozinha.
  */
-function cabecalhosSeguros(headers: Headers): Record<string, string> {
+export function cabecalhosSeguros(headers: Headers): Record<string, string> {
   const out: Record<string, string> = {};
   headers.forEach((valor, chave) => {
     if (PROIBIDOS.includes(chave.toLowerCase())) return;

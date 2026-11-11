@@ -81,6 +81,8 @@ export function SignupForm({
     },
   });
   const password = useWatch({ control, name: "password" });
+  const planoSelecionadoId = useWatch({ control, name: "cobranca_plan_id" });
+  const planoSelecionado = planos.find((plano) => plano.id === planoSelecionadoId);
 
   const onSubmit = (values: SignupInput & { full_name: string }) => {
     setServerError(null);
@@ -93,7 +95,7 @@ export function SignupForm({
           password: values.password,
           password_confirm: values.password_confirm,
         }
-      : values;
+      : { ...values, continuar_pagamento: planoSelecionado?.trial_dias === 0 };
     // O idioma desta tela e o fuso do navegador: a empresa nasce com eles
     // quando o e-mail for confirmado (`lib/auth/perfil-da-empresa-nova.ts`).
     void enviar(() => signUp(entrada, convite?.token, { idioma, fuso: fusoDoNavegador() }), (res) => {
@@ -190,6 +192,9 @@ export function SignupForm({
         <p className="text-sm text-muted-foreground">
           {t("Enviamos um link de confirmação para")} <strong>{sentTo}</strong>.{" "}
           {t("Abra o e-mail e clique no link para ativar sua conta.")}
+          {!convite && planoSelecionado?.trial_dias === 0 && (
+            <> {t("Seu plano está preservado. Depois da confirmação, continue para o pagamento.")}</>
+          )}
         </p>
       </div>
     );
@@ -241,11 +246,21 @@ export function SignupForm({
           <select id="cobranca_plan_id" className="h-10 w-full rounded-md border bg-background px-3 text-sm" {...register("cobranca_plan_id")}>
             {planos.map((plano) => (
               <option key={plano.id} value={plano.id}>
-                {plano.nome} — {new Intl.NumberFormat(undefined, { style: "currency", currency: "BRL" }).format(plano.preco_cents / 100)} / {plano.intervalo === "ano" ? t("ano") : t("mês")}
+                {plano.nome} — {new Intl.NumberFormat(idioma, { style: "currency", currency: "BRL" }).format(plano.preco_cents / 100)} / {plano.intervalo === "ano" ? t("ano") : t("mês")}
                 {plano.trial_dias > 0 ? ` · ${plano.trial_dias} ${t("dias de teste")}` : ` · ${t("sem período de teste")}`}
               </option>
             ))}
           </select>
+          {planoSelecionado && (
+            <div data-plan-context role="status" aria-live="polite" className="rounded-lg border bg-muted/30 p-3 text-sm">
+              <p className="text-xs text-muted-foreground">{t("Plano selecionado")}</p>
+              <p className="mt-1 font-semibold">{planoSelecionado.nome}</p>
+              <p className="mt-1 text-muted-foreground">
+                {new Intl.NumberFormat(idioma, { style: "currency", currency: "BRL" }).format(planoSelecionado.preco_cents / 100)}
+                {planoSelecionado.intervalo === "ano" ? " / " + t("ano") + " · " + t("pagamento anual de uma vez") : " / " + t("mês")}
+              </p>
+            </div>
+          )}
         </div>
       )}
       <div className="space-y-1.5">
@@ -336,7 +351,7 @@ export function SignupForm({
       )}
       {semResposta && <AvisoSemResposta />}
       <Button type="submit" className="w-full" disabled={isPending}>
-        {isPending ? t("Criando conta...") : t("Criar conta")}
+        {isPending ? t("Criando conta...") : t(!convite && planoSelecionado?.trial_dias === 0 ? "Criar conta e continuar para pagamento" : "Criar conta")}
       </Button>
     </form>
   );

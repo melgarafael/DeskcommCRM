@@ -39,6 +39,12 @@ const BUCKET_DA_CONVERSA = 'whatsapp-media';
 export const PASTA_DE_TESTE_DE_MIDIA = 'dry-run';
 
 export interface FotoParaEnvio {
+  /**
+   * Marca da foto do catálogo (main, apresentação). Opcional porque a MESMA
+   * cadeia de envio leva o documento do material da empresa (#4129), que não é
+   * imagem; quem monta foto sempre declara.
+   */
+  kind?: 'image';
   /** caminho em `whatsapp-media`, dentro da pasta da conversa */
   storagePath: string;
   mime: string;
@@ -135,7 +141,8 @@ export async function prepararFotosDoProduto(
   const fotos: FotoParaEnvio[] = [];
   for (const origem of deste) {
     const destino = `${input.tenantId}/${input.conversationId}/catalogo-${origem.split('/').pop()}`;
-    if (await copiar(origem, destino)) fotos.push({ storagePath: destino, mime: mimeDaFoto(origem) });
+    if (await copiar(origem, destino))
+      fotos.push({ kind: 'image', storagePath: destino, mime: mimeDaFoto(origem) });
   }
   return { ok: true, fotos, tinha: deste.length };
 }
