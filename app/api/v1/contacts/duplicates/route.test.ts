@@ -30,7 +30,7 @@ import { createClient } from "@/lib/supabase/server";
  * do usuário, que a policy de `merge_queue` esvazia para quem não é gestor) fica na
  * suíte de invariantes, onde há banco de verdade.
  */
-const dispensa = vi.hoisted(() => ({ pares: new Set<string>() }));
+const dispensa = vi.hoisted(() => ({ pares: new Set<string>(), chamadas: 0 }));
 
 /** O cliente do servidor da vez: é por ele, e não pela sessão, que o CPF é lido. */
 const servidor = vi.hoisted(() => ({ cliente: {} as unknown }));
@@ -40,7 +40,10 @@ vi.mock("@/lib/auth/require-role", () => ({ orgAtivaDaApi: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => servidor.cliente }));
 vi.mock("@/lib/contacts/dispensar-par", () => ({
-  lerParesDispensados: async () => new Set(dispensa.pares),
+  lerParesDispensados: async () => {
+    dispensa.chamadas += 1;
+    return new Set(dispensa.pares);
+  },
 }));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -128,6 +131,16 @@ function fakeSupabase(
       // A leitura do servidor não pagina: `await` direto na cadeia.
       builder.then = (resolver: (v: unknown) => unknown) =>
         Promise.resolve(falha ?? executar(null)).then(resolver);
+      // A leitura da ORGANIZAÇÃO (#4138) pede uma linha só: sem isto, o dublê
+      // devolveria a lista e a rota leria `settings` de um array.
+      builder.maybeSingle = () => {
+        const resposta = falha ?? executar(null);
+        return Promise.resolve({ ...resposta, data: (resposta.data ?? [])[0] ?? null });
+      };
+      builder.single = () => {
+        const resposta = falha ?? executar(null);
+        return Promise.resolve({ ...resposta, data: (resposta.data ?? [])[0] ?? null });
+      };
       builder.range = (inicio: number, fim: number) => {
         registro.faixas.push([inicio, fim]);
         return Promise.resolve(executar([inicio, fim]));
@@ -180,6 +193,7 @@ function corpo(res: Response): Promise<{ data: unknown; meta: Record<string, unk
 
 beforeEach(() => {
   dispensa.pares.clear();
+  dispensa.chamadas = 0;
   servidor.cliente = fakeSupabase({}).client;
   vi.mocked(loadAuthUser).mockResolvedValue({
     id: USER_ID,
@@ -283,15 +297,38 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
     linhas[9] = contato(10, { name: "Clínica Santos Odontologia", phone_number: "+553191110010" });
     linhas[19] = contato(20, {
       name: "Santos Odontologia Clínica Avançada",
-      phone_number: "+553191110020",
+      phone_number: "+553****0020",
     });
     return linhas;
   }
 
+  /** A organização pelo cliente do SERVIDOR, com a opção da #4138 no estado pedido. */
+  function comOpcao(ligada: boolean, contacts: Linha[] = cenario()) {
+    const { client } = fakeSupabase({
+      contacts,
+      organizations: [{ id: ORG_ID, settings: { crm: { duplicados_por_nome: ligada } } }],
+    });
+    servidor.cliente = client;
+    vi.mocked(createClient).mockResolvedValue(client as never);
+  }
+
+  it("⭐ opção DESLIGADA (o padrão): nenhum par por nome, e as dispensas nem são lidas", async () => {
+    // Sabotagem: chamar `encontrarParecidosPorNome` sem consultar a opção deixa o
+    // par na lista e este caso vermelho; ler `merge_queue` para nada quebra a
+    // asserção de `lerParesDispensados`.
+    comOpcao(false);
+
+    const json = await corpo(await chamar());
+    const grupos = json.data as Array<{ motivos: string[] }>;
+
+    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
+    expect(json.meta.sugestao_por_nome, "a tela precisa saber que a seção está desligada").toBe(false);
+    expect(dispensa.chamadas, "desligada, a dispensa não tem o que esconder").toBe(0);
+  });
+
   it("o par por nome vem com motivos nome_parecido, DEPOIS do grupo forte", async () => {
     // Sabotagem: concatenar os parecidos ANTES dos fortes deixa a ordem vermelha.
-    const { client } = fakeSupabase({ contacts: cenario() });
-    vi.mocked(createClient).mockResolvedValue(client as never);
+    comOpcao(true);
 
     const grupos = (await corpo(await chamar())).data as Array<{
       motivos: string[];
@@ -302,6 +339,7 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
     expect(grupos[1]!.contatos.map((c) => c.id)).toEqual(["contato-0010", "contato-0020"]);
     // O campo novo chega à tela, mesmo quando é nulo.
     expect(grupos[1]!.contatos[0]!.address_book_name).toBeNull();
+    expect(dispensa.chamadas, "ligada, a dispensa é lida").toBe(1);
   });
 
   it("par dispensado (com a ordem invertida) não aparece, e o papel de quem olha não muda isso", async () => {
@@ -316,13 +354,13 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
       idioma: "pt-BR",
       organizations: [{ organization_id: ORG_ID, organization_name: "Org", role: "viewer" }],
     } as never);
-    const { client } = fakeSupabase({ contacts: cenario() });
-    vi.mocked(createClient).mockResolvedValue(client as never);
+    comOpcao(true);
 
     const grupos = (await corpo(await chamar())).data as Array<{ motivos: string[] }>;
 
     expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
   });
+
 });
 
 /**
