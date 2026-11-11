@@ -32,13 +32,19 @@ import { prospectEnrichmentSchema } from "@/lib/prospecting/schema";
 import { lerPersonalizacao } from "@/lib/prospecting/personalizar";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { ALVO_DE_CONTATO, VINCULO_DE_CONTATO } from "@/app/api/v1/leads/[id]/contatos-relacionados/route";
 import { atalhosDoFunil } from "@/lib/leads/atalhos-do-card";
 import { camposDoFunil, camposPorEscopo, settingsDoEmbed } from "@/lib/leads/campos-do-funil";
 import { motivosDoFunil } from "@/lib/leads/motivos-de-perda-do-funil";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { extractBearer } from "@/lib/mcp/auth";
+import { loadAuthUser } from "@/lib/auth/server";
+import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 export const dynamic = "force-dynamic";
@@ -81,11 +87,24 @@ const DEMANDA_COLS =
   "id, revision, aberta_em, origem, estado, proximo_passo, proximo_passo_em, prazo_em";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: contactId } = await ctx.params;
+
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "contacts",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+    if (teto) return teto;
+    return responderCrmSummary(authz.supabase, authz.organizationId, contactId, requestId);
+  }
 
   const supabase = await createClient();
   const {
@@ -96,8 +115,35 @@ export async function GET(
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
+  const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  const ativa = await orgAtivaDaApi(authUser, requestId);
+  if (!ativa.ok) return ativa.response;
+  const activeOrg = ativa.org;
+  if (!activeOrg) {
+    return fail("no_active_org", t("No active organization."), 403, { requestId });
+  }
+
+  return responderCrmSummary(
+    supabase,
+    activeOrg.orgId,
+    contactId,
+    requestId,
+  );
+}
+
+/**
+ * O corpo do GET, igual nos dois ramos (sessão e token): quem decide o cliente
+ * do banco e a organização é o portão, aqui só se lê o resumo.
+ */
+async function responderCrmSummary(
+  supabase: SupabaseClient,
+  organizationId: string,
+  contactId: string,
+  requestId: string,
+): Promise<Response> {
   const { data: contactScope, error: scopeError } = await supabase.from("contacts")
-    .select("organization_id, is_anonymized, source_metadata").eq("id", contactId).maybeSingle();
+    .select("organization_id, is_anonymized, source_metadata").eq("id", contactId).eq("organization_id", organizationId).maybeSingle();
   if (scopeError) return fail("internal_error", scopeError.message, 500, { requestId });
   if (!contactScope) return fail("not_found", "Contato não encontrado.", 404, { requestId });
   // Candidates are worker-only. Authorize the contact through RLS first, then
@@ -108,7 +154,7 @@ export async function GET(
       const admin = createAdminClient();
       const candidato = await admin.from("prospecting_candidates")
         .select("data, created_at")
-        .eq("organization_id", contactScope.organization_id).eq("contact_id", contactId)
+        .eq("organization_id", organizationId).eq("contact_id", contactId)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (candidato.error) return { enrichment: null, enrichment_error: true };
       if (!candidato.data) return { enrichment: null, enrichment_error: false };
@@ -121,7 +167,7 @@ export async function GET(
       if (parsed.data.site) {
         const organizacao = await admin.from("organizations")
           .select("settings")
-          .eq("id", contactScope.organization_id)
+          .eq("id", organizationId)
           .maybeSingle();
         if (!organizacao.error) {
           personalizacao = lerPersonalizacao(
@@ -140,16 +186,10 @@ export async function GET(
   })();
   const anuncios = await anunciosDoContato(supabase, contactId, contactScope);
   // ─── Fatia 2a da #3669: número adicional também mostra o negócio ──────────
-  // O contato desta conversa pode ser um número ADICIONAL do cliente (um
-  // `crm_lead_links` com `target_kind='contact'`, `link_kind='related'`). Nesse
-  // caso o negócio tem `contact_id` do contato PRINCIPAL, e a leitura por
-  // `contact_id` devolveria vazio. Consultamos os vínculos antes e, se o
-  // contato não tiver negócio próprio ABERTO (a precedência da 1a: próprio
-  // aberto vence), trazemos os negócios em que ele aparece como relacionado.
   const { data: vinculosRelacionados, error: vinculosErr } = await supabase
     .from("crm_lead_links")
     .select("lead_id")
-    .eq("organization_id", contactScope.organization_id)
+    .eq("organization_id", organizationId)
     .eq("target_kind", ALVO_DE_CONTATO)
     .eq("link_kind", VINCULO_DE_CONTATO)
     .eq("target_id", contactId);
@@ -162,12 +202,10 @@ export async function GET(
   const { data: leadsProprios, error: leadsPropriosErr } = await supabase
     .from("crm_leads")
     .select(LEAD_COLS)
-    .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
+    .eq("contact_id", contactId).eq("organization_id", organizationId)
     .eq("crm_pipelines.is_archived", false)
     .order("updated_at", { ascending: false })
     .limit(3);
-  // Sem `if` vazio: a falha desta leitura entra na varredura de `falha` abaixo,
-  // junto das outras, para o painel ver um veredito só.
 
   // Próprio só FECHADO não vence: o cartão "(2º número)" duplicado que alguém
   // fechou depois de juntar esconderia o negócio vivo do cliente.
@@ -178,7 +216,7 @@ export async function GET(
     const { data: leadsRel, error } = await supabase
       .from("crm_leads")
       .select(LEAD_COLS)
-      .eq("organization_id", contactScope.organization_id)
+      .eq("organization_id", organizationId)
       .eq("crm_pipelines.is_archived", false)
       .in("id", idsRelacionados)
       .order("updated_at", { ascending: false })
@@ -196,33 +234,24 @@ export async function GET(
     supabase
       .from("orders")
       .select(ORDER_COLS)
-      .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
+      .eq("contact_id", contactId).eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
       .limit(3),
-    // 12 e não 5. A janela de 5 foi dimensionada quando a timeline não recebia
-    // troca de comando: agora um atendimento normal (assumiu → transferiu →
-    // liberou → voltou ao automático) gasta QUATRO linhas sozinho, e com 5 o
-    // painel mostraria só a movimentação de dono, empurrando para fora o que o
-    // negócio fez. 12 cabe sem rolagem própria na coluna de 296px.
     supabase
       .from("crm_lead_activities")
       .select(ACTIVITY_COLS)
-      .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
+      .eq("contact_id", contactId).eq("organization_id", organizationId)
       .order("performed_at", { ascending: false })
       .limit(12),
-    // Só as ABERTAS: demanda encerrada é histórico e já vive na timeline. Da
-    // mais antiga para a mais nova — quem espera há mais tempo aparece primeiro,
-    // mesma régua do Radar, para as duas telas não contarem histórias
-    // diferentes sobre o mesmo contato.
     supabase
       .from("demandas")
       .select(DEMANDA_COLS)
-      .eq("contact_id", contactId).eq("organization_id", contactScope.organization_id)
+      .eq("contact_id", contactId).eq("organization_id", organizationId)
       .is("fechada_em", null)
       .order("aberta_em", { ascending: true })
       .limit(5),
-    supabase.from("lead_notes").select("id, headline, body").eq("contact_id", contactId).eq("organization_id", contactScope.organization_id).order("created_at", { ascending: false }).limit(20),
-    supabase.from("demandas").select("id, desfecho, fechada_em").eq("contact_id", contactId).eq("organization_id", contactScope.organization_id).not("fechada_em", "is", null).order("fechada_em", { ascending: false }).limit(5),
+    supabase.from("lead_notes").select("id, headline, body").eq("contact_id", contactId).eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(20),
+    supabase.from("demandas").select("id, desfecho, fechada_em").eq("contact_id", contactId).eq("organization_id", organizationId).not("fechada_em", "is", null).order("fechada_em", { ascending: false }).limit(5),
   ]);
 
   // A falha SOBE. Engolir aqui devolveria lista vazia ao cliente e recriaria,

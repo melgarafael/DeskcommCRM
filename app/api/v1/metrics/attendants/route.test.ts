@@ -199,13 +199,16 @@ describe("GET /api/v1/metrics/attendants — mediana e recorte por etiqueta", ()
 
   it("`from` depois de `to` é 422, e a leitura não acontece", async () => {
     permitido();
-    vi.mocked(createClient).mockResolvedValue({ rpc: vi.fn() } as never);
+    // O portão (`resolveAuthDual`) abre o cliente de sessão antes da validação;
+    // o que não pode acontecer é a LEITURA.
+    const rpc = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
 
     const res = await chamar(
       "http://localhost/api/v1/metrics/attendants?from=2026-10-01T00:00:00.000Z&to=2026-09-01T00:00:00.000Z",
     );
     expect(res.status).toBe(422);
-    expect(createClient).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("falha na RPC vira 500 com a razão, nunca dado pela metade", async () => {

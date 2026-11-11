@@ -15,8 +15,9 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { chaveDeMapasSchema, lerChaveDeMapas, testarChaveDeMapas } from "@/lib/mapas/credencial";
 import { PONTO_DE_TESTE, textoDoEnderecoAproximado } from "@/lib/mapas/geocodificacao";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -30,9 +31,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", { requestId, resource: "ai_maps" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_maps",
+    role: "admin",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "ai_maps_testar", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   let bruto: unknown = {};
   try {
@@ -49,12 +58,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
-  const chave = parsed.data.api_key ?? (await lerChaveDeMapas(admin, authz.org.orgId));
+  const chave = parsed.data.api_key ?? (await lerChaveDeMapas(admin, authz.organizationId));
   if (!chave) {
     return fail("validation_failed", t("Cole uma chave para testar, ou grave uma antes."), 422, { requestId });
   }
 
-  const r = await testarChaveDeMapas(admin, authz.org.orgId, chave, PONTO_DE_TESTE);
+  const r = await testarChaveDeMapas(admin, authz.organizationId, chave, PONTO_DE_TESTE);
   if (r.ok) {
     return ok({ ok: true, endereco: textoDoEnderecoAproximado(r.endereco) }, { requestId });
   }

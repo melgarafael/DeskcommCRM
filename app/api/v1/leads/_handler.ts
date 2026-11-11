@@ -598,6 +598,7 @@ export async function createLeadHandler(
     .from("crm_stages")
     .select("id, pipeline_id, organization_id")
     .eq("id", input.stage_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (stageErr) {
@@ -641,7 +642,7 @@ export async function createLeadHandler(
       : camposDoCorpo;
   const settingsDaCriacao =
     opcoes.exigirCamposDaEtapa !== false || Object.keys(recorteInicial).length > 0
-      ? await settingsDoFunil(supabase, input.pipeline_id)
+      ? await settingsDoFunil(supabase, input.pipeline_id, ctx.organization_id)
       : null;
 
   // ── A OPÇÃO DO CAMPO DE SELEÇÃO (#3508) — o que veio vira o `value` ────────
@@ -751,6 +752,7 @@ export async function createLeadHandler(
     .from("crm_leads")
     .select("position_in_stage")
     .eq("stage_id", input.stage_id)
+    .eq("organization_id", ctx.organization_id)
     // O segundo argumento EXPLÍCITO (e não o default do supabase-js): os fakes
     // `FakeQuery` das suítes de invariante leem `opts.ascending` sem guarda, e
     // um `.order(col)` de um argumento só os derruba com `Cannot read
@@ -924,6 +926,7 @@ export async function createLeadHandler(
   await audit({
     action: "lead.created",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: ctx.organization_id,
     resourceType: "crm_lead",
     resourceId: (lead as { id: string }).id,
@@ -995,7 +998,7 @@ export async function updateLeadHandler(
       (existing as { custom_fields?: unknown }).custom_fields,
     );
     if (Object.keys(alterados).length > 0) {
-      const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
+      const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id, ctx.organization_id);
       // ── A OPÇÃO (#3508) — a mesma régua da criação, no MESMO recorte ──────
       //
       // Só o que MUDOU é julgado (ver o bloco acima), e o que casa vira o
@@ -1291,6 +1294,7 @@ export async function updateLeadHandler(
   await audit({
     action: "lead.updated",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: existing.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
@@ -1344,6 +1348,7 @@ export async function moveLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (selErr) {
@@ -1401,7 +1406,7 @@ export async function moveLeadHandler(
   // porque duas réguas para a mesma regra é como o defeito nasce.
   // Vem ANTES da régua de campos, como no arrasto: um encerrado que não reabre
   // não tem campo de etapa a pedir.
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id, ctx.organization_id);
   {
     const recusa = recusaReabertura({
       modo: modoDeReabertura(settings),
@@ -1439,6 +1444,7 @@ export async function moveLeadHandler(
       .from("crm_leads")
       .select("position_in_stage")
       .eq("stage_id", input.to_stage_id)
+      .eq("organization_id", ctx.organization_id)
       .order("position_in_stage", { ascending: mesmaEtapaJa ? false : true })
       .limit(1)
       .maybeSingle();
@@ -1719,6 +1725,7 @@ export async function moveLeadHandler(
   await audit({
     action: "lead.moved",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: lead.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
@@ -1776,6 +1783,7 @@ export async function retomarLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (selErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, selErr.message);
@@ -1839,6 +1847,7 @@ export async function retomarLeadHandler(
     .from("crm_pipelines")
     .select("settings")
     .eq("id", origemTipada.pipeline_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (funilErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, funilErr.message);

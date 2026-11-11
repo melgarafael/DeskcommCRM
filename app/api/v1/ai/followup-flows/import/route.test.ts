@@ -39,6 +39,7 @@ const ARQUIVO_SEM_GRAFO = { format: "followup_flow", version: 1, flow: { name: "
 beforeEach(() => {
   vi.clearAllMocks();
   deps.support.mockResolvedValue(null);
+  deps.client.mockResolvedValue({} as never);
 });
 
 describe("POST /followup-flows/import — problemas no idioma de quem importa", () => {
@@ -52,7 +53,7 @@ describe("POST /followup-flows/import — problemas no idioma de quem importa", 
     const corpo = (await res.json()) as { error: { code: string; details: { problemas: string[] } } };
     expect(corpo.error.code).toBe("invalid_flow_file");
     expect(corpo.error.details.problemas).toEqual([linha]);
-    expect(deps.client).not.toHaveBeenCalled();
+    expect(deps.client).toHaveBeenCalledTimes(1);
     expect(deps.admin).not.toHaveBeenCalled();
   });
 });

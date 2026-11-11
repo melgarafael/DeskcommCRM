@@ -18,9 +18,11 @@ import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
 import { fail, ok, noContent } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import { snoozeSchema } from "@/lib/schemas/snooze";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -34,12 +36,45 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
+  const { id } = await params;
+
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:write",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+    const { organizationId } = authz;
+    const supabase = authz.supabase;
+    const actorId = authz.actor.type === "user" ? authz.actor.id : null;
+    return responderSnoozePost(supabase, organizationId, id, req, requestId, t, actorId, authz.apiTokenId ?? null);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
-  const { id } = await params;
+  const supabase = await createClient();
+  return responderSnoozePost(supabase, org.orgId, id, req, requestId, t, user.id, null);
+}
 
+async function responderSnoozePost(
+  supabase: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  req: NextRequest,
+  requestId: string,
+  t: (texto: string) => string,
+  actorUserId: string | null,
+  actorApiTokenId: string | null,
+): Promise<Response> {
   const raw = await req.json().catch(() => null);
   const parsed = snoozeSchema.safeParse(raw);
   if (!parsed.success) {
@@ -53,12 +88,11 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const nowIso = new Date().toISOString();
   const snoozeUntil = new Date(Date.now() + duration_hours * 3600_000).toISOString();
 
-  const supabase = await createClient();
   const { data, error } = await supabase
     .from("conversations")
-    .update({ snooze_until: snoozeUntil, snoozed_at: nowIso, snoozed_by_user_id: user.id })
-    .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .update({ snooze_until: snoozeUntil, snoozed_at: nowIso, snoozed_by_user_id: actorUserId })
+    .eq("id", conversationId)
+    .eq("organization_id", organizationId)
     .select("id")
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -66,8 +100,9 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
 
   void audit({
     action: "conversation.snoozed",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId,
+    organizationId,
     resourceType: "conversation",
     resourceId: data.id,
     requestId,
@@ -81,18 +116,49 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
+  const { id } = await params;
+
+  const authHeader = _req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(_req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:write",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+    const { organizationId } = authz;
+    const supabase = authz.supabase;
+    const actorId = authz.actor.type === "user" ? authz.actor.id : null;
+    return responderSnoozeDelete(supabase, organizationId, id, requestId, t, actorId, authz.apiTokenId ?? null);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
-  const { id } = await params;
-
   const supabase = await createClient();
+  return responderSnoozeDelete(supabase, org.orgId, id, requestId, t, user.id, null);
+}
+
+async function responderSnoozeDelete(
+  supabase: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  requestId: string,
+  t: (texto: string) => string,
+  actorUserId: string | null,
+  actorApiTokenId: string | null,
+): Promise<Response> {
   const { data, error } = await supabase
     .from("conversations")
     .update({ snooze_until: null, snoozed_at: null, snoozed_by_user_id: null })
-    .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("id", conversationId)
+    .eq("organization_id", organizationId)
     .select("id")
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -100,8 +166,9 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
 
   void audit({
     action: "conversation.snooze_cancelled",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId,
+    organizationId,
     resourceType: "conversation",
     resourceId: data.id,
     requestId,
