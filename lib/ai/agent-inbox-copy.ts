@@ -64,6 +64,9 @@ export const KIND_LABEL = {
   // por que importa agora — quem lê a Central quer saber se pode trabalhar, não
   // qual evento chegou.
   channel_template_review: "Um modelo de mensagem mudou de situação na revisão",
+  // Diz o CANAL porque a frase acima não diz, e as duas podem coexistir na
+  // mesma empresa: quem lê precisa saber em qual tela procurar o modelo.
+  channel_template_review_direct: "Um modelo do WhatsApp oficial mudou de situação na revisão",
   channel_number_alert: "Seu número de WhatsApp precisa de atenção",
   // "ninguém cumpriu" é um veredito que NENHUMA linha de código apura — o
   // sistema não sabe se a promessa foi cumprida, e agendar um retorno não é

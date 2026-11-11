@@ -26,6 +26,7 @@
 import { describe, expect, it } from "vitest";
 
 import { listContactsHandler } from "@/app/api/v1/contacts/_handler";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 
@@ -69,18 +70,29 @@ async function filtroDaBusca(termo: string, soContato?: string): Promise<string>
 }
 
 /**
- * O `imatch` (regex) das colunas de NOME casado como o Postgres casa (`~*`).
- *
- * O padrão sai em regex desde a F2 da #1835 — as letras com grafias viram
- * classe (`C l [íîï…] n t [éêè…]`) —, então afirmar a string do padrão por
- * inteiro não diz mais nada sobre o comportamento. O que se afirma aqui é o
- * que o filtro FAZ, e o tradutor tem controle no arquivo irmão
- * (`busca-de-contatos-normaliza-termo.test.ts`).
+ * A condição de NOME casada como o Postgres casa: o valor da coluna gerada é
+ * `lower(f_unaccent(...))`, então `termoSemAcento` normaliza o valor e o `like`
+ * compara. O padrão do handler já sai com `*` (curinga do PostgREST).
  */
 function casaNoNome(filtro: string, nome: string): boolean {
-  return [...filtro.matchAll(/(\w+)\.imatch\.([^,]+)/g)]
-    .filter((m) => m[1] === "name" || m[1] === "display_name")
-    .some((m) => new RegExp(m[2]!, "i").test(nome));
+  const normalizado = termoSemAcento(nome);
+  return [...filtro.matchAll(/(busca_sem_acento(?:_sem_agenda)?)\.like\.([^,]+)/g)].some((m) =>
+    padraoCasa(m[2]!, normalizado),
+  );
+}
+
+/** O `LIKE` do PostgREST: `*` é curinga, `\%`/`\_` são literais. */
+function padraoCasa(padrao: string, valor: string): boolean {
+  const literal = (ch: string) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let re = "";
+  for (let i = 0; i < padrao.length; i++) {
+    const ch = padrao[i]!;
+    if (ch === "\\" && i + 1 < padrao.length) re += literal(padrao[++i]!);
+    else if (ch === "*" || ch === "%") re += ".*";
+    else if (ch === "_") re += ".";
+    else re += literal(ch);
+  }
+  return new RegExp(`^${re}$`).test(valor);
 }
 
 /** As colunas que a listagem exige serem NULL. */
@@ -97,32 +109,38 @@ async function colunasComIsNull(): Promise<string[]> {
 describe("busca de contatos", () => {
   it("procura no display_name — o nome que a tela mostra e o WhatsApp preenche", async () => {
     // O espaço do termo virou curinga na #1835 (a mesma régua da busca de
-    // conversas); o que este caso vigia é a COLUNA estar no OR, e por isso a
-    // asserção cita `display_name` por inteiro, com o padrão que hoje sai.
+    // conversas); o que este caso vigia é a COLUNA estar no OR. Desde a #3918
+    // (fatia 2) ela é a gerada `busca_sem_acento`, que carrega display_name,
+    // name e o nome da agenda.
     const filtro = await filtroDaBusca("Cliente Retorno");
-    expect(filtro).toContain("display_name.imatch.");
+    expect(filtro).toContain("busca_sem_acento.like.");
     expect(casaNoNome(filtro, "Cliente Retorno E2E"), `filtro=${filtro}`).toBe(true);
   });
 
   it("procura no nome da agenda do celular — a tela o mostra quando não há nome no CRM (#2439)", async () => {
+    // A coluna do banco carrega `display_name`, `name` E `address_book_name`;
+    // por isso o nome da agenda continua alcançável sem uma condição própria.
     const filtro = await filtroDaBusca("João obra");
-    expect(filtro).toContain("address_book_name.imatch.");
+    expect(filtro).toContain("busca_sem_acento.like.");
+    expect(casaNoNome(filtro, "João obra"), `filtro=${filtro}`).toBe(true);
   });
 
   it("a busca do agente durante a conversa NÃO olha o nome da agenda — ele é só da equipe (#2439)", async () => {
     // Com o contato do turno (`crm_search_contacts` em atendimento), casar na
     // agenda faria a ferramenta responder ao modelo se o rótulo interno contém
     // o termo — o mesmo vazamento que a guarda SO_DA_EQUIPE fecha no template.
+    // A coluna sem agenda é a que entra.
     const filtro = await filtroDaBusca("caloteira", "22222222-2222-4222-8222-222222222222");
     expect(filtro).not.toContain("address_book_name");
-    expect(filtro).toContain("display_name.imatch.");
+    expect(filtro).toContain("busca_sem_acento_sem_agenda.like.");
+    expect(filtro).not.toContain("busca_sem_acento.like.");
   });
 
   it("continua procurando nas colunas que já procurava", async () => {
     // A adição não pode custar as outras: quem cadastrou o contato à mão tem
     // `name`, e quem digita telefone espera achar por telefone.
     const filtro = await filtroDaBusca("Maria");
-    for (const coluna of ["name.imatch", "email.imatch", "phone_number.imatch"]) {
+    for (const coluna of ["busca_sem_acento.like", "email.ilike", "phone_number.ilike"]) {
       expect(filtro).toContain(coluna);
     }
   });
@@ -142,8 +160,8 @@ describe("busca de contatos", () => {
   });
 
   it("curinga do LIKE digitado pelo usuário é literal, não coringa", async () => {
-    // Em regex `%` e `_` não são curinga nenhum de natureza — o que se prova é
-    // o casamento nos dois sentidos: com o `%` de verdade e sem ele.
+    // No `like` o `%` e o `_` SÃO curinga de natureza — quem os torna literais
+    // é o escape do `termoSeguroParaOr`. Prova nos dois sentidos.
     const filtro = await filtroDaBusca("100%");
     expect(casaNoNome(filtro, "Plano 100%"), `filtro=${filtro}`).toBe(true);
     expect(casaNoNome(filtro, "Plano 1000"), `filtro=${filtro}`).toBe(false);
