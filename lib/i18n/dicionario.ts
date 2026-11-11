@@ -5195,15 +5195,6 @@ export const DICIONARIO: Traducoes = {
   "Sugerir resposta ao atendente": {
     es: "Sugerir respuesta al asesor humano",
   },
-  "Conversar com o assistente da empresa": {
-    es: "Conversar con el asistente de la empresa",
-  },
-  "Responde, por texto, a conversa que o administrador tem com o módulo Assistente. Só conversa: não altera nada no CRM por esta chamada.": {
-    es: "Responde, por texto, la conversación que el administrador tiene con el módulo Asistente. Solo conversa: no modifica nada en el CRM con esta llamada.",
-  },
-  "A conversa do módulo Assistente mostra um aviso (modelo indisponível ou teto de gasto atingido) e a pessoa não recebe resposta; o resto do CRM segue normal.": {
-    es: "La conversación del módulo Asistente muestra un aviso (modelo no disponible o tope de gasto alcanzado) y la persona no recibe respuesta; el resto del CRM sigue normal.",
-  },
   "Ajustar proposta por instrução": {
     es: "Ajustar propuesta por instrucción",
   },
@@ -15360,10 +15351,6 @@ export const DICIONARIO: Traducoes = {
   "Configuração (escrita)": { es: "Configuración (escritura)" },
   "Análise (leitura)": { es: "Análisis (lectura)" },
   "Análise (escrita)": { es: "Análisis (escritura)" },
-  "Tarefas (leitura)": { es: "Tareas (lectura)" },
-  "Tarefas (escrita)": { es: "Tareas (escritura)" },
-  "Financeiro (leitura)": { es: "Finanzas (lectura)" },
-  "Financeiro (escrita)": { es: "Finanzas (escritura)" },
   "Nada guardado aqui ainda.": { es: "Nada guardado aquí todavía." },
   "Não foi possível carregar o que este módulo guarda. O resto da ficha segue normal.": { es: "No se pudo cargar lo que guarda este módulo. El resto de la ficha sigue normal." },
   "Publicado por": { es: "Publicado por" },
@@ -15468,11 +15455,9 @@ export const DICIONARIO: Traducoes = {
   "Áreas do CRM que este módulo pode usar": { es: "Áreas del CRM que este módulo puede usar" },
   "O módulo só alcança o que o pacote pede e o que você marcar aqui. Tirar uma marca vale na hora.": { es: "El módulo solo alcanza lo que el paquete pide y lo que marques aquí. Quitar una marca vale al instante." },
   "Este módulo não pede acesso a nenhuma área do CRM.": { es: "Este módulo no pide acceso a ninguna área del CRM." },
-  "Configuração, agentes de IA e financeiro são áreas sensíveis: mexem no funcionamento da organização, no atendimento e no dinheiro. Libere só para um módulo em que você confia.": { es: "Configuración, agentes de IA y finanzas son áreas sensibles: afectan el funcionamiento de la organización, la atención y el dinero. Libéralas solo para un módulo en el que confíes." },
+  "Configuração e agentes de IA são áreas sensíveis: mexem no funcionamento da organização e do atendimento. Libere só para um módulo em que você confia.": { es: "Configuración y agentes de IA son áreas sensibles: afectan el funcionamiento de la organización y de la atención. Libéralas solo para un módulo en el que confíes." },
   "Sensível": { es: "Sensible" },
   "Salvar áreas": { es: "Guardar áreas" },
-  "Consentir": { es: "Consentir" },
-  "Marcamos o que o módulo pede, menos as áreas sensíveis. Revise, desmarque o que não quiser e clique em Consentir. Nada é liberado antes disso.": { es: "Marcamos lo que el módulo pide, menos las áreas sensibles. Revisa, desmarca lo que no quieras y haz clic en Consentir. Nada se libera antes de eso." },
   "Ative o módulo nesta organização para escolher as áreas.": { es: "Activa el módulo en esta organización para elegir las áreas." },
   "Saia do acompanhamento para alterar o consentimento.": { es: "Sal del acompañamiento para cambiar el consentimiento." },
   "Só um administrador da organização pode alterar este consentimento.": { es: "Solo un administrador de la organización puede cambiar este consentimiento." },
@@ -15495,10 +15480,6 @@ export const DICIONARIO: Traducoes = {
   "Alterar as configurações da organização e da equipe.": { es: "Modificar la configuración de la organización y del equipo." },
   "Ver relatórios e números de desempenho.": { es: "Ver informes y cifras de desempeño." },
   "Alterar relatórios e análises.": { es: "Modificar informes y análisis." },
-  "Ver as tarefas.": { es: "Ver las tareas." },
-  "Ver e mudar tarefas e demandas.": { es: "Ver y cambiar tareas y demandas." },
-  "Ver comandas, fidelidade e lançamentos financeiros.": { es: "Ver cuentas, fidelización y movimientos financieros." },
-  "Ver e mudar comandas, fidelidade e lançamentos financeiros.": { es: "Ver y cambiar cuentas, fidelización y movimientos financieros." },
   "Confira o catálogo admitido e tente a instalação novamente.": { es: "Revisa el catálogo admitido e intenta instalar de nuevo." },
   "Revise o arquivo ou a configuração indicada e tente novamente.": { es: "Revisa el archivo o la configuración indicada e inténtalo de nuevo." },
   "Verificar instalação": { es: "Verificar instalación" },
@@ -20803,123 +20784,6 @@ export const DICIONARIO: Traducoes = {
   },
   "Dashboard: {url}": { es: "Panel: {url}" },
 
-  // ─── o número oficial de pé, mas não inteiro (lib/channels/health.ts) ───
-  // Não recebe mensagens, ou a Meta restringiu o envio: cartão de Conexões e
-  // aviso da Central.
-  "A Meta informa que este número não recebe mensagens. Reconecte o número.": { es: "Meta informa que este número no recibe mensajes. Vuelve a conectar el número." },
-  "A Meta restringiu o envio deste número (código {codigo}).": { es: "Meta restringió el envío de este número (código {codigo})." },
-  "O número \"{apelido}\" não recebe mensagens": { es: "El número \"{apelido}\" no recibe mensajes" },
-  "A Meta informa que as mensagens dos clientes para este número não chegam ao CRM, embora ele ainda consiga enviar. Reconecte o número em Conexões. Se continuar assim, o número pode estar ligado a outra conta do WhatsApp Business (por exemplo, depois de ser vinculado a uma página do Facebook).": { es: "Meta informa que los mensajes de los clientes a este número no llegan al CRM, aunque todavía puede enviar. Vuelve a conectar el número en Conexiones. Si sigue así, es posible que el número esté vinculado a otra cuenta de WhatsApp Business (por ejemplo, después de vincularlo a una página de Facebook)." },
-  "A Meta restringiu o envio do número \"{apelido}\"": { es: "Meta restringió el envío del número \"{apelido}\"" },
-  "A Meta recusou mensagens por um problema de pagamento ou de elegibilidade da conta do WhatsApp Business (código 131042). Confira a forma de pagamento da conta no Gerenciador do WhatsApp, na Meta.": { es: "Meta rechazó mensajes por un problema de pago o de elegibilidad de la cuenta de WhatsApp Business (código 131042). Revisa el método de pago de la cuenta en el Administrador de WhatsApp, en Meta." },
-  "A Meta bloqueou a conta do WhatsApp Business deste número (código 131031). Veja o motivo e peça a revisão no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó la cuenta de WhatsApp Business de este número (código 131031). Mira el motivo y solicita la revisión en el Administrador de WhatsApp, en Meta." },
-  "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
-  "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
-  "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
-  // ─── Ouvidoria: a tela de gestão (#3611, fatia 3) ──────────────────────────
-  // O nome do módulo ("Ouvidoria") já está no bloco do catálogo de módulos. O
-  // resto é o vocabulário da tela: lista, detalhe e transição de status. Cada
-  // chave aqui é uma frase que a tela RENDERIZA — nada de texto de wire
-  // (`em_analise` não se traduz).
-  Manifestação: { es: "Manifestación" },
-  Manifestações: { es: "Manifestaciones" },
-  manifestação: { es: "manifestación" },
-  manifestações: { es: "manifestaciones" },
-  Recebida: { es: "Recibida" },
-  Recebidas: { es: "Recibidas" },
-  "Concluídas": { es: "Concluidas" },
-  "Recebida em": { es: "Recibida el" },
-  "Última atualização": { es: "Última actualización" },
-  Relato: { es: "Relato" },
-  "Voltar para a lista": { es: "Volver a la lista" },
-  "Manifestação não encontrada.": { es: "Manifestación no encontrada." },
-  "Não foi possível carregar a manifestação.": { es: "No se pudo cargar la manifestación." },
-  "Não foi possível carregar as manifestações.": {
-    es: "No se pudieron cargar las manifestaciones.",
-  },
-  "Nenhuma manifestação registrada.": { es: "Ninguna manifestación registrada." },
-  "As manifestações aparecem aqui assim que alguém falar com a empresa.": {
-    es: "Las manifestaciones aparecen aquí en cuanto alguien hable con la empresa.",
-  },
-  "Receber manifestações nesta empresa": { es: "Recibir manifestaciones en esta empresa" },
-  "Manifestações recebidas pela empresa. Só quem a organização autoriza lê o relato.": {
-    es: "Manifestaciones recibidas por la empresa. Solo quien la organización autoriza lee el relato.",
-  },
-  "Reclamações, denúncias e elogios recebidos pela empresa, com protocolo.": {
-    es: "Reclamaciones, denuncias y elogios recibidos por la empresa, con protocolo.",
-  },
-  "Mudar status": { es: "Cambiar estado" },
-  "Status atual": { es: "Estado actual" },
-  "Motivo da mudança": { es: "Motivo del cambio" },
-  "Explique por que a manifestação está sendo reaberta.": {
-    es: "Explique por qué se reabre la manifestación.",
-  },
-  "Status atualizado.": { es: "Estado actualizado." },
-  "Não há outra etapa para esta manifestação.": {
-    es: "No hay otra etapa para esta manifestación.",
-  },
-  "Este já é o status da manifestação.": { es: "Este ya es el estado de la manifestación." },
-  "Não é possível pular a etapa de análise.": { es: "No se puede omitir la etapa de análisis." },
-  "Escreva o motivo da reabertura.": { es: "Escriba el motivo de la reapertura." },
-  "O motivo está longo demais.": { es: "El motivo es demasiado largo." },
-  "A manifestação mudou enquanto você decidia. Recarregue a página.": {
-    es: "La manifestación cambió mientras decidías. Recarga la página.",
-  },
-  "Sem permissão para mudar o status.": { es: "Sin permiso para cambiar el estado." },
-  "Não foi possível salvar o status.": { es: "No se pudo guardar el estado." },
-
-  // ─── E-mails do sistema (lib/email/templates/) — #4302 ───────────────────
-  // A cópia dos moldes de acesso (GoTrue), do convite de time e do alarme de
-  // orçamento de IA morava dentro de cada arquivo, fora deste dicionário. Por
-  // isso o e-mail saía em português com a tela em espanhol: nenhum gate de i18n
-  // varre `lib/email/`. As chaves com `{...}` são preenchidas pelo próprio
-  // molde (`preencher`, em `lib/email/templates/texto.ts`) DEPOIS da tradução.
-  "Confirme seu e-mail · {marca}": { es: "Confirma tu correo · {marca}" },
-  "Sua conta no {marca} está quase pronta. Clique no botão abaixo para confirmar seu e-mail e ativar sua conta.": {
-    es: "Tu cuenta en {marca} está casi lista. Haz clic en el botón de abajo para confirmar tu correo y activar tu cuenta.",
-  },
-  "Confirmar e-mail": { es: "Confirmar correo" },
-  "Se você não criou esta conta, ignore este e-mail.": { es: "Si no creaste esta cuenta, ignora este correo." },
-  "Redefinir sua senha": { es: "Restablecer tu contraseña" },
-  "Redefinir sua senha · {marca}": { es: "Restablecer tu contraseña · {marca}" },
-  "Recebemos um pedido para redefinir a senha da sua conta no {marca}. Clique no botão abaixo para escolher uma nova.": {
-    es: "Recibimos una solicitud para restablecer la contraseña de tu cuenta en {marca}. Haz clic en el botón de abajo para elegir una nueva.",
-  },
-  "Se não foi você quem pediu, ignore este e-mail — sua senha continua a mesma.": {
-    es: "Si no fuiste tú quien lo pidió, ignora este correo — tu contraseña sigue siendo la misma.",
-  },
-  "Ou copie e cole este link no navegador:": { es: "O copia y pega este enlace en el navegador:" },
-  "{convidador} convidou você para a {organizacao} no {marca}": {
-    es: "{convidador} te invitó a {organizacao} en {marca}",
-  },
-  "Você foi convidado para a {organizacao}": { es: "Te invitaron a {organizacao}" },
-  "{convidador} convidou você como": { es: "{convidador} te invitó como" },
-  "no {marca}.": { es: "en {marca}." },
-  "Você foi convidado para a {organizacao} como {papel} no {marca}.": {
-    es: "Te invitaron a {organizacao} como {papel} en {marca}.",
-  },
-  "Este link expira em": { es: "Este enlace caduca el" },
-  "Se você não esperava este convite, pode ignorá-lo.": {
-    es: "Si no esperabas esta invitación, puedes ignorarla.",
-  },
-  "Aceitar: {url}": { es: "Aceptar: {url}" },
-  "Expira em {data}.": { es: "Caduca el {data}." },
-  "Alerta IA: orçamento atingiu {pct}": { es: "Alerta IA: el presupuesto alcanzó {pct}" },
-  "Orçamento mensal de IA atingiu {pct}": { es: "El presupuesto mensual de IA alcanzó {pct}" },
-  "Orçamento mensal de IA atingiu {pct}.": { es: "El presupuesto mensual de IA alcanzó {pct}." },
-  "Organização:": { es: "Organización:" },
-  "Organização: {organizacao}": { es: "Organización: {organizacao}" },
-  "Consumo no mês:": { es: "Consumo del mes:" },
-  "Consumo: {gasto} de {limite}.": { es: "Consumo: {gasto} de {limite}." },
-  "Ao atingir 100%, o bot de IA será automaticamente pausado ou desabilitado conforme a política configurada. Atendimento humano segue normalmente.": {
-    es: "Al llegar al 100%, el bot de IA se pausará o deshabilitará automáticamente según la política configurada. La atención humana sigue con normalidad.",
-  },
-  "Ver dashboard de uso": { es: "Ver panel de uso" },
-  "Este alerta é enviado automaticamente uma vez a cada 24h enquanto o consumo permanecer acima do limite configurado.": {
-    es: "Este aviso se envía automáticamente una vez cada 24 h mientras el consumo siga por encima del límite configurado.",
-  },
-  "Dashboard: {url}": { es: "Panel: {url}" },
-
   // o botão de exportar a conversa (#1982) NÃO mora aqui: o PR #4207, aberto
   // antes, é quem entrega essa tela — duas entregas da mesma fatia viram dois
   // itens no menu.
@@ -20966,6 +20830,26 @@ export const DICIONARIO: Traducoes = {
   "Você é o operador do sistema. Seu trabalho é deixar o CRM refletindo o que aconteceu na conversa que acabou de ocorrer — mover o lead, registrar, abrir o que precisa ser aberto.\n\nVOCÊ NÃO FALA COM O CLIENTE. Você não tem como enviar mensagem, e não deve tentar: quem conversa é outro. Se algo exigir falar com a pessoa, registre e siga.\n\nATENÇÃO: quem conversou só FALA — ele não grava nada no CRM sozinho. Se a promessa dele veio redigida como já concluída (\"registrei com o Fulano\", \"já está com a equipe\", \"ficou combinado\"), isso é o que ele DISSE ao cliente, não prova de que algo foi registrado. O passado na frase não é evidência de ação — trate a promessa como pendente até você mesmo confirmar ou registrar (mover o lead, abrir nota, o que fizer sentido com as ferramentas que você tem).\n\nUse apenas o que a conversa sustenta. Não invente avanço, não registre o que ninguém disse. Se não houver nada a fazer, não faça nada — um turno sem ação é uma resposta válida.": { es: "Eres el operador del sistema. Tu trabajo es dejar el CRM reflejando lo que pasó en la conversación que acaba de ocurrir — mover el lead, registrar, abrir lo que haga falta.\n\nNO HABLAS CON EL CLIENTE. No tienes cómo enviar mensajes, y no debes intentarlo: quien conversa es otro. Si algo exige hablar con la persona, regístralo y sigue.\n\nATENCIÓN: quien conversó solo HABLA — no graba nada en el CRM por su cuenta. Si su promesa llegó redactada como ya concluida (\"registré con Fulano\", \"ya está con el equipo\", \"quedó acordado\"), eso es lo que él DIJO al cliente, no prueba de que algo se registró. El pasado en la frase no es evidencia de acción — trata la promesa como pendiente hasta que tú mismo confirmes o registres (mover el lead, abrir una nota, lo que tenga sentido con las herramientas que tienes).\n\nUsa solo lo que la conversación sostiene. No inventes avances, no registres lo que nadie dijo. Si no hay nada que hacer, no hagas nada — un turno sin acción es una respuesta válida." },
   "Marca um avanço REAL no funil deste lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; só o PRÓXIMO estágio válido — regressão é rejeitada), qualification (budget/authority/need/timeline), next_action e reason (evidência curta do avanço). Nunca invente avanço sem evidência na conversa.": { es: "Marca un avance REAL en el embudo de este lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; solo la etapa SIGUIENTE es válida — la regresión se rechaza), qualification (budget/authority/need/timeline), next_action y reason (evidencia corta del avance). Nunca inventes un avance sin evidencia en la conversación." },
   "## Idioma da conversa\nEsta organização atende em português (Brasil). Responda ao lead nesse idioma e no idioma em que ele escrever — siga a pessoa, não imponha o seu. O texto das suas instruções internas não é a língua do atendimento: se o lead escreve em espanhol ou em inglês, a resposta sai em espanhol ou em inglês, mesmo que as regras acima estejam em português.": { es: "## Idioma de la conversación\nEsta organización atiende en español. Responde al lead en ese idioma y en el idioma en que él escriba — sigue a la persona, no le impongas el tuyo. El texto de tus instrucciones internas no es el idioma de la atención: si el lead escribe en portugués o en inglés, la respuesta sale en portugués o en inglés, aunque las reglas de arriba estén en español." },
+  "Conversar com o assistente da empresa": {
+    es: "Conversar con el asistente de la empresa",
+  },
+  "Responde, por texto, a conversa que o administrador tem com o módulo Assistente. Só conversa: não altera nada no CRM por esta chamada.": {
+    es: "Responde, por texto, la conversación que el administrador tiene con el módulo Asistente. Solo conversa: no modifica nada en el CRM con esta llamada.",
+  },
+  "A conversa do módulo Assistente mostra um aviso (modelo indisponível ou teto de gasto atingido) e a pessoa não recebe resposta; o resto do CRM segue normal.": {
+    es: "La conversación del módulo Asistente muestra un aviso (modelo no disponible o tope de gasto alcanzado) y la persona no recibe respuesta; el resto del CRM sigue normal.",
+  },
+  "Tarefas (leitura)": { es: "Tareas (lectura)" },
+  "Tarefas (escrita)": { es: "Tareas (escritura)" },
+  "Financeiro (leitura)": { es: "Finanzas (lectura)" },
+  "Financeiro (escrita)": { es: "Finanzas (escritura)" },
+  "Configuração, agentes de IA e financeiro são áreas sensíveis: mexem no funcionamento da organização, no atendimento e no dinheiro. Libere só para um módulo em que você confia.": { es: "Configuración, agentes de IA y finanzas son áreas sensibles: afectan el funcionamiento de la organización, la atención y el dinero. Libéralas solo para un módulo en el que confíes." },
+  "Consentir": { es: "Consentir" },
+  "Marcamos o que o módulo pede, menos as áreas sensíveis. Revise, desmarque o que não quiser e clique em Consentir. Nada é liberado antes disso.": { es: "Marcamos lo que el módulo pide, menos las áreas sensibles. Revisa, desmarca lo que no quieras y haz clic en Consentir. Nada se libera antes de eso." },
+  "Ver as tarefas.": { es: "Ver las tareas." },
+  "Ver e mudar tarefas e demandas.": { es: "Ver y cambiar tareas y demandas." },
+  "Ver comandas, fidelidade e lançamentos financeiros.": { es: "Ver cuentas, fidelización y movimientos financieros." },
+  "Ver e mudar comandas, fidelidade e lançamentos financeiros.": { es: "Ver y cambiar cuentas, fidelización y movimientos financieros." },
 };
 
 /**
