@@ -20,7 +20,9 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { logger } from "@/lib/logger";
+
+import { CANAIS_QUE_RESPONDEM_ANTES, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -31,6 +33,12 @@ import {
 import { sincronizarSaudeDaConexao } from "./health";
 import { lerEnvelopeMeta } from "./meta/envelope";
 import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
+import {
+  MOTIVO_CONTATO_ANONIMIZADO,
+  MOTIVO_TITULAR_APAGADO,
+  perguntarTitularesApagadosNoLote,
+  type ApagadosNoLote,
+} from "./meta/titular-apagado";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
 import {
@@ -41,7 +49,12 @@ import {
 } from "./zernio/avisos";
 import { aplicarEdicaoZernio, ingestZernioInbound } from "./zernio/ingest";
 import { lerEnvelopeZernio } from "./zernio/envelope";
-import { parseZernioEdicao, verifyZernioSignature } from "./zernio/webhook";
+import {
+  parseZernioEdicao,
+  parseZernioInbound,
+  verifyZernioSignature,
+  type ZernioInboundMessage,
+} from "./zernio/webhook";
 import type { ChannelProvider } from "./types";
 
 /** Curto demais para ser segredo — placeholder ou lixo de decrypt. */
@@ -201,6 +214,91 @@ export async function handleInboundWebhook(
   }
 }
 
+/**
+ * RESPONDER ANTES DE PROCESSAR — quais eventos, de qual canal.
+ *
+ * ─── O defeito, medido numa instalação real (27/10/2026) ────────────────────
+ *
+ * O provedor intermediado dá por falha a entrega que não recebe resposta em 5 s
+ * e reentrega. A ingestão de uma mensagem faz ~30 idas sequenciais ao banco
+ * (contato, conversa, mensagem, carimbo, negócio, follow-up, despacho do
+ * agente) e, no pino, o endereço aproximado (até 2,5 s). Em 30
+ * dias, 368 de 1.304 mensagens entregues tiveram ao menos uma tentativa vencida
+ * (no pico, p50 3,6 s e p90 4,6 s na 1ª tentativa). Nenhuma se perdeu — o
+ * processamento terminava e a reentrega batia no `23505` —, mas cada vencida
+ * rodava a ingestão de novo, e o vencimento é o que sobra para perder a
+ * mensagem no dia em que a reentrega também falhar.
+ *
+ * Então a mensagem nova é arquivada, aceita e respondida; a ingestão roda
+ * depois da resposta (`_entrada-do-canal.ts`), e o que ficar no meio — o
+ * contêiner reiniciou — o cron `webhook-replay` reprocessa pelo arquivo.
+ *
+ * ─── Por que SÓ mensagem nova, e não todo evento ───────────────────────────
+ *
+ * Mensagem nova é o único evento cuja repetição o banco absorve sozinho:
+ * `unique (organization_id, external_id)` faz a segunda vez virar `23505`. Os
+ * outros continuam respondendo depois de processar, como antes, porque o
+ * reprocessamento atrasado de cada um tem dono e tem custo:
+ *
+ *   - estado do número e revisão de modelo: o último que chega vence. Um
+ *     `suspenso` reprocessado minutos depois de um `conectado` deixaria o canal
+ *     marcado fora do ar estando no ar;
+ *   - edição e apagamento: a edição mais velha reprocessada por cima da nova
+ *     devolveria o texto antigo;
+ *   - desfecho de envio (`entregue`/`lida`): só protege `read` de rebaixar, e
+ *     um `sent` atrasado desceria o tique de `delivered`.
+ *
+ * Nenhum deles é o que vencia: são poucas idas ao banco cada um.
+ *
+ * Vale só para o canal intermediado de WhatsApp. O de redes sociais divide a
+ * rota, mas ficou como estava: o arquivo dele não grava (o CHECK de
+ * `webhook_events_log.provider` não conhece o valor), e sem arquivo não há o
+ * que reprocessar — responder antes perderia a mensagem.
+ */
+export const EVENTOS_QUE_RESPONDEM_ANTES = ["message.received", "message.sent"] as const;
+
+/** Os canais cuja entrada responde antes de processar (ver acima). A lista mora em `./capabilities.ts`. */
+export { CANAIS_QUE_RESPONDEM_ANTES };
+
+/**
+ * Este evento é respondido ANTES de processar? Puro: decide pelo canal e pelo
+ * corpo, sem banco. Corpo fora do contrato responde depois, como sempre — a
+ * recusa (400, com o campo nomeado) precisa chegar ao provedor.
+ */
+export function processaDepoisDeResponder(provider: string, rawBody: string): boolean {
+  if (!CANAIS_QUE_RESPONDEM_ANTES.includes(provider)) return false;
+  const leitura = lerEnvelopeZernio(rawBody);
+  if (!leitura.ok) return false;
+  const evento = leitura.envelope.event;
+  return typeof evento === "string" && (EVENTOS_QUE_RESPONDEM_ANTES as readonly string[]).includes(evento);
+}
+
+/**
+ * Processa um evento que a entrada JÁ aceitou — assinatura e conta conferidas
+ * antes da resposta, e a aceitação gravada no arquivo (`valid_signature`).
+ *
+ * É a mesma ingestão de `handleInboundWebhook`, sem reconferir a assinatura: o
+ * reprocessamento lê o corpo do arquivo, onde o segredo de quem o assinou (o da
+ * sessão ou o da instalação) não está gravado. A prova é a própria linha, que
+ * só o servidor escreve.
+ */
+export async function processarEventoAceito(
+  admin: SupabaseClient,
+  input: { session: InboundWebhookInput["session"]; rawBody: string; retomada?: boolean },
+): Promise<InboundWebhookOutcome> {
+  if (!CANAIS_QUE_RESPONDEM_ANTES.includes(input.session.provider)) {
+    return { ok: false, code: "provider_mismatch", message: "canal não responde antes de processar" };
+  }
+  return zernioEventoConferido(admin, input.session, input.rawBody, input.retomada);
+}
+
+/** A mensagem deste corpo aceito; `null` quando o corpo não é legível ou não traz uma. */
+export function mensagemDaEntradaAceita(rawBody: string): ZernioInboundMessage | null {
+  const leitura = lerEnvelopeZernio(rawBody);
+  if (!leitura.ok) return null;
+  return parseZernioInbound(leitura.envelope);
+}
+
 async function zernioInbound(
   admin: SupabaseClient,
   input: InboundWebhookInput,
@@ -217,6 +315,24 @@ async function zernioInbound(
   if (!verifyZernioSignature(input.rawBody, assinatura, input.secret)) {
     return { ok: false, code: "unauthorized", message: "bad_signature" };
   }
+
+  return zernioEventoConferido(admin, input.session, input.rawBody);
+}
+
+/**
+ * O evento deste canal, com a assinatura JÁ conferida por quem chama.
+ *
+ * Separado de `zernioInbound` para que a entrada que responde antes de
+ * processar (`processarEventoAceito`) e o reprocessamento do arquivo passem pela
+ * MESMA ingestão que a resposta síncrona — e não por uma cópia.
+ */
+async function zernioEventoConferido(
+  admin: SupabaseClient,
+  session: InboundWebhookInput["session"],
+  rawBody: string,
+  retomada = false,
+): Promise<InboundWebhookOutcome> {
+  const input = { session, rawBody };
 
   // ─── O contrato do fio, ANTES de qualquer leitura ─────────────────────────
   //
@@ -337,6 +453,7 @@ async function zernioInbound(
     organizationId: input.session.organization_id,
     channelSessionId: input.session.id,
     payload,
+    retomada,
   });
   return { ok: true, body: { ...r } };
 }
@@ -378,6 +495,15 @@ async function datafyInbound(
   const eventos = parseMetaWebhook(leitura.envelope);
   const desfechos: string[] = [];
   const agora = new Date().toISOString();
+  /**
+   * A pergunta do apagado a pedido é do LOTE (uma consulta para todos os
+   * contatos desta entrega, migration 9321). `undefined` = ainda não perguntou;
+   * `null` = perguntou e falhou — aí cada evento cai na pergunta individual da
+   * ingestão, que falha fechada sem parar o lote.
+   */
+  let apagadosDaAgenda: ApagadosNoLote | null | undefined;
+  let puladosPorTitularApagado = 0;
+  let puladosPorContatoAnonimizado = 0;
 
   for (const e of eventos) {
     // Mesma régua da rota do canal oficial: evento carimbado com outra conta é
@@ -419,11 +545,33 @@ async function datafyInbound(
         desfechos.push("outro_numero");
         continue;
       }
-      const r = await ingestMetaAppContactSync(admin, e, {
-        organizationId: orgId,
-        channelSessionId: input.session.id,
-      });
+      if (apagadosDaAgenda === undefined) {
+        const lote = await perguntarTitularesApagadosNoLote(
+          admin,
+          orgId,
+          eventos.filter((x) => x.kind === "app_contact_sync").map((x) => x.phone),
+        );
+        apagadosDaAgenda = lote.erro ? null : lote.apagados;
+        if (lote.erro) {
+          logger.error("[meta.ingest] a pergunta do titular apagado no lote falhou", {
+            organization_id: orgId,
+            erro: lote.erro,
+          });
+        }
+      }
+      const r = await ingestMetaAppContactSync(
+        admin,
+        e,
+        { organizationId: orgId, channelSessionId: input.session.id },
+        apagadosDaAgenda ?? undefined,
+      );
       desfechos.push(`contato:${r.status}`);
+      if (r.status === "ignored" && r.reason === MOTIVO_TITULAR_APAGADO) {
+        puladosPorTitularApagado += 1;
+      }
+      if (r.status === "ignored" && r.reason === MOTIVO_CONTATO_ANONIMIZADO) {
+        puladosPorContatoAnonimizado += 1;
+      }
       continue;
     }
     if (e.kind === "message_status") {
@@ -451,6 +599,16 @@ async function datafyInbound(
       continue;
     }
     desfechos.push("ignorado");
+  }
+
+  // O que ficou de fora por LGPD não some em silêncio — `outcomes` só diz
+  // `contato:ignored`. Só o contador, nunca o telefone.
+  if (puladosPorTitularApagado > 0 || puladosPorContatoAnonimizado > 0) {
+    logger.info("[meta.ingest] contatos da agenda não sincronizados por LGPD", {
+      organization_id: orgId,
+      pulados_por_titular_apagado: puladosPorTitularApagado,
+      pulados_por_contato_anonimizado: puladosPorContatoAnonimizado,
+    });
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };

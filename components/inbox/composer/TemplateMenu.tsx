@@ -1,6 +1,7 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
 import type { GrupoDeRespostas, MessageTemplate } from "@/hooks/inbox/useMessageTemplates";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { grupoDaResposta } from "@/lib/templates/grupos";
 
 /** Estado do slash-menu a partir do texto do composer. Puro (testável). */
@@ -33,13 +34,20 @@ export function filtrarRespostas(
   query: string,
   grupos: readonly GrupoDeRespostas[] = [],
 ): MessageTemplate[] {
-  const q = query.trim().toLowerCase();
+  // A conta é a do repo, não uma nova: `termoSemAcento` (`lib/inbox/termo-de-busca`)
+  // é a mesma régua da busca do Inbox e a que o banco espelha em `f_unaccent`.
+  //
+  // ⚠️ Os DOIS LADOS passam por ela. Normalizar só o rótulo resolveria metade
+  // dos casos: quem digita `Orçamento` continuaria sem achar a resposta
+  // cadastrada como "Orcamento". O que a tela MOSTRA não é tocado — o `title`
+  // devolvido é o do cadastro, com acento; a normalização morre aqui dentro.
+  const q = termoSemAcento(query.trim());
   if (!q) return [...templates];
   return templates.filter((template) => {
-    if (template.title.toLowerCase().includes(q)) return true;
-    if ((template.shortcut ?? "").toLowerCase().includes(q)) return true;
+    if (termoSemAcento(template.title).includes(q)) return true;
+    if (termoSemAcento(template.shortcut ?? "").includes(q)) return true;
     const grupo = grupoDaResposta(template, grupos);
-    return grupo ? grupo.name.toLowerCase().includes(q) : false;
+    return grupo ? termoSemAcento(grupo.name).includes(q) : false;
   });
 }
 

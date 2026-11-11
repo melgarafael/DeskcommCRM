@@ -53,7 +53,8 @@
  * A MESMA função decide o push do servidor (`push.handler.ts`) e o aviso
  * dentro do app (rota `conversations/[id]/aviso-de-mensagem`, lida por
  * `useInboundMessageAlerts`). Grupos (`message.group_received`) e avisos da
- * Central NÃO passam por aqui — continuam indo para a organização inteira.
+ * Central NÃO passam por aqui. A passagem para pessoa usa só
+ * `responsaveisDaConversa`, sem somar os administradores (`./push-dos-avisos.ts`).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 

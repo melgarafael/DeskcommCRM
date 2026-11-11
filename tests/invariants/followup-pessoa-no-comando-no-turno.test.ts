@@ -27,6 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
 import { aplicarPessoaNoComandoAoTurno } from "@/lib/followup/pessoa-no-comando-no-turno";
+import { isLeadInHandoff } from "@/lib/agent-engine/agent/human-handoff";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
 
 import { criarOrigemDeFollowup } from "./followup-service-origin";
@@ -85,7 +86,12 @@ async function atribuir(conversa: string, para: string | null, motivo: "claim" |
   ]);
 }
 
-async function cenario(politica: "pause" | "cancel" | "allow", comando: Comando) {
+async function cenario(
+  politica: "pause" | "cancel" | "allow",
+  comando: Comando,
+  /** #3974 — a opção por fluxo; `false` é o comportamento de sempre. */
+  enviarComDono = false,
+) {
   const { rows: c } = await pool.query<{ id: string }>(
     `insert into contacts (organization_id, display_name, force_human) values ($1, 'Cliente', $2) returning id`,
     [ORG, comando === "force_human"],
@@ -106,9 +112,9 @@ async function cenario(politica: "pause" | "cancel" | "allow", comando: Comando)
     [ORG, JSON.stringify(GRAFO)],
   );
   const { rows: p } = await pool.query<{ id: string }>(
-    `insert into followup_flow_pointers (organization_id, name, status, active_version_id, handoff_policy, trigger_config)
-     values ($1, $2, 'active', $3, $4, '{"kind":"manual"}'::jsonb) returning id`,
-    [ORG, `Fluxo ${Math.random()}`, v[0]!.id, politica],
+    `insert into followup_flow_pointers (organization_id, name, status, active_version_id, handoff_policy, send_when_assigned, trigger_config)
+     values ($1, $2, 'active', $3, $4, $5, '{"kind":"manual"}'::jsonb) returning id`,
+    [ORG, `Fluxo ${Math.random()}`, v[0]!.id, politica, enviarComDono],
   );
   const { rows: e } = await pool.query<{ id: string }>(
     `insert into followup_enrollments
@@ -137,8 +143,12 @@ async function eventos(id: string) {
 
 const UMA_HORA = 60 * 60 * 1000;
 
-const aplicar = (s: { inscricao: string; contato: string }, agora = new Date(), no = NO) =>
-  aplicarPessoaNoComandoAoTurno(pool, { organizationId: ORG, enrollmentId: s.inscricao, nodeId: no, contactId: s.contato }, agora);
+const aplicar = (s: { inscricao: string; contato: string }, agora = new Date(), no = NO, passoDeTexto = true) =>
+  aplicarPessoaNoComandoAoTurno(
+    pool,
+    { organizationId: ORG, enrollmentId: s.inscricao, nodeId: no, contactId: s.contato, passoDeTexto },
+    agora,
+  );
 
 async function semRastro(s: { inscricao: string }) {
   expect((await inscricao(s.inscricao)).status).toBe("active");
@@ -215,5 +225,112 @@ describe("a política de handoff do fluxo na hora do turno, com uma pessoa no co
     const s = await cenario("cancel", "assumida");
     expect(await aplicar(s, new Date(), "outro-no")).toBeNull();
     await semRastro(s);
+  });
+});
+
+/**
+ * #3974 — A OPÇÃO POR FLUXO "enviar mesmo com a conversa atribuída a uma pessoa".
+ *
+ * O que a medição da issue mostrou: 28 inscrições, 2 clientes atendidos e 7
+ * canceladas com `pessoa_no_comando` já na primeira mensagem. O vendedor com a
+ * conversa atribuída é o caso NORMAL, não a exceção — o follow-up existia e
+ * morria aqui.
+ *
+ * Estes casos prendem as duas metades: desligada (padrão) o comportamento é o de
+ * hoje, byte a byte; ligada, a posse da conversa deixa de derrubar o passo. O
+ * que a opção NÃO vence continua preso no mesmo lugar — e a IA continua calada,
+ * porque `bot_silenced_until` não é tocado por nenhum caminho daqui.
+ */
+describe("#3974 — a opção por fluxo 'enviar mesmo com a conversa atribuída'", () => {
+  it("RED literal: fluxo SEM a opção + conversa com dono → cancelada por pessoa_no_comando", async () => {
+    const s = await cenario("cancel", "assumida", false);
+    expect(await aplicar(s)).toEqual({ kind: "cancelada" });
+    expect(await inscricao(s.inscricao)).toMatchObject({
+      status: "cancelled",
+      outcome: "handoff",
+      cancel_reason: "pessoa_no_comando",
+    });
+    expect((await eventos(s.inscricao)).map((x) => x.event_type)).toEqual(["reactivity_handoff_cancel"]);
+  });
+
+  it("GREEN: fluxo COM a opção + conversa com dono → o passo SEGUE e nada é registrado como cancelado", async () => {
+    const s = await cenario("cancel", "assumida", true);
+    expect(await aplicar(s)).toBeNull();
+    const e = await inscricao(s.inscricao);
+    expect(e.status).toBe("active");
+    expect(e.cancel_reason).toBeNull();
+    expect(e.outcome).toBeNull();
+    expect(e.completed_at).toBeNull();
+    expect(await eventos(s.inscricao)).toEqual([]);
+    // A prova de que a opção NÃO acordou a IA: o silêncio continua de pé.
+    expect(await isLeadInHandoff(pool, ORG, s.contato)).toBe(true);
+  });
+
+  it("opção ligada + pause: o passo SEGUE (não adia) — é o mesmo desfecho do allow, sem mudar a política", async () => {
+    const s = await cenario("pause", "assumida", true);
+    expect(await aplicar(s)).toBeNull();
+    await semRastro(s);
+    expect(await isLeadInHandoff(pool, ORG, s.contato)).toBe(true);
+  });
+
+  it("opção ligada + force_human: o handoff do CONTATO continua vencendo — a política ainda cancela", async () => {
+    const s = await cenario("cancel", "force_human", true);
+    expect(await aplicar(s)).toEqual({ kind: "cancelada" });
+    expect(await inscricao(s.inscricao)).toMatchObject({
+      status: "cancelled",
+      cancel_reason: "pessoa_no_comando",
+    });
+    expect((await eventos(s.inscricao)).map((x) => x.event_type)).toEqual(["reactivity_handoff_cancel"]);
+  });
+
+  it("opção ligada + silêncio de 5 min SEM dono: é alguém digitando agora — adia, não libera", async () => {
+    const s = await cenario("pause", "silencio_5min", true);
+    const agora = new Date();
+    const r = await aplicar(s, agora);
+    expect(r?.kind).toBe("adiada");
+    expect((r as { ate: Date }).ate.getTime()).toBeLessThanOrEqual(agora.getTime() + 5 * 60 * 1000 + 1000);
+    await semRastro(s);
+  });
+
+  it("opção ligada + conversa atribuída pelo rodízio (sem silêncio): segue, como já seguia", async () => {
+    const s = await cenario("cancel", "rodizio", true);
+    expect(await aplicar(s)).toBeNull();
+    await semRastro(s);
+  });
+
+  it("opção ligada + ninguém no comando: nada muda", async () => {
+    const s = await cenario("cancel", "ninguem", true);
+    expect(await aplicar(s)).toBeNull();
+    await semRastro(s);
+  });
+
+  it("opção ligada + turno de outro nó: não mexe na inscrição", async () => {
+    const s = await cenario("cancel", "assumida", true);
+    expect(await aplicar(s, new Date(), "outro-no")).toBeNull();
+    await semRastro(s);
+  });
+
+  // O passo de IA não aproveita a opção: liberado, ele seguiria para um turno
+  // que o silêncio do dono veta (`runAgentTurn` sai sem enviar), o desfecho seria
+  // `skipped` e o fluxo avançaria. Sem a liberação, vale a política de sempre.
+  it("opção ligada + passo de IA + pause: adia, como sem a opção — não pula o passo", async () => {
+    const s = await cenario("pause", "assumida", true);
+    const agora = new Date();
+    expect(await aplicar(s, agora, NO, false)).toEqual({ kind: "adiada", ate: new Date(agora.getTime() + UMA_HORA) });
+    await semRastro(s);
+  });
+
+  it("opção ligada + passo de IA + cancel: cancela por pessoa_no_comando, como sem a opção", async () => {
+    const s = await cenario("cancel", "assumida", true);
+    expect(await aplicar(s, new Date(), NO, false)).toEqual({ kind: "cancelada" });
+    expect(await inscricao(s.inscricao)).toMatchObject({ status: "cancelled", cancel_reason: "pessoa_no_comando" });
+  });
+
+  it("opção ligada + a pessoa devolveu (Liberar): segue, sem precisar da opção", async () => {
+    const s = await cenario("cancel", "assumida", true);
+    await atribuir(s.conversa, null, "release");
+    expect(await aplicar(s)).toBeNull();
+    await semRastro(s);
+    expect(await isLeadInHandoff(pool, ORG, s.contato)).toBe(false);
   });
 });

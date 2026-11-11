@@ -19,6 +19,7 @@ import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { limparModelosDeOutraConta } from "./modelos-de-outra-conta";
 import {
   apagarWebhook,
   contaEstaNoPerfil,
@@ -203,6 +204,8 @@ export interface PartnerSession {
   phoneNumber: string | null;
   displayName: string | null;
   status: string | null;
+  /** O defeito de um número de pé, gravado pelo vigia de saúde (`./defeito-do-numero.ts`). */
+  statusReason: string | null;
   webhookPathToken: string | null;
   hasApiKey: boolean;
   archivedAt: string | null;
@@ -215,7 +218,7 @@ export interface PartnerSession {
 }
 
 const COLUNAS =
-  "id, zernio_account_id, phone_number, display_name, status, webhook_path_token, zernio_token_encrypted, zernio_credencial_da_instalacao, zernio_profile_id, zernio_webhook_id";
+  "id, zernio_account_id, phone_number, display_name, status, status_reason, webhook_path_token, zernio_token_encrypted, zernio_credencial_da_instalacao, zernio_profile_id, zernio_webhook_id";
 
 function toPartnerSession(row: Record<string, unknown> | null): PartnerSession | null {
   if (!row) return null;
@@ -225,6 +228,7 @@ function toPartnerSession(row: Record<string, unknown> | null): PartnerSession |
     phoneNumber: (row.phone_number as string) ?? null,
     displayName: (row.display_name as string) ?? null,
     status: (row.status as string) ?? null,
+    statusReason: (row.status_reason as string) ?? null,
     webhookPathToken: (row.webhook_path_token as string) ?? null,
     hasApiKey: !!row.zernio_token_encrypted,
     archivedAt: (row.archived_at as string) ?? null,
@@ -301,7 +305,24 @@ export async function savePartnerSession(
       .update(linha)
       .eq("id", input.existingId)
       .eq("organization_id", input.organizationId);
-    return { error: error?.message ?? null, id: error ? null : input.existingId };
+    if (error) return { error: error.message, id: null };
+
+    // ─── A CONEXÃO TROCOU DE CONTA? OS MODELOS DA ANTERIOR NÃO FICAM ────────
+    //
+    // Medido numa instalação real: o dono reconectou a MESMA linha de conexão
+    // apontando para outra conta do provedor (outro número), e a aba "Modelos do
+    // parceiro" seguiu listando os modelos aprovados da conta ANTERIOR.
+    //
+    // A limpeza vem DEPOIS da gravação, e só com a gravação aceita: uma troca
+    // recusada (conta já ligada a outra conexão, limite do plano) deixa a
+    // conexão onde estava, e aqueles modelos seguem sendo dela. Apagá-los antes
+    // perderia também o modelo escolhido no aviso e no lembrete, que a FK zera.
+    await limparModelosDeOutraConta(admin, {
+      organizationId: input.organizationId,
+      sessionId: input.existingId,
+      accountId: input.accountId,
+    });
+    return { error: null, id: input.existingId };
   }
   const { data, error } = await admin
     .from("channel_sessions")

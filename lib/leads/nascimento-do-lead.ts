@@ -61,9 +61,14 @@ import { ORIGEM_DO_WHATSAPP } from "@/lib/channels/origem-do-negocio";
 import { lerRegrasDeCliente } from "@/lib/contacts/regras-de-cliente";
 import { ehContatoInterno, lerTagsInternas } from "@/lib/contacts/tags-internas";
 import { ehContatoDaEquipe, lerTagsDaEquipe } from "@/lib/contacts/tags-da-equipe";
-import { ehIdentificadorTecnico, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
+import {
+  ehIdentificadorTecnico,
+  rotuloDoContato,
+  SEM_NOME,
+} from "@/lib/contacts/rotulo-do-contato";
 
 import { decidirPelaVenda, lerVendaAnterior } from "./cliente-pela-venda";
+import { reabrirPerdidoRecente } from "./reabrir-perdido";
 import { emitLeadActivity } from "./activity-emitter";
 import { removerProvaMetaLeadSubmitted } from "./prova-meta-lead-submitted";
 
@@ -118,11 +123,19 @@ export type MotivoSemLead =
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
   | "pos_venda" // #3644: comprou dentro da janela de pós-venda — a conversa não é demanda
+  // #4076: o negócio PERDIDO recente voltou a aberto — a conversa é a MESMA
+  // demanda, não uma nova. Não é "nenhum card": `leadId` vem preenchido.
+  | "reaberto"
   | "erro"; // qualquer falha de escrita
 
 export type NascimentoDoLead =
   | { criado: true; leadId: string; pipelineId: string; stageId: string }
-  | { criado: false; motivo: MotivoSemLead; detalhe?: string };
+  /**
+   * `leadId` só vem em `motivo: "reaberto"` (#4076): o card existia e voltou a
+   * estar aberto. Quem chama NÃO deve tratá-lo como criação — o `lead.created`
+   * não é emitido, porque nada nasceu.
+   */
+  | { criado: false; motivo: MotivoSemLead; detalhe?: string; leadId?: string };
 
 export interface DadosDoNascimento {
   organizationId: string;
@@ -353,6 +366,13 @@ async function destinoDaCampanha(
  * contato, novas mensagens alimentam o que já existe. Quando ele fecha (ganho ou
  * perdido) e a pessoa volta a escrever, nasce outro — que é o comportamento
  * certo: é uma demanda nova.
+ *
+ * ⚠️ UMA EXCEÇÃO, e ela é opt-in (#4076): o perdido de MINUTOS atrás. O autor da
+ * issue mediu 5 de 7 perdas virando card vazio em até 85 minutos, quase sempre
+ * por uma mensagem de despedida — a demanda não morreu, a conversa é a mesma.
+ * Com `settings.reabrir_perdido_dias` ligado no funil, o card PERDIDO dentro da
+ * janela volta a `aberto` (mesmo `id`, histórico intacto) em vez de nascer
+ * outro. Desligado — o padrão de todo funil de hoje —, nada muda aqui.
  */
 export async function garantirLeadDaConversa(
   db: SupabaseClient,
@@ -372,7 +392,9 @@ export async function garantirLeadDaConversa(
     // `first_service_at` viaja no select que JÁ existe: decidir o funil não custa
     // uma consulta a mais no caminho quente da ingestão. É por isso que o fato
     // mora numa coluna de `contacts`, e não é derivado da agenda a cada inbound.
-    .select("is_blocked,is_personal,display_name,name,phone_number,source,source_metadata,first_service_at,tags")
+    .select(
+      "is_blocked,is_personal,display_name,name,phone_number,source,source_metadata,first_service_at,tags",
+    )
     .eq("organization_id", organizationId)
     .eq("id", contactId)
     .maybeSingle();
@@ -465,8 +487,7 @@ export async function garantirLeadDaConversa(
     return { criado: false, motivo: "pos_venda", detalhe: pelaVenda.motivo ?? undefined };
   }
 
-  const ehCliente =
-    (contato?.first_service_at != null && regras.pelaAgenda) || pelaVenda.cliente;
+  const ehCliente = (contato?.first_service_at != null && regras.pelaAgenda) || pelaVenda.cliente;
   // A CAMPANHA ganha do padrão quando declara funil (migration 0378): é a
   // escolha mais específica, e quem montou a campanha sabe onde quer medir o
   // resultado dela. Campanha sem funil declarado, ou conversa que não nasceu de
@@ -481,6 +502,43 @@ export async function garantirLeadDaConversa(
       )
     : await funilDeEntrada(db, organizationId, ehCliente);
   if ("erro" in destino) return { criado: false, motivo: destino.erro };
+
+  // 3c · #4076 · o perdido de MINUTOS atrás não vira card vazio.
+  //
+  // Vem DEPOIS do pós-venda (3b) de propósito: aquela recusa é "a conversa não
+  // abre negócio nenhum", e reabrir um card ali criaria justamente o card que a
+  // regra de pós-venda acabou de recusar. Vem antes do insert (4), porque a
+  // decisão é entre reabrir e criar — e é aqui que o histórico comercial fica
+  // no card certo.
+  //
+  // `null` é "siga como hoje": opção desligada, nenhum perdido, perdido fora da
+  // janela, etapa de volta indisponível ou falha de leitura. O card novo é o
+  // desfecho seguro; não criar nada faria a pessoa sumir.
+  const reaberto = await reabrirPerdidoRecente(db, {
+    organizationId,
+    contactId,
+    conversationId,
+    pipelineId: destino.pipelineId,
+    stageIdDeEntrada: destino.stageId,
+  });
+  if (reaberto) {
+    logger.info("[nascimento-do-lead] negócio perdido reaberto — a conversa é a mesma demanda", {
+      organization_id: organizationId,
+      contact_id: contactId,
+      conversation_id: conversationId,
+      lead_id: reaberto.leadId,
+      pipeline_id: destino.pipelineId,
+      stage_id: reaberto.stageId,
+      perdido_em: reaberto.perdidoEm,
+      janela_dias: reaberto.dias,
+    });
+    return {
+      criado: false,
+      motivo: "reaberto",
+      detalhe: `janela de ${reaberto.dias} dias`,
+      leadId: reaberto.leadId,
+    };
+  }
 
   // 4 · o card.
   //

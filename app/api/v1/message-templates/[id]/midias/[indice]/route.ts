@@ -17,7 +17,7 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -74,7 +74,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   }
 
   const corpo = await objeto.arrayBuffer();
-  return new Response(corpo, {
+  return comIdDaRequisicao(new Response(corpo, {
     status: 200,
     headers: {
       "Content-Type": mimeDaMidia(midia.storage_path),
@@ -84,5 +84,5 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
       // os bytes da imagem antiga sob a URL da nova (prova pela tela do #2704).
       "Cache-Control": "private, no-store",
     },
-  });
+  }), requestId);
 }

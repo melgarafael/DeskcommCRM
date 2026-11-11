@@ -27,6 +27,7 @@ vi.mock("@/lib/notifications/web_push", () => ({
   enviarPushDaOrg: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
   enviarPushAoUsuario: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
   enviarPushAQuemVeAConversa: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
+  enviarPushDaEtapaAQuemVeONegocio: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
 }));
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
@@ -44,7 +45,12 @@ import {
   tituloComValor,
   valorDoNegocio,
 } from "@/lib/notifications/push-de-venda";
-import { enviarPushAQuemVeAConversa, enviarPushAoUsuario, enviarPushDaOrg } from "@/lib/notifications/web_push";
+import {
+  enviarPushAQuemVeAConversa,
+  enviarPushAoUsuario,
+  enviarPushDaEtapaAQuemVeONegocio,
+  enviarPushDaOrg,
+} from "@/lib/notifications/web_push";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -121,6 +127,7 @@ beforeEach(() => {
   vi.mocked(enviarPushDaOrg).mockClear();
   vi.mocked(enviarPushAoUsuario).mockClear();
   vi.mocked(enviarPushAQuemVeAConversa).mockClear();
+  vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mockClear();
 });
 
 describe("as peças do texto", () => {
@@ -240,7 +247,7 @@ describe("o push que chega ao celular", () => {
     );
     const r = await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i1" }, "agent_inbox_item"));
     expect(r.status).toBe("ok");
-    const payload = vi.mocked(enviarPushDaOrg).mock.calls[0]![1];
+    const payload = vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]![2].ampla;
     expect(payload).toEqual({
       title: "Negocio entró en «Pagado» · R$ 1.250,00",
       body: "Hoy en esta etapa: 2 (R$ 1.500,00)",
@@ -251,8 +258,12 @@ describe("o push que chega ao celular", () => {
     expect(JSON.stringify(payload)).not.toContain("Maria");
   });
 
+  // #3981 — a régua deixou de ser o `visibility_mode` da organização e passou a
+  // ser quem VÊ aquele negócio (`fn_can_view_lead`, no banco). O texto do push
+  // da etapa não é mais um só: o handler entrega três, e o funil escolhe por
+  // destinatário.
   it.each([[{}], [{ visibility_mode: "own" }]])(
-    "etapa que avisa fora do modo 'all' (%j): nem valor nem soma, porque o aviso vai a todo atendente",
+    "etapa que avisa em carteira fechada (%j): o gerente que VÊ o negócio recebe o valor e o «Hoje nesta etapa»",
     async (settings) => {
       const db = banco(
         {
@@ -270,15 +281,115 @@ describe("o push que chega ao celular", () => {
       );
       vi.mocked(createAdminClient).mockReturnValue(db as never);
       await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i3" }, "agent_inbox_item"));
-      const payload = vi.mocked(enviarPushDaOrg).mock.calls[0]![1];
-      expect(payload).toMatchObject({
-        title: "Negócio entrou em «Pago»",
-        body: corpoDoAvisoDeEtapa("pt-BR"),
-        corpoSemPrevia: corpoDoAvisoDeEtapa("pt-BR"),
-      });
-      expect(plano(JSON.stringify(payload))).not.toContain("R$");
+
+      // O que SAI no push para quem vê o negócio, seja qual for o funil: o
+      // gerente desta organização de carteira fechada. Antes da #3981 a lista
+      // tinha um payload só, sem valor nenhum.
+      const enviados = [
+        ...vi.mocked(enviarPushDaOrg).mock.calls.map((c) => c[1]),
+        ...vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls.map((c) => c[2].ampla),
+      ];
+      expect(enviados.map((p) => plano(p.title))).toContain("Negócio entrou em «Pago» · R$ 1.250,00");
+
+      const [, leadId, textos, papel] = vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]!;
+      expect([leadId, papel]).toEqual(["l1", "agent"]);
+      // O que a gestão recebe: o número LITERAL, na moeda do negócio.
+      expect(plano(textos.ampla.title)).toBe("Negócio entrou em «Pago» · R$ 1.250,00");
+      expect(plano(textos.ampla.body)).toBe("Hoje nesta etapa: 2 (R$ 1.500,00)");
+      expect(textos.ampla.corpoSemPrevia).toBe(corpoDoAvisoDeEtapa("pt-BR"));
+      expect(db.filtros).toContainEqual(["crm_leads", "eq", "organization_id", ORG]);
     },
   );
+
+  it("o MESMO aviso, sem valor, para quem NÃO vê o negócio — a carteira alheia não vaza", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      banco(
+        {
+          agent_inbox_items: {
+            id: "i5", kind: "other", ref_kind: "lead", ref_id: "l1",
+            title: tituloDoAvisoDeEtapa("Pago", "pt-BR"), body: corpoDoAvisoDeEtapa("pt-BR"),
+          },
+          organizations: { locale: "pt-BR", settings: {} },
+          crm_leads: { pipeline_id: "p1", value_cents: 125_000, currency: "BRL", owner_user_id: "u-dono" },
+        },
+        { agent_inbox_items: [{ ref_id: "l1" }] },
+      ) as never,
+    );
+    await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i5" }, "agent_inbox_item"));
+    const textos = vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]![2];
+    expect(textos.semValor).toMatchObject({
+      title: "Negócio entrou em «Pago»",
+      body: corpoDoAvisoDeEtapa("pt-BR"),
+      corpoSemPrevia: corpoDoAvisoDeEtapa("pt-BR"),
+    });
+    expect(plano(JSON.stringify(textos.semValor))).not.toContain("R$");
+  });
+
+  it("o DONO fora do 'all' leva o valor do negócio dele, mas não a soma do dia (ela é da organização)", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      banco(
+        {
+          agent_inbox_items: {
+            id: "i6", kind: "other", ref_kind: "lead", ref_id: "l1",
+            title: tituloDoAvisoDeEtapa("Pago", "pt-BR"), body: corpoDoAvisoDeEtapa("pt-BR"),
+          },
+          organizations: { locale: "pt-BR", settings: {} },
+          crm_leads: { pipeline_id: "p1", value_cents: 125_000, currency: "BRL", owner_user_id: "u-dono" },
+        },
+        {
+          agent_inbox_items: [{ ref_id: "l1" }, { ref_id: "l9" }],
+          crm_leads: [{ value_cents: 125_000, currency: "BRL" }, { value_cents: 25_000, currency: "BRL" }],
+        },
+      ) as never,
+    );
+    await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i6" }, "agent_inbox_item"));
+    const textos = vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]![2];
+    expect(plano(textos.daCarteira.title)).toBe("Negócio entrou em «Pago» · R$ 1.250,00");
+    expect(textos.daCarteira.body).toBe(corpoDoAvisoDeEtapa("pt-BR"));
+    expect(plano(JSON.stringify(textos.daCarteira))).not.toContain("Hoje nesta etapa");
+  });
+
+  it("negócio sem valor preenchido: o título não ganha «R$ 0» e o corpo não inventa soma", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      banco({
+        agent_inbox_items: {
+          id: "i7", kind: "other", ref_kind: "lead", ref_id: "l1",
+          title: tituloDoAvisoDeEtapa("Pago", "pt-BR"), body: corpoDoAvisoDeEtapa("pt-BR"),
+        },
+        organizations: { locale: "pt-BR", settings: {} },
+        crm_leads: { pipeline_id: "p1", value_cents: 0, currency: "BRL", owner_user_id: "u-dono" },
+      }) as never,
+    );
+    await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i7" }, "agent_inbox_item"));
+    const textos = vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]![2];
+    expect(textos.ampla.title).toBe("Negócio entrou em «Pago»");
+    expect(textos.ampla.body).toBe(corpoDoAvisoDeEtapa("pt-BR"));
+    expect(textos.daCarteira).toEqual(textos.semValor);
+    expect(plano(JSON.stringify(textos))).not.toContain("R$ 0");
+  });
+
+  it("em 'all' o texto do dono é o da gestão: o que chega ao celular é o de hoje, sem mudança", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      banco(
+        {
+          agent_inbox_items: {
+            id: "i8", kind: "other", ref_kind: "lead", ref_id: "l1",
+            title: tituloDoAvisoDeEtapa("Pago", "pt-BR"), body: corpoDoAvisoDeEtapa("pt-BR"),
+          },
+          organizations: { locale: "pt-BR", settings: TODOS_VEEM },
+          crm_leads: { pipeline_id: "p1", value_cents: 125_000, currency: "BRL", owner_user_id: "u-dono" },
+        },
+        {
+          agent_inbox_items: [{ ref_id: "l1" }, { ref_id: "l9" }],
+          crm_leads: [{ value_cents: 125_000, currency: "BRL" }, { value_cents: 25_000, currency: "BRL" }],
+        },
+      ) as never,
+    );
+    await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i8" }, "agent_inbox_item"));
+    const textos = vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]![2];
+    expect(textos.daCarteira).toEqual(textos.ampla);
+    expect(plano(textos.ampla.body)).toBe("Hoje nesta etapa: 2 (R$ 1.500,00)");
+  });
 
   it("etapa que avisa sem valor e sem resumo: o texto de antes, intacto", async () => {
     vi.mocked(createAdminClient).mockReturnValue(
@@ -292,7 +403,7 @@ describe("o push que chega ao celular", () => {
       }) as never,
     );
     await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i2" }, "agent_inbox_item"));
-    expect(vi.mocked(enviarPushDaOrg).mock.calls[0]![1]).toMatchObject({
+    expect(vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]![2].ampla).toMatchObject({
       title: "Negócio entrou em «Pago»",
       body: corpoDoAvisoDeEtapa("pt-BR"),
     });
@@ -350,6 +461,50 @@ describe("o push que chega ao celular", () => {
     expect(plano(payload.title)).toBe("Lead ganho · R$ 1.250,00");
     expect(plano(payload.body)).toBe(`Pedido da Ana · ${linha}`);
     expect(payload.corpoSemPrevia).toBe("Pedido da Ana");
+  });
+
+  it("lead.won: a GESTÃO recebe o ganho de negócio que não é dela, com a soma do dia inteira", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      banco(
+        {
+          organizations: { locale: "pt-BR", settings: {} },
+          crm_leads: { title: "Pedido da Ana", owner_user_id: "u-dono", pipeline_id: "p1", value_cents: 125_000, currency: "BRL" },
+        },
+        {
+          crm_leads: [
+            { value_cents: 125_000, currency: "BRL", owner_user_id: "u-dono" },
+            { value_cents: 75_000, currency: "BRL", owner_user_id: "u-outro" },
+            { value_cents: 10_000, currency: "BRL", owner_user_id: null },
+          ],
+        },
+      ) as never,
+    );
+    await webPushInboundHandler.handle(evento("lead.won", { lead_id: "l1" }));
+    const [org, payload, quem] = vi.mocked(enviarPushDaOrg).mock.calls[0]!;
+    expect(org).toBe(ORG);
+    expect(payload).toMatchObject({
+      title: "Lead ganho · R$ 1.250,00",
+      body: "Pedido da Ana · Ganhos hoje: 3 (R$ 2.100,00)",
+      corpoSemPrevia: "Pedido da Ana",
+    });
+    // O dono recebe o texto DELE (com a soma que ele vê), então não entra aqui.
+    expect(quem).toEqual({ papelMinimo: "manager", excetoUsuario: "u-dono" });
+  });
+
+  it("lead.won de negócio SEM dono: quem gerencia recebe, e ninguém fica com aviso sem destinatário", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      banco(
+        {
+          organizations: { locale: "pt-BR", settings: {} },
+          crm_leads: { title: "Pedido da Ana", owner_user_id: null, pipeline_id: "p1", value_cents: 125_000, currency: "BRL" },
+        },
+        { crm_leads: [{ value_cents: 125_000, currency: "BRL", owner_user_id: null }] },
+      ) as never,
+    );
+    await webPushInboundHandler.handle(evento("lead.won", { lead_id: "l1" }));
+    expect(vi.mocked(enviarPushDaOrg)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(enviarPushDaOrg).mock.calls[0]![2]).toEqual({ papelMinimo: "manager", excetoUsuario: undefined });
+    expect(vi.mocked(enviarPushAoUsuario)).not.toHaveBeenCalled();
   });
 
   it.each([

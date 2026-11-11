@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
+import { CANAIS_QUE_RESPONDEM_ANTES } from "@/lib/channels/capabilities";
 import { esquecerRetrato, recursoTemTrabalho, type RecursoDoCron } from "@/lib/cron/piso-ocioso";
 
 const pool = new pg.Pool({
@@ -109,6 +110,68 @@ describe("retrato do piso ocioso contra o baseline", () => {
       expect(await leitura("ligacao_presa")).toBe(false);
     } finally {
       await pool.query("delete from voice_calls where id = any($1::uuid[])", [[presa, recente]]);
+    }
+  });
+
+  it("outbound `queued` entre 10 min e 25 h mantém o recover-stuck-messages acordado; a recente, a velha e a inbound não", async () => {
+    // O aviso da espera esquecida roda DEPOIS do portão: se ele só olhasse `sending`,
+    // o caso comum (nada travado, mensagem esperando) nunca chegaria à rota.
+    const id = randomUUID();
+    const org = randomUUID();
+    const inserir = (direction: string, idade: string) =>
+      semFk(
+        `insert into messages (id, organization_id, conversation_id, channel_session_id, contact_id, direction, type, status, created_at)
+         values ($1, $2, $3, $4, $5, $6, 'text', 'queued', now() - $7::interval)`,
+        [id, org, randomUUID(), randomUUID(), randomUUID(), direction, idade],
+      );
+    const apagar = () => pool.query("delete from messages where id = $1", [id]);
+    try {
+      await inserir("outbound", "5 minutes");
+      expect(await leitura("mensagem_presa")).toBe(false);
+      await apagar();
+
+      await inserir("outbound", "26 hours");
+      expect(await leitura("mensagem_presa")).toBe(false);
+      await apagar();
+
+      await inserir("inbound", "1 hour");
+      expect(await leitura("mensagem_presa")).toBe(false);
+      await apagar();
+
+      await inserir("outbound", "1 hour");
+      expect(await leitura("mensagem_presa")).toBe(true);
+    } finally {
+      await apagar();
+    }
+  });
+
+  it("entrada aceita sem desfecho mantém o webhook-replay acordado; a da captação e a fora da janela não", async () => {
+    // O 200 já saiu quando esta linha fica `received`: se o portão não a enxergar,
+    // o provedor não reentrega e a mensagem para no arquivo. O filtro de canal vem
+    // por parâmetro, que só um Postgres de verdade prova que casa.
+    const canal = String(CANAIS_QUE_RESPONDEM_ANTES[0]);
+    const aceita = randomUUID();
+    const captacao = randomUUID();
+    const velha = randomUUID();
+    const inserir = (id: string, provider: string, idade: string) =>
+      semFk(
+        `insert into webhook_events_log (id, organization_id, provider, raw_body, valid_signature, status, received_at)
+         values ($1, $2, $3, '{}', true, 'received', now() - $4::interval)`,
+        [id, randomUUID(), provider, idade],
+      );
+    try {
+      await inserir(captacao, "generic", "1 minute");
+      expect(await leitura("webhook_replay")).toBe(false);
+      await inserir(aceita, canal, "1 minute");
+      expect(await leitura("webhook_replay")).toBe(true);
+      // controle: é a linha sem desfecho que acorda o cron
+      await pool.query("update webhook_events_log set status = 'processed' where id = $1", [aceita]);
+      expect(await leitura("webhook_replay")).toBe(false);
+      // a que passou da janela também acorda: é o cron que a marca `dead` e avisa
+      await inserir(velha, canal, "7 hours");
+      expect(await leitura("webhook_replay")).toBe(true);
+    } finally {
+      await pool.query("delete from webhook_events_log where id = any($1::uuid[])", [[aceita, captacao, velha]]);
     }
   });
 
