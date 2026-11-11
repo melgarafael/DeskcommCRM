@@ -13366,6 +13366,15 @@ export const DICIONARIO: Traducoes = {
   "ocupado na agenda do Google": { es: "ocupado en la agenda de Google" },
   "Dia": { es: "Día" },
   "Mês": { es: "Mes" },
+  // Quadro por profissional na agenda (#4186)
+  "Quadro por profissional de {data}": { es: "Tablero por profesional del {data}" },
+  "Nenhum profissional na agenda ainda. Quem atende é definido em Configurações › Agendamentos.": {
+    es: "Todavía no hay profesionales en la agenda. Quién atiende se define en Configuración › Citas.",
+  },
+  "1 agendamento": { es: "1 cita" },
+  "{n} agendamentos": { es: "{n} citas" },
+  "Marcar com {pessoa} às {hora} de {data}": { es: "Agendar con {pessoa} a las {hora} del {data}" },
+  "{pessoa} às {hora} — sem horário livre": { es: "{pessoa} a las {hora} — sin horario libre" },
   "Próximos": { es: "Próximas" },
   "Aguardando confirmação": { es: "Esperando confirmación" },
   "Passados": { es: "Pasadas" },
