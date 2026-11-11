@@ -34,13 +34,14 @@ import { trocarCodigoPorToken } from "@/lib/plataformas-de-anuncio/google/token"
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
-function voltar(base: string, params: Record<string, string>): NextResponse {
+function voltar(base: string, params: Record<string, string>, req: NextRequest): NextResponse {
   const url = new URL("/app/settings/conversoes", base || "http://localhost:3000");
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const resposta = NextResponse.redirect(url);
+  const resposta = comIdDaRequisicao(NextResponse.redirect(url), req);
   // Toda saída passa por aqui: o vínculo morre com o fluxo, sucesso ou erro.
   resposta.cookies.set(NOME_DO_VINCULO, "", {
     httpOnly: true,
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // 1. Cancelamento não é erro.
   if (url.searchParams.get("error")) {
-    return voltar(base, { erro: "cancelado" });
+    return voltar(base, { erro: "cancelado" }, req);
   }
 
   // 2. `state` antes do `code`. Sob `try`: a rota é pública e
@@ -73,9 +74,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.error("[plataformas-de-anuncio.google.callback] state não verificável", {
       motivo: erro instanceof Error ? erro.message : String(erro),
     });
-    return voltar(base, { erro: "estado_invalido" });
+    return voltar(base, { erro: "estado_invalido" }, req);
   }
-  if (!estado) return voltar(base, { erro: "estado_invalido" });
+  if (!estado) return voltar(base, { erro: "estado_invalido" }, req);
 
   // O navegador que volta é o que saiu. Antes da queima do nonce: queimar
   // primeiro daria a quem tem um `state` vazado como derrubar a volta legítima.
@@ -83,17 +84,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     logger.warn("[plataformas-de-anuncio.google.callback] vínculo do navegador não confere", {
       organizationId: estado.organizationId,
     });
-    return voltar(base, { erro: "estado_invalido" });
+    return voltar(base, { erro: "estado_invalido" }, req);
   }
 
   const code = url.searchParams.get("code");
-  if (!code) return voltar(base, { erro: "sem_codigo" });
+  if (!code) return voltar(base, { erro: "sem_codigo" }, req);
 
   const app = configuracaoDoGoogleAds(estado.api);
-  if (!app) return voltar(base, { erro: "google_ads_nao_configurado" });
+  if (!app) return voltar(base, { erro: "google_ads_nao_configurado" }, req);
 
   if (!(await supportCallbackWriteAllowed(estado.organizationId, estado.userId, estado.authSessionId))) {
-    return voltar(base, { erro: "estado_invalido" });
+    return voltar(base, { erro: "estado_invalido" }, req);
   }
 
   const admin = createAdminClient();
@@ -110,7 +111,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     user_id: estado.userId,
     expira_em: new Date(estado.expiraEmMs).toISOString(),
   });
-  if (erroDoNonce) return voltar(base, { erro: "estado_invalido" });
+  if (erroDoNonce) return voltar(base, { erro: "estado_invalido" }, req);
 
   // 3. Troca — só depois do state confirmado e queimado.
   const leitura = await trocarCodigoPorToken(app, code, { agora: new Date() });
@@ -120,18 +121,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       motivo: leitura.motivo,
       detalhe: leitura.detalhe.slice(0, 300),
     });
-    return voltar(base, { erro: "troca_falhou" });
+    return voltar(base, { erro: "troca_falhou" }, req);
   }
   if (!leitura.token.refresh_token) {
     // Reconexão sem `prompt=consent` ter funcionado (extremamente raro, já que
     // sempre pedimos): sem refresh token não há o que gravar — a conexão
     // funcionaria por uma hora e morreria calada.
-    return voltar(base, { erro: "sem_refresh_token" });
+    return voltar(base, { erro: "sem_refresh_token" }, req);
   }
 
   // 4. Cifra antes do upsert.
   const cifrado = await encryptWebhookSecret(admin, leitura.token.refresh_token);
-  if (!cifrado) return voltar(base, { erro: "cifra_indisponivel" });
+  if (!cifrado) return voltar(base, { erro: "cifra_indisponivel" }, req);
 
   const { error } = await admin.from("ad_platform_connections").upsert(
     {
@@ -148,7 +149,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organizationId: estado.organizationId,
       detalhe: error.message,
     });
-    return voltar(base, { erro: "erro_ao_gravar" });
+    return voltar(base, { erro: "erro_ao_gravar" }, req);
   }
 
   await audit({
@@ -160,5 +161,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     metadata: { platform: "google_ads" },
   });
 
-  return voltar(base, { ok: "1" });
+  return voltar(base, { ok: "1" }, req);
 }
