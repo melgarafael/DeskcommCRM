@@ -185,6 +185,7 @@
       "GET /api/v1/metrics/metas",
       "GET /api/v1/metrics/serie",
       "GET /api/v1/reports/activities",
+      "GET /api/v1/reports/comercial",
       "GET /api/v1/reports/financeiro",
       "GET /api/v1/reports/tags",
       "PATCH /api/v1/metrics/atrito"
@@ -331,6 +332,7 @@
       "POST /api/v1/conversations/[id]/close",
       "POST /api/v1/conversations/[id]/drafts",
       "POST /api/v1/conversations/[id]/drafts/consume",
+      "POST /api/v1/conversations/[id]/ia-com-dono",
       "POST /api/v1/conversations/[id]/media",
       "POST /api/v1/conversations/[id]/notes",
       "POST /api/v1/conversations/[id]/notes/media",
@@ -389,10 +391,12 @@
       "DELETE /api/v1/leads/[id]/contatos-relacionados",
       "DELETE /api/v1/proposals/[id]",
       "GET /api/v1/lead-captures",
+      "GET /api/v1/leads/[id]",
       "GET /api/v1/leads/[id]/attachments",
       "GET /api/v1/leads/[id]/attachments/[id]/media",
       "GET /api/v1/leads/[id]/clone",
       "GET /api/v1/leads/[id]/contatos-relacionados",
+      "GET /api/v1/leads/[id]/conversas-e-ligacoes",
       "GET /api/v1/leads/[id]/eventos",
       "GET /api/v1/leads/[id]/field-proposals",
       "GET /api/v1/leads/[id]/timeline",
@@ -1851,6 +1855,16 @@
           "nome": "querySchema",
           "origem": "local",
           "hash": "52af1f613bc64e70"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/reports/comercial": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "f4cc2c9fb73d1f3e"
         }
       ],
       "resposta": []
