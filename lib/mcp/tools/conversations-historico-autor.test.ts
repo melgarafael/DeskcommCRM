@@ -8,8 +8,9 @@
  *      e `sent_by_user_name`, quando o nome é resolvível.
  *   2. Mensagem RECEBIDA do cliente não tem autor interno: id e nome vazios —
  *      nunca o id de um "sistema".
- *   3. O nome custa UMA consulta de vínculo por página e UM lookup por AUTOR
- *      DISTINTO (nunca por mensagem). 4 mensagens de 2 pessoas = 1 + 2.
+ *   3. O nome custa UMA consulta por página (`fn_nomes_dos_membros`, que
+ *      responde vínculo e nome de uma vez) e NENHUMA chamada ao GoTrue — nem por
+ *      autor, nem por mensagem. 4 mensagens de 2 pessoas = 1 consulta.
  *   4. Quem não é (ou não foi) membro da organização do chamador sai sem nome —
  *      a linha de outra organização não vira nome na resposta.
  *   5. A transcrição continua atrás do escopo próprio (`messages:derived:read`,
@@ -25,8 +26,15 @@ const membrosDaOrg = vi.fn();
 const getUserById = vi.fn();
 
 /**
- * Dublê do admin client: `user_organizations` (a conferência de vínculo) e o
- * GoTrue Admin API (onde o nome mora). Os contadores são o critério de "sem N+1".
+ * Dublê do admin client. Os contadores são o critério de "sem N+1".
+ *
+ * `rpc("fn_nomes_dos_membros")` reproduz a REGRA DA FUNÇÃO (migration 9314), que
+ * é por onde `nomesDosAtendentesCom` lê desde o #4336: só id com vínculo com a
+ * organização pedida ganha linha, com o `full_name` de quem tem. É a consulta de
+ * vínculo e a de nome numa só — por isso conta em `consultas.vinculo`.
+ *
+ * O GoTrue Admin API continua no dublê de propósito: é o caminho ANTIGO (uma
+ * requisição por autor), e `consultas.nomes` tem de ficar em zero.
  */
 const consultas = { vinculo: 0, nomes: 0, storage: 0 };
 let membros: Record<string, string[]> = {};
@@ -51,6 +59,17 @@ function adminFalso() {
             },
           }),
         }),
+      };
+    },
+    rpc: async (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") throw new Error(`função inesperada: ${funcao}`);
+      consultas.vinculo += 1;
+      membrosDaOrg(args.p_org, args.p_ids);
+      return {
+        data: args.p_ids
+          .filter((id) => (membros[args.p_org] ?? []).includes(id))
+          .map((user_id) => ({ user_id, full_name: NOMES[user_id] ?? null })),
+        error: null,
       };
     },
     auth: {
@@ -210,7 +229,7 @@ describe("#4077 — autor da mensagem no histórico MCP", () => {
     expect(out.messages[0]).toMatchObject({ media_status: "none" });
   });
 
-  it("UMA consulta de vínculo por página e UM lookup por AUTOR DISTINTO — nunca por mensagem", async () => {
+  it("UMA consulta por página — nenhuma chamada por autor nem por mensagem", async () => {
     await historico(ctx, [
       msg({ id: "m1", direction: "outbound", sent_by_user_id: "u-andreia" }),
       msg({ id: "m2", direction: "outbound", sent_by_user_id: "u-andreia" }),
@@ -219,7 +238,9 @@ describe("#4077 — autor da mensagem no histórico MCP", () => {
     ]);
 
     expect(consultas.vinculo).toBe(1);
-    expect(consultas.nomes).toBe(2);
+    // Era 2 (um `getUserById` por autor distinto) até o #4336 trocar o leitor
+    // por uma consulta só; o teto ficou mais apertado, não mais frouxo.
+    expect(consultas.nomes).toBe(0);
     expect(membrosDaOrg).toHaveBeenCalledWith(ORG, ["u-andreia", "u-thamyres"]);
   });
 

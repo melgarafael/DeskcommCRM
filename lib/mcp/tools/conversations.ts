@@ -421,15 +421,15 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
     // jogava fora: quem lê por token sabia que a mensagem foi de PESSOA
     // (`sent_via`) e não sabia de qual. O nome não é coluna — mora em
     // `auth.users`, que o PostgREST não expõe —, então sai da MESMA resolução
-    // que o balão do inbox usa (#4031), com os ids DISTINTOS da página: uma
-    // consulta de vínculo (`user_organizations`) e um lookup por AUTOR, nunca um
-    // por mensagem.
+    // que o balão do inbox usa (#4031), com os ids DISTINTOS da página: UMA
+    // consulta (`fn_nomes_dos_membros`, que responde vínculo e nome juntos),
+    // nunca uma por autor nem por mensagem.
     //
     // DUAS COISAS QUE O MAPA VAZIO DIZ. Mensagem de cliente (`inbound`), de IA,
     // de automação, de sistema ou de celular NÃO pede nome (`mereceNomeDeQuemEnviou`):
     // sai com `sent_by_user_id` nulo e nome nulo — vazio, não um "sistema" de
     // mentira. E o nome só se resolve para quem tem vínculo com a organização do
-    // chamador: id de fora, usuário removido ou falha do GoTrue devolvem nulo, e
+    // chamador: id de fora, usuário removido ou falha da leitura devolvem nulo, e
     // o `sent_by_user_id` continua sendo a verdade. Nada aqui amplia o conjunto
     // de conversas que o chamador já podia ler — é projeção sobre a página que
     // veio do handler, depois da RLS/escopo dele.

@@ -91,7 +91,7 @@ export type MensagemComNomeDeQuemEnviou = Message & {
  * sendo a de `nomesDosAtendentesCom`, uma só.
  *
  * Devolve um mapa `id da mensagem → nome`, com os ids DISTINTOS deduplicados:
- * uma consulta de vínculo por página e um lookup por AUTOR, nunca por mensagem.
+ * UMA consulta por página (vínculo e nome juntos), nunca por autor nem por mensagem.
  * Quem não merece nome (cliente, IA, automação, sem id) simplesmente não entra no
  * mapa, e o chamador projeta `null`.
  */
