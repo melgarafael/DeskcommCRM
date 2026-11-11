@@ -11,4 +11,22 @@ import type { ModeloDePorta } from "./porta";
 // proxy filtra por caminho e não por método. A cerca
 // `tests/unit/rotas-bearer-tem-porta-no-proxy.test.ts` reprova porta sem rota
 // com token e rota com token sem porta.
-export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [];
+export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+];

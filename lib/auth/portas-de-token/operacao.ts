@@ -11,4 +11,16 @@ import type { ModeloDePorta } from "./porta";
 // proxy filtra por caminho e não por método. A cerca
 // `tests/unit/rotas-bearer-tem-porta-no-proxy.test.ts` reprova porta sem rota
 // com token e rota com token sem porta.
-export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [];
+export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
+
+
+
+
+  {
+    caminho: "/api/v1/financeiro/catalogo/[tipo]",
+    segmentos: {
+      tipo: "contas|formas_de_pagamento|planos_de_conta|regras_de_comissao|recorrencias",
+    },
+    amostras: { tipo: "contas" },
+  },
+];

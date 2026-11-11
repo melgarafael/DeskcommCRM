@@ -10,6 +10,9 @@
  * Se um dia alguém quiser "só mais um total", ele entra na função — não num
  * `reduce` deste arquivo.
  *
+ * Sessão OU token `dsk_…` (`mcp:read`, viewer+; Spec 33, R3): a organização vem
+ * da sessão ou da linha do token.
+ *
  * A função é INVOKER, então a RLS continua decidindo o que cada pessoa vê; esta
  * rota resolve a organização do lado confiável (a sessão) e nunca do corpo.
  */
@@ -18,9 +21,8 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +36,16 @@ const periodoSchema = z.object({
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "reports" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "reports",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "reports", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const hoje = new Date().toISOString().slice(0, 10);
@@ -62,9 +72,9 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("validation_failed", "O período não pode passar de 400 dias.", 422, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase.rpc("fn_relatorio_financeiro", {
-    p_org: authz.org.orgId,
+    p_org: authz.organizationId,
     p_de: lido.data.de,
     p_ate: lido.data.ate,
   });
