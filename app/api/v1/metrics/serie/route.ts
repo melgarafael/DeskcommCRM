@@ -27,16 +27,16 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   agregarGanhos,
   totalDeGanhos,
   type FechamentoDeGanho,
   type Granularidade,
 } from "@/lib/metrics/serie-temporal";
-import { createClient } from "@/lib/supabase/server";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
@@ -63,10 +63,17 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   // Piso agent (vê as próprias); a RLS é quem garante o escopo de cada linha.
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -94,7 +101,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const ate = to.toISOString();
   const granularidade: Granularidade = parsed.data.granularidade ?? "dia";
 
-  const supabase = await createClient();
+  // Token: cliente de serviço; o filtro de organização abaixo é a barreira.
+  const supabase = authz.supabase;
 
   // Falha ABERTA no fuso, como `fusoDaOrganizacao`: leitura que falha ou valor
   // que o `Intl` recusa caem no padrão do produto — um dia de diferença na
@@ -102,7 +110,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { data: organizacao } = await supabase
     .from("organizations")
     .select("timezone")
-    .eq("id", activeOrg.orgId)
+    .eq("id", authz.organizationId)
     .maybeSingle();
   const fuso = fusoUtilizavel((organizacao as { timezone?: string | null } | null)?.timezone);
 
@@ -117,7 +125,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const { data, error, count } = await supabase
       .from("crm_leads")
       .select("closed_at", pagina === 0 ? { count: "exact" } : undefined)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("status", "won")
       .gte("closed_at", de)
       .lt("closed_at", ate)

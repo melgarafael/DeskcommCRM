@@ -44,7 +44,7 @@ describe("GET /api/v1/channel-sessions — a lista de qualquer membro", () => {
 
   it("devolve só o `disabled` da metadata, nunca a configuração interna do canal", async () => {
     const { GET } = await import("@/app/api/v1/channel-sessions/route");
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/v1/channel-sessions") as never);
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: Array<{ id: string; metadata: unknown }> };
     expect(corpo.data.map((c) => c.metadata)).toEqual([{ disabled: true }, { disabled: false }]);

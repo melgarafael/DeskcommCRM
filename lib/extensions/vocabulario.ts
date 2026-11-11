@@ -18,6 +18,8 @@ export const EXTENSION_OPERATION_KINDS = [
   "configure",
   // Módulo opcional instalado na instância (ADR-0002, D3 — migration 0340). Recibo de plataforma.
   "module_install",
+  // O interruptor, por instalação, do módulo `connected` (spec 33, D8 — migration 9116). Recibo de plataforma.
+  "switch",
 ] as const;
 export type ExtensionOperationKind = (typeof EXTENSION_OPERATION_KINDS)[number];
 

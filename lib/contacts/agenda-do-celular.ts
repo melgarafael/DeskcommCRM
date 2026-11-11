@@ -309,7 +309,9 @@ export async function sincronizarAgendaDoCelular(
   e: {
     organizationId: string;
     session: string;
-    actorUserId: string;
+    actorUserId: string | null;
+    /** Id do token de integração, quando o gesto veio por Bearer (auditoria). */
+    actorApiTokenId?: string | null;
     requestId: string;
     /** De onde ESTE clique começa na agenda — o `proximo_offset` do anterior. */
     offset?: number;
@@ -422,6 +424,7 @@ export async function sincronizarAgendaDoCelular(
   await deps.audit({
     action: "contacts.synced_from_phone",
     actorUserId: e.actorUserId,
+    actorApiTokenId: e.actorApiTokenId ?? null,
     organizationId: e.organizationId,
     resourceType: "contact",
     resourceId: null,
