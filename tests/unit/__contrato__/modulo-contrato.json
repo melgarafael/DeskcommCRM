@@ -9,9 +9,7 @@
     "agentes_ia",
     "catalogo",
     "configuracao",
-    "analise",
-    "tarefas",
-    "financeiro"
+    "analise"
   ],
   "permissoes": [
     "area.agenda.escrita",
@@ -28,14 +26,10 @@
     "area.contatos.leitura",
     "area.conversas.escrita",
     "area.conversas.leitura",
-    "area.financeiro.escrita",
-    "area.financeiro.leitura",
     "area.funis.escrita",
     "area.funis.leitura",
     "area.negocios.escrita",
-    "area.negocios.leitura",
-    "area.tarefas.escrita",
-    "area.tarefas.leitura"
+    "area.negocios.leitura"
   ],
   "rotas": {
     "agenda": [
@@ -349,25 +343,6 @@
       "POST /api/v1/messages/[id]/hide",
       "PUT /api/v1/conversations/[id]/sector"
     ],
-    "financeiro": [
-      "DELETE /api/v1/financeiro/catalogo/[id]",
-      "DELETE /api/v1/financeiro/comandas/[id]/itens/[id]",
-      "DELETE /api/v1/financeiro/lancamentos/[id]",
-      "GET /api/v1/financeiro/comandas",
-      "GET /api/v1/financeiro/comandas/[id]",
-      "GET /api/v1/financeiro/comandas/pendentes",
-      "GET /api/v1/financeiro/fidelidade",
-      "PATCH /api/v1/financeiro/catalogo/[id]",
-      "PATCH /api/v1/financeiro/comandas/[id]",
-      "PATCH /api/v1/financeiro/lancamentos/[id]",
-      "POST /api/v1/financeiro/catalogo/[id]",
-      "POST /api/v1/financeiro/comandas",
-      "POST /api/v1/financeiro/comandas/[id]/itens",
-      "POST /api/v1/financeiro/fidelidade",
-      "POST /api/v1/financeiro/lancamentos",
-      "POST /api/v1/honorarios/contratos",
-      "POST /api/v1/honorarios/contratos/[id]/parcelas"
-    ],
     "funis": [
       "DELETE /api/v1/pipelines/[id]",
       "DELETE /api/v1/pipelines/[id]/stages/[id]",
@@ -435,13 +410,6 @@
       "POST /api/v1/proposals/[id]/decide",
       "POST /api/v1/proposals/[id]/preencher-com-conversa",
       "POST /api/v1/proposals/[id]/revise"
-    ],
-    "tarefas": [
-      "DELETE /api/v1/tasks/[id]",
-      "GET /api/v1/tasks",
-      "PATCH /api/v1/demandas/[id]",
-      "PATCH /api/v1/tasks/[id]",
-      "POST /api/v1/tasks"
     ]
   },
   "formatos": {
@@ -1354,16 +1322,6 @@
       ],
       "resposta": []
     },
-    "/api/v1/demandas/[id]": {
-      "corpo": [
-        {
-          "nome": "patchSchema",
-          "origem": "local",
-          "hash": "5288b983dc6269e1"
-        }
-      ],
-      "resposta": []
-    },
     "/api/v1/financeiro/catalogo/[id]": {
       "corpo": [
         {
@@ -1374,62 +1332,12 @@
       ],
       "resposta": []
     },
-    "/api/v1/financeiro/comandas": {
-      "corpo": [
-        {
-          "nome": "abrirComandaSchema",
-          "origem": "@/lib/financeiro/comanda",
-          "hash": "9ddc5b53f293104a"
-        }
-      ],
-      "resposta": []
-    },
-    "/api/v1/financeiro/comandas/[id]": {
-      "corpo": [
-        {
-          "nome": "alterarComandaSchema",
-          "origem": "@/lib/financeiro/comanda",
-          "hash": "0837b0f6ea6a4250"
-        }
-      ],
-      "resposta": []
-    },
-    "/api/v1/financeiro/comandas/[id]/itens": {
-      "corpo": [
-        {
-          "nome": "itemSchema",
-          "origem": "@/lib/financeiro/comanda",
-          "hash": "f6867d4dd6215c21"
-        }
-      ],
-      "resposta": []
-    },
-    "/api/v1/financeiro/fidelidade": {
-      "corpo": [
-        {
-          "nome": "movimentoSchema",
-          "origem": "local",
-          "hash": "eebf99712ac97bfe"
-        }
-      ],
-      "resposta": []
-    },
     "/api/v1/financeiro/lancamentos": {
       "corpo": [
         {
           "nome": "criarSchema",
           "origem": "local",
           "hash": "0fb0c0a64f6bcf72"
-        }
-      ],
-      "resposta": []
-    },
-    "/api/v1/financeiro/lancamentos/[id]": {
-      "corpo": [
-        {
-          "nome": "alterarSchema",
-          "origem": "local",
-          "hash": "076d3a4559627320"
         }
       ],
       "resposta": []
@@ -2010,31 +1918,6 @@
       "resposta": [
         "tagsPageResultSchema"
       ]
-    },
-    "/api/v1/tasks": {
-      "corpo": [
-        {
-          "nome": "criacaoSchema",
-          "origem": "local",
-          "hash": "5bd7b4471832f8e9"
-        },
-        {
-          "nome": "listaSchema",
-          "origem": "local",
-          "hash": "b25db4e0cf6dc15f"
-        }
-      ],
-      "resposta": []
-    },
-    "/api/v1/tasks/[id]": {
-      "corpo": [
-        {
-          "nome": "edicaoSchema",
-          "origem": "local",
-          "hash": "49c07a1badcf3b69"
-        }
-      ],
-      "resposta": []
     }
   }
 }
