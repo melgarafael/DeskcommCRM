@@ -15,7 +15,12 @@ export type ChannelSessionRef =
   | { provider: "waha"; waha_session_name: string }
   | { provider: "meta_cloud"; meta_phone_number_id: string }
   | { provider: "zernio" | "zernio_social"; zernio_account_id: string }
-  | { provider: "datafy"; datafy_phone_number_id: string };
+  | { provider: "datafy"; datafy_phone_number_id: string }
+  /**
+   * SMS (#4415): o id do NÚMERO no fornecedor (`PN…`). A chave da conta é
+   * segredo cifrado e não pode virar `sessionRef`, que atravessa log e métrica.
+   */
+  | { provider: "twilio"; twilio_phone_number_sid: string };
 
 /**
  * Colunas que um `select` do PostgREST precisa trazer para `resolveSessionRef`
@@ -23,7 +28,7 @@ export type ChannelSessionRef =
  * nomeia coluna de provider, e ela some da feature junto com a decisão.
  */
 export const CHANNEL_SESSION_REF_COLUMNS =
-  "provider, waha_session_name, meta_phone_number_id, zernio_account_id, datafy_phone_number_id";
+  "provider, waha_session_name, meta_phone_number_id, zernio_account_id, datafy_phone_number_id, twilio_phone_number_sid";
 
 export function resolveSessionRef(session: ChannelSessionRef): string {
   switch (session.provider) {
@@ -33,6 +38,9 @@ export function resolveSessionRef(session: ChannelSessionRef): string {
     // parceiro, porque os dois podem conviver e endereçam servidores diferentes.
     case "datafy":
       return session.datafy_phone_number_id;
+    // SMS (#4415): endereça pelo id do número no fornecedor (migration 9345).
+    case "twilio":
+      return session.twilio_phone_number_sid;
     case "waha":
       return session.waha_session_name;
     // O `accountId` que o provider devolve ao conectar a WABA. NÃO é o

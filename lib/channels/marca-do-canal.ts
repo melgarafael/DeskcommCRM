@@ -23,10 +23,10 @@ import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
-import { InstagramLogo, MessengerLogo, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
+import { ChatText, InstagramLogo, MessengerLogo, TelegramLogo, WhatsappLogo } from "@/lib/ui/icons";
 
 /** As redes que o produto sabe desenhar. Rede nova entra aqui E em `channelBrand`. */
-export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram";
+export type CanalConhecido = "whatsapp" | "instagram" | "messenger" | "telegram" | "sms";
 
 export interface MarcaDeCanal {
   /** `unknown` é o fallback: sem ícone, cor neutra, rótulo genérico. */
@@ -62,6 +62,14 @@ const MARCAS: Record<CanalConhecido, MarcaDeCanal> = {
     rotulo: "Telegram",
     cor: "var(--color-canal-telegram)",
     Icone: TelegramLogo,
+  },
+  // SMS (#4415): não é marca de ninguém — o ícone é o balão de texto genérico,
+  // e o rótulo é igual em todo idioma.
+  sms: {
+    id: "sms",
+    rotulo: "SMS",
+    cor: "var(--color-canal-sms)",
+    Icone: ChatText,
   },
 };
 

@@ -62,7 +62,15 @@ export const ORIGEM_DO_WHATSAPP_OPERADOR: OrigemDoNascimento = {
   motivo: "primeira mensagem enviada pelo celular",
 };
 
+/** SMS (#4415): canal próprio, fora do catálogo de redes do parceiro. */
+export const ORIGEM_DO_SMS: OrigemDoNascimento = {
+  rotulo: "SMS",
+  source: "sms",
+  motivo: "primeira mensagem recebida por SMS",
+};
+
 export function origemDoNegocioPeloCanal(canal: string | null | undefined): OrigemDoNascimento {
+  if (canal === "sms") return ORIGEM_DO_SMS;
   const rede = SOCIAL_NETWORKS.find((r) => r.inbox && r.id === canal);
   if (!rede) return ORIGEM_DO_WHATSAPP;
   return {

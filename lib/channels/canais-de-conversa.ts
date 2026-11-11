@@ -41,6 +41,8 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  */
 export const CANAIS_DE_CONVERSA = [
   "whatsapp",
+  // SMS (#4415): canal próprio, não rede do catálogo do parceiro.
+  "sms",
   ...SOCIAL_NETWORKS.filter((rede) => rede.inbox).map((rede) => rede.id),
 ] as const satisfies readonly string[];
 

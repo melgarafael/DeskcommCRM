@@ -144,6 +144,44 @@ export async function enviarSms(
   return { sid: json.sid };
 }
 
+/** Id de um número no fornecedor: `PN` + 32 hexadecimais. */
+const NUMERO_ID = /^PN[0-9a-f]{32}$/i;
+
+export function numeroIdValido(numeroId: string): boolean {
+  return NUMERO_ID.test(numeroId);
+}
+
+/**
+ * O número ainda existe nesta conta e esta chave ainda vale? É a sonda de
+ * saúde da conexão: `ok` responde as duas perguntas de uma vez. Recusa de
+ * credencial ou número sumido voltam como `recusado` (o canal caiu); falha de
+ * rede volta como `inalcancavel` (não dá para dizer que caiu).
+ */
+export async function consultarNumero(
+  creds: SmsCredentials,
+  numeroId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ estado: "ok"; numero: string } | { estado: "recusado" | "inalcancavel"; detalhe: string }> {
+  if (!ACCOUNT_SID.test(creds.accountSid) || !NUMERO_ID.test(numeroId)) {
+    return { estado: "recusado", detalhe: "identificador fora do formato" };
+  }
+  let res: Response;
+  try {
+    res = await fetchImpl(`${API_BASE}/Accounts/${creds.accountSid}/IncomingPhoneNumbers/${numeroId}.json`, {
+      method: "GET",
+      headers: { Authorization: autorizacao(creds) },
+      signal: AbortSignal.timeout(TETO_DE_ESPERA_MS),
+    });
+  } catch (err) {
+    return { estado: "inalcancavel", detalhe: err instanceof Error ? err.message.slice(0, 200) : "erro_desconhecido" };
+  }
+  const json = (await res.json().catch(() => null)) as { phone_number?: unknown; message?: unknown } | null;
+  if (res.ok && typeof json?.phone_number === "string") return { estado: "ok", numero: json.phone_number };
+  const detalhe = `${res.status} ${typeof json?.message === "string" ? json.message : res.statusText}`.slice(0, 200);
+  if (res.status === 401 || res.status === 403 || res.status === 404) return { estado: "recusado", detalhe };
+  return { estado: "inalcancavel", detalhe };
+}
+
 /**
  * Confere que o webhook veio do fornecedor: HMAC-SHA1, com a chave da conta,
  * da URL pública EXATA seguida de cada parâmetro do formulário em ordem
