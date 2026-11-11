@@ -48,6 +48,7 @@ import { lerParesDispensados } from "@/lib/contacts/dispensar-par";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import type { Idioma } from "@/lib/i18n/idiomas";
+import { duplicadosPorNomeLigado } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -182,10 +183,24 @@ async function responderDuplicates(
   // ler, e o par dispensado tem de sumir para todo papel que vê esta lista. Se a leitura
   // falhar, a rota falha — mostrar a lista sem as dispensas faria um par tirado voltar
   // calado, e sem o CPF faria o par de mesmo documento sumir sem aviso.
+  //
+  // A OPÇÃO DA EMPRESA (#4138) é lida na MESMA ida ao banco: `settings.crm.
+  // duplicados_por_nome`, desligada por padrão (`duplicadosPorNomeLigado` — só o
+  // booleano `true` liga). Desligada, a varredura por nome não roda E as dispensas
+  // nem são lidas: o par dispensado só existe para esconder uma sugestão que não
+  // existe mais, e ler 5.000 linhas de `merge_queue` para nada é custo sem uso.
   let dispensados: Set<string>;
   let varridos: ContatoParaDeduplicar[];
+  let sugestaoPorNome: boolean;
   try {
-    dispensados = await lerParesDispensados(supabaseAdmin, organizationId);
+    const { data: organizacao, error: erroOrg } = await supabaseAdmin
+      .from("organizations")
+      .select("settings")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (erroOrg) throw new Error(erroOrg.message);
+    sugestaoPorNome = duplicadosPorNomeLigado(organizacao?.settings);
+    dispensados = sugestaoPorNome ? await lerParesDispensados(supabaseAdmin, organizationId) : new Set<string>();
     varridos = await comHashDeCpf(supabaseAdmin, organizationId, linhas.slice(0, TETO_DE_VARREDURA));
   } catch {
     // Sem o detalhe do erro na resposta: a mensagem do banco não é para quem opera a tela.
@@ -194,11 +209,11 @@ async function responderDuplicates(
     });
   }
 
-  // Os fortes vêm primeiro, com o mesmo formato. O nome vem depois, em grupos de
-  // dois: sugestão para conferir, não prova.
+  // Os fortes vêm sempre, com o mesmo formato. O nome vem depois, em grupos de
+  // dois — sugestão para conferir, não prova — e SÓ se a empresa ligou a opção.
   const grupos = [
     ...encontrarContatosDuplicados(varridos),
-    ...encontrarParecidosPorNome(varridos, { dispensados }),
+    ...(sugestaoPorNome ? encontrarParecidosPorNome(varridos, { dispensados }) : []),
   ];
 
   return ok(
@@ -217,6 +232,6 @@ async function responderDuplicates(
         last_activity_at: c.last_activity_at,
       })),
     })),
-    { requestId, meta: { varreu_tudo: varreuTudo, contatos_varridos: Math.min(linhas.length, TETO_DE_VARREDURA) } },
+    { requestId, meta: { varreu_tudo: varreuTudo, contatos_varridos: Math.min(linhas.length, TETO_DE_VARREDURA), sugestao_por_nome: sugestaoPorNome } },
   );
 }
