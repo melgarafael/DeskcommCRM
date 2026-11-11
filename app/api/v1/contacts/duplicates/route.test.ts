@@ -30,7 +30,7 @@ import { createClient } from "@/lib/supabase/server";
  * do usuário, que a policy de `merge_queue` esvazia para quem não é gestor) fica na
  * suíte de invariantes, onde há banco de verdade.
  */
-const dispensa = vi.hoisted(() => ({ pares: new Set<string>() }));
+const dispensa = vi.hoisted(() => ({ pares: new Set<string>(), chamadas: 0 }));
 
 /** O cliente do servidor da vez: é por ele, e não pela sessão, que o CPF é lido. */
 const servidor = vi.hoisted(() => ({ cliente: {} as unknown }));
@@ -40,7 +40,10 @@ vi.mock("@/lib/auth/require-role", () => ({ orgAtivaDaApi: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => servidor.cliente }));
 vi.mock("@/lib/contacts/dispensar-par", () => ({
-  lerParesDispensados: async () => new Set(dispensa.pares),
+  lerParesDispensados: async () => {
+    dispensa.chamadas += 1;
+    return new Set(dispensa.pares);
+  },
 }));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -128,6 +131,16 @@ function fakeSupabase(
       // A leitura do servidor não pagina: `await` direto na cadeia.
       builder.then = (resolver: (v: unknown) => unknown) =>
         Promise.resolve(falha ?? executar(null)).then(resolver);
+      // A leitura da ORGANIZAÇÃO (#4138) pede uma linha só: sem isto, o dublê
+      // devolveria a lista e a rota leria `settings` de um array.
+      builder.maybeSingle = () => {
+        const resposta = falha ?? executar(null);
+        return Promise.resolve({ ...resposta, data: (resposta.data ?? [])[0] ?? null });
+      };
+      builder.single = () => {
+        const resposta = falha ?? executar(null);
+        return Promise.resolve({ ...resposta, data: (resposta.data ?? [])[0] ?? null });
+      };
       builder.range = (inicio: number, fim: number) => {
         registro.faixas.push([inicio, fim]);
         return Promise.resolve(executar([inicio, fim]));
@@ -154,6 +167,8 @@ function contato(i: number, parcial: Linha = {}): Linha {
     email_normalized: null,
     phone_number: `+553198${String(1000000 + i)}`, // 8 dígitos iniciando em 1: sem nono dígito
     cpf_hash: null,
+    wa_identity: null,
+    wa_lid: null,
     is_merged_into: null,
     is_anonymized: false,
     source_metadata: null,
@@ -178,6 +193,7 @@ function corpo(res: Response): Promise<{ data: unknown; meta: Record<string, unk
 
 beforeEach(() => {
   dispensa.pares.clear();
+  dispensa.chamadas = 0;
   servidor.cliente = fakeSupabase({}).client;
   vi.mocked(loadAuthUser).mockResolvedValue({
     id: USER_ID,
@@ -281,15 +297,38 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
     linhas[9] = contato(10, { name: "Clínica Santos Odontologia", phone_number: "+553191110010" });
     linhas[19] = contato(20, {
       name: "Santos Odontologia Clínica Avançada",
-      phone_number: "+553191110020",
+      phone_number: "+553****0020",
     });
     return linhas;
   }
 
+  /** A organização pelo cliente do SERVIDOR, com a opção da #4138 no estado pedido. */
+  function comOpcao(ligada: boolean, contacts: Linha[] = cenario()) {
+    const { client } = fakeSupabase({
+      contacts,
+      organizations: [{ id: ORG_ID, settings: { crm: { duplicados_por_nome: ligada } } }],
+    });
+    servidor.cliente = client;
+    vi.mocked(createClient).mockResolvedValue(client as never);
+  }
+
+  it("⭐ opção DESLIGADA (o padrão): nenhum par por nome, e as dispensas nem são lidas", async () => {
+    // Sabotagem: chamar `encontrarParecidosPorNome` sem consultar a opção deixa o
+    // par na lista e este caso vermelho; ler `merge_queue` para nada quebra a
+    // asserção de `lerParesDispensados`.
+    comOpcao(false);
+
+    const json = await corpo(await chamar());
+    const grupos = json.data as Array<{ motivos: string[] }>;
+
+    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
+    expect(json.meta.sugestao_por_nome, "a tela precisa saber que a seção está desligada").toBe(false);
+    expect(dispensa.chamadas, "desligada, a dispensa não tem o que esconder").toBe(0);
+  });
+
   it("o par por nome vem com motivos nome_parecido, DEPOIS do grupo forte", async () => {
     // Sabotagem: concatenar os parecidos ANTES dos fortes deixa a ordem vermelha.
-    const { client } = fakeSupabase({ contacts: cenario() });
-    vi.mocked(createClient).mockResolvedValue(client as never);
+    comOpcao(true);
 
     const grupos = (await corpo(await chamar())).data as Array<{
       motivos: string[];
@@ -300,6 +339,7 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
     expect(grupos[1]!.contatos.map((c) => c.id)).toEqual(["contato-0010", "contato-0020"]);
     // O campo novo chega à tela, mesmo quando é nulo.
     expect(grupos[1]!.contatos[0]!.address_book_name).toBeNull();
+    expect(dispensa.chamadas, "ligada, a dispensa é lida").toBe(1);
   });
 
   it("par dispensado (com a ordem invertida) não aparece, e o papel de quem olha não muda isso", async () => {
@@ -314,13 +354,13 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
       idioma: "pt-BR",
       organizations: [{ organization_id: ORG_ID, organization_name: "Org", role: "viewer" }],
     } as never);
-    const { client } = fakeSupabase({ contacts: cenario() });
-    vi.mocked(createClient).mockResolvedValue(client as never);
+    comOpcao(true);
 
     const grupos = (await corpo(await chamar())).data as Array<{ motivos: string[] }>;
 
     expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
   });
+
 });
 
 /**
@@ -420,5 +460,68 @@ describe("CPF na varredura", () => {
 
     const leitura = sessao.consultas.find((c) => c.tabela === "contacts")!;
     expect(leitura.filtros).toContainEqual(["organization_id", ORG_ID]);
+  });
+});
+
+/**
+ * ─── O WhatsApp na varredura (#4081) ─────────────────────────────────────────
+ *
+ * `contacts.phone_whatsapp` NÃO é número (é `sim`/`nao`/`nao_sei`), e é por isso
+ * que a coluna não entra aqui. O que identifica a conta é `wa_identity` (0027) e
+ * `wa_lid` (0122) — as duas geradas, as duas com índice único nascido de
+ * `if not exists`. A rota passa a LER as duas e continua devolvendo só pessoa,
+ * telefone e e-mail: identificador de conta de WhatsApp não é dado de tela.
+ */
+describe("WhatsApp na varredura", () => {
+  const LID = "100000000000001";
+
+  function comOLid(linhas: Linha[]): Linha[] {
+    // Duas fichas nascidas do MESMO @lid — antes e depois da correção da 0027, ou
+    // num clone em que o índice único não nasceu. Nomes e telefones diferentes: o
+    // que prova que é a mesma pessoa é a conta do WhatsApp.
+    linhas[4] = contato(5, {
+      name: "Maria Souza",
+      wa_identity: `lid:${LID}`,
+      wa_lid: LID,
+    });
+    linhas[149] = contato(150, {
+      name: "M. Souza Atendimento",
+      wa_identity: `lid:${LID}`,
+      wa_lid: LID,
+    });
+    return linhas;
+  }
+
+  it("⭐ a conta de WhatsApp igual une o par com o motivo `whatsapp` — e a rota PEDE as duas colunas", async () => {
+    const { consultas, client } = fakeSupabase({ contacts: comOLid(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const json = await corpo(await chamar());
+    const grupos = json.data as Array<{ motivos: string[]; contatos: Array<{ id: string }> }>;
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.motivos).toEqual(["whatsapp"]);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["contato-0005", "contato-0150"]);
+
+    // Sabotagem: tirar `wa_identity`/`wa_lid` de `COLUNAS_DO_CONTATO` deixa esta
+    // asserção vermelha — e, no banco, o par nunca mais é encontrado.
+    const leitura = consultas.find((c) => c.tabela === "contacts")!;
+    expect(leitura.colunas).toContain("wa_identity");
+    expect(leitura.colunas).toContain("wa_lid");
+  });
+
+  it("`wa_identity` e `wa_lid` NÃO saem no JSON", async () => {
+    const { client } = fakeSupabase({ contacts: comOLid(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    const texto = await res.clone().text();
+
+    expect(texto).not.toContain("wa_identity");
+    expect(texto).not.toContain("wa_lid");
+    expect(texto).not.toContain(LID);
+    // Controle positivo: o grupo está lá (um payload vazio também não teria o lid).
+    const json = (await res.json()) as { data: unknown[] };
+    expect(json.data).toHaveLength(1);
   });
 });

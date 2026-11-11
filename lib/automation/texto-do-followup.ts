@@ -22,6 +22,7 @@
 import type pg from "pg";
 
 import { anexarCamposDoFunil } from "./campos-do-render";
+import { anexarOpcoesDoRender } from "./opcoes-do-render";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { MARCACAO, renderTemplate } from "./template";
 
@@ -70,7 +71,7 @@ export async function contextoDoContato(
   organizationId: string,
   contactId: string,
 ): Promise<Record<string, unknown>> {
-  const [contatos, negocios] = await Promise.all([
+  const [contatos, negocios, organizacao] = await Promise.all([
     pool.query<Record<string, unknown>>(
       `select * from contacts where organization_id = $1 and id = $2 limit 1`,
       [organizationId, contactId],
@@ -79,8 +80,18 @@ export async function contextoDoContato(
       `select * from crm_leads where organization_id = $1 and contact_id = $2 order by updated_at desc limit 1`,
       [organizationId, contactId],
     ),
+    // O idioma e o fuso da empresa alimentam `{{campo|data}}` (#4339) — mesma
+    // régua da automação, uma leitura a mais pela PK.
+    pool.query<{ locale: string | null; timezone: string | null }>(
+      `select locale, timezone from organizations where id = $1 limit 1`,
+      [organizationId],
+    ),
   ]);
   const contexto: Record<string, unknown> = {};
+  anexarOpcoesDoRender(contexto, {
+    idioma: organizacao.rows[0]?.locale,
+    fuso: organizacao.rows[0]?.timezone,
+  });
   if (contatos.rows[0]) contexto.contact = contatos.rows[0];
   if (negocios.rows[0]) contexto.lead = negocios.rows[0];
 

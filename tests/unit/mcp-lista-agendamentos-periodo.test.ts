@@ -52,22 +52,17 @@ const ctx: McpContext = {
         eq: () => ({ in: async () => ({ data: [{ user_id: DONO }], error: null }) }),
       }),
     }),
-    auth: {
-      admin: {
-        getUserById: async () => ({
-          data: {
-            user: {
-              user_metadata: {
-                full_name: "Ana Souza",
-                // LGPD: isto NUNCA pode aparecer na resposta.
-                email: "ana@clinica.com.br",
-                phone: "+5511999990000",
-              },
-            },
-          },
-          error: null,
-        }),
-      },
+    // O nome vem de UMA consulta a `fn_nomes_dos_membros` (#4326, fatia 3). A
+    // linha traz e-mail e nada de telefone, e a resposta NUNCA pode expor o
+    // e-mail: quem recorta é a tool.
+    rpc: async (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") return { data: null, error: { message: "rpc inesperado" } };
+      return {
+        data: args.p_ids
+          .filter((id) => id === DONO)
+          .map((id) => ({ user_id: id, full_name: "Ana Souza", email: "ana@clinica.com.br" })),
+        error: null,
+      };
     },
   } as unknown as SupabaseClient,
 };

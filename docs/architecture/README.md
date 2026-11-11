@@ -1,5 +1,7 @@
 # Mapas de arquitetura
 
+- `continuidade-primeiro-pagamento.architecture.json`: cadastro com intenção assinada → Auth → primeiro pagamento → checkout nativo → confirmação financeira → onboarding; ajuda e LGPD preservadas.
+
 ## Regra única deste diretório: o JSON é a FONTE; o HTML é DERIVADO
 
 Cada mapa tem um `*.json` (fonte) e pode ter um `*.html` (render).

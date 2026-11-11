@@ -12,6 +12,7 @@ vi.mock("@/lib/external-db/receitas/registro", async (importOriginal) => ({
 }));
 
 import { crmConsultarReceita } from "./receitas-externas";
+import { criarProcedenciaDeImagens } from "@/lib/agent-engine/agent/imagem-por-url";
 import type { McpContext } from "@/lib/mcp/types";
 
 const SENTINELA_ORG = "org-sentinela-isolamento";
@@ -142,6 +143,27 @@ describe("crm_consultar_receita — execução respeita limite e max_rows", () =
     expect(res).not.toHaveProperty("erro");
     expect(executarReceita).toHaveBeenCalledTimes(1);
     expect(executarReceita.mock.calls[0]![1].limiteMax).toBe(3);
+  });
+
+  it("a célula chega inteira ao resultado: a coluna de foto vale como procedência", async () => {
+    const foto = "https://exemplo.test/casas/1.jpg";
+    const executarReceita = vi.fn(async (_consulta: unknown, _opcoes: { limiteMax?: number }) => ({
+      colunas: ["id", "foto"],
+      linhas: [{ id: 1, foto }] as unknown[],
+      truncado: false,
+    }));
+    mocks.abrirAcesso.mockResolvedValue({ ok: true, dialeto: { executarReceita } });
+    const eqChamadas: Array<string[]> = [];
+    const conexao = { id: CONEXAO, db_type: "mysql", receitas: [INSTANCIA], max_rows: 200 };
+    const ctx = ctxComSupabase("org-1", supabaseDuble(eqChamadas, conexao), eqChamadas);
+
+    const res = await crmConsultarReceita.handler(
+      { acao: "executar", connection_id: CONEXAO, instancia_id: INSTANCIA_ID, busca: { termos: ["casa"] } },
+      ctx,
+    );
+    const procedencia = criarProcedenciaDeImagens();
+    procedencia.registrar(res, {});
+    expect(procedencia.viu(foto)).toBe(true);
   });
 
   it("limite pedido menor que o teto: montar recebe esse limite", async () => {
