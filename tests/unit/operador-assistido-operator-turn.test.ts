@@ -59,6 +59,10 @@ const DE_SAIDA = [
   'crm_send_whatsapp_message',
   'crm_schedule_followup',
   'crm_enroll_followup_flow',
+  'crm_book_appointment',
+  'crm_find_and_book_appointment',
+  'crm_reschedule_appointment',
+  'crm_confirm_appointment',
   'mcp_externo:escrita:cancelar_pedido',
   'mcp_externo:22000000-0000-4000-8000-0000000000aa:escrita:enviar_email',
 ];

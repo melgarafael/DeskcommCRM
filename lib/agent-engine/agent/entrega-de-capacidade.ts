@@ -159,6 +159,14 @@ export const FORA_DO_OPERADOR: readonly string[] = ['crm_draft_proposal', 'crm_p
 const RETORNO_QUE_FALA_COM_O_CLIENTE: readonly string[] = [
   'crm_schedule_followup',
   'crm_enroll_followup_flow',
+  // A agenda é a mesma decisão por outra porta: o compromisso marcado manda os
+  // lembretes do tipo ao cliente (`lib/agenda/lembretes.ts`), e `appointment.*`
+  // nasce do gatilho do banco, sem a marca do assistido — as regras desses
+  // gatilhos não teriam o que segurar (doc 301 = B).
+  'crm_find_and_book_appointment',
+  'crm_book_appointment',
+  'crm_reschedule_appointment',
+  'crm_confirm_appointment',
 ];
 
 /**
