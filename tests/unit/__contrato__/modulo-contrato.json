@@ -50,6 +50,7 @@
       "GET /api/v1/agenda/excecoes",
       "GET /api/v1/agenda/horarios-livres",
       "GET /api/v1/agenda/lista-de-espera",
+      "GET /api/v1/agenda/painel-do-dia",
       "GET /api/v1/agenda/pessoas",
       "GET /api/v1/agenda/servicos",
       "GET /api/v1/agenda/tipos",
@@ -551,6 +552,16 @@
           "nome": "corpoSchema",
           "origem": "local",
           "hash": "c33045766d016021"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/painel-do-dia": {
+      "corpo": [
+        {
+          "nome": "consultaSchema",
+          "origem": "local",
+          "hash": "60785f28c9a502f0"
         }
       ],
       "resposta": []
