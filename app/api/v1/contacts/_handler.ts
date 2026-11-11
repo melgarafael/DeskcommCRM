@@ -29,7 +29,10 @@ import {
 } from "@/lib/contacts/conflito-unico";
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
-import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
+import { abrirConversaDoContatoNovo, type PortaDaCriacao } from "@/lib/contacts/conversa-ao-criar";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { listaLegivel } from "@/lib/leads/activity-vocabulary";
+import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { atribuirConversaDoCadastroAoCriador } from "@/lib/contacts/conversa-do-criador";
 import type {
   ContactCreate,
@@ -39,8 +42,12 @@ import type {
 } from "@/lib/schemas";
 import { contactListQuerySchema } from "@/lib/schemas";
 import { arrayDeUmValorParaOr } from "@/lib/inbox/marcador-da-conversa";
-import { buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
-import { padraoRegexDeBusca } from "@/lib/contacts/busca-regex";
+import {
+  buscaValeConsulta,
+  normalizarTermoDeBusca,
+  termoSeguroParaOr,
+  termoSemAcento,
+} from "@/lib/inbox/termo-de-busca";
 import {
   camposQueMudaram,
   defsDoPadraoDaOrg,
@@ -213,71 +220,58 @@ export async function listContactsHandler(
     .limit(q.limit + 1);
 
   if (q.search && termoDeTexto !== undefined) {
-    // ─── O padrão sai em regex, não em LIKE (#1835, F2) ─────────────────────
-    // A composição continua a MESMA da busca de conversas
-    // (`conversations/_handler.ts:297`, `termoSeguroParaOr(normalizarTermoDeBusca(...))`)
-    // e continua sendo a régua única de `lib/inbox/termo-de-busca.ts` — o que
-    // muda é o DESTINO do padrão:
+    // ─── A MESMA RÉGUA DA BUSCA DO INBOX (#3918, fatia 2) ──────────────────
     //
-    //   normalizarTermoDeBusca → como a PESSOA digitou: espaço duplo, vírgula e
-    //                            ponto e vírgula colapsam num curinga só, então
-    //                            "Paulo  Lima" e "Paulo Jr" acham o "Paulo Lima Jr"
-    //                            e "Silva, Maria" não exige mais adjacência
-    //   padraoRegexDeBusca     → o curinga vira `.*`, o `%`/`_` digitado continua
-    //                            literal, e a LETRA com grafias vira classe
-    //                            (`jo[aáàâãä]o`) — é ela que faz "Joao" achar
-    //                            "João" e "João" achar "Joao"
+    // Aqui havia `name.imatch.*…*`, `display_name.imatch.*…*` e
+    // `address_book_name.imatch.*…*`. O `ILIKE` (e o regex que o imitava) dobra
+    // a CAIXA, não o ACENTO — `lower('Á') = 'á'`, que não é `'a'` —, então
+    // "Joao" não achava "João" e quem digita rápido, sem acento, concluía que o
+    // cliente não existia. Desde o #3924 o banco tem a coluna GERADA
+    // `contacts.busca_sem_acento` — `lower(public.f_unaccent(display_name,
+    // name, address_book_name))`, com índice `pg_trgm` (migration 9098) — e o
+    // inbox já busca nela. A partir daqui as TRÊS portas da busca de contato
+    // (a tela de Contatos, o seletor e a ferramenta do agente) usam a MESMA
+    // coluna, e `lib/contacts/busca-regex.ts` (a régua própria da #1835) foi
+    // aposentada: duas réguas de acento divergem no primeiro ajuste.
     //
-    // Por que regex e não `ilike` (a parte medida da F2): `ILIKE` dobra a CAIXA,
-    // não o ACENTO — `lower("Á") = "á"`, que não é `"a"` —, e o banco não tem
-    // `unaccent` nenhum (`git grep unaccent origin/main -- supabase/` = 0) para
-    // chamar do lado de lá. Sem coluna materializada (migração + backfill + gatilho,
-    // a F2 que ficou de fora do #1892), a comparação de acento é NOSSA dos dois
-    // lados: o termo normalizado aqui, a coluna virando classe no padrão. O
-    // operador `imatch` (`~*`) resolve a caixa. Medido contra o PostgREST real
-    // (docker postgrest/postgrest:latest + postgres:17) antes de escrever esta
-    // linha: um só `or=` com as quatro colunas em `imatch` + as variantes de
-    // telefone em `ilike` devolve as seis linhas certas.
+    // Composição, nesta ordem — cada passo tem um dono:
+    //   normalizarTermoDeBusca → como a PESSOA digitou (espaço duplo, vírgula
+    //                            e ponto e vírgula viram UM curinga)
+    //   termoSeguroParaOr      → a GRAMÁTICA do `or=` do PostgREST (`,` `(` `)`
+    //                            viram curinga; `%`/`_` digitados, literais)
+    //   termoSemAcento         → o lado do TERMO da coluna: NFD sem marca,
+    //                            minúsculo, com a mesma tabela de letras que o
+    //                            `unaccent` do banco cobre (ß→ss, ø→o…)
     //
-    // Os PARÊNTESES saem ANTES da régua: são delimitador do DSL do `.or()` do
-    // PostgREST (um "(" sem fechar derrubaria o filtro inteiro com HTTP 400 — no
-    // regex o Postgres devolve `2201B parentheses () not balanced`) e a régua não
-    // os conhece — tirá-los depois deixaria `Paulo* Jr` com espaço solto, que não
-    // casa nada. A VÍRGULA também não passa: `normalizarTermoDeBusca` usa ela
-    // como separador, e uma vírgula que sobrasse splitaria o `.or()` em duas
-    // condições (medido: `PGRST100 failed to parse logic tree`). Um nome com
-    // vírgula continua sem injetar condição nenhuma.
-    const s = padraoRegexDeBusca(termoDeTexto);
+    // `like` e não `ilike`: a coluna já é minúscula, e o índice GIN de trigrama
+    // serve os dois operadores. O `%`/`_` escapado pelo `termoSeguroParaOr` é
+    // literal no LIKE do Postgres — o `%` digitado não vira "casa tudo".
+    //
+    // Os PARÊNTESES saem ANTES da régua, como antes: são delimitador do DSL do
+    // `.or()` (um `(` sem fechar derrubaria o filtro inteiro com HTTP 400) e a
+    // régua não os conhece — tirá-los depois deixaria espaço solto, que não
+    // casa nada.
+    const s = termoSemAcento(termoSeguroParaOr(normalizarTermoDeBusca(termoDeTexto)));
+
+    // A coluna do NOME muda com `soContato`: `busca_sem_acento` carrega também
+    // o nome da agenda do celular (#2439), e ele é SÓ DA EQUIPE. Na busca do
+    // agente durante a conversa (`crm_search_contacts`), casar nele faria a
+    // ferramenta responder ao modelo se o rótulo interno contém o termo — o
+    // rótulo chegaria ao cliente aos pedaços. `busca_sem_acento_sem_agenda`
+    // (migration 9325) é `display_name` + `name` e nada mais, e é a coluna que
+    // aquela busca usa; ela não tem índice porque o `id` do turno já a reduz a
+    // UMA linha.
+    const colunaDoNome = soContato ? "busca_sem_acento_sem_agenda" : "busca_sem_acento";
+
     const digits = q.search.replace(/\D/g, "");
     const orParts = [
-      `name.imatch.${s}`,
-      // ⚠️ `display_name` ESTAVA DE FORA, e é a coluna que a tela MOSTRA.
-      //
-      // Contato que entra pelo WhatsApp nasce só com `display_name` (o pushName);
-      // `name` fica nulo até alguém editar à mão, e a busca ignorava exatamente
-      // o nome que o usuário vê e digita. Medido nesta instalação: 15 de 33
-      // contatos têm `display_name` e nenhum `name`.
-      //
-      // Quem decide o nome exibido é `nomeDoContato`/`rotuloDoContato`
-      // (lib/contacts/rotulo-do-contato.ts) — a ordem em vigor se lê ali, não
-      // aqui. Esta linha já afirmou que a UI prefere `display_name`, e a issue
-      // #906 inverteu a precedência sem que a frase acompanhasse. O que
-      // justifica a coluna no OR não é a ordem: é que ela é a ÚNICA preenchida
-      // em metade da base, então buscar sem ela devolve zero para quem existe.
-      //
-      // Achado por um turno de agente REAL (IA 360 · wave 2): pedido para marcar
-      // um retorno para "Cliente Retorno E2E", o modelo chamou esta busca, levou
-      // zero resultados para um contato que EXISTE, e desistiu — a demanda
-      // morreria por uma coluna faltando no OR.
-      `display_name.imatch.${s}`,
-      // O nome da agenda do celular (#2439) é o que a tela mostra quando não há
-      // nome escolhido no CRM — mesma razão do `display_name` acima. Mas ele é SÓ
-      // DA EQUIPE: com `soContato` (a busca do agente durante a conversa), casar
-      // nele faria a ferramenta responder ao modelo se o rótulo interno contém o
-      // termo digitado — o rótulo chegaria ao cliente aos pedaços.
-      ...(soContato ? [] : [`address_book_name.imatch.${s}`]),
-      `email.imatch.${s}`,
-      `phone_number.imatch.${s}`,
+      `${colunaDoNome}.like.*${s}*`,
+      // Email e telefone NÃO têm acento: seguem no `ilike` com o termo
+      // saneado, e não na coluna gerada — ela guarda só os NOMES. Continuam no
+      // OR porque a pessoa busca o cadastro pelo que tem à mão: o e-mail que o
+      // cliente mandou ou o número do identificador de chamadas.
+      `email.ilike.*${s}*`,
+      `phone_number.ilike.*${s}*`,
     ];
     if (digits.length >= 8) {
       // 10/11 dígitos sem DDI: no Brasil é DDD+local. Sem o 55, `3284793302`
@@ -287,7 +281,7 @@ export async function listContactsHandler(
           ? `55${digits}`
           : digits;
       // Os critérios de TELEFONE do principal, reaproveitados para o extra abaixo.
-      const criteriosDeTelefone = [`phone_number.imatch.${s}`];
+      const criteriosDeTelefone = [`phone_number.ilike.*${s}*`];
       for (const v of phoneLookupVariants(base)) {
         const d = v.replace(/\D/g, "");
         if (d && d !== digits) {
@@ -363,9 +357,7 @@ export async function listContactsHandler(
     }
     const op = asc ? "gt" : "lt";
     if (c.sort) {
-      query = query.or(
-        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`,
-      );
+      query = query.or(`${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`);
     } else {
       // Página na região de sort NULL (nulls last): pagina só por id.
       query = query.is(sortCol, null);
@@ -525,9 +517,11 @@ export async function getContactHandler(
     }
   }
 
-  const { contacts: enriched, error: convErr } = await withConversas(supabase, ctx.organization_id, [
-    contact,
-  ]);
+  const { contacts: enriched, error: convErr } = await withConversas(
+    supabase,
+    ctx.organization_id,
+    [contact],
+  );
   if (convErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, convErr);
   }
@@ -643,10 +637,22 @@ export interface CreateContactResult {
   action: "created";
 }
 
+export interface CreateContactOptions {
+  /**
+   * Quem está criando, para a regra de "criar contato abre conversa"
+   * (`lib/contacts/conversa-ao-criar.ts`). Padrão `manual`: a rota e o cartão
+   * do negócio. A prospecção declara `prospeccao`, porque abre a conversa no
+   * canal da campanha por conta própria.
+   */
+  porta?: Extract<PortaDaCriacao, "manual" | "prospeccao">;
+}
+
 export async function createContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: ContactCreate,
+  linkedLeadId?: string,
+  opcoes: CreateContactOptions = {},
 ): Promise<CreateContactResult> {
   // ── O PADRÃO (#2730) — a MESMA régua do formulário, aqui no SERVIDOR ──────
   //
@@ -702,13 +708,25 @@ export async function createContactHandler(
     Object.assign(insertRow, await camposCpfParaGravar(supabase, input.cpf));
   }
 
-  const { data: created, error: insErr } = await supabase
-    .from("contacts")
-    .insert(insertRow)
-    .select(SELECT_COLS)
-    .single();
+  const { data: created, error: insErr } = linkedLeadId
+    ? await supabase.rpc("fn_create_contact_for_lead", {
+        p_organization_id: ctx.organization_id,
+        p_lead_id: linkedLeadId,
+        p_contact: insertRow,
+      })
+    : await supabase.from("contacts").insert(insertRow).select(SELECT_COLS).single();
 
   if (insErr) {
+    if (insErr.code === "PT404") throw new ApiError(404, "not_found", undefined, ctx.requestId);
+    if (insErr.code === "PT409")
+      throw new ApiError(
+        409,
+        "conflict",
+        undefined,
+        ctx.requestId,
+        traduzir("Este negócio já tem contato vinculado. Atualize a ficha.", ctx.idioma ?? "pt-BR"),
+      );
+    if (insErr.code === "42501") throw new ApiError(403, "forbidden", undefined, ctx.requestId);
     // 409 quando o dado já pertence a um contato vivo desta organização (#3084).
     //
     // O índice parcial `uniq_contacts_org_phone` (organization_id, phone_number)
@@ -723,7 +741,8 @@ export async function createContactHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
-  const contact = fichaDaResposta(created as LinhaDeContato);
+  // A função do negócio já devolve a ficha, com `cpf_available` e sem coluna de CPF.
+  const contact = linkedLeadId ? (created as Contact) : fichaDaResposta(created as LinhaDeContato);
   // ── A CONVERSA DO CONTATO NOVO (#3718) ────────────────────────────────────
   //
   // A regra — esta porta abre, a importação por CSV não — mora num lugar só:
@@ -732,8 +751,16 @@ export async function createContactHandler(
   // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
   // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
   // porta.
-  const conversa = await abrirConversaDoContatoNovo(supabase, {
-    porta: "manual",
+  // Criar pelo negócio é a MESMA ficha manual, uma por vez: a regra de abrir
+  // conversa é a da porta `manual` (`lib/contacts/conversa-ao-criar.ts`), e o
+  // `contact.created` sai igual ao das outras portas que criam contato.
+  //
+  // Cliente de SERVIÇO, não o recebido: `fn_service_begin` só é concedido a
+  // `service_role`, e com o cliente do cookie a RPC voltava 42501 — o contato
+  // gravava e a conversa nunca abria. A organização já veio de fonte confiável
+  // (sessão ou token) em `ctx`, e a escolha da sessão e a RPC filtram por ela.
+  const conversa = await abrirConversaDoContatoNovo(createAdminClient(), {
+    porta: opcoes.porta ?? "manual",
     organizationId: ctx.organization_id,
     contactId: contact.id,
     phoneNumber: contact.phone_number,
@@ -784,6 +811,40 @@ export async function createContactHandler(
     metadata: { ...a.metadataActor, source: contact.source },
   });
 
+  if (linkedLeadId) {
+    // O vínculo entra na timeline do negócio como o PATCH de `contact_id` já
+    // faz (`leads/_handler.updateLeadHandler`): nome do campo, nunca o valor.
+    const atividade = await emitLeadActivity(supabase, {
+      organizationId: ctx.organization_id,
+      leadId: linkedLeadId,
+      contactId: contact.id,
+      type: "lead_edited",
+      sourceModule: "crm",
+      sourceId: linkedLeadId,
+      actor: ctx.actor,
+      reason: `Alterou ${listaLegivel(["contact_id"])}`,
+      payload: { fields: ["contact_id"] },
+    });
+    if (!atividade.ok) {
+      await registraFalhaDeAtividade(supabase, {
+        organizationId: ctx.organization_id,
+        leadId: linkedLeadId,
+        tipo: "lead_edited",
+        origem: "contacts/_handler.createContactHandler",
+        erro: atividade.error,
+        requestId: ctx.requestId,
+      });
+    }
+    await audit({
+      action: "lead.updated",
+      actorUserId: a.actorUserId,
+      organizationId: ctx.organization_id,
+      resourceType: "lead",
+      resourceId: linkedLeadId,
+      requestId: ctx.requestId,
+      metadata: { ...a.metadataActor, from: { contact_id: null }, to: { contact_id: contact.id } },
+    });
+  }
   return { contact, action: "created" };
 }
 
@@ -881,7 +942,9 @@ export async function patchContactHandler(
   // O banco deriva a coluna sozinho — era só não escrever nela.
   if (input.email !== undefined) patch.email = input.email;
   if (input.phone_number !== undefined) {
-    patch.phone_number = input.phone_number ? canonicalPhoneBR(input.phone_number) : input.phone_number;
+    patch.phone_number = input.phone_number
+      ? canonicalPhoneBR(input.phone_number)
+      : input.phone_number;
   }
   // Tipo e WhatsApp do principal (Spec 31, B2). Ausentes não entram no patch: o
   // gatilho do banco recalcula só o que a pessoa não fixou (ver a migration 9043).
@@ -1155,11 +1218,7 @@ const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{ tabela: string; rotulo: st
  * por organização, um id alheio responderia "sem vínculos" e a tela diria que é
  * seguro excluir algo que quem chamou nem enxerga.
  */
-async function contatoExistente(
-  supabase: SB,
-  ctx: HandlerCtx,
-  contactId: string,
-): Promise<void> {
+async function contatoExistente(supabase: SB, ctx: HandlerCtx, contactId: string): Promise<void> {
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
     .select("id, organization_id")
@@ -1267,7 +1326,10 @@ export async function deleteContactHandler(
       "state_conflict",
       { vinculos, por_tabela },
       ctx.requestId,
-      traduzir("Não foi possível excluir: o contato ainda tem registros vinculados.", ctx.idioma ?? "pt-BR"),
+      traduzir(
+        "Não foi possível excluir: o contato ainda tem registros vinculados.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
 
@@ -1290,12 +1352,14 @@ export async function deleteContactHandler(
   // terceiro (RFC 7009) — então revoga primeiro. A tabela é server-side only
   // (service role), filtrada pela organização do ctx. Melhor esforço: falha
   // do terceiro não barra a exclusão.
-  await revogarAcessosDoContato(createAdminClient(), ctx.organization_id, contactId).catch((err: unknown) => {
-    logger.warn("revogacao dos acessos MCP do contato falhou antes da exclusao", {
-      organization_id: ctx.organization_id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  });
+  await revogarAcessosDoContato(createAdminClient(), ctx.organization_id, contactId).catch(
+    (err: unknown) => {
+      logger.warn("revogacao dos acessos MCP do contato falhou antes da exclusao", {
+        organization_id: ctx.organization_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    },
+  );
   let apagou = false;
   try {
     const { data, error: rpcErr } = await supabase.rpc("fn_apagar_contato_com_historico", {

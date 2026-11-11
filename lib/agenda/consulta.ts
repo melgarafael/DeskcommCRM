@@ -578,7 +578,14 @@ export interface AgendamentoListado {
    * vínculo e não paga o preço de quem publica. (issue #1744)
    */
   leadIds?: string[];
-  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string };
+  /**
+   * Pessoas da equipe convidadas além do responsável (#4006).
+   *
+   * É o que deixa a tela mostrar quem mais está no compromisso — e o que
+   * explica por que ele aparece na agenda de quem não é o dono.
+   */
+  convidadosDaEquipe?: string[];
+  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string; pessoas: number };
 }
 
 export interface ParametrosDaLista {
@@ -738,7 +745,7 @@ async function fusoDaOrganizacao(
  * `null` quando o fuso é inexistente (`instanteDe` lança `RangeError`) — quem
  * chama cai no corte em UTC.
  */
-function janelaDoDiaNoFuso(dia: string, fuso: string): { de: string; ate: string } | null {
+export function janelaDoDiaNoFuso(dia: string, fuso: string): { de: string; ate: string } | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dia);
   if (!m) return null;
   const [ano, mes, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
@@ -897,7 +904,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error",
+      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_party_size, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -912,7 +919,23 @@ export async function listaAgendamentos(
   if (idsPorLead) q = q.in("id", idsPorLead);
   if (params.contactId) q = q.eq("contact_id", params.contactId);
   if (params.somenteColetivas) q = q.in("service_booking_mode", ["collective_limited", "collective_unlimited"]);
-  if (params.ownerUserId) q = q.eq("owner_user_id", params.ownerUserId);
+  if (params.ownerUserId) {
+    /**
+     * A AGENDA DE QUEM FOI CONVIDADO TAMBÉM É DELE (#4006).
+     *
+     * O recorte por dono existia porque o compromisso tinha um responsável e só
+     * ele participava. Com convidados da equipe, "minha agenda" precisa mostrar
+     * o que eu vou ATENDER (sou o dono) e o que eu fui CHAMADO a participar —
+     * sem isso, a SDR marca com o closer, o closer abre a própria agenda e não
+     * vê nada, que é metade do relato da issue.
+     *
+     * `cs` é "contém" de array no PostgREST, e o id é uuid validado a montante:
+     * não há vírgula nem chave para escapar na expressão `or`.
+     */
+    q = q.or(
+      `owner_user_id.eq.${params.ownerUserId},team_guest_user_ids.cs.{${params.ownerUserId}}`,
+    );
+  }
   if (params.situacao) q = q.eq("status", params.situacao);
   if (params.depoisDe) {
     const cursor = decodificarCursorDaLista(params.depoisDe);
@@ -1048,8 +1071,12 @@ export async function listaAgendamentos(
         tipo: tipo ? { slug: texto(tipo.slug) ?? "", nome: texto(tipo.name) ?? "" } : null,
         local: { tipo: texto(l.location_kind), descricao: texto(l.location_details) },
         leadIds: vinculosPorAlvo?.get(String(l.id)) ?? [],
+        convidadosDaEquipe: Array.isArray(l.team_guest_user_ids)
+          ? (l.team_guest_user_ids as unknown[]).map(String)
+          : [],
         ...(l.service_occurrence_id ? { servico: { occurrence_id: String(l.service_occurrence_id), participant_name: texto(l.participant_name),
           booking_mode: String(l.service_booking_mode), capacity_limit: l.service_capacity_limit == null ? null : Number(l.service_capacity_limit),
+          pessoas: Number(l.service_party_size ?? 1),
           google_publication: l.service_publication_mode === "none" ? "not_configured" : l.google_conflict ? "conflict" : l.google_sync_error ? "failed"
             : l.google_event_id && l.google_synced_local_revision === l.google_local_revision ? l.status === "cancelled" ? "removed" : "synced" : "pending" } } : {}),
       } satisfies AgendamentoListado;
@@ -1141,6 +1168,8 @@ export interface TipoDeAtendimento {
    * controle decorativo, invertido.
    */
   lembreteLigado: boolean;
+  /** true = a descrição do evento no Google leva o bloco do negócio (migration 9209). Desligado de fábrica. */
+  levarDadosDoNegocio: boolean;
   lembreteCanalId?: string | null;
   /** Modelo aprovado para quando a janela de 24 h do cliente fechou (`lib/agenda/lembrete-por-modelo.ts`). */
   lembreteModeloId?: string | null;
@@ -1166,6 +1195,14 @@ export type ResultadoDosTipos =
     };
 
 /**
+ * As colunas do tipo de agendamento, numa lista só: a da tela de configuração e a
+ * da rota. Eram duas, e a coluna que entrou em uma e não na outra fazia o
+ * formulário reabrir sem o valor gravado e, ao salvar, apagá-lo.
+ */
+export const COLUNAS_DO_TIPO_DE_AGENDAMENTO =
+  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode";
+
+/**
  * Os tipos de atendimento da organização.
  *
  * ⚠️ Erro de leitura NUNCA vira lista vazia. As duas leituras são
@@ -1182,9 +1219,7 @@ export async function listaTiposDeAtendimento(
 
   let q = supabase
     .from("calendar_event_types")
-    .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode",
-    )
+    .select(COLUNAS_DO_TIPO_DE_AGENDAMENTO)
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
     .eq("organization_id", organizationId);
@@ -1220,6 +1255,7 @@ export async function listaTiposDeAtendimento(
       antecedenciaMinimaMin: Number(t.minimum_notice_minutes),
       janelaDeAgendamentoDias: Number(t.booking_window_days),
       lembreteLigado: Boolean(t.reminder_enabled),
+      levarDadosDoNegocio: t.levar_dados_do_negocio === true,
       lembreteCanalId: t.reminder_channel_session_id ?? null,
       lembreteModeloId: t.reminder_meta_template_id ?? null,
       lembreteAntecedenciaMin: Number(t.reminder_minutes_before),

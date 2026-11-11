@@ -49,6 +49,14 @@ export function useAlterarMensagem(conversationId: string | null) {
     },
     onError: showApiError,
   });
+  const reagir = useMutation({
+    mutationFn: ({ id, emoji }: { id: string; emoji: string }) =>
+      apiClient.post(`/api/v1/messages/${id}/reactions`, { emoji }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+    },
+    onError: showApiError,
+  });
   // Reenvio da mensagem que falhou, na mesma linha. Sem toast: a própria bolha
   // muda (sai de "Falhou"). A recarga é explícita porque a rede de segurança do
   // fio só percebe mensagem nova, não troca de status — e vale também na
@@ -78,5 +86,5 @@ export function useAlterarMensagem(conversationId: string | null) {
       showApiError(err);
     },
   });
-  return { editar, apagar, ocultar, restaurar, reenviar };
+  return { editar, apagar, ocultar, restaurar, reenviar, reagir };
 }

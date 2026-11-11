@@ -5,6 +5,7 @@
 import { z } from "zod";
 
 import { DEFAULT_SENTIMENT_THRESHOLD } from "@/lib/ai/prompts/sentiment";
+import { TETO_DA_FRASE_DO_AVISO } from "@/lib/escalacao/frase-do-aviso-configurada";
 
 // ---------------------------------------------------------------------------
 // Models permitidos (Vercel AI Gateway)
@@ -145,6 +146,16 @@ export const agentConfigSchema = z.object({
   voice_speed: z.number().min(0.25).max(1.5).default(0.85),
   voice_model: agentVoiceModelSchema.default("gpt-realtime"),
   /**
+   * A voz do AGENTE para a resposta falada por TTS (#4228) — `voice_id` do
+   * ElevenLabs, DIFERENTE de `voice` acima, que é a da Realtime (OpenAI) do
+   * canal de ligação. `null`/ausente = herda a voz da organização
+   * (`organizations.settings.voz.voice_id`), o comportamento de antes.
+   *
+   * Sem `.default()` de propósito: um PATCH de outra chave não pode regravar a
+   * voz de todo agente que nunca escolheu (mesmo motivo de `sentiment_threshold`).
+   */
+  voz_voice_id: z.string().trim().min(1).max(200).nullable().optional(),
+  /**
    * Aceita os comandos de controle `#on`/`#off` enviados pelo CELULAR do
    * operador (C-076)? `false` (default do produto) = o ingest NÃO reconhece os
    * comandos; qualquer mensagem do celular continua pausando a IA normalmente.
@@ -175,6 +186,15 @@ export const agentConfigSchema = z.object({
    * `lib/agent-engine/agent/modo-de-conhecimento.ts`.
    */
   knowledge_mode: z.enum(["busca", "leitura_direta"]).default("busca"),
+  /**
+   * A frase que o CLIENTE lê quando a IA passa a conversa para uma pessoa
+   * (#3725, tela desde o #3816). `null`/ausente = a frase padrão do produto,
+   * curta e humana (`textoDoAviso`). Lida em runtime por
+   * `lerFraseDoAvisoConfigurada`, que é quem valida tamanho e conteúdo — aqui o
+   * teto é o MESMO `TETO_DA_FRASE_DO_AVISO`, para o PATCH recusar com 400 o que
+   * a leitura recusaria em silêncio.
+   */
+  aviso_de_handoff: z.string().max(TETO_DA_FRASE_DO_AVISO).nullable().optional(),
 });
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
