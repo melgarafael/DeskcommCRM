@@ -2127,9 +2127,12 @@ export const DICIONARIO: Traducoes = {
   "Ativos:": { es: "Activos:" },
   "Busca": { es: "Búsqueda" },
   "Etiqueta": { es: "Etiqueta" },
-  "Buscar por nome, telefone ou última mensagem…": {
-    es: "Buscar por nombre, teléfono o último mensaje…",
+  // #1355 — a busca passou a alcançar o TEXTO das mensagens: o placeholder e o
+  // rótulo do trecho casado mudam juntos, porque um promete o que o outro mostra.
+  "Buscar por nome, telefone ou texto das mensagens…": {
+    es: "Buscar por nombre, teléfono o texto de los mensajes…",
   },
+  "Encontrado numa mensagem anterior": { es: "Encontrado en un mensaje anterior" },
   "Buscar mensagens…": { es: "Buscar mensajes…" },
   "Todos os números": { es: "Todos los números" },
   "Todas as tags": { es: "Todas las etiquetas" },

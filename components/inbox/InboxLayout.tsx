@@ -640,6 +640,17 @@ export function InboxLayout({
     // O mesmo vale para o encaminhamento: o destino não pode sobreviver à
     // troca de conversa.
     setEncaminhando(null);
+    // ─── ABRIR JÁ NO TRECHO ENCONTRADO (#1355) ────────────────────────────
+    //
+    // Quando a linha veio de um casamento no TEXTO de uma mensagem, o fio abre
+    // com a busca do #1793 no mesmo termo: ela destaca as ocorrências e rola até
+    // a primeira. É o mais perto de "abrir na mensagem" que o fio suporta sem
+    // paginar em torno de uma mensagem — ele só conhece as páginas carregadas —,
+    // e o termo continua valendo quando as antigas forem carregadas.
+    if (id && filters.search) {
+      const daBusca = conversasDaLista.find((c) => c.id === id)?.busca_em_mensagem;
+      if (daBusca) setBusca({ conversaId: id, termo: filters.search });
+    }
     // ?id= é o formato já usado pelos atalhos do CRM. A History API mantém a
     // seleção instantânea sem pedir um novo Server Component a cada clique.
     const params = new URLSearchParams(searchParams.toString());
@@ -652,7 +663,7 @@ export function InboxLayout({
     if (navegarNoInbox(query ? `${pathname}?${query}` : pathname, selectedId, id) === "trocou") {
       setSelectedId(id);
     }
-  }, [selectedId, searchParams, pathname]);
+  }, [selectedId, searchParams, pathname, conversasDaLista, filters.search]);
   const handleVisibleChange = useCallback((ids: string[]) => setVisibleIds(ids), []);
   const handleFocusReply = useCallback(() => composerRef.current?.focus(), []);
   const handleClaim = useCallback(() => {

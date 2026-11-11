@@ -68358,6 +68358,15 @@ alter table public.contacts
 
 notify pgrst, 'reload schema';
 
+-- ---- busca no TEXTO das mensagens (migration 9332, #1355 fatia 1) ----
+-- A busca do Inbox deixa de alcançar só `last_message_preview` (a última
+-- mensagem) e passa a casar `body`. O índice é o que tira o `ILIKE '%termo%'`
+-- do seq scan: 77 ms → 0,62 ms num termo raro, com 200.000 mensagens (heap de
+-- 71 MB, índice de 14 MB). Trigrama e não full-text: o caso é SUBSTRING, e
+-- `pg_trgm` já é a fundação do schema. Cabeçalho completo na 9332.
+create index if not exists idx_messages_body_trgm
+  on public.messages using gin (body public.gin_trgm_ops);
+
 -- ---- o molde de IA das empresas novas: as funções e o gatilho (migration 9096) ----
 --
 -- A PRIMEIRA metade da 9096, aqui porque cria FUNÇÃO e a VARREDURA anon (logo

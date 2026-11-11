@@ -16,8 +16,12 @@ import type {
   ListConversationsQuery,
   PatchConversationInput,
 } from "@/lib/schemas";
-import type { Conversation } from "@/lib/types/messaging";
+import type { Conversation, TrechoDeBusca } from "@/lib/types/messaging";
 import { normalizarTermoDeBusca, termoSemAcento, termoSeguroParaOr } from "@/lib/inbox/termo-de-busca";
+import {
+  TETO_DE_CONVERSAS_NA_BUSCA_DE_MENSAGENS,
+  buscarConversasPorTextoDeMensagem,
+} from "@/lib/inbox/busca-em-mensagens";
 import { ORDEM_DA_ESPERA, ehAFila, comPreFiltroDoComando } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
 import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
@@ -60,17 +64,36 @@ const ORCAMENTO_DE_IDS_NA_URL = 5_000;
  * aparece porque a busca por conteúdo (`last_message_preview`) continua rodando
  * ao lado, sem depender desta lista.
  */
-function idsQueCabemNaURL(ids: string[]): string[] {
+function idsQueCabemNaURL(ids: string[], orcamento: number = ORCAMENTO_DE_IDS_NA_URL): string[] {
   const cabem: string[] = [];
   let bytes = 0;
   for (const id of ids) {
     // +1 pela vírgula que separa; o último sobra do lado seguro.
     const custo = id.length + 1;
-    if (bytes + custo > ORCAMENTO_DE_IDS_NA_URL) break;
+    if (bytes + custo > orcamento) break;
     cabem.push(id);
     bytes += custo;
   }
   return cabem;
+}
+
+/**
+ * O que um id de 36 caracteres ocupa na lista separada por vírgula (+1 da
+ * vírgula). Usado para reservar o orçamento do ramo de MENSAGEM antes de
+ * preencher o dos contatos.
+ */
+const BYTES_DE_UM_ID_NA_URL = 37;
+
+/**
+ * O que uma lista de ids JÁ ocupa do orçamento da URL.
+ *
+ * A busca do Inbox passou a ter TRÊS fontes de id — contato, telefone extra e,
+ * desde a #1355, conversa com mensagem casada — todas dentro do mesmo `or=`.
+ * Duas delas com o orçamento cheio estouram a linha de requisição em silêncio
+ * (o `414` do gateway vira `500`), então quem entra depois paga o que sobrou.
+ */
+function bytesDaListaDeIds(ids: string[]): number {
+  return ids.reduce((total, id) => total + id.length + 1, 0);
 }
 
 const SELECT_COLS = `
@@ -197,6 +220,16 @@ export async function listConversationsHandler(
     .order(sortCol, ordem)
     .order("id", { ascending: asc })
     .limit(q.limit + 1);
+
+  /**
+   * Os casamentos no TEXTO das mensagens, por conversa (#1355).
+   *
+   * Vive fora do `if (q.search)` porque a PÁGINA precisa dele depois: a consulta
+   * que casa mensagens é limitada ao teto de conversas, e o trecho só é anexado
+   * às linhas que a lista realmente devolveu — as demais casaram, mas não estão
+   * nesta página.
+   */
+  let trechos = new Map<string, TrechoDeBusca>();
 
   // Contato pessoal some da lista (spec 21, etapa 7 — critério 1): conversa cujo
   // contato é pessoal não aparece em nenhuma visão. ANTES de todo filtro
@@ -496,10 +529,49 @@ export async function listConversationsHandler(
     const ids = idsQueCabemNaURL([
       ...new Set([...(contatos ?? []).map((c) => (c as { id: string }).id), ...idsDoExtra]),
     ]);
-    if (ids.length > 0) {
-      query = query.or(
-        `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,
-      );
+
+    // ─── A BUSCA ALCANÇA O TEXTO DAS MENSAGENS (#1355) ────────────────────
+    //
+    // O `ilike` acima olha `last_message_preview` — a ÚLTIMA mensagem, já
+    // truncada. Quem atende não conseguia responder "onde o cliente falou sobre
+    // X": o termo da 3ª mensagem de um tique de 32 devolvia zero.
+    //
+    // A consulta devolve IDs DE CONVERSA (e o trecho, para a linha poder dizer
+    // POR QUE apareceu). Os ids entram como MAIS UM RAMO do mesmo `or=`, e não
+    // como uma lista paralela: o `WHERE` da lista — organização, contato
+    // pessoal, canal desativado, status, fila, dono, etiqueta — segue valendo
+    // inteiro para eles. É o que faz a busca herdar a MESMA régua de
+    // visibilidade em vez de reimplementá-la (ver `lib/inbox/busca-em-mensagens`).
+    trechos = await buscarConversasPorTextoDeMensagem(
+      supabase,
+      ctx.organization_id,
+      s,
+      TETO_DE_CONVERSAS_NA_BUSCA_DE_MENSAGENS,
+    );
+    // O ramo de MENSAGEM reserva o próprio teto (40 × 37 B ≈ 1,5 kB) e o
+    // contato paga o que sobrar. Sem casamento em mensagem (o caso de hoje, em
+    // toda busca por nome), os contatos ficam com o orçamento inteiro — nenhum
+    // regresso para o #507.
+    const idsDeMensagem = idsQueCabemNaURL(
+      [...trechos.keys()],
+      Math.min(
+        ORCAMENTO_DE_IDS_NA_URL,
+        TETO_DE_CONVERSAS_NA_BUSCA_DE_MENSAGENS * BYTES_DE_UM_ID_NA_URL,
+      ),
+    );
+    const idsDeContatoNaURL = idsQueCabemNaURL(
+      ids,
+      ORCAMENTO_DE_IDS_NA_URL - bytesDaListaDeIds(idsDeMensagem),
+    );
+
+    const ramos = [`last_message_preview.ilike.*${s}*`];
+    if (idsDeContatoNaURL.length > 0) ramos.push(`contact_id.in.(${idsDeContatoNaURL.join(",")})`);
+    // Ramo de CONTEÚDO: `id.in.(…)`, e não `contact_id` — o casamento é da
+    // conversa, que pode ter qualquer contato (ou nenhum).
+    if (idsDeMensagem.length > 0) ramos.push(`id.in.(${idsDeMensagem.join(",")})`);
+
+    if (ramos.length > 1) {
+      query = query.or(ramos.join(","));
     } else {
       // Sem ids casados, um `contact_id.in.()` vazio é SQL inválido no
       // PostgREST — a busca por conteúdo segue sozinha, como antes.
@@ -536,6 +608,15 @@ export async function listConversationsHandler(
   }
 
   const rows = (data ?? []) as unknown as Conversation[];
+  // O TRECHO vai só nas linhas DESTA página: a consulta que o produz é limitada
+  // ao teto de conversas, e inventar trecho para quem não está aqui seria pior
+  // que não mostrar nenhum.
+  if (trechos.size > 0) {
+    for (const linha of rows) {
+      const trecho = trechos.get(linha.id);
+      if (trecho) linha.busca_em_mensagem = trecho;
+    }
+  }
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
   const last = page[page.length - 1];
