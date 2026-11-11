@@ -58,6 +58,10 @@ vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
 vi.mock("@/hooks/inbox/usePauseAiAttendance", () => ({
   usePauseAiAttendance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+// "IA com o dono" (#3967) usa `useMutation`: sem o mock, exigiria QueryClientProvider.
+vi.mock("@/hooks/inbox/useIaComDono", () => ({
+  useIaComDono: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock("@/hooks/contacts/usePersonalContact", () => ({
   useMarkPersonalContact: () => ({ mutate: vi.fn(), isPending: false }),
   useUnmarkPersonalContact: () => ({ mutate: vi.fn(), isPending: false }),
