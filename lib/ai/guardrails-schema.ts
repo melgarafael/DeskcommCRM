@@ -146,6 +146,16 @@ export const agentConfigSchema = z.object({
   voice_speed: z.number().min(0.25).max(1.5).default(0.85),
   voice_model: agentVoiceModelSchema.default("gpt-realtime"),
   /**
+   * A voz do AGENTE para a resposta falada por TTS (#4228) — `voice_id` do
+   * ElevenLabs, DIFERENTE de `voice` acima, que é a da Realtime (OpenAI) do
+   * canal de ligação. `null`/ausente = herda a voz da organização
+   * (`organizations.settings.voz.voice_id`), o comportamento de antes.
+   *
+   * Sem `.default()` de propósito: um PATCH de outra chave não pode regravar a
+   * voz de todo agente que nunca escolheu (mesmo motivo de `sentiment_threshold`).
+   */
+  voz_voice_id: z.string().trim().min(1).max(200).nullable().optional(),
+  /**
    * Aceita os comandos de controle `#on`/`#off` enviados pelo CELULAR do
    * operador (C-076)? `false` (default do produto) = o ingest NÃO reconhece os
    * comandos; qualquer mensagem do celular continua pausando a IA normalmente.
