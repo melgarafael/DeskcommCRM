@@ -50,6 +50,12 @@ export interface Conversation {
   is_group: boolean;
   group_chat_id: string | null;
   tags: string[];
+  /**
+   * jsonb livre, por conversa. Entre outras marcas, mora aqui
+   * `ai_com_dono: true` — o modo da #3967 em que a IA responde SEM soltar o dono
+   * humano (`lib/ai/elegibilidade/ia-com-dono.ts`). A tela lê deste campo para
+   * desenhar o interruptor; não é coluna nova e não precisa de leitura nova.
+   */
   metadata: Record<string, unknown>;
   snooze_until: string | null;
   /**

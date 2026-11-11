@@ -2238,6 +2238,25 @@ export const DICIONARIO: Traducoes = {
   "Automático volta em instantes": { es: "El automático vuelve en unos instantes" },
   "Cliente pediu para não receber mensagens": { es: "El cliente pidió no recibir mensajes" },
   "Pausar o automático": { es: "Pausar el automático" },
+  "IA com o dono": { es: "IA con el dueño" },
+  "Desliga a IA nesta conversa. Ela volta a ficar calada e continua sua.": {
+    es: "Apaga la IA en esta conversa. Vuelve a quedar en silencio y sigue siendo tuya.",
+  },
+  "A IA responde esta conversa sem tirar o dono de você. Se ela passar para uma pessoa, a conversa continua com o mesmo atendente.":
+    {
+      es: "La IA responde esta conversa sin quitarte la propiedad. Si pasa a una persona, la conversa sigue con el mismo agente.",
+    },
+  "Esta conversa está encerrada — não há atendimento automático a ligar ou desligar.": {
+    es: "Esta conversa está cerrada: no hay atención automática que activar o desactivar.",
+  },
+  "Esta conversa não tem atendente — assuma a conversa antes de ligar a IA com o dono.": {
+    es: "Esta conversa no tiene agente: asume la conversa antes de activar la IA con el dueño.",
+  },
+  "O contato está marcado como humano obrigatório.": {
+    es: "El contacto está marcado como humano obligatorio.",
+  },
+  "O contato pediu para não falar com a IA.": { es: "El contacto pidió no hablar con la IA." },
+  "O contato está bloqueado.": { es: "El contacto está bloqueado." },
   "Ver contato": { es: "Ver contacto" },
 
   // ─── Inbox: composer ───
@@ -4302,6 +4321,16 @@ export const DICIONARIO: Traducoes = {
       es: "Necesita una credencial de ElevenLabs registrada y una voz elegida en Agente de IA → Proveedores. Sin los dos, el agente sigue respondiendo en texto — activar esto no rompe nada.",
     },
   "Quando falar": { es: "Cuándo hablar" },
+  "Voz deste agente": { es: "Voz de este agente" },
+  "Qual voz este agente usa": { es: "Qué voz usa este agente" },
+  "Voz da organização": { es: "Voz de la organización" },
+  "Só vale com “Enviar nota de voz” ligado. Sem escolha própria, o agente fala com a voz da organização.":
+    {
+      es: "Solo vale con “Enviar nota de voz” activado. Sin elección propia, el agente habla con la voz de la organización.",
+    },
+  "Voz deste agente: passa a usar a voz da organização.":
+    { es: "Voz de este agente: pasa a usar la voz de la organización." },
+  "Voz deste agente salva:": { es: "Voz de este agente guardada:" },
   "Só quando o cliente mandar áudio": { es: "Solo cuando el cliente envíe audio" },
   "Nunca (desligado, sem apagar a configuração)": {
     es: "Nunca (desactivado, sin borrar la configuración)",
@@ -16464,6 +16493,18 @@ export const DICIONARIO: Traducoes = {
   "O contato que já tinha este número foi ligado ao negócio.": {
     es: "El contacto que ya tenía este número fue vinculado al negocio.",
   },
+  // ─── #3669 F1 (leitura): conversas e ligações de todos os números do cliente ───
+  "Conversas e ligações dos números": { es: "Conversaciones y llamadas de los números" },
+  "Não consegui carregar as conversas e ligações.": {
+    es: "No pude cargar las conversaciones y llamadas.",
+  },
+  "Nenhuma conversa ou ligação nos outros números ainda.": {
+    es: "Todavía no hay conversaciones ni llamadas en los otros números.",
+  },
+  // "Recebida" já existe mais abaixo (veio pela main, com o mesmo espanhol):
+  // repetir a chave aqui é TS1117.
+  Feita: { es: "Realizada" },
+  Atendida: { es: "Atendida" },
   "Este contato já é o contato principal do negócio.": {
     es: "Este contacto ya es el contacto principal del negocio.",
   },
@@ -20172,6 +20213,11 @@ export const DICIONARIO: Traducoes = {
   "Política DMARC definida por quem administra o domínio": { es: "Política DMARC definida por quien administra el dominio" },
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
+  },
+  // #4339: a porta do `|data` — só nas telas em que o formato funciona
+  // (automação e follow-up); campanha e Inbox ainda não leem o modificador.
+  "Para escrever uma data no formato do cliente, use {{campo|data}}.": {
+    es: "Para escribir una fecha en el formato del cliente, usa {{campo|data}}.",
   },
   // Installed runtime identity, distinct from an available release.
   "Versão ainda não confirmada": { es: "Versión aún no confirmada" },
