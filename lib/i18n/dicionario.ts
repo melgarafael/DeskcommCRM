@@ -7434,8 +7434,8 @@ export const DICIONARIO: Traducoes = {
   },
   // #3274 — o veto da camada "valores e negociação só com a equipe" na mensagem
   // escrita pela IA (`commercial_requires_human`, frase no mapa MOTIVO_DA_PARADA).
-  "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada e a conversa passou para o atendimento humano.": {
-    es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso: no se envió y la conversación pasó a la atención humana.",
+  "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso nas duas tentativas: nada foi enviado, e a conversa continua com a IA. O trecho barrado aparece no detalhe desta execução.": {
+    es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso en los dos intentos: no se envió nada y la conversación sigue con la IA. El fragmento bloqueado aparece en el detalle de esta ejecución.",
   },
   "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada. A conversa não foi passada para a equipe nesta execução — abra a conversa e confira quem vai responder ao cliente.": {
     es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso: no se envió. La conversación no pasó al equipo en esta ejecución: abre la conversación y revisa quién va a responder al cliente.",

@@ -212,7 +212,7 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
    * código que a cadeia `before_send` usa; a conversa passa para a equipe.
    */
   commercial_requires_human:
-    "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada e a conversa passou para o atendimento humano.",
+    "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso nas duas tentativas: nada foi enviado, e a conversa continua com a IA. O trecho barrado aparece no detalhe desta execução.",
   // A mesma parada quando o orquestrador RECUSOU a passagem
   // (`passagem_para_a_equipe: false`): a frase acima afirmaria um handoff que
   // não houve.
