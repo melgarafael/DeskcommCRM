@@ -3082,6 +3082,11 @@ export const DICIONARIO: Traducoes = {
   "Funil de destino (opcional)": { es: "Embudo de destino (opcional)" },
   "Sem destino — só escolher o agente": { es: "Sin destino — solo elegir el agente" },
   "Primeira etapa aberta": { es: "Primera etapa abierta" },
+  // #2569 — o id gravado já está na tela antes de a lista de funis/etapas
+  // voltar: o gatilho diz que HÁ destino (nunca fica vazio nem vira "Sem
+  // destino") e o nome toma o lugar quando a lista chega.
+  "Funil selecionado": { es: "Embudo seleccionado" },
+  "Etapa selecionada": { es: "Etapa seleccionada" },
   Início: { es: "Inicio" },
   Fim: { es: "Fin" },
   Dias: { es: "Días" },
@@ -6561,6 +6566,11 @@ export const DICIONARIO: Traducoes = {
   "Exportar CSV": { es: "Exportar CSV" },
   "Exportar": { es: "Exportar" },
   "Exportar vCard": { es: "Exportar vCard" },
+  // Exportar conversa em PDF (#1982): o item do menu ⋯ do cabeçalho da conversa.
+  "Exportar conversa": { es: "Exportar conversación" },
+  "Baixa o histórico desta conversa em PDF, datado e em ordem, para arquivar. Notas internas não entram.": {
+    es: "Descarga el historial de esta conversación en PDF, con fecha y en orden, para archivar. Las notas internas no se incluyen.",
+  },
   "Invoc. AI": { es: "Invoc. IA" },
   "Custo AI": { es: "Costo IA" },
 
@@ -8649,6 +8659,8 @@ export const DICIONARIO: Traducoes = {
   "Lead ganho": { es: "Lead ganado" },
   "Lead perdido": { es: "Lead perdido" },
   "Você foi mencionado": { es: "Te mencionaron" },
+  // #2372 — o selo da linha na lista de conversas (o mesmo aviso, em duas palavras).
+  "Mencionado": { es: "Te mencionaron" },
   // ─── lib/notifications/push.handler.ts + push-de-venda.ts (o push no celular) ───
   "Nova mensagem no grupo": { es: "Mensaje nuevo en el grupo" },
   "Hoje nesta etapa: {quantidade}": { es: "Hoy en esta etapa: {quantidade}" },
@@ -10438,6 +10450,7 @@ export const DICIONARIO: Traducoes = {
   "mesmo telefone": { es: "mismo teléfono" },
   "mesmo e-mail": { es: "mismo correo" },
   "mesmo CPF": { es: "mismo CPF" },
+  "mesma conta de WhatsApp": { es: "misma cuenta de WhatsApp" },
   "telefone que o WhatsApp deixou em conflito": {
     es: "teléfono que WhatsApp dejó en conflicto",
   },
@@ -10508,8 +10521,8 @@ export const DICIONARIO: Traducoes = {
   "Um dos contatos não está disponível — ele pode ter sido anonimizado ou já mesclado em outro.": {
     es: "Uno de los contactos no está disponible. Puede haberse anonimizado o fusionado con otro.",
   },
-  "Mesmo telefone, mesmo e-mail ou mesmo CPF não se dispensa: junte as fichas.": {
-    es: "Mismo teléfono, mismo correo o mismo CPF no se descarta: fusione las fichas.",
+  "Mesmo telefone, mesmo e-mail, mesmo CPF ou a mesma conta de WhatsApp não se dispensa: junte as fichas.": {
+    es: "Mismo teléfono, mismo correo, mismo CPF o la misma cuenta de WhatsApp no se descarta: fusione las fichas.",
   },
   "Não foi possível dispensar a sugestão agora.": { es: "No fue posible descartar la sugerencia ahora." },
   "Mostrando os duplicados entre os contatos mais antigos. Junte estes e reabra para ver os próximos.": {
@@ -19691,6 +19704,18 @@ export const DICIONARIO: Traducoes = {
   "Leitura parcial: as parcelas somam o que foi lido no período.": {
     es: "Lectura parcial: las partes suman lo que se leyó en el período.",
   },
+  // As mesmas duas parcelas na PREVISÃO do funil (#3602, fatia da previsão). O
+  // vocabulário é o da fatia 2 de propósito: passado e futuro da mesma carteira
+  // não podem se ler por dois nomes.
+  "Valor único": { es: "Valor único" },
+  "As duas parcelas nunca são somadas: o valor único entra uma vez e a recorrência entra todo mês.":
+    {
+      es: "Las dos partes nunca se suman: el valor único entra una vez y la recurrencia entra todos los meses.",
+    },
+  "recorrência mensal": { es: "recurrencia mensual" },
+  "Recorrência fora do mensal — não entra na projeção por mês": {
+    es: "Recurrencia fuera del mensual: no entra en la proyección por mes",
+  },
   "Só quem administra a empresa define a meta.": {
     es: "Solo quien administra la empresa define la meta.",
   },
@@ -20358,6 +20383,10 @@ export const DICIONARIO: Traducoes = {
   "A mensagem sai na hora, mesmo com atendimento marcado. Serve para o pós-atendimento e o aniversário, que perdem o sentido se esperarem.":
     {
       es: "El mensaje sale en el momento, aunque haya una cita agendada. Sirve para el posatención y el cumpleaños, que pierden sentido si esperan.",
+    },
+  "Vale para todos os fluxos de follow-up deste agente. Cada passo de automação tem a escolha própria.":
+    {
+      es: "Vale para todos los flujos de seguimiento de este agente. Cada paso de automatización tiene su propia elección.",
     },
   "Não enviar": { es: "No enviar" },
   "A mensagem não sai e o pulo fica registrado na Atividade com o motivo “contato com horário marcado”, para a equipe saber que a automação passou.":
