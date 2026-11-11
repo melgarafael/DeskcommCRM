@@ -157,7 +157,10 @@ describe("a revisão do modelo volta pelo webhook", () => {
           limit: () => q,
           // O dedup do aviso não acha nada aberto: primeira entrega.
           maybeSingle: async () => ({ data: null, error: null }),
-          then: (ok: (r: unknown) => unknown) => ok({ data: null, error: null }),
+          // O update do espelho devolve a linha que casou (`.select("id")`): é o
+          // que autoriza o aviso. Zero linhas não abriria aviso nenhum.
+          then: (ok: (r: unknown) => unknown) =>
+            ok({ data: tabela === "meta_templates" ? [{ id: "modelo-1" }] : null, error: null }),
         });
         return q;
       },

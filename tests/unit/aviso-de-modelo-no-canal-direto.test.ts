@@ -394,6 +394,38 @@ describe("o aviso na Central, pelo webhook do canal oficial direto", () => {
     expect(r.status).toBe(200);
     expect(r.body.outcomes).toEqual(["modelo_nao_atualizado"]);
   });
+
+  it("update que não casa linha NENHUMA volta sem erro — e também não abre aviso", async () => {
+    // É o que o banco devolve de verdade para um modelo que este CRM não
+    // espelha: `{ data: [], error: null }`. Olhar só o `error` abria o aviso
+    // de um modelo que a tela de Modelos não lista.
+    const avisos: unknown[] = [];
+    const semLinha = {
+      from: (tabela: string) => {
+        const q: Record<string, unknown> = {};
+        Object.assign(q, {
+          update: () => q,
+          select: () => q,
+          insert: (p: unknown) => {
+            if (tabela === "agent_inbox_items") avisos.push(p);
+            return q;
+          },
+          eq: () => q,
+          limit: () => q,
+          maybeSingle: async () => ({ data: null, error: null }),
+          then: (ok: (r: unknown) => unknown) => ok({ data: [], error: null }),
+        });
+        return q;
+      },
+    };
+    ESTADO.banco = semLinha;
+
+    const r = await entregar(corpoDoModelo({ evento: "REJECTED", motivo: "INCORRECT_CATEGORY" }));
+
+    expect(r.status).toBe(200);
+    expect(r.body.outcomes).toEqual(["modelo_nao_atualizado"]);
+    expect(avisos).toHaveLength(0);
+  });
 });
 
 describe("a gravação direta do aviso", () => {

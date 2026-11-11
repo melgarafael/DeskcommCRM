@@ -589,19 +589,22 @@ async function datafyInbound(
       // ficava PENDING no espelho até alguém clicar em Sincronizar, e o seletor
       // do inbox não a oferecia. Escopo pela CONEXÃO desta entrega — a coluna
       // `waba_id` do espelho deste canal guarda o número, não a conta.
-      const { error } = await admin
+      const { data: espelhados, error } = await admin
         .from("meta_templates")
         .update({ status: e.event, rejected_reason: e.reason, updated_at: agora })
         .eq("organization_id", orgId)
         .eq("channel_session_id", input.session.id)
         .eq("name", e.templateName)
-        .eq("language", e.templateLanguage);
+        .eq("language", e.templateLanguage)
+        .select("id");
       // O aviso vem DEPOIS do espelho: o empurrão para olhar não pode chegar
       // antes de a tela que ele manda abrir já estar certa. Mesmo caminho do
       // canal oficial direto (`meta/aviso-do-modelo`), e nunca uma segunda
       // tabela de avisos — a Central é uma só.
+      // E só quando o update casou linha: zero linhas volta sem erro, e o aviso
+      // apontaria para um modelo que a tela não lista.
       let desfecho = "modelo_nao_atualizado";
-      if (!error) {
+      if (!error && (espelhados?.length ?? 0) > 0) {
         desfecho = desfechoDoAviso(
           await avisarStatusDoModelo(
             admin,

@@ -313,13 +313,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     if (e.kind === "template_status") {
       // A revisão da plataforma decide DEPOIS da criação: sem este update o
       // espelho ficava em PENDING até alguém clicar em Sincronizar.
-      const { error: erroDoEspelho } = await admin
+      const { data: espelhados, error: erroDoEspelho } = await admin
         .from("meta_templates")
         .update({ status: e.event, rejected_reason: e.reason, updated_at: now })
         .eq("organization_id", session.organizationId)
         .eq("waba_id", e.wabaId)
         .eq("name", e.templateName)
-        .eq("language", e.templateLanguage);
+        .eq("language", e.templateLanguage)
+        .select("id");
 
       // ── O empurrão para olhar (#3635, fatia 3) ─────────────────────────
       //
@@ -331,8 +332,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       // contradiz a tela que ele manda abrir. E `avisarStatusDoModelo` não
       // lança — falha dela não pode virar 5xx (a Meta re-entregaria o mesmo
       // evento para sempre) nem desfazer o espelho já gravado.
+      //
+      // E só quando o update CASOU linha: update de zero linhas volta sem erro,
+      // e o aviso de um modelo que este CRM não espelha mandaria abrir uma
+      // lista onde ele não aparece.
       let desfecho = "modelo_nao_atualizado";
-      if (!erroDoEspelho) {
+      if (!erroDoEspelho && (espelhados?.length ?? 0) > 0) {
         desfecho = desfechoDoAviso(
           await avisarStatusDoModelo(
             admin,

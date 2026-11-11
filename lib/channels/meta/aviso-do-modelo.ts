@@ -35,6 +35,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { logger } from "@/lib/logger";
+
 /**
  * O kind deste aviso. Existe separado de `channel_template_review` (o do canal
  * de parceiro) pelo destino e pelo rótulo — ver o cabeçalho.
@@ -246,7 +248,7 @@ export async function avisarStatusDoModelo(
       // Consulta que falha não é "já existe": seguir para o insert é escolher
       // aviso repetido em vez de aviso nenhum — a Central ruidosa se conserta
       // fechando um item; o aviso que não existe, ninguém sabe que faltou.
-      console.error("[aviso-do-modelo] dedup não consultado", {
+      logger.error("[aviso-do-modelo] dedup não consultado", {
         organization_id: alvo.organizationId,
         channel_session_id: alvo.channelSessionId,
         erro: erroDaConsulta.message,
@@ -265,7 +267,7 @@ export async function avisarStatusDoModelo(
     });
 
     if (error) {
-      console.error("[aviso-do-modelo] aviso não gravado", {
+      logger.error("[aviso-do-modelo] aviso não gravado", {
         organization_id: alvo.organizationId,
         channel_session_id: alvo.channelSessionId,
         model: status.templateName,
@@ -277,7 +279,7 @@ export async function avisarStatusDoModelo(
 
     return "aviso";
   } catch (erro) {
-    console.error("[aviso-do-modelo] aviso não gravado", {
+    logger.error("[aviso-do-modelo] aviso não gravado", {
       organization_id: alvo.organizationId,
       channel_session_id: alvo.channelSessionId,
       model: status.templateName,
