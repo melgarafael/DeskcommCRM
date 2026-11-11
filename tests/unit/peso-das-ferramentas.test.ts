@@ -46,7 +46,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
-  "crm_get_conversation_history": { tokens: 203, motivo: BASE },
+  "crm_get_conversation_history": {
+    tokens: 240,
+    motivo:
+      "#4077: a descrição passou a dizer que cada mensagem traz o AUTOR (sent_by_user_id e sent_by_user_name) — sem isso a integração não sabia que o campo existia e atribuía a fala ao 'sistema'",
+  },
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
@@ -97,6 +101,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
+  "crm_publish_whatsapp_status": { tokens: 464, motivo: "ferramenta nova do módulo opcional status_whatsapp (#3463), medida na criação (2026-11-10); só é oferecida com o módulo ligado" },
   "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
   "crm_set_conversation_sector": { tokens: 383, motivo: "capacidade nova (#3881): a triagem da IA escolhe a FILA da conversa; a descrição precisa nomear os setores de exemplo e as recusas, senão o modelo tenta resolver fila com crm_assign_conversation (que é dono, não setor)" },
@@ -139,8 +144,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
 // modo `leitura_direta` — nunca junto de `search_knowledge`; +54 com `imagem_url`
-// no `send_message` (Spec 25 R4, #3276).
-const TETO_TOTAL = 30148;
+// no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
+// (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
+// descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
+// mensagem (#4077).
+const TETO_TOTAL = 30649;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

@@ -361,6 +361,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
       "Ligado, cada empresa ganha no CRM a tela Cold Call: um funil próprio, a importação da lista e a ligação para um lead por vez, pelo canal de voz quando ele está pareado ou pelo discador do aparelho. Quem pediu para não ser incomodado, contato pessoal e contato anonimizado não recebem ligação. Desligado, a tela e o menu somem.",
   },
   {
+    modulo: "status_whatsapp",
+    id: "modulo-status-whatsapp",
+    rotulo: "Status do WhatsApp por integração",
+    descricao:
+      "Ligado, um sistema conectado ao servidor MCP com token de escrita pode publicar uma imagem no Status de um número conectado por QR Code. A imagem sai de verdade e some em 24 horas. Numa lista de contatos, quem pediu para não ser incomodado fica de fora. Para todos os contatos, a conexão precisa guardar o histórico, e quem vê é decidido pelo WhatsApp, inclusive quem pediu para não ser incomodado. Desligado, a ferramenta some.",
+    foraDoMenu: "Não cria porta no menu do CRM: a publicação é uma ferramenta do servidor MCP, sem tela própria.",
+  },
+  {
     modulo: "painel_atendimento",
     id: "modulo-painel-atendimento",
     rotulo: "Painel de atendimento",
