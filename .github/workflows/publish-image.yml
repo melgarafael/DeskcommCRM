@@ -512,13 +512,21 @@ jobs:
   # NÚMERO sempre (cada imagem, independente — ninguém instala por um número que
   # o instalador não escreveu) e mover o CANAL num job final.
   promover-stable:
-    # Sem `always()`, e isso é o ponto: `needs` só libera quando as QUATRO entradas
-    # deram `success`. Com `always()` o canal andaria por cima de uma irmã que
-    # falhou, que é exatamente o defeito de volta com outra roupa.
-    # `imagens-de-fundo-sobem` entrou aqui de propósito (#604): worker ou
-    # scheduler que não sobe/carrega o laço do event_log não pode virar o
-    # `stable` de quem self-hospeda — publicar seria empurrar o defeito da #648
-    # canal abaixo.
+    # `always()` desde a #568, e ele NÃO é o `always()` que a #488 proibia.
+    #
+    # O run 33823333160 (tag v1.13.0) foi CANCELADO à mão 3m48s depois de
+    # começar: `build-and-push`, `juntar-manifestos` e `imagem-do-app-sobe`
+    # ficaram `cancelled`, este job virou `skipped` e a release ficou publicada
+    # com o GHCR vazio — nenhum gate disse nada, porque `skipped` não é falha.
+    # Sem `always()`, `needs` cancela o dependente e o canal não anda em
+    # silêncio; com ele, este job RODA e diz o que falta.
+    #
+    # O que impede o canal de andar por cima de uma irmã que falhou deixou de
+    # ser o `needs` — ele sabe que "alguém falhou", nunca "o que existe no
+    # registro" — e passou a ser a conferência do conjunto: as QUATRO imagens,
+    # nas DUAS plataformas, ANTES de mover o primeiro ponteiro. É mais forte que
+    # o `needs`: cobre build cancelado, build que publicou só uma arquitetura e
+    # imagem apagada do registro depois do build.
     needs: [build-and-push, juntar-manifestos, imagem-do-app-sobe, imagens-de-fundo-sobem]
     # As três condições, e cada uma barra um caminho medido. Sem `push`, um
     # dispatch numa release ANTIGA faria `stable` REGREDIR, e todo self-hoster no
@@ -526,7 +534,7 @@ jobs:
     # velho sobre banco já migrado. Sem `tag`, um dispatch numa branch moveria o
     # canal. Sem o `v`, uma tag de teste o move (o registro já tem uma
     # `quebrada-teste`, que nenhum push na main consegue produzir).
-    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && always()
     runs-on: ubuntu-latest
     permissions:
       # O menor escopo que faz o trabalho: reapontar tag no GHCR. Sem o bloco, o
@@ -558,10 +566,29 @@ jobs:
           # Confere o conjunto INTEIRO antes de mover QUALQUER ponteiro. Conferir
           # dentro do laço de mover deixava uma falha na 3ª imagem com app e
           # worker já em `stable` — o canal dividido da #488.
+          #
+          # Esta conferência é o gate da #568: com `always()`, este job roda
+          # mesmo quando o build foi cancelado, e é AQUI que "não há imagem"
+          # vira falha alta, nomeada por imagem e arquitetura, em vez de
+          # `skipped` silencioso. As QUATRO precisam existir nas DUAS
+          # plataformas: o índice multi-arquitetura só está completo depois de
+          # `juntar-manifestos`.
+          faltando=""
           for img in deskcommcrm deskcomm-worker deskcomm-scheduler deskcomm-voice-agent; do
-            manifesto_tem_plataforma "${REGISTRY}/${dono}/${img}:${numero}" linux/amd64
-            manifesto_tem_plataforma "${REGISTRY}/${dono}/${img}:${numero}" linux/arm64
+            for plat in linux/amd64 linux/arm64; do
+              if manifesto_tem_plataforma "${REGISTRY}/${dono}/${img}:${numero}" "$plat" 2>/dev/null; then
+                continue
+              fi
+              echo "::error::falta ${img}:${numero} em ${plat} no ${REGISTRY}."
+              faltando="${faltando} ${img}/${plat#linux/}"
+            done
           done
+          if [ -n "$faltando" ]; then
+            echo "::error::A versão ${numero} NÃO tem o conjunto completo de imagens no ${REGISTRY}:${faltando}."
+            echo "::error::O canal 'stable' NÃO foi movido e a release da ${VERSAO} não pode ser anunciada sem imagem."
+            echo "::error::O build desta tag não publicou (cancelado, falhou, ou barrado pelo portão da main). Re-dispare a publicação da tag ${VERSAO}: o build publica por número e esta promoção roda no mesmo run."
+            exit 1
+          fi
           for img in deskcommcrm deskcomm-worker deskcomm-scheduler deskcomm-voice-agent; do
             echo "::group::${img}"
             docker buildx imagetools create \

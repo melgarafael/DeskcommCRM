@@ -152,7 +152,13 @@ describe("toda imagem publicada é construída em PR", () => {
     expect(juntar).toContain('manifesto_tem_plataforma "$tag" linux/amd64');
     expect(juntar).toContain('manifesto_tem_plataforma "$tag" linux/arm64');
     expect(promover).toContain("juntar-manifestos");
-    expect(promover).toContain('manifesto_tem_plataforma "${REGISTRY}/${dono}/${img}:${numero}" linux/arm64');
+    // O laço da promoção passou a listar as DUAS plataformas numa variável
+    // (`for plat in linux/amd64 linux/arm64`) para poder nomear o que falta
+    // quando o build não publicou (#568). O que este teste guarda continua
+    // sendo o mesmo: cada índice é conferido nas duas arquiteturas ANTES de o
+    // canal andar.
+    expect(promover).toContain('manifesto_tem_plataforma "${REGISTRY}/${dono}/${img}:${numero}" "$plat"');
+    expect(promover).toContain("for plat in linux/amd64 linux/arm64");
   });
 
   it("a matriz gera um job por receita E por arquitetura — nenhum item do include engole o anterior", () => {

@@ -120,13 +120,22 @@ const GATILHO_ESPERADO: Record<string, { condicao: string | null; efeito: string
   // o canal simplesmente NÃO ANDA — quem instala pelo default do compose fica na
   // versão anterior sem que nada tenha ficado vermelho.
   "publish-image.yml::promover-stable": {
+    // `&& always()` no fim desde a #568: com `needs` puro, o run cancelado da
+    // v1.13.0 (33823333160) deixou este job `skipped` e a release publicada sem
+    // imagem no GHCR — e `skipped` é lido como verde. As três condições
+    // continuam sendo o gate de ENTRADA (dispatch de release antiga, dispatch
+    // de branch, tag de teste); `always()` só impede que o cancelamento do
+    // build o desligue. Quem impede o canal de andar por cima de uma irmã que
+    // falhou é a conferência do conjunto no registro, antes do primeiro
+    // `imagetools create` (tests/unit/canal-stable-move-em-bloco.test.ts).
     condicao:
-      "github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')",
+      "github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && always()",
     efeito:
       "As três condições barram um caminho medido cada uma. Sem `push`, um dispatch numa " +
       "release ANTIGA faria `stable` REGREDIR, e todo self-hoster no default do compose " +
       "sofreria downgrade silencioso no próximo `up -d` — app velho sobre banco já migrado. " +
-      "Sem `tag`, um dispatch numa branch moveria o canal. Sem o `v`, uma tag de teste o move.",
+      "Sem `tag`, um dispatch numa branch moveria o canal. Sem o `v`, uma tag de teste o move. " +
+      "`always()` não afrouxa nada disso: sem imagem publicada da versão, o job FALHA alto.",
   },
 
   // As imagens de FUNDO (#604): `deskcomm-worker` e `deskcomm-scheduler`
