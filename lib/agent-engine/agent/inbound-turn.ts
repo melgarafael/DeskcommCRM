@@ -2527,11 +2527,11 @@ async function escalarComercialAntesDoModelo(
     },
   );
   const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: textos,
-    motivo: { codigo: 'low_confidence', texto: 'Valores e negociação: fora do escopo da IA.' } });
+    motivo: { codigo: 'restricao_comercial', texto: 'Valores e negociação: fora do escopo da IA.' } });
   await performHumanHandoff(pool, { tenantId, leadId: turno.leadId, conversationId: turno.conversationId },
-    { reason: 'low_confidence', conversationSummary: briefing.body,
+    { reason: 'restricao_comercial', conversationSummary: briefing.body,
       inboxTitle: 'Valores e negociação — atendimento humano necessário',
-      passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing },
+      passagem: { origem: 'runtime_nativo', motivoCodigo: 'restricao_comercial', briefing },
       avisoAoLead: aviso, log });
   log.info('assunto comercial restrito encaminhado sem chamada ao redator', { lead_avisado: aviso.avisado });
   return true;
@@ -3415,11 +3415,11 @@ async function executarTurnoDoAgente(
       motivo: 'outro',
     });
     const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: [],
-      motivo: { codigo: 'low_confidence', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
+      motivo: { codigo: 'restricao_comercial', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
     await performHumanHandoff(pool, { tenantId, leadId, conversationId: input.conversationId },
-      { reason: 'low_confidence', conversationSummary: briefing.body,
+      { reason: 'restricao_comercial', conversationSummary: briefing.body,
         inboxTitle: 'Valores e negociação — atendimento humano necessário',
-        passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing },
+        passagem: { origem: 'runtime_nativo', motivoCodigo: 'restricao_comercial', briefing },
         avisoAoLead: aviso, log: runLog });
     return { ok: false as const, error: { code,
       message: 'Resposta barrada e necessidade de atendimento humano registrada. Não envie valores nem negocie.' } };

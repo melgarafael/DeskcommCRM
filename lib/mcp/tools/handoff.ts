@@ -291,7 +291,10 @@ function proximoPasso(result: TriggerHandoffResult): string {
  */
 function motivoDoAgenteExterno(texto: string | null | undefined): HandoffReason {
   const codigo = motivoCodigoDoTexto(texto);
-  return codigo === "suspected_optout" || codigo === "caso_escalado" || codigo === "verificacao_manual"
+  return codigo === "suspected_optout" ||
+    codigo === "caso_escalado" ||
+    codigo === "verificacao_manual" ||
+    codigo === "restricao_comercial"
     ? "low_confidence"
     : codigo;
 }

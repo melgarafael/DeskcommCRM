@@ -15949,6 +15949,8 @@ export const DICIONARIO: Traducoes = {
   "(percebido pelo Jev)": { es: "(detectado por Jev)" },
   "O assistente não teve confiança suficiente para responder":
     { es: "El asistente no estaba lo bastante seguro para responder" },
+  "A trava de valores e negociação barrou a resposta":
+    { es: "El bloqueo de valores y negociación frenó la respuesta" },
   "O negócio chegou a uma etapa que pede uma pessoa":
     { es: "El negocio llegó a una etapa que requiere una persona" },
   "A conversa tocou em assunto jurídico":

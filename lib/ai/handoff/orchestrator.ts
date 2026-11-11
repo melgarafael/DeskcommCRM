@@ -62,6 +62,8 @@ export type HandoffReason =
   | "critical_stage"
   | "legal_mention"
   | "refund_mention"
+  /** A trava de valores e negociação barrou a resposta da IA (Spec 34). */
+  | "restricao_comercial"
   /**
    * O teto de gasto com IA parou o atendimento automático. NÃO é pedido do lead —
    * quem lê `last_handoff_reason` precisa distinguir, porque a primeira frase que
@@ -132,6 +134,7 @@ const MOTIVO_DA_PASSAGEM = {
   legal_mention: "legal_mention",
   refund_mention: "refund_mention",
   orcamento_de_ia: "orcamento_de_ia",
+  restricao_comercial: "restricao_comercial",
 } satisfies Record<HandoffReason, MotivoDaPassagem>;
 
 function motivoDaPassagem(reason: HandoffReason): MotivoDaPassagem {
