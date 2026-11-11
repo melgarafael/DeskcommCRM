@@ -7776,6 +7776,10 @@ export const DICIONARIO: Traducoes = {
   "credencial guardada": { es: "credencial guardada" },
   "conectado por": { es: "conectado por" },
   "(anterior ao registro)": { es: "(anterior al registro)" },
+  // Os rótulos de `ROTULOS_DA_ORIGEM` (lib/channels/meta/origem-da-conexao.ts):
+  // a tela os passa por t() a partir do valor, não de um literal.
+  "token colado à mão": { es: "token pegado a mano" },
+  "Embedded Signup da Meta": { es: "Embedded Signup de Meta" },
   "sem credencial": { es: "sin credencial" },
   número: { es: "número" },
   "Cole isto no painel da Meta": { es: "Pega esto en el panel de Meta" },

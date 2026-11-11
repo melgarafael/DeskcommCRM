@@ -184,6 +184,17 @@ describe("registrarOrigemDaConexao — gravação tolerante", () => {
     ).resolves.toEqual({ gravada: false, motivo: "coluna_ausente" });
   });
 
+  it("banco sem a coluna recusado pelo cache de schema (PGRST204) também não derruba a conexão já gravada", async () => {
+    const { client } = adminFalso({ erro: { code: "PGRST204", message: "Could not find the 'meta_connection_origin' column of 'channel_sessions' in the schema cache" } });
+    await expect(
+      registrarOrigemDaConexao(client, {
+        organizationId: ORG,
+        channelSessionId: SESSAO,
+        origem: ORIGEM_DO_TOKEN_MANUAL,
+      }),
+    ).resolves.toEqual({ gravada: false, motivo: "coluna_ausente" });
+  });
+
   it("outra falha de banco vira motivo, não exceção", async () => {
     const { client } = adminFalso({ erro: { code: "42501", message: "permission denied" } });
     await expect(

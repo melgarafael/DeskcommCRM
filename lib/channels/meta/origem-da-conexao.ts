@@ -139,8 +139,12 @@ export async function registrarOrigemDaConexao(
       .eq("organization_id", organizationId)
       .eq("id", channelSessionId);
     if (!error) return { gravada: true };
-    // 42703 = coluna não existe neste banco (migration 9328 não aplicada).
-    if ((error as { code?: string }).code === "42703") {
+    // Coluna ausente neste banco (migration 9328 não aplicada). No UPDATE o
+    // PostgREST recusa pelo cache de schema, com PGRST204, antes de o Postgres
+    // ver a instrução; 42703 é o que volta quando ela chega ao banco. Os dois
+    // são o mesmo fato (precedente: COLUNA_AUSENTE em lib/channels/archived.ts).
+    const codigo = (error as { code?: string }).code;
+    if (codigo === "42703" || codigo === "PGRST204") {
       return { gravada: false, motivo: "coluna_ausente" };
     }
     logger.warn("[meta.origem] não gravou a origem da conexão", {
