@@ -8,6 +8,7 @@
  * "Salvar rascunho" existindo em es/en, porque a frase do editor é montada na tela.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { readFileSync } from "node:fs";
@@ -31,12 +32,16 @@ beforeEach(() => {
 });
 
 function abrir() {
+  // O diálogo recarrega a lista de agentes pelo React Query ao salvar: em
+  // produção ele sempre vive dentro do QueryClientProvider da casca.
   render(
-    <RenameAgentDialog
-      agent={{ id: "agente-1", name: "Vendas" } as never}
-      open
-      onOpenChange={fechar}
-    />,
+    <QueryClientProvider client={new QueryClient()}>
+      <RenameAgentDialog
+        agent={{ id: "agente-1", name: "Vendas" } as never}
+        open
+        onOpenChange={fechar}
+      />
+    </QueryClientProvider>,
   );
 }
 

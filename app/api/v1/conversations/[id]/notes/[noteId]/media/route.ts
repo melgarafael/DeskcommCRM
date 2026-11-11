@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -96,7 +96,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", t("Erro ao abrir o arquivo."), 500, { requestId });
   }
 
-  const response = NextResponse.redirect(signed.signedUrl, 302);
+  const response = comIdDaRequisicao(NextResponse.redirect(signed.signedUrl, 302), requestId);
   response.headers.set("X-Request-Id", requestId);
   // `private` porque o redirect é para um link assinado de 60 s: guardá-lo na
   // memória do browser além do TTL transformaria a curta em longa na prática.

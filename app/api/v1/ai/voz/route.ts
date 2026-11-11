@@ -19,6 +19,16 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { loadEnv } from "@/lib/agent-engine/env";
+import { resolveOrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
+import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/run-model-call";
+import {
+  listarVozesDoProvedor,
+  montarCatalogoDeVozes,
+  type VozDoProvedor,
+} from "@/lib/ai/voz/catalogo-do-provedor";
+import { PADRAO_VOICE_ID } from "@/lib/ai/voz/voice-id";
 
 export const dynamic = "force-dynamic";
 
@@ -59,25 +69,65 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Vozes de TODAS as credenciais ElevenLabs ativas, sem duplicar — o
   // operador comum tem uma só, mas nada impede uma segunda (ex.: trocando de
   // conta). `models_available` já carrega os `voice_id` (gravados pelo
-  // validador — `lib/ai/provider-validators.ts`), não nomes: a tela mostra o
-  // id e o botão "ouvir prévia" é o que de fato identifica a voz.
+  // validador — `lib/ai/provider-validators.ts`), não nomes: é a LISTA DE
+  // ONTEM, e continua sendo o piso quando a listagem ao vivo não responde.
+  // Quando responde, o `catalogo` abaixo acrescenta nome e idioma.
   const vozesDisponiveis = [
     ...new Set((credenciais ?? []).flatMap((c) => c.models_available ?? [])),
   ];
+
+  // ─── O CATÁLOGO AO VIVO, COM A LISTA DE HOJE COMO PISO ────────────────────
+  //
+  // `models_available` só tem id. O pedido do #4260 é ver nome e idioma — e,
+  // principalmente, enxergar vozes que a validação da credencial nunca listou.
+  // A chamada é externa e opcional: sem credencial validada, ou com a
+  // ElevenLabs fora/lenta/sem permissão de listagem, `montarCatalogoDeVozes`
+  // devolve exatamente a lista que a tela já mostrava e este GET continua 200.
+  const temCredencial = (credenciais ?? []).some((c) => c.validated_at !== null);
+  let catalogo: VozDoProvedor[] = vozesDisponiveis.map((id) => ({ id, nome: id, idioma: null }));
+  let catalogoVeioDoProvedor = false;
+  if (temCredencial) {
+    let chave: string | null = null;
+    try {
+      const elevenlabs = await resolveOrgLlmConfig(
+        getRequestPool(),
+        llmEdgeConfigFromEnv(loadEnv()),
+        org.orgId,
+        { provider: "elevenlabs" },
+      );
+      chave = elevenlabs.apiKey;
+    } catch {
+      chave = null;
+    }
+    if (chave !== null) {
+      const chaveParaBuscar = chave;
+      const montado = await montarCatalogoDeVozes({
+        idsDaCredencial: vozesDisponiveis,
+        buscar: () => listarVozesDoProvedor(chaveParaBuscar),
+      });
+      catalogo = montado.catalogo;
+      catalogoVeioDoProvedor = montado.veioDoProvedor;
+    }
+  }
 
   return ok(
     {
       voiceId: voz.voice_id ?? null,
       modelId: voz.model_id ?? null,
       vozesDisponiveis,
-      temCredencial: (credenciais ?? []).some((c) => c.validated_at !== null),
+      catalogo,
+      catalogoVeioDoProvedor,
+      temCredencial,
     },
     { requestId },
   );
 }
 
 const corpoDoPatch = z.object({
-  voice_id: z.string().trim().min(1).max(200),
+  // Formato, não catálogo: um id fora da lista é válido (#4260, item 2). A
+  // recusa por "não existe" é do provedor, no uso, e chega à tela com a
+  // mensagem dele — ver `app/api/v1/ai/voz/preview/route.ts`.
+  voice_id: z.string().trim().regex(PADRAO_VOICE_ID),
   model_id: z.string().trim().min(1).max(200).nullable().optional(),
 });
 

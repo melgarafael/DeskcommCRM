@@ -393,7 +393,31 @@ function umRodizioPorRegra(
  * Os objetos são os MESMOS de sempre, byte a byte — só mudou onde moram.
  */
 const acoesFixas = [
-  z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
+  z.object({
+    type: z.literal("create_or_move_lead"),
+    config: z.object({
+      pipeline_id: z.string().uuid(),
+      stage_id: z.string().uuid(),
+      /**
+       * #4297 — O MOTIVO DA PERDA, quando a etapa de destino é de perda.
+       *
+       * A etapa exige motivo (issue #917: `decideMotivoDaPerda`), e sem esta
+       * chave a ação não tinha como informá-lo: toda regra que apontava para a
+       * etapa de perda falhava em execução. Opcional aqui de propósito — as
+       * regras JÁ gravadas não têm a chave e continuam válidas; elas é que
+       * passam a falhar com o código real no recibo em vez de `internal_error`.
+       * Quem exige o preenchimento é a porta de gravação, que sabe ler
+       * `is_lost` da etapa (`lib/automation/motivo-da-perda-na-acao.ts`).
+       *
+       * O editor deixa o campo como "" quando a etapa não é de perda; "" vira
+       * AUSÊNCIA aqui, e não um motivo vazio que o trigger recusaria.
+       */
+      lost_reason: z.preprocess(
+        (v) => (v === "" ? undefined : v),
+        z.string().trim().min(1).max(500).optional(),
+      ),
+    }),
+  }),
   z.object({
     type: z.literal("send_whatsapp_message"),
     config: z.object({

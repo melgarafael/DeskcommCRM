@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", t("Erro ao gerar link do arquivo."), 500, { requestId });
   }
 
-  const response = NextResponse.redirect(signed.signedUrl, 302);
+  const response = comIdDaRequisicao(NextResponse.redirect(signed.signedUrl, 302), requestId);
   response.headers.set("X-Request-Id", requestId);
   response.headers.set("Cache-Control", "private, no-store");
   return response;

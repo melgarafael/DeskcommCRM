@@ -87,7 +87,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     return fail(
       "not_dismissable",
-      "Mesmo telefone, mesmo e-mail ou mesmo CPF não se dispensa: junte as fichas.",
+      "Mesmo telefone, mesmo e-mail, mesmo CPF ou a mesma conta de WhatsApp não se dispensa: junte as fichas.",
       422,
       { requestId },
     );
