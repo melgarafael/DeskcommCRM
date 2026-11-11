@@ -14774,6 +14774,24 @@ alter table public.webhook_events_log
     'stripe', 'asaas', 'efi'
   ));
 
+-- ---- a assinatura aceita o provedor do Efi (migration 9223) ----
+-- O CHECK nasceu com a lista da época (0387: stripe, asaas) e o Efi Bank é um
+-- provedor a mais do MESMO contrato de cobrança (#4056). Quem aplica a cadeia
+-- ganha o alargamento pela migration; quem instala pelo kit self-host aplica SÓ
+-- este baseline, então o bloco tem de estar aqui — senão a instalação nova
+-- recusa a assinatura do Efi e só o clone atualizado a aceita.
+--
+-- BLOCO ÚNICO desta constraint, pela regra da issue #159: provedor novo edita
+-- ESTA lista, não acrescenta um segundo bloco.
+--
+-- Alargamento puro: aceitar MAIS valores não viola linha que já passava.
+alter table public.cobranca_assinaturas
+  drop constraint if exists cobranca_assinaturas_provedor_check;
+alter table public.cobranca_assinaturas
+  add constraint cobranca_assinaturas_provedor_check check (provedor in (
+    'stripe', 'asaas', 'efi'
+  ));
+
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----
 --
 -- Nome, logo e cor viviam só em `APP_NAME`/`APP_LOGO_URL`/`APP_ACCENT_HEX`:
