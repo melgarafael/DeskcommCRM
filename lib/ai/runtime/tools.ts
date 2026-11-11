@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { auditMcpToolCall } from "@/lib/mcp/audit";
 import { McpAuthError, ensureRole, ensureScope } from "@/lib/mcp/auth";
 import type { McpAuthResult } from "@/lib/mcp/auth";
+import { recusaDaChamada, rotuloDaRecusa } from "@/lib/mcp/desfecho-da-chamada";
 import { logger } from "@/lib/logger";
 import { allTools, getToolByName } from "@/lib/mcp/tools";
 import {
@@ -521,11 +522,18 @@ function wrapMcpTool(
         // muda — a chave nem aparece no `metadata` (mesma disciplina do motivo).
         const termoBuscado = def.termoBuscado?.(argsRecord as never) ?? null;
 
-        // Recusa devolvida PELO HANDLER também não é sucesso (#2158): a ficha de
-        // outro cliente recusada em `crm_get_contact` volta no mesmo formato da
-        // recusa de escrita acima, e entra no audit como ela — `success: false`
-        // e o motivo em `error` —, senão a recusa some contada como acerto.
-        const recusa = recusaDoHandler(result);
+        // Recusa devolvida PELO HANDLER também não é sucesso (#2158, #4342): a
+        // ficha de outro cliente recusada em `crm_get_contact`, a escrita de
+        // funil e QUALQUER tool que recuse no formato do catálogo
+        // (`{ erro, mensagem }`) voltam no mesmo formato e entram no audit como
+        // recusa — `success: false`, o CÓDIGO em `error`/`motivo` —, senão a
+        // recusa some contada como acerto e o gate `registro_sem_efeito` lê
+        // `produziu_efeito` numa chamada que não criou nada.
+        //
+        // A régua é UMA (`lib/mcp/desfecho-da-chamada.ts`), a mesma do traço e
+        // da rota MCP externa: antes daqui, só `{ permitido: false }` era
+        // reconhecido, e o formato real das tools passava por sucesso.
+        const recusa = recusaDaChamada(result);
         if (recusa !== null) {
           void auditMcpToolCall({
             ctx: input.ctx,
@@ -533,7 +541,9 @@ function wrapMcpTool(
             args: argsAudit,
             durationMs: Date.now() - startedAt,
             success: false,
-            errorMessage: `contato_da_conversa:${recusa}`,
+            errorMessage: rotuloDaRecusa(recusa),
+            desfecho: "recusa",
+            ...(recusa.codigo === null ? {} : { motivo: recusa.codigo }),
           });
           anotarEfeito("falhou");
           return result;
@@ -613,13 +623,6 @@ function wrapMcpTool(
       }
     },
   });
-}
-
-/** O `motivo` de uma recusa `{ permitido: false, motivo }` devolvida pelo handler, ou `null`. */
-function recusaDoHandler(result: unknown): string | null {
-  if (typeof result !== "object" || result === null) return null;
-  const r = result as { permitido?: unknown; motivo?: unknown };
-  return r.permitido === false && typeof r.motivo === "string" ? r.motivo : null;
 }
 
 export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
