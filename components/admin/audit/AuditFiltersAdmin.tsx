@@ -16,6 +16,7 @@ import type { AdminAuditFilters } from "@/hooks/useAdminAuditLog";
 // acontece". `lib/audit/actions.ts` não importa nada, de propósito: é o que
 // mantém este import de cliente barato. Ver o cabeçalho de lá.
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
+import { filtrarOpcoes } from "@/lib/audit/filtrar-opcoes";
 import { useT } from "@/hooks/i18n/useT";
 
 // ---------------------------------------------------------------------------
@@ -55,9 +56,7 @@ function MultiSelectPopover({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const filtered = options.filter((o) =>
-    o.label.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = filtrarOpcoes(options, search);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

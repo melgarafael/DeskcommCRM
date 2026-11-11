@@ -122,6 +122,7 @@ test.describe("a caixa do streaming SSR não fica órfã (issue #1374)", () => {
     await entrar(page, creds.users.manager!.email, creds.password);
     const estado = await context.storageState();
 
+    // dispensa-da-espera: contexto SEM JavaScript — os reveladores do streaming não rodam, a caixa `S:` nunca fecharia e a espera estouraria o teto; este caso mede justamente essa caixa.
     const semJs = await browser.newContext({
       javaScriptEnabled: false,
       storageState: estado,

@@ -106,10 +106,18 @@ class ReadQuery {
     }
     const order = this.ordering.length ? ` order by ${this.ordering.join(",")}` : "";
     const sql = `select ${projection} from ${ident(this.table)}${where}${order}${this.size === undefined ? "" : ` limit ${this.size}`} offset ${this.offset}`;
-    const result = await pool.query(
-      `with result as (${sql}) select to_jsonb(result) r from result`,
-      this.values,
-    );
+    let result;
+    try {
+      result = await pool.query(
+        `with result as (${sql}) select to_jsonb(result) r from result`,
+        this.values,
+      );
+    } catch (erro) {
+      // Tabela de módulo não instalado: o PostgREST devolve o erro, não lança.
+      const { code, message } = erro as { code?: string; message: string };
+      if (code === "42P01") return { data: null, error: { code, message } };
+      throw erro;
+    }
     const data = result.rows.map((row) => row.r);
     return { data: this.one ? (data[0] ?? null) : data, error: null };
   }

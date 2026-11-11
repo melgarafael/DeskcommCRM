@@ -204,7 +204,9 @@ describe("a lista do inbox consulta UMA vez quando o filtro efetivo muda (#2365)
 
     // UMA requisição, com o filtro DEFINITIVO da Fila de uma org sem automático.
     await waitFor(() => expect(listas()).toHaveLength(1));
-    expect(comando(unicaLista().url)).toBe("aguardando,automatico");
+    // `ninguem` entrou na #4012: o banco passou a dizer que a conversa sem dono
+    // não tem robô por trás, e ela espera gente em qualquer organização.
+    expect(comando(unicaLista().url)).toBe("aguardando,ninguem,automatico");
 
     // E nenhuma segunda chave depois: nada de GET em série.
     await assentar();
@@ -224,14 +226,14 @@ describe("a lista do inbox consulta UMA vez quando o filtro efetivo muda (#2365)
     expect(listas()).toHaveLength(1);
   });
 
-  it("org COM automático: a Fila continua pedindo só `aguardando` — uma busca, filtro igual", async () => {
+  it("org COM automático: a Fila pede `aguardando` e `ninguem` — uma busca, filtro igual", async () => {
     montar();
     await waitFor(() => expect(chamadas.some((c) => c.url === AUTOMATICO)).toBe(true));
 
     await entregar(AUTOMATICO, { data: { ativo: true } });
 
     await waitFor(() => expect(listas()).toHaveLength(1));
-    expect(comando(unicaLista().url)).toBe("aguardando");
+    expect(comando(unicaLista().url)).toBe("aguardando,ninguem");
 
     await assentar();
     expect(listas()).toHaveLength(1);

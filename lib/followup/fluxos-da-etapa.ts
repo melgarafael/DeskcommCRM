@@ -29,6 +29,12 @@
  *      saber que o fluxo existe e está parado, que é justamente o conserto que
  *      ele precisa fazer.
  *
+ * A porta 3 é chamada SEM canal de propósito (#3852): esta lista responde por
+ * ORGANIZAÇÃO ("existe algum agente que arma este fluxo?"), e a etapa do funil
+ * não tem número — o mesmo negócio pode ser trabalhado em dois. A pergunta por
+ * número é do motor, no momento em que ele tem a conversa na mão. Por isso a
+ * marcação aqui diz "ninguém arma", não "ninguém arma no número X".
+ *
  * O que fica de fora por natureza: o que depende do NEGÓCIO (sem contato, já
  * vivo noutro fluxo, janela de origem). A lista diz "entrar aqui arma isto",
  * não "este negócio vai receber isto".

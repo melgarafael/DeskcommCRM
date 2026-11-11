@@ -1,5 +1,7 @@
 # Mapas de arquitetura
 
+- `continuidade-primeiro-pagamento.architecture.json`: cadastro com intenção assinada → Auth → primeiro pagamento → checkout nativo → confirmação financeira → onboarding; ajuda e LGPD preservadas.
+
 ## Regra única deste diretório: o JSON é a FONTE; o HTML é DERIVADO
 
 Cada mapa tem um `*.json` (fonte) e pode ter um `*.html` (render).
@@ -17,13 +19,16 @@ ser fonte sem ninguém decidir isso.
 | arquivo | escopo |
 |---|---|
 | `atendimento-alerta-humano-nome-informado.architecture.json` | aviso interno por episódio, reserva sem reenvio incerto, nome selecionado pela ferramenta com escopo inbound e ficha vazia; limites da timeline declarados |
+| `apresentacao-do-catalogo.architecture.json` | apresentação de produto pela IA, opcional por empresa: chave, seção, ferramenta no turno, snapshot, retomada e envio em ordem |
 | `catalogo-de-modelos.architecture.json` | descoberta diária de modelos nativos OpenAI/Anthropic via Models.dev, conciliação OpenRouter, seletores e auditoria |
+| `lista-de-espera.architecture.json` | módulo opcional da agenda: vaga que abre, oferta atômica, aviso pelo caminho proativo, aceite pela agenda, recusa e vencimento chamam o próximo |
 | `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |
 | `nomes-internos-das-conexoes.architecture.json` | renomeação interna dos canais — cartões de WhatsApp, parceiro e redes sociais → rota tenant-aware → `channel_sessions.display_name` → cartões e seletores, com auditoria e sem alterar o nome público no provedor |
 | `conversoes-de-anuncios.architecture.json` | Purchase, etapas e LeadSubmitted por clique CTWA; entrega, livro de cliques e reprocessamento |
 | `prospeccao-nativa.architecture.json` | busca comercial, fila gradual, configuração conversacional persistente, sandbox e assistente de voz opcional |
 | `pre-go-live-whatsapp.architecture.json` | modo de teste por canal (issue #573): configuração administrativa, gate compartilhado, releitura no envio e validação pelo Inbox |
 | `app-da-meta-da-instalacao.architecture.json` | App da Meta da instalação (issue #850, migration 0257) — 10 peças, 12 arestas; a tela `/admin/meta` que grava a chave e mostra o token uma vez, o resolvedor que serve o par inteiro de UMA fonte (banco, com o `.env` de reserva) e por que Conexões só mostra o token quando ele veio do `.env` |
+| `agenda-camada-datas-dos-negocios.architecture.json` | camada de leitura das datas do funil na Agenda: 10 peças, 13 arestas; desligada de fábrica, a data no `where` com ordem e teto, e as **não-ligações declaradas** (não vira compromisso, não grava a escolha, não escreve no negócio) |
 | `agenda-google-sync.architecture.json` | fontes/destino por dono, tupla estável, três vias, claim/CAS e cobertura de calendário; presença e LGPD integradas |
 | `encerramento-atendimento.architecture.json` | conversa/demanda independentes, mutex no inbound, origem imutável dos jobs, memória vigente e guardas antes dos efeitos |
 | `agent-turn.workflow.json` | Conversador e Operador, entregas determinísticas de Meet e respostas aprovadas; revisão humana ligada ao mesmo core e à cadeia de envio. O JSON é a fonte atual; o HTML é um render anterior |
@@ -47,6 +52,8 @@ ser fonte sem ninguém decidir isso.
 | `captacao-por-webhook.architecture.json` | captação por webhook — 17 peças, 26 arestas, 5 faixas; o adaptador por ferramenta (Respondi, RD Station, Elementor, genérico), o cadastro do campo que mora no funil e o laço em que a definição volta como rótulo no painel, no card do lead, nos botões da automação e na entrada da IA; **não-ligação declarada**: o rótulo que o Elementor manda não é guardado |
 | `suspensao-de-organizacao.architecture.json` | suspensão que suspende (PR 1 da cobrança do revendedor): 17 peças, 24 arestas; a régua única de "opera", a escrita do estado só por duas funções definer (e o gatilho que fecha o PostgREST), o hub `/account-suspended` e o laço de retorno pela Central até a Fila; as **não-ligações declaradas** (entrada de mensagens, landings, escrita pela RLS) estão no card do próprio mapa |
 | `cobranca-do-revendedor.architecture.json` | cobrança do revendedor, PR 2 (planos e limites): a chave da instalação acima de uma régua única de limite (`fn_limite_do_plano`), as travas no banco para pessoas e números, o teto de IA numa consulta separada do orçamento da org, o teste grátis na criação e a liberação ao desligar a chave. Cada nó que espelha outro mapa declara `espelho`, e o teste reprova quando a peça espelhada some; a PR 3a acrescenta o caminho do dinheiro (conexão, adaptador, aviso assinado, releitura, régua, cron, hub do suspenso) e o card lista o que ainda não liga; a PR 3b liga o Asaas (Pix e boleto recorrentes) no mesmo encaixe, com o dialeto /v3 no mesmo dublê |
+| `numero-oficial-do-provedor.architecture.json` | o número oficial pelo provedor parceiro de pé sozinho — 16 peças, 14 arestas; a saúde que vê o número que não recebe ou está com envio restrito (motivo no cartão de Conexões e aviso na Central), a nova tentativa na mesma linha quando o provedor pede calma, o pino lido do próprio webhook e os eventos de etapa que saem pela conversa |
+| `entrada-que-responde-antes.architecture.json` | a entrada do número oficial pelo provedor parceiro responde antes de processar — 11 peças, 14 arestas; o arquivo como caixa durável (sem a marca de aceita, 503), a ingestão no `after()` e no cron `webhook-replay` pela mesma função, e por que só mensagem nova entra por aqui |
 | `molde-de-ia.architecture.json` | molde de IA das empresas novas (migration 9096) — 17 peças, 23 arestas; a escolha em Recursos opcionais, a cópia por gatilho de `organizations` (o único ponto comum aos quatro caminhos de criação), o padrão decidido num lugar só (`fn_seed_org_llm_defaults`) e o laço de retorno: a auditoria da empresa nova aparece na página dela |
 
 > **Esta tabela já apodreceu uma vez:** ela listava 8 mapas quando o disco tinha 9 — faltava
@@ -113,3 +120,5 @@ implementação, com a peça já meio pronta.
 
 - `carteiras-transferencia.architecture.json`: atribuição respeita o escopo da carteira sob lock.
 - `atendimento-comercial.architecture.json`: entrada, veto, briefing e configuração de atendimento comercial exclusivamente humano.
+
+`cadencias.architecture.json`: módulo oficial opcional do PR#1738; vitrine, decisão da empresa, fila, transporte, consentimento, descadastro e LGPD. Contrato em `docs/modulos/cadencias.md`.
