@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
@@ -87,17 +87,23 @@ export const INTERVALO_DAS_CONTAGENS_MS = 30_000;
  * e o React Query recalcula os timers. Ao voltar, o intervalo volta e o próprio
  * React Query refaz por foco — o número se atualiza sem polling cego no meio.
  */
+function assinarVisibilidade(aoMudar: () => void): () => void {
+  if (typeof document === "undefined") return () => {};
+  document.addEventListener("visibilitychange", aoMudar);
+  return () => document.removeEventListener("visibilitychange", aoMudar);
+}
+
+function lerVisibilidade(): boolean {
+  return typeof document === "undefined" || document.visibilityState === "visible";
+}
+
 function useDocumentoVisivel(): boolean {
-  const [visivel, setVisivel] = useState(
-    () => typeof document === "undefined" || document.visibilityState === "visible",
-  );
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const aoTrocar = () => setVisivel(document.visibilityState === "visible");
-    document.addEventListener("visibilitychange", aoTrocar);
-    return () => document.removeEventListener("visibilitychange", aoTrocar);
-  }, []);
-  return visivel;
+  // #4325: inicializador de `useState` que lê o navegador roda DE NOVO na
+  // hidratação, com `window` de verdade, e o cliente diverge do HTML que o
+  // servidor mandou (cerca `hidratacao-useState-nao-le-o-navegador`). Com
+  // `useSyncExternalStore` o snapshot do servidor é determinístico e o do
+  // cliente só é lido depois da montagem.
+  return useSyncExternalStore(assinarVisibilidade, lerVisibilidade, () => true);
 }
 
 /**
