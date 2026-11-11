@@ -1,10 +1,16 @@
 import type { EventHandler, EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
+import { PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destino";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { canalDoEventoDesativado } from "@/lib/channels/desativado";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NOTIFY_KINDS } from "./kinds";
 import { corpoDoAvisoDeMensagem, montarPayloadDeInbound, truncar } from "./push_payload";
-import { enviarPushAoUsuario, enviarPushAQuemVeAConversa, enviarPushDaOrg } from "./web_push";
+import {
+  enviarPushAoUsuario,
+  enviarPushAQuemVeAConversa,
+  enviarPushDaEtapaAQuemVeONegocio,
+  enviarPushDaOrg,
+} from "./web_push";
 import { carregarDestinatariosDaMensagem, type DestinatariosDaMensagem } from "./destinatarios-da-mensagem";
 import { logger } from "@/lib/logger";
 import { vapidPronto } from "./vapid";
@@ -187,7 +193,25 @@ async function handleAvisoQuePedeGente(row: EventRow): Promise<HandlerResult> {
   if (aviso === null) {
     return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "aviso_fora_do_celular" };
   }
+  // A etapa que avisa não tem um texto só: o valor e a soma do dia vão a quem
+  // VÊ o negócio, e a frase fixa a quem não vê (`./web_push.ts`, #3981). Os
+  // outros avisos seguem com um texto para a organização.
+  if (aviso.etapa) {
+    const { sent } = await enviarPushDaEtapaAQuemVeONegocio(
+      row.organization_id,
+      aviso.etapa.leadId,
+      { ampla: aviso.payload, daCarteira: aviso.etapa.daCarteira, semValor: aviso.etapa.semValor },
+      aviso.para.papelMinimo ?? PAPEL_MINIMO_DA_CENTRAL,
+    );
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
+  }
   const { sent } = await enviarPushDaOrg(row.organization_id, aviso.payload, aviso.para);
+  // O responsável da passagem sem celular inscrito: o aviso volta ao time, porque
+  // uma passagem que não chega a ninguém deixa o cliente esperando sem ninguém saber.
+  if (sent === 0 && aviso.seNinguemRecebeu) {
+    const doTime = await enviarPushDaOrg(row.organization_id, aviso.payload, aviso.seNinguemRecebeu);
+    return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${doTime.sent}` };
+  }
   return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
 }
 
@@ -313,28 +337,64 @@ export const webPushInboundHandler: EventHandler = {
     if (row.event_type === "lead.won") {
       // O valor do negócio no título e, no corpo, ao lado de quem ganhou,
       // quantos ganhos o dia já tem e a soma deles na mesma moeda
-      // (`./push-de-venda.ts`). Só lê o dia quando há alguém para receber, e só
-      // os ganhos que ESSA pessoa veria na tela (o papel dela e o
-      // `visibility_mode`). O valor do próprio negócio entra: o dono o vê.
+      // (`./push-de-venda.ts`).
+      //
+      // DUAS audiências, e não só o dono (#3981): a GESTÃO vê a organização
+      // inteira, então recebe o ganho de qualquer negócio com a soma do dia
+      // inteira; o DONO continua recebendo o dele com a soma que ELE vê (o
+      // papel dele e o `visibility_mode`, via `escopoDeQuemRecebe`). Num texto
+      // só isso não caberia — o número do dono é o da carteira dele e o da
+      // gestão é o da organização, e mandar um deles aos dois mostraria a
+      // alguém um número que a tela dele não mostra. O dono que também é gestor
+      // recebe UMA vez, pelo texto do dono (`excetoUsuario`); o escopo dele já
+      // é a organização inteira.
       const moeda = lead.valor?.moeda ?? null;
       const admin = createAdminClient();
-      const hoje = lead.ownerUserId
-        ? await ganhosDeHoje(
-            admin,
-            row.organization_id,
-            moeda,
-            inicioDoDia(new Date(), fuso),
-            await escopoDeQuemRecebe(admin, row.organization_id, lead.ownerUserId, visibilidade),
-          )
-        : null;
-      const dia = linhaDoDia(traduzir("Ganhos hoje: {quantidade}", idioma), hoje, moeda);
-      return enviarParaUsuario(row.organization_id, lead.ownerUserId, {
-        title: truncar(tituloComValor(traduzir("Lead ganho", idioma), lead.valor)),
-        body: truncar(dia ? `${lead.title} · ${dia}` : lead.title),
-        corpoSemPrevia: truncar(lead.title),
-        tag: `${NOTIFY_KINDS.lead_won.tagPrefix}:${leadId}`,
+      const desde = inicioDoDia(new Date(), fuso);
+      const titulo = truncar(tituloComValor(traduzir("Lead ganho", idioma), lead.valor));
+      const corpo = (dia: string | null) => truncar(dia ? `${lead.title} · ${dia}` : lead.title);
+      const corpoSemPrevia = truncar(lead.title);
+      const tag = `${NOTIFY_KINDS.lead_won.tagPrefix}:${leadId}`;
+
+      const diaDaGestao = linhaDoDia(
+        traduzir("Ganhos hoje: {quantidade}", idioma),
+        await ganhosDeHoje(admin, row.organization_id, moeda, desde, null),
+        moeda,
+      );
+      const daGestao = await enviarPushDaOrg(
+        row.organization_id,
+        { title: titulo, body: corpo(diaDaGestao), corpoSemPrevia, tag, href },
+        { papelMinimo: "manager", excetoUsuario: lead.ownerUserId ?? undefined },
+      );
+
+      // Negócio sem dono: não há a quem mandar o texto do dono — a gestão já
+      // recebeu, e é ela quem enxerga (e atende) o negócio sem responsável.
+      if (!lead.ownerUserId) {
+        return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${daGestao.sent}` };
+      }
+      const diaDoDono = linhaDoDia(
+        traduzir("Ganhos hoje: {quantidade}", idioma),
+        await ganhosDeHoje(
+          admin,
+          row.organization_id,
+          moeda,
+          desde,
+          await escopoDeQuemRecebe(admin, row.organization_id, lead.ownerUserId, visibilidade),
+        ),
+        moeda,
+      );
+      const doDono = await enviarPushAoUsuario(row.organization_id, lead.ownerUserId, {
+        title: titulo,
+        body: corpo(diaDoDono),
+        corpoSemPrevia,
+        tag,
         href,
       });
+      return {
+        consumer_key: WEB_PUSH_INBOUND_KEY,
+        status: "ok",
+        detail: `sent:${daGestao.sent + doDono.sent};gestao:${daGestao.sent}`,
+      };
     }
     return enviarParaUsuario(row.organization_id, lead.ownerUserId, {
       title: traduzir("Lead perdido", idioma),

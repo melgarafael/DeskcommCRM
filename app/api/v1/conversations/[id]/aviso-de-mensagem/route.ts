@@ -1,10 +1,16 @@
 /**
  * GET /api/v1/conversations/[id]/aviso-de-mensagem — "devo avisar ESTA pessoa
- * da mensagem que acabou de chegar nesta conversa?" → `{ avisar, conteudo }`.
+ * da mensagem que acabou de chegar nesta conversa?" → `{ avisar, conteudo, canal }`.
  *
  * `conteudo` é o que a bandeja do sistema pode mostrar (a opção da empresa em
  * `settings.notificacoes`, a mesma que o funil do push aplica), decidido aqui
  * no servidor e não no navegador.
+ *
+ * `canal` é a REDE da conversa, traduzida por `channelBrand`, para o toast se
+ * identificar sem a pessoa ler (#4094). Vem aqui, e não de um segundo pedido à
+ * rota da conversa, porque esta leitura já existe: cada aviso continua custando
+ * uma pergunta só (é o que `tests/unit/aviso-nao-dispara-na-importacao.test.ts`
+ * conta).
  *
  * Quem lê é `hooks/notifications/useInboundMessageAlerts.ts` (toast e
  * notificação do navegador). A regra é a do push do servidor, na MESMA função:
@@ -40,6 +46,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { channelBrand } from "@/lib/channels/presentation";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import {
@@ -72,7 +79,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   const supabase = await createClient();
   const { data: conversa } = await supabase
     .from("conversations")
-    .select("id")
+    .select("id, channel_sessions:channel_session_id (provider, social_platform:metadata->>social_platform)")
     .eq("id", id)
     .eq("organization_id", org.orgId)
     .maybeSingle();
@@ -86,7 +93,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     // O que a bandeja do sistema pode mostrar é decidido aqui, no servidor,
     // pela mesma opção que o funil do push aplica.
     const { modo } = await lerTelaBloqueada(createAdminClient(), org.orgId);
-    return ok({ avisar, conteudo: modo }, { requestId });
+    // O tipo vê o embed como lista; pela FK ele chega como objeto único.
+    const sessao = conversa.channel_sessions;
+    const canal = channelBrand(Array.isArray(sessao) ? sessao[0] : sessao);
+    return ok({ avisar, conteudo: modo, canal }, { requestId });
   } catch (err) {
     logger.error("[aviso-de-mensagem] leitura falhou", {
       conversation_id: id,

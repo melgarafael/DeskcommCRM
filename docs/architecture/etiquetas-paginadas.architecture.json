@@ -75,7 +75,7 @@
       "lane": "data",
       "col": 5,
       "type": "service",
-      "label": "Audit + regras add_tag e registros corrigidos"
+      "label": "Audit + regras add_tag/remove_tag e registros corrigidos"
     }
   ],
   "edges": [

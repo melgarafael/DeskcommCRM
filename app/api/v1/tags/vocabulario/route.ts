@@ -5,7 +5,7 @@
  * ── Por que manager, e não agent ─────────────────────────────────────────────
  *
  * A leitura é inofensiva, mas a escrita REESCREVE o vocabulário de todo mundo da
- * organização, inclusive as regras `add_tag` dos agentes — é decisão de
+ * organização, inclusive as regras `add_tag` e `remove_tag` — é decisão de
  * configuração, não de atendimento. Mesmo gate do roteamento de filas
  * (`settings_routing`), que também é configuração de organização.
  *
@@ -133,8 +133,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       return fail("destino_inexistente", "A etiqueta de destino não existe nesta organização.", 422, { requestId });
   }
 
-  // Uma chamada só. Renomear a etiqueta e trocar o nome nas regras `add_tag` dos
-  // agentes acontece na MESMA transação — é isto que impede o estado que a issue
+  // Uma chamada só. Renomear a etiqueta e trocar o nome nas regras `add_tag` e
+  // `remove_tag` acontece na MESMA transação — é isto que impede o estado que a issue
   // descreve: contato renomeado com o agente ainda escrevendo o nome antigo.
   // `p_cor` vai sempre (nulo fora do `definir_cor`): a assinatura da função tem
   // o parâmetro com `default null`, e mandar o campo explícito evita depender de

@@ -37,10 +37,17 @@ export type ModoDaMensagem = (typeof MODOS_DA_MENSAGEM)[number];
  * QR e o mais seguro para a qualidade de qualquer número. `rapida` = rajada de
  * várias por segundo, só com modelo aprovado: o número oficial não é banido por
  * volume, quem limita ali é a plataforma (nível diário e mensagens por segundo).
+ * `transmissao` (migration 0712) = a lista inteira entregue ao PROVEDOR numa
+ * chamada, que manda a todos e devolve o relatório por destinatário — só no
+ * número cujo provedor faz transmissão, e só com variáveis de texto fixo.
  */
-export const VELOCIDADES_DA_CAMPANHA = ["gradual", "rapida"] as const;
+export const VELOCIDADES_DA_CAMPANHA = ["gradual", "rapida", "transmissao"] as const;
 
 export type VelocidadeDaCampanha = (typeof VELOCIDADES_DA_CAMPANHA)[number];
+
+export function ehVelocidadeDaCampanha(v: unknown): v is VelocidadeDaCampanha {
+  return typeof v === "string" && (VELOCIDADES_DA_CAMPANHA as readonly string[]).includes(v);
+}
 
 export const STATUS_DO_DESTINATARIO = [
   "pending",
