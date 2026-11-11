@@ -9649,6 +9649,7 @@ export const DICIONARIO: Traducoes = {
   // Segundo estágio do zoom do lightbox (#4149): a mesma imagem ampliada, um
   // clique a mais. O rótulo diz o que o clique FAZ — voltar ao tamanho original.
   "Reduzir imagem": { es: "Reducir imagen" },
+  "Baixar imagem": { es: "Descargar imagen" },
   "Imagem recebida": { es: "Imagen recibida" },
   // Transcrição do áudio no balão (#2133): rótulo e estado de carregamento.
   Transcrição: { es: "Transcripción" },
