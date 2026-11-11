@@ -106,6 +106,8 @@ function responder(relatorio: object) {
     if (url.startsWith("/api/v1/team/assignable")) {
       return { data: [{ user_id: ANA, full_name: "Ana", role: "agent" }] };
     }
+    // Os rankings de negócios ganhos (#4280) moram nesta tela; aqui, sem venda.
+    if (url.startsWith("/api/v1/reports/comercial")) return { data: { sem_dados: true } };
     if (url.startsWith("/api/v1/contacts")) {
       return { data: [{ id: CLIENTE, display_name: "Cliente Um", name: null }] };
     }

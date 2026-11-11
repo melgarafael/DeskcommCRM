@@ -55,6 +55,7 @@ import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
 import { LimiarDeSentimento } from "./LimiarDeSentimento";
+import { VozDoAgente } from "./VozDoAgente";
 import { FollowupFlowPicker } from "./FollowupFlowPicker";
 import {
   FollowupWindowEditor,
@@ -1588,6 +1589,16 @@ export function AgentForm(props: Props) {
               </div>
             ) : null}
           </Card>
+
+          {/* A voz DESTE agente (#4228): grava em `ai_agents.config.voz_voice_id`,
+              por isso só em edição — como o limiar de sentimento logo abaixo. */}
+          {isEdit && (
+            <VozDoAgente
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).voz_voice_id}
+              disabled={disabled}
+            />
+          )}
 
           {/* Capacidades */}
           <Card className="space-y-2 p-4">

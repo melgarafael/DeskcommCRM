@@ -68,6 +68,7 @@
  * e exclusão vencida não exclui ninguém. O custo de errar para "não havia marca"
  * é uma devolução a mais; o de errar para "havia" é a conversa presa.
  */
+import { modoProtegeODono } from "@/lib/ai/elegibilidade/ia-com-dono";
 import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
 
 /**
@@ -270,6 +271,7 @@ export interface Selecao {
 export type MotivoDeNaoDevolver =
   | "sem_prazo"
   | "status_nao_devolvivel"
+  | "ia_com_dono"
   | "sem_dono"
   | "ciclos_esgotados"
   | "ultimo_evento_nao_e_rodizio"
@@ -291,6 +293,14 @@ export function avaliarEntregaAoRodizio(
   const minutos = sel.prazoPorOrg.get(c.organization_id);
   if (minutos === undefined) return { candidata: false, motivo: "sem_prazo" };
   if (!STATUS_DEVOLVIVEIS.has(c.status ?? "")) return { candidata: false, motivo: "status_nao_devolvivel" };
+  // #3967: no modo "IA com o dono" a IA responde SEM soltar o dono, então
+  // "ninguém respondeu" nunca é abandono — é o desenho. Devolver ao rodízio
+  // aqui entregaria a conversa a OUTRA pessoa, que é exatamente o que o modo
+  // existe para impedir. A ausência de resposta humana é o gatilho legítimo
+  // fora do modo; dentro dele, não.
+  if (modoProtegeODono({ metadata: c.metadata, assignedToUserId: c.assigned_to_user_id })) {
+    return { candidata: false, motivo: "ia_com_dono" };
+  }
   // Sem dono não há entrega para desfazer: a devolução já aconteceu, ou a
   // conversa nunca foi do rodízio. Nos dois casos não há nada a fazer.
   if (c.assigned_to_user_id === null) return { candidata: false, motivo: "sem_dono" };
