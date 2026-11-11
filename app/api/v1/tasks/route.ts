@@ -45,6 +45,13 @@ import {
 
 export const dynamic = "force-dynamic";
 
+/**
+ * O teto da lista — e o máximo que `?limite=` aceita. Está nomeado porque agora
+ * tem dois leitores (o default do `.limit()` e a validação do parâmetro): o dia
+ * em que um deles mudar sozinho, a rota passaria a aceitar mais do que serve.
+ */
+const LIMITE_MAXIMO = 500;
+
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
   "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
@@ -99,6 +106,14 @@ const listaSchema = z.object({
    * da consulta e a RLS continuam valendo.
    */
   pipeline_id: z.string().uuid().optional(),
+  /**
+   * Teto de linhas desta busca (#4028). Existe porque a visão em QUADRO desenha
+   * todas as colunas de uma vez e pediria a base inteira: ela manda um número
+   * menor que o teto da lista. O máximo é DAQUI, não do navegador — um cliente
+   * que peça mais que `LIMITE_MAXIMO` recebe 422 em vez de uma consulta do
+   * tamanho que ele quiser.
+   */
+  limite: z.coerce.number().int().min(1).max(LIMITE_MAXIMO).optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -127,7 +142,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("organization_id", authz.org.orgId)
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(filtros.limite ?? LIMITE_MAXIMO);
 
   if (filtros.status) query = query.eq("status", filtros.status);
   if (filtros.priority) query = query.eq("priority", filtros.priority);

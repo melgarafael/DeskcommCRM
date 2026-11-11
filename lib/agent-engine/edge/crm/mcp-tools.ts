@@ -65,6 +65,13 @@ export interface McpTurnTools {
   cobertasPelaNativa: string[];
   /** revoga o token efêmero — chamar no fim do turno (caminho feliz). */
   cleanup: () => Promise<void>;
+  /**
+   * Nomes, em `tools`, das remotas do servidor MCP externo montadas como
+   * LEITURA — quem decide é `definirFerramentasRemotas`, e a ponte só anota o
+   * que montou. O turno registra o resultado delas como evidência da
+   * conferência de promessa.
+   */
+  leiturasRemotas: ReadonlySet<string>;
 }
 
 /**
@@ -225,6 +232,7 @@ export async function buildMcpTurnTools(
     },
   );
 
+  const leiturasRemotas = new Set<string>();
   const tools = pickToolsFromMcp({
     supabase: cfg.supabase,
     ctx,
@@ -245,11 +253,13 @@ export async function buildMcpTurnTools(
     ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
     ...(servidoresDoAgente.length > 0 ? { servidoresDoAgente } : {}),
     ...(options?.efeitos ? { efeitos: options.efeitos } : {}),
+    leiturasRemotas,
   });
 
   return {
     tools,
     toolIds: Object.keys(tools),
+    leiturasRemotas,
     cobertasPelaNativa: cobertas,
     // ponytail: revoke só no caminho feliz — em crash do turno o token expira
     // pelo TTL curto do mint (mesmo tradeoff aceito pelo runtime nativo no grace).

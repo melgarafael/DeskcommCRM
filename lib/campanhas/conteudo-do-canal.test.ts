@@ -6,7 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
-import { decidirConteudo, decidirVelocidade } from "./conteudo-do-canal";
+import { decidirConteudo, decidirVelocidade, fraseDaRecusa } from "./conteudo-do-canal";
 
 const SEM_BANCO = new Proxy({} as SupabaseClient, {
   get() {
@@ -71,18 +71,78 @@ describe("decidirConteudo", () => {
 });
 
 describe("decidirVelocidade", () => {
+  // O número oficial cujo provedor faz broadcast, sem variável no modelo.
+  const oficial = { modo: "template" as const, transmissao: true, variaveis: {} };
+
   it("rápida no número oficial passa; sem pedir, fica a que estava", () => {
-    expect(decidirVelocidade({ pedida: "rapida", atual: "gradual", modo: "template" })).toEqual({ ok: true, velocidade: "rapida" });
-    expect(decidirVelocidade({ pedida: undefined, atual: "rapida", modo: "template" })).toEqual({ ok: true, velocidade: "rapida" });
-    expect(decidirVelocidade({ pedida: undefined, atual: "gradual", modo: "template" })).toEqual({ ok: true, velocidade: "gradual" });
+    expect(decidirVelocidade({ ...oficial, pedida: "rapida", atual: "gradual" })).toEqual({ ok: true, velocidade: "rapida" });
+    expect(decidirVelocidade({ ...oficial, pedida: undefined, atual: "rapida" })).toEqual({ ok: true, velocidade: "rapida" });
+    expect(decidirVelocidade({ ...oficial, pedida: undefined, atual: "gradual" })).toEqual({ ok: true, velocidade: "gradual" });
   });
 
-  it("rápida pedida num número por QR é recusada com o código e a frase", () => {
-    const r = decidirVelocidade({ pedida: "rapida", atual: "gradual", modo: "text" });
-    expect(r).toMatchObject({ ok: false, codigo: "campanha_velocidade_do_canal", status: 422 });
+  it("rápida ou broadcast pedidos num número por QR são recusados com o código e a frase", () => {
+    for (const pedida of ["rapida", "transmissao"] as const) {
+      const r = decidirVelocidade({ pedida, atual: "gradual", modo: "text", transmissao: false, variaveis: {} });
+      expect(r).toMatchObject({ ok: false, codigo: "campanha_velocidade_do_canal", status: 422 });
+    }
   });
 
-  it("campanha rápida que troca para um número por QR volta a gradual em vez de travar no CHECK", () => {
-    expect(decidirVelocidade({ pedida: undefined, atual: "rapida", modo: "text" })).toEqual({ ok: true, velocidade: "gradual" });
+  it("campanha rápida ou por broadcast que troca para um número por QR volta a gradual em vez de travar no CHECK", () => {
+    for (const atual of ["rapida", "transmissao"] as const) {
+      expect(
+        decidirVelocidade({ pedida: undefined, atual, modo: "text", transmissao: false, variaveis: {} }),
+      ).toEqual({ ok: true, velocidade: "gradual" });
+    }
+  });
+
+  it("broadcast passa no número que o faz, sem variável ou só com texto fixo", () => {
+    expect(decidirVelocidade({ ...oficial, pedida: "transmissao", atual: "gradual" })).toEqual({
+      ok: true,
+      velocidade: "transmissao",
+    });
+    expect(
+      decidirVelocidade({
+        ...oficial,
+        pedida: "transmissao",
+        atual: "gradual",
+        variaveis: { "1": { kind: "fixed", value: "Cafeteira Elétrica" } },
+      }),
+    ).toEqual({ ok: true, velocidade: "transmissao" });
+  });
+
+  it("broadcast com variável que muda por pessoa é recusado, e a frase nomeia a variável", () => {
+    const r = decidirVelocidade({
+      ...oficial,
+      pedida: "transmissao",
+      atual: "gradual",
+      variaveis: { "1": { kind: "contact_first_name" }, "2": { kind: "fixed", value: "Cafeteira" } },
+    });
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_transmissao_variavel", status: 422 });
+    const frase = r.ok ? "" : fraseDaRecusa(r, (x) => x);
+    expect(frase).toContain("({{1}})");
+    expect(frase).not.toContain("{{2}}");
+    expect(frase).not.toContain("{variaveis}");
+  });
+
+  it("trocar o modelo de uma campanha por broadcast para um com nome também é recusado", () => {
+    const r = decidirVelocidade({
+      ...oficial,
+      pedida: undefined,
+      atual: "transmissao",
+      variaveis: { "1": { kind: "contact_name" } },
+    });
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_transmissao_variavel" });
+  });
+
+  it("broadcast pedido num número oficial cujo provedor não o faz é recusado; a que estava vira rápida", () => {
+    const semTransmissao = { ...oficial, transmissao: false };
+    expect(decidirVelocidade({ ...semTransmissao, pedida: "transmissao", atual: "gradual" })).toMatchObject({
+      ok: false,
+      codigo: "campanha_velocidade_do_canal",
+    });
+    expect(decidirVelocidade({ ...semTransmissao, pedida: undefined, atual: "transmissao" })).toEqual({
+      ok: true,
+      velocidade: "rapida",
+    });
   });
 });

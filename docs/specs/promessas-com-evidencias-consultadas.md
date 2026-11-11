@@ -92,6 +92,37 @@ Se uma mutação começar enquanto o banco ou o classificador responde, a geraç
 também invalida a aprovação em voo: a revisão devolve veto conservador, sem
 exceção ou nova chamada de modelo, mesmo se o replay repuser um recibo idêntico.
 
+### Reserva feita em turno anterior
+
+Reserva feita antes não deixa recibo no turno seguinte. Com evidência comercial
+na revisão, a confirmação fiel dela era vetada: 21 de 24 (Haiku 5.5 e Sonnet 4.6,
+3 repetições por caso, dados sintéticos, #3205). Sem evidência comercial o prompt
+padrão não veta (0 de 6), e por isso a leitura abaixo não roda nesse caso: ela
+trocaria o prompt de toda conversa de quem tem reserva.
+
+`lerAgendaDaRevisao` decide a fonte de cada revisão, uma por vez. O turno que
+tentou mexer na agenda fica só com o recibo, porque a mutação começa antes de
+aparecer no banco e uma leitura em voo comprovaria a reserva que está sendo
+cancelada. Fora isso, `lerReservasConfirmadasDoContato` lê pelo `pool` do motor,
+com organização e contato no SQL, as reservas `confirmed` e ainda não terminadas,
+sem bloqueio de serviço e sem aprovação humana pendente, e confere cada linha com
+as mesmas regras do recibo. Vão até 20, as mais próximas, com o mesmo
+`evidencias_agendamento`. Além do teto, `evidencias_agendamento_parcial` avisa que
+a lista parou ali, e esse aviso não comprova nenhuma reserva. Falha de leitura e o
+teste do agente ficam sem evidência. O texto fixo de follow-up não recebe a
+leitura e não precisa dela (0 de 6 no prompt padrão). O follow-up de IA passa pelo
+mesmo fechamento do turno comum.
+
+Se a reserva foi lida e uma mutação começa durante a revisão, a aprovação em voo
+cai como no recibo. A chave da memoização inclui a lista e o aviso.
+
+Medido no revisor com a evidência já no prompt, mesmos modelos e repetições:
+confirmação fiel 0 de 24, lembrete 0 de 6, gratuidade acrescentada 12 de 12,
+horário diferente do reservado 6 de 6, reserva fora de uma lista parcial 6 de 6.
+Não mede um turno completo, a recuperação real de evidências nem modelos OpenAI.
+
+### Revisão
+
 A candidata inteira e `evidencias_agendamento` chegam em campos separados ao
 mesmo `classifyPromise`. A instrução permite relatar aquela confirmação factual
 e exige correspondência de pessoa, tipo, local, horário e fuso. Não libera

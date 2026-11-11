@@ -271,6 +271,17 @@ describe("criarPegadaDoCandidato", () => {
     expect(linha).toMatchObject({ status: "queued", conversation_id: CONVERSA });
   });
 
+  it("o cadastro do contato vai pela porta `prospeccao`: a ÚNICA conversa é a do canal da campanha", async () => {
+    // Pela porta `manual` o cadastro abria outra conversa no telefone mais
+    // antigo da org, antes da `beginServiceAtOrigin` abrir a da campanha.
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(db, {} as never, ORG, campanha, configOnSend, candidato(1), null);
+
+    expect(m.contato.mock.calls[0]?.[4]).toEqual({ porta: "prospeccao" });
+    expect(m.fronteira).toHaveBeenCalledTimes(1);
+    expect(m.fronteira).toHaveBeenCalledWith({}, ORG, CONTATO, configOnSend.channel_session_id);
+  });
+
   it("idempotente: contato da campanha e negócio que já existem não são criados de novo", async () => {
     const { db } = bancoFalso({ negocioExistente: { id: NEGOCIO } });
     await criarPegadaDoCandidato(
