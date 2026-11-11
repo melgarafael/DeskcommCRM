@@ -396,7 +396,7 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     id: "modulo-campanha-por-email",
     rotulo: "Campanha por e-mail (em construção)",
     descricao:
-      "Ligado, a tela de nova campanha ganha a opção E-mail: dá para escrever o assunto e o corpo e conferir o público. Esta versão ainda não envia o e-mail, e também não tem o descadastro nem a lista de quem pediu para não receber; a campanha criada fica guardada. Desligado, a opção não aparece e ninguém cria campanha de e-mail; as que já existem ficam guardadas.",
+      "Este interruptor ainda não pode ser ligado: a campanha por e-mail guarda o assunto, o corpo e o público, mas esta versão não envia o e-mail nem tem o descadastro e a lista de quem pediu para não receber. Se ele já estiver ligado, dá para desligar: a opção E-mail some da nova campanha e as campanhas já criadas ficam guardadas.",
     foraDoMenu: "Não cria porta no menu do CRM: a opção E-mail aparece dentro de Campanhas, ao criar uma nova.",
   },
 ];

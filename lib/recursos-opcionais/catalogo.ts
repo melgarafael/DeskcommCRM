@@ -30,7 +30,7 @@
  * quem desenha passa por `t()`/`traduzir()`.
  */
 import { type Role, visibilidadeRestritaAoAtendente } from "@/lib/auth/types";
-import { MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, MODULOS_SO_DA_INSTALACAO, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { MODULOS_AINDA_NAO_LIGAVEIS, MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, MODULOS_SO_DA_INSTALACAO, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { moduloDoCatalogo } from "@/lib/modulos/catalogo";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
@@ -191,7 +191,7 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   },
   campanha_por_email: {
     nome: "Campanha por e-mail (em construção)",
-    oQueFaz: "A nova campanha ganha a opção E-mail, com assunto, corpo e público. Esta versão ainda não envia o e-mail.",
+    oQueFaz: "A base da campanha por e-mail: assunto, corpo e público. Ainda não pode ser ligada, porque falta o envio com descadastro.",
   },
 };
 
@@ -785,10 +785,16 @@ export const RECURSOS_OPCIONAIS: readonly RecursoOpcional[] = [
 /**
  * Os módulos que a EMPRESA vê em Configurações › Recursos opcionais: todos os da
  * instalação, menos os que são decisão só de quem administra o servidor
- * (`MODULOS_SO_DA_INSTALACAO`).
+ * (`MODULOS_SO_DA_INSTALACAO`) e os que ninguém consegue ligar ainda
+ * (`MODULOS_AINDA_NAO_LIGAVEIS`): "desligado por quem administra o servidor"
+ * faria a empresa pedir um interruptor que o servidor não oferece.
  */
 export const MODULOS_DA_EMPRESA: readonly RecursoOpcional[] = RECURSOS_OPCIONAIS.filter(
-  (r) => r.nivel === "instalacao" && !!r.modulo && !MODULOS_SO_DA_INSTALACAO.includes(r.modulo),
+  (r) =>
+    r.nivel === "instalacao" &&
+    !!r.modulo &&
+    !MODULOS_SO_DA_INSTALACAO.includes(r.modulo) &&
+    !MODULOS_AINDA_NAO_LIGAVEIS.includes(r.modulo),
 );
 
 /**
