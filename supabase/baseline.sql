@@ -66977,16 +66977,13 @@ alter table public.ai_agent_versions
 alter table public.ai_agent_versions
   add column if not exists voz_quando text not null default 'espelhar';
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'ai_agent_versions_voz_quando_check'
-  ) then
-    alter table public.ai_agent_versions
-      add constraint ai_agent_versions_voz_quando_check
-      check (voz_quando in ('nunca', 'espelhar', 'sempre'));
-  end if;
-end $$;
+-- A constraint NÃO é reconstruída aqui: o vocabulário FINAL dela (o de 9052
+-- mais o 'quando_pede' da 9338) mora no bloco único do fim deste apêndice,
+-- logo acima da VARREDURA anon. Um segundo bloco, com a lista desta época,
+-- é exatamente o padrão que `baseline-constraint-reconstruida.test.ts` proíbe:
+-- num clone que já tem linha com 'quando_pede', o `update.sh` falha ao
+-- re-aplicar o bloco velho e a tabela passa SEM constraint entre o drop e o
+-- add que funciona. O default continua 'espelhar' — nenhum valor renomeado.
 
 comment on column public.ai_agent_versions.voz_enabled is
   'Migration 9052. A resposta do agente pode saír como nota de voz nesta versão. '
