@@ -180,8 +180,11 @@ export const TETO_PADRAO_MS = 15_000;
  * conserto do timeout viraria um defeito novo, e mais difícil de ver que o
  * original, porque a mensagem simplesmente não sai.
  *
- * 30s é o mesmo teto que a mídia de ENTRADA já usa
- * (`lib/messaging/media/waha-source.ts:18`).
+ * 180s, e não os 30s da mídia de ENTRADA: com o `proxyClientMaxBodySize` do
+ * `next.config.ts`, vídeo de até 50 MB chega inteiro ao WAHA com `convert`, e
+ * um envio real de 86 MB levou 69s (#4422). Um abort nosso com o WAHA ainda
+ * entregando marcaria "falhou" numa mensagem que saiu. Fica abaixo dos 5 min
+ * do `recover-stuck-messages`.
  */
 export const TETO_DE_MIDIA_MS = 180_000;
 
