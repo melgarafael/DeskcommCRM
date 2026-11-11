@@ -25,6 +25,12 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import {
+  CODIGO_NOME_DE_AGENTE_EM_USO,
+  NOME_DE_AGENTE_EM_USO,
+  RASCUNHO_SALVO_NOME_NAO_MUDOU,
+  ehNomeDeAgenteRepetido,
+} from "@/lib/ai/agents/nome-repetido";
+import {
   agentMcpCreateSchema,
   agentMcpPatchSchema,
   PUBLISH_ERROR_CODES,
@@ -39,7 +45,7 @@ import { VALID_TOOL_IDS } from "@/lib/mcp/tools";
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, voz_enabled, voz_quando, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, voz_enabled, voz_quando, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,skill_names,image_vision_enabled,provisioning_origin,inbound_debounce_ms,reply_min_interval_ms";
 
 type ActionResult<T = void> =
   | { ok: true; data?: T }
@@ -77,7 +83,7 @@ async function gravarCadastroDoAgente(
     atual: { name?: unknown; description?: unknown; priority?: unknown };
     pedido: { name?: string; description?: string | null; priority?: number };
   },
-): Promise<{ erro: string } | { mudou: string[] }> {
+): Promise<{ erro: string; doBanco: unknown } | { mudou: string[] }> {
   const patch: Record<string, unknown> = {};
   for (const campo of ["name", "description", "priority"] as const) {
     const novo = args.pedido[campo];
@@ -93,7 +99,7 @@ async function gravarCadastroDoAgente(
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", args.agentId)
     .eq("organization_id", args.orgId);
-  if (error) return { erro: error.message };
+  if (error) return { erro: error.message, doBanco: error };
 
   void audit({
     action: "ai_agent.updated",
@@ -171,6 +177,7 @@ export async function saveAgentDraftAction(
     provider: v.provider,
     pipeline_ids: v.pipeline_ids,
     knowledge_source_ids: v.knowledge_source_ids,
+    skill_names: v.skill_names,
     credential_id: v.credential_id,
     channel_session_id: v.channel_session_id,
   });
@@ -264,6 +271,17 @@ export async function saveAgentDraftAction(
       // As duas escritas não são atômicas. O desfecho tem de dizer o que
       // gravou: um toast verde genérico aqui reproduz o defeito com outra cara.
       if ("erro" in r) {
+        if (ehNomeDeAgenteRepetido(r.doBanco)) {
+          // O rascunho FOI salvo — o que não entrou foi o nome do cadastro. Dizer
+          // só "já existe um agente com esse nome" faria a pessoa achar que
+          // perdeu o trabalho; dizer só "o cadastro não" mandaria procurar
+          // defeito onde há um nome para trocar.
+          return {
+            ok: false,
+            error: CODIGO_NOME_DE_AGENTE_EM_USO,
+            message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
+          };
+        }
         return {
           ok: false,
           error: "internal_error",
@@ -316,6 +334,7 @@ export async function saveAgentDraftAction(
         handoff_keywords: v.handoff_keywords,
         handoff_tool_enabled: v.handoff_tool_enabled,
         handoff_legal_enabled: v.handoff_legal_enabled,
+        image_vision_enabled: v.image_vision_enabled,
         proposal_ai_draft_enabled: v.proposal_ai_draft_enabled,
         cases_enabled: v.cases_enabled,
         operator_enabled: v.operator_enabled,
@@ -323,9 +342,11 @@ export async function saveAgentDraftAction(
         operator_tool_ids: v.operator_tool_ids,
         pipeline_ids: v.pipeline_ids,
         knowledge_source_ids: v.knowledge_source_ids,
+        skill_names: v.skill_names,
         split_messages: v.split_messages,
         split_max_chars: v.split_max_chars,
         inbound_debounce_ms: v.inbound_debounce_ms ?? null,
+        reply_min_interval_ms: v.reply_min_interval_ms ?? null,
         followup: v.followup,
         voz_enabled: v.voz_enabled,
         voz_quando: v.voz_quando,
@@ -355,6 +376,14 @@ export async function saveAgentDraftAction(
           pedido: cadastroParsed.data,
         });
         if ("erro" in r) {
+          if (ehNomeDeAgenteRepetido(r.doBanco)) {
+            // Mesmo desfecho do ramo de cima: rascunho salvo, nome não.
+            return {
+              ok: false,
+              error: CODIGO_NOME_DE_AGENTE_EM_USO,
+              message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
+            };
+          }
           return {
             ok: false,
             error: "internal_error",
@@ -547,6 +576,7 @@ export async function revertToVersionAction(
     handoff_keywords: string[];
     handoff_tool_enabled: boolean;
     handoff_legal_enabled: boolean;
+    image_vision_enabled: boolean | null;
     proposal_ai_draft_enabled: boolean;
     cases_enabled: boolean;
     operator_enabled: boolean;
@@ -554,9 +584,11 @@ export async function revertToVersionAction(
     operator_tool_ids: string[];
     pipeline_ids: string[];
     knowledge_source_ids: string[];
+    skill_names: string[] | null;
     split_messages: boolean;
     split_max_chars: number;
     inbound_debounce_ms: number | null;
+    reply_min_interval_ms: number | null;
     followup: unknown;
     voz_enabled: boolean;
     voz_quando: "nunca" | "espelhar" | "sempre";
@@ -600,6 +632,8 @@ export async function revertToVersionAction(
         // seria publicar uma configuração que nunca existiu (mesma régua de
         // `pipeline_ids` logo abaixo).
         handoff_legal_enabled: src.handoff_legal_enabled,
+        // A visão de foto vai junto pela mesma régua (9108).
+        image_vision_enabled: src.image_vision_enabled ?? true,
         proposal_ai_draft_enabled: src.proposal_ai_draft_enabled,
         cases_enabled: src.cases_enabled,
         operator_enabled: src.operator_enabled,
@@ -611,9 +645,13 @@ export async function revertToVersionAction(
         // que aquela versão consultava é publicar uma configuração inventada.
         pipeline_ids: src.pipeline_ids,
         knowledge_source_ids: src.knowledge_source_ids ?? [],
+        // As skills vão junto pela mesma régua: reverter e o agente voltar a usar
+        // todas (ou outra lista) seria publicar uma configuração que nunca existiu.
+        skill_names: src.skill_names ?? null,
         split_messages: src.split_messages,
         split_max_chars: src.split_max_chars,
         inbound_debounce_ms: src.inbound_debounce_ms ?? null,
+        reply_min_interval_ms: src.reply_min_interval_ms ?? null,
         followup: src.followup,
         // A voz vai junto pela mesma régua: reverter para uma versão que falava
         // e ela voltar calada seria publicar uma configuração que nunca existiu.
@@ -753,6 +791,14 @@ export async function createMcpAgentAction(
     .single();
 
   if (agentErr || !agentRow) {
+    // Nome repetido na organização (#3952): o índice `ai_agents_name_unique` é
+    // `(organization_id, name)`. A tela marca o campo de nome com a frase, então
+    // a Action devolve o CÓDIGO e não a mensagem: quem traduz é o cliente, que
+    // sabe o idioma de quem está logado (`useT`), e o toast genérico não é o
+    // lugar de um erro que mora num campo.
+    if (ehNomeDeAgenteRepetido(agentErr)) {
+      return { ok: false, error: CODIGO_NOME_DE_AGENTE_EM_USO };
+    }
     return { ok: false, error: "internal_error", message: agentErr?.message };
   }
 
@@ -776,11 +822,13 @@ export async function createMcpAgentAction(
     handoff_keywords: v.handoff_keywords,
     handoff_tool_enabled: v.handoff_tool_enabled,
     handoff_legal_enabled: v.handoff_legal_enabled,
+    image_vision_enabled: v.image_vision_enabled,
     proposal_ai_draft_enabled: v.proposal_ai_draft_enabled,
     cases_enabled: v.cases_enabled,
     split_messages: v.split_messages,
     split_max_chars: v.split_max_chars,
     inbound_debounce_ms: v.inbound_debounce_ms ?? null,
+    reply_min_interval_ms: v.reply_min_interval_ms ?? null,
     followup: v.followup,
     voz_enabled: v.voz_enabled,
     voz_quando: v.voz_quando,
@@ -792,6 +840,7 @@ export async function createMcpAgentAction(
     operator_tool_ids: v.operator_tool_ids,
     pipeline_ids: v.pipeline_ids,
     knowledge_source_ids: v.knowledge_source_ids,
+    skill_names: v.skill_names,
     status: "draft",
     created_by: authUser.id,
   });

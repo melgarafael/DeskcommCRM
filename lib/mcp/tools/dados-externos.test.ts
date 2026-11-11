@@ -8,6 +8,7 @@ import { FonteNaoLiberadaError } from "@/lib/external-db/dialeto";
 import { LeituraInvalidaError, montarConsulta } from "@/lib/external-db/leitura";
 import type { ConexaoExterna, TabelaExterna } from "@/lib/external-db/types";
 import type { McpContext } from "@/lib/mcp/types";
+import { criarProcedenciaDeImagens } from "@/lib/agent-engine/agent/imagem-por-url";
 
 import { crmDescribeExternalData, crmQueryExternalData, motivoDoVazioExterno } from "./dados-externos";
 
@@ -185,6 +186,24 @@ describe("crm_query_external_data", () => {
       ctxFake(),
     )) as Record<string, unknown>;
     expect(r.erro).toBe("pedido_invalido");
+  });
+
+  it("a célula chega inteira ao resultado: a coluna de foto vale como procedência, a descrição não", async () => {
+    const foto = "https://exemplo.test/casas/1.jpg";
+    vi.mocked(lerTabela).mockResolvedValue({
+      colunas: ["id", "foto", "descricao"],
+      linhas: [{ id: "1", foto, descricao: "Veja https://exemplo.test/casas/2.jpg" }],
+      limite: 20,
+      offset: 0,
+    });
+    const r = await crmQueryExternalData.handler(
+      { connection_id: "conn-1", schema: "public", tabela: "assinaturas", limite: 20 },
+      ctxFake(),
+    );
+    const procedencia = criarProcedenciaDeImagens();
+    procedencia.registrar(r, {});
+    expect(procedencia.viu(foto)).toBe(true);
+    expect(procedencia.viu("https://exemplo.test/casas/2.jpg")).toBe(false);
   });
 
   it("devolve as linhas e marca truncagem por orçamento de bytes", async () => {

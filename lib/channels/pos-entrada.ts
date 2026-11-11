@@ -51,6 +51,7 @@ import {
 import { logger } from "@/lib/logger";
 import { PADRAO_DO_REF } from "@/lib/plataformas-de-anuncio/captura-de-clique";
 import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-clique";
+import { casarOrigemPorHorario } from "@/lib/leads/origem-por-horario";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
@@ -59,6 +60,7 @@ import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
 import { lerPessoalDoContato } from "@/lib/contacts/contato-pessoal";
+import { moduloQueAssumeAEntrada } from "@/lib/modulos/desvios-da-entrada";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
@@ -174,6 +176,12 @@ export async function aplicarEfeitosPosEntrada(
     });
     return;
   }
+  // ── MÓDULO OPCIONAL que assume a mensagem · ANTES de virar demanda ───────
+  //
+  // É o último instante em que dá para não criar o card. Módulo desligado (ou
+  // mensagem que não é dele) devolve `null`, e tudo abaixo roda como sempre.
+  if (await desviadaPorModulo(admin, entrada)) return;
+
   await guardarOrigemDaPagina(admin, entrada);
   await abrirDemanda(admin, entrada);
   await avaliarCampanha(admin, entrada);
@@ -194,6 +202,44 @@ export async function aplicarEfeitosPosEntrada(
 }
 
 /**
+ * 2a · Algum módulo opcional assume esta mensagem? (`lib/modulos/desvios-da-entrada.ts`)
+ *
+ * NUNCA lança: a mensagem já está gravada. Falha aqui segue o caminho de sempre —
+ * sem saber se a mensagem é de um módulo, parar a ingestão inteira seria pior do
+ * que o card.
+ */
+async function desviadaPorModulo(admin: Admin, entrada: EntradaDeMensagem): Promise<boolean> {
+  try {
+    const desvio = await moduloQueAssumeAEntrada(admin, {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      texto: entrada.texto,
+    });
+    if (!desvio) return false;
+
+    // O rastro de que a mensagem NÃO sumiu: um módulo a tratou, e é por isso
+    // que não há card.
+    logger.info("[pos-entrada] efeitos pulados: um módulo opcional assumiu a mensagem", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      origem: entrada.origem,
+      modulo: desvio.modulo,
+      motivo: desvio.motivo,
+    });
+    return true;
+  } catch (err) {
+    logger.error("[pos-entrada] desvio por módulo falhou (a mensagem entra assim mesmo)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+    return false;
+  }
+}
+
+/**
  * A mensagem recuperada de uma queda (Spec 32 §3): a entrada de `EntradaDeMensagem`
  * com o que o efeito de "o cliente respondeu" precisa de mais. A hora é a REAL da
  * mensagem, nunca `now()`: a recuperação chega dias depois, e a campanha e a reatividade
@@ -204,6 +250,8 @@ export type EntradaDaRecuperacao = EntradaDeMensagem & {
   enviadaEm: string;
   /** A prévia que a conversa mostra na caixa (mesma regra do ao vivo). */
   previa: string;
+  /** Quem chama já passou por `aplicarOptOutPendente`: repetir duplicaria a auditoria. */
+  optOutJaTratado?: boolean;
 };
 
 /**
@@ -238,7 +286,9 @@ export async function aplicarEfeitosDaRecuperacao(
       return;
     }
 
-    await passoDaRecuperacao("opt-out", () => aplicarOptOut(admin, entrada), entrada);
+    if (!entrada.optOutJaTratado) {
+      await passoDaRecuperacao("opt-out", () => aplicarOptOut(admin, entrada), entrada);
+    }
     if (await ehContatoPessoal(admin, entrada)) {
       logger.info("pos-entrada: recuperação pulada — contato pessoal", {
         organization_id: entrada.organizationId,
@@ -449,15 +499,46 @@ async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promi
   }
 }
 
+/** O que o opt-out precisa saber. A conversa falta quando a mensagem morreu antes de abrir uma. */
+type PedidoDeSaida = Pick<EntradaDeMensagem, "organizationId" | "contactId" | "texto" | "requestId" | "origem"> & {
+  conversationId: string | null;
+};
+
+/**
+ * O pedido de sair de uma entrada que a ingestão não vai terminar.
+ *
+ * Diferente de `aplicarOptOut`, a mesma mensagem pode passar aqui mais de uma vez
+ * (o fechamento da linha falhou e a rodada seguinte a relê), e por isso quem já está
+ * bloqueado não recebe outra auditoria. Canal desativado não pula: como na ingestão,
+ * o pedido vale nele.
+ *
+ * Lança se a gravação não aconteceu, para quem chama não dar a linha por encerrada.
+ */
+export async function aplicarOptOutPendente(admin: Admin, pedido: PedidoDeSaida): Promise<void> {
+  if (!ehPedidoDeOptOut(pedido.texto)) return;
+  if (await ehContatoDoNumeroInterno(admin, pedido.organizationId, pedido.contactId)) return;
+  const { data, error } = await admin
+    .from("contacts")
+    .select("is_blocked")
+    .eq("organization_id", pedido.organizationId)
+    .eq("id", pedido.contactId)
+    .maybeSingle();
+  if (error) throw new Error(`opt-out não conferido: ${error.message}`);
+  if (!data || data.is_blocked) return;
+  if (!(await aplicarOptOut(admin, pedido))) throw new Error("opt-out não gravado");
+}
+
 /**
  * 1 · Quem pediu para sair, sai.
  *
  * O update é incondicional (não filtra por `is_blocked` atual) de propósito:
  * regravar `true` sobre `true` é barato, e a linha de auditoria de cada pedido
  * é justamente o que prova, depois, que o pedido chegou e foi respeitado.
+ *
+ * `false` = o pedido existe e o bloqueio não foi gravado.
  */
-async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
-  if (!ehPedidoDeOptOut(entrada.texto)) return;
+async function aplicarOptOut(admin: Admin, entrada: PedidoDeSaida): Promise<boolean> {
+  if (!ehPedidoDeOptOut(entrada.texto)) return true;
 
   try {
     const agora = new Date().toISOString();
@@ -477,7 +558,7 @@ async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<
         origem: entrada.origem,
         detail: error.message.slice(0, 160),
       });
-      return;
+      return false;
     }
 
     await audit({
@@ -497,11 +578,12 @@ async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<
     // Sem o bloqueio gravado não há o que fechar: o contato segue recebendo, e
     // fechar o negócio de quem o sistema não conseguiu proteger esconderia o
     // problema no funil em vez de deixá-lo no log.
-    return;
+    return false;
   }
 
   await fecharNegociosAbertosDeQuemPediuParar(admin, entrada);
   await encerrarDemandasAbertasDeQuemPediuParar(admin, entrada);
+  return true;
 }
 
 /**
@@ -550,7 +632,7 @@ const ATOR_DO_OPT_OUT = { type: "webhook_source", id: "canal-inbound" } as const
  */
 async function fecharNegociosAbertosDeQuemPediuParar(
   admin: Admin,
-  entrada: EntradaDeMensagem,
+  entrada: PedidoDeSaida,
 ): Promise<void> {
   try {
     const { data, error } = await admin
@@ -634,7 +716,7 @@ async function fecharNegociosAbertosDeQuemPediuParar(
  */
 async function encerrarDemandasAbertasDeQuemPediuParar(
   admin: Admin,
-  entrada: EntradaDeMensagem,
+  entrada: PedidoDeSaida,
 ): Promise<void> {
   try {
     const { data, error } = await admin
@@ -837,8 +919,14 @@ async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): 
   // O ref não é lido no banco aqui: a leitura CONSOME o clique, e consumir um
   // clique fora da primeira mensagem o queimaria sem estampar ninguém.
   const ref = achada ? null : (PADRAO_DO_REF.exec(entrada.texto ?? "")?.[1] ?? null);
-  // O caso comum: quase nenhuma mensagem traz código de página nem ref.
-  if (!achada && !ref) return;
+  // O caso comum: quase nenhuma mensagem traz código de página nem ref. Sem
+  // código, ainda pode ser quem clicou num link rastreável e APAGOU o código ao
+  // editar a mensagem — a origem sai do horário do clique, e o caso sem clique
+  // pendente custa uma consulta (ver `lib/leads/origem-por-horario.ts`).
+  if (!achada && !ref) {
+    await casarOrigemPorHorario(admin, entrada);
+    return;
+  }
 
   try {
     // A consulta vem ANTES de qualquer escrita, e DENTRO do try: falha de

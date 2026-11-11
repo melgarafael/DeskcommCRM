@@ -14,6 +14,7 @@ import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { AgendaPuladoError, MOTIVO_DO_PULO } from "@/lib/agenda/escolha-no-envio";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import type { SendMessageInput } from "@/lib/schemas";
+import { CHAVE_DO_PULO } from "@/lib/inbox/pulo-da-agenda";
 import { criarDubleDoHandler } from "@/tests/helpers/duble-do-handler";
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -46,7 +47,7 @@ afterEach(() => {
 });
 
 describe("pulo por compromisso no recheck do corte", () => {
-  it("a linha sai de `queued` (o redrive não a reenvia) e nada vai ao canal", async () => {
+  async function disparar(agenda: Array<Record<string, unknown>> = []) {
     conferencias = 0;
     postsAoCanal = 0;
     vi.stubEnv("WAHA_API_BASE_URL", "http://localhost:3030");
@@ -59,6 +60,7 @@ describe("pulo por compromisso no recheck do corte", () => {
       }),
     );
     const { supabase, mensagens } = criarDubleDoHandler({
+      agenda,
       conversation: {
         id: CONV,
         organization_id: ORG,
@@ -90,7 +92,29 @@ describe("pulo por compromisso no recheck do corte", () => {
     expect(conferencias, "o recheck do corte não rodou — o caso não mede o que diz").toBeGreaterThanOrEqual(2);
     expect(postsAoCanal).toBe(0);
     expect(mensagens).toHaveLength(1);
-    expect(mensagens[0]!.status, "linha em `queued` é pedido de reenvio ao watchdog").toBe("failed");
-    expect(mensagens[0]!.error_code).toBe(MOTIVO_DO_PULO);
+    return mensagens[0]!;
+  }
+
+  it("a linha sai de `queued` (o redrive não a reenvia) e nada vai ao canal", async () => {
+    const linha = await disparar();
+    expect(linha.status, "linha em `queued` é pedido de reenvio ao watchdog").toBe("failed");
+    expect(linha.error_code).toBe(MOTIVO_DO_PULO);
+  });
+
+  // #3848 — o selo da Inbox diz QUAL compromisso barrou. O produtor é este ramo:
+  // o código do pulo identifica o caso, e o retrato (id + motivo medido + título
+  // do momento) viaja no MESMO UPDATE. Sabotagem: tirar a chave do `metadata`
+  // deixa este caso vermelho e a bolha sem o compromisso.
+  it("o pulo leva o retrato do compromisso que barrou no mesmo UPDATE", async () => {
+    const linha = await disparar([
+      { id: "ap-1", organization_id: ORG, contact_id: CONTACT, title: "Avaliação inicial" },
+    ]);
+    expect(linha.metadata).toMatchObject({
+      [CHAVE_DO_PULO]: {
+        appointment_id: "ap-1",
+        motivo: "agendado",
+        titulo: "Avaliação inicial",
+      },
+    });
   });
 });

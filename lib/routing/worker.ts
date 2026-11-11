@@ -43,6 +43,8 @@ export type RoutingOutcome =
   | "skipped_conv_missing"
   | "skipped_invalid_payload"
   | "skipped_contato_pessoal"
+  /** #3937: contato do tipo `fornecedor` não entra na distribuição automática. */
+  | "skipped_contato_fornecedor"
   /** #3717: o caso mais recente da conversa não pede uma pessoa agora. */
   | "skipped_caso_sem_humano"
   | "assign_lost_race"
@@ -54,13 +56,23 @@ export interface RoutingSummary {
   errors: string[];
 }
 
-interface EventRow {
+/**
+ * A linha como ela sai da VARREDURA (#3878, item 3): sem `payload`/`metadata`.
+ *
+ * O corpo do evento só existe depois do claim, em `EventRow` — antes disso
+ * ninguém pode lê-lo, e é o tipo que impede alguém de "só usar o payload" a
+ * partir da varredura e reintroduzir o egress que este corte tirou.
+ */
+interface EventoDaFila {
   id: string;
   organization_id: string;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown> | null;
   consumed_by: string[];
   attempts: number;
+}
+
+interface EventRow extends EventoDaFila {
+  payload: Record<string, unknown>;
+  metadata: Record<string, unknown> | null;
   claimed_at?: string;
 }
 
@@ -75,6 +87,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_conv_missing: 0,
   skipped_invalid_payload: 0,
   skipped_contato_pessoal: 0,
+  skipped_contato_fornecedor: 0,
   skipped_caso_sem_humano: 0,
   assign_lost_race: 0,
   error: 0,
@@ -115,11 +128,16 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
       .eq("updated_at", previous.updated_at);
     if (error) summary.errors.push("routing_recovery_failed");
   }
+  // ─── A VARREDURA NÃO LEVA O CORPO DO EVENTO (#3878, item 3) ────────────────
+  //
+  // `payload`/`metadata` são o JSONB gordo da linha, e este pull traz até 100
+  // eventos por tique só para decidir QUAIS reclamar. O corpo é de quem chega
+  // ao `processEvent` — um por claim — e vem no `update ... select` do claim
+  // (`claimEvent`), que já acontecia: uma linha por evento processado em vez de
+  // 100 por tique, sem consulta a mais.
   const { data: rawEvents, error: pullErr } = await admin
     .from("event_log")
-    .select(
-      "id, organization_id, payload, metadata, consumed_by, attempts, next_attempt_at, status",
-    )
+    .select("id, organization_id, consumed_by, attempts")
     .eq("event_type", ROUTING_EVENT_TYPE)
     .eq("status", "pending")
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now.toISOString()}`)
@@ -131,13 +149,15 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
     return summary;
   }
 
-  const events = (rawEvents ?? []).filter(
+  const naFila = (rawEvents ?? []).filter(
     (e) => !(Array.isArray(e.consumed_by) && e.consumed_by.includes(ROUTING_WORKER_KEY)),
-  ) as EventRow[];
+  ) as EventoDaFila[];
 
-  for (const event of events) {
-    const claimed = await claimEvent(event);
-    if (!claimed) continue;
+  for (const candidato of naFila) {
+    // O claim devolve a linha COM o corpo; quem perde a corrida (outro worker
+    // pegou) não custa um byte de `payload`/`metadata`.
+    const event = await claimEvent(candidato);
+    if (!event) continue;
     summary.batch_size += 1;
     try {
       const outcome = await processEvent(event, now);
@@ -190,15 +210,33 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
 
   // Contato pessoal não distribui (spec 21, caminho 9): depois da leitura da
   // conversa — o pulo precisa do contato, que só ela tem.
+  //
+  // #3937: a MESMA leitura, na MESMA ordem, decide o contato FORNECEDOR
+  // (`contacts.contact_type`, issue #3005) — promoção de operadora, comunicado
+  // de companhia aérea e recado de grupo comercial chegam pelo mesmo número do
+  // cliente e ocupavam carga e capacidade do rodízio. Um contato, uma query,
+  // duas réguas: pessoal primeiro porque a dele é a mais forte (tira a conversa
+  // da operação inteira); fornecedor depois, e só ele sai da DISTRIBUIÇÃO — a
+  // conversa continua no Inbox, sem dono, como hoje.
   const { data: contato } = await admin
     .from("contacts")
-    .select("is_personal")
+    .select("is_personal, contact_type")
     .eq("id", conv.contact_id)
     .eq("organization_id", orgId)
     .maybeSingle();
-  if ((contato as { is_personal?: boolean } | null)?.is_personal === true) {
+  const contatoDaConversa = contato as
+    | { is_personal?: boolean; contact_type?: string | null }
+    | null;
+  if (contatoDaConversa?.is_personal === true) {
     await markDone(event, "skipped_contato_pessoal");
     return "skipped_contato_pessoal";
+  }
+  // Fornecedor: `contact_type` nasce 'cliente' no banco (migration 0763), então
+  // quem nunca falou de tipo continua distribuindo. Fornecedor E pessoal já saiu
+  // acima — a precedência é a de hoje e não há filtro duplo divergente.
+  if (contatoDaConversa?.contact_type === "fornecedor") {
+    await markDone(event, "skipped_contato_fornecedor");
+    return "skipped_contato_fornecedor";
   }
 
   // O CASO DA CONVERSA (#3717): a pergunta que a fila nunca fazia. Fica AQUI —
@@ -395,23 +433,33 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
 
 // --- event lifecycle (mesma mecânica do agent-dispatcher; status ∈ pending|processing|done|dead) ---
 
-async function claimEvent(event: EventRow): Promise<boolean> {
+async function claimEvent(naFila: EventoDaFila): Promise<EventRow | null> {
   const admin = createAdminClient();
-  event.claimed_at = new Date().toISOString();
+  const claimedAt = new Date().toISOString();
+  // O corpo do evento vem DAQUI (#3878, item 3): a varredura acima só trouxe
+  // `id/organization_id/consumed_by/attempts`, e este `update ... select` — que
+  // já existia para carimbar o claim e ler o `updated_at` — devolve a
+  // representação da linha reclamada. Uma linha por evento processado, no mesmo
+  // round-trip; nenhum evento que perde o claim paga o JSONB.
   const { data, error } = await admin
     .from("event_log")
-    .update({ status: "processing", updated_at: event.claimed_at })
-    .eq("id", event.id)
-    .eq("organization_id", event.organization_id)
+    .update({ status: "processing", updated_at: claimedAt })
+    .eq("id", naFila.id)
+    .eq("organization_id", naFila.organization_id)
     .eq("status", "pending")
-    .select("id, updated_at")
+    .select("id, updated_at, payload, metadata")
     .maybeSingle();
   if (error) {
-    logger.warn("[routing-worker] claim failed", { event_id: event.id, error: error.message });
-    return false;
+    logger.warn("[routing-worker] claim failed", { event_id: naFila.id, error: error.message });
+    return null;
   }
-  if (data) event.claimed_at = data.updated_at;
-  return Boolean(data);
+  if (!data) return null;
+  return {
+    ...naFila,
+    payload: (data.payload ?? {}) as Record<string, unknown>,
+    metadata: (data.metadata ?? null) as Record<string, unknown> | null,
+    claimed_at: data.updated_at,
+  };
 }
 
 async function markDone(
@@ -599,9 +647,10 @@ export async function motivoDoCasoParaRoteamento(
  *
  * ## Por que isto existe
  *
- * `fn_conversation_assign` grava `conversations.assigned_to_user_id` e não toca
- * em `crm_leads.owner_user_id` (medido: a função inteira só faz `update
- * public.conversations`). Enquanto `visibility_mode` era `all` ou
+ * `fn_conversation_assign` grava `conversations.assigned_to_user_id` e, desde a
+ * 9208, adota o negócio quando o contato tem UM aberto sem dono. Esta função
+ * cobre o contato com mais de um, que a 9208 não toca (por isso
+ * `leads_adotados` conta só esses). Enquanto `visibility_mode` era `all` ou
  * `own_and_unassigned`, ninguém notava: o lead sem dono aparecia para todo
  * mundo. No modo `own` — exatamente o que a issue #144 pede — lead sem dono não
  * aparece para NINGUÉM. O atendente receberia a conversa e o funil dele ficaria

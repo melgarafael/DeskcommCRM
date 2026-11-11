@@ -416,6 +416,34 @@ describe("executeCallWebhook", () => {
     expect(data.owner).toEqual({ id: OWNER });
   });
 
+  it("include_owner: o nome do responsável só sai para membro da organização da regra", async () => {
+    // O nome vem de UMA consulta (`fn_nomes_dos_membros`), não mais de um
+    // `getUserById` por pessoa: o dublê modela a MESMA regra — só quem tem
+    // vínculo com a organização da regra ganha nome.
+    function adminCom(membros: string[]): ActionCtx["admin"] {
+      return {
+        rpc: async (_fn: string, args: { p_org: string; p_ids: string[] }) => ({
+          data:
+            args.p_org === "org-1"
+              ? args.p_ids
+                  .filter((id) => membros.includes(id))
+                  .map((user_id) => ({ user_id, full_name: "Ana", email: null }))
+              : [],
+          error: null,
+        }),
+      } as unknown as ActionCtx["admin"];
+    }
+
+    const membro = { ...ctxDeCompromisso(), admin: adminCom([OWNER]) };
+    expect((await corpoRecebido(membro, { include_owner: true })).owner).toEqual({
+      id: OWNER,
+      name: "Ana",
+    });
+
+    const deFora = { ...ctxDeCompromisso(), admin: adminCom([]) };
+    expect((await corpoRecebido(deFora, { include_owner: true })).owner).toEqual({ id: OWNER });
+  });
+
   it("o endereço e o link saem da linha ATUAL do compromisso, não do evento", async () => {
     const ctx = ctxDeCompromisso();
     ctx.context = {

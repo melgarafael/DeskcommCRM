@@ -40,7 +40,14 @@ describe("decidirElegibilidadeDaConversaViaSupabase", () => {
       agora: AGORA,
       ttlMs: TTL,
     });
-    expect(d).toEqual({ permite: true, motivo: "gate_aberto", bloqueioPorAllowlist: false });
+    // #3534: a decisão do transporte carrega também `contatoDaEquipe` (a régua
+    // que o medidor de clima precisa). Aqui o contato não tem etiqueta de equipe.
+    expect(d).toEqual({
+      permite: true,
+      motivo: "gate_aberto",
+      bloqueioPorAllowlist: false,
+      contatoDaEquipe: false,
+    });
   });
 
   it("canal 'allowlist' + contato NÃO autorizado: NÃO permite (bloqueioPorAllowlist)", async () => {
@@ -153,7 +160,12 @@ describe("decidirElegibilidadeDaConversaViaSupabase", () => {
       adminStub({ data: linha({ organizations: { status: "suspended" } }), error: null }),
       { organizationId: ORG, conversationId: CONV, agora: AGORA, ttlMs: TTL },
     );
-    expect(d).toEqual({ permite: false, motivo: "org_nao_operante", bloqueioPorAllowlist: false });
+    expect(d).toEqual({
+      permite: false,
+      motivo: "org_nao_operante",
+      bloqueioPorAllowlist: false,
+      contatoDaEquipe: false,
+    });
   });
 
   it("embed da org ausente: NÃO permite (falha fechada)", async () => {
@@ -162,6 +174,14 @@ describe("decidirElegibilidadeDaConversaViaSupabase", () => {
       { organizationId: ORG, conversationId: CONV, agora: AGORA, ttlMs: TTL },
     );
     expect(d?.motivo).toBe("org_nao_operante");
+  });
+
+  it("dono humano + modo 'IA com o dono' ligado: o transporte também permite (#3967)", async () => {
+    const d = await decidirElegibilidadeDaConversaViaSupabase(
+      adminStub({ data: linha({ assignee_kind: "user", metadata: { ai_com_dono: true } }), error: null }),
+      { organizationId: ORG, conversationId: CONV, agora: AGORA, ttlMs: TTL },
+    );
+    expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
   });
 
   it("conversa inexistente → null", async () => {

@@ -3,10 +3,13 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, ArrowBendUpRight, CaretDown, Check, Checks, Clock, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -18,12 +21,15 @@ import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
 import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
+import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
+import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
 import { LocationCard } from "@/components/inbox/media/LocationCard";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
+import { lerBotoesDoModelo } from "@/lib/messaging/botoes-do-modelo";
 import { reenvioDaMensagem } from "@/lib/messaging/reenvio";
 import { ApiError } from "@/lib/api/types";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
@@ -34,6 +40,42 @@ import {
   extractCitations,
   isAiGeneratedMessage,
 } from "@/lib/ai/citations/types";
+
+const PickerDeReacao = lazy(() => import("@emoji-mart/react"));
+const REACOES_INICIAIS = ["👍", "❤️", "😂", "😮", "🙏"];
+
+// O emoji-mart tem largura fixa de `colunas × 36px + 28px` (9 colunas = 352px), e o
+// modal só oferece `janela − 2rem − p-3 − borda` = janela − 58px. A 375px isso dá
+// 317px, e o seletor de 9 colunas vazava 22px pela borda do modal. As colunas saem
+// da largura da janela, entre 6 e 9.
+export function colunasDoSeletorDeReacao(larguraDaJanela: number): number {
+  return Math.max(6, Math.min(9, Math.floor((larguraDaJanela - 58 - 28) / 36)));
+}
+// Identificador persistido no navegador; não é texto de marca exibido ao usuário.
+const REACOES_STORAGE = ["desk", "comm:reacoes-frequentes:v1"].join("");
+
+function lerContagens(): Record<string, number> {
+  try {
+    const data: unknown = JSON.parse(localStorage.getItem(REACOES_STORAGE) ?? "{}");
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+    return Object.fromEntries(Object.entries(data).filter(([emoji, n]) =>
+      emoji.length > 0 && emoji.length <= 64 && typeof n === "number" && Number.isFinite(n) && n > 0,
+    ));
+  } catch { return {}; }
+}
+
+function cincoMaisUsados(contagens: Record<string, number>): string[] {
+  const usados = Object.entries(contagens).sort((a, b) => b[1] - a[1]).map(([emoji]) => emoji);
+  return [...new Set([...usados, ...REACOES_INICIAIS])].slice(0, 5);
+}
+
+/** Quem não tem histórico recebe cinco opções; as escolhas confirmadas sobem para o início. */
+function registrarReacao(emoji: string): string[] {
+  const contagens = lerContagens();
+  contagens[emoji] = (contagens[emoji] ?? 0) + 1;
+  try { localStorage.setItem(REACOES_STORAGE, JSON.stringify(contagens)); } catch { /* Sem armazenamento, o menu ainda funciona. */ }
+  return cincoMaisUsados(contagens);
+}
 
 interface Props {
   message: Message;
@@ -50,6 +92,7 @@ interface Props {
   citada?: Message | null;
   /** As reações a ESTA mensagem — marca no canto do balão, nunca balão próprio. */
   reacoes?: ReacaoNoBalao[];
+  onReagir?: (emoji: string) => Promise<void>;
   /**
    * QUEM está lendo a conversa. É o que separa "Você" de "Atendente": a coluna
    * `sent_via='user'` só diz *"um humano digitou no CRM"*, nunca QUAL humano.
@@ -79,8 +122,13 @@ interface Props {
 /** Quem tem um motor que reenvia sozinho quando a conexão volta (`redriveQueued`). */
 const SAI_SOZINHA_QUANDO_VOLTAR = new Set(["ai", "automation", "system"]);
 
-function AckIndicator({ status, paradaSemConexao, saiSozinha, t }: {
-  status: string; paradaSemConexao: boolean; saiSozinha: boolean; t: (texto: string) => string;
+function AckIndicator({ status, deliveredAt, readAt, paradaSemConexao, saiSozinha, t }: {
+  status: string;
+  /** Carimbo da entrega (`delivered_at`) — o canal oficial só tem aqui o "entregue". */
+  deliveredAt?: string | null;
+  /** Carimbo da leitura (`read_at`) — idem para o "lida". */
+  readAt?: string | null;
+  paradaSemConexao: boolean; saiSozinha: boolean; t: (texto: string) => string;
 }) {
   // Só a linha que o envio PAROU por falta de conexão (`queued_reason`). Todo
   // envio nasce `queued` por um instante; mostrar o relógio nele diria
@@ -98,10 +146,15 @@ function AckIndicator({ status, paradaSemConexao, saiSozinha, t }: {
       </span>
     );
   }
-  if (status === "read") {
+  // A Cloud API oficial NÃO muda `status` — ele fica colapsado em `sent |
+  // failed` de propósito (`lib/channels/meta/status-update.ts`), e entrega e
+  // leitura vivem só nos carimbos. Por isso o tique parte dos FATOS, na ordem
+  // em que acontecem (leitura > entrega > status), e o `status` fica como
+  // último recurso para o canal que ainda usa o domínio fino.
+  if (readAt || status === "read") {
     return <Checks size={12} weight="bold" className="text-blue-400" aria-label={t("Lida")} />;
   }
-  if (status === "delivered") {
+  if (deliveredAt || status === "delivered") {
     return <Checks size={12} weight="bold" className="text-current/70" aria-label={t("Entregue")} />;
   }
   if (status === "sent") {
@@ -118,6 +171,7 @@ export function MessageBubble({
   onEncaminhar,
   citada,
   reacoes,
+  onReagir,
   viewerUserId,
   onEditar,
   onApagar,
@@ -132,6 +186,19 @@ export function MessageBubble({
   const [ocultando, setOcultando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [confirmandoReenvio, setConfirmandoReenvio] = useState(false);
+  const [seletorDeReacaoAberto, setSeletorDeReacaoAberto] = useState(false);
+  const [reacoesFrequentes, setReacoesFrequentes] = useState(REACOES_INICIAIS);
+  const reacaoPendente = useRef(false);
+  const enviarReacao = async (emoji: string) => {
+    if (!onReagir || reacaoPendente.current) return;
+    reacaoPendente.current = true;
+    try {
+      await onReagir(emoji);
+      setReacoesFrequentes(registrarReacao(emoji));
+    } finally {
+      reacaoPendente.current = false;
+    }
+  };
   const salvandoEdicao = useRef(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const abrindoEdicao = useRef(false);
@@ -172,6 +239,10 @@ export function MessageBubble({
   const isContact = message.type === "contact";
   // Pino com coordenadas: o cartão substitui o corpo, que é só o mesmo link em texto.
   const localizacao = localizacaoDaMensagem(message);
+  // Saiu por MODELO aprovado: o balão diz qual e mostra as opções que o cliente
+  // recebeu — sem isso, a resposta dele ("Quero mudar algo") ficava solta.
+  const porModelo = message.type === "template";
+  const botoesDoModelo = porModelo ? lerBotoesDoModelo(message.metadata) : [];
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   // Apagada pelo autor ("apagar para todos"). A linha continua no histórico —
@@ -192,12 +263,31 @@ export function MessageBubble({
   // Encaminhar vale para qualquer mensagem com conteúdo — recebida ou enviada.
   // Só não se encaminha o que foi apagado: o conteúdo saiu do ar de propósito.
   const podeEncaminhar = Boolean(onEncaminhar) && !apagada;
-  const temMenu = Boolean(onResponder || podeEncaminhar || (podeEditar && onEditar) || podeApagar || podeOcultar);
+  const podeReagir = Boolean(onReagir) && !apagada && !ocultaNoCrm;
+  const temMenu = Boolean(onResponder || podeEncaminhar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
     ? reenvioDaMensagem(message, { userId: viewerUserId, podeReenviarDeOutros, agora })
     : "nenhum";
+  // PULO DA AGENDA (#3848): o fluxo escolheu não enviar porque o contato tem
+  // compromisso marcado. A linha do banco carrega `failed` + o código do pulo
+  // (é o par que já identifica o caso — ver lib/inbox/pulo-da-agenda.ts), e é
+  // aqui que os dois desfechos se separam na tela: falha de verdade continua
+  // com "Falhou" e com o botão; pulo ganha selo próprio e NÃO oferece reenvio
+  // (a regra é `reenvioDaMensagem`, a mesma da rota — acrescentar um botão aqui
+  // seria oferecer um toque que o servidor recusa).
+  const pulo = puloDaAgendaDaMensagem(message);
+  const puloHref = pulo ? hrefDoCompromisso(pulo) : null;
+  // O motivo medido pela guarda muda a frase: horário no futuro, atendimento
+  // acontecendo agora e presença sem confirmação são coisas diferentes para
+  // quem lê o fio.
+  const fraseDoPulo =
+    pulo?.motivo === "em_atendimento"
+      ? t("O contato está na agenda agora — o fluxo está configurado para não enviar quando isso acontece.")
+      : pulo?.motivo === "presenca_pendente"
+        ? t("O compromisso do contato já terminou e a presença ainda não foi confirmada — o fluxo está configurado para não enviar quando isso acontece.")
+        : t("O contato tem compromisso marcado na agenda — o fluxo está configurado para não enviar quando isso acontece.");
   const paradaSemConexao = message.status === "queued" && Boolean(message.metadata?.queued_reason)
     && !message.metadata?._optimistic;
   // O MOTIVO à vista, e não só no Tooltip: o dedo não abre Tooltip. O texto
@@ -262,9 +352,17 @@ export function MessageBubble({
       // qualquer uma, o rótulo cai para "Atendente" — que continua dizendo o
       // que `sent_via` de fato garante (um humano, pelo CRM) sem afirmar uma
       // identidade que o dado não sustenta.
-      return viewerUserId != null && message.sent_by_user_id === viewerUserId
-        ? "Você"
-        : "Atendente";
+      if (viewerUserId != null && message.sent_by_user_id === viewerUserId) return "Você";
+      // #4031: com o nome no PAYLOAD (resolvido uma vez por página na rota, que
+      // é quem tem service role), o balão diz QUAL pessoa da equipe falou —
+      // "Atendente · Andreia", no mesmo formato de "IA · Clara". Sem nome
+      // (linha antiga, lookup caído, self-host sem service role), "Atendente":
+      // o id continua sendo a verdade, o nome é a cortesia. O nome NUNCA é
+      // lido de `metadata` — ali é entrada do cliente, como no #3649.
+      const nome = message.sent_by_user_id
+        ? primeiroNomeDeQuemEnviou(message.sent_by_user_name)
+        : null;
+      return nome ? `${t("Atendente")} · ${nome}` : "Atendente";
     }
     return null;
   })();
@@ -339,7 +437,9 @@ export function MessageBubble({
                   ? "rounded-br-sm bg-primary text-primary-foreground"
                   : "rounded-bl-sm bg-muted text-foreground",
               ),
-          isFailed && "border border-destructive",
+          // O pulo da agenda não é falha: o selo diz isso, e a moldura de erro
+          // diria o contrário (#3850).
+          isFailed && !pulo && "border border-destructive",
           // Apagada sai das cores da DIREÇÃO e vai para o CINZA: a diferença
           // entre o que foi apagado e o que está vivo tem de ser vista de
           // relance, e o fundo é justamente o que diz de quem é a mensagem —
@@ -356,6 +456,7 @@ export function MessageBubble({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" aria-label={t("Opções da mensagem")} disabled={ocupado}
+                onClick={() => setReacoesFrequentes(cincoMaisUsados(lerContagens()))}
                 className={cn(
                   "absolute right-1 top-1 z-10 rounded-md p-0.5 transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1",
                   // No toque, a área que pega o dedo passa a ~48px sem mudar o desenho:
@@ -380,6 +481,16 @@ export function MessageBubble({
               {onResponder && (
                 <DropdownMenuItem onSelect={() => onResponder(message)}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
+                </DropdownMenuItem>
+              )}
+              {podeReagir && reacoesFrequentes.map((emoji) => (
+                <DropdownMenuItem key={emoji} aria-label={t("Reagir com {emoji}").replace("{emoji}", emoji)} onSelect={() => void enviarReacao(emoji).catch(() => undefined)}>
+                  {emoji}
+                </DropdownMenuItem>
+              ))}
+              {podeReagir && (
+                <DropdownMenuItem onSelect={() => setSeletorDeReacaoAberto(true)}>
+                  {t("Mais emojis")}
                 </DropdownMenuItem>
               )}
               {podeEncaminhar && (
@@ -461,11 +572,17 @@ export function MessageBubble({
           </p>
         )}
         {senderLabel && (
-          <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
+          <div className="mb-0.5 flex min-w-0 max-w-full items-center gap-1 text-[11px] font-semibold opacity-80">
             {message.sent_via === "ai" ? (
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}
-            {senderLabel && t(senderLabel)}
+            {/*
+              `truncate` + `min-w-0` no pai: o rótulo pode ganhar um NOME
+              (#4031, "Atendente · Andreia") e o nome vem do cadastro de quem
+              usa o sistema, fora do nosso controle. Num fio estreito — a
+              gaveta do inbox no celular — o corte é do TEXTO, nunca do balão.
+            */}
+            <span className="truncate">{senderLabel && t(senderLabel)}</span>
           </div>
         )}
 
@@ -534,8 +651,40 @@ export function MessageBubble({
 
             {localizacao && <LocationCard localizacao={localizacao} />}
 
+            {porModelo && (
+              <div
+                data-testid="selo-do-modelo"
+                className="mb-1 inline-flex max-w-full items-center gap-1 rounded-sm bg-current/10 px-1.5 py-0.5 text-[10px] font-medium"
+              >
+                <FileText size={11} weight="bold" aria-hidden />
+                <span className="truncate">
+                  {t("Modelo do WhatsApp")}
+                  {message.template_name ? ` · ${message.template_name}` : ""}
+                </span>
+              </div>
+            )}
+
             {message.body && !isContact && !localizacao && (
               <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{corpo}</p>
+            )}
+
+            {botoesDoModelo.length > 0 && (
+              // As opções como o cliente as vê: abaixo do texto, uma por linha.
+              // Não são clicáveis aqui — quem responde é o cliente, no WhatsApp.
+              <ul
+                aria-label={t("Opções enviadas ao cliente")}
+                className="mt-2 flex flex-col gap-1 border-t border-current/20 pt-2"
+              >
+                {botoesDoModelo.map((botao, i) => (
+                  <li
+                    key={`${i}-${botao}`}
+                    className="flex items-center justify-center gap-1 rounded-md bg-current/10 px-2 py-1 text-xs font-medium"
+                  >
+                    <ArrowBendUpLeft size={12} aria-hidden />
+                    <span className="wrap-anywhere">{botao}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </>
         )}
@@ -560,9 +709,11 @@ export function MessageBubble({
           {showCitationButton && (
             <CitationButton citations={citations} messageId={message.id} />
           )}
-          {isOutbound && !isFailed && <AckIndicator status={message.status} paradaSemConexao={paradaSemConexao}
+          {isOutbound && !isFailed && <AckIndicator status={message.status}
+            deliveredAt={message.delivered_at} readAt={message.read_at}
+            paradaSemConexao={paradaSemConexao}
             saiSozinha={SAI_SOZINHA_QUANDO_VOLTAR.has(message.sent_via)} t={t} />}
-          {isFailed && (
+          {isFailed && !pulo && (
             // Provider local: o painel do inbox não tem TooltipProvider ancestral e
             // este Tooltip só monta em mensagem failed — sem o provider, abrir uma
             // conversa com falha de envio derrubava o painel inteiro (error boundary).
@@ -577,10 +728,48 @@ export function MessageBubble({
               </Tooltip>
             </TooltipProvider>
           )}
+          {pulo && (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    data-testid="selo-pulada-pela-agenda"
+                    className="inline-flex items-center gap-0.5 font-semibold"
+                  >
+                    <CalendarX size={10} weight="bold" aria-hidden /> {t("Pulada pela agenda")}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{fraseDoPulo}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
-        {(isFailed || reenvio !== "nenhum") && (
+        {(isFailed || reenvio !== "nenhum" || pulo) && (
           <div className="mt-1.5 space-y-1.5 border-t border-current/20 pt-1.5">
-            {isFailed && <p data-testid="motivo-da-falha" className="text-xs leading-snug">{motivoDaFalha}</p>}
+            {isFailed && !pulo && <p data-testid="motivo-da-falha" className="text-xs leading-snug">{motivoDaFalha}</p>}
+            {pulo && (
+              // O pulo não tem botão de reenvio: quem decidiu não enviar foi a
+              // escolha do fluxo, e insistir por aqui a furaria em silêncio. A
+              // ação é abrir o compromisso que barrou; mandar assim mesmo é
+              // mudar a escolha do fluxo ou escrever pelo campo de resposta —
+              // a tela diz isso, em vez de esconder a saída.
+              <div data-testid="pulo-da-agenda" className="space-y-1">
+                <p className="text-xs leading-snug">{fraseDoPulo}</p>
+                {pulo.titulo && (
+                  <p className="text-xs leading-snug opacity-80">
+                    {t("Compromisso: {titulo}").replace("{titulo}", pulo.titulo)}
+                  </p>
+                )}
+                {puloHref && (
+                  <Link href={puloHref} className="inline-flex text-xs underline">
+                    {t("Abrir compromisso")}
+                  </Link>
+                )}
+                <p className="text-[10px] leading-snug opacity-70">
+                  {t("Para mandar mesmo assim, mude a escolha do fluxo ou escreva pelo campo de resposta.")}
+                </p>
+              </div>
+            )}
             {reenvio !== "nenhum" && (
               <Button size="sm" variant="secondary" disabled={ocupado}
                 onClick={() => (reenvio === "confirmar" ? setConfirmandoReenvio(true) : void reenviar(false))}>
@@ -606,6 +795,27 @@ export function MessageBubble({
           </span>
         ) : null}
       </div>
+      <Dialog open={seletorDeReacaoAberto} onOpenChange={setSeletorDeReacaoAberto}>
+        <DialogContent className="w-fit max-w-[calc(100vw-2rem)] p-3 sm:max-w-fit">
+          <DialogHeader>
+            <DialogTitle>{t("Escolha uma reação")}</DialogTitle>
+          </DialogHeader>
+          {seletorDeReacaoAberto && (
+            <Suspense fallback={<Skeleton className="h-[420px] w-[min(352px,calc(100vw-4rem))]" />}>
+              <PickerDeReacao
+                data={async () => (await import("@emoji-mart/data")).default}
+                locale="pt"
+                previewPosition="none"
+                perLine={colunasDoSeletorDeReacao(window.innerWidth)}
+                onEmojiSelect={(e: { native: string }) => {
+                  setSeletorDeReacaoAberto(false);
+                  void enviarReacao(e.native).catch(() => undefined);
+                }}
+              />
+            </Suspense>
+          )}
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={apagando} onOpenChange={setApagando}>
         <AlertDialogContent>
           <AlertDialogHeader>

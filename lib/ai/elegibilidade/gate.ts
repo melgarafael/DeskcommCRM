@@ -41,8 +41,11 @@ import {
   numeroPodeTestar,
 } from "./pre-go-live";
 import { ehContatoInterno } from "@/lib/contacts/tags-internas";
+import { ehContatoDaEquipe } from "@/lib/contacts/tags-da-equipe";
 import { ehOperante } from "@/lib/organizacao/operante";
-import { tagsInternasDaOrg } from "@/lib/schemas/settings";
+import { tagsDaEquipeDaOrg, tagsInternasDaOrg } from "@/lib/schemas/settings";
+
+import { donoHumanoVetaIA, lerModoIaComDono } from "./ia-com-dono";
 
 /** Valores aceitos em `channel_sessions.metadata.ai_gate`. */
 export const AI_GATE_MODES = ["open", "allowlist"] as const;
@@ -82,6 +85,16 @@ export interface EstadoDeElegibilidade {
    */
   contatoInterno: boolean;
   /**
+   * `contacts.tags` cruza com `organizations.settings.crm.team_contact_tags`
+   * (#3534): contato da EQUIPE que continua sendo atendido. É só um FATO,
+   * não entra em `decidirElegibilidade`: não veta e não autoriza — o contato
+   * segue a régua do canal como qualquer outro (no pré-go-live, quem autoriza
+   * é a lista de teste). Quem o lê é o medidor de clima e o handoff (sem
+   * repasse por `low_sentiment`) e o nascimento do lead. Ver
+   * `lib/contacts/tags-da-equipe.ts`.
+   */
+  contatoDaEquipe: boolean;
+  /**
    * `contacts.ai_opt_out` — a marca PERMANENTE "sempre atendimento humano"
    * (migration 0624 / issue 2379). Convive com `force_human` de propósito: a
    * devolução limpa `force_human`, e esta coluna é o que ela não alcança. Vetado
@@ -92,6 +105,14 @@ export interface EstadoDeElegibilidade {
   botSilencedUntil: Date | number | null;
   /** `conversations.assignee_kind` — `'user'` = uma pessoa é a dona do thread. */
   assigneeKind: string | null;
+  /**
+   * `conversations.metadata.ai_com_dono` — o modo explícito da #3967: nesta
+   * conversa, a IA responde SEM soltar o dono humano. Desliga SÓ o veto de dono
+   * (`conversa_de_humano`); todas as outras travas continuam valendo. A regra
+   * mora em `donoHumanoVetaIA` (`./ia-com-dono`), a mesma que o worker
+   * pré-engine usa.
+   */
+  iaComDono: boolean;
   /** `contacts.ai_authorized_at`. `null` = nunca autorizado. */
   aiAuthorizedAt: Date | null;
   /** O allowlist representa o período de teste deste canal. */
@@ -130,6 +151,17 @@ export interface DecisaoDeElegibilidade {
   bloqueioPorAllowlist: boolean;
 }
 
+/**
+ * A decisão + o fato que a régua da equipe precisa carregar (#3534).
+ *
+ * `decidirElegibilidade` continua devolvendo só `{permite, motivo, bloqueio}`
+ * — é a regra pura, e mudar o formato dela obrigaria todo consumidor a saber de
+ * equipe. Quem lê do BANCO (os dois transportes) já montou o estado, e devolve
+ * junto `contatoDaEquipe`: o medidor de clima precisa saber que a conversa é
+ * atendida (permite) E que não pode ser passada por `low_sentiment`.
+ */
+export type DecisaoDaConversa = DecisaoDeElegibilidade & { contatoDaEquipe: boolean };
+
 function silenciadoAgora(until: Date | number | null, agora: Date): boolean {
   if (until === null) return false;
   const t = typeof until === "number" ? until : until.getTime();
@@ -162,7 +194,7 @@ export function decidirElegibilidade(e: EstadoDeElegibilidade): DecisaoDeElegibi
   if (silenciadoAgora(e.botSilencedUntil, e.agora)) {
     return { permite: false, motivo: "conversa_silenciada", bloqueioPorAllowlist: false };
   }
-  if (e.assigneeKind === "user") {
+  if (donoHumanoVetaIA(e)) {
     return { permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false };
   }
   // #2353: contato marcado como interno não é atendido pela IA em canal nenhum —
@@ -251,6 +283,13 @@ export function montarEstadoDeElegibilidade(raw: {
    */
   aiOptOut: unknown;
   assigneeKind: string | null;
+  /**
+   * `conversations.metadata` cru. Obrigatório como CHAVE, igual a `forceHuman`:
+   * é dele que sai o modo "IA com o dono" (#3967), e um transporte novo que
+   * esqueça de ler a coluna falha no typecompile em vez de silenciar a IA numa
+   * conversa em que alguém ligou o modo.
+   */
+  metadataDaConversa: unknown;
   botSilencedUntil: Date | string | number | null | undefined;
   aiAuthorizedAt: Date | string | null | undefined;
   agora: Date;
@@ -266,9 +305,11 @@ export function montarEstadoDeElegibilidade(raw: {
     modo,
     forceHuman: raw.forceHuman === true,
     contatoInterno: ehContatoInterno(raw.contactTags, tagsInternasDaOrg(raw.orgSettings)),
+    contatoDaEquipe: ehContatoDaEquipe(raw.contactTags, tagsDaEquipeDaOrg(raw.orgSettings)),
     aiOptOut: raw.aiOptOut === true,
     botSilencedUntil: normalizarInstante(raw.botSilencedUntil),
     assigneeKind: raw.assigneeKind,
+    iaComDono: lerModoIaComDono(raw.metadataDaConversa),
     aiAuthorizedAt: autorizadoEm instanceof Date ? autorizadoEm : null,
     preGoLiveAtivo: preGoLive,
     numeroDeTesteAutorizado:

@@ -58,7 +58,9 @@ import { rotuloDoMembro, sufixoDoMembro } from "@/lib/users/rotulo-do-atendente"
 const UUID = "4fa3917a-9c1e-4b6d-8f2a-5d7c1e0b3a44";
 const SEM_NOME = { user_id: UUID, role: "agent", full_name: null };
 const COM_NOME = { user_id: "u-ana", role: "agent", full_name: "Ana Lima" };
-const SEM_DONO = { contact_id: "c1", dono_user_id: null, qualificado: false };
+// `pode_alterar` (#3746): o seletor só existe quando o SERVIDOR autoriza esta
+// sessão neste contato — este arquivo mede o RÓTULO da lista, então precisa dele.
+const SEM_DONO = { contact_id: "c1", dono_user_id: null, qualificado: false, pode_alterar: true };
 
 const t = (chave: string) => chave;
 
@@ -123,7 +125,7 @@ describe("a régua do rótulo de membro (#3023)", () => {
 
 describe("as telas da issue mostram o rótulo do helper", () => {
   it("carteira do contato: o seletor de dono lista o membro sem uuid", () => {
-    render(<CartaoDaCarteira contactId="c1" papelDoUsuario="manager" />);
+    render(<CartaoDaCarteira contactId="c1" />);
     const seletor = screen.getByTestId("carteira-seletor");
     const opcoes = within(seletor as HTMLElement)
       .getAllByRole("option")

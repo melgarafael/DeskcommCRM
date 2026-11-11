@@ -26,6 +26,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { bodyHash, resolverChaveDoLedger, type Intent, type LedgerStore } from "./send-ledger";
+import { mimeDoCaminhoDeVoz } from "@/lib/ai/voz/formato";
 import { sintetizarVoz, type SintetizarVozInput } from "@/lib/ai/voz/sintetizar";
 import { custoDeVozCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { logger } from "@/lib/logger";
@@ -75,7 +76,9 @@ export async function resolverCaminhoDeVoz(
   if (pathExistente) {
     return {
       mediaStoragePath: pathExistente,
-      mimeType: "audio/mpeg",
+      // O formato da tentativa anterior está no CAMINHO (`.ogg` = opus do canal
+      // oficial); `audio/mpeg` fixo mandaria a etiqueta errada no retry.
+      mimeType: mimeDoCaminhoDeVoz(pathExistente),
       caracteres: input.textoFalado.length,
       sintetizouAgora: false,
     };

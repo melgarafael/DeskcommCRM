@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "titulo": "Molde de IA das empresas novas",
+  "descricao": "Migration 9096. O dono da instalação escolhe uma empresa como molde em Recursos opcionais; toda empresa que nasce depois recebe, por gatilho de organizations, as funções de IA do molde (ai_purpose_bindings sem endereço próprio e de provedor com chave da instalação, sempre com credential_id nulo) e o padrão settings.llm. Nunca credenciais, Jev, agentes nem base de conhecimento. Gatilho e não código porque organizations é o único ponto comum aos quatro caminhos de criação. O laço de retorno: a auditoria da empresa nova (ai.molde_de_ia_aplicado) aparece na página dela, e a regra que a tela mostra é cobrada contra a que o banco aplica.",
+  "lanes": [
+    { "id": "telas", "label": "Telas" },
+    { "id": "escrita", "label": "Escrita da escolha" },
+    { "id": "criacao", "label": "Caminhos de criação" },
+    { "id": "banco", "label": "Banco" },
+    { "id": "guarda", "label": "Laço de retorno" }
+  ],
+  "mainPath": ["telaSistema", "acao", "platformSettings", "copia", "bindings", "telaProvedores"],
+  "nodes": [
+    {
+      "id": "telaSistema",
+      "lane": "telas",
+      "label": "/admin/sistema › IA das empresas novas",
+      "sublabel": "_molde-de-ia.tsx · seletor (Nenhuma ou empresa ativa) + resumo do que vai ser copiado",
+      "type": "ui",
+      "dot": "emerald"
+    },
+    {
+      "id": "telaConfig",
+      "lane": "telas",
+      "label": "/admin/configuracao",
+      "sublabel": "ponteiro do grupo Inteligência artificial para Recursos opcionais",
+      "type": "ui",
+      "dot": "emerald"
+    },
+    {
+      "id": "telaNova",
+      "lane": "telas",
+      "label": "/admin/tenants/new",
+      "sublabel": "aviso: esta empresa vai nascer com a IA do molde",
+      "type": "ui",
+      "dot": "emerald"
+    },
+    {
+      "id": "telaTenant",
+      "lane": "telas",
+      "label": "/admin/tenants/[id] › IA copiada do molde",
+      "sublabel": "CartaoDaIaDoMolde · lê a linha ai.molde_de_ia_aplicado da empresa",
+      "type": "ui",
+      "dot": "emerald"
+    },
+    {
+      "id": "telaProvedores",
+      "lane": "telas",
+      "label": "/app/ai/providers da empresa nova",
+      "sublabel": "as funções copiadas aparecem com origem binding; as outras herdam o padrão do molde",
+      "type": "ui",
+      "dot": "emerald"
+    },
+    {
+      "id": "acao",
+      "lane": "escrita",
+      "label": "updateMoldeDeIa",
+      "sublabel": "app/actions/settings · escritaDeAdminOuRecusa + Zod (uuid|null) + só empresa ativa",
+      "type": "route",
+      "dot": "violet"
+    },
+    {
+      "id": "regra",
+      "lane": "escrita",
+      "label": "lib/ai/molde-de-ia.ts",
+      "sublabel": "PROVEDORES_DO_MOLDE (anthropic, openai, openrouter) · funcaoCopiavel · resumirMolde",
+      "type": "lib",
+      "dot": "violet"
+    },
+    {
+      "id": "servidor",
+      "lane": "escrita",
+      "label": "lib/instalacao/molde-de-ia-servidor.ts",
+      "sublabel": "lerMoldeDeIa · empresasParaMolde · resumoDoMoldeNoBanco · gravarMoldeDeIa (nunca lança)",
+      "type": "lib",
+      "dot": "violet"
+    },
+    {
+      "id": "caminhos",
+      "lane": "criacao",
+      "label": "Cadastro · Empresas › Nova · fn_create_tenant_with_owner · bootstrap-owner",
+      "sublabel": "todos terminam num INSERT em organizations",
+      "type": "service",
+      "dot": "blue"
+    },
+    {
+      "id": "platformSettings",
+      "lane": "banco",
+      "label": "platform_settings.molde_de_ia_org_id",
+      "sublabel": "FK organizations, on delete set null · nulo = comportamento de antes",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "organizations",
+      "lane": "banco",
+      "label": "organizations",
+      "sublabel": "BEFORE e AFTER INSERT",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "seed",
+      "lane": "banco",
+      "label": "fn_seed_org_llm_defaults + fn_llm_do_molde_de_ia",
+      "sublabel": "BEFORE INSERT · settings.llm: o de quem cria, senão o do molde, senão o do produto",
+      "type": "service",
+      "dot": "sky"
+    },
+    {
+      "id": "copia",
+      "lane": "banco",
+      "label": "fn_molde_de_ia_na_org_nova",
+      "sublabel": "AFTER INSERT, definer, sem HTTP · copia as funções e audita só quando houve efeito",
+      "type": "service",
+      "dot": "sky"
+    },
+    {
+      "id": "bindings",
+      "lane": "banco",
+      "label": "ai_purpose_bindings",
+      "sublabel": "as funções da empresa nova, credential_id nulo = chave da instalação",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "audit",
+      "lane": "banco",
+      "label": "api_audit_log",
+      "sublabel": "platform.molde_de_ia_updated (a escolha) · ai.molde_de_ia_aplicado (o efeito, na empresa nova)",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "invariante",
+      "lane": "guarda",
+      "label": "tests/invariants/molde-de-ia-empresas-novas.test.ts",
+      "sublabel": "sem molde nada muda · exclusões · lista = PROVEDORES_DO_MOLDE · outras orgs intactas · molde excluído",
+      "type": "teste",
+      "dot": "amber"
+    },
+    {
+      "id": "cerca",
+      "lane": "guarda",
+      "label": "tests/unit/molde-de-ia.test.ts",
+      "sublabel": "a lista da tela = provedores com chave da instalação = a lista do gatilho (última definição)",
+      "type": "teste",
+      "dot": "amber"
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "telaSistema", "to": "acao", "label": "escolhe o molde (salva na hora)" },
+    { "id": "e2", "from": "acao", "to": "servidor", "label": "lê o anterior, grava, resume" },
+    { "id": "e3", "from": "servidor", "to": "regra", "label": "resumirMolde" },
+    { "id": "e4", "from": "servidor", "to": "platformSettings", "label": "upsert só da coluna" },
+    { "id": "e5", "from": "acao", "to": "audit", "label": "platform.molde_de_ia_updated" },
+    { "id": "e6", "from": "acao", "to": "telaSistema", "label": "devolve o resumo" },
+    { "id": "e7", "from": "telaConfig", "to": "telaSistema", "label": "ponteiro" },
+    { "id": "e8", "from": "telaNova", "to": "servidor", "label": "lerMoldeDeIa (aviso)" },
+    { "id": "e9", "from": "telaNova", "to": "caminhos", "label": "Criar organização" },
+    { "id": "e10", "from": "caminhos", "to": "organizations", "label": "INSERT" },
+    { "id": "e11", "from": "organizations", "to": "seed", "label": "BEFORE INSERT" },
+    { "id": "e12", "from": "organizations", "to": "copia", "label": "AFTER INSERT" },
+    { "id": "e13", "from": "seed", "to": "platformSettings", "label": "lê o molde" },
+    { "id": "e14", "from": "copia", "to": "platformSettings", "label": "lê o molde" },
+    { "id": "e15", "from": "copia", "to": "bindings", "label": "copia (credential_id nulo)" },
+    { "id": "e16", "from": "copia", "to": "audit", "label": "ai.molde_de_ia_aplicado" },
+    { "id": "e17", "from": "audit", "to": "telaTenant", "label": "IA copiada do molde" },
+    { "id": "e18", "from": "bindings", "to": "telaProvedores", "label": "origem binding" },
+    { "id": "e19", "from": "seed", "to": "telaProvedores", "label": "padrão herdado" },
+    { "id": "e20", "from": "invariante", "to": "copia", "label": "mede contra o Postgres" },
+    { "id": "e21", "from": "invariante", "to": "regra", "label": "lista copiada = PROVEDORES_DO_MOLDE" },
+    { "id": "e22", "from": "cerca", "to": "regra", "label": "= chaves da instalação" },
+    { "id": "e23", "from": "cerca", "to": "copia", "label": "mesmos literais no SQL" }
+  ]
+}

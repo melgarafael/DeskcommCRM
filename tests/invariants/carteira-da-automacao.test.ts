@@ -56,6 +56,8 @@ const CONVERSA_DO_GESTOR = "35653565-4444-4000-8000-000000000002";
 const CONVERSA_ENCERRADA = "35653565-4444-4000-8000-000000000003";
 const CONVERSA_SEM_DONO = "35653565-4444-4000-8000-000000000004";
 const CONVERSA_DO_CLOSER = "35653565-4444-4000-8000-000000000005";
+const AGENTE = "35653565-6666-4000-8000-000000000001";
+const VERSAO_DO_AGENTE = "35653565-6666-4000-8000-000000000002";
 
 /**
  * Chama a RPC como o MOTOR chama: `service_role`, sem ator humano, com a
@@ -179,6 +181,21 @@ describe("carteira do cliente pela origem `automacao` (#3514)", () => {
         (id, organization_id, provider, waha_session_name, webhook_secret_encrypted, status, display_name)
       values ${NUMEROS.map((id, i) => `('${id}', '${ORG}', 'waha', 'passagem-inv-${i}', '\\x00'::bytea, 'WORKING', 'Passagem ${i}')`).join(",\n")}
       on conflict (id) do nothing;
+      -- A CONVERSA_SEM_DONO mora no NUMEROS[3] e o teste diz que "a IA atende"
+      -- essa conversa (doc 237, 3-B). Com a régua da #4012 a frase passou a ser
+      -- verificável: sem agente publicado NAQUELE número, o comando dela é
+      -- 'aguardando' e a passagem de carteira a levaria junto. O agente vai só
+      -- neste número de propósito — os outros quatro seguem sem IA.
+      insert into public.ai_agents (id, organization_id, name, system_prompt)
+        values ('35653565-9999-4000-8000-000000000001', '${ORG}', 'Agente da passagem', 'x')
+      on conflict (id) do nothing;
+      insert into public.ai_agent_versions
+        (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status)
+        values ('35653565-9999-4000-8000-000000000002', '${ORG}', '35653565-9999-4000-8000-000000000001',
+                1, 'x', 'anthropic', 'm', '${NUMEROS[3]}', 'published')
+      on conflict (id) do nothing;
+      update public.ai_agents set published_version_id = '35653565-9999-4000-8000-000000000002'
+        where id = '35653565-9999-4000-8000-000000000001';
       insert into public.contacts (id, organization_id, display_name) values
         ('${CONTATO_DAS_CONVERSAS}', '${ORG}', 'Contato das Conversas'),
         ('${CONTATO}', '${ORG}', 'Contato da Passagem'),
@@ -190,6 +207,15 @@ describe("carteira do cliente pela origem `automacao` (#3514)", () => {
       insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position)
         values ('${ETAPA}', '${ORG}', '${PIPELINE}', 'Reunião agendada', 'reuniao', 9100)
         on conflict (id) do nothing;
+      -- Os casos 3-B afirmam "a IA está atendendo", e desde a #4012 isso exige agente no ar.
+      insert into public.ai_agents (id, organization_id, name, system_prompt)
+        values ('${AGENTE}', '${ORG}', 'Agente da Passagem', 'prompt')
+        on conflict (id) do update set archived_at = null, paused_at = null;
+      insert into public.ai_agent_versions
+        (id, organization_id, agent_id, version_number, system_prompt, provider, model, status, published_at)
+        values ('${VERSAO_DO_AGENTE}', '${ORG}', '${AGENTE}', 1, 'prompt', 'anthropic', 'claude-sonnet-4-6', 'published', now())
+        on conflict (id) do update set status = 'published', published_at = now();
+      update public.ai_agents set published_version_id = '${VERSAO_DO_AGENTE}' where id = '${AGENTE}';
     `);
     limpaCarteira(CONTATO);
   });
@@ -197,8 +223,12 @@ describe("carteira do cliente pela origem `automacao` (#3514)", () => {
   afterAll(() => {
     sql(`
       delete from public.conversations where organization_id in ('${ORG}', '${OUTRA_ORG}');
+      update public.ai_agents set published_version_id = null where organization_id in ('${ORG}', '${OUTRA_ORG}');
+      delete from public.ai_agent_versions where organization_id in ('${ORG}', '${OUTRA_ORG}');
+      delete from public.ai_agents where organization_id in ('${ORG}', '${OUTRA_ORG}');
       delete from public.channel_sessions where organization_id in ('${ORG}', '${OUTRA_ORG}');
       delete from public.crm_leads where organization_id in ('${ORG}', '${OUTRA_ORG}');
+      delete from public.ai_agents where organization_id = '${ORG}';
       delete from public.user_organizations where organization_id in ('${ORG}', '${OUTRA_ORG}');
       delete from public.crm_stages where organization_id in ('${ORG}', '${OUTRA_ORG}');
       delete from public.crm_pipelines where organization_id in ('${ORG}', '${OUTRA_ORG}');

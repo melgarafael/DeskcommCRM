@@ -280,7 +280,12 @@ async function confirmar({
   if (modo === "com_aprovacao") return redirectTo("/get-started");
 
   try {
-    await ensureTenantForUser(usuario);
+    // O idioma e o fuso de quem se cadastrou já vêm no `user_metadata` (gravados
+    // pelo `signUp`); o `Accept-Language` deste clique é a pista de reserva para
+    // contas criadas antes de o cadastro guardá-los.
+    await ensureTenantForUser(usuario, {
+      pistas: { acceptLanguage: request.headers.get("accept-language") },
+    });
   } catch (e) {
     await audit({
       action: "auth.signup_provision_failed",

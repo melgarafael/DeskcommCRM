@@ -19,6 +19,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarEtiqueta } from "@/lib/metrics/mediana-e-recorte-por-etiqueta";
+import { membrosDaOrganizacao } from "@/lib/users/nome-do-atendente";
 
 export const dynamic = "force-dynamic";
 
@@ -104,18 +105,27 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // Enriquece cada atendente com nome/email (mesmo padrão de /api/v1/team).
   // Degrada com name=null quando o service role não está configurado (dev).
+  // Só quem tem ou teve vínculo com a org ativa é enriquecido: o admin client
+  // lê qualquer usuário da instalação (regra de `nome-do-atendente.ts`).
   const names = new Map<string, { name: string | null; email: string | null }>();
   if (isServiceRoleConfigured() && metrics.attendants.length > 0) {
     const admin = createAdminClient();
+    const membros = await membrosDaOrganizacao(
+      admin,
+      activeOrg.orgId,
+      metrics.attendants.map((a) => a.user_id),
+    );
     await Promise.all(
-      metrics.attendants.map(async (a) => {
-        const { data: userRes } = await admin.auth.admin.getUserById(a.user_id);
-        const u = userRes?.user;
-        names.set(a.user_id, {
-          name: (u?.user_metadata?.full_name as string | undefined) ?? null,
-          email: u?.email ?? null,
-        });
-      }),
+      metrics.attendants
+        .filter((a) => membros.has(a.user_id))
+        .map(async (a) => {
+          const { data: userRes } = await admin.auth.admin.getUserById(a.user_id);
+          const u = userRes?.user;
+          names.set(a.user_id, {
+            name: (u?.user_metadata?.full_name as string | undefined) ?? null,
+            email: u?.email ?? null,
+          });
+        }),
     );
   }
 

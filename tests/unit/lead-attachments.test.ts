@@ -12,6 +12,7 @@
  * `tests/invariants/anexo-de-lead-isolamento-e-poda.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 type Linha = Record<string, unknown>;
@@ -173,11 +174,11 @@ function anexo(id: string, org: string, lead: string, caminho: string): Linha {
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 
-function postArquivo(lead: string, fieldKey: string): NextRequest {
+function postArquivo(lead: string, fieldKey: string): Promise<NextRequest> {
   const form = new FormData();
   form.append("field_key", fieldKey);
   form.append("file", new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "voucher.pdf", { type: "application/pdf" }));
-  return new NextRequest(`http://localhost/api/v1/leads/${lead}/attachments`, { method: "POST", body: form });
+  return pedidoComTamanho(`http://localhost/api/v1/leads/${lead}/attachments`, { method: "POST", body: form });
 }
 
 function deleteAnexo(lead: string, attachmentId: string): NextRequest {
@@ -242,25 +243,25 @@ describe("GET da mídia do anexo", () => {
 
 describe("POST do anexo", () => {
   it("chave fora da régua do funil (`../`) é recusada antes de tocar o Storage", async () => {
-    const res = await POST(postArquivo(LEAD, "../../outra"), ctx(LEAD));
+    const res = await POST(await postArquivo(LEAD, "../../outra"), ctx(LEAD));
     expect(res.status).toBe(422);
     expect(h.upload).not.toHaveBeenCalled();
   });
 
   it("campo que não é `file` no funil do negócio é recusado", async () => {
-    const res = await POST(postArquivo(LEAD, "obs"), ctx(LEAD));
+    const res = await POST(await postArquivo(LEAD, "obs"), ctx(LEAD));
     expect(res.status).toBe(422);
     expect(h.upload).not.toHaveBeenCalled();
   });
 
   it("negócio de OUTRA organização: 404 e nada sobe", async () => {
-    const res = await POST(postArquivo(LEAD_OUTRA, "comprovante"), ctx(LEAD_OUTRA));
+    const res = await POST(await postArquivo(LEAD_OUTRA, "comprovante"), ctx(LEAD_OUTRA));
     expect(res.status).toBe(404);
     expect(h.upload).not.toHaveBeenCalled();
   });
 
   it("upload válido sobe no prefixo da organização e grava a linha dela", async () => {
-    const res = await POST(postArquivo(LEAD, "comprovante"), ctx(LEAD));
+    const res = await POST(await postArquivo(LEAD, "comprovante"), ctx(LEAD));
     expect(res.status).toBe(201);
     const caminho = h.upload.mock.calls[0]?.[0] as string;
     expect(caminho.startsWith(`${ORG}/leads/${LEAD}/comprovante/`)).toBe(true);

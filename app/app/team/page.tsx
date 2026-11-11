@@ -133,7 +133,7 @@ export default async function TeamPage({
           <TabsContent value="sectors" className="mt-4">
             {/* Qualquer membro lê os setores; só manager+ cadastra
                 (as rotas de escrita exigem manager). */}
-            <SectorsClient canManage={isManager} />
+            <SectorsClient canManage={isManager} setoresLigado={setoresLigado} />
           </TabsContent>
         ) : null}
       </Tabs>
