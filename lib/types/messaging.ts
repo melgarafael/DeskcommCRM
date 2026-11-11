@@ -17,6 +17,14 @@ export interface Conversation {
   current_demanda_id?: string | null;
   assigned_to_user_id: string | null;
   /**
+   * A FILA da conversa (migration 9062): o setor para onde ela foi classificada.
+   * `null` = ainda sem fila, que é o estado de toda conversa até alguém (ou a
+   * triagem por IA) escolher. Opcional no tipo pela mesma razão dos outros
+   * campos novos: o cache do react-query gravado antes deste deploy não tem a
+   * chave, e a lista a lê antes da primeira resposta nova.
+   */
+  sector_id?: string | null;
+  /**
    * Cópia desnormalizada do nome de quem atende (migration 0202), escrita por
    * `fn_conversation_assign` no mesmo UPDATE que grava `assigned_to_user_id`.
    * `null` quando não atribuída, ou quando o backfill/lookup não alcançou —
