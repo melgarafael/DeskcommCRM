@@ -50,6 +50,7 @@ import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
 import { etiquetasParaOMatcher } from './etiquetas-do-matcher';
+import { emOrdemDeEscrita } from './fila-de-envio';
 import {
   criarColetorDeFerramentas,
   envolverFerramentasComTraco,
@@ -141,6 +142,7 @@ import {
   checkpointContentSchema,
   fecharOTurno,
   insertCheckpoint,
+  instrucaoDeFechamentoNoIdioma,
   parseCheckpointText,
   tirarLinkDaReuniao,
   type CheckpointContent,
@@ -230,6 +232,7 @@ import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
+import { idiomaDaOrganizacaoDoTurno, montarBlocoDePassagemDoRoteador } from './passagem-do-roteador';
 import { ferramentaDePassagemEntreAgentes } from './transferir-agente';
 import {
   hasOpenCaseForContact,
@@ -328,8 +331,10 @@ import {
 } from '@/lib/ai/decisao/manipulacao';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
+import { fatosDaOrganizacao } from './fatos-da-organizacao';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
+import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -1422,6 +1427,12 @@ export function blocoDoModoDePrevia(kind: TurnPreview['kind']): string {
  *
  * A régua é o que o agente TEM: os dois blocos de ensino nomeiam ferramentas, e
  * nomear uma ferramenta ausente faz o modelo tentar chamá-la.
+ *
+ * ⚠️ O bloco `agendaSystemBlock` (quem MARCA horário) segue em português por
+ * exceção declarada em `idioma-do-turno.ts`: ele é composto ramo a ramo por
+ * `tem(ferramenta)`, e traduzir exige um segundo texto por ramo — trabalho que
+ * não cabe nesta fatia e que o bloco da cadeia (este sim traduzido) cobre no
+ * caminho do turno.
  */
 export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
   const blocos: string[] = [];
@@ -1892,6 +1903,12 @@ export interface AgentTurnInput {
     compromissosBlock?: string;
     /** O anúncio que o contato clicou (vazio = não veio de anúncio). */
     origemBlock?: string;
+    /**
+     * O aviso da PASSAGEM AUTOMÁTICA do roteador (#4363), já montado — '' quando
+     * a conversa não trocou de agente. Opcional pela razão de `projeta`: quem
+     * monta um ritual à mão (testes, follow-up, resposta de caso) não o calcula.
+     */
+    passagemBlock?: string;
     /** Texto exato da mensagem que acordou este turno inbound. */
     currentInboundText?: string;
     /**
@@ -2585,8 +2602,9 @@ async function executarTurnoDoAgente(
   // da abertura. Lido aqui pela mesma razão da linha acima: uma query por turno,
   // longe do ponto de uso, para não virar duas respostas para a mesma pergunta.
   // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
-  const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
-
+  // O fuso E o idioma da organização, numa query só (#4260, item 1): o idioma
+  // do turno sai daqui e chega à montagem do system sem consulta nova.
+  const { fuso: fusoDaOrg, idioma: idiomaDaOrg } = await fatosDaOrganizacao(pool, tenantId, runLog);
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
@@ -2859,7 +2877,31 @@ async function executarTurnoDoAgente(
   // A guarda é de TELEMETRIA e degrada ABERTO: se a leitura falhar, `false` e a
   // gravação acontece como antes — nunca se perde a linha por causa dela.
   let decisaoJaGravada = false;
-  if (!preview && routed.routerId !== null) {
+  // #4340 — O NÚMERO SEM ROTEADOR TAMBÉM É UMA DECISÃO DE ROTEAMENTO.
+  //
+  // Quando o agente troca de número, o roteador fica no número arquivado e o
+  // número novo nasce SEM roteador. `resolveTurnAgent` então devolve
+  // `routerId: null` + `outcome: 'no_router'` e o turno segue no agente
+  // publicado do número (o principal) — que é o comportamento certo. O errado
+  // era este `if` antigo (`routed.routerId !== null`): sem roteador, NADA era
+  // gravado, e o painel contava os turnos do número novo como se não houvesse
+  // turno nenhum. Ninguém enxergava o defeito que o cliente reclamou.
+  //
+  // O desfecho é `no_match` porque o CHECK de `outcome` aceita um vocabulário
+  // FECHADO (classified, sticky, reclassified, fallback, no_match,
+  // classifier_failed, transferred) e esta fatia não tem migration. O
+  // discriminador de "número sem roteador" é `router_id is null`: todo
+  // `no_match` de um roteador de verdade carrega o `router_id` dele, porque o
+  // caminho do roteador só grava com ele carregado. `origem` não serve para
+  // isso — o CHECK aceita só 'classificador' e 'acao' — nem `motivo`, fechado
+  // nos três motivos de transferência.
+  // Sem `channel_session_id` não há número a apontar: não se inventa decisão.
+  const numeroSemRoteador =
+    !preview &&
+    routed.routerId === null &&
+    routed.outcome === 'no_router' &&
+    input.channelSessionId !== '';
+  if (!preview && (routed.routerId !== null || numeroSemRoteador)) {
     try {
       decisaoJaGravada = await decisaoDeRoteamentoDoJobJaGravada(
         pool,
@@ -2873,7 +2915,11 @@ async function executarTurnoDoAgente(
       });
     }
     try {
-      if (agentConfig !== null) {
+      // A conversa só ganha agente ativo quando houve ROTEADOR: no número sem
+      // roteador o agente principal não é escolha de intenção, e gravar o
+      // sticky dele aqui inventaria estado para o dia em que o número ganhar
+      // um roteador (#4340).
+      if (agentConfig !== null && routed.routerId !== null) {
         await pool.query(
           `update conversations
            set active_ai_agent_id = $3, active_intent = $4, active_agent_set_at = now()
@@ -2887,6 +2933,17 @@ async function executarTurnoDoAgente(
       // `origem_da_escolha = 'jev'`); o único leitor desta tabela
       // (`app/api/v1/ai/evolution`) conta roteamento, não quem o fez.
       if (!decisaoJaGravada) {
+        // UM registro POR TURNO — dentro da guarda do job, então nem a reexecução
+        // do turno reagendado repete a linha (nunca por mensagem). É `info`, não
+        // `warn`: número sem roteador é o estado NORMAL de quem nunca criou
+        // roteador, e um aviso por turno afogaria os avisos de verdade.
+        if (numeroSemRoteador) {
+          runLog.info('número sem roteador — o turno segue no agente principal (#4340)', {
+            conversation_id: input.conversationId,
+            channel_session_id: input.channelSessionId,
+            agent_id: agentConfig?.agentId ?? null,
+          });
+        }
         await pool.query(
           `insert into ai_router_decisions
            (organization_id, router_id, conversation_id, intent_name, confidence, agent_id, outcome, job_id)
@@ -2898,7 +2955,10 @@ async function executarTurnoDoAgente(
             routed.intentName,
             routed.confidence,
             agentConfig?.agentId ?? null,
-            routed.outcome,
+            // Número sem roteador: não houve nada para casar, e o turno seguiu
+            // no agente principal. `no_match` é o desfecho honesto do
+            // vocabulário fechado — `router_id` nulo diz o motivo.
+            numeroSemRoteador ? 'no_match' : routed.outcome,
             liveJob().id,
           ],
         );
@@ -3172,6 +3232,11 @@ async function executarTurnoDoAgente(
   // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
   // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
   if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
+  // #4260, item 1: o único bloco NOVO é a diretiva de idioma, e ela entra por
+  // último para não deslocar nenhum dos de cima (o prefixo cacheável continua
+  // igual em `pt-BR`). A tradução dos blocos acima acontece DEPOIS da montagem,
+  // numa passada só — ver `blocosNoIdioma`.
+  blocosResidentes.push(diretivaDeIdioma(idiomaDaOrg));
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -3200,6 +3265,9 @@ async function executarTurnoDoAgente(
           agentId: agentConfig.agentId,
           vozEnabled: agentConfig.vozEnabled,
           vozQuando: agentConfig.vozQuando,
+          // Voz por agente (#4228): sem chave no agente, `null` e a resolução cai
+          // na voz da organização — o comportamento de antes, byte a byte.
+          vozVoiceId: agentConfig.vozVoiceId ?? null,
           voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
           inboundType:
             input.inboundMessageId === undefined
@@ -3219,6 +3287,12 @@ async function executarTurnoDoAgente(
   // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
   const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
   if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
+  // #4260, item 1: a passada de idioma vem DEPOIS da montagem — a ordem dos
+  // blocos e o `join` daqui continuam os de antes, e em `pt-BR` cada bloco volta
+  // igual. Mutação local, na mesma lista: o turno não guarda os blocos.
+  blocosNoIdioma(blocosResidentes, idiomaDaOrg).forEach((bloco, indice) => {
+    blocosResidentes[indice] = bloco;
+  });
   const system = blocosResidentes.join('\n\n');
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
@@ -4167,7 +4241,7 @@ async function executarTurnoDoAgente(
         textoDaOrganizacao(playbook.prompt),
         renderOrgMemory(memoriaEscritaPorPessoas(orgMemory)),
         skillsDaOrganizacao,
-        evidenciasComerciais.contexto(),
+        evidenciasComerciais.materialDaOrganizacao(),
         ...valoresConsultados,
       ],
       ...(historico !== undefined ? { historico } : {}),
@@ -5915,6 +5989,31 @@ async function executarTurnoDoAgente(
               };
               continue;
             }
+            // Leitura do servidor MCP externo (#2147): o que o sistema da empresa
+            // devolveu — a data do exame na agenda — é fato consultado neste turno.
+            // Sem isto a revisão de promessa não via de onde a data veio e vetava
+            // a resposta certa como compromisso inventado.
+            if (mcp.leiturasRemotas.has(name) && typeof mcpTool.execute === 'function') {
+              const executeOriginal = mcpTool.execute.bind(mcpTool);
+              // Troca o `execute` no PRÓPRIO objeto, sem cópia: a prévia libera a
+              // remota pela identidade do objeto que `pickToolsFromMcp` marcou
+              // (`leitura-remota.ts`), e uma cópia perderia a marca. O objeto é
+              // montado por turno, então a troca não vaza para outro turno.
+              mcpTool.execute = (async (...args: Parameters<typeof executeOriginal>) => {
+                const resultado = await executeOriginal(...args);
+                const descartadas = evidenciasComerciais.registrarLeituraRemota(name, resultado);
+                if (descartadas.length > 0) {
+                  runLog.warn('leitura remota acima do teto da evidência — fora da conferência de promessa', {
+                    ferramenta: name,
+                    descartadas: descartadas.length,
+                    tamanhos: descartadas,
+                  });
+                }
+                return resultado;
+              }) as typeof mcpTool.execute;
+              rawTools[name] = mcpTool;
+              continue;
+            }
             // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
             // precisa saber para não vetar um turno que já checou a agenda de verdade.
             if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
@@ -6175,11 +6274,18 @@ async function executarTurnoDoAgente(
           apresentacaoEncerraTurno,
         )
       : breakerTools;
-    const tools = envolverFerramentasComTraco(
-      presentationTools,
-      // O traço continua por fora: registra tanto o veto do breaker quanto o
-      // descarte de ferramentas após a apresentação terminal.
-      input.tracoDoTurno?.coletor,
+    // A fila fica por fora de tudo (prévia inclusive): chamadas paralelas do mesmo
+    // passo falam com o cliente na ordem em que o modelo as escreveu (`fila-de-envio.ts`).
+    const tools = emOrdemDeEscrita(
+      envolverFerramentasComTraco(
+        // Descrição no idioma do turno (#4260, item 1). Nome, schema e `execute`
+        // passam intactos: só a prosa muda, e ferramenta sem tradução no
+        // dicionário volta igual (as exceções declaradas em `idioma-do-turno.ts`).
+        ferramentasNoIdioma(presentationTools, idiomaDaOrg),
+        // O traço continua por fora: registra tanto o veto do breaker quanto o
+        // descarte de ferramentas após a apresentação terminal.
+        input.tracoDoTurno?.coletor,
+      ),
     );
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
@@ -6335,6 +6441,19 @@ async function executarTurnoDoAgente(
       mcp_tools_no_turno: mcpToolIdsDoTurno.length - cobertasPelaNativaNoTurno,
       cobertas_pela_nativa: cobertasPelaNativaNoTurno,
     });
+    // #4363 — A TROCA AUTOMÁTICA DO ROTEADOR chega ao agente que RECEBE a
+    // conversa: ele precisa saber que herdou o atendimento (e de quem) para se
+    // apresentar e continuar de onde está, no idioma da organização. Só existe
+    // no turno da troca (`reclassified`) — nos demais o bloco é '' e nem a
+    // leitura do locale acontece.
+    const passagemRecebida = 'passagemRecebida' in routed ? (routed.passagemRecebida ?? null) : null;
+    const passagemBlock =
+      passagemRecebida === null
+        ? ''
+        : montarBlocoDePassagemDoRoteador(
+            passagemRecebida,
+            await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
+          );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
       leadState,
@@ -6344,6 +6463,7 @@ async function executarTurnoDoAgente(
       entregues,
       compromissosBlock,
       origemBlock,
+      passagemBlock,
       formatoDoHistorico: deps.knobs.historyFormat ?? 'json',
       ...(currentInboundText !== null ? { currentInboundText } : {}),
       // #2729 — o autor da mensagem canônica, quando ela é de grupo. Vai junto
@@ -7025,15 +7145,22 @@ async function executarTurnoDoAgente(
             : {}),
           ...(reservaDeFormato ? { reservaDeFormato } : {}),
           system,
-          messages: [
-            // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-            // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-            ...openingTextOnly,
-            ...responseMessages,
-            ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
-            { role: 'user', content: CHECKPOINT_INSTRUCTION },
-            ...correcao,
-          ],
+          messages: instrucaoDeFechamentoNoIdioma(
+            [
+              // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
+              // fez seu trabalho na 1ª chamada e não precisa ir de novo.
+              ...openingTextOnly,
+              ...responseMessages,
+              ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
+              { role: 'user', content: CHECKPOINT_INSTRUCTION },
+              ...correcao,
+            ],
+            // #4260, item 1: a instrução de fechamento é a última coisa que o
+            // modelo lê no turno e passou a falar o idioma da organização. A
+            // passada vem depois da montagem para a ordem e a identidade da
+            // mensagem não mudarem.
+            idiomaDaOrg,
+          ),
         },
         { registry: deps.registry, log: runLog },
       );
@@ -7666,6 +7793,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         currentInboundText,
         currentInboundSender,
         formatoDoHistorico,
+        passagemBlock,
       }) =>
         buildOpeningMessage(
           previous,
@@ -7679,6 +7807,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           currentInboundSender,
           origemBlock,
           formatoDoHistorico,
+          passagemBlock,
         ),
     });
   };

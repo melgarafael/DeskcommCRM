@@ -1136,12 +1136,22 @@ export class WahaClient {
    * junto em TODA chamada — é o que torna "página seguinte" uma pergunta com
    * resposta.
    *
-   * ─── O caso NOWEB sem store, que vem vazio e não é erro ────────────────────
+   * ─── O caso NOWEB sem store: `[]` ou 400, e o 400 NÃO é instabilidade ─────
    *
    * No NOWEB (o engine padrão do kit) este endpoint só enxerga o que o store
    * da sessão guardou (`noweb.store.enabled` — a opção "Guardar histórico" da
    * conexão). Sem ele a resposta é `[]`: lista vazia é um desfecho legítimo e
-   * quem chama decide o que comunicar; HTTP errado continua sendo exceção.
+   * quem chama decide o que comunicar.
+   *
+   * Dependendo da versão do transporte, porém, o store desligado vira
+   * **400** — e aí ele NÃO significa instabilidade, significa "este endpoint
+   * não existe nesta sessão" (a doc do WAHA é explícita: os endpoints de
+   * contatos não funcionam por padrão no NOWEB). O status sai daqui cru
+   * (`waha_contacts_all_400`) e quem classifica é
+   * `lib/channels/agenda-do-aparelho-falha.ts`: tratá-lo aqui como queda do
+   * número foi o defeito do #4102 — a tela mandava conferir uma conexão que
+   * estava boa, e a pessoa ficava travada sem saber que faltava ligar uma
+   * opção. O corpo da resposta continua não atravessando.
    */
   async listarAgendaDoAparelho(
     session: string,
@@ -1219,6 +1229,46 @@ export class WahaClient {
     }, TETO_DE_MIDIA_MS);
     if (!res.ok) {
       throw new Error(`waha_${res.status}`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Publica uma imagem no STATUS do número (#3397): `POST /api/{session}/status/image`.
+   *
+   * O corpo não tem destinatário — Status não se endereça, se PUBLICA. O que
+   * escolhe quem vê é `contacts`: uma lista de JIDs, ou vazia/ausente para o
+   * número inteiro. Numa sessão NOWEB a lista não consulta nada; é o número
+   * inteiro que busca os contatos no acervo do histórico (`noweb.store`), e sem
+   * ele o provedor responde 400. Por isso quem chama decide o público ANTES, e
+   * a ferramenta explica o que falta em vez de ligar o acervo por conta própria
+   * (decisão da #999).
+   *
+   * Teto de MÍDIA, como `sendMedia`: o provedor grava o arquivo antes de
+   * responder, e o teto de texto cortaria uma publicação legítima.
+   */
+  async sendStatusImage(
+    session: string,
+    imagem: { mimetype: string; data: string; caption?: string; contacts?: string[] },
+  ): Promise<unknown> {
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/status/image`,
+      {
+        method: "POST",
+        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: { mimetype: imagem.mimetype, filename: "status", data: imagem.data },
+          ...(imagem.caption ? { caption: imagem.caption } : {}),
+          // Lista vazia NÃO vai no corpo: no provedor ela e a ausência são a
+          // mesma coisa, e mandar `contacts: []` sugeriria um público que não
+          // existe. Quem quer todos diz `todos` na camada de cima.
+          ...(imagem.contacts?.length ? { contacts: imagem.contacts } : {}),
+        }),
+      },
+      TETO_DE_MIDIA_MS,
+    );
+    if (!res.ok) {
+      throw new Error(`waha_status_${res.status}`);
     }
     return res.json();
   }
