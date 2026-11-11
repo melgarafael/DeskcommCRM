@@ -232,6 +232,7 @@ import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
+import { idiomaDaOrganizacaoDoTurno, montarBlocoDePassagemDoRoteador } from './passagem-do-roteador';
 import { ferramentaDePassagemEntreAgentes } from './transferir-agente';
 import {
   hasOpenCaseForContact,
@@ -1902,6 +1903,12 @@ export interface AgentTurnInput {
     compromissosBlock?: string;
     /** O anúncio que o contato clicou (vazio = não veio de anúncio). */
     origemBlock?: string;
+    /**
+     * O aviso da PASSAGEM AUTOMÁTICA do roteador (#4363), já montado — '' quando
+     * a conversa não trocou de agente. Opcional pela razão de `projeta`: quem
+     * monta um ritual à mão (testes, follow-up, resposta de caso) não o calcula.
+     */
+    passagemBlock?: string;
     /** Texto exato da mensagem que acordou este turno inbound. */
     currentInboundText?: string;
     /**
@@ -6434,6 +6441,19 @@ async function executarTurnoDoAgente(
       mcp_tools_no_turno: mcpToolIdsDoTurno.length - cobertasPelaNativaNoTurno,
       cobertas_pela_nativa: cobertasPelaNativaNoTurno,
     });
+    // #4363 — A TROCA AUTOMÁTICA DO ROTEADOR chega ao agente que RECEBE a
+    // conversa: ele precisa saber que herdou o atendimento (e de quem) para se
+    // apresentar e continuar de onde está, no idioma da organização. Só existe
+    // no turno da troca (`reclassified`) — nos demais o bloco é '' e nem a
+    // leitura do locale acontece.
+    const passagemRecebida = 'passagemRecebida' in routed ? (routed.passagemRecebida ?? null) : null;
+    const passagemBlock =
+      passagemRecebida === null
+        ? ''
+        : montarBlocoDePassagemDoRoteador(
+            passagemRecebida,
+            await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
+          );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
       leadState,
@@ -6443,6 +6463,7 @@ async function executarTurnoDoAgente(
       entregues,
       compromissosBlock,
       origemBlock,
+      passagemBlock,
       formatoDoHistorico: deps.knobs.historyFormat ?? 'json',
       ...(currentInboundText !== null ? { currentInboundText } : {}),
       // #2729 — o autor da mensagem canônica, quando ela é de grupo. Vai junto
@@ -7772,6 +7793,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         currentInboundText,
         currentInboundSender,
         formatoDoHistorico,
+        passagemBlock,
       }) =>
         buildOpeningMessage(
           previous,
@@ -7785,6 +7807,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           currentInboundSender,
           origemBlock,
           formatoDoHistorico,
+          passagemBlock,
         ),
     });
   };
