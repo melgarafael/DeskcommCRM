@@ -71,6 +71,7 @@ import { agentePorRemetente } from './sender-routing';
 import { registrarDecisaoDoRoteador } from './router-decision-log';
 import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
 import { roteadorPorRemetente } from './transferir-agente';
+import type { PassagemRecebida } from './passagem-do-roteador';
 import {
   escolherAgenteDoNumero,
   loadPublishedAgentConfig,
@@ -133,6 +134,18 @@ export interface TurnAgentResolution {
    * agente de vendas não respondeu este cliente?" sem abrir o banco.
    */
   rastroDoPublico?: RastroDoPublico;
+  /**
+   * A PASSAGEM AUTOMÁTICA do roteador (#4363): presente SÓ quando o desfecho é
+   * `reclassified` — o agente deste turno herdou a conversa do que atendia até
+   * aqui. Antes disto a troca era silenciosa: o cliente não era avisado e o
+   * agente novo respondia como se a conversa começasse nele.
+   *
+   * `agenteAnteriorNome` é `null` quando a versão publicada do anterior não
+   * pôde ser lida — o aviso continua valendo, sem inventar um nome que não se
+   * conhece. O turno transforma isto no bloco do prompt
+   * (`passagem-do-roteador.ts`), no idioma da organização.
+   */
+  passagemRecebida?: PassagemRecebida;
 }
 
 export interface ResolveTurnAgentDeps {
@@ -457,12 +470,25 @@ export async function resolveTurnAgent(
         });
         return resolveFallback('no_match', confidence);
       }
+      // #4363 — a TROCA AUTOMÁTICA diz de quem a conversa veio, para o agente
+      // novo se apresentar e continuar. Uma leitura a mais, paga SÓ no turno da
+      // troca; falha dela não derruba o turno — o aviso sai sem o nome.
+      const passagem: PassagemRecebida | null =
+        outcome !== 'reclassified' || input.stickyAgentId === null
+          ? null
+          : {
+              agenteAnteriorId: input.stickyAgentId,
+              agenteAnteriorNome:
+                (await _loadAgentById(db, input.tenantId, input.stickyAgentId).catch(() => null))
+                  ?.agentName ?? null,
+            };
       return {
         config,
         routerId: router.id,
         intentName,
         confidence,
         outcome,
+        ...(passagem !== null ? { passagemRecebida: passagem } : {}),
         // Só a intenção casada AGORA começa roteiro. Sticky é o mesmo assunto da
         // conversa em curso: devolvê-lo recomeçaria o roteiro a cada turno — e,
         // depois de concluído, de novo, para sempre.
