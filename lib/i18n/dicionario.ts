@@ -18245,6 +18245,9 @@ export const DICIONARIO: Traducoes = {
   "Nenhum negócio aberto com valor neste funil.": {
     es: "Ningún negocio abierto con valor en este embudo.",
   },
+  "Este funil tem mais negócios abertos do que a previsão consegue ler. Os valores abaixo são parciais.": {
+    es: "Este embudo tiene más negocios abiertos de los que la previsión logra leer. Los valores de abajo son parciales.",
+  },
   "Sem data prevista — entram, mas sem mês no cronograma": {
     es: "Sin fecha prevista — entran, pero sin mes en el cronograma.",
   },
