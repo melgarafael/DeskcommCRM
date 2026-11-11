@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
       last_message_preview,
       unread_count_for_assignee,
       created_at,
-      organizations!inner ( display_name, slug ),
+      organizations!conversations_organization_id_fkey!inner ( display_name, slug ),
       contacts ( name, phone_number )
     `,
     )

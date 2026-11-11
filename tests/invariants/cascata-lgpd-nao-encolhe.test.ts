@@ -69,6 +69,7 @@ const TABELAS_NA_CASCATA = [
   // `lgpd-cascata-alcanca-quem-guarda-pessoa.test.ts` não a alcança — é ESTA
   // catraca que segura o passo 6d de não sumir.
   "conversation_notes",
+  "crm_lead_attachments", //9243 — o arquivo vai para a fila e a linha sai
   "crm_lead_activities", //0071 — payload, metadata e `reason` escrito por LLM
   "crm_leads", //          0019 — título, descrição, campos personalizados, tags
   // 0477 — destinatario_nome (nome impresso no PDF), briefing_json e
@@ -141,11 +142,14 @@ const TABELAS_NA_CASCATA = [
 const TIPOS_RESERVADOS = [
   "ai.case_closed", //               0279
   "ai.case_opened", //               0279
+  "ai.case_updated", //              9240 — manda WhatsApp à equipe com comando preso à atualização
   "appointment.outcome_confirmed", //herdado
   "contact.birthday", //             0551
   "contact.phone_added", //          0670
   "conversation.autonomous_turn_revoked", //0594 — revogação nativa, sessão não pode forjar
+  "conversation.closed", //          9212 — encerramento é do gatilho; forjado, mandaria mensagem pós-atendimento
   "lead.date_field_due", //          0743
+  "lead.stage_stale", //             9206 — mesma reserva do 0743: só o servidor emite
   "message.received", //             herdado
 ] as const;
 

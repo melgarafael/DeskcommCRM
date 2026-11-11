@@ -109,7 +109,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   }
 
   const linhas = data ?? [];
-  const nomes = await nomesDosAtendentes(linhas.map((l) => l.reconhecido_por));
+  const nomes = await nomesDosAtendentes(org.orgId, linhas.map((l) => l.reconhecido_por));
 
   return ok(
     // `reconhecido_por` continua na linha mesmo sem nome: o dono é a VERDADE, o

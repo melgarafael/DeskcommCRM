@@ -3,11 +3,13 @@
  *
  * ═══ O que esta ação NÃO faz ═══
  *
- * Ela não escolhe transporte, não abre conexão e não conhece credencial: quem
- * entrega é `lib/email/roteador.ts` (SMTP configurado → SMTP; sem SMTP →
- * Resend), o MESMO caminho de um convite ou de um alarme de LGPD. Escrever um
- * segundo transporte aqui seria o defeito que o roteador existe para matar
- * (ver o cabeçalho dele: trocar oito `import` por um não é somar).
+ * Ela não abre conexão nem decifra credencial. Há UM desvio: se a organização
+ * conectou a conta Resend dela, quem entrega é `lib/email/resend-da-organizacao.ts`,
+ * e conta ilegível falha com motivo próprio, sem trocar o remetente. Sem conta
+ * conectada, quem entrega é `lib/email/roteador.ts` (SMTP configurado → SMTP; sem
+ * SMTP → Resend), o MESMO caminho de um convite ou de um alarme de LGPD. Escrever
+ * outro transporte aqui seria o defeito que o roteador existe para matar (ver o
+ * cabeçalho dele: trocar oito `import` por um não é somar).
  *
  * ═══ O que ela faz ═══
  *
@@ -70,8 +72,13 @@ import {
   SEM_REMETENTE_DA_ORGANIZACAO,
   type RemetenteDaOrganizacao,
 } from "@/lib/email/remetente-da-organizacao";
+import {
+  carregarContaResend,
+  enviarPelaContaDaOrganizacao,
+} from "@/lib/email/resend-da-organizacao";
 import { sendEmail, type EmailDeliveryError } from "@/lib/email/roteador";
 import { logger } from "@/lib/logger";
+import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
 import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 
 /**
@@ -125,7 +132,7 @@ interface ContatoDoContexto {
   id: string;
   is_blocked?: boolean;
   email?: string | null;
-  consent?: { marketing?: { declined_at?: string | null } | null } | null;
+  consent?: unknown;
 }
 
 /** O veredito do destinatário — o `motivo` é o que vira `detail.reason`. */
@@ -206,8 +213,8 @@ async function resolverDestinatario(
   const contact = ctx.context.contact as ContatoDoContexto | undefined;
   if (!contact) return { ok: false, motivo: "no_contact" };
   if (contact.is_blocked) return { ok: false, motivo: "contact_blocked" };
-  // Recusa registrada — não "grant ausente". Ver `guarda-do-contato.ts`.
-  if (contact.consent?.marketing?.declined_at) return { ok: false, motivo: "consent_declined" };
+  // Recusa registrada — não "grant ausente". Ver `guarda-do-contato.ts`. Nos dois formatos.
+  if (recusaRegistrada(contact.consent)) return { ok: false, motivo: "consent_declined" };
   const email = emailValido(contact.email);
   return email ? { ok: true, endereco: email } : { ok: false, motivo: "no_email" };
 }
@@ -386,25 +393,41 @@ async function execute(
   // Depois do teto, de propósito: recusa por limite não paga a leitura do
   // `settings` da organização. Quem não vai enviar não precisa saber o remetente.
   const remetente = await remetenteDaAutomacao(ctx);
-  const resultado = await sendEmail({
+  const pedido = {
     to: para.endereco,
     subject: assuntoPronto,
     html: corpoParaHtml(corpoHtml, formato),
     text: corpoParaTexto(corpoPronto, formato),
     // O remetente da ORGANIZAÇÃO (#3287, fatia 1): quando ela configurou um
     // nome de exibição e/ou um "responder para", o e-mail da automação sai com
-    // eles. O ENDEREÇO do `From` continua sendo o da PLATAFORMA — quem entrega
-    // não muda nesta fatia (o SMTP próprio é a fatia 2). Sem configuração, as
-    // duas chaves ficam AUSENTES e o envio sai byte a byte como sempre saiu:
-    // `fromName: undefined` não é o mesmo que a chave ausente para quem monta o
-    // cabeçalho (o SMTP da plataforma usa o `fromName` DELE quando ninguém
-    // passa um).
+    // eles. Sem configuração, as duas chaves ficam AUSENTES e o envio sai byte a
+    // byte como sempre saiu (`fromName: undefined` não é o mesmo que a chave
+    // ausente para quem monta o cabeçalho).
     ...(remetente.fromName ? { fromName: remetente.fromName } : {}),
     ...(remetente.replyTo ? { replyTo: remetente.replyTo } : {}),
     // Mesma tag da cobrança, com o valor que diz de ONDE veio: no painel da
     // Resend dá para separar o envio de automação do convite de equipe.
     tags: [{ name: "origem", value: "automacao" }],
-  });
+  };
+  // DE QUEM o e-mail sai (#3287, fatia da conta própria): se a organização
+  // conectou a CONTA Resend DELA, este envio sai por ela — o domínio no `From:`
+  // é o da organização e os eventos de entrega caem na conta dele. Sem conta
+  // conectada, o roteador da plataforma entrega como sempre. Erro de leitura
+  // ou cifra inválida não autoriza trocar a identidade de quem envia.
+  let conta;
+  try {
+    conta = await carregarContaResend(ctx.admin, ctx.organizationId);
+  } catch {
+    return {
+      type: "send_email",
+      status: "failed",
+      error: "conta_de_email_indisponivel",
+      detail: { destinatario, via: "resend" },
+    };
+  }
+  const resultado = conta
+    ? { ...(await enviarPelaContaDaOrganizacao(conta, pedido)), via: "resend" as const }
+    : await sendEmail(pedido);
 
   const base = { destinatario, via: resultado.via ?? null };
   if (!resultado.ok) {

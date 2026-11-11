@@ -91,7 +91,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     );
     // Mesma razão da listagem: o nome entra na borda HTTP, não no handler que o
     // MCP compartilha. Aqui é UM lookup, não N.
-    const [comNome] = await comNomeDoAtendente([conv]);
+    const [comNome] = await comNomeDoAtendente(activeOrg.orgId, [conv]);
     return ok(comNome ?? conv, { requestId });
   } catch (err) {
     if (err instanceof ApiError) {

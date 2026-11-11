@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
 import type { PreviaSalva } from "@/lib/prospecting/previa";
+import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 
 /**
  * Os dois números do RITMO da campanha, com os mesmos limites no início e no
@@ -21,6 +22,49 @@ export const ofertasDaCampanhaSchema = z
   .max(3)
   .default(["site"]);
 export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
+
+/**
+ * Rótulos de tela de cada oferta. Fonte única: a tela da campanha (com `t()`), o
+ * contexto que o agente lê em cada turno e a ferramenta de auditoria usam estes
+ * mesmos textos, para os três lugares não divergirem.
+ */
+export const ROTULOS_DAS_OFERTAS = {
+  site: "Site profissional",
+  automacao_crm: "Automação do atendimento (CRM)",
+  automacao_n8n: "Automações e integrações (N8N)",
+} as const satisfies Record<OfertaDaCampanha, string>;
+
+/**
+ * Etiquetas que a campanha põe no CONTATO antes da primeira mensagem (spec 27). Até 5, na
+ * mesma forma que o CRM guarda (`normalizarTags`). Sem `.default()`: configuração gravada
+ * antes desta chave existir continua SEM a chave, e a comparação de `activateCampaign`
+ * segue igual para ela. Lista vazia (ou só de espaços) = nenhuma etiqueta.
+ */
+export const CONTACT_TAGS_MAXIMO = 5;
+const contactTagsSchema = z
+  .array(z.string().max(TAMANHO_MAXIMO_DA_TAG))
+  .max(CONTACT_TAGS_MAXIMO)
+  .transform((tags) => normalizarTags(tags));
+
+/**
+ * Por que o texto do campo de etiquetas não pode ser gravado; `null` quando pode. Existe para a
+ * tela AVISAR em vez de cortar: `normalizarTags` corta em 40 caracteres, e a etiqueta cortada
+ * nunca casaria com a da skill; a sexta, se a tela a descartasse, sumiria sem ninguém saber.
+ */
+export function problemaNasEtiquetas(texto: string): "demais" | "longa" | null {
+  const partes = texto.split(",").map((parte) => parte.trim());
+  if (partes.some((parte) => parte.length > TAMANHO_MAXIMO_DA_TAG)) return "longa";
+  return normalizarTags(partes).length > CONTACT_TAGS_MAXIMO ? "demais" : null;
+}
+
+/**
+ * As etiquetas que o nicho da busca sugere, ou nenhuma quando ele não cabe. O nicho aceita 120
+ * caracteres e a etiqueta 40: cortar geraria uma etiqueta que nunca casa com a skill, e devolver
+ * lista inválida prenderia o Iniciar por um texto que o operador não digitou.
+ */
+export function etiquetasDoNicho(nicho: string): string[] {
+  return problemaNasEtiquetas(nicho) === null ? normalizarTags(nicho.split(",")) : [];
+}
 
 export const campaignConfigSchema = z
   .object({
@@ -48,6 +92,8 @@ export const campaignConfigSchema = z
     // O padrão é `first_message`: configuração gravada antes desta chave existir segue
     // igual, sem ninguém editar nada.
     exit_offer: z.enum(["first_message", "second_message"]).default("first_message"),
+    // Etiquetas do contato na abordagem (spec 27). Ausente = a campanha não etiqueta ninguém.
+    contact_tags: contactTagsSchema.optional(),
   })
   .strict();
 export const searchSchema = z
@@ -103,6 +149,16 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
       id: z.string().uuid(),
       candidate_ids: z.array(z.string().uuid()).min(1).max(5000),
       selected: z.boolean(),
+    })
+    .strict(),
+  // Trocar as etiquetas de contato DEPOIS de iniciada, com a campanha pausada (spec 27). Só vale
+  // para os contatos criados dali em diante; quem já foi abordado não é reescrito. Mesma régua
+  // de `adjust_pace`: lista vazia é um ajuste válido (tira as etiquetas), campo a mais é 422.
+  z
+    .object({
+      action: z.literal("adjust_tags"),
+      id: z.string().uuid(),
+      contact_tags: contactTagsSchema,
     })
     .strict(),
   z.object({ action: z.literal("discard_unselected"), id: z.string().uuid() }).strict(),
@@ -195,6 +251,15 @@ export const RAZAO_NAO_SELECIONADA = "Não selecionada pelo operador.";
 export function razaoDeAbordarSelecionado(selected: boolean): string | null {
   return selected ? null : RAZAO_NAO_SELECIONADA;
 }
+/**
+ * O que fica gravado em `prospecting_candidates.data.whatsapp` (`lib/prospecting/whatsapp.ts`).
+ * Mora AQUI, e não lá, de propósito: a tela importa este arquivo, e trazer o módulo da
+ * consulta para o grafo dela puxaria o seam inteiro de canais para o bundle do navegador.
+ */
+export interface VereditoWhatsapp {
+  existe: boolean;
+  verificado_em: string;
+}
 export interface Prospect {
   key: string;
   name: string;
@@ -215,6 +280,12 @@ export interface Prospect {
    * vencida, o envio escreve do zero.
    */
   previa?: PreviaSalva | null;
+  /**
+   * O telefone tem WhatsApp? Resposta do canal (`numeroTemConta`, via
+   * `lib/prospecting/whatsapp.ts`). Ausente = ainda não conferido (ou não há
+   * conexão capaz de conferir); `existe: false` tira a empresa da abordagem.
+   */
+  whatsapp?: VereditoWhatsapp | null;
 }
 
 /**

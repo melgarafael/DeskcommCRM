@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { provedorDaInstalacao } from "@/lib/cobranca/configuracao";
 import { sugestaoDoCadastro } from "@/lib/cobranca/documento";
+import { declararPlano, limitesDaTela } from "@/lib/cobranca/planos";
 import { lerUsoDaOrganizacao, type UsoDaOrganizacao } from "@/lib/cobranca/uso";
 import type { EstadoDaAssinatura, Modo, ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
 
@@ -121,7 +122,10 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
     plano: plano
       ? {
           id: plano.id, nome: plano.nome, preco_cents: plano.preco_cents, intervalo: plano.intervalo,
-          max_assentos: plano.max_assentos, max_canais: plano.max_canais, teto_ia_usd_cents: plano.teto_ia_usd_cents,
+          // o teto de cada recurso DERIVA da declaração do plano (planos.ts): a
+          // linha que não trouxe uma coluna lança aqui, em vez de a tela mostrar
+          // "sem limite" para um SELECT que só esqueceu o campo.
+          ...limitesDaTela(declararPlano(plano)),
         }
       : null,
     uso,
@@ -135,7 +139,7 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
       ? todos
           .filter((p) => p.arquivado_em === null && p.oferecido_ao_cliente && p.intervalo === plano.intervalo && p.id !== plano.id)
           .map((p) => ({ id: p.id, nome: p.nome, preco_cents: p.preco_cents, intervalo: p.intervalo,
-            max_assentos: p.max_assentos, max_canais: p.max_canais, teto_ia_usd_cents: p.teto_ia_usd_cents }))
+            ...limitesDaTela(declararPlano(p)) }))
       : [],
   };
 }

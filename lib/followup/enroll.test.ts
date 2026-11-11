@@ -164,4 +164,67 @@ describe("enrollFollowupFlow", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("flow_not_enrollable");
   });
+
+  it("#3923 — instalação SEM canal pareado devolve erro tratado, não uma exceção crua", async () => {
+    // `fn_service_begin` levanta `service_channel_not_found` (P0002) quando a
+    // organização não tem sessão de canal. Antes, o `throw` de
+    // `beginServiceAtOrigin` subia até a rota e virava 500 SEM CORPO.
+    const base = fakeDb({
+      id: POINTER,
+      organization_id: ORG,
+      status: "active",
+      active_version_id: VERSION,
+    });
+    const semCanal = {
+      ...base,
+      rpc: async () => ({
+        data: null,
+        error: { code: "P0002", message: "service_channel_not_found" },
+      }),
+    };
+
+    const result = await enrollFollowupFlow(semCanal as never, {
+      organizationId: ORG,
+      pointerId: POINTER,
+      contactId: CONTACT,
+      actorUserId: null,
+      requestId: "r-3923",
+    });
+
+    // 409: o corpo do pedido está correto; quem não está pronto é a instalação.
+    expect(result).toMatchObject({
+      ok: false,
+      code: "service_channel_not_found",
+      status: 409,
+    });
+    if (!result.ok) expect(result.message).toMatch(/conecte um número/i);
+  });
+
+  it("#3923 — OUTRO erro do banco continua propagando (a régua é da mensagem, não do P0002)", async () => {
+    // `P0002` é o `no_data_found` genérico do Postgres: se a correção olhasse
+    // só o código, qualquer "não achei a linha" viraria "conecte um número".
+    const base = fakeDb({
+      id: POINTER,
+      organization_id: ORG,
+      status: "active",
+      active_version_id: VERSION,
+    });
+    const outroErro = {
+      ...base,
+      rpc: async () => ({
+        data: null,
+        error: { code: "P0002", message: "parcela_nao_encontrada" },
+      }),
+    };
+
+    await expect(
+      enrollFollowupFlow(outroErro as never, {
+        organizationId: ORG,
+        pointerId: POINTER,
+        contactId: CONTACT,
+        actorUserId: null,
+        requestId: "r-3923",
+      }),
+    ).rejects.toMatchObject({ message: "parcela_nao_encontrada" });
+  });
 });

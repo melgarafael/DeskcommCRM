@@ -250,6 +250,149 @@ describe("MessageBubble — rótulo de origem", () => {
     expect(screen.getByText("Você")).toBeInTheDocument();
   });
 
+  // ─── #4031: o NOME de quem da equipe enviou ────────────────────────────────
+  //
+  // O caso real: um gestor abre a conversa em que DUAS consultoras falaram e
+  // não sabe quem prometeu o quê. `sent_via='user'` só dizia "um humano, pelo
+  // CRM"; o nome agora vem no payload (`sent_by_user_name`), resolvido uma vez
+  // por página — o balão segue sem fazer consulta.
+  it("#4031: mensagem do colega mostra 'Atendente · <primeiro nome>'", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          sent_via: "user",
+          sent_by_user_id: "u-andreia",
+          sent_by_user_name: "Andreia Cristina de Souza",
+        })}
+        viewerUserId="u-eu"
+      />,
+    );
+    // Só o primeiro nome: o balão é estreito, e o sobrenome não distingue
+    // ninguém numa equipe de duas pessoas.
+    expect(screen.getByText("Atendente · Andreia")).toBeInTheDocument();
+    expect(screen.queryByText(/Cristina/)).not.toBeInTheDocument();
+  });
+
+  it("#4031: duas pessoas da equipe na MESMA conversa saem com nomes distintos", () => {
+    const { unmount } = render(
+      <MessageBubble
+        message={msg({
+          id: "m-andreia",
+          sent_via: "user",
+          sent_by_user_id: "u-andreia",
+          sent_by_user_name: "Andreia",
+        })}
+        viewerUserId="u-eu"
+      />,
+    );
+    expect(screen.getByText("Atendente · Andreia")).toBeInTheDocument();
+    unmount();
+    render(
+      <MessageBubble
+        message={msg({
+          id: "m-thamyres",
+          sent_via: "user",
+          sent_by_user_id: "u-thamyres",
+          sent_by_user_name: "Thamyres",
+        })}
+        viewerUserId="u-eu"
+      />,
+    );
+    expect(screen.getByText("Atendente · Thamyres")).toBeInTheDocument();
+  });
+
+  it("#4031: o AUTOR continua vendo 'Você' — o próprio nome não aparece", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          sent_via: "user",
+          sent_by_user_id: "u-eu",
+          sent_by_user_name: "Marcos Vinicius",
+        })}
+        viewerUserId="u-eu"
+      />,
+    );
+    expect(screen.getByText("Você")).toBeInTheDocument();
+    expect(screen.queryByText(/Marcos/)).not.toBeInTheDocument();
+  });
+
+  it("#4031: sem nome no payload (linha antiga, lookup caído) o rótulo é só 'Atendente'", () => {
+    // O nome é cortesia; `sent_by_user_id` é a verdade. Sem ele o balão não
+    // pode quebrar nem inventar identidade.
+    render(
+      <MessageBubble
+        message={msg({ sent_via: "user", sent_by_user_id: "u-andreia", sent_by_user_name: null })}
+        viewerUserId="u-eu"
+      />,
+    );
+    expect(screen.getByText("Atendente")).toBeInTheDocument();
+  });
+
+  it("#4031: nome em branco cai no mesmo 'Atendente', sem ' · ' pendurado", () => {
+    render(
+      <MessageBubble
+        message={msg({ sent_via: "user", sent_by_user_id: "u-andreia", sent_by_user_name: "   " })}
+        viewerUserId="u-eu"
+      />,
+    );
+    expect(screen.getByText("Atendente")).toBeInTheDocument();
+    expect(screen.queryByText(/Atendente ·\s*$/)).not.toBeInTheDocument();
+  });
+
+  it("#4031: sent_by_user_id nulo com nome no payload NÃO vira nome de atendente", () => {
+    // Não existe linha de `messages` com nome e sem id; se existir, é dado
+    // inconsistente e o rótulo não afirma identidade nenhuma.
+    render(
+      <MessageBubble
+        message={msg({ sent_via: "user", sent_by_user_id: null, sent_by_user_name: "Andreia" })}
+        viewerUserId="u-eu"
+      />,
+    );
+    expect(screen.getByText("Atendente")).toBeInTheDocument();
+    expect(screen.queryByText(/Andreia/)).not.toBeInTheDocument();
+  });
+
+  it("#4031: nome comprido não estoura o balão — primeiro nome + corte por classe", () => {
+    // jsdom não mede layout: a prova aqui é de ESTRUTURA (o texto é o primeiro
+    // nome, e ele mora num `truncate`), não de pixel.
+    render(
+      <MessageBubble
+        message={msg({
+          sent_via: "user",
+          sent_by_user_id: "u-longo",
+          sent_by_user_name: "Maximiliano Bartholomeu da Conceição Albuquerque Nascimento",
+        })}
+        viewerUserId="u-eu"
+      />,
+    );
+    const rotulo = screen.getByText("Atendente · Maximiliano");
+    expect(rotulo).toBeInTheDocument();
+    expect(screen.queryByText(/Albuquerque/)).not.toBeInTheDocument();
+    expect(rotulo).toHaveClass("truncate");
+  });
+
+  it("#4031: recebida do cliente NÃO ganha rótulo de atendente, mesmo com nome no payload", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          direction: "inbound",
+          sent_via: "user",
+          sent_by_user_id: "u-andreia",
+          sent_by_user_name: "Andreia",
+        })}
+      />,
+    );
+    expect(screen.queryByText(/Atendente/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Andreia/)).not.toBeInTheDocument();
+  });
+
+  it("#4031: a IA continua 'IA · Clara' — a equipe ganhou nome, a máquina não perdeu", () => {
+    render(
+      <MessageBubble message={msg({ sent_via: "ai", metadata: { ai_actor_name: "Clara" } })} />,
+    );
+    expect(screen.getByText("IA · Clara")).toBeInTheDocument();
+  });
+
   it("IA continua mostrando 'IA' (comportamento preservado)", () => {
     render(<MessageBubble message={msg({ sent_via: "ai" })} />);
     expect(screen.getByText("IA")).toBeInTheDocument();
@@ -642,5 +785,45 @@ describe("MessageBubble — menções de grupo (#3566)", () => {
   it("CONTROLE: mensagem sem menção é exibida byte a byte como veio", () => {
     render(<MessageBubble message={msg({ direction: "inbound", body: "bom dia, grupo", metadata: {} })} />);
     expect(screen.getByText("bom dia, grupo")).toBeInTheDocument();
+  });
+});
+
+/**
+ * MENSAGEM QUE SAIU POR MODELO: o balão diz qual modelo e mostra as opções que
+ * o cliente recebeu. Antes, só o corpo aparecia — quem lia a conversa não sabia
+ * que tinha saído por modelo, e a resposta do cliente ("Quero mudar algo")
+ * ficava solta, sem a pergunta que a originou.
+ */
+describe("mensagem enviada por modelo", () => {
+  it("⭐ mostra o selo com o nome do modelo e os botões, na ordem", () => {
+    render(
+      <MessageBubble
+        message={msg({
+          type: "template",
+          template_name: "confirmacao_de_entrega",
+          body: "Olá! Seu pedido sai hoje.",
+          metadata: { template_buttons: ["Sim, confirmo", "Quero mudar algo"] },
+        })}
+      />,
+    );
+    expect(screen.getByTestId("selo-do-modelo").textContent).toBe("Modelo do WhatsApp · confirmacao_de_entrega");
+    const opcoes = screen.getByRole("list", { name: "Opções enviadas ao cliente" });
+    expect(Array.from(opcoes.querySelectorAll("li")).map((li) => li.textContent)).toEqual([
+      "Sim, confirmo",
+      "Quero mudar algo",
+    ]);
+    expect(screen.getByText("Olá! Seu pedido sai hoje.")).toBeTruthy();
+  });
+
+  it("modelo sem botões gravados (envio antigo): o selo aparece, a lista não", () => {
+    render(<MessageBubble message={msg({ type: "template", template_name: "lembrete", metadata: {} })} />);
+    expect(screen.getByTestId("selo-do-modelo")).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Opções enviadas ao cliente" })).toBeNull();
+  });
+
+  it("texto comum não ganha selo nem opções — mesmo com botões no metadata", () => {
+    render(<MessageBubble message={msg({ metadata: { template_buttons: ["X"] } })} />);
+    expect(screen.queryByTestId("selo-do-modelo")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Opções enviadas ao cliente" })).toBeNull();
   });
 });

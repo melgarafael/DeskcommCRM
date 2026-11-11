@@ -7,6 +7,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useSystemVersion } from "@/hooks/system/useSystemVersion";
 import { blocosVisiveis, instalacaoAnteriorAoArtigo, rotuloDaVersao } from "@/lib/ajuda/hub";
 import { destinosDaInterface } from "@/lib/navigation/interface";
+import { BlocoDoPapel } from "./_papel";
 
 /**
  * A versão da instalação vem de FORA deste componente (#3567, F4).
@@ -54,6 +55,9 @@ export function AjudaConteudo({
           {t("O caminho para cada tarefa, e onde ir quando algo não sai como esperado.")}
         </p>
       </header>
+
+      {/* O alcance do papel vem ANTES do índice: "posso" antes de "onde". */}
+      <BlocoDoPapel papel={activeOrg?.role ?? null} destinos={destinos} />
 
       <div className="grid gap-6 md:grid-cols-2">
         {blocos.map((bloco) => (

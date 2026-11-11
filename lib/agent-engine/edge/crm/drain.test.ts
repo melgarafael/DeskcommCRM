@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
 import { TIPOS_DERIVAVEIS } from '@/lib/messaging/media/derivable';
+import { ANCORA_ISO_8601, LOTE_DE_REABERTURA } from '@/lib/messaging/media/leitura-adiada';
 
 import { drainTick } from './drain';
 
@@ -74,13 +75,30 @@ function poolFalso(
   msgRow: { type: string; media_derived_status: string | null; quando?: string },
   calls: string[],
   capacidade: { tem_agente: boolean; tem_roteador: boolean } = { tem_agente: true, tem_roteador: false },
+  reabertura: { rows: unknown[] } | Error = { rows: [] },
+  params: unknown[][] = [],
+  /** A versão publicada do dono da conversa (`active_ai_agent_id`); ausente = sem dono. */
+  agente?: Record<string, unknown>,
+  /** `haLeitorDaDescricao`: a empresa tem quem veja a foto (outro agente, token...). */
+  temLeitor = true,
 ) {
-  const query = vi.fn().mockImplementation((sql: string) => {
+  const query = vi.fn().mockImplementation((sql: string, p?: unknown[]) => {
     calls.push(sql);
+    params.push(p ?? []);
+    if (sql.includes('as tem_leitor')) return { rows: [{ settings: {}, tem_leitor: temLeitor }] };
+    if (agente && sql.includes('select active_ai_agent_id')) return { rows: [{ active_ai_agent_id: 'ag1', contact_id: null }] };
+    if (agente && sql.includes('a.published_version_id') && sql.includes('a.id = $2')) return { rows: [agente] };
     if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(Number(process.env.__ESPERA__ ?? 0))] };
     if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [capacidade] };
+    // A reabertura da foto adiada também cita `media_derived_status` (ela o
+    // zera): o ramo dela vem ANTES, senão a consulta de espera e a reabertura
+    // seriam respondidas pela mesma linha falsa.
+    if (sql.includes('derivacao_adiada')) {
+      if (reabertura instanceof Error) throw reabertura;
+      return reabertura;
+    }
     // A consulta real filtra por TIPOS_DERIVAVEIS — linha de texto não entra. O
     // falso banco precisa recusá-la também, senão devolveria um texto para uma
     // pergunta que o Postgres nunca responderia, e o teste passaria por engano.
@@ -88,7 +106,9 @@ function poolFalso(
     // A idade da mídia acompanha a do evento nos testes: o caso medido é o do
     // LOTE (foto + texto chegando juntos), onde as duas têm a mesma idade.
     if (sql.includes('media_derived_status')) {
-      if (!TIPOS_DERIVAVEIS.has(msgRow.type)) return { rows: [] };
+      // Os tipos esperados vêm do PARÂMETRO, como no Postgres.
+      const tipos = (p?.[2] as string[] | undefined) ?? [...TIPOS_DERIVAVEIS];
+      if (!tipos.includes(msgRow.type)) return { rows: [] };
       const quando =
         msgRow.quando ?? new Date(Date.now() - Number(process.env.__ESPERA__ ?? 0)).toISOString();
       return { rows: [{ ...msgRow, quando }] };
@@ -102,7 +122,7 @@ it('áudio ainda sem transcrição: turno é ADIADO, sem enfileirar job', async 
   const calls: string[] = [];
   process.env.__ESPERA__ = '1000'; // chegou há 1s — dentro do teto
   await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, calls), knobs, log);
-  expect(calls.some((s) => s.includes('media_derived_status'))).toBe(true);
+  expect(calls.some((s) => /as\s+quando/.test(s))).toBe(true);
   expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
   expect(calls.some((s) => s.includes("status = 'pending'") && s.includes('next_attempt_at'))).toBe(true);
   expect(calls.some((s) => s.includes("status = 'done'"))).toBe(false);
@@ -165,9 +185,7 @@ it('foto + pergunta em texto: a espera da mídia olha a CONVERSA, não o id do e
   // A mídia pendente é a FOTO; o evento veio do TEXTO que chegou depois dela.
   await drainTick(poolFalso({ type: 'image', media_derived_status: null }, calls), knobs, log);
 
-  const consultaDeMidia = calls.find(
-    (s) => s.includes('media_derived_status') && s.includes('conversation_id'),
-  );
+  const consultaDeMidia = calls.find((s) => /as\s+quando/.test(s) && s.includes('conversation_id'));
   expect(consultaDeMidia, 'a espera precisa consultar a conversa').toBeDefined();
   // O recorte por id de mensagem era o defeito: ele ignora a foto que chegou
   // antes do texto que disparou o evento.
@@ -188,12 +206,253 @@ it('foto + pergunta em texto: a espera da mídia olha a CONVERSA, não o id do e
  */
 it('espera da mídia: âncora é created_at (não sent_at) e só conta mídia com media_url', async () => {
   const calls: string[] = [];
+  const params: unknown[][] = [];
   process.env.__ESPERA__ = '1000';
-  await drainTick(poolFalso({ type: 'image', media_derived_status: null }, calls), knobs, log);
-  const consultaDeMidia = calls.find((s) => s.includes('media_derived_status')) ?? '';
-  expect(consultaDeMidia).toMatch(/created_at\s+as\s+quando/);
+  await drainTick(
+    poolFalso({ type: 'image', media_derived_status: null }, calls, undefined, undefined, params),
+    knobs, log,
+  );
+  const iEspera = calls.findIndex((s) => /as\s+quando/.test(s));
+  const consultaDeMidia = calls[iEspera] ?? '';
+  // A âncora é o PEDIDO da leitura quando ela foi reaberta (foto adiada por
+  // falta de leitor), senão a chegada. Sem isto, uma foto antiga reaberta agora
+  // já nasceria além do teto e o turno não esperaria a descrição que acabou de
+  // pedir. E a ordem segue a âncora: uma reaberta antiga fora das 20 primeiras
+  // por `created_at` nunca seria esperada.
+  //
+  // A âncora mora em `metadata`, e o cast dela só roda DEPOIS de o texto casar o
+  // ISO-8601 de calendário real: lixo ali derrubava a consulta inteira e calava a
+  // IA da empresa. Data futura cai na chegada — `least(…, now())` seria "pedida
+  // agora" a cada rodada, e o turno esperaria para sempre.
+  expect(consultaDeMidia).toMatch(
+    /case\s+when\s+coalesce\(metadata->>'derivacao_pedida_em',\s*''\)\s+!~\s+\$4\s+then\s+created_at/,
+  );
+  expect(consultaDeMidia).toMatch(
+    /when\s+\(metadata->>'derivacao_pedida_em'\)::timestamptz\s+>\s+now\(\)\s+then\s+created_at/,
+  );
+  expect(consultaDeMidia).toMatch(/end\s+as\s+quando/);
+  expect(params[iEspera]?.[3]).toBe(ANCORA_ISO_8601);
+  expect(consultaDeMidia).toMatch(/order by quando desc/);
   expect(consultaDeMidia).not.toMatch(/sent_at/);
   expect(consultaDeMidia).toMatch(/media_url\s+is\s+not\s+null/);
+});
+
+/**
+ * O padrão da âncora aceita o que `jsonb_build_object('…', now())` grava e
+ * recusa tudo o que o Postgres não converteria — o mesmo texto roda no banco
+ * (`tests/invariants/leitura-adiada.test.ts` prova o cast lá). Data que não
+ * existe no calendário casaria um padrão só de forma e derrubaria o cast.
+ */
+it.each([
+  ['2026-10-31T18:01:00.123456+00:00', true],
+  ['2026-10-31T18:01:00+00:00', true],
+  ['2026-10-31T15:01:00.5-03:00', true],
+  ['2026-10-31T23:31:00.1+05:30', true],
+  ['2026-10-31T18:01:00Z', true],
+  ['2028-02-29T10:00:00+00:00', true],
+  ['2000-02-29T10:00:00+00:00', true],
+  ['2026-02-29T10:00:00+00:00', false],
+  ['2026-02-30T10:00:00+00:00', false],
+  ['2026-04-31T10:00:00+00:00', false],
+  ['2026-13-01T10:00:00+00:00', false],
+  ['2026-10-31T24:00:00+00:00', false],
+  ['2026-10-31T18:01:00', false],
+  ['2026-10-31', false],
+  ['infinity', false],
+  ['now', false],
+  ['lixo', false],
+  ['', false],
+  ["2026-10-31T18:01:00+00:00'; drop table messages; --", false],
+])('âncora %j casa o padrão? %s', (texto, casa) => {
+  expect(new RegExp(ANCORA_ISO_8601).test(texto)).toBe(casa);
+});
+
+/**
+ * FOTO ADIADA POR FALTA DE LEITOR (MEDIA_VISION_WITHOUT_READER=defer): o turno
+ * que VAI ler a conversa pede a descrição e espera por ela. O ponto certo é
+ * depois do portão de quem atende e da elegibilidade — é ali que se sabe que um
+ * agente vai ler — e antes da espera, que segura o primeiro turno.
+ */
+it('foto adiada: o turno que vai ler pede a leitura da conversa e ADIA', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      // A espera vê a foto reaberta, com status nulo e a âncora no pedido.
+      { type: 'image', media_derived_status: null, quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: false },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      params,
+    ),
+    knobs,
+    log,
+  );
+  const iPortao = calls.findIndex((s) => s.includes('tem_agente'));
+  const iReabre = calls.findIndex((s) => s.includes('derivacao_adiada'));
+  expect(iReabre, 'a reabertura não rodou').toBeGreaterThan(-1);
+  expect(iReabre, 'a reabertura tem de vir DEPOIS do portão de quem atende').toBeGreaterThan(iPortao);
+  // Sem dono resolvido, o lote de sempre e sem limite de idade (o dreno lê agora).
+  expect(params[iReabre]).toEqual([event.organization_id, event.payload.conversation_id, LOTE_DE_REABERTURA, null]);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  expect(calls.some((s) => s.includes("status = 'pending'") && s.includes('next_attempt_at'))).toBe(true);
+});
+
+/**
+ * O AGENTE QUE DESLIGOU "VER AS FOTOS" (9108) recebe o aviso de imagem não vista
+ * no lugar da descrição. Mas quem responde o turno é escolhido DEPOIS do dreno
+ * (`resolveTurnAgent`: roteador, campanha) e pode ser outro agente, que vê. Então
+ * o "não" do agente da conversa não basta: a régua é a da empresa
+ * (`haLeitorDaDescricao`), e a espera da foto não depende do agente.
+ */
+const versaoDoDono = (extra: Record<string, unknown>) => ({
+  agent_id: 'ag1', version_id: 'v1', agent_name: 'Recepção', system_prompt: 'x', provider: 'anthropic',
+  model: 'claude-sonnet-4-6', max_steps: 10, history_message_window: 20, history_token_window: 8000,
+  inbound_debounce_ms: null, multimodal_input: true, image_vision_enabled: true, ...extra,
+});
+
+it('agente que não vê imagens, numa empresa sem quem veja: não reabre, e a foto adiada não segura o turno', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: 'skipped', quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: false },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      [],
+      versaoDoDono({ image_vision_enabled: false }),
+      false,
+    ),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes('as tem_leitor')), 'o não do agente tem de consultar a empresa').toBe(true);
+  expect(calls.some((s) => s.includes('derivacao_adiada')), 'pediu visão sem ninguém que a leia').toBe(false);
+  expect(calls.some((s) => s.includes('job_queue')), 'o turno ficou segurado pela foto adiada').toBe(true);
+});
+
+it('agente da conversa sem visão, mas a empresa tem quem veja (o roteador pode entregar a outro): reabre o lote de sempre e espera', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: null, quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: true },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      params,
+      versaoDoDono({ image_vision_enabled: false, history_message_window: 37 }),
+      true,
+    ),
+    knobs,
+    log,
+  );
+  const iReabre = calls.findIndex((s) => s.includes('derivacao_adiada'));
+  expect(iReabre, 'o agente que vê, escolhido depois, ficaria sem a descrição').toBeGreaterThan(-1);
+  expect(params[iReabre]).toEqual([event.organization_id, event.payload.conversation_id, LOTE_DE_REABERTURA, null]);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+});
+
+it('foto JÁ sendo descrita segura o turno mesmo com o agente da conversa sem visão (o comprovante + "já paguei")', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: 'pending', quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: true },
+      { rows: [] },
+      params,
+      versaoDoDono({ image_vision_enabled: false }),
+    ),
+    knobs,
+    log,
+  );
+  const iEspera = calls.findIndex((s) => /as\s+quando/.test(s));
+  expect(iEspera).toBeGreaterThan(-1);
+  expect(params[iEspera]?.[2], 'a espera tirou a foto da lista').toEqual([...TIPOS_DERIVAVEIS]);
+  expect(calls.some((s) => s.includes('job_queue')), 'o turno saiu sem a descrição que estava chegando').toBe(false);
+});
+
+it('sem agente resolvido (número só com roteador) e sem quem veja na empresa: não reabre', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: 'skipped', quando: new Date().toISOString() },
+      calls,
+      { tem_agente: false, tem_roteador: true },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      [],
+      undefined,
+      false,
+    ),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes('as tem_leitor'))).toBe(true);
+  expect(calls.some((s) => s.includes('derivacao_adiada')), 'pagou visão sem ninguém que a leia').toBe(false);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
+});
+
+it('controle: o mesmo agente com a opção ligada reabre até a janela de histórico DELE e espera', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: null, quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: false },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      params,
+      versaoDoDono({ image_vision_enabled: true, history_message_window: 37 }),
+    ),
+    knobs,
+    log,
+  );
+  const iReabre = calls.findIndex((s) => s.includes('derivacao_adiada'));
+  expect(iReabre).toBeGreaterThan(-1);
+  expect(params[iReabre]).toEqual([event.organization_id, event.payload.conversation_id, 37, null]);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+});
+
+it('agente que não vê imagens ainda espera o ÁUDIO', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '1000';
+  await drainTick(
+    poolFalso({ type: 'audio', media_derived_status: null }, calls, undefined, undefined, [],
+      versaoDoDono({ image_vision_enabled: false })),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  expect(calls.some((s) => s.includes("status = 'pending'") && s.includes('next_attempt_at'))).toBe(true);
+});
+
+it('controle: sem quem atenda, nada é reaberto (a reabertura vem depois do portão)', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(textoSimples, calls, { tem_agente: false, tem_roteador: false }),
+    knobs, log,
+  );
+  expect(calls.some((s) => s.includes('derivacao_adiada'))).toBe(false);
+});
+
+it('controle: a reabertura falhou — o turno segue o fluxo normal', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(textoSimples, calls, { tem_agente: true, tem_roteador: false }, new Error('deadlock detected')),
+    knobs, log,
+  );
+  expect(calls.some((s) => s.includes('derivacao_adiada'))).toBe(true);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
 });
 
 /**
@@ -226,7 +485,7 @@ it('áudio esperando 90s (janela 45s–120s do #530): turno segue ADIADO, não d
   const calls: string[] = [];
   process.env.__ESPERA__ = '90000'; // 90s — dentro do teto de 120s e fora do antigo de 45s
   await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, calls), knobs, log);
-  expect(calls.some((s) => s.includes('media_derived_status'))).toBe(true);
+  expect(calls.some((s) => /as\s+quando/.test(s))).toBe(true);
   // Nada de job: a resposta não sai antes de o texto derivado existir.
   expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
   // Adiar não é falha: volta a 'pending' com espera curta, sem gastar tentativa.

@@ -18,6 +18,13 @@ import {
   type BotaoDaDefinicao,
 } from "@/lib/channels/template-conteudo";
 import { cn } from "@/lib/utils";
+import {
+  LIMITES_DO_MODELO,
+  problemasDoModelo,
+  textoDoProblema,
+  type CampoDoModelo,
+  type ProblemaDoModelo,
+} from "@/lib/channels/limites-do-modelo";
 import { useT } from "@/hooks/i18n/useT";
 import { useLocaleDaOrgAtiva } from "@/hooks/auth/AuthProvider";
 import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
@@ -100,6 +107,75 @@ export function FormularioDaDefinicao({
   // descobre a exigência numa recusa que chega horas depois.
   const nVariaveis = contarVariaveis(corpo);
 
+  /**
+   * A RÉGUA, enquanto se digita (#3635).
+   *
+   * É a MESMA função que a rota usa antes de falar com a Meta: o que a tela
+   * deixa passar é o que a plataforma recebe. Medir aqui com números próprios
+   * faria a tela aprovar o que a rota recusa (ou o contrário) — o pior dos dois
+   * mundos, porque o operador só descobre depois do envio.
+   */
+  const problemas = problemasDoModelo({
+    corpo,
+    cabecalhoTexto: cabecalho,
+    rodape,
+    botoes,
+    exemplos,
+  });
+  const problemaDe = (campo: CampoDoModelo, botao?: number): ProblemaDoModelo | undefined =>
+    problemas.find((p) => p.campo === campo && (botao === undefined || p.botao === botao));
+
+  /**
+   * O contador de um campo — cinza enquanto cabe, VERMELHO quando estoura.
+   *
+   * Antes o `onChange` cortava o texto no limite: quem colava 1500 caracteres
+   * via o campo parar no meio da palavra, sem saber por quê. Contar e AVISAR é
+   * o que deixa corrigir; cortar em silêncio é o que fazia perder texto.
+   */
+  const contador = (campo: CampoDoModelo, atual: number, limite: number) => {
+    const estourou = atual > limite;
+    return (
+      <span
+        data-contador={campo}
+        data-excedido={estourou ? "true" : undefined}
+        className={cn(
+          "self-end text-[10px]",
+          estourou ? "font-semibold text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {atual}/{limite}
+      </span>
+    );
+  };
+
+  /** A mensagem do campo culpado — diz o atual, o limite e o número quando há. */
+  const erroDoCampo = (campo: CampoDoModelo, problema: ProblemaDoModelo | undefined) =>
+    problema ? (
+      <p
+        data-erro-do-campo={campo}
+        role="alert"
+        className="basis-full text-[11px] font-medium text-destructive"
+      >
+        {textoDoProblema(problema, t)}
+      </p>
+    ) : null;
+
+  // Contadores e recusas calculados FORA do JSX: são nome de campo e número,
+  // não texto de tela — e o guarda de i18n lê literal em JSX como prosa crua.
+  const contadorDoCabecalho = contador(
+    "cabecalhoTexto",
+    cabecalho.length,
+    LIMITES_DO_MODELO.cabecalhoTexto,
+  );
+  const erroDoCabecalho = erroDoCampo("cabecalhoTexto", problemaDe("cabecalhoTexto"));
+  const contadorDoCorpo = contador("corpo", corpo.length, LIMITE_CORPO);
+  const erroDoCorpo = erroDoCampo("corpo", problemaDe("corpo"));
+  const contadorDoRodape = contador("rodape", rodape.length, LIMITE_RODAPE);
+  const erroDoRodape = erroDoCampo("rodape", problemaDe("rodape"));
+  // Fora do JSX de propósito: a cerca de botão mudo (`controle-decorativo`) lê o
+  // atributo até o primeiro `>`, e um `problemas.length > 0` inline a cortaria.
+  const temProblema = problemas.length > 0;
+
   return (
     <div
       className="grid scroll-mt-4 grid-cols-1 gap-4 rounded-md border border-border p-3 lg:grid-cols-[1fr_20rem]"
@@ -162,93 +238,101 @@ export function FormularioDaDefinicao({
 
         {/* CABEÇALHO opcional: texto OU mídia, nunca os dois — a plataforma
             aceita um formato por definição, e mandar ambos é recusa. */}
-        <div className="flex flex-wrap gap-2">
-          <input
-            value={cabecalho}
-            onChange={(e) => {
-              setCabecalho(e.target.value);
-              if (e.target.value) setMidiaUrl("");
-            }}
-            placeholder={t("Cabeçalho de texto (opcional)")}
-            aria-label={t("Cabeçalho de texto")}
-            disabled={!!midiaUrl}
-            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
-          />
-          {/* SUBIR, e não colar URL. Colar exigia que o operador já tivesse a
-              imagem hospedada em algum lugar público — que é justamente o que
-              ele não tem. O arquivo vai para o nosso storage e a rota devolve
-              um link assinado, que é o que a plataforma baixa na revisão. */}
-          <label
-            className={cn(
-              "flex h-9 min-w-0 flex-1 cursor-pointer items-center justify-center rounded-md border border-dashed border-input px-2 text-sm text-muted-foreground hover:bg-muted",
-              cabecalho && "pointer-events-none opacity-50",
-            )}
-          >
-            {subindo
-              ? t("Subindo…")
-              : midiaUrl
-                ? t("Trocar imagem")
-                : t("Subir imagem (JPG/PNG)")}
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap gap-2">
             <input
-              type="file"
-              accept="image/jpeg,image/png"
-              className="hidden"
-              aria-label={t("Imagem do cabeçalho")}
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                setSubindo(true);
-                try {
-                  const fd = new FormData();
-                  fd.append("file", f);
-                  const r = await fetch(rotaDeMidia, {
-                    method: "POST",
-                    body: fd,
-                  });
-                  const j = (await r.json()) as { data?: { url?: string }; error?: { message?: string } };
-                  if (!r.ok || !j.data?.url) {
-                    // A mensagem da rota CHEGA ao operador: é ela que
-                    // distingue "formato" de "tamanho" de "erro nosso".
-                    toast.error(t(j.error?.message ?? "Não consegui subir a imagem."));
-                    return;
-                  }
-                  setMidiaUrl(j.data.url);
-                  setCabecalho("");
-                } finally {
-                  setSubindo(false);
-                  e.target.value = "";
-                }
+              value={cabecalho}
+              onChange={(e) => {
+                setCabecalho(e.target.value);
+                if (e.target.value) setMidiaUrl("");
               }}
+              placeholder={t("Cabeçalho de texto (opcional)")}
+              aria-label={t("Cabeçalho de texto")}
+              disabled={!!midiaUrl}
+              className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
             />
-          </label>
+            {/* SUBIR, e não colar URL. Colar exigia que o operador já tivesse a
+                imagem hospedada em algum lugar público — que é justamente o que
+                ele não tem. O arquivo vai para o nosso storage e a rota devolve
+                um link assinado, que é o que a plataforma baixa na revisão. */}
+            <label
+              className={cn(
+                "flex h-9 min-w-0 flex-1 cursor-pointer items-center justify-center rounded-md border border-dashed border-input px-2 text-sm text-muted-foreground hover:bg-muted",
+                cabecalho && "pointer-events-none opacity-50",
+              )}
+            >
+              {subindo
+                ? t("Subindo…")
+                : midiaUrl
+                  ? t("Trocar imagem")
+                  : t("Subir imagem (JPG/PNG)")}
+              <input
+                type="file"
+                accept="image/jpeg,image/png"
+                className="hidden"
+                aria-label={t("Imagem do cabeçalho")}
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  setSubindo(true);
+                  try {
+                    const fd = new FormData();
+                    fd.append("file", f);
+                    const r = await fetch(rotaDeMidia, {
+                      method: "POST",
+                      body: fd,
+                    });
+                    const j = (await r.json()) as { data?: { url?: string }; error?: { message?: string } };
+                    if (!r.ok || !j.data?.url) {
+                      // A mensagem da rota CHEGA ao operador: é ela que
+                      // distingue "formato" de "tamanho" de "erro nosso".
+                      toast.error(t(j.error?.message ?? "Não consegui subir a imagem."));
+                      return;
+                    }
+                    setMidiaUrl(j.data.url);
+                    setCabecalho("");
+                  } finally {
+                    setSubindo(false);
+                    e.target.value = "";
+                  }
+                }}
+              />
+            </label>
+          </div>
+          {contadorDoCabecalho}
+          {erroDoCabecalho}
         </div>
 
         <div className="flex flex-col gap-1">
           <textarea
             value={corpo}
-            onChange={(e) => setCorpo(e.target.value.slice(0, LIMITE_CORPO))}
+            onChange={(e) => setCorpo(e.target.value)}
             placeholder={t("Texto da mensagem. Use {{1}}, {{2}} para os valores que mudam.")}
             aria-label={t("Conteúdo")}
-            className="min-h-20 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+            className={cn(
+              "min-h-20 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm",
+              problemaDe("corpo") && "border-destructive",
+            )}
           />
           {/* O contador existe porque passar do limite é RECUSA, e a recusa
               chega horas depois sem dizer que o problema era o tamanho. */}
-          <span className="self-end text-[10px] text-muted-foreground">
-            {corpo.length}/{LIMITE_CORPO}
-          </span>
+          {contadorDoCorpo}
+          {erroDoCorpo}
         </div>
 
         <div className="flex flex-col gap-1">
           <input
             value={rodape}
-            onChange={(e) => setRodape(e.target.value.slice(0, LIMITE_RODAPE))}
+            onChange={(e) => setRodape(e.target.value)}
             placeholder={t("Rodapé (opcional) — texto pequeno no fim da mensagem")}
             aria-label={t("Rodapé")}
-            className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm"
+            className={cn(
+              "h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm",
+              problemaDe("rodape") && "border-destructive",
+            )}
           />
-          <span className="self-end text-[10px] text-muted-foreground">
-            {rodape.length}/{LIMITE_RODAPE}
-          </span>
+          {contadorDoRodape}
+          {erroDoRodape}
         </div>
 
         {/* BOTÕES: até três, e cada tipo pede um campo diferente. URL sem
@@ -256,7 +340,16 @@ export function FormularioDaDefinicao({
             extra aparece junto com o tipo, e não escondido atrás de outro
             clique. */}
         <div className="flex flex-col gap-1.5">
-          {botoes.map((b, i) => (
+          {botoes.map((b, i) => {
+            // Por botão, e fora do JSX: o nome do campo não é texto de tela.
+            const contadorDoTexto = contador(
+              "textoDoBotao",
+              b.texto.length,
+              LIMITES_DO_MODELO.textoDoBotao,
+            );
+            const erroDoTexto = erroDoCampo("textoDoBotao", problemaDe("textoDoBotao", i + 1));
+            const erroDaUrl = erroDoCampo("urlDoBotao", problemaDe("urlDoBotao", i + 1));
+            return (
             <div key={i} className="flex flex-wrap items-center gap-2">
               <select
                 value={b.tipo}
@@ -285,8 +378,14 @@ export function FormularioDaDefinicao({
                 }}
                 placeholder={t("Texto do botão")}
                 aria-label={`${t("Texto do botão")} ${i + 1}`}
-                className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                className={cn(
+                  "h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm",
+                  problemaDe("textoDoBotao", i + 1) && "border-destructive",
+                )}
               />
+              {/* 25 caracteres é o teto da plataforma para o rótulo do botão —
+                  e o texto que não cabe é recusado na revisão, não na tela. */}
+              {contadorDoTexto}
               {b.tipo === "url" && (
                 <input
                   value={b.url ?? ""}
@@ -321,8 +420,13 @@ export function FormularioDaDefinicao({
               >
                 {t("remover")}
               </button>
+              {/* O erro do botão fica NA LINHA dele: com dois botões, "texto
+                  grande demais" sem número não diz qual corrigir. */}
+              {erroDoTexto}
+              {erroDaUrl}
             </div>
-          ))}
+            );
+          })}
           {botoes.length < LIMITE_BOTOES && (
             <button
               type="button"
@@ -344,24 +448,46 @@ export function FormularioDaDefinicao({
             <p className="text-[11px] text-amber-900 dark:text-amber-200">
               {t("A revisão exige um exemplo de cada valor. Sem eles o modelo é recusado.")}
             </p>
-            {Array.from({ length: nVariaveis }, (_, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="w-12 shrink-0 font-mono text-xs text-muted-foreground">
-                  {`{{${i + 1}}}`}
-                </span>
-                <input
-                  value={exemplos[i] ?? ""}
-                  onChange={(e) => {
-                    const proximo = [...exemplos];
-                    proximo[i] = e.target.value;
-                    setExemplos(proximo);
-                  }}
-                  placeholder={t("ex.: María")}
-                  aria-label={`${t("Exemplo do valor")} ${i + 1}`}
-                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-                />
-              </div>
-            ))}
+            {Array.from({ length: nVariaveis }, (_, i) => {
+              const semExemplo = problemas.some(
+                (p) => p.campo === "exemploDaVariavel" && p.variavel === i + 1,
+              );
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-12 shrink-0 font-mono text-xs text-muted-foreground">
+                    {`{{${i + 1}}}`}
+                  </span>
+                  <input
+                    value={exemplos[i] ?? ""}
+                    onChange={(e) => {
+                      const proximo = [...exemplos];
+                      proximo[i] = e.target.value;
+                      setExemplos(proximo);
+                    }}
+                    placeholder={t("ex.: María")}
+                    aria-label={`${t("Exemplo do valor")} ${i + 1}`}
+                    className={cn(
+                      "h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm",
+                      semExemplo && "border-destructive",
+                    )}
+                  />
+                </div>
+              );
+            })}
+            {/* A exigência é por VARIÁVEL: "falta um exemplo" não diz qual dos
+                campos acima está vazio, e a recusa da plataforma também não. */}
+            {problemas
+              .filter((p) => p.campo === "exemploDaVariavel")
+              .map((p) => (
+                <p
+                  key={p.variavel}
+                  data-erro-do-campo="exemploDaVariavel"
+                  role="alert"
+                  className="text-[11px] font-medium text-destructive"
+                >
+                  {textoDoProblema(p, t)}
+                </p>
+              ))}
           </div>
         )}
 
@@ -377,11 +503,14 @@ export function FormularioDaDefinicao({
                 "A plataforma revisa antes de aprovar — o modelo nasce pendente e some da lista de envio até ela decidir.",
               )}
         </p>
+        {/* Bloqueado enquanto houver QUALQUER problema de limite ou de exemplo:
+            enviar assim manda para a revisão algo que já se sabe recusado, e o
+            retorno demora horas. */}
         <div className="flex sm:justify-end">
           <Button
             type="button"
             size="sm"
-            disabled={!nome.trim() || !corpo.trim() || salvando}
+            disabled={!nome.trim() || !corpo.trim() || salvando || temProblema}
             onClick={() => {
               const components = montarComponents({
                 body: corpo,

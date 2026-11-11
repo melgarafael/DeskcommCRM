@@ -64,6 +64,7 @@
 import type pg from "pg";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { CANAIS_QUE_RESPONDEM_ANTES } from "@/lib/channels/capabilities";
 import { logger } from "@/lib/logger";
 
 /** Os recursos cujo cron pode ficar ocioso sem que a organização perca nada. */
@@ -79,6 +80,16 @@ export const RECURSOS_DO_CRON = [
   "fila_followup",
   "pausa_de_canal",
   "propostas",
+  "fila_de_soneca",
+  "mensagem_presa",
+  "ligacao_presa",
+  "redacao_de_storage",
+  "devolucao_de_handoff",
+  "devolucao_ao_rodizio",
+  "canal_vigiado",
+  "mcp_a_revogar",
+  "lembrete_de_tarefa",
+  "lembrete_de_agenda",
 ] as const;
 export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
 
@@ -130,13 +141,60 @@ const TETO_DA_LEITURA_MS = 2_000;
  * - os seis do #3694 são a condição EXATA da consulta que cada rota faz, ou um
  *   superconjunto dela: `webhook_events_log` sem o corte de espera de 2 min (a
  *   linha recém-arquivada nunca fica invisível) e sem o filtro de provider (o
- *   nome dele não sai de lib/channels/; mais largo é o lado seguro); `followup_enrollments` com o
+ *   nome dele não sai de lib/channels/; mais largo é o lado seguro) — nas DUAS
+ *   filas do replay: a transitória do canal por QR e a entrada aceita que
+ *   respondeu antes de processar (`received` com `valid_signature`, na janela de
+ *   6 h de `reprocessar-entradas-aceitas.ts`, sem o corte de 5 min). Esta segunda
+ *   filtra o provider, pelo parâmetro `$1` (`CANAIS_QUE_RESPONDEM_ANTES`, sem
+ *   escrever o nome): a captação por webhook e a loja também gravam `received`
+ *   com assinatura válida e nunca fecham a linha, e sem o filtro o replay
+ *   rodaria a cada minuto por 6 h depois de cada lead; `followup_enrollments` com o
  *   mesmo filtro da CTE de `fn_claim_due_followup_enrollments` (status vivo,
  *   vencido, sem lease, organização `active` — o teste do portão compara os
  *   dois); pointer `active` (o que `runSilenceSweep` varre); `followup_turn`
  *   `pending` (o dreno de texto fixo); janela `scheduled`/`running` já começada
  *   (`aplicarAgendas` não lê a que ainda vai começar); proposta `enviando` (o
  *   corte de 5 min continua sendo da rodada).
+ *
+ * ─── AS FILAS (segunda fatia do #3731) ─────────────────────────────────────
+ *
+ * Depois do #3753/#3707 o que sobrou de piso ocioso no crontab eram as rotas de
+ * FILA: soneca vencida, mensagem presa, fila de redação de objeto, devolução de
+ * handoff e ao rodízio, saúde de canal, revogação de MCP, lembrete de tarefa e
+ * de agenda. Medido numa instalação parada: 15 `from()`/`rpc()` por batida de 5
+ * min = **2,4 req/min (144/h)** — mais da metade do crontab que restava. As
+ * nove linhas novas seguem a mesma regra das anteriores, e cada uma é
+ * DELIBERADAMENTE mais larga que o predicado da rota, porque fechar o portão
+ * com trabalho na fila é o defeito que este arquivo existe para não ter:
+ *
+ * - `mensagem_presa`: `sending` acima de 3 min, contra o corte de 5 min da rota
+ *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada. E
+ *   `queued` entre 10 min e 25 h, contra os 15 min e as 24 h da espera esquecida
+ *   (`avisarEsperaEsquecida`), sem o filtro de conexão de pé e sem o prazo por
+ *   motivo, que a rodada aplica depois: a mensagem mais velha que a janela não
+ *   acorda o cron, e por isso a instalação parada volta a dormir sozinha;
+ * - `ligacao_presa`: `starting`/`ringing` acima de 3 min, contra o corte de 5 min
+ *   da rota (`STUCK_CALL_AFTER_MS`), pela mesma folga da `mensagem_presa`;
+ * - `lembrete_de_tarefa`: a janela de ±1 dia de `janelaDaVarredura`, sem o
+ *   filtro de organização parada, que a rodada aplica depois;
+ * - `lembrete_de_agenda`: compromisso confirmado e futuro em 30 dias — a maior
+ *   antecedência configurável (`MAIOR_ANTECEDENCIA_MS`), SEM o join do tipo de
+ *   evento: tipo com lembrete desligado só mantém a rota acordada, que é o lado
+ *   seguro;
+ * - `devolucao_de_handoff`/`devolucao_ao_rodizio`: as mesmas quatro colunas que
+ *   as rotas filtram, sem o prazo por organização (que muda por empresa e vive
+ *   em `organizations`);
+ * - `canal_vigiado`, `fila_de_soneca`, `redacao_de_storage`: a condição exata
+ *   da consulta da rodada.
+ *
+ * Duas rodadas fazem MAIS do que a consulta principal, e o portão cobre as duas
+ * (medido em `tests/invariants/piso-ocioso-retrato.test.ts`):
+ *
+ * - `mcp_a_revogar`: além da credencial vencida, a poda dos pedidos de
+ *   autorização vencidos há mais de um dia (`revogarVencidas`);
+ * - `lembrete_de_agenda`: além do compromisso futuro, o aviso de remetente
+ *   aberto, que `fn_resolver_avisos_de_lembrete_expirados` resolve quando o
+ *   compromisso já passou — sem ele o aviso ficava aberto na Central.
  */
 const SQL_DO_RETRATO = `
 select
@@ -174,9 +232,16 @@ select
         or (google_event_id is not null and google_conflict is null)
         or google_conflict -> 'resolution' is not null
   ) as agenda_google_push,
-  exists (
-    select 1 from webhook_events_log
-     where status = 'error' and error_message like 'transitoria:%'
+  (
+    exists (
+      select 1 from webhook_events_log
+       where status = 'error' and error_message like 'transitoria:%'
+    )
+    or exists (
+      select 1 from webhook_events_log
+       where status = 'received' and valid_signature
+         and provider = any($1::text[])
+    )
   ) as webhook_replay,
   exists (
     select 1 from followup_enrollments e
@@ -197,7 +262,67 @@ select
   ) as pausa_de_canal,
   exists (
     select 1 from crm_proposals where status = 'enviando'
-  ) as propostas
+  ) as propostas,
+  exists (
+    select 1 from conversations
+     where snooze_until is not null and snooze_until <= now()
+  ) as fila_de_soneca,
+  (
+    exists (
+      select 1 from messages
+       where direction = 'outbound' and status = 'sending'
+         and created_at < now() - interval '3 minutes'
+    )
+    or exists (
+      select 1 from messages
+       where direction = 'outbound' and status = 'queued'
+         and created_at < now() - interval '10 minutes'
+         and created_at > now() - interval '25 hours'
+    )
+  ) as mensagem_presa,
+  exists (
+    select 1 from voice_calls
+     where status in ('starting', 'ringing')
+       and created_at < now() - interval '3 minutes'
+  ) as ligacao_presa,
+  exists (
+    select 1 from storage_redaction_queue where status = 'pending'
+  ) as redacao_de_storage,
+  exists (
+    select 1 from conversations
+     where is_group = false
+       and status in ('open', 'pending', 'claimed', 'ai_handling')
+       and (bot_silenced_until is not null or assignee_kind = 'user' or assigned_to_user_id is not null)
+  ) as devolucao_de_handoff,
+  exists (
+    select 1 from conversations
+     where is_group = false
+       and status in ('open', 'pending', 'claimed', 'ai_handling')
+       and assigned_to_user_id is not null
+  ) as devolucao_ao_rodizio,
+  exists (
+    select 1 from channel_sessions where archived_at is null
+  ) as canal_vigiado,
+  exists (
+    select 1 from contato_mcp_credenciais
+     where revogado_em is null and revogar_apos <= now()
+  ) or exists (
+    select 1 from mcp_oauth_pedidos where expira_em < now() - interval '1 day'
+  ) as mcp_a_revogar,
+  exists (
+    select 1 from crm_tasks
+     where status in ('pending', 'in_progress')
+       and assigned_to is not null and due_date is not null
+       and due_date between now() - interval '1 day' and now() + interval '1 day'
+  ) as lembrete_de_tarefa,
+  exists (
+    select 1 from calendar_appointments
+     where status = 'confirmed' and contact_id is not null
+       and starts_at > now() and starts_at <= now() + interval '30 days'
+  ) or exists (
+    select 1 from agent_inbox_items
+     where ref_kind = 'agenda_reminder_sender' and status = 'open'
+  ) as lembrete_de_agenda
 `;
 
 type Retrato = { emUso: Record<RecursoDoCron, boolean>; ate: number };
@@ -248,7 +373,7 @@ async function lerRetrato(db?: BancoDoPortao): Promise<Record<RecursoDoCron, boo
   try {
     const banco = db ?? getRequestPool();
     const { rows } = await comTeto(
-      Promise.resolve(banco.query(SQL_DO_RETRATO)) as Promise<{ rows: unknown[] }>,
+      Promise.resolve(banco.query(SQL_DO_RETRATO, [[...CANAIS_QUE_RESPONDEM_ANTES]])) as Promise<{ rows: unknown[] }>,
       TETO_DA_LEITURA_MS,
     );
     return retratoCompleto(rows[0] as Record<string, unknown> | undefined);

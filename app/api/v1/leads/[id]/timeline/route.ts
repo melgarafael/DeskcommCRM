@@ -42,8 +42,9 @@ import {
   TIMELINE_COLS,
   comNomeDoAtor,
   decodeCursor,
-  eixoDoDossie,
   encodeCursor,
+  filtroDaPagina,
+  filtroDoCursor,
 } from "@/lib/leads/timeline-query";
 import type { TimelineItem } from "@/lib/types/contacts";
 
@@ -81,13 +82,15 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // O lead vem pela RLS do caller — é ele que prova a org, nunca o body.
   const { data: lead, error: leadErr } = await supabase
     .from("crm_leads")
-    .select("id, contact_id")
+    .select("id, contact_id, organization_id")
     .eq("id", leadId)
     .maybeSingle();
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
 
   const contactId = (lead as { contact_id: string | null }).contact_id;
+  // A organização vem do lead, que veio pela RLS do caller — nunca do body.
+  const orgId = (lead as { organization_id: string }).organization_id;
 
   let q = supabase
     .from("crm_lead_activities")
@@ -96,17 +99,18 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .order("id", { ascending: false })
     .limit(limit + 1);
 
-  // A cláusula mora em `eixoDoDossie` — não aqui — porque é ela que o teste
-  // prende. Sem contato ela devolve null e o filtro vira igualdade simples: é
-  // isso que dá porta ao lead que antes não tinha nenhuma.
-  const eixo = eixoDoDossie(leadId, contactId);
-  q = eixo ? q.or(eixo) : q.eq("lead_id", leadId);
+  // A cláusula mora em `timeline-query` — não aqui — porque é ela que os testes
+  // prendem. Ela leva a ORGANIZAÇÃO dona junto do eixo do dossiê: todos os
+  // índices de `crm_lead_activities` começam por `organization_id`, e uma
+  // consulta que não diz a empresa não usa nenhum deles. Os dois lados do
+  // dossiê continuam intactos; o irmão continua fora por construção.
+  q = q.or(filtroDaPagina(orgId, leadId, contactId));
 
   if (types.length > 0) q = q.in("type", types);
   if (cursor) {
-    q = q.or(
-      `performed_at.lt.${cursor.performed_at},and(performed_at.eq.${cursor.performed_at},id.lt.${cursor.id})`,
-    );
+    // O cursor é o segundo `or(...)` da mesma consulta e carrega a mesma
+    // organização — sem isso a segunda página volta a varrer a tabela.
+    q = q.or(filtroDoCursor(orgId, cursor));
   }
 
   const { data, error } = await q;
@@ -115,7 +119,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const rows = (data ?? []) as unknown as TimelineItem[];
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const page = await comNomeDoAtor(supabase, pageRows);
+  const page = await comNomeDoAtor(supabase, (lead as { organization_id: string }).organization_id, pageRows);
   const last = pageRows[pageRows.length - 1];
 
   return ok(page, {

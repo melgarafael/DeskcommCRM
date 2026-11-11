@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   OPERADORES_SEM_VALOR,
+  conditionsSchema,
   contarCondicoes,
   evaluateConditions,
   resolveField,
@@ -487,5 +488,38 @@ describe("OPERADORES_SEM_VALOR (#2727)", () => {
     expect([...OPERADORES_SEM_VALOR].sort()).toEqual(["is_empty", "is_not_empty"]);
     expect(OPERADORES_SEM_VALOR.has("eq")).toBe(false);
     expect(OPERADORES_SEM_VALOR.has("is_empty")).toBe(true);
+  });
+});
+
+describe("colunas de CPF do contato na condição", () => {
+  const HASH = "a".repeat(64);
+  const contexto = {
+    contact: { email: "ana@example.com", cpf_hash: HASH, cpf_encrypted: "\\xc30d" },
+  };
+
+  it.each([
+    ["contact.cpf_hash", "eq", HASH],
+    ["contact.cpf_hash", "neq", "outro"],
+    ["contact.cpf_hash", "contains", HASH.slice(0, 8)],
+    ["contact.cpf_hash", "not_contains", "zzz"],
+    ["contact.cpf_hash", "gt", "0"],
+    ["contact.cpf_encrypted", "contains", "c30d"],
+  ])("%s %s não responde pelo valor, e a porta aceita a condição", (field, op, value) => {
+    // Sabotagem: tirar a guarda de `matches` deixa estes casos vermelhos.
+    const conditions = conditionsSchema.parse([{ field, op, value }]);
+    expect(evaluateConditions(conditions, contexto)).toBe(false);
+  });
+
+  it("preenchido e vazio seguem respondendo", () => {
+    const preenchido = [{ field: "contact.cpf_hash", op: "is_not_empty", value: "" }];
+    const vazio = [{ field: "contact.cpf_hash", op: "is_empty", value: "" }];
+    expect(evaluateConditions(conditionsSchema.parse(preenchido), contexto)).toBe(true);
+    expect(evaluateConditions(conditionsSchema.parse(vazio), contexto)).toBe(false);
+    expect(evaluateConditions(conditionsSchema.parse(vazio), { contact: { cpf_hash: null } })).toBe(true);
+  });
+
+  it("CONTROLE — outro campo do contato segue comparando pelo valor", () => {
+    const conditions = [{ field: "contact.email", op: "eq" as const, value: "ana@example.com" }];
+    expect(evaluateConditions(conditions, contexto)).toBe(true);
   });
 });

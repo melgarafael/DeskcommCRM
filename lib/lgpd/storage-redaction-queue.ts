@@ -9,6 +9,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
+import { isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
 
 export interface DrainStats {
   attempted: number;
@@ -61,6 +62,25 @@ export async function drainStorageRedactionQueue(
   for (const row of queueRows) {
     stats.attempted++;
     const nextAttempts = row.attempts + 1;
+
+    // Todo enfileiramento passa por aqui: a régua fica num ponto só.
+    if (!isMediaPathInOrganization(row.object_path, row.organization_id)) {
+      await admin
+        .from("storage_redaction_queue")
+        .update({
+          status: "skipped",
+          attempts: nextAttempts,
+          processed_at: new Date().toISOString(),
+          error_message: "path_outside_organization",
+        })
+        .eq("id", row.id);
+      stats.skipped++;
+      logger.warn("[lgpd-redact-worker] caminho fora da organização; não removido", {
+        queue_id: row.id,
+        organization_id: row.organization_id,
+      });
+      continue;
+    }
 
     try {
       const { error: removeErr } = await admin.storage

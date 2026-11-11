@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   permitido: true,
   baldes: [] as string[],
   aviso: vi.fn(),
+  erro: vi.fn(),
   banco: undefined as unknown as BancoFalso,
 }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.ligada }));
@@ -22,13 +23,21 @@ vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({
   },
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
-vi.mock("@/lib/logger", () => ({ logger: { warn: h.aviso, error: vi.fn(), info: vi.fn() } }));
+vi.mock("@/lib/logger", () => ({ logger: { warn: h.aviso, error: h.erro, info: vi.fn() } }));
 
 import { POST } from "./route";
 
 const ORG = "cccccccc-0000-4000-8000-000000000001";
 
-interface Mundo { duplicado: boolean; statusExistente: string; dona: { organization_id: string } | null; emit: Resposta }
+interface Mundo {
+  duplicado: boolean;
+  statusExistente: string;
+  dona: { organization_id: string } | null;
+  erroDona: boolean;
+  /** A leitura da empresa LANÇA (rede/fetch abortado), em vez de devolver erro. */
+  lancaDona: boolean;
+  emit: Resposta;
+}
 let m: Mundo;
 
 function responder(c: Cadeia): Resposta {
@@ -38,7 +47,10 @@ function responder(c: Cadeia): Resposta {
     if (op === "select") return { data: { id: "linha-1", status: m.statusExistente } };
     return { data: null };
   }
-  if (c.tabela === "cobranca_assinaturas") return { data: m.dona };
+  if (c.tabela === "cobranca_assinaturas") {
+    if (m.lancaDona) throw new TypeError("fetch failed");
+    return m.erroDona ? { error: { code: "08000", message: "sem banco" } } : { data: m.dona };
+  }
   return {};
 }
 
@@ -52,6 +64,7 @@ const pedido = (provedor = "stripe", corpo = '{"id":"evt_1"}', ip: string | null
     { params: Promise.resolve({ provedor }) },
   );
 const doLog = (op: string) => h.banco.cadeias.filter((c) => c.tabela === "webhook_events_log" && operacao(c) === op);
+const gravado = () => argumentos(doLog("insert")[0]!, "insert")?.[0] as Record<string, unknown> | undefined;
 const emits = () => h.banco.rpcs.filter((r) => r.nome === "emit_event");
 const TOKEN_ASAAS = ["token", "do", "aviso", "0123456789abcdef"].join("_");
 const doAsaas = (headers: Record<string, string>) =>
@@ -67,7 +80,7 @@ beforeEach(() => {
   h.sinal = { eventoId: "evt_1", tipo: "invoice.paid", clienteRef: "cus_1" };
   h.permitido = true;
   h.baldes = [];
-  m = { duplicado: false, statusExistente: "received", dona: { organization_id: ORG }, emit: { data: "ev-1" } };
+  m = { duplicado: false, statusExistente: "received", dona: { organization_id: ORG }, erroDona: false, lancaDona: false, emit: { data: "ev-1" } };
   h.banco = bancoFalso(responder, () => m.emit);
 });
 
@@ -85,12 +98,10 @@ describe("webhook da cobrança", () => {
   it("⭐ assinatura inválida: 401 e deixa RASTRO que o dono vê (linha valid_signature=false, sem org, sem id, sem cabeçalhos)", async () => {
     h.sinal = null;
     expect((await pedido()).status).toBe(401);
-    expect(doLog("insert").map((c) => argumentos(c, "insert")?.[0])).toEqual([
-      {
-        organization_id: null, provider: "stripe", raw_body: "{}", headers: null, signature_header: null,
-        valid_signature: false, external_id: null, status: "error", error_message: "assinatura_invalida",
-      },
-    ]);
+    expect(gravado()).toEqual({
+      organization_id: null, provider: "stripe", raw_body: "{}", headers: null, signature_header: null,
+      valid_signature: false, external_id: null, status: "error", error_message: "assinatura_invalida",
+    });
     expect(h.aviso).toHaveBeenCalledWith("cobranca.webhook_recusado", { provedor: "stripe", motivo: "assinatura_invalida" });
     expect(emits()).toEqual([]);
   });
@@ -98,7 +109,7 @@ describe("webhook da cobrança", () => {
   it("⭐ válido: ponteiro sem org, sem cabeçalhos e com corpo {id,type}; emite o sinal e fecha a linha", async () => {
     const res = await pedido();
     expect(res.status).toBe(200);
-    expect(argumentos(doLog("insert")[0]!, "insert")?.[0]).toEqual({
+    expect(gravado()).toEqual({
       organization_id: null, provider: "stripe", raw_body: '{"id":"evt_1","type":"invoice.paid"}', headers: null,
       signature_header: "t=1,v1=ab", valid_signature: true, external_id: "evt_1", event_type: "invoice.paid", status: "received",
     });
@@ -136,6 +147,64 @@ describe("webhook da cobrança", () => {
     expect(doLog("update")).toEqual([]);
   });
 
+  it("⭐ a leitura da empresa falha: 500 com o ponteiro received e o motivo, o erro no log, e sem emitir", async () => {
+    m.erroDona = true;
+    expect((await pedido()).status).toBe(500);
+    expect(gravado()).toEqual({
+      organization_id: null, provider: "stripe", raw_body: '{"id":"evt_1","type":"invoice.paid"}', headers: null,
+      signature_header: "t=1,v1=ab", valid_signature: true, external_id: "evt_1", event_type: "invoice.paid",
+      status: "received", error_message: "falha_ao_identificar_empresa",
+    });
+    expect(h.erro).toHaveBeenCalledWith("cobranca.empresa_nao_identificada", { provedor: "stripe", codigo: "08000" });
+    expect(emits()).toEqual([]);
+  });
+
+  it("⭐ a leitura da empresa LANÇA: 500, mas o ponteiro fica gravado (o aviso não se perde) — #3870", async () => {
+    // Sem o `catch`, a exceção subia e o 500 saía sem linha nenhuma: a
+    // reentrega do provedor era a única esperança de rastro.
+    m.lancaDona = true;
+    expect((await pedido()).status).toBe(500);
+    expect(gravado()).toMatchObject({
+      organization_id: null,
+      provider: "stripe",
+      valid_signature: true,
+      external_id: "evt_1",
+      status: "received",
+      error_message: "falha_ao_identificar_empresa",
+    });
+    expect(h.erro).toHaveBeenCalledWith("cobranca.leitura_da_empresa_falhou", {
+      provedor: "stripe",
+      motivo: "TypeError",
+    });
+    expect(emits()).toEqual([]);
+  });
+
+  it("⭐ a reentrega depois da falha de leitura fecha a mesma linha e apaga o motivo", async () => {
+    m.duplicado = true;
+    m.statusExistente = "received";
+    expect((await pedido()).status).toBe(200);
+    expect(emits()).toHaveLength(1);
+    expect(argumentos(doLog("update")[0]!, "update")?.[0]).toMatchObject({ status: "processed", error_message: null });
+  });
+
+  it.each([
+    ["corpo vazio", "   ", "corpo_vazio"],
+    ["corpo que não é JSON", '{"id":', "corpo_malformado"],
+  ])("⭐ %s: 401 com o motivo nomeado, e o corpo fica fora da linha", async (_nome, corpo, motivo) => {
+    h.sinal = null;
+    expect((await pedido("stripe", corpo)).status).toBe(401);
+    expect(gravado()).toMatchObject({ raw_body: "{}", headers: null, status: "error", error_message: motivo });
+    expect(h.aviso).toHaveBeenCalledWith("cobranca.webhook_recusado", { provedor: "stripe", motivo });
+  });
+
+  it("⭐ o corpo recusado não vai para a linha nem para o log de aplicação", async () => {
+    h.sinal = null;
+    await pedido("stripe", '{"cliente":{"email":"cliente@exemplo.com","cpf":"12345678901"}}');
+    const rastro = JSON.stringify([h.banco.cadeias, h.aviso.mock.calls]);
+    expect(rastro).not.toContain("cliente@exemplo.com");
+    expect(rastro).not.toContain("12345678901");
+  });
+
   it("⭐ aviso VÁLIDO nunca recebe 429, mesmo com o balde de recusas cheio (a reativação de quem pagou não espera)", async () => {
     h.permitido = false;
     expect((await pedido()).status).toBe(200);
@@ -166,14 +235,14 @@ describe("webhook da cobrança pelo Asaas (PR 3b)", () => {
   it("⭐ Asaas: o token do cabeçalho nunca é gravado — nem como assinatura, que só a Stripe tem", async () => {
     const res = await doAsaas({ "asaas-access-token": TOKEN_ASAAS, "stripe-signature": "t=1,v1=forjada" });
     expect(res.status).toBe(200);
-    expect(argumentos(doLog("insert")[0]!, "insert")?.[0]).toMatchObject({ provider: "asaas", signature_header: null, headers: null });
+    expect(gravado()).toMatchObject({ provider: "asaas", signature_header: null, headers: null });
     expect(JSON.stringify([h.banco.cadeias, h.banco.rpcs])).not.toContain(TOKEN_ASAAS);
   });
 
   it("Asaas com token errado: 401, a linha de recusa sem token e sem assinatura", async () => {
     h.sinal = null;
     expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS, "stripe-signature": "t=1,v1=forjada" })).status).toBe(401);
-    expect(argumentos(doLog("insert")[0]!, "insert")?.[0]).toMatchObject({ provider: "asaas", signature_header: null, valid_signature: false });
+    expect(gravado()).toMatchObject({ provider: "asaas", signature_header: null, valid_signature: false, raw_body: "{}" });
     expect(JSON.stringify(h.banco.cadeias)).not.toContain(TOKEN_ASAAS);
   });
 
@@ -193,6 +262,23 @@ describe("webhook da cobrança pelo Asaas (PR 3b)", () => {
     expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS })).status).toBe(200);
     expect(doLog("insert")).toHaveLength(1);
     expect(argumentos(doLog("update")[0]!, "update")?.[0]).toMatchObject({ status: "error", error_message: "cliente_desconhecido" });
+  });
+
+  it("⭐ leitura da empresa falhando acima do balde: 200 SEM gravar e sem log de erro, como o aviso de cliente desconhecido", async () => {
+    m.erroDona = true;
+    h.permitido = false;
+    expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS })).status).toBe(200);
+    expect(h.baldes).toEqual(["cobranca-webhook-desconhecido:asaas"]);
+    expect(doLog("insert")).toEqual([]);
+    expect(h.erro).not.toHaveBeenCalled();
+    expect(emits()).toEqual([]);
+  });
+
+  it("leitura da empresa falhando abaixo do balde: 500 com o ponteiro received e o motivo", async () => {
+    m.erroDona = true;
+    expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS })).status).toBe(500);
+    expect(h.baldes).toEqual(["cobranca-webhook-desconhecido:asaas"]);
+    expect(gravado()).toMatchObject({ status: "received", error_message: "falha_ao_identificar_empresa" });
   });
 
   it("controle: aviso VÁLIDO de cliente conhecido do Asaas nunca passa por balde nenhum", async () => {
