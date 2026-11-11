@@ -26,6 +26,7 @@ import { logger } from "@/lib/logger";
 
 import { flowGraphSchema, type FlowGraph, type FlowNode, type ReplySaveTo } from "./graph-schema";
 import { TETO_DE_PASSOS_DO_MOTOR } from "./custo-no-motor";
+import { enviosJaFeitos, redacaoDaVez, redacoesDoPasso } from "./variacoes-do-passo";
 import {
   ACTION_RECHECK_MS,
   BACKOFF_MS,
@@ -425,6 +426,8 @@ function turnPayloadExtras(
   smartWaits: EsperaAdaptativa[],
   events: EnrollmentEventRef[] = [],
   contexto?: Record<string, unknown> | null,
+  /** #4429 — o contato, semente estável do ponto de partida da rotação. */
+  semente?: string,
 ): Partial<FollowupJobRequest["payload"]> {
   if (node.type === "action" && node.config.mode === "ai_message") {
     return {
@@ -433,8 +436,16 @@ function turnPayloadExtras(
     };
   }
   if (node.type === "action" && node.config.mode === "text") {
+    // #4429 — QUAL REDAÇÃO SAI, ESCOLHIDO AQUI. O texto do passo deixou de ser
+    // um só: `variacoes` guarda outras redações do MESMO passo e a rotação anda
+    // um passo por mensagem já enviada nesta inscrição (`enviosJaFeitos`), com
+    // ponto de partida no hash do contato. Passo com uma redação só — o de
+    // hoje, e todo grafo já publicado — cai em `redacoes[0]`, que é o `body`:
+    // nenhuma diferença byte a byte no que sai.
+    const redacoes = redacoesDoPasso(node.config);
+    const redacao = redacaoDaVez(redacoes, semente ?? "", enviosJaFeitos(events));
     return {
-      fixed_body: interpolarVolta(node.config.body, events, contexto),
+      fixed_body: interpolarVolta(redacao, events, contexto),
       ...(node.config.media_url ? { fixed_media_url: node.config.media_url } : {}),
     };
   }
@@ -839,7 +850,7 @@ async function applyResult(
             node_id: node.id,
             source_step_key: idemKey,
             purpose: result.purpose,
-            ...turnPayloadExtras(node, smartWaits, events, contexto),
+            ...turnPayloadExtras(node, smartWaits, events, contexto, enrollment.contact_id),
             ...(result.fixed_body ? { fixed_body: result.fixed_body } : {}),
           },
         });

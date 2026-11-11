@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,10 +16,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { FonteDeVariavel, VariaveisDoModelo } from "@/lib/channels/meta/variaveis-do-fluxo";
-import { actionConfigSchema } from "@/lib/followup/graph-schema";
+import { actionConfigSchema, MAX_VARIACOES_DO_PASSO } from "@/lib/followup/graph-schema";
 import type { VariavelDoModelo } from "@/lib/followup/modelos-aprovados";
 import { MODOS_DA_ACAO, opcoes, type ModoDaAcao } from "@/lib/followup/vocabulario";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { Plus, Trash } from "@/lib/ui/icons";
 import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { useModelosAprovadosDoFluxo } from "@/hooks/followup/useModelosAprovadosDoFluxo";
@@ -250,6 +252,12 @@ export function ActionForm({
   const t = useT();
   const [mode, setMode] = useState(config.mode);
   const [body, setBody] = useState(config.mode === "text" ? config.body : "");
+  // #4429 — as OUTRAS redações do mesmo passo. A primeira continua sendo o
+  // `body` acima; estas o motor alterna a cada envio. O estado local guarda a
+  // caixa vazia recém-adicionada (o config só recebe as preenchidas).
+  const [variacoes, setVariacoes] = useState<string[]>(
+    config.mode === "text" ? (config.variacoes ?? []) : [],
+  );
   const [promptHint, setPromptHint] = useState(config.mode === "ai_message" ? config.prompt_hint : "");
   const [fallbackTemplateId, setFallbackTemplateId] = useState(
     config.mode === "ai_message" ? (config.fallback_template_id ?? "") : "",
@@ -271,6 +279,7 @@ export function ActionForm({
   const commit = (next: {
     mode: ModoDaAcao;
     body: string;
+    variacoes: string[];
     mediaUrl: string;
     promptHint: string;
     fallbackTemplateId: string;
@@ -285,11 +294,15 @@ export function ActionForm({
       aprovados.data === undefined
         ? next.templateValues
         : Object.fromEntries(Object.entries(next.templateValues).filter(([chave]) => chaves.includes(chave)));
+    // Caixa vazia (a que o botão "Redação" acabou de abrir) não vira variação:
+    // mandá-la crua reprovaria o schema inteiro e a tela não gravaria o texto.
+    const redacoesExtras = next.variacoes.map((redacao) => redacao.trim()).filter((redacao) => redacao.length > 0);
     const candidate =
       next.mode === "text"
         ? {
             mode: "text" as const,
             body: next.body,
+            ...(redacoesExtras.length > 0 ? { variacoes: redacoesExtras } : {}),
             ...(next.mediaUrl.trim() ? { media_url: next.mediaUrl.trim() } : {}),
           }
         : next.mode === "ai_message"
@@ -312,7 +325,7 @@ export function ActionForm({
     onChange(parsed.data);
   };
 
-  const fields = { body, mediaUrl, promptHint, fallbackTemplateId, templateId, templateValues };
+  const fields = { body, variacoes, mediaUrl, promptHint, fallbackTemplateId, templateId, templateValues };
   const variaveisDoEscolhido = variaveisDe(templateId);
 
   return (
@@ -361,6 +374,50 @@ export function ActionForm({
           <p className="text-xs text-text-muted">
             {t("Para escrever uma data no formato do cliente, use {{campo|data}}.")}
           </p>
+          <div className="space-y-2 rounded-sm border border-border p-2" data-testid="action-variacoes">
+            <Label>{t("Outras redações do mesmo passo (opcional)")}</Label>
+            <p className="text-xs text-text-muted">
+              {t("O motor alterna entre o texto acima e as redações abaixo a cada envio — assim o contato não recebe a mesma frase duas vezes seguidas.")}
+            </p>
+            {variacoes.map((redacao, idx) => (
+              <div key={idx} className="flex items-start gap-2">
+                <Textarea
+                  id={`action-variacao-${idx}`}
+                  aria-label={`${t("Redação")} ${idx + 2}`}
+                  maxLength={4000}
+                  placeholder={t("Outra forma de dizer a mesma coisa")}
+                  value={redacao}
+                  onChange={(e) => {
+                    const proximas = variacoes.map((atual, i) => (i === idx ? e.target.value : atual));
+                    setVariacoes(proximas);
+                    commit({ mode, ...fields, variacoes: proximas });
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t("Remover redação")}
+                  onClick={() => {
+                    const proximas = variacoes.filter((_, i) => i !== idx);
+                    setVariacoes(proximas);
+                    commit({ mode, ...fields, variacoes: proximas });
+                  }}
+                >
+                  <Trash size={14} aria-hidden />
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={variacoes.length >= MAX_VARIACOES_DO_PASSO}
+              onClick={() => setVariacoes([...variacoes, ""])}
+            >
+              <Plus size={14} aria-hidden className="mr-1" /> {t("Redação")}
+            </Button>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="action-media-url">{t("Imagem, vídeo, áudio ou documento (opcional)")}</Label>
             <Input
