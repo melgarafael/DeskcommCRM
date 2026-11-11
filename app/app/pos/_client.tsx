@@ -92,6 +92,7 @@ export function POSDashboardClient() {
 
       <nav className="flex flex-wrap gap-2">
         {[
+          { href: "/app/pos/cajas", label: "Cajas" },
           { href: "/app/pos/ventas", label: "Ventas" },
           { href: "/app/pos/productos", label: "Productos" },
           { href: "/app/pos/descuentos", label: "Descuentos" },

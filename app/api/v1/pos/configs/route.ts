@@ -32,13 +32,17 @@ export async function POST(req: Request): Promise<Response> {
   const { org: activeOrg } = authz;
 
   const body = await req.json().catch(() => null);
-  if (!body?.name) return fail("validation", "name is required", 422, { requestId });
+  if (!body?.name || !body?.code) {
+    return fail("validation", "name and code are required", 422, { requestId });
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("finance_pos_configs")
     .insert({
       name: body.name,
+      code: body.code,
+      cash_control: body.cash_control ?? true,
       is_active: body.is_active ?? true,
       journal_id: body.journal_id ?? null,
       organization_id: activeOrg.orgId,

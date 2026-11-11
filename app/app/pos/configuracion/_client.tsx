@@ -7,6 +7,8 @@ import { apiClient } from "@/lib/api/client";
 interface POSConfig {
   id: string;
   name: string;
+  code: string;
+  cash_control: boolean;
   journal_id: string | null;
   is_active: boolean;
 }
@@ -24,6 +26,8 @@ export function ConfiguracionPOSClient() {
   // --- POS Configs ---
   const [showConfigForm, setShowConfigForm] = useState(false);
   const [configName, setConfigName] = useState("");
+  const [configCode, setConfigCode] = useState("");
+  const [configCashControl, setConfigCashControl] = useState(true);
   const [configJournal, setConfigJournal] = useState("");
 
   const { data: configs, isLoading: loadingConfigs } = useQuery({
@@ -32,12 +36,14 @@ export function ConfiguracionPOSClient() {
   });
 
   const createConfig = useMutation({
-    mutationFn: (body: { name: string; journal_id?: string }) =>
+    mutationFn: (body: { name: string; code: string; cash_control: boolean; journal_id?: string }) =>
       apiClient.post("/api/v1/pos/configs", body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pos-configs"] });
       setShowConfigForm(false);
       setConfigName("");
+      setConfigCode("");
+      setConfigCashControl(true);
       setConfigJournal("");
     },
   });
@@ -82,7 +88,7 @@ export function ConfiguracionPOSClient() {
         {showConfigForm && (
           <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-border-primary bg-surface-secondary p-4">
             <div>
-              <label className="mb-1 block text-xs text-text-muted">Nombre</label>
+              <label className="mb-1 block text-xs text-text-muted">Nombre *</label>
               <input
                 type="text"
                 value={configName}
@@ -90,6 +96,26 @@ export function ConfiguracionPOSClient() {
                 placeholder="Ej: Caja Principal"
                 className="rounded-md border border-border-primary bg-surface-primary px-3 py-2 text-sm text-text-primary"
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-text-muted">Codigo *</label>
+              <input
+                type="text"
+                value={configCode}
+                onChange={(e) => setConfigCode(e.target.value.toUpperCase().slice(0, 10))}
+                placeholder="Ej: 001"
+                className="w-24 rounded-md border border-border-primary bg-surface-primary px-3 py-2 text-sm text-text-primary"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="cash-control"
+                checked={configCashControl}
+                onChange={(e) => setConfigCashControl(e.target.checked)}
+                className="h-4 w-4 rounded border-border-primary"
+              />
+              <label htmlFor="cash-control" className="text-xs text-text-muted">Control de efectivo</label>
             </div>
             <div>
               <label className="mb-1 block text-xs text-text-muted">ID Diario (opcional)</label>
@@ -103,13 +129,15 @@ export function ConfiguracionPOSClient() {
             </div>
             <button
               onClick={() => {
-                if (!configName.trim()) return;
+                if (!configName.trim() || !configCode.trim()) return;
                 createConfig.mutate({
                   name: configName.trim(),
+                  code: configCode.trim(),
+                  cash_control: configCashControl,
                   ...(configJournal.trim() ? { journal_id: configJournal.trim() } : {}),
                 });
               }}
-              disabled={createConfig.isPending || !configName.trim()}
+              disabled={createConfig.isPending || !configName.trim() || !configCode.trim()}
               className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
             >
               {createConfig.isPending ? "Guardando..." : "Guardar"}
@@ -129,6 +157,8 @@ export function ConfiguracionPOSClient() {
             <thead>
               <tr className="border-b border-border-primary text-left text-text-muted">
                 <th className="px-4 py-3 font-medium">Nombre</th>
+                <th className="px-4 py-3 font-medium">Codigo</th>
+                <th className="px-4 py-3 font-medium">Ctrl. Efectivo</th>
                 <th className="px-4 py-3 font-medium">Diario</th>
                 <th className="px-4 py-3 font-medium">Estado</th>
               </tr>
@@ -137,6 +167,8 @@ export function ConfiguracionPOSClient() {
               {configs.map((c) => (
                 <tr key={c.id}>
                   <td className="px-4 py-3 text-text-primary">{c.name}</td>
+                  <td className="px-4 py-3 font-mono text-text-muted">{c.code}</td>
+                  <td className="px-4 py-3 text-text-muted">{c.cash_control ? "Si" : "No"}</td>
                   <td className="px-4 py-3 text-text-muted">{c.journal_id ?? "---"}</td>
                   <td className="px-4 py-3">
                     <span
