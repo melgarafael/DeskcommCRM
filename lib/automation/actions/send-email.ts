@@ -78,6 +78,7 @@ import {
 } from "@/lib/email/resend-da-organizacao";
 import { sendEmail, type EmailDeliveryError } from "@/lib/email/roteador";
 import { logger } from "@/lib/logger";
+import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
 import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 
 /**
@@ -131,7 +132,7 @@ interface ContatoDoContexto {
   id: string;
   is_blocked?: boolean;
   email?: string | null;
-  consent?: { marketing?: { declined_at?: string | null } | null } | null;
+  consent?: unknown;
 }
 
 /** O veredito do destinatário — o `motivo` é o que vira `detail.reason`. */
@@ -212,8 +213,8 @@ async function resolverDestinatario(
   const contact = ctx.context.contact as ContatoDoContexto | undefined;
   if (!contact) return { ok: false, motivo: "no_contact" };
   if (contact.is_blocked) return { ok: false, motivo: "contact_blocked" };
-  // Recusa registrada — não "grant ausente". Ver `guarda-do-contato.ts`.
-  if (contact.consent?.marketing?.declined_at) return { ok: false, motivo: "consent_declined" };
+  // Recusa registrada — não "grant ausente". Ver `guarda-do-contato.ts`. Nos dois formatos.
+  if (recusaRegistrada(contact.consent)) return { ok: false, motivo: "consent_declined" };
   const email = emailValido(contact.email);
   return email ? { ok: true, endereco: email } : { ok: false, motivo: "no_email" };
 }

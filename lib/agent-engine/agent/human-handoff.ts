@@ -28,6 +28,7 @@ import { z } from 'zod';
 import type pg from 'pg';
 
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
+import { camposDoCardDoContatoNoBanco } from '@/lib/leads/campos-do-resumo-da-passagem';
 import { EVENTO_AVISO_HANDOFF, MARCA_EPISODIO_HANDOFF, MARCA_SOLICITACAO_HANDOFF } from '@/lib/escalacao/aviso-de-handoff';
 import {
   CHAVE_DO_HANDOFF_TECNICO,
@@ -900,6 +901,13 @@ export async function applyRequestHumanHandoff(
   // O código classifica a passagem, sem escolher destino nem alterar a
   // autoridade da ferramenta: a DECISÃO de passar a conversa é a mesma.
   const motivoCodigo = declarado.motivo_codigo ?? 'low_confidence';
+  // #4303 — OS CAMPOS DO CARD NO RESUMO. Aqui há TURNO, então o card é o do
+  // atendimento: o negócio ABERTO mais recente do contato (`ids.leadId` é
+  // `contacts.id` — ver `HandoffIds`), UM card só, nunca a soma de dois. O
+  // contato com dois cards abertos é caso real, e somar valores de duas vendas
+  // inventaria um total que ninguém digitou. Leitura que falha devolve `{}` —
+  // o resumo sai como o de hoje, nunca uma passagem a menos.
+  const camposDoCard = await camposDoCardDoContatoNoBanco(db, ids.tenantId, ids.leadId);
   const briefing = montarBriefingDaPassagem({
     checkpoint: opts.contextoDoTurno?.checkpoint ?? null,
     declaradoPeloModelo: {
@@ -912,6 +920,7 @@ export async function applyRequestHumanHandoff(
     ...(opts.contextoDoTurno?.declaracaoDoTurno !== undefined
       ? { declaracaoDoTurno: opts.contextoDoTurno.declaracaoDoTurno }
       : {}),
+    ...(Object.keys(camposDoCard).length > 0 ? { camposColetados: camposDoCard } : {}),
     motivo: { codigo: motivoCodigo, texto: porQue },
   });
 

@@ -871,6 +871,73 @@ describe("funil só no envio: a checagem do canal vem ANTES de criar qualquer co
 });
 
 /**
+ * #4170 — A PAUSA DA PROSPECÇÃO FALA HUMANO NO PONTO ONDE O MOTIVO É GRAVADO.
+ *
+ * O que se mede aqui é o TEXTO que vai para `prospecting_campaigns.error` e,
+ * por ele, para o cartão da campanha. Só o teste da frase (no módulo do mapa)
+ * não bastaria: se o worker voltar a interpolar o motivo cru, a tela volta ao
+ * defeito da issue e nenhum teste ficaria vermelho. É este caso que cai na
+ * sabotagem registrada em /tmp/dk-g721-sabot.log.
+ */
+describe("#4170: a recusa do canal pausa a campanha com texto de gente", () => {
+  const naFila = {
+    id: "candidate",
+    contact_id: null,
+    lead_id: null,
+    conversation_id: null,
+    service_boundary: null,
+    message_id: "stable-message",
+    phone: "+551****0000",
+    data: { name: "Example", socials: [] },
+  };
+
+  it("fora da lista de teste: diz modo de teste e onde liberar, e NÃO mostra o código", async () => {
+    mocks.preflight.mockResolvedValue({ permite: false, motivo: "fora_da_lista_de_teste" });
+    let erro: unknown;
+    try {
+      await sendNextCandidate(
+        {} as never,
+        database(undefined, naFila) as never,
+        {} as never,
+        campaign,
+      );
+    } catch (e) {
+      erro = e;
+    }
+    expect(erro).toBeInstanceOf(ProspectingError);
+    const mensagem = (erro as ProspectingError).message;
+    expect(mensagem).toContain("modo de teste");
+    expect(mensagem).toContain("só fala com os números da lista de teste");
+    expect(mensagem).toContain("Configurar acesso da IA");
+    expect(mensagem).toContain("Liberar atendimento ao público");
+    expect(mensagem, "o código interno não é texto de tela").not.toContain(
+      "fora_da_lista_de_teste",
+    );
+  });
+
+  it("motivo desconhecido: o código cru continua (controle negativo, sem frase inventada)", async () => {
+    mocks.preflight.mockResolvedValue({
+      permite: false,
+      motivo: "telefone fora da lista liberada",
+    });
+    await expect(
+      sendNextCandidate({} as never, database(undefined, naFila) as never, {} as never, campaign),
+    ).rejects.toThrow("O canal ainda não permite esta abordagem: telefone fora da lista liberada.");
+  });
+
+  it("preflight que permite: nada muda — o envio acontece e a campanha não pausa", async () => {
+    mocks.preflight.mockResolvedValue({ permite: true, motivo: "numero_de_teste" });
+    const db = database();
+    await sendNextCandidate({} as never, db as never, {} as never, campaign);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    expect(
+      db.query.mock.calls.some(([q]) => String(q).includes("set status='paused'")),
+      "campanha pausada sem recusa",
+    ).toBe(false);
+  });
+});
+
+/**
  * A PROVA EM PAR DA PRÉVIA (B1, `docs/doctrine/prova-em-par.md`).
  *
  * A tela gera a prévia com a estratégia e a guarda no candidato. Se o ENVIO não

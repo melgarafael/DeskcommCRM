@@ -1,0 +1,19 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: Leads dos formulários de anúncio da Meta entram no funil, ligados pela tela da fonte
+---
+
+Desligado por padrão. Quem administra a organização liga em **Webhooks › a fonte › Formulários de anúncio da Meta**: copia o endereço para a Meta, cola o token da página (a página é conferida pelo próprio token) e liga a busca das respostas. Lead que a Meta avisar e não entrar aparece em **Leads recebidos** da fonte dona da página, com o motivo, inclusive quando ela está pausada. A exceção é a fonte cujo endereço foi cadastrado na Meta: pausada, ela recusa os avisos de todas as páginas da instalação, sem registrar nada.
+
+Uma fonte de captação cadastrada em Webhooks ganhou um endereço próprio para receber o aviso de formulário preenchido da Meta, aceito só com a assinatura do App da Meta da instalação (comparada por tempo constante) e verificado pelo `GET` de desafio que a Meta usa para aprovar a URL.
+
+O aviso da Meta chega sem as respostas: traz o `leadgen_id` e os ids de página, formulário e anúncio. Por isso a fonte tem uma opção — **desligada por padrão** — de buscar as respostas na Graph API, com um token de página guardado cifrado (nunca devolvido pela API, só o fato de existir), colado por quem administra a organização. Desligada, o aviso sem respostas é registrado como ignorado com motivo nomeado; ligada e sem token, o mesmo. Em nenhum dos casos o lead entra com dado inventado.
+
+Com as respostas na mão, o lead vira contato (reaproveitando a ficha que já existe, pelo telefone normalizado) e card na etapa configurada da fonte, com nome, telefone, e-mail e as demais respostas nos campos do negócio, e a origem "Meta_ads" marcada no card.
+
+O dono do lead é a **página**: a Meta tem uma URL de destino só para o objeto `page`, então o aviso é roteado pelo `page_id` para a fonte que reivindica aquela página, e não pelo token do endereço. A página da fonte é a que o token lê, e só quem administra a troca. Aviso de página que nenhuma fonte reivindica fica só no log do servidor, e não entra na fonte errada.
+
+Entrega que chega atrasada **entra**, com a idade marcada no rastro da captação: a Meta reentrega por horas, e recusar uma reentrega assinada perdia o lead de vez. O mesmo aviso entregue duas vezes responde como duplicado e não cria segundo contato nem segundo card.
+
+Ainda fora: entrar com a conta da Meta e escolher a página por lista, listar os formulários e sincronizar campanhas. Contribuição de @webtecnica (#3768).

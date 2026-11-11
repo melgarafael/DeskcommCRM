@@ -3,7 +3,7 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { formatDistanceToNowStrict } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { Check, Robot, Sparkle } from "@/lib/ui/icons";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
@@ -14,6 +14,7 @@ import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import {
   comandoDaConversa,
   esperaDaConversa,
+  rotuloDaEspera,
   ROTULO_DO_COMANDO,
   STATUS_ENCERRADOS,
 } from "@/lib/inbox/comando-da-conversa";
@@ -22,6 +23,12 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
+/**
+ * A régua do "quando" mora em `lib/i18n/hora-curta.ts` desde que o card do funil
+ * precisou da MESMA resposta para a última mensagem do negócio. Aqui ela era
+ * privada; duas cópias divergiriam no primeiro ajuste.
+ */
+import { horaCurta as relativeTime } from "@/lib/i18n/hora-curta";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -87,6 +94,15 @@ interface Props {
    * QueryClient set". Quem faz o `POST .../usable-for-rag` é a lista.
    */
   onAlternarExemplo?: (id: string, enabled: boolean) => void;
+  /**
+   * Esta conversa tem uma menção PENDENTE para quem está olhando a lista
+   * (#2372). Vem da lista (uma marca só, compartilhada) e não de hook por
+   * linha, pela mesma razão do `automaticoDaOrg`.
+   *
+   * Ausente = sem marca, e é o default de todo teste que renderiza a linha
+   * sozinha: o selo só aparece com `true` porque afirmar o contrário seria pior.
+   */
+  mencionado?: boolean;
 }
 
 /**
@@ -122,16 +138,6 @@ function initials(name: string | null | undefined, fallback: string): string {
   return (first + last).toUpperCase();
 }
 
-function relativeTime(iso: string | null, locale: Locale): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return format(d, "HH:mm");
-  const diff = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
-  if (diff < 7) return formatDistanceToNowStrict(d, { addSuffix: false, locale: locale });
-  return format(d, "dd/MM");
-}
 
 /**
  * "Aguardando há 5 min" — desde quando o cliente ESPERA.
@@ -146,9 +152,10 @@ function waitingLabel(
   conversation: ConversationWithContact,
   t: (texto: string) => string = (texto) => texto, locale: Locale,
 ): string {
-  const since = esperaDaConversa(conversation);
-  if (!since) return t("Aguardando");
-  return `${t("Aguardando")} ${formatDistanceToNowStrict(new Date(since), { addSuffix: true, locale: locale })}`;
+  // O texto mora em `rotuloDaEspera`, ao lado da régua (`esperaDaConversa`):
+  // enquanto ele era escrito aqui, privado, a pílula só podia ser provada
+  // renderizando a linha inteira — e a #990 ficou sem teste vermelho por isso.
+  return rotuloDaEspera(esperaDaConversa(conversation), new Date(), t, locale);
 }
 
 export function ConversationListItem({
@@ -163,6 +170,7 @@ export function ConversationListItem({
   selecionado = false,
   onAlternarSelecao,
   onAlternarExemplo,
+  mencionado = false,
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -219,6 +227,9 @@ export function ConversationListItem({
     is_blocked: c?.is_blocked ?? null,
     is_group: conversation.is_group ?? false,
     automaticoDaOrg,
+    // O fato por NÚMERO (#4012) vem no próprio registro — nada de uma consulta
+    // por linha. Ausente em cache antigo, e aí a regra cai no org-wide.
+    automaticoDaConversa: conversation.automatico_da_conversa ?? undefined,
   });
   const isAi = comando.quem === "automatico";
   const dot = COR_DO_COMANDO[comando.quem] ?? COR_DO_COMANDO.ninguem;
@@ -394,9 +405,29 @@ export function ConversationListItem({
                 {t("Grupo")}
               </Badge>
             )}
+            {/*
+              O SELO "MENCIONADO" (#2372), ao lado do nome.
+
+              O sino e o push dizem que houve menção; a lista precisa dizer ONDE,
+              e a hora do canto não ajuda. Fica antes das etiquetas porque não é
+              classificação do contato — é um recado pendente para QUEM ESTÁ
+              OLHANDO, e some no clique que abre a conversa (`ConversationList`).
+              `default` já usa fundo `accent-soft` + texto `accent`: o par que o
+              selo de exemplo usa no escuro e no claro.
+            */}
+            {mencionado && (
+              <Badge
+                variant="default"
+                data-testid="selo-mencionado"
+                title={t("Você foi mencionado")}
+                className="h-4 shrink-0 gap-1 px-1.5 text-[10px] font-normal"
+              >
+                {t("Mencionado")}
+              </Badge>
+            )}
           </span>
           <span
-            className="shrink-0 text-[11px] tabular-nums text-text-subtle"
+            className="shrink-0 text-[11px] tabular-nums text-text-muted"
             // O mesmo lugar da tela mostra duas coisas diferentes conforme a aba:
             // na Fila é "desde quando o cliente ESPERA" (a mensagem mais antiga sem
             // resposta — #990), nas outras é "há quanto tempo a conversa mexeu". O

@@ -171,9 +171,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     // momento em que o ponteiro se moveu, ou seja, a instalação/atualização.
     ler<{ updated_at: string; name: string }>("skill_pointers", "updated_at, name", "updated_at"),
     ler<{ created_at: string; skill_name: string }>("skill_activations", "created_at, skill_name", "created_at"),
-    ler<{ created_at: string; outcome: string; intent_name: string | null }>(
+    // `router_id` vai junto: nulo é o turno de um número SEM roteador (#4340),
+    // que `aggregateEvolution` deixa fora de todas as contas.
+    ler<{ created_at: string; outcome: string; intent_name: string | null; router_id: string | null }>(
       "ai_router_decisions",
-      "created_at, outcome, intent_name",
+      "created_at, outcome, intent_name, router_id",
       "created_at",
     ),
     ler<{ created_at: string; hits: number; top_score: number | null; threshold: number; author_kind: string }>(
