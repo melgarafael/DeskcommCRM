@@ -31,12 +31,13 @@
  * quem funde é `manager`, e esse gate está na rota de POST /contacts/merge.
  */
 import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import {
   encontrarContatosDuplicados,
   encontrarParecidosPorNome,
@@ -45,8 +46,11 @@ import {
 } from "@/lib/contacts/duplicados";
 import { lerParesDispensados } from "@/lib/contacts/dispensar-par";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
@@ -100,8 +104,21 @@ async function comHashDeCpf(
   return linhas.map((c) => ({ ...c, cpf_hash: hashPorId.get(c.id) ?? null }));
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "contacts",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+    if (teto) return teto;
+    return responderDuplicates(authz.supabase, authz.organizationId, authz.idioma, requestId);
+  }
 
   const user = await loadAuthUser();
   if (!user) {
@@ -115,7 +132,18 @@ export async function GET(): Promise<Response> {
     return fail("forbidden_tenant", t("Organização ativa não resolvida."), 403, { requestId });
   }
 
-  const supabase = await createClient();
+  return responderDuplicates(await createClient(), org.orgId, user.idioma, requestId);
+}
+
+async function responderDuplicates(
+  supabase: SupabaseClient,
+  organizationId: string,
+  idioma: Idioma | undefined,
+  requestId: string,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
+
+  const supabaseAdmin = createAdminClient();
 
   // Varredura PAGINADA por `range`, com ordem estável (`created_at`, `id`): o
   // fim é provado pelo `count` exato ou por página VAZIA. Página curta não é
@@ -131,7 +159,7 @@ export async function GET(): Promise<Response> {
     const { data, error, count } = await supabase
       .from("contacts")
       .select(COLUNAS_DO_CONTATO, pagina === 0 ? { count: "exact" } : undefined)
-      .eq("organization_id", org.orgId)
+      .eq("organization_id", organizationId)
       .is("is_merged_into", null)
       .eq("is_anonymized", false)
       .order("created_at", { ascending: true })
@@ -157,9 +185,8 @@ export async function GET(): Promise<Response> {
   let dispensados: Set<string>;
   let varridos: ContatoParaDeduplicar[];
   try {
-    const admin = createAdminClient();
-    dispensados = await lerParesDispensados(admin, org.orgId);
-    varridos = await comHashDeCpf(admin, org.orgId, linhas.slice(0, TETO_DE_VARREDURA));
+    dispensados = await lerParesDispensados(supabaseAdmin, organizationId);
+    varridos = await comHashDeCpf(supabaseAdmin, organizationId, linhas.slice(0, TETO_DE_VARREDURA));
   } catch {
     // Sem o detalhe do erro na resposta: a mensagem do banco não é para quem opera a tela.
     return fail("internal_error", "Não foi possível ler os dados de duplicados.", 500, {

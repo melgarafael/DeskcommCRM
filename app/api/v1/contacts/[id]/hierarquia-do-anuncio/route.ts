@@ -15,10 +15,13 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { resolverHierarquiaDoContato } from "@/lib/plataformas-de-anuncio/hierarquia-do-contato";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { extractBearer } from "@/lib/mcp/auth";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +29,24 @@ export const dynamic = "force-dynamic";
 const VAZIO = { ad_name: null, adset_name: null, campaign_name: null };
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: contactId } = await ctx.params;
+
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "contacts",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+    if (teto) return teto;
+    return responderHierarquia(authz.supabase, authz.organizationId, contactId, requestId);
+  }
 
   const supabase = await createClient();
   const {
@@ -45,6 +61,24 @@ export async function GET(
     .from("contacts")
     .select("organization_id, source_metadata, is_anonymized")
     .eq("id", contactId)
+    .maybeSingle();
+  if (erroDoContato) return fail("internal_error", erroDoContato.message, 500, { requestId });
+  if (!contato) return fail("not_found", "Contato não encontrado.", 404, { requestId });
+
+  return responderHierarquia(supabase, contato.organization_id, contactId, requestId);
+}
+
+async function responderHierarquia(
+  supabase: SupabaseClient,
+  organizationId: string,
+  contactId: string,
+  requestId: string,
+): Promise<Response> {
+  const { data: contato, error: erroDoContato } = await supabase
+    .from("contacts")
+    .select("organization_id, source_metadata, is_anonymized")
+    .eq("id", contactId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (erroDoContato) return fail("internal_error", erroDoContato.message, 500, { requestId });
   if (!contato) return fail("not_found", "Contato não encontrado.", 404, { requestId });
@@ -65,7 +99,7 @@ export async function GET(
 
   const h = await resolverHierarquiaDoContato(
     createAdminClient(),
-    contato.organization_id,
+    organizationId,
     adId,
   );
 

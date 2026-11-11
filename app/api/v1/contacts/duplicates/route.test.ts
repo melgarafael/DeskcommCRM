@@ -171,7 +171,7 @@ function base(quantos: number): Linha[] {
 
 async function chamar(): Promise<Response> {
   const { GET } = await import("./route");
-  return GET();
+  return GET(new Request("http://localhost/api/v1/contacts/duplicates") as never);
 }
 
 function corpo(res: Response): Promise<{ data: unknown; meta: Record<string, unknown> }> {
