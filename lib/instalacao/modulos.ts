@@ -41,7 +41,7 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar` e `link_de_pagamento` ligam/desligam por uma linha em `platform_config`
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento` e `canal_bot` ligam/desligam por uma linha em `platform_config`
  * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera` e `ouvidoria` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
@@ -79,6 +79,7 @@ export const MODULOS_OPCIONAIS = [
   "painel_atendimento",
   "reservas_de_lugar",
   "link_de_pagamento",
+  "canal_bot",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -109,6 +110,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "painel_atendimento",
   "reservas_de_lugar",
   "link_de_pagamento",
+  "canal_bot",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -177,6 +179,11 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // negócio sozinho; quem não cobra por link não carrega essa porta. Desligado,
   // registrar responde 404 e o aviso também.
   link_de_pagamento: "MODULO_LINK_DE_PAGAMENTO",
+  // Doc 216 (A): o canal do robô de mensagens do #3486 é integração OPCIONAL.
+  // Serve a quem atende por robô, não à maioria, e abre conexão com um
+  // fornecedor a mais. Desligado, a aba de Conexões some e conectar responde
+  // 404; um robô já conectado segue atendendo até a empresa desconectá-lo.
+  canal_bot: "MODULO_CANAL_BOT",
 };
 
 const LIGADO = "ligado";

@@ -23,7 +23,7 @@ import { randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
-import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { decryptWebhookSecret, encryptWebhookSecret } from "@/lib/webhooks/secrets";
 
 import { CHANNEL_PROVIDER_TELEGRAM } from "../capabilities";
 import { reactivateChannelSession } from "../reactivate";
@@ -33,6 +33,9 @@ import { telegramGetMe, telegramRequest, type TelegramBotInfo } from "./credenti
 export const ROTULO_DO_CANAL = "Telegram";
 
 export const TELEGRAM_CHANNEL_PROVIDER = CHANNEL_PROVIDER_TELEGRAM;
+
+/** O mesmo valor com nome neutro, para quem mora fora de `lib/channels/` (`lint:channels`). */
+export const BOT_CHANNEL_PROVIDER = CHANNEL_PROVIDER_TELEGRAM;
 
 export interface TelegramSession {
   id: string;
@@ -124,6 +127,36 @@ export async function registrarWebhookDoBot(
     allowed_updates: ["message"],
     drop_pending_updates: false,
   });
+}
+
+/**
+ * O robô já atende por OUTRA conexão ativa — desta ou de outra organização?
+ *
+ * Pergunta feita ANTES do `setWebhook`: o índice único do robô ativo protege a
+ * gravação, mas chega tarde para o efeito no fornecedor, que já teria trocado
+ * a URL e o segredo de quem atendia. Recusar aqui deixa a conexão existente
+ * intacta. A resposta é só sim/não: nada da outra conexão sai daqui.
+ *
+ * ponytail: consulta e gravação não são atômicas; duas conexões simultâneas do
+ * mesmo robô ainda chegam ao índice único. Reserva com trava, se isso aparecer.
+ *
+ * LANÇA quando a consulta falha: na dúvida, não se mexe no webhook de ninguém.
+ */
+export async function roboLigadoEmOutraConexao(
+  admin: SupabaseClient,
+  botId: string,
+  sessaoPropria: string | null,
+): Promise<boolean> {
+  let q = admin
+    .from("channel_sessions")
+    .select("id")
+    .eq("provider", TELEGRAM_CHANNEL_PROVIDER)
+    .eq("telegram_bot_id", botId)
+    .is("archived_at", null);
+  if (sessaoPropria) q = q.neq("id", sessaoPropria);
+  const { data, error } = await q.limit(1);
+  if (error) throw new Error(`telegram_bot_lookup_failed: ${error.message}`);
+  return ((data as unknown[] | null) ?? []).length > 0;
 }
 
 /**
@@ -245,6 +278,20 @@ export async function conectarRobo(
     return { ok: false, reason: "Não foi possível falar com o Telegram. Tente de novo.", status: 502 };
   }
 
+  let emUso: boolean;
+  try {
+    emUso = await roboLigadoEmOutraConexao(admin, bot.id, input.existente?.id ?? null);
+  } catch {
+    return { ok: false, reason: "Não foi possível conferir o robô agora. Tente de novo.", status: 503 };
+  }
+  if (emUso) {
+    return {
+      ok: false,
+      reason: "Este robô já está conectado em outra conta. Desconecte-o lá antes, ou crie outro robô no @BotFather.",
+      status: 409,
+    };
+  }
+
   const tokenEncrypted = await encryptWebhookSecret(admin, token);
   const secretToken = novoSegredoDoWebhook();
   const secretEncrypted = await encryptWebhookSecret(admin, secretToken);
@@ -289,4 +336,34 @@ export async function conectarRobo(
   }
 
   return { ok: true, bot, channelSessionId, webhookUrl };
+}
+
+/**
+ * Desfaz no fornecedor o que a conexão fez: apaga o webhook do robô.
+ *
+ * Chamada pela exclusão neutra da conexão (`DELETE /api/v1/channel-sessions/[id]`)
+ * ANTES de a linha ser arquivada — depois disso o token cifrado é o único
+ * caminho para o robô, e a URL antiga só responderia 404 ao fornecedor, que
+ * reentrega por horas. Best-effort, como os ramos vizinhos: quem chama registra
+ * o desfecho e NÃO desfaz a exclusão que o operador pediu.
+ */
+export async function desligarRoboNoFornecedor(
+  admin: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string,
+): Promise<"desfeito" | "sem_credencial"> {
+  const { data, error } = await admin
+    .from("channel_sessions")
+    .select("telegram_token_encrypted")
+    .eq("organization_id", organizationId)
+    .eq("id", channelSessionId)
+    .maybeSingle();
+  if (error) throw new Error(`telegram_session_lookup_failed: ${error.message}`);
+  const cifrado = (data as { telegram_token_encrypted?: string | null } | null)?.telegram_token_encrypted;
+  const token = cifrado ? await decryptWebhookSecret(admin, cifrado) : null;
+  if (!token) return "sem_credencial";
+  // `drop_pending_updates: false`: o que ficou na fila do fornecedor volta a ser
+  // entregue se a empresa reconectar o mesmo robô.
+  await telegramRequest<boolean>(token, "deleteWebhook", { drop_pending_updates: false });
+  return "desfeito";
 }

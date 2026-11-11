@@ -11,6 +11,7 @@ import {
   ROTULO_DO_CANAL,
 } from "@/lib/channels/bot/connect";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
 
@@ -23,6 +24,9 @@ import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
  * `lib/channels/bot/`, e é o `lint:channels` (invariante 1 da doutrina
  * `restricao-de-canal.md`) que cobra isso — ele reprova nome de provider fora
  * de `lib/channels/`, e esta rota é justamente o lugar onde ele seria tentador.
+ *
+ * O canal é MÓDULO OPCIONAL da instalação (doc 216, A): com `canal_bot`
+ * desligado em `/admin/sistema`, as duas respondem 404 — antes de ler o corpo.
  *
  * Nenhuma das duas respostas devolve o token do robô nem o segredo do webhook: a
  * tela sabe que eles existem (`has_token`), não quais são.
@@ -45,6 +49,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!authz.ok) return authz.response;
 
   const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "canal_bot"))) return fail("not_found", "Not found", 404, { requestId });
   const sessao = await acharSessaoDoRobo(admin, authz.org.orgId);
   const ativa = sessao && !sessao.archivedAt ? sessao : null;
 
@@ -74,12 +79,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const authz = await requireRole("admin", { requestId, resource: "channels_bot" });
   if (!authz.ok) return authz.response;
 
+  const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "canal_bot"))) return fail("not_found", "Not found", 404, { requestId });
+
   const parsed = conectarSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return fail("invalid_request", "Informe o token do robô (@BotFather).", 422, { requestId });
   }
 
-  const admin = createAdminClient();
   const orgId = authz.org.orgId;
   let existente;
   try {

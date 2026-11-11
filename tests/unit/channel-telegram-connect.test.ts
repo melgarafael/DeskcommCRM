@@ -279,6 +279,74 @@ describe("conectarRobo", () => {
   });
 });
 
+describe("robô já ligado em outra conexão", () => {
+  /** Admin cujo SELECT de sessões ativas do robô devolve `linhas`, e que anota os filtros. */
+  function adminComRobo(linhas: unknown[], filtros: string[]) {
+    return {
+      from() {
+        const proxy: Record<string, unknown> = new Proxy(
+          {},
+          {
+            get(_t, prop) {
+              if (prop === "then") return (ok: (v: unknown) => unknown) => ok({ data: linhas, error: null });
+              if (prop === "insert") return (payload: Record<string, unknown>) => (inseridos.push(payload), proxy);
+              return (...args: unknown[]) => {
+                filtros.push(`${String(prop)}(${args.map(String).join(",")})`);
+                return proxy;
+              };
+            },
+          },
+        );
+        return proxy;
+      },
+    } as never;
+  }
+
+  it("recusa com 409 ANTES do setWebhook: a conexão que já atendia não é tocada", async () => {
+    const filtros: string[] = [];
+    const r = await conectarRobo(adminComRobo([{ id: "sess-de-outra" }], filtros), {
+      organizationId: "org-2",
+      token: "123456789:AAH-segredo-do-botfather",
+      existente: null,
+      webhookUrlBase: BASE,
+      userId: "user-2",
+      requestId: "req-2",
+    });
+    expect(r).toMatchObject({ ok: false, status: 409 });
+    expect(chamadas.map((c) => c.metodo)).toEqual(["getMe"]);
+    expect(inseridos).toHaveLength(0);
+    // A pergunta é pelo ROBÔ entre as ativas, e não pela organização — é o
+    // que alcança a conexão de outra empresa.
+    expect(filtros).toContain("eq(telegram_bot_id,777)");
+    expect(filtros).toContain("is(archived_at,null)");
+    expect(filtros.some((f) => f.startsWith("eq(organization_id"))).toBe(false);
+  });
+
+  it("reconectar a PRÓPRIA sessão não conta como outra conexão", async () => {
+    const filtros: string[] = [];
+    const r = await conectarRobo(adminComRobo([], filtros), {
+      organizationId: "org-1",
+      token: "123456789:AAH-segredo-do-botfather",
+      existente: {
+        id: "sess-propria",
+        botId: "777",
+        displayName: "Atendimento",
+        status: "WORKING",
+        webhookPathToken: "caminho-antigo",
+        hasToken: true,
+        webhookSecretEncrypted: "enc:x",
+        archivedAt: null,
+      },
+      webhookUrlBase: BASE,
+      userId: "user-1",
+      requestId: "req-1",
+    });
+    expect(r.ok).toBe(true);
+    expect(filtros).toContain("neq(id,sess-propria)");
+    expect(chamadas.map((c) => c.metodo)).toEqual(["getMe", "setWebhook"]);
+  });
+});
+
 describe("novoSegredoDoWebhook", () => {
   it("32 bytes em hex: entropia de verdade e dentro do que o Telegram aceita", () => {
     const a = novoSegredoDoWebhook();
