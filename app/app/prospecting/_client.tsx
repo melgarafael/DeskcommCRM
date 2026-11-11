@@ -16,6 +16,7 @@ import {
   problemaNoTextoDaSaidaNoIdioma,
   rodapeDeSaida,
   TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+  textoDaSaidaEfetivo,
 } from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
@@ -1812,7 +1813,7 @@ export function ProspectingClient() {
                                 <span className="block text-xs text-muted-foreground">
                                   {/* A frase é a ENVIADA: idioma da organização, não da interface. */}
                                   {t("A abertura já diz como parar:")}{" "}
-                                  {rodapeDeSaida(data?.organization_locale)}
+                                  {textoDaSaidaEfetivo(config.texto_da_saida, data?.organization_locale)}
                                 </span>
                               </span>
                             </label>
