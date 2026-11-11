@@ -1,0 +1,6 @@
+---
+impacto: capacidade_nova
+secao: corrigido
+titulo: Follow-up barrado pela trava de valores não avisa o cliente nem pausa a conversa
+---
+Quando a IA escrevia um follow-up ou uma mensagem de automação que tocava em valores e a organização deixou valores e negociação só com a equipe, a trava barrava o texto, mas o sistema tratava isso como se o cliente tivesse pedido ajuda: mandava "Esse caso é melhor resolvido por uma pessoa" a quem nunca tinha escrito e abria um item crítico na Central. Agora, quando o cliente não tem mensagem esperando resposta, o texto só não sai: nenhum aviso vai ao cliente, a conversa não é passada para a equipe e a IA continua atendendo. No follow-up, a IA pode reescrever sem o assunto ou terminar o turno; na automação "Mensagem escrita pela IA", ela escreve de novo uma vez e, se for barrada outra vez, nada é enviado. Quando o cliente de fato perguntou de valores, nada muda: ele é avisado e a conversa passa para a equipe, e o cartão da passagem agora diz "A trava de valores e negociação barrou a resposta" em vez de "o assistente não teve confiança". A linha "Não enviei" na timeline do negócio passa a mostrar qual trecho do texto acionou a trava e guarda o texto barrado, para você ver o que a IA tentou dizer. Crédito: @paulolimajr77.
