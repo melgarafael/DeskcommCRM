@@ -26,7 +26,7 @@
  *
  * Por que o "botão" aqui é um `<input type="file">` mockado: o `AttachMenu`
  * real envolve o Radix do popover, que não acrescenta nada ao caminho medido —
- * o contrato dele é `onPick(file)`, e é exatamente o que o dublê entrega. A
+ * o contrato dele é `onPick(files)`, e é exatamente o que o dublê entrega. A
  * prévia também é dublê, pelo motivo oposto: ela é o PONTO DE MEDIÇÃO (o que
  * chega nela, e o que sai dela pelo `onSend` é o upload de verdade, mockado só
  * na borda de rede).
@@ -80,13 +80,15 @@ vi.mock("@/lib/messaging/contact-card", () => ({ resolveSharedContact: vi.fn() }
 // O BOTÃO DE ANEXAR, reduzido ao contrato: escolher o arquivo e entregá-lo ao
 // `onPick` do compositor. É o mesmo `onPick` que o menu "+" real recebe.
 vi.mock("@/components/inbox/composer/AttachMenu", () => ({
-  AttachMenu: ({ onPick }: { onPick: (file: File) => void }) => (
+  // A LISTA, como o menu real entrega desde o #4364: o compositor recebe
+  // `escolherArquivos` e uma fila de um arquivo só é `[arquivo]`.
+  AttachMenu: ({ onPick }: { onPick: (files: File[]) => void }) => (
     <input
       type="file"
       aria-label="Anexar arquivo do botão"
       onChange={(e) => {
-        const arquivo = e.target.files?.[0];
-        if (arquivo) onPick(arquivo);
+        const arquivos = Array.from(e.target.files ?? []);
+        if (arquivos.length) onPick(arquivos);
       }}
     />
   ),

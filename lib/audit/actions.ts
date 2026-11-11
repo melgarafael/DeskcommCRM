@@ -139,6 +139,12 @@ export const AUDIT_ACTIONS = [
   // automático numa conversa não tinha rota e, portanto, não tinha ação de
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
+  // Ligar a IA numa conversa que tem dono, sem soltar o dono (#3967), é decisão
+  // auditável nos dois sentidos: quem ligou, em que conversa, e quando desligou.
+  // O par existe para que "por que a IA falou nessa conversa que é minha?"
+  // tenha resposta sem abrir o histórico inteiro.
+  "conversation.ai_with_owner_enabled",
+  "conversation.ai_with_owner_disabled",
   "conversation.tags_changed",
   // (migration 9062) Mudar a FILA de uma conversa é decisão auditável: quem
   // escolheu, de qual fila para qual, e se aquilo disparou redistribuição. Sem
@@ -1361,6 +1367,10 @@ export const AUDIT_ACTIONS = [
   // as gravações que ela deixou passar.
   "crm.telefone_de_ficha_vazia_alterado",
   "crm.nome_informado_alterado",
+  // O admin ligou/desligou a SUGESTÃO de duplicado pelo nome (#4138). É a opção
+  // que decide se a tela de limpeza de contatos mostra "Parecidos — confira" —
+  // o ato administrativo que abriu (ou fechou) essa seção para a organização.
+  "crm.duplicados_por_nome_alterado",
   // O admin ligou/desligou o aviso das transferências para atendimento humano
   // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
   "crm.aviso_de_transferencia_alterado",

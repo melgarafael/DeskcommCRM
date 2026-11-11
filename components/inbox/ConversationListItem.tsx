@@ -14,6 +14,7 @@ import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import {
   comandoDaConversa,
   esperaDaConversa,
+  rotuloDaEspera,
   ROTULO_DO_COMANDO,
   STATUS_ENCERRADOS,
 } from "@/lib/inbox/comando-da-conversa";
@@ -151,9 +152,10 @@ function waitingLabel(
   conversation: ConversationWithContact,
   t: (texto: string) => string = (texto) => texto, locale: Locale,
 ): string {
-  const since = esperaDaConversa(conversation);
-  if (!since) return t("Aguardando");
-  return `${t("Aguardando")} ${formatDistanceToNowStrict(new Date(since), { addSuffix: true, locale: locale })}`;
+  // O texto mora em `rotuloDaEspera`, ao lado da régua (`esperaDaConversa`):
+  // enquanto ele era escrito aqui, privado, a pílula só podia ser provada
+  // renderizando a linha inteira — e a #990 ficou sem teste vermelho por isso.
+  return rotuloDaEspera(esperaDaConversa(conversation), new Date(), t, locale);
 }
 
 export function ConversationListItem({
@@ -225,6 +227,9 @@ export function ConversationListItem({
     is_blocked: c?.is_blocked ?? null,
     is_group: conversation.is_group ?? false,
     automaticoDaOrg,
+    // O fato por NÚMERO (#4012) vem no próprio registro — nada de uma consulta
+    // por linha. Ausente em cache antigo, e aí a regra cai no org-wide.
+    automaticoDaConversa: conversation.automatico_da_conversa ?? undefined,
   });
   const isAi = comando.quem === "automatico";
   const dot = COR_DO_COMANDO[comando.quem] ?? COR_DO_COMANDO.ninguem;
@@ -422,7 +427,7 @@ export function ConversationListItem({
             )}
           </span>
           <span
-            className="shrink-0 text-[11px] tabular-nums text-text-subtle"
+            className="shrink-0 text-[11px] tabular-nums text-text-muted"
             // O mesmo lugar da tela mostra duas coisas diferentes conforme a aba:
             // na Fila é "desde quando o cliente ESPERA" (a mensagem mais antiga sem
             // resposta — #990), nas outras é "há quanto tempo a conversa mexeu". O

@@ -57,8 +57,7 @@ async function anonymize(client:pg.PoolClient,f:Fixture,commit=true) {
   if(commit) await client.query("commit");
 }
 async function anonymizeDirect(client:pg.PoolClient,f:Fixture,commit=true) {
-  await client.query("begin; set local role authenticated; set local statement_timeout='5s'");
-  await client.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({role:"authenticated",sub:f.user,aal:"aal1"})]);
+  await begin(client);
   const result=await client.query("update public.contacts set is_anonymized=true,anonymized_at=clock_timestamp() where id=$1 and organization_id=$2 returning id",[f.contact,f.org]);
   if(commit) await client.query("commit");
   return result.rowCount;
@@ -124,14 +123,18 @@ describe("congelamento de catálogo e anonimização em duas sessões",()=>{
 });
 
 
-describe("UPDATE direto da sessão também obedece à barreira de anonimização",()=>{
-  it("controle real: ACL/policy permitem a própria org e escondem a vizinha",async()=>{
+describe("UPDATE direto do servidor também obedece à barreira de anonimização",()=>{
+  it("controle real: a sessão não vira a coluna na própria org e não enxerga a vizinha; o servidor vira",async()=>{
     const f=await fixture(),other=await fixture(),session=await pool.connect();
     try{
       expect((await pool.query("select has_table_privilege('authenticated','public.contacts','UPDATE') as allowed")).rows[0].allowed).toBe(true);
-      expect(await anonymizeDirect(session,f,false)).toBe(1);
+      await session.query("begin; set local role authenticated; set local statement_timeout='5s'");
+      await session.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({role:"authenticated",sub:f.user,aal:"aal1"})]);
       expect((await session.query("update contacts set is_anonymized=true,anonymized_at=clock_timestamp() where id=$1 returning id",[other.contact])).rowCount).toBe(0);
-      await session.query("commit");
+      await expect(session.query("update contacts set is_anonymized=true,anonymized_at=clock_timestamp() where id=$1 returning id",[f.contact])).rejects.toMatchObject({code:"42501"});
+      await session.query("rollback");
+      expect((await pool.query("select is_anonymized from contacts where id=$1",[f.contact])).rows[0].is_anonymized).toBe(false);
+      expect(await anonymizeDirect(session,f)).toBe(1);
       expect((await pool.query("select is_anonymized from contacts where id=$1",[f.contact])).rows[0].is_anonymized).toBe(true);
       expect((await pool.query("select is_anonymized from contacts where id=$1",[other.contact])).rows[0].is_anonymized).toBe(false);
     }finally{await session.query("rollback");session.release();}

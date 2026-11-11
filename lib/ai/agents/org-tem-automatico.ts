@@ -1,11 +1,12 @@
 /**
  * "ESTA ORG TEM ATENDIMENTO AUTOMÁTICO DE PÉ?" — uma pergunta, um lugar.
  *
- * O fato é ORG-WIDE, e é o único pedaço de `comandoDaConversa` que o banco não
- * pode responder sozinho: para saber se há agente no ar ele teria de reproduzir
- * `agenteAtende` inteiro dentro do SQL — a regra em mais uma encarnação, agora a
- * terceira. Então quem resolve é o servidor, e o resultado entra na consulta
- * escolhendo o CONJUNTO de comandos que a aba pede (`comandosDaFila`).
+ * O fato é ORG-WIDE. Desde a #4012 o banco também o responde
+ * (`fn_org_tem_automatico`, espelho SQL de `agenteAtende`, migration 9330), porque
+ * as funções do banco que decidem pelo comando precisam dele. Aqui ele segue
+ * servindo o servidor: a aba Fila escolhe o CONJUNTO de comandos que pede
+ * (`comandosDaFila`) e a contagem da aba Automático. As duas réguas são casadas por
+ * `tests/invariants/comando-da-conversa-com-agente-no-ar.test.ts`.
  *
  * Já havia dois consumidores no primeiro dia (`/api/v1/conversations/counts` e
  * `lib/routing/queue.ts`), e é por isso que isto nasce como função e não como
