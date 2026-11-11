@@ -76,6 +76,21 @@ describe("resolverVozDoTurno", () => {
     expect(r).toMatchObject({ formato: "mp3" });
   });
 
+  it("id que não está em catálogo nenhum: o turno usa o que está salvo, sem 'corrigir' (#4260)", async () => {
+    // A razão do pedido: o cliente tem vozes próprias na conta ElevenLabs e
+    // elas nunca apareceram na lista derivada da validação da credencial. Se o
+    // turno filtrasse por lista, salvar um id livre não teria efeito nenhum.
+    resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "chave-de-teste" });
+    const r = await resolverVozDoTurno({
+      ...base,
+      pool: pool({ voz: { voice_id: "vozPropriaDoCliente123" } }),
+      vozEnabled: true,
+      vozQuando: "sempre",
+      inboundType: "text",
+    });
+    expect(r).toMatchObject({ voiceId: "vozPropriaDoCliente123" });
+  });
+
   it("vozQuando='nunca': não fala mesmo com voz_enabled=true", async () => {
     const r = await resolverVozDoTurno({
       ...base,

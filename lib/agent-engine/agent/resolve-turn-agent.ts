@@ -70,6 +70,7 @@ import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
 import { agentePorRemetente } from './sender-routing';
 import { registrarDecisaoDoRoteador } from './router-decision-log';
 import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
+import { roteadorPorRemetente } from './transferir-agente';
 import {
   escolherAgenteDoNumero,
   loadPublishedAgentConfig,
@@ -318,8 +319,7 @@ export async function resolveTurnAgent(
   try {
     const router = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
     roteadorCarregado = true;
-    temRegrasDeRemetente = router?.senderRoutes !== undefined &&
-      (!Array.isArray(router.senderRoutes) || router.senderRoutes.length > 0);
+    temRegrasDeRemetente = router !== null && roteadorPorRemetente(router);
     if (router && temRegrasDeRemetente) {
       const { agentId, reserved } = await agentePorRemetente(db, input, router);
       // O canal opera em modo de identidade: agentes internos nunca entram por

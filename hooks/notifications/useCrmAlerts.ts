@@ -15,6 +15,10 @@ import {
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { entregarAviso } from "@/lib/notifications/deliver";
 import { mencaoAtingeUsuario, textoLegivelDeMencao } from "@/lib/notifications/mentions";
+import {
+  limparMencoesDaLista,
+  marcarConversaMencionada,
+} from "@/lib/notifications/mencao-na-lista";
 import { buscaEventosDoNegocio } from "./eventos-do-negocio";
 
 function str(v: unknown): string | null {
@@ -69,6 +73,10 @@ export function useCrmAlerts(): void {
     const geracao = { orgId, userId: user.id, ativo: orgId !== null };
     contexto.current = geracao;
     memorias.current.clear();
+    // A marca "mencionado" da lista (#2372) é do par org+pessoa: a conversa da
+    // organização anterior não existe na lista desta, e a menção de outro
+    // atendente não é minha. Mesmo escopo do canal e do histórico acima.
+    limparMencoesDaLista();
     return () => { geracao.ativo = false; };
   }, [orgId, user.id]);
 
@@ -177,6 +185,11 @@ export function useCrmAlerts(): void {
         return;
       }
       const conversationId = str(novo.conversation_id);
+      // A lista de conversas é onde a pessoa trabalha: a linha da conversa da
+      // nota fica marcada até ela abrir (#2372). Marca ANTES de entregar, e não
+      // depende de o canal `in_app` estar ligado — quem desligou o toast ainda
+      // precisa achar a conversa.
+      if (conversationId) marcarConversaMencionada(conversationId);
       entregarAviso({
         category: "mention",
         kind: "mention",

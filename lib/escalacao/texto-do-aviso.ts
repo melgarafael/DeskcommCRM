@@ -126,10 +126,10 @@ export function montarAvisoDeCaso(aviso: AvisoDeCaso): string {
   const precisa = sanitizarTextoDoLead(aviso.summary, TETOS_DO_TEXTO_DO_LEAD.summary);
   if (precisa) {
     // A ETIQUETA é a defesa barata contra phishing no caso de fail-safe: ali o
-    // `summary` é a própria frase que a IA ia mandar ao cliente, e sem a
-    // etiqueta ela chega à equipe com cara de afirmação do sistema. Declarada
-    // como citação, ela volta a ser o que é.
-    if (failSafe) linhas.push(t("(resumo escrito pela IA a partir da conversa)"));
+    // `summary` é montado sem revisão — trecho copiado da conversa (#3725) ou a
+    // frase barrada da IA — e sem a etiqueta chega à equipe com cara de
+    // afirmação do sistema. Declarado como citação, volta a ser o que é.
+    if (failSafe) linhas.push(t("(montado automaticamente; confira na conversa)"));
     linhas.push(`${t("O que o cliente precisa")}: ${precisa}`);
   }
 

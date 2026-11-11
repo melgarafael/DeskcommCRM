@@ -47,6 +47,16 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser " +
       "avisado. Cada empresa escolhe os prazos da oferta antes de ligar.",
   },
+  {
+    // #3611: volta ao catálogo junto com a tela de gestão (#3636) — antes dela,
+    // instalar daria uma tabela que ninguém conseguia abrir.
+    slug: "ouvidoria",
+    nome: "Ouvidoria",
+    descricao:
+      "Registro de manifestações (reclamações, denúncias, elogios, sugestões) com protocolo " +
+      "próprio, leitura restrita a administradores e sem cartão no funil. Quem não instala " +
+      "o módulo não carrega a tabela.",
+  },
 ];
 
 export function moduloDoCatalogo(slug: string): ModuloCatalogo | undefined {

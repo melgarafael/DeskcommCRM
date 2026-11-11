@@ -14,6 +14,7 @@ vi.mock("@/lib/api/client", () => ({ apiClient: api }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (text: string) => text }));
 
 import { ProspectingClient } from "./_client";
+import { ApiError } from "@/lib/api/types";
 
 const COMPLETA = "11111111-1111-4111-8111-111111111111";
 const PARCIAL = "11111111-1111-4111-8111-111111111112";
@@ -711,5 +712,45 @@ describe("WhatsApp conferido antes da abordagem (lib/prospecting/whatsapp.ts)", 
     expect(within(linha).queryByRole("checkbox")).toBeNull();
     // A desmarcada pelo operador (c5) continua marcável: a trava é só de quem não tem WhatsApp.
     expect(within(screen.getByRole("row", { name: /Desmarcada/ })).getByRole("checkbox")).toBeVisible();
+  });
+});
+
+/**
+ * O AVISO DA RECUSA DO AGENTE LEVA AO AGENTE (issue #4118, saída 2).
+ *
+ * A recusa chegava como texto e mandava "publicar o agente com a ferramenta e
+ * acesso ao funil" — sem dizer qual das duas faltava e sem caminho. O servidor
+ * passou a devolver `details.agent_id`; a tela tem de transformar isso em link
+ * DIRETO do agente escolhido (não da lista), senão a pessoa volta a procurar.
+ */
+describe("o aviso do agente (issue #4118)", () => {
+  const RECUSA =
+    'O agente publicado não tem acesso ao funil "Clínicas" — marque o funil em "Em que negócios ele pode mexer". A campanha usa a versão publicada do agente: o ajuste só vale depois de publicar.';
+
+  it("traz o link do agente que o servidor apontou, e não o da lista", async () => {
+    api.post.mockRejectedValueOnce(
+      new ApiError(422, "prospecting_agent_incompleto", { agent_id: AGENT }, "req-4118", RECUSA),
+    );
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Iniciar abordagens com IA/ }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent(/versão publicada/);
+    expect(within(alerta).getByTestId("abrir-o-agente")).toHaveAttribute(
+      "href",
+      `/app/ai/agents/${AGENT}`,
+    );
+  });
+
+  it("sem `agent_id` no erro, não inventa link: a frase continua sozinha", async () => {
+    api.post.mockRejectedValueOnce(
+      new ApiError(422, "prospecting_agent_incompleto", undefined, "req-4118", RECUSA),
+    );
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Iniciar abordagens com IA/ }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent(/versão publicada/);
+    expect(within(alerta).queryByTestId("abrir-o-agente")).toBeNull();
   });
 });
