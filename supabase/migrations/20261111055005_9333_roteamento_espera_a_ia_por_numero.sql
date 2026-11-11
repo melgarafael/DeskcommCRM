@@ -149,6 +149,7 @@ begin
     'recuperacao_da_queda',
     'cliente_sem_resposta_na_queda',
     'assinatura_desconectada',
+    'channel_template_review_direct',
     'routing_ia_wait_expired',
     'other'
   ));

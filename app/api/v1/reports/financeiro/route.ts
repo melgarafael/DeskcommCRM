@@ -20,12 +20,10 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { periodoPassaDoTeto } from "@/lib/relatorios/janela";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-
-/** Quantos dias um período pode cobrir. */
-const JANELA_MAXIMA_DIAS = 400;
 
 const periodoSchema = z.object({
   de: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida."),
@@ -56,9 +54,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("validation_failed", "A data inicial é depois da final.", 422, { requestId });
   }
 
-  const dias =
-    (Date.parse(lido.data.ate) - Date.parse(lido.data.de)) / 86_400_000;
-  if (dias > JANELA_MAXIMA_DIAS) {
+  // O teto e a conta são compartilhados com `/reports/comercial`: a tela de
+  // Faturamento chama as duas com o mesmo período, e uma não pode recusar o que a
+  // outra aceita (`JANELA_MAXIMA_DIAS`, em lib/relatorios/janela.ts).
+  if (periodoPassaDoTeto(lido.data.de, lido.data.ate)) {
     return fail("validation_failed", "O período não pode passar de 400 dias.", 422, { requestId });
   }
 

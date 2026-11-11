@@ -302,6 +302,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "função recusa tudo que não seja admin da própria organização.",
   },
   {
+    fn: "fn_definir_lembrete_do_aviso_de_agendamento(uuid,boolean)",
+    razao:
+      "A porta de escrita de `config_aviso_de_agendamento.lembrar_antes` (migration 9326). " +
+      "PUT app/api/v1/agenda/aviso/route.ts chama com createClient da sessão, logo depois de " +
+      "fn_definir_aviso_de_agendamento. Mesmas guardas da irmã: auth.uid(), " +
+      "fn_role_at_least(p_org,'admin'), fn_support_write_allowed(p_org) e " +
+      "fn_session_mfa_proven(); só atualiza a linha da organização pedida e recusa quem " +
+      "ainda não tem configuração. Prova: tests/invariants/lembrete-ao-dono-escrita.test.ts.",
+  },
+  {
     fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text)",
     razao:
       "A ÚNICA porta de escrita de `config_aviso_de_agendamento` (migration 0707) — " +
