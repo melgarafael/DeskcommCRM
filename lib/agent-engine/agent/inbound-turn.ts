@@ -232,6 +232,7 @@ import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
+import { idiomaDaOrganizacaoDoTurno, montarBlocoDePassagemDoRoteador } from './passagem-do-roteador';
 import { ferramentaDePassagemEntreAgentes } from './transferir-agente';
 import {
   hasOpenCaseForContact,
@@ -1902,6 +1903,12 @@ export interface AgentTurnInput {
     compromissosBlock?: string;
     /** O anúncio que o contato clicou (vazio = não veio de anúncio). */
     origemBlock?: string;
+    /**
+     * O aviso da PASSAGEM AUTOMÁTICA do roteador (#4363), já montado — '' quando
+     * a conversa não trocou de agente. Opcional pela razão de `projeta`: quem
+     * monta um ritual à mão (testes, follow-up, resposta de caso) não o calcula.
+     */
+    passagemBlock?: string;
     /** Texto exato da mensagem que acordou este turno inbound. */
     currentInboundText?: string;
     /**
@@ -3258,6 +3265,9 @@ async function executarTurnoDoAgente(
           agentId: agentConfig.agentId,
           vozEnabled: agentConfig.vozEnabled,
           vozQuando: agentConfig.vozQuando,
+          // Voz por agente (#4228): sem chave no agente, `null` e a resolução cai
+          // na voz da organização — o comportamento de antes, byte a byte.
+          vozVoiceId: agentConfig.vozVoiceId ?? null,
           voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
           inboundType:
             input.inboundMessageId === undefined
@@ -4231,7 +4241,7 @@ async function executarTurnoDoAgente(
         textoDaOrganizacao(playbook.prompt),
         renderOrgMemory(memoriaEscritaPorPessoas(orgMemory)),
         skillsDaOrganizacao,
-        evidenciasComerciais.contexto(),
+        evidenciasComerciais.materialDaOrganizacao(),
         ...valoresConsultados,
       ],
       ...(historico !== undefined ? { historico } : {}),
@@ -5979,6 +5989,31 @@ async function executarTurnoDoAgente(
               };
               continue;
             }
+            // Leitura do servidor MCP externo (#2147): o que o sistema da empresa
+            // devolveu — a data do exame na agenda — é fato consultado neste turno.
+            // Sem isto a revisão de promessa não via de onde a data veio e vetava
+            // a resposta certa como compromisso inventado.
+            if (mcp.leiturasRemotas.has(name) && typeof mcpTool.execute === 'function') {
+              const executeOriginal = mcpTool.execute.bind(mcpTool);
+              // Troca o `execute` no PRÓPRIO objeto, sem cópia: a prévia libera a
+              // remota pela identidade do objeto que `pickToolsFromMcp` marcou
+              // (`leitura-remota.ts`), e uma cópia perderia a marca. O objeto é
+              // montado por turno, então a troca não vaza para outro turno.
+              mcpTool.execute = (async (...args: Parameters<typeof executeOriginal>) => {
+                const resultado = await executeOriginal(...args);
+                const descartadas = evidenciasComerciais.registrarLeituraRemota(name, resultado);
+                if (descartadas.length > 0) {
+                  runLog.warn('leitura remota acima do teto da evidência — fora da conferência de promessa', {
+                    ferramenta: name,
+                    descartadas: descartadas.length,
+                    tamanhos: descartadas,
+                  });
+                }
+                return resultado;
+              }) as typeof mcpTool.execute;
+              rawTools[name] = mcpTool;
+              continue;
+            }
             // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
             // precisa saber para não vetar um turno que já checou a agenda de verdade.
             if (AGENDA_TOOL_NAMES.has(name) && typeof mcpTool.execute === 'function') {
@@ -6406,6 +6441,19 @@ async function executarTurnoDoAgente(
       mcp_tools_no_turno: mcpToolIdsDoTurno.length - cobertasPelaNativaNoTurno,
       cobertas_pela_nativa: cobertasPelaNativaNoTurno,
     });
+    // #4363 — A TROCA AUTOMÁTICA DO ROTEADOR chega ao agente que RECEBE a
+    // conversa: ele precisa saber que herdou o atendimento (e de quem) para se
+    // apresentar e continuar de onde está, no idioma da organização. Só existe
+    // no turno da troca (`reclassified`) — nos demais o bloco é '' e nem a
+    // leitura do locale acontece.
+    const passagemRecebida = 'passagemRecebida' in routed ? (routed.passagemRecebida ?? null) : null;
+    const passagemBlock =
+      passagemRecebida === null
+        ? ''
+        : montarBlocoDePassagemDoRoteador(
+            passagemRecebida,
+            await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
+          );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
       leadState,
@@ -6415,6 +6463,7 @@ async function executarTurnoDoAgente(
       entregues,
       compromissosBlock,
       origemBlock,
+      passagemBlock,
       formatoDoHistorico: deps.knobs.historyFormat ?? 'json',
       ...(currentInboundText !== null ? { currentInboundText } : {}),
       // #2729 — o autor da mensagem canônica, quando ela é de grupo. Vai junto
@@ -7744,6 +7793,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         currentInboundText,
         currentInboundSender,
         formatoDoHistorico,
+        passagemBlock,
       }) =>
         buildOpeningMessage(
           previous,
@@ -7757,6 +7807,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           currentInboundSender,
           origemBlock,
           formatoDoHistorico,
+          passagemBlock,
         ),
     });
   };
