@@ -57,6 +57,9 @@ export function ContabilidadHub() {
         <QuickLink href="/app/contabilidad/plan-cuentas" title="Plan de Cuentas" description="Gestionar cuentas contables" />
         <QuickLink href="/app/contabilidad/diario" title="Diario" description="Asientos contables" />
         <QuickLink href="/app/contabilidad/fiscal" title="Libros Fiscales" description="IVA, IT y declaraciones" />
+        <QuickLink href="/app/contabilidad/reportes" title="Reportes" description="Balance, resultados, libro mayor" />
+        <QuickLink href="/app/contabilidad/kpis" title="KPIs" description="Indicadores financieros" />
+        <QuickLink href="/app/contabilidad/presupuestos" title="Presupuestos" description="Control presupuestario mensual" />
       </div>
 
       {/* Recent posted entries */}
