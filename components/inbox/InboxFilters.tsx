@@ -37,6 +37,7 @@ import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
 import { useDepoisDeMontar } from "@/hooks/ui/useDepoisDeMontar";
 import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
+import type { Sector } from "@/hooks/team/useSectors";
 
 export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
 
@@ -102,6 +103,50 @@ export interface InboxFiltersValue {
    * ausente = todas. A aba Minhas já é "as minhas", então ali ele não vale.
    */
   assigned_to?: string;
+  /**
+   * A FILA escolhida (#3876): id do setor. Ausente = todas as filas. É o mesmo
+   * valor que vai para a lista (`sector_id` no GET) e para as contagens — um
+   * seletor que muda a tela sem mudar a lista seria pior que seletor nenhum.
+   */
+  sector_id?: string;
+}
+
+/**
+ * O conteúdo de UMA opção do seletor de fila (#3876): o ponto da cor, o nome e
+ * quantas conversas esperam ali.
+ *
+ * Exportado porque é a única parte da opção com informação a medir — o
+ * `SelectContent` do Radix só existe no portal DEPOIS do clique, e um teste que
+ * dependesse de abrir o menu mediria o Radix, não a cor da fila. Sem cor
+ * declarada (migration 9084), o ponto não é desenhado: um cinza fixo ao lado de
+ * toda fila transformaria "não escolhi cor" em "escolhi cinza".
+ */
+export function OpcaoDaFila({
+  fila,
+  esperando,
+}: {
+  fila: Pick<Sector, "id" | "name" | "color">;
+  esperando?: number;
+}) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      {fila.color != null && (
+        <span
+          aria-hidden
+          data-cor-da-fila={fila.id}
+          className="inline-block size-2 shrink-0 rounded-full"
+          style={{ backgroundColor: fila.color }}
+        />
+      )}
+      <span className="truncate">{fila.name}</span>
+      {/* O número é o trabalho que ESPERA naquela fila — o mesmo predicado da
+          aba Fila (`por_fila` na rota counts). Zero não é desenhado: um "0" ao
+          lado de toda fila vazia é ruído. */}
+      {typeof esperando === "number" && esperando > 0 && (
+        <span className="tabular-nums text-text-subtle">{esperando}</span>
+      )}
+    </span>
+  );
 }
 
 /**
@@ -120,9 +165,19 @@ type EstadoDoVocabularioDeTag = "carregando" | "vazio" | "com-itens";
 interface Props {
   value: InboxFiltersValue;
   onChange: (next: InboxFiltersValue) => void;
+  /**
+   * As filas da organização, JÁ filtradas pelo módulo (#3876).
+   *
+   * Vêm de fora, e não de um `useSectors` aqui dentro, por duas razões: a barra
+   * de filtros é montada em 16 arquivos de teste que não têm `QueryClient`
+   * (ela nunca consultou o servidor — as contagens chegam por hook dublado), e
+   * quem sabe se Setores está ligado é a página, que já tem o `activeOrg` e o
+   * provider. Ausente = organização sem Setores: o seletor não existe.
+   */
+  filas?: Pick<Sector, "id" | "name" | "color">[];
 }
 
-export function InboxFilters({ value, onChange }: Props) {
+export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Props) {
   const t = useT();
   const [searchInput, setSearchInput] = useState(value.search);
   const tabsListRef = useRef<HTMLDivElement>(null);
@@ -233,7 +288,26 @@ export function InboxFilters({ value, onChange }: Props) {
     tag: etiquetas,
     tagMode: value.tagMode,
     channel_session_id: value.channel_session_id,
+    sector_id: value.sector_id,
   });
+
+  /**
+   * A FILA (#3876) — o seletor que faltava.
+   *
+   * Setores é MÓDULO OPCIONAL da instalação (doc 213), desligado por padrão: com
+   * ele fora, `useSectors` nem pergunta (a rota daria 404) e o seletor não
+   * existe. Sem fila criada é a mesma coisa — um controle que abre uma lista
+   * vazia é ruído na coluna de 280 px.
+   *
+   * A COR vem da fila (migration 9084) e o NÚMERO, de `por_fila`: quantas
+   * conversas esperam gente naquela fila, com o mesmo predicado da aba Fila.
+   * Nome + ponto + contagem é a mesma gramática do seletor de etiqueta logo
+   * abaixo — quem já aprendeu um leu o outro sem explicação.
+   */
+  const filas = filasDaOrganizacao ?? [];
+  const filaForaDaLista =
+    value.sector_id != null && filas.length > 0 && !filas.some((f) => f.id === value.sector_id);
+  const mostrarSeletorDeFila = filas.length > 0 || filaForaDaLista;
 
   // Filtro por ATENDENTE: só para gerente ou acima (a lista de quem atende é da
   // gestão; o atendente comum continua vendo só o escopo dele, que a RLS impõe).
@@ -679,6 +753,50 @@ export function InboxFilters({ value, onChange }: Props) {
                 onChange={(atendente) => onChange({ ...value, assigned_to: atendente })}
               />
             )}
+          </div>
+        )}
+
+        {/* A FILA (#3876) ganha LINHA PRÓPRIA, e não a quarta cápsula da fileira
+            de cima: aquela linha divide 280 px entre número, etiqueta e
+            atendente, e um quarto controle truncaria os quatro. Aqui o seletor
+            tem a largura toda, o que deixa o nome da fila legível — e a cor
+            (migration 9084) aparece no item e no gatilho, porque o `SelectValue`
+            desenha os filhos do item escolhido. Sem cor, nada muda: o ponto só
+            existe quando a fila declarou uma. */}
+        {mostrarSeletorDeFila && (
+          <div className="flex gap-2">
+            <Select
+              value={value.sector_id ?? "todas"}
+              onValueChange={(v) =>
+                onChange({ ...value, sector_id: v === "todas" ? undefined : v })
+              }
+            >
+              <SelectTrigger
+                data-testid="filtro-de-fila"
+                className={cn(
+                  "h-8 min-w-0 flex-1 rounded-full border-transparent bg-surface-elevated px-3 text-xs shadow-none",
+                  value.sector_id != null && "border-accent bg-accent-soft text-accent",
+                )}
+                aria-label={t("Filtrar por fila")}
+              >
+                <SelectValue placeholder={t("Todas as filas")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">{t("Todas as filas")}</SelectItem>
+                {/* Fila apagada com o filtro ainda ligado: sem esta linha o
+                    gatilho mostraria um resumo de filtro que não está mais na
+                    lista, e não haveria como desligá-lo. A mesma válvula do
+                    seletor de número (`Número removido`). */}
+                {filaForaDaLista && value.sector_id != null && (
+                  <SelectItem value={value.sector_id}>{t("Fila removida")}</SelectItem>
+                )}
+                {filas.map((fila) => (
+                  <SelectItem key={fila.id} value={fila.id}>
+                    <OpcaoDaFila fila={fila} esperando={counts?.por_fila?.[fila.id]} />
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
       </div>

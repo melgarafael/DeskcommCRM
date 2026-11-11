@@ -40,7 +40,7 @@ import { responderSobreOCaso } from "@/lib/agent-engine/agent/conversa-do-caso";
 import {
   montarBlocoDeDados,
   montarSystem,
-  PERSONA_NEUTRA,
+  personaNeutra,
 } from "@/lib/agent-engine/agent/conversa-do-caso/contexto";
 import {
   falasDoSnapshot,
@@ -55,7 +55,7 @@ import {
   resolverPersona,
   type PersonaDaConversa,
 } from "@/lib/agent-engine/agent/conversa-do-caso/persona";
-import { fusoDaOrganizacao } from "@/lib/agent-engine/agent/fuso-da-org";
+import { fatosDaOrganizacao } from "@/lib/agent-engine/agent/fatos-da-organizacao";
 import { loadOrgMemory, renderOrgMemory } from "@/lib/agent-engine/agent/org-memory";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import {
@@ -525,7 +525,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const deps = requestTurnDeps();
-  const fuso = await fusoDaOrganizacao(pool, c.orgId, deps.log);
+  const { fuso, idioma } = await fatosDaOrganizacao(pool, c.orgId, deps.log);
   const persona = await personaDeAgora(pool, c.orgId, caso.agent_id);
   const fronteira = parseServiceBoundary(caso.context_snapshot?.service_boundary);
   const obsoleto = await casoEstaObsoleto(pool, c.orgId, caso.context_snapshot);
@@ -592,8 +592,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     depoisDaAbertura: conversa.depois,
   });
   const system = montarSystem({
-    persona: persona.fonte === "agente_do_caso" ? persona.agente.systemPrompt : PERSONA_NEUTRA,
+    persona: persona.fonte === "agente_do_caso" ? persona.agente.systemPrompt : personaNeutra(idioma),
     memoriaDaOrganizacao: renderOrgMemory(orgMemory) || null,
+    idioma,
   });
 
   let erroCodigo: string | null = null;

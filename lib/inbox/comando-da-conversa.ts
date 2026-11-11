@@ -46,6 +46,9 @@
  * tela oferece um botão de "devolver" para um estado que já vai voltar sozinho.
  */
 
+import { formatDistanceStrict } from "date-fns";
+import type { Locale } from "date-fns";
+
 /** As colunas de que esta função precisa — nada além. */
 export interface FatosDoComando {
   status: string;
@@ -516,4 +519,32 @@ export function esperaDaConversa(c: {
   created_at?: string | null;
 }): string | null {
   return c.awaiting_since ?? c.last_inbound_at ?? c.created_at ?? null;
+}
+
+/**
+ * O TEXTO da pílula ("Aguardando há 5 min"), a partir do MESMO instante.
+ *
+ * `esperaDaConversa` responde "desde quando?"; este formatador diz COMO a
+ * resposta aparece. Eles nasceram separados de propósito: enquanto o texto era
+ * uma função privada dentro de `ConversationListItem.tsx`, a única forma de
+ * provar que a pílula lia a régua certa era renderizar o componente inteiro — e
+ * foi assim que a #990 passou tanto tempo sem nenhum teste vermelho. Aqui a
+ * régua e o texto dela moram no mesmo módulo, e `agora` é PARÂMETRO: com
+ * `new Date()` escondido lá dentro, um caso que anda o relógio não teria como
+ * prender o arredondamento (dez minutos viram "há 9 minutos" no meio do teste).
+ *
+ * Sem instante (conversa que nunca recebeu mensagem do cliente), sai o rótulo
+ * seco "Aguardando" — inventar uma data seria pior que não dizer nenhuma.
+ */
+export function rotuloDaEspera(
+  desde: string | null,
+  agora: Date,
+  t: (texto: string) => string = (texto) => texto,
+  locale?: Locale,
+): string {
+  if (!desde) return t("Aguardando");
+  return `${t("Aguardando")} ${formatDistanceStrict(new Date(desde), agora, {
+    addSuffix: true,
+    ...(locale ? { locale } : {}),
+  })}`;
 }
