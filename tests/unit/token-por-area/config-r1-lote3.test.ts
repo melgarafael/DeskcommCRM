@@ -311,7 +311,16 @@ const CASOS: Caso[] = [
     verificaA: async (res) => {
       const d = (await corpoDe(res)).data;
       expect(d.pipeline_id).toBe(PIPE_A);
-      expect(d.totais).toEqual([{ moeda: "BRL", bruto_cents: 300_000, ponderado_cents: 150_000, n: 2 }]);
+      expect(d.totais).toEqual([
+        {
+          moeda: "BRL",
+          bruto_cents: 300_000,
+          ponderado_cents: 150_000,
+          n: 2,
+          unico: { bruto_cents: 300_000, ponderado_cents: 150_000 },
+          recorrente_mensal: { bruto_cents: 0, ponderado_cents: 0 },
+        },
+      ]);
     },
     verificaB: async (res, f) => {
       expect(res.status).toBe(404);
@@ -664,7 +673,14 @@ describe("funis com token: etapa, destino e corpo são da organização do token
     const res = await rotaPrevisao.GET(reqDe("GET", `/api/v1/pipelines/${PIPE_B}/forecast`, TOKEN_B), comId(PIPE_B));
     expect(res.status).toBe(200);
     expect((await corpoDe(res)).data.totais).toEqual([
-      { moeda: "BRL", bruto_cents: 777_000, ponderado_cents: 777_000, n: 1 },
+      {
+        moeda: "BRL",
+        bruto_cents: 777_000,
+        ponderado_cents: 777_000,
+        n: 1,
+        unico: { bruto_cents: 777_000, ponderado_cents: 777_000 },
+        recorrente_mensal: { bruto_cents: 0, ponderado_cents: 0 },
+      },
     ]);
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
   });
