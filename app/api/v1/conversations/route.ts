@@ -111,6 +111,10 @@ async function responderLista(
     modo: url.searchParams.get("modo") ?? undefined,
     unread: url.searchParams.get("unread") ?? undefined,
     channel_session_id: url.searchParams.get("channel_session_id") ?? undefined,
+    // A FILA (#3876). Mesma cerca das linhas de cima: schema, hook, handler e
+    // ESTA leitura — esquecer aqui é invisível para todo gate de tipo e a lista
+    // volta inteira com o seletor de fila marcado (`rota-le-todo-filtro-do-schema`).
+    sector_id: url.searchParams.get("sector_id") ?? undefined,
     // A aba "Grupos" (Task 10) — mesma rotura que `tag`/`comando` já tiveram
     // aqui: schema aceita, hook serializa, handler filtra, e esta linha é o
     // único lugar que pode esquecer sem erro nenhum. `rota-le-todo-filtro-do-schema`
