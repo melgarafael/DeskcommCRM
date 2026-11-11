@@ -46,68 +46,9 @@ import {
 } from "@/lib/contacts/duplicados";
 import { lerParesDispensados } from "@/lib/contacts/dispensar-par";
 import { traduzir } from "@/lib/i18n/dicionario";
-    const { data: organizacao, error: erroOrg } = await supabaseAdmin
-      .from("organizations")
-      .select("settings")
-      .eq("id", organizationId)
-      .maybeSingle();
-    if (erroOrg) throw new Error(erroOrg.message);
-    sugestaoPorNome = duplicadosPorNomeLigado(organizacao?.settings);
-    dispensados = sugestaoPorNome ? await lerParesDispensados(supabaseAdmin, organizationId) : new Set<string>();
-    varridos = await comHashDeCpf(supabaseAdmin, organizationId, linhas.slice(0, TETO_DE_VARREDURA));
-contacts/duplicates — quem é a MESMA pessoa cadastrada duas vezes.
- *
- * A detecção é PURA (`lib/contacts/duplicados.ts`) e roda aqui, no servidor,
- * sobre a página de contatos vivos que a RLS deixa o usuário ver. Não é um
- * `select` esperto: os índices únicos parciais de `contacts` — telefone, e-mail
- * normalizado e hash de CPF — já impedem duas linhas ativas com a MESMA string,
- * então o que sobra para o produto é a grafia diferente do mesmo número (o nono
- * dígito), o telefone que a ingestão do WhatsApp parkou em
- * `source_metadata.telefone_em_conflito` e a duplicata exata de CPF no clone em
- * que o índice não nasceu (`if not exists` num `update.sh` sem `ON_ERROR_STOP`).
- * Nenhuma dessas é comparação que o índice garante, e é por isso que a regra vive
- * em TypeScript testável em vez de virar SQL que ninguém relê.
- *
- * Há um segundo motivo, que NÃO é igualdade: `nome_parecido` (Spec 31). Ele vem
- * DEPOIS dos fortes, com o mesmo formato, e é sugestão para conferir — o nome
- * sozinho não prova nada. Os pares que a pessoa dispensou ("não são a mesma
- * empresa") saem da lista para todo papel, porque a leitura da dispensa usa o
- * cliente administrador, filtrado pela organização da sessão.
- *
- * ─── O que sai daqui e o que não sai ─────────────────────────────────────────
- * `cpf_hash` é lido pelo SERVIDOR (a comparação precisa dele), só para as fichas
- * que a sessão já viu, e NÃO é devolvido: é PII derivada, e a tela de conferência
- * mostra pessoa, telefone e e-mail — não hash de documento. O mesmo vale para `wa_identity`/`wa_lid`:
- * identificam a CONTA do WhatsApp, não a pessoa para quem se liga; a tela mostra
- * `phone_number`. O mapeamento do
- * `ok(...)` abaixo é a lista fechada do que o cliente recebe; campo novo em
- * `contacts` não vaza por acidente.
- *
- * `viewer` pode LISTAR (é leitura de contato, que ele já enxerga na tabela);
- * quem funde é `manager`, e esse gate está na rota de POST /contacts/merge.
- */
-import { randomUUID } from "node:crypto";
-import type { NextRequest } from "next/server";
-
-import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { ok, fail } from "@/lib/api/wrappers";
-import { loadAuthUser } from "@/lib/auth/server";
-import { orgAtivaDaApi } from "@/lib/auth/require-role";
-import { extractBearer } from "@/lib/mcp/auth";
-import {
-  encontrarContatosDuplicados,
-  encontrarParecidosPorNome,
-  principalSugerido,
-  type ContatoParaDeduplicar,
-} from "@/lib/contacts/duplicados";
-import { lerParesDispensados } from "@/lib/contacts/dispensar-par";
-import { traduzir } from "@/lib/i18n/dicionario";
-<<<<<<< HEAD
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import type { Idioma } from "@/lib/i18n/idiomas";
-=======
 import { duplicadosPorNomeLigado } from "@/lib/schemas/settings";
->>>>>>> mc-r-s1
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -252,21 +193,15 @@ async function responderDuplicates(
   let varridos: ContatoParaDeduplicar[];
   let sugestaoPorNome: boolean;
   try {
-<<<<<<< HEAD
-    dispensados = await lerParesDispensados(supabaseAdmin, organizationId);
-    varridos = await comHashDeCpf(supabaseAdmin, organizationId, linhas.slice(0, TETO_DE_VARREDURA));
-=======
-    const admin = createAdminClient();
-    const { data: organizacao, error: erroOrg } = await admin
+    const { data: organizacao, error: erroOrg } = await supabaseAdmin
       .from("organizations")
       .select("settings")
-      .eq("id", org.orgId)
+      .eq("id", organizationId)
       .maybeSingle();
     if (erroOrg) throw new Error(erroOrg.message);
     sugestaoPorNome = duplicadosPorNomeLigado(organizacao?.settings);
-    dispensados = sugestaoPorNome ? await lerParesDispensados(admin, org.orgId) : new Set<string>();
-    varridos = await comHashDeCpf(admin, org.orgId, linhas.slice(0, TETO_DE_VARREDURA));
->>>>>>> mc-r-s1
+    dispensados = sugestaoPorNome ? await lerParesDispensados(supabaseAdmin, organizationId) : new Set<string>();
+    varridos = await comHashDeCpf(supabaseAdmin, organizationId, linhas.slice(0, TETO_DE_VARREDURA));
   } catch {
     // Sem o detalhe do erro na resposta: a mensagem do banco não é para quem opera a tela.
     return fail("internal_error", "Não foi possível ler os dados de duplicados.", 500, {
