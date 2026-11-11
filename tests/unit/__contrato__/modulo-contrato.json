@@ -439,7 +439,7 @@
         {
           "nome": "commandSchema",
           "origem": "local",
-          "hash": "94e3b79cdd341130"
+          "hash": "7247b722087d8ede"
         },
         {
           "nome": "querySchema",
@@ -559,7 +559,7 @@
         {
           "nome": "testRunSchema",
           "origem": "@/lib/ai/agents/validation",
-          "hash": "76f604b4229b5272"
+          "hash": "8e1d409c3cd0aa0f"
         }
       ],
       "resposta": []
@@ -634,7 +634,7 @@
         {
           "nome": "triggerConfigSchema",
           "origem": "@/lib/followup/api-schemas",
-          "hash": "7c9ca42cf40a0cd9"
+          "hash": "9b5936d3412dfcb9"
         }
       ],
       "resposta": []
@@ -654,7 +654,7 @@
         {
           "nome": "triggerConfigSchema",
           "origem": "@/lib/followup/api-schemas",
-          "hash": "7c9ca42cf40a0cd9"
+          "hash": "9b5936d3412dfcb9"
         }
       ],
       "resposta": []
@@ -1054,7 +1054,7 @@
         {
           "nome": "listConversationsQuerySchema",
           "origem": "@/lib/schemas",
-          "hash": "58bd2226bf0fbff4"
+          "hash": "0f4ab9f2813af786"
         }
       ],
       "resposta": []
