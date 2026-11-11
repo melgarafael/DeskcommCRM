@@ -61,6 +61,8 @@ export async function processarEntradaDoCanal(
     headers: Headers;
     secret: string | null;
     requestId: string;
+    /** A URL pública em que o canal entregou (o SMS assina por ela, #4415). */
+    urlPublica?: string | null;
   },
 ): Promise<Response> {
   const { sessao, rawBody, secret, requestId } = entrada;
@@ -93,7 +95,7 @@ export async function processarEntradaDoCanal(
     headers: req.headers,
   });
 
-  if (!verifyInboundWebhookSignature(sessao.provider, rawBody, req.headers, secret)) {
+  if (!verifyInboundWebhookSignature(sessao.provider, rawBody, req.headers, secret, entrada.urlPublica ?? null)) {
     await fecharArquivoDoWebhook(admin, arquivo, {
       status: "error",
       validSignature: false,
@@ -176,6 +178,7 @@ export async function processarEntradaDoCanal(
       rawBody,
       headers: req.headers,
       secret,
+      urlPublica: entrada.urlPublica ?? null,
     });
 
     if (r.ok) {
