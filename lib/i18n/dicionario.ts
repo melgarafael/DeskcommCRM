@@ -20948,17 +20948,8 @@ export const DICIONARIO: Traducoes = {
   "A conversa do módulo Assistente mostra um aviso (modelo indisponível ou teto de gasto atingido) e a pessoa não recebe resposta; o resto do CRM segue normal.": {
     es: "La conversación del módulo Asistente muestra un aviso (modelo no disponible o tope de gasto alcanzado) y la persona no recibe respuesta; el resto del CRM sigue normal.",
   },
-  "Tarefas (leitura)": { es: "Tareas (lectura)" },
-  "Tarefas (escrita)": { es: "Tareas (escritura)" },
-  "Financeiro (leitura)": { es: "Finanzas (lectura)" },
-  "Financeiro (escrita)": { es: "Finanzas (escritura)" },
-  "Configuração, agentes de IA e financeiro são áreas sensíveis: mexem no funcionamento da organização, no atendimento e no dinheiro. Libere só para um módulo em que você confia.": { es: "Configuración, agentes de IA y finanzas son áreas sensibles: afectan el funcionamiento de la organización, la atención y el dinero. Libéralas solo para un módulo en el que confíes." },
   "Consentir": { es: "Consentir" },
   "Marcamos o que o módulo pede, menos as áreas sensíveis. Revise, desmarque o que não quiser e clique em Consentir. Nada é liberado antes disso.": { es: "Marcamos lo que el módulo pide, menos las áreas sensibles. Revisa, desmarca lo que no quieras y haz clic en Consentir. Nada se libera antes de eso." },
-  "Ver as tarefas.": { es: "Ver las tareas." },
-  "Ver e mudar tarefas e demandas.": { es: "Ver y cambiar tareas y demandas." },
-  "Ver comandas, fidelidade e lançamentos financeiros.": { es: "Ver cuentas, fidelización y movimientos financieros." },
-  "Ver e mudar comandas, fidelidade e lançamentos financeiros.": { es: "Ver y cambiar cuentas, fidelización y movimientos financieros." },
 };
 
 /**

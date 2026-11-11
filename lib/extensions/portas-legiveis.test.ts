@@ -102,38 +102,40 @@ describe("frases do consentimento por área (módulo conectado, F3)", () => {
     p.startsWith("area."),
   );
 
-  it("as 22 permissões de área têm frase própria, não vazia e diferente entre si", () => {
-    expect(permissoesDeArea).toHaveLength(22);
+  it("as 18 permissões de área têm frase própria, não vazia e diferente entre si", () => {
+    expect(permissoesDeArea).toHaveLength(18);
     const frases = permissoesDeArea.map((p) => fraseDaPermissaoDeArea(p));
     expect(frases.every((frase) => frase.length > 10)).toBe(true);
-    expect(new Set(frases).size).toBe(22);
+    expect(new Set(frases).size).toBe(18);
   });
 
-  it("só configuração, agentes de IA e financeiro são sensíveis", () => {
+  it("só configuração e agentes de IA são sensíveis", () => {
     const sensiveis = permissoesDeArea.filter(ehAreaSensivel).sort();
     expect(sensiveis).toEqual([
       "area.agentes_ia.escrita",
       "area.agentes_ia.leitura",
       "area.configuracao.escrita",
       "area.configuracao.leitura",
-      "area.financeiro.escrita",
-      "area.financeiro.leitura",
     ]);
-    // Tarefas NÃO é sensível: não mexe no dinheiro nem no funcionamento da organização.
-    expect(ehAreaSensivel("area.tarefas.escrita")).toBe(false);
+    // Agenda NÃO é sensível: não mexe no funcionamento da organização.
+    expect(ehAreaSensivel("area.agenda.escrita")).toBe(false);
   });
 
-  it("as frases das duas áreas novas dizem o que o módulo passa a poder fazer", () => {
-    expect(fraseDaPermissaoDeArea("area.tarefas.escrita")).toBe("Ver e mudar tarefas e demandas.");
-    expect(fraseDaPermissaoDeArea("area.financeiro.escrita")).toBe(
-      "Ver e mudar comandas, fidelidade e lançamentos financeiros.",
+  it("as frases das áreas de venda dizem o que o módulo passa a poder fazer", () => {
+    expect(fraseDaPermissaoDeArea("area.agenda.escrita")).toBe("Marcar, mudar e cancelar agendamentos.");
+    expect(fraseDaPermissaoDeArea("area.analise.leitura")).toBe("Ver relatórios e números de desempenho.");
+  });
+
+  it("a frase da lista nomeia as áreas em Lê/Altera", () => {
+    expect(portasLegiveis(["area.analise.leitura", "area.agenda.leitura", "area.agenda.escrita"])).toBe(
+      "Lê Agenda e Análise. Altera Agenda.",
     );
   });
 
-  it("a frase da lista nomeia as áreas novas em Lê/Altera", () => {
-    expect(portasLegiveis(["area.financeiro.leitura", "area.tarefas.leitura", "area.tarefas.escrita"])).toBe(
-      "Lê Financeiro e Tarefas. Altera Tarefas.",
-    );
+  it("tarefas e financeiro não são áreas: não há nome nem frase para elas", () => {
+    const nomes = portasLegiveis(["area.contatos.leitura"]);
+    expect(nomes).not.toMatch(/Tarefas|Financeiro/);
+    expect(permissoesDeArea.some((p) => /tarefas|financeiro/.test(p))).toBe(false);
   });
 
   it("traduz cada frase pelo tradutor recebido (literais cobertos pelo dicionário)", () => {

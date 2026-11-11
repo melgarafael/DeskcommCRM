@@ -11,9 +11,7 @@
  * Regras, em ordem:
  *  1. Método fora de GET/HEAD/POST/PUT/PATCH/DELETE ⇒ null.
  *  2. A lista SEM área tem PRECEDÊNCIA sobre o mapa (rota que casa nas duas é sem área).
- *  3. Entre as entradas do mapa que casam, vence o prefixo MAIS LONGO. Na ESCRITA, as entradas de
- *     `MAPA_DE_ESCRITA` são consultadas ANTES: elas existem para a porta cuja leitura fica numa área
- *     e cuja escrita fica noutra (`financeiro/lancamentos`: lê em `analise`, escreve em `financeiro`).
+ *  3. Entre as entradas do mapa que casam, vence o prefixo MAIS LONGO.
  *  4. Nenhum prefixo casou ⇒ null (modelo desconhecido recusa).
  *
  * Casamento por SEGMENTO, nunca por texto solto: `contacts` casa `contacts/[id]` mas não
@@ -122,13 +120,15 @@ const SEM_AREA: readonly EntradaSemArea[] = [
   e("conversations/[id]/draft-reply"), // não classificado na R; fecha por cautela
   e("prospecting"),
 
-  // --- 5. Financeiro e honorários: dinheiro que não se desfaz. O resto do financeiro tem a área
-  //        `financeiro` (ver MAPA e MAPA_DE_ESCRITA); estas quatro ficam de fora porque mexem com
-  //        dinheiro, não se desfazem e hoje nem aceitam token de integração (decisão de 10/11).
-  e("financeiro/comandas/[id]/finalizar"), // fecha a comanda e gera o recebimento
-  e("financeiro/comandas/[id]/estornar"), // devolve dinheiro
-  e("financeiro/comandas/faturar-lote"), // fatura várias comandas de uma vez
-  e("honorarios/parcelas/[id]/pagar"), // dá baixa numa parcela de honorário
+  // --- 5. Financeiro e honorários: a ESCRITA fica fora. A área própria (`financeiro`) não nasce agora
+  //        (decisão do mantenedor na #4142, item 4); a leitura de lançamentos e de honorários segue em `analise`.
+  e("financeiro", "escrita"),
+  e("honorarios", "escrita"),
+  // --- 5a. Sem área até a decisão: `tarefas` e `financeiro` não nascem agora (#4142, item 4).
+  e("financeiro/comandas"), // comandas: nenhuma área decidida
+  e("financeiro/fidelidade"), // saldo e extrato de pontos: nenhuma área decidida
+  e("tasks"), // tarefas: a área não nasce agora
+  e("demandas"), // demandas: a área não nasce agora
 
   // --- 5b. Escritas que gastam dinheiro da organização ou não se desfazem: lado seguro (decisão
   //         do engenheiro, 05/11). Afrouxar depois é fácil; apertar depois de um módulo usar, não.
@@ -224,26 +224,9 @@ const MAPA: readonly (readonly [string, ExtensionArea])[] = [
   ["honorarios", "analise"],
   ["ads/meta/accounts", "analise"], // só leitura (a escrita está em SEM_AREA)
   ["ads/meta/campaigns", "analise"],
-  // tarefas
-  ["tasks", "tarefas"],
-  ["demandas", "tarefas"],
   // etiquetas (não há área própria: não existe rota de escrita de etiqueta)
   ["contact-tags", "contatos"], // só leitura hoje
   ["conversation-tags", "conversas"], // só leitura hoje
-  // financeiro: comandas e fidelidade têm a área nos dois modos. As quatro portas de dinheiro que
-  // não se desfazem estão em SEM_AREA e vencem. O que não casa aqui, nem no mapa de escrita, recusa.
-  ["financeiro/comandas", "financeiro"],
-  ["financeiro/fidelidade", "financeiro"],
-];
-
-/**
- * Entradas que valem SÓ para escrita, consultadas antes de `MAPA`. A leitura destas portas fica na
- * área do mapa acima (catálogo, análise); a escrita é de `financeiro`.
- */
-const MAPA_DE_ESCRITA: readonly (readonly [string, ExtensionArea])[] = [
-  ["financeiro/catalogo", "financeiro"],
-  ["financeiro/lancamentos", "financeiro"],
-  ["honorarios", "financeiro"],
 ];
 
 function segmentos(modelo: string): string[] | null {
@@ -298,10 +281,8 @@ const LEITURAS_COM_CONTATO_EMBUTIDO: readonly string[] = [
   "leads/[id]/contatos-relacionados",
   "leads/proposals",
   "proposals/[id]/documento",
-  "financeiro/fidelidade", // saldo e extrato de pontos de UM contato
   "calls", // o histórico de chamadas traz o contato que foi chamado
   "messages/[id]/media", // o arquivo é da conversa com o cliente
-  "financeiro/comandas/pendentes", // traz o `title` do agendamento, que pode ter o nome do cliente
   "leads/[id]/conversas-e-ligacoes", // lista nome e telefone dos números do negócio
   "reports/comercial", // os rankings de negócios ganhos trazem nome e telefone do contato
 ];
@@ -326,18 +307,13 @@ export function areaDaPorta(modelo: string, metodo: string): AreaDaPorta | null 
   if (!partes) return null;
   if (estaSemAreaPorDesenho(modelo, m)) return null;
 
-  // Na escrita, o mapa próprio dela vem primeiro; sem entrada ali, vale o mapa geral.
-  const mapas = modo === "escrita" ? [MAPA_DE_ESCRITA, MAPA] : [MAPA];
-  for (const mapa of mapas) {
-    let melhor: { area: ExtensionArea; tamanho: number } | null = null;
-    for (const [prefixo, area] of mapa) {
-      if (!casa(prefixo, partes, false)) continue;
-      const tamanho = prefixo.split("/").length;
-      if (!melhor || tamanho > melhor.tamanho) melhor = { area, tamanho };
-    }
-    if (melhor) return { area: melhor.area, modo };
+  let melhor: { area: ExtensionArea; tamanho: number } | null = null;
+  for (const [prefixo, area] of MAPA) {
+    if (!casa(prefixo, partes, false)) continue;
+    const tamanho = prefixo.split("/").length;
+    if (!melhor || tamanho > melhor.tamanho) melhor = { area, tamanho };
   }
-  return null;
+  return melhor ? { area: melhor.area, modo } : null;
 }
 
 /**
@@ -349,7 +325,6 @@ export const SEGMENTOS_LITERAIS_CONHECIDOS: ReadonlySet<string> = new Set(
   [
     ...SEM_AREA.map((x) => x.modelo),
     ...MAPA.map(([prefixo]) => prefixo),
-    ...MAPA_DE_ESCRITA.map(([prefixo]) => prefixo),
     // Sem isto `agenda/vinculos` viraria `agenda/[id]` e a trava de contato nunca casaria.
     ...LEITURAS_COM_CONTATO_EMBUTIDO,
   ]
@@ -359,7 +334,3 @@ export const SEGMENTOS_LITERAIS_CONHECIDOS: ReadonlySet<string> = new Set(
 
 /** Só para o teste de consistência: o mapa cru, sem a lista sem área. */
 export const PREFIXOS_DO_MAPA: readonly (readonly [string, ExtensionArea])[] = MAPA;
-
-/** Só para o teste de consistência: o mapa que vale só na escrita. */
-export const PREFIXOS_DO_MAPA_DE_ESCRITA: readonly (readonly [string, ExtensionArea])[] =
-  MAPA_DE_ESCRITA;

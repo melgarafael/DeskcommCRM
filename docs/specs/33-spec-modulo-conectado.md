@@ -151,26 +151,18 @@ no audit. Nasce a variante `module` em `Actor`, para a auditoria dizer qual mód
 É a decisão D4 da ADR, aplicada num ponto só, `resolveAuthDual`.
 
 **Consentimento por área.** A tela de ativação lista as áreas em frases legíveis, e a organização
-pode aceitar menos do que o pacote pede. São **11 áreas**: `contatos`, `negocios`, `conversas`,
-`agenda`, `funis`, `agentes_ia`, `catalogo`, `configuracao`, `analise` e, desde a migration 9316
-(10/11/2026), `tarefas` e `financeiro`. Cada área tem leitura e escrita separadas (22
+pode aceitar menos do que o pacote pede. São **9 áreas**: `contatos`, `negocios`, `conversas`, `agenda`, `funis`, `agentes_ia`, `catalogo`,
+`configuracao` e `analise`. Cada área tem leitura e escrita separadas (18
 permissões `area.<área>.<leitura|escrita>`). Toda rota convertida declara sua área. Rota sem área
 recusa token de módulo, e um teste varre isso.
 
-**As duas áreas novas** (frases da tela de consentimento em `lib/extensions/portas-legiveis.ts`):
-
-| Área | Frase | Sensível? | Rotas (`app/api/v1/...`) |
-|---|---|---|---|
-| `tarefas` | "Ver e mudar tarefas e demandas." | não | `tasks`, `tasks/[id]` (leitura e escrita); `demandas/[id]` PATCH (escrita) |
-| `financeiro` | "Ver e mudar comandas, fidelidade e lançamentos financeiros." | **sim** (só quem administra a organização consente; não vem pré-marcada na tela) | `financeiro/comandas` (GET, POST), `financeiro/comandas/[id]` (GET, PATCH), `financeiro/comandas/[id]/itens` (POST), `financeiro/comandas/[id]/itens/[itemId]` (DELETE), `financeiro/comandas/pendentes` (GET), `financeiro/fidelidade` (GET, POST); a ESCRITA de `financeiro/catalogo/[tipo]`, `financeiro/lancamentos`, `financeiro/lancamentos/[id]`, `honorarios/contratos` e `honorarios/contratos/[id]/parcelas` |
-
-Não existe área `etiquetas`: não há rota de escrita de etiqueta, e anunciar escrita que não existe é
-proibido. `contact-tags` (GET) vive em `contatos` e `conversation-tags` (GET) em `conversas`.
-
-A leitura de `financeiro/catalogo/[tipo]` continua em `catalogo`, e a de `financeiro/lancamentos` e de
-`honorarios/*` continua em `analise`: o mapa tem uma entrada que vale só para escrita
-(`MAPA_DE_ESCRITA` em `lib/auth/portas-de-token/areas.ts`).
-
+**Tarefas, etiquetas e financeiro não nascem agora** (decisão do mantenedor, #4142 item 4); as rotas
+correspondentes ficam sem área e recusam módulo até nova decisão. Não existe área `etiquetas`: não há
+rota de escrita de etiqueta, e anunciar escrita que não existe é proibido. `contact-tags` (GET) vive em
+`contatos` e `conversation-tags` (GET) em `conversas`. A leitura de `financeiro/catalogo/[tipo]` continua em
+`catalogo`, e a de `financeiro/lancamentos` e de `honorarios/*` continua em `analise`; a escrita de
+`financeiro/*` e de `honorarios/*`, e as rotas `tasks`, `demandas`, `financeiro/comandas` e
+`financeiro/fidelidade`, ficam sem área.
 **Outras rotas que saíram da lista "fora do mapa"** (10/11/2026): `people`, `people/[id]`,
 `company-people`, `company-people/[id]` em `contatos` (leitura e escrita); `campaign-templates`,
 `campaign-templates/[id]` (o modelo não envia nada sozinho; quem dispara a campanha é a pessoa) e
@@ -187,7 +179,7 @@ com o cliente) continua sem área, e `phone-numbers` fica inteiro sem área: a l
 rota; criar lançamento pendente segue permitido.
 
 **Leitura que traz o contato exige também `contatos`**, como agenda e follow-ups já faziam
-(`LEITURAS_COM_CONTATO_EMBUTIDO`): `financeiro/fidelidade` GET, `calls` GET, `messages/[id]/media` GET e `financeiro/comandas/pendentes` GET (o título do agendamento pode ter o nome do cliente).
+(`LEITURAS_COM_CONTATO_EMBUTIDO`): `calls` GET e `messages/[id]/media` GET.
 
 **Texto livre digitado pela equipe** (título do negócio, observação, descrição). Para módulo sem
 `contatos`, dentro de cada registro que traz um contato, os identificadores DESSE contato viram
@@ -244,7 +236,7 @@ extensões e envio de mensagem (D6). Além dos prefixos que já saem do recorte,
 **Ainda sem token**, porque a função do banco recusa quem não tem sessão (`auth.uid()` nulo): o PATCH de
 `settings/routing/channels` (`fn_set_channel_routing`) e de `agenda/configuracao` (`fn_agenda_settings`),
 `financeiro/comandas/[id]/finalizar|estornar`, `financeiro/comandas/faturar-lote` e
-`honorarios/parcelas/[id]/pagar` (estas quatro ficam sem área também por decisão, ver a tabela acima).
+`honorarios/parcelas/[id]/pagar` (sem área também: `financeiro/comandas` inteiro está sem área, ver acima).
 Liberar exige uma variante da função que receba o ator, numa fatia própria com migration.
 
 O módulo pode gravar **rascunho** por `conversations/[id]/drafts`; quem envia é a pessoa.
@@ -439,10 +431,10 @@ o motivo. Cada uma vale até a revisão do PR que a implementa, e o mantenedor p
 4. **Depois da revogação, por 30 dias, vale um token que só lê eventos.** Sem ele, um módulo desativado
    nunca fica sabendo de uma anonimização. A outra saída seria o módulo apagar tudo da organização ao
    ser desativado, o que perde dado numa desativação por engano.
-5. **`configuracao`, `agentes_ia` e `financeiro` só podem ser consentidas por quem administra a
+5. **`configuracao` e `agentes_ia` só podem ser consentidas por quem administra a
    organização,** e a doutrina de extensões registra isso. Essas áreas mudam operação do núcleo (ou o
-   dinheiro dela), mesmo com credencial, acesso de pessoas e envio fora. `financeiro` entrou na regra
-   em 10/11/2026 (migration 9316) e não vem pré-marcada na tela de consentimento.
+   dinheiro dela), mesmo com credencial, acesso de pessoas e envio fora. A área `financeiro` não nasce
+   agora (#4142, item 4).
 6. **A prova de aceite da O2 é um serviço de exemplo no repositório,** rodando no CI. A ADR pede "um
    módulo de pagamento real", mas o pagamento está indo para o núcleo: a #3509 é uma issue aberta, e
    o PR #3590 está em andamento.

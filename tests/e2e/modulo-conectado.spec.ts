@@ -24,7 +24,7 @@ import {
  *
  * Seis passos, um serviço de módulo de verdade (o de ensaio do laboratório, num processo HTTP real,
  * dentro de um iframe real) e o CRM real: nada é simulado no caminho do módulo ao CRM. O módulo busca
- * o token por HMAC, recebe o JWT de contexto por postMessage e chama `/api/v1/tasks`; a página dele
+ * o token por HMAC, recebe o JWT de contexto por postMessage e chama `/api/v1/contacts`; a página dele
  * mostra o status HTTP e o código de erro que o CRM respondeu, e é isso que a prova lê.
  *
  * O segredo da instalação nasce no CRM (botão "Gerar segredo", pela tela) e é entregue ao serviço
@@ -96,7 +96,7 @@ async function paginaNaoEncontrada(page: Page, caminho: string): Promise<void> {
 async function abrirModulo(page: Page, slug: string, titulo: string): Promise<FrameLocator> {
   await page.goto(`/app/m/${slug}`);
   const quadro = page.frameLocator(`iframe[title="${titulo}"]`);
-  await expect(quadro.getByRole("button", { name: "Listar tarefas" })).toBeEnabled({
+  await expect(quadro.getByRole("button", { name: "Listar contatos" })).toBeEnabled({
     timeout: 45_000,
   });
   return quadro;
@@ -104,7 +104,7 @@ async function abrirModulo(page: Page, slug: string, titulo: string): Promise<Fr
 
 async function lerResposta(
   quadro: FrameLocator,
-  botao: "Listar tarefas" | "Criar tarefa",
+  botao: "Listar contatos" | "Criar contato",
   status: string,
   codigo: string | null,
 ): Promise<void> {
@@ -154,7 +154,7 @@ test("módulo conectado: instalar, consentir, usar, recusar, cair e desligar, tu
     await page.screenshot({ path: `${EVIDENCE}/01-zero-modulos.png`, fullPage: true });
   });
 
-  await test.step("2. o admin instala, gera o segredo, ativa, consente e o módulo lista tarefas", async () => {
+  await test.step("2. o admin instala, gera o segredo, ativa, consente e o módulo lista contatos", async () => {
     await page.goto("/app/extensions");
     await expect(page.getByTestId("extension-catalog-admission")).toBeVisible({ timeout: 30_000 });
     await page.getByTestId("extension-catalog-file").setInputFiles(catalogo!.catalogo);
@@ -208,12 +208,12 @@ test("módulo conectado: instalar, consentir, usar, recusar, cair e desligar, tu
       segredo,
     });
 
-    // Ativa nesta organização e consente as áreas (a proposta traz `tarefas` e `conversas`).
+    // Ativa nesta organização e consente as áreas (a proposta traz `contatos` e `conversas`).
     await page.getByTestId(`extension-enabled-${installationId}`).click();
     await page.getByTestId(`extension-save-${installationId}`).click();
     await expect(page.getByText("Configuração salva.", { exact: true })).toBeVisible();
     await expect(
-      page.getByTestId(`extension-consent-${installationId}-area.tarefas.leitura`),
+      page.getByTestId(`extension-consent-${installationId}-area.contatos.leitura`),
     ).toBeChecked();
     await page.getByTestId(`extension-consent-save-${installationId}`).click();
     await expect(page.getByText("Áreas do módulo salvas.")).toBeVisible();
@@ -224,33 +224,33 @@ test("módulo conectado: instalar, consentir, usar, recusar, cair e desligar, tu
       timeout: 30_000,
     });
     const quadro = await abrirModulo(page, slug, pacote.title);
-    await lerResposta(quadro, "Listar tarefas", "200", null);
+    await lerResposta(quadro, "Listar contatos", "200", null);
     await page.screenshot({ path: `${EVIDENCE}/02-listar-200.png`, fullPage: true });
   });
 
   await test.step("3. o viewer lê mas não grava (403 de papel); o admin grava (201)", async () => {
     const viewer = await paginaAutenticada(browser, atores!.usuarios.viewerA.email, atores!.senha);
     const quadroDoViewer = await abrirModulo(viewer, slug, pacote.title);
-    await lerResposta(quadroDoViewer, "Listar tarefas", "200", null);
-    await lerResposta(quadroDoViewer, "Criar tarefa", "403", "forbidden_role");
+    await lerResposta(quadroDoViewer, "Listar contatos", "200", null);
+    await lerResposta(quadroDoViewer, "Criar contato", "403", "forbidden_role");
     await viewer.screenshot({ path: `${EVIDENCE}/03-viewer-403.png`, fullPage: true });
 
     const quadroDoAdmin = await abrirModulo(page, slug, pacote.title);
-    await lerResposta(quadroDoAdmin, "Criar tarefa", "201", null);
+    await lerResposta(quadroDoAdmin, "Criar contato", "201", null);
     await page.screenshot({ path: `${EVIDENCE}/03-admin-201.png`, fullPage: true });
   });
 
-  await test.step("4. o admin retira a área tarefas e o CRM recusa na hora", async () => {
+  await test.step("4. o admin retira a área contatos e o CRM recusa na hora", async () => {
     await page.goto("/app/extensions");
     await page.getByRole("tab", { name: "Instaladas" }).click();
-    const tarefas = page.getByTestId(`extension-consent-${installationId}-area.tarefas.leitura`);
-    await expect(tarefas).toBeChecked({ timeout: 30_000 });
-    await tarefas.uncheck();
+    const contatos = page.getByTestId(`extension-consent-${installationId}-area.contatos.leitura`);
+    await expect(contatos).toBeChecked({ timeout: 30_000 });
+    await contatos.uncheck();
     await page.getByTestId(`extension-consent-save-${installationId}`).click();
     await expect(page.getByText("Áreas do módulo salvas.")).toBeVisible();
 
     const quadro = await abrirModulo(page, slug, pacote.title);
-    await lerResposta(quadro, "Listar tarefas", "403", "module_area_not_granted");
+    await lerResposta(quadro, "Listar contatos", "403", "module_area_not_granted");
     await page.screenshot({ path: `${EVIDENCE}/04-area-retirada.png`, fullPage: true });
   });
 

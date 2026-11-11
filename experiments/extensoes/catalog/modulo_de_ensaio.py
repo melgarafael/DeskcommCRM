@@ -10,8 +10,8 @@ CRM direto. Quem chama o CRM é este processo, com o token curto do módulo.
   POST /ensaio/configurar                               entrega ao serviço a origem do CRM, a
                                                         instalação e o segredo (só em memória)
   GET  /ensaio/estado                                   {"configurado": bool}
-  POST /ensaio/tarefas/listar                           GET  /api/v1/tasks  no CRM, como o módulo
-  POST /ensaio/tarefas/criar                            POST /api/v1/tasks  no CRM, como o módulo
+  POST /ensaio/contatos/listar                          GET  /api/v1/contacts  no CRM, como o módulo
+  POST /ensaio/contatos/criar                           POST /api/v1/contacts  no CRM, como o módulo
 
 COMO O SERVIÇO OBTÉM O SEGREDO. Não há segredo escrito no repositório. O segredo da instalação nasce
 no CRM (botão "Gerar segredo" de `/app/extensions`) e a tela o mostra UMA vez. A prova em tela lê
@@ -72,13 +72,13 @@ PAGINA = """<!doctype html>
     <h1>Módulo de ensaio</h1>
     <p id="estado" data-testid="ensaio-estado">__ESTADO__</p>
     <p>
-      <button id="listar" type="button" disabled>Listar tarefas</button>
-      <button id="criar" type="button" disabled>Criar tarefa</button>
+      <button id="listar" type="button" disabled>Listar contatos</button>
+      <button id="criar" type="button" disabled>Criar contato</button>
     </p>
     <dl>
       <dt>Resposta HTTP</dt><dd id="status" data-testid="ensaio-status">—</dd>
       <dt>Código</dt><dd id="codigo" data-testid="ensaio-codigo">—</dd>
-      <dt>Tarefas na lista</dt><dd id="total" data-testid="ensaio-total">—</dd>
+      <dt>Contatos na lista</dt><dd id="total" data-testid="ensaio-total">—</dd>
     </dl>
   </main>
   <script src="/embed.js"></script>
@@ -178,8 +178,8 @@ SCRIPT = r"""// Tela do módulo de ensaio (roda no iframe, na origem do serviço
       });
   }
 
-  botaoListar.addEventListener("click", function () { acao("/ensaio/tarefas/listar"); });
-  botaoCriar.addEventListener("click", function () { acao("/ensaio/tarefas/criar"); });
+  botaoListar.addEventListener("click", function () { acao("/ensaio/contatos/listar"); });
+  botaoCriar.addEventListener("click", function () { acao("/ensaio/contatos/criar"); });
 
   window.addEventListener("message", function (e) {
     if (e.origin !== host || e.source !== window.parent) return;
@@ -420,7 +420,7 @@ class ModuloDeEnsaio:
             return _json(400, {"status": 400, "codigo": "pedido_do_ensaio_invalido"})
         try:
             status, dados = self._chamar_crm(
-                organizacao, metodo, "/api/v1/tasks", jwt, corpo_da_chamada
+                organizacao, metodo, "/api/v1/contacts", jwt, corpo_da_chamada
             )
         except _RecusaDoToken as recusa:
             return _json(200, {"status": recusa.status, "codigo": recusa.codigo, "etapa": "token"})
@@ -463,9 +463,13 @@ class ModuloDeEnsaio:
             if motivo is not None:
                 return _json(400, {"erro": motivo})
             return _json(200, {"configurado": True})
-        if caminho == "/ensaio/tarefas/listar":
+        if caminho == "/ensaio/contatos/listar":
             return self._acao(cabecalhos, "GET", None, resumir=True)
-        if caminho == "/ensaio/tarefas/criar":
-            titulo = f"Tarefa do módulo de ensaio {secrets.token_hex(4)}"
-            return self._acao(cabecalhos, "POST", {"title": titulo}, resumir=False)
+        if caminho == "/ensaio/contatos/criar":
+            # Telefone único por chamada (8 dígitos aleatórios): o CRM não pode achar que o contato já existe.
+            corpo_do_contato = {
+                "name": f"Contato do módulo de ensaio {secrets.token_hex(4)}",
+                "phone_number": "+55119" + f"{secrets.randbelow(10**8):08d}",
+            }
+            return self._acao(cabecalhos, "POST", corpo_do_contato, resumir=False)
         return None

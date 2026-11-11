@@ -15,13 +15,23 @@ describe("vocabulario das areas (modulo conectado, F1)", () => {
     }
   });
 
-  it("as permissoes de area sao exatamente o produto area x modo (22 no total)", () => {
+  it("as permissoes de area sao exatamente o produto area x modo (18 no total: 9 areas x 2 modos)", () => {
     const deArea = EXTENSION_PERMISSIONS.filter(ehPermissaoDeArea);
     const produto = EXTENSION_AREAS.flatMap((area) =>
       MODOS.map((modo) => permissaoDaArea(area, modo)),
     );
-    expect(deArea).toHaveLength(22);
+    expect(deArea).toHaveLength(18);
     expect([...deArea].sort()).toEqual([...produto].sort());
+  });
+
+  it("o vocabulario inteiro tem 26 permissoes e 9 areas; tarefas e financeiro nao sao areas", () => {
+    expect(EXTENSION_AREAS).toHaveLength(9);
+    expect(EXTENSION_PERMISSIONS).toHaveLength(26);
+    for (const area of ["tarefas", "financeiro"]) {
+      expect(EXTENSION_AREAS as readonly string[]).not.toContain(area);
+      expect(EXTENSION_PERMISSIONS as readonly string[]).not.toContain(`area.${area}.leitura`);
+      expect(EXTENSION_PERMISSIONS as readonly string[]).not.toContain(`area.${area}.escrita`);
+    }
   });
 
   it("toda permissao, inclusive as de area, tem nome legivel", () => {

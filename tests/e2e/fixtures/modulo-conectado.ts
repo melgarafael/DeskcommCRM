@@ -13,7 +13,7 @@ import {
 
 /**
  * O catálogo de ENSAIO do módulo conectado (Spec 33): um pacote `connected` que pede as áreas
- * `tarefas` (leitura e escrita) e `conversas` (leitura), servido pelo MESMO processo do laboratório
+ * `contatos` (leitura e escrita) e `conversas` (leitura), servido pelo MESMO processo do laboratório
  * (`catalog.py serve --modulo-de-ensaio`), que também serve o `/embed` do módulo.
  *
  * Por que o mesmo processo: a política do host só aceita `http` em loopback quando a origem do serviço
@@ -85,7 +85,7 @@ export async function criarCatalogoDoModuloConectado(
         version: "1.0.0",
         license: "MIT",
         host_api: { min: 2, max: 2 },
-        permissions: ["area.tarefas.leitura", "area.tarefas.escrita", "area.conversas.leitura"],
+        permissions: ["area.contatos.leitura", "area.contatos.escrita", "area.conversas.leitura"],
         dependencies: [],
         data: { mode: "none" },
         display: {

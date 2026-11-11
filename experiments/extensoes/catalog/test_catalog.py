@@ -170,8 +170,8 @@ class CatalogFixtureTest(unittest.TestCase):
             "license": "MIT",
             "host_api": {"min": 2, "max": 2},
             "permissions": [
-                "area.tarefas.leitura",
-                "area.tarefas.escrita",
+                "area.contatos.leitura",
+                "area.contatos.escrita",
                 "area.conversas.leitura",
             ],
             "dependencies": [],
@@ -208,7 +208,7 @@ class CatalogFixtureTest(unittest.TestCase):
         self.assertEqual(entrada["service_origin"], "http://127.0.0.1:8787")
         self.assertEqual(
             entrada["permissions"],
-            ["area.tarefas.leitura", "area.tarefas.escrita", "area.conversas.leitura"],
+            ["area.contatos.leitura", "area.contatos.escrita", "area.conversas.leitura"],
         )
         # O pacote não tem endereço nenhum: ele mora só na entrada do catálogo.
         self.assertNotIn("service_origin", self.package.read_text(encoding="utf-8"))

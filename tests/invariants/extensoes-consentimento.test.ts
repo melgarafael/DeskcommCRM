@@ -23,8 +23,6 @@ const orgB = "c0ae0000-0000-4000-8000-0000000000b6";
 const SERVICO = "https://servico.consentimento.test";
 const CONFIG = { density: "comfortable", show_description: true };
 const DECLARADAS = ["area.contatos.leitura", "area.contatos.escrita", "area.configuracao.leitura", "area.agentes_ia.escrita"];
-// As duas áreas da migration 9316 (tarefas e financeiro).
-const DECLARADAS_NOVAS = ["area.tarefas.escrita", "area.financeiro.leitura", "area.financeiro.escrita"];
 let seq = 0;
 const origem = () => `https://consentimento-${++seq}.invariant.test`;
 
@@ -319,7 +317,7 @@ describe("recusas", () => {
   it("área que o pacote NÃO declarou: PT409 extension_area_not_declared", async () => {
     const inst = await instalarEAtivar();
 
-    const e = await erroDe(consentir(dono, orgA, inst, ["area.contatos.leitura", "area.financeiro.escrita"]));
+    const e = await erroDe(consentir(dono, orgA, inst, ["area.contatos.leitura", "area.negocios.escrita"]));
     expect(e).toMatchObject({ code: "PT409", message: "extension_area_not_declared" });
 
     // Existe no vocabulário, mas este pacote não a declarou.
@@ -413,53 +411,18 @@ describe("recusas", () => {
   });
 });
 
-describe("as áreas tarefas e financeiro (migration 9316)", () => {
-  it("o pacote pode declará-las, e um admin da organização consente tarefas.escrita e financeiro", async () => {
-    const inst = await instalarEAtivar(DECLARADAS_NOVAS);
-
-    await consentir(outroAdmin, orgA, inst, ["area.financeiro.leitura", "area.tarefas.escrita"]);
-
-    expect((await vinculo(orgA, inst))?.consented_areas).toEqual([
-      "area.financeiro.leitura",
-      "area.tarefas.escrita",
-    ]);
-  });
-
-  it.each([
-    ["viewer", viewer],
-    ["agent", agente],
-    ["manager", gerente],
-  ])("%s não consente financeiro: quem barra é `fn_extensions_assert_actor` (exige admin da organização), não o regex das áreas sensíveis", async (_papel, ator) => {
-    const inst = await instalarEAtivar(DECLARADAS_NOVAS);
-
-    for (const area of ["area.financeiro.leitura", "area.financeiro.escrita"]) {
-      const e = await erroDe(consentir(ator, orgA, inst, [area]));
-      expect(e.message).toBe("extension_forbidden");
-    }
-    expect((await vinculo(orgA, inst))?.consented_areas).toEqual([]);
-  });
-
-  it("financeiro não declarada pelo pacote: PT409 extension_area_not_declared, mesmo para admin", async () => {
-    const inst = await instalarEAtivar(); // DECLARADAS não tem financeiro
-
-    const e = await erroDe(consentir(dono, orgA, inst, ["area.financeiro.leitura"]));
-
-    expect(e).toMatchObject({ code: "PT409", message: "extension_area_not_declared" });
-  });
-
-  it("o CHECK aceita as quatro permissões novas direto na tabela", async () => {
+describe("o CHECK das áreas consentidas", () => {
+  it("aceita as 18 permissões de área direto na tabela", async () => {
     const inst = await instalarEAtivar();
-    const novas = [
-      "area.tarefas.leitura", "area.tarefas.escrita",
-      "area.financeiro.leitura", "area.financeiro.escrita",
-    ];
+    const todas = EXTENSION_AREAS.flatMap((a) => [permissaoDaArea(a, "leitura"), permissaoDaArea(a, "escrita")]);
 
     await query(
       "update public.organization_extensions set consented_areas = $3::text[] where organization_id = $1 and installation_id = $2",
-      [orgA, inst, novas],
+      [orgA, inst, todas],
     );
 
-    expect((await vinculo(orgA, inst))?.consented_areas).toEqual(novas);
+    expect(todas).toHaveLength(18);
+    expect((await vinculo(orgA, inst))?.consented_areas).toHaveLength(18);
   });
 });
 

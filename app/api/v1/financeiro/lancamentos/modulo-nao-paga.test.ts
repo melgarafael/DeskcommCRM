@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * LANÇAMENTO PAGO NÃO SE DESFAZ, E UM MÓDULO CONECTADO NÃO O PRODUZ (Spec 33, migration 9316).
+ * LANÇAMENTO PAGO NÃO SE DESFAZ, E UM MÓDULO CONECTADO NÃO O PRODUZ (Spec 33). A guarda é pelo tipo do ator, independe de o módulo ter área.
  *
  * Marcar como pago (PATCH `pay: true`) e criar já pago (POST `status: "paid"`) são só da pessoa na
  * sessão. Para o ator `module` a rota recusa com 403 antes de qualquer leitura ou escrita; o

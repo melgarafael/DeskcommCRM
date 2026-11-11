@@ -50,10 +50,6 @@ const NOME_DA_PORTA: Record<ExtensionPermission, string> = {
   "area.configuracao.escrita": "Configuração (escrita)",
   "area.analise.leitura": "Análise (leitura)",
   "area.analise.escrita": "Análise (escrita)",
-  "area.tarefas.leitura": "Tarefas (leitura)",
-  "area.tarefas.escrita": "Tarefas (escrita)",
-  "area.financeiro.leitura": "Financeiro (leitura)",
-  "area.financeiro.escrita": "Financeiro (escrita)",
 };
 
 export function nomeDaPorta(permissao: ExtensionPermission): string {
@@ -132,16 +128,14 @@ export function portasLegiveis(
 export type PermissaoDeArea = Extract<ExtensionPermission, `area.${string}`>;
 
 /**
- * As áreas que mexem no funcionamento da organização e do atendimento, ou no dinheiro dela. Só
- * quem administra a organização as consente (decisão 5 da spec 33; `financeiro` entra na
- * migration 9316), e a tela as avisa como sensíveis. A regra do banco
+ * As áreas que mexem no funcionamento da organização e do atendimento. Só
+ * quem administra a organização as consente (decisão 5 da spec 33), e a tela as avisa como sensíveis. A regra do banco
  * (`fn_extensions_set_consent`) tem a mesma lista: mudar uma exige mudar a outra.
  */
 export function ehAreaSensivel(permissao: PermissaoDeArea): boolean {
   return (
     permissao.startsWith("area.configuracao.") ||
-    permissao.startsWith("area.agentes_ia.") ||
-    permissao.startsWith("area.financeiro.")
+    permissao.startsWith("area.agentes_ia.")
   );
 }
 
@@ -192,14 +186,6 @@ export function fraseDaPermissaoDeArea(
       return t("Ver relatórios e números de desempenho.");
     case "area.analise.escrita":
       return t("Alterar relatórios e análises.");
-    case "area.tarefas.leitura":
-      return t("Ver as tarefas.");
-    case "area.tarefas.escrita":
-      return t("Ver e mudar tarefas e demandas.");
-    case "area.financeiro.leitura":
-      return t("Ver comandas, fidelidade e lançamentos financeiros.");
-    case "area.financeiro.escrita":
-      return t("Ver e mudar comandas, fidelidade e lançamentos financeiros.");
   }
 }
 
