@@ -65,10 +65,14 @@ function cliente(
 
 describe("GET /api/v1/contacts/:id/roteiros", () => {
   it("módulo desligado: 404, sem consulta", async () => {
+    // A identidade da sessão (resolveAuthDual) abre o cliente antes da checagem do
+    // módulo; o que a porta promete é nenhuma CONSULTA ao banco.
     deps.modulo.mockResolvedValue(false);
+    const consultas = vi.fn();
+    deps.client.mockResolvedValue({ from: consultas });
     const res = await GET(req(), ctx);
     expect(res.status).toBe(404);
-    expect(deps.client).not.toHaveBeenCalled();
+    expect(consultas).not.toHaveBeenCalled();
   });
 
   it("ligado: devolve rótulo e valor dos campos, só de roteiros", async () => {
