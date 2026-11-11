@@ -49,6 +49,7 @@ import {
 } from "@/lib/webhooks/formulario";
 import { useT } from "@/hooks/i18n/useT";
 import { WebhookFormFieldsEditor } from "./WebhookFormFieldsEditor";
+import { LeadAdsDaMeta } from "./LeadAdsDaMeta";
 
 interface Props {
   source: WebhookSourceRow;
@@ -447,6 +448,8 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
               {t("Configure a assinatura da fonte antes de reaproveitar o card aberto do contato. Para remover a assinatura, desligue primeiro o reaproveitamento do card aberto.")}
             </p>}
           </section>
+
+          <LeadAdsDaMeta source={source} />
 
           <section className="space-y-2">
             <p className="text-sm font-medium text-text">{t("Personalizar perguntas do formulário")}</p>
