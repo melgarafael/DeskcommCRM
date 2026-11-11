@@ -25,7 +25,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   /api/v1/pipelines/{id}/forecast` e a tool `crm_get_pipeline_forecast` — projetava
   só `value_cents`. Quem vende setup + mensalidade via o contrato de R$ 3.000 +
   R$ 500/mês como **R$ 3.000**, seis vezes menor, e a mensalidade nova não
-  aparecia em número nenhum do cronograma.
+  aparecia em número nenhum do cronograma. Crédito: @webtecnica.
 
   Cada balde (mês × moeda, total, "sem data" e "sem probabilidade") passa a trazer
   **duas parcelas**, com o mesmo par bruto/ponderado e a mesma probabilidade:
@@ -64,7 +64,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   nenhum funil que já existe muda sozinho. Não é preciso mexer em nada na VPS.
   Contribuição de @webtecnica.
 
-- **Duplicados reconhece a mesma conta de WhatsApp em duas fichas** A tela de juntar duplicados passa a reconhecer duas fichas da mesma conta de WhatsApp — a que nasceu do atendimento e a que foi criada por telefone, por exemplo — como a mesma pessoa, mesmo com nomes e telefones diferentes. O critério é a identidade do WhatsApp que a ingestão já grava em cada ficha; a lista mostra o motivo "mesma conta de WhatsApp".
+- **Duplicados reconhece a mesma conta de WhatsApp em duas fichas** A tela de juntar duplicados passa a reconhecer duas fichas da mesma conta de WhatsApp — a que nasceu do atendimento e a que foi criada por telefone, por exemplo — como a mesma pessoa, mesmo com nomes e telefones diferentes. O critério é a identidade do WhatsApp que a ingestão já grava em cada ficha; a lista mostra o motivo "mesma conta de WhatsApp". Crédito: @webtecnica.
 
   O pareamento por mesmo telefone, mesmo e-mail e mesmo CPF continua como era, e um par ligado pela conta de WhatsApp também não pode ser dispensado como "não são a mesma pessoa". Nada muda no banco e não há nada a configurar. A conta em si não aparece na tela: a lista segue mostrando nome, telefone e e-mail.
 
@@ -74,7 +74,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Contribuição original de @webtecnica, PR #3636; adaptação ao molde dos módulos em commits separados.
 
-- ****A voz do agente mostra o catálogo do ElevenLabs com nome e idioma — e aceita um Voice ID colado**** A tela de voz em Agente de IA › Provedores passa a pedir ao ElevenLabs a lista de vozes da conta e a mostrar **nome e idioma**, não só o id congelado na última validação da credencial. Quem tem **voz própria ou contratada** na conta ElevenLabs e nunca a via na lista agora cola o id no campo e ele vale: a lista é atalho, não permissão — o `voice_id` salvo é usado como está no turno do agente, sem ser descartado nem "corrigido" por não constar do catálogo. Só o **formato** é conferido (letras, números, hífen e sublinhado, 8 a 64 caracteres), com a mensagem na tela antes de qualquer chamada paga. Se o provedor recusar a voz no uso — ou na prévia —, o motivo que **ele** devolveu aparece na tela, em vez de um "não foi possível" genérico. E se a listagem do ElevenLabs falhar, a tela não quebra: cai na lista da última validação da credencial, avisa que está nela, e o campo livre continua funcionando.
+- **A voz do agente mostra o catálogo do ElevenLabs com nome e idioma — e aceita um Voice ID colado** A tela de voz em Agente de IA › Provedores passa a pedir ao ElevenLabs a lista de vozes da conta e a mostrar **nome e idioma**, não só o id congelado na última validação da credencial. Quem tem **voz própria ou contratada** na conta ElevenLabs e nunca a via na lista agora cola o id no campo e ele vale: a lista é atalho, não permissão — o `voice_id` salvo é usado como está no turno do agente, sem ser descartado nem "corrigido" por não constar do catálogo. Só o **formato** é conferido (letras, números, hífen e sublinhado, 8 a 64 caracteres), com a mensagem na tela antes de qualquer chamada paga. Se o provedor recusar a voz no uso — ou na prévia —, o motivo que **ele** devolveu aparece na tela, em vez de um "não foi possível" genérico. E se a listagem do ElevenLabs falhar, a tela não quebra: cai na lista da última validação da credencial, avisa que está nela, e o campo livre continua funcionando. Crédito: @webtecnica.
 
 ### Alterado
 
@@ -82,7 +82,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   mesmo tempo: com dez ou mais, a Memória da IA virava uma parede em que nada se
   achava. Agora os aprendizados são um acordeão — todos fechados por padrão, abrir
   um fecha o outro, clicar de novo fecha. O corpo, o campo **Vale até** e o botão
-  de arquivar/reativar continuam iguais; só passam a aparecer na linha aberta.
+  de arquivar/reativar continuam iguais; só passam a aparecer na linha aberta. Crédito: @webtecnica.
 
   O acordeão é um componente de lista (`components/ui/accordion.tsx`), sem
   biblioteca nova, com `aria-expanded`/`aria-controls` no cabeçalho e o painel
@@ -99,10 +99,10 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ### Corrigido
 
-- **A nota interna apagada some da tela dos outros atendentes, sem recarregar** A nota interna de uma conversa já chegava em tempo real para os outros
+- **O aviso de nota interna apagada passa a dizer de qual conversa ela era** A nota interna de uma conversa já chegava em tempo real para os outros
   atendentes desde a correção anterior. Apagar, não: o aviso de remoção chegava
   sem o identificador da conversa, então quem tinha a conversa aberta continuava
-  vendo a nota que já não existia até apertar F5.
+  vendo a nota que já não existia até apertar F5. Agora o aviso leva a conversa. Crédito: @webtecnica.
 
   Agora o aviso de remoção carrega a nota inteira, e a nota some da tela de todo
   mundo na hora — como já acontecia com a nota recém-escrita. Nada muda para quem
@@ -150,7 +150,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 - **Toda resposta montada à mão sob /api leva o X-Request-Id da requisição** Desde o #3991, `ok()`/`fail()` já devolvem o `X-Request-Id`; as respostas
   montadas à mão — arquivo (CSV, vCard, PDF, planilha), imagem, QR, página de
   callback de OAuth, `405` de método não permitido, redirecionamento de login e
-  webhook de entrada — saíam sem ele, e o pedido ficava sem id correlacionável.
+  webhook de entrada — saíam sem ele, e o pedido ficava sem id correlacionável. Crédito: @webtecnica.
 
   Agora essas saídas passam por `comIdDaRequisicao(res, req)`, em
   `lib/api/wrappers.ts`: o id é o mesmo da requisição (o que o `proxy.ts` pôs no
@@ -171,7 +171,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **A busca dos filtros da Auditoria acha a empresa digitada sem acento** No painel de Auditoria da plataforma, o filtro de empresas ignorava maiúsculas,
   mas não acento: digitar `clinica` não achava "Clínica Aurora". Agora a busca
-  usa a mesma régua da busca do Inbox, e `clinica` acha "Clínica Aurora".
+  usa a mesma régua da busca do Inbox, e `clinica` acha "Clínica Aurora". Crédito: @jay23606.
 
   Issue #4168.
 
