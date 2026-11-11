@@ -1027,6 +1027,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint padrão do canal parceiro que espelha a Cloud API (recorte do #1130), com override por DATAFY_API_BASE_URL. É o destino das chamadas de envio e de validação do token — e o canal só existe numa instalação que o liga (DATAFY_ENABLED).",
   },
+  "api.twilio.com": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "API do fornecedor do canal de SMS (#4415): destino do envio e da sonda de saúde do número (`lib/channels/sms/twilio.ts`). Fixo de propósito, como o do canal parceiro: é o único endereço da API, e instalação que conecta SMS não configura host nenhum.",
+  },
   // ── painel do fornecedor: texto de tela apontando para o endereço DELE ────
   "platform.openai.com": {
     categoria: "CONSOLE",

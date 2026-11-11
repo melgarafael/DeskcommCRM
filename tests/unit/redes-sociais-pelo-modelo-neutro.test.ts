@@ -132,7 +132,8 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
   });
 
   it("o vocabulário de canal da conversa não mudou", () => {
-    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "instagram", "facebook"]);
+    // `sms` (#4415) é canal próprio, fora do catálogo do parceiro.
+    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "sms", "instagram", "facebook"]);
   });
 
   it("a matriz de capabilities segue respondendo por todos os canais de mensagem", () => {
@@ -142,6 +143,7 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
       "zernio",
       "zernio_social",
       "datafy",
+      "twilio",
     ]);
     for (const provider of PROVIDERS_DE_MENSAGEM) {
       const caps = capabilitiesOf(provider);
