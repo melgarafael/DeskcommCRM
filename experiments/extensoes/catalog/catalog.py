@@ -47,6 +47,25 @@ PERMISSOES = [
     # O consentimento para um tema de extensão pintar o produto (ADR-0003, #1095).
     # A ordem espelha `EXTENSION_PERMISSIONS` em `lib/extensions/capacidades.ts` —
     # `tests/unit/catalogo-de-ensaio-espelha-o-vocabulario.test.ts` compara as duas.
+    # Áreas do CRM do módulo conectado (spec 33, F1): mesma ordem das 11 áreas, leitura e escrita.
+    "area.contatos.leitura",
+    "area.contatos.escrita",
+    "area.negocios.leitura",
+    "area.negocios.escrita",
+    "area.conversas.leitura",
+    "area.conversas.escrita",
+    "area.agenda.leitura",
+    "area.agenda.escrita",
+    "area.funis.leitura",
+    "area.funis.escrita",
+    "area.agentes_ia.leitura",
+    "area.agentes_ia.escrita",
+    "area.catalogo.leitura",
+    "area.catalogo.escrita",
+    "area.configuracao.leitura",
+    "area.configuracao.escrita",
+    "area.analise.leitura",
+    "area.analise.escrita",
 ]
 CAPACIDADES = [
     "tasks.open",
@@ -146,7 +165,8 @@ def validate_manifest(value: Any) -> dict[str, Any]:
         },
         "manifesto",
     )
-    if manifest["format_version"] != 1 or manifest["profile"] != "declarative":
+    profile = manifest["profile"]
+    if manifest["format_version"] != 1 or profile not in ("declarative", "connected"):
         fail("formato ou perfil não suportado")
     for field in ("publisher", "name"):
         value = manifest[field]
@@ -175,6 +195,13 @@ def validate_manifest(value: Any) -> dict[str, Any]:
         or manifest["dependencies"] != []
     ):
         fail("permissões ou dependências não suportadas")
+    # Espelho de `manifest.ts`: permissão de área é do perfil conectado e de mais nenhum, e o
+    # perfil conectado só declara permissão de área (Spec 33, F1).
+    areas = [p for p in permissoes if p.startswith("area.")]
+    if profile == "connected" and len(areas) != len(permissoes):
+        fail("perfil conectado só declara permissão de área")
+    if profile != "connected" and areas:
+        fail("permissão de área só existe no perfil conectado")
     if manifest["data"] != {"mode": "none"}:
         fail("modo de dados não suportado")
 
@@ -183,6 +210,12 @@ def validate_manifest(value: Any) -> dict[str, Any]:
     localized(display["summary"], 400, "display.summary")
     if display["category"] not in {"productivity", "sales", "service"} or display["icon"] not in ICONS:
         fail("apresentação inválida")
+
+    if profile == "connected":
+        # Sem card, sem tema, sem configuração de card: o perfil conectado só tem a tela do serviço.
+        exact_keys(manifest["configuration"], set(), "configuration")
+        exact_keys(manifest["contributions"], set(), "contributions")
+        return manifest
 
     configuration = exact_keys(
         manifest["configuration"], {"density", "show_description"}, "configuration"
@@ -331,8 +364,13 @@ def command_make_example(args: argparse.Namespace) -> None:
         raise CatalogError("o arquivo de pacote já existe") from error
 
 
-def entry_from_manifest(manifest: dict[str, Any], digest: str, byte_length: int) -> dict[str, Any]:
-    return {
+def entry_from_manifest(
+    manifest: dict[str, Any],
+    digest: str,
+    byte_length: int,
+    service_origin: str | None = None,
+) -> dict[str, Any]:
+    entry = {
         "publisher": manifest["publisher"],
         "name": manifest["name"],
         "version": manifest["version"],
@@ -343,15 +381,33 @@ def entry_from_manifest(manifest: dict[str, Any], digest: str, byte_length: int)
         "sha256": digest,
         "byte_length": byte_length,
     }
+    if service_origin is not None:
+        # Spec 33, F1: o endereço do serviço mora na entrada do catálogo revisado.
+        entry["service_origin"] = service_origin
+    return entry
 
 
 def command_publish(args: argparse.Namespace) -> None:
     data = args.manifest.read_bytes()
     manifest = validate_manifest(strict_json(data))
     digest = hashlib.sha256(data).hexdigest()
-    entry = entry_from_manifest(manifest, digest, len(data))
+    service_origin = args.service_origin
+    if service_origin is not None:
+        if manifest["profile"] != "connected":
+            fail("--service-origin só vale para um pacote do perfil conectado")
+        validate_local_origin(service_origin)
+    elif manifest["profile"] == "connected":
+        fail("um pacote conectado precisa de --service-origin")
+    entry = entry_from_manifest(manifest, digest, len(data), service_origin)
     entry_json = json.dumps(entry, ensure_ascii=False, separators=(",", ":"))
     with connect(args.db) as connection:
+        if service_origin is not None:
+            # A exceção de laboratório do host aceita UMA origem http: a do catálogo. O serviço mora nela.
+            origem_do_catalogo = connection.execute(
+                "select origin from settings where singleton = 1"
+            ).fetchone()
+            if origem_do_catalogo is None or origem_do_catalogo[0] != service_origin:
+                fail("a origem do serviço de ensaio precisa ser a do catálogo")
         existing = connection.execute(
             "select sha256 from packages where publisher = ? and name = ? and version = ?",
             (manifest["publisher"], manifest["name"], manifest["version"]),
@@ -416,13 +472,43 @@ def command_export(args: argparse.Namespace) -> None:
     print(digest)
 
 
-def handler_for(db: pathlib.Path) -> type[BaseHTTPRequestHandler]:
+def handler_for(db: pathlib.Path, ensaio: Any = None) -> type[BaseHTTPRequestHandler]:
     database_uri = f"{db.resolve().as_uri()}?mode=ro"
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def _responder_ensaio(self, metodo: str, corpo: bytes) -> bool:
+            """Entrega a requisição ao módulo de ensaio, quando ele está ligado. `True` = atendeu."""
+            if ensaio is None:
+                return False
+            resposta = ensaio.atender(metodo, self.path, self.headers, corpo)
+            if resposta is None:
+                return False
+            status, tipo, conteudo = resposta
+            self.send_response(status)
+            self.send_header("Content-Type", tipo)
+            self.send_header("Content-Length", str(len(conteudo)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(conteudo)
+            return True
+
+        def do_POST(self) -> None:
+            try:
+                tamanho = int(self.headers.get("Content-Length") or "0")
+            except ValueError:
+                tamanho = -1
+            if tamanho < 0 or tamanho > 16 * 1024:
+                self.send_error(413)
+                return
+            corpo = self.rfile.read(tamanho) if tamanho else b""
+            if not self._responder_ensaio("POST", corpo):
+                self.send_error(404)
+
         def do_GET(self) -> None:
+            if self._responder_ensaio("GET", b""):
+                return
             match = DIGEST_PATH.fullmatch(self.path)
             if match is None:
                 self.send_error(404)
@@ -455,7 +541,15 @@ def command_serve(args: argparse.Namespace) -> None:
         fail("o servidor de ensaio aceita somente --host 127.0.0.1")
     if not args.db.is_file():
         fail("banco do catálogo não encontrado")
-    server = ThreadingHTTPServer((args.host, args.port), handler_for(args.db))
+    ensaio = None
+    if args.modulo_de_ensaio:
+        # Import tardio de propósito: `catalog.py` também é carregado por `importlib` (os testes), que
+        # não põe a pasta dele em `sys.path`; e o módulo de ensaio só existe quando alguém o pede.
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        from modulo_de_ensaio import ModuloDeEnsaio
+
+        ensaio = ModuloDeEnsaio()
+    server = ThreadingHTTPServer((args.host, args.port), handler_for(args.db, ensaio))
     server.daemon_threads = True
     port = server.server_address[1]
     print(f"http://127.0.0.1:{port}", flush=True)
@@ -487,6 +581,11 @@ def parser() -> argparse.ArgumentParser:
     publish = commands.add_parser("publish", help="publica bytes imutáveis no SQLite")
     publish.add_argument("--db", type=path, required=True)
     publish.add_argument("--manifest", type=path, required=True)
+    publish.add_argument(
+        "--service-origin",
+        default=None,
+        help="origem do serviço de um pacote conectado (grava service_origin na entrada)",
+    )
     publish.set_defaults(run=command_publish)
 
     export = commands.add_parser("export", help="exporta o arquivo offline de admissão")
@@ -498,6 +597,11 @@ def parser() -> argparse.ArgumentParser:
     serve.add_argument("--db", type=path, required=True)
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8787)
+    serve.add_argument(
+        "--modulo-de-ensaio",
+        action="store_true",
+        help="serve também /embed e /ensaio/*: o módulo conectado de ensaio (Spec 33)",
+    )
     serve.set_defaults(run=command_serve)
     return root
 

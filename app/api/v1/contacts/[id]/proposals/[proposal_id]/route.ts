@@ -30,9 +30,9 @@ import { patchContactHandler } from "@/app/api/v1/contacts/_handler";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -62,11 +62,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // `agent`: paridade com o PATCH do próprio contato. Confirmar um dado é
   // editar a ficha, e editar ficha é trabalho de quem atende.
-  const guard = await requireRole("agent", { requestId });
+  //
+  // Sessão OU token de integração (Spec 33, R2): `mcp:write` e papel `agent`. A
+  // organização sai da sessão ou da LINHA DO TOKEN. O id de um token não é
+  // pessoa: `decided_by_user_id` (FK para `auth.users`) e o `actorUserId` do
+  // audit levam `null`, e o token vai em `actorApiTokenId`.
+  const guard = await resolveAuthDual(req, {
+    requestId,
+    resource: "contact",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!guard.ok) return guard.response;
-  const t = (texto: string) => traduzir(texto, guard.user.idioma);
-  const orgId = guard.org.orgId;
-  const userId = guard.user.id;
+  const teto = await tetoDeEscritaDoToken(guard, "contact", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, guard.idioma ?? IDIOMA_PADRAO);
+  const orgId = guard.organizationId;
+  const userId = guard.actor.type === "user" ? guard.actor.id : null;
+  const apiTokenId = guard.apiTokenId ?? null;
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -74,7 +87,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   const { decision, motivo } = parsed.data;
 
-  const supabase = await createClient();
+  const supabase = guard.supabase;
 
   const { data: decidida, error } = await supabase
     .from("contact_field_proposals")
@@ -121,6 +134,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     await audit({
       action: "contact.field_rejected",
       actorUserId: userId,
+      actorApiTokenId: apiTokenId,
       organizationId: orgId,
       resourceType: "contact",
       resourceId: contactId,
@@ -142,7 +156,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   try {
     await patchContactHandler(
       supabase,
-      { organization_id: orgId, actor: { type: "user", id: userId }, requestId },
+      { organization_id: orgId, actor: guard.actor, requestId },
       contactId,
       {
         [p.campo]: p.valor_proposto,
@@ -158,7 +172,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
           transactional: {
             granted: true,
             granted_at: new Date().toISOString(),
-            source: `informado pelo titular em atendimento; confirmado por usuário ${userId}`,
+            source: userId
+              ? `informado pelo titular em atendimento; confirmado por usuário ${userId}`
+              : `informado pelo titular em atendimento; confirmado por integração ${apiTokenId}`,
           },
         },
       } as never,
@@ -178,6 +194,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   await audit({
     action: "contact.field_confirmed",
     actorUserId: userId,
+    actorApiTokenId: apiTokenId,
     organizationId: orgId,
     resourceType: "contact",
     resourceId: contactId,

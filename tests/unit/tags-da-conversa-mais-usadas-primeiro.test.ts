@@ -92,6 +92,7 @@ beforeEach(() => {
   logWarn.mockReset();
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
+    user: { id: "user-1", idioma: "pt-BR" },
     org: { orgId: ORG, name: "Org", role: "agent" },
   } as never);
 });

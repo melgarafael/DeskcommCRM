@@ -20,21 +20,21 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * O texto extraído não é guardado — o blob é a fonte da verdade, e o worker o lê
  * de novo na hora de indexar (DIRC: calcular, não duplicar).
  *
- * Auth: sessão por cookie, papel >= manager.
- * `organization_id` sai do JWT — NUNCA do corpo.
+ * Auth: sessão por cookie OU token de servidor (`resolveAuthDual`), papel >= manager.
+ * `organization_id` sai da sessão ou da linha do token — NUNCA do corpo.
  */
 
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { temChaveDeEmbedding } from "@/lib/ai/embeddings/chave";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { temChaveDeEmbedding } from "@/lib/ai/embeddings/chave";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   BUCKET_DE_CONHECIMENTO,
   ErroDeExtracao,
@@ -55,15 +55,22 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   // 1 MB de folga para o envelope multipart e os campos de texto.
   const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO + 1_048_576, {
     requestId,
-    idioma: authz.user.idioma,
+    idioma: authz.idioma,
     acimaDoTeto: t("O arquivo passa de 20 MB."),
   });
   if (!corpo.ok) return corpo.response;
@@ -101,12 +108,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (!agentIdParsed.success) {
       return fail("validation_failed", t("Campo 'agent_id' deve ser UUID válido."), 422, { requestId });
     }
-    const supabase = await createClient();
+    const supabase = authz.supabase;
     const { data: agent, error: agentErr } = await supabase
       .from("ai_agents")
       .select("id")
       .eq("id", agentIdParsed.data)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", authz.organizationId)
       .maybeSingle();
     if (agentErr) {
       console.error("[conhecimento-upload] validação do agente falhou:", agentErr.message);
@@ -147,7 +154,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
   const blobId = randomUUID();
-  const blobPath = `${activeOrg.orgId}/${blobId}.${ext}`;
+  const blobPath = `${authz.organizationId}/${blobId}.${ext}`;
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 
   // O MIME vai pela EXTENSÃO resolvida, não pelo que o browser mandou.
@@ -191,7 +198,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: ks, error: ksErr } = await admin
     .from("ai_knowledge_sources")
     .insert({
-      organization_id: activeOrg.orgId,
+      organization_id: authz.organizationId,
       agent_id: agentId,
       source_type: "documento",
       name,
@@ -202,7 +209,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         filename: file.name,
         blob_path: blobPath,
         ext,
-        uploaded_by: authUser.id,
+        uploaded_by: authz.actor.type === "user" ? authz.actor.id : null,
         mime_type: file.type,
         size_bytes: file.size,
       },
@@ -231,7 +238,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     p_entity_kind: "ai_knowledge_source",
     p_entity_id: ksId,
     p_payload: { knowledge_source_id: ksId, agent_id: agentId, source_type: "documento" },
-    p_organization_id: activeOrg.orgId,
+    p_organization_id: authz.organizationId,
   } as never);
 
   if (emitErr) {
@@ -243,15 +250,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   // com extensão e tamanho — o nome do arquivo pode carregar dado pessoal.
   void audit({
     action: "ai.knowledge_source_created",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "ai_knowledge_source",
     resourceId: ksId,
     requestId,
     metadata: { source_type: "documento", ext, size_bytes: file.size },
   });
 
-  const temChave = await temChaveDeEmbedding(activeOrg.orgId);
+  const temChave = await temChaveDeEmbedding(authz.organizationId);
 
   return ok(
     { id: ksId, blob_path: blobPath, indexacao_habilitada: temChave },

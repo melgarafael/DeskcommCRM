@@ -1,0 +1,1923 @@
+{
+  "host_api_version": 2,
+  "areas": [
+    "contatos",
+    "negocios",
+    "conversas",
+    "agenda",
+    "funis",
+    "agentes_ia",
+    "catalogo",
+    "configuracao",
+    "analise"
+  ],
+  "permissoes": [
+    "area.agenda.escrita",
+    "area.agenda.leitura",
+    "area.agentes_ia.escrita",
+    "area.agentes_ia.leitura",
+    "area.analise.escrita",
+    "area.analise.leitura",
+    "area.catalogo.escrita",
+    "area.catalogo.leitura",
+    "area.configuracao.escrita",
+    "area.configuracao.leitura",
+    "area.contatos.escrita",
+    "area.contatos.leitura",
+    "area.conversas.escrita",
+    "area.conversas.leitura",
+    "area.funis.escrita",
+    "area.funis.leitura",
+    "area.negocios.escrita",
+    "area.negocios.leitura"
+  ],
+  "rotas": {
+    "agenda": [
+      "DELETE /api/v1/agenda/agendamentos",
+      "DELETE /api/v1/agenda/excecoes",
+      "DELETE /api/v1/agenda/tipos",
+      "GET /api/v1/agenda/agendamentos",
+      "GET /api/v1/agenda/agendamentos/[id]",
+      "GET /api/v1/agenda/configuracao",
+      "GET /api/v1/agenda/datas-dos-negocios",
+      "GET /api/v1/agenda/enderecos",
+      "GET /api/v1/agenda/excecoes",
+      "GET /api/v1/agenda/horarios-livres",
+      "GET /api/v1/agenda/lista-de-espera",
+      "GET /api/v1/agenda/painel-do-dia",
+      "GET /api/v1/agenda/pessoas",
+      "GET /api/v1/agenda/servicos",
+      "GET /api/v1/agenda/tipos",
+      "GET /api/v1/agenda/vinculos",
+      "PATCH /api/v1/agenda/agendamentos",
+      "PATCH /api/v1/agenda/configuracao",
+      "PATCH /api/v1/agenda/lista-de-espera",
+      "PATCH /api/v1/agenda/tipos",
+      "POST /api/v1/agenda/agendamentos",
+      "POST /api/v1/agenda/agendamentos/[id]/google/resolver",
+      "POST /api/v1/agenda/agendamentos/[id]/google/retry",
+      "POST /api/v1/agenda/enderecos",
+      "POST /api/v1/agenda/excecoes",
+      "POST /api/v1/agenda/lista-de-espera",
+      "POST /api/v1/agenda/lista-de-espera/[id]",
+      "POST /api/v1/agenda/servicos",
+      "POST /api/v1/agenda/servicos/atualizar",
+      "POST /api/v1/agenda/tipos",
+      "POST /api/v1/agenda/tipos/reativar"
+    ],
+    "agentes_ia": [
+      "DELETE /api/v1/ai/agents/[id]",
+      "DELETE /api/v1/ai/followup-flows/[id]",
+      "DELETE /api/v1/ai/knowledge/sources/[id]",
+      "DELETE /api/v1/ai/mapas",
+      "DELETE /api/v1/ai/routers/[id]",
+      "DELETE /api/v1/ai/skills/[id]",
+      "GET /api/v1/ai/agents",
+      "GET /api/v1/ai/agents/[id]",
+      "GET /api/v1/ai/agents/[id]/proposals",
+      "GET /api/v1/ai/agents/[id]/runs",
+      "GET /api/v1/ai/agents/[id]/tool-usage",
+      "GET /api/v1/ai/agents/[id]/versions",
+      "GET /api/v1/ai/agents/[id]/versions/[id]",
+      "GET /api/v1/ai/agents/assignable",
+      "GET /api/v1/ai/automatico-ativo",
+      "GET /api/v1/ai/budget",
+      "GET /api/v1/ai/cases",
+      "GET /api/v1/ai/cases/[id]",
+      "GET /api/v1/ai/cases/[id]/chat",
+      "GET /api/v1/ai/evolution",
+      "GET /api/v1/ai/followup-flows",
+      "GET /api/v1/ai/followup-flows/[id]",
+      "GET /api/v1/ai/followup-flows/[id]/export",
+      "GET /api/v1/ai/followup-flows/modelos-aprovados",
+      "GET /api/v1/ai/followups/enrollments",
+      "GET /api/v1/ai/followups/enrollments/[id]",
+      "GET /api/v1/ai/followups/queue",
+      "GET /api/v1/ai/guardrail-layers",
+      "GET /api/v1/ai/inbox",
+      "GET /api/v1/ai/jev",
+      "GET /api/v1/ai/knowledge/sources",
+      "GET /api/v1/ai/knowledge/sources/[id]",
+      "GET /api/v1/ai/knowledge/sources/[id]/conteudo",
+      "GET /api/v1/ai/knowledge/sources/[id]/trechos",
+      "GET /api/v1/ai/mapas",
+      "GET /api/v1/ai/memory",
+      "GET /api/v1/ai/memory/versions/[id]",
+      "GET /api/v1/ai/operator-metrics",
+      "GET /api/v1/ai/pacing",
+      "GET /api/v1/ai/routers",
+      "GET /api/v1/ai/routers/[id]",
+      "GET /api/v1/ai/routing-results",
+      "GET /api/v1/ai/runs",
+      "GET /api/v1/ai/skills",
+      "GET /api/v1/ai/skills/[id]",
+      "GET /api/v1/ai/skills/[id]/versions",
+      "GET /api/v1/ai/style-adjustments",
+      "GET /api/v1/ai/turn-traces",
+      "GET /api/v1/ai/usage",
+      "GET /api/v1/ai/voz",
+      "PATCH /api/v1/ai/agents/[id]",
+      "PATCH /api/v1/ai/agents/[id]/versions/[id]",
+      "PATCH /api/v1/ai/followup-flows/[id]",
+      "PATCH /api/v1/ai/inbox/[id]",
+      "PATCH /api/v1/ai/jev",
+      "PATCH /api/v1/ai/knowledge/sources/[id]",
+      "PATCH /api/v1/ai/memory/entries/[id]",
+      "PATCH /api/v1/ai/routers/[id]",
+      "PATCH /api/v1/ai/routing-results/[id]",
+      "POST /api/v1/ai/agents",
+      "POST /api/v1/ai/agents/[id]/duplicate",
+      "POST /api/v1/ai/agents/[id]/pause",
+      "POST /api/v1/ai/agents/[id]/proposals/[id]/apply",
+      "POST /api/v1/ai/agents/[id]/publish",
+      "POST /api/v1/ai/agents/[id]/reconcile",
+      "POST /api/v1/ai/agents/[id]/versions",
+      "POST /api/v1/ai/agents/[id]/versions/[id]/test",
+      "POST /api/v1/ai/assistente/conversa",
+      "POST /api/v1/ai/cases/[id]/chat",
+      "POST /api/v1/ai/cases/[id]/close",
+      "POST /api/v1/ai/followup-flows",
+      "POST /api/v1/ai/followup-flows/[id]/disable",
+      "POST /api/v1/ai/followup-flows/[id]/duplicate",
+      "POST /api/v1/ai/followup-flows/from-model",
+      "POST /api/v1/ai/followup-flows/import",
+      "POST /api/v1/ai/followups/enrollments/[id]/cancel",
+      "POST /api/v1/ai/followups/enrollments/[id]/pause",
+      "POST /api/v1/ai/followups/enrollments/[id]/snooze",
+      "POST /api/v1/ai/followups/promises/[id]/cancel",
+      "POST /api/v1/ai/inbox/resolve-all",
+      "POST /api/v1/ai/knowledge/busca",
+      "POST /api/v1/ai/knowledge/sources",
+      "POST /api/v1/ai/knowledge/sources/[id]/reindex",
+      "POST /api/v1/ai/knowledge/sources/upload",
+      "POST /api/v1/ai/mapas/testar",
+      "POST /api/v1/ai/memory",
+      "POST /api/v1/ai/memory/entries",
+      "POST /api/v1/ai/routers",
+      "POST /api/v1/ai/routers/[id]/test",
+      "POST /api/v1/ai/skills/[id]/install",
+      "POST /api/v1/ai/skills/[id]/restore",
+      "POST /api/v1/ai/skills/import",
+      "PUT /api/v1/ai/guardrail-layers",
+      "PUT /api/v1/ai/mapas",
+      "PUT /api/v1/ai/pacing",
+      "PUT /api/v1/ai/routers/[id]/members",
+      "PUT /api/v1/ai/skills/[id]",
+      "PUT /api/v1/ai/style-adjustments"
+    ],
+    "analise": [
+      "GET /api/v1/ads/meta/accounts",
+      "GET /api/v1/ads/meta/campaigns",
+      "GET /api/v1/financeiro/lancamentos",
+      "GET /api/v1/honorarios/contratos",
+      "GET /api/v1/honorarios/contratos/[id]/parcelas",
+      "GET /api/v1/metrics/atrito",
+      "GET /api/v1/metrics/attendants",
+      "GET /api/v1/metrics/channels",
+      "GET /api/v1/metrics/funil",
+      "GET /api/v1/metrics/lost",
+      "GET /api/v1/metrics/metas",
+      "GET /api/v1/metrics/serie",
+      "GET /api/v1/reports/activities",
+      "GET /api/v1/reports/comercial",
+      "GET /api/v1/reports/financeiro",
+      "GET /api/v1/reports/tags",
+      "PATCH /api/v1/metrics/atrito"
+    ],
+    "catalogo": [
+      "DELETE /api/v1/message-templates/[id]",
+      "DELETE /api/v1/products/[id]",
+      "DELETE /api/v1/products/[id]/ai-presentation/audio",
+      "GET /api/v1/financeiro/catalogo/[id]",
+      "GET /api/v1/message-templates",
+      "GET /api/v1/message-templates/[id]/midias/[id]",
+      "GET /api/v1/message-templates/exportar",
+      "GET /api/v1/products",
+      "GET /api/v1/products/[id]/ai-presentation",
+      "GET /api/v1/products/import",
+      "PATCH /api/v1/message-templates/[id]",
+      "PATCH /api/v1/products/[id]",
+      "PATCH /api/v1/products/[id]/ai-presentation",
+      "POST /api/v1/message-templates",
+      "POST /api/v1/message-templates/[id]/midias",
+      "POST /api/v1/message-templates/importar",
+      "POST /api/v1/products",
+      "POST /api/v1/products/[id]/ai-presentation/audio",
+      "POST /api/v1/products/[id]/fotos",
+      "POST /api/v1/products/import",
+      "PUT /api/v1/message-templates/[id]/ordem",
+      "PUT /api/v1/products/[id]/fotos"
+    ],
+    "configuracao": [
+      "DELETE /api/v1/attendants/sectors/[id]",
+      "DELETE /api/v1/campaign-templates/[id]",
+      "DELETE /api/v1/message-template-groups/[id]",
+      "DELETE /api/v1/settings/proposal-templates/[id]",
+      "DELETE /api/v1/settings/sons",
+      "GET /api/v1/attendants/availability",
+      "GET /api/v1/attendants/sectors",
+      "GET /api/v1/campaign-templates",
+      "GET /api/v1/channel-schedules",
+      "GET /api/v1/message-template-groups",
+      "GET /api/v1/settings/campanhas",
+      "GET /api/v1/settings/proposal-templates",
+      "GET /api/v1/settings/proposal-templates/[id]",
+      "GET /api/v1/settings/proposals",
+      "GET /api/v1/settings/prospeccao",
+      "GET /api/v1/settings/routing",
+      "GET /api/v1/settings/routing/channels",
+      "GET /api/v1/settings/sons",
+      "GET /api/v1/settings/task-plans",
+      "GET /api/v1/team/assignable",
+      "PATCH /api/v1/attendants/availability/[id]",
+      "PATCH /api/v1/attendants/sectors/[id]",
+      "PATCH /api/v1/campaign-templates/[id]",
+      "PATCH /api/v1/message-template-groups/[id]",
+      "PATCH /api/v1/settings/agenda-apresentacao",
+      "PATCH /api/v1/settings/campanhas",
+      "PATCH /api/v1/settings/catalogo",
+      "PATCH /api/v1/settings/proposal-templates/[id]",
+      "PATCH /api/v1/settings/proposals",
+      "PATCH /api/v1/settings/prospeccao",
+      "PATCH /api/v1/settings/routing",
+      "PATCH /api/v1/settings/routing/channels",
+      "PATCH /api/v1/settings/task-plans",
+      "POST /api/v1/attendants/sectors",
+      "POST /api/v1/campaign-templates",
+      "POST /api/v1/message-template-groups",
+      "POST /api/v1/settings/proposal-templates",
+      "POST /api/v1/settings/proposal-templates/importar",
+      "POST /api/v1/settings/sons",
+      "PUT /api/v1/attendants/sector/[id]",
+      "PUT /api/v1/message-template-groups/[id]/ordem"
+    ],
+    "contatos": [
+      "DELETE /api/v1/companies/[id]",
+      "DELETE /api/v1/contacts/[id]/always-human",
+      "DELETE /api/v1/contacts/[id]/personal",
+      "DELETE /api/v1/contacts/[id]/phones/[id]",
+      "GET /api/v1/companies",
+      "GET /api/v1/companies/[id]",
+      "GET /api/v1/companies/lookup",
+      "GET /api/v1/contact-tags",
+      "GET /api/v1/contacts",
+      "GET /api/v1/contacts/[id]",
+      "GET /api/v1/contacts/[id]/avatar",
+      "GET /api/v1/contacts/[id]/carteira",
+      "GET /api/v1/contacts/[id]/compras",
+      "GET /api/v1/contacts/[id]/crm-summary",
+      "GET /api/v1/contacts/[id]/hierarquia-do-anuncio",
+      "GET /api/v1/contacts/[id]/proposals",
+      "GET /api/v1/contacts/[id]/roteiros",
+      "GET /api/v1/contacts/[id]/timeline",
+      "GET /api/v1/contacts/[id]/vinculos",
+      "GET /api/v1/contacts/cep",
+      "GET /api/v1/contacts/compare",
+      "GET /api/v1/contacts/duplicates",
+      "GET /api/v1/people",
+      "GET /api/v1/people/[id]",
+      "GET /api/v1/tags/cores",
+      "GET /api/v1/tags/vocabulario",
+      "PATCH /api/v1/companies/[id]",
+      "PATCH /api/v1/company-people/[id]",
+      "PATCH /api/v1/contacts/[id]",
+      "PATCH /api/v1/contacts/[id]/carteira",
+      "PATCH /api/v1/contacts/[id]/person",
+      "PATCH /api/v1/contacts/[id]/phones/[id]",
+      "PATCH /api/v1/people/[id]",
+      "POST /api/v1/companies",
+      "POST /api/v1/companies/[id]/enrich",
+      "POST /api/v1/company-people",
+      "POST /api/v1/contacts",
+      "POST /api/v1/contacts/[id]/always-human",
+      "POST /api/v1/contacts/[id]/personal",
+      "POST /api/v1/contacts/[id]/phones",
+      "POST /api/v1/contacts/[id]/phones/[id]/primary",
+      "POST /api/v1/contacts/[id]/proposals/[id]",
+      "POST /api/v1/contacts/[id]/roteiros/[id]/negocio",
+      "POST /api/v1/contacts/bulk",
+      "POST /api/v1/contacts/duplicates/dismiss",
+      "POST /api/v1/contacts/import",
+      "POST /api/v1/contacts/import/agenda",
+      "POST /api/v1/people",
+      "POST /api/v1/tags/vocabulario"
+    ],
+    "conversas": [
+      "DELETE /api/v1/conversations/[id]/notes/[id]",
+      "DELETE /api/v1/conversations/[id]/participants",
+      "DELETE /api/v1/conversations/[id]/snooze",
+      "DELETE /api/v1/messages/[id]/hide",
+      "GET /api/v1/calls",
+      "GET /api/v1/conversation-tags",
+      "GET /api/v1/conversations",
+      "GET /api/v1/conversations/[id]",
+      "GET /api/v1/conversations/[id]/messages",
+      "GET /api/v1/conversations/[id]/notes",
+      "GET /api/v1/conversations/[id]/notes/[id]/media",
+      "GET /api/v1/conversations/[id]/participants",
+      "GET /api/v1/conversations/[id]/passagens",
+      "GET /api/v1/conversations/[id]/reply-address",
+      "GET /api/v1/conversations/[id]/retention",
+      "GET /api/v1/conversations/[id]/sector",
+      "GET /api/v1/conversations/[id]/transfer",
+      "GET /api/v1/conversations/counts",
+      "GET /api/v1/messages/[id]/media",
+      "PATCH /api/v1/conversations/[id]",
+      "POST /api/v1/conversations/[id]/close",
+      "POST /api/v1/conversations/[id]/drafts",
+      "POST /api/v1/conversations/[id]/drafts/consume",
+      "POST /api/v1/conversations/[id]/ia-com-dono",
+      "POST /api/v1/conversations/[id]/media",
+      "POST /api/v1/conversations/[id]/notes",
+      "POST /api/v1/conversations/[id]/notes/media",
+      "POST /api/v1/conversations/[id]/pagamentos",
+      "POST /api/v1/conversations/[id]/participants",
+      "POST /api/v1/conversations/[id]/pause-ai",
+      "POST /api/v1/conversations/[id]/reactivate-bot",
+      "POST /api/v1/conversations/[id]/snooze",
+      "POST /api/v1/conversations/[id]/transfer",
+      "POST /api/v1/conversations/[id]/transferir-agente",
+      "POST /api/v1/conversations/[id]/usable-for-rag",
+      "POST /api/v1/conversations/bulk",
+      "POST /api/v1/conversations/open-with-contact",
+      "POST /api/v1/messages/[id]/hide",
+      "PUT /api/v1/conversations/[id]/sector"
+    ],
+    "funis": [
+      "DELETE /api/v1/pipelines/[id]",
+      "DELETE /api/v1/pipelines/[id]/stages/[id]",
+      "GET /api/v1/automation-rules",
+      "GET /api/v1/automation-rules/[id]/runs",
+      "GET /api/v1/automation-rules/runs",
+      "GET /api/v1/pipelines",
+      "GET /api/v1/pipelines/[id]/agent-mapping",
+      "GET /api/v1/pipelines/[id]/forecast",
+      "GET /api/v1/pipelines/[id]/stages",
+      "GET /api/v1/pipelines/[id]/stages/win-rates",
+      "GET /api/v1/pipelines/default",
+      "PATCH /api/v1/pipelines/[id]",
+      "PATCH /api/v1/pipelines/[id]/stages/[id]",
+      "POST /api/v1/pipelines",
+      "POST /api/v1/pipelines/[id]/stages",
+      "PUT /api/v1/pipelines/[id]/agent-mapping"
+    ],
+    "negocios": [
+      "DELETE /api/v1/leads/[id]/attachments",
+      "DELETE /api/v1/leads/[id]/contatos-relacionados",
+      "DELETE /api/v1/proposals/[id]",
+      "GET /api/v1/lead-captures",
+      "GET /api/v1/leads/[id]",
+      "GET /api/v1/leads/[id]/attachments",
+      "GET /api/v1/leads/[id]/attachments/[id]/media",
+      "GET /api/v1/leads/[id]/clone",
+      "GET /api/v1/leads/[id]/contatos-relacionados",
+      "GET /api/v1/leads/[id]/conversas-e-ligacoes",
+      "GET /api/v1/leads/[id]/eventos",
+      "GET /api/v1/leads/[id]/field-proposals",
+      "GET /api/v1/leads/[id]/timeline",
+      "GET /api/v1/leads/at-risk",
+      "GET /api/v1/leads/import",
+      "GET /api/v1/leads/proposals",
+      "GET /api/v1/leads/reactivations",
+      "GET /api/v1/pipelines/[id]/board",
+      "GET /api/v1/pipelines/[id]/leads",
+      "GET /api/v1/proposals",
+      "GET /api/v1/proposals/[id]",
+      "GET /api/v1/proposals/[id]/assistant/disponibilidade",
+      "GET /api/v1/proposals/[id]/documento",
+      "GET /api/v1/proposals/[id]/previa",
+      "PATCH /api/v1/leads/[id]",
+      "PATCH /api/v1/proposals/[id]",
+      "PATCH /api/v1/proposals/[id]/documento",
+      "PATCH /api/v1/proposals/[id]/modelo",
+      "POST /api/v1/leads",
+      "POST /api/v1/leads/[id]/attachments",
+      "POST /api/v1/leads/[id]/clone",
+      "POST /api/v1/leads/[id]/contact",
+      "POST /api/v1/leads/[id]/contatos-relacionados",
+      "POST /api/v1/leads/[id]/field-proposals/[id]",
+      "POST /api/v1/leads/[id]/lose",
+      "POST /api/v1/leads/[id]/move",
+      "POST /api/v1/leads/[id]/next-action",
+      "POST /api/v1/leads/[id]/reactivation",
+      "POST /api/v1/leads/[id]/retomar",
+      "POST /api/v1/leads/[id]/win",
+      "POST /api/v1/leads/bulk",
+      "POST /api/v1/leads/import",
+      "POST /api/v1/proposals",
+      "POST /api/v1/proposals/[id]/assistant",
+      "POST /api/v1/proposals/[id]/assistant/apply",
+      "POST /api/v1/proposals/[id]/decide",
+      "POST /api/v1/proposals/[id]/preencher-com-conversa",
+      "POST /api/v1/proposals/[id]/revise"
+    ]
+  },
+  "formatos": {
+    "/api/v1/ads/meta/campaigns": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "69705edca235855a"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/agendamentos": {
+      "corpo": [
+        {
+          "nome": "listarSchema",
+          "origem": "local",
+          "hash": "78f956924c61c17b"
+        },
+        {
+          "nome": "schema",
+          "origem": "desconhecida",
+          "hash": "nao-resolvido"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/agendamentos/[id]": {
+      "corpo": [
+        {
+          "nome": "conflictSchema",
+          "origem": "@/lib/agenda/google/sync-model",
+          "hash": "3a4db2737ddc5e20"
+        },
+        {
+          "nome": "meetingDeliverySchema",
+          "origem": "@/lib/agenda/google/meet",
+          "hash": "5c5d0aac00de1a1d"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/configuracao": {
+      "corpo": [
+        {
+          "nome": "agendaSettingsSchema",
+          "origem": "@/lib/schemas/settings",
+          "hash": "1c19f3583c862f58"
+        },
+        {
+          "nome": "agendaSettingsWriteSchema",
+          "origem": "@/lib/schemas/settings",
+          "hash": "e5b0ab5a9419b500"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/datas-dos-negocios": {
+      "corpo": [
+        {
+          "nome": "datasDosNegociosQuerySchema",
+          "origem": "@/lib/schemas/agenda",
+          "hash": "24ea4d8f813f4b72"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/excecoes": {
+      "corpo": [
+        {
+          "nome": "apagarSchema",
+          "origem": "local",
+          "hash": "28b5b12598b47ac7"
+        },
+        {
+          "nome": "criarSchema",
+          "origem": "local",
+          "hash": "0d1d3d541d84f23f"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/horarios-livres": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "786f309ddb962ac9"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/lista-de-espera": {
+      "corpo": [
+        {
+          "nome": "configDaListaDeEsperaSchema",
+          "origem": "@/lib/agenda/lista-de-espera",
+          "hash": "d0b6365ed4847ac2"
+        },
+        {
+          "nome": "inscreverSchema",
+          "origem": "local",
+          "hash": "0f70aa7f72098091"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/lista-de-espera/[id]": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "c33045766d016021"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/painel-do-dia": {
+      "corpo": [
+        {
+          "nome": "consultaSchema",
+          "origem": "local",
+          "hash": "60785f28c9a502f0"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/servicos": {
+      "corpo": [
+        {
+          "nome": "commandSchema",
+          "origem": "local",
+          "hash": "7247b722087d8ede"
+        },
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "d17b5c6d449c3802"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/agenda/tipos": {
+      "corpo": [
+        {
+          "nome": "alterarSchema",
+          "origem": "local",
+          "hash": "cdc6c4a4de188595"
+        },
+        {
+          "nome": "criarComRascunhoSchema",
+          "origem": "local",
+          "hash": "8fba77b82a7329bc"
+        },
+        {
+          "nome": "desativarSchema",
+          "origem": "local",
+          "hash": "28b5b12598b47ac7"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents": {
+      "corpo": [
+        {
+          "nome": "agentCreateSchema",
+          "origem": "@/lib/ai/guardrails-schema",
+          "hash": "c2e5ac95cf75516a"
+        },
+        {
+          "nome": "agentMcpCreateSchema",
+          "origem": "@/lib/ai/agents/validation",
+          "hash": "0973df2a57fee0b8"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents/[id]": {
+      "corpo": [
+        {
+          "nome": "agentPatchSchema",
+          "origem": "@/lib/ai/guardrails-schema",
+          "hash": "4dd5a06a056c9d33"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents/[id]/proposals": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "eecbaf6f13c33b7e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents/[id]/publish": {
+      "corpo": [
+        {
+          "nome": "publishSchema",
+          "origem": "@/lib/ai/agents/validation",
+          "hash": "7b0d0b040befc990"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents/[id]/runs": {
+      "corpo": [
+        {
+          "nome": "runsListQuerySchema",
+          "origem": "@/lib/ai/agents/validation",
+          "hash": "f6dfd2f0ef833d03"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents/[id]/tool-usage": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "db483183b8377b5e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents/[id]/versions": {
+      "corpo": [
+        {
+          "nome": "versionCreateSchema",
+          "origem": "@/lib/ai/agents/validation",
+          "hash": "fcd96b5a70ecbd30"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents/[id]/versions/[id]": {
+      "corpo": [
+        {
+          "nome": "versionPatchSchema",
+          "origem": "@/lib/ai/agents/validation",
+          "hash": "4d1d5bc771d49858"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/agents/[id]/versions/[id]/test": {
+      "corpo": [
+        {
+          "nome": "testRunSchema",
+          "origem": "@/lib/ai/agents/validation",
+          "hash": "8e1d409c3cd0aa0f"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/budget": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "820bd8d6af08aa14"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/cases": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "ed887fe56d450648"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/cases/[id]/close": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "e3c3b54347284ce9"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/evolution": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "9dc67378df615886"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/followup-flows": {
+      "corpo": [
+        {
+          "nome": "createFollowupFlowSchema",
+          "origem": "@/lib/followup/api-schemas",
+          "hash": "988f0357bd655acd"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/followup-flows/[id]": {
+      "corpo": [
+        {
+          "nome": "patchFollowupFlowSchema",
+          "origem": "@/lib/followup/api-schemas",
+          "hash": "311c84ba603d5ad1"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/followup-flows/[id]/export": {
+      "corpo": [
+        {
+          "nome": "flowGraphSchema",
+          "origem": "@/lib/followup/graph-schema",
+          "hash": "5f753c169544ad2d"
+        },
+        {
+          "nome": "triggerConfigSchema",
+          "origem": "@/lib/followup/api-schemas",
+          "hash": "9b5936d3412dfcb9"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/followup-flows/from-model": {
+      "corpo": [
+        {
+          "nome": "flowGraphSchema",
+          "origem": "@/lib/followup/graph-schema",
+          "hash": "5f753c169544ad2d"
+        },
+        {
+          "nome": "instalarModeloSchema",
+          "origem": "@/lib/followup/api-schemas",
+          "hash": "b4c8145f800b239b"
+        },
+        {
+          "nome": "triggerConfigSchema",
+          "origem": "@/lib/followup/api-schemas",
+          "hash": "9b5936d3412dfcb9"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/followup-flows/import": {
+      "corpo": [
+        {
+          "nome": "arquivoDeFluxoSchema",
+          "origem": "@/lib/followup/portabilidade",
+          "hash": "fe7ef9c92decb31f"
+        },
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "0ed54c7a0906034a"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/followups/enrollments": {
+      "corpo": [
+        {
+          "nome": "createFollowupEnrollmentSchema",
+          "origem": "@/lib/followup/api-schemas",
+          "hash": "80a5da2b5b9a3c88"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/followups/enrollments/[id]": {
+      "corpo": [
+        {
+          "nome": "flowGraphSchema",
+          "origem": "@/lib/followup/graph-schema",
+          "hash": "5f753c169544ad2d"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/followups/enrollments/[id]/snooze": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "73230f00a52c30ee"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/inbox": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "d756cf9ca31cad76"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/inbox/[id]": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "ffb4855dd14dce85"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/jev": {
+      "corpo": [
+        {
+          "nome": "aiDispatchModeSchema",
+          "origem": "@/lib/schemas/settings",
+          "hash": "391ed783fc3a20f5"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/knowledge/sources": {
+      "corpo": [
+        {
+          "nome": "createSourceSchema",
+          "origem": "local",
+          "hash": "d5992dc747a79d08"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/knowledge/sources/[id]": {
+      "corpo": [
+        {
+          "nome": "patchSourceSchema",
+          "origem": "local",
+          "hash": "ddcaddd704569237"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/knowledge/sources/[id]/reindex": {
+      "corpo": [
+        {
+          "nome": "reindexBodySchema",
+          "origem": "local",
+          "hash": "2d0daa7b355d761b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/knowledge/sources/upload": {
+      "corpo": [
+        {
+          "nome": "agentIdSchema",
+          "origem": "local",
+          "hash": "bdd56948bd84109a"
+        },
+        {
+          "nome": "nameSchema",
+          "origem": "local",
+          "hash": "da92a08d2cf181ab"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/mapas": {
+      "corpo": [
+        {
+          "nome": "putSchema",
+          "origem": "local",
+          "hash": "b52f84e3ee60e678"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/mapas/testar": {
+      "corpo": [
+        {
+          "nome": "postSchema",
+          "origem": "local",
+          "hash": "90da7f8c64f004ee"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/memory": {
+      "corpo": [
+        {
+          "nome": "postSchema",
+          "origem": "local",
+          "hash": "dc3acae645bf9137"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/memory/entries": {
+      "corpo": [
+        {
+          "nome": "postSchema",
+          "origem": "local",
+          "hash": "d6ad817aa25943e3"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/memory/entries/[id]": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "534482acaa9562e0"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/operator-metrics": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "b5482ba98683971e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/pacing": {
+      "corpo": [
+        {
+          "nome": "pacingKnobsUpdateSchema",
+          "origem": "@/lib/ai/pacing-knobs",
+          "hash": "f777500f9c95c198"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/routers": {
+      "corpo": [
+        {
+          "nome": "createRouterSchema",
+          "origem": "local",
+          "hash": "4b77ed64d3973002"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/routers/[id]": {
+      "corpo": [
+        {
+          "nome": "patchRouterSchema",
+          "origem": "local",
+          "hash": "eb9729200bea2fd2"
+        },
+        {
+          "nome": "senderRoutesSchema",
+          "origem": "@/lib/ai/agents/sender-routes",
+          "hash": "ac3446b3cb1aaa97"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/routers/[id]/members": {
+      "corpo": [
+        {
+          "nome": "membersPutSchema",
+          "origem": "local",
+          "hash": "f957343081190383"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/routers/[id]/test": {
+      "corpo": [
+        {
+          "nome": "testSchema",
+          "origem": "local",
+          "hash": "c46c569b1c1b7095"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/routing-results": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "9061e78d5f6ac482"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/routing-results/[id]": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "351330d22bd50d46"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/skills/[id]": {
+      "corpo": [
+        {
+          "nome": "nameSchema",
+          "origem": "local",
+          "hash": "a45e49a45bfefabe"
+        },
+        {
+          "nome": "salvarSkillSchema",
+          "origem": "local",
+          "hash": "282e41a93ee548ab"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/skills/[id]/install": {
+      "corpo": [
+        {
+          "nome": "nameSchema",
+          "origem": "local",
+          "hash": "a45e49a45bfefabe"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/skills/[id]/restore": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "d8e9161904bd038c"
+        },
+        {
+          "nome": "nameSchema",
+          "origem": "local",
+          "hash": "a45e49a45bfefabe"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/skills/[id]/versions": {
+      "corpo": [
+        {
+          "nome": "nameSchema",
+          "origem": "local",
+          "hash": "a45e49a45bfefabe"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/ai/usage": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "ef2e6ac5c0c15c82"
+        },
+        {
+          "nome": "usoDeIaSchema",
+          "origem": "@/lib/ai/usage/aggregate",
+          "hash": "2e65f363eeff4213"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/attendants/sector/[id]": {
+      "corpo": [
+        {
+          "nome": "idSchema",
+          "origem": "local",
+          "hash": "bdd56948bd84109a"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/attendants/sectors/[id]": {
+      "corpo": [
+        {
+          "nome": "idSchema",
+          "origem": "local",
+          "hash": "bdd56948bd84109a"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/automation-rules": {
+      "corpo": [
+        {
+          "nome": "createAutomationRuleSchema",
+          "origem": "@/lib/schemas",
+          "hash": "e30b6fd607012e7f"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/calls": {
+      "corpo": [
+        {
+          "nome": "listCallsQuerySchema",
+          "origem": "@/lib/schemas/calls",
+          "hash": "00dc862b0cf5dc1d"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/campaign-templates": {
+      "corpo": [
+        {
+          "nome": "criarTemplateSchema",
+          "origem": "@/lib/campanhas/schemas",
+          "hash": "67907a013767316b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/campaign-templates/[id]": {
+      "corpo": [
+        {
+          "nome": "editarTemplateSchema",
+          "origem": "@/lib/campanhas/schemas",
+          "hash": "fee5f5a375c59d1e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/channel-schedules": {
+      "corpo": [
+        {
+          "nome": "criarSchema",
+          "origem": "local",
+          "hash": "5fce8097272314ec"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/company-people": {
+      "corpo": [
+        {
+          "nome": "companyPersonCreateSchema",
+          "origem": "@/lib/crm-b2b/schemas",
+          "hash": "75955c2a86e61070"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/contact-tags": {
+      "corpo": [
+        {
+          "nome": "tagsPageQuerySchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "4219ec67afa6fe18"
+        },
+        {
+          "nome": "tagsPageResultSchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "2074f4b202dd3c34"
+        }
+      ],
+      "resposta": [
+        "tagsPageResultSchema"
+      ]
+    },
+    "/api/v1/contacts": {
+      "corpo": [
+        {
+          "nome": "contactListQuerySchema",
+          "origem": "@/lib/schemas",
+          "hash": "07e3a609f4c5df23"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/contacts/[id]/carteira": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "2f01abd27fc91b1e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/contacts/[id]/crm-summary": {
+      "corpo": [
+        {
+          "nome": "prospectEnrichmentSchema",
+          "origem": "@/lib/prospecting/schema",
+          "hash": "01ed8514f2d740fc"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/contacts/[id]/person": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "10041d46efc92e68"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/contacts/import/agenda": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "55d557991946c579"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/conversation-tags": {
+      "corpo": [
+        {
+          "nome": "canonicalConversationTagsSchema",
+          "origem": "@/lib/schemas/settings",
+          "hash": "afeb664b38bdc8c7"
+        },
+        {
+          "nome": "tagsPageQuerySchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "4219ec67afa6fe18"
+        },
+        {
+          "nome": "tagsPageResultSchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "2074f4b202dd3c34"
+        }
+      ],
+      "resposta": [
+        "tagsPageResultSchema"
+      ]
+    },
+    "/api/v1/conversations": {
+      "corpo": [
+        {
+          "nome": "listConversationsQuerySchema",
+          "origem": "@/lib/schemas",
+          "hash": "0f4ab9f2813af786"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/conversations/[id]/messages": {
+      "corpo": [
+        {
+          "nome": "listMessagesQuerySchema",
+          "origem": "@/lib/schemas",
+          "hash": "0fd36de5efeaf6f3"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/conversations/[id]/notes": {
+      "corpo": [
+        {
+          "nome": "createNoteSchema",
+          "origem": "@/lib/schemas/notes",
+          "hash": "fbdcbfc9b09289c6"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/conversations/[id]/pagamentos": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "93671da7b5102b7f"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/conversations/[id]/snooze": {
+      "corpo": [
+        {
+          "nome": "snoozeSchema",
+          "origem": "@/lib/schemas/snooze",
+          "hash": "007e51046d96b3fa"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/conversations/[id]/transfer": {
+      "corpo": [
+        {
+          "nome": "previaSchema",
+          "origem": "local",
+          "hash": "c1e9e9d2b1c80eed"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/conversations/[id]/transferir-agente": {
+      "corpo": [
+        {
+          "nome": "corpoSchema",
+          "origem": "local",
+          "hash": "c163e1f550d7ce43"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/financeiro/catalogo/[id]": {
+      "corpo": [
+        {
+          "nome": "alterarSchema",
+          "origem": "local",
+          "hash": "1c31051824bc27d2"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/financeiro/lancamentos": {
+      "corpo": [
+        {
+          "nome": "criarSchema",
+          "origem": "local",
+          "hash": "0fb0c0a64f6bcf72"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/honorarios/contratos": {
+      "corpo": [
+        {
+          "nome": "criarSchema",
+          "origem": "local",
+          "hash": "1af36cd45a9720b0"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/honorarios/contratos/[id]/parcelas": {
+      "corpo": [
+        {
+          "nome": "criarSchema",
+          "origem": "local",
+          "hash": "3c742155647ad507"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/lead-captures": {
+      "corpo": [
+        {
+          "nome": "leadCapturesQuerySchema",
+          "origem": "@/lib/schemas/lead-captures",
+          "hash": "2bcf8e0e1d720268"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/leads/[id]/attachments": {
+      "corpo": [
+        {
+          "nome": "DeleteSchema",
+          "origem": "local",
+          "hash": "db145c3e00653e7f"
+        },
+        {
+          "nome": "PostSchema",
+          "origem": "local",
+          "hash": "2ee544503f9381b9"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/leads/at-risk": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "1bb07823e7c174f1"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-template-groups": {
+      "corpo": [
+        {
+          "nome": "createGrupoSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "d0e3d268fd5d3550"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-template-groups/[id]": {
+      "corpo": [
+        {
+          "nome": "updateGrupoSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "44eb8f1148bbf0fa"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-template-groups/[id]/ordem": {
+      "corpo": [
+        {
+          "nome": "moverGrupoSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "360e3b90c47a395e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-templates": {
+      "corpo": [
+        {
+          "nome": "createTemplateSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "721d11c73504fdf3"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-templates/[id]": {
+      "corpo": [
+        {
+          "nome": "snapshotDeMidiasSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "d166583c6fa373c5"
+        },
+        {
+          "nome": "updateTemplateSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "ed3c145eee7fb5ca"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-templates/[id]/midias": {
+      "corpo": [
+        {
+          "nome": "camposDoUploadDeTemplateSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "196f9f5ff0d75f75"
+        },
+        {
+          "nome": "snapshotDeMidiasSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "d166583c6fa373c5"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/message-templates/[id]/ordem": {
+      "corpo": [
+        {
+          "nome": "moverTemplateSchema",
+          "origem": "@/lib/schemas/templates",
+          "hash": "360e3b90c47a395e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/metrics/atrito": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "3939607cd0b10eb3"
+        },
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "6970206d97ec0d0b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/metrics/attendants": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "40f8a27b4cd5aa90"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/metrics/channels": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "c8f7e8a2fbd53f94"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/metrics/funil": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "6970206d97ec0d0b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/metrics/lost": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "6970206d97ec0d0b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/metrics/metas": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "6970206d97ec0d0b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/metrics/serie": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "e3f25fb38810981e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/people": {
+      "corpo": [
+        {
+          "nome": "personCreateSchema",
+          "origem": "@/lib/crm-b2b/schemas",
+          "hash": "156b784c836bd8c5"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/pipelines": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "92be4922f328d60c"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/pipelines/[id]": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "f9576bd3ffc7c6d2"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/pipelines/[id]/agent-mapping": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "341874070d107bdd"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/pipelines/[id]/stages": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "392603962c75038a"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/pipelines/[id]/stages/[id]": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "9096be4b25b5df3e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/products": {
+      "corpo": [
+        {
+          "nome": "produtoCreateSchema",
+          "origem": "@/lib/schemas/produtos",
+          "hash": "55c58e69c4f1f94e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/products/[id]": {
+      "corpo": [
+        {
+          "nome": "produtoPatchSchema",
+          "origem": "@/lib/schemas/produtos",
+          "hash": "79a80dfa238c3220"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/products/[id]/ai-presentation": {
+      "corpo": [
+        {
+          "nome": "catalogProductPresentationPatchSchema",
+          "origem": "@/lib/catalogo/apresentacao",
+          "hash": "74a25da462975b79"
+        },
+        {
+          "nome": "paramsSchema",
+          "origem": "local",
+          "hash": "ec29ef33868d08ae"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/products/[id]/ai-presentation/audio": {
+      "corpo": [
+        {
+          "nome": "catalogProductPresentationAudioMutationSchema",
+          "origem": "@/lib/catalogo/apresentacao",
+          "hash": "b7bf7b81c733c504"
+        },
+        {
+          "nome": "paramsSchema",
+          "origem": "local",
+          "hash": "ec29ef33868d08ae"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/products/[id]/fotos": {
+      "corpo": [
+        {
+          "nome": "ordemSchema",
+          "origem": "local",
+          "hash": "0e19da6bbaadc952"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/proposals": {
+      "corpo": [
+        {
+          "nome": "propostaCreateSchema",
+          "origem": "@/lib/schemas/propostas",
+          "hash": "22c49429fa0aaa14"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/proposals/[id]": {
+      "corpo": [
+        {
+          "nome": "paramsSchema",
+          "origem": "local",
+          "hash": "28b5b12598b47ac7"
+        },
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "f96f1fd3753832e3"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/proposals/[id]/assistant": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "adde9e730bbb5051"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/proposals/[id]/assistant/apply": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "4272e9460110e30a"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/proposals/[id]/decide": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "4ab76dd1f973dec1"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/proposals/[id]/documento": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "52a8432bec24d73b"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/proposals/[id]/modelo": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "388a70a198f3b1fc"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/proposals/[id]/revise": {
+      "corpo": [
+        {
+          "nome": "bodySchema",
+          "origem": "local",
+          "hash": "ef92b5ccdd3e6ffc"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/reports/activities": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "52af1f613bc64e70"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/reports/comercial": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "f4cc2c9fb73d1f3e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/reports/financeiro": {
+      "corpo": [
+        {
+          "nome": "periodoSchema",
+          "origem": "local",
+          "hash": "b5415df7c9d81027"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/reports/tags": {
+      "corpo": [
+        {
+          "nome": "querySchema",
+          "origem": "local",
+          "hash": "e98518f395fc9103"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/agenda-apresentacao": {
+      "corpo": [
+        {
+          "nome": "tituloDaAgendaEntradaSchema",
+          "origem": "@/lib/agenda/apresentacao",
+          "hash": "178e609e81d957df"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/campanhas": {
+      "corpo": [
+        {
+          "nome": "configuracaoDeCampanhasSchema",
+          "origem": "@/lib/campanhas/configuracao",
+          "hash": "af8d65667f1e2056"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/catalogo": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "658a88a6e158ef9e"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/proposal-templates": {
+      "corpo": [
+        {
+          "nome": "postSchema",
+          "origem": "local",
+          "hash": "5ff99ba20560e6d5"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/proposal-templates/[id]": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "003d90a2184fed36"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/proposals": {
+      "corpo": [
+        {
+          "nome": "patchSchema",
+          "origem": "local",
+          "hash": "f0fef34509c57c25"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/prospeccao": {
+      "corpo": [
+        {
+          "nome": "personalizacaoProspeccaoSchema",
+          "origem": "@/lib/prospecting/personalizar",
+          "hash": "c7bb8a3c6c5549c0"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/routing": {
+      "corpo": [
+        {
+          "nome": "routingConfigSchema",
+          "origem": "@/lib/schemas",
+          "hash": "4dba7560f048f69a"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/routing/channels": {
+      "corpo": [
+        {
+          "nome": "channelRoutingPatchSchema",
+          "origem": "@/lib/schemas/routing",
+          "hash": "d7c6b08a37372167"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/settings/task-plans": {
+      "corpo": [
+        {
+          "nome": "planosSchema",
+          "origem": "@/lib/tarefas/plano",
+          "hash": "c142f24064b016be"
+        }
+      ],
+      "resposta": []
+    },
+    "/api/v1/tags/vocabulario": {
+      "corpo": [
+        {
+          "nome": "tagsPageQuerySchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "4219ec67afa6fe18"
+        },
+        {
+          "nome": "tagsPageResultSchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "2074f4b202dd3c34"
+        },
+        {
+          "nome": "vocabularioDeTagsSchema",
+          "origem": "@/lib/schemas/tags",
+          "hash": "ae8fa751d8a15906"
+        }
+      ],
+      "resposta": [
+        "tagsPageResultSchema"
+      ]
+    }
+  }
+}

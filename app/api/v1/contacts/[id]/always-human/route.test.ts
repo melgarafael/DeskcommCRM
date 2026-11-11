@@ -12,6 +12,9 @@ import { DELETE, POST } from "./route";
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+// resolveAuthDual abre o cliente de sessão (cookies) na volta de requireRole; a
+// rota só usa o admin client, então o cliente de sessão é um objeto vazio.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 
 const ORG = "11111111-1111-4111-8111-111111111111";

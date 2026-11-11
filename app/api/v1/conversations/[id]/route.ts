@@ -7,11 +7,14 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { extractBearer } from "@/lib/mcp/auth";
+import { redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
 import { patchConversationSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
@@ -53,9 +56,48 @@ function idInvalido(id: string): boolean {
   return !z.uuid().safeParse(id).success;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
+
+  // Token de integração (Spec 33, R2): `getConversationHandler` filtra
+  // `organization_id` e é o mesmo das tools MCP. A guarda do id vem DEPOIS do
+  // portão, como no ramo da sessão.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "viewer",
+      scope: "mcp:read",
+      tokenRole: "agent",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    if (idInvalido(id)) {
+      return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+    }
+    try {
+      const conv = await getConversationHandler(
+        authz.supabase,
+        {
+          organization_id: authz.organizationId,
+          actor: authz.actor,
+          requestId,
+          idioma: authz.idioma,
+        },
+        id,
+      );
+      const [comNome] = await comNomeDoAtendente(authz.organizationId, [conv]);
+      return ok(redigirContatoParaModulo(authz, comNome ?? conv), { requestId });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        return fail(err.code, err.message, err.status, { requestId });
+      }
+      throw err;
+    }
+  }
+
   const supabase = await createClient();
 
   const {

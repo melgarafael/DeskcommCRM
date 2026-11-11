@@ -702,6 +702,13 @@ const schema = z.object({
    */
   VAPID_PUBLIC_KEY: z.string().optional().default(""),
   VAPID_PRIVATE_KEY: z.string().optional().default(""),
+
+  /**
+   * Chave PRIVADA (PEM PKCS#8, curva P-256) com que o host assina o JWT de contexto do módulo
+   * conectado (spec 33, F3). Vazio = recurso desligado: a rota de contexto responde 503 e o módulo
+   * fica com teto `agent` e sem pessoa. Instalação fresca não precisa dela. Nunca vai a log.
+   */
+  MODULE_JWT_PRIVATE_KEY: z.string().optional().default(""),
 });
 
 let parsed = schema.safeParse(process.env);

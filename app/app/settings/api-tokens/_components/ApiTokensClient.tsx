@@ -157,7 +157,19 @@ export function ApiTokensClient() {
             <TableBody>
               {tokens.map((tok) => (
                 <TableRow key={tok.id}>
-                  <TableCell className="font-medium">{tok.name}</TableCell>
+                  <TableCell className="font-medium">
+                    {tok.module_slug ? (
+                      // Token de MÓDULO conectado (spec 33, F2): identificado pelo módulo, nunca editável.
+                      <span className="flex flex-wrap items-center gap-2" data-token-de-modulo>
+                        {t("Módulo")} {tok.module_slug}
+                        <Badge variant="outline" className="text-xs">
+                          {t("Módulo conectado")}
+                        </Badge>
+                      </span>
+                    ) : (
+                      tok.name
+                    )}
+                  </TableCell>
                   <TableCell>
                     <code className="text-xs">{tok.prefix}…</code>
                   </TableCell>
@@ -189,8 +201,12 @@ export function ApiTokensClient() {
                         size="sm"
                         disabled={revoke.isPending}
                         onClick={async () => {
-                          await revoke.mutateAsync(tok.id);
-                          toast.success(t("Token revogado."));
+                          const res = await revoke.mutateAsync(tok.id);
+                          toast.success(
+                            res.data.module_deactivated
+                              ? t("Módulo desativado e token revogado.")
+                              : t("Token revogado."),
+                          );
                         }}
                       >
                         {t("Revogar")}

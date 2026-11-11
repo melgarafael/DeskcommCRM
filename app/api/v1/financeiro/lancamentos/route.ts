@@ -10,21 +10,26 @@
  * não vem do corpo: deixar quem chama escolher `'sale'` permitiria criar uma
  * entrada que o relatório conta como venda sem existir comanda nenhuma por trás.
  *
- * ⚠️ CLIENT DE SESSÃO. A RLS já diz que escrever exige `agent`, e a rota cobra o
- * mesmo degrau de propósito — pedir `manager` aqui criaria uma segunda régua, e
- * quem chamasse com um token de servidor passaria pela RLS mesmo assim.
+ * ⚠️ COM SESSÃO, client de SESSÃO. A RLS já diz que escrever exige `agent`, e a
+ * rota cobra o mesmo degrau de propósito — pedir `manager` aqui criaria uma
+ * segunda régua.
+ *
+ * ⚠️ COM TOKEN (`mcp:write`, Spec 33 R2) o client é a service role e a RLS deixa
+ * de proteger: o insert leva a organização da linha do token, `account_id` e
+ * `account_plan_id` do corpo são conferidos na organização (a FK é simples e
+ * aceitaria a conta de outra), e `created_by_user_id` fica nulo (token não é
+ * pessoa).
  */
 import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -45,20 +50,29 @@ const criarSchema = z.object({
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura do extrato: sessão OU token `mcp:read`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_lancamentos_listar", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const de = url.searchParams.get("de");
   const ate = url.searchParams.get("ate");
   const status = url.searchParams.get("status");
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let q = supabase
     .from("financial_entries")
     .select(
       "id, account_id, account_plan_id, sale_id, direction, amount_cents, currency, description, entry_date, status, paid_at, origin, reverses_entry_id, created_at",
     )
+    .eq("organization_id", authz.organizationId)
     .order("entry_date", { ascending: false })
     .limit(LIMITE_MAXIMO);
 
@@ -77,8 +91,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_lancamentos_criar", requestId);
+  if (teto) return teto;
 
   const lido = criarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -87,7 +108,37 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  // Lançamento já PAGO não se desfaz (trigger `fn_lancamento_pago_e_imutavel`): um módulo
+  // conectado (Spec 33) só cria pendente; nascer pago é só da pessoa na sessão.
+  if (authz.actor.type === "module" && lido.data.status === "paid") {
+    return fail("forbidden", "Lançar como já pago é só pela sessão.", 403, { requestId });
+  }
+
+  const supabase = authz.supabase;
+  const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+
+  // Só o token precisa desta conferência: a sessão passa pela RLS do banco.
+  if (authz.via === "token") {
+    const { data: conta } = await supabase
+      .from("financial_accounts")
+      .select("id")
+      .eq("organization_id", authz.organizationId)
+      .eq("id", lido.data.account_id)
+      .maybeSingle();
+    let planoValido = true;
+    if (lido.data.account_plan_id) {
+      const { data: plano } = await supabase
+        .from("account_plans")
+        .select("id")
+        .eq("organization_id", authz.organizationId)
+        .eq("id", lido.data.account_plan_id)
+        .maybeSingle();
+      planoValido = Boolean(plano);
+    }
+    if (!conta || !planoValido) {
+      return fail("validation_failed", "Conta ou plano de contas inválido.", 422, { requestId });
+    }
+  }
 
   // ─── A MOEDA É DA ORGANIZAÇÃO, NUNCA DO CORPO (#3379) ──────────────────
   //
@@ -97,12 +148,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   // outra unidade na lista, que é o pior desfecho porque parece certo. Mesmo
   // leitor da comanda (`moedaDaOrganizacao`), e o corpo nem declara o campo: o
   // Zod o descarta antes de chegar aqui.
-  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
+  const moeda = await moedaDaOrganizacao(supabase, authz.organizationId);
 
   const { data, error } = await supabase
     .from("financial_entries")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: authz.organizationId,
       currency: moeda,
       account_id: lido.data.account_id,
       account_plan_id: lido.data.account_plan_id ?? null,
@@ -117,7 +168,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       // diferentes.
       paid_at: lido.data.status === "paid" ? new Date().toISOString() : null,
       origin: "manual",
-      created_by_user_id: authz.user.id,
+      created_by_user_id: atorUserId,
     })
     .select("id, direction, amount_cents, currency, status, entry_date")
     .single();
@@ -133,6 +184,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "financeiro.lancamento_criado",
+    actorUserId: atorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "financial_entry",
     resourceId: data.id,
     requestId,

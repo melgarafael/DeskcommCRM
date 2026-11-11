@@ -38,6 +38,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
+import { extractBearer } from "@/lib/mcp/auth";
 import {
   TIMELINE_COLS,
   comNomeDoAtor,
@@ -46,7 +47,10 @@ import {
   filtroDaPagina,
   filtroDoCursor,
 } from "@/lib/leads/timeline-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { TimelineItem } from "@/lib/types/contacts";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +62,21 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
+  const authHeader = req.headers.get("authorization");
+  if (extractBearer(authHeader)) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "crm_leads",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "leads_timeline", requestId);
+    if (teto) return teto;
+    return responder(authz.supabase, authz.organizationId, authz.idioma ?? IDIOMA_PADRAO, leadId, req, requestId);
+  }
+
+  // Sessão do navegador
   const supabase = await createClient();
   const {
     data: { user },
@@ -67,7 +86,18 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
   const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  return responder(supabase, null, authUser?.idioma ?? "pt-BR", leadId, req, requestId);
+}
+
+async function responder(
+  supabase: SupabaseClient,
+  organizationId: string | null,
+  idioma: Idioma,
+  leadId: string,
+  req: NextRequest,
+  requestId: string,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma);
 
   const url = new URL(req.url);
   const types = url.searchParams.getAll("type").filter(Boolean);
@@ -80,11 +110,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   // O lead vem pela RLS do caller — é ele que prova a org, nunca o body.
-  const { data: lead, error: leadErr } = await supabase
-    .from("crm_leads")
-    .select("id, contact_id, organization_id")
-    .eq("id", leadId)
-    .maybeSingle();
+  // No ramo do token, o client é admin: filtra explicitamente pela org do token.
+  // `organization_id` volta no select porque o nome de quem agiu é resolvido por ele (#4031).
+  let leadQuery = supabase.from("crm_leads").select("id, contact_id, organization_id").eq("id", leadId);
+  if (organizationId) leadQuery = leadQuery.eq("organization_id", organizationId);
+  const { data: lead, error: leadErr } = await leadQuery.maybeSingle();
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
 
@@ -112,6 +142,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     // organização — sem isso a segunda página volta a varrer a tabela.
     q = q.or(filtroDoCursor(orgId, cursor));
   }
+  if (organizationId) q = q.eq("organization_id", organizationId);
 
   const { data, error } = await q;
   if (error) return fail("internal_error", error.message, 500, { requestId });
