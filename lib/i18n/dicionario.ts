@@ -20690,6 +20690,44 @@ export const DICIONARIO: Traducoes = {
   "Sem permissão para mudar o status.": { es: "Sin permiso para cambiar el estado." },
   "Não foi possível salvar o status.": { es: "No se pudo guardar el estado." },
 
+  // ═══ Rankings de negócios ganhos, na tela de Faturamento (#4280, #4295) ═══
+  // Etiquetas que mais vendem e clientes que mais compram. As frases de aviso
+  // existem porque os rankings declaram o que ficou FORA (moeda, valor ausente,
+  // contato ausente, leitura interrompida) em vez de esconder.
+  "Tags que mais vendem": { es: "Etiquetas que más venden" },
+  "Clientes que mais compram": { es: "Clientes que más compran" },
+  "Estes dois rankings somam os negócios marcados como ganhos no período — não as comandas dos números acima.":
+    {
+      es: "Estos dos rankings suman los negocios marcados como ganados en el período — no las comandas de los números de arriba.",
+    },
+  // "Tag", "Cliente", "Valor", "Contato", "Negócios" e "Negócios ganhos" já
+  // existem neste dicionário: não se repetem aqui.
+  "Nenhum negócio ganho no período.": { es: "Ningún negocio ganado en el período." },
+  "O período é maior do que este relatório cobre.": {
+    es: "El período es mayor de lo que cubre este informe.",
+  },
+  "Os números são um piso: a leitura foi interrompida antes do fim do período.": {
+    es: "Los números son un piso: la lectura se interrumpió antes del final del período.",
+  },
+  "negócio(s) sem valor preenchido somam zero — valor ausente, não venda de zero.": {
+    es: "negocio(s) sin valor completado suman cero — valor ausente, no venta de cero.",
+  },
+  "negócio(s) em outra moeda ficaram fora: o painel soma na moeda da empresa e não converte.":
+    {
+      es: "negocio(s) en otra moneda quedaron fuera: el panel suma en la moneda de la empresa y no convierte.",
+    },
+  "negócio(s) ganho(s) sem data de fechamento não entram em nenhum recorte de período.": {
+    es: "negocio(s) ganado(s) sin fecha de cierre no entran en ningún recorte de período.",
+  },
+  "negócio(s) ganho(s) sem contato não entram no ranking de clientes.": {
+    es: "negocio(s) ganado(s) sin contacto no entran en el ranking de clientes.",
+  },
+  "Nenhum negócio ganho no período tem tag.": {
+    es: "Ningún negocio ganado en el período tiene etiqueta.",
+  },
+  "Nenhum negócio ganho no período tem contato.": {
+    es: "Ningún negocio ganado en el período tiene contacto.",
+  },
   // ─── E-mails do sistema (lib/email/templates/) — #4302 ───────────────────
   // A cópia dos moldes de acesso (GoTrue), do convite de time e do alarme de
   // orçamento de IA morava dentro de cada arquivo, fora deste dicionário. Por
