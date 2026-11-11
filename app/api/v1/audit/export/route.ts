@@ -9,7 +9,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { auditQuerySchema } from "@/lib/schemas/audit";
@@ -136,12 +136,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
   }
   const csv = lines.join("\n") + "\n";
-  return new Response(csv, {
+  return comIdDaRequisicao(new Response(csv, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="audit-${new Date().toISOString().slice(0, 10)}.csv"`,
       "X-Request-Id": requestId,
     },
-  });
+  }), requestId);
 }

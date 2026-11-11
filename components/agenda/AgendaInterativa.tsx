@@ -55,6 +55,7 @@ export function AgendaInterativa({
   onEscolherTipo,
   onMarcarEm,
   onAbrirAgendamento,
+  donoId,
   className,
 }: {
   visao: VisaoDaAgenda;
@@ -109,12 +110,30 @@ export function AgendaInterativa({
    */
   onMarcarEm?: (instante: string) => void;
   onAbrirAgendamento?: (id: string) => void;
+  /**
+   * O PROFISSIONAL ISOLADO no filtro da agenda (#4186) — `null` = "todos".
+   *
+   * A grade pergunta a disponibilidade de UM profissional (a rota recebe
+   * `event_type_id` e, opcionalmente, `owner_user_id`). Sem esta prop, isolar a
+   * Ana mostrava os blocos dela e pintava como "livre" a jornada do DONO DO TIPO
+   * — clicar ali abria o painel da Ana num horário que a Ana não atende, e o
+   * motor recusava a escrita. O filtro tem de governar os dois lados: o que se
+   * vê e o que se oferece clicar.
+   */
+  donoId?: string | null;
   className?: string;
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const { data: horarios, isError: horariosFalharam } = useHorariosLivres(
-    tipo ? { event_type_id: tipo.id, de: recorte.de, ate: recorte.ate } : null,
+    tipo
+      ? {
+          event_type_id: tipo.id,
+          owner_user_id: donoId ?? undefined,
+          de: recorte.de,
+          ate: recorte.ate,
+        }
+      : null,
   );
 
   const horariosPorDia = React.useMemo(() => {

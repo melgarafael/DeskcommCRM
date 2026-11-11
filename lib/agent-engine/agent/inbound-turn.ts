@@ -50,6 +50,7 @@ import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
 import { etiquetasParaOMatcher } from './etiquetas-do-matcher';
+import { emOrdemDeEscrita } from './fila-de-envio';
 import {
   criarColetorDeFerramentas,
   envolverFerramentasComTraco,
@@ -6175,11 +6176,15 @@ async function executarTurnoDoAgente(
           apresentacaoEncerraTurno,
         )
       : breakerTools;
-    const tools = envolverFerramentasComTraco(
-      presentationTools,
-      // O traço continua por fora: registra tanto o veto do breaker quanto o
-      // descarte de ferramentas após a apresentação terminal.
-      input.tracoDoTurno?.coletor,
+    // A fila fica por fora de tudo (prévia inclusive): chamadas paralelas do mesmo
+    // passo falam com o cliente na ordem em que o modelo as escreveu (`fila-de-envio.ts`).
+    const tools = emOrdemDeEscrita(
+      envolverFerramentasComTraco(
+        presentationTools,
+        // O traço continua por fora: registra tanto o veto do breaker quanto o
+        // descarte de ferramentas após a apresentação terminal.
+        input.tracoDoTurno?.coletor,
+      ),
     );
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam
