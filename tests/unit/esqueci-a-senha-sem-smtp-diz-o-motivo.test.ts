@@ -15,6 +15,8 @@
  *     GoTrue, e a resposta é a mesma qualquer que seja a resposta dele (200 ou
  *     500): depende da instalação, nunca do e-mail digitado;
  *   - host sem remetente não é SMTP usável (mesma régua do kit);
+ *   - sem SMTP e COM Resend o GoTrue é chamado: o kit leva a Resend até ele
+ *     (`resend_da_instalacao`, em `hostgator-setup-kit/_common.sh`), #3039;
  *   - a catraca continua vencendo;
  *   - o banco que FALHA não vira "sem SMTP": segue o caminho de sempre;
  *   - fora do single-server (Supabase na nuvem ou separado) nada muda: o login
@@ -58,6 +60,7 @@ const estado = {
   envSmtpHost: "",
   envSmtpFrom: "",
   limitado: false,
+  resend: false,
   resposta: { error: null } as RespostaGoTrue,
   chamouGoTrue: 0,
 };
@@ -92,6 +95,13 @@ vi.mock("@/lib/supabase/admin", () => ({
       }),
     }),
   }),
+}));
+// A Resend é lida por `valorDaInstalacao`, que cai no `env` já parseado na
+// importação. O dublê fica na pergunta "a Resend entrega?", e a composição que
+// decide (`lib/email/estado.ts`) roda real, como em `admin-avisa-sem-smtp.test.tsx`.
+vi.mock("@/lib/email/resend", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  isEmailConfigured: async () => estado.resend,
 }));
 vi.mock("@/lib/webhooks/secrets", () => ({
   decryptWebhookSecret: async () => "",
@@ -128,6 +138,7 @@ beforeEach(() => {
   estado.envSmtpHost = "";
   estado.envSmtpFrom = "";
   estado.limitado = false;
+  estado.resend = false;
   estado.resposta = { error: null };
   estado.chamouGoTrue = 0;
   vi.stubEnv("SINGLE_SERVER", "1");
@@ -185,6 +196,27 @@ describe("single-server SEM SMTP no CRM", () => {
       expect(estado.chamouGoTrue).toBe(1);
     },
   );
+});
+
+describe("single-server sem SMTP, COM a Resend (#3039)", () => {
+  it("⭐ o GoTrue é chamado e a recuperação segue: o kit leva a Resend até ele", async () => {
+    estado.resend = true;
+
+    const r = await requestPasswordReset({ email: EMAIL });
+
+    expect(r).toEqual({ ok: true });
+    expect(estado.chamouGoTrue).toBe(1);
+  });
+
+  it("a falha do GoTrue aqui é a genérica, não 'sem SMTP': a instalação tem por onde enviar", async () => {
+    estado.resend = true;
+    estado.resposta = falhaDoGoTrue(500);
+
+    const r = await requestPasswordReset({ email: EMAIL });
+
+    expect(r).toEqual({ ok: false, error: "request_failed" });
+    expect(estado.chamouGoTrue).toBe(1);
+  });
 });
 
 describe("Supabase fora do single-server (nuvem ou separado)", () => {

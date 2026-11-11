@@ -21,7 +21,7 @@
  * resposta rápida (#2526) — de propósito.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NextRequest } from "next/server";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 
 const h = vi.hoisted(() => ({
   guard: vi.fn(),
@@ -110,7 +110,7 @@ function multipart(bytes: number[] | Uint8Array<ArrayBuffer>, nome: string, tipo
   const corpo = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const form = new FormData();
   form.append("file", new File([corpo], nome, { type: tipo }));
-  return new NextRequest(`http://localhost/api/v1/message-templates/${TPL}/midias`, {
+  return pedidoComTamanho(`http://localhost/api/v1/message-templates/${TPL}/midias`, {
     method: "POST",
     body: form,
   });
@@ -187,7 +187,7 @@ describe("POST /message-templates/:id/midias — áudio", () => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [] });
 
     // `file.type` MENTE de propósito: é o campo que o cliente controla.
-    const r = await POST(multipart(OGG, "foto.jpg", "image/png"), params);
+    const r = await POST(await multipart(OGG, "foto.jpg", "image/png"), params);
 
     expect(r.status).toBe(200);
     const caminho = h.storage.upload.mock.calls[0]![0] as string;
@@ -205,7 +205,7 @@ describe("POST /message-templates/:id/midias — áudio", () => {
     const grande = new Uint8Array(TAMANHO_MAXIMO_DO_AUDIO + 1);
     grande.set(new Uint8Array(OGG), 0);
 
-    const r = await POST(multipart(grande, "longo.ogg", "audio/ogg"), params);
+    const r = await POST(await multipart(grande, "longo.ogg", "audio/ogg"), params);
 
     expect(r.status).toBe(413);
     expect(h.storage.upload).not.toHaveBeenCalled();
@@ -217,7 +217,7 @@ describe("POST /message-templates/:id/midias — áudio", () => {
     const grande = new Uint8Array(TAMANHO_MAXIMO_DA_MIDIA + 1);
     grande.set(new Uint8Array(JPEG), 0);
 
-    const r = await POST(multipart(grande, "foto.jpg", "image/jpeg"), params);
+    const r = await POST(await multipart(grande, "foto.jpg", "image/jpeg"), params);
 
     expect(r.status).toBe(413);
     expect(h.storage.upload).not.toHaveBeenCalled();
@@ -226,7 +226,7 @@ describe("POST /message-templates/:id/midias — áudio", () => {
   it("tipo não aceito: 415 e nada sobe", async () => {
     template({ id: TPL, owner_user_id: USER, midias: [] });
 
-    const r = await POST(multipart(MP4, "clipe.m4a", "audio/mp4"), params);
+    const r = await POST(await multipart(MP4, "clipe.m4a", "audio/mp4"), params);
 
     expect(r.status).toBe(415);
     expect(h.storage.upload).not.toHaveBeenCalled();

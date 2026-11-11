@@ -245,13 +245,18 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "(app/actions/settings/updateProfile.ts, updateTenant.ts).",
   },
   {
-    fn: "fn_conversation_assign(uuid,uuid,uuid,text,uuid,boolean,uuid)",
+    fn: "fn_conversation_assign(uuid,uuid,uuid,text,uuid,boolean,uuid,boolean)",
     razao:
       "Rotas de claim/release/transfer chamam com a sessão do usuário " +
       "(app/api/v1/conversations/[id]/*). A função faz a própria checagem de " +
       "membership e papel. O 7º argumento (p_source_job_id) é o da origem do " +
       "turno autônomo: só chega pelo client de service role, e o corpo recusa " +
-      "(source_job_requires_runtime_caller) quando o chamador não é o runtime.",
+      "(source_job_requires_runtime_caller) quando o chamador não é o runtime. " +
+      "O 8º (p_negocio_so_sem_dono, #4019) é o do negócio aberto: com sessão, o " +
+      "corpo só escreve em crm_leads o que crm_leads_update já permitiria ao " +
+      "chamador (fn_can_view_lead sobre o responsável atual E o novo), e fora de " +
+      "'transfer' só preenche negócio sem responsável — o grant não acrescenta " +
+      "alcance nenhum à sessão.",
   },
   {
     fn: "fn_mesclar_contatos(uuid,uuid,uuid[])",
@@ -291,6 +296,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "(Configurações › Avisos de atendimento). Até ela existir, o grant é " +
       "superfície sem consumidor — declarado aqui em vez de presumido —, e a " +
       "função recusa tudo que não seja admin da própria organização.",
+  },
+  {
+    fn: "fn_definir_lembrete_do_aviso_de_agendamento(uuid,boolean)",
+    razao:
+      "A porta de escrita de `config_aviso_de_agendamento.lembrar_antes` (migration 9326). " +
+      "PUT app/api/v1/agenda/aviso/route.ts chama com createClient da sessão, logo depois de " +
+      "fn_definir_aviso_de_agendamento. Mesmas guardas da irmã: auth.uid(), " +
+      "fn_role_at_least(p_org,'admin'), fn_support_write_allowed(p_org) e " +
+      "fn_session_mfa_proven(); só atualiza a linha da organização pedida e recusa quem " +
+      "ainda não tem configuração. Prova: tests/invariants/lembrete-ao-dono-escrita.test.ts.",
   },
   {
     fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text)",

@@ -7,18 +7,51 @@
  * e as respostas que o provedor lê. Duas cópias divergiriam na primeira mudança
  * — e a divergência apareceria como mensagem que entra por um caminho e some
  * pelo outro.
+ *
+ * A ingestão roda ANTES da resposta para todo evento, menos o que o canal
+ * declara em `processaDepoisDeResponder` (hoje: mensagem nova do número
+ * oficial). Esse responde 200 assim que o arquivo o guardou e marcou, e é
+ * processado no `after()` — o mapa está em
+ * `docs/architecture/entrada-que-responde-antes.architecture.json`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { abrirArquivoDoWebhook, fecharArquivoDoWebhook } from "@/lib/channels/arquivo-de-webhook";
+import { aceitarEntrada, processarDepoisDaResposta } from "@/lib/channels/entrada-aceita";
 import {
   handleInboundWebhook,
   inboundPayloadBelongsToSession,
+  processaDepoisDeResponder,
   verifyInboundWebhookSignature,
   type InboundWebhookInput,
 } from "@/lib/channels/inbound";
 import { logger } from "@/lib/logger";
+
+/** Segundos sugeridos ao provedor no `Retry-After` do 503. */
+const REENTREGA_EM_SEGUNDOS = 5;
+
+/**
+ * Agenda o trabalho para DEPOIS de a resposta sair. `after()` do Next roda no
+ * servidor próprio (`next start` / standalone no Docker), e o encerramento
+ * gracioso (SIGTERM) espera os pendentes antes de sair. O que um SIGKILL cortar
+ * fica no arquivo para o cron `webhook-replay`.
+ *
+ * O `catch` é cinto: `processarDepoisDaResposta` já não lança, e uma rejeição
+ * aqui só viraria log do Next sem contexto.
+ */
+function agendar(tarefa: () => Promise<void>): void {
+  after(async () => {
+    try {
+      await tarefa();
+    } catch (err) {
+      logger.error("[webhook-canal] processamento depois da resposta lançou", {
+        detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+      });
+    }
+  });
+}
 
 export async function processarEntradaDoCanal(
   admin: SupabaseClient,
@@ -95,6 +128,46 @@ export async function processarEntradaDoCanal(
       erro: "evento_de_outra_conta",
     });
     return ok({ status: "ignored", reason: "evento_de_outra_conta" }, { requestId });
+  }
+
+  // ─── Responder primeiro, processar depois ──────────────────────────────────
+  //
+  // O provedor dá por falha a entrega que não responde em poucos segundos e
+  // reentrega; a ingestão de uma mensagem passava disso com volume (medido:
+  // 368 de 1.304 mensagens em 30 dias com uma tentativa vencida). Para o evento
+  // que o canal declara (`processaDepoisDeResponder` — a rota não sabe qual
+  // canal é), a resposta sai assim que o arquivo guardou o corpo e marcou a
+  // linha como aceita; a ingestão roda no `after()`.
+  //
+  // O ARQUIVO É A CAIXA DE ENTRADA DURÁVEL: se ele não gravou, não há 200. Um
+  // 200 sem a linha marcada entregaria a mensagem a um processamento que morre
+  // com o contêiner — e o provedor, que recebeu 200, não reentrega. 503 pede a
+  // reentrega, e a reentrega é segura (`23505` vira dedup).
+  if (processaDepoisDeResponder(sessao.provider, rawBody)) {
+    const arquivoId = arquivo;
+    if (arquivoId === null || !(await aceitarEntrada(admin, arquivoId))) {
+      // A linha que abriu e não se deixou marcar fecha como recusada: a
+      // reentrega abre outra, e esta não pode ficar `received` com cara de
+      // pendente. (Sem linha, o fechamento não faz nada.)
+      await fecharArquivoDoWebhook(admin, arquivoId, {
+        status: "error",
+        validSignature: true,
+        erro: "nao_aceita_reentrega_pedida",
+      });
+      logger.warn("[webhook-canal] arquivo indisponível — pedindo a reentrega", {
+        organization_id: sessao.organization_id,
+        channel_session_id: sessao.id,
+        request_id: requestId,
+      });
+      return fail("upstream_unavailable", "arquivo indisponível — reentregue o evento", 503, {
+        requestId,
+        headers: { "Retry-After": String(REENTREGA_EM_SEGUNDOS) },
+      });
+    }
+    agendar(async () => {
+      await processarDepoisDaResposta(admin, { sessao, rawBody, arquivoId, requestId });
+    });
+    return ok({ status: "accepted" }, { requestId });
   }
 
   try {
