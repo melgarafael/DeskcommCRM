@@ -42,7 +42,7 @@ export const PISO_DA_BUSCA = 2;
  *
  * Esta função torna o acidente uma regra: todo separador vira o mesmo curinga.
  *
- * ⚠️ NÃO substitui `termoSeguroParaOr` (`app/api/v1/conversations/_handler.ts`).
+ * ⚠️ NÃO substitui `termoSeguroParaOr` (neste mesmo arquivo).
  * Aquela cuida da GRAMÁTICA do `or=` do PostgREST e está correta — mexer nela é
  * regressão, e isso foi medido contra a instância real. Esta cuida de COMO A
  * PESSOA DIGITA. As duas compõem, nesta ordem, e `termoSeguroParaOr` não escapa
@@ -116,6 +116,29 @@ const NAO_DECOMPOEM: Record<string, string> = {
   ŧ: "t",
   ĸ: "k",
 };
+
+/**
+ * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
+ *
+ * Estava em `app/api/v1/conversations/_handler.ts` e desceu para cá quando a
+ * busca de CONTATOS passou a precisar da MESMA gramática (#3918, fatia 2): as
+ * duas rotas montam `or=`, e duas cópias do escape divergem no primeiro ajuste.
+ * O handler de conversas continua exportando o nome para os testes que o leem.
+ *
+ * Exportada para ser testável: o defeito que ela impede é de SINTAXE, e sintaxe
+ * se verifica sem subir banco. O comportamento contra o PostgREST de verdade
+ * está em `tests/e2e/`.
+ */
+export function termoSeguroParaOr(bruto: string): string {
+  return (
+    bruto
+      .trim()
+      // curingas do `ilike` (Postgres)
+      .replace(/[%_]/g, (m) => `\\${m}`)
+      // gramática do `or=` (PostgREST) — viram o próprio curinga
+      .replace(/[,()]/g, "*")
+  );
+}
 
 /**
  * O termo como o BANCO o guarda: sem acento e em minúscula (#3918).
