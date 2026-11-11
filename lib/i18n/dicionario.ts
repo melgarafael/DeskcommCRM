@@ -18524,6 +18524,14 @@ export const DICIONARIO: Traducoes = {
   "Todas ao iniciar": { es: "Todas al iniciar" },
   "Contato, negócio e conversa de toda a fila são criados na hora de iniciar.": { es: "Contacto, negocio y conversación de toda la cola se crean al iniciar." },
   "Quando oferecer a opção de parar de receber": { es: "Cuándo ofrecer la opción de dejar de recibir" },
+  "Texto da opção de parar": { es: "Texto de la opción de dejar de recibir" },
+  "Opcional. Em branco, sai a frase padrão. Até 160 caracteres, sem link, e precisa conter a palavra que a pessoa responde para sair.": {
+    es: "Opcional. Si está en blanco, se envía la frase predeterminada. Hasta 160 caracteres, sin enlace, y debe incluir la palabra que la persona responde para salir.",
+  },
+  "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.": {
+    es: "Incluye la palabra que la persona responde para salir; sin ella, el pedido no se reconoce.",
+  },
+  "Use até 160 caracteres e nenhum link.": { es: "Usa hasta 160 caracteres y ningún enlace." },
   "Na primeira mensagem (recomendado)": { es: "En el primer mensaje (recomendado)" },
   "A abertura já diz como parar:": { es: "La apertura ya dice cómo detenerse:" },
   "Atrasar para a 2ª mensagem": { es: "Postergar al 2.º mensaje" },

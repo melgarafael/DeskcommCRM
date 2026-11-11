@@ -12,7 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
-import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
+import {
+  problemaNoTextoDaSaidaNoIdioma,
+  rodapeDeSaida,
+  TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+} from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
   OFERTAS_DA_CAMPANHA,
@@ -360,6 +364,14 @@ export function ProspectingClient() {
   const textoDasEtiquetas =
     (campaign && tagsDigitadas[campaign.id]) ?? (config.contact_tags ?? []).join(", ");
   const etiquetasComProblema = problemaNasEtiquetas(textoDasEtiquetas);
+  // O texto da saída (#4370) é validado no IDIOMA da instalação: o schema recusa
+  // o texto sem NENHUMA palavra de saída, mas só aqui se sabe qual palavra a
+  // pessoa daqui responde (PARAR em pt-BR, BAJA em espanhol). Recusar antes de
+  // enviar é o que impede a tela de prometer uma saída que o detector não pega.
+  const problemaDoTextoDaSaida = problemaNoTextoDaSaidaNoIdioma(
+    config.texto_da_saida,
+    data?.organization_locale,
+  );
   // "Configurada" é a campanha que TEM agente escolhido. Config parcial salva
   // pelo meio (instrução/qualificação sem agente) NÃO trava a etapa 2: medido na
   // VPS, 3 rascunhos assim ficavam sem como ser iniciados.
@@ -1828,6 +1840,34 @@ export function ProspectingClient() {
                                 )}
                               </p>
                             )}
+                            <div>
+                              <Label htmlFor="prospecting-texto-da-saida">
+                                {t("Texto da opção de parar")}
+                              </Label>
+                              <Input
+                                id="prospecting-texto-da-saida"
+                                value={config.texto_da_saida ?? ""}
+                                maxLength={TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA}
+                                aria-invalid={problemaDoTextoDaSaida !== null}
+                                onChange={(e) => update("texto_da_saida", e.target.value)}
+                                placeholder={rodapeDeSaida(data?.organization_locale)}
+                                className="mt-1"
+                              />
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {t(
+                                  "Opcional. Em branco, sai a frase padrão. Até 160 caracteres, sem link, e precisa conter a palavra que a pessoa responde para sair.",
+                                )}
+                              </p>
+                              {problemaDoTextoDaSaida && (
+                                <p className="mt-1 text-xs text-destructive" role="alert">
+                                  {problemaDoTextoDaSaida === "sem_palavra"
+                                    ? t(
+                                        "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.",
+                                      )
+                                    : t("Use até 160 caracteres e nenhum link.")}
+                                </p>
+                              )}
+                            </div>
                           </fieldset>
                           <div>
                             <Label htmlFor="prospecting-contact-tags">
@@ -1896,7 +1936,8 @@ export function ProspectingClient() {
                             busy ||
                             !agents.length ||
                             !data?.channels.some((c) => c.status === "WORKING") ||
-                            etiquetasComProblema !== null
+                            etiquetasComProblema !== null ||
+                            problemaDoTextoDaSaida !== null
                           }
                         >
                           {t("Iniciar abordagens com IA")}
