@@ -68344,6 +68344,18 @@ alter table public.contacts
 create index if not exists idx_contacts_busca_sem_acento_trgm
   on public.contacts using gin (busca_sem_acento public.gin_trgm_ops);
 
+-- ---- busca de contatos sem acento (migration 9325, #3918 fatia 2) ----
+-- A coluna que a busca do AGENTE usa: sem o nome da agenda do celular, que é
+-- rótulo interno da equipe (#2439) e não pode casar na ferramenta do turno.
+-- Sem índice: a consulta já vem presa a um `id`. Cabeçalho completo na 9325.
+alter table public.contacts
+  add column if not exists busca_sem_acento_sem_agenda text
+  generated always as (
+    lower(public.f_unaccent(
+      coalesce(display_name, '') || ' ' || coalesce(name, '')
+    ))
+  ) stored;
+
 notify pgrst, 'reload schema';
 
 -- ---- o molde de IA das empresas novas: as funções e o gatilho (migration 9096) ----
