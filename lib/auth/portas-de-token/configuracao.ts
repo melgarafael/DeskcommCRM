@@ -120,8 +120,54 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/voz",
 
 
+  // products e tags. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
+  // `[id]` é forma de UUID; `import` é irmão literal de `[id]` e tem entrada
+  // própria, exata. `tags/vocabulario` POST segue só de sessão (a função de escrita
+  // exige `auth.uid()`) e não entra de carona: ali o token leva 401 do `requireRole`.
+  "/api/v1/products",
+  "/api/v1/products/[id]",
+  "/api/v1/products/[id]/fotos",
+  "/api/v1/products/import",
+  "/api/v1/tags/cores",
+  "/api/v1/tags/vocabulario",
 
+  // settings. Quem autentica é a própria rota, por `resolveAuthDual`: token com
+  // `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
+  // `routing/channels` aceita token só no GET (a sessão mantém `allowPlatformAdmin`
+  // e `mfaEmDivida`; o ramo do token é à parte). O PATCH segue só de sessão
+  // (`fn_set_channel_routing` exige `auth.uid()`) e recusa o token com 401 no
+  // `requireRole`. `proposal-templates/importar` (POST) segue só de sessão
+  // (`getSkillsPool`, pg Pool cru). `[slug]` é a classe do regex da rota (`[a-z0-9_]{1,100}`): o
+  // irmão literal `importar` cai nessa classe, e a rota responde 401 pelo
+  // `requireRole` de sessão.
+  "/api/v1/settings/agenda-apresentacao",
+  "/api/v1/settings/campanhas",
+  { caminho: "/api/v1/settings/proposal-templates/[slug]", segmentos: { slug: "[a-z0-9_]{1,100}" }, amostras: { slug: "empresa_minha_proposta" } },
+  "/api/v1/settings/proposal-templates",
+  "/api/v1/settings/proposals",
+  "/api/v1/settings/prospeccao",
+  "/api/v1/settings/routing",
+  "/api/v1/settings/routing/channels",
+  "/api/v1/settings/sons",
+  "/api/v1/settings/task-plans",
 
+  // message-templates e message-template-groups. Quem autentica é a própria
+  // rota, por `resolveAuthDual`: token com `config:read` (GET) ou `config:write`
+  // (escrita) e papel admin (`tokenRole`). `[id]` é forma de UUID. `[indice]` da
+  // mídia é número inteiro não negativo (a rota recusa o resto com 404). O token
+  // só alcança a resposta COMPARTILHADA (`owner_user_id` nulo): o POST de criação
+  // recusa `shared: false`, e o PATCH e o DELETE de `[id]` e o POST de `[id]/midias`
+  // e o PUT de `[id]/ordem` (renumeração só entre as compartilhadas) filtram o
+  // compartilhado.
+  "/api/v1/message-templates",
+  "/api/v1/message-templates/[id]",
+  "/api/v1/message-templates/[id]/midias",
+  "/api/v1/message-templates/[id]/ordem",
+  { caminho: "/api/v1/message-templates/[id]/midias/[indice]", segmentos: { indice: "[0-9]+" }, amostras: { indice: "0" } },
+  "/api/v1/message-template-groups",
+  "/api/v1/message-template-groups/[id]",
+  "/api/v1/message-template-groups/[id]/ordem",
 
 
 
