@@ -237,6 +237,13 @@ export const PUBLIC_PATHS: RegExp[] = [
   // HMAC `X-Module-*`, conferida DENTRO da rota (`app/api/v1/extensions/events/route.ts`), mais a
   // autorização do par organização × instalação pelo banco. Só este caminho exato, pelo mesmo motivo.
   /^\/api\/v1\/extensions\/events$/,
+  // AS ROTAS DAS FATIAS R DA SPEC 33 (configuração, operação, leitura). Mesma
+  // dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO de cada rota, com a organização saindo da
+  // linha do token. Os modelos ficam em `lib/auth/portas-de-token/`, um arquivo
+  // por fatia, no formato do caminho da pasta; `portaDeToken` monta cada um
+  // ancorado nos dois lados e com o segmento dinâmico em forma de UUID.
+  ...PORTAS_DE_TOKEN,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —
