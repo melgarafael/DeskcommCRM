@@ -149,6 +149,24 @@ describe("#3642 — a conversa segue o número do vendedor novo", () => {
       on conflict (user_id, organization_id) do update
         set role = excluded.role, revoked_at = null, accepted_at = now();
 
+      -- A ORGANIZACAO TEM AUTOMATICO DE PE. Sem esta linha a fixture nao media
+      -- mais o que diz medir: desde a #4012 o comando da conversa pergunta a
+      -- organizacao se existe agente atendendo, e numa org sem ai_agents a
+      -- resposta correta para conversa sem dono virou 'ninguem'. O caso aqui e
+      -- outro -- "o numero segue o vendedor" com a IA atendendo --, e para ele o
+      -- agente precisa existir e estar publicado.
+      insert into public.ai_agents (id, organization_id, name, system_prompt)
+      values ('ffffffff-4012-4000-8000-00000000000a', '${ORG}', 'Agente Inv', 'prompt')
+      on conflict (id) do update set archived_at = null, paused_at = null;
+      insert into public.ai_agent_versions
+        (id, organization_id, agent_id, version_number, system_prompt, provider, model, status, published_at)
+      values ('ffffffff-4012-4000-8000-00000000000b', '${ORG}',
+              'ffffffff-4012-4000-8000-00000000000a', 1, 'prompt', 'anthropic',
+              'claude-sonnet-4-6', 'published', now())
+      on conflict (id) do update set status = 'published', published_at = now();
+      update public.ai_agents set published_version_id = 'ffffffff-4012-4000-8000-00000000000b'
+       where id = 'ffffffff-4012-4000-8000-00000000000a';
+
       -- Três números: A e B com policy própria; o terceiro sem policy (legado).
       insert into public.channel_sessions
         (id, organization_id, provider, waha_session_name, webhook_secret_encrypted, status, display_name)

@@ -403,19 +403,29 @@ export const ROTULO_DO_MOTIVO: Record<MotivoDoSilencio, string> = {
 };
 
 /**
- * O VOCABULÁRIO QUE O BANCO FALA — quatro, não cinco.
+ * O VOCABULÁRIO QUE O BANCO FALA — cinco, desde a issue #4012.
  *
- * `fn_comando_da_conversa` (migration 0202) devolve estes quatro. `ninguem` fica
- * de fora de propósito: ele não é um estado diferente, é o mesmo balde do
- * `automatico` renomeado quando a ORG não tem nenhum agente no ar — e "a org tem
- * automático?" é um fato org-wide que o SQL só saberia reproduzindo
- * `agenteAtende` inteiro dentro do banco. Seria a regra duplicada de novo, agora
- * numa terceira encarnação.
+ * `fn_comando_da_conversa` (migration 0202) devolve os quatro primeiros; o quinto,
+ * `ninguem`, o banco passou a devolver quando a ORGANIZAÇÃO não tem agente no ar
+ * (`comando_da_conversa` rebaixa `automatico` → `ninguem` via
+ * `fn_org_tem_automatico`, migration 9330).
  *
- * Quem sabe o fato da org é o servidor, e ele o aplica escolhendo o CONJUNTO de
- * comandos que a aba pede — ver `comandosDaFila`.
+ * Até a #4012 `ninguem` era renomeação SÓ de TS, e a razão escrita aqui era que
+ * "a org tem automático?" só o servidor sabia responder. Era verdade pela metade:
+ * o servidor *compensava* na consulta (`comandosDaFila`), mas as funções do BANCO
+ * que decidem pelo comando (`fn_definir_carteira_do_cliente`, a adoção de
+ * `fn_conversation_assign`) não tinham como compensar — e aplicavam a regra "a
+ * conversa da IA fica com a IA" numa instalação sem IA. O fato virou SQL porque o
+ * banco precisa dele para decidir, e a régua é uma: o espelho de `agenteAtende`
+ * em `fn_org_tem_automatico`.
  */
-export const COMANDOS_DO_BANCO = ["humano", "automatico", "aguardando", "encerrada"] as const;
+export const COMANDOS_DO_BANCO = [
+  "humano",
+  "automatico",
+  "aguardando",
+  "encerrada",
+  "ninguem",
+] as const;
 export type ComandoDoBanco = (typeof COMANDOS_DO_BANCO)[number];
 
 /**
@@ -433,7 +443,21 @@ export type ComandoDoBanco = (typeof COMANDOS_DO_BANCO)[number];
  * linhas de trabalho humano que não existe.
  */
 export function comandosDaFila(automaticoDaOrg?: boolean): ComandoDoBanco[] {
-  return automaticoDaOrg === false ? ["aguardando", "automatico"] : ["aguardando"];
+  // `ninguem` está SEMPRE: desde a #4012 o banco é quem diz que a conversa sem dono
+  // não tem robô por trás (a organização não tem agente no ar), e essa conversa
+  // espera uma pessoa. Pedir o valor independe do fato org-wide que a TELA conhece,
+  // que pode estar carregando ou ter falhado. O banco responde pela ORGANIZAÇÃO,
+  // não pelo número: a conversa de um número sem agente, numa organização que tem
+  // agente em outro, ainda sai `automatico` — é a parte 2 da #4012, aberta.
+  //
+  // `automatico` continua aqui quando o fato diz que NÃO há automático, e agora por
+  // um motivo com prazo: entre o deploy deste código e a migration 9330 aplicada, o
+  // banco ainda responde `automatico` para essas conversas. Sem o valor extra, a
+  // Fila de uma instalação sem IA nasceria vazia nessa janela — exatamente o P0 que
+  // o `ninguem` veio consertar.
+  return automaticoDaOrg === false
+    ? ["aguardando", "ninguem", "automatico"]
+    : ["aguardando", "ninguem"];
 }
 
 /**
