@@ -45,7 +45,7 @@ import { updateLeadHandler } from "@/app/api/v1/leads/_handler";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
@@ -54,8 +54,8 @@ import {
   mensagemDaRecusa,
   type RecusaDePadrao,
 } from "@/lib/leads/padrao-do-campo";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 
 export const dynamic = "force-dynamic";
@@ -123,19 +123,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // `agent`: paridade com o PATCH do próprio negócio. Confirmar um dado do card
   // é editar o dossiê, e editar dossiê é trabalho de quem atende.
-  const guard = await requireRole("agent", { requestId, resource: "crm_leads" });
-  if (!guard.ok) return guard.response;
-  const t = (texto: string) => traduzir(texto, guard.user.idioma);
-  const orgId = guard.org.orgId;
-  const userId = guard.user.id;
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_field_proposals_decision", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
+  const orgId = organizationId;
+  const userId = actor.type === "user" ? actor.id : null;
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return fail("invalid_body", t("decision é obrigatório (accept | dismiss)."), 400, { requestId });
   }
   const { decision, motivo, valor: correcao } = parsed.data;
-
-  const supabase = await createClient();
   // O relógio do SERVIDOR, uma vez: o prazo da proposta e a decisão são
   // comparados com o mesmo instante dentro deste handler.
   const agora = new Date();
@@ -176,6 +182,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .from("lead_field_proposals")
       .update({ status: "expired", decided_at: agora.toISOString() })
       .eq("id", p.id)
+      .eq("organization_id", orgId)
       .eq("status", "pending")
       .select("id")
       .maybeSingle();
@@ -185,7 +192,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     void encerrada;
     await audit({
       action: "lead.field_rejected",
-      actorUserId: userId,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: orgId,
       resourceType: "crm_lead",
       resourceId: leadId,
@@ -217,6 +225,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         motivo_recusa: motivo ?? null,
       })
       .eq("id", p.id)
+      .eq("organization_id", orgId)
       .eq("status", "pending")
       .select("id")
       .maybeSingle();
@@ -226,7 +235,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     }
     await audit({
       action: "lead.field_rejected",
-      actorUserId: userId,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: orgId,
       resourceType: "crm_lead",
       resourceId: leadId,
@@ -265,7 +275,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
 
-  const settings = await settingsDoFunil(supabase, (lead as { pipeline_id?: string | null }).pipeline_id);
+  const settings = await settingsDoFunil(supabase, (lead as { pipeline_id?: string | null }).pipeline_id, orgId);
   const defs = camposPorEscopo(
     camposDoFunil(
       settings && typeof settings === "object" && !Array.isArray(settings)
@@ -310,6 +320,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       decided_by_user_id: userId,
     })
     .eq("id", p.id)
+    .eq("organization_id", orgId)
     .eq("status", "pending")
     .select("id")
     .maybeSingle();
@@ -344,7 +355,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   try {
     await updateLeadHandler(
       supabase,
-      { organization_id: orgId, actor: { type: "user", id: userId }, requestId, idioma: guard.user.idioma },
+      { organization_id: orgId, actor: authz.actor, requestId, idioma },
       leadId,
       { custom_fields: { [p.campo]: conferido.valor } },
     );
@@ -353,6 +364,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .from("lead_field_proposals")
       .update({ status: "pending", decided_at: null, decided_by_user_id: null })
       .eq("id", p.id)
+      .eq("organization_id", orgId)
       .eq("status", "accepted");
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });
@@ -362,7 +374,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   await audit({
     action: "lead.field_confirmed",
-    actorUserId: userId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: orgId,
     resourceType: "crm_lead",
     resourceId: leadId,

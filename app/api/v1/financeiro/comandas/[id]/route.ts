@@ -15,48 +15,66 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { alterarComandaSchema } from "@/lib/financeiro/comanda";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
   // #1907 item 4 — comanda é MÓDULO DE TABELA: sem `modulos_instalados` a
   // linha ativa as cinco tabelas não existem e a rota não existe. 404,
   // mesmo molde da cobrança desligada (falha fechada, dois lados).
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "financeiro"))) return fail("not_found", "Not found", 404, { requestId });
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comanda_ler", requestId);
+  if (teto) return teto;
 
   const { id } = await ctx.params;
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("sales")
-    // Literal único — ver a nota em `comandas/route.ts`.
+    // Literal único — ver a nota em `comandas/route.ts`. Sem embed de `sale_items`:
+    // os itens vêm na consulta abaixo, com a organização.
     .select(
-      "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, cancel_reason, reversed_at, reverse_reason, created_at, sale_items(id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id, created_at)",
+      "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, cancel_reason, reversed_at, reverse_reason, created_at",
     )
     .eq("id", id)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!data) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
 
-  const itens = (data.sale_items ?? []) as Array<{ total_cents: number }>;
+  const { data: itensDaVenda } = await supabase
+    .from("sale_items")
+    .select(
+      "id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id, created_at",
+    )
+    .eq("sale_id", id)
+    .eq("organization_id", authz.organizationId);
+
+  const itens = (itensDaVenda ?? []) as Array<{ total_cents: number }>;
   const soma = itens.reduce((acc, i) => acc + Number(i.total_cents), 0);
   return ok(
     {
       ...data,
+      sale_items: itens,
       items_total_cents: soma,
       total_cents:
         data.status === "open"
@@ -77,8 +95,15 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comanda_alterar", requestId);
+  if (teto) return teto;
 
   const lido = alterarComandaSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -87,13 +112,20 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     });
   }
 
+  // Cancelar é só de sessão (fragmento `financeiro-aceita-token`): o token não cancela
+  // comanda. A recusa vem antes de qualquer leitura ou escrita.
+  if (authz.via === "token" && lido.data.cancel === true) {
+    return fail("forbidden", "Cancelar a comanda é só pela sessão.", 403, { requestId });
+  }
+
   const { id } = await ctx.params;
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   const { data: atual } = await supabase
     .from("sales")
     .select("id, status, number")
     .eq("id", id)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
   if (!atual) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
 
@@ -116,7 +148,11 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     mudanca.cancelled_at = new Date().toISOString();
   }
 
-  const { error } = await supabase.from("sales").update(mudanca).eq("id", id);
+  const { error } = await supabase
+    .from("sales")
+    .update(mudanca)
+    .eq("id", id)
+    .eq("organization_id", authz.organizationId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   // ⚠️ NUNCA espalhe o corpo lido aqui. `lib/audit` grava `metadata` CRU em
@@ -132,6 +168,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   // a observação. Este é o padrão que o POST de abertura já segue.
   await audit({
     action: lido.data.cancel ? "comanda.cancelada" : "comanda.alterada",
+    organizationId: authz.organizationId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     resourceType: "sale",
     resourceId: id,
     requestId,

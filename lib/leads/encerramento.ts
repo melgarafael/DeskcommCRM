@@ -217,6 +217,7 @@ export async function encerraDemanda(
   const settings = await settingsDoFunil(
     supabase,
     (lead as { pipeline_id: string }).pipeline_id,
+    ctx.organization_id,
   );
   const vereditoDeCampos = validaCamposExigidos({
     lead: lead as Record<string, unknown>,
@@ -362,6 +363,7 @@ export async function encerraDemanda(
   await audit({
     action: eventType,
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: ctx.organization_id,
     resourceType: "crm_lead",
     resourceId: input.leadId,

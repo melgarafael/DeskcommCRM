@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { NextRequest } from 'next/server';
+import { resolveAuthDual, tetoDeEscritaDoToken } from '@/lib/api/auth-dual';
 import { fail, ok } from '@/lib/api/wrappers';
 import { requireRole } from '@/lib/auth/require-role';
 import { roleAtLeast } from '@/lib/auth/types';
+import { extractBearer } from '@/lib/mcp/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -28,8 +31,27 @@ interface Linha {
 const quantil = (n: number[], q: number) => n.length ? n[Math.ceil(q * n.length) - 1] ?? null : null;
 
 export async function GET(req: NextRequest): Promise<Response> {
-  const authz = await requireRole('manager', { resource: 'jev_router_decisions' });
-  if (!authz.ok) return authz.response;
+  // Quem chama, pelo portão que o trouxe. Sem Bearer, a sessão segue como era.
+  // Com Bearer `dsk_…` (`config:read`, papel admin), a organização vem da linha
+  // do token, nunca da query, e `pode_revisar` é fixo: o token só entra como admin.
+  let organizationId: string;
+  let podeRevisar: boolean;
+  if (extractBearer(req.headers.get('authorization'))) {
+    const requestId = randomUUID();
+    const authz = await resolveAuthDual(req, {
+      requestId, resource: 'jev_router_decisions', role: 'manager', scope: 'config:read', tokenRole: 'admin',
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "jev_router_decisions", requestId);
+    if (teto) return teto;
+    organizationId = authz.organizationId;
+    podeRevisar = true;
+  } else {
+    const authz = await requireRole('manager', { resource: 'jev_router_decisions' });
+    if (!authz.ok) return authz.response;
+    organizationId = authz.org.orgId;
+    podeRevisar = roleAtLeast(authz.org.role, 'admin');
+  }
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) return fail('invalid_query', 'Filtros inválidos.', 422, { details: parsed.error.issues });
   const filtro = parsed.data;
@@ -37,7 +59,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // O type gerado será atualizado pelo pipeline do schema; a tabela é criada
   // pela migration desta feature, e toda consulta filtra a organização da sessão.
   let q = db.from('jev_router_decisions' as 'jev_observacoes').select('*')
-    .eq('organization_id', authz.org.orgId)
+    .eq('organization_id', organizationId)
     .gte('created_at', new Date(Date.now() - filtro.dias * 86400000).toISOString())
     .order('created_at', { ascending: false }).limit(500);
   if (filtro.router_id) q = q.eq('router_id', filtro.router_id);
@@ -51,13 +73,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   const routers = [...new Set(linhas.map((l) => l.router_id))];
   const [obs, chamadas, membros, roteadores] = await Promise.all([
     ids.length ? db.from('jev_observacoes').select('message_id,rotulo_jev,rotulo_atual,intencao_jev,intencao_atual,concordou,modelo')
-      .eq('organization_id', authz.org.orgId).eq('tarefa', 'roteador').in('message_id', ids) : Promise.resolve({ data: [], error: null }),
+      .eq('organization_id', organizationId).eq('tarefa', 'roteador').in('message_id', ids) : Promise.resolve({ data: [], error: null }),
     jobs.length ? db.from('llm_calls').select('job_id,provider,cost_cents,model')
-      .eq('organization_id', authz.org.orgId).eq('purpose', 'intent_router').in('job_id', jobs).limit(1500) : Promise.resolve({ data: [], error: null }),
+      .eq('organization_id', organizationId).eq('purpose', 'intent_router').in('job_id', jobs).limit(1500) : Promise.resolve({ data: [], error: null }),
     routers.length ? db.from('ai_router_members').select('router_id,agent_id,intent_name')
-      .eq('organization_id', authz.org.orgId).in('router_id', routers) : Promise.resolve({ data: [], error: null }),
+      .eq('organization_id', organizationId).in('router_id', routers) : Promise.resolve({ data: [], error: null }),
     routers.length ? db.from('ai_routers').select('id,name')
-      .eq('organization_id', authz.org.orgId).in('id', routers) : Promise.resolve({ data: [], error: null }),
+      .eq('organization_id', organizationId).in('id', routers) : Promise.resolve({ data: [], error: null }),
   ]);
   if (obs.error || chamadas.error || membros.error || roteadores.error) return fail('query_failed', 'Não foi possível carregar as medições.', 500);
   const porMensagem = new Map((obs.data ?? []).map((o) => [o.message_id, o]));
@@ -99,7 +121,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     casos,
     membros: membros.data ?? [],
     roteadores: roteadores.data ?? [],
-    pode_revisar: roleAtLeast(authz.org.role, 'admin'),
+    pode_revisar: podeRevisar,
     resumo: {
       total: casos.length, limite_amostra: 500, periodo_dias: filtro.dias,
       sem_reserva: casos.filter((l) => l.modo === 'jev_sob_demanda' && l.origem === 'jev').length,

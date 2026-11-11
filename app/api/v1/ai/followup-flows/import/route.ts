@@ -1,4 +1,3 @@
-import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followup-flows/import — cria um fluxo a partir de um ARQUIVO
  * exportado (manager+). Corpo: `{ file, name? }`, onde `file` é o que o
@@ -20,12 +19,13 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { MAX_FOLLOWUP_FLOW_NAME } from "@/lib/followup/nome-da-copia";
 import {
@@ -52,14 +52,23 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
   const envio = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DO_ARQUIVO, {
     requestId,
-    idioma: authz.user.idioma,
+    idioma: authz.idioma,
     acimaDoTeto: t("Arquivo grande demais para um fluxo (máximo de 512 KB)."),
   });
   if (!envio.ok) return envio.response;
@@ -78,7 +87,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
 
-  const corpo = corpoSchema.safeParse(raw, zodNoIdioma(authz.user.idioma));
+  const corpo = corpoSchema.safeParse(raw, zodNoIdioma(authz.idioma ?? IDIOMA_PADRAO));
   if (!corpo.success) {
     return fail("validation_failed", t("Campos inválidos."), 422, {
       requestId,
@@ -86,7 +95,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const arquivo = arquivoDeFluxoSchema.safeParse(corpo.data.file, zodNoIdioma(authz.user.idioma));
+  const arquivo = arquivoDeFluxoSchema.safeParse(corpo.data.file, zodNoIdioma(authz.idioma ?? IDIOMA_PADRAO));
   if (!arquivo.success) {
     return fail(
       "invalid_flow_file",
@@ -113,11 +122,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   let conta;
   try {
-    conta = await contextoDaConta(supabase, createAdminClient(), activeOrg.orgId);
+    conta = await contextoDaConta(supabase, createAdminClient(), organizationId);
   } catch (err) {
     return fail(
       "internal_error",
@@ -135,7 +144,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: criado, error: insErr } = await supabase
     .from("followup_flow_pointers")
     .insert({
-      organization_id: activeOrg.orgId,
+      organization_id: organizationId,
       name: nome,
       status: "draft",
       draft_graph: resultado.graph,
@@ -158,8 +167,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "followup_flow.imported",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "followup_flow_pointer",
     resourceId: criado.id,
     requestId,
