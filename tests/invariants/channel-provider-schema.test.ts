@@ -74,7 +74,11 @@ describe("0087 · o canal da sessão chega ao clone", () => {
     // As três `meta_webhook_override_*` (migration 0311) entraram de propósito: são o
     // desfecho do registro do webhook do número ao conectar o canal oficial. A cerca
     // continua valendo — ela existe para pegar coluna que entrou SEM querer.
+    // `meta_connection_origin` (migration 9328, #4074) entra de propósito: registra
+    // se a conexão nasceu do Embedded Signup ou de token colado à mão. A cerca
+    // continua valendo — é ela que pega coluna `meta_*` que apareça SEM intenção.
     expect(cols).toEqual([
+      "meta_connection_origin",
       "meta_phone_number_id",
       "meta_token_encrypted",
       "meta_waba_id",

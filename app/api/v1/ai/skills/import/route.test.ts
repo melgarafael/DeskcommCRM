@@ -7,6 +7,7 @@
 // branding não bate entre realms); com o File global do runtime real (Node), o
 // roundtrip preserva os bytes exatos do zip.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 import { zipSync, strToU8 } from "fflate";
 
@@ -67,7 +68,7 @@ function mockAuthzOk() {
 function postReq(zipBytes: Uint8Array, filename = "skill.zip") {
   const form = new FormData();
   form.set("file", new File([zipBytes as BlobPart], filename, { type: "application/zip" }));
-  return new NextRequest("http://localhost/api/v1/ai/skills/import", {
+  return pedidoComTamanho("http://localhost/api/v1/ai/skills/import", {
     method: "POST",
     body: form,
   });
@@ -84,7 +85,7 @@ describe("POST /api/v1/ai/skills/import", () => {
       response: fail("unauthenticated", "Auth required.", 401, {}),
     });
     const { POST } = await import("./route");
-    const res = await POST(postReq(makeZip({ "SKILL.md": validSkillMd })));
+    const res = await POST(await postReq(makeZip({ "SKILL.md": validSkillMd })));
     expect(res.status).toBe(401);
     expect(importSkillPackage).not.toHaveBeenCalled();
   });
@@ -94,7 +95,7 @@ describe("POST /api/v1/ai/skills/import", () => {
     vi.mocked(importSkillPackage).mockResolvedValue({ versionId: "ver-1", name: "frete-gratis" });
 
     const { POST } = await import("./route");
-    const res = await POST(postReq(makeZip({ "SKILL.md": validSkillMd })));
+    const res = await POST(await postReq(makeZip({ "SKILL.md": validSkillMd })));
 
     expect(res.status).toBe(201);
     const body = (await res.json()) as { data: { name: string; version_id: string } };
@@ -118,7 +119,7 @@ describe("POST /api/v1/ai/skills/import", () => {
   it("zip inválido (sem SKILL.md) → 422 com o code do parser, sem chamar importSkillPackage", async () => {
     mockAuthzOk();
     const { POST } = await import("./route");
-    const res = await POST(postReq(makeZip({ "leia.txt": "oi" })));
+    const res = await POST(await postReq(makeZip({ "leia.txt": "oi" })));
 
     expect(res.status).toBe(422);
     const body = (await res.json()) as { error: { code: string } };
@@ -127,10 +128,52 @@ describe("POST /api/v1/ai/skills/import", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 
+  it("#4203: pacote embrulhado num diretório de topo → 201, com os caminhos da skill (sem o embrulho)", async () => {
+    mockAuthzOk();
+    vi.mocked(importSkillPackage).mockResolvedValue({ versionId: "ver-1", name: "frete-gratis" });
+
+    const { POST } = await import("./route");
+    const res = await POST(
+      await postReq(
+        makeZip({
+          "humanizer-main/SKILL.md": validSkillMd,
+          "humanizer-main/README.md": "# humanizer",
+          "humanizer-main/references/tabela.md": "# Tabela de frete",
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: { name: string; version_id: string } };
+    expect(body.data).toEqual({ name: "frete-gratis", version_id: "ver-1" });
+    const [, input] = vi.mocked(importSkillPackage).mock.calls[0]!;
+    expect(input.pkg.files.map((f) => f.path)).toEqual(["references/tabela.md"]);
+  });
+
+  it("#4203: ambiguidade (dois diretórios de topo com SKILL.md) → 422 com o MESMO code, sem importar", async () => {
+    mockAuthzOk();
+    const { POST } = await import("./route");
+    const res = await POST(
+      await postReq(
+        makeZip({
+          "humanizer-main/SKILL.md": validSkillMd,
+          "outra-skill/SKILL.md": validSkillMd,
+        }),
+      ),
+    );
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("skill_md_missing");
+    expect(body.error.message).toContain("outra-skill");
+    expect(importSkillPackage).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
   it("campo 'file' ausente → 400 invalid_request", async () => {
     mockAuthzOk();
     const form = new FormData();
-    const req = new NextRequest("http://localhost/api/v1/ai/skills/import", {
+    const req = await pedidoComTamanho("http://localhost/api/v1/ai/skills/import", {
       method: "POST",
       body: form,
     });

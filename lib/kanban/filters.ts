@@ -1,5 +1,6 @@
 import type { Lead } from "@/lib/types/leads";
 import { diaDeHojeLocal } from "@/lib/ai/pacing-knobs";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { cardTemMarcador, cardTemTodasNaMesmaCaixa } from "@/lib/kanban/marcadores-do-card";
 import {
   type ModoDeEtiqueta,
@@ -164,7 +165,20 @@ export function applyFilters(
   // marcava como vencido o negócio que fecha HOJE (`expected_close_date >= today`
   // deixava de excluí-lo). A mesma conta que o resto do produto usa.
   const today = diaDeHojeLocal();
-  const search = f.search?.trim().toLowerCase() ?? "";
+  // ─── A BUSCA DO FUNIL IGNORA ACENTO (#3918, fatia 2) ────────────────────
+  //
+  // Aqui o termo e o texto do card eram só `.toLowerCase()`: "andreia" não
+  // achava "Andréia", "joao" não achava "João" — o mesmo buraco que a busca do
+  // inbox tinha e que a #3924 fechou no servidor. O funil filtra no CLIENTE,
+  // então não há coluna gerada para consultar: a normalização é a MESMA de
+  // `lib/inbox/termo-de-busca.ts`, aplicada dos DOIS lados (termo e card), e é
+  // isso que faz a simetria — termo com acento acha nome sem acento e vice-versa.
+  //
+  // O custo é uma normalização NFD por card a cada tecla. A lista do funil é a
+  // do quadro (milhares, não milhões) e o filtro já rodava por card; o pior caso
+  // conhecido do repo é ~3.900 negócios. Se um dia pesar em perfil, o lugar de
+  // consertar é pré-computar o texto do card, não voltar a comparar com acento.
+  const search = termoSemAcento(f.search?.trim() ?? "");
   // "(11) 99999-8888" tem de achar o "+5511999998888" gravado: busca feita só de
   // dígitos e pontuação de telefone compara por dígitos. Texto com letra não
   // entra aqui, senão "Pedido 2" casaria todo telefone com um 2.
@@ -224,7 +238,7 @@ export function applyFilters(
     if (!passaMarcador(l)) return false;
     if (
       search &&
-      !`${l.title} ${l.description ?? ""} ${l.contact_phone ?? ""}`.toLowerCase().includes(search) &&
+      !termoSemAcento(`${l.title} ${l.description ?? ""} ${l.contact_phone ?? ""}`).includes(search) &&
       !(buscaDeTelefone && (l.contact_phone ?? "").replace(/\D/g, "").includes(buscaDeTelefone))
     )
       return false;

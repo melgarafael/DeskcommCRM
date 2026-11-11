@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -42,8 +42,11 @@ test("interface por membro atualiza ao vivo, preserva formulário e convite apli
   const users: string[] = [];
   const orgs: string[] = [];
   const memberContext = await browser.newContext();
+  memberContext.on("page", esperarARevelacaoNasCargas);
   const otherContext = await browser.newContext();
+  otherContext.on("page", esperarARevelacaoNasCargas);
   const guestContext = await browser.newContext();
+  guestContext.on("page", esperarARevelacaoNasCargas);
   try {
     for (const email of emails) {
       const { data, error } = await db.auth.admin.createUser({

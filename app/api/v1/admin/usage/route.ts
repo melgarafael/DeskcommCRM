@@ -31,6 +31,8 @@ export interface UsageTenantRow {
   ai_invocations_count: number;
   ai_tokens_total: number;
   ai_cost_cents: number;
+  /** Chamadas cujo preço ainda não foi registrado; não equivalem a custo zero. */
+  ai_unpriced_count?: number;
   conversations_count: number;
   /**
    * Nome do agente publicado nesta organização — o de maior prioridade, quando
@@ -189,6 +191,7 @@ export async function GET(req: NextRequest) {
   const aiInvCountMap = new Map<string, number>();
   const aiTokensMap = new Map<string, number>();
   const aiCostMap = new Map<string, number>();
+  const aiUnpricedMap = new Map<string, number>();
   const msgDayMap = new Map<string, number>();
   const aiCostDayMap = new Map<string, number>();
   const aiTokensDayMap = new Map<string, number>();
@@ -206,6 +209,7 @@ export async function GET(req: NextRequest) {
     somar(aiTokensMap, row.organization_id, tokens);
     somar(aiTokensDayMap, dia, tokens);
     somar(aiCostMap, row.organization_id, row.cost_cents ?? 0);
+    if (row.cost_cents == null) somar(aiUnpricedMap, row.organization_id);
     somar(aiCostDayMap, dia, row.cost_cents ?? 0);
   }
 
@@ -243,6 +247,7 @@ export async function GET(req: NextRequest) {
         ai_invocations_count: aiInvCountMap.get(org.id) ?? 0,
         ai_tokens_total: aiTokensMap.get(org.id) ?? 0,
         ai_cost_cents: aiCostMap.get(org.id) ?? 0,
+        ai_unpriced_count: aiUnpricedMap.get(org.id) ?? 0,
         conversations_count: convsCountMap.get(org.id) ?? 0,
         agent_name: agentNamePorOrg[org.id] ?? null,
       };

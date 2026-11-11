@@ -52,8 +52,17 @@
  * prospecção — "do contrário todo 1º reply de inbound seria vetado". Quem
  * preencheu o seu formulário te procurou. Quem disse "não me mande mensagem",
  * não.
+ *
+ * ═══ Os dois formatos da recusa ═══
+ *
+ * `declined_at` não é mais a ÚNICA chave da recusa: a ficha do contato (o PATCH, e a fila de confirmação de dado)
+ * grava a revogação como `{ granted: false }`, o formato que o export de LGPD lê, e esta guarda não a via — quem a
+ * empresa registrou que disse não seguia recebendo. A régua dos dois formatos é `lib/lgpd/recusa-registrada.ts`, a
+ * mesma da ação de e-mail, da elegibilidade das campanhas e da guarda da prospecção. A ausência continua não sendo
+ * recusa, pelo motivo acima.
  */
 import type { ActionCtx } from "@/lib/automation/types";
+import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
 
 export type MotivoDeBloqueio = "no_contact" | "contact_blocked" | "no_phone" | "consent_declined";
 
@@ -66,7 +75,7 @@ interface ContatoDoContexto {
   id: string;
   is_blocked?: boolean;
   phone_number?: string | null;
-  consent?: { marketing?: { granted_at?: string | null; declined_at?: string | null } | null } | null;
+  consent?: unknown;
 }
 
 export type ResultadoDaGuarda =
@@ -78,12 +87,15 @@ export type ResultadoDaGuarda =
  * lido antes de saber que há contato). Devolve o contato tipado e estreito
  * (só o que o chamador precisa) quando passa; a razão do bloqueio quando não.
  */
-export function checarGuardasDeContato(ctx: ActionCtx): ResultadoDaGuarda {
+export function checarGuardasDeContato(
+  ctx: Pick<ActionCtx, "context"> & Partial<ActionCtx>,
+): ResultadoDaGuarda {
   const contact = ctx.context.contact as ContatoDoContexto | undefined;
   if (!contact) return { ok: false, reason: "no_contact" };
   if (contact.is_blocked) return { ok: false, reason: "contact_blocked" };
   if (!contact.phone_number) return { ok: false, reason: "no_phone" };
-  // Recusa registrada — não "grant ausente". Ver o cabeçalho.
-  if (contact.consent?.marketing?.declined_at) return { ok: false, reason: "consent_declined" };
+  // Recusa registrada — não "grant ausente". Ver o cabeçalho. Nos DOIS formatos, `declined_at` da captação e
+  // `granted: false` da ficha: `lib/lgpd/recusa-registrada.ts`.
+  if (recusaRegistrada(contact.consent)) return { ok: false, reason: "consent_declined" };
   return { ok: true, contact: { id: contact.id, phone_number: contact.phone_number } };
 }

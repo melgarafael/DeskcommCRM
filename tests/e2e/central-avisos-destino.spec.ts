@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page, type TestInfo } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page, type TestInfo } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { trocarIdiomaPelaTela } from "./helpers/idioma";
 const credentials = credenciaisSupabaseDeTeste();
@@ -192,6 +192,7 @@ test("devolver ao automático recusa colega e respeita o CAS real do banco", asy
   // all permite enxergar o colega; isso não concede o direito de liberar o dono.
   expect((await db.from("organizations").update({ settings: { visibility_mode: "all" } }).eq("id", org)).error).toBeNull();
   const contexto = await browser.newContext();
+  contexto.on("page", esperarARevelacaoNasCargas);
   try {
     await preparar();
     const conflito = await db.rpc("fn_conversation_assign", {
