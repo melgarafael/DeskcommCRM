@@ -7774,6 +7774,8 @@ export const DICIONARIO: Traducoes = {
   Copiar: { es: "Copiar" },
   "Conectado:": { es: "Conectado:" },
   "credencial guardada": { es: "credencial guardada" },
+  "conectado por": { es: "conectado por" },
+  "(anterior ao registro)": { es: "(anterior al registro)" },
   "sem credencial": { es: "sin credencial" },
   número: { es: "número" },
   "Cole isto no painel da Meta": { es: "Pega esto en el panel de Meta" },

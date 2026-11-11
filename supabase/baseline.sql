@@ -73623,6 +73623,94 @@ do $reaplicar$ begin
   end if;
 end $reaplicar$;
 
+-- ---- a origem da conexão oficial é dado do servidor (migration 9328) ----
+-- manifest: **A conexão oficial passa a registrar DE ONDE nasceu (#4074).** `channel_sessions` ganha `meta_connection_origin` (`embedded_signup` | `token_manual`), nula nas linhas anteriores a esta migration — que, por construção, vieram do formulário de token colado à mão. A coluna entra no gatilho `fn_channel_sessions_ligacao_ao_provedor_e_do_servidor` (9093/9104): `anon`/`authenticated` não declaram procedência; quem grava é a rota do servidor, pelo service role. Aditiva e idempotente, sem backfill e sem mudar nenhum caminho existente.
+--
+-- A #4074 abre uma SEGUNDA porta para o número oficial (Embedded Signup com o
+-- app da própria instalação). As duas gravam a MESMA linha, e sem procedência
+-- um canal de token que expira em 60 dias fica idêntico a um de consentimento
+-- renovável. Entrega só o LADO DO ESTADO: não há chamada à Meta aqui, e o
+-- código que troca o código do Embedded Signup por token depende de
+-- `app_id`/`config_id`, que a issue ainda vai decidir onde guardar.
+--
+-- Nula, e NÃO backfill para 'token_manual': seria verdade INFERIDA, e a leitura
+-- (`lib/channels/meta/origem-da-conexao.ts`) já a marca como `inferida: true`.
+-- Backfill transformaria inferência em registro.
+--
+-- A coluna entra no gatilho da 9104 pelo mesmo motivo das outras: o admin da
+-- organização escreve a própria linha pela API do banco, e procedência que o
+-- cliente declara não é procedência. Função substituída INTEIRA, e não uma
+-- segunda — como a 9104 fez com a 9093.
+
+alter table public.channel_sessions
+  add column if not exists meta_connection_origin text;
+
+do $bloco$
+begin
+  if not exists (
+    select 1
+      from pg_constraint
+     where conrelid = 'public.channel_sessions'::regclass
+       and conname = 'channel_sessions_meta_connection_origin_check'
+  ) then
+    alter table public.channel_sessions
+      add constraint channel_sessions_meta_connection_origin_check
+      check (
+        meta_connection_origin is null
+        or meta_connection_origin in ('embedded_signup', 'token_manual')
+      );
+  end if;
+end $bloco$;
+
+comment on column public.channel_sessions.meta_connection_origin is
+  'De onde nasceu a conexão oficial (#4074): embedded_signup | token_manual. Nulo = linha anterior à 9328, que só podia ter vindo do formulário.';
+
+create or replace function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor()
+returns trigger language plpgsql set search_path = public, pg_temp as $fn$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    -- `new` é nulo no DELETE: devolvê-lo cancelaria a exclusão do servidor.
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'DELETE' then
+    if old.zernio_credencial_da_instalacao then
+      raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+    end if;
+    return old;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.zernio_credencial_da_instalacao
+       or new.zernio_account_id is not null
+       or new.zernio_profile_id is not null
+       or new.zernio_webhook_id is not null
+       -- 9104: a credencial do número oficial também é do servidor.
+       or new.meta_token_encrypted is not null
+       or new.meta_phone_number_id is not null
+       or new.meta_waba_id is not null
+       -- 9328: e a PROCEDÊNCIA da conexão também.
+       or new.meta_connection_origin is not null then
+      raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+  if (new.zernio_credencial_da_instalacao, new.zernio_account_id, new.zernio_profile_id, new.zernio_webhook_id)
+       is distinct from
+     (old.zernio_credencial_da_instalacao, old.zernio_account_id, old.zernio_profile_id, old.zernio_webhook_id)
+     -- 9104: a credencial do número oficial também é do servidor.
+     or (new.meta_token_encrypted, new.meta_phone_number_id, new.meta_waba_id, new.meta_connection_origin)
+       is distinct from
+     (old.meta_token_encrypted, old.meta_phone_number_id, old.meta_waba_id, old.meta_connection_origin)
+     or (old.zernio_credencial_da_instalacao and
+         (new.archived_at, new.provider, new.organization_id, new.phone_number)
+           is distinct from
+         (old.archived_at, old.provider, old.organization_id, old.phone_number)) then
+    raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+  end if;
+  return new;
+end;
+$fn$;
+
+revoke execute on function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor() from public, anon, authenticated;
 
 -- ---- passagem explícita entre agentes de IA na trilha do roteador (migration 9064, #3770) ----
 -- `transferred` é o desfecho da AÇÃO pedida — distinto de `reclassified`, que é
