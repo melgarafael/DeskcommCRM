@@ -187,8 +187,11 @@ describe("PATCH /api/v1/leads/[id] — alcançável sem cookie (proxy)", () => {
     expect(isPublicPath(`/api/v1/leads/${LEAD_ID}`)).toBe(true);
   });
 
-  it("NÃO libera os irmãos literais de /api/v1/leads/, que não têm Bearer", () => {
-    expect(isPublicPath("/api/v1/leads/bulk")).toBe(false);
+  it("libera os irmãos literais de /api/v1/leads/ que ganharam porta", () => {
+    expect(isPublicPath("/api/v1/leads/bulk")).toBe(true);
+    expect(isPublicPath("/api/v1/leads/import")).toBe(true);
+    expect(isPublicPath("/api/v1/leads/proposals")).toBe(true);
+    expect(isPublicPath("/api/v1/leads/reactivations")).toBe(true);
   });
 });
 

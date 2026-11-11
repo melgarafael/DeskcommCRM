@@ -10,14 +10,14 @@ import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { resolverItensDaProposta } from "@/lib/propostas/itens";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { resolverPadroesDaProposta } from "@/lib/propostas/padroes-da-organizacao";
 import { propostaCreateSchema } from "@/lib/schemas/propostas";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { fusoDaOrganizacao, somarDiasNoFuso } from "@/lib/propostas/data-no-fuso";
 import { sePropostasDesligadas } from "@/lib/propostas/porta";
@@ -26,18 +26,20 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "crm_proposals" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "crm_proposals", role: "viewer", scope: "mcp:read" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "proposals_colecao", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const status = req.nextUrl.searchParams.get("status");
   const leadId = req.nextUrl.searchParams.get("lead_id");
   let q = supabase
     .from("crm_proposals")
     .select("id, lead_id, titulo, status, total_cents, moeda, numero, ano, versao, valid_until, created_at, drafted_by_agent_id")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("created_at", { ascending: false })
     .limit(500);
   if (status) q = q.eq("status", status);
@@ -59,18 +61,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "crm_proposals" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "crm_proposals", role: "agent", scope: "mcp:write" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "proposals_colecao", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const parsed = propostaCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return fail("validation_failed", t("Campos inválidos."), 422, { requestId, details: parsed.error.flatten() });
   }
   const input = parsed.data;
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // O lead_id do body nunca é confiado sozinho: confirma que pertence à
   // organização ativa ANTES de gravar qualquer coisa vinculada a ele
@@ -78,7 +82,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: lead } = await supabase
     .from("crm_leads")
     .select("id, contact_id")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", input.lead_id)
     .maybeSingle();
   if (!lead) return fail("not_found", t("Negócio não encontrado nesta organização."), 404, { requestId });
@@ -101,7 +105,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: rascunhoExistente } = await supabase
     .from("crm_proposals")
     .select("id")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("lead_id", input.lead_id)
     .eq("status", "rascunho")
     .maybeSingle();
@@ -116,18 +120,18 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // D11 — a proposta nasce na moeda da organização; item de catálogo em
   // moeda diferente é recusado dentro do resolvedor, nunca convertido.
-  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
-  const resolvido = await resolverItensDaProposta(supabase, authz.org.orgId, input.itens, moeda);
+  const moeda = await moedaDaOrganizacao(supabase, authz.organizationId);
+  const resolvido = await resolverItensDaProposta(supabase, authz.organizationId, input.itens, moeda);
   if (!resolvido.ok) {
     return fail("validation_failed", t(resolvido.motivo), 422, { requestId });
   }
 
-  const { data: org } = await supabase.from("organizations").select("settings").eq("id", authz.org.orgId).single();
+  const { data: org } = await supabase.from("organizations").select("settings").eq("id", authz.organizationId).single();
   const padroes = resolverPadroesDaProposta((org as { settings?: unknown } | null)?.settings);
 
   let validUntil = input.valid_until;
   if (validUntil === undefined) {
-    const fuso = await fusoDaOrganizacao(supabase, authz.org.orgId);
+    const fuso = await fusoDaOrganizacao(supabase, authz.organizationId);
     validUntil = somarDiasNoFuso(new Date(), padroes.defaultValidDays, fuso);
   }
   const condicoes = input.condicoes ?? padroes.defaultConditions;
@@ -135,7 +139,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: proposta, error: propErr } = await supabase
     .from("crm_proposals")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: authz.organizationId,
       lead_id: input.lead_id,
       contact_id: lead.contact_id,
       titulo: input.titulo,
@@ -162,7 +166,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const { error: itensErr } = await supabase.from("crm_proposal_items").insert(
       resolvido.itens.map((it) => ({
         proposal_id: proposta.id,
-        organization_id: authz.org.orgId,
+        organization_id: authz.organizationId,
         product_id: it.product_id,
         descricao: it.descricao,
         quantidade: it.quantidade,
@@ -180,7 +184,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       // proposta (descartar é de `manager`, e enviada ninguém apaga — 0464).
       // Seguro com service role porque o alvo é a linha que ESTA requisição
       // acabou de criar, na organização da sessão.
-      await createAdminClient().from("crm_proposals").delete().eq("organization_id", authz.org.orgId).eq("id", proposta.id);
+      await createAdminClient().from("crm_proposals").delete().eq("organization_id", authz.organizationId).eq("id", proposta.id);
       return fail("internal_error", t("Falha ao gravar os itens."), 500, { requestId });
     }
   }
@@ -189,20 +193,21 @@ export async function POST(req: NextRequest): Promise<Response> {
   // escritor canônico (lib/leads/activity-emitter.ts) — mesmo caminho que o
   // resto do CRM usa para gravar em crm_lead_activities, nunca um insert cru.
   await emitLeadActivity(supabase, {
-    organizationId: authz.org.orgId,
+    organizationId: authz.organizationId,
     leadId: input.lead_id,
     contactId: lead.contact_id,
     type: "proposal_drafted",
     sourceModule: "proposals",
     sourceId: proposta.id,
-    actor: { type: "user", id: authz.user.id },
+    actor: authz.actor,
     reason: `Rascunho de proposta criado: ${input.titulo}`,
   });
 
   void audit({
     action: "proposal.drafted",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "crm_proposals",
     resourceId: proposta.id,
     requestId,
