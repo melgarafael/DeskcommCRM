@@ -387,11 +387,13 @@ export function fontePrevisao(settings: unknown): FonteDeProbabilidade {
 /**
  * Carrega e calcula a previsão de UM funil.
  *
- * ⚠️ O CLIENTE É O QUE O CHAMADOR PASSAR. Na rota REST ele é o de SESSÃO, e
- * isso é o que faz valer `visibility_mode = "own"` (migration 0036): um
- * cliente admin furaria o isolamento e devolveria a previsão dos outros
- * atendentes. Este módulo não escolhe o cliente — só o usa, com o filtro
- * explícito de organização por convenção do repo.
+ * ⚠️ O CLIENTE É O QUE O CHAMADOR PASSAR. Na rota REST, pela sessão, ele é o de
+ * SESSÃO, e isso é o que faz valer `visibility_mode = "own"` (migration 0036):
+ * um cliente admin furaria o isolamento e devolveria a previsão dos outros
+ * atendentes. Pelo token (papel admin) a rota passa o cliente admin de
+ * propósito, e a leitura é da organização inteira. Este módulo não escolhe o
+ * cliente — só o usa, com o filtro explícito de organização por convenção do
+ * repo.
  *
  * Lança `ApiError(404)` quando o funil não é desta organização — mesma resposta
  * de um funil inexistente, porque dizer "existe, mas não é seu" já vaza.

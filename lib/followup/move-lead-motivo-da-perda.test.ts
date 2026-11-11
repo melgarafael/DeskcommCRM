@@ -119,21 +119,38 @@ describe("a decisão da casa que o publish espelha", () => {
 
 describe("carregaEtapasCitadas — lê is_lost e os motivos do funil", () => {
   it("traz se é perda e o settings do funil, filtrando pela organização", async () => {
-    const pedido: { tabela?: string; filtros: Array<[string, unknown]> } = { filtros: [] };
-    const consulta = {
-      select: () => consulta,
-      eq: (col: string, v: unknown) => (pedido.filtros.push([col, v]), consulta),
-      in: () =>
-        Promise.resolve({
-          data: [
-            { id: PERDA, name: "Perdido", is_archived: false, is_lost: true, crm_pipelines: { name: "Vendas", settings: { lost_reasons: ["Sem orçamento"] } } },
-          ],
-          error: null,
-        }),
+    // O funil vem em consulta PRÓPRIA (crm_pipelines), não por embed: cada tabela
+    // recebe a sua resposta.
+    const FUNIL = "cccccccc-3333-4333-8333-333333333333";
+    const respostas: Record<string, { data: unknown; error: null }> = {
+      crm_stages: {
+        data: [{ id: PERDA, name: "Perdido", is_archived: false, is_lost: true, pipeline_id: FUNIL }],
+        error: null,
+      },
+      crm_pipelines: {
+        data: [{ id: FUNIL, name: "Vendas", settings: { lost_reasons: ["Sem orçamento"] } }],
+        error: null,
+      },
     };
-    const cliente = { from: (t: string) => ((pedido.tabela = t), consulta) } as never;
+    const pedido: { tabela?: string; tabelas: string[]; filtros: Array<[string, unknown]> } = { tabelas: [], filtros: [] };
+    const consultaDe = (tabela: string) => {
+      const consulta = {
+        select: () => consulta,
+        eq: (col: string, v: unknown) => (pedido.filtros.push([col, v]), consulta),
+        in: () => Promise.resolve(respostas[tabela]!),
+      };
+      return consulta;
+    };
+    const cliente = {
+      from: (t: string) => {
+        pedido.tabela ??= t;
+        pedido.tabelas.push(t);
+        return consultaDe(t);
+      },
+    } as never;
     const r = await carregaEtapasCitadas(cliente, "org-1", [mover(PERDA, "no_response")]);
     expect(pedido.tabela).toBe("crm_stages");
+    expect(pedido.tabelas).toEqual(["crm_stages", "crm_pipelines"]);
     expect(pedido.filtros).toContainEqual(["organization_id", "org-1"]);
     expect(r).toEqual({
       ok: true,

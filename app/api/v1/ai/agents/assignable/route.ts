@@ -32,17 +32,19 @@
  * A régua agora é `agenteAtende` (`lib/ai/agents/no-ar.ts`), a mesma da tela e
  * dos workers.
  *
- * Auth: cookie session; organization_id vem do JWT — nunca do body/query.
- * RLS-scoped (createClient), sem admin client: não há nada aqui que a RLS do
- * tenant não deva mostrar.
+ * Auth: sessão OU token de integração (Spec 33, R1), por `resolveAuthDual`;
+ * organization_id vem do JWT (sessão) ou da linha do token — nunca do
+ * body/query. O token precisa de `config:read` e de papel admin (`tokenRole`).
+ * Pela sessão o cliente é RLS-scoped; pelo token é a service role, que ignora a
+ * RLS — por isso o `organization_id` das duas consultas abaixo é explícito e,
+ * no ramo do token, é a única barreira.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { agenteAtende } from "@/lib/ai/agents/no-ar";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -55,16 +57,24 @@ export interface AssignableAgent {
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents", requestId);
+  if (teto) return teto;
+  const orgId = authz.organizationId;
 
   // Filtro opcional por canal: quem monta um picker de destino de VOZ (ex.:
   // cadastro de número de telefone) não pode oferecer um agente de WhatsApp
   // como opção — ele simplesmente não sabe atender ligação nenhuma.
   const channel = new URL(req.url).searchParams.get("channel");
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let query = supabase
     .from("ai_agents")
     .select("id, name, published_version_id, kind, is_active, paused_at, archived_at")

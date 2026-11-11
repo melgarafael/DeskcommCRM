@@ -39,10 +39,12 @@ vi.mock("@/lib/supabase/server", () => ({
 const ROTAS: Array<[string, () => Promise<Response>]> = [
   ["conversations", async () => (await import("@/app/api/v1/conversations/route")).GET(
     new Request("http://x/api/v1/conversations") as never)],
-  ["channel-sessions", async () => (await import("@/app/api/v1/channel-sessions/route")).GET()],
+  ["channel-sessions", async () => (await import("@/app/api/v1/channel-sessions/route")).GET(
+    new Request("http://x/api/v1/channel-sessions") as never)],
   ["mcp/tools", async () => (await import("@/app/api/v1/mcp/tools/route")).GET(
     new Request("http://x/api/v1/mcp/tools") as never)],
-  ["voice/sessions/status", async () => (await import("@/app/api/v1/voice/sessions/status/route")).GET()],
+  ["voice/sessions/status", async () => (await import("@/app/api/v1/voice/sessions/status/route")).GET(
+    new Request("http://x/api/v1/voice/sessions/status") as never)],
 ];
 
 beforeEach(() => {

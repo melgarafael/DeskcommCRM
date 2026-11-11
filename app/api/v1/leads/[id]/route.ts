@@ -104,7 +104,7 @@ export async function PATCH(
   if (!authz.ok) return authz.response;
   const { supabase, organizationId, actor, idioma } = authz;
 
-  const tetoEstourado = await tetoDeEscritaDoToken(authz, "leads", requestId);
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "leads_patch", requestId);
   if (tetoEstourado) return tetoEstourado;
 
   let input;

@@ -10,15 +10,20 @@
  * relatório mostra o funil INTEIRO, não o pedaço do atendente). Leitura com o
  * client admin + `organization_id` explícito — a mesma disciplina de todo
  * service-role query do projeto. Read-only ⇒ sem audit.
+ *
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` e papel manager+ (Spec 33,
+ * R3). A organização vem da sessão ou da LINHA do token, nunca da query, e a
+ * leitura filtra por ela nos dois ramos.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { agruparPerdas, type PerdaLinha } from "@/lib/metrics/perdas";
 
 export const dynamic = "force-dynamic";
@@ -41,10 +46,17 @@ const querySchema = z.object({
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "metrics" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -71,8 +83,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   const supabase = createAdminClient();
 
   const [funis, etapas] = await Promise.all([
-    supabase.from("crm_pipelines").select("id, settings").eq("organization_id", activeOrg.orgId),
-    supabase.from("crm_stages").select("id, name").eq("organization_id", activeOrg.orgId),
+    supabase
+      .from("crm_pipelines")
+      .select("id, settings")
+      .eq("organization_id", authz.organizationId),
+    supabase.from("crm_stages").select("id, name").eq("organization_id", authz.organizationId),
   ]);
 
   if (funis.error) return fail("internal_error", funis.error.message, 500, { requestId });
@@ -93,7 +108,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         "lost_reason, lost_from_stage_id, value_cents, currency, pipeline_id",
         pagina === 0 ? { count: "exact" } : undefined,
       )
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("status", "lost")
       .gte("closed_at", from.toISOString())
       .lt("closed_at", to.toISOString())

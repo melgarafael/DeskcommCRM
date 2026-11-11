@@ -18,10 +18,11 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -49,9 +50,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:write` e papel `manager`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   if (!(await moduloLigado(createAdminClient(), "fluxos_atendimento"))) {
     return fail("not_found", t("Recurso não encontrado."), 404, { requestId });
@@ -68,14 +78,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("invalid_request", t("Escolha o negócio."), 400, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // 1. A execução precisa ser DESTE contato, desta organização e estar viva.
   const { data: enrollment, error: enrollmentErr } = await supabase
     .from("followup_enrollments")
     .select("id, status, contact_id")
     .eq("id", enrollmentId)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("contact_id", id)
     .maybeSingle();
   if (enrollmentErr) return fail("internal_error", enrollmentErr.message, 500, { requestId });
@@ -90,7 +100,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .from("crm_leads")
     .select("id, status, contact_id")
     .eq("id", leadId)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
   if (!lead || lead.contact_id !== id || lead.status !== "open") {
@@ -102,7 +112,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data: existente, error: vinculoErr } = await supabase
     .from("followup_enrollment_events")
     .select("payload")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("enrollment_id", enrollmentId)
     .eq("event_type", EVENTO_DO_VINCULO)
     .order("created_at", { ascending: true })
@@ -115,7 +125,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   const { error: insertErr } = await supabase.from("followup_enrollment_events").insert({
-    organization_id: authz.org.orgId,
+    organization_id: authz.organizationId,
     enrollment_id: enrollmentId,
     node_id: null,
     event_type: EVENTO_DO_VINCULO,
@@ -132,7 +142,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     const { data: gravado } = await supabase
       .from("followup_enrollment_events")
       .select("payload")
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("enrollment_id", enrollmentId)
       .eq("event_type", EVENTO_DO_VINCULO)
       .order("created_at", { ascending: true })
@@ -147,8 +157,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // das outras ações de `manager` sobre a execução.
   void audit({
     action: "followup_enrollment.negocio_escolhido",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "followup_enrollment",
     resourceId: enrollmentId,
     requestId,
