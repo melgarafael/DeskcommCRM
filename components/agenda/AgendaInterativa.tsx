@@ -9,12 +9,14 @@ import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import { useHorariosLivres } from "@/hooks/agenda/useHorariosLivres";
+import { useHorariosLivresPorPessoa } from "@/hooks/agenda/useHorariosLivresPorPessoa";
 import { useRemarcarAgendamento } from "@/hooks/agenda/useRemarcarAgendamento";
 import type { FechamentoDaGrade } from "@/lib/agenda/fechamentos-na-grade";
 import type { MotivoDaGradeTravada } from "@/lib/agenda/grade-interativa";
 import { cn } from "@/lib/utils";
 
-import { GradeDaAgenda } from "./GradeDaAgenda";
+import { GradeDaAgenda, JANELA_DA_GRADE } from "./GradeDaAgenda";
+import { QuadroPorProfissional } from "./QuadroPorProfissional";
 import type { Agendamento, Pessoa, VisaoDaAgenda } from "./tipos";
 import { dataDeParede, diaLocalISO } from "@/lib/agenda/fuso";
 
@@ -56,6 +58,7 @@ export function AgendaInterativa({
   onMarcarEm,
   onAbrirAgendamento,
   donoId,
+  onMarcarComProfissional,
   className,
 }: {
   visao: VisaoDaAgenda;
@@ -121,12 +124,33 @@ export function AgendaInterativa({
    * vê e o que se oferece clicar.
    */
   donoId?: string | null;
+  /**
+   * O clique num bloco livre do QUADRO (#4186): ali a linha diz QUEM atende, e
+   * o painel precisa abrir com essa pessoa — não com o dono do tipo nem com o
+   * isolado do filtro. `undefined` = quadro de leitura, pela mesma regra de
+   * `onMarcarEm`.
+   */
+  onMarcarComProfissional?: (instante: string, pessoaId: string) => void;
   className?: string;
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
+  const ehQuadro = visao === "quadro";
+  // As linhas do quadro obedecem ao MESMO filtro de pessoas que a grade: com a
+  // Ana isolada, o quadro tem uma linha só — a dela.
+  const linhasDoQuadro = React.useMemo(
+    () => (donoId ? pessoas.filter((p) => p.id === donoId) : pessoas),
+    [pessoas, donoId],
+  );
+  const livresDoQuadro = useHorariosLivresPorPessoa(
+    ehQuadro && tipo ? tipo.id : null,
+    ehQuadro ? linhasDoQuadro.map((p) => p.id) : [],
+    recorte,
+  );
   const { data: horarios, isError: horariosFalharam } = useHorariosLivres(
-    tipo
+    // No quadro cada linha pergunta por si (acima); a consulta única da grade
+    // seria um pedido a mais, de uma pessoa só, que ninguém desenharia.
+    tipo && !ehQuadro
       ? {
           event_type_id: tipo.id,
           owner_user_id: donoId ?? undefined,
@@ -162,7 +186,18 @@ export function AgendaInterativa({
    * aviso nenhum. Por isso o erro é testado ANTES, e a ausência de resposta não
    * vira afirmação.
    */
-  const motivo: MotivoDaGradeTravada | null = horariosFalharam
+  const estadosDoQuadro = Object.values(livresDoQuadro);
+  const motivo: MotivoDaGradeTravada | null = ehQuadro
+    ? !tipo || estadosDoQuadro.length === 0
+      ? null
+      : estadosDoQuadro.some((e) => e.falhou)
+        ? "erro"
+        : estadosDoQuadro.every((e) => e.slots !== null && !e.publicou)
+          ? "sem-jornada"
+          : estadosDoQuadro.every((e) => e.slots !== null && e.slots.length === 0)
+            ? "sem-vaga"
+            : null
+    : horariosFalharam
     ? "erro"
     : horarios && !horarios.publicou_horarios
       ? "sem-jornada"
@@ -361,6 +396,28 @@ export function AgendaInterativa({
         </div>
       )}
 
+      {ehQuadro ? (
+        <QuadroPorProfissional
+          dia={ancora}
+          fuso={fuso}
+          pessoas={linhasDoQuadro}
+          agendamentos={agendamentos}
+          fechamentos={fechamentos}
+          livres={Object.fromEntries(
+            linhasDoQuadro.map((p) => [
+              p.id,
+              livresDoQuadro[p.id]?.slots?.map((s) => ({
+                instante: s.inicio,
+                rotulo: format(dataDeParede(new Date(s.inicio), fuso), "HH:mm"),
+              })),
+            ]),
+          )}
+          primeiraHora={JANELA_DA_GRADE.primeira}
+          ultimaHora={JANELA_DA_GRADE.ultima}
+          onMarcarEm={tipo ? onMarcarComProfissional : undefined}
+          onAbrirAgendamento={onAbrirAgendamento}
+        />
+      ) : (
       <GradeDaAgenda
         visao={visao}
         ancora={ancora}
@@ -394,6 +451,7 @@ export function AgendaInterativa({
             : undefined
         }
       />
+      )}
     </div>
   );
 }
