@@ -108,10 +108,14 @@ afterEach(() => {
   vi.resetModules();
 });
 
-/** Nenhuma chamada pode citar o host real: é a asserção que a issue pede. */
+/**
+ * Nenhuma chamada pode SAIR para o host real: é a asserção que a issue pede.
+ * Compara o host de cada URL gravada, e não um trecho do texto — o que se mede
+ * é o destino da requisição.
+ */
 function assertNadaVazou(): void {
   expect(chamadas.length).toBeGreaterThan(0);
-  expect(chamadas.filter((u) => u.includes("graph.facebook.com"))).toEqual([]);
+  expect(chamadas.filter((u) => new URL(u).hostname === "graph.facebook.com")).toEqual([]);
 }
 
 describe("com host FALSO apontado, nada sai para graph.facebook.com", () => {
