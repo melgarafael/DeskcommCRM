@@ -16402,7 +16402,8 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma conversa ou ligação nos outros números ainda.": {
     es: "Todavía no hay conversaciones ni llamadas en los otros números.",
   },
-  Recebida: { es: "Recibida" },
+  // "Recebida" já existe mais abaixo (veio pela main, com o mesmo espanhol):
+  // repetir a chave aqui é TS1117.
   Feita: { es: "Realizada" },
   Atendida: { es: "Atendida" },
   "Este contato já é o contato principal do negócio.": {
