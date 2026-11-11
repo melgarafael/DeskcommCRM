@@ -1527,6 +1527,13 @@ export const AUDIT_ACTIONS = [
   // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
   // o evento, não o conteúdo — mesma regra de message.edited/revoked.
   "message.reaction_sent",
+  // A mudança de STATUS de uma manifestação (#3611, fatia 3). O metadata leva
+  // `de`, `para`, `reabertura` e — só quando existe — o motivo da reabertura.
+  // NUNCA o texto do relato: `api_audit_log` é append-only e a cascata de LGPD
+  // não a alcança, então o dado sigiloso da ouvidoria não entra aqui. Este
+  // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
+  // aceitável: a única porta da escrita deixa rastro.
+  "ouvidoria.status_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
