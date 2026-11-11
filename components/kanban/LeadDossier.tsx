@@ -8,11 +8,13 @@ import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider"
 import { ROLE_RANK } from "@/lib/auth/types";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
+import { useContatosRelacionados } from "@/hooks/leads/useContatosRelacionados";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
 import { AtalhosDoNegocio } from "./AtalhosDoCard";
 import { ConversaNoDossie } from "./ConversaNoDossie";
+import { ConversasDosNumeros } from "./ConversasDosNumeros";
 import { LeadFieldsForm, type ControleDosCamposDoNegocio } from "./LeadFieldsForm";
 import { RevisaoDoDocumento } from "./RevisaoDoDocumento";
 import { ScoreSlot } from "./ScoreSlot";
@@ -120,6 +122,15 @@ export function LeadDossier({
   const campos = useRef<HTMLDivElement | null>(null);
   const formulario = useRef<ControleDosCamposDoNegocio | null>(null);
   const timeline = useLeadTimeline(open ? lead.id : null, lead.contact_id);
+  /**
+   * As pessoas relacionadas, aqui, para decidir se a seção dos números existe
+   * (#3669). O hook é o MESMO que `ContatoDoNegocio` usa — a chave de cache é
+   * uma só, então isto não é uma consulta a mais: é a mesma resposta, lida por
+   * dois componentes. Negócio sem relação não monta a seção, e é assim que quem
+   * não usa a lista vê exatamente a tela de antes.
+   */
+  const relacionadas = useContatosRelacionados(open ? lead.id : null);
+  const temPessoaRelacionada = (relacionadas.data?.data.length ?? 0) > 0;
   const { fechadas, alternar, abrir } = useSecoesRecolhidas();
   const timelineRecolhida = fechadas.has("linha-do-tempo");
   // As três MAIS RECENTES: a rota devolve `performed_at` decrescente, então o
@@ -285,6 +296,21 @@ export function LeadDossier({
             podeCriarContato={podeCriarContato}
           />
         </SecaoDoDossie>
+
+        {/* Os OUTROS NÚMEROS DO CLIENTE (#3669, fatia 1): as conversas e as
+            ligações das "Pessoas relacionadas", que até aqui só existiam como
+            anotação. Só existe quando há relacionado — negócio de um número só
+            fica idêntico ao de antes, sem seção vazia. */}
+        {temPessoaRelacionada && (
+          <SecaoDoDossie
+            id="numeros-do-negocio"
+            titulo={t("Conversas e ligações dos números")}
+            recolhida={fechadas.has("numeros-do-negocio")}
+            aoAlternar={alternar}
+          >
+            <ConversasDosNumeros leadId={open ? lead.id : null} />
+          </SecaoDoDossie>
+        )}
 
         {/* ② Dados do negócio — o que se PREENCHE, agora ANTES da linha do
             tempo (#3181). */}
