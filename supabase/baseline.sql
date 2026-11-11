@@ -70520,6 +70520,96 @@ begin
 end $function$;
 revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
 grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
+-- ---- mensagem nova do cliente acorda o roteamento da conversa sem dono (migration 9225) ----
+-- Espelho da 9225. Fica ACIMA da VARREDURA anon porque cria função, e DEPOIS de
+-- tudo que ele lê (`messages`, `conversations`, `event_log`,
+-- `channel_routing_policies`, todos criados muito acima). O porquê inteiro está
+-- no cabeçalho da migration: o pedido `conversation.routing_requested` só nascia
+-- no INSERT de `conversations`, então uma conversa que já existia e continuava
+-- sem dono não voltava à distribuição pela mensagem do cliente — só pelo laço de
+-- retentativa do worker, que a reagenda para sempre.
+create or replace function public.fn_pedir_roteamento_na_mensagem()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  -- SECURITY DEFINER é o que permite o INSERT em `event_log` acontecer também
+  -- quando quem grava a mensagem é um membro da organização pela API: um
+  -- gatilho com os privilégios do invocador faria o INSERT da mensagem falhar
+  -- na RLS do barramento, e a mensagem se perderia por causa do aviso.
+  insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload)
+  select c.organization_id,'conversation.routing_requested','conversation',c.id,
+    jsonb_build_object('organization_id',c.organization_id,'conversation_id',c.id,
+      'channel_session_id',c.channel_session_id)
+    from public.conversations c
+   where c.organization_id=new.organization_id
+     and c.id=new.conversation_id
+     and c.assigned_to_user_id is null
+     and c.is_group=false
+     and c.status in('open','pending','claimed','ai_handling')
+     and not exists (select 1 from public.channel_routing_policies p
+                      where p.organization_id=c.organization_id
+                        and p.channel_session_id=c.channel_session_id
+                        and p.distribution_mode='manual'
+                        and p.default_assignee_user_id is null)
+  on conflict(organization_id,entity_id) where event_type='conversation.routing_requested' and status in('pending','processing')
+  do update set next_attempt_at=case when event_log.status='pending' then now() else event_log.next_attempt_at end;
+  return null;
+end;
+$$;
+revoke all on function public.fn_pedir_roteamento_na_mensagem() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_nova_mensagem_do_cliente on public.messages;
+create trigger trg_routing_nova_mensagem_do_cliente
+  after insert on public.messages
+  for each row
+  when (new.direction='inbound'
+        and new.type <> 'reaction'
+        and coalesce(new.metadata->>'historico_importado','') <> 'true')
+  execute function public.fn_pedir_roteamento_na_mensagem();
+
+-- ---- "Liberar" não devolve a conversa ao rodízio (migration 9226, #3937) ----
+-- Espelho da 9226. Fica ACIMA da VARREDURA anon (só recria funções, nenhuma
+-- tabela nova). O porquê inteiro está no cabeçalho da migration: o gatilho
+-- `trg_routing_assignment_changed` tratava "perdeu o dono" e "reabriu" como o
+-- mesmo fato, então liberar a conversa a devolvia à distribuição em ~1 min. A
+-- régua nova pede o rodízio só quando a conversa ENTRA no pool vindo de fora
+-- dele (`old.status` terminal) — a reabertura. As portas que querem pedir
+-- seguem pedindo por conta própria: `fn_wake_channel_routing` (disponibilidade,
+-- política do número, revogação de membro) e o cron `rodizio-devolucao`.
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ elsif old.status not in('open','pending','claimed','ai_handling') then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
+-- O aviso para de prometer "a distribuição continuará tentando": com o estado
+-- terminal do #3916 ele nasce justamente quando o evento FECHOU.
+create or replace function public.fn_routing_unassigned_notice(p_org uuid,p_conversation uuid,p_reason text)
+returns void language plpgsql security definer set search_path=public as $$
+begin
+ if not exists(select 1 from public.conversations where organization_id=p_org and id=p_conversation and assigned_to_user_id is null
+  and status in('open','pending','claimed','ai_handling')) then return;end if;
+ insert into public.agent_inbox_items(organization_id,kind,severity,title,body,ref_kind,ref_id)
+ values(p_org,'routing_unassigned','warn','Uma conversa aguarda um responsável',
+  case when p_reason='invalid_channel' then 'Confira o canal de origem desta conversa nas Conexões.'
+   else 'Confira os responsáveis do canal em Configurações → Atendimento e a disponibilidade da equipe. A conversa segue na fila, sem responsável, até alguém assumir ou o cliente escrever de novo.' end,
+  'conversation',p_conversation)
+ on conflict(organization_id,ref_id,kind) where kind='routing_unassigned'
+ do update set status='open',body=excluded.body;
+end;
+$$;
+revoke all on function public.fn_routing_unassigned_notice(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.fn_routing_unassigned_notice(uuid,uuid,text) to service_role;
 
 -- ---- o comando da conversa pergunta pelo NÚMERO (migration 9331, issue #4012) ----
 -- O wrapper `comando_da_conversa(c)` deixa de dizer `automatico` para conversa

@@ -284,7 +284,14 @@ test("configura responsáveis por canal e o cron distribui sem misturar números
     expect(firstDrain.errors).toEqual([]);
     expect(firstDrain.batch_size).toBe(2);
     expect(firstDrain.outcomes.assigned).toBe(1);
-    expect(firstDrain.outcomes.requeued_no_eligible).toBe(1);
+    // `max_retries: 0` acima é "nenhuma tentativa": o evento FECHA no primeiro
+    // dreno, com o desfecho terminal (#3916). Antes daqui a asserção era
+    // `requeued_no_eligible` — zero tentativas significava reenfileirar para
+    // sempre, que é exatamente a contradição que a issue descreve. O que o
+    // teste quer medir (a conversa do canal do Sul fica sem dono e avisa na
+    // Central) não mudou; o nome do desfecho, sim.
+    expect(firstDrain.outcomes.requeued_no_eligible).toBe(0);
+    expect(firstDrain.outcomes.exhausted_no_eligible).toBe(1);
 
     const northAssigned = await db
       .from("conversations")

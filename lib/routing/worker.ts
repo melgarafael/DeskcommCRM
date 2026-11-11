@@ -38,6 +38,8 @@ export type RoutingOutcome =
   | "skipped_already_assigned"
   | "skipped_unsupported_mode"
   | "requeued_no_eligible"
+  /** #3916: o teto de tentativas foi atingido e o evento fecha — não gira mais. */
+  | "exhausted_no_eligible"
   | "skipped_invalid_channel"
   | "skipped_invalid_sector"
   | "skipped_conv_missing"
@@ -82,6 +84,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_already_assigned: 0,
   skipped_unsupported_mode: 0,
   requeued_no_eligible: 0,
+  exhausted_no_eligible: 0,
   skipped_invalid_channel: 0,
   skipped_invalid_sector: 0,
   skipped_conv_missing: 0,
@@ -374,7 +377,17 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
         ) {
           throw new Error("routing_claim_invalid_result");
         }
-        await requeueEvent(event, now, Math.min(event.attempts + 1, config.max_retries), {
+        // O claim recusado também respeita o teto (#3916). Antes daqui o
+        // `Math.min` congelava `attempts` no teto e este ramo reagendava para
+        // sempre — o mesmo laço do "sem elegível", com outra roupa.
+        if (event.attempts >= config.max_retries) {
+          await markDone(event, "exhausted_no_eligible", {
+            reason: `claim_refused:${result}`,
+            attempts: config.max_retries,
+          });
+          return "exhausted_no_eligible";
+        }
+        await requeueEvent(event, now, event.attempts + 1, {
           reason: result,
         });
         return "requeued_no_eligible";
@@ -418,7 +431,10 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
       return outcome;
     }
     case "requeue": {
-      if (action.attempts >= config.max_retries) await notice(orgId, conversationId, "no_eligible");
+      // O aviso NÃO sai a cada rodada (#3916). Ele saía em TODO tick a partir
+      // do teto — ~96 chamadas/dia por conversa presa, reabrindo o MESMO item
+      // da Central que o gerente já tinha dado por visto. Ele sai uma vez só,
+      // na transição para terminal, no ramo abaixo.
       await requeueEvent(
         event,
         now,
@@ -427,6 +443,28 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
         action.nextAttemptAt,
       );
       return "requeued_no_eligible";
+    }
+    case "exhausted": {
+      // A última tentativa: avisa UMA vez e FECHA o evento. A conversa não é
+      // tocada — continua `open`, sem dono, visível no Inbox para todos; quem
+      // a acorda depois é um gatilho real (mensagem nova do cliente — 9225 —,
+      // reabertura, disponibilidade/capacidade, regra do número, revogação).
+      try {
+        await notice(orgId, conversationId, "no_eligible");
+      } catch (err) {
+        // O aviso é o RECIBO do desfecho, não a condição dele: falhar ao avisar
+        // não pode reabrir o laço que este ramo veio fechar.
+        logger.warn("[routing-worker] aviso de conversa sem elegível falhou", {
+          organization_id: orgId,
+          conversation_id: conversationId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      await markDone(event, "exhausted_no_eligible", {
+        reason: action.reason,
+        attempts: action.attempts,
+      });
+      return "exhausted_no_eligible";
     }
   }
 }

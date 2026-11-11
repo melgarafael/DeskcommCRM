@@ -30,8 +30,22 @@ export type RoutingAction =
   | { kind: "assign"; userId: string }
   /** Marca o evento consumido sem atribuir (já tem dono, modo manual, modo não suportado). */
   | { kind: "skip"; reason: string }
-  /** Sem elegível: reenfileira com backoff (fica na fila até haver quem atenda). */
-  | { kind: "requeue"; nextAttemptAt: string; attempts: number };
+  /** Sem elegível e ainda com tentativa: reenfileira com backoff. */
+  | { kind: "requeue"; nextAttemptAt: string; attempts: number }
+  /**
+   * Sem elegível e SEM tentativa sobrando: o evento FECHA (#3916).
+   *
+   * `max_retries` é um teto de PARADA, não de contagem. Antes daqui o `Math.min`
+   * congelava `attempts` no teto e o retorno era `requeue` para sempre — a
+   * conversa era reagendada indefinidamente (~96 rodadas e ~96 avisos por dia,
+   * por conversa) enquanto a tela prometia "Tentativas antes de desistir".
+   *
+   * A conversa NÃO é tocada: continua `open`, sem dono, visível no Inbox para
+   * todos. Quem a acorda depois são os gatilhos que já existem — mensagem nova
+   * do cliente (migration 9225), reabertura, disponibilidade/capacidade, regra
+   * do número, revogação de membro —, todos reabrindo um `pending` novo.
+   */
+  | { kind: "exhausted"; reason: "no_eligible_exhausted"; attempts: number };
 
 export interface DecideRoutingInput {
   mode: RoutingMode | string;
@@ -124,11 +138,24 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
     input.mode === "load" ? selectByLoad(input.eligibles) : selectRoundRobin(input.eligibles);
   if (picked) return { kind: "assign", userId: picked };
 
-  // Sem elegível (acceptance 4): re-agenda com backoff da config (não hardcoded).
-  const attempts = Math.min(input.attempts + 1, input.config.max_retries);
-  const slow = input.attempts >= input.config.max_retries;
-  const seconds = slow ? Math.max(900, input.config.backoff_seconds) : input.config.backoff_seconds;
-  const nextAttemptAt = new Date(input.now.getTime() + seconds * 1000).toISOString();
+  // Sem elegível: o teto é de PARADA, não de contagem (#3916).
+  //
+  // `attempts` é quantas vezes o evento JÁ voltou para a fila. Chegando ao
+  // `max_retries`, esta é a última tentativa: o evento fecha com desfecho
+  // próprio e a conversa fica no Inbox, sem dono, esperando um gatilho real
+  // (mensagem nova, reabertura, disponibilidade, regra do número). Devolver
+  // `requeue` aqui era o laço eterno — o `Math.min` congelava o contador e o
+  // worker reagendava para sempre, negando o rótulo "Tentativas antes de
+  // desistir" e queimando ~1.500 requisições/dia por conversa presa.
+  if (input.attempts >= input.config.max_retries) {
+    return {
+      kind: "exhausted",
+      reason: "no_eligible_exhausted",
+      attempts: input.config.max_retries,
+    };
+  }
+  const attempts = input.attempts + 1;
+  const nextAttemptAt = new Date(input.now.getTime() + input.config.backoff_seconds * 1000).toISOString();
   return { kind: "requeue", nextAttemptAt, attempts };
 }
 
