@@ -20904,6 +20904,27 @@ export const DICIONARIO: Traducoes = {
     {
       es: "El envío sigue siendo del flujo de seguimiento de cada etapa, en el constructor de flujos: es allí donde una persona revisa el texto antes de que salga. Esta pantalla guarda la regla de la operación — lo que cada etapa espera.",
     },
+  "O que a operação espera de cada etapa do funil depois que a conversa chega.": {
+    es: "Lo que la operación espera de cada etapa del embudo después de que llega la conversación.",
+  },
+  // As frases de recusa da tela ficam numa tabela de módulo (`ERRO` em
+  // `_followup.tsx`) e chegam aqui por `t(ERRO[erro])` — por isso cada valor
+  // dela precisa de entrada própria, uma linha por frase possível.
+  "Toda etapa ligada precisa de prazo e de modelo de mensagem.": {
+    es: "Toda etapa activada necesita plazo y modelo de mensaje.",
+  },
+  "O prazo máximo de um follow-up é de 720 horas (30 dias).": {
+    es: "El plazo máximo de un seguimiento es de 720 horas (30 días).",
+  },
+  "Só um gerente ou administrador pode mudar esta opção.": {
+    es: "Solo un gerente o administrador puede cambiar esta opción.",
+  },
+  "Uma das etapas mudou enquanto a tela estava aberta. Recarregue.": {
+    es: "Una de las etapas cambió mientras la pantalla estaba abierta. Recarga.",
+  },
+  "Não consegui salvar agora. Tente de novo.": {
+    es: "No pude guardar ahora. Inténtalo de nuevo.",
+  },
 };
 
 /**
