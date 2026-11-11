@@ -183,7 +183,7 @@ export const TETO_PADRAO_MS = 15_000;
  * 30s é o mesmo teto que a mídia de ENTRADA já usa
  * (`lib/messaging/media/waha-source.ts:18`).
  */
-export const TETO_DE_MIDIA_MS = 30_000;
+export const TETO_DE_MIDIA_MS = 180_000;
 
 /**
  * O ERRO DIZ O STATUS. NUNCA O CORPO QUE O WAHA DEVOLVEU.

@@ -12,10 +12,10 @@ describe("wahaSendPlanFor", () => {
     expect(plan.payload.caption).toBe("oi");
     expect((plan.payload.file as { url: string }).url).toBe(media.url);
   });
-  it("video → sendVideo com caption e convert", () => {
+  it("video → sendVideo com caption e sem re-encode desnecessario", () => {
     const plan = wahaSendPlanFor("video", { ...media, mime: "video/mp4" });
     expect(plan.endpoint).toBe("sendVideo");
-    expect(plan.payload.convert).toBe(true);
+    expect(plan.payload.convert).toBe(false);
   });
   it("audio → sendVoice com convert (WhatsApp exige OGG/OPUS)", () => {
     const plan = wahaSendPlanFor("audio", { ...media, mime: "audio/webm;codecs=opus" });
