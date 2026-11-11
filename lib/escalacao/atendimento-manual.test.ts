@@ -111,6 +111,7 @@ function iaCaladaEm(ate: Date, quando: Date): boolean {
     aiOptOut: false,
     botSilencedUntil: normalizarInstante(ate.toISOString()),
     assigneeKind: null,
+    iaComDono: false,
     aiAuthorizedAt: null,
     preGoLiveAtivo: false,
     numeroDeTesteAutorizado: false,

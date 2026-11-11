@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, DownloadSimple } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -39,6 +39,7 @@ import {
 } from "@/hooks/inbox/useCloseConversation";
 import { useResumeAiAttendance } from "@/hooks/inbox/useResumeAiAttendance";
 import { usePauseAiAttendance } from "@/hooks/inbox/usePauseAiAttendance";
+import { useIaComDono } from "@/hooks/inbox/useIaComDono";
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
@@ -46,6 +47,7 @@ import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conv
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
+import { DialogoMoverParaFila, ItemMoverParaFila } from "@/components/inbox/MoverParaFila";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { ItemReservarServico, ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
@@ -112,6 +114,7 @@ export function ConversationHeader({
   const arquivar = useArchiveConversation();
   const retomar = useResumeAiAttendance();
   const pausar = usePauseAiAttendance();
+  const iaComDono = useIaComDono();
   // "Existe automático nesta org?" — sem isto o selo afirmava que o robô estava
   // atendendo em instalação que nunca configurou agente nenhum.
   const automaticoDaOrg = useAutomaticoAtivo();
@@ -139,6 +142,9 @@ export function ConversationHeader({
   // A folha de reserva segue o MESMO desenho do convite: o item do ⋯ só levanta
   // a bandeira, a folha mora fora do menu e o menu fecha como qualquer outro.
   const [reservaAberta, setReservaAberta] = useState(false);
+  // A FILA (#3876): o item do ⋯ só levanta a bandeira — o diálogo mora fora do
+  // menu, pelo mesmo motivo do convite acima.
+  const [filaAberta, setFilaAberta] = useState(false);
 
   const c = conversation.contacts ?? null;
   /**
@@ -308,6 +314,28 @@ export function ConversationHeader({
    */
   const podePausar =
     automaticoAtivo && !encerrada && conversation.assigned_to_user_id !== null;
+
+  /**
+   * O INTERRUPTOR DO MODO "IA COM O DONO" (#3967).
+   *
+   * Aparece quando a pergunta faz sentido: a conversa TEM dono humano e não está
+   * encerrada. É o único estado em que ligar o modo muda alguma coisa — sem dono
+   * não há dono a preservar, e a rota recusa (o automático já responde ali).
+   *
+   * Aparece TAMBÉM com o automático parado: "voltar com a IA sem soltar o dono"
+   * é literalmente o caso de uso da issue (a conversa foi pausada, o atendente
+   * quer a IA de apoio e não quer sair da carteira). Ligar limpa o silêncio —
+   * está no cabeçalho da rota, e é o que o botão promete.
+   *
+   * Escondido quando o CONTATO está travado/bloqueado: ali o modo não pode
+   * valer (a rota devolve 409) e um botão que só leva a erro é pior que nenhum.
+   */
+  const modoLigado = conversation.metadata?.ai_com_dono === true;
+  const podeModoIaComDono =
+    !encerrada &&
+    conversation.assigned_to_user_id !== null &&
+    fatosDoComando.force_human !== true &&
+    fatosDoComando.is_blocked !== true;
 
   if (user.support?.access_mode === "support_readonly") return <header className="flex items-center justify-between border-b p-4">
     <strong>{displayName}</strong><span className="text-sm text-muted-foreground">{STATUS_LABEL[status] ?? status} · Somente leitura</span>
@@ -668,6 +696,18 @@ export function ConversationHeader({
                 {t("Convidar")}
               </DropdownMenuItem>
             )}
+            {/* ─── A FILA (#3876) ──────────────────────────────────────────
+                Uma ação que a conversa já tinha e a tela não oferecia: o
+                `PUT /conversations/[id]/sector` (9062) estava sem consumidor.
+                Fica no ⋯ porque classificar é correção de rota, não é do dia a
+                dia. `ItemMoverParaFila` devolve `null` quando a rota recusaria
+                (viewer, módulo desligado, conversa encerrada).
+                O export em PDF (#1982) NÃO entra aqui: o PR #4207, aberto
+                antes, é quem entrega essa tela — duas entregas da mesma fatia
+                viram dois itens no menu.
+                O separador de cima vem de dentro do item: solto aqui, ele
+                dobraria com o de baixo quando o item não aparece. */}
+            <ItemMoverParaFila encerrada={encerrada} onAbrir={() => setFilaAberta(true)} />
             <DropdownMenuSeparator />
             {podePausar && (
               <DropdownMenuItem
@@ -681,6 +721,33 @@ export function ConversationHeader({
               >
                 <Pause size={16} aria-hidden className="mr-2" />
                 {pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
+              </DropdownMenuItem>
+            )}
+            {/* #3967 — "IA com o dono": um interruptor, um rótulo, dois estados.
+                A conversa ganha a IA de APOIO sem perder o dono: nada de `release`,
+                nada de rodízio, nada de fila. É o par do "Pausar o automático"
+                (que cala sem devolver) e existe porque, com dono humano, a IA
+                ficava calada por definição — e o único caminho de volta soltava
+                a conversa de quem a estava acompanhando. Clicar fecha o menu; o
+                estado ligado fica à vista no selo abaixo da barra. */}
+            {podeModoIaComDono && (
+              <DropdownMenuItem
+                role="menuitemcheckbox"
+                aria-checked={modoLigado}
+                disabled={iaComDono.isPending}
+                data-testid="ia-com-o-dono"
+                title={
+                  modoLigado
+                    ? t("Desliga a IA nesta conversa. Ela volta a ficar calada e continua sua.")
+                    : t("A IA responde esta conversa sem tirar o dono de você. Se ela passar para uma pessoa, a conversa continua com o mesmo atendente.")
+                }
+                onSelect={() =>
+                  iaComDono.mutate({ conversation_id: conversation.id, ligado: !modoLigado })
+                }
+              >
+                <Robot size={16} aria-hidden className="mr-2" />
+                {iaComDono.isPending ? t("Salvando...") : t("IA com o dono")}
+                {modoLigado && <Check size={16} aria-hidden className="ml-auto" />}
               </DropdownMenuItem>
             )}
             {!encerrada && (
@@ -785,6 +852,16 @@ export function ConversationHeader({
             {t(ROTULO_DO_MOTIVO[motivo])}
           </Badge>
         )}
+        {/* O modo ligado é informação, e informação dentro de um menu deixa de ser
+            lida: sem este selo a conversa em que a IA responde ao lado do dono
+            tem a cara de qualquer outra. Com o automático calado por outro
+            motivo, quem fala é o selo de cima. */}
+        {podeModoIaComDono && modoLigado && motivo === null && (
+          <Badge variant="outline" className="h-4 w-fit max-w-full truncate px-1.5 text-[10px]"
+            data-testid="badge-ia-com-o-dono">
+            {t("IA com o dono")}
+          </Badge>
+        )}
       </div>
       <ReassignDialog
         conversationId={conversation.id}
@@ -809,6 +886,18 @@ export function ConversationHeader({
         aberto={conviteAberto}
         onAbertoChange={setConviteAberto}
       />
+      {/* O diálogo da fila, FORA do menu ⋯ — o mesmo desenho do convite acima —
+          e montado só quando abre. Aberto é o único estado em que ele existe, e
+          um diálogo fechado que consultasse setores em toda conversa seria uma
+          requisição por cabeçalho montado para quem nunca tocou no ⋯. */}
+      {filaAberta && (
+        <DialogoMoverParaFila
+          conversationId={conversation.id}
+          filaAtual={conversation.sector_id ?? null}
+          aberto
+          onAbertoChange={setFilaAberta}
+        />
+      )}
       {podeReservar && c?.id && activeOrg && (
         <ReservarServicoNaConversa
           key={`${activeOrg.orgId}:${conversation.id}`}
