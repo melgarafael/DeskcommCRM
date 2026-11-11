@@ -419,6 +419,13 @@ export const ApiErrorCodes = {
   base_publica_nao_configurada: "base_publica_nao_configurada", // 503: NEXT_PUBLIC_APP_URL ausente, placeholder ou da própria máquina — o webhook único da instalação não é registrado
   waha_error: "waha_error",
   channel_unavailable: "channel_unavailable", // 502: o transporte do canal não respondeu (ex.: listar grupos com a sessão fora de WORKING)
+  // 409: a agenda do aparelho não é entregue com o store da sessão desligado
+  // (a opção "Guardar o histórico anterior à vinculação"). Código próprio, e
+  // não `channel_unavailable`, porque a AÇÃO é outra: ligar uma opção na tela
+  // de Conexões — não esperar a conexão voltar (#4102).
+  channel_acervo_desligado: "channel_acervo_desligado",
+  channel_timeout: "channel_timeout", // 504: o canal não respondeu dentro do teto (relógio, não recusa)
+  channel_session_rejected: "channel_session_rejected", // 502: o WhatsApp recusou a sessão do número (401/403)
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu
   wacalls_not_connected: "wacalls_not_connected", // 503 + Retry-After: sessão pareada cujo socket com o WhatsApp caiu por um instante (ver `wacallsSemConexao`)
   ai_provider_error: "ai_provider_error",

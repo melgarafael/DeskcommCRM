@@ -22,6 +22,7 @@ import { isPublicPath } from "@/lib/auth/public-paths";
 import { McpAuthError } from "@/lib/mcp/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { CHAVE_PROVA_NASCIMENTO_META } from "@/lib/leads/prova-meta-lead-submitted";
 import { updateLeadHandler } from "../_handler";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -29,6 +30,7 @@ vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
+vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock("../_handler", () => ({
   updateLeadHandler: vi.fn(async () => ({ id: "l-1", title: "Atualizado" })),
 }));
@@ -261,5 +263,65 @@ describe("PATCH /api/v1/leads/[id] — teto de escrita do Bearer", () => {
 
     expect(res.status).toBeLessThan(300);
     expect(checkRateLimit).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/v1/leads/[id] — a leitura fresca da página do negócio (#4151)", () => {
+  /** `select().eq().eq().maybeSingle()` — a corrente da leitura de uma linha. */
+  function clienteQueDevolve(resposta: { data: unknown; error: { message: string } | null }) {
+    const corrente = {
+      eq: vi.fn(() => corrente),
+      maybeSingle: vi.fn(async () => resposta),
+    };
+    vi.mocked(createClient).mockResolvedValue({
+      from: () => ({ select: () => corrente }),
+    } as never);
+    return corrente;
+  }
+
+  const getReq = () => new NextRequest(`http://localhost/api/v1/leads/${LEAD_ID}`);
+
+  it("aplica a mesma projeção das rotas irmãs: a prova interna não sai na resposta", async () => {
+    sessaoOk();
+    const corrente = clienteQueDevolve({
+      data: {
+        id: LEAD_ID,
+        updated_at: "2026-11-10T12:00:00.000Z",
+        source_metadata: { campanha: "ads", [CHAVE_PROVA_NASCIMENTO_META]: { interno: true } },
+      },
+      error: null,
+    });
+    const { GET } = await import("./route");
+    const res = await GET(getReq(), params);
+    const texto = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(texto).not.toContain(CHAVE_PROVA_NASCIMENTO_META);
+    const corpo = JSON.parse(texto) as { data: { updated_at: string; source_metadata: unknown } };
+    // O que é comercial fica, e a régua do OCC (o motivo da rota) também.
+    expect(corpo.data.source_metadata).toEqual({ campanha: "ads" });
+    expect(corpo.data.updated_at).toBe("2026-11-10T12:00:00.000Z");
+    expect(corrente.eq).toHaveBeenCalledWith("organization_id", ORG_ID);
+  });
+
+  it("falha do banco → 500 com mensagem genérica, sem o texto do erro", async () => {
+    sessaoOk();
+    clienteQueDevolve({ data: null, error: { message: "relation crm_leads segredo-do-banco" } });
+    const { GET } = await import("./route");
+    const res = await GET(getReq(), params);
+    const texto = await res.text();
+
+    expect(res.status).toBe(500);
+    expect(texto).not.toContain("segredo-do-banco");
+    expect((JSON.parse(texto) as { error: { code: string } }).error.code).toBe("internal_error");
+  });
+
+  it("negócio que não existe (ou é de outra organização) → 404", async () => {
+    sessaoOk();
+    clienteQueDevolve({ data: null, error: null });
+    const { GET } = await import("./route");
+    const res = await GET(getReq(), params);
+
+    expect(res.status).toBe(404);
   });
 });
