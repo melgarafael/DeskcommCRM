@@ -43,11 +43,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const supabase = createAdminClient();
 
-<<<<<<< HEAD
-  const { data: pointer } = await supabase
-=======
-  const { data: pointer, error: pointerErr } = await admin
->>>>>>> mc-r-s6
+  const { data: pointer, error: pointerErr } = await supabase
     .from("org_memory_pointers")
     .select("version_id")
     .eq("organization_id", authz.organizationId)
@@ -67,11 +63,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   } | null = null;
 
   if (pointer?.version_id) {
-<<<<<<< HEAD
-    const { data: ver } = await supabase
-=======
-    const { data: ver, error: verErr } = await admin
->>>>>>> mc-r-s6
+    const { data: ver, error: verErr } = await supabase
       .from("org_memory_versions")
       .select("id, version_number, content, created_at")
       .eq("id", pointer.version_id as string)
