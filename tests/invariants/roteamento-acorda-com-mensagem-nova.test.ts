@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Pool } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runRoutingWorker } from "@/lib/routing/worker";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -376,6 +376,139 @@ describe("o que NÃO acorda o roteamento", () => {
     await clienteEscreve(conversation, contact);
 
     expect(await vivo(conversation)).toHaveLength(1);
+  });
+});
+
+/** O modo de distribuição da ORGANIZAÇÃO (`settings.routing.mode`). */
+const modoDaOrganizacao = (mode: string) =>
+  query(
+    `update organizations set settings=jsonb_set(coalesce(settings,'{}'::jsonb),'{routing,mode}',to_jsonb($2::text)) where id=$1`,
+    [ORG, mode],
+  );
+
+/**
+ * O DEFEITO QUE A REVISÃO DO #4193 APONTOU. A primeira versão do gatilho só
+ * consultava `channel_routing_policies`: numa organização em modo manual (o
+ * padrão de fábrica) e sem regra por número, cada mensagem recebida em conversa
+ * sem dono gravava um evento que o worker fechava com `manual_mode`, sem
+ * entregar. A régua certa é a do worker: destino padrão do número, ou modo
+ * efetivo (número, senão organização) em rodízio ou menor carga.
+ */
+describe("o gatilho só pede onde a distribuição automática vale", () => {
+  afterEach(() => modoDaOrganizacao("round_robin"));
+
+  it("⭐ organização em modo manual, sem regra por número: ZERO evento, por mais que o cliente escreva", async () => {
+    await modoDaOrganizacao("manual");
+    const { id: conversation, contact } = await conversa();
+
+    for (let i = 0; i < 3; i += 1) {
+      await clienteEscreve(conversation, contact);
+    }
+
+    expect(await vivo(conversation)).toHaveLength(0);
+    expect((await pedidos(conversation)).map((p) => p.status)).toEqual(["done"]); // só o do INSERT
+  });
+
+  it("organização sem `settings.routing` nenhum é manual: zero evento", async () => {
+    await query("update organizations set settings=coalesce(settings,'{}'::jsonb) - 'routing' where id=$1", [ORG]);
+    try {
+      const { id: conversation, contact } = await conversa();
+      await clienteEscreve(conversation, contact);
+      expect(await vivo(conversation)).toHaveLength(0);
+    } finally {
+      await query(
+        `update organizations set settings=jsonb_set(coalesce(settings,'{}'::jsonb),'{routing}',
+           '{"mode":"round_robin","max_retries":5,"backoff_seconds":60}'::jsonb) where id=$1`,
+        [ORG],
+      );
+    }
+  });
+
+  it.each(["round_robin", "load"])("⭐ organização em modo automático (%s): UM evento", async (mode) => {
+    await modoDaOrganizacao(mode);
+    const { id: conversation, contact } = await conversa();
+
+    await clienteEscreve(conversation, contact);
+
+    expect(await vivo(conversation)).toHaveLength(1);
+  });
+
+  it("⭐ duas mensagens seguidas com o pedido pendente: UM evento só, e nenhuma linha nova", async () => {
+    const { id: conversation, contact } = await conversa();
+
+    await clienteEscreve(conversation, contact);
+    const [primeiro] = await vivo(conversation);
+    await clienteEscreve(conversation, contact);
+
+    const depois = await vivo(conversation);
+    expect(depois.map((p) => p.id)).toEqual([primeiro?.id]);
+    expect(await pedidos(conversation)).toHaveLength(2); // o consumido do INSERT + o vivo
+  });
+
+  it("organização manual, mas o NÚMERO em rodízio: a regra do número vence e o pedido nasce", async () => {
+    await modoDaOrganizacao("manual");
+    await query(
+      "insert into channel_routing_policies(organization_id,channel_session_id,distribution_mode) values($1,$2,'round_robin')",
+      [ORG, SESSAO],
+    );
+    const { id: conversation, contact } = await conversa();
+
+    await clienteEscreve(conversation, contact);
+
+    expect(await vivo(conversation)).toHaveLength(1);
+  });
+
+  it("organização manual, número com regra SEM modo próprio (só responsáveis): herda o manual, zero evento", async () => {
+    await modoDaOrganizacao("manual");
+    await query("insert into channel_routing_policies(organization_id,channel_session_id) values($1,$2)", [
+      ORG,
+      SESSAO,
+    ]);
+    const { id: conversation, contact } = await conversa();
+
+    await clienteEscreve(conversation, contact);
+
+    expect(await vivo(conversation)).toHaveLength(0);
+  });
+});
+
+/**
+ * O CASO QUE MOTIVOU A ENTRADA DESTE GATILHO (doc 309, A1). Desde a 9332
+ * "Liberar" não pede rodízio: a conversa liberada fica sem dono e sem pedido.
+ * Sem este gatilho, o cliente que escrevesse de novo esperaria a equipe mudar de
+ * disponibilidade. Aqui a porta é a de produção: `fn_conversation_assign` com
+ * destino nulo e `reason='release'`, a mesma da rota do botão.
+ */
+describe("conversa LIBERADA volta à distribuição quando o cliente escreve de novo", () => {
+  it("⭐ liberar não cria pedido; a mensagem nova do cliente cria UM", async () => {
+    const { id: conversation, contact } = await conversa({ status: "claimed", dono: DONO });
+    expect(await pedidos(conversation)).toHaveLength(0);
+
+    await query("select public.fn_conversation_assign($1,$2,null,'release')", [ORG, conversation]);
+    const liberada = await query("select assigned_to_user_id, status from conversations where id=$1", [conversation]);
+    expect(liberada.rows[0]).toMatchObject({ assigned_to_user_id: null, status: "open" });
+    // O contrato do #4404: liberar, sozinho, não devolve a conversa ao rodízio.
+    expect(await pedidos(conversation)).toHaveLength(0);
+
+    await clienteEscreve(conversation, contact);
+    await clienteEscreve(conversation, contact);
+
+    expect(await vivo(conversation)).toHaveLength(1);
+    expect(await pedidos(conversation)).toHaveLength(1);
+  });
+
+  it("liberada em organização de modo manual continua parada: ali ninguém pediu distribuição", async () => {
+    await modoDaOrganizacao("manual");
+    try {
+      const { id: conversation, contact } = await conversa({ status: "claimed", dono: DONO });
+      await query("select public.fn_conversation_assign($1,$2,null,'release')", [ORG, conversation]);
+
+      await clienteEscreve(conversation, contact);
+
+      expect(await pedidos(conversation)).toHaveLength(0);
+    } finally {
+      await modoDaOrganizacao("round_robin");
+    }
   });
 });
 

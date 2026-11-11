@@ -15,3 +15,9 @@ distribuição na hora. Cinco mensagens seguidas continuam sendo **um** pedido s
 a conversa com dono, encerrada, de grupo, ou em número cuja distribuição está
 desligada não pede nada. Nada muda no número de tentativas nem no intervalo entre
 elas: a mudança é ter por onde acordar a conversa.
+
+Vale também para a conversa que alguém liberou: ela continua sem voltar sozinha
+para o rodízio na hora do "Liberar", mas agora volta para a distribuição quando o
+cliente escreve de novo. Onde a distribuição é manual (o padrão), nada muda.
+
+Crédito: @webtecnica.

@@ -1,6 +1,6 @@
--- manifest: mensagem nova do cliente em conversa aberta e SEM DONO passa a pedir roteamento (conversation.routing_requested) — o gatilho existente só vê o INSERT em conversations, então essa conversa só voltava à distribuição pelo laço de retentativa do worker (#3916)
+-- manifest: **Mensagem nova do cliente em conversa aberta e SEM DONO passa a pedir roteamento (#3916; #4113 de @webtecnica, decisão do dono no doc 309, A1).** O gatilho existente só vê o INSERT em `conversations`, então essa conversa só voltava à distribuição pelo laço de retentativa do worker — e, depois da 9332 ("Liberar" não pede rodízio), a conversa LIBERADA não voltava nem quando o cliente escrevia de novo. Gatilho novo `trg_routing_nova_mensagem_do_cliente` (`after insert on messages`, só entrada do cliente, sem reação nem histórico importado) chama `fn_request_channel_routing`, a porta única do pedido, que deduplica pelo índice único parcial de pedido ativo: várias mensagens = um pedido. Ajuste da triagem sobre o #4113: o gatilho só pede quando a distribuição automática VALE para a conversa (destino padrão do número, ou modo efetivo rodízio/menor carga, com o modo da ORGANIZAÇÃO valendo quando o número não tem modo próprio). Antes ele só consultava a regra do número, e numa organização em modo manual sem regra por número gravava um evento por mensagem, que o worker fechava sem entregar. O teto de tentativas (#3916) NÃO entra aqui. Gate: `tests/invariants/roteamento-acorda-com-mensagem-nova.test.ts`.
 --
--- 9225 — A MENSAGEM NOVA DO CLIENTE ACORDA A CONVERSA SEM DONO (#3916).
+-- 9335 — A MENSAGEM NOVA DO CLIENTE ACORDA A CONVERSA SEM DONO (#3916).
 --
 -- ═══ O caminho que faltava ═══
 --
@@ -28,8 +28,8 @@
 -- o que já existe em vez de duplicar a régua:
 --
 --   * `fn_request_channel_routing` continua sendo a única porta que cria o
---     evento: este gatilho não inventa um segundo formato de payload nem uma
---     segunda noção de "elegível para a fila".
+--     evento, e o gatilho a CHAMA (a versão do #4113 repetia o INSERT dela):
+--     não há segundo formato de payload nem segunda noção de "elegível".
 --   * o índice único parcial `event_log_routing_active_unique`
 --     (`(organization_id, entity_id)` para `conversation.routing_requested` em
 --     `pending`/`processing`) é o que impede a enxurrada: cinco mensagens
@@ -56,16 +56,18 @@
 --     uma conversa de meses atrás não é fala nova e não pode acordar a fila;
 --   * saída da equipe (`direction='outbound'`, inclusive a resposta dada pelo
 --     celular, `sent_via='external_device'`) — o gatilho pergunta pelo INBOUND;
---   * número cuja distribuição está DESLIGADA (`channel_routing_policies
---     .distribution_mode = 'manual'` e sem `default_assignee_user_id`): o pedido
---     não nasce — o worker o consumiria com `manual_mode` sem entregar ninguém.
---     Número manual COM destino padrão continua emitindo: ali há para quem
---     entregar, e o worker atribui direto.
+--   * conversa em que a distribuição automática NÃO vale: sem destino padrão no
+--     número e com modo efetivo fora de rodízio/menor carga. O modo efetivo é o
+--     do número; se o número não tem modo próprio, o da organização
+--     (`organizations.settings.routing.mode`, padrão manual). O pedido não nasce
+--     — o worker o consumiria com `manual_mode` sem entregar ninguém, um evento
+--     por mensagem. Número manual COM destino padrão continua emitindo: ali há
+--     para quem entregar, e o worker atribui direto.
 --
 -- ═══ Custo por mensagem recebida ═══
 --
--- Uma instrução SQL, nenhuma chamada de rede: a conversa é lida pelo índice da
--- chave primária e o evento é escrito (ou reusado) na mesma passada. Não é uma
+-- Até três leituras por chave e nenhuma chamada de rede: a conversa, a regra
+-- do número e, só quando o número não tem modo próprio, a organização. Não é uma
 -- leitura nova "por mensagem" no sentido de egress: o worker continua lendo o
 -- MESMO evento pendente, e a mensagem que chega em conversa com dono (o caso
 -- comum) não escreve nada. A condição de dono/estado é avaliada na própria
@@ -78,28 +80,41 @@
 
 create or replace function public.fn_pedir_roteamento_na_mensagem()
 returns trigger language plpgsql security definer set search_path=public as $$
+declare
+  c record;
+  v_modo text;
+  v_destino uuid;
 begin
   -- SECURITY DEFINER é o que permite o INSERT em `event_log` acontecer também
   -- quando quem grava a mensagem é um membro da organização pela API: um
   -- gatilho com os privilégios do invocador faria o INSERT da mensagem falhar
   -- na RLS do barramento, e a mensagem se perderia por causa do aviso.
-  insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload)
-  select c.organization_id,'conversation.routing_requested','conversation',c.id,
-    jsonb_build_object('organization_id',c.organization_id,'conversation_id',c.id,
-      'channel_session_id',c.channel_session_id)
-    from public.conversations c
-   where c.organization_id=new.organization_id
-     and c.id=new.conversation_id
-     and c.assigned_to_user_id is null
-     and c.is_group=false
-     and c.status in('open','pending','claimed','ai_handling')
-     and not exists (select 1 from public.channel_routing_policies p
-                      where p.organization_id=c.organization_id
-                        and p.channel_session_id=c.channel_session_id
-                        and p.distribution_mode='manual'
-                        and p.default_assignee_user_id is null)
-  on conflict(organization_id,entity_id) where event_type='conversation.routing_requested' and status in('pending','processing')
-  do update set next_attempt_at=case when event_log.status='pending' then now() else event_log.next_attempt_at end;
+  select organization_id,id,channel_session_id into c from public.conversations
+   where organization_id=new.organization_id and id=new.conversation_id
+     and assigned_to_user_id is null and is_group=false
+     and status in('open','pending','claimed','ai_handling');
+  if not found then return null; end if;
+
+  -- A DISTRIBUIÇÃO AUTOMÁTICA VALE PARA ESTA CONVERSA? A mesma régua do worker
+  -- (`resolverRoteamentoPorNumero`): o destino padrão do número entrega em
+  -- qualquer modo; sem ele, vale o modo do número e, se o número não tem modo
+  -- próprio, o da ORGANIZAÇÃO — cujo padrão é manual. Fora do rodízio e da
+  -- menor carga o worker fecharia o pedido sem entregar, então ele não nasce.
+  -- Condição nova de "não pedir" (por exemplo, uma opção do número) entra AQUI.
+  select p.distribution_mode,p.default_assignee_user_id into v_modo,v_destino
+    from public.channel_routing_policies p
+   where p.organization_id=c.organization_id and p.channel_session_id=c.channel_session_id;
+  if v_destino is null then
+    if v_modo is null then
+      select o.settings->'routing'->>'mode' into v_modo from public.organizations o where o.id=c.organization_id;
+    end if;
+    if coalesce(v_modo,'manual') not in('round_robin','load') then return null; end if;
+  end if;
+
+  -- A porta única do pedido. É ela que deduplica: com pedido `pending` ou
+  -- `processing` da conversa, o índice único parcial não deixa nascer outro —
+  -- a mensagem só traz `next_attempt_at` do pendente para agora.
+  perform public.fn_request_channel_routing(c.organization_id,c.id);
   return null;
 end;
 $$;

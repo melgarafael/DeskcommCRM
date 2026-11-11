@@ -11,8 +11,7 @@ ainda ocupava a vez de um cliente no rodízio até ser recusada.
 
 Agora liberar tira a conversa do atendente e ela fica na fila, sem responsável,
 visível para todos. Ela volta a ser distribuída quando acontece um fato novo:
-mudança de disponibilidade ou capacidade da equipe, regra do número, ou
-reabertura da conversa. Mensagem nova do cliente ainda não devolve a conversa
-liberada à distribuição: ela aparece no Inbox para quem quiser assumir.
+mensagem do cliente, mudança de disponibilidade ou capacidade da equipe, regra
+do número, ou reabertura da conversa.
 
 Crédito: @webtecnica.
