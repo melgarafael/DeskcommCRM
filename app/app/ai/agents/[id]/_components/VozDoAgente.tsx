@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
@@ -56,19 +56,35 @@ export function VozDoAgente({ agentId, inicial, disabled }: Props) {
   const [vozes, setVozes] = useState<string[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  // Atualização que chega depois do desmonte não é inofensiva: o React agenda a
+  // atualização e lê `window` no agendamento (resolveUpdatePriority). Com a tela
+  // já fora e o ambiente do teste desmontado, isso vira `window is not defined` —
+  // foi o vermelho do verify-parte (2) do #4447 e do verify-parte (3) do #4439,
+  // com a pilha em `setCarregando(false)`. A guarda é do componente, não do
+  // teste: quem navega antes de /api/v1/ai/voz responder faz o mesmo caminho em
+  // produção.
+  const vivo = useRef(true);
+
+  useEffect(() => {
+    vivo.current = true;
+    return () => {
+      vivo.current = false;
+    };
+  }, []);
 
   const carregar = useCallback(async () => {
     try {
       const res = await apiClient.get<{
         data: { voiceId: string | null; vozesDisponiveis: string[] };
       }>("/api/v1/ai/voz");
+      if (!vivo.current) return;
       setVozDaOrg(res.data.voiceId ?? "");
       setVozes(res.data.vozesDisponiveis ?? []);
     } catch (err) {
       // Resposta incompleta não derruba o resto do editor: sem lista, cartão fica fora.
-      showApiError(err);
+      if (vivo.current) showApiError(err);
     } finally {
-      setCarregando(false);
+      if (vivo.current) setCarregando(false);
     }
   }, []);
 
@@ -85,16 +101,18 @@ export function VozDoAgente({ agentId, inicial, disabled }: Props) {
       await apiClient.patch(`/api/v1/ai/agents/${agentId}`, {
         config: { voz_voice_id: nova === "" ? null : nova },
       });
+      if (!vivo.current) return;
       toast.success(
         nova === ""
           ? t("Voz deste agente: passa a usar a voz da organização.")
           : `${t("Voz deste agente salva:")} ${nova}`,
       );
     } catch (err) {
+      if (!vivo.current) return;
       setVozDoAgente(anterior);
       showApiError(err);
     } finally {
-      setSalvando(false);
+      if (vivo.current) setSalvando(false);
     }
   }
 
