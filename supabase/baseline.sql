@@ -10437,6 +10437,13 @@ alter table public.agent_inbox_items
     -- razões de sempre (#159, bloco único por constraint) e o item nasce SEM
     -- referência: o destino é a tela de Credenciais, para quem administra.
     'assinatura_desconectada',
+    -- (migration 9327, issue #3635) A revisão do modelo no canal OFICIAL DIRETO
+    -- só virava linha em `meta_templates`: quem conecta direto pela Cloud API
+    -- descobria a reprovação no disparo que não saiu. Kind próprio, e não o
+    -- `channel_template_review` do parceiro, porque o destino e o rótulo daquele
+    -- apontam para a aba do parceiro. Nasce com `ref_kind='channel_session'`,
+    -- um aberto por conexão. Entra NESTA lista (#159, bloco único).
+    'channel_template_review_direct',
     'other'
   ));
 

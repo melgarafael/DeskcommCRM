@@ -31,6 +31,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { appDaMeta } from "@/lib/channels/meta/app";
+import { avisarStatusDoModelo, desfechoDoAviso } from "@/lib/channels/meta/aviso-do-modelo";
 import { lerEnvelopeMeta } from "@/lib/channels/meta/envelope";
 import {
   MOTIVO_DO_CONTRATO_VIOLADO,
@@ -310,13 +311,37 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     }
 
     if (e.kind === "template_status") {
-      await admin
+      // A revisão da plataforma decide DEPOIS da criação: sem este update o
+      // espelho ficava em PENDING até alguém clicar em Sincronizar.
+      const { error: erroDoEspelho } = await admin
         .from("meta_templates")
         .update({ status: e.event, rejected_reason: e.reason, updated_at: now })
         .eq("organization_id", session.organizationId)
         .eq("waba_id", e.wabaId)
         .eq("name", e.templateName)
         .eq("language", e.templateLanguage);
+
+      // ── O empurrão para olhar (#3635, fatia 3) ─────────────────────────
+      //
+      // O espelho atualizado é o que a tela mostra; ninguém abre a tela de
+      // modelos por acaso. O aviso é o que faz o operador saber que a Meta
+      // mexeu no modelo ANTES de a campanha falhar.
+      //
+      // DEPOIS do update, nunca antes: aviso que chega com o espelho velho
+      // contradiz a tela que ele manda abrir. E `avisarStatusDoModelo` não
+      // lança — falha dela não pode virar 5xx (a Meta re-entregaria o mesmo
+      // evento para sempre) nem desfazer o espelho já gravado.
+      let desfecho = "modelo_nao_atualizado";
+      if (!erroDoEspelho) {
+        desfecho = desfechoDoAviso(
+          await avisarStatusDoModelo(
+            admin,
+            { organizationId: session.organizationId, channelSessionId: session.id },
+            e,
+          ),
+        );
+      }
+      desfechos.push(desfecho);
     } else if (e.status === "failed") {
       // A recusa da plataforma chega DEPOIS do 200 (131047 fora da janela,
       // 131026 número não registrado, 132015 template pausado). O evento inteiro

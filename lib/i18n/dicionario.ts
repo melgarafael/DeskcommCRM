@@ -1926,6 +1926,11 @@ export const DICIONARIO: Traducoes = {
   "Revisar conexões": { es: "Revisar conexiones" },
   "Revisar provedores de IA": { es: "Revisar proveedores de IA" },
   "Revisar modelos do canal": { es: "Revisar plantillas del canal" },
+  // (migration 9327, #3635) O aviso do canal oficial direto tem kind próprio,
+  // então tem destino e rótulo próprios — e por isso precisa da própria linha.
+  "Revisar modelos do canal oficial": { es: "Revisar plantillas del canal oficial" },
+  "Um modelo do WhatsApp oficial mudou de situação na revisão": { es: "Una plantilla del WhatsApp oficial cambió de situación en la revisión" },
+  "Abra Conexões › Modelos do canal oficial: o modelo reprovado precisa de correção no texto antes de voltar para revisão.": { es: "Abre Conexiones › Plantillas del canal oficial: la plantilla rechazada necesita corrección en el texto antes de volver a revisión." },
   "Abrir uma conversa afetada": { es: "Abrir una conversación afectada" },
   "Abrir Agenda": { es: "Abrir Agenda" },
   "Este contato tem 1 compromisso na Agenda. Cancele ou apague o compromisso antes de excluir.": { es: "Este contacto tiene 1 cita en la Agenda. Cancela o elimina la cita antes de eliminar el contacto." },
