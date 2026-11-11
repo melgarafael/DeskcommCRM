@@ -229,14 +229,18 @@ export const STATUS_ENCERRADOS: ReadonlySet<string> = new Set(STATUS_ENCERRADOS_
  * NECESSÁRIA de `aguardando`/`automatico`, nada além.
  *
  * ─── Quando ele vale ───────────────────────────────────────────────────────
- * Só quando o comando pedido é subconjunto de `{aguardando, automatico}`. Comando
+ * Só quando o comando pedido é subconjunto de `{aguardando, automatico, ninguem}`
+ * — `ninguem` (#4012) é o `automatico` rebaixado pelo wrapper quando a
+ * organização não tem agente no ar, então herda a mesma condição necessária; sem
+ * ele no conjunto a Fila, que pede `aguardando` e `ninguem`, perderia o
+ * pré-filtro. Comando
  * vazio (ou qualquer valor fora do conjunto, ou mistura) devolve `null`: a
  * consulta tem de ser, byte a byte, a de antes. A lista de status é a de
  * `STATUS_ENCERRADOS_LISTA` — a MESMA da função SQL, com `resolved`; copiá-la de
  * `CONVERSATION_TERMINAL_STATUSES` daria um filtro frouxo (aquela constante
  * responde outra pergunta e não tem `resolved`).
  */
-export const COMANDOS_SEM_DONO_E_ABERTOS = ["aguardando", "automatico"] as const;
+export const COMANDOS_SEM_DONO_E_ABERTOS = ["aguardando", "automatico", "ninguem"] as const;
 
 export interface PreFiltroDoComando {
   /** `.is("assigned_to_user_id", null)` — sem dono é condição da função. */
@@ -335,16 +339,21 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
       : // Sem dono: quem manda depende do automático estar de pé. Calado e sem
         // dono é a conversa que o automático escalou e ninguém pegou — a fila.
         // Grupo entra junto: o automático nunca o atende, é sempre de humano.
-        // `automaticoDaConversa === false` entra AQUI, e não no ramo do
-        // `ninguem`: não há agente publicado no número (ou o contato está fora
-        // da lista de teste do canal), mas a conversa continua esperando uma
-        // PESSOA — que é a fila. `ninguem` diria "a org não tem robô", que é
-        // outro fato e esconde a conversa da Fila.
-        grupo || silencio.vigente || travado || bloqueado || fatos.automaticoDaConversa === false
+        grupo || silencio.vigente || travado || bloqueado
         ? { quem: "aguardando" }
-        : fatos.automaticoDaOrg === false
+        : // As duas perguntas da #4012, NA MESMA ORDEM do wrapper do banco
+          // (`comando_da_conversa`, migration 9331): primeiro a organização,
+          // depois o número. Organização sem agente no ar é `ninguem` — não há
+          // robô nenhum nesta instalação.
+          fatos.automaticoDaOrg === false
           ? { quem: "ninguem" }
-          : { quem: "automatico" };
+          : // Há agente na organização, mas não publicado NESTE número (ou o
+            // contato está fora da lista de teste do canal): a conversa espera
+            // uma PESSOA, que é a fila. Os dois valores estão em
+            // `comandosDaFila`, então a Fila mostra a conversa nos dois casos.
+            fatos.automaticoDaConversa === false
+            ? { quem: "aguardando" }
+            : { quem: "automatico" };
 
   /**
    * Encerrada COM dono continua nomeando quem atendeu.
@@ -473,9 +482,9 @@ export function comandosDaFila(automaticoDaOrg?: boolean): ComandoDoBanco[] {
   // `ninguem` está SEMPRE: desde a #4012 o banco é quem diz que a conversa sem dono
   // não tem robô por trás (a organização não tem agente no ar), e essa conversa
   // espera uma pessoa. Pedir o valor independe do fato org-wide que a TELA conhece,
-  // que pode estar carregando ou ter falhado. O banco responde pela ORGANIZAÇÃO,
-  // não pelo número: a conversa de um número sem agente, numa organização que tem
-  // agente em outro, ainda sai `automatico` — é a parte 2 da #4012, aberta.
+  // que pode estar carregando ou ter falhado. A conversa de um número sem agente,
+  // numa organização que tem agente em outro, sai `aguardando` (a segunda pergunta
+  // do mesmo wrapper, `fn_automatico_da_conversa`, migration 9331).
   //
   // `automatico` continua aqui quando o fato diz que NÃO há automático, e agora por
   // um motivo com prazo: entre o deploy deste código e a migration 9330 aplicada, o

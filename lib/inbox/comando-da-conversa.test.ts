@@ -183,6 +183,17 @@ describe("o que a tela NÃO pode afirmar", () => {
     expect(r.motivo).toBeNull();
   });
 
+  it("organização SEM agente e número sem agente: 'ninguem' — a mesma ordem do wrapper do banco (#4012)", () => {
+    // Organização sem agente implica número sem agente, então os dois fatos
+    // chegam `false` juntos. O banco pergunta primeiro pela organização
+    // (`fn_org_tem_automatico`) e responde `ninguem`; a tela, que recalcula o
+    // comando com os dois fatos, tem de dizer o mesmo. Os dois valores estão em
+    // `comandosDaFila`: a conversa aparece na Fila de qualquer jeito.
+    const r = comandoDaConversa(fatos({ automaticoDaOrg: false, automaticoDaConversa: false }), AGORA);
+    expect(r.comando).toEqual({ quem: "ninguem" });
+    expect(r.automaticoAtivo).toBe(false);
+  });
+
   it("sem agente no número e silêncio vigente: continua fila, e o motivo é o silêncio", () => {
     const r = comandoDaConversa(fatos({ automaticoDaConversa: false, bot_silenced_until: "infinity" }), AGORA);
     expect(r.comando).toEqual({ quem: "aguardando" });

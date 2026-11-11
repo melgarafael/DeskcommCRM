@@ -35,7 +35,7 @@ function isInQueue(c: { comando_da_conversa?: string | null }): boolean {
   // página? Por isso é liberal de propósito — pergunta "não tem dono e não
   // acabou", que cobre as três respostas que a Fila aceita em `comandosDaFila`:
   // `aguardando`, `ninguem` (desde a #4012 o banco diz isso quando a organização
-  // não tem agente no ar — ainda não por número, parte 2 da issue) e `automatico` (a janela
+  // não tem agente no ar) e `automatico` (a janela
   // entre o deploy e a migration, em que o banco ainda devolve `automatico`).
   // Errar para o lado do sim custa uma consulta; errar para o não some com a
   // posição que a IA devolve ao cliente.
