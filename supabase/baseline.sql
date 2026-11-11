@@ -75704,81 +75704,81 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
--- ---- Mensagens agendadas (9109): espelho idempotente da migration 9109 ----
--- 9109 — `mensagens_agendadas` guarda a série (texto, contato, número, recorrência e
--- ocorrência corrente em `scheduled_at`). `mensagens_agendadas_envios` guarda o
--- desfecho de cada ocorrência, para o relatório e para conferir o que saiu de fato.
--- O cron `api/v1/cron/mensagens-agendadas` envia; `claimed_until` impede que duas
--- execuções enviem a mesma ocorrência.
---
--- Escrita só pelo servidor (service role). Os papéis do PostgREST leem apenas a
--- própria organização. Apêndice idêntico no fim de `supabase/baseline.sql`.
-
-create table if not exists mensagens_agendadas (
+-- ---- mensagens agendadas, envio único (migration 9336) ----
+-- #3118, primeira parte (PR #4131, contribuição de @DIOGRO83). O porquê está no
+-- cabeçalho da 9336. Entra ANTES da VARREDURA anon porque cria a função do
+-- gatilho de LGPD. Idempotente: `if not exists`, `create or replace`, `drop ... if exists`.
+create table if not exists public.mensagens_agendadas (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations(id) on delete cascade,
-  contact_id uuid not null references contacts(id) on delete cascade,
-  channel_session_id uuid not null references channel_sessions(id) on delete cascade,
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete cascade,
   title text,
   body text not null check (length(btrim(body)) > 0),
-  recorrencia text not null default 'nenhuma' check (
-    recorrencia in ('nenhuma', 'diaria', 'semanal', 'quinzenal', 'mensal', 'trimestral', 'semestral', 'anual', 'a_cada_n_dias')
-  ),
-  intervalo_dias int check (intervalo_dias is null or (intervalo_dias between 1 and 365)),
-  check (recorrencia <> 'a_cada_n_dias' or intervalo_dias is not null),
-  inicio_local text not null,
-  termino_local text,
-  tz text not null default 'UTC',
   scheduled_at timestamptz not null,
-  status text not null default 'agendada' check (status in ('agendada', 'concluida', 'cancelada')),
-  -- "esperar": número fora do ar mantém a ocorrência. "cancelar": pula a ocorrência e segue a série.
-  se_desconectado text not null default 'esperar' check (se_desconectado in ('esperar', 'cancelar')),
+  status text not null default 'agendada'
+    check (status in ('agendada', 'encaminhada', 'falhou', 'cancelada')),
+  se_desconectado text not null default 'esperar'
+    check (se_desconectado in ('esperar', 'cancelar')),
+  motivo text,
+  message_id uuid references public.messages(id) on delete set null,
   claimed_until timestamptz,
-  ultimo_envio_em timestamptz,
-  ultimo_erro text,
   created_by_user_id uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_mensagens_agendadas_org_contato
-  on mensagens_agendadas (organization_id, contact_id);
+  on public.mensagens_agendadas (organization_id, contact_id, scheduled_at desc);
 create index if not exists idx_mensagens_agendadas_devidas
-  on mensagens_agendadas (scheduled_at) where status = 'agendada';
+  on public.mensagens_agendadas (scheduled_at) where status = 'agendada';
 
-create table if not exists mensagens_agendadas_envios (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations(id) on delete cascade,
-  agendamento_id uuid not null references mensagens_agendadas(id) on delete cascade,
-  prevista_para timestamptz not null,
-  desfecho text not null check (desfecho in ('enviada', 'falhou', 'pulada_desconectado')),
-  message_id uuid,
-  erro text,
-  created_at timestamptz not null default now()
-);
+alter table public.mensagens_agendadas enable row level security;
 
-create index if not exists idx_mensagens_agendadas_envios_agendamento
-  on mensagens_agendadas_envios (agendamento_id, created_at desc);
+drop policy if exists mensagens_agendadas_select on public.mensagens_agendadas;
+create policy mensagens_agendadas_select on public.mensagens_agendadas
+  for select to authenticated using (
+    organization_id in (select public.fn_user_org_ids())
+    and exists (
+      select 1 from public.conversations c
+       where c.id = mensagens_agendadas.conversation_id
+         and c.organization_id = mensagens_agendadas.organization_id
+    )
+  );
 
-alter table mensagens_agendadas enable row level security;
-alter table mensagens_agendadas_envios enable row level security;
+revoke all on public.mensagens_agendadas from public, anon, authenticated;
+grant select on public.mensagens_agendadas to authenticated;
+grant select, insert, update, delete on public.mensagens_agendadas to service_role;
 
-drop policy if exists "mensagens_agendadas_select" on mensagens_agendadas;
-create policy "mensagens_agendadas_select" on mensagens_agendadas
-  for select using (organization_id in (select fn_user_org_ids()));
+create or replace function public.fn_mensagens_agendadas_contato_anonimizado()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+begin
+  update public.mensagens_agendadas
+     set body = '[redigido]',
+         title = null,
+         status = case when status = 'agendada' then 'cancelada' else status end,
+         motivo = case when status = 'agendada' then 'contato_anonimizado' else motivo end,
+         claimed_until = null,
+         updated_at = now()
+   where organization_id = new.organization_id
+     and contact_id = new.id;
+  return new;
+end$$;
 
-drop policy if exists "mensagens_agendadas_envios_select" on mensagens_agendadas_envios;
-create policy "mensagens_agendadas_envios_select" on mensagens_agendadas_envios
-  for select using (organization_id in (select fn_user_org_ids()));
+revoke all on function public.fn_mensagens_agendadas_contato_anonimizado() from public, anon, authenticated;
 
-revoke all on mensagens_agendadas from public, anon;
-revoke all on mensagens_agendadas_envios from public, anon;
-revoke insert, update, delete on mensagens_agendadas from authenticated;
-revoke insert, update, delete on mensagens_agendadas_envios from authenticated;
-grant select on mensagens_agendadas to authenticated;
-grant select on mensagens_agendadas_envios to authenticated;
-grant select, insert, update, delete on mensagens_agendadas to service_role;
-grant select, insert, update, delete on mensagens_agendadas_envios to service_role;
+drop trigger if exists trg_contacts_anonimizado_mensagens_agendadas on public.contacts;
+create trigger trg_contacts_anonimizado_mensagens_agendadas
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
+  execute function public.fn_mensagens_agendadas_contato_anonimizado();
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

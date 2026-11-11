@@ -1,35 +1,23 @@
 import { z } from "zod";
-import { RECORRENCIAS, motivoRegraInvalida, type RegraDeRecorrencia } from "@/lib/agendamento-mensagem/recorrencia";
 
-const dataLocal = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "data_local_invalida");
-
-/** Criação de uma mensagem de texto agendada para um contato. */
-export const criarAgendamentoSchema = z
+/**
+ * Edição de uma mensagem de texto agendada: o texto, o horário e o que fazer se
+ * o número estiver fora do ar. Contato e número NÃO vêm do corpo: saem da
+ * conversa, lida pela sessão (primeira parte da #3118 — envio único).
+ */
+export const editarAgendamentoSchema = z
   .object({
-    contact_id: z.uuid(),
-    channel_session_id: z.uuid(),
     title: z.string().trim().max(120).optional().nullable(),
     body: z.string().trim().min(1, "mensagem_vazia").max(4096),
-    recorrencia: z.enum(RECORRENCIAS),
-    intervalo_dias: z.number().int().min(1).max(365).optional().nullable(),
-    inicio_local: dataLocal,
-    termino_local: dataLocal.optional().nullable(),
-    tz: z.string().min(1).max(64),
+    scheduled_at: z.iso.datetime(),
     se_desconectado: z.enum(["esperar", "cancelar"]).default("esperar"),
   })
   .strict();
 
-export type CriarAgendamento = z.infer<typeof criarAgendamentoSchema>;
+/** Criação: a edição mais a conversa onde o atendente agendou. */
+export const criarAgendamentoSchema = editarAgendamentoSchema.extend({ conversation_id: z.uuid() }).strict();
 
-/** Regra de recorrência a partir do corpo validado. */
-export function regraDoCorpo(v: Pick<CriarAgendamento, "recorrencia" | "intervalo_dias" | "inicio_local" | "termino_local" | "tz">): RegraDeRecorrencia {
-  return {
-    recorrencia: v.recorrencia,
-    intervalo_dias: v.intervalo_dias ?? null,
-    inicio: v.inicio_local,
-    termino: v.termino_local ?? null,
-    tz: v.tz,
-  };
+/** O horário precisa estar no futuro: agendar para o passado seria enviar agora sem ninguém pedir. */
+export function horarioNoFuturo(scheduledAt: string, agora: Date = new Date()): boolean {
+  return new Date(scheduledAt).getTime() > agora.getTime();
 }
-
-export { motivoRegraInvalida };

@@ -1,16 +1,16 @@
 /**
- * O CRON DAS MENSAGENS AGENDADAS — envia as ocorrências vencidas.
+ * O CRON DAS MENSAGENS AGENDADAS — encaminha ao envio as que venceram.
  *
- * Roda por minuto. Para cada série com `scheduled_at` no passado:
+ * Roda por minuto. Para cada agendamento com `scheduled_at` no passado:
  *   1. CLAIM: marca `claimed_until` com UPDATE condicional. Só quem marcar a linha
- *      processa; duas execuções simultâneas não enviam a mesma ocorrência.
- *   2. número WORKING → envia e grava o desfecho.
+ *      processa; duas rodadas simultâneas não encaminham o mesmo envio.
+ *   2. quem agendou perdeu o acesso → `cancelada` (`sem_acesso`).
  *   3. número fora do ar + `esperar` → solta a trava e tenta no próximo minuto.
- *   4. número fora do ar + `cancelar` → registra `pulada_desconectado`.
- *   5. desfecho final → avança `scheduled_at` para a próxima ocorrência depois de
- *      AGORA (sem rajada) ou conclui a série.
+ *   4. número fora do ar + `cancelar` → `cancelada` (`numero_desconectado`).
+ *   5. número no ar → encaminha; `encaminhada` com o `message_id`, ou `falhou`.
  *
- * Auditoria só quando a ocorrência teve desfecho gravado (regra do cron).
+ * Primeira parte da #3118: envio único. Não há próxima ocorrência.
+ * Auditoria só quando o agendamento teve desfecho gravado (regra do cron).
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -19,25 +19,27 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { proximaOcorrenciaDepois, type RegraDeRecorrencia } from "@/lib/agendamento-mensagem/recorrencia";
-import { enviarOcorrencia, sessaoEstaConectada, type AgendamentoParaEnvio, type DesfechoDoEnvio } from "@/lib/agendamento-mensagem/envio";
+import {
+  autorAindaTemAcesso,
+  encaminharAgendamento,
+  sessaoEstaConectada,
+  type AgendamentoParaEnvio,
+} from "@/lib/agendamento-mensagem/envio";
 
 export const dynamic = "force-dynamic";
 
 const LOTE = 50;
+const COLUNAS = "id, organization_id, contact_id, channel_session_id, created_by_user_id, body, scheduled_at, se_desconectado";
 const TRAVA_S = 300;
 
 interface LinhaDevida extends AgendamentoParaEnvio {
-  recorrencia: string;
-  intervalo_dias: number | null;
-  inicio_local: string;
-  termino_local: string | null;
-  tz: string;
   scheduled_at: string;
   se_desconectado: "esperar" | "cancelar";
-  ultimo_envio_em: string | null;
-  ultimo_erro: string | null;
 }
+
+type Final =
+  | { status: "encaminhada"; message_id: string }
+  | { status: "falhou" | "cancelada"; motivo: string };
 
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -47,7 +49,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const agora = new Date();
   const { data: candidatas, error } = await admin
     .from("mensagens_agendadas")
-    .select("*")
+    .select("id, organization_id")
     .eq("status", "agendada")
     .lte("scheduled_at", agora.toISOString())
     .order("scheduled_at", { ascending: true })
@@ -55,11 +57,12 @@ async function handle(req: NextRequest): Promise<Response> {
   if (error) return fail("internal_error", "Erro ao ler as mensagens devidas.", 500, { requestId });
 
   const paradas = new Set(await idsDeOrgsParadas(admin));
-  const resumo = { processadas: 0, enviadas: 0, falhas: 0, puladas: 0, esperando: 0 };
+  const resumo = { processadas: 0, encaminhadas: 0, falhas: 0, canceladas: 0, esperando: 0 };
 
-  for (const candidata of (candidatas ?? []) as LinhaDevida[]) {
+  const soltar = (id: string) => admin.from("mensagens_agendadas").update({ claimed_until: null }).eq("id", id);
+
+  for (const candidata of candidatas ?? []) {
     if (paradas.has(candidata.organization_id)) continue;
-    // 1. CLAIM: só processa quem conseguir marcar a trava agora.
     const trava = new Date(agora.getTime() + TRAVA_S * 1000).toISOString();
     const { data: reservada } = await admin
       .from("mensagens_agendadas")
@@ -67,81 +70,68 @@ async function handle(req: NextRequest): Promise<Response> {
       .eq("id", candidata.id)
       .eq("status", "agendada")
       .or(`claimed_until.is.null,claimed_until.lt.${agora.toISOString()}`)
-      .select("*");
+      .select(COLUNAS);
+    // As colunas vêm do CLAIM, não da leitura da fila: uma edição feita entre as
+    // duas não pode sair com o texto antigo.
     const ag = (reservada?.[0] ?? null) as LinhaDevida | null;
     if (!ag) continue;
     resumo.processadas++;
 
-    const previstaPara = new Date(ag.scheduled_at);
-    const conectado = await sessaoEstaConectada(admin, ag.organization_id, ag.channel_session_id);
-
-    // 3. Fora do ar + esperar: solta a trava e tenta no próximo minuto.
-    if (!conectado && ag.se_desconectado === "esperar") {
-      await admin.from("mensagens_agendadas").update({ claimed_until: null }).eq("id", ag.id);
-      resumo.esperando++;
-      continue;
+    let final: Final;
+    if (!(await autorAindaTemAcesso(admin, ag))) {
+      final = { status: "cancelada", motivo: "sem_acesso" };
+    } else if (!(await sessaoEstaConectada(admin, ag.organization_id, ag.channel_session_id))) {
+      if (ag.se_desconectado === "esperar") {
+        await soltar(ag.id);
+        resumo.esperando++;
+        continue;
+      }
+      final = { status: "cancelada", motivo: "numero_desconectado" };
+    } else {
+      const desfecho = await encaminharAgendamento(admin, ag);
+      // Org parada no meio do envio: não grava desfecho. O agendamento fica como
+      // estava e a rota volta a ele quando a org for operante de novo.
+      if (desfecho.desfecho === "org_parada") {
+        await soltar(ag.id);
+        continue;
+      }
+      final =
+        desfecho.desfecho === "encaminhada"
+          ? { status: "encaminhada", message_id: desfecho.message_id }
+          : { status: "falhou", motivo: desfecho.motivo };
     }
 
-    const desfecho: DesfechoDoEnvio = conectado
-      ? await enviarOcorrencia(admin, ag, previstaPara)
-      : { desfecho: "pulada_desconectado" };
-
-    // Org parada no meio do envio: não grava desfecho nem avança a agenda. A ocorrência
-    // fica como estava e a rota volta a ela quando a org for operante de novo.
-    if (desfecho.desfecho === "org_parada") {
-      await admin.from("mensagens_agendadas").update({ claimed_until: null }).eq("id", ag.id);
-      continue;
-    }
-
-    await admin.from("mensagens_agendadas_envios").insert({
-      organization_id: ag.organization_id,
-      agendamento_id: ag.id,
-      prevista_para: ag.scheduled_at,
-      desfecho: desfecho.desfecho,
-      message_id: desfecho.desfecho === "enviada" ? desfecho.message_id : null,
-      erro: desfecho.desfecho === "falhou" ? desfecho.erro : null,
-    });
-
-    const enviou = desfecho.desfecho === "enviada";
-    const falhou = desfecho.desfecho === "falhou";
-
-    // 5. Desfecho final desta ocorrência: avança a série sem rajada.
-    const regra: RegraDeRecorrencia = {
-      recorrencia: ag.recorrencia as RegraDeRecorrencia["recorrencia"],
-      intervalo_dias: ag.intervalo_dias,
-      inicio: ag.inicio_local,
-      termino: ag.termino_local,
-      tz: ag.tz,
-    };
-    const proxima = proximaOcorrenciaDepois(regra, new Date(Math.max(previstaPara.getTime(), agora.getTime())));
     const { error: upErr } = await admin
       .from("mensagens_agendadas")
       .update({
-        scheduled_at: proxima ? proxima.toISOString() : ag.scheduled_at,
-        status: proxima ? "agendada" : "concluida",
+        status: final.status,
+        message_id: final.status === "encaminhada" ? final.message_id : null,
+        motivo: final.status === "encaminhada" ? null : final.motivo,
         claimed_until: null,
-        ultimo_envio_em: enviou ? agora.toISOString() : ag.ultimo_envio_em,
-        ultimo_erro: falhou ? desfecho.erro : enviou ? null : ag.ultimo_erro,
-        updated_at: agora.toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq("id", ag.id)
-      .eq("organization_id", ag.organization_id);
-    if (upErr) continue;
+      .eq("organization_id", ag.organization_id)
+      .eq("status", "agendada");
+    // Auditoria só quando o desfecho foi gravado (regra do cron: sem efeito, sem linha).
+    if (!upErr) {
+      if (final.status === "encaminhada") resumo.encaminhadas++;
+      else if (final.status === "falhou") resumo.falhas++;
+      else resumo.canceladas++;
 
-    if (enviou) resumo.enviadas++;
-    else if (falhou) resumo.falhas++;
-    else resumo.puladas++;
-
-    // Auditoria só quando a ocorrência teve desfecho gravado (regra do cron: sem efeito, sem linha).
-    if (enviou || falhou || desfecho.desfecho === "pulada_desconectado") {
       void audit({
-        action: enviou ? "scheduled_message.sent" : falhou ? "scheduled_message.failed" : "scheduled_message.skipped",
+        action:
+          final.status === "encaminhada"
+            ? "scheduled_message.dispatched"
+            : final.status === "falhou"
+              ? "scheduled_message.failed"
+              : "scheduled_message.cancelled",
         organizationId: ag.organization_id,
         actorUserId: null,
         resourceType: "mensagens_agendadas",
         resourceId: ag.id,
         requestId,
-        metadata: { previsto_para: ag.scheduled_at, desfecho: desfecho.desfecho },
+        metadata: { previsto_para: ag.scheduled_at, status: final.status, ...(final.status === "encaminhada" ? {} : { motivo: final.motivo }) },
       });
     }
   }

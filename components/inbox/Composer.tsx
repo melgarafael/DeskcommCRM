@@ -94,8 +94,8 @@ function avisoDeRascunhoIndisponivel(motivo: MotivoDeRecusa, t: (texto: string) 
 
 interface Props {
   conversationId: string;
-  /** Contato e número da conversa: habilitam o botão de mensagem agendada ao lado do Enviar. */
-  agendamentoContato?: { contactId: string; channelSessionId: string; contactName?: string | null } | null;
+  /** Liga o botão de mensagem agendada ao lado do Enviar (a conversa tem contato e número). */
+  agendamentoLigado?: boolean;
   initialDraft?: string;
   initialMode?: "reply" | "note";
   onDraftChange?: (text: string, mode: "reply" | "note") => void;
@@ -174,7 +174,7 @@ interface Props {
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   {
     conversationId,
-    agendamentoContato = null,
+    agendamentoLigado = false,
     initialDraft = "",
     initialMode = "reply",
     active = true,
@@ -1341,13 +1341,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}
           />
-          {agendamentoContato && mode === "reply" ? (
-            <MensagensAgendadasBotao
-              contactId={agendamentoContato.contactId}
-              channelSessionId={agendamentoContato.channelSessionId}
-              contactName={agendamentoContato.contactName ?? null}
-              textoInicial={text}
-            />
+          {agendamentoLigado && mode === "reply" ? (
+            <MensagensAgendadasBotao conversationId={conversationId} textoInicial={text} />
           ) : null}
           {text.trim() || mode === "note" ? (
             <Button

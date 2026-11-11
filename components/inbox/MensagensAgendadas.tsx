@@ -1,16 +1,20 @@
 "use client";
 
 /**
- * MENSAGENS AGENDADAS — botão ao lado do Enviar e popup com três visões:
- *  - as agendadas do contato, pendentes (padrão), com editar e cancelar;
- *  - "Relatório": os envios já feitos para o contato;
- *  - "Exibir Todos": os envios já feitos para todos os clientes da organização.
+ * MENSAGENS AGENDADAS — botão ao lado do Enviar e popup da CONVERSA:
+ *  - as agendadas pendentes (padrão), com editar e cancelar;
+ *  - "Relatório": as que já tiveram desfecho, com o status real da mensagem.
+ *
+ * Primeira parte da #3118 (contribuição de @DIOGRO83): envio único, só nas
+ * conversas que o atendente já enxerga. Repetição e a visão de todos os
+ * clientes ficam para a segunda parte.
  */
 import { useState } from "react";
-import { CalendarClock, Eye, EyeOff, History, Plus, X } from "lucide-react";
+import { CalendarClock, History, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -19,130 +23,70 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 import { PencilSimple, Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
+import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import { desfechoDoAgendamento, type Desfecho } from "@/lib/agendamento-mensagem/desfecho";
 
-const CHAVE_RAIZ = "mensagens-agendadas";
-
-const RECORRENCIAS: { valor: string; rotulo: string }[] = [
-  { valor: "nenhuma", rotulo: "Nenhuma (envio único)" },
-  { valor: "diaria", rotulo: "Diária" },
-  { valor: "semanal", rotulo: "Semanal" },
-  { valor: "quinzenal", rotulo: "Quinzenal" },
-  { valor: "mensal", rotulo: "Mensal" },
-  { valor: "trimestral", rotulo: "Trimestral" },
-  { valor: "semestral", rotulo: "Semestral" },
-  { valor: "anual", rotulo: "Anual" },
-  { valor: "a_cada_n_dias", rotulo: "A cada N dias" },
-];
-
-const DESFECHOS: Record<EnvioLinha["desfecho"], string> = {
-  enviada: "Enviado",
-  falhou: "Falhou",
-  pulada_desconectado: "Pulado (desconectado)",
-};
-
-interface AgendamentoLinha {
+interface Agendamento {
   id: string;
-  contact_id: string;
-  channel_session_id: string;
   title: string | null;
   body: string;
-  recorrencia: string;
-  intervalo_dias: number | null;
-  inicio_local: string;
-  termino_local: string | null;
   scheduled_at: string;
+  status: "agendada" | "encaminhada" | "falhou" | "cancelada";
   se_desconectado: "esperar" | "cancelar";
+  motivo: string | null;
+  mensagem: { status: string } | null;
 }
 
-interface ContatoNoEnvio {
-  display_name: string | null;
-  name: string | null;
+/** Texto de cada desfecho e de cada motivo — `t()` com literal, nunca chave montada em runtime. */
+function rotuloDoDesfecho(d: Desfecho, t: (texto: string) => string): string {
+  switch (d) {
+    case "enviada":
+      return t("Enviada");
+    case "falhou":
+      return t("Falhou");
+    case "cancelada":
+      return t("Cancelada");
+    case "na_fila":
+      return t("Na fila de envio");
+  }
 }
 
-interface EnvioLinha {
-  id: string;
-  prevista_para: string;
-  desfecho: "enviada" | "falhou" | "pulada_desconectado";
-  erro: string | null;
-  agendamento: {
-    id: string;
-    title: string | null;
-    body: string;
-    recorrencia: string;
-    intervalo_dias: number | null;
-    contact_id: string;
-    contacts?: ContatoNoEnvio | null;
-  } | null;
+function rotuloDoMotivo(motivo: string | null, t: (texto: string) => string): string | null {
+  switch (motivo) {
+    case "cancelada_pelo_atendente":
+      return t("cancelada na conversa");
+    case "numero_desconectado":
+      return t("o número estava desconectado");
+    case "sem_acesso":
+      return t("quem agendou não tem mais acesso");
+    case "contato_anonimizado":
+      return t("contato anonimizado");
+    default:
+      return motivo;
+  }
 }
 
-type Modo = "contato" | "todas" | "relatorio";
+const chave = (conversationId: string) => ["mensagens-agendadas", conversationId] as const;
 
-interface Props {
-  contactId: string;
-  channelSessionId: string;
-  contactName?: string | null;
-  /** Texto do campo de envio, para pré-preencher a nova mensagem. */
-  textoInicial?: string;
-}
-
-function rotuloRecorrencia(a: { recorrencia: string; intervalo_dias: number | null }): string {
-  if (a.recorrencia === "a_cada_n_dias") return `A cada ${a.intervalo_dias ?? "?"} dias`;
-  return RECORRENCIAS.find((r) => r.valor === a.recorrencia)?.rotulo ?? a.recorrencia;
-}
-
-function formatarQuando(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-}
-
-function nomeDoContato(contato: ContatoNoEnvio | null | undefined): string {
-  return contato?.display_name || contato?.name || "Sem nome";
-}
-
-/** Chave da lista de agendamentos pendentes de um contato: o badge e o popup dividem o mesmo cache. */
-const chaveDaLista = (contactId: string) => [CHAVE_RAIZ, contactId] as const;
-const chaveDosEnvios = (contactId: string) => [CHAVE_RAIZ, "envios", contactId] as const;
-const CHAVE_ENVIOS_TODOS = [CHAVE_RAIZ, "envios-todos"] as const;
-
-function buscarAgendamentos(contactId: string) {
-  return apiClient.get<{ data: AgendamentoLinha[] }>(
-    `/api/v1/mensagens-agendadas?contact_id=${encodeURIComponent(contactId)}`,
-  );
-}
-
-function buscarEnvios(contactId: string) {
-  return apiClient.get<{ data: EnvioLinha[] }>(
-    `/api/v1/mensagens-agendadas/envios?contact_id=${encodeURIComponent(contactId)}`,
-  );
-}
-
-function buscarEnviosDeTodos() {
-  return apiClient.get<{ data: EnvioLinha[] }>("/api/v1/mensagens-agendadas/envios");
-}
-
-/**
- * Consulta compartilhada pelo badge e pelo popup. Se a primeira busca falhar
- * (timeout com o servidor ocupado, rede oscilando), o badge fica em branco até
- * alguém recarregar: por isso tenta de novo e busca de novo ao voltar à aba.
- */
-function opcoesDaLista(contactId: string) {
-  return {
-    queryKey: chaveDaLista(contactId),
-    queryFn: () => buscarAgendamentos(contactId),
+function useAgendamentos(conversationId: string) {
+  return useQuery({
+    queryKey: chave(conversationId),
+    queryFn: () =>
+      apiClient.get<{ data: Agendamento[] }>(
+        `/api/v1/mensagens-agendadas?conversation_id=${encodeURIComponent(conversationId)}`,
+      ),
     staleTime: 0,
     retry: 3,
     refetchOnWindowFocus: true,
-  };
+  });
 }
 
-/** Botão ao lado do Enviar, com o número de mensagens agendadas do contato. */
-export function MensagensAgendadasBotao(props: Props) {
+/** Botão ao lado do Enviar, com o número de mensagens agendadas pendentes da conversa. */
+export function MensagensAgendadasBotao({ conversationId, textoInicial }: { conversationId: string; textoInicial?: string }) {
+  const t = useT();
   const [aberto, setAberto] = useState(false);
-  const { contactId } = props;
-
-  // Mesma consulta do popup: sempre que o botão monta, busca de novo, e o popup
-  // invalida esta chave ao criar, editar ou cancelar, então o número nunca fica para trás.
-  const consulta = useQuery(opcoesDaLista(contactId));
-  const total = consulta.data?.data.length ?? 0;
+  const consulta = useAgendamentos(conversationId);
+  const pendentes = (consulta.data?.data ?? []).filter((a) => a.status === "agendada").length;
 
   return (
     <>
@@ -152,184 +96,142 @@ export function MensagensAgendadasBotao(props: Props) {
         size="icon"
         className="relative shrink-0"
         onClick={() => setAberto(true)}
-        aria-label="Mensagens agendadas"
-        title="Mensagens agendadas"
+        aria-label={t("Mensagens agendadas")}
+        title={t("Mensagens agendadas")}
         data-testid="botao-mensagens-agendadas"
       >
         <CalendarClock className="size-5" aria-hidden />
-        {total ? (
+        {pendentes ? (
           <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
-            {total}
+            {pendentes}
           </span>
         ) : null}
       </Button>
-      {aberto && <MensagensAgendadasDialog {...props} open onOpenChange={setAberto} />}
+      {aberto && (
+        <MensagensAgendadasDialog conversationId={conversationId} textoInicial={textoInicial ?? ""} onOpenChange={setAberto} />
+      )}
     </>
   );
 }
 
-export function MensagensAgendadasDialog({
-  open,
-  onOpenChange,
-  contactId,
-  channelSessionId,
+function MensagensAgendadasDialog({
+  conversationId,
   textoInicial,
-}: Props & { open: boolean; onOpenChange: (v: boolean) => void }) {
+  onOpenChange,
+}: {
+  conversationId: string;
+  textoInicial: string;
+  onOpenChange: (v: boolean) => void;
+}) {
   const t = useT();
-  const [modo, setModo] = useState<Modo>("contato");
-  const [criando, setCriando] = useState(false);
-  const [editando, setEditando] = useState<AgendamentoLinha | null>(null);
+  const tag = useTagDeIdioma();
   const qc = useQueryClient();
+  const consulta = useAgendamentos(conversationId);
+  const [relatorio, setRelatorio] = useState(false);
+  const [editando, setEditando] = useState<Agendamento | "novo" | null>(null);
 
-  const consulta = useQuery(opcoesDaLista(contactId));
-  const envios = useQuery({
-    queryKey: chaveDosEnvios(contactId),
-    queryFn: () => buscarEnvios(contactId),
-    staleTime: 0,
-    retry: 3,
-    refetchOnWindowFocus: true,
-  });
-  const enviosDeTodos = useQuery({
-    queryKey: CHAVE_ENVIOS_TODOS,
-    queryFn: buscarEnviosDeTodos,
-    enabled: modo === "todas",
-    staleTime: 0,
-    retry: 3,
-    refetchOnWindowFocus: true,
-  });
-
-  const lista = consulta.data?.data ?? [];
-  const totalEnvios = envios.data?.data.length ?? 0;
-  const formularioAberto = criando || editando !== null;
-
-  // Criar, editar ou cancelar mexe nas visões de agendados e de envios: invalida o prefixo inteiro.
-  const atualizarTudo = () => qc.invalidateQueries({ queryKey: [CHAVE_RAIZ] });
-
-  function alternar(alvo: Exclude<Modo, "contato">) {
-    setCriando(false);
-    setEditando(null);
-    setModo((atual) => (atual === alvo ? "contato" : alvo));
-  }
-
-  function fecharFormulario() {
-    setCriando(false);
-    setEditando(null);
-  }
+  const todos = consulta.data?.data ?? [];
+  const pendentes = todos.filter((a) => a.status === "agendada");
+  const historico = todos.filter((a) => a.status !== "agendada");
+  const quando = (iso: string) => new Date(iso).toLocaleString(tag, { dateStyle: "short", timeStyle: "short" });
+  const atualizar = () => qc.invalidateQueries({ queryKey: chave(conversationId) });
 
   async function cancelar(id: string) {
     try {
       await apiClient.delete(`/api/v1/mensagens-agendadas/${id}`);
-      toast.success("Agendamento cancelado.");
-      await atualizarTudo();
+      toast.success(t("Agendamento cancelado."));
+      await atualizar();
     } catch {
-      toast.error("Não consegui cancelar o agendamento.");
+      toast.error(t("Não consegui cancelar o agendamento."));
     }
   }
 
-  const titulo = formularioAberto
-    ? editando
-      ? "Editar agendamento"
-      : "Criar agendamento"
-    : modo === "relatorio"
-      ? "Relatório"
-      : modo === "todas"
-        ? "Mensagens enviadas — todos os clientes"
-        : "Mensagens agendadas";
+  const titulo = editando
+    ? editando === "novo"
+      ? t("Criar agendamento")
+      : t("Editar agendamento")
+    : relatorio
+      ? t("Relatório")
+      : t("Mensagens agendadas");
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{titulo}</DialogTitle>
         </DialogHeader>
 
-        {!formularioAberto && (
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              type="button"
-              variant={modo === "relatorio" ? "secondary" : "outline"}
-              size="sm"
-              aria-pressed={modo === "relatorio"}
-              onClick={() => alternar("relatorio")}
-            >
-              <History className="mr-1 size-4" aria-hidden />
-              {modo === "relatorio" ? "Ocultar" : "Relatório"}
-              {modo !== "relatorio" && totalEnvios > 0 ? (
-                <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
-                  {totalEnvios}
-                </span>
-              ) : null}
-            </Button>
-            <Button
-              type="button"
-              variant={modo === "todas" ? "secondary" : "outline"}
-              size="sm"
-              aria-pressed={modo === "todas"}
-              onClick={() => alternar("todas")}
-            >
-              {modo === "todas" ? (
-                <>
-                  <EyeOff className="mr-1 size-4" aria-hidden /> Ocultar
-                </>
-              ) : (
-                <>
-                  <Eye className="mr-1 size-4" aria-hidden /> Exibir Todos
-                </>
-              )}
-            </Button>
-          </div>
-        )}
-
-        {formularioAberto ? (
-          <CriarAgendamento
-            key={editando?.id ?? "novo"}
-            inicial={editando ?? undefined}
-            contactId={editando?.contact_id ?? contactId}
-            channelSessionId={editando?.channel_session_id ?? channelSessionId}
-            textoInicial={textoInicial ?? ""}
-            onCancelar={fecharFormulario}
-            onCriado={async () => {
-              fecharFormulario();
-              await atualizarTudo();
+        {editando ? (
+          <FormularioDeAgendamento
+            key={editando === "novo" ? "novo" : editando.id}
+            inicial={editando === "novo" ? undefined : editando}
+            conversationId={conversationId}
+            textoInicial={textoInicial}
+            onCancelar={() => setEditando(null)}
+            onSalvo={async () => {
+              setEditando(null);
+              await atualizar();
             }}
-          />
-        ) : modo === "relatorio" ? (
-          <ListaDeEnvios
-            envios={envios.data?.data}
-            carregando={envios.isPending}
-            mostrarCliente={false}
-            vazio="Nenhum envio realizado para este contato ainda."
-          />
-        ) : modo === "todas" ? (
-          <ListaDeEnvios
-            envios={enviosDeTodos.data?.data}
-            carregando={enviosDeTodos.isPending}
-            mostrarCliente
-            vazio="Nenhum envio realizado para os clientes ainda."
           />
         ) : (
           <div className="space-y-3">
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant={relatorio ? "secondary" : "outline"}
+                size="sm"
+                aria-pressed={relatorio}
+                onClick={() => setRelatorio((r) => !r)}
+              >
+                <History className="mr-1 size-4" aria-hidden />
+                {relatorio ? t("Ocultar") : t("Relatório")}
+              </Button>
+            </div>
+
             {consulta.isPending ? (
-              <p className="text-sm text-muted-foreground">Carregando…</p>
-            ) : lista.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t("Nenhuma mensagem agendada para este contato.")}</p>
+              <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>
+            ) : relatorio ? (
+              historico.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t("Nenhum envio agendado saiu desta conversa ainda.")}</p>
+              ) : (
+                <ul className="divide-y rounded-md border">
+                  {historico.map((a) => {
+                    const d = desfechoDoAgendamento(a);
+                    const motivo = rotuloDoMotivo(a.motivo, t);
+                    return (
+                      <li key={a.id} className="flex items-center gap-3 p-3 text-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{a.title || a.body}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {quando(a.scheduled_at)}
+                            {motivo ? ` · ${motivo}` : ""}
+                          </p>
+                        </div>
+                        <Badge variant={d.tom}>{rotuloDoDesfecho(d.desfecho, t)}</Badge>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )
+            ) : pendentes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("Nenhuma mensagem agendada nesta conversa.")}</p>
             ) : (
               <ul className="divide-y rounded-md border">
-                {lista.map((a) => (
+                {pendentes.map((a) => (
                   <li key={a.id} className="flex items-center gap-3 p-3 text-sm">
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{a.title || a.body}</p>
                       <p className="text-xs text-muted-foreground">
-                        {formatarQuando(a.scheduled_at)} · {rotuloRecorrencia(a)}
-                        {a.se_desconectado === "cancelar" ? " · cancela se desconectado" : ""}
+                        {quando(a.scheduled_at)}
+                        {a.se_desconectado === "cancelar" ? ` · ${t("cancela se o número estiver desconectado")}` : ""}
                       </p>
                     </div>
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      aria-label="Editar agendamento"
-                      title="Editar agendamento"
+                      aria-label={t("Editar agendamento")}
+                      title={t("Editar agendamento")}
                       onClick={() => setEditando(a)}
                     >
                       <PencilSimple size={16} weight="regular" aria-hidden />
@@ -338,8 +240,8 @@ export function MensagensAgendadasDialog({
                       type="button"
                       size="icon"
                       variant="ghost"
-                      aria-label="Cancelar agendamento"
-                      title="Cancelar agendamento"
+                      aria-label={t("Cancelar agendamento")}
+                      title={t("Cancelar agendamento")}
                       onClick={() => void cancelar(a.id)}
                     >
                       <Trash size={16} weight="regular" aria-hidden />
@@ -348,11 +250,14 @@ export function MensagensAgendadasDialog({
                 ))}
               </ul>
             )}
-            <div className="flex justify-end">
-              <Button type="button" onClick={() => setCriando(true)}>
-                <Plus className="mr-1 size-4" aria-hidden /> Adicionar
-              </Button>
-            </div>
+
+            {!relatorio && (
+              <div className="flex justify-end">
+                <Button type="button" onClick={() => setEditando("novo")}>
+                  <Plus className="mr-1 size-4" aria-hidden /> {t("Adicionar")}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
@@ -360,111 +265,61 @@ export function MensagensAgendadasDialog({
   );
 }
 
-/** Lista de envios já feitos (relatório do contato ou de todos os clientes). */
-function ListaDeEnvios({
-  envios,
-  carregando,
-  mostrarCliente,
-  vazio,
-}: {
-  envios: EnvioLinha[] | undefined;
-  carregando: boolean;
-  mostrarCliente: boolean;
-  vazio: string;
-}) {
-  if (carregando) return <p className="text-sm text-muted-foreground">Carregando…</p>;
-  if (!envios || envios.length === 0) return <p className="text-sm text-muted-foreground">{vazio}</p>;
-  return (
-    <ul className="divide-y rounded-md border">
-      {envios.map((e) => (
-        <li key={e.id} className="flex items-center gap-3 p-3 text-sm">
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">{e.agendamento?.title || e.agendamento?.body || "Mensagem"}</p>
-            <p className="text-xs text-muted-foreground">
-              {mostrarCliente && e.agendamento ? `${nomeDoContato(e.agendamento.contacts)} · ` : ""}
-              {formatarQuando(e.prevista_para)}
-              {e.agendamento ? ` · ${rotuloRecorrencia(e.agendamento)}` : ""}
-              {e.erro ? ` · ${e.erro}` : ""}
-            </p>
-          </div>
-          <span
-            className={
-              e.desfecho === "enviada"
-                ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800"
-                : e.desfecho === "falhou"
-                  ? "rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800"
-                  : "rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-            }
-          >
-            {DESFECHOS[e.desfecho]}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
+/** Data e hora no fuso do navegador, no formato dos campos `date` e `time`. */
+function partesLocais(iso: string): { data: string; hora: string } {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return { data: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, hora: `${p(d.getHours())}:${p(d.getMinutes())}` };
 }
 
 /** Formulário de criação ou, quando recebe `inicial`, de edição (PATCH). */
-function CriarAgendamento({
+function FormularioDeAgendamento({
   inicial,
+  conversationId,
   textoInicial,
-  contactId,
-  channelSessionId,
   onCancelar,
-  onCriado,
+  onSalvo,
 }: {
-  inicial?: AgendamentoLinha;
+  inicial?: Agendamento;
+  conversationId: string;
   textoInicial: string;
-  contactId: string;
-  channelSessionId: string;
   onCancelar: () => void;
-  onCriado: () => Promise<void>;
+  onSalvo: () => Promise<void>;
 }) {
   const t = useT();
+  const inicio = inicial ? partesLocais(inicial.scheduled_at) : { data: "", hora: "" };
   const [titulo, setTitulo] = useState(inicial?.title ?? "");
   const [texto, setTexto] = useState(inicial ? inicial.body : textoInicial);
-  const [data, setData] = useState(inicial ? inicial.inicio_local.slice(0, 10) : "");
-  const [hora, setHora] = useState(inicial ? inicial.inicio_local.slice(11, 16) : "");
-  const [recorrencia, setRecorrencia] = useState(inicial?.recorrencia ?? "nenhuma");
-  const [intervaloDias, setIntervaloDias] = useState(inicial?.intervalo_dias ? String(inicial.intervalo_dias) : "");
-  const [temTermino, setTemTermino] = useState(Boolean(inicial?.termino_local));
-  const [termino, setTermino] = useState(inicial?.termino_local ? inicial.termino_local.slice(0, 10) : "");
+  const [data, setData] = useState(inicio.data);
+  const [hora, setHora] = useState(inicio.hora);
   const [seDesconectado, setSeDesconectado] = useState<"esperar" | "cancelar">(inicial?.se_desconectado ?? "esperar");
   const [salvando, setSalvando] = useState(false);
 
   async function salvar() {
-    if (!texto.trim()) return toast.error("Escreva a mensagem.");
-    if (!data || !hora) return toast.error("Escolha a data e a hora.");
-    if (recorrencia === "a_cada_n_dias" && !intervaloDias) return toast.error("Informe de quantos em quantos dias.");
+    if (!texto.trim()) return toast.error(t("Escreva a mensagem."));
+    if (!data || !hora) return toast.error(t("Escolha a data e a hora."));
+    // `new Date("AAAA-MM-DDTHH:mm")` lê no fuso do navegador: é a hora que a pessoa viu na tela.
+    const quando = new Date(`${data}T${hora}`);
+    if (quando.getTime() <= Date.now()) return toast.error(t("Escolha um horário no futuro."));
 
     setSalvando(true);
     const corpo = {
-      contact_id: contactId,
-      channel_session_id: channelSessionId,
       title: titulo.trim() || null,
       body: texto,
-      recorrencia,
-      intervalo_dias: recorrencia === "a_cada_n_dias" ? Number(intervaloDias) : null,
-      inicio_local: `${data}T${hora}`,
-      termino_local: temTermino && termino ? `${termino}T23:59` : null,
-      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      scheduled_at: quando.toISOString(),
       se_desconectado: seDesconectado,
     };
     try {
       if (inicial) {
         await apiClient.patch(`/api/v1/mensagens-agendadas/${inicial.id}`, corpo);
-        toast.success("Agendamento atualizado.");
+        toast.success(t("Agendamento atualizado."));
       } else {
-        await apiClient.post("/api/v1/mensagens-agendadas", corpo);
-        toast.success("Agendamento criado.");
+        await apiClient.post("/api/v1/mensagens-agendadas", { ...corpo, conversation_id: conversationId });
+        toast.success(t("Agendamento criado."));
       }
-      await onCriado();
+      await onSalvo();
     } catch {
-      toast.error(
-        inicial
-          ? "Não consegui salvar a edição. Confira os campos."
-          : "Não consegui criar o agendamento. Confira os campos.",
-      );
+      toast.error(inicial ? t("Não consegui salvar a edição. Confira os campos.") : t("Não consegui criar o agendamento. Confira os campos."));
     } finally {
       setSalvando(false);
     }
@@ -477,71 +332,37 @@ function CriarAgendamento({
         <Input id="ag-titulo" value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={t("Insira aqui o título")} />
       </div>
       <div className="space-y-1">
-        <Label htmlFor="ag-texto">Mensagem</Label>
+        <Label htmlFor="ag-texto">{t("Mensagem")}</Label>
         <Textarea id="ag-texto" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={t("Insira sua mensagem")} rows={4} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <Label htmlFor="ag-data">Data</Label>
+          <Label htmlFor="ag-data">{t("Data")}</Label>
           <Input id="ag-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="ag-hora">Hora</Label>
+          <Label htmlFor="ag-hora">{t("Hora")}</Label>
           <Input id="ag-hora" type="time" value={hora} onChange={(e) => setHora(e.target.value)} />
         </div>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="ag-recorrencia">{t("Recorrência")}</Label>
-        <select
-          id="ag-recorrencia"
-          className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-          value={recorrencia}
-          onChange={(e) => setRecorrencia(e.target.value)}
-        >
-          {RECORRENCIAS.map((r) => (
-            <option key={r.valor} value={r.valor}>
-              {r.rotulo}
-            </option>
-          ))}
-        </select>
-      </div>
-      {recorrencia === "a_cada_n_dias" && (
-        <Input
-          type="number"
-          min={1}
-          max={365}
-          value={intervaloDias}
-          onChange={(e) => setIntervaloDias(e.target.value)}
-          placeholder="Insira de quantos em quantos dias"
-        />
-      )}
-      {recorrencia !== "nenhuma" && (
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={temTermino} onChange={(e) => setTemTermino(e.target.checked)} />
-            {t("Definir data de término")}
-          </label>
-          {temTermino && <Input type="date" value={termino} onChange={(e) => setTermino(e.target.value)} />}
-        </div>
-      )}
-      <div className="space-y-1">
-        <Label htmlFor="ag-desconectado">Se o WhatsApp estiver desconectado na hora</Label>
+        <Label htmlFor="ag-desconectado">{t("Se o WhatsApp estiver desconectado na hora")}</Label>
         <select
           id="ag-desconectado"
           className="h-9 w-full rounded-md border bg-background px-2 text-sm"
           value={seDesconectado}
-          onChange={(e) => setSeDesconectado(e.target.value as "esperar" | "cancelar")}
+          onChange={(e) => setSeDesconectado(e.target.value === "cancelar" ? "cancelar" : "esperar")}
         >
-          <option value="esperar">Esperar reconectar e enviar</option>
+          <option value="esperar">{t("Esperar reconectar e enviar")}</option>
           <option value="cancelar">{t("Cancelar este envio")}</option>
         </select>
       </div>
       <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={onCancelar}>
-          <X className="mr-1 size-4" aria-hidden /> Cancelar
+          <X className="mr-1 size-4" aria-hidden /> {t("Cancelar")}
         </Button>
         <Button type="button" onClick={() => void salvar()} disabled={salvando}>
-          {salvando ? "Salvando…" : inicial ? "Salvar" : "Criar"}
+          {salvando ? t("Salvando…") : inicial ? t("Salvar") : t("Criar")}
         </Button>
       </div>
     </div>

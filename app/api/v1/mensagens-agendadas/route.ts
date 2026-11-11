@@ -1,6 +1,12 @@
 /**
- * GET  /api/v1/mensagens-agendadas?contact_id=…  — agendamentos pendentes do contato (ou da organização).
- * POST /api/v1/mensagens-agendadas               — cria uma mensagem de texto agendada para um contato.
+ * GET  /api/v1/mensagens-agendadas?conversation_id=…  — os agendamentos da conversa
+ *      (pendentes e os que já tiveram desfecho), com o status da mensagem enviada.
+ * POST /api/v1/mensagens-agendadas                    — agenda um texto nesta conversa.
+ *
+ * Primeira parte da #3118: envio único, só nas conversas que o atendente já
+ * enxerga. A leitura é pela SESSÃO: a policy de `mensagens_agendadas` exige a
+ * conversa visível, então vale a mesma régua da caixa de entrada. A escrita é do
+ * servidor, depois de a sessão provar que enxerga a conversa.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -10,28 +16,30 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { criarAgendamentoSchema, motivoRegraInvalida, regraDoCorpo } from "@/lib/agendamento-mensagem/schema";
-import { primeiraOcorrencia } from "@/lib/agendamento-mensagem/recorrencia";
+import { createClient } from "@/lib/supabase/server";
+import { criarAgendamentoSchema, horarioNoFuturo } from "@/lib/agendamento-mensagem/schema";
 
 export const dynamic = "force-dynamic";
+
+const COLUNAS =
+  "id, conversation_id, title, body, scheduled_at, status, se_desconectado, motivo, created_at, mensagem:messages(status)";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const auth = await requireRole("agent", { requestId, resource: "mensagens_agendadas" });
   if (!auth.ok) return auth.response;
-  const contactId = req.nextUrl.searchParams.get("contact_id");
-  if (contactId && !z.uuid().safeParse(contactId).success) {
-    return fail("validation_failed", "contact_id inválido.", 422, { requestId });
+  const conversationId = req.nextUrl.searchParams.get("conversation_id");
+  if (!z.uuid().safeParse(conversationId).success) {
+    return fail("validation_failed", "conversation_id inválido.", 422, { requestId });
   }
-  let q = createAdminClient()
+  const sessao = await createClient();
+  const { data, error } = await sessao
     .from("mensagens_agendadas")
-    .select("id, contact_id, channel_session_id, title, body, recorrencia, intervalo_dias, inicio_local, termino_local, tz, scheduled_at, status, se_desconectado, ultimo_erro, created_at, contacts(display_name, name)")
+    .select(COLUNAS)
     .eq("organization_id", auth.org.orgId)
-    .eq("status", "agendada")
-    .order("scheduled_at", { ascending: true })
-    .limit(200);
-  if (contactId) q = q.eq("contact_id", contactId);
-  const { data, error } = await q;
+    .eq("conversation_id", conversationId)
+    .order("scheduled_at", { ascending: false })
+    .limit(50);
   if (error) return fail("internal_error", "Erro ao listar agendamentos.", 500, { requestId });
   return ok(data ?? [], { requestId });
 }
@@ -51,33 +59,35 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
   const v = parsed.data;
+  if (!horarioNoFuturo(v.scheduled_at)) {
+    return fail("validation_failed", "Escolha um horário no futuro.", 422, { requestId, details: { motivo: "horario_no_passado" } });
+  }
   const orgId = auth.org.orgId;
 
-  const regra = regraDoCorpo(v);
-  const motivo = motivoRegraInvalida(regra);
-  if (motivo) return fail("validation_failed", "Confira a recorrência e as datas.", 422, { requestId, details: { motivo } });
+  // A sessão enxerga a conversa? A RLS de `conversations` decide; contato e
+  // número saem daqui, nunca do corpo.
+  const sessao = await createClient();
+  const { data: conversa, error: convErr } = await sessao
+    .from("conversations")
+    .select("id, contact_id, channel_session_id")
+    .eq("id", v.conversation_id)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (convErr) return fail("internal_error", "Erro ao ler a conversa.", 500, { requestId });
+  if (!conversa?.contact_id || !conversa.channel_session_id) {
+    return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+  }
 
-  const admin = createAdminClient();
-  const [{ data: contato }, { data: sessao }] = await Promise.all([
-    admin.from("contacts").select("id").eq("id", v.contact_id).eq("organization_id", orgId).maybeSingle(),
-    admin.from("channel_sessions").select("id").eq("id", v.channel_session_id).eq("organization_id", orgId).maybeSingle(),
-  ]);
-  if (!contato || !sessao) return fail("not_found", "Contato ou número não encontrado.", 404, { requestId });
-
-  const { data: criado, error } = await admin
+  const { data: criado, error } = await createAdminClient()
     .from("mensagens_agendadas")
     .insert({
       organization_id: orgId,
-      contact_id: v.contact_id,
-      channel_session_id: v.channel_session_id,
+      conversation_id: conversa.id,
+      contact_id: conversa.contact_id,
+      channel_session_id: conversa.channel_session_id,
       title: v.title ?? null,
       body: v.body,
-      recorrencia: v.recorrencia,
-      intervalo_dias: v.intervalo_dias ?? null,
-      inicio_local: v.inicio_local,
-      termino_local: v.termino_local ?? null,
-      tz: v.tz,
-      scheduled_at: primeiraOcorrencia(regra).toISOString(),
+      scheduled_at: v.scheduled_at,
       se_desconectado: v.se_desconectado,
       created_by_user_id: auth.user.id,
     })
@@ -92,7 +102,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "mensagens_agendadas",
     resourceId: criado.id,
     requestId,
-    metadata: { recorrencia: v.recorrencia },
+    metadata: { conversation_id: conversa.id, scheduled_at: v.scheduled_at },
   });
   return ok(criado, { requestId });
 }
