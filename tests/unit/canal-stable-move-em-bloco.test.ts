@@ -143,22 +143,8 @@ describe("o canal `stable` move em bloco", () => {
     ]);
   });
 
-  it("a promoção roda mesmo com o build cancelado — e só move o canal depois de provar o conjunto", () => {
-    // #568: o run 33823333160 (v1.13.0) foi cancelado à mão e `promover-stable`
-    // virou `skipped` — a release ficou publicada sem imagem nenhuma no GHCR.
-    // Antes da #568 este arquivo proibia `always()` porque ele faria o canal
-    // andar por cima de uma irmã que falhou. O que sustenta a proibição agora é
-    // outra coisa, e é mais forte: `needs` só sabe que "alguém falhou", nunca o
-    // que EXISTE no registro; a conferência abaixo sabe, e ela vem antes do
-    // primeiro `imagetools create`. Sem `always()` o job nem roda, e `skipped`
-    // não é falha em gate nenhum.
-    const t = corpo(publish, "promover-stable");
-    expect(t, "sem `always()` a promoção morre junto do build cancelado (#568)").toMatch(/always\(\)/);
-    const confere = t.indexOf("manifesto_tem_plataforma");
-    const move = t.indexOf("imagetools create");
-    expect(confere, "a promoção não confere o conjunto no registro").toBeGreaterThan(-1);
-    expect(confere, "a conferência do conjunto tem de vir ANTES do primeiro move").toBeLessThan(move);
-    expect(t, "sem imagem o job tem de falhar ALTO, não em silêncio").toMatch(/::error::/);
+  it("a promoção NÃO roda com `always()` — isso a faria promover por cima de uma irmã que falhou", () => {
+    expect(corpo(publish, "promover-stable")).not.toMatch(/always\(\)/);
   });
 
   it("a promoção cobre exatamente as imagens da matriz, ao conferir e ao mover", () => {
