@@ -34,6 +34,7 @@ import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
+import { quadroDisponivel } from "@/lib/agenda/quadro-por-profissional";
 import { diasDoRecorte, recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
 import { useVinculoDaMarcacao } from "@/lib/agenda/vinculo-da-marcacao";
@@ -58,6 +59,10 @@ const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
   { id: "dia", rotulo: "Dia" },
   { id: "semana", rotulo: "Semana" },
   { id: "mes", rotulo: "Mês" },
+  // UMA LINHA POR PROFISSIONAL, o dia na horizontal (#4186). É uma visão da
+  // MESMA agenda, não uma tela à parte: mesmos compromissos, mesmos filtros,
+  // mesma navegação de um dia por vez.
+  { id: "quadro", rotulo: "Quadro" },
 ];
 
 /**
@@ -333,7 +338,7 @@ export function AgendaClient({
     [busca, caminho],
   );
   const endereco = enderecoEditado ?? tipo?.localDetalhes ?? "";
-  const [visao, setVisao] = React.useState<VisaoDaAgenda>("semana");
+  const [visaoEscolhida, setVisao] = React.useState<VisaoDaAgenda>("semana");
   /**
    * No CELULAR a agenda abre no DIA, não na semana.
    *
@@ -355,6 +360,23 @@ export function AgendaClient({
     if (window.matchMedia("(max-width: 767px)").matches) setVisao("dia");
   }, []);
   const [isolada, setIsolada] = React.useState<string | null>(null);
+  /**
+   * QUEM ATENDE a marcação aberta por um clique no QUADRO (#4186).
+   *
+   * No quadro, a linha clicada diz o profissional — e ele nem sempre é o
+   * isolado no filtro (com "Todos", ninguém está isolado). Sem isto o painel
+   * abria com o dono do tipo, oferecia a jornada dele e gravava na agenda dele:
+   * o mesmo defeito que o #4219 fechou para o filtro, reaberto pelo quadro.
+   * Vale só para a marcação aberta pelo quadro; qualquer outra porta o zera.
+   */
+  const [profissionalDoClique, setProfissionalDoClique] = React.useState<string | null>(null);
+  const donoDaMarcacao = profissionalDoClique ?? isolada;
+  // Fechou o painel, o profissional do clique morre junto: a próxima marcação
+  // (pelo botão, pela grade, pela conversa) volta a seguir o filtro.
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- zerar ao fechar É o ponto: o painel fecha por vários caminhos e todos precisam esquecer a linha clicada.
+    if (!marcando) setProfissionalDoClique(null);
+  }, [marcando]);
   /**
    * A ÂNCORA NASCE DO RELÓGIO DA ORGANIZAÇÃO, não do navegador.
    *
@@ -387,6 +409,15 @@ export function AgendaClient({
   // para entender o 403 do Atendente precisa saber que ele JÁ não existe, e um
   // comentário que afirma o contrário é o defeito de novo.
   const { data: pessoas = [] } = usePessoasDaAgenda();
+
+  // O QUADRO SÓ APARECE COM DOIS OU MAIS PROFISSIONAIS COM AGENDA (doc 307). A
+  // conta sai da MESMA lista do filtro de pessoas. Se a escolha "quadro" ficar
+  // órfã — a equipe encolheu com a tela aberta, ou a lista ainda não chegou —,
+  // a tela mostra a visão padrão em vez de um quadro de uma linha só. A escolha
+  // não é apagada: quando a lista volta a ter dois, o quadro volta sozinho.
+  const temQuadro = quadroDisponivel(pessoas.length);
+  const visao: VisaoDaAgenda =
+    visaoEscolhida === "quadro" && !temQuadro ? "semana" : visaoEscolhida;
 
   // A JANELA ACOMPANHA O MÊS QUE O PAINEL MOSTRA.
   //
@@ -529,7 +560,7 @@ export function AgendaClient({
           // Ana mostrava os blocos dela e oferecia os horários da jornada do dono
           // do tipo — e o POST, que também passa a levar o dono, seria recusado
           // pelo motor por um horário que ele nunca ofereceu.
-          owner_user_id: isolada ?? undefined,
+          owner_user_id: donoDaMarcacao ?? undefined,
           de: janelaDeBusca.de,
           ate: janelaDeBusca.ate,
           // A DURAÇÃO ENTRA NA CONSULTA (#3709): quem decide o que está livre é
@@ -773,7 +804,7 @@ export function AgendaClient({
             data-testid="alternador-de-visao"
             className="flex items-center gap-0.5 rounded-md border border-border bg-surface p-0.5"
           >
-            {VISOES.map((v) => (
+            {VISOES.filter((v) => v.id !== "quadro" || temQuadro).map((v) => (
               <button
                 key={v.id}
                 type="button"
@@ -1151,7 +1182,7 @@ export function AgendaClient({
                     pessoas,
                     donoId: tipo.donoId,
                     usuarioId,
-                    isoladaId: isolada,
+                    isoladaId: donoDaMarcacao,
                   })
                 }
                 tipo={tipo.nome}
@@ -1269,7 +1300,7 @@ export function AgendaClient({
                       event_type_id: tipo.id,
                       // O profissional isolado no filtro (#4186) — `null` = todos,
                       // e aí o campo fica fora do corpo (o 422 de #3709).
-                      owner_user_id: isolada ?? undefined,
+                      owner_user_id: donoDaMarcacao ?? undefined,
                       contact_id: contactId || undefined,
                       conversation_id: conversationId || undefined,
                       starts_at: instante,
@@ -1563,9 +1594,27 @@ export function AgendaClient({
                   rotulo: format(dataDeParede(new Date(instante), fusoDaAgenda), "HH:mm"),
                 });
                 setRemarcandoId(null);
+                setProfissionalDoClique(null);
                 // `abrirMarcacao` e não `setMarcando(true)`: clicar num bloco
                 // livre abre uma marcação NOVA, e ela nasce com o vínculo da rota.
                 abrirMarcacao();
+              }
+            : undefined
+        }
+        // A PORTA DO QUADRO (#4186): o mesmo clique num bloco livre, mas a linha
+        // diz QUEM atende. O painel abre com essa pessoa, oferece a jornada dela
+        // e grava na agenda dela — `donoDaMarcacao` leva isso à consulta, ao
+        // rótulo do painel e ao POST.
+        onMarcarComProfissional={
+          podeMarcar
+            ? (instante, pessoaId) => {
+                setHorarioEscolhido({
+                  instante,
+                  rotulo: format(dataDeParede(new Date(instante), fusoDaAgenda), "HH:mm"),
+                });
+                setRemarcandoId(null);
+                abrirMarcacao();
+                setProfissionalDoClique(pessoaId);
               }
             : undefined
         }
