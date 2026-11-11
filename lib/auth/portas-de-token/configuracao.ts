@@ -59,9 +59,65 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/followups/promises/[id]/cancel",
   "/api/v1/ai/followups/queue",
 
+  // ai/knowledge. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID. `chave` e `provedor` seguem só de
+  // sessão e não entram de carona.
+  "/api/v1/ai/knowledge/busca",
+  "/api/v1/ai/knowledge/reindex-all",
+  "/api/v1/ai/knowledge/sources/[id]/conteudo",
+  "/api/v1/ai/knowledge/sources/[id]/reindex",
+  "/api/v1/ai/knowledge/sources/[id]",
+  "/api/v1/ai/knowledge/sources/[id]/trechos",
+  "/api/v1/ai/knowledge/sources",
+  "/api/v1/ai/knowledge/sources/upload",
 
+  // ai/memory. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID.
+  "/api/v1/ai/memory",
+  "/api/v1/ai/memory/entries",
+  "/api/v1/ai/memory/entries/[id]",
+  "/api/v1/ai/memory/versions/[id]",
 
+  // ai/skills. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[name]` é o nome da skill (kebab-case `[a-z0-9][a-z0-9-]{0,119}`
+  // — os nomes do catálogo seguem `objecao-preco`/`agendamento` no baseline) — não é
+  // UUID, então declara classe e amostra. `import`, `[name]/install`,
+  // `[name]/restore` e o PUT de `[name]` aceitam token também (usam `getSkillsPool`,
+  // pg Pool cru, mas a organização entra como parâmetro, vinda da linha do token).
+  //
+  // DECISAO: a classe do segmento e o Zod da rota (`nameSchema`) são apertados para
+  // `[a-z0-9][a-z0-9-]{0,119}` porque todos os nomes de skill no baseline e na
+  // lib seguem esse formato kebab-case (ex.: `objecao-preco`, `agendamento`). Assim
+  // irmãos literais como `import`, `install`, `restore` e `upload` não caem de
+  // carona na porta do `[name]` por engano.
+  "/api/v1/ai/skills",
+  "/api/v1/ai/skills/import",
+  { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+  { caminho: "/api/v1/ai/skills/[name]/install", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+  { caminho: "/api/v1/ai/skills/[name]/restore", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+  { caminho: "/api/v1/ai/skills/[name]/versions", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
 
+  // ai (demais). Quem autentica é a própria rota, por `resolveAuthDual`: token com
+  // `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`),
+  // com o papel de sempre da tabela (manager/agent/admin) como mínimo. Caminhos
+  // literais, sem `[nome]`. Métodos que seguem só de sessão na mesma rota (`pacing`
+  // PUT) recusam o token com 401 no `requireRole`. `jev` e `voz/preview` seguem só de sessão e não entram de carona.
+  "/api/v1/ai/automatico-ativo",
+  "/api/v1/ai/budget",
+  "/api/v1/ai/evolution",
+  "/api/v1/ai/guardrail-layers",
+  "/api/v1/ai/mapas",
+  "/api/v1/ai/mapas/testar",
+  "/api/v1/ai/operator-metrics",
+  "/api/v1/ai/pacing",
+  "/api/v1/ai/runs",
+  "/api/v1/ai/style-adjustments",
+  "/api/v1/ai/turn-traces",
+  "/api/v1/ai/usage",
+  "/api/v1/ai/voz",
 
 
 

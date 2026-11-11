@@ -19,11 +19,13 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
 import { aggregateEvolution, type EvolutionInput } from "@/lib/ai/evolution/aggregate";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -56,13 +58,61 @@ function resolveRange(qs: { from?: string; to?: string }): { from: Date; to: Dat
   return { from: startOfUtcDay(from), to: startOfUtcDay(to) };
 }
 
+/**
+ * Funil declarado (passo do agente por pipeline) NO TOKEN. A sessão usa o embed
+ * `crm_pipelines!inner` de sempre; a service role não passa pela RLS da tabela de
+ * dentro, então aqui o nome do funil vem de consulta própria filtrada pela
+ * organização, e o passo é ligado ao funil em memória, na mesma forma.
+ */
+type LinhaDoFunil = { agent_stage_hint: string | null; crm_pipelines: { name: string } };
+
+async function lerFunilDoToken(
+  db: SupabaseClient,
+  orgId: string,
+): Promise<{ data: LinhaDoFunil[] | null; error: { message: string } | null }> {
+  const { data: funis, error: errFunis } = await db
+    .from("crm_pipelines")
+    .select("id, name")
+    .eq("organization_id", orgId);
+  if (errFunis) return { data: null, error: errFunis };
+  const nomePorFunil = new Map(
+    ((funis ?? []) as Array<{ id: string; name: string }>).map((f) => [f.id, f.name] as const),
+  );
+  if (nomePorFunil.size === 0) return { data: [], error: null };
+
+  const { data: etapas, error: errEtapas } = await db
+    .from("crm_stages")
+    .select("agent_stage_hint, pipeline_id")
+    .eq("organization_id", orgId)
+    .in("pipeline_id", [...nomePorFunil.keys()])
+    .eq("is_archived", false)
+    .limit(ROW_CAP);
+  if (errEtapas) return { data: null, error: errEtapas };
+
+  const linhas = ((etapas ?? []) as Array<{ agent_stage_hint: string | null; pipeline_id: string }>).flatMap(
+    (e): LinhaDoFunil[] => {
+      const name = nomePorFunil.get(e.pipeline_id);
+      return name === undefined ? [] : [{ agent_stage_hint: e.agent_stage_hint, crm_pipelines: { name } }];
+    },
+  );
+  return { data: linhas, error: null };
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_evolution" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_evolution",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_evolution", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
 
   const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
   if (!parsed.success) {
@@ -75,7 +125,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const range = resolveRange(parsed.data);
   const fromIso = range.from.toISOString();
   const toIso = endOfUtcDay(range.to).toISOString();
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   /**
    * Uma fonte fora do ar não pode apagar o painel inteiro: o bloco dela aparece
@@ -199,13 +249,15 @@ export async function GET(req: NextRequest): Promise<Response> {
     contar("event_log", "created_at", ["event_type", "ai.handoff_triggered"]),
     // Mapeamento declarado do funil: quais passos do agente cada pipeline recebe.
     // Sem janela de data — é o estado ATUAL do funil, não um evento do período.
-    supabase
-      .from("crm_stages")
-      .select("agent_stage_hint, crm_pipelines!inner(name)")
-      .eq("organization_id", orgId)
-      .eq("crm_pipelines.organization_id", orgId)
-      .eq("is_archived", false)
-      .limit(ROW_CAP),
+    authz.via === "token"
+      ? lerFunilDoToken(supabase, orgId)
+      : supabase
+          .from("crm_stages")
+          .select("agent_stage_hint, crm_pipelines!inner(name)")
+          .eq("organization_id", orgId)
+          .eq("crm_pipelines.organization_id", orgId)
+          .eq("is_archived", false)
+          .limit(ROW_CAP),
   ]);
 
   if (stages.error) fonteFalhou("crm_stages", stages.error);
