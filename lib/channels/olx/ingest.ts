@@ -41,15 +41,38 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
+import { audit } from "@/lib/audit";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
-import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import {
+  pausarIaPorAtendimentoManual,
+  type FalhaDaPausa,
+} from "@/lib/escalacao/atendimento-manual";
 
 import { saiuDaConta, type MensagemDeEntradaOlx } from "../adapters/olx";
 
 /** `conversations.channel` deste canal. Ver `CANAIS_DE_CONVERSA`. */
 const CANAL_DA_CONVERSA = "olx";
+
+/**
+ * Aviso durável de que a pausa da IA não foi garantida (#534). A pausa é o que
+ * impede a IA de falar por cima do atendente; quando ela não grava, o desfecho
+ * `ingested` não pode sair limpo — o registro vai para o audit, não para o log.
+ */
+function avisarPausaNaoGravada(falha: FalhaDaPausa): Promise<void> {
+  return audit({
+    action: "ai.pausa_nao_gravada",
+    organizationId: falha.organizationId,
+    resourceType: "conversation",
+    resourceId: falha.conversationId,
+    metadata: {
+      canal: falha.canal ?? CANAL_DA_CONVERSA,
+      motivo: falha.motivo,
+      detalhe: falha.detalhe ?? null,
+    },
+  });
+}
 
 export interface IngestResultOlx {
   status: "ingested" | "duplicate" | "ignored";
@@ -149,6 +172,7 @@ async function depoisDeGravar(
       organizationId: input.organizationId,
       conversationId,
       canal: CANAL_DA_CONVERSA,
+      avisar: avisarPausaNaoGravada,
     });
     return;
   }
