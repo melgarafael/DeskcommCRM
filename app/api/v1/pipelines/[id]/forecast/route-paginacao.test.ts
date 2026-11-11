@@ -11,7 +11,7 @@
  * As réguas deste arquivo:
  *
  *  (a) a leitura dos negócios é paginada, filtra a organização e ordena por
- *      `position_in_stage, id` (ordem estável entre as páginas);
+ *      `id` (ordem estável entre as páginas, imune a card arrastado);
  *  (b) 1.200 negócios abertos voltam TODOS na soma, e o corpo não ganha campo;
  *  (c) com a fonte `ia_quando_houver`, a leitura dos scores é do FUNIL (embed
  *      `crm_leads!inner`), da organização, ordenada por `lead_id` e paginada —
@@ -228,9 +228,9 @@ describe("GET /forecast — a leitura não corta calado (#4322)", () => {
     expect(argDe(chamadas, "eq")).toContainEqual(["organization_id", ORG]);
     expect(argDe(chamadas, "eq")).toContainEqual(["pipeline_id", PIPE]);
     expect(argDe(chamadas, "eq")).toContainEqual(["status", "open"]);
-    // `id` desempata `position_in_stage`: sem ele, dois negócios empatados
-    // podem trocar de página entre leituras e um deles some da soma.
-    expect(argDe(chamadas, "order").map((a) => a[0])).toEqual(["position_in_stage", "id"]);
+    // Só `id`: a soma não tem ordem de exibição, e ordenar por posição deixaria
+    // um card arrastado durante a leitura trocar de página e sumir da soma.
+    expect(argDe(chamadas, "order").map((a) => a[0])).toEqual(["id"]);
     expect(argDe(chamadas, "range")[0]).toEqual([0, 999]);
     // O `count` exato da primeira página é o que prova onde a carteira acaba.
     expect(argDe(chamadas, "select")[0]?.[1]).toEqual({ count: "exact" });

@@ -450,7 +450,6 @@ export async function carregarPrevisao(
         .eq("organization_id", organizationId)
         .eq("pipeline_id", pipelineId)
         .eq("status", "open")
-        .order("position_in_stage", { ascending: true })
         .order("id", { ascending: true })
         .range(inicio, fim),
     ),
