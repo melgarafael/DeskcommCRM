@@ -11,3 +11,5 @@ mostra a capacidade, a importação lê a coluna «capacidade» e o atendente de
 acha o produto de 256GB mesmo quando o nome não repete a capacidade. Na planilha,
 uma célula com mais de 60 caracteres recusa a linha com o motivo. Desligar esconde
 o campo e não apaga o que foi cadastrado. Nenhum produto já cadastrado muda.
+
+Crédito: @adsinside, pelo código, e @igornewmedia, que o trouxe no #3472.
