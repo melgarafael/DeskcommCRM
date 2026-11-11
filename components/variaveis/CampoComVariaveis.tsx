@@ -47,7 +47,11 @@ export function CampoComVariaveis({
   maxLength?: number;
 }) {
   const campoRef = React.useRef<HTMLTextAreaElement>(null);
-  const idDoCampo = id ?? React.useId();
+  // `useId` é HOOK: chamado incondicionalmente, e só o valor é descartado quando
+  // quem chama já passou um `id`. Antes ele morava no `??`, que o React lê como
+  // chamada condicional (React.useId dentro de expressão curto-circuitada).
+  const idGerado = React.useId();
+  const idDoCampo = id ?? idGerado;
 
   const inserir = (token: string) => {
     const el = campoRef.current;
