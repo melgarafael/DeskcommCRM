@@ -26,6 +26,8 @@
  */
 import { rotuloLocal } from "@/lib/tempo/agora";
 
+import { falaDoMotor, type Idioma } from "../idioma-do-turno";
+
 /**
  * A marca que identifica esta chamada para o dublê de modelo do e2e.
  *
@@ -164,6 +166,18 @@ export function montarBlocoDeDados(d: DadosDoCaso): string {
 export const PERSONA_NEUTRA = "Você é o assistente interno desta equipe de atendimento.";
 
 /**
+ * A persona neutra no idioma da organização (#4260, item 1).
+ *
+ * Era o bloco fixo em português que abria o system de TODA consulta ao caso,
+ * qualquer que fosse o idioma da empresa. `pt-BR` continua devolvendo a
+ * constante acima, byte a byte.
+ */
+export function personaNeutra(idioma: Idioma = "pt-BR"): string {
+  return falaDoMotor(PERSONA_NEUTRA, idioma);
+}
+
+
+/**
  * O bloco fixo do `system`.
  *
  * Nada do CASO entra aqui: o `system` é o prefixo estável do cache do provedor,
@@ -184,16 +198,23 @@ Atribua sempre a fonte: "o cliente disse", "a IA registrou", "a equipe decidiu".
 Não invente. O que não estiver nos dados, diga que não está registrado.
 Seja curto.`;
 
+/** O bloco fixo da consulta interna no idioma da organização (#4260, item 1). */
+export function instrucaoDaConsultaInterna(idioma: Idioma = "pt-BR"): string {
+  return falaDoMotor(INSTRUCAO_DA_CONSULTA_INTERNA, idioma);
+}
+
 /** `system` completo: persona + memória da organização + o bloco fixo. */
 export function montarSystem(input: {
   persona: string;
   memoriaDaOrganizacao: string | null;
+  /** Idioma da organização. Ausente = `pt-BR`, o texto de antes da #4260. */
+  idioma?: Idioma;
 }): string {
   const partes = [input.persona.trim()];
   if (input.memoriaDaOrganizacao && input.memoriaDaOrganizacao.trim() !== "") {
     partes.push(input.memoriaDaOrganizacao.trim());
   }
-  partes.push(INSTRUCAO_DA_CONSULTA_INTERNA);
+  partes.push(instrucaoDaConsultaInterna(input.idioma ?? "pt-BR"));
   return partes.join("\n\n");
 }
 
