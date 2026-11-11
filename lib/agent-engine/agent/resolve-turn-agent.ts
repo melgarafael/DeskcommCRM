@@ -75,11 +75,18 @@ import {
   escolherAgenteDoNumero,
   loadPublishedAgentConfig,
   loadPublishedAgentConfigById,
+  type CandidatoNoRastroDoPublico,
   type EscolhaDoNumero,
   type PublishedAgentConfig,
   type RastroDoPublico,
 } from './agent-config';
 import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
+import {
+  avaliarAgentePeloPublico,
+  ErroDeLeituraDoPublico,
+  filtrarMembrosPeloPublico,
+} from './publico-no-roteador';
+import { carregarFatosDoContato, type FatosDoContato } from './publico-do-gatilho';
 import {
   carregarFatosDoCrmDoContato,
   temFatosDoCrm,
@@ -155,6 +162,12 @@ export interface ResolveTurnAgentDeps {
    * não há dado.
    */
   carregarFatosDoCrmDoContato?: typeof carregarFatosDoCrmDoContato;
+  /**
+   * Os fatos do contato para a régua do PÚBLICO no roteador (#3722, fatia 2).
+   * Default: a leitura real, UMA vez por turno (promessa memoizada) e só quando
+   * algum candidato declarou público.
+   */
+  carregarFatosDoPublico?: typeof carregarFatosDoContato;
   /** O Jev ao lado do classificador (`lib/ai/decisao/roteador.ts`). */
   consultarJev?: typeof consultarJevNoRoteador;
   /** Chave e `fetch` do Jev — dublês só no teste. Default: a chave da organização e o egress com allowlist. */
@@ -317,19 +330,19 @@ export async function resolveTurnAgent(
   let roteadorCarregado = false;
   let temRegrasDeRemetente = false;
   try {
-    const router = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
+    const roteadorDoNumero = await _loadActiveRouter(db, input.tenantId, input.channelSessionId);
     roteadorCarregado = true;
-    temRegrasDeRemetente = router !== null && roteadorPorRemetente(router);
-    if (router && temRegrasDeRemetente) {
-      const { agentId, reserved } = await agentePorRemetente(db, input, router);
+    temRegrasDeRemetente = roteadorDoNumero !== null && roteadorPorRemetente(roteadorDoNumero);
+    if (roteadorDoNumero && temRegrasDeRemetente) {
+      const { agentId, reserved } = await agentePorRemetente(db, input, roteadorDoNumero);
       // O canal opera em modo de identidade: agentes internos nunca entram por
       // classificação, campanha, sticky antigo ou fallback genérico.
-      const destino = agentId ?? router.fallbackAgentId;
+      const destino = agentId ?? roteadorDoNumero.fallbackAgentId;
       const config = destino ? await _loadAgentById(db, input.tenantId, destino) : null;
       if (!config) throw new Error('sender_route_agent_unpublished');
       if (!agentId && reserved.has(config.agentId)) throw new Error('sender_route_reserved_fallback');
       return {
-        config, routerId: router.id, intentName: agentId ? 'remetente_autorizado' : null,
+        config, routerId: roteadorDoNumero.id, intentName: agentId ? 'remetente_autorizado' : null,
         confidence: null, outcome: agentId ? 'classified' : 'fallback',
       };
     }
@@ -355,7 +368,7 @@ export async function resolveTurnAgent(
       });
     }
 
-    if (router === null) {
+    if (roteadorDoNumero === null) {
       const escolha = await agenteDoNumero();
       if (escolha.motivo === 'publico_barrou') {
         deps.log.info(
@@ -373,6 +386,79 @@ export async function resolveTurnAgent(
         ...rastroDoPublico(escolha),
       };
     }
+
+    // ─── #3722, fatia 2: o PÚBLICO do agente chega ao roteador ───
+    //
+    // O membro que não atende este contato não pode ser OFERECIDO ao
+    // classificador: a pergunta é montada com `router.members`, e a escolha é
+    // validada contra ela. Filtrar aqui, UMA vez por turno, cobre os dois
+    // caminhos (Jev e IA de sempre) e faz o agente grudado perder a vez pelo
+    // mesmo mecanismo — ele é procurado na lista já filtrada.
+    //
+    // A leitura dos fatos é memoizada: nenhum membro com público ⇒ `lerFatos`
+    // NÃO é chamado (quem não configura não paga consulta), e quando o fallback
+    // também declara público a régua usa a MESMA leitura.
+    const _carregarFatosDoPublico = deps.carregarFatosDoPublico ?? carregarFatosDoContato;
+    let fatosDoPublicoPromessa: Promise<FatosDoContato> | null = null;
+    const lerFatosDoPublico = (): Promise<FatosDoContato> => {
+      if (fatosDoPublicoPromessa === null) {
+        fatosDoPublicoPromessa = _carregarFatosDoPublico(db, input.tenantId, input.leadId).catch((causa) => {
+          // Erro de LEITURA não se decide no escuro: sobe tipado, e o `catch`
+          // geral re-lança para a fila re-tentar o job.
+          throw new ErroDeLeituraDoPublico(causa);
+        });
+      }
+      return fatosDoPublicoPromessa;
+    };
+    const filtroDoPublico = await filtrarMembrosPeloPublico(roteadorDoNumero, lerFatosDoPublico);
+    const router = filtroDoPublico.router;
+
+    // O fallback do router, quando o público o avalia: entra no MESMO rastro dos
+    // membros (`posicao` logo depois deles) para o operador ver por que ele não
+    // assumiu.
+    let candidatoDoFallback: CandidatoNoRastroDoPublico | null = null;
+    let rastroRegistrado = false;
+
+    /**
+     * Anexa o rastro do público do ROTEADOR à resolução e o registra UMA vez no
+     * log do turno. Sem público declarado (`rastro === null`) não há linha nova
+     * — quem não usa o recurso não paga nem um log.
+     */
+    const comRastroDoPublico = (r: TurnAgentResolution): TurnAgentResolution => {
+      if (filtroDoPublico.rastro === null) return r;
+      const candidatos =
+        candidatoDoFallback === null
+          ? filtroDoPublico.rastro.candidatos
+          : [...filtroDoPublico.rastro.candidatos, candidatoDoFallback];
+      const barrados = filtroDoPublico.barrados + (candidatoDoFallback?.decisao?.passa === false ? 1 : 0);
+      const rastro: RastroDoPublico = {
+        ...filtroDoPublico.rastro,
+        candidatos,
+        barrados,
+        escolhidoAgentId: r.config?.agentId ?? null,
+        ...(r.silencioPeloPublico ? { motivo: 'publico_barrou' as const } : {}),
+      };
+      if (!rastroRegistrado) {
+        rastroRegistrado = true;
+        deps.log.info('público do agente: membros do roteador considerados (#3722)', {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          contactId: input.leadId,
+          origem: 'roteador',
+          escolhido: rastro.escolhidoAgentId,
+          barrados,
+          motivo: rastro.motivo ?? null,
+          candidatos: rastro.candidatos.map((c) => ({
+            agente: c.agentName,
+            posicao: c.posicao,
+            sem_publico: c.semPublico,
+            regra: c.decisao?.regra ?? 'nao_avaliado',
+            valor: c.decisao?.valor ?? null,
+          })),
+        });
+      }
+      return { ...r, rastroDoPublico: rastro };
+    };
 
     // fallback do router ou genérico — usado pelas regras 4, 5, 6 e 7.
     const resolveFallback = async (
@@ -417,8 +503,43 @@ export async function resolveTurnAgent(
           ...rastroDoPublico(escolha),
         };
       }
-      const config = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
-      if (config === null) {
+      // O nome `agentConfig` não é estilo: é o que a cerca
+      // `knobs-da-versao-publicada-sao-aplicados` enxerga como CONSUMIDOR do
+      // campo (`agentConfig.publico`). Renomear para `config` faria o campo
+      // parecer carregado e nunca aplicado.
+      const agentConfig = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
+      // #3722 fatia 2: o fallback também tem público. Se a régua o barra, ele
+      // NÃO assume — nem como "membro padrão/none". A conversa fica sem dono e
+      // o turno termina em silêncio, como quando o número inteiro barra.
+      if (agentConfig !== null) {
+        const avaliado = await avaliarAgentePeloPublico(
+          agentConfig.agentId,
+          agentConfig.agentName,
+          agentConfig.publico,
+          lerFatosDoPublico,
+          router.members.length,
+        );
+        if (avaliado !== null) {
+          candidatoDoFallback = avaliado;
+          if (avaliado.decisao?.passa === false) {
+            deps.log.info('resolve-turn-agent: público barrou o fallback do roteador — turno silenciado (#3722)', {
+              routerId: router.id,
+              outcome,
+              fallbackAgentId: agentConfig.agentId,
+              regra: avaliado.decisao.regra,
+            });
+            return {
+              config: null,
+              routerId: router.id,
+              intentName: null,
+              confidence,
+              outcome,
+              silencioPeloPublico: true,
+            };
+          }
+        }
+      }
+      if (agentConfig === null) {
         // regra 7: fallback também sem versão publicada — fim legítimo da
         // linha, mas o outcome que já explicava a causa (classifier_failed)
         // não vira 'no_match' por engano; só rebaixa quando o motivo era
@@ -429,11 +550,11 @@ export async function resolveTurnAgent(
         });
       }
       return {
-        config,
+        config: agentConfig,
         routerId: router.id,
         intentName: null,
         confidence,
-        outcome: outcome === 'classifier_failed' ? 'classifier_failed' : config === null ? 'no_match' : 'fallback',
+        outcome: outcome === 'classifier_failed' ? 'classifier_failed' : agentConfig === null ? 'no_match' : 'fallback',
       };
     };
 
@@ -474,17 +595,35 @@ export async function resolveTurnAgent(
 
     // sticky elegível: config liga sticky E o agente ainda é membro do router
     // (membro removido ⇒ trata como sem sticky, decisão segura — ver report).
+    //
+    // #3722 fatia 2: `router.members` JÁ é a lista filtrada pelo público. Se o
+    // agente grudado deixou de ser elegível (o cliente virou cliente no meio),
+    // ele simplesmente não está aqui — e perde a vez, como um membro removido.
     const stickyMember =
       router.sticky && input.stickyAgentId !== null
         ? router.members.find((m) => m.agentId === input.stickyAgentId)
         : undefined;
 
+    // #3722 fatia 2: TODOS os membros barrados. Não há o que perguntar ao
+    // classificador — a resposta só poderia ser "nenhuma" —, então nenhum
+    // modelo é chamado (nem o Jev). O fallback só assume se o público dele
+    // também aceitar; senão o turno termina em silêncio, com o motivo no rastro.
+    if (filtroDoPublico.avaliado && filtroDoPublico.elegiveis === 0) {
+      deps.log.info('público do agente barrou todos os membros do roteador — turno sem classificador (#3722)', {
+        tenantId: input.tenantId,
+        conversationId: input.conversationId,
+        contactId: input.leadId,
+        barrados: filtroDoPublico.barrados,
+      });
+      return comRastroDoPublico(await resolveFallback('no_match', null));
+    }
+
     // regra 6: sem mensagem inbound (follow-up) — nunca classifica.
     if (input.signal === null) {
       if (stickyMember !== undefined) {
-        return loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, null);
+        return comRastroDoPublico(await loadMatchedOrFallback('sticky', stickyMember, input.stickyIntent, null));
       }
-      return resolveFallback('no_match', null);
+      return comRastroDoPublico(await resolveFallback('no_match', null));
     }
 
     // O Jev pergunta o mesmo (onda 2 do Jev, bloco 2.2): só a mensagem, sem o
@@ -610,8 +749,12 @@ export async function resolveTurnAgent(
       resultado,
       tempoTotalMs: Date.now() - inicioDoRoteamento,
     });
-    return resultado;
+    return comRastroDoPublico(resultado);
   } catch (err) {
+    // #3722 fatia 2: erro ao LER os fatos do contato para o público NÃO pode
+    // cair no fluxo sem router nem no agente do número — isso escolheria um
+    // agente no escuro. Sobe, e a fila re-tenta o job.
+    if (err instanceof ErroDeLeituraDoPublico) throw err;
     deps.log.warn('resolve-turn-agent: erro inesperado no router — turno cai no fluxo sem router', {
       error: err instanceof Error ? err.message : String(err),
     });

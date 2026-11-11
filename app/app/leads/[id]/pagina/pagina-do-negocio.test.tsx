@@ -42,6 +42,12 @@ vi.mock("@/hooks/leads/useLeadTimeline", () => ({
     seguranca: { divergencias: 0 },
   }),
 }));
+// A seção dos números (#3669) lê as pessoas relacionadas por react-query; aqui
+// o negócio não tem relacionado, que é o caso em que a seção nem é montada.
+vi.mock("@/hooks/leads/useContatosRelacionados", () => ({
+  chaveDosContatosRelacionados: (leadId: string | null) => ["contatos-relacionados", leadId],
+  useContatosRelacionados: () => ({ data: { data: [] }, isLoading: false, isError: false }),
+}));
 vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
   useAssignableMembers: () => ({ data: [{ user_id: "u1", full_name: "Ana" }] }),
 }));

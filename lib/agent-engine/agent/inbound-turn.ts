@@ -3258,6 +3258,9 @@ async function executarTurnoDoAgente(
           agentId: agentConfig.agentId,
           vozEnabled: agentConfig.vozEnabled,
           vozQuando: agentConfig.vozQuando,
+          // Voz por agente (#4228): sem chave no agente, `null` e a resolução cai
+          // na voz da organização — o comportamento de antes, byte a byte.
+          vozVoiceId: agentConfig.vozVoiceId ?? null,
           voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
           inboundType:
             input.inboundMessageId === undefined
@@ -4231,7 +4234,7 @@ async function executarTurnoDoAgente(
         textoDaOrganizacao(playbook.prompt),
         renderOrgMemory(memoriaEscritaPorPessoas(orgMemory)),
         skillsDaOrganizacao,
-        evidenciasComerciais.contexto(),
+        evidenciasComerciais.materialDaOrganizacao(),
         ...valoresConsultados,
       ],
       ...(historico !== undefined ? { historico } : {}),
@@ -5977,6 +5980,31 @@ async function executarTurnoDoAgente(
                   return resultado;
                 }) as typeof mcpTool.execute,
               };
+              continue;
+            }
+            // Leitura do servidor MCP externo (#2147): o que o sistema da empresa
+            // devolveu — a data do exame na agenda — é fato consultado neste turno.
+            // Sem isto a revisão de promessa não via de onde a data veio e vetava
+            // a resposta certa como compromisso inventado.
+            if (mcp.leiturasRemotas.has(name) && typeof mcpTool.execute === 'function') {
+              const executeOriginal = mcpTool.execute.bind(mcpTool);
+              // Troca o `execute` no PRÓPRIO objeto, sem cópia: a prévia libera a
+              // remota pela identidade do objeto que `pickToolsFromMcp` marcou
+              // (`leitura-remota.ts`), e uma cópia perderia a marca. O objeto é
+              // montado por turno, então a troca não vaza para outro turno.
+              mcpTool.execute = (async (...args: Parameters<typeof executeOriginal>) => {
+                const resultado = await executeOriginal(...args);
+                const descartadas = evidenciasComerciais.registrarLeituraRemota(name, resultado);
+                if (descartadas.length > 0) {
+                  runLog.warn('leitura remota acima do teto da evidência — fora da conferência de promessa', {
+                    ferramenta: name,
+                    descartadas: descartadas.length,
+                    tamanhos: descartadas,
+                  });
+                }
+                return resultado;
+              }) as typeof mcpTool.execute;
+              rawTools[name] = mcpTool;
               continue;
             }
             // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate

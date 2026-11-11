@@ -9,12 +9,14 @@ import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider"
 import { ROLE_RANK } from "@/lib/auth/types";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
+import { useContatosRelacionados } from "@/hooks/leads/useContatosRelacionados";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
 import { ArrowLeft, ArrowsOutSimple } from "@/lib/ui/icons";
 import { ContatoDoNegocio } from "./ContatoDoNegocio";
 import { AtalhosDoNegocio } from "./AtalhosDoCard";
 import { ConversaNoDossie } from "./ConversaNoDossie";
+import { ConversasDosNumeros } from "./ConversasDosNumeros";
 import { LeadFieldsForm, type ControleDosCamposDoNegocio } from "./LeadFieldsForm";
 import { RevisaoDoDocumento } from "./RevisaoDoDocumento";
 import { ScoreSlot } from "./ScoreSlot";
@@ -175,6 +177,18 @@ export function LeadDossier({
   // continua lendo a prop — é ela que diz quando buscar a linha do tempo.
   const emFoco = naPagina || open;
   const timeline = useLeadTimeline(emFoco ? lead.id : null, lead.contact_id);
+  /**
+   * As pessoas relacionadas, aqui, para decidir se a seção dos números existe
+   * (#3669). O hook é o MESMO que `ContatoDoNegocio` usa — a chave de cache é
+   * uma só, então isto não é uma consulta a mais: é a mesma resposta, lida por
+   * dois componentes. Negócio sem relação não monta a seção, e é assim que quem
+   * não usa a lista vê exatamente a tela de antes.
+   *
+   * `emFoco`, e não `open`: a página inteira não tem aberto/fechado, e sem isto
+   * a seção dos números nunca apareceria nela.
+   */
+  const relacionadas = useContatosRelacionados(emFoco ? lead.id : null);
+  const temPessoaRelacionada = (relacionadas.data?.data.length ?? 0) > 0;
   const { fechadas, alternar, abrir } = useSecoesRecolhidas();
   const timelineRecolhida = fechadas.has("linha-do-tempo");
   // As três MAIS RECENTES: a rota devolve `performed_at` decrescente, então o
@@ -340,6 +354,21 @@ export function LeadDossier({
     </SecaoDoDossie>
   );
 
+  /* Os OUTROS NÚMEROS DO CLIENTE (#3669, fatia 1): as conversas e as
+     ligações das "Pessoas relacionadas", que até aqui só existiam como
+     anotação. Só existe quando há relacionado — negócio de um número só
+     fica idêntico ao de antes, sem seção vazia. */
+  const numeros = temPessoaRelacionada ? (
+    <SecaoDoDossie
+      id="numeros-do-negocio"
+      titulo={t("Conversas e ligações dos números")}
+      recolhida={fechadas.has("numeros-do-negocio")}
+      aoAlternar={alternar}
+    >
+      <ConversasDosNumeros leadId={emFoco ? lead.id : null} />
+    </SecaoDoDossie>
+  ) : null;
+
   /* ② Dados do negócio — o que se PREENCHE, agora ANTES da linha do
      tempo (#3181). */
   const dadosDoNegocio = (
@@ -487,6 +516,7 @@ export function LeadDossier({
           {/* O que se lê e se preenche. */}
           <div className="flex min-w-0 flex-col gap-4">
             {contato}
+            {numeros}
             {dadosDoNegocio}
           </div>
           {/* O que se acompanha. */}
@@ -543,6 +573,7 @@ export function LeadDossier({
         {atalhosDoNegocio}
         {conversa}
         {contato}
+        {numeros}
         {dadosDoNegocio}
         {tarefas}
         {linhaDoTempo}

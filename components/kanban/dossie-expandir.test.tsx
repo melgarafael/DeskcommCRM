@@ -41,6 +41,12 @@ vi.mock("@/hooks/leads/useLeadTimeline", () => ({
   }),
 }));
 
+// A seção dos números (#3669) lê as pessoas relacionadas por react-query; aqui
+// o negócio não tem relacionado, que é o caso em que a seção nem é montada.
+vi.mock("@/hooks/leads/useContatosRelacionados", () => ({
+  chaveDosContatosRelacionados: (leadId: string | null) => ["contatos-relacionados", leadId],
+  useContatosRelacionados: () => ({ data: { data: [] }, isLoading: false, isError: false }),
+}));
 vi.mock("./ContatoDoNegocio", () => ({ ContatoDoNegocio: () => <div data-peca="contato" /> }));
 vi.mock("./LeadFieldsForm", () => ({ LeadFieldsForm: () => <div data-peca="campos" /> }));
 vi.mock("./RevisaoDoDocumento", () => ({ RevisaoDoDocumento: () => null }));
