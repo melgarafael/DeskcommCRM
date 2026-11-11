@@ -48,8 +48,8 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
-import { definirSetorDaConversa } from "@/lib/atendimento/setor-da-conversa";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { definirSetorDaConversa } from "@/lib/atendimento/setor-da-conversa";
 import { requireRole } from "@/lib/auth/require-role";
 import { conversationSectorSchema, validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -123,11 +123,10 @@ async function responderSetorPut(
     throw err;
   }
 
-  // A escrita passa pelo cliente que a rota recebeu: o da SESSÃO (a RLS de sempre
-  // vale: quem não enxerga a conversa não escolhe a fila dela) ou, no ramo do
-  // token, o de serviço com o `.eq("organization_id")` dentro do helper. O de
-  // serviço entra só onde ele já entrava: a lista de setores e o pedido de
-  // distribuição.
+  // A escrita passa pelo cliente recebido: a SESSÃO na rota humana (a RLS de sempre, sem exceção para
+  // esta rota) e o de serviço no ramo do token, onde a organização vem da LINHA do token e a conversa
+  // é conferida com `organization_id` dentro do auxiliar. O de serviço entra só onde ele já entrava:
+  // a lista de setores e o pedido de distribuição.
   const resultado = await definirSetorDaConversa({
     db: supabase,
     admin: createAdminClient(),

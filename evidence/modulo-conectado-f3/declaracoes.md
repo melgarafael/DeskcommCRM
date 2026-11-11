@@ -29,7 +29,7 @@ chamando a API com o token; só não há JWT de contexto de pessoa. Nenhum valor
 
 ## Migrations (tripla)
 
-- `supabase/migrations/20261105120000_9119_modulo_conectado_consentimento.sql` (permissões `area.*` na
+- `supabase/migrations/20261105120100_9119_modulo_conectado_consentimento.sql` (permissões `area.*` na
   CHECK e `fn_extensions_set_consent`).
 - `supabase/baseline.sql`: apêndice idempotente depois do apêndice da 9118
   (`grep -n "fn_extensions_set_consent" supabase/baseline.sql`).
@@ -80,8 +80,8 @@ variável nova é opcional e que não exige ação. Sem seção no `CHANGELOG.md
 - **Nada foi executado nesta máquina.** Nenhum `pnpm`, `vitest`, typecheck, lint, build, Docker ou
   Playwright. O veredito é o CI do PR interno.
 - **A migration 9119 e o apêndice do baseline não foram aplicados** em nenhum Postgres.
-- **Nenhuma jornada em navegador.** J69 é especificação, todos os casos "NÃO EXECUTADO"; a coluna de CI da
-  J69 foi montada a partir dos nomes e da intenção dos testes das tarefas anteriores, e cada teste
+- **Nenhuma jornada em navegador.** J70 é especificação, todos os casos "NÃO EXECUTADO"; a coluna de CI da
+  J70 foi montada a partir dos nomes e da intenção dos testes das tarefas anteriores, e cada teste
   não foi relido caso a caso nesta tarefa.
 - **Rotas que não usam `metadataDoModulo` não gravam `person_id`.** Só as quatro rotas listadas acima e o
   audit de ferramentas MCP usam o mecanismo comum; não se varreu uma a uma as demais rotas mutantes de

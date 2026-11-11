@@ -4420,10 +4420,10 @@ lado seguro: quem administra a instalação liga de novo, de propósito.
 estado é só guardado e mostrado: a F2 e a F4 vão ler `disabled_at`); um aviso de instalação específico para o
 módulo conectado; e a chamada real ao endereço `service_origin`, que nenhuma peça da F1 faz.
 
-## J68 — Módulo conectado: segredo, busca do token e revogação `[P0]` (2026-11-05)
+## J69 — Módulo conectado: segredo, busca do token e revogação `[P0]` (2026-11-05)
 
 Specs: esta jornada é **especificação**. Nenhuma execução foi feita; o laboratório local ainda não
-admite o perfil `connected` (ver J67.1), então nenhum caso abaixo roda nele. Quando J67.1 passar, os
+admite o perfil `connected` (ver J68.1), então nenhum caso abaixo roda nele. Quando J68.1 passar, os
 casos viram execução; até lá, cada linha descreve o que a tela e o banco devem fazer.
 
 Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-token-modulo.test.ts` e
@@ -4436,26 +4436,26 @@ Nenhuma delas abre `/admin/extensoes` nem `/app/settings/api-tokens` num navegad
 
 Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
 
-Ambiente previsto: o mesmo de J67 (banco fresco do `supabase/baseline.sql`, `scripts/bootstrap-owner.ts`,
+Ambiente previsto: o mesmo de J68 (banco fresco do `supabase/baseline.sql`, `scripts/bootstrap-owner.ts`,
 envs opcionais ausentes), com `AI_CRED_AES_KEY` definida (sem ela, instalar `connected` falha antes de gravar;
 a mensagem exibida na tela ainda não foi conferida), um módulo de laboratório que assina com o segredo recebido e duas organizações
 para provar o isolamento.
 
 | Caso | Prioridade | Prova prevista | Resultado |
 |---|---|---|---|
-| J68.1 | Instalar um módulo `connected` | P0 | A instalação aparece com perfil `connected`; banco com linha em `extension_installation_secrets` cujo `ciphertext` não é o segredo em claro | **NÃO EXECUTADO** (depende de J67.1) |
-| J68.2 | Gerar o segredo e vê-lo uma vez | P0 | Botão "Gerar segredo" no cartão abre a caixa com o segredo; fechar a caixa apaga o valor da tela; reabrir não mostra de novo; `api_audit_log` com `extension.secret_rotated` e sem o valor | **NÃO EXECUTADO** |
-| J68.3 | Gerar novo segredo | P0 | Botão "Gerar novo segredo"; os tokens vivos da instalação somem da tela de tokens; uma busca com o segredo antigo é recusada | **NÃO EXECUTADO** |
-| J68.4 | Ativar numa organização | P0 | Ativar reserva a vaga: a linha "Módulo <slug>" aparece na tela de tokens da organização. Previsto, não medido: a vaga ainda não tem texto utilizável, porque o banco guarda só um hash que ninguém conhece | **NÃO EXECUTADO** |
-| J68.5 | O módulo busca o token com a assinatura | P0 | `POST /api/v1/extensions/token` com `X-Module-*` assinados devolve `token` e `expires_at` (1 h); o token é aceito em `/api/v1` com escopo `mcp:read` e papel `viewer` | **NÃO EXECUTADO** |
-| J68.6 | Ver o token na tela de tokens | P0 | Linha "Módulo <slug>" com o prefixo, sem botão de copiar; nenhum texto do token aparece na tela | **NÃO EXECUTADO** |
-| J68.7 | Revogar na tela desativa o módulo | P0 | Botão "Revogar" na linha do módulo; a ativação daquela organização passa a desativada e o token fica revogado, na mesma transação | **NÃO EXECUTADO** |
-| J68.8 | Repetir a busca com o mesmo nonce | P1 | Segunda busca com o mesmo `X-Module-Nonce` recusa; a resposta é idêntica à de assinatura errada e à de instalação inexistente | **CI** (rota e banco) escritos; **NÃO EXECUTADO** |
-| J68.9 | Carimbo fora de ±5 min | P1 | Carimbo com 5 min exatos entra; com mais de 5 min recusa; a recusa não troca o hash da vaga | **CI** (unit e rota) escritos; **NÃO EXECUTADO** |
-| J68.10 | Desligar a instalação corta a busca | P1 | Com `disabled_at`, a busca recusa e não troca o hash; desligar revoga os tokens de todas as organizações da instalação | **CI** (banco) escrito; **NÃO EXECUTADO** |
-| J68.11 | Limite de 50 tokens vivos | P1 | Organização com 50 tokens vivos: ativar `connected` falha inteiro e `organization_extensions` não muda | **CI** (banco) escrito; **NÃO EXECUTADO** |
-| J68.12 | Duas buscas simultâneas | P1 | Duas buscas do mesmo par deixam um só token vivo; a outra recebe recusa ou o mesmo resultado | **só CI de banco** (`extensoes-token-modulo-funcoes.test.ts`); **NÃO EXECUTADO** |
-| J68.13 | Isolamento entre organizações | P0 | Token emitido para a organização A não existe para a B; a instalação ativa só na B não emite nada para a A | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
+| J69.1 | Instalar um módulo `connected` | P0 | A instalação aparece com perfil `connected`; banco com linha em `extension_installation_secrets` cujo `ciphertext` não é o segredo em claro | **NÃO EXECUTADO** (depende de J68.1) |
+| J69.2 | Gerar o segredo e vê-lo uma vez | P0 | Botão "Gerar segredo" no cartão abre a caixa com o segredo; fechar a caixa apaga o valor da tela; reabrir não mostra de novo; `api_audit_log` com `extension.secret_rotated` e sem o valor | **NÃO EXECUTADO** |
+| J69.3 | Gerar novo segredo | P0 | Botão "Gerar novo segredo"; os tokens vivos da instalação somem da tela de tokens; uma busca com o segredo antigo é recusada | **NÃO EXECUTADO** |
+| J69.4 | Ativar numa organização | P0 | Ativar reserva a vaga: a linha "Módulo <slug>" aparece na tela de tokens da organização. Previsto, não medido: a vaga ainda não tem texto utilizável, porque o banco guarda só um hash que ninguém conhece | **NÃO EXECUTADO** |
+| J69.5 | O módulo busca o token com a assinatura | P0 | `POST /api/v1/extensions/token` com `X-Module-*` assinados devolve `token` e `expires_at` (1 h); o token é aceito em `/api/v1` com escopo `mcp:read` e papel `viewer` | **NÃO EXECUTADO** |
+| J69.6 | Ver o token na tela de tokens | P0 | Linha "Módulo <slug>" com o prefixo, sem botão de copiar; nenhum texto do token aparece na tela | **NÃO EXECUTADO** |
+| J69.7 | Revogar na tela desativa o módulo | P0 | Botão "Revogar" na linha do módulo; a ativação daquela organização passa a desativada e o token fica revogado, na mesma transação | **NÃO EXECUTADO** |
+| J69.8 | Repetir a busca com o mesmo nonce | P1 | Segunda busca com o mesmo `X-Module-Nonce` recusa; a resposta é idêntica à de assinatura errada e à de instalação inexistente | **CI** (rota e banco) escritos; **NÃO EXECUTADO** |
+| J69.9 | Carimbo fora de ±5 min | P1 | Carimbo com 5 min exatos entra; com mais de 5 min recusa; a recusa não troca o hash da vaga | **CI** (unit e rota) escritos; **NÃO EXECUTADO** |
+| J69.10 | Desligar a instalação corta a busca | P1 | Com `disabled_at`, a busca recusa e não troca o hash; desligar revoga os tokens de todas as organizações da instalação | **CI** (banco) escrito; **NÃO EXECUTADO** |
+| J69.11 | Limite de 50 tokens vivos | P1 | Organização com 50 tokens vivos: ativar `connected` falha inteiro e `organization_extensions` não muda | **CI** (banco) escrito; **NÃO EXECUTADO** |
+| J69.12 | Duas buscas simultâneas | P1 | Duas buscas do mesmo par deixam um só token vivo; a outra recebe recusa ou o mesmo resultado | **só CI de banco** (`extensoes-token-modulo-funcoes.test.ts`); **NÃO EXECUTADO** |
+| J69.13 | Isolamento entre organizações | P0 | Token emitido para a organização A não existe para a B; a instalação ativa só na B não emite nada para a A | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
 
 **Comportamento declarado.** O token do módulo vale uma hora e é renovado por nova busca; não há token
 de longa duração na F2. Revogar na tela de tokens desativa a ativação daquela organização: para voltar,
@@ -4466,10 +4466,10 @@ assinar e buscar; a concorrência entre buscas só é provada pelos invariantes 
 jornada em tela; e que a autoridade do token seja limitada por área (isso é da F3, e o token da F2 só
 tem `mcp:read`).
 
-## J69 — Módulo conectado: consentimento por área e ator com pessoa `[P0]` (2026-11-05)
+## J70 — Módulo conectado: consentimento por área e ator com pessoa `[P0]` (2026-11-05)
 
 Specs: esta jornada é **especificação**. Nenhuma execução foi feita; o laboratório local ainda não
-admite o perfil `connected` (ver J67.1), então nenhum caso abaixo roda nele. Quando J67.1 passar, os
+admite o perfil `connected` (ver J68.1), então nenhum caso abaixo roda nele. Quando J68.1 passar, os
 casos viram execução; até lá, cada linha descreve o que a tela e o banco devem fazer.
 
 Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-consentimento.test.ts`
@@ -4482,24 +4482,24 @@ num navegador.
 
 Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
 
-Ambiente previsto: o mesmo de J68, mais `MODULE_JWT_PRIVATE_KEY` definida para os casos com pessoa, um
+Ambiente previsto: o mesmo de J69, mais `MODULE_JWT_PRIVATE_KEY` definida para os casos com pessoa, um
 módulo de laboratório que declara áreas de leitura e de escrita, uma pessoa `viewer`, uma `manager` e uma
 `admin`, e duas organizações para provar o isolamento.
 
 | Caso | Prioridade | Prova prevista | Resultado |
 |---|---|---|---|
-| J69.1 | Ver as áreas declaradas ao ativar | P0 | A ativação lista, em frases legíveis, só as áreas que o pacote declarou, cada uma com caixa de seleção, nenhuma marcada de início | **NÃO EXECUTADO** (depende de J67.1) |
-| J69.2 | Consentir uma área | P0 | O admin marca e salva; o cartão mostra a área consentida; `api_audit_log` com `extension.consent_changed` e a lista de áreas, sem dado pessoal | **NÃO EXECUTADO** |
-| J69.3 | Manager e agent não alteram | P0 | Quem não é admin vê o consentimento atual, com o motivo de não poder mudar; a rota responde 403 | **CI** (rota) escrito; **NÃO EXECUTADO** |
-| J69.4 | Área não declarada | P1 | Consentir uma área que o pacote não declarou recusa com 409 e nada é gravado | **CI** (rota e banco) escritos; **NÃO EXECUTADO** |
-| J69.5 | Módulo sem consentimento | P0 | Chamada do módulo a uma área não consentida recusa com 403; o consentimento é lido do banco a cada chamada | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J69.6 | Modo da porta | P0 | Área consentida só para leitura aceita GET e recusa POST na mesma área | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J69.7 | Retirar o consentimento | P0 | O admin desmarca e salva; a chamada seguinte do mesmo token recusa, sem esperar o token expirar | **NÃO EXECUTADO** |
-| J69.8 | Pessoa limita o papel | P0 | Com JWT de contexto de pessoa `viewer`, uma rota que pede `manager` recusa mesmo que o token do módulo permita; o papel efetivo é o menor dos dois | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J69.9 | Pessoa admin passa, manager não | P1 | Com pessoa `admin`, uma rota que pede `admin` passa; com pessoa `manager`, recusa; sem JWT, recusa (ADR-0005 D4: o limite é o papel de quem clica; equipe, credencial e envio seguem sem área) | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J69.10 | Pessoa rebaixada entre duas chamadas | P1 | Rebaixar a pessoa muda o papel efetivo na chamada seguinte, com o mesmo JWT ainda válido | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J69.11 | Atribuição no audit | P0 | Mutação feita pelo módulo com JWT de pessoa grava `actor_api_token_id` e `metadata.module` como antes, mais `metadata.person_id`; `actor_user_id` continua nulo | **CI** (unit, `ator-modulo.test.ts`) escrito; **NÃO EXECUTADO** |
-| J69.12 | Isolamento entre organizações | P0 | Consentimento da organização A não vale na B; JWT de contexto de uma organização não abre a outra | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
+| J70.1 | Ver as áreas declaradas ao ativar | P0 | A ativação lista, em frases legíveis, só as áreas que o pacote declarou, cada uma com caixa de seleção, nenhuma marcada de início | **NÃO EXECUTADO** (depende de J68.1) |
+| J70.2 | Consentir uma área | P0 | O admin marca e salva; o cartão mostra a área consentida; `api_audit_log` com `extension.consent_changed` e a lista de áreas, sem dado pessoal | **NÃO EXECUTADO** |
+| J70.3 | Manager e agent não alteram | P0 | Quem não é admin vê o consentimento atual, com o motivo de não poder mudar; a rota responde 403 | **CI** (rota) escrito; **NÃO EXECUTADO** |
+| J70.4 | Área não declarada | P1 | Consentir uma área que o pacote não declarou recusa com 409 e nada é gravado | **CI** (rota e banco) escritos; **NÃO EXECUTADO** |
+| J70.5 | Módulo sem consentimento | P0 | Chamada do módulo a uma área não consentida recusa com 403; o consentimento é lido do banco a cada chamada | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.6 | Modo da porta | P0 | Área consentida só para leitura aceita GET e recusa POST na mesma área | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.7 | Retirar o consentimento | P0 | O admin desmarca e salva; a chamada seguinte do mesmo token recusa, sem esperar o token expirar | **NÃO EXECUTADO** |
+| J70.8 | Pessoa limita o papel | P0 | Com JWT de contexto de pessoa `viewer`, uma rota que pede `manager` recusa mesmo que o token do módulo permita; o papel efetivo é o menor dos dois | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.9 | Pessoa admin passa, manager não | P1 | Com pessoa `admin`, uma rota que pede `admin` passa; com pessoa `manager`, recusa; sem JWT, recusa (ADR-0005 D4: o limite é o papel de quem clica; equipe, credencial e envio seguem sem área) | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.10 | Pessoa rebaixada entre duas chamadas | P1 | Rebaixar a pessoa muda o papel efetivo na chamada seguinte, com o mesmo JWT ainda válido | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.11 | Atribuição no audit | P0 | Mutação feita pelo módulo com JWT de pessoa grava `actor_api_token_id` e `metadata.module` como antes, mais `metadata.person_id`; `actor_user_id` continua nulo | **CI** (unit, `ator-modulo.test.ts`) escrito; **NÃO EXECUTADO** |
+| J70.12 | Isolamento entre organizações | P0 | Consentimento da organização A não vale na B; JWT de contexto de uma organização não abre a outra | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
 
 **Comportamento declarado.** Declarado pelo pacote e consentido pela organização, os dois, no modo certo:
 sem um deles, a chamada recusa. Quem consente é só o admin da organização. A pessoa do JWT só limita
@@ -4510,10 +4510,10 @@ de contexto e que a tela dele o repasse; que as mutações de todas as rotas gra
 mecanismo comum, `metadataDoModulo`, foi coberto, e as rotas que não o usam não levam a pessoa); e o
 comportamento de quem já tem consentimento em edição ao mesmo tempo em duas abas.
 
-## J70 — Módulo conectado: o lugar na tela, a ponte e o painel lateral `[P0]` (2026-11-05)
+## J71 — Módulo conectado: o lugar na tela, a ponte e o painel lateral `[P0]` (2026-11-05)
 
 Specs: esta jornada é **especificação**. Nenhuma execução foi feita; ainda não existe módulo real com
-serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J67.1). Quando houver um
+serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J68.1). Quando houver um
 módulo real, os casos viram execução; até lá, cada linha descreve o que a tela deve fazer.
 
 Cobertura hoje, só por escrita (não executada): `lib/extensions/modulos-na-tela.test.ts`,
@@ -4525,7 +4525,7 @@ Cobertura hoje, só por escrita (não executada): `lib/extensions/modulos-na-tel
 
 Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
 
-Ambiente previsto: o mesmo de J69, mais um módulo de laboratório com `service_origin` de outra origem que
+Ambiente previsto: o mesmo de J70, mais um módulo de laboratório com `service_origin` de outra origem que
 sirva `/embed`, uma pessoa `viewer`, uma `admin`, e duas organizações.
 
 | Caso | Nome | Prioridade | Prova prevista | Resultado |
@@ -4558,10 +4558,10 @@ do iframe não chega ao CRM, porque o navegador entrega a tecla ao iframe: o pai
 com o foco fora do quadro. A coluna de CI foi montada a partir dos nomes e da intenção dos testes das
 tarefas anteriores; cada teste não foi relido caso a caso nesta tarefa.
 
-## J71 — Módulo conectado: os eventos que o módulo busca e o atraso em `/admin/extensoes` `[P0]` (2026-11-05)
+## J72 — Módulo conectado: os eventos que o módulo busca e o atraso em `/admin/extensoes` `[P0]` (2026-11-05)
 
 Specs: esta jornada é **especificação**. Nenhuma execução foi feita; ainda não existe módulo real com
-serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J67.1). Quando houver um
+serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J68.1). Quando houver um
 módulo real, os casos viram execução; até lá, cada linha descreve o que o módulo e a tela devem fazer.
 
 Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-eventos.test.ts` (banco real,
@@ -4572,23 +4572,23 @@ Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-ev
 
 Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
 
-Ambiente previsto: o mesmo de J69, mais um módulo de laboratório que assine as buscas com o segredo da
+Ambiente previsto: o mesmo de J70, mais um módulo de laboratório que assine as buscas com o segredo da
 instalação e guarde o cursor, duas organizações com o mesmo módulo ligado, um contato em cada uma, uma
 pessoa `admin` da organização e o dono do servidor.
 
 | Caso | Nome | Prioridade | Prova prevista | Resultado |
 |---|---|---|---|---|
-| J71.1 | Leitura por cursor, só da organização | P0 | Com o mesmo módulo ligado nas organizações A e B, o módulo que assina como A lê só os eventos de A; nenhum identificador de B aparece, nem em páginas seguintes | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
-| J71.2 | Anonimização chega em uma leitura | P0 | A organização A anonimiza um contato; na próxima busca do módulo vem um `contact_anonymized` com o id do contato, e anonimizar o mesmo contato de novo não cria um segundo evento | **CI** (invariante) escrito; **NÃO EXECUTADO** |
-| J71.3 | Módulo atrasado 40 dias que volta | P0 | O módulo lê tudo desde o último cursor, em ordem, sem perder nem repetir evento | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
-| J71.4 | Instalação desligada não prende a LGPD por 30 dias (D2) | P0 | Depois de desligar o módulo ou a organização, ele ainda lê por 30 dias, e o evento de desativação chega; com 31 dias a leitura é recusada com a mesma resposta genérica; ligar de novo volta a permitir | **CI** (invariante) escrito; **NÃO EXECUTADO** |
-| J71.5 | Organização suspensa | P0 | Suspender (ou anonimizar a organização) gera `organization_suspended` e o módulo continua lendo para recebê-lo | **CI** (invariante) escrito; **NÃO EXECUTADO** |
-| J71.6 | Cursor que não é do módulo | P0 | Cursor adulterado, de outra organização ou de outra instalação: `400 invalid_cursor`, e o módulo nunca lê de uma posição escolhida por ele | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J71.7 | Assinatura ruim, carimbo velho, nonce repetido, sem vínculo | P0 | Todas as recusas devolvem a mesma resposta genérica 401; erro nosso é 503 | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J71.8 | Selo "atrasado" em `/admin/extensoes` | P0 | Com atraso e última leitura há mais de 24 h (ou nunca leu e há evento com mais de 24 h), a linha da instalação mostra "Atrasado" e "Este módulo ainda não apagou os dados de N contato(s) anonimizado(s)."; em dia, sem selo | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J71.9 | O atraso não mistura organizações | P0 | Duas organizações com atrasos diferentes mostram cada uma o seu número; a tela não diz qual empresa é qual | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
-| J71.10 | Sem módulo conectado, a tela é a de antes | P0 | Sem nenhum módulo `connected`: nenhuma leitura de atraso, nenhum bloco novo em `/admin/extensoes` | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J71.11 | Quem pode ler as tabelas | P0 | `anon` e `authenticated` não executam as funções nem leem as tabelas de eventos e de cursor | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J72.1 | Leitura por cursor, só da organização | P0 | Com o mesmo módulo ligado nas organizações A e B, o módulo que assina como A lê só os eventos de A; nenhum identificador de B aparece, nem em páginas seguintes | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J72.2 | Anonimização chega em uma leitura | P0 | A organização A anonimiza um contato; na próxima busca do módulo vem um `contact_anonymized` com o id do contato, e anonimizar o mesmo contato de novo não cria um segundo evento | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J72.3 | Módulo atrasado 40 dias que volta | P0 | O módulo lê tudo desde o último cursor, em ordem, sem perder nem repetir evento | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J72.4 | Instalação desligada não prende a LGPD por 30 dias (D2) | P0 | Depois de desligar o módulo ou a organização, ele ainda lê por 30 dias, e o evento de desativação chega; com 31 dias a leitura é recusada com a mesma resposta genérica; ligar de novo volta a permitir | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J72.5 | Organização suspensa | P0 | Suspender (ou anonimizar a organização) gera `organization_suspended` e o módulo continua lendo para recebê-lo | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J72.6 | Cursor que não é do módulo | P0 | Cursor adulterado, de outra organização ou de outra instalação: `400 invalid_cursor`, e o módulo nunca lê de uma posição escolhida por ele | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.7 | Assinatura ruim, carimbo velho, nonce repetido, sem vínculo | P0 | Todas as recusas devolvem a mesma resposta genérica 401; erro nosso é 503 | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.8 | Selo "atrasado" em `/admin/extensoes` | P0 | Com atraso e última leitura há mais de 24 h (ou nunca leu e há evento com mais de 24 h), a linha da instalação mostra "Atrasado" e "Este módulo ainda não apagou os dados de N contato(s) anonimizado(s)."; em dia, sem selo | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.9 | O atraso não mistura organizações | P0 | Duas organizações com atrasos diferentes mostram cada uma o seu número; a tela não diz qual empresa é qual | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J72.10 | Sem módulo conectado, a tela é a de antes | P0 | Sem nenhum módulo `connected`: nenhuma leitura de atraso, nenhum bloco novo em `/admin/extensoes` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.11 | Quem pode ler as tabelas | P0 | `anon` e `authenticated` não executam as funções nem leem as tabelas de eventos e de cursor | **CI** (invariante) escrito; **NÃO EXECUTADO** |
 
 **Comportamento declarado.** O CRM não empurra nada ao módulo: gatilhos de banco escrevem uma linha e o
 módulo busca por cursor, com a mesma assinatura da busca de token. O cursor recebido reconhece o

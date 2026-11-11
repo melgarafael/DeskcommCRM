@@ -111,6 +111,7 @@ async function responder(
 
   // O lead vem pela RLS do caller — é ele que prova a org, nunca o body.
   // No ramo do token, o client é admin: filtra explicitamente pela org do token.
+  // `organization_id` volta no select porque o nome de quem agiu é resolvido por ele (#4031).
   let leadQuery = supabase.from("crm_leads").select("id, contact_id, organization_id").eq("id", leadId);
   if (organizationId) leadQuery = leadQuery.eq("organization_id", organizationId);
   const { data: lead, error: leadErr } = await leadQuery.maybeSingle();

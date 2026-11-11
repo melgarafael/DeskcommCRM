@@ -46,7 +46,7 @@
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `supabase/migrations/20261105130000_9120_modulo_conectado_eventos.sql` + apêndice no baseline | tabela de eventos, tabela de cursores, 4 gatilhos, funções de leitura e de autorização |
+| `supabase/migrations/20261105130100_9120_modulo_conectado_eventos.sql` + apêndice no baseline | tabela de eventos, tabela de cursores, 4 gatilhos, funções de leitura e de autorização |
 | `lib/extensions/prova-do-modulo.ts` | os passos de prova (formato, carimbo, segredo, assinatura, nonce) extraídos de `token-do-modulo.ts`, usados pela busca de token e pela leitura de eventos |
 | `lib/extensions/eventos-do-modulo.ts` | autoriza, lê por cursor, grava o cursor |
 | `app/api/v1/extensions/events/route.ts` | a rota `GET` |
@@ -90,10 +90,10 @@
 
 ### Tarefa 4: cercas e documentos
 
-**Files:** `tests/unit/eventos-do-modulo-so-por-prova.test.ts`; `docs/testing/user-journey-map.md` (J71); `docs/architecture/extensoes-declarativas.architecture.json` (nós `module_events_table`, `module_events_route`, `module_events_cursor`, ≥2 arestas cada); `evidence/modulo-conectado-f5/declaracoes.md`; `.changes/modulo-conectado-eventos.md`.
+**Files:** `tests/unit/eventos-do-modulo-so-por-prova.test.ts`; `docs/testing/user-journey-map.md` (J72); `docs/architecture/extensoes-declarativas.architecture.json` (nós `module_events_table`, `module_events_route`, `module_events_cursor`, ≥2 arestas cada); `evidence/modulo-conectado-f5/declaracoes.md`; `.changes/modulo-conectado-eventos.md`.
 
 - [ ] Cerca: só `eventos-do-modulo.ts` lê `extension_module_events`; a rota está em `public-paths.ts` pelo caminho exato; nenhum gatilho chama `net.http_*`/`pg_net` (varredura da migration).
-- [ ] J71 (todos "NÃO EXECUTADO" até haver módulo real) cobrindo o Foco da revisão; declarações com MEDIDO/NÃO MEDIDO, destino núcleo + extensão, Sistema Vivo (alimenta: LGPD, ativação, suspensão; alimenta: o módulo e o admin; laço de retorno: selo "atrasado" muda a decisão de quem administra), e a nota das decisões D1 a D5 para o PR.
+- [ ] J72 (todos "NÃO EXECUTADO" até haver módulo real) cobrindo o Foco da revisão; declarações com MEDIDO/NÃO MEDIDO, destino núcleo + extensão, Sistema Vivo (alimenta: LGPD, ativação, suspensão; alimenta: o módulo e o admin; laço de retorno: selo "atrasado" muda a decisão de quem administra), e a nota das decisões D1 a D5 para o PR.
 
 ## Autoverificação
 

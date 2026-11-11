@@ -24,8 +24,8 @@ import {
 } from "@/lib/campanhas/conteudo-do-canal";
 import { variaveisDaCampanhaSchema } from "@/lib/campanhas/modelo";
 import { editarCampanhaSchema } from "@/lib/campanhas/schemas";
-import { ehVelocidadeDaCampanha } from "@/lib/campanhas/tipos";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { ehVelocidadeDaCampanha } from "@/lib/campanhas/tipos";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";

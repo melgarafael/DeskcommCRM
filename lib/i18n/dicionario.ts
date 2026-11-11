@@ -20581,6 +20581,125 @@ export const DICIONARIO: Traducoes = {
   "Atrasado": { es: "Atrasado" },
   "Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).": { es: "Este módulo aún no ha borrado los datos de {n} contacto(s) anonimizado(s)." },
   "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": { es: "Hace más de 24 horas que el módulo no busca los avisos, y la LGPD exige borrar esos datos." },
+  // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
+  "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
+
+  // ─── o número oficial de pé, mas não inteiro (lib/channels/health.ts) ───
+  // Não recebe mensagens, ou a Meta restringiu o envio: cartão de Conexões e
+  // aviso da Central.
+  "A Meta informa que este número não recebe mensagens. Reconecte o número.": { es: "Meta informa que este número no recibe mensajes. Vuelve a conectar el número." },
+  "A Meta restringiu o envio deste número (código {codigo}).": { es: "Meta restringió el envío de este número (código {codigo})." },
+  "O número \"{apelido}\" não recebe mensagens": { es: "El número \"{apelido}\" no recibe mensajes" },
+  "A Meta informa que as mensagens dos clientes para este número não chegam ao CRM, embora ele ainda consiga enviar. Reconecte o número em Conexões. Se continuar assim, o número pode estar ligado a outra conta do WhatsApp Business (por exemplo, depois de ser vinculado a uma página do Facebook).": { es: "Meta informa que los mensajes de los clientes a este número no llegan al CRM, aunque todavía puede enviar. Vuelve a conectar el número en Conexiones. Si sigue así, es posible que el número esté vinculado a otra cuenta de WhatsApp Business (por ejemplo, después de vincularlo a una página de Facebook)." },
+  "A Meta restringiu o envio do número \"{apelido}\"": { es: "Meta restringió el envío del número \"{apelido}\"" },
+  "A Meta recusou mensagens por um problema de pagamento ou de elegibilidade da conta do WhatsApp Business (código 131042). Confira a forma de pagamento da conta no Gerenciador do WhatsApp, na Meta.": { es: "Meta rechazó mensajes por un problema de pago o de elegibilidad de la cuenta de WhatsApp Business (código 131042). Revisa el método de pago de la cuenta en el Administrador de WhatsApp, en Meta." },
+  "A Meta bloqueou a conta do WhatsApp Business deste número (código 131031). Veja o motivo e peça a revisão no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó la cuenta de WhatsApp Business de este número (código 131031). Mira el motivo y solicita la revisión en el Administrador de WhatsApp, en Meta." },
+  "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
+  "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
+  "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
+  // ─── Ouvidoria: a tela de gestão (#3611, fatia 3) ──────────────────────────
+  // O nome do módulo ("Ouvidoria") já está no bloco do catálogo de módulos. O
+  // resto é o vocabulário da tela: lista, detalhe e transição de status. Cada
+  // chave aqui é uma frase que a tela RENDERIZA — nada de texto de wire
+  // (`em_analise` não se traduz).
+  Manifestação: { es: "Manifestación" },
+  Manifestações: { es: "Manifestaciones" },
+  manifestação: { es: "manifestación" },
+  manifestações: { es: "manifestaciones" },
+  Recebida: { es: "Recibida" },
+  Recebidas: { es: "Recibidas" },
+  "Concluídas": { es: "Concluidas" },
+  "Recebida em": { es: "Recibida el" },
+  "Última atualização": { es: "Última actualización" },
+  Relato: { es: "Relato" },
+  "Voltar para a lista": { es: "Volver a la lista" },
+  "Manifestação não encontrada.": { es: "Manifestación no encontrada." },
+  "Não foi possível carregar a manifestação.": { es: "No se pudo cargar la manifestación." },
+  "Não foi possível carregar as manifestações.": {
+    es: "No se pudieron cargar las manifestaciones.",
+  },
+  "Nenhuma manifestação registrada.": { es: "Ninguna manifestación registrada." },
+  "As manifestações aparecem aqui assim que alguém falar com a empresa.": {
+    es: "Las manifestaciones aparecen aquí en cuanto alguien hable con la empresa.",
+  },
+  "Receber manifestações nesta empresa": { es: "Recibir manifestaciones en esta empresa" },
+  "Manifestações recebidas pela empresa. Só quem a organização autoriza lê o relato.": {
+    es: "Manifestaciones recibidas por la empresa. Solo quien la organización autoriza lee el relato.",
+  },
+  "Reclamações, denúncias e elogios recebidos pela empresa, com protocolo.": {
+    es: "Reclamaciones, denuncias y elogios recibidos por la empresa, con protocolo.",
+  },
+  "Mudar status": { es: "Cambiar estado" },
+  "Status atual": { es: "Estado actual" },
+  "Motivo da mudança": { es: "Motivo del cambio" },
+  "Explique por que a manifestação está sendo reaberta.": {
+    es: "Explique por qué se reabre la manifestación.",
+  },
+  "Status atualizado.": { es: "Estado actualizado." },
+  "Não há outra etapa para esta manifestação.": {
+    es: "No hay otra etapa para esta manifestación.",
+  },
+  "Este já é o status da manifestação.": { es: "Este ya es el estado de la manifestación." },
+  "Não é possível pular a etapa de análise.": { es: "No se puede omitir la etapa de análisis." },
+  "Escreva o motivo da reabertura.": { es: "Escriba el motivo de la reapertura." },
+  "O motivo está longo demais.": { es: "El motivo es demasiado largo." },
+  "A manifestação mudou enquanto você decidia. Recarregue a página.": {
+    es: "La manifestación cambió mientras decidías. Recarga la página.",
+  },
+  "Sem permissão para mudar o status.": { es: "Sin permiso para cambiar el estado." },
+  "Não foi possível salvar o status.": { es: "No se pudo guardar el estado." },
+
+  // ─── E-mails do sistema (lib/email/templates/) — #4302 ───────────────────
+  // A cópia dos moldes de acesso (GoTrue), do convite de time e do alarme de
+  // orçamento de IA morava dentro de cada arquivo, fora deste dicionário. Por
+  // isso o e-mail saía em português com a tela em espanhol: nenhum gate de i18n
+  // varre `lib/email/`. As chaves com `{...}` são preenchidas pelo próprio
+  // molde (`preencher`, em `lib/email/templates/texto.ts`) DEPOIS da tradução.
+  "Confirme seu e-mail · {marca}": { es: "Confirma tu correo · {marca}" },
+  "Sua conta no {marca} está quase pronta. Clique no botão abaixo para confirmar seu e-mail e ativar sua conta.": {
+    es: "Tu cuenta en {marca} está casi lista. Haz clic en el botón de abajo para confirmar tu correo y activar tu cuenta.",
+  },
+  "Confirmar e-mail": { es: "Confirmar correo" },
+  "Se você não criou esta conta, ignore este e-mail.": { es: "Si no creaste esta cuenta, ignora este correo." },
+  "Redefinir sua senha": { es: "Restablecer tu contraseña" },
+  "Redefinir sua senha · {marca}": { es: "Restablecer tu contraseña · {marca}" },
+  "Recebemos um pedido para redefinir a senha da sua conta no {marca}. Clique no botão abaixo para escolher uma nova.": {
+    es: "Recibimos una solicitud para restablecer la contraseña de tu cuenta en {marca}. Haz clic en el botón de abajo para elegir una nueva.",
+  },
+  "Se não foi você quem pediu, ignore este e-mail — sua senha continua a mesma.": {
+    es: "Si no fuiste tú quien lo pidió, ignora este correo — tu contraseña sigue siendo la misma.",
+  },
+  "Ou copie e cole este link no navegador:": { es: "O copia y pega este enlace en el navegador:" },
+  "{convidador} convidou você para a {organizacao} no {marca}": {
+    es: "{convidador} te invitó a {organizacao} en {marca}",
+  },
+  "Você foi convidado para a {organizacao}": { es: "Te invitaron a {organizacao}" },
+  "{convidador} convidou você como": { es: "{convidador} te invitó como" },
+  "no {marca}.": { es: "en {marca}." },
+  "Você foi convidado para a {organizacao} como {papel} no {marca}.": {
+    es: "Te invitaron a {organizacao} como {papel} en {marca}.",
+  },
+  "Este link expira em": { es: "Este enlace caduca el" },
+  "Se você não esperava este convite, pode ignorá-lo.": {
+    es: "Si no esperabas esta invitación, puedes ignorarla.",
+  },
+  "Aceitar: {url}": { es: "Aceptar: {url}" },
+  "Expira em {data}.": { es: "Caduca el {data}." },
+  "Alerta IA: orçamento atingiu {pct}": { es: "Alerta IA: el presupuesto alcanzó {pct}" },
+  "Orçamento mensal de IA atingiu {pct}": { es: "El presupuesto mensual de IA alcanzó {pct}" },
+  "Orçamento mensal de IA atingiu {pct}.": { es: "El presupuesto mensual de IA alcanzó {pct}." },
+  "Organização:": { es: "Organización:" },
+  "Organização: {organizacao}": { es: "Organización: {organizacao}" },
+  "Consumo no mês:": { es: "Consumo del mes:" },
+  "Consumo: {gasto} de {limite}.": { es: "Consumo: {gasto} de {limite}." },
+  "Ao atingir 100%, o bot de IA será automaticamente pausado ou desabilitado conforme a política configurada. Atendimento humano segue normalmente.": {
+    es: "Al llegar al 100%, el bot de IA se pausará o deshabilitará automáticamente según la política configurada. La atención humana sigue con normalidad.",
+  },
+  "Ver dashboard de uso": { es: "Ver panel de uso" },
+  "Este alerta é enviado automaticamente uma vez a cada 24h enquanto o consumo permanecer acima do limite configurado.": {
+    es: "Este aviso se envía automáticamente una vez cada 24 h mientras el consumo siga por encima del límite configurado.",
+  },
+  "Dashboard: {url}": { es: "Panel: {url}" },
 };
 
 

@@ -87,7 +87,7 @@ nesta fase ficar sem `revoke` de `public, anon, authenticated`.
 ## Fragmento de release
 
 `.changes/modulo-conectado-eventos.md`, `impacto: capacidade_nova`, `secao: adicionado`. Nenhuma ação do
-operador. Sem seção no `CHANGELOG.md`. Jornada: J71 (todos os casos "NÃO EXECUTADO").
+operador. Sem seção no `CHANGELOG.md`. Jornada: J72 (todos os casos "NÃO EXECUTADO").
 
 ## Medido e não medido
 
@@ -103,12 +103,12 @@ novo foi contado nas arestas (table 2, route 5, cursor 2); a entrada exata da ro
 - **Banco real:** os gatilhos e as funções só têm teste de invariante escrito, não executado; a 9121 também
   não foi aplicada.
 - **Número da migration 9121:** `pnpm checar:colisao-de-migration` não foi rodado.
-- **Módulo real:** nenhum serviço de verdade buscou eventos. J71 é especificação.
+- **Módulo real:** nenhum serviço de verdade buscou eventos. J72 é especificação.
 - **Tela em navegador:** o bloco novo de `/admin/extensoes` não foi visto renderizado (cores do selo,
   quebra de linha).
 - **Prazo entre a anonimização e a leitura:** o módulo busca quando quiser; o CRM não garante prazo, só
   mostra o atraso.
 - **Volume da tabela de eventos:** sem expurgo (D5), não foi medido crescimento.
 - **Espelho `.claude/skills` não regenerado:** a F5 não tocou o guia `deskcomm-extensao`.
-- **Coluna de CI da J71** foi montada a partir dos nomes e da intenção dos testes das tarefas anteriores;
+- **Coluna de CI da J72** foi montada a partir dos nomes e da intenção dos testes das tarefas anteriores;
   cada teste não foi relido caso a caso nesta tarefa.

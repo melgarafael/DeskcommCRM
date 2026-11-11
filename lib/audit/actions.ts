@@ -1521,11 +1521,40 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  // A CONTA Resend da organização (#3287): conectar e desconectar. Códigos
+  // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
+  // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
+  // domínio os e-mails saem e onde caem os registros de entrega. A chave em si
+  // NUNCA entra no metadata; nem o endereço: só nomes dos campos e o fato da
+  // verificação, pois a trilha append-only não é lugar para identidade pessoal.
+  "org.resend_account_connected",
+  "org.resend_account_disconnected",
+  // A ativação do módulo de Ouvidoria (#3611, migration 9040) — ligar a porta
+  // que aceita manifestação confidencial, e desligá-la. Metadata leva só o
+  // booleano: o CONTEÚDO das manifestações nunca entra na trilha, que é
+  // append-only e a cascata de LGPD não alcança.
+  "settings.ouvidoria_updated",
+  // O link de pagamento do cliente final (#3509): registrar o link na conversa
+  // (`POST /conversations/[id]/pagamentos`) e o aviso do provedor que marca
+  // "pago" (`/webhooks/pagamento/[provedor]`). O metadata leva ids, provedor e
+  // valor — nunca o link: a trilha é append-only e a cascata de LGPD não a alcança.
+  "pagamento.link_registrado",
+  "pagamento.confirmado",
+  // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
+  // o evento, não o conteúdo — mesma regra de message.edited/revoked.
+  "message.reaction_sent",
   // Um módulo conectado conversou com o modelo de IA da organização (Spec 33): gasta o orçamento
   // dela. UMA linha por turno que chegou ao modelo, e só com efeito (recusa de autorização e teto
   // de gasto atingido não auditam). metadata só com contagens e a pessoa que clicava: nunca o texto
   // da conversa. O ator é o token do módulo.
   "ai.assistente_conversa",
+  // A mudança de STATUS de uma manifestação (#3611, fatia 3). O metadata leva
+  // `de`, `para`, `reabertura` e — só quando existe — o motivo da reabertura.
+  // NUNCA o texto do relato: `api_audit_log` é append-only e a cascata de LGPD
+  // não a alcança, então o dado sigiloso da ouvidoria não entra aqui. Este
+  // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
+  // aceitável: a única porta da escrita deixa rastro.
+  "ouvidoria.status_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -107,7 +107,7 @@
 
 ## Tarefa 7 — Fecho (documentos e prova)
 
-**Faz:** `.changes/modulo-conectado-token.md` (`capacidade_nova`); `docs/testing/user-journey-map.md` (J68: instalar `connected`, girar segredo, ativar, buscar token — escrita como especificação enquanto o laboratório não suporta `connected`); mapa `docs/architecture/extensoes-declarativas.architecture.json` (nós: segredo, nonce, rota de busca; arestas); Living System Checklist com as 10 respostas nomeando o artefato; destino declarado; "afirmações de estado" viram comando; `pnpm skills:sync` se tocar o guia; `evidence/modulo-conectado-f2/` com a saída do pré-voo.
+**Faz:** `.changes/modulo-conectado-token.md` (`capacidade_nova`); `docs/testing/user-journey-map.md` (J69: instalar `connected`, girar segredo, ativar, buscar token — escrita como especificação enquanto o laboratório não suporta `connected`); mapa `docs/architecture/extensoes-declarativas.architecture.json` (nós: segredo, nonce, rota de busca; arestas); Living System Checklist com as 10 respostas nomeando o artefato; destino declarado; "afirmações de estado" viram comando; `pnpm skills:sync` se tocar o guia; `evidence/modulo-conectado-f2/` com a saída do pré-voo.
 
 **Fora desta fase (de propósito):** autoridade por área (F3); o token só-leitura de 30 dias após revogação (decisão 4, F5); tela do módulo (F4).
 

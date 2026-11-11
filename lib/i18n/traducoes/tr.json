@@ -11542,5 +11542,7 @@
   "{n} aviso(s) por ler": "okunacak {n} bildirim",
   "Atrasado": "Gecikmiş",
   "Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).": "Bu modül, anonimleştirilen {n} kişinin verilerini henüz silmedi.",
-  "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": "Modül 24 saatten uzun süredir bildirimleri almadı ve LGPD bu verilerin silinmesini gerektiriyor."
+  "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": "Modül 24 saatten uzun süredir bildirimleri almadı ve LGPD bu verilerin silinmesini gerektiriyor.",
+  "Este número já está em outra campanha em andamento.": "Bu numara zaten devam eden başka bir kampanyada kullanılıyor.",
+  "Abrir essa campanha": "O kampanyayı aç"
 }

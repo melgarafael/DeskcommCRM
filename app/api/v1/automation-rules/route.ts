@@ -15,6 +15,12 @@ import {
   campoDoGatilhoDeDataEhDoContato,
 } from "@/lib/automation/campo-do-gatilho-de-data";
 import { validarIdsDasAcoes, validarIdsDoGatilho } from "@/lib/automation/validar-ids-das-acoes";
+import {
+  CAMPO_DO_MOTIVO_DA_PERDA,
+  acoesDePerdaSemMotivo,
+  lerEtapasDasAcoes,
+  mensagemDaEtapaDePerdaSemMotivo,
+} from "@/lib/automation/motivo-da-perda-na-acao";
 import { createAutomationRuleSchema } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
@@ -110,6 +116,24 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const supabase = authz.supabase;
+
+  // ── A ETAPA DE PERDA EXIGE MOTIVO — RECUSADA NO CADASTRO (#4297) ───────────
+  //
+  // A ação não tinha como informar o motivo, então a regra que apontava para a
+  // etapa de perda era SALVA e falhava em toda execução (o #917 recusa mover
+  // sem motivo). A pergunta é da porta: a etapa de destino fecha o negócio como
+  // perdido e a ação não diz por quê?
+  const etapasDaRegra = await lerEtapasDasAcoes(supabase, orgId, parsed.data.actions);
+  if ("erro" in etapasDaRegra) return fail("internal_error", etapasDaRegra.erro, 500, { requestId });
+  const semMotivo = acoesDePerdaSemMotivo(parsed.data.actions, etapasDaRegra.etapas);
+  if (semMotivo.length > 0) {
+    return fail(
+      "invalid_request",
+      t(mensagemDaEtapaDePerdaSemMotivo(semMotivo.map((achado) => achado.etapa), authz.idioma ?? IDIOMA_PADRAO)),
+      422,
+      { requestId, details: { campo: CAMPO_DO_MOTIVO_DA_PERDA } },
+    );
+  }
   const webhookSourceId = parsed.data.trigger_config?.webhook_source_id;
   if (typeof webhookSourceId === "string") {
     const { data: source, error: sourceError } = await supabase

@@ -855,5 +855,8 @@ async function responder(
     ...(leituraDosLeads.truncado ? { truncado: true as const } : {}),
   };
 
-  return ok(quemChama ? redigirContatoParaModulo(quemChama, board) : board, { requestId });
+  return ok(quemChama ? redigirContatoParaModulo(quemChama, board) : board, {
+    requestId,
+    headers: leituraDosLeads.truncado ? { "X-Quadro-Truncado": "1" } : undefined,
+  });
 }

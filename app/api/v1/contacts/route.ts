@@ -226,7 +226,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       supabase,
       {
         organization_id: organizationId,
-        actor: authz.actor,
+        // O PAPEL vai junto, na sessão, porque a criação no "Só os seus" decide por ele:
+        // só Atendente ganha a conversa do contato novo (#3479). No token o ator segue
+        // como o `resolveAuthDual` o entrega (sem papel de pessoa, sem conversa).
+        actor:
+          authz.via === "session" && authz.actor.type === "user"
+            ? { type: "user", id: authz.actor.id, role: authz.papelDaSessao }
+            : authz.actor,
         requestId,
         idioma: authz.idioma,
       },
