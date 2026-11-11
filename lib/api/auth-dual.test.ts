@@ -201,13 +201,11 @@ describe("os caminhos de envio passam pelo proxy", () => {
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/publish`)).toBe(true);
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}`)).toBe(true);
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}/test`)).toBe(true);
-    // E NÃO dá carona: um segmento que não é UUID (ou um sufixo qualquer) não
-    // entra de carona em cima de um que entra.
-    // Spec 33 (R1): a rota passou a aceitar token
-    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(true);
+    // E NÃO dá carona: os irmãos seguem só-sessão, e um segmento que não é
+    // UUID (ou um sufixo qualquer) não entra de carona em cima de um que entra.
+    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(false);
     expect(isPublicPath("/api/v1/ai/agents/abc")).toBe(false);
-    // Spec 33 (R1): a rota passou a aceitar token
-    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/pause`)).toBe(true);
+    expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/pause`)).toBe(false);
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/${VERSAO}/rollback`)).toBe(false);
     expect(isPublicPath(`/api/v1/ai/agents/${AGENTE}/versions/`)).toBe(false);
   });
@@ -218,20 +216,14 @@ describe("os caminhos de envio passam pelo proxy", () => {
     expect(isPublicPath("/api/v1/ai/followup-flows/123/duplicate")).toBe(false);
     expect(isPublicPath("/api/v1/ai/followup-flows/123")).toBe(false);
     expect(isPublicPath("/api/v1/ai/followup-flows/xpto")).toBe(false);
-    // agents: assignable passou a aceitar token; o segmento da versão é UUID.
-    // Spec 33 (R1): a rota passou a aceitar token
-    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(true);
+    // agents: assignable segue só-sessão; o segmento da versão é UUID.
+    expect(isPublicPath("/api/v1/ai/agents/assignable")).toBe(false);
     expect(isPublicPath("/api/v1/ai/agents/abc/versions")).toBe(false);
     // prospecting: só a raiz; os irmãos de /agents (chat, prepare, session) seguem só-sessão.
     expect(isPublicPath("/api/v1/prospecting/agents")).toBe(false);
     expect(isPublicPath("/api/v1/prospecting/agents/chat")).toBe(false);
-    // agenda/tipos: o /reativar passou a aceitar token (está em portas-de-token/operacao.ts).
-    // Spec 33 (R2): a rota passou a aceitar token
-    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(true);
-    // agenda/aviso: o GET passou a aceitar token (Spec 33, R2); o PUT segue só de sessão no handler.
-    expect(isPublicPath("/api/v1/agenda/aviso")).toBe(true);
-    // Irmã que segue só-sessão (manda mensagem de teste; fora de operacao.ts e de public-paths).
-    expect(isPublicPath("/api/v1/agenda/aviso/teste")).toBe(false);
+    // agenda/tipos: o irmão /reativar segue só-sessão.
+    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(false);
   });
 
   it("não dá carona a sub-paths que não têm suporte a Bearer", () => {
