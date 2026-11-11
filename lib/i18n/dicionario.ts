@@ -477,6 +477,17 @@ export const DICIONARIO: Traducoes = {
   },
   "O modelo escolhido é de outro número. Escolha um modelo do número que envia os lembretes.": { es: "La plantilla elegida es de otro número. Elige una plantilla del número que envía los recordatorios." },
   "Escolha um canal de mensagem não arquivado desta organização.": { es: "Elige un canal de mensajes no archivado de esta organización." },
+  // ── IA › Credenciais — o aviso de recurso desligado (#4438) ──────────────
+  "Assinatura do ChatGPT": { es: "Suscripción de ChatGPT" },
+  "Ligada, a assinatura do ChatGPT deixa o agente responder com a conta do ChatGPT da sua empresa, no lugar de uma chave de API da organização. Cada empresa conecta a própria conta nesta tela, assim que o recurso estiver ligado.": {
+    es: "Activada, la suscripción de ChatGPT permite que el agente responda con la cuenta de ChatGPT de tu empresa, en lugar de una clave de API de la organización. Cada empresa conecta su propia cuenta en esta pantalla, en cuanto el recurso esté activado.",
+  },
+  "Este recurso vem desligado de fábrica: quem administra a instalação liga em Administração › Recursos opcionais (/admin/sistema).": {
+    es: "Este recurso viene desactivado de fábrica: quien administra la instalación lo activa en Administración › Recursos opcionales (/admin/sistema).",
+  },
+  "Se você não administra esta instalação, peça a essa pessoa que ligue o recurso. Depois disso, o painel para conectar a conta aparece nesta tela.": {
+    es: "Si no administras esta instalación, pídele a esa persona que active el recurso. Después de eso, el panel para conectar la cuenta aparece en esta pantalla.",
+  },
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
     es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",
