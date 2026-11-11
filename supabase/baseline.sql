@@ -70056,7 +70056,6 @@ notify pgrst, 'reload schema';
 
 alter table public.organization_extensions
   add column if not exists consented_areas text[] not null default '{}';
--- (vocabulário ampliado pela migration 9316: tarefas e financeiro)
 alter table public.organization_extensions drop constraint if exists organization_extensions_consented_areas_check;
 alter table public.organization_extensions add constraint organization_extensions_consented_areas_check
   check (consented_areas <@ array[
@@ -70068,9 +70067,7 @@ alter table public.organization_extensions add constraint organization_extension
     'area.agentes_ia.leitura','area.agentes_ia.escrita',
     'area.catalogo.leitura','area.catalogo.escrita',
     'area.configuracao.leitura','area.configuracao.escrita',
-    'area.analise.leitura','area.analise.escrita',
-    'area.tarefas.leitura','area.tarefas.escrita',
-    'area.financeiro.leitura','area.financeiro.escrita'
+    'area.analise.leitura','area.analise.escrita'
   ]::text[]);
 
 create or replace function public.fn_extensions_set_consent(p_actor uuid, p_organization uuid, p_installation uuid,
@@ -70109,10 +70106,8 @@ begin
   if exists (select 1 from unnest(p_areas) a where a <> all (v_declaradas)) then
     raise exception using errcode='PT409',message='extension_area_not_declared';
   end if;
-  -- Decisão 5 da spec 33: configuração, agentes de IA e financeiro só por quem administra a organização.
-  -- (vocabulário ampliado pela migration 9316.) Hoje este ramo é defesa a mais: `fn_extensions_assert_actor`
-  -- já exige `admin` na organização antes de chegar aqui.
-  if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia|financeiro)\.') then
+  -- Decisão 5 da spec 33: configuração e agentes de IA só por quem administra a organização.
+  if exists (select 1 from unnest(p_areas) a where a ~ '^area\.(configuracao|agentes_ia)\.') then
     select u.role into v_role from public.user_organizations u
       where u.user_id=p_actor and u.organization_id=p_organization and u.revoked_at is null and u.accepted_at is not null;
     if v_role is distinct from 'admin' and v_role is distinct from 'owner' then
