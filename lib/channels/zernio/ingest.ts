@@ -25,6 +25,7 @@ import { ehCanalDeConversa } from "@/lib/channels/canais-de-conversa";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
+import { audit } from "@/lib/audit";
 import { corpoDaLocalizacao } from "@/lib/messaging/localizacao";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
@@ -35,7 +36,17 @@ import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-ofic
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
 import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
-import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import {
+  pausarIaPorAtendimentoManual,
+  type FalhaDaPausa,
+  type MotivoDaPausaNaoGravada,
+} from "@/lib/escalacao/atendimento-manual";
+import {
+  ecoDaTransmissao,
+  ligarEcoAoDestinatario,
+  metadataDoEco,
+  type EcoDaTransmissao,
+} from "@/lib/campanhas/transmissao";
 import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-whatsapp-ao-caso";
 
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
@@ -49,6 +60,28 @@ export interface ZernioIngestResult {
   messageId?: string;
   /** Por que foi ignorado — vai para o log, e é o que se lê quando "sumiu". */
   reason?: string;
+  /**
+   * A mensagem ENTROU, mas a pausa da IA não foi garantida (#534). O motivo é
+   * nomeado (`corrida_persistente`, `conversa_inexistente`, …) e a falha também
+   * vai para o audit: a ingestão não pode dizer "ingested" limpo quando a IA
+   * pode falar por cima do atendente.
+   */
+  pausaDaIANaoGravada?: MotivoDaPausaNaoGravada;
+}
+
+/** Aviso durável de que a pausa da IA não foi garantida (#534). */
+function avisarPausaNaoGravada(falha: FalhaDaPausa): Promise<void> {
+  return audit({
+    action: "ai.pausa_nao_gravada",
+    organizationId: falha.organizationId,
+    resourceType: "conversation",
+    resourceId: falha.conversationId,
+    metadata: {
+      canal: falha.canal ?? "zernio",
+      motivo: falha.motivo,
+      detalhe: falha.detalhe ?? null,
+    },
+  });
 }
 
 /**
@@ -81,12 +114,20 @@ export async function ingestZernioInbound(
     channelSessionId: string;
     payload: unknown;
     socialMessage?: SocialMessage;
+    /**
+     * Quem chama é o reprocessamento de uma entrada aceita: a linha do arquivo
+     * não terminou, então um `duplicate` pode ser ingestão interrompida depois
+     * do INSERT. A entrada ao vivo não passa isto: lá o `duplicate` é reentrega,
+     * e a primeira entrega pode estar com os efeitos em curso.
+     */
+    retomada?: boolean;
   },
 ): Promise<ZernioIngestResult> {
   const lida = input.socialMessage ?? parseZernioInbound(input.payload);
   if (!lida) return { status: "ignored", reason: "evento_sem_interesse" };
-  // O pino do WhatsApp chega como "📍 Location", sem coordenadas: elas moram
-  // só na API. Rede social não manda pino — a busca é só do WhatsApp.
+  // O pino do WhatsApp traz as coordenadas no próprio evento (`metadata.location`);
+  // aqui ele só ganha o endereço aproximado. Sem elas, a busca pela API é da nova
+  // busca do pino, fora desta requisição. Rede social não manda pino.
   const msg = input.socialMessage ? lida : await completarLocalizacao(admin, input.organizationId, lida);
 
   // Evento de DESFECHO: a mensagem já existe (ou nem é nossa). Só atualiza o
@@ -158,6 +199,8 @@ export async function ingestZernioInbound(
     input.channelSessionId,
   );
   if (existente) {
+    /** Preenchido quando a pausa da IA falhou — sobe no resultado (#534). */
+    let pausaDaIANaoGravada: MotivoDaPausaNaoGravada | undefined;
     if (input.socialMessage) {
       // A plataforma vai CRUA para uma coluna com CHECK. Num clone cujo banco
       // ainda não conhece esta rede, o INSERT volta 23514 — e como o provedor
@@ -179,12 +222,14 @@ export async function ingestZernioInbound(
         .eq("id", existente.id);
       if (error) throw new Error("social_conversation_update_failed");
     }
+    const ecoNaExistente = await ecoDeTransmissao(admin, input.organizationId, msg, existente.contact_id);
     const inseridaNaExistente = await insertMessage(admin, {
       organizationId: input.organizationId,
       conversationId: existente.id,
       contactId: existente.contact_id,
       channelSessionId: input.channelSessionId,
       msg,
+      eco: ecoNaExistente,
     });
     // O telefone pode chegar agora e faltar no contato — vale gravar.
     //
@@ -231,17 +276,35 @@ export async function ingestZernioInbound(
         existente.id,
         inseridaNaExistente,
       );
-      if (input.socialMessage && msg.direction === "outbound") {
+      if (ecoNaExistente) {
+        await ligarEcoAoDestinatario(admin, ecoNaExistente, {
+          id: inseridaNaExistente,
+          conversationId: existente.id,
+          enviadaEm: msg.sentAt,
+        });
+      }
+      if (input.socialMessage && msg.direction === "outbound" && !ehDeTransmissao(msg)) {
+        // #534: sem `avisar`, a falha da pausa viraria um `false` que ninguém lê.
         await pausarIaPorAtendimentoManual(admin, {
           organizationId: input.organizationId,
           conversationId: existente.id,
           canal: "zernio",
+          avisar: (falha) => {
+            pausaDaIANaoGravada = falha.motivo;
+            return avisarPausaNaoGravada(falha);
+          },
         });
       }
     }
-    return inseridaNaExistente === "duplicate"
-      ? { status: "duplicate", conversationId: existente.id }
-      : { status: "ingested", conversationId: existente.id, messageId: inseridaNaExistente };
+    if (inseridaNaExistente === "duplicate") {
+      return desfechoDaDuplicata(admin, input, msg, existente.id);
+    }
+    return {
+      status: "ingested",
+      conversationId: existente.id,
+      messageId: inseridaNaExistente,
+      ...(pausaDaIANaoGravada ? { pausaDaIANaoGravada } : {}),
+    };
   }
 
   const identity = input.socialMessage
@@ -284,15 +347,17 @@ export async function ingestZernioInbound(
     if (error) throw new Error("social_conversation_update_failed");
   }
 
+  const eco = await ecoDeTransmissao(admin, input.organizationId, msg, contactId);
   const inserted = await insertMessage(admin, {
     organizationId: input.organizationId,
     conversationId,
     contactId,
     channelSessionId: input.channelSessionId,
     msg,
+    eco,
   });
 
-  if (inserted === "duplicate") return { status: "duplicate", conversationId };
+  if (inserted === "duplicate") return desfechoDaDuplicata(admin, input, msg, conversationId);
 
   await marcarConversa(admin, input.organizationId, conversationId, msg);
   if (msg.attachments[0]?.url) {
@@ -302,19 +367,163 @@ export async function ingestZernioInbound(
     await pedirNovaBuscaDoPino(admin, input.organizationId, inserted, msg);
   }
   await efeitosDaEntrada(admin, input, msg, contactId, conversationId, inserted);
+  if (eco) {
+    await ligarEcoAoDestinatario(admin, eco, { id: inserted, conversationId, enviadaEm: msg.sentAt });
+  }
 
   // SAÍDA feita por fora do CRM = uma pessoa respondeu o cliente à mão (celular,
   // outra plataforma na mesma conta). A IA para nesta conversa. O eco do nosso
   // próprio envio já saiu como `"duplicate"` acima. NÃO mexe na origem do lead.
-  if (msg.direction === "outbound") {
+  //
+  // A TRANSMISSÃO do provedor não é pessoa nenhuma: é a campanha mandando a
+  // lista de uma vez (migration 0712). Medido em 16/10/2026: sem esta exceção,
+  // cada número novo da lista ficava com a IA calada pelo prazo do atendimento
+  // manual — justamente quando as respostas chegam juntas.
+  let pausaDaIANaoGravada: MotivoDaPausaNaoGravada | undefined;
+  if (msg.direction === "outbound" && !ehDeTransmissao(msg)) {
+    // #534: sem `avisar`, a falha da pausa viraria um `false` que ninguém lê.
     await pausarIaPorAtendimentoManual(admin, {
       organizationId: input.organizationId,
       conversationId,
       canal: "zernio",
+      avisar: (falha) => {
+        pausaDaIANaoGravada = falha.motivo;
+        return avisarPausaNaoGravada(falha);
+      },
     });
   }
 
-  return { status: "ingested", conversationId, messageId: inserted };
+  return {
+    status: "ingested",
+    conversationId,
+    messageId: inserted,
+    ...(pausaDaIANaoGravada ? { pausaDaIANaoGravada } : {}),
+  };
+}
+
+async function desfechoDaDuplicata(
+  admin: SupabaseClient,
+  input: { organizationId: string; channelSessionId: string; retomada?: boolean },
+  msg: ZernioInboundMessage,
+  conversationId: string,
+): Promise<ZernioIngestResult> {
+  const retomou = input.retomada && (await retomarEfeitosDaEntrada(admin, input, msg));
+  return retomou
+    ? { status: "duplicate", conversationId, reason: "efeitos_retomados" }
+    : { status: "duplicate", conversationId };
+}
+
+/**
+ * A mensagem gravada cuja ingestão parou no meio: o processo morreu depois do
+ * INSERT, e o `23505` da repetição não diz se os efeitos rodaram.
+ *
+ * ─── O marco é o pedido de despacho ────────────────────────────────────────
+ *
+ * `ai_agent.dispatch_requested` é o último efeito com consequência na ordem de
+ * `pos-entrada.ts`, então a presença dele com esta mensagem diz que o resto
+ * veio antes, e rodar de novo daria um segundo turno. Sem ele, os efeitos rodam
+ * outra vez: contato pessoal, número interno e canal desativado nunca despacham
+ * e chegam aqui sempre, mas neles a repetição só refaz o que é idempotente
+ * (opt-out, primeiro toque, negócio por contato).
+ *
+ * O carimbo tem régua própria porque soma a não lida: só roda se a conversa
+ * ainda não chegou à hora desta mensagem. Uma mensagem mais nova que já carimbou
+ * deixa a não lida um a menos, que é o lado certo do erro.
+ *
+ * Só ENTRADA: saída duplicada é o eco do nosso envio, e não há como separá-la
+ * da saída pelo celular interrompida. O que falhar aqui lança e a linha segue
+ * pendente. `false` = não havia o que retomar.
+ */
+async function retomarEfeitosDaEntrada(
+  admin: SupabaseClient,
+  input: { organizationId: string; channelSessionId: string },
+  msg: ZernioInboundMessage,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("messages")
+    .select("id, conversation_id, contact_id, direction, sent_at")
+    .eq("organization_id", input.organizationId)
+    .eq("external_id", msg.externalId)
+    .maybeSingle();
+  if (error) throw new Error(`zernio_retomada_failed: ${error.message}`);
+  const gravada = data as {
+    id: string;
+    conversation_id: string;
+    contact_id: string;
+    direction: string;
+    sent_at: string;
+  } | null;
+  if (gravada?.direction !== "inbound") return false;
+
+  if (await despachoJaPedido(admin, input.organizationId, gravada.id)) return false;
+
+  const { data: conversa, error: erroDaConversa } = await admin
+    .from("conversations")
+    .select("last_inbound_at")
+    .eq("organization_id", input.organizationId)
+    .eq("id", gravada.conversation_id)
+    .maybeSingle();
+  if (erroDaConversa) throw new Error(`zernio_retomada_failed: ${erroDaConversa.message}`);
+  const carimbo = (conversa as { last_inbound_at: string | null } | null)?.last_inbound_at ?? null;
+  if (carimbo === null || Date.parse(carimbo) < Date.parse(gravada.sent_at)) {
+    await marcarConversa(admin, input.organizationId, gravada.conversation_id, { ...msg, sentAt: gravada.sent_at });
+  }
+
+  if (msg.attachments[0]?.url) {
+    await pedirPersistenciaDaMidia(admin, input.organizationId, gravada.conversation_id, gravada.id);
+  }
+  if (pinoFicouSemCoordenadas(msg)) {
+    await pedirNovaBuscaDoPino(admin, input.organizationId, gravada.id, msg);
+  }
+  await efeitosDaEntrada(admin, input, msg, gravada.contact_id, gravada.conversation_id, gravada.id);
+  return true;
+}
+
+/**
+ * O marco de `retomarEfeitosDaEntrada`: esta mensagem já pediu o despacho do
+ * agente? O reprocessamento usa a mesma régua na linha que passou da janela.
+ * Lança se a leitura falhar.
+ */
+export async function despachoJaPedido(
+  admin: SupabaseClient,
+  organizationId: string,
+  messageId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("event_log")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("entity_kind", "message")
+    .eq("entity_id", messageId)
+    .eq("event_type", "ai_agent.dispatch_requested")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`zernio_retomada_failed: ${error.message}`);
+  return data !== null;
+}
+
+/**
+ * O contato já cadastrado desta mensagem, sem criar nada: pela thread, depois
+ * pelo telefone. `null` = ninguém no CRM para esta pessoa. Lança se a leitura da
+ * thread falhar.
+ *
+ * ponytail: sem busca por `wa_lid`. A âncora opaca nasce neste canal, então quem
+ * a tem já tem a thread; contato só com âncora em OUTRA thread e sem telefone fica de fora.
+ */
+export async function contatoConhecidoDaEntrada(
+  admin: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string | null,
+  msg: ZernioInboundMessage,
+): Promise<{ contactId: string; conversationId: string | null } | null> {
+  const conversa = channelSessionId
+    ? await conversaPelaThread(admin, organizationId, msg.conversationId, channelSessionId)
+    : null;
+  if (conversa) return { contactId: conversa.contact_id, conversationId: conversa.id };
+  const contato = msg.identity.phone
+    ? await encontrarContatoPorTelefone(admin, organizationId, msg.identity.phone)
+    : null;
+  return contato ? { contactId: contato.id, conversationId: null } : null;
 }
 
 /**
@@ -398,7 +607,8 @@ async function efeitosDaEntrada(
  * Três sintomas sem relação aparente, uma linha ausente.
  *
  * Não carimba no `duplicate`: a reentrega é a MESMA mensagem, e somar de novo
- * inflaria o contador de não lidas a cada reenvio do provider.
+ * inflaria o contador de não lidas a cada reenvio do provider. A exceção é o
+ * reprocessamento, com a régua de `retomarEfeitosDaEntrada`.
  *
  * ⚠️ A FALHA DEIXOU DE SER SÓ `logger.warn`, que some no próximo restart do
  * contêiner. O destino agora é o mesmo dos outros canais — uma linha em
@@ -467,13 +677,17 @@ async function conversaPelaThread(
   providerConversationId: string,
   channelSessionId: string,
 ): Promise<{ id: string; contact_id: string } | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("conversations")
     .select("id, contact_id")
     .eq("organization_id", organizationId)
     .eq("channel_session_id", channelSessionId)
     .eq("provider_conversation_id", providerConversationId)
     .maybeSingle();
+  // PGRST116 = mais de uma conversa nesta thread (o índice não é único): não é
+  // falha de banco, e a resolução pela âncora segue valendo. Qualquer outro erro
+  // lança: engolido, cairia nas RPCs abaixo e criaria um segundo contato.
+  if (error && error.code !== "PGRST116") throw new Error(`zernio_thread_lookup_failed: ${error.message}`);
   const row = data as { id: string; contact_id: string | null } | null;
   return row?.contact_id ? { id: row.id, contact_id: row.contact_id } : null;
 }
@@ -509,7 +723,9 @@ async function upsertContact(
     p_chat_id: msg.conversationId,
     p_notify: msg.identity.displayName ?? msg.identity.username ?? null,
   });
-  if (error) return null;
+  // Erro de banco LANÇA, como em `insertMessage`: devolver `null` faria a ingestão
+  // responder `ignored` e a mensagem aceita fechar como processada sem ter entrado.
+  if (error) throw new Error(`zernio_contact_upsert_failed: ${error.message}`);
   const contactId = (data as string) ?? null;
   if (!contactId) return null;
 
@@ -572,7 +788,8 @@ async function upsertConversation(
     p_contact: input.contactId,
     p_session: input.channelSessionId,
   });
-  if (error || !data) return null;
+  if (error) throw new Error(`zernio_conversation_upsert_failed: ${error.message}`);
+  if (!data) return null;
   const conversationId = data as string;
 
   // A thread do provider, que é o motivo deste módulo existir.
@@ -608,9 +825,11 @@ async function insertMessage(
     contactId: string;
     channelSessionId: string;
     msg: ZernioInboundMessage;
+    /** O eco de uma transmissão de campanha: a linha nasce como a da campanha. */
+    eco?: EcoDaTransmissao | null;
   },
 ): Promise<string | "duplicate"> {
-  const { msg } = input;
+  const { msg, eco } = input;
   const temAnexo = msg.attachments.length > 0;
   const primeiro = msg.attachments[0];
   // O anúncio DESTA mensagem, quando ela nasceu de um clique. O contato guarda
@@ -652,12 +871,17 @@ async function insertMessage(
       // pelo celular. E `removerEcoDoProprioEnvio` filtra por este valor: sem
       // ele, o eco do nosso próprio envio escapa da rede e vira linha
       // duplicada na tela.
-      sent_via: "external_device",
+      sent_via: eco ? "automation" : "external_device",
       status: msg.direction === "outbound" ? (msg.status ?? "sent") : "delivered",
-      type: temAnexo ? tipoDoAnexo(primeiro?.type) : msg.location ? "location" : "text",
+      type: eco ? "template" : temAnexo ? tipoDoAnexo(primeiro?.type) : msg.location ? "location" : "text",
       // O pino vira link do mapa no corpo: é o que o agente lê e o que a
       // prévia da conversa mostra. As coordenadas ficam no metadata para a tela.
-      body: msg.location ? corpoDaLocalizacao(msg.location) : msg.text,
+      //
+      // O eco da transmissão chega com "[Template: nome]" no lugar do texto: o
+      // que a pessoa leu é o modelo congelado no destinatário, e é ele que o
+      // agente precisa ver quando a resposta chegar.
+      body: eco?.corpo ?? (msg.location ? corpoDaLocalizacao(msg.location) : msg.text),
+      ...(eco ? { template_name: eco.modelo, template_language: eco.idioma } : {}),
       // A URL do anexo NÃO é pública: é endpoint autenticado do provider, e a
       // plataforma descarta a mídia depois de um tempo. Ela é PONTEIRO, não
       // conteúdo — e é por isso que grava aqui e o worker baixa os bytes já.
@@ -676,6 +900,7 @@ async function insertMessage(
             ? { location: msg.location }
             : {}),
         ...anuncio,
+        ...(eco ? metadataDoEco(eco) : {}),
         ...(msg.direction === "inbound" ? ancoraCtwaDaMensagem(extrairAtribuicaoMeta(msg.referral)) : {}),
       },
       ...(msg.sentAt ? { sent_at: msg.sentAt } : {}),
@@ -691,6 +916,27 @@ async function insertMessage(
   if (error || !data) throw new Error(`zernio_ingest_insert_failed: ${error?.message ?? "sem id"}`);
 
   return (data as { id: string }).id;
+}
+
+/** A saída veio de uma transmissão do provedor — de campanha ou do painel dele. */
+function ehDeTransmissao(msg: ZernioInboundMessage): boolean {
+  return msg.direction === "outbound" && (msg.sentVia === "broadcast" || !!msg.broadcastId);
+}
+
+/** A campanha e o destinatário do eco, quando ele é de uma transmissão de campanha. */
+async function ecoDeTransmissao(
+  admin: SupabaseClient,
+  organizationId: string,
+  msg: ZernioInboundMessage,
+  contactId: string,
+): Promise<EcoDaTransmissao | null> {
+  if (msg.direction !== "outbound" || msg.kind !== "message" || !msg.broadcastId) return null;
+  return ecoDaTransmissao(admin, {
+    organizationId,
+    transmissaoId: msg.broadcastId,
+    contactId,
+    telefone: msg.identity.phone,
+  });
 }
 
 /**

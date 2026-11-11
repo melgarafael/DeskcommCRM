@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { audit } from "@/lib/audit";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   COLUNAS_DA_MENSAGEM,
@@ -175,7 +175,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     metadata: { mensagens: mensagens.length, formato: "pdf" },
   });
 
-  return new Response(new Uint8Array(pdf.buffer), {
+  return comIdDaRequisicao(new Response(new Uint8Array(pdf.buffer), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
@@ -183,5 +183,5 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       "Cache-Control": "no-store",
       "X-Request-Id": requestId,
     },
-  });
+  }), requestId);
 }

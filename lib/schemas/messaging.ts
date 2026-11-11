@@ -375,8 +375,27 @@ export const listConversationsQuerySchema = z.object({
    * significar "meu trabalho" para virar "tudo que já toquei".
    */
   exclude_finished: z.boolean().optional(),
+  /**
+   * Só as conversas encerradas a partir deste instante (`service_closed_at`).
+   * A ordem da lista é por última mensagem: sem o recorte no banco, a conversa
+   * fechada hoje com mensagem antiga ficaria fora dos 100 do Painel de atendimento.
+   */
+  closed_since: z.string().datetime().optional(),
   assigned_to: z.union([z.string().uuid(), z.literal("me"), z.literal("unassigned")]).optional(),
   channel_session_id: z.string().uuid().optional(),
+  /**
+   * A FILA (#3876, fatia F3): só as conversas classificadas neste setor.
+   *
+   * É o par de leitura do `PUT /conversations/[id]/sector` que já existia e não
+   * tinha consumidor — sem ele, o seletor de fila do Inbox seria um controle que
+   * muda de valor e não muda a lista. Uuid e não nome: é a chave da tabela, e um
+   * nome repetido (ou renomeado) passaria a filtrar outra fila em silêncio.
+   *
+   * Ausente = sem filtro, como todos os auxiliares. `null` NÃO significa "sem
+   * fila": nenhum cliente manda isso, e a tela que quisesse as conversas sem
+   * classificação teria de pedir isso explicitamente numa fatia própria.
+   */
+  sector_id: z.string().uuid().optional(),
   /**
    * O MARCADOR, e agora VÁRIOS (#1274).
    *

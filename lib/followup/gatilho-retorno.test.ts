@@ -18,6 +18,12 @@ const CONVERSA = "66666666-6666-6666-6666-666666666666";
 const MENSAGEM = "77777777-7777-7777-7777-777777777777";
 const VERSION = "99999999-9999-9999-9999-999999999999";
 const ENROLLMENT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+// #3852 — dois números, um agente em cada. O do número A tem o MENOR uuid de
+// propósito: era ele que a regra antiga escolhia para os dois.
+const NUMERO_A = "aaaa1111-0000-4000-8000-00000000000a";
+const NUMERO_B = "bbbb2222-0000-4000-8000-00000000000b";
+const AGENTE_DO_A = "1a000000-0000-4000-8000-00000000000a";
+const AGENTE_DO_B = "2b000000-0000-4000-8000-00000000000b";
 
 const AGORA = new Date("2026-09-20T12:00:00.000Z");
 const CLOCK = () => AGORA;
@@ -35,6 +41,8 @@ function fakeDb(opts: {
   noDeGatilho?: string | null;
   pedeAgente?: boolean;
   jaVivoInsert?: boolean;
+  /** Número da conversa em que o lead voltou (#3852); ausente = desconhecido. */
+  canal?: string | null;
   registro: Registro;
 }): GatilhoRetornoDb {
   return {
@@ -58,6 +66,9 @@ function fakeDb(opts: {
     },
     async carregaEnrollmentVivo() {
       return opts.vivo ?? null;
+    },
+    async carregaCanalDaConversa() {
+      return opts.canal ?? null;
     },
     async carregaNoDeGatilho() {
       if (opts.noDeGatilho === null) return null;
@@ -254,5 +265,52 @@ describe("aplicaGatilhoDeRetorno — o que dispara", () => {
     expect(s.enrolled).toBe(0);
     expect(s.pointers_barrados_pelo_gate).toBe(1);
     expect(reg.enrollments).toHaveLength(0);
+  });
+});
+
+describe("#3852 — o retorno é de UM número, e a persona vem dele", () => {
+  it("volta pelo número B: pina o agente publicado no B, não o de menor uuid", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeRetorno(
+      {
+        db: fakeDb({ pointers: [pointerArmado], canal: NUMERO_B, registro: reg }),
+        gateDb: fakeGate([
+          { agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionIds: [NUMERO_A] },
+          { agentId: AGENTE_DO_B, pointerIds: [POINTER], channelSessionIds: [NUMERO_B] },
+        ]),
+        clock: CLOCK,
+      },
+      evento(),
+    );
+    expect(s.enrolled).toBe(1);
+    expect(reg.enrollments[0]).toMatchObject({ agent_id: AGENTE_DO_B, conversation_id: CONVERSA });
+  });
+
+  it("volta num número sem agente armando o fluxo: BARRADO, nunca o agente do outro número", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeRetorno(
+      {
+        db: fakeDb({ pointers: [pointerArmado], canal: NUMERO_B, registro: reg }),
+        gateDb: fakeGate([{ agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionIds: [NUMERO_A] }]),
+        clock: CLOCK,
+      },
+      evento(),
+    );
+    expect(s.pointers_barrados_pelo_gate).toBe(1);
+    expect(reg.enrollments).toHaveLength(0);
+  });
+
+  it("sem o canal (adapter que não sabe), decide por organização — o comportamento de antes", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeRetorno(
+      {
+        db: fakeDb({ pointers: [pointerArmado], registro: reg }),
+        gateDb: fakeGate([{ agentId: AGENT, pointerIds: [POINTER] }]),
+        clock: CLOCK,
+      },
+      evento(),
+    );
+    expect(s.enrolled).toBe(1);
+    expect(reg.enrollments[0]).toMatchObject({ agent_id: AGENT });
   });
 });

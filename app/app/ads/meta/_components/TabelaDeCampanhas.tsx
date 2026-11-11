@@ -1,5 +1,6 @@
 "use client";
 
+import { format } from "date-fns";
 import { useMemo, useState } from "react";
 
 import {
@@ -10,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import {
   ORDEM_PADRAO,
@@ -20,7 +22,7 @@ import {
 import type { LinhaDeCampanha } from "@/lib/plataformas-de-anuncio/types";
 
 /**
- * As 15 colunas.
+ * As 16 colunas.
  *
  * ─── A regra que atravessa o arquivo inteiro: ausência vira "—" ─────────────
  *
@@ -134,6 +136,7 @@ interface Props {
 
 export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
   const t = useT();
+  const localeDaData = useLocaleDeData();
 
   /**
    * A ordenação é ESCOLHA DE LEITURA, não dado: mora no componente e não
@@ -177,6 +180,32 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
     );
   };
 
+  /**
+   * O `start_time` da plataforma (`2026-08-14T00:00:00-0300`) → "dd/MM/yyyy", no
+   * idioma de quem lê.
+   *
+   * O DIA vem do próprio texto, não do instante: a plataforma escreve a hora no
+   * fuso da CONTA de anúncios, e é nesse fuso que o Gerenciador mostra a data.
+   * Converter para o fuso do navegador faria a campanha que começou à meia-noite
+   * de São Paulo aparecer na véspera para quem abre a tela de outro fuso.
+   *
+   * Texto que não começa por uma data de calendário válida vira "—", como nas
+   * outras colunas — e nunca chega ao `format`, que LANÇA com data inválida e
+   * derrubaria a tabela inteira por causa de uma célula.
+   */
+  const inicio = (valor: string | null) => {
+    const traco = <span className="text-muted-foreground">{TRACO}</span>;
+    const pedacos = valor ? /^(\d{4})-(\d{2})-(\d{2})/.exec(valor) : null;
+    const [ano, mes, diaDoMes] = (pedacos ?? []).slice(1).map(Number);
+    if (ano === undefined || mes === undefined || diaDoMes === undefined) return traco;
+    const dia = new Date(ano, mes - 1, diaDoMes);
+    // 2026-02-31 vira 03/03 no `Date`: data que não existe no calendário é "—".
+    if (dia.getFullYear() !== ano || dia.getMonth() !== mes - 1 || dia.getDate() !== diaDoMes) {
+      return traco;
+    }
+    return <>{format(dia, "dd/MM/yyyy", { locale: localeDaData })}</>;
+  };
+
   if (linhas.length === 0) {
     return (
       <p className="rounded-md border p-4 text-sm text-muted-foreground">
@@ -196,7 +225,7 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
   return (
     <div className="space-y-2">
       {/*
-        O controle mora ACIMA da tabela, e fora do contêiner de scroll: são 15
+        O controle mora ACIMA da tabela, e fora do contêiner de scroll: são 16
         colunas, e dentro do `overflow-x-auto` ele rolaria junto, ficando fora da
         tela justamente em tela estreita, que é onde ele mais importa.
       */}
@@ -222,7 +251,7 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
       </div>
       {/*
         O scroll horizontal mora AQUI, num contêiner próprio — nunca no `<body>`.
-        São 15 colunas; em telas estreitas a tabela rola dentro do próprio quadro e
+        São 16 colunas; em telas estreitas a tabela rola dentro do próprio quadro e
         a página segue parada, que é o combinado do produto para conteúdo largo.
       */}
       <div className="overflow-x-auto rounded-md border">
@@ -232,6 +261,7 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
               <TableHead className="sticky left-0 z-10 bg-bg">{t("Campanha")}</TableHead>
               <TableHead>{t("Status")}</TableHead>
               <TableHead>{t("Veiculação")}</TableHead>
+              <TableHead>{t("Início")}</TableHead>
               <TableHead className="text-right">{t("Resultado")}</TableHead>
               <TableHead className="text-right">{t("Custo por Resultado")}</TableHead>
               <TableHead className="text-right">{t("Valor Gasto")}</TableHead>
@@ -288,6 +318,7 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
                   </TableCell>
                   <TableCell>{estado(linha.status)}</TableCell>
                   <TableCell>{estado(linha.veiculacao)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{inicio(linha.iniciadaEm)}</TableCell>
                   <TableCell className="text-right">
                     <Numero valor={linha.resultado.valor} />
                     {/*

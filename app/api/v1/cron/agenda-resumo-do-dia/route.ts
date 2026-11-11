@@ -16,6 +16,13 @@
  * destino que é número da organização. Dois caminhos de envio divergiriam no
  * primeiro conserto.
  *
+ * ═══ E O LEMBRETE AO DONO, NA MESMA RODADA ═══
+ *
+ * Quem ligou `lembrar_antes` (migration 9326) recebe, pelo mesmo número, um
+ * lembrete antes de cada horário, nos degraus do tipo de atendimento e com o
+ * link da reunião (`lib/agenda/lembrete-ao-dono.ts`). Dez minutos é a
+ * resolução: o aviso de 1 hora chega entre 60 e 50 minutos antes.
+ *
  * ═══ AUDITORIA SÓ QUANDO HOUVE EFEITO ═══
  *
  * Cada resumo que SAI (ou falha em definitivo) é auditado UMA vez, dentro do
@@ -30,6 +37,7 @@ import type { NextRequest } from "next/server";
 
 import { aplicaResumoDoDia } from "@/lib/agenda/aviso-de-agendamento";
 import { criarDepsDoAvisoDeAgendamento } from "@/lib/agenda/aviso-de-agendamento.handler";
+import { aplicaLembretesAoDono, createSupabaseLembreteAoDonoDb } from "@/lib/agenda/lembrete-ao-dono";
 import { ok, fail } from "@/lib/api/wrappers";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { logger } from "@/lib/logger";
@@ -63,8 +71,12 @@ async function handle(req: NextRequest): Promise<Response> {
   // Organização parada (suspensa, redigida, arquivada) não gasta nem fala.
   const paradas = new Set(await idsDeOrgsParadas(admin));
   const deps = await criarDepsDoAvisoDeAgendamento();
+  // O LEMBRETE AO DONO (migration 9326) roda na MESMA rodada e pelo MESMO
+  // caminho de envio: quem não ligou `lembrar_antes` sai no primeiro passo.
+  const dbDoLembrete = createSupabaseLembreteAoDonoDb(admin);
 
   let enviados = 0;
+  let lembretes = 0;
   const desfechos: Record<string, number> = {};
   const contar = (chave: string) => {
     desfechos[chave] = (desfechos[chave] ?? 0) + 1;
@@ -74,6 +86,20 @@ async function handle(req: NextRequest): Promise<Response> {
     if (paradas.has(orgId)) {
       contar("organizacao_parada");
       continue;
+    }
+    try {
+      const lembrete = await aplicaLembretesAoDono(deps, dbDoLembrete, orgId);
+      lembretes += lembrete.enviados;
+      for (const [chave, n] of Object.entries(lembrete.desfechos)) {
+        desfechos[`lembrete:${chave}`] = (desfechos[`lembrete:${chave}`] ?? 0) + n;
+      }
+    } catch (err) {
+      contar("lembrete:erro");
+      logger.error("[agenda-resumo-do-dia] lembrete ao dono falhou", {
+        organization_id: orgId,
+        error: err instanceof Error ? err.message : String(err),
+        requestId,
+      });
     }
     try {
       const desfecho = await aplicaResumoDoDia(deps, orgId);
@@ -92,7 +118,7 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
-  return ok({ organizacoes: ligadas.length, enviados, desfechos }, { requestId });
+  return ok({ organizacoes: ligadas.length, enviados, lembretes, desfechos }, { requestId });
 }
 
 export const GET = handle;

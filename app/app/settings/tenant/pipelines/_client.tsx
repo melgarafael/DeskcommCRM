@@ -1,8 +1,10 @@
 "use client";
 
 import { useT } from "@/hooks/i18n/useT";
+import { useTaxasDasEtapas } from "@/hooks/pipelines/useWinRates";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,12 @@ import {
   importarOpcoesCsv,
 } from "@/lib/leads/campos-pesquisaveis";
 import { atalhosDoFunil, motivoDaRecusaDoModelo, type AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
+import {
+  DIAS_MAXIMO_PARA_REABRIR,
+  DIAS_MINIMO_PARA_REABRIR,
+  DIAS_PADRAO_PARA_REABRIR,
+  diasParaReabrirPerdido,
+} from "@/lib/leads/janela-do-perdido";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
@@ -38,6 +46,7 @@ import { EditorDeAtalhos } from "./_atalhos-do-card";
 import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
 import { MOEDA_PADRAO } from "@/lib/money";
 import {
+  camposDoFunilPatchSchema,
   customFieldSchema,
   MAX_CAMPOS_DO_NEGOCIO,
   type CustomFieldDef,
@@ -54,8 +63,9 @@ import {
   type OperadorDeMostra,
 } from "@/lib/schemas/mostrar-quando";
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
-import { CaretDown, Plus, Trash } from "@/lib/ui/icons";
+import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
+import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
 
@@ -93,6 +103,35 @@ export const TIPOS_DE_CAMPO = customFieldSchema.shape.type.options;
 /** Tipos cujo valor sai de uma lista fechada — são os que mostram o campo de opções. */
 export function tipoTemOpcoes(tipo: CustomFieldDef["type"]): boolean {
   return tipo === "select" || tipo === "multiselect" || tipo === "searchable_select";
+}
+
+/**
+ * MOVE UM CAMPO DE LUGAR (#4043) — a única conta que o arrasto e as setas fazem.
+ *
+ * A ordem dos campos É a ordem do array `settings.fields`: o card, o dossiê e o
+ * formulário de novo negócio desenham nessa sequência, e `handleSave` regrava a
+ * lista inteira. Por isso reordenar não encosta em chave, rótulo nem em valor
+ * gravado — `crm_leads.custom_fields` é lido POR CHAVE (issue #4043, item 3).
+ *
+ * Índice fora da lista devolve a MESMA lista, não uma cópia nem um recorte: o
+ * `slice`/`splice` de uma posição inválida apagaria justamente o campo que a
+ * pessoa está tentando mover, e o save seguiria adiante com o array truncado.
+ * Uma função pura com essa guarda é o que os dois caminhos (arrastar e os
+ * botões de teclado) compartilham — régua escrita duas vezes divergiria.
+ */
+export function moverCampo(
+  campos: CustomFieldDef[],
+  de: number,
+  para: number,
+): CustomFieldDef[] {
+  if (de === para) return campos;
+  if (de < 0 || de >= campos.length) return campos;
+  if (para < 0 || para >= campos.length) return campos;
+  const next = [...campos];
+  const [movido] = next.splice(de, 1);
+  if (!movido) return campos;
+  next.splice(para, 0, movido);
+  return next;
 }
 
 /**
@@ -394,6 +433,48 @@ export function PipelinesClient({
   comandaDisponivel?: boolean;
 }) {
   const t = useT();
+  /**
+   * ⚠️ UM FUNIL ABERTO POR VEZ (#4083) — o estado mora na LISTA, não no card.
+   *
+   * Com ~10 funis a tela virava um rolo: cada card traz todas as etapas editáveis
+   * e o mapeamento do assistente abertos ao mesmo tempo. O pedido veio da
+   * comunidade, e o modelo citado é o próprio botão desta tela («Editar
+   * vocabulário e campos deste funil»), que já abre e fecha.
+   *
+   * Aberto-por-vez é um invariante da LISTA, e é por isso que `abertoId` não
+   * pode viver dentro do card: dois `useState` independentes não se recolhem.
+   *
+   * COM UM SÓ FUNIL ele nasce aberto: não há com o que competir, e a tela fica
+   * exatamente como era antes desta mudança. Quem quiser recolher, recolhe — o
+   * clique no cabeçalho continua fechando.
+   */
+  const [funilAberto, setFunilAberto] = useState<string | null>(() =>
+    pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
+  );
+  const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
+  /**
+   * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
+   *
+   * `#etapas-<id>` e `#mapeamento-<id>` são os destinos do «Mudar isso» da etapa
+   * e do mapeamento, e o hash sobrevive a recarregar a página. Recolhido, o alvo
+   * existe no DOM mas está `hidden` — o navegador não rola até ele e a pessoa cai
+   * no topo, sem entender por que o link não levou a lugar nenhum.
+   *
+   * ⚠️ SÓ NA MONTAGEM. O hash fica na URL depois do clique, e salvar o funil
+   * revalida a rota e entrega `pipelines` novo: com a lista nas dependências, o
+   * funil que a pessoa abriu depois recolhia sozinho e o do hash velho voltava.
+   */
+  useEffect(() => {
+    const alvo = pipelines.find(
+      (p) =>
+        window.location.hash === `#${ancoraDasEtapas(p.id)}` ||
+        window.location.hash === `#${ancoraDoMapeamento(p.id)}`,
+    );
+    if (!alvo) return;
+    setFunilAberto(alvo.id);
+    setChegada({ pipelineId: alvo.id, ancora: window.location.hash.slice(1), scrollY: window.scrollY });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ver ⚠️ acima: é leitura de chegada.
+  }, []);
   if (pipelines.length === 0) {
     // ⚠️ NÃO PROMETA UM CAMINHO QUE NÃO EXISTE — nem NEGUE um que existe. Este
     // texto dizia que criar funil "é feito por quem instalou o sistema, direto
@@ -423,10 +504,36 @@ export function PipelinesClient({
           podeEditarConfig={podeEditarConfig}
           comandaDisponivel={comandaDisponivel}
           ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
+          aberto={funilAberto === p.id}
+          aoAlternar={() => {
+            // Quem mexeu no acordeão assumiu a tela: a chegada não rola mais.
+            setChegada(null);
+            setFunilAberto((aberto) => (aberto === p.id ? null : p.id));
+          }}
         />
       ))}
+      {chegada && <RolagemDoFunil {...chegada} aoTerminar={() => setChegada(null)} />}
     </div>
   );
+}
+
+type ChegadaAoFunil = Chegada & { pipelineId: string };
+
+/**
+ * A CHEGADA PELA ÂNCORA DE UM FUNIL (#4083) — o mecanismo é `RolagemDeChegada`.
+ *
+ * As duas seções só põem o `id` no DOM depois da leitura do funil, e o mapeamento
+ * ainda um render depois dela (o rascunho nasce num efeito). A taxa de cada etapa
+ * vem em outra leitura e empurra o mapeamento para baixo: medido, 309 px em 1440
+ * com cinco etapas. Rolar antes dela deixa a seção longe do topo, em parte das
+ * rodadas — por isso a espera é a leitura das taxas DESTE funil.
+ */
+function RolagemDoFunil({
+  pipelineId,
+  ...chegada
+}: ChegadaAoFunil & { aoTerminar: () => void }) {
+  const taxasChegando = useTaxasDasEtapas(pipelineId).isFetching;
+  return <RolagemDeChegada {...chegada} esperando={taxasChegando} />;
 }
 
 /**
@@ -452,32 +559,76 @@ function CardDoFunil({
   podeEditarConfig,
   comandaDisponivel,
   ehFunilPadrao,
+  aberto,
+  aoAlternar,
 }: {
   pipeline: PipelineRow;
   etapas: EtapaDoFunil[];
   podeEditarConfig: boolean;
   comandaDisponivel: boolean;
   ehFunilPadrao: boolean;
+  /** Recolhido ou aberto — o estado é da LISTA (`PipelinesClient`), um por vez. */
+  aberto: boolean;
+  aoAlternar: () => void;
 }) {
   const t = useT();
   const [editorAberto, setEditorAberto] = useState(false);
   // Monta na primeira vez que abre e fica montado: recolher só ESCONDE. Desmontar
   // apagaria em silêncio o que foi editado e ainda não salvo.
   const [editorMontado, setEditorMontado] = useState(false);
+  const idDoCorpo = `corpo-do-funil-${pipeline.id}`;
   return (
     <Card className="space-y-6 p-6">
-      <header>
-        <h2 className="text-base font-semibold">{pipeline.name}</h2>
+      {/* ─── O FUNIL RECOLHIDO, E O NOME É O BOTÃO (#4083) ──────────────────
+          O pedido da comunidade foi literal: com ~10 funis a tela vira um rolo
+          e cada um deveria vir FECHADO, abrindo um por vez. O modelo citado é o
+          botão «Editar vocabulário e campos deste funil» logo abaixo — mesmo
+          idioma de abrir/fechar desta tela: `aria-expanded` no controle,
+          `CaretDown` girando e o corpo escondido com `hidden` (não desmontado:
+          recolher não pode apagar rascunho de etapa em edição).
+
+          O `<button>` fica DENTRO do `<h2>` (não o contrário): o título
+          continua sendo título para o leitor de tela, o clique pega a faixa
+          inteira do nome, e o nome acessível do botão é o próprio nome do funil
+          — sem string nova para traduzir. Enter e Espaço vêm do elemento nativo.
+
+          `hidden` no atributo, num wrapper SEM classe de display: `display:flex`
+          de uma classe Tailwind venceria o `[hidden]` e o corpo continuaria à
+          vista. O respiro entre etapas e mapeamento fica no `gap` do filho. */}
+      <header className="flex flex-col gap-1">
+        <h2 className="text-base font-semibold">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-auto justify-start gap-2 whitespace-normal px-0 text-left text-base font-semibold hover:bg-transparent"
+            aria-expanded={aberto}
+            aria-controls={idDoCorpo}
+            data-testid={`abrir-funil-${pipeline.id}`}
+            onClick={aoAlternar}
+          >
+            {pipeline.name}
+            <CaretDown
+              size={14}
+              aria-hidden
+              className={aberto ? "rotate-180 transition-transform" : "transition-transform"}
+            />
+          </Button>
+        </h2>
         <p className="text-xs text-muted-foreground">/{pipeline.slug}</p>
       </header>
-      {/* As ETAPAS vêm primeiro, e a ordem é a do raciocínio de quem
-          configura: primeiro o quadro existe do jeito da sua operação,
-          depois se decide o que o assistente faz com ele. Invertido, a
-          primeira coisa que o dono da clínica vê é um mapeamento sobre
-          colunas de e-commerce que ele nem sabia que dava para trocar. */}
-      <StagesSection pipelineId={pipeline.id} ancoraMapeamento={ancoraDoMapeamento(pipeline.id)} />
-      <div className="border-t border-border pt-6">
-        <AgentMappingSection pipelineId={pipeline.id} ancoraEtapas={ancoraDasEtapas(pipeline.id)} />
+      <div id={idDoCorpo} hidden={!aberto} data-testid={idDoCorpo}>
+        <div className="flex flex-col gap-6">
+          {/* As ETAPAS vêm primeiro, e a ordem é a do raciocínio de quem
+              configura: primeiro o quadro existe do jeito da sua operação,
+              depois se decide o que o assistente faz com ele. Invertido, a
+              primeira coisa que o dono da clínica vê é um mapeamento sobre
+              colunas de e-commerce que ele nem sabia que dava para trocar. */}
+          <StagesSection pipelineId={pipeline.id} ancoraMapeamento={ancoraDoMapeamento(pipeline.id)} />
+          <div className="border-t border-border pt-6">
+            <AgentMappingSection pipelineId={pipeline.id} ancoraEtapas={ancoraDasEtapas(pipeline.id)} />
+          </div>
+        </div>
       </div>
       {podeEditarConfig && (
         <div className="space-y-4 border-t border-border pt-6">
@@ -805,6 +956,22 @@ function PipelineEditor({
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
+  /**
+   * REABRIR O NEGÓCIO PERDIDO RECENTE (#4076) — opção POR FUNIL, desligada por
+   * padrão. O número relido é o que está gravado (`null` = desligado) e é ele
+   * que preenche o campo de dias, para ligar/desligar não exigir digitação; o
+   * campo nasce com a sugestão, que NÃO é gravada enquanto ninguém ligar a
+   * opção. A régua do schema e a do leitor são a MESMA função
+   * (`diasParaReabrirPerdido`), para a tela não mostrar um número que o motor
+   * ignora.
+   */
+  const diasParaReabrirRelidos = diasParaReabrirPerdido(pipeline.settings);
+  const [reabrePerdido, setReabrePerdido] = useState(diasParaReabrirRelidos !== null);
+  const [diasParaReabrir, setDiasParaReabrir] = useState(
+    diasParaReabrirRelidos !== null
+      ? String(diasParaReabrirRelidos)
+      : String(DIAS_PADRAO_PARA_REABRIR),
+  );
   // O recorte de encerrados antigos do quadro (#2995): opção POR FUNIL em
   // `settings.ocultar_encerrados_dias`, desligada por padrão. O número relido é
   // o que está gravado (`null` = desligado) e é ele que preenche o campo de
@@ -845,6 +1012,19 @@ function PipelineEditor({
   const atalhosIniciais = atalhosDoFunil(pipeline.settings);
   const [atalhos, setAtalhos] = useState<AtalhoDoCard[]>(atalhosIniciais);
   const [isPending, startTransition] = useTransition();
+
+  /**
+   * O SOLTAR DO ARRASTO (#4043) — traduz o `DropResult` para a MESMA conta das
+   * setas (`moverCampo`). `destination` nulo é soltar fora da lista; cair na
+   * mesma posição é gesto cancelado. Nada além disso: a lista nova vira estado e
+   * o save regrava `fields` inteiro pela `updatePipelineConfig`, que é a única
+   * porta de escrita do `settings`.
+   */
+  function aoSoltarCampo(resultado: DropResult) {
+    const { source, destination } = resultado;
+    if (!destination || destination.index === source.index) return;
+    setFields((atuais) => moverCampo(atuais, source.index, destination.index));
+  }
 
   function handleSave() {
     const ok: CustomFieldDef[] = [];
@@ -892,6 +1072,16 @@ function PipelineEditor({
       }
       ok.push(parsed.data);
     }
+    // A ORDEM É O PRÓPRIO ARRAY (#4043): a lista inteira vai no `fields` do
+    // patch, na ordem da tela. A régua da LISTA (e não só a de cada campo) roda
+    // aqui para a recusa ter nome: chave repetida faz dois campos disputarem a
+    // mesma posição e a mesma gaveta do `custom_fields`, e a action responderia
+    // só `validation_failed` — que não diz a ninguém o que consertar.
+    const lista = camposDoFunilPatchSchema.safeParse(ok);
+    if (!lista.success) {
+      toast.error(lista.error.issues[0]?.message ?? t("Campo inválido."));
+      return;
+    }
     const reasons = reasonsText
       .split(",")
       .map((s) => s.trim())
@@ -926,6 +1116,27 @@ function PipelineEditor({
         diasDigitados > DIAS_MAXIMO_DO_RECORTE)
     ) {
       toast.error(t("Escolha de 1 a 3650 dias para esconder os negócios encerrados do quadro."));
+      return;
+    }
+
+    // #4076 — a JANELA do negócio perdido que volta a ser o mesmo card. A
+    // mesma técnica do recorte acima: número fora da faixa faria o schema
+    // recusar o save inteiro com a mensagem genérica de validação, e barrar
+    // aqui diz o que está errado. O `0` é o DESLIGADO e vai explícito no
+    // patch: omitir a chave deixaria a janela antiga gravada e desligar a
+    // opção não desligaria nada.
+    const diasDaReabertura = Number(diasParaReabrir.trim());
+    if (
+      reabrePerdido &&
+      (!Number.isInteger(diasDaReabertura) ||
+        diasDaReabertura < DIAS_MINIMO_PARA_REABRIR ||
+        diasDaReabertura > DIAS_MAXIMO_PARA_REABRIR)
+    ) {
+      toast.error(
+        t(
+          "Escolha de 1 a 3650 dias para reabrir o negócio perdido quando o contato volta a escrever.",
+        ),
+      );
       return;
     }
 
@@ -974,6 +1185,9 @@ function PipelineEditor({
           }
         : {}),
       ocultar_encerrados_dias: ocultarEncerrados ? diasDigitados : 0,
+      // A REABERTURA DO PERDIDO RECENTE (#4076) pela MESMA porta de escrita do
+      // settings. `0` é o desligado, e é o padrão de quem nunca configurou.
+      reabrir_perdido_dias: reabrePerdido ? diasDaReabertura : 0,
       // OS ATALHOS DO CARD (#3487) vão no MESMO patch, pela MESMA porta de
       // escrita do settings. A chave só entra quando há o que dizer — um funil
       // que nunca declarou atalho continua idêntico ao de antes —, mas quem JÁ
@@ -1121,6 +1335,56 @@ function PipelineEditor({
           )}
         </p>
       </div>
+
+      {/* ─── A REABERTURA DO PERDIDO RECENTE (#4076) ───────────────────────
+          Quando o contato volta a escrever e o último negócio dele foi perdido
+          MINUTOS antes, o nascimento do card criava um negócio novo vazio e o
+          histórico comercial (descrição, campos, motivo da perda) ficava no
+          card perdido. O autor da issue mediu 5 de 7 perdas virando card
+          vazio em até 85 minutos, quase sempre por uma despedida.
+
+          A opção é POR FUNIL e vem DESLIGADA: quem não ligar continua com o
+          card novo de hoje. Dentro da janela, a conversa REABRE O MESMO card
+          (mesmo id, status de volta a aberto, histórico intacto) — nada é
+          copiado, nada é fundido. Fora da janela, segue como hoje: reabrir um
+          perdido de meses atrás esconderia a rotatividade do funil.
+
+          SÓ NO FUNIL QUE O MOTOR LÊ: a mensagem nasce no funil de entrada
+          (`funilDeEntrada`), então num funil secundário a escolha seria salva e
+          nunca usada — o mesmo motivo do bloco de `entrada_do_inbox` abaixo. A
+          escolha de retomada (`novo_negocio`) vence esta: ela é a decisão do
+          funil sobre "encerrado que volta", e as duas não podem valer juntas. */}
+      {(pipeline.is_default === true || pipeline.is_client_pipeline === true) && (
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={reabrePerdido}
+              onChange={(e) => setReabrePerdido(e.target.checked)}
+            />
+            {t("Reabrir o negócio perdido quando o contato volta a escrever")}
+          </label>
+          <label className="flex flex-wrap items-center gap-2 text-xs">
+            {t("Reabrir o negócio perdido há menos de")}
+            <Input
+              type="number"
+              min={DIAS_MINIMO_PARA_REABRIR}
+              max={DIAS_MAXIMO_PARA_REABRIR}
+              aria-label={t("Dias para reabrir o negócio perdido")}
+              className="h-8 w-20 text-xs"
+              disabled={!reabrePerdido}
+              value={diasParaReabrir}
+              onChange={(e) => setDiasParaReabrir(e.target.value)}
+            />
+            {t("dias")}
+          </label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Ligado, a mensagem de quem tem um negócio perdido dentro dessa janela reabre o MESMO card, com descrição, campos e motivo da perda intactos — nada é copiado nem fundido. Fora da janela, ou desligado, a conversa abre um negócio novo como hoje.",
+            )}
+          </p>
+        </div>
+      )}
 
       {/* ─── A ENTRADA DAS CONVERSAS DO INBOX (#3011) ─────────────────────
           O ajuste existia só no BANCO: a etapa declarada já valia, o fallback
@@ -1279,11 +1543,38 @@ function PipelineEditor({
         <p className="text-xs text-muted-foreground">
           {t("Aparecem no dossiê do negócio. No follow-up, você escolhe em qual campo gravar a resposta.")}
         </p>
+        {/* ─── A ORDEM DOS CAMPOS (#4043) ──────────────────────────────────
+            A ordem que o card, o dossiê e o formulário de novo negócio mostram É
+            a ordem deste array, e `handleSave` regrava a lista inteira: mudar a
+            ordem aqui não encosta em chave nem em valor já gravado, porque
+            `crm_leads.custom_fields` é lido POR CHAVE.
+
+            O arrasto é o mesmo desenho das respostas rápidas (#3244, com
+            `@hello-pangea/dnd`, que já é dependência) e as setas existem porque
+            arrastar sozinho exclui quem usa teclado. Os dois caminhos chamam a
+            MESMA `moverCampo` — o `DropResult` só diz de qual índice para qual.
+
+            Agrupar os campos em SEÇÕES recolhíveis (item 2 da issue) fica para
+            outra fatia: muda o formato de `settings.fields` e é lido no card, no
+            dossiê e no follow-up. */}
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Arraste pela alça, ou use as setas, para mudar a ordem em que os campos aparecem no card.",
+          )}
+        </p>
         {/* `lg:` e não `md:` (#3099): com a barra lateral aberta, a 768px sobram ~380px
             para a linha, e a coluna de 13rem deixava Chave e Rótulo com 46px. Abaixo de
             1024px os campos empilham, como no celular. Os `col-span-4` dos blocos de
             dentro seguem o MESMO corte: um `md:col-span-4` sozinho cria quatro colunas
-            implícitas e devolve a linha espremida, mesmo sem o template. */}
+            implícitas e devolve a linha espremida, mesmo sem o template.
+
+            Os invólucros do arrasto ficam alinhados com a LINHA, sem reindentar as
+            ~400 linhas de dentro: este arquivo é compartilhado com outras frentes e
+            um diff de formatação aqui já queimou uma PR. */}
+        <DragDropContext onDragEnd={aoSoltarCampo}>
+          <Droppable droppableId="campos-do-funil">
+            {(lista) => (
+        <div ref={lista.innerRef} {...lista.droppableProps} className="space-y-2">
         {fields.map((f, i) => {
           // As condições DESTE campo como linhas de tela (#4041): o JSON antigo
           // (uma condição) vira uma linha só, e o campo sem condição ganha a
@@ -1292,7 +1583,51 @@ function PipelineEditor({
           const linhas: CondicaoDeMostra[] =
             condicoesDoCampo.length > 0 ? condicoesDoCampo : [{ campo: "" }];
           return (
-          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]">
+          <Draggable key={`${f.key}-${i}`} draggableId={`campo-${i}`} index={i}>
+          {(arrastavel, instantaneo) => (
+          <div
+            ref={arrastavel.innerRef}
+            {...arrastavel.draggableProps}
+            className={`grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]${
+              instantaneo.isDragging ? " shadow-md ring-1 ring-accent/40" : ""
+            }`}
+            data-testid={`campo-${i + 1}`}
+          >
+            {/* A alça e as duas setas. A ordem de leitura importa: a alça é o
+                primeiro alvo, e os botões dizem em VOZ ALTA para onde o campo
+                vai — quem usa leitor de tela não arrasta. */}
+            <div className="flex items-center gap-1 lg:col-span-4">
+              <span
+                {...arrastavel.dragHandleProps}
+                aria-label={`${t("Arrastar para reordenar")} ${f.label || f.key || i + 1}`}
+                data-testid={`arrastar-campo-${i + 1}`}
+                className="shrink-0 cursor-grab text-muted-foreground"
+              >
+                <DragHandle />
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`${t("Mover para cima")} «${f.label || f.key || i + 1}»`}
+                data-testid={`subir-campo-${i + 1}`}
+                disabled={i === 0}
+                onClick={() => setFields(moverCampo(fields, i, i - 1))}
+              >
+                <CaretUp size={14} aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`${t("Mover para baixo")} «${f.label || f.key || i + 1}»`}
+                data-testid={`descer-campo-${i + 1}`}
+                disabled={i === fields.length - 1}
+                onClick={() => setFields(moverCampo(fields, i, i + 1))}
+              >
+                <CaretDown size={14} aria-hidden />
+              </Button>
+            </div>
             <Input
               aria-label={`${t("Chave do campo")} ${i + 1}`}
               placeholder={t("chave (endereco)")}
@@ -1473,6 +1808,38 @@ function PipelineEditor({
                 )}
               </p>
             </div>
+            {/* ── NO RESUMO DA PASSAGEM (issue #4303) ────────────────────────
+                O interruptor que leva o valor deste campo ao cartão de
+                passagem para humano. Mesma disciplina de `multiple`: desmarcar
+                APAGA a chave, então o funil que ninguém tocou continua
+                idêntico ao de antes (ausente = desligado, ver o schema). Só
+                campo do NEGÓCIO: é o `crm_leads.custom_fields` que a passagem
+                lê — prometer o mesmo para campo do contato seria mentir. */}
+            {escopoDoCampo(f) === "negocio" && (
+              <div className="space-y-1 lg:col-span-4">
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    aria-label={`${t("Mostrar no resumo da passagem")} — ${f.label || i + 1}`}
+                    checked={f.mostrar_no_resumo_da_passagem === true}
+                    onChange={(ev) => {
+                      const next = [...fields];
+                      const { mostrar_no_resumo_da_passagem: _apagada, ...semOpcao } = f;
+                      next[i] = ev.target.checked
+                        ? { ...f, mostrar_no_resumo_da_passagem: true }
+                        : (semOpcao as CustomFieldDef);
+                      setFields(next);
+                    }}
+                  />
+                  {t("Mostrar no resumo da passagem")}
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Quando a conversa passa para uma pessoa, o valor que este campo tem no card aparece no resumo do cartão de passagem. Desligado por padrão.",
+                  )}
+                </p>
+              </div>
+            )}
             {/* ── QUANDO ESTE CAMPO APARECE (issues #2728 e #4041) ──────────
                 A condição que a ficha do contato, o dossiê e o painel do inbox
                 leem para ESCONDER o campo: UMA condição (o de sempre) ou uma
@@ -1709,8 +2076,15 @@ function PipelineEditor({
               </div>
             )}
           </div>
+          )}
+          </Draggable>
           );
         })}
+        {lista.placeholder}
+        </div>
+            )}
+          </Droppable>
+        </DragDropContext>
         {/* A cota é do NEGÓCIO (issue #3111): o campo do contato não esconde o botão. */}
         {fields.filter((f) => escopoDoCampo(f) === "negocio").length < MAX_CAMPOS_DO_NEGOCIO && (
           <Button
