@@ -102,6 +102,7 @@ export function POSDashboardClient() {
           { href: "/app/pos/estadisticas", label: "Estadísticas" },
           { href: "/app/pos/comisiones", label: "Comisiones" },
           { href: "/app/pos/gastos", label: "Gastos" },
+          { href: "/app/pos/devoluciones", label: "Devoluciones" },
           { href: "/app/pos/reportes", label: "Reportes" },
           { href: "/app/pos/configuracion", label: "Configuración" },
         ].map((item) => (
