@@ -343,6 +343,9 @@ function clienteDoPatch(): unknown {
         const cadeia = {
           eq: () => cadeia,
           maybeSingle: async () => ({ data: estadoAtual, error: null }),
+          // A pergunta "a ficha tem telefone extra?" (Spec 31 B2) antes de
+          // aceitar o principal vazio: aqui, nenhuma.
+          limit: async () => ({ data: [], error: null }),
         };
         return cadeia;
       },

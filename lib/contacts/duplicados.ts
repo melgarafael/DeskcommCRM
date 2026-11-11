@@ -26,6 +26,30 @@
  * `uniq_contacts_org_cpf` sobre `cpf_hash` (baseline:2896): o mesmo argumento do
  * telefone e do e-mail é o que põe o CPF aqui.
  *
+ *  3. **A mesma conta de WhatsApp em duas fichas.** O que identifica a conta NÃO é
+ *     `contacts.phone_whatsapp`: essa coluna guarda a resposta "este telefone tem
+ *     WhatsApp?" (`sim`/`nao`/`nao_sei`, 9043:64-71) e tratá-la como número faria
+ *     todo contato `sim` virar a mesma pessoa. A conta é `wa_identity` (coluna
+ *     gerada da 0027: `phone:+E164` | `lid:<dígitos>`) e `wa_lid` (gerada da
+ *     0122: a correlação que sobrevive ao telefone). As duas têm índice único
+ *     criado com `if not exists` — `uniq_contacts_org_wa_identity` (0027:146) e
+ *     `uniq_contacts_org_wa_lid` (0122:90) —, então o mesmo raciocínio do clone
+ *     vale aqui: onde o índice não nasceu, a mesma conta de WhatsApp aparece em
+ *     duas fichas e nada mais as liga.
+ *
+ *     A metade `phone:` de `wa_identity` NÃO entra na régua: ela é a string do
+ *     telefone, que o motivo `telefone` já cobre, e marcá-la de novo só faria todo
+ *     par de telefone dizer "WhatsApp" na tela. Entra a metade `lid:` e entra
+ *     `wa_lid` — normalizadas para a MESMA chave (`lid:<dígitos>`), porque a ficha
+ *     que descobriu o telefone muda de `wa_identity` e só `wa_lid` continua ligando.
+ *
+ *     `contact_phones` (os telefones EXTRAS, 9043) não é lido: os gatilhos de "um
+ *     número, uma ficha viva" recusam com 23505 o extra que repete o principal ou
+ *     o extra de outra ficha viva — também na grafia sem o nono dígito
+ *     (9043:215/230) —, então não existe par a encontrar ali. O par "gêmeo" entre
+ *     dois PRINCIPAIS continua aceito de propósito e já aparece pelo motivo
+ *     `telefone`.
+ *
  * O `cpf_hash` é PII derivada: entra na comparação e **não** sai na resposta da
  * rota. Quem decide o que a tela recebe é a rota, não este módulo — mas o campo
  * existe no recorte porque a comparação precisa dele.
@@ -45,12 +69,17 @@ import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
  *
  * `cpf` é igualdade de hash — o mesmo documento, já normalizado em sha256 pela
  * ingestão. Não é "CPF parecido": é o mesmo CPF.
+ *
+ * `whatsapp` é igualdade da CONTA do WhatsApp (`wa_identity` de lid e `wa_lid`,
+ * normalizadas para `lid:<dígitos>`). Não confundir com `contacts.phone_whatsapp`,
+ * que é a resposta "tem WhatsApp?" e não um número.
  */
 export type MotivoDeDuplicidade =
   | "telefone"
   | "email"
   | "telefone_em_conflito"
   | "cpf"
+  | "whatsapp"
   | "nome_parecido";
 
 /**
@@ -77,6 +106,21 @@ export interface ContatoParaDeduplicar {
    * `null`/vazio nunca casa: vazio não é documento.
    */
   cpf_hash: string | null;
+  /**
+   * Identidade canônica do WhatsApp (`phone:+E164` | `lid:<dígitos>`), coluna
+   * GERADA da 0027. Obrigatória no recorte pelo mesmo motivo do `cpf_hash`: quem
+   * monta um contato para deduplicar tem de dizer o que sabe da conta, senão a
+   * ausência do campo passa a significar "não tem WhatsApp" e o par nunca é
+   * encontrado. Só a metade `lid:` interessa aqui — a metade `phone:` é o telefone,
+   * e quem o compara é `chaveDeTelefone`.
+   */
+  wa_identity: string | null;
+  /**
+   * Correlação do WhatsApp que sobrevive ao telefone (coluna GERADA da 0122).
+   * É o que reencontra a ficha que nasceu `lid:` e depois ganhou número — nesse
+   * dia `wa_identity` vira `phone:…` e só esta coluna continua ligando as duas.
+   */
+  wa_lid: string | null;
   is_merged_into: string | null;
   is_anonymized: boolean;
   source_metadata: Record<string, unknown> | null;
@@ -126,6 +170,31 @@ export function telefoneEmConflito(contato: Pick<ContatoParaDeduplicar, "source_
  */
 export function chaveDeCpf(contato: Pick<ContatoParaDeduplicar, "cpf_hash">): string {
   return (contato.cpf_hash ?? "").trim();
+}
+
+/**
+ * A conta de WhatsApp de um contato, na forma comparável: `lid:<dígitos>`.
+ *
+ * Duas fontes, UMA chave:
+ *  - `wa_identity`, mas só a metade `lid:` — a metade `phone:` é o telefone, que
+ *    `chaveDeTelefone` já compara e cujo motivo é `telefone`. Marcá-la aqui faria
+ *    todo par de telefone exibir "WhatsApp" na tela.
+ *  - `wa_lid`, que é o que sobra quando a ficha nasceu `lid:` e depois recebeu
+ *    número (`wa_identity` vira `phone:…`, `wa_lid` não muda).
+ *
+ * Devolve lista porque as duas fontes podem coexistir e cada uma é um cruzamento
+ * a mais; vem sem repetição. Lista VAZIA quando não há conta — e vazio nunca entra
+ * no mapa, senão `"" === ""` agruparia toda a base sem WhatsApp num cadastro só.
+ */
+export function chavesDeWhatsapp(
+  contato: Pick<ContatoParaDeduplicar, "wa_identity" | "wa_lid">,
+): string[] {
+  const chaves = new Set<string>();
+  const identidade = (contato.wa_identity ?? "").trim();
+  if (identidade.toLowerCase().startsWith("lid:")) chaves.add(identidade.toLowerCase());
+  const lid = (contato.wa_lid ?? "").trim();
+  if (lid) chaves.add(`lid:${lid.replace(/@.*$/, "").toLowerCase()}`);
+  return [...chaves];
 }
 
 /**
@@ -181,6 +250,7 @@ export function encontrarContatosDuplicados(
   const porTelefone = new Map<string, string[]>();
   const porEmail = new Map<string, string[]>();
   const porCpf = new Map<string, string[]>();
+  const porWhatsapp = new Map<string, string[]>();
   for (const contato of vivos) {
     const telefone = chaveDeTelefone(contato.phone_number);
     if (telefone) porTelefone.set(telefone, [...(porTelefone.get(telefone) ?? []), contato.id]);
@@ -190,6 +260,11 @@ export function encontrarContatosDuplicados(
     // `"" === ""` agrupariam todas as fichas sem CPF.
     const cpf = chaveDeCpf(contato);
     if (cpf) porCpf.set(cpf, [...(porCpf.get(cpf) ?? []), contato.id]);
+    // Mesma guarda para a conta de WhatsApp: sem ela, toda ficha sem conta (`""
+    // === ""`) cairia num grupo só.
+    for (const whatsapp of chavesDeWhatsapp(contato)) {
+      porWhatsapp.set(whatsapp, [...(porWhatsapp.get(whatsapp) ?? []), contato.id]);
+    }
   }
 
   for (const ids of porTelefone.values()) {
@@ -200,6 +275,9 @@ export function encontrarContatosDuplicados(
   }
   for (const ids of porCpf.values()) {
     for (let i = 1; i < ids.length; i++) unir(ids[0]!, ids[i]!, "cpf");
+  }
+  for (const ids of porWhatsapp.values()) {
+    for (let i = 1; i < ids.length; i++) unir(ids[0]!, ids[i]!, "whatsapp");
   }
   for (const contato of vivos) {
     const conflito = telefoneEmConflito(contato);
@@ -313,23 +391,26 @@ export function parDeContatos(a: string, b: string): string {
 
 /**
  * Os dois já estão ligados por motivo FORTE, pela mesma regra de
- * `encontrarContatosDuplicados`: mesmo telefone, mesmo e-mail, mesmo CPF, ou o
- * telefone em conflito de um apontando para o outro. Um par assim não é sugestão de
- * nome e não se dispensa: "mesmo telefone ou mesmo e-mail não se dispensa: junte as
- * fichas" — e o CPF é a mesma coisa, com um agravante: é o documento da pessoa.
+ * `encontrarContatosDuplicados`: mesmo telefone, mesmo e-mail, mesmo CPF, mesma
+ * conta de WhatsApp, ou o telefone em conflito de um apontando para o outro. Um
+ * par assim não é sugestão de nome e não se dispensa: "mesmo telefone ou mesmo
+ * e-mail não se dispensa: junte as fichas" — e o CPF é a mesma coisa, com um
+ * agravante: é o documento da pessoa. A conta de WhatsApp é o mesmo documento
+ * pelo outro lado: é o endereço por onde a pessoa fala.
  *
- * Quem lê o par do banco tem de trazer `cpf_hash` na consulta. Sem a coluna, os
- * dois lados chegam `undefined`, `undefined === undefined` é verdadeiro e a régua
- * passaria a recusar TODO par — por isso a comparação exige chave não vazia.
+ * Quem lê o par do banco tem de trazer `cpf_hash` e `wa_identity`/`wa_lid` na
+ * consulta. Sem as colunas, os dois lados chegam `undefined`, `undefined ===
+ * undefined` é verdadeiro e a régua passaria a recusar TODO par — por isso a
+ * comparação exige chave não vazia.
  */
 export function ligadosPorMotivoForte(
   a: Pick<
     ContatoParaDeduplicar,
-    "phone_number" | "email" | "email_normalized" | "cpf_hash" | "source_metadata"
+    "phone_number" | "email" | "email_normalized" | "cpf_hash" | "wa_identity" | "wa_lid" | "source_metadata"
   >,
   b: Pick<
     ContatoParaDeduplicar,
-    "phone_number" | "email" | "email_normalized" | "cpf_hash" | "source_metadata"
+    "phone_number" | "email" | "email_normalized" | "cpf_hash" | "wa_identity" | "wa_lid" | "source_metadata"
   >,
 ): boolean {
   const telefoneA = chaveDeTelefone(a.phone_number);
@@ -339,10 +420,45 @@ export function ligadosPorMotivoForte(
   if (emailA && emailA === chaveDeEmail(b)) return true;
   const cpfA = chaveDeCpf(a);
   if (cpfA && cpfA === chaveDeCpf(b)) return true;
+  // A conta de WhatsApp compara como CONJUNTO: as duas fontes (`wa_identity` de
+  // lid e `wa_lid`) são a mesma chave normalizada, e é o cruzamento delas que pega
+  // a ficha que mudou de identidade ao descobrir o telefone.
+  const whatsappA = chavesDeWhatsapp(a);
+  if (whatsappA.length > 0 && chavesDeWhatsapp(b).some((chave) => whatsappA.includes(chave))) {
+    return true;
+  }
   const conflitoA = telefoneEmConflito(a);
   if (conflitoA && conflitoA === telefoneB) return true;
   const conflitoB = telefoneEmConflito(b);
   return Boolean(conflitoB && conflitoB === telefoneA);
+}
+
+/**
+ * O par tem identidade FORTE que se CONTRADIZ? Se sim, o nome NÃO sugere nada.
+ *
+ * Uma só contradição conta, e é de documento: **CPF**. Dois hashes diferentes,
+ * ambos presentes, são dois documentos — e documento é a prova mais forte que
+ * existe de que a pessoa é outra. Nenhuma coincidência de nome junta o que o CPF
+ * separa.
+ *
+ * Telefone NÃO entra aqui, e a razão é medida: a mesma pessoa tem fixo e celular,
+ * e uma empresa tem linha comercial e WhatsApp. Tratar números diferentes como
+ * contradição faria a sugestão por nome perder justamente o par que ela existe
+ * para achar (o B1 da issue: a empresa com dois números). A regra "um número, uma
+ * ficha" governa o AGRUPAMENTO forte, não a supressão da sugestão.
+ *
+ * Telefone IGUAL (ou a variante do nono dígito) nunca chega aqui: o par já é forte
+ * e sai pelo agrupamento de `encontrarContatosDuplicados`. E o telefone que a
+ * ingestão parkou em `telefone_em_conflito` do outro lado também já é motivo
+ * forte — `ligadosPorMotivoForte` o reconhece.
+ */
+export function identidadeForteConflita(
+  a: Pick<ContatoParaDeduplicar, "phone_number" | "cpf_hash">,
+  b: Pick<ContatoParaDeduplicar, "phone_number" | "cpf_hash">,
+): boolean {
+  const cpfA = chaveDeCpf(a);
+  const cpfB = chaveDeCpf(b);
+  return Boolean(cpfA && cpfB && cpfA !== cpfB);
 }
 
 /**
@@ -355,6 +471,11 @@ export function ligadosPorMotivoForte(
  *  (a) divide DUAS OU MAIS palavras raras (até `TETO_DA_PALAVRA_RARA` fichas); ou
  *  (b) um nome inteiro, com 6 letras ou mais, aparece dentro do outro; ou
  *  (b') os nomes são idênticos — cai em (b), com o mesmo mínimo de 6 letras.
+ *
+ * O par entra **e sobrevive à contradição** de identidade forte
+ * (`identidadeForteConflita`): dois CPFs diferentes não são o mesmo cadastro, e
+ * sugerir a junção aí é o ruído que a opção da empresa existe para evitar.
+ * Telefone diferente NÃO suprime — ver o comentário de `identidadeForteConflita`.
  *
  * `dispensados` são as chaves de `parDeContatos` que a pessoa já tirou da lista.
  */
@@ -448,6 +569,10 @@ export function encontrarParecidosPorNome(
     const ca = porId.get(a);
     const cb = porId.get(b);
     if (!ca || !cb) continue;
+    // Documento que se contradiz não é o mesmo cadastro: o nome não sugere. É
+    // a régua que separa a sugestão útil do ruído (dois CPFs). Telefone
+    // diferente não entra na régua.
+    if (identidadeForteConflita(ca, cb)) continue;
     const ordenados = [ca, cb].sort(
       (p, q) => p.created_at.localeCompare(q.created_at) || p.id.localeCompare(q.id),
     );

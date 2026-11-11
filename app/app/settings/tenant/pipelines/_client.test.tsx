@@ -1600,3 +1600,79 @@ describe("a janela do negócio perdido que volta (#4076)", () => {
     ).toHaveLength(1);
   });
 });
+
+/**
+ * O INTERRUPTOR "MOSTRAR NO RESUMO DA PASSAGEM" (issue #4303).
+ *
+ * O resumo que a pessoa lê ao assumir a conversa não mostrava os campos do
+ * CARD — consumo em kWh, valor da conta. A opção é POR CAMPO e nasce
+ * DESLIGADA; desmarcar APAGA a chave, como `multiple`, porque a definição é
+ * jsonb e nenhum funil que já existe pode mudar de comportamento ao abrir
+ * esta tela.
+ */
+describe("mostrar no resumo da passagem (#4303)", () => {
+  const FUNIL_DO_RESUMO: PipelineRow = {
+    id: "66666666-6666-4666-8666-666666666666",
+    name: "Energia",
+    slug: "energia",
+    vocabulary: null,
+    settings: {
+      fields: [{ key: "consumo_kwh", label: "Consumo (kWh)", type: "number" }],
+    },
+  };
+  const FUNIL_DO_RESUMO_LIGADO: PipelineRow = {
+    ...FUNIL_DO_RESUMO,
+    settings: {
+      fields: [
+        {
+          key: "consumo_kwh",
+          label: "Consumo (kWh)",
+          type: "number",
+          mostrar_no_resumo_da_passagem: true,
+        },
+      ],
+    },
+  };
+
+  const tela = (p: PipelineRow) => {
+    render(<PipelinesClient pipelines={[p]} podeEditarConfig />);
+    abrirEditores();
+  };
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("vem DESLIGADO — o funil de hoje não muda de comportamento", () => {
+    tela(FUNIL_DO_RESUMO);
+    expect(
+      screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)"),
+    ).not.toBeChecked();
+  });
+
+  it("marcar grava a opção no campo", () => {
+    tela(FUNIL_DO_RESUMO);
+    fireEvent.click(screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(patchSalvo().fields?.[0]?.mostrar_no_resumo_da_passagem).toBe(true);
+  });
+
+  it("desmarcar APAGA a chave — o jsonb não guarda opção morta", () => {
+    tela(FUNIL_DO_RESUMO_LIGADO);
+    const caixa = screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)");
+    expect(caixa).toBeChecked();
+
+    fireEvent.click(caixa);
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(patchSalvo().fields?.[0]).not.toHaveProperty("mostrar_no_resumo_da_passagem");
+  });
+
+  it("campo do CONTATO não oferece o interruptor — o valor dele não está no card", () => {
+    tela({
+      ...FUNIL_DO_RESUMO,
+      settings: { fields: [{ key: "cpf", label: "CPF", type: "text", escopo: "contato" }] },
+    });
+    expect(screen.queryByLabelText("Mostrar no resumo da passagem — CPF")).toBeNull();
+  });
+});

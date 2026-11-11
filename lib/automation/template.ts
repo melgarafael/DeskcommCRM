@@ -1,13 +1,23 @@
-import { resolveField } from "@/lib/automation/conditions";
+import { COLUNAS_DE_CPF_DO_CONTATO, resolveField } from "@/lib/automation/conditions";
 import { valorComRotulo } from "@/lib/automation/campos-do-render";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
+import { formatarValorComModificadorDeData } from "@/lib/i18n/data-na-mensagem";
+import { MODIFICADOR_DA_VARIAVEL } from "@/lib/texto/modificador-da-variavel";
 import { RESERVA_DA_VARIAVEL } from "@/lib/texto/reserva-da-variavel";
 
+import { opcoesDoRender } from "./opcoes-do-render";
+
 /**
- * A marcação `{{caminho}}` ou `{{caminho|"reserva"}}`. Grupo 1 = caminho,
- * grupo 2 = reserva (ausente quando não há). Compartilhada com o follow-up.
+ * A marcação `{{caminho}}`, `{{caminho|"reserva"}}` ou `{{caminho|data}}`.
+ *
+ * Grupo 1 = caminho, grupo 2 = reserva, grupo 3 = modificador (ausente quando
+ * não há). Compartilhada com o follow-up e com a resposta pronta — a ordem dos
+ * grupos é contrato: quem já lia 1 e 2 continua lendo os mesmos dois.
  */
-export const MARCACAO = new RegExp(String.raw`\{\{\s*([\w.]+)\s*${RESERVA_DA_VARIAVEL}\}\}`, "g");
+export const MARCACAO = new RegExp(
+  String.raw`\{\{\s*([\w.]+)\s*${RESERVA_DA_VARIAVEL}${MODIFICADOR_DA_VARIAVEL}\}\}`,
+  "g",
+);
 
 const ALIASES: Record<string, string> = {
   nome: "contact.name",
@@ -65,11 +75,7 @@ function campoPersonalizadoDoLead(context: Record<string, unknown>, nome: string
  * apelido interno (decisão do mantenedor no PR #2439). As colunas de CPF também
  * ficam de fora: mensagem nenhuma tem por que levá-las.
  */
-const SO_DA_EQUIPE = new Set([
-  "contact.address_book_name",
-  "contact.cpf_hash",
-  "contact.cpf_encrypted",
-]);
+const SO_DA_EQUIPE = new Set(["contact.address_book_name", ...COLUNAS_DE_CPF_DO_CONTATO]);
 
 /**
  * A chave do campo personalizado que `path` está pedindo — ou `null` quando a
@@ -98,7 +104,7 @@ export function renderTemplate(
   context: Record<string, unknown>,
   formatarValor: (valor: string) => string = (valor) => valor,
 ): string {
-  return template.replace(MARCACAO, (_m, path: string, reserva: string | undefined) => {
+  return template.replace(MARCACAO, (_m, path: string, reserva: string | undefined, modificador: string | undefined) => {
     if (SO_DA_EQUIPE.has(path)) return "";
     // `{{nome}}` fala com a pessoa: segue a régua única de nome de gente
     // (cadastrado, depois o perfil do WhatsApp). Contato que chega pelo
@@ -119,6 +125,14 @@ export function renderTemplate(
     // Sem o dado, a reserva que quem escreveu a mensagem deixou. Ela é texto do
     // operador (como o resto do corpo), não valor do contato: não passa por `formatarValor`.
     if (reserva !== undefined && valor.trim() === "") return reserva;
+    // `{{campo|data}}` e `{{campo|data:dd/mm/aaaa}}` (#4339): a data no formato
+    // de quem RECEBE a mensagem, resolvida no fuso da organização. Valor que não
+    // é data ISO volta intacto — a mensagem nunca diz "Invalid Date".
+    if (modificador !== undefined) {
+      return formatarValor(
+        formatarValorComModificadorDeData(valor, modificador, opcoesDoRender(context)),
+      );
+    }
     return formatarValor(valor);
   });
 }

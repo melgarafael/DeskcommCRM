@@ -7,7 +7,7 @@
  * sinal só fica certo se o handler de fato ler a coluna.
  */
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hashCpf } from "@/lib/contacts/cpf";
 import { roleAtLeast, type Role } from "@/lib/auth/types";
@@ -38,6 +38,12 @@ const estado = vi.hoisted(() => ({
   papel: "viewer" as string,
   buscas: [] as string[],
   decifrou: 0,
+  /** Toda menção de `cpf_hash` feita pelo cliente da SESSÃO: tem de ficar vazia. */
+  sessaoPediuOHash: [] as string[],
+  /** O que o cliente do SERVIDOR comparou com a coluna. */
+  servidorComparou: [] as unknown[],
+  /** A organização pela qual o cliente do SERVIDOR filtrou. */
+  servidorFiltrou: [] as unknown[],
 }));
 
 function linha(id: string, hash: string | null): Record<string, unknown> {
@@ -48,6 +54,7 @@ function linha(id: string, hash: string | null): Record<string, unknown> {
     phone_number: null,
     email: null,
     cpf_hash: hash,
+    cpf_encrypted: hash ? "\\xc30d04" : null,
     is_anonymized: false,
     tags: [],
     source: "manual",
@@ -65,8 +72,12 @@ function projetar(linhaCheia: Record<string, unknown>, colunas: string): Record<
   return Object.fromEntries(Object.entries(linhaCheia).filter(([k]) => nomes.includes(k)));
 }
 
-function cadeia(tabela: string): unknown {
+function cadeia(tabela: string, quem: "sessao" | "servidor"): unknown {
   let colunas = "*";
+  let hashPedido: unknown;
+  const anotarDaSessao = (trecho: string) => {
+    if (quem === "sessao" && trecho.includes("cpf_hash")) estado.sessaoPediuOHash.push(trecho);
+  };
   let alvo: Record<string, unknown> = CONTATOS[0] as Record<string, unknown>;
   const umaLinha = () => {
     if (tabela === "user_organizations") return { role: estado.papel };
@@ -79,11 +90,18 @@ function cadeia(tabela: string): unknown {
         if (metodo === "select") {
           return (c?: string) => {
             colunas = c ?? "*";
+            anotarDaSessao(colunas);
             return proxy;
           };
         }
         if (metodo === "eq") {
           return (coluna: string, valor: unknown) => {
+            anotarDaSessao(coluna);
+            if (quem === "servidor" && coluna === "organization_id") estado.servidorFiltrou.push(valor);
+            if (coluna === "cpf_hash") {
+              hashPedido = valor;
+              if (quem === "servidor") estado.servidorComparou.push(valor);
+            }
             if (coluna === "id") {
               alvo = CONTATOS.find((c) => c.id === valor) ?? alvo;
             }
@@ -92,6 +110,7 @@ function cadeia(tabela: string): unknown {
         }
         if (metodo === "or") {
           return (filtro: string) => {
+            anotarDaSessao(filtro);
             estado.buscas.push(filtro);
             return proxy;
           };
@@ -100,7 +119,12 @@ function cadeia(tabela: string): unknown {
           return async () => ({ data: umaLinha(), error: null });
         }
         if (metodo === "then") {
-          const lista = tabela === "contacts" ? CONTATOS.map((c) => projetar(c, colunas)) : [];
+          const lista =
+            tabela === "contacts"
+              ? CONTATOS.filter((c) => hashPedido === undefined || c.cpf_hash === hashPedido).map((c) =>
+                  projetar(c, colunas),
+                )
+              : [];
           return (resolver: (v: unknown) => unknown) => resolver({ data: lista, error: null });
         }
         return () => proxy;
@@ -112,7 +136,7 @@ function cadeia(tabela: string): unknown {
 
 const clienteFalso = {
   auth: { getUser: async () => ({ data: { user: { id: USUARIO } }, error: null }) },
-  from: cadeia,
+  from: (tabela: string) => cadeia(tabela, "sessao"),
   rpc: async (funcao: string) => {
     if (funcao === "decrypt_cpf") estado.decifrou += 1;
     return {
@@ -123,7 +147,9 @@ const clienteFalso = {
 };
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => clienteFalso) }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => clienteFalso) }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: vi.fn(() => ({ from: (tabela: string) => cadeia(tabela, "servidor") })),
+}));
 
 function usuario() {
   return { id: USUARIO, idioma: "pt-BR" as const };
@@ -188,10 +214,19 @@ async function corpoSemOValor(res: Response): Promise<{ data: Record<string, unk
   const texto = await res.text();
   expect(texto).not.toContain(HASH);
   expect(texto).not.toContain("cpf_hash");
+  expect(texto).not.toContain("cpf_encrypted");
   return JSON.parse(texto);
 }
 
+afterEach(() => {
+  // Vale para cada caso deste arquivo: lista, detalhe, criação, edição e busca.
+  expect(estado.sessaoPediuOHash).toEqual([]);
+});
+
 beforeEach(() => {
+  estado.sessaoPediuOHash = [];
+  estado.servidorComparou = [];
+  estado.servidorFiltrou = [];
   estado.papel = "viewer";
   estado.buscas.length = 0;
   estado.decifrou = 0;
@@ -269,8 +304,21 @@ describe("o que é interno segue funcionando", () => {
     expect(estado.decifrou).toBe(1);
   });
 
-  it("buscar pelo CPF ainda filtra pela coluna", async () => {
+  it("buscar pelo CPF acha a ficha, e quem compara é o servidor", async () => {
     await listar(`?search=${CPF}`);
-    expect(estado.buscas.join(",")).toContain(`cpf_hash.eq.${HASH}`);
+    expect(estado.servidorComparou).toEqual([HASH]);
+    expect(estado.servidorFiltrou).toEqual([ORG]);
+    expect(estado.buscas.join(",")).toContain(`id.in.(${COM_CPF})`);
+    expect(estado.buscas.join(",")).not.toContain(HASH);
+  });
+
+  it("CPF que ninguém tem não vira filtro de id, e a busca segue pelo resto", async () => {
+    await listar(`?search=11144477735`);
+    expect(estado.servidorComparou).toHaveLength(1);
+    expect(estado.buscas.join(",")).not.toContain("id.in.");
+    // "O resto" é a busca por nome. Desde a #3918 (fatia 2) ela sai pela coluna
+    // sem acento, e não mais por `name.imatch`: o que este caso prova é que a
+    // busca por nome CONTINUA quando o CPF não acha ninguém, não o operador.
+    expect(estado.buscas.join(",")).toContain("busca_sem_acento.like.");
   });
 });

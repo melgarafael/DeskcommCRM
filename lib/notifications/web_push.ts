@@ -105,9 +105,14 @@ async function enviarAsInscricoes(
   return { sent, gone };
 }
 
-export type DestinoDoPush = { soUsuario?: string; papelMinimo?: Role; excetoUsuario?: string };
+export type DestinoDoPush = {
+  soUsuario?: string;
+  soUsuarios?: ReadonlyArray<string>;
+  papelMinimo?: Role;
+  excetoUsuario?: string;
+};
 
-/** Push às inscrições da organização — ou só às de `soUsuario` (sem as de `excetoUsuario`), e só a quem alcança `papelMinimo`. */
+/** Push às inscrições da organização — ou só às de `soUsuario`/`soUsuarios` (sem as de `excetoUsuario`), e só a quem alcança `papelMinimo`. */
 export async function enviarPushDaOrg(
   organizationId: string,
   payload: PushPayload,
@@ -121,6 +126,7 @@ export async function enviarPushDaOrg(
     .select("id, user_id, endpoint, p256dh, auth")
     .eq("organization_id", organizationId);
   if (quem.soUsuario) query = query.eq("user_id", quem.soUsuario);
+  if (quem.soUsuarios) query = query.in("user_id", [...quem.soUsuarios]);
   const { data, error } = await query;
   if (error) {
     logger.warn("push_subscriptions_list_failed", { detail: error.message });

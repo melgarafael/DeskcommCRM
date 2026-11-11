@@ -128,6 +128,44 @@ export function useRouter(id: string, initial?: RouterDetailState) {
   });
 }
 
+/** Uma etapa do funil, no recorte que o seletor de destino do roteador usa. */
+export interface EstagioDoFunil {
+  id: string;
+  name: string;
+  /** Etapa de fechamento: nenhum card NASCE em Ganho/Perdido. */
+  is_won: boolean;
+  is_lost: boolean;
+}
+
+/**
+ * #2569 — as etapas de UM funil, para o seletor "Etapa de destino" do roteador.
+ *
+ * Rota LEVE (`/api/v1/pipelines/<id>/stages`) de propósito. A porta vizinha,
+ * `usePipelineStages` (hooks/webhooks/useWebhookSources.ts), lê o QUADRO inteiro
+ * (`/board`): leads abertos, anexos, tarefas e a próxima ação de cada card. O
+ * editor do roteador só precisa dos nomes das colunas — e, enquanto o quadro não
+ * voltava, o seletor de etapa não existia na tela (metade do relato da issue);
+ * se aquela resposta falhasse, ele não aparecia nunca. Aqui a pergunta é a
+ * mesma, e a resposta é só ela.
+ *
+ * Etapa fechada fica de fora: o card nasce na etapa escolhida, e card não nasce
+ * em Ganho/Perdido (mesma regra de `lib/followup`, que recusa destino em etapa
+ * de fechamento).
+ */
+export function useEstagiosDoFunil(pipelineId: string | null) {
+  return useQuery({
+    queryKey: ["roteador-estagios-do-funil", pipelineId],
+    enabled: !!pipelineId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await apiClient.get<{ data: EstagioDoFunil[] }>(
+        `/api/v1/pipelines/${encodeURIComponent(pipelineId as string)}/stages`,
+      );
+      return (res.data ?? []).filter((e) => !e.is_won && !e.is_lost);
+    },
+  });
+}
+
 export function useCreateRouter() {
   const qc = useQueryClient();
   return useMutation({
