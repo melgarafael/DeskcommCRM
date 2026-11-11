@@ -35,7 +35,7 @@ import * as path from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 import type { Page } from "@playwright/test";
-import { expect, test } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test } from "./helpers/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoDono } from "./helpers/login-admin";
@@ -110,6 +110,7 @@ test("corrigir o e-mail, ver o aviso na Central, editar, recusar a exclusão por
   test.setTimeout(300_000);
 
   const ctxAdmin = await browser.newContext();
+  ctxAdmin.on("page", esperarARevelacaoNasCargas);
   const admin = await ctxAdmin.newPage();
   await loginComoDono(admin, lerCreds());
 
@@ -131,10 +132,12 @@ test("corrigir o e-mail, ver o aviso na Central, editar, recusar a exclusão por
 
   // O endereço novo entra; o antigo não entra mais.
   const ctxNovo = await browser.newContext();
+  ctxNovo.on("page", esperarARevelacaoNasCargas);
   const novo = await ctxNovo.newPage();
   await entrarComo(novo, EMAIL_CERTO);
   await novo.waitForURL(/\/app/, { timeout: 45_000 });
   const ctxAntigo = await browser.newContext();
+  ctxAntigo.on("page", esperarARevelacaoNasCargas);
   const antigo = await ctxAntigo.newPage();
   await entrarComo(antigo, EMAIL_ERRADO);
   await expect(antigo).toHaveURL(/\/login/);

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,14 +9,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useCarteiraDoContato, useDefinirCarteira } from "@/hooks/contacts/useCarteiraDoContato";
 import { useT } from "@/hooks/i18n/useT";
-import { ROLE_RANK } from "@/lib/auth/types";
 import { UsersThree } from "@/lib/ui/icons";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface Props {
   contactId: string;
-  /** Papel do usuário ativo — só `manager`+ muda (regra: quem muda é gerente+). */
-  papelDoUsuario: string | null | undefined;
 }
 
 /**
@@ -26,13 +23,19 @@ interface Props {
  * o CRM não sabia, e por que o cliente do vendedor A atendido por B fazia o
  * negócio nascer no nome errado.
  *
- * ─── Ler para todos, mudar para gerente+ ─────────────────────────────────────
+ * ─── Ler para todos, mudar para quem TEM o cliente ──────────────────────────
  *
  * Quem atende PRECISA ver o dono (regra 2). Mudar é outra coisa: a issue mediu
  * que a policy de UPDATE de `contacts` não olha papel, então a coluna só se
- * grava pela rota `manager`+ `PATCH /contacts/[id]/carteira`. Aqui o seletor só
- * aparece para `manager`+ — mas o gate de verdade é o do servidor; esconder o
- * seletor é para não oferecer um botão que sempre falharia com 403.
+ * grava pela rota `PATCH /contacts/[id]/carteira`.
+ *
+ * Até a v1.94 essa rota era `manager`+, e este cartão repetia a régua em
+ * `role === "manager"` — o que dava o seletor a todo gerente e NEGAVA ao
+ * atendente dono do cliente (#3746). Hoje quem responde é o servidor, no
+ * `pode_alterar` do GET: `manager`+ sempre; `agent` no cliente que já está na
+ * carteira dele, ou no cliente SEM dono cuja conversa está com ele (doc 250). A tela só desenha o
+ * seletor quando essa resposta é `true`, e continua não sendo ela a guarda —
+ * quem recusa o `PATCH` é `lib/carteira/posse.ts`.
  *
  * ─── O nome do dono vem da lista de membros, não da rota ─────────────────────
  *
@@ -40,16 +43,22 @@ interface Props {
  * lista que preenche o seletor). Duas razões: uma fonte de nomes só, e a lista
  * já está em cache quando o seletor abre.
  */
-export function CartaoDaCarteira({ contactId, papelDoUsuario }: Props) {
+export function CartaoDaCarteira({ contactId }: Props) {
   const t = useT();
-  const podeMudar = Boolean(papelDoUsuario && ROLE_RANK[papelDoUsuario as keyof typeof ROLE_RANK] >= ROLE_RANK.manager);
   const carteira = useCarteiraDoContato(contactId, true);
+  // A capacidade vem do SERVIDOR (#3746): é a mesma régua que o PATCH aplica.
+  // Comparar papel aqui daria o seletor a todo gerente e negaria a todo
+  // atendente — inclusive ao dono do cliente, que é o defeito que a issue mediu.
+  const podeMudar = carteira.data?.pode_alterar === true;
   // A lista de membros serve DUAS coisas: o nome do dono (regra 2 — quem atende
   // precisa ver o NOME de quem é o cliente) e as opções do seletor. Por isso é
   // buscada sempre, não só para gerente+; a rota dela é `agent`+, o mesmo piso de
   // quem vê a ficha.
   const membros = useAssignableMembers(true);
   const definir = useDefinirCarteira(contactId);
+  // O cartão monta DUAS vezes na conversa (painel xl, oculto mas montado, e o
+  // diálogo "Ficha"): id fixo fazia o label do diálogo apontar para o select oculto.
+  const idDoSeletor = useId();
 
   // `__sem_dono__` é o sentinela de "sem dono" no select nativo (a opção de valor
   // vazio existe no HTML, mas o sentinela deixa o estado explícito no código).
@@ -102,14 +111,14 @@ export function CartaoDaCarteira({ contactId, papelDoUsuario }: Props) {
           {podeMudar && (
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <div className="space-y-1">
-                <Label htmlFor="carteira-dono">{t("Escolha o vendedor dono")}</Label>
+                <Label htmlFor={idDoSeletor}>{t("Escolha o vendedor dono")}</Label>
                 {/* Select NATIVO, como o das telas de cobrança e agenda: o dono é um
                     punhado de ids e o rótulo é o nome do membro — a lista não pede
                     um combobox com busca, e um `<select>` é alcançável por teclado
                     e leitor de tela sem mais uma camada de JS. */}
                 <select
-                  id="carteira-dono"
-                  className="h-9 w-full max-w-xs rounded-md border bg-background px-2 text-sm"
+                  id={idDoSeletor}
+                  className="h-11 w-full lg:h-9 max-w-xs rounded-md border bg-background px-2 text-sm"
                   value={selecionado}
                   data-testid="carteira-seletor"
                   onChange={(e) => setSelecionado(e.target.value)}

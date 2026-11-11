@@ -594,4 +594,51 @@ describe("devolver o atendimento ao agente", () => {
     if (!res.ok) expect(res.erro).toBe("contact_state_unreadable");
     expect(cap.updates).toEqual([]);
   });
+
+  // ─── FECHAR COM "DEVOLVER AO AUTOMÁTICO" (#3313, item 1) ───────────────────
+  //
+  // O fechamento da conversa NÃO tem regra própria: ele chama esta função
+  // DEPOIS de a `fn_service_status` gravar `closed` (`app/api/v1/conversations/
+  // [id]/close/route.ts`). Estes dois casos prendem o que a ordem escolhida
+  // significa no banco — a conversa encerrada NÃO reabre, e a trava do contato
+  // vai embora; o contato marcado para ficar com gente continua com gente.
+
+  it("conversa já encerrada: a devolução solta a trava e NÃO reabre o atendimento", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({
+        conversa: conversaPassadaAHumano({ status: "closed", assigned_to_user_id: null }),
+        contato: { id: CONTATO, ai_opt_out: false },
+      }),
+      cap,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(cap.updates.filter((u) => u.tabela === "contacts")).toContainEqual({
+      tabela: "contacts",
+      valores: { force_human: false },
+    });
+    const naConversa = cap.updates.find((u) => u.tabela === "conversations");
+    expect(naConversa?.valores).toMatchObject({
+      status: "closed",
+      bot_silenced_until: null,
+      assignee_kind: "ai",
+    });
+  });
+
+  it("fechar com o contato marcado 'sempre atendimento humano': segue com a equipe, nada é escrito", async () => {
+    const cap = novaCaptura();
+    const res = await retomar(
+      cenarioComAtendimentoHumano({
+        conversa: conversaPassadaAHumano({ status: "closed", assigned_to_user_id: null }),
+        contato: { id: CONTATO, ai_opt_out: true },
+      }),
+      cap,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.erro).toBe("contato_sempre_humano");
+    expect(cap.updates, "a conversa fechou e a trava CONTINUA — é isso que a tela conta").toEqual([]);
+    expect(cap.rpc).toEqual([]);
+  });
 });

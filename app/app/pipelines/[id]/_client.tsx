@@ -41,6 +41,7 @@ import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
+import { hrefDaPaginaDoNegocio } from "@/lib/leads/pagina-do-negocio";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { cn } from "@/lib/utils";
 
@@ -146,6 +147,18 @@ export function PipelinePageClient({
   );
   const router = useRouter();
   const pathname = usePathname();
+  /**
+   * O ENDEREÇO DA PÁGINA INTEIRA DO NEGÓCIO (#4151).
+   *
+   * Nasce AQUI porque é aqui que a URL do quadro existe: o `pathname` e a query
+   * string com o filtro (`lib/kanban/filters.ts`) — e é ela que o "Voltar" da
+   * página devolve. O quadro só recebe a função pronta: ele conhece o lead, não
+   * o endereço (ver `hrefDaPaginaDoNegocio`).
+   */
+  const hrefDoNegocio = useCallback(
+    (leadId: string) => hrefDaPaginaDoNegocio(leadId, pathname, searchParams),
+    [pathname, searchParams],
+  );
   /**
    * ⚠️ O FILTRO PEDIDO VALE ANTES DE A URL CHEGAR NELE.
    *
@@ -253,7 +266,7 @@ export function PipelinePageClient({
    * lote, renomear etapa e dossiê.
    */
   // O funil da leitura do servidor já diz se está arquivado: sem ele, o
-  // "Novo Lead" e a `?visao=lista` apareceriam até o quadro carregar.
+  // "Novo negócio" e a `?visao=lista` apareceriam até o quadro carregar.
   const arquivado = (data?.pipeline ?? funilInicial).is_archived === true;
   /**
    * Funil arquivado só tem o quadro em leitura: nem `?visao=lista` escapa. A
@@ -384,7 +397,7 @@ export function PipelinePageClient({
           {/* Funil arquivado abre só no quadro, e o quadro é leitura (#1298):
               a Lista e o Calendário têm ações de negócio, e oferecê-las num
               funil que não recebe mais escrita seria a mesma promessa falsa
-              que o "Novo Lead" apagado. Por isso as abas nem aparecem. */}
+              que o "Novo negócio" apagado. Por isso as abas nem aparecem. */}
           {!arquivado && (
             <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
               <button
@@ -441,14 +454,14 @@ export function PipelinePageClient({
               disabled={etapasIniciais.length === 0}
               className="shrink-0"
             >
-              <Plus size={16} className="mr-2" /> {t("Novo Lead")}
+              <Plus size={16} className="mr-2" /> {t("Novo negócio")}
             </Button>
           )}
         </div>
       </header>
       {arquivado && (
         <p
-          className="rounded-md border border-border bg-surface-muted/40 p-3 text-sm leading-relaxed text-text-muted"
+          className="rounded-md border border-border bg-surface-elevated/40 p-3 text-sm leading-relaxed text-text-muted"
           data-testid="funil-arquivado-aviso"
         >
           {t(
@@ -537,6 +550,7 @@ export function PipelinePageClient({
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
+          hrefDoNegocio={hrefDoNegocio}
           podeRenomearEtapa={!arquivado && ROLE_RANK[role] >= ROLE_RANK.manager}
           denso={cardsCompactos}
           somenteLeitura={arquivado}

@@ -2,8 +2,19 @@ import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels';
 import { describe, it, expect, vi } from 'vitest';
 import { tool } from '../edge/llm/run-model-call';
 import { z } from 'zod';
-import { applyPreviewPolicy, newPreviewResult, scenarioContext, type TurnPreview } from './preview';
+import {
+  applyPreviewPolicy,
+  blocoDeNotasDaPrevia,
+  lerNotaDaPrevia,
+  newPreviewResult,
+  PREVIEW_NOTES_INLINE_MAX_TOKENS,
+  scenarioContext,
+  type TurnPreview,
+} from './preview';
+import { renderNotesIndexBlock } from './lead-notes';
+import { countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
 import { evaluateBeforeSend, type GateContext } from '../guardrails/before-send';
+import { marcarLeituraRemota } from '@/lib/mcp/servidor-externo/leitura-remota';
 import { PACING_DEFAULTS } from '../pacing/defaults';
 import { SPINNING_DEFAULTS } from '../spinning/defaults';
 const gate = (): GateContext => ({
@@ -98,6 +109,42 @@ describe('preview policy shares gates and contains side effects', () => {
     expect(spy).not.toHaveBeenCalled();
     expect(p.result.impediments[0]?.code).toBe('unknown_preview_tool');
   });
+  it('runs only the remote MCP tool pickToolsFromMcp classified as read', async () => {
+    // O catálogo de um servidor MCP externo (#2147) chega ao turno pelo nome que o
+    // servidor anuncia; sem isto a prévia — que é também o rascunho do modo
+    // assistido — recusava `buscar_produtos` como `unknown_preview_tool`.
+    // A marca é do OBJETO: o `tool_ids` dizer "leitura" não basta (o servidor pode
+    // não ter declarado readOnlyHint), e um nome nativo não vira leitura remota.
+    const p = preview(),
+      leitura = vi.fn().mockResolvedValue({ itens: [] }),
+      semHint = vi.fn(),
+      nativo = vi.fn();
+    (p.agent as { toolIds: string[] }).toolIds = [
+      'mcp_externo:leitura:buscar_produtos',
+      'mcp_externo:leitura:cancelar_pedido',
+      'mcp_externo:leitura:hidden_mutation',
+    ];
+    const tools = applyPreviewPolicy(
+      {
+        buscar_produtos: marcarLeituraRemota(definition(leitura)),
+        cancelar_pedido: definition(semHint),
+        hidden_mutation: definition(nativo),
+      },
+      p,
+      gate(),
+      () => [],
+    );
+    await execute(tools, 'buscar_produtos', { body: 'colar 925' });
+    await execute(tools, 'cancelar_pedido');
+    await execute(tools, 'hidden_mutation');
+    expect(leitura).toHaveBeenCalledOnce();
+    expect(semHint).not.toHaveBeenCalled();
+    expect(nativo).not.toHaveBeenCalled();
+    expect(p.result.impediments.map((i) => i.message)).toEqual([
+      'cancelar_pedido',
+      'hidden_mutation',
+    ]);
+  });
   it('does not mutate the original gate context when disclosure amends a body', () => {
     const ctx = {
       ...gate(),
@@ -167,5 +214,69 @@ describe('proteção comercial: ferramenta e prévia concordam', () => {
       { ...gate(), commercialRestrictionEnforced: true }, () => []), 'send_message', { body });
     expect(p.result.candidates[0]?.body).toBe(body);
     expect(evaluateBeforeSend({ ...gate(), body: 'São R$ 299,90.' }).veto).toBeNull();
+  });
+});
+
+/**
+ * Notas na prévia (frente F1): inteiras enquanto cabem no teto inline — a string
+ * de sempre —, e no índice do turno real acima dele, com o corpo pelo id.
+ */
+describe('notas da prévia: teto inline e índice', () => {
+  const longa = (i: number) => ({
+    id: `n${i}`,
+    headline: `Nota ${i}`,
+    body: `CORPO-LONGO-${i} ` + 'x'.repeat(4_000),
+  });
+
+  it('sem notas, o bloco é vazio e inline — a saída de antes', () => {
+    expect(blocoDeNotasDaPrevia([], 500)).toEqual({ bloco: '', inline: true });
+  });
+
+  it('nota curta vai inteira, no formato "headline: corpo" de antes', () => {
+    const notas = [
+      { id: 'n1', headline: 'Prefere manhã', body: 'CORPO-SENTINELA-91' },
+      { id: 'n2', headline: 'Tem filho', body: 'Dois anos' },
+    ];
+    expect(blocoDeNotasDaPrevia(notas, 500)).toEqual({
+      bloco: 'Prefere manhã: CORPO-SENTINELA-91\nTem filho: Dois anos',
+      inline: true,
+    });
+  });
+
+  it('acima do teto vira o índice do turno real, sem nenhum corpo', () => {
+    const notas = [0, 1, 2, 3].map(longa);
+    const inline = notas.map((n) => n.headline + ': ' + n.body).join('\n');
+    expect(countPayloadTokens(inline)).toBeGreaterThan(PREVIEW_NOTES_INLINE_MAX_TOKENS);
+    const r = blocoDeNotasDaPrevia(notas, 500);
+    expect(r.inline).toBe(false);
+    expect(r.bloco).toBe(renderNotesIndexBlock(notas, 500));
+    expect(r.bloco).toContain('- [n0] Nota 0');
+    expect(r.bloco).not.toContain('CORPO-LONGO-');
+  });
+
+  it('get_lead_note inline devolve todas as notas, sem o id — a resposta de antes', () => {
+    const notas = [{ id: 'n1', headline: 'Prefere manhã', body: 'CORPO-SENTINELA-91' }];
+    expect(lerNotaDaPrevia(notas, true, { note_id: 'qualquer' })).toEqual({
+      ok: true,
+      notes: [{ headline: 'Prefere manhã', body: 'CORPO-SENTINELA-91' }],
+    });
+  });
+
+  it('get_lead_note no índice devolve UM corpo pelo id, no formato da ferramenta real', () => {
+    const notas = [0, 1].map(longa);
+    expect(lerNotaDaPrevia(notas, false, { note_id: ' n1 ' })).toEqual({
+      ok: true,
+      note_id: 'n1',
+      body: notas[1]!.body,
+    });
+  });
+
+  it('id desconhecido (ou ausente) no índice vira note_not_found', () => {
+    const notas = [longa(0)];
+    for (const args of [{ note_id: 'nao-existe' }, {}, null]) {
+      const r = lerNotaDaPrevia(notas, false, args);
+      expect(r.ok).toBe(false);
+      expect(r).toMatchObject({ error: { code: 'note_not_found' } });
+    }
   });
 });

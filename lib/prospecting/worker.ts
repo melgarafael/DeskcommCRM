@@ -35,7 +35,11 @@ import { previaDoAgente } from "./previa";
 import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
 import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
+import { provedoresQueConferemNumero } from "@/lib/channels";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { CanalReconectandoError, ProspectingError } from "./provider";
+import { mensagemDaRecusaDoCanal } from "./motivo-da-pausa";
+import { canalDaCampanha } from "./canal-da-campanha";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
@@ -109,6 +113,20 @@ export async function sendNextCandidate(
     new Promise((resolve) => setTimeout(resolve, ms)),
 ) {
   const cfg = campaignConfigSchema.parse(c.config);
+  // O NÚMERO da campanha: coluna (fonte da verdade desde a 9221) e `config`
+  // têm de dizer o MESMO número. Divergência é estado impossível de propósito
+  // (o `start` e o `resume` gravam os dois juntos): seguir com um dos dois
+  // mandaria por um número e contaria o teto em outro — a conta do aquecimento
+  // sai do número que ENVIA, e nesse estado ninguém sabe qual é.
+  const canal = canalDaCampanha(c);
+  if (!canal)
+    throw new ProspectingError(
+      "A campanha não tem conexão de WhatsApp definida. Pause e inicie de novo escolhendo uma conexão.",
+    );
+  if (c.channel_session_id && c.channel_session_id !== cfg.channel_session_id)
+    throw new ProspectingError(
+      "A conexão gravada na campanha diverge da configuração dela. Pause e inicie de novo escolhendo uma conexão.",
+    );
   await validateConfig(db, c.organization_id, cfg);
   // O CANAL ESTÁ `WORKING` — a validação passou, e a espera da reconexão acabou.
   // Limpa a marca do adiamento para a PRÓXIMA espera começar a contar do zero
@@ -121,11 +139,7 @@ export async function sendNextCandidate(
       [c.organization_id, c.id],
     );
   if (new Date(c.next_send_at).getTime() > Date.now()) return;
-  const { knobs, numberActivatedAt } = await loadChannelKnobs(
-    db,
-    c.organization_id,
-    cfg.channel_session_id,
-  );
+  const { knobs, numberActivatedAt } = await loadChannelKnobs(db, c.organization_id, canal);
   const now = new Date();
   // O PORTÃO DA PROSPECÇÃO: dias próprios (`prospeccao_dias`, 0642) + horas de
   // disparo — e NÃO o domingo compartilhado. Fora dele, o envio fica agendado
@@ -141,15 +155,15 @@ export async function sendNextCandidate(
     );
     return;
   }
-  const pacingState = await loadPacingState(db, c.organization_id, cfg.channel_session_id, {
+  const pacingState = await loadPacingState(db, c.organization_id, canal, {
     now,
     timezone: knobs.timezone,
     numberActivatedAt,
   });
   const channel = (
     await db.query(
-      "select daily_message_limit from channel_sessions where organization_id=$1 and id=$2",
-      [c.organization_id, cfg.channel_session_id],
+      "select daily_message_limit from channel_sessions where organization_id=$1 and id=$2 and archived_at is null",
+      [c.organization_id, canal],
     )
   ).rows[0];
   if (!channel) throw new ProspectingError("Conexão de saída indisponível.");
@@ -171,15 +185,23 @@ export async function sendNextCandidate(
     );
     return;
   }
-  // Count attempts, including failures/unknown delivery: a timeout must not release quota.
+  // TETO, INTERVALO E AQUECIMENTO SÃO DESTE NÚMERO (issue #3896).
+  //
+  // Antes a contagem era da ORGANIZAÇÃO inteira: com duas campanhas em números
+  // diferentes rodando, as duas dividiam as mesmas 50 abordagens do dia e o
+  // MESMO intervalo mínimo — dois números valendo o de um só, que é
+  // exatamente a queixa do pedido. Agora a chave é o `channel_session_id` da
+  // campanha do candidato, e não a campanha: uma campanha PAUSADA no mesmo
+  // número já queimou tentativas daquele número nas últimas 24 h, e essas
+  // contam para o aquecimento dele.
   const { rows: counts } = await db.query<{
     campaign: number;
     total: number;
     retry_at: Date | null;
     last_attempt: Date | null;
   }>(
-    "select count(*) filter(where campaign_id=$2)::int as campaign,count(*)::int as total,max(attempted_at) as last_attempt,min(attempted_at)+interval '24 hours' as retry_at from prospecting_candidates where organization_id=$1 and attempted_at>now()-interval '24 hours'",
-    [c.organization_id, c.id],
+    "select count(*) filter(where p.campaign_id=$2)::int as campaign,count(*)::int as total,max(p.attempted_at) as last_attempt,min(p.attempted_at)+interval '24 hours' as retry_at from prospecting_candidates p join prospecting_campaigns pc on pc.organization_id=p.organization_id and pc.id=p.campaign_id where p.organization_id=$1 and pc.channel_session_id=$3 and p.attempted_at>now()-interval '24 hours'",
+    [c.organization_id, c.id, canal],
   );
   const count = counts[0]!;
   // O TETO DO WARM-UP DESTA ESTEIRA. Os degraus da casa (20 no primeiro dia)
@@ -233,11 +255,15 @@ export async function sendNextCandidate(
   // negócio nem conversa para trás — que é exatamente o que o modo `on_send` quer evitar.
   const preflight = await decidirPreGoLiveDoCanalViaSupabase(admin, {
     organizationId: c.organization_id,
-    channelSessionId: cfg.channel_session_id,
+    channelSessionId: canal,
     contactPhoneNumber: queued.phone ?? "",
   });
   if (!preflight.permite)
-    throw new ProspectingError(`O canal ainda não permite esta abordagem: ${preflight.motivo}.`);
+    // O motivo que o preflight devolve é vocabulário de código
+    // (`fora_da_lista_de_teste`): vai para a tela traduzido por um mapa único
+    // (`./motivo-da-pausa.ts`, #4170). Motivo sem frase própria continua
+    // saindo cru — o comportamento de antes.
+    throw new ProspectingError(mensagemDaRecusaDoCanal(preflight.motivo));
   // MODO `on_send`: a empresa está na fila, mas ainda NÃO existe no CRM — contato,
   // negócio e conversa nascem agora, na vez dela de ser abordada. Se ela saiu da fila
   // no caminho (virou contato por outro lado, ou o CRM recusou o cadastro), não houve
@@ -285,7 +311,7 @@ export async function sendNextCandidate(
       ],
     );
     // Reserve the shared channel budget before the external effect, including uncertain attempts.
-    await recordSend(db, c.organization_id, cfg.channel_session_id, now);
+    await recordSend(db, c.organization_id, canal, now);
     await db.query("commit");
   } catch (error) {
     await db.query("rollback");
@@ -591,7 +617,7 @@ export async function sendNextCandidate(
         contact_id: p.contact_id,
         conversation_id: p.conversation_id,
         agent_id: cfg.agent_id,
-        channel_session_id: cfg.channel_session_id,
+        channel_session_id: canal,
         sent,
         // Bolhas FÍSICAS confirmadas / bolhas em que o texto foi fatiado.
         bubbles_sent: entregues,
@@ -657,7 +683,14 @@ const ORGS_COM_PREPARO_PENDENTE =
   // existe um é o preparo, em TS.
   "or (coalesce(pc.search->>'avaliar_site','true') <> 'false' and coalesce(pc.search->>'gerar_previa','false') = 'true' and c.data->'previa' is null " +
   "and ((c.data->'site' is not null and not coalesce((c.data->'site'->>'provisorio')::boolean, false)) " +
-  "or (c.data->'site' is null and nullif(trim(c.data->>'website'), '') is null))))) " +
+  "or (c.data->'site' is null and nullif(trim(c.data->>'website'), '') is null))) " +
+  // (c) WhatsApp por conferir (`whatsapp.ts`): telefone sem veredito, e uma conexão
+  // conectada cujo canal sabe perguntar ($1 = `provedoresQueConferemNumero()`, ou vazio
+  // com o módulo `conferir_whatsapp` desligado). Sem ela a organização NÃO entra —
+  // senão voltaria toda rodada para nada.
+  "or (nullif(trim(c.data->>'phone'), '') is not null and c.data->'whatsapp' is null " +
+  "and exists (select 1 from channel_sessions s where s.organization_id=pc.organization_id " +
+  "and s.provider = any($1::text[]) and s.status='WORKING' and s.archived_at is null)))) " +
   "group by pc.organization_id order by min(pc.updated_at) limit 20";
 
 /** Teto de tempo do preparo de UMA organização dentro do tick. */
@@ -682,8 +715,12 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
   // Fail-open: se ela falhar, as organizações que já rodam seguem como antes.
   let apenasPreparo: string[] = [];
   try {
+    // Módulo desligado (o padrão): lista vazia, e o ramo (c) não seleciona ninguém.
+    const conferir = await moduloLigado(admin, "conferir_whatsapp");
     apenasPreparo = (
-      await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE)
+      await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE, [
+        conferir ? provedoresQueConferemNumero() : [],
+      ])
     ).rows.map((r) => r.organization_id);
   } catch (error) {
     logger.error("[prospecting] consulta das organizações a preparar falhou", {
@@ -728,13 +765,34 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
         }
         // (Nada de fetch de site aqui dentro: a verificação e a prévia são do
         // `prepararCandidatos`, depois deste bloco e fora do bloqueio.)
-        const c = (
+        // TODAS as campanhas `running` da organização, em ordem determinística
+        // (#3896). Antes era `.rows[0]` SEM `order by`: com duas campanhas em
+        // números diferentes, só UMA enviava por rodada — e qual delas não era
+        // determinístico. O volume do segundo número ficava parado sem ninguém
+        // ver, e a escolha mudava de rodada para rodada.
+        const rodando = (
           await db.query<Campaign>(
-            "select * from prospecting_campaigns where organization_id=$1 and status='running'",
+            "select * from prospecting_campaigns where organization_id=$1 and status='running' order by next_send_at,id",
             [org],
           )
-        ).rows[0];
-        if (c) {
+        ).rows;
+        for (const escolhida of rodando) {
+          // O PRAZO DO TICK vale dentro da organização também: com N campanhas
+          // (uma por número), o laço de fora só confere entre organizações, e
+          // uma org com muitos números estouraria os 180 s sozinha.
+          if (Date.now() >= deadline) break;
+          // RELÊ A CAMPANHA ANTES DE ENVIAR. Entre a seleção e a vez dela, o
+          // operador pode ter pausado — e enviar com a linha velha seria o
+          // envio que ninguém pediu. O claim do candidato (`status='sending'`
+          // dentro da transação) continua sendo a garantia contra duplicar
+          // depois de um restart; esta leitura cobre o intervalo ANTERIOR.
+          const c = (
+            await db.query<Campaign>(
+              "select * from prospecting_campaigns where organization_id=$1 and status='running' and id=$2",
+              [org, escolhida.id],
+            )
+          ).rows[0];
+          if (!c) continue;
           try {
             await sendNextCandidate(pool, db, admin, c);
           } catch (error) {

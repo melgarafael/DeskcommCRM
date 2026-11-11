@@ -12,6 +12,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
 
@@ -42,7 +43,7 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("honorarios_parcelas")
-    .select("id, contrato_id, numero, vencimento, valor_cents, financial_entry_id, status")
+    .select("id, contrato_id, numero, vencimento, valor_cents, currency, financial_entry_id, status")
     .eq("contrato_id", contratoId)
     .order("numero", { ascending: true });
 
@@ -73,6 +74,17 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const supabase = await createClient();
+
+  // ─── A PARCELA NASCE NA MOEDA DA ORGANIZAÇÃO (#3379) ───────────────────
+  //
+  // `honorarios_parcelas` ganhou coluna própria (`currency`, migration 0770) em
+  // vez de herdar a moeda na hora de LER: parcela é linha de dinheiro, como
+  // `financial_entries` e `sales`, e a moeda de uma linha é fato dela — herdar
+  // do `organizations.currency` de hoje faria o histórico inteiro mudar de
+  // rótulo no dia em que a organização trocasse de moeda. A unidade vem do
+  // servidor; o corpo nem declara o campo, então o Zod o descarta.
+  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
+
   const { data, error } = await supabase
     .from("honorarios_parcelas")
     .insert({
@@ -81,8 +93,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       numero: lido.data.numero,
       vencimento: lido.data.vencimento,
       valor_cents: lido.data.valor_cents,
+      currency: moeda,
     })
-    .select("id, contrato_id, numero, vencimento, valor_cents, status")
+    .select("id, contrato_id, numero, vencimento, valor_cents, currency, status")
     .single();
 
   if (error) {

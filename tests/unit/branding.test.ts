@@ -905,6 +905,12 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da plataforma que roda o crawler do Google Places (`lib/prospecting/provider.ts`). É o destino do request, com a chave da PRÓPRIA organização — trocar pelo domínio do revendedor quebraria a chamada, e esconder o nome não esconde para onde o dado vai.",
   },
+  // ── prospecção (#1758): provedor `scavio`, escolhido por organização ──
+  "api.scavio.dev": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da API da Scavio que busca os lugares do Google Maps (`lib/prospecting/provedor-scavio.ts`), só para a organização que escolheu `scavio` em `settings.prospecting.provider`. É o destino do request, com a chave da PRÓPRIA organização — trocar pelo domínio do revendedor quebraria a chamada.",
+  },
   // ── identificador de fio: NÃO é destino de chamada nem texto de tela ──────
   "s.whatsapp.net": {
     categoria: "PROTOCOLO",

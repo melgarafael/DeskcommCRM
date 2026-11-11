@@ -55,7 +55,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Clock, Copy, Plus, Trash } from "@/lib/ui/icons";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { CaretDown, Clock, Copy, Plus, Trash } from "@/lib/ui/icons";
 import {
   copiarParaDiasUteis,
   podeCopiarParaDiasUteis,
@@ -82,7 +88,8 @@ interface Attendant {
   name: string;
   email: string | null;
   availability: AttendantAvailability;
-  sectorId: string | null;
+  /** FILAS da pessoa (migration 9062: N por atendente). Vazio = sem fila. */
+  sectorIds: string[];
 }
 
 /** Valor do filtro de setor: todos, sem setor, ou o id de um setor. */
@@ -106,33 +113,55 @@ function SectorCell({
 }) {
   const t = useT();
   const assign = useAssignSector();
-  const atual = sectors.find((s) => s.id === attendant.sectorId) ?? null;
+  const atuais = sectors.filter((s) => attendant.sectorIds.includes(s.id));
+  const rotulo = atuais.length === 0 ? t("Sem setor") : atuais.map((s) => s.name).join(", ");
   if (!canManage) {
-    return <span className="text-sm">{atual?.name ?? t("Sem setor")}</span>;
+    return <span className="text-sm">{rotulo}</span>;
   }
   if (sectors.length === 0) {
     return <span className="text-xs text-muted-foreground">{t("Cadastre setores na aba Setores")}</span>;
   }
+  // N setores por pessoa: um Select de valor único não consegue dizer "esta pessoa
+  // atende comercial E financeiro" — a célula virou lista de caixas. A troca é
+  // gravada a CADA clique (o conjunto inteiro vai junto), e o item não fecha o
+  // menu, para marcar duas filas custar dois cliques e não quatro.
   return (
-    <Select
-      value={atual?.id ?? SEM_SETOR}
-      disabled={assign.isPending}
-      onValueChange={(v) =>
-        assign.mutate({ userId: attendant.userId, sectorId: v === SEM_SETOR ? null : v })
-      }
-    >
-      <SelectTrigger className="h-8 w-[160px]" aria-label={`${t("Setor de")} ${attendant.name}`}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={SEM_SETOR}>{t("Sem setor")}</SelectItem>
-        {sectors.map((s) => (
-          <SelectItem key={s.id} value={s.id}>
-            {s.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 w-[180px] justify-between font-normal"
+          disabled={assign.isPending}
+          aria-label={`${t("Setores de")} ${attendant.name}`}
+        >
+          <span className="truncate">{rotulo}</span>
+          <CaretDown className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[220px]">
+        {sectors.map((s) => {
+          const marcado = attendant.sectorIds.includes(s.id);
+          return (
+            <DropdownMenuCheckboxItem
+              key={s.id}
+              checked={marcado}
+              onSelect={(event) => event.preventDefault()}
+              onCheckedChange={(marcar) =>
+                assign.mutate({
+                  userId: attendant.userId,
+                  sectorIds: marcar
+                    ? [...attendant.sectorIds, s.id]
+                    : attendant.sectorIds.filter((id) => id !== s.id),
+                })
+              }
+            >
+              {s.name}
+            </DropdownMenuCheckboxItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -639,16 +668,16 @@ export function AttendantsClient({ canManage, organizationTimezone, setoresLigad
         name: rotuloDoMembro({ full_name: a.name, email: a.email, user_id: a.user_id }, t),
         email: a.email,
         availability: a,
-        sectorId: a.sector_id ?? null,
+        sectorIds: a.sector_ids ?? [],
       })),
     [avail.data],
   );
 
   const visiveis = attendants.filter((a) => {
     if (filtroSetor === TODOS_OS_SETORES) return true;
-    const temSetorConhecido = sectors.some((s) => s.id === a.sectorId);
+    const temSetorConhecido = a.sectorIds.some((id) => sectors.some((s) => s.id === id));
     if (filtroSetor === SEM_SETOR) return !temSetorConhecido;
-    return a.sectorId === filtroSetor;
+    return a.sectorIds.includes(filtroSetor);
   });
 
   const isLoading = avail.isLoading;

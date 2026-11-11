@@ -25,6 +25,7 @@
     "operator",
     "discovery",
     "candidates",
+    "whatsapp-check",
     "site-enrich",
     "crm",
     "queue",
@@ -115,6 +116,13 @@
       "col": 5,
       "type": "component",
       "label": "ElevenLabs Agents privado e teste no navegador"
+    },
+    {
+      "id": "whatsapp-check",
+      "lane": "app",
+      "col": 3,
+      "type": "component",
+      "label": "WhatsApp conferido antes da abordagem (check-exists do WAHA)"
     },
     {
       "id": "site-enrich",
@@ -308,17 +316,32 @@
     {
       "from": "candidates",
       "to": "site-tool",
-      "label": "lê data.site, a estratégia e o cadastro do contato da conversa"
+      "label": "lê data.site, cadastro e ofertas da configuração da campanha do contato da conversa"
     },
     {
       "from": "site-tool",
       "to": "inbound-turn",
-      "label": "o agente consulta durante qualquer turno, da primeira à última mensagem"
+      "label": "o agente consulta ofertas e estratégia complementar durante a conversa; a configuração também entra no contexto do inbound"
     },
     {
       "from": "site-tool",
       "to": "operator",
       "label": "cada consulta sai no registro de ferramentas do agente (laço: a tela mostra se o agente usa)"
+    },
+    {
+      "from": "candidates",
+      "to": "whatsapp-check",
+      "label": "telefone sem veredito em data.whatsapp, 15 por minuto"
+    },
+    {
+      "from": "whatsapp-check",
+      "to": "queue",
+      "label": "sem WhatsApp: fora da seleção e da fila, com o motivo"
+    },
+    {
+      "from": "whatsapp-check",
+      "to": "operator",
+      "label": "a lista mostra Tem/Sem WhatsApp e o contador"
     }
   ]
 }

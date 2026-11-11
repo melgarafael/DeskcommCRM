@@ -18,10 +18,11 @@ vi.mock("@/lib/notifications/vapid", () => ({ vapidPronto: () => true, vapidPubl
 vi.mock("@/lib/notifications/web_push", () => ({
   enviarPushDaOrg: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
   enviarPushAoUsuario: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
+  enviarPushDaEtapaAQuemVeONegocio: vi.fn().mockResolvedValue({ sent: 1, gone: 0 }),
 }));
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { enviarPushDaOrg } from "@/lib/notifications/web_push";
+import { enviarPushDaEtapaAQuemVeONegocio, enviarPushDaOrg } from "@/lib/notifications/web_push";
 import { webPushInboundHandler } from "@/lib/notifications/push.handler";
 import { dispatchEvent, registerHandler, type EventRow } from "@/lib/event-log/dispatcher";
 import { corpoDoAvisoDeEtapa, tituloDoAvisoDeEtapa } from "@/lib/leads/aviso-de-etapa";
@@ -34,6 +35,7 @@ const filtros: Array<[string, string, unknown]> = [];
 function banco(
   linhas: Record<string, Record<string, unknown> | null>,
   erros: Record<string, { message: string; code: string }> = {},
+  listas: Record<string, Array<Record<string, unknown>>> = {},
 ) {
   return {
     from(tabela: string) {
@@ -44,6 +46,9 @@ function banco(
           return q;
         },
         maybeSingle: async () => ({ data: linhas[tabela] ?? null, error: erros[tabela] ?? null }),
+        // A leitura de lista termina no `await` da própria consulta, sem `maybeSingle`.
+        then: (resolver: (r: { data: unknown; error: unknown }) => unknown) =>
+          resolver({ data: listas[tabela] ?? [], error: erros[tabela] ?? null }),
       };
       return q;
     },
@@ -57,6 +62,7 @@ const evento = (event_type: string, payload: Record<string, unknown>): EventRow 
 
 beforeEach(() => {
   vi.mocked(enviarPushDaOrg).mockClear();
+  vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mockClear();
   filtros.length = 0;
 });
 
@@ -77,7 +83,13 @@ describe("aviso da Central → celular", () => {
     }) as never);
     const r = await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i1" }));
     expect(r.status).toBe("ok");
-    const payload = vi.mocked(enviarPushDaOrg).mock.calls[0]![1];
+    // A etapa sai por destinatário (#3981): sem valor e sem resumo do dia, os
+    // três textos são o mesmo — e nenhum deles nomeia o cliente.
+    const [, leadId, textos] = vi.mocked(enviarPushDaEtapaAQuemVeONegocio).mock.calls[0]!;
+    expect(leadId).toBe("l1");
+    expect(textos.daCarteira).toEqual(textos.ampla);
+    expect(textos.semValor).toEqual(textos.ampla);
+    const payload = textos.ampla;
     expect(payload).toEqual({
       title: "Negocio entró en «Pedido confirmado»",
       body: "Abre el negocio para dar el siguiente paso. Este aviso se pidió en la configuración de la etapa.",
@@ -217,6 +229,84 @@ describe("aviso da Central → celular", () => {
     expect(vi.mocked(enviarPushDaOrg).mock.calls[0]![2]).toEqual({ papelMinimo: PAPEL_MINIMO_DA_CENTRAL });
   });
 
+  describe("passagem com responsável vai só a ele", () => {
+    const AVISO = { id: "i20", kind: "handoff", ref_kind: "conversation", ref_id: "c1", title: "Handoff", body: null, para_user_id: null };
+    const DO_TIME = { papelMinimo: PAPEL_MINIMO_DA_CENTRAL };
+    const conversa = (campos: Record<string, unknown>) => ({ assigned_to_user_id: null, contact_id: "k1", is_group: false, ...campos });
+    const entregar = (conv: Record<string, unknown> | null, negocios: Array<Record<string, unknown>> = []) => {
+      vi.mocked(createAdminClient).mockReturnValue(banco(
+        { agent_inbox_items: AVISO, organizations: { locale: "pt-BR" }, conversations: conv },
+        {},
+        { crm_leads: negocios },
+      ) as never);
+      return webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i20" }));
+    };
+    const destinos = () => vi.mocked(enviarPushDaOrg).mock.calls.map((c) => c[2]);
+
+    it("conversa atribuída: só o atendente, e o dono do negócio não entra", async () => {
+      await entregar(conversa({ assigned_to_user_id: "u-atende" }), [{ owner_user_id: "u-dono" }]);
+      expect(destinos()).toEqual([{ papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuarios: ["u-atende"] }]);
+      expect(filtros).toContainEqual(["conversations", "organization_id", ORG]);
+    });
+
+    it("conversa na fila com negócio aberto de dono: só o dono", async () => {
+      await entregar(conversa({}), [{ owner_user_id: "u-dono" }, { owner_user_id: null }]);
+      expect(destinos()).toEqual([{ papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuarios: ["u-dono"] }]);
+      expect(filtros).toEqual(expect.arrayContaining([
+        ["crm_leads", "organization_id", ORG],
+        ["crm_leads", "contact_id", "k1"],
+        ["crm_leads", "status", "open"],
+      ]));
+    });
+
+    it("dois negócios abertos com donos diferentes: os dois, sem repetir", async () => {
+      await entregar(conversa({}), [{ owner_user_id: "u-a" }, { owner_user_id: "u-b" }, { owner_user_id: "u-a" }]);
+      expect(destinos()).toEqual([{ papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuarios: ["u-a", "u-b"] }]);
+    });
+
+    it("sem responsável, o aviso segue indo ao time", async () => {
+      await entregar(conversa({}), [{ owner_user_id: null }]);
+      expect(destinos()).toEqual([DO_TIME]);
+    });
+
+    it("grupo é do time, mesmo com atendente", async () => {
+      await entregar(conversa({ is_group: true, assigned_to_user_id: "u-atende" }));
+      expect(destinos()).toEqual([DO_TIME]);
+    });
+
+    it("responsável sem celular inscrito: o aviso volta ao time, uma vez", async () => {
+      vi.mocked(enviarPushDaOrg).mockResolvedValueOnce({ sent: 0, gone: 0 });
+      const r = await entregar(conversa({ assigned_to_user_id: "u-atende" }));
+      expect(destinos()).toEqual([{ papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuarios: ["u-atende"] }, DO_TIME]);
+      expect(r.detail).toBe("sent:1");
+    });
+
+    it("responsável recebeu: o time não é avisado", async () => {
+      await entregar(conversa({ assigned_to_user_id: "u-atende" }));
+      expect(destinos()).toHaveLength(1);
+    });
+
+    it("falha ao ler a conversa não envia a ninguém: a retentativa do dreno decide", async () => {
+      vi.mocked(createAdminClient).mockReturnValue(banco(
+        { agent_inbox_items: AVISO, organizations: { locale: "pt-BR" } },
+        { conversations: { message: "fora do ar", code: "XX000" } },
+      ) as never);
+      await expect(webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i20" }))).rejects.toThrow("fora do ar");
+      expect(destinos()).toEqual([]);
+    });
+
+    it("aviso de proposta ligado a conversa não muda: só a passagem restringe", async () => {
+      vi.mocked(createAdminClient).mockReturnValue(banco({
+        agent_inbox_items: { ...AVISO, kind: "proposta_pronta_para_revisao" },
+        organizations: { locale: "pt-BR" },
+        conversations: conversa({ assigned_to_user_id: "u-atende" }),
+      }) as never);
+      await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i20" }));
+      expect(destinos()).toEqual([DO_TIME]);
+      expect(filtros.some(([tabela]) => tabela === "conversations")).toBe(false);
+    });
+  });
+
   it("aviso com destinatário vai só a ele, com o mesmo papel mínimo da Central", async () => {
     vi.mocked(createAdminClient).mockReturnValue(banco({
       agent_inbox_items: { id: "i10", kind: "handoff", ref_kind: "conversation", ref_id: "c1", title: "Handoff", body: null, para_user_id: "u-dono" },
@@ -227,6 +317,23 @@ describe("aviso da Central → celular", () => {
       papelMinimo: PAPEL_MINIMO_DA_CENTRAL,
       soUsuario: "u-dono",
     });
+  });
+
+  it("aviso de etapa com destinatário vai só a ele e SEM valor: não passou pela régua de quem vê o negócio", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({
+      agent_inbox_items: {
+        id: "i11", kind: "other", ref_kind: "lead", ref_id: "l1",
+        title: tituloDoAvisoDeEtapa("Pago", "pt-BR"), body: corpoDoAvisoDeEtapa("pt-BR"), para_user_id: "u-dono",
+      },
+      organizations: { locale: "pt-BR" },
+      crm_leads: { pipeline_id: "p1", value_cents: 125000, currency: "BRL" },
+    }) as never);
+    await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i11" }));
+    expect(enviarPushDaEtapaAQuemVeONegocio).not.toHaveBeenCalled();
+    const [, payload, para] = vi.mocked(enviarPushDaOrg).mock.calls[0]!;
+    expect(para).toEqual({ papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: "u-dono" });
+    expect(payload.title).toBe(tituloDoAvisoDeEtapa("Pago", "pt-BR"));
+    expect(JSON.stringify(payload)).not.toContain("R$");
   });
 
   it("aviso que sumiu antes do dreno não manda nada", async () => {

@@ -148,7 +148,8 @@ describe("pacing: sem varrer o histórico do número", () => {
     const sql = (db.sqls[0] ?? "").replace(/\s+/g, " ");
     expect(sql).not.toMatch(/filter|max\(/i);
     expect(sql).toContain("order by sent_at desc limit 1");
-    expect(sql).toMatch(/and sent_at >= \$3\) as sent_today/);
+    // Resposta não gasta o teto do dia (9061): a contagem exclui a coluna `resposta`.
+    expect(sql).toMatch(/and sent_at >= \$3 and not resposta\) as sent_today/);
     // Meia-noite de São Paulo = 03:00Z: o início do dia vem do `now` injetado.
     expect(db.params[0]).toEqual(["org", "sess", new Date("2026-10-02T03:00:00Z")]);
   });

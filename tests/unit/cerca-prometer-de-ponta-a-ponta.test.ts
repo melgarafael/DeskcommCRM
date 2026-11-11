@@ -396,8 +396,21 @@ describe("cerca prometer — retorno do PRÓPRIO assistente pelo léxico (issue 
     }
   });
 
-  it("curto-circuitos seguem valendo para o léxico novo: casesEnabled=false PASSA", () => {
+  it("resíduo do #2916: casesEnabled=false NÃO libera o retorno do assistente sem follow-up", () => {
+    // Até o resíduo, esta linha era o curto-circuito: `if (!ctx.casesEnabled) return pass`
+    // no topo do gate. Como o destino da promessa do assistente é `schedule_followup` —
+    // e não um caso humano —, a guarda de casos não tinha o que liberar aqui: com casos
+    // desligados (o padrão de um agente novo) a frase saía sem nada agendado.
     const v = casePromiseGate.evaluate(ctx(CASO_MEDIDO, { ...SEM_AGENDAR, casesEnabled: false }));
+    expect(v.pass).toBe(false);
+    if (!v.pass) {
+      expect(v.code).toBe("followup_promise_without_followup");
+      expect(v.reason).toContain("schedule_followup");
+    }
+  });
+
+  it("resíduo do #2916: casesEnabled=false com o retorno AGENDADO passa", () => {
+    const v = casePromiseGate.evaluate(ctx(CASO_MEDIDO, { ...AGENDADO, casesEnabled: false }));
     expect(v.pass).toBe(true);
   });
 

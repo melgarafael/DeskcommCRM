@@ -36,9 +36,10 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
+import { createClient } from "@/lib/supabase/server";
 import { extractBearer } from "@/lib/mcp/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -79,6 +80,7 @@ export async function GET(
   // LINHA DO TOKEN, nunca do path, então um token de uma organização não
   // alcança contato de outra. Sem Bearer, o ramo (a) de baixo roda intocado.
   let orgId: string;
+  let navegador = false;
   if (extractBearer(req.headers.get("authorization"))) {
     const authz = await resolveAuthDual(req, {
       requestId,
@@ -106,8 +108,23 @@ export async function GET(
       return fail("no_active_org", "No active organization.", 403, { requestId });
     }
     orgId = activeOrg.orgId;
+    navegador = true;
   }
 
+  // A sessão humana respeita o recorte RLS; Bearer mantém o escopo
+  // contacts:read já conferido e a organização da linha do token.
+  if (navegador) {
+    const session = await createClient();
+    const { data: visible, error: scopeError } = await session
+      .from("contacts")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("id", id)
+      .maybeSingle();
+    if (scopeError)
+      return fail("internal_error", "Não foi possível conferir o contato.", 500, { requestId });
+    if (!visible) return comIdDaRequisicao(new Response(null, { status: 404 }), requestId);
+  }
   const admin = createAdminClient();
   // Service role bypassa RLS: o filtro por organization_id é obrigatório e vem
   // da sessão ou da LINHA DO TOKEN, nunca do path (doutrina do CLAUDE.md).
@@ -122,7 +139,7 @@ export async function GET(
   if (!row?.avatar_storage_path || row.is_anonymized) {
     // 404 e não erro: "sem foto" é o estado normal da maioria dos contatos, e o
     // <AvatarFallback> das iniciais assume sozinho.
-    return new Response(null, { status: 404 });
+    return comIdDaRequisicao(new Response(null, { status: 404 }), requestId);
   }
 
   const { data: signed, error } = await admin.storage
@@ -130,16 +147,16 @@ export async function GET(
     .createSignedUrl(row.avatar_storage_path, SIGNED_TTL_SECONDS);
 
   if (error || !signed?.signedUrl) {
-    return new Response(null, { status: 404 });
+    return comIdDaRequisicao(new Response(null, { status: 404 }), requestId);
   }
 
   // Response.redirect() devolve headers imutáveis — não dá pra anexar o
   // Cache-Control depois. Por isso o 307 é montado à mão.
-  return new Response(null, {
+  return comIdDaRequisicao(new Response(null, {
     status: 307,
     headers: {
       Location: signed.signedUrl,
       "Cache-Control": `private, max-age=${BROWSER_CACHE_SECONDS}`,
     },
-  });
+  }), requestId);
 }

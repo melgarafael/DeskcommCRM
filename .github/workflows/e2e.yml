@@ -827,6 +827,7 @@ jobs:
         j20-elegibilidade-respondi.spec.ts j20-elegibilidade-followup.spec.ts
         j20-elegibilidade-atendimento-manual.spec.ts
         juntar-contatos-duplicados.spec.ts
+        ficha-com-varios-telefones.spec.ts
         lote-no-quadro-do-funil.spec.ts
         quadro-do-funil-colunas.spec.ts
         motivos-de-perda-do-funil.spec.ts
@@ -915,7 +916,17 @@ jobs:
       # (COBRANCA_API_BASE_URL_TESTE do .env.e2e) e devolve as chaves da
       # instalação como achou.
       # PREVISÃO, não medida: ~5 min de caso.
+      # `modelos-cabem-em-375` (#3702) é irmã de `celular-cabe-na-tela` e entra
+      # pelo mesmo critério: o que ela mede é a REGRA (formulário de modelo ×
+      # 375px), não um fluxo — um login, sem WAHA, sem Graph, sem seed próprio.
+      # Ela abre Conexões nas duas abas e mede `main.scrollWidth ×
+      # clientWidth` com o formulário aberto, que é justamente a medida que a
+      # spec de celular não faz: o formulário só existe depois de um clique.
+      # Conta Resend: parte semeada; o stub persistente 3997 serve TODAS as SDKs.
+      # Parte 2 nos 4 últimos verdes da main (07/11): 982, 1092, 984 e 1090 s.
+      # Pior caso 1092 s + 53 s da jornada (medida em 27/10) contra orçamento de 1440 s.
       SPECS_PARTE_2: >-
+        conta-resend-da-organizacao.spec.ts
         agente-marca-consulta.spec.ts
         agenda-marcar-pela-tela.spec.ts
         agenda-remarcar-e-cancelar.spec.ts
@@ -931,6 +942,7 @@ jobs:
         distribuicao-atendimento.spec.ts
         cobranca-revendedor.spec.ts
         escopo-de-funil-do-agente.spec.ts
+        publico-por-origem-do-agente.spec.ts
         followup-tempo-adaptativo.spec.ts
         gatilho-de-etapa.spec.ts
         etapa-avisa-na-central.spec.ts
@@ -946,6 +958,7 @@ jobs:
         agenda-conectar-google.spec.ts
         agenda-painel-cabe-na-tela.spec.ts
         celular-cabe-na-tela.spec.ts
+        modelos-cabem-em-375.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
         aba-e-cookie-divergentes.spec.ts
@@ -1346,6 +1359,7 @@ jobs:
         etapa-pela-conversa.spec.ts
         pausa-de-reentrada.spec.ts
         funil-arquivado-volta-pela-tela.spec.ts
+        numero-oficial-um-clique.spec.ts
         inbox-selecionada-no-escuro.spec.ts
         inbox-anuncio-de-origem.spec.ts
         campanha-com-modelo-aprovado.spec.ts
@@ -1485,17 +1499,37 @@ jobs:
       # regra de entrada: cada uma semeia o que usa ou só lê os seeds de
       # passo (ex.: o catálogo da OpenRouter que `seed-e2e-catalogo-openrouter`
       # semeia em toda parte comum), e nenhuma cita WAHA, Graph ou webhook.
+      #
+      # `fotos-skills-e-peso-da-memoria-pela-tela` entrou em 2026-11-01: as
+      # chaves de custo do editor do agente (fotos 9108, skills 9107) e o limite
+      # do aviso de peso da Memória da IA. Semeia o que usa
+      # (`seed-e2e-elegibilidade` se faltar, agente pela API arquivado no fim) e
+      # devolve o limite da empresa a 1500. PREVISÃO, não medida no CI: ~3 min.
+      #
+      # `inbox-mensagem-por-modelo` entrou em 2026-11-03. Semeia contato,
+      # conversa e duas mensagens pelo service role (reaproveita um canal da
+      # organização, ou grava uma linha de canal sem transporte nenhum no ar) e
+      # apaga tudo no fim; só lê a tela. PREVISÃO, não medida: ~30 s de caso.
+      #
+      # `molde-de-ia-empresas-novas` grava uma escolha da INSTALAÇÃO
+      # (`platform_settings.molde_de_ia_org_id`, migration 9096) e a devolve a
+      # nulo no fim: deixada escolhida, as empresas das specs seguintes desta
+      # parte nasceriam com a IA do molde.
       SPECS_PARTE_7: >-
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
+        fotos-skills-e-peso-da-memoria-pela-tela.spec.ts
         capacidades-do-agente.spec.ts
         equipe-no-celular.spec.ts
         extensoes-versao.spec.ts
         ia-no-celular.spec.ts
+        inbox-mensagem-por-modelo.spec.ts
         navegacao.spec.ts
         prova-painel-provedores.spec.ts
         comercial-no-celular.spec.ts
         propostas-de-campos-do-card.spec.ts
+        aviso-pelo-numero-oficial.spec.ts
+        molde-de-ia-empresas-novas.spec.ts
       # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
       # processo next start. As demais partes preservam a configuração WAHA.
       #
@@ -2256,19 +2290,56 @@ jobs:
       # O dublê é exercitado pelo SMOKE antes da spec: se ele não responder o
       # contrato, o job falha aqui, com a rota nomeada, em vez de falhar seis
       # minutos depois dentro do Playwright com "elemento não encontrado".
-      - if: matrix.parte == 4
-        name: Ligar a VPS fresca (WAHA, Redis e dublê de SaaS)
+      # O receiver vive pelo job inteiro: RESEND_BASE_URL afeta também a SDK
+      # da plataforma. A spec não o fecha nem altera a configuração da instalação.
+      - if: matrix.parte == 2 || matrix.parte == 4
+        name: Ligar o dublê de SaaS persistente (Resend e Nuvemshop)
         run: |
           set -euo pipefail
-
-          # 1. O dublê de Resend/Nuvemshop: processo separado, porta de verdade.
           nohup node scripts/duble-saas-e2e.mjs >/tmp/duble-saas.log 2>&1 &
+          echo "$!" > /tmp/duble-saas-e2e.pid
           for _ in $(seq 1 30); do
             if curl -sf http://127.0.0.1:3997/__duble/saude >/dev/null; then break; fi
             sleep 1
           done
-          cat /tmp/duble-saas.log
+          # Não aceitar um receiver antigo de outro checkout que já ocupava a porta.
+          curl -sf http://127.0.0.1:3997/__duble/saude \
+            | node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{try{if(JSON.parse(b).pid!==Number(process.argv[1]))process.exit(1)}catch{process.exit(1)}})' "$(cat /tmp/duble-saas-e2e.pid)"
           bash scripts/duble-saas-e2e-smoke.sh
+          if [ "${{ matrix.parte }}" = 2 ]; then
+            node scripts/duble-saas-email-organizacao-smoke.mjs
+          fi
+
+      - if: matrix.parte == 2
+        name: Apontar todas as SDKs Resend ao receiver da parte semeada
+        run: |
+          set -euo pipefail
+          # Só a base de transporte: não inventar chave/From/SMTP configurados.
+          # A fonte canônica chega ao Next, aos seeds e ao runner da ação real.
+          grep -v '^RESEND_BASE_URL=' .env.e2e > /tmp/env-email-sem-base
+          echo 'RESEND_BASE_URL=http://127.0.0.1:3997' >> /tmp/env-email-sem-base
+          mv /tmp/env-email-sem-base .env.e2e
+          echo 'RESEND_BASE_URL=http://127.0.0.1:3997' >> "$GITHUB_ENV"
+          echo 'CANDIDATO_SHA=${{ github.event.pull_request.head.sha || github.sha }}' >> "$GITHUB_ENV"
+
+      - if: matrix.parte == 2
+        name: Conferir loader da ação real de e-mail antes do navegador
+        run: |
+          set -euo pipefail
+          # Só imports/contratoSDK: sem query ou envio. Falha alto antes daUI,
+          # com prazo e sem publicar stderr bruto/credenciais do processo.
+          if timeout -k 2s 20s node --import tsx scripts/provas/enviar-email-da-organizacao.ts --conferir-loader \
+              > /tmp/email-runner-loader.json 2> /tmp/email-runner-loader.stderr; then
+            cat /tmp/email-runner-loader.json
+          else
+            echo '::error title=Loader da prova de e-mail recusado::O filho próprio encerrou sem um loader válido; stderr bruto não é publicado.'
+            exit 1
+          fi
+
+      - if: matrix.parte == 4
+        name: Ligar a VPS fresca (WAHA, Redis e dublê de SaaS)
+        run: |
+          set -euo pipefail
 
           # 2. O que a spec fresca exige do ambiente (cabeçalho dela):
           #    WAHA ativo, Redis local, e Resend SEM chave — instalação nova não
@@ -2741,6 +2812,23 @@ jobs:
             echo "$(( MARGEM_SEGUNDOS / 60 )) min de folga à suíte, para o vermelho dizer o NOME do problema"
             echo "(qual parte, com quantos segundos medidos) em vez de cancelar em silêncio."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Encerrar somente o receiver criado por este job
+        if: ${{ always() && (matrix.parte == 2 || matrix.parte == 4) }}
+        run: |
+          set -euo pipefail
+          [ -f /tmp/duble-saas-e2e.pid ] || exit 0
+          pid=$(cat /tmp/duble-saas-e2e.pid)
+          [[ "$pid" =~ ^[0-9]+$ ]] || exit 1
+          proprio() { ps -p "$pid" -o args= | grep -Eq '(^|/)node scripts/duble-saas-e2e.mjs$'; }
+          if proprio; then
+            kill -TERM "$pid"
+            for _ in $(seq 1 20); do
+              if ! kill -0 "$pid" 2>/dev/null; then break; fi
+              sleep 0.1
+            done
+            if proprio; then kill -KILL "$pid"; fi
+          fi
 
   # O NOME DESTE JOB É O CHECK OBRIGATÓRIO, e é por isso que ele existe.
   #

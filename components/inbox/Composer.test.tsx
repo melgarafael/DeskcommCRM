@@ -105,6 +105,7 @@ vi.mock("@/lib/inbox/clipboard-image", () => ({
 
 vi.mock("@/lib/notifications/mentions", () => ({
   embutirMencoes: vi.fn((body: string) => body),
+  podarMencoesDaEdicao: vi.fn((_antes: string, _depois: string, m: unknown) => m),
   podarMencoes: vi.fn((_texto: string, m: unknown) => m),
   resolverMencao: vi.fn(() => null),
 }));

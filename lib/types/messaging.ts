@@ -17,6 +17,14 @@ export interface Conversation {
   current_demanda_id?: string | null;
   assigned_to_user_id: string | null;
   /**
+   * A FILA da conversa (migration 9062): o setor para onde ela foi classificada.
+   * `null` = ainda sem fila, que é o estado de toda conversa até alguém (ou a
+   * triagem por IA) escolher. Opcional no tipo pela mesma razão dos outros
+   * campos novos: o cache do react-query gravado antes deste deploy não tem a
+   * chave, e a lista a lê antes da primeira resposta nova.
+   */
+  sector_id?: string | null;
+  /**
    * Cópia desnormalizada do nome de quem atende (migration 0202), escrita por
    * `fn_conversation_assign` no mesmo UPDATE que grava `assigned_to_user_id`.
    * `null` quando não atribuída, ou quando o backfill/lookup não alcançou —
@@ -42,6 +50,12 @@ export interface Conversation {
   is_group: boolean;
   group_chat_id: string | null;
   tags: string[];
+  /**
+   * jsonb livre, por conversa. Entre outras marcas, mora aqui
+   * `ai_com_dono: true` — o modo da #3967 em que a IA responde SEM soltar o dono
+   * humano (`lib/ai/elegibilidade/ia-com-dono.ts`). A tela lê deste campo para
+   * desenhar o interruptor; não é coluna nova e não precisa de leitura nova.
+   */
   metadata: Record<string, unknown>;
   snooze_until: string | null;
   /**
@@ -57,6 +71,14 @@ export interface Conversation {
    * resposta de uma versão anterior, ainda em cache do react-query, não o tem.
    */
   comando_da_conversa?: string | null;
+  /**
+   * Há agente que vai responder ESTA conversa? (migration 9331, issue #4012) —
+   * outro campo CALCULADO, e a segunda metade do mesmo fato: `comando_da_conversa`
+   * já chega rebaixado a `aguardando` quando este é `false`, mas o cabeçalho e a
+   * linha recalculam localmente (para o "devolver" simulado), e sem o fato
+   * voltariam a dizer "Automático". Ausente = "não sei" (cache anterior).
+   */
+  automatico_da_conversa?: boolean | null;
   last_handoff_at: string | null;
   /**
    * Por que o automático está parado. Diferencia o handoff formal de uma pausa
@@ -117,6 +139,24 @@ export interface Message {
   sent_via: SentVia;
   sent_by_user_id: string | null;
   /**
+   * O NOME de quem enviou (#4031) — e por que ele não é coluna.
+   *
+   * `sent_by_user_id` diz QUAL pessoa da equipe digitou, mas o balão só sabia
+   * disso duas coisas: "Você" (para o autor) e "Atendente" (para todos os
+   * outros). Com duas consultoras na mesma conversa, o gestor não tinha como
+   * saber quem prometeu o quê — enquanto a IA já aparecia nomeada ("IA · Clara").
+   *
+   * O nome mora em `auth.users.raw_user_meta_data`, fora do alcance de uma
+   * consulta por PostgREST — e o balão NÃO faz consulta. Por isso este campo é
+   * de PAYLOAD: `GET /api/v1/conversations/[id]/messages` o preenche uma vez por
+   * página (ids distintos, com `nomesDosAtendentes`), exatamente como o export
+   * em PDF já fazia. Opcional porque uma resposta em cache de antes do campo
+   * não o tem — e `null` é a declaração de "não resolvi o nome" (self-host sem
+   * service role, linha antiga, usuário removido). Nunca é o nome de um cliente:
+   * só aparece quando há `sent_by_user_id`.
+   */
+  sent_by_user_name?: string | null;
+  /**
    * Quem DECIDIU o envio quando o que apertou foi um token (#1613, migration
    * 0416) — a pessoa "em nome de" quem a integração mandou. `null` em todo
    * envio direto, e ausente nas linhas anteriores à coluna. O balão lê este
@@ -145,6 +185,13 @@ export interface Message {
    * do `MSG_COLS` (otimistas antigas, fixtures) não o trazem.
    */
   updated_at?: string;
+  /**
+   * O modelo aprovado pelo qual a mensagem saiu (`type = 'template'`). Opcionais:
+   * ausentes em linhas montadas fora do `MSG_COLS`. O balão os usa para dizer
+   * que a mensagem foi por modelo; os botões moram em `metadata.template_buttons`.
+   */
+  template_name?: string | null;
+  template_language?: string | null;
 }
 
 /** Nota interna de conversa (Onda 5.2) — nunca vai ao cliente, tabela separada de messages. */

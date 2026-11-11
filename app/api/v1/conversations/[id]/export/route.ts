@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { audit } from "@/lib/audit";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   COLUNAS_DA_MENSAGEM,
@@ -142,7 +142,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Uma leitura por user id DISTINTO (o helper deduplica) — nome de quem
   // enviou não fica na linha da mensagem, e "Atendente" no PDF de prova é a
   // metade da prova. Se o lookup cair, o rótulo cai junto, sem falhar o export.
-  const nomesDosUsuarios = await nomesDosAtendentes(mensagens.map((m) => m.sent_by_user_id));
+  const nomesDosUsuarios = await nomesDosAtendentes(
+    authz.org.orgId,
+    mensagens.map((m) => m.sent_by_user_id),
+  );
 
   const conversaParaPdf: ConversaParaPdf = {
     id,
@@ -172,7 +175,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     metadata: { mensagens: mensagens.length, formato: "pdf" },
   });
 
-  return new Response(new Uint8Array(pdf.buffer), {
+  return comIdDaRequisicao(new Response(new Uint8Array(pdf.buffer), {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
@@ -180,5 +183,5 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       "Cache-Control": "no-store",
       "X-Request-Id": requestId,
     },
-  });
+  }), requestId);
 }

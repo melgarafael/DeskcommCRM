@@ -7,7 +7,6 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
 import { audit } from "@/lib/audit";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
-import { sincronizarNegocioAbertoDoContato } from "@/lib/inbox/negocio-aberto-do-contato";
 
 import { POST } from "./route";
 
@@ -107,9 +106,6 @@ vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/inbox/atividade-de-comando", () => ({ registrarTrocaDeComando: vi.fn(async () => undefined) }));
-vi.mock("@/lib/inbox/negocio-aberto-do-contato", () => ({
-  sincronizarNegocioAbertoDoContato: vi.fn(async () => ({ gravou: false, motivo: "sem_negocio_aberto", abertos: 0 })),
-}));
 vi.mock("@/lib/messaging/open-shared-contact-conversation", () => ({
   openSharedContactConversation: vi.fn(),
 }));
@@ -137,7 +133,9 @@ describe("#3479 — abrir a conversa assume a conversa SEM dono", () => {
     expect(rpcs[1]?.nome).toBe("emit_event");
     expect(audit).toHaveBeenCalledOnce();
     expect(registrarTrocaDeComando).toHaveBeenCalledOnce();
-    expect(sincronizarNegocioAbertoDoContato).toHaveBeenCalledOnce();
+    // #4019 + #3216: "Iniciar conversa" só preenche card SEM responsável. Quem
+    // decide é o banco, pelo motivo `claim` — o pedido não leva o 8º argumento.
+    expect(rpcs[0]?.params).not.toHaveProperty("p_negocio_so_sem_dono");
   });
 
   it("o cliente é o da SESSÃO, nunca o admin que abriu a conversa", async () => {
@@ -183,5 +181,26 @@ describe("#3479 — abrir a conversa assume a conversa SEM dono", () => {
     await expect(res.json()).resolves.toMatchObject({ data: { conversation_id: CONV } });
     expect(erro).toHaveBeenCalled();
     erro.mockRestore();
+  });
+
+  it("canal escolhido desligado/fora do ar recusa com o motivo, sem criar e sem assumir", async () => {
+    // #3483: a recusa nasce ANTES do `fn_service_begin` (é o que o dublê
+    // representa aqui), então não há conversa para assumir nem para navegar —
+    // e o corpo precisa dizer POR QUE, não devolver 200 com a tela parada.
+    const { cliente, rpcs } = clienteFake({ data: [CONVERSA_DA_ORG], error: null });
+    mResolve.mockResolvedValue(authzDeSessao(cliente));
+    mAbrir.mockRejectedValue(new Error("session_unavailable"));
+
+    const res = await POST(requisicao());
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({
+      error: {
+        code: "state_conflict",
+        message: "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.",
+      },
+    });
+    // Sem conversa aberta não há claim: nenhum RPC sai da sessão.
+    expect(rpcs).toHaveLength(0);
   });
 });

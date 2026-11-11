@@ -122,7 +122,8 @@ export async function mensagensDoClienteSemResposta(
   );
   return rows
     .reverse()
-    .map(corpoDaMensagem)
+    // Seta, não `.map(corpoDaMensagem)`: o índice do map cairia no 2º parâmetro (`verImagens`).
+    .map((m) => corpoDaMensagem(m))
     .filter((corpo) => corpo.trim() !== "");
 }
 
@@ -174,7 +175,7 @@ export async function perguntarOsPedidosDoCliente(
         .eq("organization_id", c.organizationId)
         .eq("id", contactId)
         .maybeSingle(),
-      isLeadInHandoff(pool, c.organizationId, contactId),
+      isLeadInHandoff(pool, c.organizationId, contactId, { conversationId }),
       c.sessaoId === null ? null : haQuemAtendaASessao(pool, c.organizationId, c.sessaoId, { ignorarPausados: true }),
       palavrasDeQuemPodeAtender(pool, c.organizationId, c.sessaoId, conversationId).then(palavrasDePassagem),
       mensagensDoClienteSemResposta(pool, c.organizationId, conversationId),

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 
-import { recordRunMetrics } from "@/lib/agent-engine/obs/metrics";
+import { CACHE_RATIO_METRIC, recordRunMetrics } from "@/lib/agent-engine/obs/metrics";
 
 /**
  * AS MÉTRICAS DO RUN GRAVAM — no Postgres do baseline, não num dublê.
@@ -92,6 +92,34 @@ describe("recordRunMetrics no banco real", () => {
     expect(m.run_llm_latency_ms).toBe(2000);
     // espera na fila = claim − criação; o tempo total vem do relógio do banco.
     expect(Object.keys(m).length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("⭐ a razão de cache conta só a chamada cacheável: o classificador de 800 tokens fica fora", async () => {
+    const job = randomUUID();
+    await pool.query(`insert into job_queue (id, organization_id, kind) values ($1, $2, 'watchdog')`, [job, ORG]);
+    await pool.query(
+      `insert into llm_calls (organization_id, job_id, purpose, provider, model,
+                              input_tokens, output_tokens, cache_read_tokens, cost_cents, latency_ms)
+       values ($1, $2, 'agent_turn', 'anthropic', 'claude-x', 3700, 200, 1850, 3.0, 1000),
+              ($1, $2, 'classifier', 'anthropic', 'claude-x', 800, 20, 700, 0.2, 200)`,
+      [ORG, job],
+    );
+
+    const chamadas = await recordRunMetrics(pool, {
+      id: job,
+      organization_id: ORG,
+      contact_id: CONTATO,
+      kind: "inbound_turn",
+      created_at: new Date(Date.now() - 5_000),
+      claim_acquired_at: new Date(Date.now() - 3_000).toISOString(),
+    });
+
+    expect(chamadas).toBe(2);
+    const m = await metricasDoJob(job);
+    // os totais do run continuam somando todas as chamadas (é o custo real)
+    expect(m.run_input_tokens).toBe(4_500);
+    // 1.850/3.700; com o classificador no denominador daria 2.550/4.500 = 56,7%
+    expect(m[CACHE_RATIO_METRIC]).toBeCloseTo(0.5, 6);
   });
 
   it("run sem chamada de IA, só com claim: ainda grava a espera e o tempo total", async () => {

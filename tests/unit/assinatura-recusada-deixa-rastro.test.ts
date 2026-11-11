@@ -35,7 +35,10 @@ import path from "node:path";
  * e é isso que este arquivo trava.
  */
 
-const ROTA = path.resolve(__dirname, "../../app/api/v1/webhooks/channel/[token]/route.ts");
+// Desde o webhook único da instalação (migration 9093), o que vem depois de saber a sessão
+// mora em `_entrada-do-canal.ts`, chamado pelas DUAS entradas de canal — é ali
+// que esta cerca lê. Que as rotas delegam a ele, o último caso confere.
+const ROTA = path.resolve(__dirname, "../../app/api/v1/webhooks/_entrada-do-canal.ts");
 
 function fonte(): string {
   return fs.readFileSync(ROTA, "utf8");
@@ -98,7 +101,7 @@ describe("o outro lado: assinatura BOA não pode ser marcada como inválida", ()
     // existe — e é o erro que o comentário do arquivador já avisava.
     const s = fonte();
     const bloco = s.slice(
-      onde(s, "if (!await inboundPayloadBelongsToSession("),
+      onde(s, "await inboundPayloadBelongsToSession("),
       onde(s, 'reason: "evento_de_outra_conta" }, { requestId })'),
     );
     expect(bloco).toMatch(/validSignature:\s*true/);
@@ -110,7 +113,12 @@ describe("o outro lado: assinatura BOA não pode ser marcada como inválida", ()
     // contagem de quem for auditar o que aconteceu com aquele webhook.
     const s = fonte();
     const depoisDoArquivo = s.slice(onde(s, "await abrirArquivoDoWebhook("));
-    const saidas = (depoisDoArquivo.match(/return (fail|ok)\(/g) ?? []).length;
+    // A saída que responde ANTES de processar não fecha a linha ali: ela a
+    // ENTREGA a quem fecha depois (`processarDepoisDaResposta`, no `after()`, e
+    // o cron `webhook-replay` se ele não terminar). Ela fica fora da conta, e o
+    // caso seguinte cobra que a entrega exista antes dela.
+    const entregas = (depoisDoArquivo.match(/return ok\(\{ status: "accepted" \}/g) ?? []).length;
+    const saidas = (depoisDoArquivo.match(/return (fail|ok)\(/g) ?? []).length - entregas;
     const fechamentos = (depoisDoArquivo.match(/await fecharArquivoDoWebhook\(/g) ?? []).length;
     expect(saidas).toBeGreaterThan(0);
     expect(
@@ -118,4 +126,32 @@ describe("o outro lado: assinatura BOA não pode ser marcada como inválida", ()
       `${saidas} saídas depois do arquivo e só ${fechamentos} fechamentos: alguma linha fica 'received' para sempre`,
     ).toBe(saidas);
   });
+
+  it("a saída que responde antes de processar entrega a linha ao processamento de depois", () => {
+    // Sem o agendamento antes dela, o 200 deixaria a linha `received` sem dono —
+    // a mensagem esperaria o cron, ou a janela dele passaria.
+    const s = fonte();
+    const depoisDoArquivo = s.slice(onde(s, "await abrirArquivoDoWebhook("));
+    const entrega = onde(depoisDoArquivo, 'return ok({ status: "accepted" }');
+    const agendamento = onde(depoisDoArquivo, /agendar\(async \(\) => \{\s*await processarDepoisDaResposta\(/);
+    expect(entrega, "a saída que responde antes sumiu — o caso de cima deixou de vigiá-la").toBeGreaterThan(-1);
+    expect(agendamento).toBeGreaterThan(-1);
+    expect(agendamento).toBeLessThan(entrega);
+  });
+});
+
+describe("as duas entradas de canal passam pelo MESMO caminho", () => {
+  it.each([
+    "../../app/api/v1/webhooks/channel/[token]/route.ts",
+    "../../app/api/v1/webhooks/canal-da-instalacao/route.ts",
+  ])(
+    "%s entrega a processarEntradaDoCanal, sem conferir assinatura por conta própria no meio",
+    (rel) => {
+      const fonte = fs.readFileSync(path.resolve(__dirname, rel), "utf8");
+      expect(fonte).toMatch(/return processarEntradaDoCanal\(admin,/);
+      expect(fonte).not.toMatch(
+        /\b(handleInboundWebhook|abrirArquivoDoWebhook|verifyInboundWebhookSignature)\(/,
+      );
+    },
+  );
 });

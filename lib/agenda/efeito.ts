@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AgendaDeferredError, protecaoAgendaPg, protecaoAgendaSupabase } from "./protecao-followup";
+import { AgendaPuladoError, decidirNoEnvio, ESCOLHA_PADRAO, type EscolhaNoEnvio } from "./escolha-no-envio";
 import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 
 /** Somente contexto interno: não é aceito pelo schema de mensagens/tools. */
@@ -13,6 +14,28 @@ export interface ProactiveContext {
   nodeId?: string;
   jobId?: string;
   jobClaim?: JobClaim;
+  /**
+   * O que fazer quando o contato tem horário marcado (#3813).
+   *
+   * Viaja no contexto de propósito: o mesmo envio passa por MAIS de uma guarda
+   * (`send-whatsapp` → `sendMessageHandler` → `_handler`), e uma escolha que só
+   * valesse na primeira faria a segunda recusar o que a regra autorizou. Ausente
+   * = `adiar`, o comportamento de sempre.
+   */
+  escolhaNoEnvio?: EscolhaNoEnvio;
+}
+
+/**
+ * A guarda de agenda, agora com a escolha da regra/fluxo.
+ *
+ * `adiar` (padrão) lança `AgendaDeferredError` como sempre; `enviar` não lança;
+ * `nao_enviar` lança `AgendaPuladoError`, que quem chama converte em pulo
+ * REGISTRADO com motivo — nunca numa falha genérica.
+ */
+function decidirProtecao(protection: Awaited<ReturnType<typeof protecaoAgendaPg>>, escolha?: EscolhaNoEnvio): void {
+  const decisao = decidirNoEnvio(protection, escolha ?? ESCOLHA_PADRAO);
+  if (decisao.acao === "adiar") throw new AgendaDeferredError(protection);
+  if (decisao.acao === "pular") throw new AgendaPuladoError(protection);
 }
 const effects = new AsyncLocalStorage<{ db: Queryable; context: ProactiveContext }>();
 export async function assertAgendaEffectPg(db: Queryable, c: ProactiveContext): Promise<void> {
@@ -39,7 +62,7 @@ export async function assertAgendaEffectPg(db: Queryable, c: ProactiveContext): 
     if (!rows[0]?.current) throw new StaleServiceBoundaryError();
   }
   const p = await protecaoAgendaPg(db, c.organizationId, c.contactId);
-  if (p.adiar) throw new AgendaDeferredError(p);
+  decidirProtecao(p, c.escolhaNoEnvio);
 }
 export async function assertAgendaEffectSupabase(
   db: SupabaseClient,
@@ -76,7 +99,7 @@ export async function assertAgendaEffectSupabase(
     if (!data) throw new StaleServiceBoundaryError();
   }
   const p = (await protecaoAgendaSupabase(db, c.organizationId, [c.contactId])).get(c.contactId)!;
-  if (p.adiar) throw new AgendaDeferredError(p);
+  decidirProtecao(p, c.escolhaNoEnvio);
 }
 export async function guardAgendaEffect(): Promise<void> {
   const scope = effects.getStore();

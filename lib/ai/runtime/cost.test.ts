@@ -51,6 +51,14 @@ const CATALOGO = [
     input_price_per_million_cents: 100,
     output_price_per_million_cents: 500,
   },
+  {
+    // Taxa por milhão do Haiku 5.5; o degrau acima de 100k é regra de cálculo
+    // (#4123), não linha de catálogo — por isso a mesma linha serve aos dois.
+    provider: "anthropic",
+    model_id: "claude-haiku-5-5",
+    input_price_per_million_cents: 100,
+    output_price_per_million_cents: 500,
+  },
 ] as LinhaCatalogo[];
 
 beforeEach(() => {
@@ -262,5 +270,52 @@ describe("computeCostCents — três caminhos da issue #1931", () => {
       outputTokens: 1_000_000,
     });
     expect(custo).toBe(0);
+  });
+});
+
+/**
+ * #4123 — o degrau do Haiku 5.5 (> 100 mil tokens de entrada = 5× pela chamada
+ * inteira) é regra de CÁLCULO, num lugar só (`lib/ai/custo-escalonado.ts`).
+ *
+ * Taxa do Haiku 5.5 no catálogo de teste: 100/500 centavos por milhão — 100 mil
+ * de entrada custam 10¢ e 10 mil de saída, 5¢.
+ */
+describe("computeCostCents — degrau do Claude Haiku 5.5 (#4123)", () => {
+  const uso = { provider: "anthropic", inputTokens: 100_000, outputTokens: 10_000 };
+
+  beforeEach(() => {
+    vi.mocked(createAdminClient).mockReturnValue(adminComCatalogo(CATALOGO) as never);
+  });
+
+  it("até 100 mil tokens de entrada o preço é o de sempre", async () => {
+    expect(await computeCostCents({ ...uso, model: "claude-haiku-5-5" })).toBe(15);
+    // O limite é "acima de", não "a partir de": 100.000 exatos continuam 1×.
+    expect(await computeCostCents({ ...uso, model: "claude-haiku-5-5", inputTokens: 100_000 })).toBe(15);
+  });
+
+  it("100.001 tokens de entrada: a chamada inteira (entrada + saída) custa 5×", async () => {
+    const custo = await computeCostCents({ ...uso, model: "claude-haiku-5-5", inputTokens: 100_001 });
+    // (100.001 × 100 + 10.000 × 500) / 1.000.000 = 15,0001¢ — × 5 = 75,0005¢.
+    // Fracionado: arredondar aqui seria o defeito que o `Math.ceil` já pagou.
+    expect(custo).toBeCloseTo(75.0005, 10);
+    expect(custo).not.toBe(75);
+  });
+
+  it("modelo que não é Haiku 5.5 não multiplica acima de 100k", async () => {
+    // Sonnet 5 (200/1000): 100.001 de entrada + 10.000 de saída = 30,0002¢.
+    expect(
+      await computeCostCents({ ...uso, provider: "anthropic", model: "claude-sonnet-5", inputTokens: 100_001 }),
+    ).toBeCloseTo(30.0002, 10);
+    // O Haiku 4.5 NÃO tem essa faixa: multiplicá-lo cobraria 5× a mais.
+    expect(
+      await computeCostCents({ ...uso, provider: "openrouter", model: "anthropic/claude-haiku-4-5", inputTokens: 100_001 }),
+    ).toBeCloseTo(15.0001, 10);
+  });
+
+  it("as três grafias do id passam pelo degrau", async () => {
+    const acima = { ...uso, inputTokens: 100_001 };
+    for (const model of ["claude-haiku-5-5", "claude-haiku-5.5", "anthropic/claude-haiku-5.5:beta"]) {
+      expect(await computeCostCents({ ...acima, model }), model).toBeCloseTo(75.0005, 10);
+    }
   });
 });

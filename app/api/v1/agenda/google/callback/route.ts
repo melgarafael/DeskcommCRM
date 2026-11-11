@@ -60,6 +60,8 @@ import { contaDaAgendaPrimaria } from "@/lib/agenda/google/calendarios";
 import { classificarErroDoGoogle } from "@/lib/agenda/google/erros";
 import { env } from "@/lib/env";
 
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -97,7 +99,7 @@ export const dynamic = "force-dynamic";
  *
  * As 14 saídas herdam de graça, porque todas passam por aqui.
  */
-function voltar(parametro: string): NextResponse {
+function voltar(parametro: string, req: NextRequest): NextResponse {
   const base = env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const destino = new URL(`/app/agenda?${parametro}`, base).toString();
   // Escapado mesmo o valor vindo de literais nossos: a ponte é genérica, e o
@@ -108,8 +110,9 @@ function voltar(parametro: string): NextResponse {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-  const resposta = new NextResponse(
-    `<!doctype html><html lang="pt-br"><head><meta charset="utf-8">` +
+  const resposta = comIdDaRequisicao(
+    new NextResponse(
+      `<!doctype html><html lang="pt-br"><head><meta charset="utf-8">` +
       `<meta name="robots" content="noindex">` +
       `<noscript><meta http-equiv="refresh" content="0;url=${seguro}"></noscript>` +
       `<title>Voltando…</title></head><body>` +
@@ -117,7 +120,9 @@ function voltar(parametro: string): NextResponse {
       `<script>location.replace(${JSON.stringify(destino)})</script>` +
       `<noscript><p><a href="${seguro}">Continuar</a></p></noscript>` +
       `</body></html>`,
-    { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+      { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+    ),
+    req,
   );
   // A LIMPEZA MORA AQUI, e não em cada saída, porque esta rota tem catorze delas
   // e uma que esquecesse deixaria um vínculo vivo até o TTL. Toda volta passa
@@ -141,7 +146,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const stateBruto = url.searchParams.get("state");
 
   // 1. A pessoa desistiu. Não é falha: é alguém clicando "Cancelar".
-  if (recusa) return voltar("erro=conexao_cancelada");
+  if (recusa) return voltar("erro=conexao_cancelada", req);
 
   // 2. Quem está voltando? Sem isto não há org para auditar.
   // ⚠️ SOB `try`, e a razão mudou com esta rota: ela agora é alcançável sem
@@ -153,7 +158,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     estado = verificarEstado(stateBruto, { segredo: env.INTERNAL_SECRET, agora: new Date() });
   } catch {
-    return voltar("erro=retorno_nao_verificavel");
+    return voltar("erro=retorno_nao_verificavel", req);
   }
   if (!estado) {
     // Um motivo só para assinatura inválida, prazo vencido e formato estranho:
@@ -163,7 +168,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       action: "agenda.google.conexao_falhou",
       metadata: { reason: "state_invalido" },
     });
-    return voltar("erro=retorno_nao_verificavel");
+    return voltar("erro=retorno_nao_verificavel", req);
   }
   const { organizationId, userId } = estado;
 
@@ -196,7 +201,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     });
     // Um destino só: distinguir "sem vínculo" de "vínculo de outra pessoa"
     // contaria a quem ataca se o `state` que ele tem pertence a alguém.
-    return voltar("erro=retorno_nao_verificavel");
+    return voltar("erro=retorno_nao_verificavel", req);
   }
 
   if (!code) {
@@ -205,11 +210,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organizationId,
       metadata: { reason: "sem_codigo", user_id: userId },
     });
-    return voltar("erro=retorno_incompleto");
+    return voltar("erro=retorno_incompleto", req);
   }
 
   const app = await configuracaoDoGoogle(origemLocalDosCabecalhos(req.headers) ?? undefined);
-  if (!app) return voltar("erro=google_nao_configurado");
+  if (!app) return voltar("erro=google_nao_configurado", req);
 
   // ⚠️ QUEIMA DO NONCE — e ela vem ANTES de trocar o código, não depois.
   //
@@ -222,7 +227,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // `code` do Google — que é de uso único — antes de descobrir que o `state`
   // era repetido, e quem apresentasse o legítimo receberia "código já usado",
   // um erro que aponta para o Google e não para o replay.
-  if (!(await supportCallbackWriteAllowed(organizationId, userId, estado.authSessionId))) return voltar("erro=retorno_nao_verificavel");
+  if (!(await supportCallbackWriteAllowed(organizationId, userId, estado.authSessionId))) return voltar("erro=retorno_nao_verificavel", req);
   const admin = createAdminClient();
   const { error: erroDoNonce } = await admin.from("calendar_oauth_nonces").insert({
     nonce: estado.nonce,
@@ -242,7 +247,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         user_id: userId,
       },
     });
-    return voltar("erro=retorno_nao_verificavel");
+    return voltar("erro=retorno_nao_verificavel", req);
   }
 
   // 3. Troca o código pelos tokens.
@@ -253,7 +258,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organizationId,
       metadata: { reason: leitura.motivo, detalhe: leitura.detalhe, user_id: userId },
     });
-    return voltar("erro=troca_de_codigo_falhou");
+    return voltar("erro=troca_de_codigo_falhou", req);
   }
   const token = leitura.token;
 
@@ -265,7 +270,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organizationId,
       metadata: { reason: "scope_missing", faltando, user_id: userId },
     });
-    return voltar("erro=permissao_incompleta");
+    return voltar("erro=permissao_incompleta", req);
   }
 
   // 5. De quem é a agenda, e em que fuso ela vive.
@@ -302,9 +307,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // dois. Ele merece tela própria porque a ação é do dono da instalação, no
     // Google Cloud, e não da pessoa que clicou.
     if (classificacao.desfecho === "sem_permissao") {
-      return voltar("erro=google_recusou_o_acesso");
+      return voltar("erro=google_recusou_o_acesso", req);
     }
-    return voltar("erro=conta_indisponivel");
+    return voltar("erro=conta_indisponivel", req);
   }
 
   // 6. Cifra ANTES de gravar. `encryptWebhookSecret` devolve `null` quando a
@@ -337,7 +342,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         organizationId,
         metadata: { reason: "sem_token_de_renovacao", user_id: userId },
       });
-      return voltar("erro=sem_token_de_renovacao");
+      return voltar("erro=sem_token_de_renovacao", req);
     }
   }
 
@@ -349,7 +354,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organizationId,
       metadata: { reason: "cifra_indisponivel", user_id: userId },
     });
-    return voltar("erro=cifra_indisponivel");
+    return voltar("erro=cifra_indisponivel", req);
   }
 
   // 7. Grava. `organization_id` e `user_id` vêm do `state` ASSINADO, nunca da
@@ -387,7 +392,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       organizationId,
       metadata: { reason: "upsert_falhou", detalhe: erroAoGravar.message, user_id: userId },
     });
-    return voltar("erro=nao_consegui_guardar");
+    return voltar("erro=nao_consegui_guardar", req);
   }
 
   // 8. REGISTRA O CALENDÁRIO PRIMÁRIO. Sem esta linha a conexão existe e não sincroniza
@@ -439,5 +444,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     metadata: { user_id: userId, account_email: conta.conta.email, fuso: conta.conta.fuso },
   });
 
-  return voltar("ok=agenda_conectada");
+  return voltar("ok=agenda_conectada", req);
 }

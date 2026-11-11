@@ -29,9 +29,13 @@ export const STATUS_DA_ENTREGA_DE_AGENDAMENTO = [
 ] as const;
 export type StatusDaEntregaDeAgendamento = (typeof STATUS_DA_ENTREGA_DE_AGENDAMENTO)[number];
 
-/** O que a linha de entrega representa: um aviso de evento ou o resumo do dia. */
-export const TIPOS_DA_ENTREGA_DE_AGENDAMENTO = ["aviso", "resumo"] as const;
+/** O que a linha de entrega representa: um aviso de evento, o resumo do dia ou o lembrete antes do horário (9326). */
+export const TIPOS_DA_ENTREGA_DE_AGENDAMENTO = ["aviso", "resumo", "lembrete"] as const;
 export type TipoDaEntregaDeAgendamento = (typeof TIPOS_DA_ENTREGA_DE_AGENDAMENTO)[number];
+
+/** Para onde a entrega foi: o número do dono ou o grupo da equipe (migration 9060). */
+export const ALVOS_DA_ENTREGA_DE_AGENDAMENTO = ["numero", "grupo"] as const;
+export type AlvoDaEntregaDeAgendamento = (typeof ALVOS_DA_ENTREGA_DE_AGENDAMENTO)[number];
 
 /** Os três eventos de `lib/agenda/laco.ts` que este aviso consome. */
 export const EVENTOS_DO_AVISO_DE_AGENDAMENTO = [
