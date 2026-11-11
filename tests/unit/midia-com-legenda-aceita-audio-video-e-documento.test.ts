@@ -215,7 +215,7 @@ describe("wahaSendPlanFor — o endpoint que cada tipo usa", () => {
       wahaSendPlanFor("video", { url: "https://cdn.exemplo/produto.mp4", mime: "video/mp4", caption: "Olha o produto." }),
     ).toMatchObject({
       endpoint: "sendVideo",
-      payload: { convert: false, caption: "Olha o produto." },
+      payload: { convert: true, caption: "Olha o produto." },
     });
   });
 

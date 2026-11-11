@@ -36,7 +36,7 @@ describe("storagePathFor", () => {
 });
 
 describe("MAX_MEDIA_BYTES", () => {
-  it("é 100MB", () => {
-    expect(MAX_MEDIA_BYTES).toBe(104_857_600);
+  it("é 50MB", () => {
+    expect(MAX_MEDIA_BYTES).toBe(52_428_800);
   });
 });

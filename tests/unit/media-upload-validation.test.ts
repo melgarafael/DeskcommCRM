@@ -19,8 +19,8 @@ describe("validateOutboundMedia", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe("unsupported_media_type");
   });
-  it("rejeita acima de 100MB", () => {
-    const r = validateOutboundMedia("image/jpeg", 101 * 1024 * 1024);
+  it("rejeita acima de 50MB", () => {
+    const r = validateOutboundMedia("image/jpeg", 51 * 1024 * 1024);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe("payload_too_large");
   });

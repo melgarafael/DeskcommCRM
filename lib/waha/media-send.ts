@@ -25,7 +25,7 @@ export function wahaSendPlanFor(kind: string, media: OutboundMedia): WahaSendPla
     case "video":
       return {
         endpoint: "sendVideo",
-        payload: { file, convert: false, ...(media.caption ? { caption: media.caption } : {}) },
+        payload: { file, convert: true, ...(media.caption ? { caption: media.caption } : {}) },
       };
     case "audio":
       return { endpoint: "sendVoice", payload: { file, convert: true } };

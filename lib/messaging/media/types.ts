@@ -4,7 +4,7 @@
  * interface de fetch e o resto do sistema não muda (spec Onda 0).
  */
 
-export const MAX_MEDIA_BYTES = 104_857_600; // 100MB — espelha file_size_limit do bucket
+export const MAX_MEDIA_BYTES = 52_428_800; // 50MB — espelha file_size_limit do bucket
 
 export interface FetchedMedia {
   buffer: Buffer;
