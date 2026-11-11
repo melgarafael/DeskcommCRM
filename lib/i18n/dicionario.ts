@@ -2309,6 +2309,9 @@ export const DICIONARIO: Traducoes = {
   "Apenas atrasados": { es: "Solo atrasados" },
   "Sem responsável": { es: "Sin responsable" },
   "Editar campos": { es: "Editar campos" },
+  // Página inteira do negócio (#4151): o painel do quadro ganha o botão. O
+  // caminho de volta ("Voltar") já existe no bloco de estados e avisos.
+  Expandir: { es: "Expandir" },
   "Linha do tempo": { es: "Línea de tiempo" },
   "Ver tudo": { es: "Ver todo" },
   "DADOS DO NEGÓCIO": { es: "DATOS DEL NEGOCIO" },

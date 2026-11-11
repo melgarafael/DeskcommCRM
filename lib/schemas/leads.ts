@@ -21,7 +21,19 @@ const flexibleTimestamp = z
 
 export const moveLeadSchema = z.object({
   stage_id: z.string().uuid(),
-  position_in_stage: z.number().finite(),
+  /**
+   * A POSIÇÃO É OPCIONAL (#4151).
+   *
+   * O arrasto do quadro sempre a manda (ele tem a coluna na tela e escolhe o
+   * ponto exato entre dois cards). Quem abre o negócio em PÁGINA INTEIRA não
+   * tem a coluna: só sabe a etapa de destino. Omitida, o servidor posiciona
+   * pela MESMA régua de quem chega pelo menu ou pelo MCP — no topo da etapa de
+   * destino (`posicaoDeEntradaNaEtapa`, min − 1000; #3461) —, lendo a etapa
+   * inteira no banco em vez de adivinhar no cliente.
+   *
+   * Continua `finite`: posição explícita inválida não vira `NaN` no banco.
+   */
+  position_in_stage: z.number().finite().optional(),
   expected_updated_at: flexibleTimestamp,
   /**
    * O motivo da perda, quando a etapa de destino é de perda (issue #917). É o
