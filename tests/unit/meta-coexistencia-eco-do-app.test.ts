@@ -236,7 +236,13 @@ describe("ingestão do eco", () => {
       expect.objectContaining({ conversationId: "conversation-1", direction: "outbound" }),
     ]);
     expect(estado.pausas).toEqual([
-      { organizationId: "org-1", conversationId: "conversation-1", canal: "meta" },
+      {
+        organizationId: "org-1",
+        conversationId: "conversation-1",
+        canal: "meta",
+        // #534: o chamador TEM de entregar o aviso da pausa não gravada.
+        avisar: expect.any(Function),
+      },
     ]);
     expect(estado.auditorias).toEqual([
       expect.objectContaining({ action: "message.sent", organizationId: "org-1" }),

@@ -119,6 +119,36 @@ describe("origem externa não se edita aqui", () => {
   });
 });
 
+describe("a seção da apresentação pela IA segue a chave da empresa", () => {
+  const abrirEdicao = () => fireEvent.click(screen.getByTestId("editar-IP15"));
+  const telaComChave = (apresentacaoLigada?: boolean) =>
+    render(
+      <ProdutosClient
+        inicial={[produto()]}
+        total={1}
+        pagina={1}
+        porPagina={1}
+        buscaInicial=""
+        urlsDasFotos={{}}
+        podeEditar
+        textos={TEXTOS}
+        {...(apresentacaoLigada === undefined ? {} : { apresentacaoLigada })}
+      />,
+    );
+
+  it("desligada por padrão: sem a seção", () => {
+    telaComChave();
+    abrirEdicao();
+    expect(screen.queryByTestId("apresentacao-ia")).toBeNull();
+  });
+
+  it("ligada: a seção aparece", () => {
+    telaComChave(true);
+    abrirEdicao();
+    expect(screen.getByTestId("apresentacao-ia")).toBeTruthy();
+  });
+});
+
 describe("o botão Editar", () => {
   it("abre preenchido com a linha e grava só o preço que mudou", async () => {
     const p = produto();

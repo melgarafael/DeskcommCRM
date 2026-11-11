@@ -19,15 +19,20 @@
  * cliente administrador, filtrado pela organização da sessão.
  *
  * ─── O que sai daqui e o que não sai ─────────────────────────────────────────
- * `cpf_hash` é LIDO (a comparação precisa dele) e NÃO é devolvido: é PII derivada,
- * e a tela de conferência mostra pessoa, telefone e e-mail — não hash de
- * documento. O mapeamento do `ok(...)` abaixo é a lista fechada do que o cliente
- * recebe; campo novo em `contacts` não vaza por acidente.
+ * `cpf_hash` é lido pelo SERVIDOR (a comparação precisa dele), só para as fichas
+ * que a sessão já viu, e NÃO é devolvido: é PII derivada, e a tela de conferência
+ * mostra pessoa, telefone e e-mail — não hash de documento. O mesmo vale para `wa_identity`/`wa_lid`:
+ * identificam a CONTA do WhatsApp, não a pessoa para quem se liga; a tela mostra
+ * `phone_number`. O mapeamento do
+ * `ok(...)` abaixo é a lista fechada do que o cliente recebe; campo novo em
+ * `contacts` não vaza por acidente.
  *
  * `viewer` pode LISTAR (é leitura de contato, que ele já enxerga na tabela);
  * quem funde é `manager`, e esse gate está na rota de POST /contacts/merge.
  */
 import { randomUUID } from "node:crypto";
+
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
@@ -40,6 +45,7 @@ import {
 } from "@/lib/contacts/duplicados";
 import { lerParesDispensados } from "@/lib/contacts/dispensar-par";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { duplicadosPorNomeLigado } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -70,7 +76,30 @@ const TETO_DE_VARREDURA = 2000;
 const TAMANHO_DA_PAGINA = 1000;
 
 const COLUNAS_DO_CONTATO =
-  "id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
+  "id, name, display_name, address_book_name, email, email_normalized, phone_number, wa_identity, wa_lid, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
+
+/** Cada id custa ~37 caracteres na URL do PostgREST; 100 ficam abaixo do limite comum de 8 KB de um proxy. */
+const LOTE_DE_IDS = 100;
+
+/** O CPF de cada ficha, para comparar. A leitura é do servidor, filtrada pela organização da sessão. */
+async function comHashDeCpf(
+  admin: SupabaseClient,
+  orgId: string,
+  linhas: Omit<ContatoParaDeduplicar, "cpf_hash">[],
+): Promise<ContatoParaDeduplicar[]> {
+  const hashPorId = new Map<string, string>();
+  for (let inicio = 0; inicio < linhas.length; inicio += LOTE_DE_IDS) {
+    const { data, error } = await admin
+      .from("contacts")
+      .select("id, cpf_hash")
+      .eq("organization_id", orgId)
+      .in("id", linhas.slice(inicio, inicio + LOTE_DE_IDS).map((c) => c.id))
+      .not("cpf_hash", "is", null);
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as { id: string; cpf_hash: string }[]) hashPorId.set(r.id, r.cpf_hash);
+  }
+  return linhas.map((c) => ({ ...c, cpf_hash: hashPorId.get(c.id) ?? null }));
+}
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
@@ -94,7 +123,7 @@ export async function GET(): Promise<Response> {
   // fim — numa instalação com `max_rows` menor que a página, ela vem curta sem
   // ser o fim. O `+1` além do teto é o que prova que existia mais do que a
   // varredura alcança.
-  const linhas: ContatoParaDeduplicar[] = [];
+  const linhas: Omit<ContatoParaDeduplicar, "cpf_hash">[] = [];
   let totalDeVivos: number | null = null;
   let acabou = false;
   for (let pagina = 0; linhas.length <= TETO_DE_VARREDURA && !acabou; pagina++) {
@@ -113,34 +142,51 @@ export async function GET(): Promise<Response> {
       return fail("internal_error", error.message, 500, { requestId });
     }
     if (pagina === 0) totalDeVivos = count;
-    const lote = (data ?? []) as unknown as ContatoParaDeduplicar[];
+    const lote = (data ?? []) as unknown as Omit<ContatoParaDeduplicar, "cpf_hash">[];
     linhas.push(...lote);
     acabou = lote.length === 0 || (totalDeVivos !== null && linhas.length >= totalDeVivos);
   }
 
   const varreuTudo =
     totalDeVivos !== null ? totalDeVivos <= TETO_DE_VARREDURA : linhas.length <= TETO_DE_VARREDURA;
-  const varridos = linhas.slice(0, TETO_DE_VARREDURA);
 
-  // As dispensas são lidas com o cliente administrador, filtrado pela organização da
-  // SESSÃO (nunca do pedido): a policy de `merge_queue` só deixa gestor ler, e o par
-  // dispensado tem de sumir para todo papel que vê esta lista. Se a leitura falhar,
-  // a rota falha — mostrar a lista sem as dispensas faria um par tirado voltar calado.
+  // As dispensas e o CPF são lidos com o cliente administrador, filtrado pela
+  // organização da SESSÃO (nunca do pedido): a policy de `merge_queue` só deixa gestor
+  // ler, e o par dispensado tem de sumir para todo papel que vê esta lista. Se a leitura
+  // falhar, a rota falha — mostrar a lista sem as dispensas faria um par tirado voltar
+  // calado, e sem o CPF faria o par de mesmo documento sumir sem aviso.
+  //
+  // A OPÇÃO DA EMPRESA (#4138) é lida na MESMA ida ao banco: `settings.crm.
+  // duplicados_por_nome`, desligada por padrão (`duplicadosPorNomeLigado` — só o
+  // booleano `true` liga). Desligada, a varredura por nome não roda E as dispensas
+  // nem são lidas: o par dispensado só existe para esconder uma sugestão que não
+  // existe mais, e ler 5.000 linhas de `merge_queue` para nada é custo sem uso.
   let dispensados: Set<string>;
+  let varridos: ContatoParaDeduplicar[];
+  let sugestaoPorNome: boolean;
   try {
-    dispensados = await lerParesDispensados(createAdminClient(), org.orgId);
+    const admin = createAdminClient();
+    const { data: organizacao, error: erroOrg } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", org.orgId)
+      .maybeSingle();
+    if (erroOrg) throw new Error(erroOrg.message);
+    sugestaoPorNome = duplicadosPorNomeLigado(organizacao?.settings);
+    dispensados = sugestaoPorNome ? await lerParesDispensados(admin, org.orgId) : new Set<string>();
+    varridos = await comHashDeCpf(admin, org.orgId, linhas.slice(0, TETO_DE_VARREDURA));
   } catch {
     // Sem o detalhe do erro na resposta: a mensagem do banco não é para quem opera a tela.
-    return fail("internal_error", "Não foi possível ler as dispensas de duplicados.", 500, {
+    return fail("internal_error", "Não foi possível ler os dados de duplicados.", 500, {
       requestId,
     });
   }
 
-  // Os fortes vêm primeiro, com o mesmo formato. O nome vem depois, em grupos de
-  // dois: sugestão para conferir, não prova.
+  // Os fortes vêm sempre, com o mesmo formato. O nome vem depois, em grupos de
+  // dois — sugestão para conferir, não prova — e SÓ se a empresa ligou a opção.
   const grupos = [
     ...encontrarContatosDuplicados(varridos),
-    ...encontrarParecidosPorNome(varridos, { dispensados }),
+    ...(sugestaoPorNome ? encontrarParecidosPorNome(varridos, { dispensados }) : []),
   ];
 
   return ok(
@@ -159,6 +205,6 @@ export async function GET(): Promise<Response> {
         last_activity_at: c.last_activity_at,
       })),
     })),
-    { requestId, meta: { varreu_tudo: varreuTudo, contatos_varridos: Math.min(linhas.length, TETO_DE_VARREDURA) } },
+    { requestId, meta: { varreu_tudo: varreuTudo, contatos_varridos: Math.min(linhas.length, TETO_DE_VARREDURA), sugestao_por_nome: sugestaoPorNome } },
   );
 }

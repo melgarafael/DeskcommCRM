@@ -249,6 +249,31 @@ describe('resolveTurnAgent', () => {
     expect(out.intentName).toBe('suporte');
   });
 
+  it('#4363: a troca automática diz ao novo agente de QUEM é a conversa que ele herdou', async () => {
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'na verdade tenho um problema técnico', stickyAgentId: 'agent-vendas', stickyIntent: 'vendas' },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router()),
+        classifyIntent: vi.fn().mockResolvedValue({ intentName: 'suporte', confidence: 0.8 }),
+        loadPublishedAgentConfigById: idAwareLoader(),
+      }));
+    expect(out.outcome).toBe('reclassified');
+    expect(out.passagemRecebida).toEqual({ agenteAnteriorId: 'agent-vendas', agenteAnteriorNome: 'agent-vendas' });
+  });
+
+  it('#4363 controle: sem troca (sticky) não há passagem a anunciar', async () => {
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'e o preço?', stickyAgentId: 'agent-vendas', stickyIntent: 'vendas' },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router()),
+        classifyIntent: vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 }),
+        loadPublishedAgentConfigById: idAwareLoader(),
+      }));
+    expect(out.outcome).toBe('sticky');
+    expect(out.passagemRecebida).toBeUndefined();
+  });
+
+
   it('5. sticky + intenção diferente com confiança ABAIXO do min → sticky (não troca)', async () => {
     const r = router();
     const loadActiveRouter = vi.fn().mockResolvedValue(r);
