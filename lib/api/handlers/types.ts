@@ -31,7 +31,20 @@ export type Actor =
    * porque nem todo caminho conhece o agente (token externo, por exemplo) — e
    * "não sei qual agente" tem de virar atividade de sistema, nunca linha perdida.
    */
-  | { type: "ai_agent"; id: string; role: string; api_token_id?: string; agent_id?: string }
+  | {
+      type: "ai_agent";
+      id: string;
+      role: string;
+      api_token_id?: string;
+      agent_id?: string;
+      /**
+       * `assisted` quando quem age é um agente em modo ASSISTIDO (doc 301 = B).
+       * Viaja para o `metadata` do evento como `actor_operation_mode`, e é por
+       * ele que o motor de automação segura as ações que falam com o cliente
+       * (`lib/automation/parada-no-assistido.ts`). Ausente = automático.
+       */
+      operation_mode?: "assisted";
+    }
   /**
    * TOKEN DE SERVIDOR sem escopo de agente — uma integração, não uma pessoa.
    *

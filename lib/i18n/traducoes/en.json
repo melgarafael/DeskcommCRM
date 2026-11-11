@@ -9763,5 +9763,12 @@
   "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": "Each product can have a presentation in text or audio, with photos and price, which the AI agent sends in sequence when the customer asks.",
   "O aviso da Meta chegou sem as respostas do formulário, e a busca das respostas está desligada nesta fonte. Cole o token da página e ligue a busca para os próximos entrarem.": "Meta's notice arrived without the form answers, and answer lookup is turned off for this source. Paste the page token and turn on the lookup so the next ones come in.",
   "A busca das respostas na Meta não deu certo: o token pode ter vencido, estar sem permissão de leads, ou a Meta não respondeu. Confira o token da página nesta fonte.": "Looking up the answers on Meta failed: the token may have expired, lack leads permission, or Meta didn't respond. Check the page token on this source.",
-  "A Meta avisou um lead da página desta fonte, mas a fonte está pausada. Reative-a para os próximos entrarem.": "Meta reported a lead from this source's page, but the source is paused. Reactivate it so the next ones come in."
+  "A Meta avisou um lead da página desta fonte, mas a fonte está pausada. Reative-a para os próximos entrarem.": "Meta reported a lead from this source's page, but the source is paused. Reactivate it so the next ones come in.",
+  "Quem disparou foi a IA no modo assistido, e no assistido nada fala com o cliente sem aprovação: esta ação ficou parada. O aviso na Central de avisos tem o botão para disparar.": "This was triggered by the AI in assisted mode, and in assisted mode nothing reaches the customer without approval: this action was held. The notice in the Notification Center has the button to send it.",
+  "Não há nada parado para disparar neste aviso: ele já foi disparado ou descartado.": "There is nothing held to send in this notice: it was already sent or dismissed.",
+  "A automação mudou depois que a ação ficou parada. Abra a automação e confira antes de disparar.": "The automation changed after the action was held. Open the automation and check it before sending.",
+  "Agora está fora da janela de envio deste número (ou no limite do dia). Nada foi enviado; tente depois do horário indicado.": "It is now outside this number's sending window (or at the daily limit). Nothing was sent; try again after the time shown.",
+  "Disparar agora": "Send now",
+  "Não foi possível disparar. O aviso continua aberto se nada saiu; leia o motivo na atividade das automações.": "Could not send. The notice stays open if nothing went out; read the reason in the automations activity.",
+  "Ver na atividade das automações": "View in automations activity"
 }

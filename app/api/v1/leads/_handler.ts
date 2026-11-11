@@ -1,3 +1,4 @@
+import { marcaDoAssistido } from "@/lib/automation/parada-no-assistido";
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -325,6 +326,8 @@ function actorAuditPayload(actor: Actor): {
       actor_type: "ai_agent",
       actor_id: actor.id,
       ...(actor.api_token_id ? { actor_api_token_id: actor.api_token_id } : {}),
+      // Doc 301 = B: a ação da IA no assistido segura a automação que fala com o cliente.
+      ...marcaDoAssistido(actor),
     },
   };
 }

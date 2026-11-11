@@ -1544,6 +1544,9 @@ export const AUDIT_ACTIONS = [
   // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
   // aceitável: a única porta da escrita deixa rastro.
   "ouvidoria.status_updated",
+  // Doc 301 = B: alguém disparou pela Central o que a automação segurou porque
+  // a IA mexeu no modo assistido. Metadata leva só ids e os tipos de ação.
+  "automation.held_actions_dispatched",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

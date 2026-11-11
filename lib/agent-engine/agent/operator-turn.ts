@@ -515,6 +515,9 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
           // `FORA_DO_OPERADOR` (a proposta nascia na primeira mensagem).
           mao,
           log,
+          // No assistido, remota só entra se MONTOU como leitura: a marca no id
+          // sozinha não basta para dizer que nada sai.
+          { readOnly: false, remotasSoLeitura: mao.operationMode === 'assisted' },
         );
       } catch (err) {
         // Mesma doutrina do turno do Conversador: capacidade que não montou não

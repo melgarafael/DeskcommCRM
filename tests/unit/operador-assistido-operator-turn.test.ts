@@ -117,6 +117,12 @@ describe('agente em modo assistido', () => {
     const mao = mocks.mcp.mock.calls[0]![2] as { toolIds: string[] };
     expect(mao.toolIds).toEqual([...FERRAMENTAS, REMOTA_DE_LEITURA]);
   });
+
+  it('a remota marcada leitura só entra se MONTAR como leitura (remotasSoLeitura)', async () => {
+    await rodar(pool());
+
+    expect(mocks.mcp.mock.calls[0]![4]).toMatchObject({ remotasSoLeitura: true });
+  });
 });
 
 describe('controles — o que continua barrando', () => {
@@ -152,6 +158,7 @@ describe('controles — o que continua barrando', () => {
 
     const mao = mocks.mcp.mock.calls[0]![2] as { toolIds: string[] };
     expect(mao.toolIds).toEqual([...FERRAMENTAS, ...DE_SAIDA]);
+    expect(mocks.mcp.mock.calls[0]![4]).toMatchObject({ remotasSoLeitura: false });
   });
 
   it('lead sem handoff e agente automático: roda como sempre (controle positivo)', async () => {
