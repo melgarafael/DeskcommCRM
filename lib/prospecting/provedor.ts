@@ -36,7 +36,9 @@
  * e nada liga uma à outra. Trocar a escolha sem regravar a chave mandaria a
  * chave antiga ao provedor novo. Com o `local-http` da #2942 o catálogo de
  * produção deixou de ser só a Apify — prender a chave ao provedor dela segue
- * pendente (#2174). Exceção desta fatia: o `local-http` NÃO usa essa coluna
+ * pendente (#2174). Até lá, o `scavio` confere o formato da chave ANTES da
+ * rede e recusa a de outro provedor, para a chave da Apify não sair para a
+ * Scavio. Exceção desta fatia: o `local-http` NÃO usa essa coluna
  * (`exigeCredencialDaOrganizacao: false`) — a URL dele vem da instalação
  * (`PROSPECTING_LOCAL_HTTP_URL`), nunca da organização.
  */
@@ -46,8 +48,10 @@ import {
   readResults as readResultsDaApify,
   readSearch as readSearchDaApify,
   startSearch as startSearchDaApify,
+  type OpcoesDaBusca,
 } from "./provider";
 import { provedorLocalHttp, validarCredencialLocalHttp } from "./provedor-local-http";
+import { provedorScavio, validarCredencialScavio } from "./provedor-scavio";
 import { provedorDeTeste } from "./provedor-teste";
 import type { SearchInput } from "./schema";
 
@@ -66,7 +70,8 @@ export interface DadosDaExecucao {
  * de sempre, venham de onde vierem.
  */
 export interface ProvedorDeBusca {
-  startSearch(chave: string, input: SearchInput): Promise<DadosDaExecucao>;
+  /** `opcoes.idioma`: o da organização (`idioma.ts`). Provedor que não o usa, ignora. */
+  startSearch(chave: string, input: SearchInput, opcoes?: OpcoesDaBusca): Promise<DadosDaExecucao>;
   readSearch(chave: string, id: string): Promise<DadosDaExecucao>;
   readResults(chave: string, dataset: string, limit: number): Promise<Record<string, unknown>[]>;
 }
@@ -129,6 +134,17 @@ const REGISTRO: Record<string, RegistroDoProvedor> = {
     provedor: provedorLocalHttp,
     validarCredencial: validarCredencialLocalHttp,
     exigeCredencialDaOrganizacao: false,
+  },
+  /**
+   * #1758, classe 1: a API da Scavio (Google Maps), com a chave DA ORGANIZAÇÃO
+   * na mesma coluna cifrada da Apify. A régua é `GET /api/v1/usage`, que não
+   * gasta crédito. Síncrona: a busca roda em `readResults` (F4) e os lugares
+   * saem nos nomes que `normalizeProspect()` já lê (F3).
+   */
+  scavio: {
+    provedor: provedorScavio,
+    validarCredencial: validarCredencialScavio,
+    exigeCredencialDaOrganizacao: true,
   },
 };
 

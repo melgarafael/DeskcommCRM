@@ -139,6 +139,19 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
+    nome: "concessao_sem_lastro",
+    rotulo: "Não confirmar condição que só o cliente citou",
+    oQueProtege:
+      "Barra a resposta que confirma preço, parcela, percentual ou concessão (aprovação, gratuidade, " +
+      "cortesia…) que só aparece no que o cliente escreveu, e em nada que a empresa enviou ou cadastrou. " +
+      "O assistente refaz sem repeti-la.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "O que o cliente escreve não é registro da sua empresa: confirmar uma condição que só ele trouxe " +
+      "obriga o negócio a algo que ninguém da equipe deu. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
     nome: "semantic_promise",
     rotulo: "Conferir promessas em texto livre",
     oQueProtege:
@@ -219,6 +232,19 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     porQueNaoSeDesliga:
       "É a mesma promessa vazia do 'vou pedir pro responsável', só que sobre agenda: o cliente " +
       "fica esperando uma confirmação que nunca foi checada. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
+    nome: "horario_da_agenda",
+    rotulo: "Só oferecer horário que a agenda devolveu",
+    oQueProtege:
+      "Barra a resposta que cita dia e horário que a busca da agenda não devolveu nesta " +
+      'resposta, e o "está agendado" quando a marcação não foi gravada. O assistente refaz ' +
+      "com a agenda; se insistir, passa a conversa para a equipe.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Horário inventado vira consulta marcada em cima de outra, e confirmação sem marcação " +
+      "vira paciente esperando uma consulta que não existe. Regra fixa, sem custo.",
     camada: null,
   },
   {

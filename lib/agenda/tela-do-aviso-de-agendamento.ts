@@ -41,7 +41,11 @@ export interface ConfigDoAvisoDeAgendamentoNaTela {
   channel_session_id: string | null;
   /** O número inteiro: é o campo que a pessoa está editando. */
   telefone: string | null;
+  /** O `chatId` do grupo que também recebe os avisos (migration 9060). */
+  grupo: string | null;
   ligado: boolean;
+  /** Também lembra antes de cada horário (migration 9326). Opcional para dublês antigos: ausente = desligado. */
+  lembrar_antes?: boolean;
   atualizado_em: string;
 }
 
@@ -89,7 +93,7 @@ export async function lerEstadoDaTelaDoAvisoDeAgendamento(
 async function lerConfig(db: SupabaseClient, orgId: string): Promise<ConfigDoAvisoDeAgendamentoNaTela | null> {
   const { data, error } = await db
     .from("config_aviso_de_agendamento")
-    .select("usa_numero_do_aviso_de_caso, channel_session_id, telefone_destino, ligado, updated_at")
+    .select("usa_numero_do_aviso_de_caso, channel_session_id, telefone_destino, grupo_destino, ligado, lembrar_antes, updated_at")
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) {
@@ -100,7 +104,9 @@ async function lerConfig(db: SupabaseClient, orgId: string): Promise<ConfigDoAvi
     usa_numero_do_aviso_de_caso: boolean;
     channel_session_id: string | null;
     telefone_destino: string | null;
+    grupo_destino: string | null;
     ligado: boolean;
+    lembrar_antes: boolean | null;
     updated_at: string;
   } | null;
   if (!linha) return null;
@@ -108,7 +114,9 @@ async function lerConfig(db: SupabaseClient, orgId: string): Promise<ConfigDoAvi
     usa_numero_do_aviso_de_caso: linha.usa_numero_do_aviso_de_caso,
     channel_session_id: linha.channel_session_id,
     telefone: linha.telefone_destino,
+    grupo: linha.grupo_destino,
     ligado: linha.ligado,
+    lembrar_antes: linha.lembrar_antes === true,
     atualizado_em: linha.updated_at,
   };
 }

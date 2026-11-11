@@ -90,7 +90,10 @@ describe("a fiação do predicado (quem responde × quem pergunta)", () => {
     // uma instância por turno, não duas
     expect(fonte.match(/criarEfeitoDasEscrituras\(\)/g) ?? []).toHaveLength(1);
     // a ponte recebe o coletor nos DOIS modos (prévia e produção)
-    expect(fonte).toMatch(/preview \? \{ readOnly: true, efeitos: efeitosDoTurno \} : \{ readOnly: false, efeitos: efeitosDoTurno \}/);
+    // (a ponte também recebe as nativas do turno — `duplicata-nativa-some-do-turno-mcp.test.ts`)
+    expect(fonte).toMatch(
+      /preview\s*\?\s*\{ readOnly: true, efeitos: efeitosDoTurno, nativasDoTurno \}\s*:\s*\{ readOnly: false, efeitos: efeitosDoTurno, nativasDoTurno \}/,
+    );
     // o before-send recebe a leitura do MESMO coletor
     expect(fonte).toMatch(/registro: registroDoTurno\(\),/);
     // a prévia arma igual ao turno real (o motivo escrito em `preview.ts` para a agenda)

@@ -43,6 +43,14 @@ function mockAdmin(respostas: Record<string, { data: unknown; error: unknown }>)
         upsert: (v: unknown) => ((chamada.op = "upsert"), (chamada.valores = v), q),
         eq: (c: string, v: unknown) => (chamada.filtros.push([c, v]), q),
         is: (c: string, v: unknown) => (chamada.filtros.push([c, v]), q),
+        // (9062) O vínculo virou CONJUNTO: a rota confere as filas pedidas com
+        // `.in("id", …)` e remove o que sobrou com `.not("sector_id","in",…)`.
+        // Sem estes dois no dublê, o teste reprova por falta do método — e não
+        // por defeito da rota.
+        in: (c: string, v: unknown) => (chamada.filtros.push([c, v]), q),
+        not: (c: string, op: string, v: unknown) => (
+          chamada.filtros.push([`not.${c}`, `${op}${v}`]), q
+        ),
         maybeSingle: async () => resposta(),
         then: (resolve: (r: unknown) => void) => resolve(resposta()),
       };
@@ -77,32 +85,34 @@ describe("PUT /api/v1/attendants/sector/[user_id]", () => {
       response: new Response(null, { status: 403 }),
     } as never);
     const { PUT } = await import("./route");
-    const res = await PUT(put({ sector_id: SETOR }), ctx);
+    const res = await PUT(put({ sector_ids: [SETOR] }), ctx);
     expect(res.status).toBe(403);
     expect(vi.mocked(requireRole).mock.calls[0]?.[0]).toBe("manager");
   });
 
-  it("põe o atendente no setor, filtrando a org em toda leitura e gravando a org do cookie", async () => {
+  it("põe o atendente no setor, filtrando a org em toda leitura e gravando a org do cookie (N:N)", async () => {
     const chamadas = mockAdmin({
       "user_organizations:select": { data: { user_id: ALVO }, error: null },
       "attendant_sector_members:select": { data: null, error: null },
-      "attendant_sectors:select": { data: { id: SETOR }, error: null },
+      "attendant_sectors:select": { data: [{ id: SETOR }], error: null },
       "attendant_sector_members:upsert": { data: null, error: null },
     });
     const { PUT } = await import("./route");
-    const res = await PUT(put({ sector_id: SETOR }), ctx);
+    const res = await PUT(put({ sector_ids: [SETOR] }), ctx);
     expect(res.status).toBe(200);
-    expect((await res.json()).data).toEqual({ user_id: ALVO, sector_id: SETOR });
+    expect((await res.json()).data).toEqual({ user_id: ALVO, sector_ids: [SETOR] });
 
     for (const c of chamadas.filter((c) => c.op !== "upsert")) {
       expect(c.filtros).toContainEqual(["organization_id", ORG]);
     }
     const upsert = chamadas.find((c) => c.op === "upsert");
-    expect(upsert?.valores).toMatchObject({ organization_id: ORG, user_id: ALVO, sector_id: SETOR });
+    expect(upsert?.valores).toEqual([
+      expect.objectContaining({ organization_id: ORG, user_id: ALVO, sector_id: SETOR }),
+    ]);
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "attendant.sector_assigned",
-        metadata: expect.objectContaining({ from_sector_id: null, to_sector_id: SETOR }),
+        metadata: expect.objectContaining({ from_sector_ids: [], to_sector_ids: [SETOR] }),
       }),
     );
   });
@@ -113,7 +123,7 @@ describe("PUT /api/v1/attendants/sector/[user_id]", () => {
       "attendant_sectors:select": { data: null, error: null },
     });
     const { PUT } = await import("./route");
-    const res = await PUT(put({ sector_id: OUTRO_SETOR }), ctx);
+    const res = await PUT(put({ sector_ids: [OUTRO_SETOR] }), ctx);
     expect(res.status).toBe(404);
     expect(chamadas.some((c) => c.op === "upsert")).toBe(false);
     expect(vi.mocked(audit)).not.toHaveBeenCalled();
@@ -122,34 +132,34 @@ describe("PUT /api/v1/attendants/sector/[user_id]", () => {
   it("alvo que não é membro ativo vira 404", async () => {
     mockAdmin({ "user_organizations:select": { data: null, error: null } });
     const { PUT } = await import("./route");
-    const res = await PUT(put({ sector_id: SETOR }), ctx);
+    const res = await PUT(put({ sector_ids: [SETOR] }), ctx);
     expect(res.status).toBe(404);
   });
 
-  it("sector_id null tira do setor e audita a saída", async () => {
+  it("lista vazia tira do setor e audita a saída", async () => {
     const chamadas = mockAdmin({
       "user_organizations:select": { data: { user_id: ALVO }, error: null },
-      "attendant_sector_members:select": { data: { sector_id: SETOR }, error: null },
+      "attendant_sector_members:select": { data: [{ sector_id: SETOR }], error: null },
       "attendant_sector_members:delete": { data: null, error: null },
     });
     const { PUT } = await import("./route");
-    const res = await PUT(put({ sector_id: null }), ctx);
+    const res = await PUT(put({ sector_ids: [] }), ctx);
     expect(res.status).toBe(200);
     const apagou = chamadas.find((c) => c.op === "delete");
     expect(apagou?.filtros).toEqual([["organization_id", ORG], ["user_id", ALVO]]);
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: expect.objectContaining({ from_sector_id: SETOR, to_sector_id: null }) }),
+      expect.objectContaining({ metadata: expect.objectContaining({ from_sector_ids: [SETOR], to_sector_ids: [] }) }),
     );
   });
 
   it("repetir o mesmo setor não é mutação: não audita", async () => {
     mockAdmin({
       "user_organizations:select": { data: { user_id: ALVO }, error: null },
-      "attendant_sector_members:select": { data: { sector_id: SETOR }, error: null },
-      "attendant_sectors:select": { data: { id: SETOR }, error: null },
+      "attendant_sector_members:select": { data: [{ sector_id: SETOR }], error: null },
+      "attendant_sectors:select": { data: [{ id: SETOR }], error: null },
     });
     const { PUT } = await import("./route");
-    const res = await PUT(put({ sector_id: SETOR }), ctx);
+    const res = await PUT(put({ sector_ids: [SETOR] }), ctx);
     expect(res.status).toBe(200);
     expect(vi.mocked(audit)).not.toHaveBeenCalled();
   });
@@ -157,7 +167,7 @@ describe("PUT /api/v1/attendants/sector/[user_id]", () => {
   it("corpo inválido é recusado antes de tocar no banco", async () => {
     const chamadas = mockAdmin({});
     const { PUT } = await import("./route");
-    const res = await PUT(put({ sector_id: "nao-e-uuid" }), ctx);
+    const res = await PUT(put({ sector_ids: ["nao-e-uuid"] }), ctx);
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
     expect(chamadas).toHaveLength(0);

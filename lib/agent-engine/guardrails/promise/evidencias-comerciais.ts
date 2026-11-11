@@ -1,15 +1,31 @@
 /**
  * Evidências já consultadas pelo servidor NESTE turno. Não são uma lista de
  * exceções: o classificador continua lendo a candidata inteira e suas condições.
- * Não recebe histórico, notas do contato, prompt do agente ou argumentos de tool.
+ * Não recebe histórico, prompt do agente ou argumentos de tool. A origem
+ * `servidor_externo` é a exceção sobre dado do contato: o sistema de terceiro
+ * devolve o registro dele, e por isso o conteúdo passa pela redação de dado
+ * pessoal (`anonymize`) antes de ser guardado.
  */
 export interface EvidenciaComercial {
-  origem: "catalogo" | "conhecimento";
+  origem: OrigemDaEvidencia;
   referencia: string;
   titulo: string;
   conteudo: string;
 }
 
+/**
+ * `servidor_externo`: resultado de uma ferramenta do servidor MCP externo
+ * montada como LEITURA (`category: "read"` de `definirFerramentasRemotas`). É
+ * o sistema da empresa — a agenda, o pedido — consultado com a identidade do
+ * contato da conversa. Sustenta RELATAR o que ele registra (data, horário,
+ * situação); é registro consultado, nunca instrução nem política comercial, e
+ * não entra no material da organização (`materialDaOrganizacao`).
+ */
+export type OrigemDaEvidencia = "catalogo" | "conhecimento" | "servidor_externo";
+
+const ORIGENS: readonly OrigemDaEvidencia[] = ["conhecimento", "catalogo", "servidor_externo"];
+
+import { anonymize } from "@/lib/ai/anonymize";
 import { canonizarTipoDeFonte, type TipoDeFonteId } from "@/lib/ai/rag/tipos-de-fonte";
 import type { Queryable } from "../../queue/queue";
 
@@ -85,11 +101,12 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
   const fontes = new Set(fontesHabilitadas);
   const evidencias = new Map<string, EvidenciaComercial>();
 
-  function guardar(evidencia: EvidenciaComercial) {
+  /** `false` quando a evidência passa do teto e fica de fora. */
+  function guardar(evidencia: EvidenciaComercial): boolean {
     const chave = `${evidencia.origem}:${evidencia.referencia}`;
     evidencias.delete(chave);
     // Nunca cortar uma frase: a ressalva no fim pode mudar toda a autorização.
-    if (JSON.stringify(evidencia).length > MAX_POR_EVIDENCIA) return;
+    if (JSON.stringify(evidencia).length > MAX_POR_EVIDENCIA) return false;
     evidencias.set(chave, evidencia);
     const daOrigem = () =>
       [...evidencias.entries()].filter(([, e]) => e.origem === evidencia.origem);
@@ -101,6 +118,7 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
       if (primeira === undefined) break;
       evidencias.delete(primeira);
     }
+    return true;
   }
 
   function registrarConhecimento(resultado: unknown) {
@@ -147,9 +165,42 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
     }
   }
 
+  let consultasRemotas = 0;
+
+  /**
+   * Só retornos bem-sucedidos (`{ texto, dados? }` de `definirFerramentasRemotas`).
+   * Erro do servidor, recusa de escopo e resultado vazio não viram evidência.
+   * `dados` em lista vira uma evidência por item: a agenda com vários horários
+   * não cai inteira no teto de uma evidência. Item acima do teto é descartado
+   * inteiro, como nas outras origens (cortar poderia esconder a ressalva do
+   * fim), e o tamanho de cada descarte volta a quem chamou, para o log do turno.
+   */
+  function registrarLeituraRemota(nome: string, resultado: unknown): number[] {
+    const r = objeto(resultado);
+    if (!r || r.error || r.erro || r.ok === false || r.permitido === false) return [];
+    const temDados = r.dados !== undefined && r.dados !== null;
+    const partes = !temDados ? [r.texto] : Array.isArray(r.dados) ? r.dados : [r.dados];
+    consultasRemotas += 1;
+    const descartadas: number[] = [];
+    partes.forEach((parte, i) => {
+      const bruto =
+        typeof parte === "string" ? texto(parte) : parte == null ? null : JSON.stringify(parte);
+      if (!bruto) return;
+      const evidencia: EvidenciaComercial = {
+        origem: "servidor_externo",
+        referencia: `${nome}:${consultasRemotas}${partes.length > 1 ? `.${i + 1}` : ""}`,
+        titulo: `Consulta ao sistema externo: ${nome}`,
+        conteudo: anonymize(bruto).anonymized,
+      };
+      if (!guardar(evidencia)) descartadas.push(JSON.stringify(evidencia).length);
+    });
+    return descartadas;
+  }
+
   return {
     registrarConhecimento,
     registrarCatalogo,
+    registrarLeituraRemota,
     // Relevância escolhe o CONTEXTO, nunca concede autorização. O classificador
     // recebe os trechos completos, inclusive condições/negações, e decide.
     ler: (candidata = ""): EvidenciaComercial[] => {
@@ -183,7 +234,7 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
       // Reserva mínima para cada origem: política e produto complementam-se.
       // O restante segue a relevância global, sem duplicar ou truncar itens.
       for (let i = 0; i < 3; i++)
-        for (const origem of ["conhecimento", "catalogo"] as const) {
+        for (const origem of ORIGENS) {
           const item = ordenadas.filter(({ e }) => e.origem === origem)[i];
           if (item) adicionar(item.e);
         }
@@ -193,5 +244,9 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
     // Inclui também itens fora do pacote selecionado: uma consulta pode mudar
     // qual item é pertinente à mesma candidata. Usado só no memo do turno.
     contexto: (): string => JSON.stringify([...evidencias.values()]),
+    // O que a ORGANIZAÇÃO escreveu ou cadastrou, para o lastro de concessão. O
+    // registro do servidor externo fica fora: ele relata, não autoriza.
+    materialDaOrganizacao: (): string =>
+      JSON.stringify([...evidencias.values()].filter((e) => e.origem !== "servidor_externo")),
   };
 }

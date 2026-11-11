@@ -74,7 +74,11 @@ describe("0087 · o canal da sessão chega ao clone", () => {
     // As três `meta_webhook_override_*` (migration 0311) entraram de propósito: são o
     // desfecho do registro do webhook do número ao conectar o canal oficial. A cerca
     // continua valendo — ela existe para pegar coluna que entrou SEM querer.
+    // `meta_connection_origin` (migration 9328, #4074) entra de propósito: registra
+    // se a conexão nasceu do Embedded Signup ou de token colado à mão. A cerca
+    // continua valendo — é ela que pega coluna `meta_*` que apareça SEM intenção.
     expect(cols).toEqual([
+      "meta_connection_origin",
       "meta_phone_number_id",
       "meta_token_encrypted",
       "meta_waba_id",
@@ -110,7 +114,7 @@ describe("0087 · o canal da sessão chega ao clone", () => {
 
   it("provider fora do vocabulário é RECUSADO", () => {
     // A sonda usava `'telegram'` enquanto o Telegram não era provider nenhum.
-    // Desde a #3440 ele É (migration 0810), e a sonda passou a medir o
+    // Desde a #3440 ele É (migration 9342), e a sonda passou a medir o
     // contrário do que o nome do caso diz: um valor que o CHECK agora ACEITA.
     // O literal virou `'canal_inexistente'` — o caso continua sendo "valor
     // fora do vocabulário", que é o invariante, e não "o Telegram é recusado".

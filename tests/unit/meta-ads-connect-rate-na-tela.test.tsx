@@ -29,6 +29,8 @@ function linha(ajustes: Partial<LinhaDeCampanha> = {}): LinhaDeCampanha {
     status: "ACTIVE",
     veiculacao: "ACTIVE",
     objetivo: "OUTCOME_LEADS",
+    criadaEm: "2026-03-02T08:15:00+0000",
+    iniciadaEm: "2026-03-03T08:15:00+0000",
     resultado: {
       valor: 13,
       custoPorResultado: 28.05,
@@ -53,15 +55,16 @@ function rotulosDasColunas(): string[] {
 }
 
 describe("Connect rate na tela", () => {
-  it("nasce entre o CTR e a Frequência, e a tabela fica com 15 colunas", () => {
+  it("nasce entre o CTR e a Frequência, e a tabela fica com 16 colunas", () => {
     render(<TabelaDeCampanhas linhas={[linha()]} moeda="BRL" />);
 
     const rotulos = rotulosDasColunas();
     // A coluna nova não empurrou nenhuma vizinha para fora.
-    expect(rotulos).toHaveLength(15);
-    expect(rotulos[10]).toBe("Connect rate");
-    expect(rotulos[9]).toBe("CTR");
-    expect(rotulos[11]).toBe("Frequência");
+    // 16 desde a coluna "Início" (#3911), logo depois da Veiculação.
+    expect(rotulos).toHaveLength(16);
+    expect(rotulos[11]).toBe("Connect rate");
+    expect(rotulos[10]).toBe("CTR");
+    expect(rotulos[12]).toBe("Frequência");
   });
 
   it("leva a fórmula no `title`, como o Hook Rate leva o numerador", () => {
@@ -87,9 +90,9 @@ describe("Connect rate na tela", () => {
     if (!corpo) throw new Error("esperava a linha da campanha");
     const celulas = within(corpo).getAllByRole("cell");
 
-    // Campanha, Status, Veiculação, Resultado, Custo por Resultado, Valor Gasto,
-    // Impressões, Alcance, CPM, CTR → o Connect rate é a décima primeira.
-    expect(celulas[10]?.textContent).toBe("—");
+    // Campanha, Status, Veiculação, Início, Resultado, Custo por Resultado,
+    // Valor Gasto, Impressões, Alcance, CPM, CTR → o Connect rate é a décima segunda.
+    expect(celulas[11]?.textContent).toBe("—");
     expect(within(corpo).queryByText("0,00%")).toBeNull();
   });
 });

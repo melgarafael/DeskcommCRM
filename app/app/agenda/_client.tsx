@@ -13,27 +13,36 @@ import { addDays, format, startOfDay, startOfMonth, startOfWeek } from "date-fns
 import * as React from "react";
 
 import { AvisoDaConexaoGoogle } from "./_components/AvisoDaConexaoGoogle";
+import { CamadaDatasDosNegocios } from "./_components/CamadaDatasDosNegocios";
 import { CartaoDaConexaoGoogle } from "./_components/CartaoDaConexaoGoogle";
 
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
+import { PainelDoDia } from "@/components/agenda/PainelDoDia";
 import { ReservasColetivas } from "@/components/agenda/ReservasColetivas";
 import { FiltroDePessoas } from "@/components/agenda/FiltroDePessoas";
 import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import {
+  MAXIMO_DE_CONVIDADOS_DA_EQUIPE,
+  equipeParaSalvar,
+  estaNaAgendaDe,
+} from "@/lib/agenda/convidados-da-equipe";
 import { duracaoEscolhidaValida } from "@/lib/agenda/duracao-escolhida";
 import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
-import { recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
+import { quadroDisponivel } from "@/lib/agenda/quadro-por-profissional";
+import { diasDoRecorte, recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
 import { useVinculoDaMarcacao } from "@/lib/agenda/vinculo-da-marcacao";
 import { Button } from "@/components/ui/button";
 import { PainelDeMarcacao } from "@/components/agenda/PainelDeMarcacao";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAgendamentos } from "@/hooks/agenda/useAgendamentos";
+import { useFechamentosDaGrade } from "@/hooks/agenda/useFechamentosDaGrade";
 import { useHorariosLivres } from "@/hooks/agenda/useHorariosLivres";
 import { useMarcarAgendamento } from "@/hooks/agenda/useMarcarAgendamento";
 import {
@@ -43,12 +52,17 @@ import {
 } from "@/hooks/agenda/useRemarcarAgendamento";
 import { usePessoasDaAgenda } from "@/hooks/agenda/usePessoasDaAgenda";
 import { CalendarPlus, CaretLeft, CaretRight } from "@/lib/ui/icons";
+import type { FunilComDatas } from "@/lib/agenda/datas-dos-negocios";
 import { cn } from "@/lib/utils";
 
 const VISOES: Array<{ id: VisaoDaAgenda; rotulo: string }> = [
   { id: "dia", rotulo: "Dia" },
   { id: "semana", rotulo: "Semana" },
   { id: "mes", rotulo: "Mês" },
+  // UMA LINHA POR PROFISSIONAL, o dia na horizontal (#4186). É uma visão da
+  // MESMA agenda, não uma tela à parte: mesmos compromissos, mesmos filtros,
+  // mesma navegação de um dia por vez.
+  { id: "quadro", rotulo: "Quadro" },
 ];
 
 /**
@@ -90,6 +104,7 @@ export function AgendaClient({
   tiposIniciais,
   agendamentosIniciais,
   podeMarcar,
+  funisComDatas,
 }: {
   tituloDaAgenda?: string | null;
   /**
@@ -142,6 +157,15 @@ export function AgendaClient({
    * fechar. Esconder aqui é cortesia: quem decide segue sendo a rota.
    */
   podeMarcar: boolean;
+  /**
+   * Os funis que declaram campo de data do negócio — a matéria-prima da camada
+   * "Datas dos negócios" (#3221), resolvida no servidor.
+   *
+   * Opcional e não obrigatória de propósito: instalação que não usa campo de
+   * data não tem o que oferecer, e a ausência da prop é o mesmo que a lista
+   * vazia — a camada não aparece e a tela fica idêntica à de antes.
+   */
+  funisComDatas?: FunilComDatas[];
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -178,9 +202,43 @@ export function AgendaClient({
     },
     [podeMarcar, registrarVinculoDaRota],
   );
+  /**
+   * OS CONVIDADOS DA EQUIPE (#4006).
+   *
+   * Ids de pessoas DESTA organização, além do responsável e do e-mail digitado.
+   * É o que resolve o caso da issue: a SDR marca, o closer é o responsável, e o
+   * gestor (ou um especialista) também precisa entrar — hoje ele não vê o
+   * compromisso em lugar nenhum.
+   *
+   * A lista sai de `usePessoasDaAgenda`, a MESMA fonte da barra de pessoas: não
+   * há uma segunda lista de "quem existe nesta organização" para divergir.
+   *
+   * Declaradas ANTES de `abrirMarcacao` porque ele zera as duas ao abrir um
+   * painel novo: ler um `setState` declarado depois é erro de lint (e o valor
+   * lido seria o da renderização anterior).
+   */
+  const [convidadosDaEquipe, setConvidadosDaEquipe] = React.useState<string[]>([]);
+  /**
+   * A EQUIPE QUE O COMPROMISSO JÁ TINHA quando o painel abriu (#4006).
+   *
+   * Só existe para o diff do PATCH: remarcar manda `starts_at` sempre, e se a
+   * lista fosse junto por omissão o compromisso perderia a equipe inteira com
+   * um 200 na resposta. `equipeParaSalvar` compara com esta foto e devolve
+   * `undefined` quando ninguém foi mexido — e `[]` quando a pessoa tirou todo
+   * mundo, que é edição legítima e tem de chegar ao banco.
+   *
+   * Na marcação nova nasce vazia: não há anterior com que comparar, e a lista
+   * escolhida é a própria diferença.
+   */
+  const [equipeAoAbrir, setEquipeAoAbrir] = React.useState<string[]>([]);
   /** Abrir o painel do zero: o vínculo volta a ser o da rota, nunca o da vez anterior. */
   const abrirMarcacao = React.useCallback(() => {
     reiniciarVinculo();
+    // A equipe também volta ao zero: sem isto, os convidados de um compromisso
+    // remarcado antes continuariam marcados numa marcação NOVA — e seriam
+    // convidados sem ninguém ter escolhido (#4006).
+    setConvidadosDaEquipe([]);
+    setEquipeAoAbrir([]);
     setMarcando(true);
   }, [reiniciarVinculo]);
   // O horário que veio de um CLIQUE NA GRADE. Preenchido, o painel abre já em
@@ -199,6 +257,10 @@ export function AgendaClient({
   // do Google quando existe. Este campo é a outra pessoa (acompanhante).
   // Vazio = só o cliente (se tiver e-mail) ou só a agenda do atendente.
   const [emailConvidado, setEmailConvidado] = React.useState("");
+  const alternarConvidadoDaEquipe = (id: string) =>
+    setConvidadosDaEquipe((antes) =>
+      antes.includes(id) ? antes.filter((x) => x !== id) : [...antes, id],
+    );
   const emailConvidadoLimpo = emailConvidado.trim();
   // A MESMA pergunta que a rota faz, feita aqui só para não gastar um 422 com
   // uma letra faltando no domínio. A rota continua sendo a dona da recusa — esta
@@ -210,6 +272,19 @@ export function AgendaClient({
   // vazia) = a pessoa editou, e o tipo novo não pode devolver o que ela apagou.
   const [enderecoEditado, setEnderecoEditado] = React.useState<string | null>(null);
   const [observacao, setObservacao] = React.useState("");
+  /**
+   * O TÍTULO LIVRE DO COMPROMISSO (#3766) — a agenda também serve para
+   * atendimento externo, e "OS 1234" ou "Atendimento fulano" é o que quem olha
+   * a grade precisa ler.
+   *
+   * ⚠️ A COLUNA JÁ EXISTIA (`calendar_appointments.title`), e a rota já a
+   * aceitava: o que faltava era o CAMPO. Vazio manda `undefined`, e aí a
+   * decisão de hoje continua valendo — `title: input.title ?? tipo.name`, num
+   * lugar só (`app/api/v1/agenda/agendamentos/_handler.ts:508`). É de propósito
+   * que a tela NÃO repita o nome do tipo: duas cópias da mesma regra divergem
+   * na primeira vez que alguém mudar uma delas.
+   */
+  const [tituloLivre, setTituloLivre] = React.useState("");
   const marcar = useMarcarAgendamento();
   const remarcar = useRemarcarAgendamento();
   const cancelar = useCancelarAgendamento();
@@ -263,7 +338,7 @@ export function AgendaClient({
     [busca, caminho],
   );
   const endereco = enderecoEditado ?? tipo?.localDetalhes ?? "";
-  const [visao, setVisao] = React.useState<VisaoDaAgenda>("semana");
+  const [visaoEscolhida, setVisao] = React.useState<VisaoDaAgenda>("semana");
   /**
    * No CELULAR a agenda abre no DIA, não na semana.
    *
@@ -285,6 +360,23 @@ export function AgendaClient({
     if (window.matchMedia("(max-width: 767px)").matches) setVisao("dia");
   }, []);
   const [isolada, setIsolada] = React.useState<string | null>(null);
+  /**
+   * QUEM ATENDE a marcação aberta por um clique no QUADRO (#4186).
+   *
+   * No quadro, a linha clicada diz o profissional — e ele nem sempre é o
+   * isolado no filtro (com "Todos", ninguém está isolado). Sem isto o painel
+   * abria com o dono do tipo, oferecia a jornada dele e gravava na agenda dele:
+   * o mesmo defeito que o #4219 fechou para o filtro, reaberto pelo quadro.
+   * Vale só para a marcação aberta pelo quadro; qualquer outra porta o zera.
+   */
+  const [profissionalDoClique, setProfissionalDoClique] = React.useState<string | null>(null);
+  const donoDaMarcacao = profissionalDoClique ?? isolada;
+  // Fechou o painel, o profissional do clique morre junto: a próxima marcação
+  // (pelo botão, pela grade, pela conversa) volta a seguir o filtro.
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- zerar ao fechar É o ponto: o painel fecha por vários caminhos e todos precisam esquecer a linha clicada.
+    if (!marcando) setProfissionalDoClique(null);
+  }, [marcando]);
   /**
    * A ÂNCORA NASCE DO RELÓGIO DA ORGANIZAÇÃO, não do navegador.
    *
@@ -317,6 +409,15 @@ export function AgendaClient({
   // para entender o 403 do Atendente precisa saber que ele JÁ não existe, e um
   // comentário que afirma o contrário é o defeito de novo.
   const { data: pessoas = [] } = usePessoasDaAgenda();
+
+  // O QUADRO SÓ APARECE COM DOIS OU MAIS PROFISSIONAIS COM AGENDA (doc 307). A
+  // conta sai da MESMA lista do filtro de pessoas. Se a escolha "quadro" ficar
+  // órfã — a equipe encolheu com a tela aberta, ou a lista ainda não chegou —,
+  // a tela mostra a visão padrão em vez de um quadro de uma linha só. A escolha
+  // não é apagada: quando a lista volta a ter dois, o quadro volta sozinho.
+  const temQuadro = quadroDisponivel(pessoas.length);
+  const visao: VisaoDaAgenda =
+    visaoEscolhida === "quadro" && !temQuadro ? "semana" : visaoEscolhida;
 
   // A JANELA ACOMPANHA O MÊS QUE O PAINEL MOSTRA.
   //
@@ -391,6 +492,12 @@ export function AgendaClient({
     return { de: de.toISOString(), ate: ate.toISOString() };
   }, [visao, ancora]);
 
+  // A JANELA DA CAMADA "Datas dos negócios" (#3221): os dias que a grade
+  // desenha, na mesma leitura das colunas dela. A âncora já é o dia da
+  // organização; converter de novo deslocaria um dia para quem abre a Agenda de
+  // outro fuso.
+  const janelaDaCamada = React.useMemo(() => diasDoRecorte(visao, ancora), [visao, ancora]);
+
   // A janela que o SERVIDOR pintou. Sem esta comparação, navegar para outra
   // semana mostraria os compromissos DESTA por um instante — o fallback estaria
   // respondendo a uma pergunta que ninguém fez. Cair para lista vazia é pior de
@@ -414,7 +521,7 @@ export function AgendaClient({
     agendamentosVivos ?? (naJanelaDoServidor ? agendamentosIniciais : []);
 
   const agendamentos = React.useMemo(
-    () => (isolada === null ? todos : todos.filter((a) => a.responsavelId === isolada)),
+    () => (isolada === null ? todos : todos.filter((a) => estaNaAgendaDe(a, isolada))),
     [isolada, todos],
   );
 
@@ -449,6 +556,11 @@ export function AgendaClient({
     marcando && tipo
       ? {
           event_type_id: tipo.id,
+          // O PROFISSIONAL ISOLADO MANDA NA CONSULTA (#4186). Sem isto, isolar a
+          // Ana mostrava os blocos dela e oferecia os horários da jornada do dono
+          // do tipo — e o POST, que também passa a levar o dono, seria recusado
+          // pelo motor por um horário que ele nunca ofereceu.
+          owner_user_id: donoDaMarcacao ?? undefined,
           de: janelaDeBusca.de,
           ate: janelaDeBusca.ate,
           // A DURAÇÃO ENTRA NA CONSULTA (#3709): quem decide o que está livre é
@@ -489,6 +601,16 @@ export function AgendaClient({
   const agendamentosDaGrade = React.useMemo(
     () => agendamentos.filter((a) => a.situacao !== "cancelled"),
     [agendamentos],
+  );
+
+  // As faixas FECHADAS em "Dias fora da rotina" — e pela MESMA pessoa isolada que
+  // os agendamentos: isolar a Ana e ver o fechamento do Bruno faria a grade dela
+  // parecer fechada sem estar.
+  const { data: fechamentosVivos } = useFechamentosDaGrade(recorteDaGrade, fusoDaAgenda);
+  const fechamentosDaGrade = React.useMemo(
+    () =>
+      (fechamentosVivos ?? []).filter((f) => isolada === null || f.responsavelId === isolada),
+    [fechamentosVivos, isolada],
   );
 
   /**
@@ -682,7 +804,7 @@ export function AgendaClient({
             data-testid="alternador-de-visao"
             className="flex items-center gap-0.5 rounded-md border border-border bg-surface p-0.5"
           >
-            {VISOES.map((v) => (
+            {VISOES.filter((v) => v.id !== "quadro" || temQuadro).map((v) => (
               <button
                 key={v.id}
                 type="button"
@@ -713,6 +835,33 @@ export function AgendaClient({
       </div>
 
       {/*
+        A CAMADA "DATAS DOS NEGÓCIOS" (#3221) — acima da grade, e não dentro
+        dela.
+
+        ─── Por que acima, e não dentro das células ──────────────────────────
+
+        A grade é uma tabela de HORAS × PESSOAS: cada célula é um instante, e o
+        que mora nela é compromisso com começo e fim. Um embarque não tem hora —
+        ele é um DIA —, e enfiá-lo numa célula de hora obrigaria a escolher uma
+        hora que ninguém marcou (09:00? a primeira livre?) e a fazê-lo parecer
+        um compromisso, que é justamente o que a camada promete NÃO ser: ela não
+        ocupa horário livre, não entra em `crm_find_free_slots` e não manda
+        lembrete.
+
+        ─── O que ela NÃO muda no resto da tela ──────────────────────────────
+
+        Desligada (o padrão), ela é um interruptor sem corpo: `agendamentos` da
+        grade continua sendo exatamente a mesma lista, nenhuma busca sai, e
+        nenhum item é desenhado. É o que o teste de controle mede comparando a
+        região da grade com e sem a camada.
+
+        Sem funil com campo de data a prop vem vazia e o componente devolve
+        `null` — nesse caso a tela não muda um byte em relação à de antes desta
+        entrega.
+      */}
+      <CamadaDatasDosNegocios funis={funisComDatas ?? []} janela={janelaDaCamada} />
+
+      {/*
         O HISTÓRICO na tela do produto, e não só na vitrine. Ele aparece mesmo
         sem dado: as quatro abas com contador zero respondem "não há nada" sem
         gastar um clique, e some-lo faria a tela parecer menor do que é.
@@ -734,6 +883,11 @@ export function AgendaClient({
             setEmailConvidado("");
             setEnderecoEditado(null);
             setObservacao("");
+            // O título livre digitado e não usado é o mesmo caso do convidado:
+            // reapareceria na marcação seguinte, que é de OUTRO atendimento —
+            // e um título que não corresponde ao compromisso é pior que um
+            // genérico, porque parece de propósito.
+            setTituloLivre("");
             // E o próprio cliente, que é o pior dos quatro a sobrar: medido numa
             // instalação real em 2026-09-12, "Novo agendamento" abriu com um
             // contato JÁ selecionado, herdado de uma abertura anterior feita a
@@ -848,6 +1002,40 @@ export function AgendaClient({
                 </div>
               </div>
             )}
+            {!remarcandoId ? (
+              /*
+                O TÍTULO LIVRE (#3766) — opcional, e por isso vem ANTES dos
+                outros campos opcionais: é o que a grade mostra no bloco.
+
+                Sem texto, o corpo do POST sai sem `title` e a rota grava o
+                nome do tipo, como sempre. Com texto, é ELE o título do
+                compromisso na grade, no histórico, no evento do Google e
+                no lembrete que vai ao cliente (`montarLembrete` usa `title`).
+              */
+              <div className="lg:col-span-2">
+                <label className="block" htmlFor="titulo-do-compromisso">
+                  {t("Título do compromisso")}{" "}
+                  <span className="font-normal opacity-70">({t("opcional")})</span>
+                </label>
+                <input
+                  id="titulo-do-compromisso"
+                  data-testid="titulo-do-compromisso"
+                  type="text"
+                  autoComplete="off"
+                  // 200 é o teto do schema da rota (`marcarSchema`): o mesmo
+                  // número aqui evita um 422 por uma letra a mais.
+                  maxLength={200}
+                  value={tituloLivre}
+                  onChange={(e) => setTituloLivre(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-border bg-surface p-2 outline-hidden focus:border-border-strong"
+                  placeholder={t("OS 1234 · Atendimento fulano")}
+                  aria-describedby="ajuda-do-titulo"
+                />
+                <p id="ajuda-do-titulo" className="mt-1 text-xs text-text-muted">
+                  {t("Aparece na agenda e também para o cliente, no lembrete e no convite. Em branco, usa o nome do tipo de agendamento.")}
+                </p>
+              </div>
+            ) : null}
             {/*
               O CONVIDADO — opcional. O e-mail da ficha do cliente já entra no
               convite do Google; este campo é para outra pessoa (acompanhante).
@@ -892,6 +1080,61 @@ export function AgendaClient({
                     )}
               </p>
             </div>
+            {/*
+              A EQUIPE (#4006) — o seletor mínimo, logo abaixo do e-mail digitado
+              e pela mesma razão: quem participa se decide ANTES do horário.
+
+              Também na REMARCAÇÃO (o "editar" desta tela): ao abrir, a lista é
+              preenchida com a equipe que o compromisso já tem, e o PATCH leva
+              só a diferença (`equipeParaSalvar`). Mandar a lista por omissão
+              desconvidaria todo mundo a cada remarcação com um 200 mudo; mandar
+              a foto inteira faria o Google republicar o evento sem motivo.
+
+              Nem num SERVIÇO: a reserva não grava a equipe e a rota recusa
+              `agenda_equipe_no_servico`.
+            */}
+            {!tipo?.servico ? (
+              <fieldset>
+                <legend className="block">
+                  {t("Equipe no compromisso")}{" "}
+                  <span className="font-normal opacity-70">({t("opcional")})</span>
+                </legend>
+                <p className="mt-1 text-xs text-text-muted">
+                  {t(
+                    "O responsável já recebe o convite. Marque quem mais precisa participar: cada pessoa vê o compromisso na própria agenda.",
+                  )}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2" data-testid="convidados-da-equipe">
+                  {pessoas.map((pessoa) => {
+                    const marcada = convidadosDaEquipe.includes(pessoa.id);
+                    const cheio =
+                      !marcada && convidadosDaEquipe.length >= MAXIMO_DE_CONVIDADOS_DA_EQUIPE;
+                    return (
+                      <label
+                        key={pessoa.id}
+                        className={cn(
+                          "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3 py-1 text-xs lg:min-h-0",
+                          marcada
+                            ? "border-border-strong bg-surface-elevated"
+                            : "border-border bg-surface",
+                          cheio && "cursor-not-allowed opacity-50",
+                        )}
+                        title={cheio ? t("O convite cabe em até 20 pessoas da equipe.") : undefined}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={marcada}
+                          disabled={cheio}
+                          onChange={() => alternarConvidadoDaEquipe(pessoa.id)}
+                        />
+                        {pessoa.nome}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ) : null}
             {!remarcandoId ? (
               <>
                 <EnderecoDaMarcacao value={endereco} onChange={setEnderecoEditado} />
@@ -925,14 +1168,22 @@ export function AgendaClient({
                 agora={new Date()}
                 responsavel={
                   // O DONO DO TIPO, não o primeiro da lista. A tela dizia "com
-                  // <primeira pessoa>" enquanto oferecia a jornada de outra —
-                  // e marcava na agenda da primeira, que não tinha jornada.
+                  // <primeira pessoa>" enquanto oferecia a jornada de outra — e
+                  // marcava na agenda da primeira, que não tinha jornada.
+                  //
+                  // Com um profissional ISOLADO no filtro, é ele — a pergunta da
+                  // tela é a agenda dele (#4186); `isoladaId` entra na frente.
                   //
                   // "Você" só quando o dono da agenda É quem está logado. A
                   // regra está em `lib/agenda/responsavel-do-painel.ts`: com a
                   // lista da equipe vazia (o 403 do item 1 da issue 896) este
                   // fallback dizia "Você" para a jornada de OUTRA pessoa.
-                  resolverResponsavelDoPainel({ pessoas, donoId: tipo.donoId, usuarioId })
+                  resolverResponsavelDoPainel({
+                    pessoas,
+                    donoId: tipo.donoId,
+                    usuarioId,
+                    isoladaId: donoDaMarcacao,
+                  })
                 }
                 tipo={tipo.nome}
                 tipoId={tipo.id}
@@ -982,11 +1233,12 @@ export function AgendaClient({
                 // ESTE é o fio que faltava. Sem ele o "Marcado ✓" era estado
                 // local do React e nenhuma linha nascia no banco.
                 onConfirmar={(instante, duracaoDoAtendimento) => {
-                  // ⚠️ SEM `owner_user_id`, e é isto que conserta o 422.
+                  // ⚠️ SEM `owner_user_id` — EXCETO quando há profissional isolado
+                  // no filtro (#4186), e aí ele vai.
                   //
                   // Isto mandava `pessoas[0]?.id` — a PRIMEIRA pessoa da lista.
                   // Os horários oferecidos vêm de `useHorariosLivres`, que NÃO
-                  // manda dono, então a rota resolve `tipo.default_owner_user_id`.
+                  // mandava dono, então a rota resolvia `tipo.default_owner_user_id`.
                   // A tela oferecia a agenda de um e marcava na de outro: medido
                   // nesta org, 5 pessoas e só o dono do tipo com jornada, e o POST
                   // devolvia `agenda_disponibilidade_invalida` ("expected object,
@@ -994,6 +1246,12 @@ export function AgendaClient({
                   //
                   // Omitir é o que faz oferta e marcação resolverem o dono pela
                   // MESMA regra (`_handler.ts:96`), por construção e não por sorte.
+                  // Isolar uma pessoa não quebra essa igualdade: a consulta de
+                  // horários passou a levar `owner_user_id: isolada` junto (ver
+                  // acima), então oferta e escrita continuam falando do MESMO
+                  // profissional — o isolado. Sem isolamento, `isolada` é `null`
+                  // e o campo fica FORA do corpo, como era.
+                  //
                   // Remarcar é PATCH com o id; marcar é POST. A escolha do
                   // horário é o mesmo gesto, e por isso o mesmo painel.
                   // Recusa ANTES da rede: o painel já pintou "Marcado ✓" quando
@@ -1013,11 +1271,25 @@ export function AgendaClient({
                         revision: agendamentos.find((a) => a.id === remarcandoId)?.revision,
                         starts_at: instante,
                         guest_email: convidado,
+                        // SÓ A DIFERENÇA (#4006): `undefined` não mexe na lista,
+                        // `[]` tira todo mundo. Sem o diff, o `starts_at` que
+                        // todo salvamento manda levaria a equipe junto, e
+                        // remarcar desconvidaria quem só queria outro horário.
+                        // Quem saiu da organização não aparece no seletor e
+                        // não pode ser tirado à mão: ao editar, o id dele não
+                        // é reenviado (a rota recusaria a lista com 422).
+                        team_guest_user_ids: equipeParaSalvar(
+                          equipeAoAbrir,
+                          convidadosDaEquipe,
+                          pessoas.map((pessoa) => pessoa.id),
+                        ),
                       })
                       .then((r) => {
                         setRemarcandoId(null);
                         setMarcando(false);
                         setEmailConvidado("");
+                        setConvidadosDaEquipe([]);
+                        setEquipeAoAbrir([]);
                         setEnderecoEditado(null);
                         setObservacao("");
                         return r;
@@ -1026,6 +1298,9 @@ export function AgendaClient({
                   return marcar
                     .mutateAsync({
                       event_type_id: tipo.id,
+                      // O profissional isolado no filtro (#4186) — `null` = todos,
+                      // e aí o campo fica fora do corpo (o 422 de #3709).
+                      owner_user_id: donoDaMarcacao ?? undefined,
                       contact_id: contactId || undefined,
                       conversation_id: conversationId || undefined,
                       starts_at: instante,
@@ -1038,13 +1313,30 @@ export function AgendaClient({
                       // publicada e a rota recusa qualquer duration_minutes ali.
                       duration_minutes: tipo.servico ? undefined : duracaoDoAtendimento,
                       guest_email: convidado,
+                      // `undefined` (e não `[]`) quando ninguém foi marcado: é o
+                      // que mantém o caminho de sempre idêntico, sem depender de
+                      // a coluna ter default no banco. Num serviço também não
+                      // vai: quem marcou e depois trocou para um serviço não vê
+                      // mais os botões, e a rota recusaria a lista.
+                      team_guest_user_ids:
+                        convidadosDaEquipe.length && !tipo.servico
+                          ? convidadosDaEquipe
+                          : undefined,
                       location_details: endereco.trim(),
                       description: observacao.trim() || undefined,
+                      // TÍTULO LIVRE (#3766): digitado, é ele o `title` da
+                      // linha; vazio fica FORA do corpo e a rota grava o nome
+                      // do tipo (`_handler.ts:508`). `|| undefined` e não `""`:
+                      // a rota exige `min(1)` e string vazia seria 422 — a
+                      // tela estaria recusando o caminho de sempre.
+                      title: tituloLivre.trim() || undefined,
                     })
                     .then((r) => {
                       setEmailConvidado("");
+                      setConvidadosDaEquipe([]);
                       setEnderecoEditado(null);
                       setObservacao("");
+                      setTituloLivre("");
                       // Guardado para o fechamento saber para onde levar a grade.
                       setMarcadoEm(instante);
                       return r;
@@ -1192,6 +1484,13 @@ export function AgendaClient({
         // "Disponível quando a agenda estiver conectada", que é falso: PATCH e
         // DELETE não tocam o Google. Só a IA conseguia remarcar ou cancelar.
         onRemarcar={(id) => {
+          // A equipe que o compromisso JÁ tem entra no seletor: editar é ver o
+          // que está lá, não uma tela em branco que desconvidaria todo mundo no
+          // primeiro salvamento (#4006). A foto fica guardada para o diff.
+          const alvo = agendamentos.find((a) => a.id === id);
+          const equipe = alvo?.convidadosDaEquipe ?? [];
+          setEquipeAoAbrir(equipe);
+          setConvidadosDaEquipe(equipe);
           setRemarcandoId(id);
           setMarcando(true);
         }}
@@ -1253,6 +1552,15 @@ export function AgendaClient({
           <EmptyAgenda />
         </div>
       ) : null}
+      {/* O PAINEL DO DIA (#4029, saída 3) — leitura, só na visão de dia.
+          Ele responde "quantas reservas, quantas pessoas esperadas e quantas
+          confirmadas" por turma, num lugar só; confirmar/remarcar continuam no
+          card da reserva. Só existe na visão de DIA porque o número é do dia:
+          numa semana, "total do dia" seria uma linha por dia e o resumo deixaria
+          de responder a pergunta que o painel existe para responder. */}
+      {visao === "dia" && tiposIniciais.some((tipo) => tipo.servicoColetivo) ? (
+        <PainelDoDia dia={diaLocalISO(ancora, fusoDaAgenda)} fuso={fusoDaAgenda} />
+      ) : null}
       {/* A GRADE INTERATIVA — clicar num bloco livre marca ali, arrastar um card
           remarca. Toda a fiação (a consulta de horários da janela desenhada, a
           proposta de remarcação, o otimismo com volta atrás) mora em
@@ -1264,9 +1572,13 @@ export function AgendaClient({
         agora={new Date()}
         pessoas={pessoas}
         agendamentos={agendamentosDaGrade}
+        fechamentos={fechamentosDaGrade}
         recorte={recorteDaGrade}
         tipos={tiposIniciais.map((t) => ({ id: t.id, nome: t.nome, duracaoMin: t.duracaoMin }))}
         tipo={tipo ? { id: tipo.id, duracaoMin: tipo.duracaoMin } : null}
+        // O filtro governa também a disponibilidade que a grade pinta (#4186):
+        // com a Ana isolada, os blocos "livres" são os da jornada dela.
+        donoId={isolada}
         onEscolherTipo={escolherTipo}
         // SEGUNDA PORTA: o clique num bloco livre da grade. Sem `onMarcarEm`, a
         // `AgendaInterativa` não monta a interação, e a grade volta a ser o que
@@ -1282,9 +1594,27 @@ export function AgendaClient({
                   rotulo: format(dataDeParede(new Date(instante), fusoDaAgenda), "HH:mm"),
                 });
                 setRemarcandoId(null);
+                setProfissionalDoClique(null);
                 // `abrirMarcacao` e não `setMarcando(true)`: clicar num bloco
                 // livre abre uma marcação NOVA, e ela nasce com o vínculo da rota.
                 abrirMarcacao();
+              }
+            : undefined
+        }
+        // A PORTA DO QUADRO (#4186): o mesmo clique num bloco livre, mas a linha
+        // diz QUEM atende. O painel abre com essa pessoa, oferece a jornada dela
+        // e grava na agenda dela — `donoDaMarcacao` leva isso à consulta, ao
+        // rótulo do painel e ao POST.
+        onMarcarComProfissional={
+          podeMarcar
+            ? (instante, pessoaId) => {
+                setHorarioEscolhido({
+                  instante,
+                  rotulo: format(dataDeParede(new Date(instante), fusoDaAgenda), "HH:mm"),
+                });
+                setRemarcandoId(null);
+                abrirMarcacao();
+                setProfissionalDoClique(pessoaId);
               }
             : undefined
         }

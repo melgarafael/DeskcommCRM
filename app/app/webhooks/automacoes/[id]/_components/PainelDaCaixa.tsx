@@ -11,7 +11,12 @@ import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 import { usePipelineStages, usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
-import { contarCondicoes, OPERADORES_SEM_VALOR } from "@/lib/automation/conditions";
+import {
+  CONDICOES_DO_CONTATO,
+  contarCondicoes,
+  OPERADORES_SEM_VALOR,
+  valorPadraoDoCampo,
+} from "@/lib/automation/conditions";
 import { DIAS_MAX, DIAS_MIN, GATILHO_DE_DATA_DO_FUNIL } from "@/lib/automation/gatilho-de-data-do-funil";
 import {
   DIRECOES_DO_SILENCIO,
@@ -31,7 +36,11 @@ import {
 } from "@/lib/automation/desenho-da-regra";
 import { camposDeDataDoNegocio } from "@/lib/leads/campos-do-funil";
 import { ActionConfigForm, type ActionItem } from "@/app/app/webhooks/_components/ActionConfigForm";
-import { CURATED_FIELDS, OP_LABELS, type Op } from "@/app/app/webhooks/_components/RuleEditor";
+import {
+  ValorDaCondicaoDoContato,
+  valorDaCondicaoNaTela,
+} from "@/app/app/webhooks/_components/CondicaoDoContato";
+import { CURATED_FIELDS, OP_LABELS, type CuratedField, type Op } from "@/app/app/webhooks/_components/RuleEditor";
 import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } from "@/app/app/webhooks/_components/labels";
 
 import { VISUAL_DAS_CONDICOES, VISUAL_DO_GATILHO, visualDaAcao, type VisualDaCaixa } from "./visual";
@@ -295,7 +304,11 @@ export function PainelDasCondicoes({
   const padrao = funisRes?.data?.find((p) => p.is_default) ?? funisRes?.data?.[0] ?? null;
   const { data: quadro } = usePipelineStages(padrao?.id ?? null);
   const etapas = quadro?.data?.stages ?? [];
-  const campos = evento ? (CURATED_FIELDS[evento as TriggerEvent] ?? []) : [];
+  // As condições do contato (#3814) valem em qualquer gatilho: entram depois
+  // das do evento, e não na tabela de cada um.
+  const campos: CuratedField[] = evento
+    ? [...(CURATED_FIELDS[evento as TriggerEvent] ?? []), ...CONDICOES_DO_CONTATO]
+    : [];
   const linhas = dados.linhas;
   const grupoPreservado = dados.grupoPreservado;
   const mudar = (i: number, patch: Partial<LinhaDeCondicao>) =>
@@ -326,11 +339,15 @@ export function PainelDasCondicoes({
             // O mesmo rótulo do formulário e do cartão — nunca a chave técnica do campo.
             const curado = campos.find((c) => c.value === linha.field);
             const operador = t(curado?.lista && linha.op === "contains" ? "tem a tag" : OP_LABELS[linha.op]);
+            // Condição do contato: o jsonb guarda `sim|7|Manutenção`, e o que a
+            // pessoa lê é `Sim · 7 dias · Manutenção`.
+            const valor =
+              curado?.kind === "sim_nao" ? valorDaCondicaoNaTela(linha.value, t) : linha.value;
             return (
               <li key={i} className="rounded-md border border-border px-3 py-2 text-text" data-testid={`condicao-${i}`}>
                 <span className="font-medium">{curado ? t(curado.label) : linha.field}</span>
                 <span className="text-text-muted">
-                  {` ${operador} ${OPERADORES_SEM_VALOR.has(linha.op) ? "" : linha.value}`.trimEnd()}
+                  {` ${operador} ${OPERADORES_SEM_VALOR.has(linha.op) ? "" : valor}`.trimEnd()}
                 </span>
               </li>
             );
@@ -385,7 +402,16 @@ export function PainelDasCondicoes({
             ) : (
               <Select
                 value={linha.field}
-                onValueChange={(v) => mudar(i, { field: v, op: campos.find((c) => c.value === v)?.op ?? "eq" })}
+                onValueChange={(v) => {
+                  // A condição do contato nasce com um valor aceito pela porta
+                  // ("sim"); sem isso a linha nova já seria recusada ao salvar.
+                  const padrao = valorPadraoDoCampo(v, linha.value);
+                  mudar(i, {
+                    field: v,
+                    op: campos.find((c) => c.value === v)?.op ?? "eq",
+                    ...(padrao === null ? {} : { value: padrao }),
+                  });
+                }}
               >
                 <SelectTrigger aria-label={t("Campo")}>
                   <SelectValue placeholder={t("Campo")} />
@@ -428,6 +454,12 @@ export function PainelDasCondicoes({
                     ))}
                   </SelectContent>
                 </Select>
+              ) : curado?.kind === "sim_nao" && !avancado ? (
+                <ValorDaCondicaoDoContato
+                  campo={linha.field}
+                  valor={linha.value}
+                  onChange={(v) => mudar(i, { value: v })}
+                />
               ) : (
                 <Input
                   className="flex-1"

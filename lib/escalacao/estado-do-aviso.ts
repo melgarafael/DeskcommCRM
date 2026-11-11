@@ -42,12 +42,13 @@
  */
 
 /**
- * Os onze estados. Tupla e não união solta: `satisfies` e varredura precisam de
+ * Os doze estados. Tupla e não união solta: `satisfies` e varredura precisam de
  * um valor em runtime, e um código novo sem frase para de compilar na tela.
  */
 export const CODIGOS_DO_ESTADO_DO_AVISO = [
   "sem_conexao",
   "so_canal_oficial",
+  "oficial_sem_modelo",
   "sem_endereco_publico",
   "conexao_removida",
   "conexao_fora_do_ar",
@@ -86,6 +87,38 @@ export interface ConexaoParaAviso {
   aceitaMensagemLivre: boolean;
   /** Alguma versão publicada de agente ou roteador fala com cliente por este número. */
   atendeClientes: boolean;
+  /**
+   * Os modelos aprovados DESTA conexão que servem para levar o aviso
+   * (`lib/escalacao/modelo-do-aviso.ts`: uma variável só, no corpo). Só é
+   * preenchido para quem não manda texto livre; ausente = nenhum.
+   */
+  modelos?: ModeloOferecido[];
+}
+
+/** Um modelo aprovado que a tela oferece para levar o aviso (migration 9094). */
+export interface ModeloOferecido {
+  id: string;
+  nome: string;
+  idioma: string;
+  /** O corpo com o marcador da variável — a prévia que a tela mostra. */
+  corpo: string;
+}
+
+/**
+ * COMO o destino do aviso é escolhido (#3803).
+ *
+ *   `fixo`        o número da empresa, como sempre.
+ *   `responsavel` conversa → negócio aberto → carteira → e o número da empresa
+ *                 quando ninguém serve.
+ */
+export type ModoDoDestinoNaTela = "fixo" | "responsavel";
+
+/** Uma pessoa da equipe, com o WhatsApp que ela cadastrou — ou `null`. */
+export interface MembroDoAvisoNaTela {
+  user_id: string;
+  nome: string | null;
+  /** `null` = a pessoa não cadastrou. É ele que faz o elo cair para o próximo. */
+  whatsapp: string | null;
 }
 
 /** A configuração como ela está no banco, projetada para a tela. */
@@ -96,6 +129,10 @@ export interface ConfiguracaoNaTela {
   rotulo: string | null;
   ligado: boolean;
   respostaWhatsappHabilitada?: boolean;
+  /** Ausente = linha anterior ao #3803, e é lida como `fixo`. */
+  destinoModo?: ModoDoDestinoNaTela;
+  /** `config_aviso_de_caso.modelo_id` (migration 9094). */
+  modeloId?: string | null;
 }
 
 /** O que o `pacing_ledger` responde sobre o número que ENVIA os avisos. */
@@ -163,6 +200,24 @@ export function normalizarTelefoneDeAviso(bruto: string): string {
   return digitos === "" ? "" : `+${digitos}`;
 }
 
+/**
+ * A conexão serve para mandar o aviso? Texto livre a qualquer hora, ou ao menos
+ * um modelo aprovado que leve o aviso (migration 9094). É a mesma pergunta que
+ * decide o que o seletor da tela oferece.
+ */
+export function conexaoServeParaAviso(c: ConexaoParaAviso): boolean {
+  return c.aceitaMensagemLivre || (c.modelos?.length ?? 0) > 0;
+}
+
+/** O modelo escolhido está entre os que servem para esta conexão? */
+export function modeloEscolhidoServe(
+  c: ConexaoParaAviso,
+  modeloId: string | null | undefined,
+): boolean {
+  if (!modeloId) return false;
+  return (c.modelos ?? []).some((m) => m.id === modeloId);
+}
+
 /** A conexão escolhida, quando ela ainda existe na lista. */
 function conexaoEscolhida(f: FatosDaTelaDeAviso): ConexaoParaAviso | null {
   const id = f.config?.channelSessionId;
@@ -181,7 +236,8 @@ export function podeLigarOAviso(f: FatosDaTelaDeAviso): boolean {
   if (!f.urlPublicaOk) return false;
   if (!telefoneDeAvisoValido(f.config?.telefone)) return false;
   const canal = conexaoEscolhida(f);
-  return canal !== null && canal.aceitaMensagemLivre;
+  if (canal === null) return false;
+  return canal.aceitaMensagemLivre || modeloEscolhidoServe(canal, f.config?.modeloId);
 }
 
 /**
@@ -196,13 +252,14 @@ export function avisosDaTela(f: FatosDaTelaDeAviso): AvisoDaTela[] {
   const bloqueios: AvisoDaTela[] = [];
   const alertas: AvisoDaTela[] = [];
 
-  const temAlgumaLivre = f.conexoes.some((c) => c.aceitaMensagemLivre);
+  const temAlgumaQueServe = f.conexoes.some(conexaoServeParaAviso);
 
   // ── Bloqueios ────────────────────────────────────────────────────────────
   if (f.conexoes.length === 0) {
     bloqueios.push({ codigo: "sem_conexao", bloqueia: true });
-  } else if (!temAlgumaLivre) {
-    // Há número conectado — ele é que não serve. Dizer "você não tem conexão"
+  } else if (!temAlgumaQueServe) {
+    // Há número conectado — ele é que não serve: nenhum manda texto livre e
+    // nenhum tem modelo aprovado que leve o aviso. Dizer "você não tem conexão"
     // aqui mandaria a pessoa parear de novo um número que já está no ar.
     bloqueios.push({ codigo: "so_canal_oficial", bloqueia: true });
   }
@@ -225,8 +282,21 @@ export function avisosDaTela(f: FatosDaTelaDeAviso): AvisoDaTela[] {
     bloqueios.push({ codigo: "conexao_removida", bloqueia: true });
   }
 
+  // A conexão salva só manda modelo, e o modelo escolhido não serve (ou não
+  // há escolha): o switch trava até a pessoa escolher um modelo aprovado com
+  // uma variável. Sem isto, a tela mostraria o aviso "ligado" com um envio que
+  // o motor condena a cada caso (migration 9094).
+  const escolhida = conexaoEscolhida(f);
+  if (escolhida && !escolhida.aceitaMensagemLivre && !modeloEscolhidoServe(escolhida, f.config?.modeloId)) {
+    bloqueios.push({
+      codigo: "oficial_sem_modelo",
+      bloqueia: true,
+      dados: { conexao: escolhida.nome, modelos: escolhida.modelos?.length ?? 0 },
+    });
+  }
+
   // ── Alertas ──────────────────────────────────────────────────────────────
-  const canal = conexaoEscolhida(f);
+  const canal = escolhida;
   if (canal && canal.status !== "WORKING") {
     // Alerta e NÃO bloqueio: a entrega fica `pendente` e o motor reenvia por até
     // 24 h. Travar o switch aqui apagaria a configuração de quem está só

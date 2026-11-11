@@ -83,7 +83,7 @@ const FRONTEIRAS: Fronteira[] = [
       "https://supabase.com/docs/guides/storage/uploads/file-limits — seção «File name restrictions»",
     lacuna:
       "a mesma página documenta o alfabeto do nome de arquivo e não documenta teto de comprimento da chave. Forma entra no teste; número, não.",
-    medir: () => [ORG, VERSAO, "minha skill", "SKILL.md", "assets", "referencia.md"],
+    medir: () => [ORG, VERSAO, "minha skill", "SKILL.md", "assets", "referencia.md", "externa-0123456789abcdef.jpg"],
   },
   {
     id: "api.idempotency-key",
@@ -168,6 +168,11 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // digitado por ninguém entra na chave.
   { arquivo: "lib/lgpd/emitir-atestado.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "workers/media-persist-worker.ts", fronteira: "storage.chave-de-objeto" },
+  // Spec 25 R4: a imagem que o agente manda por `imagem_url` é baixada pelo CRM e gravada em
+  // `${tenant}/${conversa}/externa-<16 hex do conteúdo>.jpg|png|webp`. Os dois ids vêm do turno
+  // e são conferidos como segmento simples (sem `/`, `\`, `.` nem `..`) antes de montar a chave;
+  // o nome sai do hash dos bytes e a extensão de uma lista de três.
+  { arquivo: "lib/agent-engine/agent/baixar-imagem-segura.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "lib/ai/skills/install.ts", fronteira: "storage.chave-de-objeto" },
   // Herança de arquivos do pacote no save textual (#2047): a chave é montada
   // com os MESMOS pedaços do install — org (uuid do JWT), name (vem da
@@ -181,6 +186,7 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // registro acima: UUID v4 de alfabeto ASCII + `.jpg`/`.png` conhecido pela
   // ASSINATURA dos bytes, nunca pelo content-type que o cliente diz.
   { arquivo: "app/api/v1/message-templates/[id]/midias/route.ts", fronteira: "storage.chave-de-objeto" },
+  { arquivo: "app/api/v1/products/[id]/ai-presentation/audio/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/cron/contact-avatars/route.ts", fronteira: "storage.chave-de-objeto" },
   // #3635: o upload do cabeçalho saiu da rota do parceiro para `lib/` quando o
   // canal oficial direto passou a gerenciar modelo pela tela — a lógica é a
@@ -188,6 +194,10 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // o handler. A chave é a de antes: `{org}/templates/{uuid}.{jpg|png}`, com a
   // extensão vinda da ASSINATURA dos bytes.
   { arquivo: "lib/channels/templates-midia.ts", fronteira: "storage.chave-de-objeto" },
+  // A nota de voz do agente (`uploadDeVoz`): `{org}/{conversa}/voz-agente-{jobId}-{seq}.mp3`
+  // — org e conversa do turno, jobId uuid da fila, seq inteiro do turno. Nada de
+  // texto do cliente nem do modelo entra na chave.
+  { arquivo: "lib/agent-engine/agent/inbound-turn.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/settings/sons/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/marca/logo/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/conversations/[id]/media/route.ts", fronteira: "storage.chave-de-objeto" },
@@ -200,6 +210,12 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "app/api/v1/ai/knowledge/sources/route.ts", fronteira: "storage.chave-de-objeto" },
   // O PDF da proposta comercial (#1832): `<org>/<proposta>.pdf`, dois uuids.
   { arquivo: "lib/propostas/storage.ts", fronteira: "storage.chave-de-objeto" },
+  // A foto do produto por URL na planilha (#3587, fatia 1): a chave é
+  // `<org>/<produto>/<uuid>.<ext>` — os mesmos pedaços que a tela grava. O uuid
+  // nasce aqui (`randomUUID`), a extensão vem do tipo farejado nos BYTES (não
+  // do nome nem da URL) e o `org`/`produto` são uuids já resolvidos. Nenhum
+  // texto da planilha entra na chave — a URL do cliente só escolhe o conteúdo.
+  { arquivo: "lib/catalogo/fotos-por-url.ts", fronteira: "storage.chave-de-objeto" },
   // Chave de idempotência: os geradores (manda UUID) e os validadores (exige UUID).
   { arquivo: "app/onboarding/connect-whatsapp/_client.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "components/extensions/ExtensionsManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },

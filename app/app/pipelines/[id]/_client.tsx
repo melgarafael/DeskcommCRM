@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/hooks/i18n/useT";
 import { useBoard } from "@/hooks/kanban/useBoard";
+import { useDensidadeDoQuadro } from "@/hooks/kanban/useDensidadeDoQuadro";
 
 function formatError(err: unknown, t: (texto: string) => string): string {
   if (err instanceof Error) return err.message;
@@ -40,6 +41,7 @@ import type { LeadFilters } from "@/lib/kanban/filters";
 import { applyFilters, filtersFromParams, filtersToParams } from "@/lib/kanban/filters";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
+import { hrefDaPaginaDoNegocio } from "@/lib/leads/pagina-do-negocio";
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 import { cn } from "@/lib/utils";
 
@@ -146,6 +148,18 @@ export function PipelinePageClient({
   const router = useRouter();
   const pathname = usePathname();
   /**
+   * O ENDEREÇO DA PÁGINA INTEIRA DO NEGÓCIO (#4151).
+   *
+   * Nasce AQUI porque é aqui que a URL do quadro existe: o `pathname` e a query
+   * string com o filtro (`lib/kanban/filters.ts`) — e é ela que o "Voltar" da
+   * página devolve. O quadro só recebe a função pronta: ele conhece o lead, não
+   * o endereço (ver `hrefDaPaginaDoNegocio`).
+   */
+  const hrefDoNegocio = useCallback(
+    (leadId: string) => hrefDaPaginaDoNegocio(leadId, pathname, searchParams),
+    [pathname, searchParams],
+  );
+  /**
    * ⚠️ O FILTRO PEDIDO VALE ANTES DE A URL CHEGAR NELE.
    *
    * `router.replace` só muda o `useSearchParams` depois da ida ao servidor
@@ -210,6 +224,12 @@ export function PipelinePageClient({
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
+  /**
+   * A densidade dos cards do quadro (issue #3461, item 2). Preferência de quem
+   * olha, gravada no navegador — ver `useDensidadeDoQuadro` para por que não é
+   * coluna do funil nem parâmetro de URL.
+   */
+  const { compacta: cardsCompactos, alternar: alternarDensidade } = useDensidadeDoQuadro();
 
   /**
    * Motivo e categoria da perda (#1537): a categoria NÃO vem no lead — ela é
@@ -246,7 +266,7 @@ export function PipelinePageClient({
    * lote, renomear etapa e dossiê.
    */
   // O funil da leitura do servidor já diz se está arquivado: sem ele, o
-  // "Novo Lead" e a `?visao=lista` apareceriam até o quadro carregar.
+  // "Novo negócio" e a `?visao=lista` apareceriam até o quadro carregar.
   const arquivado = (data?.pipeline ?? funilInicial).is_archived === true;
   /**
    * Funil arquivado só tem o quadro em leitura: nem `?visao=lista` escapa. A
@@ -356,10 +376,28 @@ export function PipelinePageClient({
           passar pelo quadro.
         */}
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {/* A DENSIDADE DOS CARDS (issue #3461, item 2) mora AO LADO das abas
+              da visão, e só no Quadro: é a mesma família de escolha ("como eu
+              olho este funil"), mas ela não muda o que se vê — muda quanto cabe.
+              Um interruptor (`aria-pressed`) e não um par de botões: são dois
+              estados e o nome do controle é o estado que ele LIGA, que é a
+              forma que o leitor de tela anuncia sem inventar vocabulário. */}
+          {visao === "quadro" && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-pressed={cardsCompactos}
+              title={t("Cards compactos")}
+              data-testid="densidade-do-quadro"
+              onClick={alternarDensidade}
+            >
+              {t("Compacta")}
+            </Button>
+          )}
           {/* Funil arquivado abre só no quadro, e o quadro é leitura (#1298):
               a Lista e o Calendário têm ações de negócio, e oferecê-las num
               funil que não recebe mais escrita seria a mesma promessa falsa
-              que o "Novo Lead" apagado. Por isso as abas nem aparecem. */}
+              que o "Novo negócio" apagado. Por isso as abas nem aparecem. */}
           {!arquivado && (
             <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
               <button
@@ -416,14 +454,14 @@ export function PipelinePageClient({
               disabled={etapasIniciais.length === 0}
               className="shrink-0"
             >
-              <Plus size={16} className="mr-2" /> {t("Novo Lead")}
+              <Plus size={16} className="mr-2" /> {t("Novo negócio")}
             </Button>
           )}
         </div>
       </header>
       {arquivado && (
         <p
-          className="rounded-md border border-border bg-surface-muted/40 p-3 text-sm leading-relaxed text-text-muted"
+          className="rounded-md border border-border bg-surface-elevated/40 p-3 text-sm leading-relaxed text-text-muted"
           data-testid="funil-arquivado-aviso"
         >
           {t(
@@ -512,7 +550,9 @@ export function PipelinePageClient({
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
+          hrefDoNegocio={hrefDoNegocio}
           podeRenomearEtapa={!arquivado && ROLE_RANK[role] >= ROLE_RANK.manager}
+          denso={cardsCompactos}
           somenteLeitura={arquivado}
         />
       )}

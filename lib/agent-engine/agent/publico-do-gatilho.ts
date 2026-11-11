@@ -20,10 +20,11 @@
  *
  * ## O contrato (jsonb, sem migration)
  *
- * Quatro listas opcionais em `ai_agent_versions.trigger_config.filters`:
+ * Seis listas opcionais em `ai_agent_versions.trigger_config.filters`:
  * `include_tags`, `exclude_tags`, `include_pipeline_ids`,
- * `exclude_pipeline_ids`. Mora no jsonb da versão, como `keyword_regex` e
- * `business_hours`: nenhuma coluna nova, nenhuma migration.
+ * `exclude_pipeline_ids`, `include_sources`, `exclude_sources`. Mora no jsonb
+ * da versão, como `keyword_regex` e `business_hours`: nenhuma coluna nova,
+ * nenhuma migration.
  *
  * A régua é curta de propósito:
  *
@@ -36,7 +37,13 @@
  *    cliente antigo com card fechado voltaria a ser "do funil de vendas";
  *  - contato SEM negócio aberto não entra em "só estes funis" e NÃO é atingido
  *    por "não estes funis": o número novo, que ainda não tem card, passa por
- *    uma exclusão. É a direção que não cala quem chega.
+ *    uma exclusão. É a direção que não cala quem chega;
+ *  - origem é a coluna `contacts.source` (de onde o contato ENTROU: `whatsapp`,
+ *    `prospecting`, `site`, `import_csv`…), sem diferença de maiúscula. É a
+ *    única das três réguas que não depende de alguém ter etiquetado ou aberto
+ *    card: quem nasce da prospecção já nasce `prospecting`, e é isso que deixa
+ *    um agente de atendimento dividir o número com o da prospecção sem que um
+ *    classificador de IA decida quem responde a resposta de uma abordagem.
  *
  * ## Falha ABERTA para configuração, FECHADA para leitura de dados
  *
@@ -53,6 +60,14 @@
  * agente é `escolherAgenteDoNumero` (`agent-config.ts`) — o mesmo ponto onde a
  * escolha já acontecia. Não há caminho paralelo: o filtro roda dentro da
  * seleção, não antes dela.
+ *
+ * ## A resposta vem com o motivo (`avaliarPublico`)
+ *
+ * `passaNoPublico` devolve sim/não e é tudo de que a ESCOLHA precisa. Quem
+ * investiga um turno precisa do resto — QUAL lista e QUAL item decidiram —, e
+ * é isso que `avaliarPublico` devolve (e que vai para o rastro do turno em
+ * `resolve-turn-agent.ts`). As duas funções são a MESMA régua: `passaNoPublico`
+ * delega, e um teste de concordância sobre a matriz impede divergência.
  */
 import type pg from 'pg';
 
@@ -66,6 +81,10 @@ export interface PublicoDoAgente {
   incluirFunis: readonly string[];
   /** Funis em que o contato NÃO pode ter negócio aberto. Vence a inclusão. */
   excluirFunis: readonly string[];
+  /** Origens (`contacts.source`) de que o contato PRECISA ter vindo — uma basta. */
+  incluirOrigens: readonly string[];
+  /** Origens de que o contato NÃO pode ter vindo. Vence qualquer inclusão. */
+  excluirOrigens: readonly string[];
 }
 
 /** Os fatos do contato que a régua lê. Só o que ela usa. */
@@ -74,6 +93,12 @@ export interface FatosDoContato {
   etiquetas: readonly string[];
   /** `crm_leads.pipeline_id` dos negócios ABERTOS do contato. */
   funisAbertos: readonly string[];
+  /**
+   * `contacts.source`. Opcional porque nasce depois dos fixtures que montam
+   * este tipo à mão; ausente vale como "origem desconhecida": não entra em
+   * "só estas origens" e não é atingido por "não estas origens".
+   */
+  origem?: string | null;
 }
 
 /** Teto de cada lista — o mesmo tamanho de `pipeline_ids`/`tool_ids` na tela. */
@@ -116,12 +141,16 @@ export function lerPublicoDoGatilho(triggerConfig: unknown): PublicoDoAgente | n
     excluirEtiquetas: listaDeTexto(f.exclude_tags),
     incluirFunis: listaDeTexto(f.include_pipeline_ids),
     excluirFunis: listaDeTexto(f.exclude_pipeline_ids),
+    incluirOrigens: listaDeTexto(f.include_sources),
+    excluirOrigens: listaDeTexto(f.exclude_sources),
   };
   const vazio =
     publico.incluirEtiquetas.length === 0 &&
     publico.excluirEtiquetas.length === 0 &&
     publico.incluirFunis.length === 0 &&
-    publico.excluirFunis.length === 0;
+    publico.excluirFunis.length === 0 &&
+    publico.incluirOrigens.length === 0 &&
+    publico.excluirOrigens.length === 0;
   return vazio ? null : publico;
 }
 
@@ -130,37 +159,95 @@ function chave(tag: string): string {
 }
 
 /**
- * Este contato passa neste público?
+ * Qual regra do público decidiu — o motivo que vai para o rastro do turno.
  *
- * Pura e sem banco: é a régua única, chamada pela seleção do agente e pelos
- * testes. A ordem é a da decisão — exclusão primeiro, porque ela vence.
+ * Vocabulário FECHADO de propósito: o operador lê isto no log e procura a
+ * mesma palavra na tela do agente. Cada valor nomeia a lista de onde veio a
+ * decisão (`_excluida` = a lista de exclusão casou, `_exigida` = a de inclusão
+ * não foi cumprida).
  */
-export function passaNoPublico(publico: PublicoDoAgente, fatos: FatosDoContato): boolean {
+export type RegraDoPublico =
+  | 'passou'
+  | 'barrado_por_etiqueta_excluida'
+  | 'barrado_por_funil_excluido'
+  | 'barrado_por_origem_excluida'
+  | 'barrado_por_etiqueta_exigida'
+  | 'barrado_por_funil_exigido'
+  | 'barrado_por_origem_exigida';
+
+/** A decisão de UM público sobre UM contato, com o motivo. */
+export interface DecisaoDoPublico {
+  passa: boolean;
+  regra: RegraDoPublico;
+  /**
+   * O item DECLARADO no público que decidiu (etiqueta como o admin digitou, ou
+   * `pipeline_id`). `null` quando a decisão não aponta um item do contato —
+   * uma exigência não cumprida, ou a passagem limpa.
+   *
+   * É o item da CONFIG, nunca um dado do contato: é por isso que o rastro pode
+   * ir para o log sem violar a disciplina de PII do call site.
+   */
+  valor: string | null;
+}
+
+/**
+ * Este contato passa neste público, E POR QUÊ.
+ *
+ * Pura e sem banco: é a régua única. `passaNoPublico` delega aqui — a decisão e
+ * o motivo não podem divergir (há teste de concordância sobre a matriz).
+ *
+ * A ordem é a da decisão: exclusão primeiro, porque ela vence.
+ */
+export function avaliarPublico(publico: PublicoDoAgente, fatos: FatosDoContato): DecisaoDoPublico {
   const temEtiqueta = new Set(fatos.etiquetas.map(chave));
   const abertos = new Set(fatos.funisAbertos);
+  const origem = typeof fatos.origem === 'string' && fatos.origem.trim() !== '' ? chave(fatos.origem) : null;
 
   // 1. A EXCLUSÃO VENCE — nem a inclusão reabre.
   for (const tag of publico.excluirEtiquetas) {
-    if (temEtiqueta.has(chave(tag))) return false;
+    if (temEtiqueta.has(chave(tag))) {
+      return { passa: false, regra: 'barrado_por_etiqueta_excluida', valor: tag };
+    }
   }
   for (const funil of publico.excluirFunis) {
-    if (abertos.has(funil)) return false;
+    if (abertos.has(funil)) {
+      return { passa: false, regra: 'barrado_por_funil_excluido', valor: funil };
+    }
+  }
+  for (const fonte of publico.excluirOrigens) {
+    if (origem !== null && origem === chave(fonte)) {
+      return { passa: false, regra: 'barrado_por_origem_excluida', valor: fonte };
+    }
   }
 
   // 2. Depois, TODAS as inclusões configuradas (E entre as listas, OU dentro).
   if (publico.incluirEtiquetas.length > 0) {
     const alguma = publico.incluirEtiquetas.some((tag) => temEtiqueta.has(chave(tag)));
-    if (!alguma) return false;
+    if (!alguma) return { passa: false, regra: 'barrado_por_etiqueta_exigida', valor: null };
   }
   if (publico.incluirFunis.length > 0) {
     const algum = publico.incluirFunis.some((funil) => abertos.has(funil));
-    if (!algum) return false;
+    if (!algum) return { passa: false, regra: 'barrado_por_funil_exigido', valor: null };
   }
-  return true;
+  if (publico.incluirOrigens.length > 0) {
+    const alguma = origem !== null && publico.incluirOrigens.some((fonte) => chave(fonte) === origem);
+    if (!alguma) return { passa: false, regra: 'barrado_por_origem_exigida', valor: null };
+  }
+  return { passa: true, regra: 'passou', valor: null };
 }
 
 /**
- * Os fatos do contato: etiquetas da ficha + funis dos negócios ABERTOS.
+ * Este contato passa neste público?
+ *
+ * A resposta de sim/não que a escolha do agente consome. Delega em
+ * `avaliarPublico` para não existir uma segunda cópia da régua.
+ */
+export function passaNoPublico(publico: PublicoDoAgente, fatos: FatosDoContato): boolean {
+  return avaliarPublico(publico, fatos).passa;
+}
+
+/**
+ * Os fatos do contato: etiquetas e origem da ficha + funis dos negócios ABERTOS.
  *
  * Uma consulta, não duas: a seleção do agente roda em todo turno e o público é
  * opcional — quem paga é só quem configurou.
@@ -175,8 +262,9 @@ export async function carregarFatosDoContato(
   organizationId: string,
   contactId: string,
 ): Promise<FatosDoContato> {
-  const { rows } = await db.query<{ tags: string[] | null; funis: string[] | null }>(
+  const { rows } = await db.query<{ tags: string[] | null; source: string | null; funis: string[] | null }>(
     `select c.tags,
+            c.source,
             (select array_agg(distinct l.pipeline_id::text)
                from crm_leads l
               where l.organization_id = $1
@@ -187,9 +275,10 @@ export async function carregarFatosDoContato(
     [organizationId, contactId],
   );
   const r = rows[0];
-  if (r === undefined) return { etiquetas: [], funisAbertos: [] };
+  if (r === undefined) return { etiquetas: [], funisAbertos: [], origem: null };
   return {
     etiquetas: (r.tags ?? []).filter((t): t is string => typeof t === 'string'),
     funisAbertos: (r.funis ?? []).filter((f): f is string => typeof f === 'string'),
+    origem: typeof r.source === 'string' ? r.source : null,
   };
 }

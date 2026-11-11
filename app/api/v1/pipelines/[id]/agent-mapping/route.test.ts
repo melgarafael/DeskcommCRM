@@ -6,6 +6,7 @@ import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
+import { grafoDeFluxo } from "@/tests/helpers/stages-db-double";
 
 /**
  * Task 2 — GET/PUT /api/v1/pipelines/[id]/agent-mapping.
@@ -59,6 +60,10 @@ interface DbOpts {
   pipelineOrg?: string;
   stages?: StageRow[];
   updateError?: (n: number) => { code: string; message: string } | null;
+  /** #3603 — fluxos de follow-up da org; `trigger_config` cru, como no banco. */
+  pointers?: Array<Record<string, unknown>>;
+  /** `followup_flow_versions` — o grafo decide se o fluxo tem gatilho e se pede IA. */
+  flowVersions?: Array<Record<string, unknown>>;
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -73,16 +78,21 @@ function makeDb(opts: DbOpts = {}) {
       { id: PIPE, name: "Pedidos", organization_id: opts.pipelineOrg ?? ORG_ID },
     ],
     crm_stages: (opts.stages ?? []) as unknown as Array<Record<string, unknown>>,
+    followup_flow_pointers: (opts.pointers ?? []) as Array<Record<string, unknown>>,
+    followup_flow_versions: (opts.flowVersions ?? []) as Array<Record<string, unknown>>,
   };
 
   function builder(table: string) {
     const filtros: Array<[string, unknown]> = [];
+    const pertinencias: Array<[string, unknown[]]> = [];
     let patch: Record<string, unknown> | null = null;
     let colunas: string[] | null = null;
     let ordem: string | null = null;
 
     const casam = () =>
-      (tables[table] ?? []).filter((r) => filtros.every(([c, v]) => r[c] === v));
+      (tables[table] ?? [])
+        .filter((r) => filtros.every(([c, v]) => r[c] === v))
+        .filter((r) => pertinencias.every(([c, vs]) => vs.includes(r[c])));
 
     /** Ordena e projeta como o PostgREST faria: `order()` e a lista do `select()`. */
     const lidos = () => {
@@ -120,6 +130,10 @@ function makeDb(opts: DbOpts = {}) {
       },
       eq: (c: string, v: unknown) => {
         filtros.push([c, v]);
+        return b;
+      },
+      in: (c: string, vs: unknown[]) => {
+        pertinencias.push([c, vs]);
         return b;
       },
       order: (col: string) => {
@@ -273,6 +287,10 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
       expected_duration_hours: null,
       last_change_actor_kind: null,
       last_change_at: null,
+      // #3603: a lista de fluxos armados por etapa viaja na MESMA leitura — a
+      // tela de etapas lê daqui e não abre uma segunda lista de etapas para
+      // saber dos gatilhos. Sem pointer na fixture = nenhum fluxo = lista vazia.
+      fluxos: [],
     });
 
     // O valor gravado volta como foi gravado (e não `undefined`, que a tela lê
@@ -284,6 +302,58 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
     );
     // O hint da arquivada não vaza para o mapa.
     expect(body.data.mapeamento.qualifying).toBeNull();
+  });
+
+  /**
+   * #3603 — a tela de etapas lê DESTA rota (é a leitura única do funil), então é
+   * aqui que a lista read-only precisa chegar. Se o campo só existisse no GET das
+   * etapas, a tela teria de abrir uma segunda lista de etapas — exatamente a
+   * segunda régua que `hooks/pipelines/useStages.ts` recusa.
+   */
+  it("traz os fluxos armados por etapa, com o mesmo recorte do motor", async () => {
+    authOk();
+    const ETAPA_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const ETAPA_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    makeDb({
+      stages: [
+        etapa({ id: ETAPA_A, name: "Proposta", position: 1 }),
+        etapa({ id: ETAPA_B, name: "Pago", position: 2, is_won: true }),
+      ],
+      pointers: [
+        {
+          id: "11111111-aaaa-4aaa-8aaa-111111111111",
+          organization_id: ORG_ID,
+          name: "Retomada da proposta",
+          status: "active",
+          active_version_id: "99999999-9999-4999-8999-999999999999",
+          trigger_config: { kind: "stage_change", params: { stage_id: ETAPA_A } },
+        },
+        // Rascunho: o motor não arma, então a tela não anuncia.
+        {
+          id: "22222222-aaaa-4aaa-8aaa-222222222222",
+          organization_id: ORG_ID,
+          name: "Esboço",
+          status: "draft",
+          active_version_id: null,
+          trigger_config: { kind: "stage_change", params: { stage_id: ETAPA_A } },
+        },
+      ],
+      flowVersions: [
+        { id: "99999999-9999-4999-8999-999999999999", organization_id: ORG_ID, graph: grafoDeFluxo() },
+      ],
+    });
+    const { GET } = await import("./route");
+    const res = await GET(reqGet(), ctx);
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      data: { etapas: Array<{ id: string; fluxos?: Array<{ id: string; name: string }> }> };
+    };
+    const porId = Object.fromEntries(body.data.etapas.map((e) => [e.id, e]));
+    expect(porId[ETAPA_A]?.fluxos).toEqual([
+      { id: "11111111-aaaa-4aaa-8aaa-111111111111", name: "Retomada da proposta", sem_agente: false },
+    ]);
+    expect(porId[ETAPA_B]?.fluxos).toEqual([]);
   });
 });
 
@@ -384,6 +454,43 @@ describe("PUT /api/v1/pipelines/[id]/agent-mapping", () => {
 
     const body = (await res.json()) as { data: { mapeamento: Record<string, string | null> } };
     expect(body.data.mapeamento).toEqual(mapa({ new: "e1", won: "e3", lost: "e4" }));
+  });
+
+  /**
+   * #3603 — a resposta do PUT SUBSTITUI o cache da tela (ver `useAgentMapping`).
+   * Se só o GET trouxesse os fluxos, salvar o mapeamento apagaria a linha dos
+   * gatilhos até o próximo recarregamento — e a tela passaria a esconder
+   * justamente o que ela existe para mostrar.
+   */
+  it("a resposta do PUT também traz os fluxos armados por etapa", async () => {
+    authOk();
+    const ETAPA_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    makeDb({
+      stages: [etapa({ id: ETAPA_A, name: "Proposta", position: 1 })],
+      pointers: [
+        {
+          id: "11111111-aaaa-4aaa-8aaa-111111111111",
+          organization_id: ORG_ID,
+          name: "Retomada da proposta",
+          status: "active",
+          active_version_id: "99999999-9999-4999-8999-999999999999",
+          trigger_config: { kind: "stage_change", params: { stage_id: ETAPA_A } },
+        },
+      ],
+      flowVersions: [
+        { id: "99999999-9999-4999-8999-999999999999", organization_id: ORG_ID, graph: grafoDeFluxo() },
+      ],
+    });
+    const { PUT } = await import("./route");
+    const res = await PUT(reqPut({ mapeamento: mapa({ new: ETAPA_A }) }), ctx);
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      data: { etapas: Array<{ id: string; fluxos?: Array<{ name: string }> }> };
+    };
+    expect(body.data.etapas[0]?.fluxos).toEqual([
+      { id: "11111111-aaaa-4aaa-8aaa-111111111111", name: "Retomada da proposta", sem_agente: false },
+    ]);
   });
 
   it("aplica os UPDATEs um de cada vez, em sequência", async () => {

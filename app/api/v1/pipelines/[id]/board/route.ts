@@ -33,6 +33,7 @@ import { camposDeArquivoDoNegocio } from "@/lib/leads/campos-do-funil";
 import { diasDeRecorte, recortaEncerradosAntigos } from "@/lib/kanban/recorte-de-encerrados";
 import { anexarTarefasAosNegocios, type LinhaDaTarefaNoQuadro } from "@/lib/kanban/tarefas-no-quadro";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
+import { lerPaginado } from "@/lib/supabase/pagina";
 import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
@@ -525,6 +526,55 @@ async function withAnexos(
   };
 }
 
+/**
+ * As colunas do negócio que o quadro REALMENTE entrega (#4321).
+ *
+ * O `select("*")` antigo puxava a linha inteira de `crm_leads` — colunas que
+ * nenhum card lê viajavam em cada página de cada leitura. Esta lista é a do
+ * contrato `Lead` (`lib/types/leads.ts`): o que sai daqui é o que a tela
+ * consome, e o que não está aqui não sai. Coluna nova no contrato do quadro
+ * entra AQUI junto com o tipo — o teste de forma (`route-paginacao.test.ts`)
+ * cobra as duas coisas na mesma régua.
+ *
+ * `organization_id` e `position_in_stage`/`id` não são decoração: são as três
+ * primeiras colunas de `idx_crm_leads_org_pipeline_position_id`
+ * (`supabase/baseline.sql`), o índice que só é usado quando o filtro por
+ * organização vai junto — e são elas que dão a ordem estável da paginação.
+ */
+const COLUNAS_DO_QUADRO = [
+  "id",
+  "organization_id",
+  "pipeline_id",
+  "stage_id",
+  "contact_id",
+  "title",
+  "description",
+  "status",
+  "lost_reason",
+  "position_in_stage",
+  "value_cents",
+  "recurring_value_cents",
+  "recurring_period",
+  "recurring_months",
+  "currency",
+  "owner_user_id",
+  "owner_kind",
+  "owner_agent_id",
+  "assigned_at",
+  "last_activity_at",
+  "stage_changed_at",
+  "expected_close_date",
+  "closed_at",
+  "source",
+  "source_metadata",
+  "external_id",
+  "custom_fields",
+  "tags",
+  "created_at",
+  "updated_at",
+  "created_by_user_id",
+].join(", ");
+
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: pipelineId } = await ctx.params;
@@ -540,30 +590,59 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const authUser = await loadAuthUser();
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
 
-  const [
-    { data: pipeline, error: pipelineErr },
-    { data: stages, error: stagesErr },
-    { data: leads, error: leadsErr },
-  ] = await Promise.all([
-    supabase.from("crm_pipelines").select("*").eq("id", pipelineId).maybeSingle(),
+  // O funil vem PRIMEIRO, sozinho: é desta linha — a única que a RLS do caller
+  // deixou passar — que sai a organização do quadro (#4321). Ela é a org da
+  // SESSÃO, nunca um id do corpo da requisição: um funil de outra organização
+  // nem chega a existir para quem pediu.
+  const { data: pipeline, error: pipelineErr } = await supabase
+    .from("crm_pipelines")
+    .select("*")
+    .eq("id", pipelineId)
+    .maybeSingle();
+  if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
+  if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
+
+  const organizationId = (pipeline as Pipeline).organization_id;
+
+  const [{ data: stages, error: stagesErr }, leituraDosLeads] = await Promise.all([
     supabase
       .from("crm_stages")
       .select("*")
       .eq("pipeline_id", pipelineId)
       .eq("is_archived", false)
       .order("position"),
-    supabase
-      .from("crm_leads")
-      .select("*")
-      .eq("pipeline_id", pipelineId)
-      .neq("status", "archived")
-      .order("position_in_stage"),
+    // ─── A LEITURA PAGINADA (#4321) ────────────────────────────────────────
+    // O PostgREST corta TODA resposta em `max_rows` (1000, `supabase/config.toml`)
+    // sem erro: sem `.range()` o quadro de um funil grande chegava com um pedaço
+    // arbitrário e a tela dizia que era o funil inteiro. `lerPaginado` lê por
+    // páginas e prova o fim pelo `count` exato da primeira — quando não consegue
+    // provar (mais páginas que o teto), devolve `truncado` e a resposta AVISA.
+    //
+    // O `organization_id` não é redundância com a RLS: é a PRIMEIRA coluna de
+    // `idx_crm_leads_org_pipeline_position_id` (`supabase/baseline.sql`). Sem
+    // ele o índice não serve e a consulta varre o funil inteiro filtrando a
+    // organização linha a linha.
+    lerPaginado<Lead>((inicio, fim, contar) =>
+      supabase
+        .from("crm_leads")
+        // O genérico explícito (`<string, Lead>`) porque a lista de colunas é
+        // montada em tempo de execução: sem ele o tipo da linha vira
+        // `GenericStringError[]` e o `lerPaginado<Lead>` não fecha.
+        .select<string, Lead>(COLUNAS_DO_QUADRO, contar ? { count: "exact" } : undefined)
+        .eq("organization_id", organizationId)
+        .eq("pipeline_id", pipelineId)
+        .neq("status", "archived")
+        .order("position_in_stage")
+        .order("id")
+        .range(inicio, fim),
+    ),
   ]);
 
-  if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
   if (stagesErr) return fail("internal_error", stagesErr.message, 500, { requestId });
-  if (leadsErr) return fail("internal_error", leadsErr.message, 500, { requestId });
-  if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
+  if (leituraDosLeads.erro) {
+    return fail("internal_error", leituraDosLeads.erro, 500, { requestId });
+  }
+  const leads = leituraDosLeads.linhas;
 
   // Contato pessoal some do board mas a linha continua no banco (spec 21, etapa
   // 8, decisão 2 — critério 4): o card não é listado e volta ao desmarcar, com
@@ -691,7 +770,15 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       (lead) =>
         ocultarProvaMetaNaResposta(lead as unknown as Record<string, unknown>) as unknown as Lead,
     ),
+    // O AVISO anda com o corpo (#4321): quando a leitura não conseguiu provar o
+    // fim, quem desenha o quadro precisa saber que está vendo um recorte — o
+    // resto do contrato fica igual. Ausente quando o fim foi provado, então o
+    // quadro pequeno responde byte a byte o que respondia antes.
+    ...(leituraDosLeads.truncado ? { truncado: true as const } : {}),
   };
 
-  return ok(board, { requestId });
+  return ok(board, {
+    requestId,
+    headers: leituraDosLeads.truncado ? { "X-Quadro-Truncado": "1" } : undefined,
+  });
 }

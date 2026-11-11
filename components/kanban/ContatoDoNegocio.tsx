@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { NewContactDialog } from "@/components/contacts/NewContactDialog";
+import { dadosDoCardParaContato } from "@/lib/leads/dados-do-card-para-contato";
+import type { Lead } from "@/lib/types/leads";
 import { useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,7 +17,12 @@ import { useContactList } from "@/hooks/contacts/useContactList";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
 import { useT } from "@/hooks/i18n/useT";
 import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
-import { useContatosRelacionados } from "@/hooks/leads/useContatosRelacionados";
+import { useEditLead } from "@/hooks/kanban/useUpdateLead";
+import {
+  chaveDosContatosRelacionados,
+  useContatosRelacionados,
+} from "@/hooks/leads/useContatosRelacionados";
+import { ApiError } from "@/lib/api/types";
 import {
   useAdicionarParticipante,
   useAdicionarPeloTelefone,
@@ -43,6 +51,13 @@ interface Props {
    * `useContatosRelacionados` segura a chamada sem `leadId`.
    */
   leadId?: string | null;
+  lead?: Lead;
+  /**
+   * Vem do pai (`LeadDossier`, que já lê `usePermission`) em vez de ser lida
+   * aqui: assim o componente segue renderizando sem `AuthProvider`, como os
+   * testes do dossiê o montam. Ausente = sem o botão "Criar contato".
+   */
+  podeCriarContato?: boolean;
 }
 
 /**
@@ -62,50 +77,332 @@ interface Props {
  * adicionar, remover e dar papel passam pela mesma rota (`POST`/`DELETE` em
  * `contatos-relacionados`). A aba OPCIONAL "Participantes" continua fora — ela
  * é opt-in por organização ou funil, e esse interruptor é decisão de produto.
+ *
+ * ─── O VÍNCULO DEIXOU DE SER SÓ LEITURA (#852, fatia 3) ─────────────────────
+ *
+ * Até aqui, negócio sem contato era um parágrafo passivo e um fim de linha: o
+ * funil cria o negócio sem contato, e quem descobria depois que faltava não
+ * tinha NENHUM caminho de tela — nem para ligar, nem para desfazer um vínculo
+ * errado. O backend nunca foi o obstáculo (`updateLeadSchema` já aceita
+ * `contact_id`, nullable de propósito), então esta fatia é só de tela: o
+ * seletor busca na MESMA lista da tela de contatos (`useContactList`, a rota
+ * `GET /api/v1/contacts?search=`, que já casa variações de telefone) e grava
+ * pelo `useEditLead` — o mesmo `PATCH /api/v1/leads/[id]` da edição do card,
+ * com o mesmo acerto de cache do quadro.
+ *
+ * O estado é OTIMISTA e local (`vinculo`): o dossiê mostra o contato no mesmo
+ * instante, sem esperar o quadro reler. A revalidação acontece do lado do hook
+ * (que grava a resposta no cache do board e invalida) mais a invalidação da
+ * lista vizinha — o vínculo é do NEGÓCIO, e as duas seções do dossiê precisam
+ * contar a mesma história sem recarregar a página.
+ *
+ * `undefined` = nenhuma decisão local (vale o `contactId` da prop); `null` =
+ * desvinculado por esta tela. É o que permite desfazer sem inventar estado no
+ * pai.
  */
-export function ContatoDoNegocio({ contactId, pipelineId, leadId }: Props) {
+export function ContatoDoNegocio({
+  contactId,
+  pipelineId,
+  leadId,
+  lead,
+  podeCriarContato = false,
+}: Props) {
   const t = useT();
+  const qc = useQueryClient();
+  const [criando, setCriando] = useState(false);
+  const [vinculo, setVinculo] = useState<string | null | undefined>(undefined);
+  const efetivo = vinculo !== undefined ? vinculo : contactId;
   return (
     <>
-      {contactId ? (
-        <ContatoVinculado contactId={contactId} pipelineId={pipelineId} />
+      {efetivo ? (
+        <ContatoVinculado
+          contactId={efetivo}
+          pipelineId={pipelineId}
+          leadId={leadId ?? null}
+          onDesvinculado={() => setVinculo(null)}
+        />
       ) : (
-        <p className="text-xs text-text-muted">{t("Este negócio não tem contato vinculado.")}</p>
+        <SemContato
+          leadId={leadId ?? null}
+          pipelineId={pipelineId}
+          onVinculado={(id) => setVinculo(id)}
+        />
+      )}
+      {!efetivo && lead && leadId === lead.id && podeCriarContato && (
+        <>
+          <Button type="button" size="sm" variant="outline" onClick={() => setCriando(true)}>
+            {t("Criar contato")}
+          </Button>
+          {criando && (
+            <NewContactDialog
+              key={lead.id}
+              open
+              onOpenChange={setCriando}
+              leadId={lead.id}
+              nomeInicial={lead.title}
+              dadosIniciais={dadosDoCardParaContato(lead)}
+              referenciaDoCard={lead.description}
+              permitirIniciarConversa={false}
+              onCriado={(c) => {
+                setVinculo(c.id);
+                void qc.invalidateQueries({ queryKey: chaveDoQuadro(pipelineId) });
+                void qc.invalidateQueries({ queryKey: chaveDosContatosRelacionados(lead.id) });
+              }}
+            />
+          )}
+        </>
       )}
       <PessoasRelacionadas leadId={leadId ?? null} />
     </>
   );
 }
 
-function ContatoVinculado({ contactId, pipelineId }: { contactId: string; pipelineId: string }) {
+/**
+ * O estado VAZIO do vínculo — com a saída que faltava (#852).
+ *
+ * A frase continua: ela é a explicação de por que a seção está vazia, e tirá-la
+ * deixaria um botão solto no dossiê. O que ela não podia continuar sendo é o
+ * FIM da história.
+ *
+ * Sem `leadId` não há âncora para escrever (o card e os testes do dossiê montam
+ * o componente sem o negócio): aí fica só o aviso, sem um botão que prometeria
+ * o que não pode cumprir — a mesma régua de `PessoasRelacionadas`.
+ */
+function SemContato({
+  leadId,
+  pipelineId,
+  onVinculado,
+}: {
+  leadId: string | null;
+  pipelineId: string;
+  onVinculado: (contactId: string) => void;
+}) {
+  const t = useT();
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div className="space-y-2" data-testid="negocio-sem-contato">
+      <p className="text-xs text-text-muted">{t("Este negócio não tem contato vinculado.")}</p>
+      {!leadId ? null : aberto ? (
+        <SeletorDeVinculo
+          leadId={leadId}
+          pipelineId={pipelineId}
+          onVinculado={(id) => {
+            setAberto(false);
+            onVinculado(id);
+          }}
+        />
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="px-2 text-xs lg:h-7"
+          data-testid="vincular-contato"
+          onClick={() => setAberto(true)}
+        >
+          {t("Vincular contato")}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A busca, e o PATCH que grava o vínculo.
+ *
+ * Fechado por padrão — a montagem é que segura a chamada (`useContactList` não
+ * tem `enabled`), mesmo desenho de `AdicionarParticipante`: abrir o dossiê não
+ * faz requisição de contatos.
+ *
+ * A falha fica NO BLOCO, não só no toast: o toast de `useEditLead` (`showApiError`)
+ * some sozinho, e quem escolheu a pessoa precisa saber o motivo — e precisa ver
+ * o seletor ainda aberto para tentar outro contato. `ApiError.message` é o texto
+ * que a rota escreveu (contato de outra organização, sem permissão); qualquer
+ * outra coisa cai na frase genérica, nunca em silêncio.
+ */
+function SeletorDeVinculo({
+  leadId,
+  pipelineId,
+  onVinculado,
+}: {
+  leadId: string;
+  pipelineId: string;
+  onVinculado: (contactId: string) => void;
+}) {
+  const t = useT();
+  const qc = useQueryClient();
+  const [busca, setBusca] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const editar = useEditLead(pipelineId);
+  const termo = busca.trim();
+  const { data, isLoading } = useContactList({ search: termo || undefined, limit: 5 });
+  // Anonimizado é dado pessoal redigido: não se oferece para vínculo novo.
+  const contatos = (data?.pages[0]?.data ?? []).filter((c) => !c.is_anonymized);
+
+  async function vincular(contato: Contact) {
+    setErro(null);
+    try {
+      await editar.mutateAsync({ leadId, patch: { contact_id: contato.id } });
+      // O vínculo é do NEGÓCIO: o bloco de pessoas relacionadas relê junto.
+      await qc.invalidateQueries({ queryKey: chaveDosContatosRelacionados(leadId) });
+      toast.success(t("Contato vinculado ao negócio."));
+      onVinculado(contato.id);
+    } catch (err) {
+      setErro(err instanceof ApiError ? t(err.message) : t("Não foi possível vincular o contato."));
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-2" data-testid="seletor-de-vinculo">
+      <div className="space-y-1">
+        <Label htmlFor="busca-do-contato-a-vincular" className="text-xs">
+          {t("Buscar contato")}
+        </Label>
+        <Input
+          id="busca-do-contato-a-vincular"
+          value={busca}
+          placeholder={t("Procure pelo nome ou telefone")}
+          onChange={(e) => setBusca(e.target.value)}
+        />
+      </div>
+      {isLoading && <p className="text-[11px] text-text-muted">{t("Carregando…")}</p>}
+      {!isLoading && contatos.length === 0 && (
+        <p className="text-[11px] text-text-muted">{t("Nenhum contato encontrado.")}</p>
+      )}
+      <ul className="space-y-1">
+        {contatos.map((contato) => {
+          const nome = nomeDoContato(contato) ?? "";
+          return (
+            <li key={contato.id} className="flex items-center gap-2 text-xs">
+              <span className="min-w-0 truncate">{nome || "—"}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="ml-auto px-2 text-[11px] lg:h-6"
+                disabled={editar.isPending}
+                // Numa lista de pessoas, "Vincular" sozinho não diz a quem.
+                aria-label={`${t("Vincular")} ${nome}`.trim()}
+                onClick={() => vincular(contato)}
+              >
+                {t("Vincular")}
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      {erro && <MensagemDeErro texto={erro} />}
+    </div>
+  );
+}
+
+/** O motivo da falha, no próprio bloco. `role="alert"` para quem não vê o toast. */
+function MensagemDeErro({ texto }: { texto: string }) {
+  return (
+    <p role="alert" data-testid="erro-ao-vincular" className="text-[11px] text-destructive">
+      {texto}
+    </p>
+  );
+}
+
+function ContatoVinculado({
+  contactId,
+  pipelineId,
+  leadId,
+  onDesvinculado,
+}: {
+  contactId: string;
+  pipelineId: string;
+  leadId: string | null;
+  onDesvinculado: () => void;
+}) {
   const t = useT();
   const { data, isLoading, isError } = useContact(contactId);
   const contato = data?.data;
 
-  if (isLoading) {
-    return <p className="text-xs text-text-muted">{t("Carregando…")}</p>;
-  }
-  if (isError || !contato) {
-    return <p className="text-xs text-text-muted">{t("Não consegui carregar o contato.")}</p>;
+  return (
+    <>
+      {isLoading ? (
+        <p className="text-xs text-text-muted">{t("Carregando…")}</p>
+      ) : isError || !contato ? (
+        <p className="text-xs text-text-muted">{t("Não consegui carregar o contato.")}</p>
+      ) : (
+        <Tabs defaultValue="dados" data-testid="contato-do-negocio">
+          <TabsList>
+            <TabsTrigger value="dados">{t("Dados")}</TabsTrigger>
+            <TabsTrigger value="links">{t("Links")}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="dados">
+            <DadosDoContato contato={contato} />
+          </TabsContent>
+          <TabsContent value="links">
+            {/* `key` = updated_at: quando o contato é relido depois de salvar
+                (ou editado em outra tela), o formulário reinicia com o valor do
+                servidor, sem um efeito de sincronização que pisaria no que a
+                pessoa está digitando. */}
+            <FormularioDeLinks key={contato.updated_at} contato={contato} pipelineId={pipelineId} />
+          </TabsContent>
+        </Tabs>
+      )}
+      <RodapeDoVinculo pipelineId={pipelineId} leadId={leadId} onDesvinculado={onDesvinculado} />
+    </>
+  );
+}
+
+/**
+ * O "Desvincular contato" — FORA das abas e FORA do caminho de erro.
+ *
+ * Dois motivos para ele não estar dentro da ficha: (1) o vínculo é do NEGÓCIO,
+ * não do contato; (2) um contato que falha ao carregar — apagado, fundido, fora
+ * do alcance — é justamente quando o vínculo PRECISA ser desfeito, e um botão
+ * que só nasce depois de o `useContact` dar certo seria inalcançável aí.
+ *
+ * `contact_id: null` é aceito pelo schema de propósito, e a rota só valida o
+ * contato NOVO quando ele vem (`if (input.contact_id && …)`) — então desfazer
+ * não custa nenhuma regra nova no servidor.
+ */
+function RodapeDoVinculo({
+  pipelineId,
+  leadId,
+  onDesvinculado,
+}: {
+  pipelineId: string;
+  leadId: string | null;
+  onDesvinculado: () => void;
+}) {
+  const t = useT();
+  const [erro, setErro] = useState<string | null>(null);
+  const editar = useEditLead(pipelineId);
+  if (!leadId) return null;
+
+  async function desvincular() {
+    if (!leadId) return;
+    setErro(null);
+    try {
+      await editar.mutateAsync({ leadId, patch: { contact_id: null } });
+      toast.success(t("Contato desvinculado do negócio."));
+      onDesvinculado();
+    } catch (err) {
+      setErro(
+        err instanceof ApiError ? t(err.message) : t("Não foi possível desvincular o contato."),
+      );
+    }
   }
 
   return (
-    <Tabs defaultValue="dados" data-testid="contato-do-negocio">
-      <TabsList>
-        <TabsTrigger value="dados">{t("Dados")}</TabsTrigger>
-        <TabsTrigger value="links">{t("Links")}</TabsTrigger>
-      </TabsList>
-      <TabsContent value="dados">
-        <DadosDoContato contato={contato} />
-      </TabsContent>
-      <TabsContent value="links">
-        {/* `key` = updated_at: quando o contato é relido depois de salvar (ou
-            editado em outra tela), o formulário reinicia com o valor do
-            servidor, sem um efeito de sincronização que pisaria no que a
-            pessoa está digitando. */}
-        <FormularioDeLinks key={contato.updated_at} contato={contato} pipelineId={pipelineId} />
-      </TabsContent>
-    </Tabs>
+    <div className="mt-1 space-y-1">
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="px-2 text-[11px] text-text-muted hover:text-destructive lg:h-6"
+        disabled={editar.isPending}
+        onClick={desvincular}
+      >
+        {t("Desvincular contato")}
+      </Button>
+      {erro && <MensagemDeErro texto={erro} />}
+    </div>
   );
 }
 

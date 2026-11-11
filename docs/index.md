@@ -53,6 +53,7 @@ de menor precedência e registre.
 | [`prd/05-prd-ai-rag-handoff.md`](prd/05-prd-ai-rag-handoff.md) | IA conversacional, RAG por tenant, sentiment |
 | [`prd/06-prd-nuvemshop-lgpd.md`](prd/06-prd-nuvemshop-lgpd.md) | Integração Nuvemshop + webhooks LGPD |
 | [`business-rules/00-business-rules-catalog.md`](business-rules/00-business-rules-catalog.md) | **Catálogo de regras de negócio** — fonte da verdade fora do código |
+| [`features/atendimento-alerta-humano-nome-informado.md`](features/atendimento-alerta-humano-nome-informado.md) | Aviso interno por episódio de transferência e opt-in para preencher nome vazio com limites da prova |
 | [`features/feature-a-leadsubmitted-ctwa.md`](features/feature-a-leadsubmitted-ctwa.md) | Feature A portada: LeadSubmitted por clique CTWA recebido, evidência do fork e validações pendentes do upstream |
 | [`presentation/pitch-deck.md`](presentation/pitch-deck.md) | Pitch |
 
@@ -84,6 +85,7 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 | [`specs/18`](specs/18-spec-voice-calls-wacalls.md) | Chamada de voz WhatsApp (WaCalls) — rascunho, sem sub-PRD dedicado |
 | [`specs/extensoes-declarativas-v1.md`](specs/extensoes-declarativas-v1.md) | **Extensões declarativas v1** — pacote JSON estrito, catálogo admitido pelo dono da instalação, ativação por organização, guia no hub CRM |
 | [`integracao/webhooks-de-saida.md`](integracao/webhooks-de-saida.md) | Webhook de saída do lado de quem recebe: cabeçalhos, assinatura com carimbo de tempo, id de entrega, exemplos em Node e Python |
+| [`integracao/mcp-oauth-por-contato.md`](integracao/mcp-oauth-por-contato.md) | Servidores MCP por agente com OAuth por contato: cadastro, link de autorização na conversa, escrita delegada, revogação e LGPD |
 | [`specs/RECONCILIATION-LOG.md`](specs/RECONCILIATION-LOG.md) | Log de reconciliação entre specs |
 
 ## 4. Doutrina e arquitetura
@@ -143,7 +145,7 @@ acessibilidade).
 | [`runbooks/oracle-arm64.md`](runbooks/oracle-arm64.md) | **Oracle Ampere A1/Ubuntu** — VM ARM64, rede, instalação, atualização, backup e aceite real |
 | [`runbooks/remediar-worker-congelado.md`](runbooks/remediar-worker-congelado.md) | **Incidente: o worker congelado** — diagnóstico (`diagnostico.sh`), impacto medido e as duas rotas de remediação. **Ainda não ensaiado** |
 | [`runbooks/ativar-packaging.md`](runbooks/ativar-packaging.md) | **Ativação da doutrina de packaging** — os 3 passos que não cabem num PR (pacote público, check obrigatório, primeira release) |
-| [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md) | **“Meu Supabase estourou a cota”** — como medir a origem do consumo, os dois intervalos da fila e as duas tabelas que só crescem |
+| [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md) | **“Meu Supabase estourou a cota”** — como medir a origem do consumo, os dois intervalos da fila, as duas tabelas que só crescem e o aviso “Log Ingestion Exceeded” (1 GB de log no free) |
 | [`runbooks/waha-hostgator.md`](runbooks/waha-hostgator.md) | Runbook do WAHA em produção |
 | [`runbooks/cloudpanel.md`](runbooks/cloudpanel.md) | **VPS que já tem CloudPanel/Nginx nas portas 80/443** — o modo proxy externo do kit, o endereço fixo para o Nginx do host e o 403 do webhook global |
 | [`saas/README.md`](saas/README.md) | **Revender como SaaS** — a jornada do dono da instalação, do servidor ao primeiro cliente pagando; modelo, painel do dono, primeiro cliente, custo por cliente |

@@ -41,6 +41,8 @@ dc() {
   # para arquivo ausente derrubaria o compose no meio da instalação.
   local -a ca=()
   if ca_do_supabase_ok && [ -f docker-compose.supabase-ca.yml ]; then ca=(-f docker-compose.supabase-ca.yml); fi
+  # Rede do Supabase self-hosted no mesmo host (gemea de _common.sh).
+  if rede_do_supabase_ok && [ -f docker-compose.supabase-rede.yml ]; then ca+=(-f docker-compose.supabase-rede.yml); fi
   if [ "${SINGLE_SERVER:-0}" = "1" ]; then
     # #2099: o overlay do proxy da hospedagem entra também no single-server.
     case "${REVERSE_PROXY:-caddy}" in
@@ -63,6 +65,9 @@ dc_files() {
   local sufixo=""
   if ca_do_supabase_ok && [ -f docker-compose.supabase-ca.yml ]; then
     sufixo=" -f docker-compose.supabase-ca.yml"
+  fi
+  if rede_do_supabase_ok && [ -f docker-compose.supabase-rede.yml ]; then
+    sufixo="${sufixo} -f docker-compose.supabase-rede.yml"
   fi
   if [ "${SINGLE_SERVER:-0}" = "1" ]; then
     case "${REVERSE_PROXY:-caddy}" in
@@ -110,10 +115,17 @@ ca_do_supabase() {
 # Idem _common.sh: silenciosa, para as decisões de montagem.
 ca_do_supabase_ok() { ca_do_supabase >/dev/null 2>&1; }
 
+# Gemea de _common.sh: rede docker de um Supabase self-hosted no mesmo host.
+rede_do_supabase_ok() {
+  [ -n "${SUPABASE_DOCKER_NETWORK:-}" ] && docker network inspect "$SUPABASE_DOCKER_NETWORK" >/dev/null 2>&1
+}
+
 pg_container() {
   local -a rede=() ca=()
   local caminho=""
-  [ -n "${PSQL_DOCKER_NETWORK:-}" ] && rede=(--network "$PSQL_DOCKER_NETWORK")
+  # Gêmea de _common.sh: sem PSQL_DOCKER_NETWORK, vale a rede do Supabase do mesmo host.
+  if [ -n "${PSQL_DOCKER_NETWORK:-}" ]; then rede=(--network "$PSQL_DOCKER_NETWORK")
+  elif rede_do_supabase_ok; then rede=(--network "$SUPABASE_DOCKER_NETWORK"); fi
   # `local caminho` separado de propósito: `local caminho="$(...)"` engole o
   # status do comando substituído e o `if` aceitaria CA quebrada como pronta.
   if caminho="$(ca_do_supabase 2>/dev/null)"; then

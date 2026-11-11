@@ -35,10 +35,16 @@ import {
  * marcada. É o estado inicial da caixa, lido do `tool_ids` — nunca do que o
  * servidor anunciou.
  */
-export function marcaDaRemota(toolIds: readonly string[], nome: string): MarcaRemota | null {
+export function marcaDaRemota(
+  toolIds: readonly string[],
+  nome: string,
+  servidorId?: string,
+): MarcaRemota | null {
   for (const id of toolIds) {
     const escolha = lerToolIdRemoto(id);
-    if (escolha && escolha.nome === nome) return escolha.leitura ? "leitura" : "escrita";
+    if (escolha && escolha.nome === nome && escolha.servidorId === servidorId) {
+      return escolha.leitura ? "leitura" : "escrita";
+    }
   }
   return null;
 }
@@ -59,8 +65,9 @@ export function marcarRemota(
   toolIds: readonly string[],
   nome: string,
   marca: MarcaRemota,
+  servidorId?: string,
 ): string[] {
-  return [...desmarcarRemota(toolIds, nome), toolIdRemoto(nome, marca)];
+  return [...desmarcarRemota(toolIds, nome, servidorId), toolIdRemoto(nome, marca, servidorId)];
 }
 
 /**
@@ -70,11 +77,22 @@ export function marcarRemota(
  * isso não é tocado: quem recusa id malformado é a validação, não uma remoção
  * silenciosa no meio de um clique.
  */
-export function desmarcarRemota(toolIds: readonly string[], nome: string): string[] {
+export function desmarcarRemota(
+  toolIds: readonly string[],
+  nome: string,
+  servidorId?: string,
+): string[] {
+  // `servidorId` ausente = o servidor da organização: as escolhas de servidores
+  // do agente com o mesmo nome são de OUTRO servidor e ficam.
   return toolIds.filter((id) => {
     const escolha = lerToolIdRemoto(id);
-    return escolha === null || escolha.nome !== nome;
+    return escolha === null || escolha.nome !== nome || escolha.servidorId !== servidorId;
   });
+}
+
+/** Tira TODAS as escolhas de um servidor do agente (o servidor foi removido). */
+export function desmarcarServidor(toolIds: readonly string[], servidorId: string): string[] {
+  return toolIds.filter((id) => lerToolIdRemoto(id)?.servidorId !== servidorId);
 }
 
 /**
@@ -101,6 +119,8 @@ export function removerRemotasOrfas(
   const nomes = new Set(anunciadas);
   return toolIds.filter((id) => {
     const escolha = lerToolIdRemoto(id);
-    return escolha === null || nomes.has(escolha.nome);
+    // Só o servidor da organização: a órfã de um servidor do agente é medida
+    // contra o que AQUELE servidor anuncia, e não contra este.
+    return escolha === null || escolha.servidorId !== undefined || nomes.has(escolha.nome);
   });
 }

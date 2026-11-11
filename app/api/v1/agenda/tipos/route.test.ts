@@ -79,7 +79,11 @@ interface Escrita {
   filtros: Record<string, unknown>;
 }
 
-function makeAdmin(linhas: Linha[], canais: Array<Record<string, unknown>> = []) {
+function makeAdmin(
+  linhas: Linha[],
+  canais: Array<Record<string, unknown>> = [],
+  modelos: Array<Record<string, unknown>> = [],
+) {
   const escritas: Escrita[] = [];
 
   function builder() {
@@ -141,6 +145,15 @@ function makeAdmin(linhas: Linha[], canais: Array<Record<string, unknown>> = [])
           select: () => c,
           eq(k: string, v: unknown) { filtros[k] = v; return c; },
           maybeSingle: async () => ({ data: canais.find((r) => Object.entries(filtros).every(([k,v]) => r[k] === v)) ?? null, error: null }),
+        };
+        return c;
+      }
+      if (tabela === "meta_templates") {
+        const filtros: Record<string, unknown> = {};
+        const c = {
+          select: () => c,
+          eq(k: string, v: unknown) { filtros[k] = v; return c; },
+          maybeSingle: async () => ({ data: modelos.find((r) => Object.entries(filtros).every(([k,v]) => r[k] === v)) ?? null, error: null }),
         };
         return c;
       }
@@ -466,6 +479,7 @@ describe("GET /api/v1/agenda/tipos", () => {
           antecedenciaMinimaMin: 120,
           janelaDeAgendamentoDias: 60,
           lembreteLigado: true,
+          levarDadosDoNegocio: true,
           lembreteAntecedenciaMin: 180,
           lembreteDegrausExtras: [],
           lembreteMensagem: "Oi {{nome}}, te espero {{dia}} às {{hora}}.",
@@ -485,15 +499,54 @@ describe("GET /api/v1/agenda/tipos", () => {
         reminder_minutes_before: number;
         reminder_body: string | null;
         reminder_bodies: Record<string, string>;
+        levar_dados_do_negocio: boolean;
       }>;
     };
     expect(corpo.data[0]?.reminder_enabled).toBe(true);
+    expect(corpo.data[0]?.levar_dados_do_negocio).toBe(true);
     expect(corpo.data[0]?.reminder_minutes_before).toBe(180);
     expect(corpo.data[0]?.reminder_body).toBe("Oi {{nome}}, te espero {{dia}} às {{hora}}.");
     expect(corpo.data[0]?.reminder_bodies).toEqual({});
   });
 });
 
+
+/**
+ * O BLOCO DO NEGÓCIO no evento do Google (#4006, doc 272 = B): desligado de
+ * fábrica, e a tela do tipo é a porta para ligar. O que se prende no POST é a
+ * AUSÊNCIA do campo no INSERT — quem decide o padrão é o default da coluna
+ * (false, migration 9209), não um `.default()` do Zod.
+ */
+describe("levar os dados do negócio ao Google — a chave do tipo", () => {
+  it("sem o campo, o INSERT não o menciona", async () => {
+    authOk();
+    const db = makeAdmin([]);
+    const { POST } = await import("./route");
+    await POST(req("POST", { name: "Reunião", category: "reuniao", duration_minutes: 30, location_kind: "google_meet" }));
+    expect(Object.keys(db.escritas[0]?.campos ?? {})).not.toContain("levar_dados_do_negocio");
+  });
+
+  it("PATCH liga e desliga, e o valor CHEGA à linha", async () => {
+    authOk();
+    const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG, levar_dados_do_negocio: false })];
+    makeAdmin(linhas);
+    const { PATCH } = await import("./route");
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, levar_dados_do_negocio: true }))).status).toBe(200);
+    expect(linhas[0]?.levar_dados_do_negocio).toBe(true);
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, levar_dados_do_negocio: false }))).status).toBe(200);
+    expect(linhas[0]?.levar_dados_do_negocio).toBe(false);
+  });
+
+  it("recusa valor que não é booleano sem escrever", async () => {
+    authOk();
+    const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG, levar_dados_do_negocio: false })];
+    const db = makeAdmin(linhas);
+    const { PATCH } = await import("./route");
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, levar_dados_do_negocio: "sim" }))).status).toBe(422);
+    expect(db.escritas).toHaveLength(0);
+    expect(linhas[0]?.levar_dados_do_negocio).toBe(false);
+  });
+});
 
 describe("canal do lembrete na API de tipos", () => {
   const CANAL = "77777777-7777-4777-8777-777777777777";
@@ -524,5 +577,85 @@ describe("canal do lembrete na API de tipos", () => {
     const { POST } = await import("./route");
     expect((await POST(req("POST", { name: "Design", category: "procedimento", duration_minutes: 30, location_kind: "in_person", reminder_channel_session_id: CANAL }))).status).toBe(201);
     expect(rows[0]?.reminder_channel_session_id).toBe(CANAL);
+  });
+});
+
+/**
+ * O MODELO DO LEMBRETE FORA DA JANELA (migration 9092). A tela oferece só o que
+ * serve; a rota recusa o resto ANTES de escrever — um modelo que o cron nunca
+ * mandaria, gravado, seria a configuração que existe e não faz nada.
+ */
+describe("modelo do lembrete fora da janela na API de tipos", () => {
+  const CANAL = "77777777-7777-4777-8777-777777777777";
+  const OUTRO_CANAL = "88888888-8888-4888-8888-888888888888";
+  const MODELO = "99999999-9999-4999-8999-999999999999";
+  const modelo = (over: Record<string, unknown> = {}) => ({
+    id: MODELO,
+    organization_id: ORG,
+    channel_session_id: CANAL,
+    name: "lembrete_da_consulta",
+    language: "pt_BR",
+    parameter_format: "POSITIONAL",
+    components: [{ type: "BODY", text: "Oi {{1}}, sua consulta: {{2}}." }],
+    ...over,
+  });
+  const canalDaOrg = { id: CANAL, organization_id: ORG, provider: DEFAULT_CHANNEL_PROVIDER, archived_at: null };
+
+  it("PATCH persiste o modelo da organização e permite voltar a nenhum", async () => {
+    authOk();
+    const rows = [linha({ id: TIPO_DA_ORG, organization_id: ORG })];
+    makeAdmin(rows, [canalDaOrg], [modelo()]);
+    const { PATCH } = await import("./route");
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_meta_template_id: MODELO }))).status).toBe(200);
+    expect(rows[0]?.reminder_meta_template_id).toBe(MODELO);
+    // Com o número do mesmo pedido, sendo o dono do modelo: aceita.
+    expect(
+      (await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_channel_session_id: CANAL, reminder_meta_template_id: MODELO }))).status,
+    ).toBe(200);
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_meta_template_id: null }))).status).toBe(200);
+    expect(rows[0]?.reminder_meta_template_id).toBeNull();
+  });
+
+  it.each([
+    ["de outra organização", { organization_id: OUTRA_ORG }],
+    ["com variável nomeada", { parameter_format: "NAMED", components: [{ type: "BODY", text: "Oi {{nome}}" }] }],
+    ["com mídia no cabeçalho", { components: [{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "Oi {{1}}" }] }],
+    ["com mais de quatro variáveis", { components: [{ type: "BODY", text: "{{1}} {{2}} {{3}} {{4}} {{5}}" }] }],
+  ])("recusa modelo %s antes de escrever", async (_caso, over) => {
+    authOk();
+    const { escritas } = makeAdmin([linha({ id: TIPO_DA_ORG, organization_id: ORG })], [canalDaOrg], [modelo(over)]);
+    const { PATCH } = await import("./route");
+    const res = await PATCH(req("PATCH", { id: TIPO_DA_ORG, reminder_meta_template_id: MODELO }));
+    expect(res.status).toBe(422);
+    expect((await corpoDeErro(res)).error.code).toBe("validation_failed");
+    expect(escritas).toHaveLength(0);
+  });
+
+  it("recusa modelo de OUTRO número que o escolhido no mesmo pedido — o lembrete nunca troca de número", async () => {
+    authOk();
+    const { escritas } = makeAdmin(
+      [linha({ id: TIPO_DA_ORG, organization_id: ORG })],
+      [canalDaOrg],
+      [modelo({ channel_session_id: OUTRO_CANAL })],
+    );
+    const { PATCH } = await import("./route");
+    const res = await PATCH(
+      req("PATCH", { id: TIPO_DA_ORG, reminder_channel_session_id: CANAL, reminder_meta_template_id: MODELO }),
+    );
+    expect(res.status).toBe(422);
+    expect((await corpoDeErro(res)).error.message).toMatch(/outro número/);
+    expect(escritas).toHaveLength(0);
+  });
+
+  it("POST valida e persiste o modelo no nascimento do tipo", async () => {
+    authOk();
+    const rows: Linha[] = [];
+    makeAdmin(rows, [canalDaOrg], [modelo()]);
+    const { POST } = await import("./route");
+    const res = await POST(
+      req("POST", { name: "Retorno", category: "retorno", duration_minutes: 15, location_kind: "in_person", reminder_meta_template_id: MODELO }),
+    );
+    expect(res.status).toBe(201);
+    expect(rows[0]?.reminder_meta_template_id).toBe(MODELO);
   });
 });

@@ -42,7 +42,7 @@ export const PISO_DA_BUSCA = 2;
  *
  * Esta função torna o acidente uma regra: todo separador vira o mesmo curinga.
  *
- * ⚠️ NÃO substitui `termoSeguroParaOr` (`app/api/v1/conversations/_handler.ts`).
+ * ⚠️ NÃO substitui `termoSeguroParaOr` (neste mesmo arquivo).
  * Aquela cuida da GRAMÁTICA do `or=` do PostgREST e está correta — mexer nela é
  * regressão, e isso foi medido contra a instância real. Esta cuida de COMO A
  * PESSOA DIGITA. As duas compõem, nesta ordem, e `termoSeguroParaOr` não escapa
@@ -92,4 +92,79 @@ export function normalizarTermoDeBusca(bruto: string): string {
 export function buscaValeConsulta(bruto: string): boolean {
   const semLixo = bruto.replace(/[()*]/g, " ");
   return normalizarTermoDeBusca(semLixo).length >= PISO_DA_BUSCA;
+}
+
+/**
+ * Letras que o NFD não decompõe — o `unaccent` do Postgres mapeia todas elas.
+ *
+ * Sem esta tabela, um contato cadastrado como "Øyvind" (coluna do banco:
+ * "oyvind") deixaria de ser achado por quem digita "Øyvind" — um REGRESSO em
+ * relação ao `ilike` atual, que casava igual com igual. A lista é a das letras
+ * latinas que o arquivo `unaccent.rules` cobre e a decomposição NFD não.
+ */
+const NAO_DECOMPOEM: Record<string, string> = {
+  ß: "ss",
+  æ: "ae",
+  œ: "oe",
+  ø: "o",
+  đ: "d",
+  ð: "d",
+  ł: "l",
+  þ: "th",
+  ı: "i",
+  ħ: "h",
+  ŧ: "t",
+  ĸ: "k",
+};
+
+/**
+ * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
+ *
+ * Estava em `app/api/v1/conversations/_handler.ts` e desceu para cá quando a
+ * busca de CONTATOS passou a precisar da MESMA gramática (#3918, fatia 2): as
+ * duas rotas montam `or=`, e duas cópias do escape divergem no primeiro ajuste.
+ * O handler de conversas continua exportando o nome para os testes que o leem.
+ *
+ * Exportada para ser testável: o defeito que ela impede é de SINTAXE, e sintaxe
+ * se verifica sem subir banco. O comportamento contra o PostgREST de verdade
+ * está em `tests/e2e/`.
+ */
+export function termoSeguroParaOr(bruto: string): string {
+  return (
+    bruto
+      .trim()
+      // curingas do `ilike` (Postgres)
+      .replace(/[%_]/g, (m) => `\\${m}`)
+      // gramática do `or=` (PostgREST) — viram o próprio curinga
+      .replace(/[,()]/g, "*")
+  );
+}
+
+/**
+ * O termo como o BANCO o guarda: sem acento e em minúscula (#3918).
+ *
+ * ─── Por que existe, se o `ilike` já dobra a caixa ───────────────────────────
+ * `ILIKE` dobra CAIXA, não ACENTO: `lower('Á') = 'á'`, que não é `'a'`. Quem
+ * digita "Andreia" não acha "Andréia" — e no Brasil a mesma pessoa é escrita das
+ * duas formas, com o atendente digitando rápido, sem acento.
+ *
+ * ─── O outro lado mora no banco, e não aqui ──────────────────────────────────
+ * A coluna `contacts.busca_sem_acento` é GERADA por
+ * `lower(public.f_unaccent(…))` (migration 9098). Comparar o termo limpo contra
+ * a coluna crua não resolveria nada — os dois lados têm de estar normalizados,
+ * e é por isso que a coluna existe: `ilike` sobre `display_name` continua sem
+ * achar nada, por mais limpo que o termo chegue.
+ *
+ * ⚠️ Esta função e `public.f_unaccent` são a MESMA regra em duas linguagens, e
+ * duas cópias divergem no primeiro ajuste (é a classe de defeito que já apareceu
+ * neste repo com telefone). O que as mantém juntas é
+ * `tests/invariants/busca-do-inbox-ignora-acento.test.ts`, que compara as duas
+ * sobre uma matriz de nomes — não uma delas sozinha.
+ */
+export function termoSemAcento(bruto: string): string {
+  return bruto
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[ßæœøđðłþıħŧĸ]/gi, (letra) => NAO_DECOMPOEM[letra.toLowerCase()] ?? letra)
+    .toLowerCase();
 }

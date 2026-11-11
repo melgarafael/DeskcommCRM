@@ -25,16 +25,23 @@ interface AuditMcpToolCallInput {
    */
   resultBytes?: number;
   /**
-   * Vazio DECLARADO pela tool ("não achei"), quando o `success: false` é isso e
-   * não erro técnico. A tool diz qual vazio foi (`motivo`).
+   * O DESFECHO da chamada quando não é sucesso puro:
+   *
+   *   - `sem_resultado` — a tool declarou um vazio ("não achei"), e o `motivo`
+   *     diz qual vazio foi;
+   *   - `recusa` — a ferramenta RECUSOU sem efeito (`{ erro, mensagem }`,
+   *     `{ permitido: false, motivo }`, `{ error }`, `{ ok: false }`), e o
+   *     `motivo` é o CÓDIGO da recusa (`sem_destino`). Sem esta marca a trilha
+   *     afirmava uma mutação que não aconteceu (#4342/#4343).
    *
    * O painel conta a chamada como falha por `metadata->>'success' = 'false'`
    * (`fn_agent_tool_usage`, migration 0103) e não precisa saber mais nada para
    * parar de dizer "nenhuma falha". Estes dois campos são o que separa
-   * "a busca não achou" de "a busca quebrou" no dado gravado; separar os dois na
-   * TELA pede um contador novo naquela função — migration, trabalho do mantenedor.
+   * "a busca não achou" de "a ferramenta recusou" e de "a busca quebrou" no
+   * dado gravado; separar os três na TELA pede um contador novo naquela
+   * função — migration, trabalho do mantenedor.
    */
-  desfecho?: "sem_resultado";
+  desfecho?: "sem_resultado" | "recusa";
   motivo?: string;
   /**
    * O TERMO desta chamada, quando a tool declara um (`termoBuscado`). É o que

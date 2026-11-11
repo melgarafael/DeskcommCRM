@@ -47,6 +47,19 @@ interface LinhaDeContato {
   phone_number: string | null;
   email: string | null;
   email_normalized: string | null;
+  /**
+   * Lido porque `ligadosPorMotivoForte` compara CPF (#4081). Sem esta coluna os
+   * dois lados chegam `undefined` e a régua não vê par forte nenhum — a dispensa
+   * passaria a aceitar o par que é a mesma pessoa.
+   */
+  cpf_hash: string | null;
+  /**
+   * Mesma razão, para a conta de WhatsApp (#4081): `wa_identity` (metade `lid:`)
+   * e `wa_lid` são colunas geradas, e sem elas na leitura o par ligado pela mesma
+   * conta seria dispensável.
+   */
+  wa_identity: string | null;
+  wa_lid: string | null;
   source_metadata: Record<string, unknown> | null;
 }
 
@@ -76,7 +89,7 @@ export async function dispensarParDeContatos(
     ]);
 
     const { rows } = await db.query<LinhaDeContato>(
-      `select id, phone_number, email, email_normalized, source_metadata
+      `select id, phone_number, email, email_normalized, cpf_hash, wa_identity, wa_lid, source_metadata
          from public.contacts
         where organization_id = $1
           and id = any($2::uuid[])

@@ -29,6 +29,17 @@
  * A explicação sai no idioma de quem pediu (o `t` de sempre), porque quem a
  * escreveu foi o servidor.
  *
+ * ─── As duas parcelas do período (fatia 2, item 1, da #3602) ────────────────
+ * A meta continua contando VENDAS GANHAS, e valor não entra no percentual. Ao
+ * lado dela a rota passa a devolver `valores_do_periodo`: "vendido único"
+ * (`value_cents`) e "recorrência nova mensal" (`recurring_value_cents` dos
+ * ganhos com `recurring_period = 'monthly'`), SEPARADOS, mais a contagem de
+ * negócios com recorrência. Nada é somado entre as duas parcelas — a régua é
+ * `lib/metrics/valores-do-periodo.ts`, a mesma que o funil usa. Aditivo e
+ * retrocompatível: quem não preenche recorrência recebe zero nos dois números e
+ * o resto da resposta é o de antes. Sai mesmo sem meta cadastrada: "não há
+ * alvo" não é motivo para esconder quanto entrou no mês.
+ *
  * A org vem do cookie validado (`requireRole`), NUNCA do query. Read-only ⇒ sem
  * audit.
  */
@@ -39,6 +50,8 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { type NegocioComValor, separarValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
+import { lerPaginado } from "@/lib/supabase/pagina";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -186,6 +199,41 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
 
+  // ─── Os ganhos da janela, em LINHAS, para as duas parcelas (#3602) ────────
+  //
+  // Depois do laço de propósito: a PRIMEIRA leitura de `crm_leads` desta rota
+  // continua sendo a contagem `head: true` do realizado, que não traz linha
+  // nenhuma e por isso não serve para somar valor. Esta leitura é própria, e é
+  // PAGINADA: sem `.range()` o PostgREST corta a resposta em `max_rows` (1000)
+  // sem erro nenhum, e um mês com 1.200 vendas apareceria como se fossem 1.000.
+  // `truncado` viaja na resposta para ninguém ler um piso como se fosse o total.
+  const leituraDeValores = await lerPaginado<NegocioComValor>((inicio, fim, contar) =>
+    supabase
+      .from("crm_leads")
+      .select(
+        "status, closed_at, currency, value_cents, recurring_value_cents, recurring_period",
+        contar ? { count: "exact" } : undefined,
+      )
+      .eq("organization_id", orgId)
+      .eq("status", "won")
+      .gte("closed_at", de)
+      .lt("closed_at", ate)
+      .order("closed_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(inicio, fim),
+  );
+  if (leituraDeValores.erro) {
+    return fail("internal_error", `crm_leads: valores do período: ${leituraDeValores.erro}`, 500, {
+      requestId,
+    });
+  }
+  const valoresDoPeriodo = separarValoresDoPeriodo({
+    negocios: leituraDeValores.linhas,
+    janela: { from: de, to: ate },
+    moedaDaOrganizacao: activeOrg.currency ?? null,
+    truncado: leituraDeValores.truncado,
+  });
+
   const semMeta = saida.length === 0;
 
   return ok(
@@ -194,6 +242,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       periodo,
       indicador: INDICADOR_DA_FATIA,
       metas: saida,
+      // Duas parcelas SEPARADAS (nunca um total): o painel mostra as duas lado
+      // a lado, e a org sem recorrência recebe zero nos dois sem nada mudar.
+      valores_do_periodo: valoresDoPeriodo,
       motivo: semMeta ? "sem_meta" : null,
       explicacao: semMeta
         ? t(
