@@ -97,6 +97,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
+  "crm_publish_whatsapp_status": { tokens: 464, motivo: "ferramenta nova do módulo opcional status_whatsapp (#3463), medida na criação (2026-11-10); só é oferecida com o módulo ligado" },
   "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
   "crm_set_conversation_sector": { tokens: 383, motivo: "capacidade nova (#3881): a triagem da IA escolhe a FILA da conversa; a descrição precisa nomear os setores de exemplo e as recusas, senão o modelo tenta resolver fila com crm_assign_conversation (que é dono, não setor)" },
@@ -139,8 +140,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
 // modo `leitura_direta` — nunca junto de `search_knowledge`; +54 com `imagem_url`
-// no `send_message` (Spec 25 R4, #3276).
-const TETO_TOTAL = 30148;
+// no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
+// (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado.
+const TETO_TOTAL = 30612;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
