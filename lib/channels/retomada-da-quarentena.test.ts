@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/channels/pos-entrada", async (importOriginal) => {
-  const real = await importOriginal();
+  const real = await importOriginal<typeof import("@/lib/channels/pos-entrada")>();
   return { ...real, aplicarEfeitosPosEntrada: vi.fn(async () => {}) };
 });
 
