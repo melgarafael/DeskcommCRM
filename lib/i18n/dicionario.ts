@@ -889,6 +889,12 @@ export const DICIONARIO: Traducoes = {
   "Ao ganhar": { es: "Al ganar" },
   "Ao perder": { es: "Al perder" },
   "arquivada": { es: "archivada" },
+  // ─── CAMPOS DO CARD NO RESUMO DA PASSAGEM (issue #4303) ───
+  "Mostrar no resumo da passagem": { es: "Mostrar en el resumen de la transferencia" },
+  "Quando a conversa passa para uma pessoa, o valor que este campo tem no card aparece no resumo do cartão de passagem. Desligado por padrão.":
+    {
+      es: "Cuando la conversación pasa a una persona, el valor que este campo tiene en la tarjeta aparece en el resumen de la transferencia. Desactivado por defecto.",
+    },
   "Sem marca nenhuma este campo nunca é exigido — é o comportamento de sempre. Marcado, ele precisa estar preenchido para o negócio entrar na etapa escolhida ou ser fechado como ganho/perdido.":
     {
       es: "Sin ninguna marca este campo nunca se exige — es el comportamiento de siempre. Marcado, debe estar completado para que el negocio entre en la etapa elegida o se cierre como ganado/perdido.",
@@ -1654,6 +1660,13 @@ export const DICIONARIO: Traducoes = {
   "Salvar lista de teste": { es: "Guardar lista de prueba" },
   "Ativar modo de teste": { es: "Activar modo de prueba" },
   "Liberar atendimento ao público": { es: "Habilitar atención al público" },
+  // #4170 — a pausa da Prospecção quando o canal está em modo de teste. A
+  // chave é a frase que `lib/prospecting/motivo-da-pausa.ts` grava em
+  // `prospecting_campaigns.error`; o cartão da campanha a mostra por `t()`.
+  "Este número está em modo de teste: a IA só fala com os números da lista de teste. Para liberar o atendimento ao público, abra Conexões, toque em \"Configurar acesso da IA\" no cartão do número e escolha \"Liberar atendimento ao público\".":
+    {
+      es: "Este número está en modo de prueba: la IA solo habla con los números de la lista de prueba. Para habilitar la atención al público, abre Conexiones, toca \"Configurar acceso de la IA\" en la tarjeta del número y elige \"Habilitar atención al público\".",
+    },
   "Liberar a IA para o público?": { es: "¿Habilitar la IA para el público?" },
   "A lista de teste deixará de limitar as respostas. A IA poderá atender qualquer pessoa que enviar mensagem neste canal, respeitando os demais bloqueios.": { es: "La lista de prueba dejará de limitar las respuestas. La IA podrá atender a cualquier persona que envíe mensajes en este canal, respetando los demás bloqueos." },
   "Continuar em teste": { es: "Continuar en prueba" },
@@ -3082,6 +3095,11 @@ export const DICIONARIO: Traducoes = {
   "Funil de destino (opcional)": { es: "Embudo de destino (opcional)" },
   "Sem destino — só escolher o agente": { es: "Sin destino — solo elegir el agente" },
   "Primeira etapa aberta": { es: "Primera etapa abierta" },
+  // #2569 — o id gravado já está na tela antes de a lista de funis/etapas
+  // voltar: o gatilho diz que HÁ destino (nunca fica vazio nem vira "Sem
+  // destino") e o nome toma o lugar quando a lista chega.
+  "Funil selecionado": { es: "Embudo seleccionado" },
+  "Etapa selecionada": { es: "Etapa seleccionada" },
   Início: { es: "Inicio" },
   Fim: { es: "Fin" },
   Dias: { es: "Días" },
@@ -4301,6 +4319,22 @@ export const DICIONARIO: Traducoes = {
   "Voice ID": { es: "Voice ID" },
   "Ouvir prévia": { es: "Escuchar vista previa" },
   "Salvar voz": { es: "Guardar voz" },
+  "Escolher da lista": { es: "Elegir de la lista" },
+  "escolha da lista": { es: "elija de la lista" },
+  "Informe um Voice ID.": { es: "Indique un Voice ID." },
+  "Voice ID inválido: use só letras, números, hífen e sublinhado (8 a 64 caracteres).":
+    {
+      es: "Voice ID inválido: use solo letras, números, guion y guion bajo (8 a 64 caracteres).",
+    },
+  "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.":
+    {
+      es: "Elija de la lista o pegue el ID de cualquier voz de su cuenta, incluso una que no aparezca aquí.",
+    },
+  "Não consegui listar as vozes no ElevenLabs agora. A lista abaixo é a da última validação da credencial — e colar um Voice ID continua funcionando.":
+    {
+      es: "No pude listar las voces en ElevenLabs ahora. La lista de abajo es la de la última validación de la credencial — y pegar un Voice ID sigue funcionando.",
+    },
+  "O provedor recusou esta voz:": { es: "El proveedor rechazó esta voz:" },
   "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.":
     {
       es: "Para que el agente escuche el audio que el cliente envía con más precisión (incluso diferenciando quién habla) y para responder hablando, en nota de voz, cuando tenga sentido.",
@@ -6561,6 +6595,11 @@ export const DICIONARIO: Traducoes = {
   "Exportar CSV": { es: "Exportar CSV" },
   "Exportar": { es: "Exportar" },
   "Exportar vCard": { es: "Exportar vCard" },
+  // Exportar conversa em PDF (#1982): o item do menu ⋯ do cabeçalho da conversa.
+  "Exportar conversa": { es: "Exportar conversación" },
+  "Baixa o histórico desta conversa em PDF, datado e em ordem, para arquivar. Notas internas não entram.": {
+    es: "Descarga el historial de esta conversación en PDF, con fecha y en orden, para archivar. Las notas internas no se incluyen.",
+  },
   "Invoc. AI": { es: "Invoc. IA" },
   "Custo AI": { es: "Costo IA" },
 
@@ -7545,6 +7584,22 @@ export const DICIONARIO: Traducoes = {
   // Motivo da perda no "mover lead" (etapa de perda exige motivo)
   "Motivo da perda": { es: "Motivo de pérdida" },
   "Escolha o motivo": { es: "Elige el motivo" },
+  // #4297 — a etapa de perda na AUTOMAÇÃO: o campo da ação e as duas frases
+  // (a recusa na porta de gravação e a explicação na aba Atividade).
+  "Escolha o motivo da perda": { es: "Elige el motivo de pérdida" },
+  "Esta etapa fecha o negócio como perdido: a automação precisa dizer por quê.": {
+    es: "Esta etapa cierra el negocio como perdido: la automatización debe decir por qué.",
+  },
+  "Escolha o “Motivo da perda” nesta ação: a etapa de destino fecha o negócio como perdido, e um negócio não pode ser perdido sem motivo.": {
+    es: "Elige el “Motivo de pérdida” en esta acción: la etapa de destino cierra el negocio como perdido, y un negocio no puede perderse sin motivo.",
+  },
+  "Etapa de perda: {etapas}.": { es: "Etapa de pérdida: {etapas}." },
+  "Esta automação move o card para uma etapa de perda sem dizer o motivo. Abra a automação e escolha o “Motivo da perda”.": {
+    es: "Esta automatización mueve la tarjeta a una etapa de pérdida sin decir el motivo. Abre la automatización y elige el “Motivo de pérdida”.",
+  },
+  "A etapa de destino exige campos que o card ainda não tem. Preencha-os no card e a automação move na próxima passada.": {
+    es: "La etapa de destino exige campos que la tarjeta todavía no tiene. Complétalos en la tarjeta y la automatización moverá en la próxima pasada.",
+  },
   "Escolha o motivo da perda.": { es: "Elige el motivo de pérdida." },
   "falta o motivo da perda": { es: "falta el motivo de pérdida" },
   "Texto da mensagem": { es: "Texto del mensaje" },
@@ -8649,6 +8704,8 @@ export const DICIONARIO: Traducoes = {
   "Lead ganho": { es: "Lead ganado" },
   "Lead perdido": { es: "Lead perdido" },
   "Você foi mencionado": { es: "Te mencionaron" },
+  // #2372 — o selo da linha na lista de conversas (o mesmo aviso, em duas palavras).
+  "Mencionado": { es: "Te mencionaron" },
   // ─── lib/notifications/push.handler.ts + push-de-venda.ts (o push no celular) ───
   "Nova mensagem no grupo": { es: "Mensaje nuevo en el grupo" },
   "Hoje nesta etapa: {quantidade}": { es: "Hoy en esta etapa: {quantidade}" },
@@ -10438,6 +10495,7 @@ export const DICIONARIO: Traducoes = {
   "mesmo telefone": { es: "mismo teléfono" },
   "mesmo e-mail": { es: "mismo correo" },
   "mesmo CPF": { es: "mismo CPF" },
+  "mesma conta de WhatsApp": { es: "misma cuenta de WhatsApp" },
   "telefone que o WhatsApp deixou em conflito": {
     es: "teléfono que WhatsApp dejó en conflicto",
   },
@@ -10508,8 +10566,8 @@ export const DICIONARIO: Traducoes = {
   "Um dos contatos não está disponível — ele pode ter sido anonimizado ou já mesclado em outro.": {
     es: "Uno de los contactos no está disponible. Puede haberse anonimizado o fusionado con otro.",
   },
-  "Mesmo telefone, mesmo e-mail ou mesmo CPF não se dispensa: junte as fichas.": {
-    es: "Mismo teléfono, mismo correo o mismo CPF no se descarta: fusione las fichas.",
+  "Mesmo telefone, mesmo e-mail, mesmo CPF ou a mesma conta de WhatsApp não se dispensa: junte as fichas.": {
+    es: "Mismo teléfono, mismo correo, mismo CPF o la misma cuenta de WhatsApp no se descarta: fusione las fichas.",
   },
   "Não foi possível dispensar a sugestão agora.": { es: "No fue posible descartar la sugerencia ahora." },
   "Mostrando os duplicados entre os contatos mais antigos. Junte estes e reabra para ver os próximos.": {
@@ -19691,6 +19749,18 @@ export const DICIONARIO: Traducoes = {
   "Leitura parcial: as parcelas somam o que foi lido no período.": {
     es: "Lectura parcial: las partes suman lo que se leyó en el período.",
   },
+  // As mesmas duas parcelas na PREVISÃO do funil (#3602, fatia da previsão). O
+  // vocabulário é o da fatia 2 de propósito: passado e futuro da mesma carteira
+  // não podem se ler por dois nomes.
+  "Valor único": { es: "Valor único" },
+  "As duas parcelas nunca são somadas: o valor único entra uma vez e a recorrência entra todo mês.":
+    {
+      es: "Las dos partes nunca se suman: el valor único entra una vez y la recurrencia entra todos los meses.",
+    },
+  "recorrência mensal": { es: "recurrencia mensual" },
+  "Recorrência fora do mensal — não entra na projeção por mês": {
+    es: "Recurrencia fuera del mensual: no entra en la proyección por mes",
+  },
   "Só quem administra a empresa define a meta.": {
     es: "Solo quien administra la empresa define la meta.",
   },
@@ -20359,6 +20429,10 @@ export const DICIONARIO: Traducoes = {
     {
       es: "El mensaje sale en el momento, aunque haya una cita agendada. Sirve para el posatención y el cumpleaños, que pierden sentido si esperan.",
     },
+  "Vale para todos os fluxos de follow-up deste agente. Cada passo de automação tem a escolha própria.":
+    {
+      es: "Vale para todos los flujos de seguimiento de este agente. Cada paso de automatización tiene su propia elección.",
+    },
   "Não enviar": { es: "No enviar" },
   "A mensagem não sai e o pulo fica registrado na Atividade com o motivo “contato com horário marcado”, para a equipe saber que a automação passou.":
     {
@@ -20416,6 +20490,57 @@ export const DICIONARIO: Traducoes = {
   "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
   "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
   "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
+  // ─── Ouvidoria: a tela de gestão (#3611, fatia 3) ──────────────────────────
+  // O nome do módulo ("Ouvidoria") já está no bloco do catálogo de módulos. O
+  // resto é o vocabulário da tela: lista, detalhe e transição de status. Cada
+  // chave aqui é uma frase que a tela RENDERIZA — nada de texto de wire
+  // (`em_analise` não se traduz).
+  Manifestação: { es: "Manifestación" },
+  Manifestações: { es: "Manifestaciones" },
+  manifestação: { es: "manifestación" },
+  manifestações: { es: "manifestaciones" },
+  Recebida: { es: "Recibida" },
+  Recebidas: { es: "Recibidas" },
+  "Concluídas": { es: "Concluidas" },
+  "Recebida em": { es: "Recibida el" },
+  "Última atualização": { es: "Última actualización" },
+  Relato: { es: "Relato" },
+  "Voltar para a lista": { es: "Volver a la lista" },
+  "Manifestação não encontrada.": { es: "Manifestación no encontrada." },
+  "Não foi possível carregar a manifestação.": { es: "No se pudo cargar la manifestación." },
+  "Não foi possível carregar as manifestações.": {
+    es: "No se pudieron cargar las manifestaciones.",
+  },
+  "Nenhuma manifestação registrada.": { es: "Ninguna manifestación registrada." },
+  "As manifestações aparecem aqui assim que alguém falar com a empresa.": {
+    es: "Las manifestaciones aparecen aquí en cuanto alguien hable con la empresa.",
+  },
+  "Receber manifestações nesta empresa": { es: "Recibir manifestaciones en esta empresa" },
+  "Manifestações recebidas pela empresa. Só quem a organização autoriza lê o relato.": {
+    es: "Manifestaciones recibidas por la empresa. Solo quien la organización autoriza lee el relato.",
+  },
+  "Reclamações, denúncias e elogios recebidos pela empresa, com protocolo.": {
+    es: "Reclamaciones, denuncias y elogios recibidos por la empresa, con protocolo.",
+  },
+  "Mudar status": { es: "Cambiar estado" },
+  "Status atual": { es: "Estado actual" },
+  "Motivo da mudança": { es: "Motivo del cambio" },
+  "Explique por que a manifestação está sendo reaberta.": {
+    es: "Explique por qué se reabre la manifestación.",
+  },
+  "Status atualizado.": { es: "Estado actualizado." },
+  "Não há outra etapa para esta manifestação.": {
+    es: "No hay otra etapa para esta manifestación.",
+  },
+  "Este já é o status da manifestação.": { es: "Este ya es el estado de la manifestación." },
+  "Não é possível pular a etapa de análise.": { es: "No se puede omitir la etapa de análisis." },
+  "Escreva o motivo da reabertura.": { es: "Escriba el motivo de la reapertura." },
+  "O motivo está longo demais.": { es: "El motivo es demasiado largo." },
+  "A manifestação mudou enquanto você decidia. Recarregue a página.": {
+    es: "La manifestación cambió mientras decidías. Recarga la página.",
+  },
+  "Sem permissão para mudar o status.": { es: "Sin permiso para cambiar el estado." },
+  "Não foi possível salvar o status.": { es: "No se pudo guardar el estado." },
 
   // ─── E-mails do sistema (lib/email/templates/) — #4302 ───────────────────
   // A cópia dos moldes de acesso (GoTrue), do convite de time e do alarme de

@@ -644,6 +644,22 @@ export async function startWorker(
       },
     );
   }
+  // Teto abaixo do piso (#3878): o laço grampeia no piso — recuo nunca acelera —
+  // mas o operador precisa saber que o valor que ele escreveu não está em vigor.
+  // Sem esta linha, `QUEUE_IDLE_MAX_INTERVAL_MS=500` com piso 2000 pareceria
+  // "recuo ligado" e não faria nada.
+  if (
+    env.QUEUE_IDLE_MAX_INTERVAL_MS !== undefined &&
+    env.QUEUE_IDLE_MAX_INTERVAL_MS < env.QUEUE_POLL_INTERVAL_MS
+  ) {
+    log.warn(
+      "QUEUE_IDLE_MAX_INTERVAL_MS abaixo de QUEUE_POLL_INTERVAL_MS — o piso manda: o recuo não acelera a fila",
+      {
+        poll_ocioso_ms: env.QUEUE_POLL_INTERVAL_MS,
+        poll_ocioso_teto_ms: env.QUEUE_IDLE_MAX_INTERVAL_MS,
+      },
+    );
+  }
   await stopped;
 }
 

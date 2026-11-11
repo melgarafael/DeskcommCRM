@@ -499,6 +499,11 @@ export function AgendaClient({
     marcando && tipo
       ? {
           event_type_id: tipo.id,
+          // O PROFISSIONAL ISOLADO MANDA NA CONSULTA (#4186). Sem isto, isolar a
+          // Ana mostrava os blocos dela e oferecia os horários da jornada do dono
+          // do tipo — e o POST, que também passa a levar o dono, seria recusado
+          // pelo motor por um horário que ele nunca ofereceu.
+          owner_user_id: isolada ?? undefined,
           de: janelaDeBusca.de,
           ate: janelaDeBusca.ate,
           // A DURAÇÃO ENTRA NA CONSULTA (#3709): quem decide o que está livre é
@@ -1106,14 +1111,22 @@ export function AgendaClient({
                 agora={new Date()}
                 responsavel={
                   // O DONO DO TIPO, não o primeiro da lista. A tela dizia "com
-                  // <primeira pessoa>" enquanto oferecia a jornada de outra —
-                  // e marcava na agenda da primeira, que não tinha jornada.
+                  // <primeira pessoa>" enquanto oferecia a jornada de outra — e
+                  // marcava na agenda da primeira, que não tinha jornada.
+                  //
+                  // Com um profissional ISOLADO no filtro, é ele — a pergunta da
+                  // tela é a agenda dele (#4186); `isoladaId` entra na frente.
                   //
                   // "Você" só quando o dono da agenda É quem está logado. A
                   // regra está em `lib/agenda/responsavel-do-painel.ts`: com a
                   // lista da equipe vazia (o 403 do item 1 da issue 896) este
                   // fallback dizia "Você" para a jornada de OUTRA pessoa.
-                  resolverResponsavelDoPainel({ pessoas, donoId: tipo.donoId, usuarioId })
+                  resolverResponsavelDoPainel({
+                    pessoas,
+                    donoId: tipo.donoId,
+                    usuarioId,
+                    isoladaId: isolada,
+                  })
                 }
                 tipo={tipo.nome}
                 tipoId={tipo.id}
@@ -1163,11 +1176,12 @@ export function AgendaClient({
                 // ESTE é o fio que faltava. Sem ele o "Marcado ✓" era estado
                 // local do React e nenhuma linha nascia no banco.
                 onConfirmar={(instante, duracaoDoAtendimento) => {
-                  // ⚠️ SEM `owner_user_id`, e é isto que conserta o 422.
+                  // ⚠️ SEM `owner_user_id` — EXCETO quando há profissional isolado
+                  // no filtro (#4186), e aí ele vai.
                   //
                   // Isto mandava `pessoas[0]?.id` — a PRIMEIRA pessoa da lista.
                   // Os horários oferecidos vêm de `useHorariosLivres`, que NÃO
-                  // manda dono, então a rota resolve `tipo.default_owner_user_id`.
+                  // mandava dono, então a rota resolvia `tipo.default_owner_user_id`.
                   // A tela oferecia a agenda de um e marcava na de outro: medido
                   // nesta org, 5 pessoas e só o dono do tipo com jornada, e o POST
                   // devolvia `agenda_disponibilidade_invalida` ("expected object,
@@ -1175,6 +1189,12 @@ export function AgendaClient({
                   //
                   // Omitir é o que faz oferta e marcação resolverem o dono pela
                   // MESMA regra (`_handler.ts:96`), por construção e não por sorte.
+                  // Isolar uma pessoa não quebra essa igualdade: a consulta de
+                  // horários passou a levar `owner_user_id: isolada` junto (ver
+                  // acima), então oferta e escrita continuam falando do MESMO
+                  // profissional — o isolado. Sem isolamento, `isolada` é `null`
+                  // e o campo fica FORA do corpo, como era.
+                  //
                   // Remarcar é PATCH com o id; marcar é POST. A escolha do
                   // horário é o mesmo gesto, e por isso o mesmo painel.
                   // Recusa ANTES da rede: o painel já pintou "Marcado ✓" quando
@@ -1207,6 +1227,9 @@ export function AgendaClient({
                   return marcar
                     .mutateAsync({
                       event_type_id: tipo.id,
+                      // O profissional isolado no filtro (#4186) — `null` = todos,
+                      // e aí o campo fica fora do corpo (o 422 de #3709).
+                      owner_user_id: isolada ?? undefined,
                       contact_id: contactId || undefined,
                       conversation_id: conversationId || undefined,
                       starts_at: instante,
@@ -1475,6 +1498,9 @@ export function AgendaClient({
         recorte={recorteDaGrade}
         tipos={tiposIniciais.map((t) => ({ id: t.id, nome: t.nome, duracaoMin: t.duracaoMin }))}
         tipo={tipo ? { id: tipo.id, duracaoMin: tipo.duracaoMin } : null}
+        // O filtro governa também a disponibilidade que a grade pinta (#4186):
+        // com a Ana isolada, os blocos "livres" são os da jornada dela.
+        donoId={isolada}
         onEscolherTipo={escolherTipo}
         // SEGUNDA PORTA: o clique num bloco livre da grade. Sem `onMarcarEm`, a
         // `AgendaInterativa` não monta a interação, e a grade volta a ser o que
