@@ -5,26 +5,24 @@ import { apiClient } from "@/lib/api/client";
 import type { RespostaDoRelatorioComercial } from "@/lib/relatorios/comercial";
 
 /**
- * `GET /api/v1/reports/comercial?de&ate` — o painel comercial da #4280.
+ * `GET /api/v1/reports/comercial?de&ate` — os rankings de negócios ganhos da
+ * tela de Faturamento (#4280).
+ *
+ * O PERÍODO É O DA TELA: `de`/`ate` são os mesmos dias civis (`YYYY-MM-DD`,
+ * `ate` INCLUSIVO) que a tela de Faturamento manda ao relatório financeiro. Não
+ * existe período próprio aqui — dois seletores na mesma tela seriam dois meses
+ * diferentes lado a lado.
  *
  * O FUSO NÃO VAI NA QUERY: o recorte é o dia civil da ORGANIZAÇÃO, decidido no
  * servidor (`organizations.timezone`). Mandar o fuso do navegador faria duas
- * pessoas da mesma empresa verem meses diferentes — o defeito que
- * `/reports/tags` evita pedindo `tz`, e que aqui é evitado na origem.
- *
- * `de`/`ate` são dias civis (`YYYY-MM-DD`) e o `ate` é INCLUSIVO. Sem período
- * (`null`), o servidor responde o MÊS CORRENTE dele — e devolve `padrao: true`
- * com a janela usada, que é de onde a tela preenche os campos.
+ * pessoas da mesma empresa verem meses diferentes.
  */
-export function useCommercialReport(periodo: { de: string; ate: string } | null) {
-  const query = periodo
-    ? `?de=${encodeURIComponent(periodo.de)}&ate=${encodeURIComponent(periodo.ate)}`
-    : "";
+export function useCommercialReport(periodo: { de: string; ate: string }) {
   return useQuery({
-    queryKey: ["reports", "comercial", periodo?.de ?? "padrao", periodo?.ate ?? "padrao"],
+    queryKey: ["reports", "comercial", periodo.de, periodo.ate],
     queryFn: async () =>
       apiClient.get<{ data: RespostaDoRelatorioComercial }>(
-        `/api/v1/reports/comercial${query}`,
+        `/api/v1/reports/comercial?de=${encodeURIComponent(periodo.de)}&ate=${encodeURIComponent(periodo.ate)}`,
       ),
     staleTime: 30_000,
   });

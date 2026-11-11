@@ -1,14 +1,15 @@
 /**
- * A TELA DO PAINEL COMERCIAL (#4280, fatia 2).
+ * OS RANKINGS DE NEGÓCIOS GANHOS, dentro da tela de Faturamento (#4280).
  *
- * Dois casos, e cada um prende uma promessa da fatia:
+ * Cada caso prende uma promessa:
  *
- *   1. PERÍODO VAZIO: a tela diz que não houve negócio ganho — não desenha
- *      zeros como se fossem venda. O zero explícito existe na API; a tela não
- *      pode transformá-lo em gráfico.
- *   2. NENHUM BOTÃO QUE MUDE DADO: a fatia é SÓ LEITURA. O único controle
- *      interativo é o período. Se alguém acrescentar "novo negócio" aqui, este
- *      caso reprova — e é de propósito.
+ *   1. PERÍODO VAZIO: o bloco diz que não houve negócio ganho — não desenha
+ *      tabela de zeros.
+ *   2. NENHUM BOTÃO, NENHUM PERÍODO PRÓPRIO: é SÓ LEITURA, e o período é o que a
+ *      tela de Faturamento entrega (`de`/`ate`). Um seletor aqui seriam dois
+ *      meses na mesma página.
+ *   3. SEM NÚMERO DE FATURAMENTO PRÓPRIO (doc 306): o total que vale é o da
+ *      tela. Se o cartão "Faturamento do período" voltar, o caso reprova.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -20,7 +21,7 @@ vi.mock("@/hooks/reports/useCommercialReport", () => ({
 import { useCommercialReport } from "@/hooks/reports/useCommercialReport";
 import type { RespostaDoRelatorioComercial } from "@/lib/relatorios/comercial";
 
-import { DashboardComercial } from "./dashboard-comercial";
+import { RankingsDeNegociosGanhos } from "./rankings-de-negocios-ganhos";
 
 const JANELA = {
   de: "2026-09-01",
@@ -35,7 +36,6 @@ function relatorio(patch: Partial<RespostaDoRelatorioComercial> = {}): RespostaD
     janela: JANELA,
     padrao: true,
     moeda: "BRL",
-    faturamento_centavos: 0,
     negocios_ganhos: 0,
     negocios_sem_valor: 0,
     tags: [],
@@ -74,23 +74,38 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("DashboardComercial", () => {
+const PERIODO = { de: "2026-09-01", ate: "2026-09-30" };
+
+describe("RankingsDeNegociosGanhos", () => {
   it("período vazio: diz que não houve negócio ganho, sem desenhar zeros", () => {
     responder(relatorio());
-    render(<DashboardComercial />);
+    render(<RankingsDeNegociosGanhos {...PERIODO} />);
 
     expect(screen.getByText("Nenhum negócio ganho no período.")).toBeTruthy();
-    // Nenhum bloco de número é desenhado — zero na tela leria como "vendemos nada".
-    expect(screen.queryByText("Faturamento do período")).toBeNull();
+    // Nenhuma tabela é desenhada — zero na tela leria como "vendemos nada".
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByText("Tags que mais vendem")).toBeNull();
     semBotaoQueMudaDado();
   });
 
-  it("com dado: mostra os três blocos e o nome do cliente", () => {
+  it("lê o período que a tela entrega, e não tem seletor próprio", () => {
+    responder(relatorio());
+    render(<RankingsDeNegociosGanhos de="2026-01-05" ate="2026-01-20" />);
+
+    expect(vi.mocked(useCommercialReport)).toHaveBeenLastCalledWith({
+      de: "2026-01-05",
+      ate: "2026-01-20",
+    });
+    // Nem data, nem atalho de período: quem escolhe o período é a tela.
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it("com dado: mostra os dois rankings e o nome do cliente, sem total próprio de vendas", () => {
     responder(
       relatorio({
         sem_dados: false,
         motivo: null,
-        faturamento_centavos: 150_000,
         negocios_ganhos: 2,
         tags: [
           { tag: "plano", centavos: 100_000, negocios: 1 },
@@ -102,9 +117,10 @@ describe("DashboardComercial", () => {
       }),
     );
 
-    render(<DashboardComercial />);
+    render(<RankingsDeNegociosGanhos {...PERIODO} />);
 
-    expect(screen.getByText("Faturamento do período")).toBeTruthy();
+    // O número de faturamento é o da tela de Faturamento — aqui não há outro.
+    expect(screen.queryByText("Faturamento do período")).toBeNull();
     expect(screen.getByText("Tags que mais vendem")).toBeTruthy();
     expect(screen.getByText("Clientes que mais compram")).toBeTruthy();
     expect(screen.getByText("plano")).toBeTruthy();
@@ -117,14 +133,13 @@ describe("DashboardComercial", () => {
       relatorio({
         sem_dados: false,
         motivo: null,
-        faturamento_centavos: 100_000,
         negocios_ganhos: 1,
         negocios_sem_valor: 1,
         excluidos: { outra_moeda: 2, sem_data_de_ganho: 3 },
       }),
     );
 
-    render(<DashboardComercial />);
+    render(<RankingsDeNegociosGanhos {...PERIODO} />);
 
     const lista = screen.getByRole("list");
     expect(lista.textContent).toContain("outra moeda");

@@ -133,7 +133,8 @@ describe("GET /api/v1/reports/comercial", () => {
     expect(res.headers.get("X-Request-Id")).toBeTruthy();
 
     const corpo = (await res.json()) as { data: RespostaDoRelatorioComercial };
-    expect(corpo.data.faturamento_centavos).toBe(50_000);
+    expect(corpo.data.clientes).toEqual([{ contact_id: "c1", centavos: 50_000, negocios: 1 }]);
+    expect(corpo.data.tags).toEqual([{ tag: "plano", centavos: 50_000, negocios: 1 }]);
     // São Paulo: o dia começa às 03:00Z.
     expect(corpo.data.janela.tz).toBe("America/Sao_Paulo");
     expect(corpo.data.janela.from).toBe("2026-09-01T03:00:00.000Z");
@@ -166,7 +167,8 @@ describe("GET /api/v1/reports/comercial", () => {
 
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: RespostaDoRelatorioComercial };
-    expect(corpo.data.faturamento_centavos).toBe(0);
+    // Sem total próprio de vendas: o número de faturamento é o da tela de Faturamento.
+    expect(corpo.data).not.toHaveProperty("faturamento_centavos");
     expect(corpo.data.negocios_ganhos).toBe(0);
     expect(corpo.data.tags).toEqual([]);
     expect(corpo.data.clientes).toEqual([]);

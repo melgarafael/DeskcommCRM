@@ -1,4 +1,14 @@
 /**
+ * OS DOIS RANKINGS DE NEGÓCIOS GANHOS — etiquetas que mais vendem e clientes que
+ * mais compram. Moram DENTRO da tela de Faturamento (decisão do dono, doc 306):
+ * este módulo NÃO devolve um total de "quanto vendemos". O número de faturamento
+ * que vale é o de `fn_relatorio_financeiro`; um segundo total aqui, somado de
+ * outra fonte (negócios ganhos, não comandas), seria um terceiro número parecido
+ * que não bate com os outros. O item (a) abaixo descreve a régua do VALOR de cada
+ * negócio, que alimenta as linhas dos rankings — não um campo da resposta.
+ *
+ * O texto a seguir é o contrato original da #4280 (PR #4295, @webtecnica).
+ *
  * O RELATÓRIO COMERCIAL — os TRÊS números da #4280, e só eles.
  *
  * ─── A pergunta, escrita uma vez ────────────────────────────────────────────
@@ -143,11 +153,9 @@ export interface RelatorioComercial {
   };
   /** `true` quando `de`/`ate` não vieram na query e o mês corrente foi usado. */
   padrao: boolean;
-  /** Moeda da organização — a unidade dos três números. */
+  /** Moeda da organização — a unidade dos valores dos rankings. */
   moeda: string;
-  /** (a) Soma de `value_cents` dos ganhos no período. Zero explícito. */
-  faturamento_centavos: number;
-  /** Quantos negócios entraram na soma (inclui os sem valor). */
+  /** Quantos negócios ganhos entraram nos rankings (inclui os sem valor). */
   negocios_ganhos: number;
   /** Quantos desses vieram com `value_cents` nulo — não é zero, é ausência. */
   negocios_sem_valor: number;
@@ -251,7 +259,6 @@ export function montarRelatorioComercial(entrada: {
   const porTag = new Map<string, Acumulado>();
   const porCliente = new Map<string, Acumulado>();
 
-  let faturamento = 0;
   let negociosGanhos = 0;
   let negociosSemValor = 0;
   let negociosSemContato = 0;
@@ -273,7 +280,6 @@ export function montarRelatorioComercial(entrada: {
 
     negociosGanhos += 1;
     const valor = centavos(negocio.value_cents);
-    faturamento += valor;
     if (negocio.value_cents === null || negocio.value_cents === undefined) {
       negociosSemValor += 1;
     }
@@ -325,7 +331,6 @@ export function montarRelatorioComercial(entrada: {
     janela: entrada.janela,
     padrao: entrada.padrao === true,
     moeda,
-    faturamento_centavos: faturamento,
     negocios_ganhos: negociosGanhos,
     negocios_sem_valor: negociosSemValor,
     tags,

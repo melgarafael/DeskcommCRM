@@ -51,7 +51,8 @@ describe("(a) faturamento do período", () => {
       negocio({ id: "ganho-fora", value_cents: 777_777, closed_at: "2026-08-31T23:59:59.000Z" }),
     ]);
 
-    expect(relatorio.faturamento_centavos).toBe(25_000);
+    // A soma é lida na linha do cliente: só o ganho da janela, e o nulo soma 0.
+    expect(relatorio.clientes).toEqual([{ contact_id: "c1", centavos: 25_000, negocios: 2 }]);
     expect(relatorio.negocios_ganhos).toBe(2);
     expect(relatorio.negocios_sem_valor).toBe(1);
     expect(relatorio.sem_dados).toBe(false);
@@ -61,12 +62,12 @@ describe("(a) faturamento do período", () => {
 
   it("valor negativo ou inválido não diminui o faturamento", () => {
     const relatorio = montar([
-      negocio({ id: "ok", value_cents: 10_000 }),
-      negocio({ id: "estragado", value_cents: -5_000 }),
-      negocio({ id: "nan", value_cents: Number.NaN }),
+      negocio({ id: "ok", value_cents: 10_000, tags: ["plano"] }),
+      negocio({ id: "estragado", value_cents: -5_000, tags: ["plano"] }),
+      negocio({ id: "nan", value_cents: Number.NaN, tags: ["plano"] }),
     ]);
 
-    expect(relatorio.faturamento_centavos).toBe(10_000);
+    expect(relatorio.tags).toEqual([{ tag: "plano", centavos: 10_000, negocios: 3 }]);
     expect(relatorio.negocios_ganhos).toBe(3);
   });
 
@@ -82,10 +83,9 @@ describe("(a) faturamento do período", () => {
       }),
     ]);
 
-    expect(relatorio.faturamento_centavos).toBe(10_000);
     expect(relatorio.negocios_ganhos).toBe(1);
     expect(relatorio.excluidos.outra_moeda).toBe(1);
-    expect(relatorio.tags.map((t) => t.tag)).toEqual(["plano"]);
+    expect(relatorio.tags).toEqual([{ tag: "plano", centavos: 10_000, negocios: 1 }]);
     expect(relatorio.clientes.map((c) => c.contact_id)).toEqual(["c1"]);
     expect(relatorio.nota).toContain("outra moeda");
   });
@@ -149,10 +149,11 @@ describe("(b) tags e clientes ordenados com desempate determinístico", () => {
 
     expect(relatorio.clientes.map((c) => c.contact_id)).toEqual(["c1"]);
     expect(relatorio.negocios_sem_contato).toBe(1);
-    expect(relatorio.faturamento_centavos).toBe(10_000);
+    // Fora da lista de clientes, mas continua sendo negócio ganho do período.
+    expect(relatorio.negocios_ganhos).toBe(2);
   });
 
-  it("o corte é de LISTA: 10 linhas, e o faturamento continua somando todas", () => {
+  it("o corte é de LISTA: 10 linhas, e a contagem de ganhos continua vendo todos", () => {
     const negocios = Array.from({ length: LIMITE_DE_LINHAS + 3 }, (_, i) =>
       negocio({
         id: `n${i}`,
@@ -163,7 +164,7 @@ describe("(b) tags e clientes ordenados com desempate determinístico", () => {
     const relatorio = montar(negocios);
 
     expect(relatorio.clientes).toHaveLength(LIMITE_DE_LINHAS);
-    expect(relatorio.faturamento_centavos).toBe((LIMITE_DE_LINHAS + 3) * 1_000);
+    expect(relatorio.negocios_ganhos).toBe(LIMITE_DE_LINHAS + 3);
   });
 });
 
@@ -175,7 +176,6 @@ describe("(c) período sem negócio ganho", () => {
   it("devolve zero explícito, listas vazias e o motivo — sem lançar", () => {
     const relatorio = montar([]);
 
-    expect(relatorio.faturamento_centavos).toBe(0);
     expect(relatorio.negocios_ganhos).toBe(0);
     expect(relatorio.tags).toEqual([]);
     expect(relatorio.clientes).toEqual([]);
@@ -192,7 +192,20 @@ describe("(c) período sem negócio ganho", () => {
     ]);
 
     expect(relatorio.sem_dados).toBe(true);
-    expect(relatorio.faturamento_centavos).toBe(0);
+    expect(relatorio.negocios_ganhos).toBe(0);
+  });
+});
+
+/**
+ * A DECISÃO DO DONO (doc 306, A): os rankings moram na tela de Faturamento e NÃO
+ * trazem um total próprio de "quanto vendemos". Se o campo voltar, a tela passa a
+ * ter dois números de faturamento de fontes diferentes — e este caso reprova.
+ */
+describe("sem um segundo número de faturamento", () => {
+  it("a resposta não carrega total de vendas — só as linhas dos rankings", () => {
+    const relatorio = montar([negocio({ id: "1", contact_id: "c1", tags: ["plano"] })]);
+
+    expect(relatorio).not.toHaveProperty("faturamento_centavos");
   });
 });
 

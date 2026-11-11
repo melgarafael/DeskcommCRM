@@ -20644,32 +20644,22 @@ export const DICIONARIO: Traducoes = {
   "Sem permissão para mudar o status.": { es: "Sin permiso para cambiar el estado." },
   "Não foi possível salvar o status.": { es: "No se pudo guardar el estado." },
 
-  // ═══ Relatórios comerciais (#4280, fatia 2) ═══
-  // A tela de leitura do que já foi vendido: faturamento, tags e clientes. As
-  // frases de aviso existem porque o painel declara o que ficou FORA (moeda,
-  // valor ausente, contato ausente, leitura interrompida) em vez de esconder.
-  "Relatórios comerciais": { es: "Informes comerciales" },
-  "Quanto vendemos no período, quais tags vendem mais e quais clientes estão comprando.": {
-    es: "Cuánto vendimos en el período, qué etiquetas venden más y qué clientes están comprando.",
-  },
-  "Quanto vendemos por período, quais tags vendem mais e quais clientes compram.": {
-    es: "Cuánto vendimos por período, qué etiquetas venden más y qué clientes compran.",
-  },
-  "Faturamento do período": { es: "Facturación del período" },
+  // ═══ Rankings de negócios ganhos, na tela de Faturamento (#4280, #4295) ═══
+  // Etiquetas que mais vendem e clientes que mais compram. As frases de aviso
+  // existem porque os rankings declaram o que ficou FORA (moeda, valor ausente,
+  // contato ausente, leitura interrompida) em vez de esconder.
   "Tags que mais vendem": { es: "Etiquetas que más venden" },
   "Clientes que mais compram": { es: "Clientes que más compran" },
-  "Este mês": { es: "Este mes" },
-  "Período personalizado": { es: "Período personalizado" },
-  // "De", "Até", "Tag", "Cliente", "Valor" e "Contato" já existem neste
-  // dicionário (chaves sem aspas): não se repetem aqui.
+  "Estes dois rankings somam os negócios marcados como ganhos no período — não as comandas dos números acima.":
+    {
+      es: "Estos dos rankings suman los negocios marcados como ganados en el período — no las comandas de los números de arriba.",
+    },
+  // "Tag", "Cliente", "Valor", "Contato", "Negócios" e "Negócios ganhos" já
+  // existem neste dicionário: não se repetem aqui.
   "Nenhum negócio ganho no período.": { es: "Ningún negocio ganado en el período." },
   "O período é maior do que este relatório cobre.": {
     es: "El período es mayor de lo que cubre este informe.",
   },
-  "Esta tela soma o que já foi ganho: quando um negócio for marcado como ganho no Kanban, o faturamento e os rankings aparecem aqui.":
-    {
-      es: "Esta pantalla suma lo que ya se ganó: cuando un negocio se marque como ganado en el Kanban, la facturación y los rankings aparecerán aquí.",
-    },
   "Os números são um piso: a leitura foi interrompida antes do fim do período.": {
     es: "Los números son un piso: la lectura se interrumpió antes del final del período.",
   },

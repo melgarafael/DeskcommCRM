@@ -1,13 +1,20 @@
 /**
- * GET /api/v1/reports/comercial — o painel de RELATÓRIOS COMERCIAIS da #4280.
+ * GET /api/v1/reports/comercial — os dois rankings de NEGÓCIOS GANHOS que a
+ * tela de Faturamento mostra (#4280, PR #4295 de @webtecnica).
  *
  * ─── O que esta rota responde, e o que ela NÃO responde ─────────────────────
  *
- * Os três números escritos no corpo da issue: quanto vendemos no período
- * (`faturamento_centavos`), quais tags representam mais vendas (`tags`) e quais
- * clientes estão comprando (`clientes`). A definição de cada um — coluna, quais
- * estados contam, qual data, desempate, limite e o que fica de fora — está em
+ * Quais tags representam mais vendas (`tags`) e quais clientes estão comprando
+ * (`clientes`). A definição de cada um — coluna, quais estados contam, qual
+ * data, desempate, limite e o que fica de fora — está em
  * `lib/relatorios/comercial.ts`, no cabeçalho, e é o contrato desta rota.
+ *
+ * NÃO devolve um total de "quanto vendemos": o número de faturamento é o de
+ * `/api/v1/reports/financeiro` (decisão do dono, doc 306). E por que rota
+ * própria em vez de entrar naquela: lá "a rota não soma nada" — quem agrega é
+ * `fn_relatorio_financeiro`, sobre comandas; aqui a conta é em memória, sobre
+ * negócios ganhos, com teto de páginas declarado. Misturar as duas poria um
+ * `reduce` na rota que proíbe `reduce`, ou exigiria migration.
  *
  * Não há funil, conversão, meta nem ticket médio aqui: são outras perguntas, com
  * outras rotas (`/metrics/funil`, `/metrics/metas`).
