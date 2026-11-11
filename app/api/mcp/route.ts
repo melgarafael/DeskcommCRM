@@ -59,7 +59,7 @@ async function handle(req: NextRequest): Promise<Response> {
   // Token de MÓDULO não entra no servidor MCP (spec 33, F3): ele lê pelos escopos do token e não
   // passa pela área consentida. Recusa antes de qualquer ferramenta.
   if (auth.actor.type === "module") {
-    return jsonRpcError(-32002, MENSAGEM_DA_RECUSA_DO_MODULO[MODULO_NAO_ENTRA_AQUI], 403);
+    return jsonRpcError(-32002, MENSAGEM_DA_RECUSA_DO_MODULO[MODULO_NAO_ENTRA_AQUI], 403, requestId);
   }
 
   const idempotencyKey = chaveDaRequisicao(req);
