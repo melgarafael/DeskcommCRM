@@ -70051,7 +70051,6 @@ grant execute on function public.fn_extensions_set_switch(uuid,uuid,uuid,boolean
 
 notify pgrst, 'reload schema';
 
-
 -- ---- modulo conectado: consentimento por área (migration 9119) ----
 -- Espelho idempotente da 9119 (racional completo no arquivo da migration): `organization_extensions.consented_areas`
 -- (com CHECK nas 18 permissões `area.*`) e `fn_extensions_set_consent`. Fica DEPOIS do apêndice da 9118 e ANTES
@@ -70390,6 +70389,7 @@ revoke execute on function public.fn_extensions_events_lag(uuid) from public, an
 grant execute on function public.fn_extensions_events_lag(uuid) to service_role;
 
 notify pgrst, 'reload schema';
+
 
 -- Integridade de organização, funil e etapa (9111)
 -- manifest: Exige a mesma organização/funil/etapa em todo caminho SQL, sem reparar legado automaticamente.
@@ -75319,6 +75319,40 @@ end;
 $f$;
 
 notify pgrst, 'reload schema';
+
+-- ---- a fonte do Lead Ads só muda a página pelo servidor: a função (migration 9320) ----
+-- Fica ACIMA da VARREDURA anon (que proíbe criar função depois dela); o gatilho
+-- e as colunas estão no bloco da 9320, no fim do arquivo.
+-- A página, o token e a busca do Lead Ads só mudam pelo SERVIDOR. A policy
+-- `webhook_sources_manager_write` deixa o manager escrever a linha inteira pela
+-- sessão (PostgREST), e a página decide para qual organização vai o lead de uma
+-- instalação inteira: gravada sem a conferência da rota (admin + a página que o
+-- token lê), ela tiraria os avisos da página de quem é dono. Pela sessão
+-- (`authenticated`/`anon`) estas três colunas não nascem preenchidas nem mudam;
+-- a rota grava com o cliente do servidor, já filtrando a organização.
+create or replace function public.fn_fonte_do_lead_ads_so_pelo_servidor()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.meta_page_id is not null or new.meta_page_token_encrypted is not null
+       or coalesce(new.meta_lead_retrieval, false) then
+      raise exception 'webhook_source_meta_server_only' using errcode = '42501';
+    end if;
+  elsif row(new.meta_page_id, new.meta_page_token_encrypted, new.meta_lead_retrieval)
+        is distinct from row(old.meta_page_id, old.meta_page_token_encrypted, old.meta_lead_retrieval) then
+    raise exception 'webhook_source_meta_server_only' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_fonte_do_lead_ads_so_pelo_servidor() from public, anon;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
@@ -80462,5 +80496,47 @@ drop policy if exists tenant_isolation_pagamento_recebimentos_write on public.pa
 -- `fn_aplicar_travas_de_suporte()` percorre `pg_class` no momento em que roda;
 -- sem esta linha a tabela fica sem `support_write_insert/update/delete`.
 do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+
+notify pgrst, 'reload schema';
+
+-- ---- a fonte do Lead Ads guarda a PÁGINA (migration 9320) ----
+-- Espelho idempotente da migration 9320. O porquê inteiro está no cabeçalho dela;
+-- em uma linha: o aviso de formulário preenchido chega sem as respostas e o App
+-- tem UMA URL de destino para o objeto page, então a página é o que diz de quem
+-- é o lead, e o token que busca as respostas é credencial da PÁGINA (cifrada pelo
+-- mesmo fn_encrypt_oauth do secret da fonte, write-only na leitura). A busca
+-- nasce DESLIGADA (doc 235).
+alter table public.webhook_sources
+  add column if not exists meta_page_id text;
+
+alter table public.webhook_sources
+  add column if not exists meta_page_token_encrypted bytea;
+
+alter table public.webhook_sources
+  add column if not exists meta_lead_retrieval boolean not null default false;
+
+comment on column public.webhook_sources.meta_page_id is
+  'A página da Meta que esta fonte representa (issue #3768). É a chave de ROTEAMENTO: o aviso do formulário traz entry[].id e o App tem uma URL de destino só para o objeto page, então a mesma URL recebe leads de todas as páginas — quem é o dono do lead é esta coluna, não o path_token da URL. NULL = a fonte não reivindica página nenhuma e recebe o que chegar na própria URL (configuração de uma página só).';
+
+comment on column public.webhook_sources.meta_page_token_encrypted is
+  'Token de PÁGINA com permissão de leitura de leads, cifrado por fn_encrypt_oauth (o mesmo mecanismo de secret_encrypted e de platform_meta_app). Write-only: nenhuma leitura da API o devolve — a tela recebe has_meta_page_token. Sem a chave mestra de cifra o save RECUSA; nunca é gravado em claro.';
+
+comment on column public.webhook_sources.meta_lead_retrieval is
+  'Opção da fonte (issue #3768), DESLIGADA por padrão: quando o aviso chega sem as respostas (que é o que a Meta manda), a rota busca as respostas na Graph API com o token da página antes de desistir do lead. Critério da doc 235: no núcleo, desligado por padrão, quem administra liga. Desligada, o aviso sem respostas continua sendo registrado como ignorado, com motivo nomeado.';
+
+create unique index if not exists uniq_webhook_sources_meta_page
+  on public.webhook_sources (meta_page_id)
+  where meta_page_id is not null;
+
+-- O gatilho da função acima (criada antes da VARREDURA anon). Num bloco só: se a
+-- criação falhasse depois do `drop`, o `update.sh` (sem ON_ERROR_STOP) deixaria
+-- a coluna da página sem guarda.
+do $fonte_do_lead_ads$
+begin
+  drop trigger if exists trg_fonte_do_lead_ads_so_pelo_servidor on public.webhook_sources;
+  create trigger trg_fonte_do_lead_ads_so_pelo_servidor
+    before insert or update on public.webhook_sources
+    for each row execute function public.fn_fonte_do_lead_ads_so_pelo_servidor();
+end $fonte_do_lead_ads$;
 
 notify pgrst, 'reload schema';
