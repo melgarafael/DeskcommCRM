@@ -245,9 +245,9 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
         ruleId: ctx.ruleId,
         conversationId,
       });
-      let segunda: Awaited<ReturnType<typeof gerarAbordagemDeFormulario>>;
+      let gerado: Awaited<ReturnType<typeof gerarAbordagemDeFormulario>>;
       try {
-        segunda = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
+        gerado = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
           tenantId: ctx.organizationId,
           agentId,
           leadId: contact.id,
@@ -262,23 +262,23 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
         if (pulo) return pulo;
         return { type: TIPO, status: "failed", error: mensagemDeErro(err) };
       }
-      if (!segunda.ok) {
-        return { type: TIPO, status: "failed", error: segunda.reason, detail: { reason: segunda.reason } };
+      if (!gerado.ok) {
+        return { type: TIPO, status: "failed", error: gerado.reason, detail: { reason: gerado.reason } };
       }
-      if (await barra(segunda.texto)) {
+      if (await barra(gerado.texto)) {
         return {
           type: TIPO,
           status: "skipped",
           detail: {
             reason: "commercial_requires_human",
             conversation_id: conversationId,
-            textos_barrados: [primeira.texto, segunda.texto],
-            trecho: trechoComercialNaSaida(segunda.texto),
+            textos_barrados: [primeira.texto, gerado.texto],
+            trecho: trechoComercialNaSaida(gerado.texto),
           },
         };
       }
       vetoAnterior = { texto_barrado: primeira.texto, trecho: primeira.trecho };
-      texto = segunda.texto;
+      texto = gerado.texto;
     }
 
     await espacarEnvio(sessionId);
