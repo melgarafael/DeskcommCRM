@@ -71,6 +71,8 @@ function makeDb(
     followup_enrollments: enrollments,
     ai_agents: agents,
     ai_agent_versions: agentVersions,
+    // #3928: o gate lê os roteadores ativos da organização; vazio = nenhum número emprestado.
+    ai_routers: [],
   };
 
   function builder(table: string) {

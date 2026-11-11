@@ -45,7 +45,8 @@ import { declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } fr
 import { loadPublishedAgentConfigById } from './agent-config';
 import { isLeadInHandoff } from './human-handoff';
 import { resolveActiveLeadForContact, type LeadCandidate } from '@/lib/leads/active-lead';
-import { fusoDaOrganizacao } from './fuso-da-org';
+import { fatosDaOrganizacao } from './fatos-da-organizacao';
+import { falaDoMotor } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { insertInboxItem } from '../db/repository';
 import { buildMcpTurnTools } from '../edge/crm/mcp-tools';
@@ -55,7 +56,7 @@ import { maoDoOperador } from './entrega-de-capacidade';
 import { criaRetornoDbPg } from '../../followup/retorno-pg';
 import { emitAgentActivityForContact } from '../../leads/agent-activity';
 import { copyDaPromessaSemDono } from '../../ai/agent-inbox-copy';
-import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
+import { type Idioma } from '@/lib/i18n/idiomas';
 
 /**
  * O que o runtime enfileira ao fim do turno do Conversador. Só PONTEIROS: org e
@@ -95,6 +96,17 @@ export const SYSTEM_DO_OPERADOR =
   'registrar (mover o lead, abrir nota, o que fizer sentido com as ferramentas que você tem).\n\n' +
   'Use apenas o que a conversa sustenta. Não invente avanço, não registre o que ninguém disse. ' +
   'Se não houver nada a fazer, não faça nada — um turno sem ação é uma resposta válida.';
+
+/**
+ * O system do papel no idioma da organização (#4260, item 1).
+ *
+ * O Operador não fala com o cliente, mas o BRIEFING que ele lê é escrito na
+ * língua do atendimento — e um system inteiro em português puxava o registro
+ * dele para o português. `pt-BR` devolve a constante acima, byte a byte.
+ */
+export function systemDoOperador(idioma: Idioma = 'pt-BR'): string {
+  return falaDoMotor(SYSTEM_DO_OPERADOR, idioma);
+}
 
 /**
  * O briefing do turno: o que o Conversador declarou, em linguagem de negócio.
@@ -531,6 +543,10 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
     // sobre o Conversador, não sobre o Operador.
     const leadCardId = mcp === null ? null : await cardDoFunil(pool, tenantId, leadId, log);
 
+    // Fuso e idioma da organização numa leitura só (#4260, item 1): o system e o
+    // briefing do papel saem na língua do atendimento, sem consulta nova.
+    const { fuso: fusoDoOperador, idioma: idiomaDoOperador } = await fatosDaOrganizacao(pool, tenantId, log);
+
     let saida: Awaited<ReturnType<typeof runModelCall>> | null = null;
     try {
       if (mcp !== null) {
@@ -545,17 +561,14 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
             // como se fosse conversa, e "quanto custa ligar o papel?" — a
             // pergunta que o dono do negócio vai fazer — não teria resposta.
             purpose: 'operator_turn',
-            system: SYSTEM_DO_OPERADOR,
+            system: systemDoOperador(idiomaDoOperador),
             messages: [
               {
                 role: 'user',
                 content: renderBriefingDoOperador(
                   declaracao,
                   promessas,
-                  renderAgora(
-                    deps.clock?.() ?? new Date(),
-                    await fusoDaOrganizacao(pool, tenantId, log),
-                  ),
+                  renderAgora(deps.clock?.() ?? new Date(), fusoDoOperador),
                   { leadId: leadCardId, contactId: leadId, conversationId: payload.conversation_id },
                 ),
               },
@@ -666,11 +679,7 @@ export async function apurarComRetorno(
  */
 async function idiomaDaOrganizacao(pool: pg.Pool, tenantId: string): Promise<Idioma> {
   try {
-    const { rows } = await pool.query<{ locale: string | null }>(
-      'select locale from organizations where id = $1',
-      [tenantId],
-    );
-    return normalizarIdioma(rows[0]?.locale ?? null);
+    return (await fatosDaOrganizacao(pool, tenantId)).idioma;
   } catch {
     return 'pt-BR';
   }

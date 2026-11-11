@@ -21,7 +21,9 @@
  * ─── O que sai daqui e o que não sai ─────────────────────────────────────────
  * `cpf_hash` é lido pelo SERVIDOR (a comparação precisa dele), só para as fichas
  * que a sessão já viu, e NÃO é devolvido: é PII derivada, e a tela de conferência
- * mostra pessoa, telefone e e-mail — não hash de documento. O mapeamento do
+ * mostra pessoa, telefone e e-mail — não hash de documento. O mesmo vale para `wa_identity`/`wa_lid`:
+ * identificam a CONTA do WhatsApp, não a pessoa para quem se liga; a tela mostra
+ * `phone_number`. O mapeamento do
  * `ok(...)` abaixo é a lista fechada do que o cliente recebe; campo novo em
  * `contacts` não vaza por acidente.
  *
@@ -43,6 +45,7 @@ import {
 } from "@/lib/contacts/duplicados";
 import { lerParesDispensados } from "@/lib/contacts/dispensar-par";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { duplicadosPorNomeLigado } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -73,7 +76,7 @@ const TETO_DE_VARREDURA = 2000;
 const TAMANHO_DA_PAGINA = 1000;
 
 const COLUNAS_DO_CONTATO =
-  "id, name, display_name, address_book_name, email, email_normalized, phone_number, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
+  "id, name, display_name, address_book_name, email, email_normalized, phone_number, wa_identity, wa_lid, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
 
 /** Cada id custa ~37 caracteres na URL do PostgREST; 100 ficam abaixo do limite comum de 8 KB de um proxy. */
 const LOTE_DE_IDS = 100;
@@ -152,11 +155,25 @@ export async function GET(): Promise<Response> {
   // ler, e o par dispensado tem de sumir para todo papel que vê esta lista. Se a leitura
   // falhar, a rota falha — mostrar a lista sem as dispensas faria um par tirado voltar
   // calado, e sem o CPF faria o par de mesmo documento sumir sem aviso.
+  //
+  // A OPÇÃO DA EMPRESA (#4138) é lida na MESMA ida ao banco: `settings.crm.
+  // duplicados_por_nome`, desligada por padrão (`duplicadosPorNomeLigado` — só o
+  // booleano `true` liga). Desligada, a varredura por nome não roda E as dispensas
+  // nem são lidas: o par dispensado só existe para esconder uma sugestão que não
+  // existe mais, e ler 5.000 linhas de `merge_queue` para nada é custo sem uso.
   let dispensados: Set<string>;
   let varridos: ContatoParaDeduplicar[];
+  let sugestaoPorNome: boolean;
   try {
     const admin = createAdminClient();
-    dispensados = await lerParesDispensados(admin, org.orgId);
+    const { data: organizacao, error: erroOrg } = await admin
+      .from("organizations")
+      .select("settings")
+      .eq("id", org.orgId)
+      .maybeSingle();
+    if (erroOrg) throw new Error(erroOrg.message);
+    sugestaoPorNome = duplicadosPorNomeLigado(organizacao?.settings);
+    dispensados = sugestaoPorNome ? await lerParesDispensados(admin, org.orgId) : new Set<string>();
     varridos = await comHashDeCpf(admin, org.orgId, linhas.slice(0, TETO_DE_VARREDURA));
   } catch {
     // Sem o detalhe do erro na resposta: a mensagem do banco não é para quem opera a tela.
@@ -165,11 +182,11 @@ export async function GET(): Promise<Response> {
     });
   }
 
-  // Os fortes vêm primeiro, com o mesmo formato. O nome vem depois, em grupos de
-  // dois: sugestão para conferir, não prova.
+  // Os fortes vêm sempre, com o mesmo formato. O nome vem depois, em grupos de
+  // dois — sugestão para conferir, não prova — e SÓ se a empresa ligou a opção.
   const grupos = [
     ...encontrarContatosDuplicados(varridos),
-    ...encontrarParecidosPorNome(varridos, { dispensados }),
+    ...(sugestaoPorNome ? encontrarParecidosPorNome(varridos, { dispensados }) : []),
   ];
 
   return ok(
@@ -188,6 +205,6 @@ export async function GET(): Promise<Response> {
         last_activity_at: c.last_activity_at,
       })),
     })),
-    { requestId, meta: { varreu_tudo: varreuTudo, contatos_varridos: Math.min(linhas.length, TETO_DE_VARREDURA) } },
+    { requestId, meta: { varreu_tudo: varreuTudo, contatos_varridos: Math.min(linhas.length, TETO_DE_VARREDURA), sugestao_por_nome: sugestaoPorNome } },
   );
 }

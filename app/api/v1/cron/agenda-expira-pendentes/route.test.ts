@@ -123,6 +123,8 @@ describe("agenda-expira-pendentes", () => {
     expect(capturado.selectEq).toEqual({ col: "status", val: "pending" });
     expect(capturado.updateEq).toEqual({ col: "status", val: "pending" });
     expect((capturado.patch as Record<string, string>).status).toBe("cancelled");
+    // A constraint real exige cancelled_at com status cancelled (o 500 de produção).
+    expect((capturado.patch as Record<string, string>).cancelled_at).toEqual(expect.any(String));
   });
 
   it("rodada que não expirou nada NÃO audita", async () => {
