@@ -160,6 +160,10 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
     razao: "PATCH app/api/v1/settings/routing/channels/route.ts usa createClient da sessão; RPC exige manager, suporte de escrita, MFA e canal/membros da org na mesma transação. Os dois últimos parâmetros (#2331) acrescentam o modo do número e o atendente de destino padrão à MESMA escrita dos responsáveis; a assinatura antiga de 4 argumentos foi derrubada na migration 0663, e a de 4 continua atendida pelos DEFAULTs. tests/invariants/channel-routing.test.ts prova viewer, tenants A/B, membro revogado, policy vazia, MFA platform aal1/aal2, modo fora da lista e destino que não é membro recusados sem gravar, e a entrega direta ao destino padrão.",
   },
   {
+    fn: "fn_set_channel_ai_wait(uuid,uuid,integer)",
+    razao: "PATCH app/api/v1/settings/routing/channels/route.ts usa createClient da sessão, logo depois de fn_set_channel_routing; a RPC repete as MESMAS guardas dela (manager, suporte de escrita, MFA provada) e só grava `ai_wait_minutes` (#3966, opção do número: esperar a IA qualificar, com prazo) numa regra de número que JÁ existe na org informada — não cria regra, então não muda quem pode receber o número. Faixa 15 a 10080 recusada na função e no CHECK. tests/invariants/roteamento-espera-a-qualificacao.test.ts prova viewer recusado, faixa recusada, número sem regra recusado e a gravação pelo gestor.",
+  },
+  {
     fn: "fn_reserve_channel_connection(uuid,uuid,text,text,boolean)",
     razao: "lib/channels/connect-waha.ts recebe createClient das rotas channel-sessions e onboarding/whatsapp/session; RPC exige admin, suporte e MFA, cria identidade org-owned com recibo privado. tests/invariants/channel-routing.test.ts prova lease/replay/ACL do recibo e MFA platform aal1/aal2.",
   },

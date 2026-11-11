@@ -27,6 +27,9 @@ export const KIND_LABEL = {
   appointment_outcome_required:"Confirme a presença no compromisso",
   appointment_recovery_review:"A recuperação precisa de uma decisão da equipe",
   routing_unassigned: "Conversa aguardando responsável",
+  // Diz o que ACONTECEU com o atendimento, não o nome do ajuste: a IA ficou com
+  // a conversa o prazo inteiro e não chamou ninguém.
+  routing_ia_wait_expired: "A IA não passou a conversa no prazo",
   qr_rescan: "Conexão do WhatsApp caiu — precisa escanear o QR de novo",
   job_dead: "Uma tarefa do assistente falhou e parou de tentar",
   event_dead: "Um evento recebido não pôde ser processado",
