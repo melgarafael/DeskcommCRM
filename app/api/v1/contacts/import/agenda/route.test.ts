@@ -19,6 +19,8 @@ import { getAdapter } from "@/lib/channels";
 import { requireRole } from "@/lib/auth/require-role";
 import { criarDepsDeAgenda, sincronizarAgendaDoCelular } from "@/lib/contacts/agenda-do-celular";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { FalhaDaAgendaDoAparelho } from "@/lib/channels/agenda-do-aparelho-falha";
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { POST } from "./route";
 
@@ -245,5 +247,86 @@ describe("POST /api/v1/contacts/import/agenda", () => {
     const body = (await r.json()) as { error: { code: string; message: string } };
     expect(body.error.code).toBe("channel_unavailable");
     expect(body.error.message).not.toContain("503");
+  });
+
+  /**
+   * O DANO DO #4102: a leitura da agenda falha com um status do transporte que
+   * quer dizer "o store da sessão está desligado" (a opção "Guardar o histórico
+   * anterior à vinculação"), e o `catch` desta rota tratava TODO erro como "o
+   * WhatsApp não respondeu". Quem estava conectado lia que o número não
+   * respondia — e ficava travado sem saber que faltava ligar uma chave da
+   * própria tela de conexões.
+   *
+   * A classificação do status (400 → store, timeout → relógio, 401/403 →
+   * sessão, 5xx → servidor) é de `lib/channels/agenda-do-aparelho-falha.ts`,
+   * com teste próprio lá; aqui se mede o que a ROTA faz com cada motivo.
+   */
+  it("acervo desligado diz que a opção 'Guardar o histórico' está desligada — e onde ligá-la", async () => {
+    vi.mocked(sincronizarAgendaDoCelular).mockRejectedValue(
+      new FalhaDaAgendaDoAparelho("acervo_desligado", "transporte_recusou_a_agenda"),
+    );
+    const r = await POST(requisicao({ channel_session_id: CANAL }));
+    const body = (await r.json()) as { error: { code: string; message: string } };
+
+    expect(r.status).toBe(409);
+    expect(body.error.code).toBe("channel_acervo_desligado");
+    // A mensagem tem de nomear a OPÇÃO (é o que destrava) e o caminho dela.
+    expect(body.error.message).toContain("Guardar o histórico anterior à vinculação");
+    expect(body.error.message).toContain("Conexões");
+    // E não pode repetir o dano do relato: o número ESTAVA conectado.
+    expect(body.error.message).not.toContain("não respondeu");
+    expect(body.error.message).not.toContain("está conectado");
+  });
+
+  it("a causa técnica do transporte continua no log, mesmo com a tela amigável", async () => {
+    vi.mocked(sincronizarAgendaDoCelular).mockRejectedValue(
+      new FalhaDaAgendaDoAparelho("acervo_desligado", "transporte_recusou_a_agenda"),
+    );
+    await POST(requisicao({ channel_session_id: CANAL }));
+    const registro = vi
+      .mocked(logger.warn)
+      .mock.calls.find(([msg]) => String(msg).includes("leitura da agenda falhou"));
+    expect(registro?.[1]).toMatchObject({
+      causa: "transporte_recusou_a_agenda",
+      motivo: "acervo_desligado",
+    });
+  });
+
+  it("timeout real continua dizendo que o WhatsApp não respondeu — não vira 'acervo desligado'", async () => {
+    vi.mocked(sincronizarAgendaDoCelular).mockRejectedValue(
+      new FalhaDaAgendaDoAparelho("sem_resposta", "transporte_estourou_o_teto"),
+    );
+    const r = await POST(requisicao({ channel_session_id: CANAL }));
+    const body = (await r.json()) as { error: { code: string; message: string } };
+
+    expect(r.status).toBe(504);
+    expect(body.error.code).toBe("channel_timeout");
+    expect(body.error.message).toContain("não respondeu");
+    expect(body.error.message).not.toContain("Guardar o histórico");
+  });
+
+  it("sessão recusada não é confundida com o acervo desligado", async () => {
+    vi.mocked(sincronizarAgendaDoCelular).mockRejectedValue(
+      new FalhaDaAgendaDoAparelho("sessao_recusada", "transporte_recusou_a_sessao"),
+    );
+    const r = await POST(requisicao({ channel_session_id: CANAL }));
+    const body = (await r.json()) as { error: { code: string; message: string } };
+    expect(r.status).toBe(502);
+    expect(body.error.code).toBe("channel_session_rejected");
+    expect(body.error.message).not.toContain("Guardar o histórico");
+    expect(body.error.message).toContain("Reconecte");
+  });
+
+  it("5xx continua erro do servidor do canal — não é problema do número", async () => {
+    vi.mocked(sincronizarAgendaDoCelular).mockRejectedValue(
+      new FalhaDaAgendaDoAparelho("servidor", "transporte_falhou_no_servidor"),
+    );
+    const r = await POST(requisicao({ channel_session_id: CANAL }));
+    const body = (await r.json()) as { error: { code: string; message: string } };
+
+    expect(r.status).toBe(502);
+    expect(body.error.code).toBe("channel_unavailable");
+    expect(body.error.message).not.toContain("Guardar o histórico");
+    expect(body.error.message).not.toContain("não respondeu");
   });
 });

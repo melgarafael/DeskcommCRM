@@ -18,7 +18,7 @@ import type {
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
 import { normalizarTermoDeBusca, termoSemAcento } from "@/lib/inbox/termo-de-busca";
-import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
+import { ORDEM_DA_ESPERA, ehAFila, comPreFiltroDoComando } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
 import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
 
@@ -226,7 +226,13 @@ export async function listConversationsHandler(
   // o cursor de paginação continuar valendo: filtrar depois de paginar devolveria
   // páginas curtas e um "carregar mais" que às vezes não traz nada.
   if (q.comando && q.comando.length > 0) {
-    query = query.in("comando_da_conversa", q.comando);
+    // O PRÉ-FILTRO (#4325): quando o comando pedido é subconjunto de
+    // {aguardando, automatico}, as duas condições que a função já exige
+    // (sem dono, status fora do histórico fechado) vão também para o `WHERE`.
+    // Elas NÃO substituem `comando_da_conversa` — só reduzem as linhas que ela
+    // avalia, que hoje são todas as da organização. Comando fora do conjunto
+    // devolve a consulta intacta.
+    query = comPreFiltroDoComando(query.in("comando_da_conversa", q.comando), q.comando);
   }
   // Depois do `status` de propósito: pedir um status terminal E `exclude_finished`
   // é contradição, e a resposta certa para uma contradição é lista vazia — não
