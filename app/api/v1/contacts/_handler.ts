@@ -43,8 +43,12 @@ import type {
 } from "@/lib/schemas";
 import { contactListQuerySchema } from "@/lib/schemas";
 import { arrayDeUmValorParaOr } from "@/lib/inbox/marcador-da-conversa";
-import { buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
-import { padraoRegexDeBusca } from "@/lib/contacts/busca-regex";
+import {
+  buscaValeConsulta,
+  normalizarTermoDeBusca,
+  termoSeguroParaOr,
+  termoSemAcento,
+} from "@/lib/inbox/termo-de-busca";
 import {
   camposQueMudaram,
   defsDoPadraoDaOrg,
@@ -224,71 +228,58 @@ export async function listContactsHandler(
     .limit(q.limit + 1);
 
   if (q.search && termoDeTexto !== undefined) {
-    // ─── O padrão sai em regex, não em LIKE (#1835, F2) ─────────────────────
-    // A composição continua a MESMA da busca de conversas
-    // (`conversations/_handler.ts:297`, `termoSeguroParaOr(normalizarTermoDeBusca(...))`)
-    // e continua sendo a régua única de `lib/inbox/termo-de-busca.ts` — o que
-    // muda é o DESTINO do padrão:
+    // ─── A MESMA RÉGUA DA BUSCA DO INBOX (#3918, fatia 2) ──────────────────
     //
-    //   normalizarTermoDeBusca → como a PESSOA digitou: espaço duplo, vírgula e
-    //                            ponto e vírgula colapsam num curinga só, então
-    //                            "Paulo  Lima" e "Paulo Jr" acham o "Paulo Lima Jr"
-    //                            e "Silva, Maria" não exige mais adjacência
-    //   padraoRegexDeBusca     → o curinga vira `.*`, o `%`/`_` digitado continua
-    //                            literal, e a LETRA com grafias vira classe
-    //                            (`jo[aáàâãä]o`) — é ela que faz "Joao" achar
-    //                            "João" e "João" achar "Joao"
+    // Aqui havia `name.imatch.*…*`, `display_name.imatch.*…*` e
+    // `address_book_name.imatch.*…*`. O `ILIKE` (e o regex que o imitava) dobra
+    // a CAIXA, não o ACENTO — `lower('Á') = 'á'`, que não é `'a'` —, então
+    // "Joao" não achava "João" e quem digita rápido, sem acento, concluía que o
+    // cliente não existia. Desde o #3924 o banco tem a coluna GERADA
+    // `contacts.busca_sem_acento` — `lower(public.f_unaccent(display_name,
+    // name, address_book_name))`, com índice `pg_trgm` (migration 9098) — e o
+    // inbox já busca nela. A partir daqui as TRÊS portas da busca de contato
+    // (a tela de Contatos, o seletor e a ferramenta do agente) usam a MESMA
+    // coluna, e `lib/contacts/busca-regex.ts` (a régua própria da #1835) foi
+    // aposentada: duas réguas de acento divergem no primeiro ajuste.
     //
-    // Por que regex e não `ilike` (a parte medida da F2): `ILIKE` dobra a CAIXA,
-    // não o ACENTO — `lower("Á") = "á"`, que não é `"a"` —, e o banco não tem
-    // `unaccent` nenhum (`git grep unaccent origin/main -- supabase/` = 0) para
-    // chamar do lado de lá. Sem coluna materializada (migração + backfill + gatilho,
-    // a F2 que ficou de fora do #1892), a comparação de acento é NOSSA dos dois
-    // lados: o termo normalizado aqui, a coluna virando classe no padrão. O
-    // operador `imatch` (`~*`) resolve a caixa. Medido contra o PostgREST real
-    // (docker postgrest/postgrest:latest + postgres:17) antes de escrever esta
-    // linha: um só `or=` com as quatro colunas em `imatch` + as variantes de
-    // telefone em `ilike` devolve as seis linhas certas.
+    // Composição, nesta ordem — cada passo tem um dono:
+    //   normalizarTermoDeBusca → como a PESSOA digitou (espaço duplo, vírgula
+    //                            e ponto e vírgula viram UM curinga)
+    //   termoSeguroParaOr      → a GRAMÁTICA do `or=` do PostgREST (`,` `(` `)`
+    //                            viram curinga; `%`/`_` digitados, literais)
+    //   termoSemAcento         → o lado do TERMO da coluna: NFD sem marca,
+    //                            minúsculo, com a mesma tabela de letras que o
+    //                            `unaccent` do banco cobre (ß→ss, ø→o…)
     //
-    // Os PARÊNTESES saem ANTES da régua: são delimitador do DSL do `.or()` do
-    // PostgREST (um "(" sem fechar derrubaria o filtro inteiro com HTTP 400 — no
-    // regex o Postgres devolve `2201B parentheses () not balanced`) e a régua não
-    // os conhece — tirá-los depois deixaria `Paulo* Jr` com espaço solto, que não
-    // casa nada. A VÍRGULA também não passa: `normalizarTermoDeBusca` usa ela
-    // como separador, e uma vírgula que sobrasse splitaria o `.or()` em duas
-    // condições (medido: `PGRST100 failed to parse logic tree`). Um nome com
-    // vírgula continua sem injetar condição nenhuma.
-    const s = padraoRegexDeBusca(termoDeTexto);
+    // `like` e não `ilike`: a coluna já é minúscula, e o índice GIN de trigrama
+    // serve os dois operadores. O `%`/`_` escapado pelo `termoSeguroParaOr` é
+    // literal no LIKE do Postgres — o `%` digitado não vira "casa tudo".
+    //
+    // Os PARÊNTESES saem ANTES da régua, como antes: são delimitador do DSL do
+    // `.or()` (um `(` sem fechar derrubaria o filtro inteiro com HTTP 400) e a
+    // régua não os conhece — tirá-los depois deixaria espaço solto, que não
+    // casa nada.
+    const s = termoSemAcento(termoSeguroParaOr(normalizarTermoDeBusca(termoDeTexto)));
+
+    // A coluna do NOME muda com `soContato`: `busca_sem_acento` carrega também
+    // o nome da agenda do celular (#2439), e ele é SÓ DA EQUIPE. Na busca do
+    // agente durante a conversa (`crm_search_contacts`), casar nele faria a
+    // ferramenta responder ao modelo se o rótulo interno contém o termo — o
+    // rótulo chegaria ao cliente aos pedaços. `busca_sem_acento_sem_agenda`
+    // (migration 9325) é `display_name` + `name` e nada mais, e é a coluna que
+    // aquela busca usa; ela não tem índice porque o `id` do turno já a reduz a
+    // UMA linha.
+    const colunaDoNome = soContato ? "busca_sem_acento_sem_agenda" : "busca_sem_acento";
+
     const digits = q.search.replace(/\D/g, "");
     const orParts = [
-      `name.imatch.${s}`,
-      // ⚠️ `display_name` ESTAVA DE FORA, e é a coluna que a tela MOSTRA.
-      //
-      // Contato que entra pelo WhatsApp nasce só com `display_name` (o pushName);
-      // `name` fica nulo até alguém editar à mão, e a busca ignorava exatamente
-      // o nome que o usuário vê e digita. Medido nesta instalação: 15 de 33
-      // contatos têm `display_name` e nenhum `name`.
-      //
-      // Quem decide o nome exibido é `nomeDoContato`/`rotuloDoContato`
-      // (lib/contacts/rotulo-do-contato.ts) — a ordem em vigor se lê ali, não
-      // aqui. Esta linha já afirmou que a UI prefere `display_name`, e a issue
-      // #906 inverteu a precedência sem que a frase acompanhasse. O que
-      // justifica a coluna no OR não é a ordem: é que ela é a ÚNICA preenchida
-      // em metade da base, então buscar sem ela devolve zero para quem existe.
-      //
-      // Achado por um turno de agente REAL (IA 360 · wave 2): pedido para marcar
-      // um retorno para "Cliente Retorno E2E", o modelo chamou esta busca, levou
-      // zero resultados para um contato que EXISTE, e desistiu — a demanda
-      // morreria por uma coluna faltando no OR.
-      `display_name.imatch.${s}`,
-      // O nome da agenda do celular (#2439) é o que a tela mostra quando não há
-      // nome escolhido no CRM — mesma razão do `display_name` acima. Mas ele é SÓ
-      // DA EQUIPE: com `soContato` (a busca do agente durante a conversa), casar
-      // nele faria a ferramenta responder ao modelo se o rótulo interno contém o
-      // termo digitado — o rótulo chegaria ao cliente aos pedaços.
-      ...(soContato ? [] : [`address_book_name.imatch.${s}`]),
-      `email.imatch.${s}`,
-      `phone_number.imatch.${s}`,
+      `${colunaDoNome}.like.*${s}*`,
+      // Email e telefone NÃO têm acento: seguem no `ilike` com o termo
+      // saneado, e não na coluna gerada — ela guarda só os NOMES. Continuam no
+      // OR porque a pessoa busca o cadastro pelo que tem à mão: o e-mail que o
+      // cliente mandou ou o número do identificador de chamadas.
+      `email.ilike.*${s}*`,
+      `phone_number.ilike.*${s}*`,
     ];
     if (digits.length >= 8) {
       // 10/11 dígitos sem DDI: no Brasil é DDD+local. Sem o 55, `3284793302`
@@ -298,7 +289,7 @@ export async function listContactsHandler(
           ? `55${digits}`
           : digits;
       // Os critérios de TELEFONE do principal, reaproveitados para o extra abaixo.
-      const criteriosDeTelefone = [`phone_number.imatch.${s}`];
+      const criteriosDeTelefone = [`phone_number.ilike.*${s}*`];
       for (const v of phoneLookupVariants(base)) {
         const d = v.replace(/\D/g, "");
         if (d && d !== digits) {

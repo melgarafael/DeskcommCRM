@@ -34,12 +34,14 @@ import type { McpToolDefinition } from "../types";
 function isInQueue(c: { comando_da_conversa?: string | null }): boolean {
   // Ele decide UMA coisa: vale a pena buscar as posições de fila para esta
   // página? Por isso é liberal de propósito — pergunta "não tem dono e não
-  // acabou", que cobre tanto a org COM automático (só `aguardando` está na fila)
-  // quanto a SEM (`automatico` também está, ver `comandosDaFila`). Errar para o
-  // lado do sim custa uma consulta; errar para o não some com a posição que a IA
-  // devolve ao cliente.
+  // acabou", que cobre as três respostas que a Fila aceita em `comandosDaFila`:
+  // `aguardando`, `ninguem` (desde a #4012 o banco diz isso quando a organização
+  // não tem agente no ar) e `automatico` (a janela
+  // entre o deploy e a migration, em que o banco ainda devolve `automatico`).
+  // Errar para o lado do sim custa uma consulta; errar para o não some com a
+  // posição que a IA devolve ao cliente.
   const q = c.comando_da_conversa;
-  return q === "aguardando" || q === "automatico";
+  return q === "aguardando" || q === "ninguem" || q === "automatico";
 }
 
 const listInputShape = {

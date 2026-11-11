@@ -24,6 +24,7 @@ import {
   recusaDeMotivoDaPerdaPeloBanco,
 } from "@/lib/leads/motivo-da-perda";
 import { RECUSA_DE_TROCA_DE_FUNIL } from "@/lib/leads/clonar-para-funil";
+import { posicaoDeEntradaNaEtapa } from "@/lib/kanban/entrada-na-etapa";
 import { modoDeReabertura, recusaReabertura } from "@/lib/leads/reabertura";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 import {
@@ -220,11 +221,38 @@ export async function POST(
 
   // OCC update (Pattern B / Spec 09 §7.2). O motivo da perda entra NA MESMA
   // escrita que muda a etapa — nunca numa segunda, que teria janela.
+  //
+  // ── A POSIÇÃO QUANDO NINGUÉM A MANDA (#4151) ──────────────────────────────
+  //
+  // Quem move pela PÁGINA INTEIRA do negócio só conhece a etapa de destino: não
+  // há coluna na tela para escolher o ponto entre dois cards. Posicionar isso no
+  // cliente seria adivinhação — a página não carrega o funil inteiro (é a mesma
+  // leitura que a aba Lista existe para não pagar). Então o servidor lê a PONTA
+  // da etapa de destino e aplica a MESMA régua do `moveLeadHandler` / menu
+  // "Mover para…" (#3461): quem CHEGA entra no topo (min − 1000); a mesma etapa
+  // é reordenação e vai para o fim (max + 1000). Uma regra, um lugar.
+  let position = input.position_in_stage;
+  if (position === undefined) {
+    const mesmaEtapaJa = input.stage_id === lead.stage_id;
+    const { data: ponta } = await supabase
+      .from("crm_leads")
+      .select("position_in_stage")
+      .eq("stage_id", input.stage_id)
+      .order("position_in_stage", { ascending: mesmaEtapaJa ? false : true })
+      .limit(1)
+      .maybeSingle();
+    const valorDaPonta = ponta?.position_in_stage == null ? null : Number(ponta.position_in_stage);
+    position = mesmaEtapaJa
+      ? valorDaPonta == null
+        ? 1000
+        : valorDaPonta + 1000
+      : posicaoDeEntradaNaEtapa(valorDaPonta);
+  }
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update({
       stage_id: input.stage_id,
-      position_in_stage: input.position_in_stage,
+      position_in_stage: position,
       updated_at: new Date().toISOString(),
       ...veredito.patch,
       // O motivo de ganho sai NA MESMA escrita que muda a etapa — o mesmo
@@ -341,7 +369,7 @@ export async function POST(
       p_payload: {
         from_stage_id: lead.stage_id,
         to_stage_id: input.stage_id,
-        position_in_stage: input.position_in_stage,
+        position_in_stage: position,
         status: finalLead.status,
       },
       p_metadata: { request_id: requestId, actor_user_id: userId },
@@ -362,7 +390,7 @@ export async function POST(
     metadata: {
       from_stage_id: lead.stage_id,
       to_stage_id: input.stage_id,
-      position_in_stage: input.position_in_stage,
+      position_in_stage: position,
     },
   });
 

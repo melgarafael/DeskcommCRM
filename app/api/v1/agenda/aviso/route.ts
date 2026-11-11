@@ -64,6 +64,11 @@ const corpo = z
       .nullable()
       .optional(),
     ligado: z.boolean(),
+    /**
+     * Também lembrar antes de cada horário (migration 9326). Ausente = não
+     * mexe na escolha salva — o formulário antigo continua valendo.
+     */
+    lembrar_antes: z.boolean().optional(),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
   })
@@ -109,6 +114,11 @@ const RECUSAS_DO_RPC = {
     code: "validation_failed",
     status: 422 as const,
     frase: "Esse grupo não é válido. Escolha um grupo da lista.",
+  },
+  aviso_de_agendamento_sem_config: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Salve primeiro o número que recebe os avisos.",
   },
   aviso_de_agendamento_numero_de_cliente: {
     code: "aviso_numero_de_cliente",
@@ -222,6 +232,25 @@ export async function PUT(req: NextRequest): Promise<Response> {
   limparCacheDoNumeroInterno();
   const resultado = (data ?? {}) as { trocou_numero?: boolean; antes_ligado?: boolean };
 
+  // O lembrete antes do horário é uma segunda porta (9326), depois da primeira:
+  // a linha de configuração já existe aqui. Se ela recusar, o resto já foi
+  // salvo — a resposta diz o que faltou, e a tela relê o estado.
+  let antesLembrava: boolean | null = null;
+  if (dados.lembrar_antes !== undefined) {
+    const lembrete = await db.rpc(
+      "fn_definir_lembrete_do_aviso_de_agendamento" as never,
+      { p_org: authz.org.orgId, p_lembrar: dados.lembrar_antes } as never,
+    );
+    if (lembrete.error) {
+      const recusa = Object.entries(RECUSAS_DO_RPC).find(([nome]) =>
+        (lembrete.error?.message ?? "").includes(nome),
+      )?.[1];
+      if (recusa) return fail(recusa.code, t(recusa.frase), recusa.status, { requestId });
+      return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
+    }
+    antesLembrava = Boolean(lembrete.data);
+  }
+
   // O número entra MASCARADO: `api_audit_log` é append-only e a cascata de
   // LGPD não o alcança.
   void audit({
@@ -239,6 +268,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
       depois_ligado: dados.ligado,
       confirmou_contato: dados.confirma_contato ?? false,
       com_grupo: Boolean(dados.grupo),
+      ...(dados.lembrar_antes !== undefined
+        ? { antes_lembrava: antesLembrava, depois_lembra: dados.lembrar_antes }
+        : {}),
     },
   });
 
