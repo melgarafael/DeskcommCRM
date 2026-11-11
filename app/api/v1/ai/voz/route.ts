@@ -15,9 +15,10 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { loadEnv } from "@/lib/agent-engine/env";
 import { resolveOrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
@@ -36,11 +37,19 @@ interface VozSettings {
   model_id?: string;
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "ai_providers" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_providers",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_voz", requestId);
+  if (teto) return teto;
+  const org = { orgId: authz.organizationId };
 
   const admin = createAdminClient();
 
@@ -127,10 +136,19 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", { requestId, resource: "ai_providers" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_providers",
+    role: "admin",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_voz", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
 
   const parsed = corpoDoPatch.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -183,7 +201,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "ai.voz_settings_updated",
-    actorUserId: user.id,
+    actorUserId: autor,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: org.orgId,
     resourceType: "organization",
     resourceId: org.orgId,

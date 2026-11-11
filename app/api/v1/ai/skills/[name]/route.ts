@@ -18,7 +18,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * são copiados pro prefixo dela (lib/ai/skills/package-files.ts) ANTES do ponteiro
  * mover — falha na cópia = 500 e nada muda na tela do agente.
  *
- * organization_id vem SEMPRE de requireRole — NUNCA de query/body.
+ * GET, PUT e DELETE aceitam sessão de navegador OU Bearer `dsk_…` com escopo
+ * `config:read`/`config:write` e papel admin (`tokenRole`). O PUT usa `getSkillsPool` (pg Pool
+ * cru), mas a organização entra como parâmetro (`tenantId`), vinda da linha do token — a
+ * mesma fonte do restante da rota.
+ * A organização vem da linha do token, nunca de query/body.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -26,7 +30,8 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   insertSkillVersion,
   setSkillPointer,
@@ -38,6 +43,7 @@ import { caminhosDoManifesto, copiarArquivosDoPacote } from "@/lib/ai/skills/pac
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { nomeDeSkillValido } from "@/lib/skills/nome-de-skill";
 
 export const dynamic = "force-dynamic";
 
@@ -54,39 +60,51 @@ const salvarSkillSchema = z
   .strict();
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ name: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "ai_skills" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_skills_get",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const teto = await tetoDeEscritaDoToken(authz, "ai_skills", requestId);
+  if (teto) return teto;
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
 
-  const admin = createAdminClient();
-  const { data: pointer, error: ptrErr } = await admin
+  const supabase = createAdminClient();
+  const { data: pointer, error: ptrErr } = await supabase
     .from("skill_pointers")
     .select("version_id, updated_at")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("name", name)
     .maybeSingle();
   if (ptrErr) {
     return fail("internal_error", "Erro ao carregar a skill.", 500, { requestId });
   }
+  // Só lê a skill INSTALADA nesta organização (ponteiro da própria org). Sem
+  // ponteiro da org, 404: a skill de plataforma só é lida depois de instalada.
   if (!pointer) {
     return fail("not_found", t("Skill não está instalada nesta organização."), 404, { requestId });
   }
 
-  const { data: version, error: verErr } = await admin
+  // A versão pode ser do catálogo global (organization_id null) — é por esta via
+  // (ponteiro da própria org) que o catálogo global é lido.
+  const { data: version, error: verErr } = await supabase
     .from("skill_versions")
     .select("id, name, description, body, matcher, manifest")
+    .or(`organization_id.eq.${authz.organizationId},organization_id.is.null`)
     .eq("id", pointer.version_id)
     .maybeSingle();
   if (verErr) {
@@ -126,14 +144,23 @@ export async function PUT(
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "ai_skills" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_skills",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_skills", requestId);
+  if (teto) return teto;
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
@@ -158,7 +185,7 @@ export async function PUT(
   const { data: pointer, error: ptrErr } = await admin
     .from("skill_pointers")
     .select("version_id")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", orgId)
     .eq("name", name)
     .maybeSingle();
   if (ptrErr) {
@@ -174,6 +201,9 @@ export async function PUT(
   const { data: atual, error: verErr } = await admin
     .from("skill_versions")
     .select("manifest, forked_from_version_id")
+    // A versão do ponteiro é da própria organização ou do catálogo de plataforma
+    // (cópia ainda não editada): nenhuma outra organização entra nesta leitura.
+    .or(`organization_id.eq.${orgId},organization_id.is.null`)
     .eq("id", pointer.version_id)
     .maybeSingle();
   if (verErr) {
@@ -202,7 +232,7 @@ export async function PUT(
   let versionId: string;
   try {
     const version = await insertSkillVersion(pool, {
-      tenantId: org.orgId,
+      tenantId: orgId,
       name,
       description: parsed.data.description,
       body: parsed.data.body,
@@ -219,7 +249,7 @@ export async function PUT(
         await copiarArquivosDoPacote(
           { admin },
           {
-            organizationId: org.orgId,
+            organizationId: orgId,
             name,
             deVersionId: pointer.version_id,
             paraVersionId: version.id,
@@ -244,7 +274,7 @@ export async function PUT(
         );
       }
     }
-    await setSkillPointer(pool, { tenantId: org.orgId, name, versionId: version.id });
+    await setSkillPointer(pool, { tenantId: orgId, name, versionId: version.id });
     versionId = version.id;
   } catch (err) {
     logger.error("ai.skills.put: falha ao gravar a versão", {
@@ -256,8 +286,9 @@ export async function PUT(
 
   await audit({
     action: "ai.skill_saved",
-    actorUserId: authUser.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: orgId,
     resourceType: "skill_versions",
     // `resource_id` é UUID: aqui a versão TEM id, então vai.
     resourceId: versionId,
@@ -273,31 +304,55 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ name: string }> },
 ): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-
-  const authz = await requireRole("manager", { requestId, resource: "ai_skills" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_skills_delete",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_skills", requestId);
+  if (teto) return teto;
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
 
-  const admin = createAdminClient();
-  const { data: deleted, error } = await admin
+  const supabase = createAdminClient();
+  // Primeiro a LEITURA de existência: o token de outra organização (ou skill
+  // que não é desta org) não registra cadeia de escrita nenhuma — o DELETE cego
+  // devolveria 0 linhas e o 404 certo, mas a tentativa de escrita ficaria no
+  // rastro como se o ponteiro alheio tivesse sido alvo.
+  const { data: existente, error: leituraErro } = await supabase
+    .from("skill_pointers")
+    .select("name")
+    .eq("organization_id", authz.organizationId)
+    .eq("name", name)
+    .maybeSingle();
+  if (leituraErro) {
+    return fail("internal_error", "Erro ao desinstalar a skill.", 500, { requestId });
+  }
+  if (!existente) {
+    return fail("not_found", t("Skill não está instalada nesta organização."), 404, { requestId });
+  }
+
+  const { data: deleted, error } = await supabase
     .from("skill_pointers")
     .delete()
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("name", name)
     .select("name");
 
@@ -310,8 +365,9 @@ export async function DELETE(
 
   await audit({
     action: "ai.skill_uninstalled",
-    actorUserId: authUser.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId,
+    organizationId: authz.organizationId,
     resourceType: "skill_pointers",
     // `resource_id` é UUID e `skill_pointers` não tem um: a chave é
     // (organization_id, name). Mandar o nome ali fazia o INSERT do audit estourar

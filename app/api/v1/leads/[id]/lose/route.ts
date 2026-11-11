@@ -15,11 +15,11 @@ import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { encerraDemanda } from "@/lib/leads/encerramento";
-import { traduzir } from "@/lib/i18n/dicionario";
 import { loseLeadSchema, validateRequest } from "@/lib/schemas";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -33,21 +33,28 @@ export async function POST(
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
-  const supabase = await createClient();
   // spec 13 §4: escrita é agent+ (viewer é read-only).
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_lose", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
 
   try {
     const input = await validateRequest(loseLeadSchema, req);
     const { lead } = await encerraDemanda(
       supabase,
       {
-        organization_id: authz.org.orgId,
-        actor: { type: "user", id: authz.user.id },
+        organization_id: organizationId,
+        actor,
         requestId,
-        idioma: authz.user.idioma,
+        idioma,
       },
       { leadId, desfecho: "lost", motivo: input.lost_reason },
     );

@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { z } from "zod";
@@ -51,36 +52,47 @@ type Context = { params: Promise<{ id: string }> };
  * Espelha o contato pessoal (spec 21, decisão 1): é decisão operacional, não
  * cadastro. Atendente recebe 403.
  */
-export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
+export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
   // A guarda de efeito fica DENTRO de cada handler de propósito: o gate
   // `suporte-cobertura-de-efeitos` lê o corpo de POST/DELETE e não enxerga
   // através de uma função compartilhada — indireção opaca falharia aberto.
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  return trocar(_req, ctx, true);
+  return trocar(req, ctx, true);
 }
 
-export async function DELETE(_req: NextRequest, ctx: Context): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: Context): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  return trocar(_req, ctx, false);
+  return trocar(req, ctx, false);
 }
 
-async function trocar(_req: NextRequest, ctx: Context, ligar: boolean): Promise<Response> {
+async function trocar(req: NextRequest, ctx: Context, ligar: boolean): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("manager", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `manager` na sessão; no token,
+  // `mcp:write` e papel `manager` na linha dele. A organização sai da sessão ou
+  // da LINHA DO TOKEN, nunca do path nem do corpo.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  // A rota está em PUBLIC_PATHS: o teto de escrita do token é o único que conta.
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   if (!z.uuid().safeParse(id).success) {
     return fail("validation_failed", t("Contato inválido."), 422, { requestId });
   }
 
-  const orgId = authz.org.orgId;
+  const orgId = authz.organizationId;
   const admin = createAdminClient();
   // Admin client bypassa RLS: o filtro por organização é PROGRAMÁTICO e
   // obrigatório (CLAUDE.md, anti-pattern 10).
@@ -122,8 +134,9 @@ async function trocar(_req: NextRequest, ctx: Context, ligar: boolean): Promise<
 
   await audit({
     action: ligar ? "contacts.always_human_marked" : "contacts.always_human_unmarked",
-    actorUserId: authz.user.id,
-    actorApiTokenId: null,
+    // O id de um token não é pessoa: só a sessão assina como usuário.
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: orgId,
     resourceType: "contact",
     resourceId: id,

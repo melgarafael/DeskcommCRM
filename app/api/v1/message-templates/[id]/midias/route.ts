@@ -23,17 +23,28 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * ADICIONA; `substituir_audio` troca uma entrada atual sem ocupar uma sexta
  * vaga. Remover sem substituir é o PATCH. Os dois escritores comparam a lista
  * inteira lida; o snapshot esperado também recusa uma edição já desatualizada.
+ *
+ * Aceita sessão de navegador OU Bearer `dsk_…` (`config:write`, papel admin via
+ * `tokenRole`). A sessão segue pelo `requireRole` (é ele quem traz o papel
+ * efetivo da regra "compartilhado exige manager+"). No token o cliente é o admin
+ * (sem RLS): a leitura e o update filtram a organização à mão e só alcançam a
+ * resposta COMPARTILHADA (`owner_user_id` nulo); o caminho do arquivo no bucket
+ * começa com a organização do token.
  */
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { requireRole } from "@/lib/auth/require-role";
-import { roleAtLeast } from "@/lib/auth/types";
+import { roleAtLeast, type Role } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
+import { extractBearer } from "@/lib/mcp/auth";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { camposDoUploadDeTemplateSchema, snapshotDeMidiasSchema } from "@/lib/schemas/templates";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -63,19 +74,53 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "message_templates" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  // Dois portões, um corpo (ver o cabeçalho). O `papel` é nulo no token: o
+  // `tokenRole: "admin"` já barrou quem está abaixo.
+  let orgId: string;
+  let autor: string | null;
+  let apiTokenId: string | null;
+  let papel: Role | null;
+  let idioma: Idioma;
+  let supabase: SupabaseClient;
+  const viaToken = extractBearer(req.headers.get("authorization")) !== null;
+  if (viaToken) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "message_templates",
+      role: "agent",
+      scope: "config:write",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "message_templates.midias", requestId);
+    if (teto) return teto;
+    orgId = authz.organizationId;
+    autor = authz.actor.type === "user" ? authz.actor.id : null;
+    apiTokenId = authz.apiTokenId ?? null;
+    papel = null;
+    idioma = authz.idioma ?? IDIOMA_PADRAO;
+    supabase = authz.supabase;
+  } else {
+    const authz = await requireRole("agent", { requestId, resource: "message_templates" });
+    if (!authz.ok) return authz.response;
+    orgId = authz.org.orgId;
+    autor = authz.user.id;
+    apiTokenId = null;
+    papel = authz.org.role;
+    idioma = authz.user.idioma;
+    supabase = await createClient();
+  }
+  const t = (texto: string) => traduzir(texto, idioma);
   const { id } = await params;
 
-  const supabase = await createClient();
-  const { data: linha, error: erroLeitura } = await supabase
+  let leitura = supabase
     .from("message_templates")
     .select("owner_user_id, midias")
     .eq("id", id)
-    .eq("organization_id", org.orgId)
-    .maybeSingle();
+    .eq("organization_id", orgId);
+  // No token só o compartilhado (`owner_user_id` nulo) é alcançável.
+  if (viaToken) leitura = leitura.is("owner_user_id", null);
+  const { data: linha, error: erroLeitura } = await leitura.maybeSingle();
   if (erroLeitura) {
     logger.error("[message-templates/midias] falha ao ler o template", {
       requestId,
@@ -96,7 +141,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const atuais = midias as MidiaDeTemplate[];
   // A MESMA régua do POST de criação: compartilhado só por manager+. A RLS
   // barraria de qualquer forma; isto dá o erro claro ANTES de subir o arquivo.
-  if (owner === null && !roleAtLeast(org.role, "manager")) {
+  if (owner === null && papel !== null && !roleAtLeast(papel, "manager")) {
     return fail("forbidden", t("Só manager+ altera template compartilhado."), 403, { requestId });
   }
   // O teto daqui é o MAIOR dos dois (áudio, 16 MB) mais a folga do multipart:
@@ -104,7 +149,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   // os bytes.
   const corpo = await lerCorpoComTeto(req, TAMANHO_MAXIMO_DO_AUDIO + 1_048_576, {
     requestId,
-    idioma: authz.user.idioma,
+    idioma,
     acimaDoTeto: t("A mídia passou do tamanho máximo aceito."),
   });
   if (!corpo.ok) return corpo.response;
@@ -138,7 +183,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     return fail("conflict", t("As mídias mudaram. Recarregue a página."), 409, { requestId });
   }
   const anterior = indice < 0 ? undefined : atuais[indice];
-  if (anterior && (!midiaPertenceAoTemplate(anterior.storage_path, org.orgId, id) || !ehMidiaDeAudio(anterior))) {
+  if (anterior && (!midiaPertenceAoTemplate(anterior.storage_path, orgId, id) || !ehMidiaDeAudio(anterior))) {
     return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
   }
   if (!anterior && atuais.length >= MAXIMO_DE_MIDIAS) {
@@ -173,7 +218,7 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     );
   }
 
-  const caminho = `${prefixoDoTemplate(org.orgId, id)}${randomUUID()}.${extensaoDaMidia(tipo)}`;
+  const caminho = `${prefixoDoTemplate(orgId, id)}${randomUUID()}.${extensaoDaMidia(tipo)}`;
   const admin = createAdminClient();
   const { error: erroUp } = await admin.storage
     .from(BUCKET_DAS_MIDIAS)
@@ -189,17 +234,19 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     media_mime: tipo,
     media_size_bytes: file.size,
   };
-  const { data: gravada, error: erroGrava, count } = await Promise.resolve(supabase
+  let gravacao = supabase
     .from("message_templates")
     .update({
       midias: anterior ? atuais.map((m, i) => i === indice ? nova : m) : [...atuais, nova],
       updated_at: new Date().toISOString(),
     }, { count: "exact" })
     .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", orgId)
     // JSON.stringify explícito: o SDK não serializa objetos no operador eq.
     // A igualdade JSONB protege também os clientes legados durante esta escrita.
-    .eq("midias", JSON.stringify(atuais))
+    .eq("midias", JSON.stringify(atuais));
+  if (viaToken) gravacao = gravacao.is("owner_user_id", null);
+  const { data: gravada, error: erroGrava, count } = await Promise.resolve(gravacao
     .select("midias")
     .maybeSingle()).catch(() => ({ data: null, error: { message: "write_failed" }, count: null }));
   if (erroGrava || (!gravada && count !== 0)) {
@@ -220,8 +267,9 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
 
   void audit({
     action: "template.media_added",
-    actorUserId: authz.user.id,
-    organizationId: org.orgId,
+    actorUserId: autor,
+    actorApiTokenId: apiTokenId,
+    organizationId: orgId,
     resourceType: "message_template",
     resourceId: id,
     requestId,

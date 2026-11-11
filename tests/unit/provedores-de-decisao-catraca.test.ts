@@ -44,6 +44,10 @@ vi.mock("@/lib/auth/require-role", () => ({
     org: { orgId: "11111111-1111-4111-8111-111111111111", role: "admin" },
   }),
 }));
+// A rota autentica por `resolveAuthDual` (Spec 33, R1): o ramo sessão chama o
+// `requireRole` acima e abre o client de cookie, que fora de um request do Next
+// lança. Nada aqui lê por ele.
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
 // Agente não encontrado: o corpo que PASSA pela validação chega aqui e volta 404.
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {

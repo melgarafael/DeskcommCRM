@@ -18,11 +18,11 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +52,7 @@ export interface PropostaDeCampoDoNegocio {
   expires_at: string;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
@@ -61,12 +61,19 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // fila só aparece dentro do dossiê. Quem DECIDE continua sendo `agent`
   // (`requireRole` do POST) — ler não é confirmar. Fechar a leitura em `agent`
   // faria o observador ver um erro de carregamento no lugar da fila.
-  const guard = await requireRole("viewer", { requestId, resource: "crm_leads" });
-  if (!guard.ok) return guard.response;
-  const t = (texto: string) => traduzir(texto, guard.user.idioma);
-  const orgId = guard.org.orgId;
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "viewer",
+    scope: "mcp:read",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_field_proposals", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
+  const orgId = organizationId;
 
-  const supabase = await createClient();
   // O relógio do SERVIDOR, uma vez: leitura e decisão têm de ser comparadas com
   // o mesmo instante dentro do handler.
   const agora = new Date();
@@ -81,7 +88,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
 
-  const settings = await settingsDoFunil(supabase, (lead as { pipeline_id?: string | null }).pipeline_id);
+  const settings = await settingsDoFunil(supabase, (lead as { pipeline_id?: string | null }).pipeline_id, orgId);
   // Os campos do NEGÓCIO (#2791): o do contato mora em `contacts.custom_fields`
   // e não é do card — a mesma régua do nascimento da proposta.
   const defs = camposPorEscopo(

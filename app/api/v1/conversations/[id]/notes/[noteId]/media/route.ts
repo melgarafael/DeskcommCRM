@@ -24,11 +24,10 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -43,15 +42,25 @@ interface RouteCtx {
   params: Promise<{ id: string; noteId: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "conversation_notes" });
+  // Sessão OU token de integração (Spec 33, R2). Com o token, `authz.supabase` é
+  // o cliente de serviço, e é o filtro de `organization_id` abaixo (da linha do
+  // token) que mantém a leitura dentro da organização. O resto é igual.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "conversation_notes",
+    role: "agent",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "conversation_notes", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+  const org = { orgId: authz.organizationId };
   const { id: conversationId, noteId } = await ctx.params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // A conversa precisa existir e ser da org — antes de qualquer leitura de
   // nota, para não devolver 404 de nota em conversa de outro tenant como se a
