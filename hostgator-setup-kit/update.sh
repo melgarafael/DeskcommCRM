@@ -302,7 +302,12 @@ fi
 # ── 2. Backup de segurança ANTES de tocar no banco ───────────────────────────
 if [ -z "$SKIP_BACKUP" ]; then
   step "Backup de segurança (antes de mexer no banco)"
-  if bash "$KIT_DIR/backup.sh"; then
+  # BACKUP_ESPERA_LOCK: dois caminhos chamam o backup.sh (este e o cron diário),
+  # e no mesmo segundo eles disputam a mesma pasta (#4222). Aqui não vale "o
+  # outro está fazendo": este backup é a rede de segurança DESTA atualização, e
+  # seguir sem ele seria pior que esperar o outro terminar. A trava é do
+  # backup.sh; aqui só se diz que ela pode ser esperada.
+  if BACKUP_ESPERA_LOCK=300 bash "$KIT_DIR/backup.sh"; then
     c_grn "✓ backup feito. Ele só volta num banco VAZIO, não por cima deste (restore.sh; ver hostgator-setup-kit/README.md)."
   else
     if [ -n "${DESKCOMM_AGENT_REPORT:-}" ] || [ ! -t 0 ]; then
