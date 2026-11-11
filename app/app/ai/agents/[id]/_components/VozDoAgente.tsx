@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
@@ -57,23 +57,32 @@ export function VozDoAgente({ agentId, inicial, disabled }: Props) {
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
+  // A resposta pode chegar depois de a tela sair (ou de o teste terminar): sem esta guarda, o
+  // `setState` cai num ambiente já desmontado e vira "window is not defined" solto no Vitest.
+  const vivo = useRef(true);
+
   const carregar = useCallback(async () => {
     try {
       const res = await apiClient.get<{
         data: { voiceId: string | null; vozesDisponiveis: string[] };
       }>("/api/v1/ai/voz");
+      if (!vivo.current) return;
       setVozDaOrg(res.data.voiceId ?? "");
       setVozes(res.data.vozesDisponiveis ?? []);
     } catch (err) {
       // Resposta incompleta não derruba o resto do editor: sem lista, cartão fica fora.
-      showApiError(err);
+      if (vivo.current) showApiError(err);
     } finally {
-      setCarregando(false);
+      if (vivo.current) setCarregando(false);
     }
   }, []);
 
   useEffect(() => {
+    vivo.current = true;
     void carregar();
+    return () => {
+      vivo.current = false;
+    };
   }, [carregar]);
 
   async function escolher(valor: string) {
