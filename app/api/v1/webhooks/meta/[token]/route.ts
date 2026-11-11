@@ -45,6 +45,12 @@ import {
   ingestMetaReaction,
 } from "@/lib/channels/meta/ingest";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
+import {
+  MOTIVO_CONTATO_ANONIMIZADO,
+  MOTIVO_TITULAR_APAGADO,
+  perguntarTitularesApagadosNoLote,
+  type ApagadosNoLote,
+} from "@/lib/channels/meta/titular-apagado";
 import { logger } from "@/lib/logger";
 import {
   emitirFalhaDeEntrega,
@@ -178,6 +184,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
    * indistinguível de "não chegou". Custou uma hora de diagnóstico no lugar errado.
    */
   const desfechos: string[] = [];
+  /**
+   * A pergunta do apagado a pedido é feita UMA vez por lote, não por contato
+   * (`perguntarTitularesApagadosNoLote`, migration 9321). Estados:
+   * `undefined` = ainda não perguntou; `null` = perguntou e FALHOU (cada evento
+   * cai na pergunta individual da ingestão, que falha fechada sem parar o lote).
+   */
+  let apagadosDaAgenda: ApagadosNoLote | null | undefined;
+  /** Quantos contatos da agenda ficaram de fora por LGPD — vai ao log no fim. */
+  let puladosPorTitularApagado = 0;
+  let puladosPorContatoAnonimizado = 0;
 
   for (const e of eventos) {
     // O evento chega carimbado com a WABA; se não for a desta sessão, ignoramos.
@@ -250,10 +266,38 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       // o nome do celular — sem conversa, sem mensagem e sem tocar na IA, porque
       // nada foi trocado (ver `ingestMetaAppContactSync`). Mesma política de
       // falha das outras duas: 2xx sempre, falha no log e no corpo.
-      const r = await ingestMetaAppContactSync(admin, e, {
-        organizationId: session.organizationId,
-      });
+      // A pergunta do titular apagado a pedido é do LOTE: uma consulta para
+      // todos os contatos desta entrega, feita na primeira vez que um deles
+      // aparece. Se ela falhar (`null`), cada evento cai na pergunta individual
+      // da ingestão — falha fechada, e o lote continua.
+      if (apagadosDaAgenda === undefined) {
+        const lote = await perguntarTitularesApagadosNoLote(
+          admin,
+          session.organizationId,
+          eventos.filter((x) => x.kind === "app_contact_sync").map((x) => x.phone),
+        );
+        apagadosDaAgenda = lote.erro ? null : lote.apagados;
+        if (lote.erro) {
+          logger.error("[meta.ingest] a pergunta do titular apagado no lote falhou", {
+            request_id: requestId,
+            erro: lote.erro,
+            contatos_no_lote: eventos.filter((x) => x.kind === "app_contact_sync").length,
+          });
+        }
+      }
+      const r = await ingestMetaAppContactSync(
+        admin,
+        e,
+        { organizationId: session.organizationId },
+        apagadosDaAgenda ?? undefined,
+      );
       desfechos.push(`contato:${r.status}`);
+      if (r.status === "ignored" && r.reason === MOTIVO_TITULAR_APAGADO) {
+        puladosPorTitularApagado += 1;
+      }
+      if (r.status === "ignored" && r.reason === MOTIVO_CONTATO_ANONIMIZADO) {
+        puladosPorContatoAnonimizado += 1;
+      }
       if (r.status === "failed" || r.status === "no_session") {
         logger.error("[meta.ingest] contato do app não sincronizado", {
           request_id: requestId,
@@ -341,6 +385,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
         .eq("organization_id", session.organizationId)
         .eq("external_id", e.externalId);
     }
+  }
+
+  // O que ficou de fora por LGPD NÃO pode sumir em silêncio: a rota responde 200
+  // e `outcomes` só diz `contato:ignored`. O contador diz QUANTOS (nunca o
+  // telefone: PII não vai para o log), e só aparece quando houve pulo.
+  if (puladosPorTitularApagado > 0 || puladosPorContatoAnonimizado > 0) {
+    logger.info("[meta.ingest] contatos da agenda não sincronizados por LGPD", {
+      request_id: requestId,
+      organization_id: session.organizationId,
+      pulados_por_titular_apagado: puladosPorTitularApagado,
+      pulados_por_contato_anonimizado: puladosPorContatoAnonimizado,
+    });
   }
 
   // 200 SEMPRE que a assinatura confere, inclusive para evento que não nos

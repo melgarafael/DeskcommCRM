@@ -41,7 +41,7 @@ import { logger } from "@/lib/logger";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "../archived";
 import { extrairAtribuicaoMeta } from "../atribuicao-de-anuncio-oficial";
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
-import { encontrarContatoPorTelefone } from "../contato-por-telefone";
+import { encontrarContatoPorTelefone, encontrarContatoPorTelefoneComAnonimizacao } from "../contato-por-telefone";
 import { marcarConversaComMensagem } from "../marcar-conversa";
 import { gravarReacaoDeMensagem } from "../reacao";
 import { canonicalPhoneBR, phoneLookupVariants } from "../phone-variants";
@@ -54,6 +54,7 @@ import type {
   OutboundEchoEvent,
   ReactionEvent,
 } from "./webhook";
+import { MOTIVO_CONTATO_ANONIMIZADO, MOTIVO_TITULAR_APAGADO, type ApagadosNoLote } from "./titular-apagado";
 
 type Admin = SupabaseClient;
 
@@ -606,6 +607,13 @@ export async function ingestMetaAppContactSync(
     /** Ver `ingestMetaInbound`: sessão já resolvida pelo token (canal parceiro). */
     channelSessionId?: string;
   },
+  /**
+   * Quais telefones DESTE lote já foram respondidos como apagados a pedido, com
+   * UMA consulta pelo lote (`perguntarTitularesApagadosNoLote`, migration 9321).
+   * Quem ingere um webhook inteiro passa isto para não pagar uma pergunta por
+   * contato. Ausente = pergunta sozinho, para este número (ingestão avulsa).
+   */
+  apagadosNoLote?: ApagadosNoLote,
 ): Promise<IngestOutcome> {
   // Sem nome não há o que gravar — `remove` vem sem nome de propósito.
   const nome = e.name?.trim() ?? "";
@@ -643,19 +651,36 @@ export async function ingestMetaAppContactSync(
   // mesma régua do importador de histórico (`lib/channels/historico/rodada.ts`):
   // na dúvida (erro ou resposta que não é sim/não) NÃO cria — falha fechada.
   // O evento da agenda não traz LID, então a pergunta é só pelo telefone.
-  const { data: apagado, error: erroApagado } = await admin.rpc(
-    "fn_titular_apagado_a_pedido" as never,
-    { p_org: orgId, p_telefone: canonicalPhoneBR(telefone), p_lid: null } as never,
-  );
-  if (erroApagado || typeof apagado !== "boolean") {
-    return {
-      status: "failed",
-      reason: `titular_apagado: ${erroApagado?.message ?? "resposta sem booleano"}`,
-    };
+  //
+  // Em LOTE a pergunta já foi feita uma vez, pelo chamador, para todos os
+  // contatos do webhook (`perguntarTitularesApagadosNoLote`, migration 9321):
+  // N consultas viram UMA, e nenhuma por contato. Sem o conjunto, pergunta aqui.
+  const telefoneCanonico = canonicalPhoneBR(telefone);
+  if (apagadosNoLote) {
+    if (apagadosNoLote.has(telefoneCanonico)) {
+      return { status: "ignored", reason: MOTIVO_TITULAR_APAGADO };
+    }
+  } else {
+    const { data: apagado, error: erroApagado } = await admin.rpc(
+      "fn_titular_apagado_a_pedido" as never,
+      { p_org: orgId, p_telefone: telefoneCanonico, p_lid: null } as never,
+    );
+    if (erroApagado || typeof apagado !== "boolean") {
+      return {
+        status: "failed",
+        reason: `titular_apagado: ${erroApagado?.message ?? "resposta sem booleano"}`,
+      };
+    }
+    if (apagado) return { status: "ignored", reason: MOTIVO_TITULAR_APAGADO };
   }
-  if (apagado) return { status: "ignored", reason: "titular_apagado_a_pedido" };
 
-  const existente = await findContactByVariants(admin, orgId, e.phone);
+  // A ficha que JÁ está anonimizada também não recebe nada de volta — inclusive
+  // quando a marca da 0750 não existe, porque a anonimização é anterior a ela e
+  // não tem backfill possível (o telefone já tinha sido zerado). Achada por
+  // variante ou por telefone extra, ela é pulada: o `.eq("is_anonymized", false)`
+  // que o update do nome já tinha não impedia o upsert de criar o telefone.
+  const existente = await encontrarContatoPorTelefoneComAnonimizacao(admin, orgId, e.phone);
+  if (existente?.is_anonymized) return { status: "ignored", reason: MOTIVO_CONTATO_ANONIMIZADO };
   const phone = existente?.phone_number
     ? canonicalPhoneBR(existente.phone_number)
     : canonicalPhoneBR(telefone);
