@@ -3,6 +3,7 @@ import {
   deriveLgpdFromContact,
   isLegalBasisValid,
 } from "@/lib/agent-engine/guardrails/lgpd/legal-basis";
+import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
 import { ProspectingError } from "./provider";
 
 export interface ProspectingDelivery {
@@ -17,12 +18,12 @@ export function contactMayBeProspected(contact: {
   source: string | null;
   consent: Record<string, unknown> | null;
 }) {
-  const marketing = contact.consent?.marketing as { declined_at?: unknown } | undefined;
   return (
     !contact.is_blocked &&
     !contact.force_human &&
     !contact.is_anonymized &&
-    !marketing?.declined_at &&
+    // Nos dois formatos, `declined_at` da captação e `granted: false` da ficha.
+    !recusaRegistrada(contact.consent) &&
     isLegalBasisValid(deriveLgpdFromContact(contact, true).legalBasis)
   );
 }

@@ -60,6 +60,11 @@ export type InboxKind =
   // mesma coisa, e foi ele que pegou a primeira versão desta mudança — que
   // tinha o banco atualizado e o tipo não.
   | 'channel_template_review'
+  // (migration 9327, issue #3635) O MESMO evento, no canal OFICIAL DIRETO. Kind
+  // separado porque o rótulo e o destino do de cima apontam para a aba do
+  // parceiro: reaproveitá-lo mandaria quem conecta pela Cloud API para a tela
+  // errada. Nasce com `ref_kind='channel_session'`.
+  | 'channel_template_review_direct'
   | 'channel_number_alert'
   | 'midia_nao_lida'
   | 'promise_unfulfilled'

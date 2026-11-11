@@ -38,6 +38,7 @@ import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { CanalReconectandoError, ProspectingError } from "./provider";
+import { mensagemDaRecusaDoCanal } from "./motivo-da-pausa";
 import { canalDaCampanha } from "./canal-da-campanha";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
@@ -258,7 +259,11 @@ export async function sendNextCandidate(
     contactPhoneNumber: queued.phone ?? "",
   });
   if (!preflight.permite)
-    throw new ProspectingError(`O canal ainda não permite esta abordagem: ${preflight.motivo}.`);
+    // O motivo que o preflight devolve é vocabulário de código
+    // (`fora_da_lista_de_teste`): vai para a tela traduzido por um mapa único
+    // (`./motivo-da-pausa.ts`, #4170). Motivo sem frase própria continua
+    // saindo cru — o comportamento de antes.
+    throw new ProspectingError(mensagemDaRecusaDoCanal(preflight.motivo));
   // MODO `on_send`: a empresa está na fila, mas ainda NÃO existe no CRM — contato,
   // negócio e conversa nascem agora, na vez dela de ser abordada. Se ela saiu da fila
   // no caminho (virou contato por outro lado, ou o CRM recusou o cadastro), não houve

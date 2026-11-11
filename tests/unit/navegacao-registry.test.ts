@@ -196,6 +196,7 @@ describe("hubSections", () => {
       // #3933: a fila de ligações ativas, ao lado do histórico de chamadas. Só com o módulo ligado.
       "/app/cold-call",
       "/app/comandas",
+      "/app/cadencias",
       "/app/products",
       "/app/imports",
       "/app/settings/tenant/pipelines",

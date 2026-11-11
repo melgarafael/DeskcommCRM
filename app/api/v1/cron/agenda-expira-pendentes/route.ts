@@ -48,6 +48,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { patchDeExpiracao } from "@/lib/agenda/patch-de-expiracao";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { agendaSettingsSchema } from "@/lib/schemas/settings";
@@ -140,10 +141,7 @@ async function handle(req: NextRequest): Promise<Response> {
   // desta rota.
   const { data: efetivados, error: erroUpdate } = await admin
     .from("calendar_appointments")
-    .update({
-      status: "cancelled",
-      cancellation_reason: "Pedido expirado: ninguém confirmou dentro do prazo.",
-    })
+    .update(patchDeExpiracao(agora))
     .in("id", expirados)
     .eq("status", "pending")
     .select("id");

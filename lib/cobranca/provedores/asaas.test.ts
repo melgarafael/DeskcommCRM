@@ -41,6 +41,7 @@ type Chamada = { rota: string; url: URL; headers: Headers; corpo: unknown };
 
 /** Rota = "MÉTODO /caminho" sem `/v3` e sem query. Lista = fila (a última se repete). Rota não declarada → 404. */
 function asaasFalso(rotas: Record<string, Responder>) {
+  rotas = { "PUT /payments/pay_1": { corpo: {} }, "PUT /payments/pay_v": { corpo: {} }, ...rotas };
   const filas = new Map<string, Responder>(Object.entries(rotas).map(([k, v]) => [k, Array.isArray(v) ? [...v] : v]));
   const chamadas: Chamada[] = [];
   const fetchFalso: typeof fetch = async (entrada, init) => {
@@ -641,10 +642,62 @@ describe("iniciarAssinatura", () => {
     expect(await adaptador.iniciarAssinatura(PEDIDO)).toEqual({
       url: "https://sandbox.asaas.com/i/pay_1", expiraEm: null, assinaturaRef: "sub_novo", sessaoId: "pay_1",
     });
+    expect(chamadas.find((c) => c.rota === "PUT /payments/pay_1")?.corpo).toEqual({
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
+    });
     expect(chamadas.find((c) => c.rota === "POST /subscriptions")?.corpo).toEqual({
       customer: CLIENTE, billingType: "UNDEFINED", value: 49.9, cycle: "MONTHLY", nextDueDate: "2026-10-05",
       description: "Essencial", externalReference: ORG,
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
     });
+  });
+
+  it.each([
+    "nao-e-url", "http://crm.example.com/volta", "javascript:alert(1)",
+    "https://usuario:senha@crm.example.com/volta", "https://crm.example.com/volta#fragmento",
+  ])("retorno que não serve não vai ao provedor, e a cobrança sai sem a volta automática: %s", async (urlDeVolta) => {
+    const { adaptador, chamadas } = criando();
+    expect(await adaptador.iniciarAssinatura({ ...PEDIDO, urlDeVolta })).toMatchObject({ url: "https://sandbox.asaas.com/i/pay_1" });
+    expect(chamadas.find((c) => c.rota === "POST /subscriptions")?.corpo).not.toHaveProperty("callback");
+    expect(chamadas.some((c) => c.rota.startsWith("PUT /payments"))).toBe(false);
+  });
+
+  it("conta que recusa o callback (domínio não cadastrado): refaz UMA vez sem ele e a cobrança sai", async () => {
+    const { adaptador, chamadas } = criando({
+      "POST /subscriptions": (_url, corpo) =>
+        corpo !== null && typeof corpo === "object" && "callback" in corpo
+          ? { status: 400, corpo: { errors: [{ code: "invalid_callback" }] } }
+          : { corpo: assinatura({ id: "sub_novo" }) },
+    });
+    expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_novo", url: "https://sandbox.asaas.com/i/pay_1" });
+    const posts = chamadas.filter((c) => c.rota === "POST /subscriptions");
+    expect(posts).toHaveLength(2);
+    expect(posts[1]?.corpo).not.toHaveProperty("callback");
+    // A fatura recusaria o mesmo callback: não insiste.
+    expect(chamadas.some((c) => c.rota.startsWith("PUT /payments"))).toBe(false);
+  });
+
+  it("recusa que não é do callback continua recusa (não esconde o erro de verdade)", async () => {
+    const { adaptador, chamadas } = criando({ "POST /subscriptions": { status: 400, corpo: { errors: [{ code: "invalid_customer" }] } } });
+    await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ status: 400, codigo: "invalid_customer" });
+    expect(chamadas.filter((c) => c.rota === "POST /subscriptions")).toHaveLength(2);
+  });
+
+  it("POST que caiu (5xx) não é refeito sem callback: pode ter criado", async () => {
+    const { adaptador, chamadas } = criando({ "POST /subscriptions": { status: 503 } });
+    await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ status: 503 });
+    expect(chamadas.filter((c) => c.rota === "POST /subscriptions")).toHaveLength(1);
+  });
+
+  it("falha ao pôr o callback na fatura não derruba o link válido nem cria outra assinatura", async () => {
+    const { adaptador, chamadas } = montar({
+      "GET /subscriptions": rotaDeAssinaturas([assinatura({ id: "sub_viva" })]),
+      "GET /payments": rotaDePagamentos([cobranca({ id: "pay_v", subscription: "sub_viva" })]),
+      "PUT /payments/pay_v": { status: 503 },
+    });
+    expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_viva", url: "https://sandbox.asaas.com/i/pay_v" });
+    expect(chamadas.filter((c) => c.rota.startsWith("POST "))).toHaveLength(0);
+    expect(chamadas.filter((c) => c.rota === "PUT /payments/pay_v").length).toBeGreaterThan(0);
   });
 
   it("⭐ cria cobrança avulsa proporcional no mesmo cliente e recupera o pagamento por referência idempotente", async () => {
@@ -708,6 +761,9 @@ describe("iniciarAssinatura", () => {
     expect(await adaptador.iniciarAssinatura(PEDIDO)).toMatchObject({ assinaturaRef: "sub_viva", url: "https://sandbox.asaas.com/i/pay_v" });
     expect(chamadas.some((c) => c.rota === "POST /subscriptions")).toBe(false);
     expect(chamadas[0]?.url.searchParams.get("status")).toBe("ACTIVE");
+    expect(chamadas.find((c) => c.rota === "PUT /payments/pay_v")?.corpo).toEqual({
+      callback: { successUrl: "https://crm.example.com/cobranca/volta?para=painel&voltou=1", autoRedirect: true },
+    });
   });
 
   it("cobrança ainda não gerada: transitório (o 2º clique reaproveita a assinatura)", async () => {
@@ -728,11 +784,11 @@ describe("iniciarAssinatura", () => {
     await expect(adaptador.iniciarAssinatura(PEDIDO)).rejects.toMatchObject({ codigo: "resposta_invalida" });
   });
 
-  it("a volta e a chave de idempotência não vão ao Asaas (a fatura não devolve o cliente)", async () => {
+  it("a volta segue no callback, mas a chave de idempotência não é enviada ao Asaas", async () => {
     const { adaptador, chamadas } = criando();
     await adaptador.iniciarAssinatura(PEDIDO);
     const tudo = JSON.stringify(chamadas.map((c) => [c.url.toString(), c.corpo]));
-    expect(tudo).not.toContain("cobranca/volta");
+    expect(tudo).toContain("cobranca/volta");
     expect(tudo).not.toContain("idem-1");
   });
 });

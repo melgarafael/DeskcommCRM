@@ -122,17 +122,19 @@ function makeSupabase(resolve: Resolver) {
   };
   return {
     from,
-    auth: {
-      admin: {
-        getUserById: (id: string) =>
-          Promise.resolve({
-            data:
-              id in NOMES_NA_INSTALACAO
-                ? { user: { user_metadata: { full_name: NOMES_NA_INSTALACAO[id] } } }
-                : { user: null },
-            error: null,
-          }),
-      },
+    // O nome do responsável vem de UMA consulta a `fn_nomes_dos_membros`
+    // (#4326, fatia 3); a função devolve só quem tem vínculo com a org pedida.
+    rpc: (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") {
+        return Promise.resolve({ data: null, error: { message: "rpc inesperado" } });
+      }
+      const daOrg = args.p_org === ORG ? MEMBROS_DE_ORG : [];
+      return Promise.resolve({
+        data: args.p_ids
+          .filter((id) => daOrg.includes(id))
+          .map((id) => ({ user_id: id, full_name: NOMES_NA_INSTALACAO[id] ?? null, email: null })),
+        error: null,
+      });
     },
   };
 }

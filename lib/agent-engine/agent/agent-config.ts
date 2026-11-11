@@ -15,6 +15,8 @@
  */
 import type pg from 'pg';
 
+import { lerFraseDoAvisoConfigurada } from '@/lib/escalacao/frase-do-aviso-configurada';
+
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
@@ -24,6 +26,7 @@ import {
   carregarFatosDoContato,
   lerPublicoDoGatilho,
   type DecisaoDoPublico,
+  type PublicoDoAgente,
 } from './publico-do-gatilho';
 
 export interface PublishedAgentConfig {
@@ -156,6 +159,14 @@ export interface PublishedAgentConfig {
    */
   avisoForaDoHorario?: string | null;
   /**
+   * A frase que o cliente lê quando a IA sai de campo (#3725), escrita pelo
+   * tenant em `ai_agents.config.aviso_de_handoff`. `null` = sem frase própria:
+   * sai o padrão do produto (curto e humano) de `textoDoAviso`. Lida por
+   * `lerFraseDoAvisoConfigurada`, que também recusa frase vazia/absurda — um
+   * aviso de passagem inválido não pode virar silêncio.
+   */
+  fraseDoAviso?: string | null;
+  /**
    * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
    * externo também carrega em turno com contato, com a identidade dele em
    * cabeçalho. Opcional porque nasce depois das fixtures; ausente = desligado.
@@ -173,6 +184,25 @@ export interface PublishedAgentConfig {
   vozEnabled: boolean;
   /** `'nunca' | 'espelhar' | 'sempre'` — decidido em `voz-do-turno.ts`. */
   vozQuando: 'nunca' | 'espelhar' | 'sempre';
+  /**
+   * O PÚBLICO que a versão declara no `trigger_config` (#3722, fatia 2).
+   * `null`/ausente = atende todo mundo.
+   *
+   * Existe para o ROTEADOR: o fallback do router é carregado por
+   * `loadPublishedAgentConfigById`, e sem o público aqui ele assumiria o
+   * contato que a régua barrou. Opcional porque nasce depois das fixtures que
+   * montam este tipo à mão — ausente vale "sem público", o lado que não cala.
+   * Mora no jsonb, como `janelaDeAtendimento`/`filtroDePalavraChave`; nenhuma
+   * coluna nova, nenhuma migration.
+   */
+  publico?: PublicoDoAgente | null;
+  /**
+   * A voz PRÓPRIA deste agente (`ai_agents.config.voz_voice_id`, #4228), em
+   * `voice_id` do ElevenLabs. `null` = herda a voz da organização — mesma
+   * resolução de antes desta fatia. Opcional porque nasce depois das fixtures
+   * que montam este tipo à mão; quem consome lê com `?? null`.
+   */
+  vozVoiceId?: string | null;
 }
 
 interface Row {
@@ -254,6 +284,13 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.created_by as version_created_by,
             a.created_by as agent_created_by`;
 
+/** `config.voz_voice_id` como o turno precisa: string não vazia, ou `null` (= herda). */
+function lerVozDoAgente(bruto: unknown): string | null {
+  if (typeof bruto !== 'string') return null;
+  const limpo = bruto.trim();
+  return limpo === '' ? null : limpo;
+}
+
 /** Mapeamento Row (snake_case do banco) → PublishedAgentConfig, compartilhado
  * pelas duas variantes de loader (por channel_session e por agent id). */
 function mapAgentConfigRow(r: Row): PublishedAgentConfig {
@@ -261,6 +298,10 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     rag_top_k?: unknown;
     rag_similarity_threshold?: unknown;
     mcp_externo_no_atendimento?: unknown;
+    voz_voice_id?: unknown;
+    aviso_de_handoff?: unknown;
+    aviso_de_passagem?: unknown;
+    handoff_notice?: unknown;
   };
   const ragTopK =
     typeof cfg.rag_top_k === 'number' &&
@@ -334,6 +375,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    // #3725: `null` = sem frase própria, sai o padrão do produto. A leitura
+    // valida tamanho e conteúdo (ver `frase-do-aviso-configurada.ts`).
+    fraseDoAviso: lerFraseDoAvisoConfigurada(r.config),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`
@@ -350,6 +394,12 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // cegamente num texto livre) cai no mesmo default seguro.
     vozQuando:
       r.voz_quando === 'nunca' || r.voz_quando === 'sempre' ? r.voz_quando : 'espelhar',
+    // Mesma leitura defensiva de `janelaDeAtendimento`: lista torta ⇒ `null`
+    // (atende todo mundo), nunca uma mordaça acidental.
+    publico: lerPublicoDoGatilho(r.trigger_config),
+    // Leitura defensiva: jsonb livre. Texto vazio/espaço, número ou objeto ⇒
+    // `null` (herda a voz da organização), nunca um id torto indo à ElevenLabs.
+    vozVoiceId: lerVozDoAgente(cfg.voz_voice_id),
   };
 }
 
@@ -415,6 +465,18 @@ export interface RastroDoPublico {
   candidatos: CandidatoNoRastroDoPublico[];
   /** Quem ganhou. `null` = o público barrou todo mundo (silêncio). */
   escolhidoAgentId: string | null;
+  /**
+   * De ONDE veio a fila (#3722, fatia 2). Ausente/`'numero'` = a seleção do
+   * agente do número (fatia 1), comportamento e formato de antes. `'roteador'`
+   * = a régua passou sobre os MEMBROS do roteador antes da pergunta do
+   * classificador; aí `escolhidoAgentId` é o agente que o turno de fato
+   * escolheu (ou `null` no silêncio).
+   */
+  origem?: 'numero' | 'roteador';
+  /** Quantos candidatos (membros e, quando avaliado, o fallback) o público barrou. */
+  barrados?: number;
+  /** Por que o turno ficou sem agente, quando foi o público. */
+  motivo?: 'publico_barrou';
 }
 
 /**

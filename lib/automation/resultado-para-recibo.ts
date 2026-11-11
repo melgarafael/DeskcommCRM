@@ -24,6 +24,7 @@ const CODIGOS_DAS_ACOES = new Set([
   "config_invalida",
   "consent_declined",
   "contact_blocked",
+  "conta_de_email_indisponivel",
   "continuacao_exige_outro_funil",
   "conversas_nao_passaram",
   "cross_pipeline_move_not_allowed",
@@ -101,6 +102,10 @@ const CODIGOS_DAS_ACOES = new Set([
   "texto_vazio",
   "titulo_vazio",
   "uma_vez_por_contato",
+  /* #2974, fatia 2 — o motor barra pela JANELA por contato. Sem o código aqui o
+     recibo trocaria a razão por uma frase genérica, e a aba Atividade não
+     conseguiria dizer qual das duas réguas decidiu. */
+  "intervalo_por_contato",
   "unknown_action",
   "user_not_in_org",
   "whatsapp_enviado",
