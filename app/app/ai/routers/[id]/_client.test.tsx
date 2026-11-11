@@ -566,3 +566,56 @@ describe('regras por remetente', () => {
     }) }));
   });
 });
+
+describe("#4340 — mover o roteador para o número novo", () => {
+  function renderNumeroRemovido(numerosLivres: Array<{ id: string; rotulo: string }>) {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    routerDataMock.mockReturnValue({ data: undefined });
+    updateMock.mockClear();
+    return render(
+      <RouterEditorClient
+        routerId="r1"
+        initialState={{
+          router: {
+            id: "r1",
+            name: "Roteador do atendimento",
+            channel_session_id: "s1",
+            is_active: true,
+            config: {},
+            fallback_agent_id: null,
+          },
+          members: [],
+        }}
+        agents={[]}
+        // s1 não está entre os oferecíveis: o número antigo foi arquivado.
+        channelSessions={[]}
+        classifierModels={[]}
+        numeroRemovido
+        numerosLivres={numerosLivres}
+      />,
+    );
+  }
+
+  it("com um único número livre, o número já vem escolhido e o gesto é um clique", async () => {
+    renderNumeroRemovido([{ id: "s2", rotulo: "Atendimento · 5511999999999" }]);
+
+    const botao = screen.getByTestId("mover-roteador-de-numero") as HTMLButtonElement;
+    // Não há segundo campo a preencher: o único destino possível já está no
+    // seletor, então o botão nasce habilitado — o gesto é um clique só.
+    expect(botao.disabled).toBe(false);
+
+    fireEvent.click(botao);
+
+    expect(updateMock, "o clique não pediu a mudança do roteador").toHaveBeenCalledWith({
+      channel_session_id: "s2",
+    });
+  });
+
+  it("sem número livre, a tela explica em vez de oferecer um destino impossível", () => {
+    renderNumeroRemovido([]);
+
+    expect(screen.queryByTestId("mover-roteador-de-numero")).toBeNull();
+    expect(screen.getByText("Nenhum número livre para mover: conecte o número novo em Canais.")).toBeTruthy();
+  });
+});
