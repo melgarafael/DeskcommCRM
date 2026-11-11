@@ -208,6 +208,9 @@ test.describe("Ficha com vários telefones — editar pela tela", () => {
       (r) => r.url().includes("/primary") && r.request().method() === "POST",
     );
     await linhaDoExtra.getByRole("button", { name: "Tornar principal", exact: true }).click();
+    // #4242 — o extra tem rótulo: o clique abre o aviso, e a troca só sai no Continuar.
+    await expect(linhaDoExtra.getByRole("alert")).toContainText("Rótulo que será descartado:");
+    await linhaDoExtra.getByRole("button", { name: "Continuar", exact: true }).click();
     expect((await resposta).status()).toBeLessThan(300);
 
     // No banco: o principal agora é o número do extra; o antigo virou extra.

@@ -41,7 +41,7 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `painel_atendimento` e `reservas_de_lugar` ligam/desligam por uma linha em `platform_config`
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar` e `link_de_pagamento` ligam/desligam por uma linha em `platform_config`
  * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera` e `ouvidoria` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
@@ -75,8 +75,10 @@ export const MODULOS_OPCIONAIS = [
   "conferir_whatsapp",
   "mcp_por_agente",
   "cold_call",
+  "status_whatsapp",
   "painel_atendimento",
   "reservas_de_lugar",
+  "link_de_pagamento",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -103,8 +105,10 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "conferir_whatsapp",
   "mcp_por_agente",
   "cold_call",
+  "status_whatsapp",
   "painel_atendimento",
   "reservas_de_lugar",
+  "link_de_pagamento",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -155,6 +159,10 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // (régua do núcleo enxuto): quem não prospecta por telefone não carrega a tela
   // nem as rotas. Desligado, a porta some, a tela e as rotas respondem 404.
   cold_call: "MODULO_COLD_CALL",
+  // #3397: publicar Status por token é peça de marketing de quem integra outro
+  // sistema, não atendimento (régua do núcleo enxuto). O contrato do canal fica
+  // no núcleo; a porta é a ferramenta MCP, e desligada ela não é oferecida.
+  status_whatsapp: "MODULO_STATUS_WHATSAPP",
   // #3403: a tela de leitura de quem atende um número só. Quem atende bem pelo
   // Inbox não precisa dela (régua do núcleo enxuto). Desligado, a porta some e a
   // tela responde 404.
@@ -164,6 +172,11 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // parte de banco entra para todos e não muda nada para quem não cria lugar;
   // desligado, criar um lugar pela agenda responde 404.
   reservas_de_lugar: "MODULO_RESERVAS_DE_LUGAR",
+  // Doc 232 (A) e doc 280 (A): o recebimento do cliente final na conversa, com
+  // o aviso de "pago" do provedor (#3509). Abre um endereço público que move
+  // negócio sozinho; quem não cobra por link não carrega essa porta. Desligado,
+  // registrar responde 404 e o aviso também.
+  link_de_pagamento: "MODULO_LINK_DE_PAGAMENTO",
 };
 
 const LIGADO = "ligado";
