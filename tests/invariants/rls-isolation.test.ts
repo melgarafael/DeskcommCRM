@@ -375,7 +375,7 @@ beforeAll(() => {
                     (select id from public.crm_leads where organization_id = v_org limit 1));
         end if;
 
-        -- migration 9243 (#4058) — a cobrança avulsa do negócio: quanto a
+        -- migration 9345 (#4058) — a cobrança avulsa do negócio: quanto a
         -- empresa cobra do cliente DELA, com vencimento e estado. Vazar a linha
         -- entrega ao vizinho o que a outra empresa está cobrando, de quem e
         -- quando vence. Nasce pendente porque o CHECK de âncora e o gatilho de
@@ -905,7 +905,7 @@ export const TABLES = [
   // migration 9043 — o segundo telefone da ficha (Spec 31 B1). Leitura por
   // organização; a escrita exige `agent`, o papel semeado aqui.
   "contact_phones",
-  // migration 9243 (#4058) — a cobrança avulsa do negócio. Guarda o que a
+  // migration 9345 (#4058) — a cobrança avulsa do negócio. Guarda o que a
   // empresa cobra do cliente DELA (valor, vencimento, estado). A leitura é
   // org-scoped sem gate de papel (quem atende precisa ver o que foi cobrado),
   // então o `agent` semeado é controle positivo legítimo. A ESCRITA tem um

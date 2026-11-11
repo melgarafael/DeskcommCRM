@@ -1,6 +1,6 @@
 /**
  * A COBRANÇA AVULSA DE UM NEGÓCIO — o lado TypeScript de `cobrancas_avulsas`
- * (migration 9243, issue #4058).
+ * (migration 9345, issue #4058).
  *
  * Não é a assinatura da instalação (`lib/cobranca/vocabulario.ts`, o que o dono
  * do servidor cobra das empresas): é o que a EMPRESA cobra do cliente DELA,
@@ -22,7 +22,7 @@
  *      vencimento do dia seguinte já estaria vencido.
  */
 
-/** Par de `cobrancas_avulsas.estado` (CHECK da migration 9243). */
+/** Par de `cobrancas_avulsas.estado` (CHECK da migration 9345). */
 export const ESTADOS_DA_COBRANCA = ["pendente", "paga", "cancelada"] as const;
 export type EstadoDaCobranca = (typeof ESTADOS_DA_COBRANCA)[number];
 

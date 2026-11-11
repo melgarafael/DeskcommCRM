@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
  *
  * ═══ O que este arquivo mede, e por que ele existe separado ═══
  *
- * A migration 9243 cria `cobrancas_avulsas`: valor, vencimento e estado presos a
+ * A migration 9345 cria `cobrancas_avulsas`: valor, vencimento e estado presos a
  * um negócio (`crm_leads`) e/ou a uma conversa (`conversations`). São quatro
  * cercas, e cada uma tem um jeito diferente de falhar:
  *

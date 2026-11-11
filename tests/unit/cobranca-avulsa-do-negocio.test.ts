@@ -1,6 +1,6 @@
 /**
  * A COBRANÇA AVULSA DO NEGÓCIO — a parte que decide sem banco (issue #4058,
- * migration 9243).
+ * migration 9345).
  *
  * O que NÃO se mede aqui, de propósito: isolamento entre tenants e a regra de
  * que "paga" é do servidor. As duas moram no banco (RLS + gatilhos) e a prova

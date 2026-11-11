@@ -72205,7 +72205,7 @@ grant execute on function public.fn_vocabulario_de_tags_pagina(uuid,text,integer
 
 notify pgrst, 'reload schema';
 
--- ---- cobrança avulsa do negócio (migration 9243) ----
+-- ---- cobrança avulsa do negócio (migration 9345) ----
 -- #4058: a cobrança que o tenant emite contra o próprio cliente, presa ao
 -- negócio e/ou à conversa. Fica no apêndice porque o `update.sh` re-aplica o
 -- baseline num banco existente e é ele que entrega a tabela a quem já instalou
@@ -72313,7 +72313,7 @@ create index if not exists cobrancas_avulsas_org_estado_venc_idx
   on public.cobrancas_avulsas (organization_id, estado, vencimento);
 
 comment on table public.cobrancas_avulsas is
-  'Cobrança avulsa de um tenant contra o próprio cliente, ancorada em negócio (crm_leads) e/ou conversa: valor, moeda, vencimento e estado (pendente/paga/cancelada). NÃO é a assinatura da instalação (cobranca_assinaturas), não é proposta (crm_proposals) e não é lançamento de caixa (financial_entries). "vencida" é derivada de pendente + vencimento no passado, nunca gravada. Escrita: sessão só em pendente; confirmar pagamento é do service_role. Migration 9243, issue #4058.';
+  'Cobrança avulsa de um tenant contra o próprio cliente, ancorada em negócio (crm_leads) e/ou conversa: valor, moeda, vencimento e estado (pendente/paga/cancelada). NÃO é a assinatura da instalação (cobranca_assinaturas), não é proposta (crm_proposals) e não é lançamento de caixa (financial_entries). "vencida" é derivada de pendente + vencimento no passado, nunca gravada. Escrita: sessão só em pendente; confirmar pagamento é do service_role. Migration 9345, issue #4058.';
 comment on column public.cobrancas_avulsas.estado is
   'pendente = cobrança emitida e não paga; paga = pagamento confirmado pelo servidor (pago_em obrigatório); cancelada = desfeita antes do pagamento (cancelada_em obrigatório). "vencida" NÃO é estado: é pendente com vencimento no passado.';
 comment on column public.cobrancas_avulsas.pago_em is
