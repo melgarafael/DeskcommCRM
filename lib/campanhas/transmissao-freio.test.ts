@@ -20,6 +20,9 @@ const mundo = vi.hoisted(() => ({
   ops: null as OpsDeTransmissao | null,
   enviadosHojeNoNumero: 0,
   contados: [] as number[],
+  lotes: new Map<string, number>(),
+  datasDoLivro: [] as Date[],
+  livroFalha: false,
   erroNoUpdateDaCampanha: null as { code: string; message: string } | null,
   erroNaListaDeExclusao: null as { message: string } | null,
 }));
@@ -32,8 +35,15 @@ vi.mock("@/lib/agent-engine/pacing/store", () => ({
     numberActivatedAt: null,
   }),
   loadPacingState: async () => ({ lastSentAt: null, sentToday: mundo.enviadosHojeNoNumero, numberActivatedAt: null }),
-  recordSends: async (_p: unknown, _o: string, _c: string, _a: Date, n: number) => {
-    mundo.contados.push(n);
+  // Como o livro real: o mesmo lote não conta duas vezes, e um relatório maior só
+  // completa. O SQL disso é provado em `tests/invariants/pacing-ledger-resposta-nao-conta-no-teto.test.ts`.
+  recordSends: async (_p: unknown, _o: string, _c: string, a: Date, n: number, lote: string) => {
+    if (mundo.livroFalha) throw new Error("livro fora do ar");
+    const novas = n - (mundo.lotes.get(lote) ?? 0);
+    if (novas <= 0) return;
+    mundo.lotes.set(lote, n);
+    mundo.contados.push(novas);
+    mundo.datasDoLivro.push(a);
   },
 }));
 vi.mock("@/lib/channels/transmissao", async (original) => ({
@@ -55,6 +65,7 @@ import {
   DETALHE_ACIMA_DO_TETO_DO_NUMERO,
   DETALHE_CANCELAMENTO_RECUSADO,
   DETALHE_CANCELAMENTO_SEM_CONEXAO,
+  DETALHE_ENVIO_EM_VOO,
   DETALHE_ENVIO_PODE_CONTINUAR,
   DETALHE_RASCUNHO_NAO_APAGADO,
   encerrarTransmissao,
@@ -88,7 +99,8 @@ function fakeAdmin(tabelas: Record<string, Linha[]>) {
       if (patch) for (const l of linhas) Object.assign(l, patch);
       if (faixa) linhas = linhas.slice(faixa[0], faixa[1] + 1);
       linhas = linhas.slice(0, limite);
-      return { data: soContagem ? null : linhas.map((l) => ({ ...l })), error: null, count: linhas.length };
+      // `max_rows` do PostgREST (supabase/config.toml): `data` para em 1.000, `count` não.
+      return { data: soContagem ? null : linhas.slice(0, 1_000).map((l) => ({ ...l })), error: null, count: linhas.length };
     };
     const b: Record<string, unknown> = new Proxy(
       {},
@@ -120,7 +132,7 @@ function fakeAdmin(tabelas: Record<string, Linha[]>) {
             case "not":
               return (c: string) => (filtros.push((l) => (l[c] ?? null) !== null), b);
             case "gte":
-              return (c: string, v: string) => (filtros.push((l) => String(l[c]) >= v), b);
+              return (c: string, v: string) => (filtros.push((l) => l[c] != null && String(l[c]) >= v), b);
             case "order":
               return () => b;
             case "limit":
@@ -225,6 +237,9 @@ beforeEach(() => {
   mundo.ops = null;
   mundo.enviadosHojeNoNumero = 0;
   mundo.contados = [];
+  mundo.lotes = new Map();
+  mundo.datasDoLivro = [];
+  mundo.livroFalha = false;
   mundo.erroNoUpdateDaCampanha = null;
   mundo.erroNaListaDeExclusao = null;
 });
@@ -282,7 +297,14 @@ describe("o teto do número e da campanha vale para a lista inteira", () => {
   });
 
   it("a regra pura: sem teto conhecido cabe; o número vem antes da campanha", () => {
-    const base = { tamanho: 5, enviadosHojeNoNumero: 0, tetoDiarioDaCampanha: null, tetoHorarioDaCampanha: null };
+    const base = {
+      tamanho: 5,
+      enviadosHojeNoNumero: 0,
+      tetoDiarioDaCampanha: null,
+      tetoHorarioDaCampanha: null,
+      enviadasHojeNaCampanha: 0,
+      enviadasNaHoraNaCampanha: 0,
+    };
     expect(tetoDaTransmissao({ ...base, limiteDoNumero: null })).toEqual({ cabe: true });
     expect(tetoDaTransmissao({ ...base, limiteDoNumero: 5 })).toEqual({ cabe: true });
     expect(tetoDaTransmissao({ ...base, limiteDoNumero: 4 })).toEqual({ cabe: false, de: "numero", livre: 4 });
@@ -1143,5 +1165,189 @@ describe("o que o provedor pulou", () => {
     mundo.ops = provedor({ adicionar: async (_id, tel) => ({ adicionados: tel.length - 1, pulados: 1 }) }).ops;
     const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
     expect(r.detalhe).toBe("transmissao:sending:3:pulados_pelo_provedor_1");
+  });
+});
+
+// ─── Revisão depois do merge do #3126 ────────────────────────────────────────
+
+describe("`sending` sem id de transmissão não é reserva do broadcast", () => {
+  /** A rodada gradual reservou o r1 e a campanha trocou para broadcast. */
+  const comR1SaindoPelaRodadaDeSempre = () => {
+    const lista = tres();
+    lista[0]!.status = "sending";
+    return mundoCom(10, lista);
+  };
+
+  it("a lista não sai: quem podia estar saindo não recebe de novo, e a campanha pausa com a frase", async () => {
+    const t = comR1SaindoPelaRodadaDeSempre();
+    const { ops, chamadas } = provedor();
+    mundo.ops = ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    expect(r.detalhe).toBe("pausada:transmissao_envio_em_voo");
+    expect(chamadas.criar).toBe(0);
+    expect(chamadas.adicionados).toEqual([]);
+    expect(chamadas.enviar).toBe(0);
+    expect(t.campaigns[0]).toMatchObject({ status: "paused", failure_code: "transmissao_envio_em_voo" });
+    expect(t.campaigns[0]!.failure_detail).toBe(DETALHE_ENVIO_EM_VOO);
+    expect(t.campaign_recipients.map((d) => d.status)).toEqual(["sending", "pending", "pending"]);
+  });
+
+  it("depois que o envio antigo termina, a retomada entrega só quem falta", async () => {
+    const t = comR1SaindoPelaRodadaDeSempre();
+    const { ops, chamadas } = provedor();
+    mundo.ops = ops;
+    await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    t.campaign_recipients[0]!.status = "sent";
+    t.campaigns[0]!.status = "running";
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    expect(r.detalhe).toBe("transmissao:sending:2");
+    expect(chamadas.adicionados).toEqual(["+595981000002", "+595981000003"]);
+  });
+
+  it("a rodada de sempre reserva logo depois da conferência: quem ela reservou fica fora da lista", async () => {
+    const t = mundoCom(10, tres());
+    const { ops, chamadas } = provedor();
+    mundo.ops = ops;
+    const admin = fakeAdmin(t) as unknown as { from: (tabela: string) => unknown };
+    let leituras = 0;
+    const comACorrida = {
+      from: (tabela: string) => {
+        // A 1ª leitura é a conferência; a reserva alheia cai antes da 2ª.
+        if (tabela === "campaign_recipients" && ++leituras === 2) t.campaign_recipients[0]!.status = "sending";
+        return admin.from(tabela);
+      },
+    };
+    const r = await rodarCampanhaEmTransmissao(comACorrida as never, CAMPANHA, AGORA);
+    expect(r.detalhe).toBe("transmissao:sending:2");
+    expect(chamadas.adicionados).toEqual(["+595981000002", "+595981000003"]);
+  });
+
+  it("o `sending` é de uma rodada sobreposta, que já gravou o id: não pausa nem cria outra", async () => {
+    const t = comR1SaindoPelaRodadaDeSempre();
+    t.campaigns[0]!.provider_broadcast_id = "b9";
+    const { ops, chamadas } = provedor();
+    mundo.ops = ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    expect(r.detalhe).toBe("ja_entregue");
+    expect(chamadas.criar).toBe(0);
+    expect(t.campaigns[0]!.status).toBe("running");
+  });
+});
+
+describe("o volume do broadcast entra uma vez no ritmo do número", () => {
+  const todos = ["+595981000001", "+595981000002", "+595981000003"];
+  const relatorio = (x: Partial<DestinatarioDaTransmissao> = {}) =>
+    provedor({
+      ler: async () => ({ estado: "sending" }),
+      destinatarios: async () => ({
+        itens: todos.map((f) => item(f, { status: "sent", ...x })),
+        temMais: false,
+        lidos: 3,
+        total: 3,
+      }),
+    }).ops;
+  const jaEntregue = () =>
+    mundoCom(10, tres().map((d) => ({ ...d, status: "sending" })), campanhaLinha({ provider_broadcast_id: "b1" }));
+  const COM_ID = { ...CAMPANHA, provider_broadcast_id: "b1" };
+
+  it("o livro falhou depois de mandar: a lista não volta à fila, e a rodada seguinte conta", async () => {
+    const t = mundoCom(10, tres());
+    mundo.ops = provedor().ops;
+    mundo.livroFalha = true;
+    const primeira = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    expect(primeira.enviadas).toBe(3);
+    expect(t.campaign_recipients.map((d) => d.status)).toEqual(["sending", "sending", "sending"]);
+    expect(mundo.contados).toEqual([]);
+
+    mundo.livroFalha = false;
+    mundo.ops = relatorio();
+    await rodarCampanhaEmTransmissao(fakeAdmin(t), COM_ID, AGORA);
+    expect(mundo.contados).toEqual([3]);
+  });
+
+  it("a rodada caiu entre mandar e contar: quem acompanha conta, na hora em que o provedor mandou", async () => {
+    const t = jaEntregue();
+    mundo.ops = relatorio({ enviadoEm: "2026-11-02T13:50:00.000Z" });
+    await rodarCampanhaEmTransmissao(fakeAdmin(t), COM_ID, AGORA);
+    expect(mundo.contados).toEqual([3]);
+    expect(mundo.datasDoLivro).toEqual([new Date("2026-11-02T13:50:00.000Z")]);
+  });
+
+  it("contado ao mandar, não conta de novo a cada rodada de acompanhamento", async () => {
+    const t = mundoCom(10, tres());
+    mundo.ops = provedor().ops;
+    await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    mundo.ops = relatorio();
+    await rodarCampanhaEmTransmissao(fakeAdmin(t), COM_ID, AGORA);
+    await rodarCampanhaEmTransmissao(fakeAdmin(t), COM_ID, AGORA);
+    expect(mundo.contados).toEqual([3]);
+    expect([...mundo.lotes.keys()]).toEqual(["c1:b1"]);
+  });
+
+  it("o livro fora do ar não derruba o acompanhamento", async () => {
+    const t = jaEntregue();
+    mundo.ops = relatorio();
+    mundo.livroFalha = true;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), COM_ID, AGORA);
+    expect(r.detalhe).toMatch(/^transmissao:sending:/);
+    expect(t.campaign_recipients[0]!.status).toBe("sent");
+  });
+});
+
+describe("o máximo da campanha desconta o que ela já mandou", () => {
+  const HOJE_CEDO = "2026-11-02T04:00:00.000Z"; // 1h em Assunção, fora da última hora
+  const HA_MEIA_HORA = "2026-11-02T13:30:00.000Z";
+  const enviadas = (quantas: number, em: string) =>
+    Array.from({ length: quantas }, (_, i) => ({ ...destinatario(`e${i}`, `+59598200${i}`, "sent"), sent_at: em }));
+
+  it("o dia: 3 cabem no máximo de 5, mas 3 já saíram hoje — pausa antes de criar", async () => {
+    const t = mundoCom(null, [...enviadas(3, HOJE_CEDO), ...tres()]);
+    const { ops, chamadas } = provedor();
+    mundo.ops = ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, teto_diario: 5 }, AGORA);
+    expect(r.detalhe).toBe("pausada:transmissao_acima_do_teto:3>2");
+    expect(t.campaigns[0]!.failure_detail).toBe(DETALHE_ACIMA_DO_TETO_DA_CAMPANHA);
+    expect(chamadas.criar).toBe(0);
+  });
+
+  it("a hora: o que saiu cedo não gasta a hora, o que saiu há meia hora gasta", async () => {
+    const cedo = mundoCom(null, [...enviadas(3, HOJE_CEDO), ...tres()]);
+    mundo.ops = provedor().ops;
+    expect((await rodarCampanhaEmTransmissao(fakeAdmin(cedo), { ...CAMPANHA, teto_horario: 3 }, AGORA)).enviadas).toBe(3);
+
+    const recente = mundoCom(null, [...enviadas(1, HA_MEIA_HORA), ...tres()]);
+    mundo.ops = provedor().ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(recente), { ...CAMPANHA, teto_horario: 3 }, AGORA);
+    expect(r.detalhe).toBe("pausada:transmissao_acima_do_teto:3>2");
+  });
+
+  it("ontem não conta: o máximo por dia é do dia de hoje", async () => {
+    const t = mundoCom(null, [...enviadas(3, "2026-11-01T20:00:00.000Z"), ...tres()]);
+    mundo.ops = provedor().ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, teto_diario: 5 }, AGORA);
+    expect(r.enviadas).toBe(3);
+  });
+
+  it("acima de 1.000 enviadas a conta não para no teto de linhas do PostgREST", async () => {
+    const t = mundoCom(null, [...enviadas(1_200, HOJE_CEDO), ...tres()]);
+    mundo.ops = provedor().ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, teto_diario: 1_202 }, AGORA);
+    expect(r.detalhe).toBe("pausada:transmissao_acima_do_teto:3>2");
+  });
+
+  it("a regra pura desconta o dia e a hora, e nunca devolve livre negativo", () => {
+    const base = {
+      tamanho: 5,
+      limiteDoNumero: null,
+      enviadosHojeNoNumero: 0,
+      tetoDiarioDaCampanha: 10,
+      tetoHorarioDaCampanha: 8,
+      enviadasHojeNaCampanha: 0,
+      enviadasNaHoraNaCampanha: 0,
+    };
+    expect(tetoDaTransmissao(base)).toEqual({ cabe: true });
+    expect(tetoDaTransmissao({ ...base, enviadasHojeNaCampanha: 6 })).toEqual({ cabe: false, de: "campanha", livre: 4 });
+    expect(tetoDaTransmissao({ ...base, enviadasNaHoraNaCampanha: 4 })).toEqual({ cabe: false, de: "campanha", livre: 4 });
+    expect(tetoDaTransmissao({ ...base, enviadasHojeNaCampanha: 99 })).toEqual({ cabe: false, de: "campanha", livre: 0 });
   });
 });

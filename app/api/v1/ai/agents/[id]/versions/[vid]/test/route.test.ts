@@ -143,6 +143,23 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
     vi.restoreAllMocks();
   });
 
+  it("sample_tags chega ao motor já normalizado (spec 27, fatia 3)", async () => {
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sample_message: "oi", sample_tags: [" Estetica ", "estetica", "VIP"] }),
+    });
+
+    await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+
+    expect(testAgentVersion).toHaveBeenCalledWith(
+      requestPool,
+      turnDeps,
+      expect.objectContaining({ sampleTags: ["estetica", "vip"] }),
+    );
+  });
+
   it("falha do core vira checkpoint e orientação legível", async () => {
     const { POST } = await import("./route");
     const req = new NextRequest("http://localhost/x", {

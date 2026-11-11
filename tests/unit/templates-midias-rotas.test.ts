@@ -9,6 +9,7 @@
  * `download`), não só o status.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { isDeepStrictEqual } from "node:util";
 import { NextRequest } from "next/server";
 
@@ -117,7 +118,7 @@ function multipart(bytes: number[], campos: Record<string, string> = {}) {
   const form = new FormData();
   form.append("file", new File([new Uint8Array(bytes)], "foto.jpg", { type: "image/jpeg" }));
   for (const [nome, valor] of Object.entries(campos)) form.append(nome, valor);
-  return new NextRequest(`http://localhost/api/v1/message-templates/${TPL}/midias`, {
+  return pedidoComTamanho(`http://localhost/api/v1/message-templates/${TPL}/midias`, {
     method: "POST",
     body: form,
   });
@@ -211,7 +212,7 @@ describe("POST /message-templates/:id/midias", () => {
   it("bytes que não são JPEG/PNG: 415, nada sobe (o content-type declarado não decide)", async () => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [] });
 
-    const r = await POST(multipart([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0]), params);
+    const r = await POST(await multipart([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0]), params);
 
     expect(r.status).toBe(415);
     expect(h.storage.upload).not.toHaveBeenCalled();
@@ -222,7 +223,7 @@ describe("POST /message-templates/:id/midias", () => {
     comoPapel("agent");
     template({ id: TPL, owner_user_id: null, midias: [] });
 
-    const r = await POST(multipart(JPEG), params);
+    const r = await POST(await multipart(JPEG), params);
 
     expect(r.status).toBe(403);
     expect(h.storage.upload).not.toHaveBeenCalled();
@@ -231,7 +232,7 @@ describe("POST /message-templates/:id/midias", () => {
   it("6ª imagem: 422, nada sobe", async () => {
     template({ id: TPL, owner_user_id: USER, midias: [1, 2, 3, 4, 5].map(minha) });
 
-    const r = await POST(multipart(JPEG), params);
+    const r = await POST(await multipart(JPEG), params);
 
     expect(r.status).toBe(422);
     expect(h.storage.upload).not.toHaveBeenCalled();
@@ -240,7 +241,7 @@ describe("POST /message-templates/:id/midias", () => {
   it("JPEG válido: o caminho é gerado no prefixo do template e entra na linha", async () => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [minha(1)] });
 
-    const r = await POST(multipart(JPEG), params);
+    const r = await POST(await multipart(JPEG), params);
 
     expect(r.status).toBe(200);
     const caminho = h.storage.upload.mock.calls[0]![0] as string;
@@ -263,7 +264,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
       return { error: null };
     });
 
-    const r = await POST(multipart(OGG, {
+    const r = await POST(await multipart(OGG, {
       substituir_audio: audio(5).storage_path, midias_esperadas: JSON.stringify(atuais),
     }), params);
 
@@ -279,7 +280,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
     const atuais = [audio(1)];
     const db = template({ id: TPL, owner_user_id: USER, midias: atuais });
     h.storage.upload.mockResolvedValue({ error: { message: "falha sintética" } });
-    const r = await POST(multipart(OGG, { substituir_audio: audio(1).storage_path }), params);
+    const r = await POST(await multipart(OGG, { substituir_audio: audio(1).storage_path }), params);
     expect(r.status).toBe(500);
     expect(db.linha!.midias).toEqual(atuais);
     expect(db.updates).toHaveLength(0);
@@ -293,7 +294,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
   ];
   it.each(substituicoesInvalidas)("recusa %s antes de upload", async (_nome, referencia, bytes) => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [audio(1), alheia(2)] });
-    const r = await POST(multipart(bytes, { substituir_audio: referencia }), params);
+    const r = await POST(await multipart(bytes, { substituir_audio: referencia }), params);
     expect([409, 422]).toContain(r.status);
     expect(h.storage.upload).not.toHaveBeenCalled();
     expect(h.storage.remove).not.toHaveBeenCalled();
@@ -327,7 +328,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [audio(1)] });
     const concorrentes = [audio(2)];
     db.antesDeGravar = () => { db.linha!.midias = concorrentes; };
-    const r = await POST(multipart(OGG), params);
+    const r = await POST(await multipart(OGG), params);
     expect(r.status).toBe(409);
     expect(db.linha!.midias).toEqual(concorrentes);
     expect(db.updates).toHaveLength(0);
@@ -340,7 +341,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
     const db = template({ id: TPL, owner_user_id: USER, midias: atuais });
     if (modo === "erro estruturado") db.erroDeGravacao = { message: "falha sintética" };
     else db.antesDeGravar = () => { throw new Error("falha sintética"); };
-    const r = await POST(multipart(OGG, { substituir_audio: audio(1).storage_path }), params);
+    const r = await POST(await multipart(OGG, { substituir_audio: audio(1).storage_path }), params);
     expect(r.status).toBe(500);
     expect(db.linha!.midias).toEqual(atuais);
     expect(db.updates).toHaveLength(0);
@@ -351,7 +352,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
   it("rejeição da limpeza posterior não transforma troca persistida em falha", async () => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [audio(1)] });
     h.storage.remove.mockRejectedValue(new Error("falha sintética"));
-    const r = await POST(multipart(OGG, { substituir_audio: audio(1).storage_path }), params);
+    const r = await POST(await multipart(OGG, { substituir_audio: audio(1).storage_path }), params);
     expect(r.status).toBe(200);
     expect(db.updates).toHaveLength(1);
     expect((db.linha!.midias as Linha[])[0]!.storage_path).toBe(h.storage.upload.mock.calls[0]![0]);
@@ -361,7 +362,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [audio(1)] });
     h.objetos.set(audio(1).storage_path, new Uint8Array(OGG));
     db.perderConfirmacao = modo;
-    const r = await POST(multipart(OGG, { substituir_audio: audio(1).storage_path }), params);
+    const r = await POST(await multipart(OGG, { substituir_audio: audio(1).storage_path }), params);
     expect(r.status).toBe(500);
     expect(db.updates).toHaveLength(1);
     const referencia = (db.linha!.midias as Linha[])[0]!.storage_path as string;
@@ -374,7 +375,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
   it.each(["rejeicao", "erro"] as const)("primeiro upload persistido sem confirmação (%s) mantém linha/bytes", async (modo) => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [] });
     db.perderConfirmacao = modo;
-    const r = await POST(multipart(OGG, { midias_esperadas: "[]" }), params);
+    const r = await POST(await multipart(OGG, { midias_esperadas: "[]" }), params);
     expect(r.status).toBe(500);
     expect(db.updates).toHaveLength(1);
     const referencia = (db.linha!.midias as Linha[])[0]!.storage_path as string;
@@ -385,7 +386,7 @@ describe("troca de áudio e concorrência da lista inteira", () => {
   it.each([null, {}, { storage_path: 7 }, "arquivo", ["arquivo"]].map((entrada) => ({ entrada })))(
     "upload recusa entrada JSONB malformada antes de Storage ($entrada)", async ({ entrada }) => {
       const db = template({ id: TPL, owner_user_id: USER, midias: [entrada] });
-      const r = await POST(multipart(OGG), params);
+      const r = await POST(await multipart(OGG), params);
       expect(r.status).toBe(409);
       expect(db.updates).toHaveLength(0);
       expect(h.storage.upload).not.toHaveBeenCalled();
@@ -395,14 +396,14 @@ describe("troca de áudio e concorrência da lista inteira", () => {
 
   it("snapshot multipart nulo é recusado antes de upload;[] continua sendo snapshot válido", async () => {
     template({ id: TPL, owner_user_id: USER, midias: [] });
-    const r = await POST(multipart(OGG, { midias_esperadas: "null" }), params);
+    const r = await POST(await multipart(OGG, { midias_esperadas: "null" }), params);
     expect(r.status).toBe(422);
     expect(h.storage.upload).not.toHaveBeenCalled();
   });
 
   it("controle positivo: snapshot[] permite acrescentar à linha vazia", async () => {
     const db = template({ id: TPL, owner_user_id: USER, midias: [] });
-    const r = await POST(multipart(OGG, { midias_esperadas: "[]" }), params);
+    const r = await POST(await multipart(OGG, { midias_esperadas: "[]" }), params);
     expect(r.status).toBe(200);
     expect(db.updates).toHaveLength(1);
   });
