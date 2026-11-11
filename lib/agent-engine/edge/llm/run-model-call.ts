@@ -25,7 +25,7 @@ import { z } from 'zod';
 import { PROVEDOR_POR_ASSINATURA } from '@/lib/ai/pontos/provedores';
 import { chamarComRetryUnicoEm401 } from '@/lib/ai/pontos/renovacao-da-assinatura';
 import { sincronizarAvisoDaAssinatura } from '@/lib/ai/credenciais/aviso-da-assinatura';
-import { renovarAssinaturaNoTurno } from '@/lib/ai/credenciais/login-codex';
+import { renovarAssinaturaNoTurno, lerLoginCodex } from '@/lib/ai/credenciais/login-codex';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
 // O par (provedor, modelo) é a mesma régua em TODOS os caminhos de execução:
@@ -346,6 +346,12 @@ export interface RunModelCallDeps {
    * surpresa em produção.
    */
   agora?: Date;
+  /**
+   * A espera entre as espiadas da renovação EM CURSO (#4361). Injetável pelo
+   * mesmo motivo do `agora`: sem isto, o teste do `em_curso` custaria segundos
+   * reais por espiada. O default é o timer; o teste entrega um no-op.
+   */
+  dormir?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -1116,6 +1122,54 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // Objeto e não `let`: o valor é escrito dentro do callback da renovação e lido
   // depois, no catch — e é a leitura DEPOIS que decide o aviso da Central.
   const renovacaoDoTurno: { recusa: string | null } = { recusa: null };
+
+  // A espera do `em_curso`: a trava de banco vale `JANELA_DA_TRAVA_MS` (30 s) e
+  // UMA troca de refresh_token leva poucos segundos. Espiar a credencial a cada
+  // segundo, até 20 espiadas, cobre a rotação do vencedor sem amarrar o turno
+  // por uma janela inteira. #4361.
+  const PASSO_DA_ESPERA_EM_CURSO_MS = 1_000;
+  const ESPIADAS_DA_ESPERA_EM_CURSO = 20;
+  const dormir = deps.dormir ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  /**
+   * RELER a credencial depois da renovação (#4361), e dizer ao retry se vale
+   * a pena repetir: só com um `access_token` DIFERENTE do que acabou de dar
+   * 401. Sem isto, a 2ª tentativa saía com o MESMO `cfgUsada` — o token velho
+   * no Authorization de novo, e `em_curso` nem esperava o dono da trava.
+   *
+   * Devolve `{ repetir: true }` quando a releitura achou o par novo (e grava a
+   * config da 2ª tentativa em `releitura.cfg`), ou `{ repetir: false, motivo }`
+   * quando não — aí o primeiro erro volta com o motivo e NENHUM segundo POST é
+   * gasto contra um token que o provedor acaba de recusar.
+   */
+  const relerEConfigurarDaRenovacao = async (
+    cfgUsada: OrgLlmConfig,
+    situacao: 'renovacao_bem_sucedida' | 'em_curso',
+    releitura: { cfg: OrgLlmConfig | null },
+  ): Promise<unknown> => {
+    // A renovação de sucesso se prova em UMA leitura; `em_curso` precisa de
+    // tentativas porque o vencedor pode estar no meio do POST agora.
+    const maxEspiadas = situacao === 'em_curso' ? ESPIADAS_DA_ESPERA_EM_CURSO : 1;
+    for (let espiada = 0; espiada < maxEspiadas; espiada += 1) {
+      if (espiada > 0) await dormir(PASSO_DA_ESPERA_EM_CURSO_MS);
+      let access_token: string | null = null;
+      try {
+        const tokens = await lerLoginCodex({ admin: createAdminClient(), orgId: input.tenantId });
+        access_token = tokens?.access_token ?? null;
+      } catch {
+        // Banco mudo na releitura: o token em uso é tudo o que temos, e insistir
+        // com ele seria o POST certo de 401 que o issue manda não fazer.
+        access_token = null;
+      }
+      if (access_token !== null && access_token !== cfgUsada.apiKey) {
+        releitura.cfg = { ...cfgUsada, apiKey: access_token };
+        return { repetir: true };
+      }
+    }
+    return {
+      repetir: false as const,
+      motivo: situacao === 'em_curso' ? 'em_curso_sem_token_novo' : 'releitura_sem_token_novo',
+    };
+  };
   // O par tentativa/resposta do seam. Anotado porque o genérico de
   // `chamarComRetryUnicoEm401` inferiria só o ramo de SUCESSO e recusaria o de
   // erro — o tipo é o mesmo objeto, o retry único é que é o contrato.
@@ -1126,12 +1180,18 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     cfgUsada: OrgLlmConfig,
     fabrica: typeof factory,
   ): Promise<Awaited<ReturnType<typeof generateText>>> => {
-    const { corpo, tentativas } = await chamarComRetryUnicoEm401<TentativaDaAssinatura>({
+    const releitura: { cfg: OrgLlmConfig | null } = { cfg: null };
+    const { corpo, tentativas, motivoDaRenovacao } = await chamarComRetryUnicoEm401<TentativaDaAssinatura>({
       tentar: async () => {
+        // A cada tentativa entra o PAR mais recente: a primeira usa o que o
+        // resolvedor carregou; a segunda usa o que a releitura pós-renovação
+        // achou no banco. Repetir com o `cfgUsada` de antes era o #4361 — o
+        // token que acabou de dar 401 voltava no Authorization seguinte.
+        const cfgDaVez = releitura.cfg ?? cfgUsada;
         try {
           return {
             status: 200,
-            corpo: { ok: true as const, resultado: await chamarCom(cfgUsada, fabrica) },
+            corpo: { ok: true as const, resultado: await chamarCom(cfgDaVez, fabrica) },
           };
         } catch (erro) {
           // O status do provedor, e não uma classe de erro: é o 401 que decide.
@@ -1150,7 +1210,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
             provider: cfgUsada.provider,
             model,
           });
-          return;
+          // A RENOVAÇÃO GRAVOU no banco e o `cfgUsada` deste turno é o snapshot
+          // ANTERIOR a ela. Sem reler, a 2ª tentativa sairia com o token que
+          // acabou de dar 401 (#4361).
+          return await relerEConfigurarDaRenovacao(cfgUsada, 'renovacao_bem_sucedida', releitura);
         }
         const motivo = r.motivoDetalhe ? `${r.motivo}:${r.motivoDetalhe}` : r.motivo;
         // Só recusa de LOGIN vira aviso de conta desconectada. `em_curso` (outro
@@ -1166,8 +1229,30 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
           model,
           motivo,
         });
+        if (r.motivo === 'em_curso') {
+          // Quem tem a trava de 30 s ESTÁ renovando agora: a repetição na hora
+          // achava o token velho e gastava o retry num 401 certo (#4361). Espia
+          // a credencial até o vencedor da trava gravar o par novo.
+          return await relerEConfigurarDaRenovacao(cfgUsada, 'em_curso', releitura);
+        }
+        // `falha`, `nao_encontrada`, `modulo_desligado`: a renovação não mudou
+        // nada no banco e não vai mudar. Repetir com o token que o provedor
+        // ACABA de recusar é o POST desperdiçado que o issue manda não fazer —
+        // devolve o primeiro erro com o motivo.
+        return { repetir: false as const, motivo: 'renovacao_recusada' };
       },
     });
+    // A desistência SEM segundo POST tem de ter nome no log do turno — o
+    // silêncio da recusa foi exatamente a marca do incidente Obralivre.
+    if (motivoDaRenovacao !== undefined) {
+      deps.log?.warn('llm: 401 sem repetição — a renovação não entregou token novo', {
+        organization_id: input.tenantId,
+        purpose,
+        provider: cfgUsada.provider,
+        model,
+        motivo: motivoDaRenovacao,
+      });
+    }
     if (corpo.ok) {
       if (tentativas > 1) {
         deps.log?.warn('llm: a chamada seguiu depois de renovar o login da assinatura', {
