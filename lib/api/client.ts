@@ -369,6 +369,7 @@ async function request<T>(
         typeof errBody === "string" && errBody.length > 0
           ? errBody
           : `HTTP ${res.status}`,
+        true,
       );
     } catch (err) {
       // ApiError thrown above for non-retryable: propagate immediately
