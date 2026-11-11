@@ -86,7 +86,9 @@ async function semGrupoDeModulos(page: Page): Promise<void> {
 }
 
 async function paginaNaoEncontrada(page: Page, caminho: string): Promise<void> {
-  await page.goto(caminho);
+  // commit: a 404 do Next termina o boundary em erro de servidor por desenho, e a espera da revelação
+  // (helpers/test.ts) nunca fecharia nesta página. O texto da 404 é a prova.
+  await page.goto(caminho, { waitUntil: "commit" });
   await expect(page.getByText(/404\s*—\s*Página não encontrada/)).toBeVisible({ timeout: 30_000 });
 }
 
