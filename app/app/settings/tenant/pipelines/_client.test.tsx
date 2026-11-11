@@ -198,9 +198,7 @@ describe("rótulos dos tipos de campo (#3037)", () => {
     expect(screen.getByLabelText(/Tipo do campo 2/i).textContent?.trim()).toBe(
       "Lista de várias escolhas",
     );
-    expect(screen.getByLabelText(/Tipo do campo 3/i).textContent?.trim()).toBe(
-      "Lista pesquisável",
-    );
+    expect(screen.getByLabelText(/Tipo do campo 3/i).textContent?.trim()).toBe("Lista pesquisável");
     expect(screen.getByLabelText(/Tipo do campo 4/i).textContent?.trim()).toBe("Texto curto");
   });
 });
@@ -545,7 +543,10 @@ describe("retomada de negócio encerrado (#1538)", () => {
   });
 
   it("funil já ligado abre marcado, e desligar volta a `mesmo_registro`", () => {
-    const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, reabertura: "novo_negocio" } };
+    const ligado: PipelineRow = {
+      ...FUNIL,
+      settings: { ...FUNIL.settings, reabertura: "novo_negocio" },
+    };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig />);
     abrirEditores();
     const caixa = screen.getByLabelText("Negócio encerrado que volta abre um negócio novo");
@@ -577,7 +578,10 @@ describe("comanda do ganho (#1477)", () => {
   });
 
   it("funil já ligado abre marcado, e desligar grava `false`", () => {
-    const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, comanda_no_ganho: true } };
+    const ligado: PipelineRow = {
+      ...FUNIL,
+      settings: { ...FUNIL.settings, comanda_no_ganho: true },
+    };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig comandaDisponivel />);
     abrirEditores();
     const caixa = screen.getByLabelText(ROTULO);
@@ -590,7 +594,10 @@ describe("comanda do ganho (#1477)", () => {
   });
 
   it("sem o módulo financeiro (#1907) o interruptor some, e salvar não mexe no valor gravado", () => {
-    const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, comanda_no_ganho: true } };
+    const ligado: PipelineRow = {
+      ...FUNIL,
+      settings: { ...FUNIL.settings, comanda_no_ganho: true },
+    };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig />);
     abrirEditores();
     expect(screen.queryByLabelText(ROTULO)).toBeNull();
@@ -603,9 +610,8 @@ describe("comanda do ganho (#1477)", () => {
 
 describe("escreveMostrarQuando — o item 'ainda não escolhi' não vira valor", () => {
   it("escolher o item vazio do seletor de valor deixa a condição meio montada, e ela não grava", async () => {
-    const { escreveMostrarQuando, normalizaMostrarQuando, SEM_VALOR_DA_CONDICAO } = await import(
-      "./_client"
-    );
+    const { escreveMostrarQuando, normalizaMostrarQuando, SEM_VALOR_DA_CONDICAO } =
+      await import("./_client");
     const meio = escreveMostrarQuando(
       { campo: "tipo", operador: "igual", valor: "Outro" },
       { valor: SEM_VALOR_DA_CONDICAO },
@@ -629,7 +635,10 @@ describe("mais de uma condição no 'mostrar quando' (#4041)", () => {
     const duas = adicionaCondicao(AEREO);
     expect(duas).toEqual({ modo: "qualquer", condicoes: [AEREO, { campo: "" }] });
 
-    const comCampo = escreveCondicaoNoIndice(duas, 1, { campo: "tipo_servico", operador: "contem" });
+    const comCampo = escreveCondicaoNoIndice(duas, 1, {
+      campo: "tipo_servico",
+      operador: "contem",
+    });
     expect(comCampo).toEqual({
       modo: "qualquer",
       condicoes: [AEREO, { campo: "tipo_servico", operador: "contem" }],
@@ -687,7 +696,9 @@ describe("mais de uma condição no 'mostrar quando' (#4041)", () => {
 
   it("remover a segunda linha volta ao formato de condição ÚNICA (o JSON de sempre)", async () => {
     const { removeCondicaoNoIndice } = await import("./_client");
-    expect(removeCondicaoNoIndice({ modo: "qualquer", condicoes: [AEREO, PACOTE] }, 1)).toEqual(AEREO);
+    expect(removeCondicaoNoIndice({ modo: "qualquer", condicoes: [AEREO, PACOTE] }, 1)).toEqual(
+      AEREO,
+    );
     // Remover a última apaga a condição: o campo volta a ser sempre visível.
     expect(removeCondicaoNoIndice(AEREO, 0)).toBeUndefined();
   });
@@ -705,13 +716,20 @@ describe("mais de uma condição no 'mostrar quando' (#4041)", () => {
       modo: "qualquer" as const,
       condicoes: [AEREO, { campo: "" }, PACOTE],
     };
-    expect(normalizaMostrarQuando(comBranco)).toEqual({ modo: "qualquer", condicoes: [AEREO, PACOTE] });
+    expect(normalizaMostrarQuando(comBranco)).toEqual({
+      modo: "qualquer",
+      condicoes: [AEREO, PACOTE],
+    });
 
     // Sobrando uma condição, o que grava é a condição única — não uma lista de um.
-    expect(normalizaMostrarQuando({ modo: "todas", condicoes: [AEREO, { campo: "" }] })).toEqual(AEREO);
+    expect(normalizaMostrarQuando({ modo: "todas", condicoes: [AEREO, { campo: "" }] })).toEqual(
+      AEREO,
+    );
 
     // Sobrando nenhuma, a chave some (o campo volta a ser sempre visível).
-    expect(normalizaMostrarQuando({ modo: "qualquer", condicoes: [{ campo: "" }] })).toBeUndefined();
+    expect(
+      normalizaMostrarQuando({ modo: "qualquer", condicoes: [{ campo: "" }] }),
+    ).toBeUndefined();
   });
 });
 
@@ -821,7 +839,10 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
   it("com is_default no segundo, o seletor sai do primeiro e vai para ele", () => {
     const { container } = render(
       <PipelinesClient
-        pipelines={[funil(A, "Vendas", { is_default: false }), funil(B, "Pos", { is_default: true })]}
+        pipelines={[
+          funil(A, "Vendas", { is_default: false }),
+          funil(B, "Pos", { is_default: true }),
+        ]}
         podeEditarConfig
       />,
     );
@@ -1182,7 +1203,11 @@ describe("etapa de entrada das conversas do Inbox na tela (#3011)", () => {
   // E o seletor só existe no funil de entrada: por padrão, `p` é o padrão.
   const montar = (p: PipelineRow) => {
     const r = render(
-      <PipelinesClient pipelines={[{ is_default: true, ...p }]} etapas={ETAPAS_DE_ENTRADA} podeEditarConfig />,
+      <PipelinesClient
+        pipelines={[{ is_default: true, ...p }]}
+        etapas={ETAPAS_DE_ENTRADA}
+        podeEditarConfig
+      />,
     );
     abrirEditores();
     return r;
@@ -1208,7 +1233,11 @@ describe("etapa de entrada das conversas do Inbox na tela (#3011)", () => {
     const rotulo = "Etapa de entrada das conversas do Inbox";
 
     const { unmount } = render(
-      <PipelinesClient pipelines={[{ ...FUNIL, is_default: true }, SECUNDARIO]} etapas={etapas} podeEditarConfig />,
+      <PipelinesClient
+        pipelines={[{ ...FUNIL, is_default: true }, SECUNDARIO]}
+        etapas={etapas}
+        podeEditarConfig
+      />,
     );
     abrirEditores();
     expect(screen.getAllByRole("button", { name: /Salvar vocabulário e campos/i })).toHaveLength(2);
@@ -1306,7 +1335,11 @@ describe("etapa de entrada das conversas do Inbox na tela (#3011)", () => {
   });
 
   it("etapa apagada (nem aparece na lista) também avisa, como removida", () => {
-    montar(funilCom({ entrada_do_inbox: { ativa: true, stage_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" } }));
+    montar(
+      funilCom({
+        entrada_do_inbox: { ativa: true, stage_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" },
+      }),
+    );
 
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(seletor().textContent?.trim()).toBe("Etapa removida (indisponível)");
@@ -1348,7 +1381,10 @@ describe("o recorte de encerrados antigos do quadro (#2995)", () => {
 
   it("relê o que está salvo: caixa marcada e os dias do settings", () => {
     render(
-      <PipelinesClient pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]} podeEditarConfig />,
+      <PipelinesClient
+        pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]}
+        podeEditarConfig
+      />,
     );
     abrirEditores();
 
@@ -1382,7 +1418,10 @@ describe("o recorte de encerrados antigos do quadro (#2995)", () => {
   it("desligar manda 0 EXPLÍCITO — a chave não pode ficar com o número antigo", async () => {
     vi.mocked(updatePipelineConfig).mockClear();
     render(
-      <PipelinesClient pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]} podeEditarConfig />,
+      <PipelinesClient
+        pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]}
+        podeEditarConfig
+      />,
     );
     abrirEditores();
 
@@ -1439,5 +1478,201 @@ describe("o vocabulário do funil fala português (doc 249, resposta B)", () => 
       won: "Ganho",
       lost: "Perdido",
     });
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * REABRIR O NEGÓCIO PERDIDO QUANDO O CONTATO VOLTA A ESCREVER (#4076) — a tela.
+ *
+ * O motor já sabe reabrir o card perdido dentro da janela (medido em
+ * `tests/invariants/negocio-perdido-reabre.test.ts`), mas opção que ninguém
+ * consegue ligar não existe: é o mesmo defeito da #3011, em que o ajuste estava
+ * no banco e nenhum ponto da interface o mandava. Aqui se mede a PONTE — o valor
+ * salvo volta marcado, e o que a pessoa salva sai no patch da porta única de
+ * escrita, inclusive o `0` de quem DESLIGA (omitir a chave deixaria a janela
+ * antiga gravada e continuaria reabrindo card).
+ *
+ * O controle só aparece no funil que o servidor lê — o padrão e o de clientes,
+ * como o seletor de etapa de entrada: num funil secundário a escolha seria
+ * salva e nunca usada.
+ */
+describe("a janela do negócio perdido que volta (#4076)", () => {
+  const comJanela = (settings: Record<string, unknown>): PipelineRow => ({
+    id: "77777777-7777-4777-8777-777777777777",
+    name: "Vendas",
+    slug: "vendas",
+    vocabulary: null,
+    is_default: true,
+    settings,
+  });
+
+  const caixa = () =>
+    screen.getByRole("checkbox", {
+      name: /Reabrir o negócio perdido quando o contato volta a escrever/i,
+    });
+  const campoDeDias = () =>
+    screen.getByLabelText(/Dias para reabrir o negócio perdido/i) as HTMLInputElement;
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("relê o que está salvo: caixa marcada e os dias do settings", () => {
+    render(
+      <PipelinesClient pipelines={[comJanela({ reabrir_perdido_dias: 45 })]} podeEditarConfig />,
+    );
+    abrirEditores();
+
+    expect(caixa()).toBeChecked();
+    expect(campoDeDias()).toHaveValue(45);
+  });
+
+  it("funil sem a opção nasce DESMARCADO, com a sugestão no campo — o padrão não muda", () => {
+    render(<PipelinesClient pipelines={[comJanela({})]} podeEditarConfig />);
+    abrirEditores();
+
+    expect(caixa()).not.toBeChecked();
+    expect(campoDeDias()).toHaveValue(30);
+    expect(campoDeDias()).toBeDisabled();
+  });
+
+  it("marcar e escolher 10 dias manda a janela no patch", () => {
+    render(<PipelinesClient pipelines={[comJanela({})]} podeEditarConfig />);
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    fireEvent.change(campoDeDias(), { target: { value: "10" } });
+    salvar();
+
+    expect(patchSalvo().reabrir_perdido_dias).toBe(10);
+  });
+
+  it("DESMARCAR manda `0`, e não omite a chave — senão a janela antiga continuaria valendo", () => {
+    render(
+      <PipelinesClient pipelines={[comJanela({ reabrir_perdido_dias: 45 })]} podeEditarConfig />,
+    );
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    salvar();
+
+    expect(patchSalvo().reabrir_perdido_dias).toBe(0);
+  });
+
+  it("janela sem dia nenhum é barrada na tela, com o campo certo no aviso", () => {
+    render(<PipelinesClient pipelines={[comJanela({})]} podeEditarConfig />);
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    fireEvent.change(campoDeDias(), { target: { value: "0" } });
+    salvar();
+
+    // O schema recusaria o save inteiro com a mensagem genérica de validação;
+    // barrar na tela é o que permite dizer QUAL campo está errado.
+    expect(updatePipelineConfig).not.toHaveBeenCalled();
+  });
+
+  it("só no funil que o servidor lê: o padrão e o de clientes, nunca um secundário", () => {
+    const SECUNDARIO: PipelineRow = {
+      ...comJanela({}),
+      id: "88888888-8888-4888-8888-888888888888",
+      name: "Pós-venda",
+      slug: "pos-venda",
+      is_default: false,
+    };
+    render(
+      <PipelinesClient
+        pipelines={[{ ...comJanela({}), is_default: true }, SECUNDARIO]}
+        podeEditarConfig
+      />,
+    );
+    abrirEditores();
+
+    // `garantirLeadDaConversa` lê a opção do funil onde o card nasceria; num
+    // secundário ela nunca seria consultada, e a tela mentiria.
+    expect(
+      screen.queryAllByRole("checkbox", {
+        name: /Reabrir o negócio perdido quando o contato volta a escrever/i,
+      }),
+    ).toHaveLength(1);
+  });
+});
+
+/**
+ * O INTERRUPTOR "MOSTRAR NO RESUMO DA PASSAGEM" (issue #4303).
+ *
+ * O resumo que a pessoa lê ao assumir a conversa não mostrava os campos do
+ * CARD — consumo em kWh, valor da conta. A opção é POR CAMPO e nasce
+ * DESLIGADA; desmarcar APAGA a chave, como `multiple`, porque a definição é
+ * jsonb e nenhum funil que já existe pode mudar de comportamento ao abrir
+ * esta tela.
+ */
+describe("mostrar no resumo da passagem (#4303)", () => {
+  const FUNIL_DO_RESUMO: PipelineRow = {
+    id: "66666666-6666-4666-8666-666666666666",
+    name: "Energia",
+    slug: "energia",
+    vocabulary: null,
+    settings: {
+      fields: [{ key: "consumo_kwh", label: "Consumo (kWh)", type: "number" }],
+    },
+  };
+  const FUNIL_DO_RESUMO_LIGADO: PipelineRow = {
+    ...FUNIL_DO_RESUMO,
+    settings: {
+      fields: [
+        {
+          key: "consumo_kwh",
+          label: "Consumo (kWh)",
+          type: "number",
+          mostrar_no_resumo_da_passagem: true,
+        },
+      ],
+    },
+  };
+
+  const tela = (p: PipelineRow) => {
+    render(<PipelinesClient pipelines={[p]} podeEditarConfig />);
+    abrirEditores();
+  };
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("vem DESLIGADO — o funil de hoje não muda de comportamento", () => {
+    tela(FUNIL_DO_RESUMO);
+    expect(
+      screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)"),
+    ).not.toBeChecked();
+  });
+
+  it("marcar grava a opção no campo", () => {
+    tela(FUNIL_DO_RESUMO);
+    fireEvent.click(screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(patchSalvo().fields?.[0]?.mostrar_no_resumo_da_passagem).toBe(true);
+  });
+
+  it("desmarcar APAGA a chave — o jsonb não guarda opção morta", () => {
+    tela(FUNIL_DO_RESUMO_LIGADO);
+    const caixa = screen.getByLabelText("Mostrar no resumo da passagem — Consumo (kWh)");
+    expect(caixa).toBeChecked();
+
+    fireEvent.click(caixa);
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(patchSalvo().fields?.[0]).not.toHaveProperty("mostrar_no_resumo_da_passagem");
+  });
+
+  it("campo do CONTATO não oferece o interruptor — o valor dele não está no card", () => {
+    tela({
+      ...FUNIL_DO_RESUMO,
+      settings: { fields: [{ key: "cpf", label: "CPF", type: "text", escopo: "contato" }] },
+    });
+    expect(screen.queryByLabelText("Mostrar no resumo da passagem — CPF")).toBeNull();
   });
 });

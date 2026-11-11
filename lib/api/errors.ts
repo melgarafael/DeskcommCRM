@@ -70,6 +70,19 @@ export const ApiErrorCodes = {
   // nenhum Bearer a alcança — o proxy devolve 401 antes. Se um dia ela passar a
   // aceitar token, este comentário ganha o integrador de volta.
   agenda_listagem_alvo_nao_e_lead: "agenda_listagem_alvo_nao_e_lead",
+  /**
+   * O dia pedido não EXISTE no calendário (`2026-02-31`, `2026-13-01`), e não
+   * apenas está mal escrito (#3221).
+   *
+   * Código próprio, e não o `validation_error` de sempre, porque o consumidor
+   * desta rota — a camada "Datas dos negócios" da Agenda — precisa distinguir
+   * "o cliente chamou errado" de "o dia pedido não existe": a forma está certa
+   * (`YYYY-MM-DD`), o filtro iria para o banco e voltaria vazio, e a grade
+   * diria "ninguém embarca neste período" para uma data que ninguém digitou.
+   * Com o código próprio, a tela mostra o motivo e esquece a escolha, como já
+   * faz com `campo_nao_e_data`.
+   */
+  data_de_calendario_invalida: "data_de_calendario_invalida",
 
   // 409 — conflito
   idempotency_conflict: "idempotency_conflict",
@@ -80,6 +93,13 @@ export const ApiErrorCodes = {
   // retentar depois resolve, enquanto conflito manda trocar a chave.
   idempotency_in_progress: "idempotency_in_progress",
   state_conflict: "state_conflict",
+  // POST /api/v1/prospecting (`start` e `resume`): a CONEXÃO escolhida já tem
+  // uma campanha de prospecção em andamento (#3896). Uma campanha ativa por
+  // NÚMERO, não por organização — a recusa é do número, e `details` traz
+  // `campaign_id`/`campaign_name` de quem o ocupa para a tela oferecer
+  // "abrir essa campanha". Irmão do `channel_archived`: mesma classe (o canal é
+  // o recurso escasso), outro motivo.
+  prospecting_channel_busy: "prospecting_channel_busy",
   // Escrita vinda de uma aba que ficou numa organização diferente da do cookie
   // `active_org` (#2335). O header `X-Org-Da-Aba` só serve para RECUSAR: a org
   // efetiva continua sendo a do cookie (`lib/auth/require-role.ts`).
@@ -371,15 +391,34 @@ export const ApiErrorCodes = {
   campanha_modelo_nao_aprovado: "campanha_modelo_nao_aprovado", // 422: modelo pausado, recusado ou em análise
   campanha_modelo_variaveis: "campanha_modelo_variaveis", // 422: variável sem origem, ou origem que não serve
   // Migration 0711: envio rápido (rajada) só pelo número oficial, com modelo aprovado.
-  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido pedido num número por QR
+  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido ou broadcast pedido num número que não o faz
+  campanha_transmissao_variavel: "campanha_transmissao_variavel", // 422: broadcast com variável que muda por pessoa (migration 0712)
+  campanha_transmissao_entregue: "campanha_transmissao_entregue", // 409: a velocidade não muda depois que a lista foi entregue ao provedor
 
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",
   unavailable: "unavailable", // 503: dependência de config ausente (ex.: pool do engine sem SUPABASE_DB_URL)
+
+  // ─── CEP DO CONTATO (issue #3494, fatia 2) ───
+  //
+  // 404 próprio, e não `not_found` genérico: a tela do cadastro precisa dizer
+  // "este CEP não existe" ao lado do campo, sem confundir com "contato não
+  // encontrado" — mesmo motivo de `campanha_nao_encontrada`. A falha do serviço
+  // de terceiro continua `upstream_unavailable` (502), que é o código que o
+  // cliente já trata como "tente de novo".
+  cep_nao_encontrado: "cep_nao_encontrado",
+
   base_publica_nao_configurada: "base_publica_nao_configurada", // 503: NEXT_PUBLIC_APP_URL ausente, placeholder ou da própria máquina — o webhook único da instalação não é registrado
   waha_error: "waha_error",
   channel_unavailable: "channel_unavailable", // 502: o transporte do canal não respondeu (ex.: listar grupos com a sessão fora de WORKING)
+  // 409: a agenda do aparelho não é entregue com o store da sessão desligado
+  // (a opção "Guardar o histórico anterior à vinculação"). Código próprio, e
+  // não `channel_unavailable`, porque a AÇÃO é outra: ligar uma opção na tela
+  // de Conexões — não esperar a conexão voltar (#4102).
+  channel_acervo_desligado: "channel_acervo_desligado",
+  channel_timeout: "channel_timeout", // 504: o canal não respondeu dentro do teto (relógio, não recusa)
+  channel_session_rejected: "channel_session_rejected", // 502: o WhatsApp recusou a sessão do número (401/403)
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu
   wacalls_not_connected: "wacalls_not_connected", // 503 + Retry-After: sessão pareada cujo socket com o WhatsApp caiu por um instante (ver `wacallsSemConexao`)
   ai_provider_error: "ai_provider_error",

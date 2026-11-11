@@ -202,12 +202,12 @@ describe("campo inválido na leitura de insights: repetição sem os dois nomes 
     if (!corpo) throw new Error("esperava a linha da campanha");
     const celulas = within(corpo).getAllByRole("cell");
 
-    expect(celulas).toHaveLength(15);
-    expect(celulas[10]?.textContent).toBe("—");
+    expect(celulas).toHaveLength(16);
+    expect(celulas[11]?.textContent).toBe("—");
     expect(within(corpo).queryByText("0,00%")).toBeNull();
     // E o "—" DIZ por que está vazio: o hover leva a ressalva da leitura, que é
     // o que separa "a plataforma não devolveu" de "esta campanha mediu zero".
-    expect(celulas[10]?.firstElementChild?.getAttribute("title")).toBe(
+    expect(celulas[11]?.firstElementChild?.getAttribute("title")).toBe(
       AVISO_DO_CONNECT_RATE_AUSENTE,
     );
   });
@@ -266,9 +266,9 @@ describe("campo inválido na leitura de insights: repetição sem os dois nomes 
     if (!corpo) throw new Error("esperava a linha da campanha");
     const celulas = within(corpo).getAllByRole("cell");
 
-    expect(celulas[10]?.textContent).toBe("48,00%");
+    expect(celulas[11]?.textContent).toBe("48,00%");
     // Medição NÃO leva o aviso do ausente: o título só existe quando FALTA, e é
     // isso que faz o hover ser sinal, e não decoração.
-    expect(celulas[10]?.querySelector("[title]")).toBeNull();
+    expect(celulas[11]?.querySelector("[title]")).toBeNull();
   });
 });

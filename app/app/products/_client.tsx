@@ -223,6 +223,7 @@ export function ProdutosClient({
   buscaInicial,
   urlsDasFotos,
   podeEditar,
+  apresentacaoLigada = false,
   textos,
 }: {
   /** A página atual, já filtrada no servidor (ver `lib/catalogo/busca-da-tela.ts`). */
@@ -234,6 +235,7 @@ export function ProdutosClient({
   buscaInicial: string;
   urlsDasFotos: Record<string, string>;
   podeEditar: boolean;
+  apresentacaoLigada?: boolean;
   textos: Textos;
 }) {
   const t = useT();
@@ -649,7 +651,13 @@ export function ProdutosClient({
               // `key` porque o painel fica na MESMA posição do DOM ao trocar de
               // produto: sem ela o React reaproveita o estado e o formulário
               // abriria preenchido com o produto anterior.
-              <EdicaoDoProduto key={p.id} produto={p} aoFechar={() => setEditando(null)} />
+              <EdicaoDoProduto
+                key={p.id}
+                produto={p}
+                urlsDasFotos={urlsDasFotos}
+                apresentacaoLigada={apresentacaoLigada}
+                aoFechar={() => setEditando(null)}
+              />
             ) : null}
             </li>
             );
