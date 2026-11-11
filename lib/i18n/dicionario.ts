@@ -20715,6 +20715,44 @@ export const DICIONARIO: Traducoes = {
   "Sem permissão para mudar o status.": { es: "Sin permiso para cambiar el estado." },
   "Não foi possível salvar o status.": { es: "No se pudo guardar el estado." },
 
+  // ═══ Rankings de negócios ganhos, na tela de Faturamento (#4280, #4295) ═══
+  // Etiquetas que mais vendem e clientes que mais compram. As frases de aviso
+  // existem porque os rankings declaram o que ficou FORA (moeda, valor ausente,
+  // contato ausente, leitura interrompida) em vez de esconder.
+  "Tags que mais vendem": { es: "Etiquetas que más venden" },
+  "Clientes que mais compram": { es: "Clientes que más compran" },
+  "Estes dois rankings somam os negócios marcados como ganhos no período — não as comandas dos números acima.":
+    {
+      es: "Estos dos rankings suman los negocios marcados como ganados en el período — no las comandas de los números de arriba.",
+    },
+  // "Tag", "Cliente", "Valor", "Contato", "Negócios" e "Negócios ganhos" já
+  // existem neste dicionário: não se repetem aqui.
+  "Nenhum negócio ganho no período.": { es: "Ningún negocio ganado en el período." },
+  "O período é maior do que este relatório cobre.": {
+    es: "El período es mayor de lo que cubre este informe.",
+  },
+  "Os números são um piso: a leitura foi interrompida antes do fim do período.": {
+    es: "Los números son un piso: la lectura se interrumpió antes del final del período.",
+  },
+  "negócio(s) sem valor preenchido somam zero — valor ausente, não venda de zero.": {
+    es: "negocio(s) sin valor completado suman cero — valor ausente, no venta de cero.",
+  },
+  "negócio(s) em outra moeda ficaram fora: o painel soma na moeda da empresa e não converte.":
+    {
+      es: "negocio(s) en otra moneda quedaron fuera: el panel suma en la moneda de la empresa y no convierte.",
+    },
+  "negócio(s) ganho(s) sem data de fechamento não entram em nenhum recorte de período.": {
+    es: "negocio(s) ganado(s) sin fecha de cierre no entran en ningún recorte de período.",
+  },
+  "negócio(s) ganho(s) sem contato não entram no ranking de clientes.": {
+    es: "negocio(s) ganado(s) sin contacto no entran en el ranking de clientes.",
+  },
+  "Nenhum negócio ganho no período tem tag.": {
+    es: "Ningún negocio ganado en el período tiene etiqueta.",
+  },
+  "Nenhum negócio ganho no período tem contato.": {
+    es: "Ningún negocio ganado en el período tiene contacto.",
+  },
   // ─── E-mails do sistema (lib/email/templates/) — #4302 ───────────────────
   // A cópia dos moldes de acesso (GoTrue), do convite de time e do alarme de
   // orçamento de IA morava dentro de cada arquivo, fora deste dicionário. Por
@@ -20766,6 +20804,31 @@ export const DICIONARIO: Traducoes = {
     es: "Este aviso se envía automáticamente una vez cada 24 h mientras el consumo siga por encima del límite configurado.",
   },
   "Dashboard: {url}": { es: "Panel: {url}" },
+  "Formulários de anúncio da Meta": { es: "Formularios de anuncios de Meta" },
+  "Os leads dos formulários de anúncio do Facebook e do Instagram entram neste funil. No painel de desenvolvedor da Meta, cadastre o endereço abaixo como destino dos avisos da Página (campo leadgen) e depois cole aqui o token da página.": { es: "Los leads de los formularios de anuncios de Facebook e Instagram entran en este embudo. En el panel de desarrolladores de Meta, registra la dirección de abajo como destino de los avisos de la Página (campo leadgen) y después pega aquí el token de la página." },
+  "Copiar endereço para a Meta": { es: "Copiar la dirección para Meta" },
+  "Página do Facebook (id)": { es: "Página de Facebook (id)" },
+  "Em branco: usamos a página do token": { es: "En blanco: usamos la página del token" },
+  "Token da página": { es: "Token de la página" },
+  "Token guardado. Cole outro só para trocar.": { es: "Token guardado. Pega otro solo para cambiarlo." },
+  "Cole o token da página": { es: "Pega el token de la página" },
+  "Página e token salvos.": { es: "Página y token guardados." },
+  "Salvar página e token": { es: "Guardar página y token" },
+  "Token removido.": { es: "Token eliminado." },
+  "Remover token": { es: "Eliminar token" },
+  "Página ligada:": { es: "Página conectada:" },
+  "Só quem administra a organização liga esta opção.": { es: "Solo quien administra la organización activa esta opción." },
+  "Buscar as respostas na Meta": { es: "Buscar las respuestas en Meta" },
+  "Busca das respostas ligada.": { es: "Búsqueda de respuestas activada." },
+  "Busca das respostas desligada.": { es: "Búsqueda de respuestas desactivada." },
+  "Desligada, o padrão. O aviso da Meta chega sem as respostas; ligada, buscamos nome, telefone, e-mail e as demais respostas com o token da página. Lead que a Meta avisar e não entrar aparece em Leads recebidos da fonte dona da página, com o motivo, inclusive quando ela está pausada. A exceção é a fonte cujo endereço foi cadastrado na Meta: pausada, ela recusa os avisos de todas as páginas, sem registrar nada.": { es: "Desactivada, lo predeterminado. El aviso de Meta llega sin las respuestas; activada, buscamos nombre, teléfono, correo y las demás respuestas con el token de la página. El lead que Meta avise y no entre aparece en Leads recibidos de la fuente dueña de la página, con el motivo, incluso cuando está pausada. La excepción es la fuente cuya dirección se registró en Meta: pausada, rechaza los avisos de todas las páginas, sin registrar nada." },
+  "Cole o token da página antes de ligar a página: é por ele que conferimos que a página é desta fonte.": { es: "Pega el token de la página antes de conectar la página: con él comprobamos que la página es de esta fuente." },
+  "Não conseguimos confirmar este token com a Meta. Confira se você copiou o token da página inteiro e se ele ainda vale.": { es: "No pudimos confirmar este token con Meta. Comprueba que copiaste el token de la página completo y que sigue vigente." },
+  "O token colado é de outra página. Deixe o campo da página em branco para usar a página do token, ou cole o token desta página.": { es: "El token pegado es de otra página. Deja el campo de la página en blanco para usar la página del token, o pega el token de esta página." },
+  "Para remover o token, remova também a página: sem o token, não há como conferir que a página é desta fonte.": { es: "Para eliminar el token, elimina también la página: sin el token no hay cómo comprobar que la página es de esta fuente." },
+  "O aviso da Meta chegou sem as respostas do formulário, e a busca das respostas está desligada nesta fonte. Cole o token da página e ligue a busca para os próximos entrarem.": { es: "El aviso de Meta llegó sin las respuestas del formulario, y la búsqueda de respuestas está desactivada en esta fuente. Pega el token de la página y activa la búsqueda para que entren los próximos." },
+  "A busca das respostas na Meta não deu certo: o token pode ter vencido, estar sem permissão de leads, ou a Meta não respondeu. Confira o token da página nesta fonte.": { es: "La búsqueda de respuestas en Meta no funcionó: el token puede haber vencido, no tener permiso de leads, o Meta no respondió. Revisa el token de la página en esta fuente." },
+  "A Meta avisou um lead da página desta fonte, mas a fonte está pausada. Reative-a para os próximos entrarem.": { es: "Meta avisó un lead de la página de esta fuente, pero la fuente está en pausa. Reactívala para que entren los próximos." },
 
   // o botão de exportar a conversa (#1982) NÃO mora aqui: o PR #4207, aberto
   // antes, é quem entrega essa tela — duas entregas da mesma fatia viram dois
