@@ -79,6 +79,8 @@ vi.mock("@/lib/impersonate/support", () => ({
 }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: vi.fn(async () => true) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({ from: h.from })) }));
+// O portão dual abre o cliente de sessão no ramo da sessão; a rota usa o admin.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
 vi.mock("@/lib/audit", () => ({ audit: h.estado.audit }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.estado.requireRole }));
 
