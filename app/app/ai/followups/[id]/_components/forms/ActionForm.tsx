@@ -410,6 +410,9 @@ export function ActionForm({
           <p className="text-xs text-text-muted">
             {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
           </p>
+          <p className="text-xs text-text-muted">
+            {t("Para escrever uma data no formato do cliente, use {{campo|data}}.")}
+          </p>
           <div className="space-y-2">
             <Label htmlFor="action-media-url">{t("Imagem, vídeo, áudio ou documento (opcional)")}</Label>
             <Input

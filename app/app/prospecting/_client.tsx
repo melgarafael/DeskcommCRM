@@ -15,6 +15,8 @@ import { useT } from "@/hooks/i18n/useT";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
+  OFERTAS_DA_CAMPANHA,
+  ROTULOS_DAS_OFERTAS,
   campaignConfigSchema,
   etiquetasDoNicho,
   problemaNasEtiquetas,
@@ -285,6 +287,12 @@ export function ProspectingClient() {
   // aparece enquanto o aviso na tela for o DELA — `aviso` amarra os dois, e
   // qualquer outro `setError` a esconde sem precisar limpá-la em cada caminho.
   const [ocupante, setOcupante] = useState<{ id: string; aviso: string } | null>(null);
+  // O AGENTE a corrigir quando a recusa é dele (issue #4118). Mesmo contrato do
+  // `ocupante`: `aviso` amarra o botão à frase, e qualquer outro `setError` o
+  // esconde sem limpar estado em cada caminho. Antes, o aviso mandava publicar o
+  // agente "com a ferramenta e acesso ao funil" e deixava a pessoa procurando o
+  // agente na lista.
+  const [agenteDoAviso, setAgenteDoAviso] = useState<{ id: string; aviso: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [settings, setSettings] = useState(false);
@@ -423,6 +431,17 @@ export function ProspectingClient() {
           : t("Este número já está em outra campanha em andamento.");
         setError(aviso);
         if (typeof quem?.campaign_id === "string") setOcupante({ id: quem.campaign_id, aviso });
+        return false;
+      }
+      // A recusa do AGENTE (issue #4118): `details.agent_id` é o agente que o
+      // servidor leu na versão publicada, não o que está escolhido no formulário
+      // agora — se a pessoa trocou o campo depois de iniciar, o link continua
+      // certo. Sem `agent_id`, o aviso é só texto, como antes.
+      if (e instanceof ApiError && e.code === "prospecting_agent_incompleto") {
+        const aviso = e.message;
+        setError(aviso);
+        const agente = (e.details as { agent_id?: unknown } | undefined)?.agent_id;
+        if (typeof agente === "string") setAgenteDoAviso({ id: agente, aviso });
         return false;
       }
       setError(e instanceof Error ? e.message : t("Não foi possível concluir a operação."));
@@ -767,6 +786,17 @@ export function ProspectingClient() {
             <div className="mt-2">
               <Button variant="outline" size="sm" onClick={() => abrirCampanha(ocupante.id)}>
                 {t("Abrir essa campanha")}
+              </Button>
+            </div>
+          )}
+          {error && agenteDoAviso?.aviso === error && (
+            <div className="mt-2">
+              {/* O CAMINHO, não só a frase: a correção fica na tela do agente, e
+                  mandar "procure o agente" era metade do defeito do #4118. */}
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/app/ai/agents/${agenteDoAviso.id}`} data-testid="abrir-o-agente">
+                  {t("Abrir o agente")}
+                </Link>
               </Button>
             </div>
           )}
@@ -1260,7 +1290,11 @@ export function ProspectingClient() {
                 </div>
                 {campaign.error && (
                   <p role="alert" className="mt-4 rounded-md bg-destructive/10 p-3 text-sm">
-                    {campaign.error}
+                    {/* O motivo da pausa é gravado em português pelo worker
+                        (`lib/prospecting/motivo-da-pausa.ts`, #4170) e o
+                        dicionário devolve o espanhol; texto fora do dicionário
+                        volta como veio, então erro antigo não muda. */}
+                    {t(campaign.error)}
                   </p>
                 )}
                 {/* A grade mede o CARD, não a janela: em 1024px o card divide a tela com a
@@ -1657,12 +1691,8 @@ export function ProspectingClient() {
                                     "A auditoria do site escolhe o melhor argumento por empresa, nesta ordem.",
                                   )}
                                 </p>
-                                {(
-                                  [
-                                    ["site", t("Site profissional")],
-                                    ["automacao_crm", t("Automação do atendimento (CRM)")],
-                                    ["automacao_n8n", t("Automações e integrações (N8N)")],
-                                  ] as const
+                                {OFERTAS_DA_CAMPANHA.map(
+                                  (valor) => [valor, t(ROTULOS_DAS_OFERTAS[valor])] as const,
                                 ).map(([valor, rotulo]) => (
                                   <label key={valor} className="flex items-start gap-2 text-sm">
                                     <input

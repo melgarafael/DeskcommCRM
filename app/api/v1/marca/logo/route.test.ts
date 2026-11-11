@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
@@ -169,7 +170,7 @@ describe("POST /api/v1/marca/logo — escopo organizacao nunca toca platform_bra
 
     const { POST } = await import("./route");
     const res = await POST(
-      new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
+      await pedidoComTamanho("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
     );
 
     expect(res.status, await res.clone().text()).toBe(200);
@@ -192,7 +193,7 @@ describe("POST /api/v1/marca/logo — escopo organizacao nunca toca platform_bra
     form.set("escopo", "organizacao");
     form.set("file", arquivoPng());
     const { POST } = await import("./route");
-    const res = await POST(new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }));
+    const res = await POST(await pedidoComTamanho("http://localhost/api/v1/marca/logo", { method: "POST", body: form }));
     expect(res.status).toBe(403);
     expect(espiao.fromChamadas).toHaveLength(0);
   });
@@ -274,7 +275,7 @@ describe("escopo=instalacao — só o dono do servidor alcança, e a organizaç�
 
     const { POST } = await import("./route");
     const res = await POST(
-      new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
+      await pedidoComTamanho("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
     );
 
     expect(res.status).toBe(403);
@@ -293,7 +294,7 @@ describe("escopo=instalacao — só o dono do servidor alcança, e a organizaç�
 
     const { POST } = await import("./route");
     const res = await POST(
-      new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
+      await pedidoComTamanho("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
     );
 
     expect(res.status, await res.clone().text()).toBe(200);
@@ -324,7 +325,7 @@ describe("peca=icone — o ícone da aba grava favicon_path, e só na instalaç�
 
     const { POST } = await import("./route");
     const res = await POST(
-      new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
+      await pedidoComTamanho("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
     );
 
     expect(res.status, await res.clone().text()).toBe(200);
@@ -366,7 +367,7 @@ describe("peca=icone — o ícone da aba grava favicon_path, e só na instalaç�
 
     const { POST } = await import("./route");
     const res = await POST(
-      new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
+      await pedidoComTamanho("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
     );
 
     expect(res.status).toBe(422);
@@ -386,7 +387,7 @@ describe("peca=icone — o ícone da aba grava favicon_path, e só na instalaç�
 
     const { POST } = await import("./route");
     const res = await POST(
-      new NextRequest("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
+      await pedidoComTamanho("http://localhost/api/v1/marca/logo", { method: "POST", body: form }),
     );
 
     expect(res.status).toBe(422);

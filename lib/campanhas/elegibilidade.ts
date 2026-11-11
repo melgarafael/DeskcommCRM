@@ -24,6 +24,8 @@
  * registrada que `lib/automation/guarda-do-contato.ts` já respeita no resto do
  * produto. A campanha não cria régua concorrente: lê as que existem.
  */
+import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
+
 import type { CamposPersonalizados } from "./renderizador";
 import type { MotivoDeExclusao, StatusDoDestinatario } from "./tipos";
 
@@ -189,10 +191,8 @@ export function contarExclusoes(
 
 /** Lê `contacts.consent` sem confiar no shape — é jsonb livre. */
 export function recusouMarketing(consent: unknown): boolean {
-  if (!consent || typeof consent !== "object") return false;
-  const marketing = (consent as Record<string, unknown>).marketing;
-  if (!marketing || typeof marketing !== "object") return false;
-  return !!(marketing as Record<string, unknown>).declined_at;
+  // Nos dois formatos, `declined_at` da captação e `granted: false` da ficha.
+  return recusaRegistrada(consent, "marketing");
 }
 
 /**

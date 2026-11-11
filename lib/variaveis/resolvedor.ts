@@ -53,19 +53,24 @@
  */
 import { valorComRotulo } from "@/lib/automation/campos-do-render";
 import { COLUNAS_DE_CPF_DO_CONTATO, resolveField } from "@/lib/automation/conditions";
+import { opcoesDoRender } from "@/lib/automation/opcoes-do-render";
 import { horaNoFuso } from "@/lib/campanhas/relogio";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
+import { formatarValorComModificadorDeData } from "@/lib/i18n/data-na-mensagem";
+import { MODIFICADOR_DA_VARIAVEL } from "@/lib/texto/modificador-da-variavel";
 import { RESERVA_DA_VARIAVEL } from "@/lib/texto/reserva-da-variavel";
 
 import { variavelDoCatalogo, type Resolvedor } from "./catalogo";
 
 /**
- * A marcação `{{caminho}}` ou `{{caminho|"reserva"}}`: grupo 1 = caminho, grupo
- * 2 = reserva (ausente quando não há). A MESMA forma em todas as telas — era o
- * primeiro lugar onde elas divergiam (o Inbox não casava ponto nem número).
+ * A marcação `{{caminho}}`, `{{caminho|"reserva"}}` ou `{{caminho|data}}`: grupo
+ * 1 = caminho, grupo 2 = reserva, grupo 3 = modificador (cada um ausente quando
+ * não há). A MESMA forma em todas as telas — era o primeiro lugar onde elas
+ * divergiam (o Inbox não casava ponto nem número). A ordem dos grupos é
+ * contrato: quem já lia 1 e 2 continua lendo os mesmos dois.
  */
 export const MARCACAO_DE_VARIAVEL = new RegExp(
-  String.raw`\{\{\s*([\w.]+)\s*${RESERVA_DA_VARIAVEL}\}\}`,
+  String.raw`\{\{\s*([\w.]+)\s*${RESERVA_DA_VARIAVEL}${MODIFICADOR_DA_VARIAVEL}\}\}`,
   "g",
 );
 
@@ -206,6 +211,7 @@ export function resolverVariaveis(
 
     const bruto = marca[1] ?? "";
     const reserva = marca[2];
+    const modificador = marca[3];
     const leitura = ler(bruto, contexto, opcoes);
 
     if (leitura.pendente) {
@@ -216,7 +222,7 @@ export function resolverVariaveis(
     }
 
     if (leitura.valor !== null) {
-      saida += prepararValor(leitura.valor, opcoes);
+      saida += prepararValor(comModificador(leitura.valor, modificador, contexto), opcoes);
       continue;
     }
 
@@ -272,6 +278,25 @@ export function resolverVariaveis(
 function prepararValor(valor: string, opcoes: OpcoesDaResolucao): string {
   const formatado = opcoes.formatarValor ? opcoes.formatarValor(valor) : valor;
   return opcoes.blindarValores ? formatado.replaceAll("{", CHAVE_BLINDADA) : formatado;
+}
+
+/**
+ * O valor com o MODIFICADOR da marcação aplicado — `{{campo|data}}` e
+ * `{{campo|data:dd/mm/aaaa}}` (#4339) — ou intacto quando não há modificador.
+ *
+ * O idioma e o fuso vêm do contexto (`__render`), porque quem os conhece é quem
+ * monta o dado; sem eles vale o padrão do produto. Modificador que o produto não
+ * conhece nunca chega aqui: a marcação não casa, e o token sai cru como antes.
+ * A transformação é ANTES de `formatarValor`, para que quem escapa HTML escape o
+ * texto final e não uma data que seria reformatada depois.
+ */
+function comModificador(
+  valor: string,
+  modificador: string | undefined,
+  contexto: ContextoDeVariaveis,
+): string {
+  if (modificador === undefined) return valor;
+  return formatarValorComModificadorDeData(valor, modificador, opcoesDoRender(contexto));
 }
 
 /**

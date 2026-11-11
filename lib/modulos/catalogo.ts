@@ -15,6 +15,11 @@ export interface ModuloCatalogo {
 
 export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
   {
+    slug: "cadencias",
+    nome: "Cadências de e-mail",
+    descricao: "Sequências de e-mail por negócio, com envio pela instalação, descadastro e abertura somente com consentimento. Contribuição de Marcelo (@lmarceloc), PR #1738.",
+  },
+  {
     slug: "honorarios",
     nome: "Honorários (advocacia)",
     descricao:
@@ -41,6 +46,16 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
     descricao:
       "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser " +
       "avisado. Cada empresa escolhe os prazos da oferta antes de ligar.",
+  },
+  {
+    // #3611: volta ao catálogo junto com a tela de gestão (#3636) — antes dela,
+    // instalar daria uma tabela que ninguém conseguia abrir.
+    slug: "ouvidoria",
+    nome: "Ouvidoria",
+    descricao:
+      "Registro de manifestações (reclamações, denúncias, elogios, sugestões) com protocolo " +
+      "próprio, leitura restrita a administradores e sem cartão no funil. Quem não instala " +
+      "o módulo não carrega a tabela.",
   },
 ];
 

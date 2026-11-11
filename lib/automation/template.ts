@@ -6,10 +6,11 @@ import {
 } from "@/lib/variaveis/resolvedor";
 
 /**
- * A marcação `{{caminho}}` ou `{{caminho|"reserva"}}`. Grupo 1 = caminho,
- * grupo 2 = reserva (ausente quando não há). A forma mora no resolvedor único
- * (`lib/variaveis/resolvedor.ts`) desde o #3687: era o primeiro lugar onde as
- * telas divergiam — o Inbox não casava ponto nem número.
+ * A marcação `{{caminho}}`, `{{caminho|"reserva"}}` ou `{{caminho|data}}`. A
+ * forma mora no resolvedor único (`lib/variaveis/resolvedor.ts`) desde o #3687:
+ * era o primeiro lugar onde as telas divergiam — o Inbox não casava ponto nem
+ * número. A ORDEM dos grupos é contrato (1 = caminho, 2 = reserva, 3 =
+ * modificador da data, #4339): quem já lia 1 e 2 continua lendo os mesmos dois.
  */
 export const MARCACAO = MARCACAO_DE_VARIAVEL;
 
@@ -49,7 +50,8 @@ export function marcacaoDoCrm(nome: string): boolean {
  *
  * A conta é do resolvedor único (#3687): `quandoVazio: "vazio"` é a política
  * desta tela — sem valor, string vazia, que é o que `automation_rules` já
- * gravado espera.
+ * gravado espera. É ele também que aplica `{{campo|data}}` (#4339), no idioma e
+ * no fuso que o contexto traz em `__render` — a mesma conta nas quatro telas.
  */
 export function renderTemplate(
   template: string,
