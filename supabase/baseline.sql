@@ -69612,9 +69612,20 @@ notify pgrst, 'reload schema';
 alter table public.extension_installations
   add column if not exists disabled_at timestamptz,
   add column if not exists disabled_by uuid references auth.users(id) on delete set null;
-alter table public.extension_installations drop constraint if exists extension_installations_disabled_by_requires_disabled_at;
-alter table public.extension_installations add constraint extension_installations_disabled_by_requires_disabled_at
-  check (disabled_by is null or disabled_at is not null);
+-- Criada só se ausente: o drop + add revalidava a tabela inteira a cada update.sh.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'extension_installations_disabled_by_requires_disabled_at'
+      and conrelid = 'public.extension_installations'::regclass
+  ) then
+    alter table public.extension_installations
+      add constraint extension_installations_disabled_by_requires_disabled_at
+      check (disabled_by is null or disabled_at is not null);
+  end if;
+end
+$$;
 
 create or replace function public.fn_extensions_set_switch(p_actor uuid, p_operation uuid, p_installation uuid,
   p_disabled boolean, p_expected_installation_revision integer)
