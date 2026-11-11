@@ -176,10 +176,11 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
    * `retry_after`. O limite é da PLATAFORMA, que é exatamente o que este campo
    * significa.
    *
-   * `voiceNote: "opus-only"` — `sendVoice` exige OGG/OPUS e o Telegram não
-   * converte (quem manda mp3 recebe erro). O campo não tem valor "não existe":
-   * a nota de voz não é usada neste canal hoje, mas se alguém mandar uma, a
-   * restrição declarada é a verdadeira. `groups: "none"` é o "fora da v1" da
+   * `voiceNote: "opus-only"` — limite DESTA implementação, não da plataforma:
+   * o `sendVoice` da Bot API também aceita MP3 e M4A, mas o adapter da v1
+   * recusa todo envio que não seja texto (mídia é a T2 da issue). O campo não
+   * tem valor "não existe", e "opus-only" é o que não promete conversão que o
+   * adapter não faz. `groups: "none"` é o "fora da v1" da
    * issue dito em vocabulário de capability — o bot lê `chat.type` e ignora o
    * que não for `private`.
    */
@@ -196,9 +197,15 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // ficam para a T2 da issue: hoje o adapter não os implementa, e a tela lê
     // esta capability para decidir se mostra o gesto.
     alteraMensagemEnviada: false,
+    // `setMessageReaction` existe na Bot API e também fica para a T2: o
+    // adapter da v1 não reage.
+    podeReagir: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
+    // Status é do WhatsApp: não existe neste canal.
+    statusUpdates: false,
   },
 };
 
@@ -350,6 +357,17 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
 }
 
 /**
+ * Canais que escrevem livre e mesmo assim NÃO fazem campanha.
+ *
+ * O bot do Telegram (#3440) manda texto a qualquer hora — por isso
+ * `freeformOutsideWindow: true`, que a CONVERSA usa e que está certo —, mas só
+ * para quem o iniciou, e a v1 da proposta exclui campanha. A regra mora aqui, e
+ * não num `false` falso na capability de janela: mentir na janela mudaria o
+ * que o atendimento pode fazer só para esconder a campanha.
+ */
+const PROVIDERS_SEM_CAMPANHA = ["telegram"] as const satisfies readonly ProviderDeMensagem[];
+
+/**
  * Como uma CAMPANHA fala por este canal: texto livre (`text`), modelo aprovado
  * (`template`) ou não fala (`null`).
  *
@@ -365,6 +383,7 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
  */
 export function modoDeCampanhaDoCanal(provider: string | null | undefined): "text" | "template" | null {
   if (!transportaMensagem(provider)) return null;
+  if ((PROVIDERS_SEM_CAMPANHA as readonly string[]).includes(provider ?? "")) return null;
   try {
     const caps = capabilitiesOf(provider as ProviderDeMensagem);
     if (caps.freeformOutsideWindow) return "text";

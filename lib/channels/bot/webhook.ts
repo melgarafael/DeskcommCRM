@@ -5,13 +5,13 @@
  * `../zernio/ingest.ts`): o que DECIDE dá para provar sem banco, e o que ESCREVE
  * mora no vizinho.
  *
- * ─── A exceção à regra "webhook com HMAC", e por que ela é segura ───────────
+ * ─── A exceção de protocolo à regra "webhook com HMAC" ──────────────────────
  *
  * O Telegram não assina o corpo (é a pergunta 1 da issue #3440, respondida pela
  * própria plataforma): quem prova a origem é o `secret_token` que a instalação
  * inventa e entrega no `setWebhook`, e que volta no cabeçalho
- * `X-Telegram-Bot-Api-Secret-Token` de todo update. Duas coisas fazem isso valer
- * a exceção:
+ * `X-Telegram-Bot-Api-Secret-Token` de todo update. A exceção foi aceita pelo
+ * mantenedor para ESTE fornecedor, nas condições abaixo:
  *
  *   1. o segredo é NOSSO, aleatório e por sessão — não é um literal de
  *      documentação que todo mundo conhece;
@@ -19,8 +19,11 @@
  *      vaza o prefixo certo pelo tempo de resposta.
  *
  * Somado ao `webhook_path_token` do caminho (que resolve a sessão e a
- * organização ANTES de qualquer leitura do corpo), o par é o mesmo nível de
- * garantia do HMAC: sem um dos dois, o atacante não chega ao `ingest`.
+ * organização ANTES de qualquer leitura do corpo), o par autentica a REQUISIÇÃO:
+ * sem os dois, ela não chega ao `ingest`. Isto NÃO equivale a um HMAC — o
+ * segredo não está amarrado aos bytes do corpo, e quem o tiver em mãos (no
+ * transporte TLS ou no banco) consegue mandar um corpo qualquer. É uma exceção
+ * de protocolo, não uma equivalência criptográfica.
  *
  * `timingSafeEqual` EXIGE buffers do mesmo tamanho — comparar tamanhos antes com
  * `===` é o caminho normal e não vaza nada de útil (o tamanho do segredo não é
