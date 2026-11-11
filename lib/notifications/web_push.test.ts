@@ -30,7 +30,12 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import { enviarPushAoUsuario, enviarPushAQuemVeAConversa, enviarPushDaOrg } from "./web_push";
+import {
+  enviarPushAoUsuario,
+  enviarPushAQuemVeAConversa,
+  enviarPushDaEtapaAQuemVeONegocio,
+  enviarPushDaOrg,
+} from "./web_push";
 
 type Inscricao = { id: string; user_id: string; endpoint: string; organization_id?: string };
 type Membro = { user_id: string; role: string; revoked_at: string | null; organization_id?: string };
@@ -48,7 +53,8 @@ const ORG_PADRAO = { data: { settings: {}, locale: "pt-BR" }, error: null };
  * leitura da opção da empresa em `organizations` devolve `org`.
  */
 function adminFalso(opts: {
-  visiveis?: Inscricao[];
+  /** As inscrições que o banco devolve como capazes de ver; `ampla` só vem do RPC de negócio. */
+  visiveis?: Array<Inscricao & { ampla?: boolean }>;
   inscricoes?: Inscricao[];
   membros?: Membro[];
   erroRpc?: { message: string } | null;
@@ -76,6 +82,7 @@ function adminFalso(opts: {
         return o;
       }
       const filtros: Array<[string, unknown]> = [];
+      let dentroDe: [string, readonly unknown[]] | null = null;
       let apagando = false;
       const q = {
         select: () => q,
@@ -91,6 +98,10 @@ function adminFalso(opts: {
           filtros.push([c, v]);
           return q;
         },
+        in: (c: string, v: readonly unknown[]) => {
+          dentroDe = [c, v];
+          return q;
+        },
         then: (resolve: (r: unknown) => void) => {
           if (apagando) {
             deletados.push(filtros);
@@ -100,7 +111,9 @@ function adminFalso(opts: {
           if (tabela === "user_organizations" && opts.erroMembros) {
             return resolve({ data: null, error: opts.erroMembros });
           }
-          const linhas = (tabelas[tabela] ?? []).filter((l) => filtros.every(([c, v]) => l[c] === v));
+          const linhas = (tabelas[tabela] ?? [])
+            .filter((l) => filtros.every(([c, v]) => l[c] === v))
+            .filter((l) => !dentroDe || dentroDe[1].includes(l[dentroDe[0]]));
           return resolve({ data: linhas, error: null });
         },
       };
@@ -165,6 +178,16 @@ describe("o push segue o vínculo de quem recebe", () => {
     const r = await enviarPushAoUsuario("org-1", "u-bruno", payload);
     expect(r).toEqual({ sent: 1, gone: 0 });
     expect(enviados()).toEqual(["https://fcm.googleapis.com/fcm/send/bruno"]);
+  });
+
+  it("envio a uma lista de pessoas: só as inscrições delas", async () => {
+    const { admin } = adminFalso({ inscricoes });
+    vi.mocked(createAdminClient).mockReturnValue(admin as never);
+    const r = await enviarPushDaOrg("org-1", payload, { soUsuarios: ["u-bruno", "u-ana"] });
+    expect(r).toEqual({ sent: 2, gone: 0 });
+    expect(enviados().sort()).toEqual(
+      inscricoes.filter((i) => ["u-bruno", "u-ana"].includes(i.user_id)).map((i) => i.endpoint).sort(),
+    );
   });
 
   it("conversa: quem o banco devolve como capaz de ver, mas sem vínculo ativo, não recebe", async () => {
@@ -278,6 +301,87 @@ describe("enviarPushAQuemVeAConversa", () => {
     const r = await enviarPushAQuemVeAConversa("org-1", "conv-1", payload, undefined, admin as never);
     expect(r).toEqual({ sent: 0, gone: 0 });
     expect(sendNotification).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("enviarPushDaEtapaAQuemVeONegocio", () => {
+  const FIXO = "Negócio entrou em «Pago»";
+  const COM_VALOR = `${FIXO} · R$ 1.250,00`;
+  const textos = {
+    ampla: { title: COM_VALOR, body: "Hoje nesta etapa: 2 (R$ 1.500,00)", corpoSemPrevia: FIXO, tag: "aviso:i1", href: "/app/pipelines/p1?lead=l1" },
+    daCarteira: { title: COM_VALOR, body: FIXO, corpoSemPrevia: FIXO, tag: "aviso:i1", href: "/app/pipelines/p1?lead=l1" },
+    semValor: { title: FIXO, body: FIXO, corpoSemPrevia: FIXO, tag: "aviso:i1", href: "/app/pipelines/p1?lead=l1" },
+  };
+  const MED = "https://fcm.googleapis.com/fcm/send/med";
+  const DONO = "https://fcm.googleapis.com/fcm/send/dono";
+  const ALHEIO = "https://fcm.googleapis.com/fcm/send/alheio";
+  // Os três têm vínculo ativo na organização (TODOS_ATIVOS, papel `agent`): o
+  // que separa o que cada um recebe é só `fn_can_view_lead`, não o papel.
+  const INSCRICOES: Inscricao[] = [
+    { id: "s-med", user_id: "u-admin", endpoint: MED },
+    { id: "s-dono", user_id: "u-bruno", endpoint: DONO },
+    { id: "s-alheio", user_id: "u-ana", endpoint: ALHEIO },
+  ];
+
+  /** O que chegou a cada inscrição, por endpoint (as chamadas são concorrentes). */
+  function porEndpoint(): Record<string, Record<string, unknown>> {
+    return Object.fromEntries(
+      sendNotification.mock.calls.map((c) => [
+        (c[0] as { endpoint: string }).endpoint,
+        JSON.parse(c[1] as string) as Record<string, unknown>,
+      ]),
+    );
+  }
+
+  it("o valor vai a quem VÊ o negócio; quem não vê recebe a mesma frase de antes", async () => {
+    sendNotification.mockResolvedValue(undefined);
+    const { admin, chamadas, filtrosDaLista } = adminFalso({
+      inscricoes: INSCRICOES,
+      visiveis: [
+        { id: "s-med", user_id: "u-admin", endpoint: MED, ampla: true },
+        { id: "s-dono", user_id: "u-bruno", endpoint: DONO, ampla: false },
+      ],
+      org: comOpcao("nome_e_previa"),
+    });
+    const r = await enviarPushDaEtapaAQuemVeONegocio("org-1", "l1", textos, "agent", admin as never);
+    expect(r).toEqual({ sent: 3, gone: 0 });
+    expect(chamadas).toEqual([["fn_push_inscricoes_que_veem_o_negocio", { p_org: "org-1", p_lead: "l1" }]]);
+    // Service role: a organização vai junto na leitura das inscrições.
+    expect(filtrosDaLista).toContainEqual(["organization_id", "org-1"]);
+
+    const chegou = porEndpoint();
+    expect(chegou[MED]).toMatchObject({ title: COM_VALOR, body: "Hoje nesta etapa: 2 (R$ 1.500,00)" });
+    expect(chegou[DONO]).toMatchObject({ title: COM_VALOR, body: FIXO });
+    expect(chegou[ALHEIO]).toMatchObject({ title: FIXO, body: FIXO });
+    // A carteira alheia não vaza para quem não vê o negócio.
+    expect(JSON.stringify(chegou[ALHEIO])).not.toContain("R$");
+  });
+
+  it("quem vê, mas não alcança o papel mínimo, continua fora (a régua não alarga a audiência)", async () => {
+    sendNotification.mockResolvedValue(undefined);
+    const { admin } = adminFalso({
+      inscricoes: INSCRICOES,
+      membros: INSCRICOES.map((i) => ({ user_id: i.user_id, role: "agent", revoked_at: null })),
+      visiveis: [
+        { id: "s-med", user_id: "u-admin", endpoint: MED, ampla: true },
+        { id: "s-dono", user_id: "u-bruno", endpoint: DONO, ampla: false },
+      ],
+      org: comOpcao("nome_e_previa"),
+    });
+    const r = await enviarPushDaEtapaAQuemVeONegocio("org-1", "l1", textos, "manager", admin as never);
+    expect(r).toEqual({ sent: 0, gone: 0 });
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("falha ao perguntar quem vê: a frase fixa para todos, valor para ninguém", async () => {
+    sendNotification.mockResolvedValue(undefined);
+    const { admin } = adminFalso({ inscricoes: INSCRICOES, erroRpc: { message: "banco fora" }, org: comOpcao("nome_e_previa") });
+    const r = await enviarPushDaEtapaAQuemVeONegocio("org-1", "l1", textos, "agent", admin as never);
+    expect(r).toEqual({ sent: 3, gone: 0 });
+    const chegou = porEndpoint();
+    for (const endpoint of [MED, DONO, ALHEIO]) expect(chegou[endpoint]).toMatchObject({ title: FIXO, body: FIXO });
+    expect(JSON.stringify(chegou)).not.toContain("R$");
   });
 });
 

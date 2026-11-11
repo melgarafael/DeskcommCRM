@@ -215,12 +215,13 @@ export function AvisoNoWhatsApp() {
           pessoa está digitando não é atropelado por nenhuma re-consulta. */}
       <FormularioDoAviso key={estado.config?.atualizado_em ?? "sem-configuracao"} estado={estado} />
 
-      {/* F1 da revisão: o aviso sai na ABERTURA do caso e não se repete. Sem esta
-          frase, a equipe conclui que o sistema parou de avisar quando o cliente
-          responde — e passa a não confiar no que chega. */}
+      {/* F1 da revisão: dizer quando o aviso sai e quando NÃO sai. Sem esta frase,
+          a equipe conclui que o sistema parou de avisar quando o cliente responde
+          — e passa a não confiar no que chega. Desde a migration 9240 há um aviso
+          por resposta do cliente, e a fronteira vencida é o caso em que ele não sai. */}
       <p className="text-xs text-muted-foreground">
         {t(
-          "O aviso sai quando o assistente abre o caso. Quando o cliente responde e o caso volta a esperar você, o aviso não se repete — acompanhe pela Central de alertas.",
+          "O aviso sai quando o assistente abre o caso e sai de novo quando ele registra a resposta do cliente ao que a equipe perguntou. Se a conversa foi reaberta ou o próximo passo mudou nesse meio-tempo, esse segundo aviso não sai: o caso volta a esperar você e a cobrança segue pela Central de alertas.",
         )}
       </p>
       <p className="text-xs text-muted-foreground">

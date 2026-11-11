@@ -217,3 +217,19 @@ describe("Distribuição de atendimento — distribuir só depois de qualificar 
     ).toHaveValue(120);
   });
 });
+
+describe("O que cada atendente enxerga — o modo do setor é do módulo de setores (#4022)", () => {
+  const TITULO = "Os seus e os do seu setor";
+  it("módulo desligado: o modo do setor não é oferecido", () => {
+    render(<AtendimentoForm initial={inicial} />);
+    expect(screen.queryByText(TITULO)).toBeNull();
+  });
+  it("módulo ligado: o modo do setor aparece", () => {
+    render(<AtendimentoForm initial={inicial} setoresLigado />);
+    expect(screen.getByText(TITULO)).toBeInTheDocument();
+  });
+  it("módulo desligado com o modo JÁ gravado: continua visível, para a empresa poder trocar", () => {
+    render(<AtendimentoForm initial={{ ...inicial, visibility_mode: "own_and_sector" }} />);
+    expect(screen.getByText(TITULO)).toBeInTheDocument();
+  });
+});

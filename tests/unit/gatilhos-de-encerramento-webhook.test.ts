@@ -78,25 +78,29 @@ type Linha = Record<string, unknown>;
 
 /**
  * Supabase em memória no mesmo desenho do vizinho: `from(tabela)` filtra por
- * `.eq`, `insert` grava e devolve a linha, e o construtor é "thenable" como o
+ * `.eq`/`.in`, `insert` grava e devolve a linha, e o construtor é "thenable" como o
  * de verdade. Acrescenta só `auth.admin.getUserById` (resolução de nome do
- * responsável sob opt-in) e `order`.
+ * responsável sob opt-in, que confere o vínculo em `user_organizations`) e `order`.
  */
 function bancoFalso(tabelas: Record<string, Linha[]>): SupabaseClient {
   const cliente = {
     from(tabela: string) {
-      const filtros: Array<[string, unknown]> = [];
+      const filtros: Array<(l: Linha) => boolean> = [];
       let inserida: Linha | null = null;
       const linhas = (): Linha[] =>
         inserida
           ? [inserida]
-          : (tabelas[tabela] ?? []).filter((l) => filtros.every(([c, v]) => l[c] === v));
+          : (tabelas[tabela] ?? []).filter((l) => filtros.every((f) => f(l)));
       const consulta = {
         select: () => consulta,
         order: () => consulta,
         update: () => consulta,
         eq: (coluna: string, valor: unknown) => {
-          filtros.push([coluna, valor]);
+          filtros.push((l) => l[coluna] === valor);
+          return consulta;
+        },
+        in: (coluna: string, valores: unknown[]) => {
+          filtros.push((l) => valores.includes(l[coluna]));
           return consulta;
         },
         insert: (payload: Linha) => {
@@ -110,6 +114,27 @@ function bancoFalso(tabelas: Record<string, Linha[]>): SupabaseClient {
           Promise.resolve({ data: linhas(), error: null }).then(ok, erro),
       };
       return consulta;
+    },
+    // O nome do responsável vem de UMA consulta a `fn_nomes_dos_membros`
+    // (#4326, fatia 3): devolve só quem tem vínculo com a org pedida, com
+    // `full_name` e e-mail — a tool recorta o nome.
+    rpc: (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") {
+        return Promise.resolve({ data: null, error: { message: "rpc inesperado" } });
+      }
+      const daOrg = (tabelas.user_organizations ?? [])
+        .filter((v) => v.organization_id === args.p_org)
+        .map((v) => String(v.user_id));
+      return Promise.resolve({
+        data: args.p_ids
+          .filter((id) => daOrg.includes(id))
+          .map((id) => ({
+            user_id: id,
+            full_name: id === ANA ? "Ana Souza" : "Beto Lima",
+            email: `${id.slice(0, 4)}@estudio.test`,
+          })),
+        error: null,
+      });
     },
     auth: {
       admin: {
@@ -258,6 +283,7 @@ function cenario(regraExtra: Linha[] = []): { banco: SupabaseClient; tabelas: Re
       },
     ],
     automation_rule_runs: [],
+    user_organizations: [ANA, BETO].map((user_id) => ({ user_id, organization_id: ORG })),
   };
   const banco = bancoFalso(tabelas);
   deps.criarClientAdmin.mockReturnValue(banco);

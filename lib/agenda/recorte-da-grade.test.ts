@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { recorteDaGrade } from "./recorte-da-grade";
+import { diasDoRecorte, recorteDaGrade } from "./recorte-da-grade";
 
 /**
  * As datas do vermelho de 2026-09-24. Montadas em hora LOCAL (como a
@@ -30,5 +30,14 @@ describe("recorteDaGrade", () => {
       de: dia(2026, 10, 1),
       ate: dia(2026, 10, 2),
     });
+  });
+});
+
+describe("diasDoRecorte", () => {
+  it("devolve o primeiro e o último dia desenhados em cada visão", () => {
+    const ancora = dia(2026, 10, 1, 12);
+    expect(diasDoRecorte("dia", ancora)).toEqual({ de: "2026-10-01", ate: "2026-10-01" });
+    expect(diasDoRecorte("semana", ancora)).toEqual({ de: "2026-09-27", ate: "2026-10-03" });
+    expect(diasDoRecorte("mes", ancora)).toEqual({ de: "2026-09-27", ate: "2026-11-07" });
   });
 });

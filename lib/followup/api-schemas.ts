@@ -33,6 +33,22 @@ export const createFollowupFlowSchema = z.strictObject({
 // `parseCancelOnReply` em `lib/followup/reactivity.ts`).
 const CANCEL_ON_REPLY = { cancel_on_reply: z.boolean().optional() };
 
+/**
+ * #3974 — "quando o cliente responder, mover o card para a etapa X", a opção
+ * irmã de `cancel_on_reply` no gatilho de ETAPA.
+ *
+ * Só o `stage_change` a aceita, e não é economia de schema: é o único gatilho
+ * que sabe QUAL card armou (o negócio que entrou em `params.stage_id`). Nos
+ * outros kinds o fluxo nasce de um contato, de um silêncio ou de um caso, sem
+ * card identificado — mover "o negócio do contato" ali seria escolher por ele
+ * quando o contato tem dois, e é por isso que a tela também não oferece o campo.
+ *
+ * As duas opções são ORTOGONAIS: juntas, o card anda e a inscrição é encerrada
+ * (a resposta executou o que o fluxo prometia e não há mais o que esperar).
+ */
+const MOVE_ON_REPLY = { move_to_stage_on_reply: z.string().uuid().optional() };
+
+
 export const triggerConfigSchema = z.discriminatedUnion("kind", [
   z.strictObject({kind:z.literal("appointment_no_show"),params:z.strictObject({event_type_ids:z.array(z.string().uuid()).optional()}).optional(),...CANCEL_ON_REPLY}),
   z.strictObject({ kind: z.literal("manual"), ...CANCEL_ON_REPLY }),
@@ -46,6 +62,7 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
     kind: z.literal("stage_change"),
     params: z.strictObject({ stage_id: z.string().uuid() }),
     ...CANCEL_ON_REPLY,
+    ...MOVE_ON_REPLY,
   }),
   z.strictObject({
     kind: z.literal("silence"),
@@ -129,6 +146,13 @@ export const patchFollowupFlowSchema = z.strictObject({
   name: z.string().trim().min(1).max(80).optional(),
   draft_graph: flowGraphSchema.optional(),
   handoff_policy: z.enum(["pause", "cancel", "allow"]).optional(),
+  /**
+   * #3974 — "enviar mesmo com a conversa atribuída a uma pessoa". Por fluxo, e
+   * o default é `false` (comportamento de sempre). Lida pelo motor em
+   * `lib/followup/envio-com-o-dono.ts`, não pela política de handoff: são duas
+   * réguas diferentes, e a de handoff continua valendo para a IA responder.
+   */
+  send_when_assigned: z.boolean().optional(),
   trigger_config: triggerConfigSchema.optional(),
 });
 

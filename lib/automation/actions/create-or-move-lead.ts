@@ -11,6 +11,7 @@ import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
  */
 import { registerAction } from "@/lib/automation/actions";
 import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
+import { ApiError } from "@/lib/api/types";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -37,6 +38,19 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   if (!pipelineId || !stageId) {
     return { type: "create_or_move_lead", status: "failed", error: "missing_config" };
   }
+  // ── O MOTIVO DA PERDA (#4297) ──────────────────────────────────────────────
+  //
+  // Quando a etapa de destino fecha o negócio como perdido, o `moveLeadHandler`
+  // exige o motivo (issue #917) — e até aqui a ação não tinha o que informar,
+  // então TODA regra que apontava para a etapa de perda falhava. O motivo vem
+  // da config da regra (`Motivo da perda`), e é o MESMO valor que o arrasto
+  // grava: canônico do produto ou um dos motivos cadastrados no funil.
+  //
+  // Regra ANTIGA (gravada antes do campo) chega aqui com `""`: nada é
+  // inventado, o handler recusa e o recibo mostra `lost_reason_required`. Um
+  // motivo default silencioso aqui seria pior que a falha — encheria o relatório
+  // de perdas com uma causa que ninguém escolheu.
+  const motivoDaPerda = typeof config.lost_reason === "string" ? config.lost_reason.trim() : "";
 
   const handlerCtx: HandlerCtx = {
     organization_id: ctx.organizationId,
@@ -245,7 +259,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
           error: "continuacao_exige_outro_funil",
         };
       }
-      const movido = await moveLeadHandler(ctx.admin, handlerCtx, lead.id, { to_stage_id: stageId });
+      const movido = await moveLeadHandler(ctx.admin, handlerCtx, lead.id, {
+        to_stage_id: stageId,
+        ...(motivoDaPerda ? { lost_reason: motivoDaPerda } : {}),
+      });
       publicaNoContexto(ctx, movido, contactId);
       return { type: "create_or_move_lead", status: "success", detail: { moved: lead.id } };
     }
@@ -257,7 +274,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       // fora, pela mesma regra que recusa mover entre funis.
       const existente = await negocioAbertoDoContato(ctx.admin, ctx.organizationId, contact.id, pipelineId);
       if (existente) {
-        const movido = await moveLeadHandler(ctx.admin, handlerCtx, existente.id, { to_stage_id: stageId });
+        const movido = await moveLeadHandler(ctx.admin, handlerCtx, existente.id, {
+          to_stage_id: stageId,
+          ...(motivoDaPerda ? { lost_reason: motivoDaPerda } : {}),
+        });
         publicaNoContexto(ctx, movido, contact.id);
         return { type: "create_or_move_lead", status: "success", detail: { moved: existente.id } };
       }
@@ -306,9 +326,37 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     return {
       type: "create_or_move_lead",
       status: "failed",
-      error: mensagemDeErro(err),
+      error: codigoDaRecusa(err),
     };
   }
+}
+
+/**
+ * O CÓDIGO da recusa quando o erro é uma recusa de negócio — nunca o texto.
+ *
+ * ─── O defeito que isto fecha (#4297) ───────────────────────────────────────
+ *
+ * Os handlers de `/api/v1/leads` recusam com `ApiError` (422
+ * `lost_reason_required`, `lost_reason_invalid`, `required_fields_missing`, …).
+ * O `catch` desta ação devolvia `mensagemDeErro(err)` — a FRASE. O recibo
+ * (`resultadoParaRecibo`) não reconhece frase como código, então trocava tudo
+ * por `internal_error`: a aba Atividade dizia "erro interno" para uma recusa de
+ * negócio que o operador consegue resolver abrindo a regra.
+ *
+ * `ApiError.code` é vocabulário fechado do produto (`ApiErrorCodes`, em
+ * `lib/api/errors.ts` — o mesmo que a rota devolve no corpo), e o recibo já
+ * aceita qualquer membro dele: `erroTecnicoConhecido` testa
+ * `Object.hasOwn(ApiErrorCodes, valor)` (`resultado-para-recibo.ts`). Ou seja,
+ * esta linha não abre porta para texto livre E o recibo não precisou de entrada
+ * nova — o que faltava era devolver o CÓDIGO em vez da frase.
+ *
+ * Erro que NÃO é `ApiError` (PostgREST cru, `Error` de biblioteca, qualquer
+ * objeto) continua indo pelo `mensagemDeErro`: ali o texto é a única pista, e o
+ * recibo o troca pelo código fixo como sempre fez.
+ */
+function codigoDaRecusa(err: unknown): string {
+  if (err instanceof ApiError) return err.code;
+  return mensagemDeErro(err);
 }
 
 /**

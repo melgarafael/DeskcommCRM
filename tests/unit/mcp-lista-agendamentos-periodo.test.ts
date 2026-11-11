@@ -12,7 +12,7 @@
  * seria a terceira lista da qual o repo avisa.
  *
  * ⚠️ O NOME DO ATENDENTE NÃO É MOCKADO: ele passa pelo helper de verdade
- * (`lib/mcp/tools/_users.ts`), que é a regra de exposição de responsável. Se
+ * (`lib/users/nome-do-atendente.ts`), que é a regra de exposição de responsável. Se
  * alguém trocar o helper por uma montagem de nome à mão, este arquivo cai — e
  * se a exposição alargar além do `full_name`, a asserção de não-vazamento cai.
  */
@@ -46,22 +46,23 @@ const ctx: McpContext = {
   apiTokenId: "tok-1",
   requestId: "req-1",
   supabase: {
-    auth: {
-      admin: {
-        getUserById: async () => ({
-          data: {
-            user: {
-              user_metadata: {
-                full_name: "Ana Souza",
-                // LGPD: isto NUNCA pode aparecer na resposta.
-                email: "ana@clinica.com.br",
-                phone: "+5511999990000",
-              },
-            },
-          },
-          error: null,
-        }),
-      },
+    // O nome só sai para membro da organização: o dono do compromisso é membro.
+    from: () => ({
+      select: () => ({
+        eq: () => ({ in: async () => ({ data: [{ user_id: DONO }], error: null }) }),
+      }),
+    }),
+    // O nome vem de UMA consulta a `fn_nomes_dos_membros` (#4326, fatia 3). A
+    // linha traz e-mail e nada de telefone, e a resposta NUNCA pode expor o
+    // e-mail: quem recorta é a tool.
+    rpc: async (funcao: string, args: { p_org: string; p_ids: string[] }) => {
+      if (funcao !== "fn_nomes_dos_membros") return { data: null, error: { message: "rpc inesperado" } };
+      return {
+        data: args.p_ids
+          .filter((id) => id === DONO)
+          .map((id) => ({ user_id: id, full_name: "Ana Souza", email: "ana@clinica.com.br" })),
+        error: null,
+      };
     },
   } as unknown as SupabaseClient,
 };

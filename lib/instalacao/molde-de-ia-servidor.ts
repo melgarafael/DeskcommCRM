@@ -25,6 +25,7 @@ import {
   type LlmDoMolde,
   type ResumoDoMolde,
 } from "@/lib/ai/molde-de-ia";
+import { semearLinhaDaInstalacao } from "@/lib/auth/politica-de-cadastro";
 import { logger } from "@/lib/logger";
 import { ehOperante, STATUS_OPERANTE } from "@/lib/organizacao/operante";
 
@@ -126,6 +127,9 @@ export async function gravarMoldeDeIa(
   atorUserId: string,
 ): Promise<boolean> {
   try {
+    // Sem a semente, esta gravação criaria a linha com `signup_mode='aberto'`
+    // e reabriria o cadastro de quem declarou `SIGNUP_MODE=so_convite` (#4244).
+    if (!(await semearLinhaDaInstalacao())) return false;
     const { error } = await db
       .from("platform_settings")
       .upsert({ id: 1, molde_de_ia_org_id: moldeId, updated_by: atorUserId }, { onConflict: "id" });

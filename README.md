@@ -219,7 +219,8 @@ ocupado, declarar `SUPABASE_DB_ADMIN_URL` quando foi permissão).
 
 **Deu ruim?** Guarde a mensagem e peça ajuda. O `restore.sh` **não** volta o backup por cima do
 banco em uso: ele só restaura num banco vazio (ver [`hostgator-setup-kit/README.md`](hostgator-setup-kit/README.md)).
-**Quer só diagnosticar?** `bash hostgator-setup-kit/healthcheck.sh`.
+**Quer só diagnosticar?** `bash hostgator-setup-kit/healthcheck.sh`. Ele sai **0 só** quando o app se
+declara saudável (status geral `healthy`) — por isso serve de alarme para cron/monitor.
 
 > ⚠️ **Numa instalação antiga que ainda não tem o agente da tela**, rode `update.sh` **duas
 > vezes**: a primeira execução ainda é a do script velho (que baixa o novo); a segunda instala
@@ -237,7 +238,7 @@ Passo a passo em linguagem simples: [`docs/ATUALIZANDO.md`](docs/ATUALIZANDO.md)
 | `restore.sh` | Restaura um backup |
 | `reset-password.sh` | Redefine a senha de um usuário |
 | `reset-mfa.sh` | Remove o MFA de quem perdeu o celular |
-| `healthcheck.sh` | Diagnóstico de todos os serviços de uma vez |
+| `healthcheck.sh` | Diagnóstico de todos os serviços — sai 1 quando o app não está saudável |
 
 > **Backup importa:** o plano grátis do Supabase **não faz backup sozinho**. Vale agendar
 > `backup.sh` no cron diariamente. O `update.sh` já roda um backup antes de cada atualização.

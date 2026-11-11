@@ -250,6 +250,7 @@ describe("uso sem corte em mil registros", () => {
     expect(data.tenants[0].ai_invocations_count).toBe(1501);
     expect(data.tenants[0].ai_tokens_total).toBe(7505);
     expect(data.tenants[0].ai_cost_cents).toBe(1500);
+    expect(data.tenants[0].ai_unpriced_count).toBe(1);
     expect(data.series.ai_cost.reduce((n: number, d: { cents: number }) => n + d.cents, 0)).toBe(
       1500,
     );

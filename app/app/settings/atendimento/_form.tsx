@@ -89,6 +89,11 @@ const VISIBILIDADE_COPY: Record<VisibilityMode, { titulo: string; corpo: string 
       "O atendente vê apenas o que foi direcionado a ele — nem a fila. Combine com o " +
       "rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.",
   },
+  own_and_sector: {
+    titulo: "Os seus e os do seu setor",
+    corpo:
+      "O atendente vê a própria carteira e as conversas que estão no setor dele, inclusive as que estão com um colega do mesmo setor — é o modo para cobrir férias e ausências. As conversas dos outros setores continuam fora do alcance dele.",
+  },
 };
 
 function Escolha({
@@ -135,7 +140,14 @@ function Escolha({
   );
 }
 
-export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
+export function AtendimentoForm({
+  initial,
+  setoresLigado = false,
+}: {
+  initial: AtendimentoConfig;
+  /** Módulo opcional `setores` (doc 213): desligado, o modo do setor não é oferecido. */
+  setoresLigado?: boolean;
+}) {
   const t = useT();
   const [form, setForm] = useState<AtendimentoConfig>(initial);
   const [salvo, setSalvo] = useState<AtendimentoConfig>(initial);
@@ -239,7 +251,9 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
           </p>
         </div>
         <div className="space-y-2">
-          {VISIBILITY_MODES.map((v) => (
+          {VISIBILITY_MODES.filter(
+            (v) => v !== "own_and_sector" || setoresLigado || initial.visibility_mode === v,
+          ).map((v) => (
             <Escolha
               key={v}
               nome="visibilidade"
@@ -252,6 +266,17 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
             />
           ))}
         </div>
+
+        {form.visibility_mode === "own_and_sector" ? (
+          <p
+            data-testid="aviso-modo-do-setor"
+            className="rounded-md border border-border bg-muted/40 p-3 text-xs"
+          >
+            {t(
+              "Este modo usa os setores de atendimento: quem não está em nenhum setor vê só as conversas que são dele. No funil, os negócios continuam restritos aos seus.",
+            )}
+          </p>
+        ) : null}
 
         {combinacaoMorta ? (
           <p

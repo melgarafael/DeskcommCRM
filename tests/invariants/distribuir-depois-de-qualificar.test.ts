@@ -201,6 +201,9 @@ const gateDaConversa = (assigneeKind: string | null) =>
     aiOptOut: false,
     botSilencedUntil: null,
     assigneeKind,
+    // A régua da main ganhou o "IA com o dono": `false` mantém o comportamento
+    // que este helper já media — dono humano na conversa veta a IA.
+    iaComDono: false,
     aiAuthorizedAt: null,
     preGoLiveAtivo: false,
     numeroDeTesteAutorizado: false,
