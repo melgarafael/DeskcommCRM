@@ -24,10 +24,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Crédito: @webtecnica.
 
-- **O negócio mostra as conversas e as ligações de todos os números do cliente** Na venda B2B o cliente tem vários números: o dono, o comprador, o gerente, o fixo
-  da loja. Cada um é um contato próprio, porque cada um escreve de um WhatsApp
-  diferente, mas o negócio guardava só um deles — e a conversa do comprador e o
-  histórico da ligação para o fixo ficavam fora do card.
+- **O negócio mostra as conversas e as ligações de todos os números do cliente** Na venda B2B o cliente tem vários números, cada um um contato próprio, e o
+  negócio guardava só um deles.
 
   Agora o dossiê do negócio ganha a seção **Conversas e ligações dos números**,
   com as conversas e as ligações do contato principal **e** das pessoas
@@ -36,7 +34,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Negócio sem pessoa relacionada fica exatamente como era: a seção não aparece
   para quem tem um número só. Nada muda na chegada das mensagens nem no envio —
-  cada número continua respondendo pelo próprio WhatsApp.
+  cada número continua respondendo pelo próprio WhatsApp. Contribuição de @webtecnica (#3669).
 
 - **O público do agente passa a valer também no roteador de intenção** O público que o agente declara (funil, etiqueta, origem) valia só quando ele atendia o número sozinho. Agora vale também quando ele é membro de um roteador: o membro cujo público não aceita o contato deixa de ser oferecido à escolha, e o agente que vinha atendendo perde a vez quando o contato deixa de ser elegível. Se ninguém aceita o contato, nem o agente reserva, o turno fica em silêncio. Quem não declarou público em nenhum agente não muda nada. Nada a fazer na VPS.
 
@@ -68,9 +66,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **O histórico de conversa pelo MCP diz quem da equipe enviou cada mensagem** O `crm_get_conversation_history` devolvia `sent_via`, que separa pessoa de IA e de automação, mas **não dizia de qual pessoa era a fala** — e nem o `sent_by_user_id`, que já estava na linha lida pelo handler. Quem consome por token (integração de cobrança, auditoria de atendimento) não tinha como saber se a promessa saiu de um atendente ou da IA, nem qual deles respondeu.
 
-  Agora cada mensagem traz `sent_by_user_id` e `sent_by_user_name`. O nome sai da **mesma resolução que o balão do inbox usa**, com os ids distintos da página: uma consulta só, que confere o vínculo com a organização e traz o nome, nunca uma por mensagem. Mensagem recebida do cliente, de IA, de automação, de sistema ou de celular sai com os dois campos vazios — vazio é "não há autor interno", não um "sistema" inventado. Id de quem não tem vínculo com a organização do chamador também sai sem nome: o `sent_by_user_id` continua sendo a verdade e o nome é a cortesia.
-
-  A transcrição do áudio (`media_derived_text` / `media_derived_status`) continua vindo do mesmo jeito que chegou na versão anterior: atrás do escopo próprio `messages:derived:read`, porque o texto pode conter dado pessoal.
+  Agora cada mensagem traz `sent_by_user_id` e `sent_by_user_name`. O nome sai da mesma resolução que o balão do Inbox usa. Mensagem recebida do cliente, de IA, de automação, de sistema ou de celular sai com os dois campos vazios — vazio é "não há autor interno", não um "sistema" inventado. Id de quem não tem vínculo com a organização do chamador também sai sem nome: o `sent_by_user_id` continua sendo a verdade e o nome é a cortesia. Contribuição de @webtecnica (#4077).
 
 - **A sugestão de contato duplicado pelo nome vira opção da empresa, desligada por padrão** A tela Contatos › Duplicados mostrava "Parecidos — confira" para todo mundo: pares
   sugeridos só pelo NOME, com a régua da Spec 31 (palavras raras em comum ou nome
@@ -89,10 +85,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   O par com CPF que se **contradiz** deixa de ser sugerido: dois CPFs diferentes
   são duas pessoas, e o nome sozinho não as junta. Telefone diferente não tira o
   par da lista — a mesma empresa com dois números é justamente o par que a
-  sugestão existe para achar.
-
-  Sem migration: a opção é um booleano em `organizations.settings.crm`, como as
-  vizinhas.
+  sugestão existe para achar. Sem migration. Contribuição de @webtecnica (#4138).
 
 - **Agenda ganha a visão Quadro — uma linha por profissional, o dia na horizontal** Quando a empresa tem **dois ou mais profissionais com agenda**, o alternador da
   Agenda ganha, ao lado de **Dia**, **Semana** e **Mês**, a opção **Quadro**: cada
@@ -102,12 +95,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   cliente ali. Quem atende sozinho não vê o botão: com uma pessoa só, o quadro
   seria a visão Dia deitada.
 
-  É a **mesma agenda**, vista de outro jeito: os mesmos compromissos (cada um na
-  linha de quem atende, empilhados quando dois caem no mesmo horário), os mesmos
-  fechamentos de "Dias fora da rotina", o mesmo filtro de pessoas (isolar alguém
-  deixa só a linha dele) e a mesma navegação de um dia por vez. Os blocos livres
-  são os que o motor oferece — a mesma régua do painel de marcação e do agente —
-  para o serviço escolhido em "Horários livres de".
+  É a **mesma agenda**, vista de outro jeito: os mesmos compromissos, fechamentos,
+  filtro de pessoas e blocos livres do painel de marcação.
 
   **Clicar num bloco livre abre o painel com aquela pessoa e horário**, e o
   compromisso é gravado na agenda dela, mesmo com "Todos"
@@ -125,7 +114,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **A tela de Faturamento ganhou as etiquetas que mais vendem e os clientes que mais compram** A tela **Faturamento** (menu Análise) passa a mostrar, abaixo dos números do período, dois rankings dos negócios marcados como ganhos: **as etiquetas que mais vendem** e **os clientes que mais compram** — até dez linhas cada, com a quantidade de negócios e o valor.
 
-  Os dois seguem o mesmo período escolhido no topo da tela; não há tela nova no menu nem um segundo número de "quanto vendemos". Vale saber: estes rankings somam **negócios ganhos no funil**, enquanto os cartões da tela somam comandas e lançamentos — a própria tela avisa, e os dois não precisam bater. Quando algo fica de fora (negócio em outra moeda, sem valor, sem contato, sem data de fechamento), a tela diz quantos.
+  Os dois seguem o período escolhido no topo. Estes rankings somam **negócios ganhos no funil**, e os cartões somam comandas e lançamentos: a tela avisa que os dois não precisam bater. Quando algo fica de fora (negócio em outra moeda, sem valor, sem contato, sem data de fechamento), a tela diz quantos.
 
   Não muda nada no banco e não exige nenhuma ação na atualização. Contribuição de @webtecnica (#4295, pedido da #4280).
 
@@ -133,19 +122,19 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Crédito: @webtecnica.
 
-- **Convidados da equipe: editar quem participa e ver quem foi convidado** O compromisso já nascia com convidados da equipe, mas a lista só podia ser escolhida na **criação**: abrir um compromisso existente para remarcar trazia o seletor em branco, e a alternativa era desconvidar todo mundo ou conviver com a equipe errada. Agora o painel de remarcação abre com **quem já está convidado marcado**, e o salvamento manda só a **diferença** — quem só trocou o horário não mexe na equipe, e quem tirou a última pessoa desconvida de verdade (`[]` é edição, campo ausente não é). O card do compromisso na grade mostra **com quem é a reunião** (`Com a equipe: Ana, Bruno`) e o rótulo acessível leva os nomes mesmo no bloco curto demais para a terceira linha. Id de quem saiu da organização não vira nome inventado no card, e a recusa de convidado de fora da equipe continua na rota, com mensagem na tela.
+- **Convidados da equipe: editar quem participa e ver quem foi convidado** O compromisso já nascia com convidados da equipe, mas a lista só podia ser escolhida na **criação**: abrir um compromisso existente para remarcar trazia o seletor em branco, e a alternativa era desconvidar todo mundo ou conviver com a equipe errada. Agora o painel de remarcação abre com **quem já está convidado marcado**, e o salvamento manda só a **diferença** — quem só trocou o horário não mexe na equipe, e quem tirou a última pessoa desconvida de verdade (`[]` é edição, campo ausente não é). O card do compromisso na grade mostra **com quem é a reunião** (`Com a equipe: Ana, Bruno`) e o rótulo acessível leva os nomes mesmo no bloco curto demais para a terceira linha. Id de quem saiu da organização não vira nome inventado no card, e a recusa de convidado de fora da equipe continua na rota, com mensagem na tela. Contribuição de @webtecnica (#4006).
 
 - **A Ajuda passa a dizer o que o seu papel pode fazer e o que ele não abre** A tela **Ajuda** (rodapé do menu) listava os atalhos que a pessoa alcança e não dizia o que ela **pode** naquele papel: quem entra como Somente leitura via o Inbox e não sabia se podia responder, e o Atendente não sabia que configurar o agente é do Gerente.
 
   Agora a Ajuda abre com **"O que o seu papel pode fazer"**: o alcance do papel em uma linha, os atalhos que ele realmente abre e, embaixo, **"O que este papel não abre"** — para a pessoa parar de procurar o que não existe na tela dela. Cada item está preso à tela do menu que o sustenta, e esse vínculo é conferido por teste: um item de "pode" tem de apontar para tela que o papel alcança, um item de "não abre" tem de apontar para tela que ele não alcança. Os atalhos seguem o mesmo filtro do índice: porta que a empresa escondeu do menu não aparece.
 
-  O conteúdo é arquivo versionado no repositório, junto da release — sem link externo e sem painel de conteúdo. O papel `ai_operator` não aparece: é o papel do agente publicado, não de uma pessoa. Contribuição de @webtecnica (#3567).
+  Contribuição de @webtecnica (#3567).
 
 - **Data no formato de quem lê nas mensagens de automação** Nas mensagens de automação (WhatsApp e e-mail) e de follow-up, `{{campo|data}}` escreve a data no formato do idioma da organização (dd/mm/aaaa em português e em espanhol) e no fuso dela; `{{campo|data:aaaa-mm-dd}}` escolhe o formato. Valor que não é data sai como está. Campanha e Inbox ainda não leem esse formato: lá o texto sai como foi escrito. Nada a fazer na VPS.
 
   Crédito: @webtecnica.
 
-- **A IA responde numa conversa com dono sem tirar a conversa de quem atende** Um controle no cabeçalho da conversa liga a IA numa conversa que ja tem atendente, e o dono continua o mesmo: fila, carteira, contadores e visibilidade nao mudam, e a IA deixa de ser vetada pelo fato de haver um dono humano. Quando a IA passa a conversa para uma pessoa nesse modo, ela volta para o mesmo atendente — sem `release`, sem rodizio. O modo mora em `conversations.metadata.ai_com_dono`, e desligar remove a chave. Ligar nao chama `fn_conversation_assign`: nenhuma atribuicao e reescrita. Recusa 409 em conversa encerrada, sem dono ou com contato que pediu para a IA nao responder. Missao com instrucao, escolha de agente e modo de contexto ficam para a fatia seguinte.
+- **A IA responde numa conversa com dono sem tirar a conversa de quem atende** Um controle no cabeçalho da conversa liga a IA numa conversa que ja tem atendente, e o dono continua o mesmo: fila, carteira, contadores e visibilidade nao mudam, e a IA deixa de ser vetada pelo fato de haver um dono humano. Quando a IA passa a conversa para uma pessoa nesse modo, ela volta para o mesmo atendente — sem `release`, sem rodizio. O modo mora em `conversations.metadata.ai_com_dono`, e desligar remove a chave. Ligar nao chama `fn_conversation_assign`: nenhuma atribuicao e reescrita. Recusa 409 em conversa encerrada, sem dono ou com contato que pediu para a IA nao responder. Missao com instrucao, escolha de agente e modo de contexto ficam para a fatia seguinte. Contribuição de @webtecnica.
 
 - **Lembrete antes da reunião para você também, com o link do Google Meet** O lembrete do compromisso agora leva o link da videochamada. Quando a reunião é
   pelo Google Meet, o cliente recebe no WhatsApp, 1 dia e 1 hora antes (ou nos
@@ -159,7 +148,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   manda para o seu WhatsApp, nos mesmos horários do lembrete do cliente, o nome do
   cliente, o serviço, a hora no fuso da empresa e o link da reunião. A opção nasce
   desligada. Remarcar dá à data nova os próprios lembretes, cancelar segura o que
-  ainda não saiu, e o mesmo lembrete nunca sai duas vezes.
+  ainda não saiu, e o mesmo lembrete nunca sai duas vezes. Contribuição de @ricagui.
 
 - **O botão + do Inbox aceita vários anexos de uma vez** No Inbox, o botão **+** do campo de mensagem só deixava escolher um arquivo por vez: o seletor do
   sistema abria sem permitir marcar mais de um, e quem precisava mandar vários PDFs para o mesmo
@@ -168,7 +157,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Agora o **+** de Fotos e vídeos e o de Documento aceitam marcar vários arquivos no mesmo gesto. Eles
   entram na mesma prévia do arraste, na ordem da escolha, e saem em sequência como antes. Nada muda no
-  limite de tamanho, na legenda nem no reenvio. Você não precisa fazer nada.
+  limite de tamanho, na legenda nem no reenvio. Você não precisa fazer nada. Contribuição de @webtecnica (#4364).
 
 - **Cada agente pode ter a própria voz na resposta falada** Na tela do agente, o cartão "Voz deste agente" escolhe a voz usada nas notas de voz daquele agente. Sem escolha, o agente segue com a voz da organização, como antes. Nada a fazer na VPS.
 
@@ -195,27 +184,20 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   caso a exceção subia, a resposta era 500 e o aviso ia embora sem rastro nenhum
   no arquivo de avisos.
 
-  Agora a exceção cai no mesmo caminho do erro: o ponteiro fica gravado como
-  `received`, com o motivo, e o erro vai ao log só com o tipo da falha. A
-  reentrega do provedor fecha a mesma linha pelo índice de idempotência. O corpo e
-  os cabeçalhos continuam fora do arquivo, como manda a especificação da cobrança
-  (§2.4) — o que mudou é que a falha de leitura não engole mais o registro.
+  Agora a exceção cai no mesmo caminho do erro: o aviso fica registrado com o
+  motivo, e a reentrega do provedor fecha a mesma linha. Contribuição de @webtecnica (#3870).
 
-- **A conversa que nenhum agente vai responder deixa de aparecer como "Automático atendendo"** O comando da conversa (`comando_da_conversa`, exposto pelo PostgREST) respondia
-  só pelo estado da conversa: sem dono e sem trava, ele dizia `automatico` mesmo
-  quando nenhum agente podia respondê-la — a organização tem agente publicado em
-  outro número, ou o canal está em pré-go-live e o contato está fora da lista de
-  teste. A conversa ficava fora da Fila, a troca de carteira a pulava e o dreno do
+- **A conversa que nenhum agente vai responder deixa de aparecer como "Automático atendendo"** O comando da conversa (`comando_da_conversa`, exposto pelo PostgREST) dizia `automatico`
+  para conversa sem dono e sem trava mesmo quando nenhum agente podia respondê-la
+  (agente em outro número, ou canal em pré-go-live). A conversa ficava fora da Fila, a troca de carteira a pulava e o dreno do
   agente descartava o turno: ninguém a via e ninguém respondia.
 
-  Agora o `automatico` só vale quando há, de fato, quem atenda aquele número: a
-  mesma régua que o dreno aplica antes de gastar (agente publicado na conexão, ou
-  roteador ativo com membro/fallback publicado — sem os pausados) mais o portão de
-  pré-go-live do canal, com o nono dígito comparado nas duas direções. Onde não há
-  quem atenda, o comando é `aguardando`: a Fila mostra e a carteira leva.
+  Agora o `automatico` só vale quando há, de fato, quem atenda aquele número (agente
+  publicado na conexão ou roteador ativo, e o portão de pré-go-live do canal). Onde
+  não há, o comando é `aguardando`: a Fila mostra e a carteira leva.
 
   Não muda nada onde já havia quem atendesse; conversa com dono, encerrada, grupo e
-  conversa calada continuam como estavam. Nada a fazer na instalação.
+  conversa calada continuam como estavam. Nada a fazer na instalação. Contribuição de @webtecnica (#4012).
 
 - **A busca de quatro telas passa a ignorar acento** Quatro buscas do produto comparavam texto com `toLowerCase().includes(...)`, que
   ignora maiúscula e minúscula e **não** ignora acento. Quem digitava rápido e sem
@@ -225,19 +207,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   no Cold call e `exclusao` não achava a empresa "Exclusão Fiscal" no filtro da
   Auditoria.
 
-  As quatro passam a usar a mesma régua da busca do Inbox — `termoSemAcento`, de
-  `lib/inbox/termo-de-busca.ts` — nos DOIS lados da comparação, o termo digitado e
-  o texto do item. Não há régua nova: normalizar só o termo não resolveria, porque
-  "São João" continua não contendo "sao joao".
-
-  O filtro saiu de dentro de cada componente para uma função pura em `lib/`, com
-  teste ao lado (`filtrarAgentes`, `filtrarEtiquetas`, `filtrarLigacoes`,
-  `filtrarOpcoes`), no desenho que o #4078 fixou para a busca do encaminhamento.
-  A tela continua decidindo status, etapa, titular e limite de sugestões.
+  As quatro passam a usar a régua da busca do Inbox nos dois lados da comparação,
+  o termo digitado e o texto do item.
 
   Nada muda para quem já usa o sistema, e nenhuma ação é necessária na VPS: a busca
   por telefone do Cold call, o filtro vazio mostrando a lista inteira e o filtro
-  por status dos agentes continuam como estavam.
+  por status dos agentes continuam como estavam. Contribuição de @webtecnica (#4165).
 
 - **A tela de Memória da IA avisa quando não conseguiu ler, em vez de dizer que a memória está vazia** Quando a leitura falhava, a tela Memória da IA mostrava "Nenhuma versão
   publicada ainda" e "Nenhum aprendizado ainda", os mesmos textos de uma memória
@@ -270,15 +245,15 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **A busca do funil e a de contatos passam a achar o nome mesmo quando o acento está só de um lado** A busca do funil comparava o texto digitado com o do negócio em minúsculas, e acento é outra letra para essa comparação: quem digitava "Andreia" não achava o negócio da "Andréia" — e o contrário também não. As outras portas de busca de contato (a tela de Contatos, o seletor do negócio e a ferramenta do agente) já achavam os nomes em português, mas por uma régua própria, limitada às letras da língua: "Pena" não achava "Peña" e havia duas regras de acento convivendo no produto.
 
-  As duas passam a usar a mesma régua de acento da busca da Inbox, e a comparação normaliza os dois lados: **quem digita com acento também acha o nome cadastrado sem acento**. No funil, o filtro é feito na tela sobre os negócios já carregados, então a normalização vale para o termo e para o texto do card; nas portas de contato, a busca usa a coluna normalizada do banco, a mesma que a Inbox já usava. Caixa (maiúscula e minúscula), cedilha, hífen e apóstrofo continuam funcionando, a busca por telefone e por e-mail segue igual, o recorte por organização não muda e um termo sem relação continua devolvendo lista vazia. Nenhuma configuração muda. Contribuição de @webtecnica (#3918).
+  As duas passam a usar a mesma régua de acento da busca da Inbox, e a comparação normaliza os dois lados: **quem digita com acento também acha o nome cadastrado sem acento**. A busca por telefone e por e-mail segue igual. Nenhuma configuração muda. Contribuição de @webtecnica (#3918).
 
-- ****O aviso de cache hit conta só as chamadas que podem ir para cache**** O aviso "Cache hit de prompt abaixo do alvo" parava de fazer sentido em instalações com classificadores: a razão somava no denominador chamadas com menos de **1.024 tokens de entrada**, que nenhum provedor guarda em cache, e o aviso abria e reabria sozinho mesmo com o turno principal cacheando bem. A razão agora considera só as chamadas cacheáveis, ponderada pelos tokens de entrada, e o texto do aviso mostra o **recorte por finalidade e por provedor** — assim o operador vê onde a razão cai (por exemplo, um `checkpoint` a 0,2%) em vez de ler uma causa genérica sobre o prefixo do prompt.
+- **O aviso de cache hit conta só as chamadas que podem ir para cache** O aviso "Cache hit de prompt abaixo do alvo" parava de fazer sentido em instalações com classificadores: a razão somava no denominador chamadas com menos de **1.024 tokens de entrada**, que nenhum provedor guarda em cache, e o aviso abria e reabria sozinho mesmo com o turno principal cacheando bem. A razão agora considera só as chamadas cacheáveis, ponderada pelos tokens de entrada, e o texto do aviso mostra o **recorte por finalidade e por provedor** — assim o operador vê onde a razão cai (por exemplo, um `checkpoint` a 0,2%) em vez de ler uma causa genérica sobre o prefixo do prompt. Contribuição de @webtecnica.
 
 - **Numa empresa sem agente no ar, a conversa sem dono deixa de dizer «Automático atendendo» e passa a esperar uma pessoa — na tela, na Fila e na troca de carteira** A conversa aberta, sem dono e sem trava, aparecia como «Automático atendendo» mesmo numa empresa que não tem nenhum agente configurado — nenhum agente publicado, ou o único pausado, arquivado ou ainda em rascunho. A tela do Inbox já sabia perguntar; o banco não, e é o banco que decide a aba, o contador e as passagens de conversa. Resultado: a conversa ficava fora da Fila e a troca de carteira do cliente não a levava para o vendedor novo — porque a regra «a conversa da IA fica com a IA» era aplicada onde não há IA.
 
-  Agora as duas pontas respondem a mesma coisa. **Sem agente no ar, conversa sem dono e sem trava é trabalho de gente: aparece na Fila e a troca de carteira a leva.** A pergunta «esta empresa tem atendimento automático de pé?» passou a existir também no banco, com a mesma régua da tela: agente arquivado não atende, agente pausado não atende, agente sem versão publicada nunca esteve no ar. Sem ninguém no ar, a conversa sem dono e sem trava passa a ser «Sem atendente», entra na Fila e é levada pela troca de carteira. Com agente publicado ela continua «Automático atendendo» e continua com a IA, e conversa com dono, conversa travada pelo contato, grupo e conversa encerrada não mudam.
+  Agora as duas pontas respondem a mesma coisa. **Sem agente no ar, conversa sem dono e sem trava é trabalho de gente: aparece na Fila e a troca de carteira a leva.** O banco passou a usar a mesma régua da tela: agente arquivado, pausado ou sem versão publicada não conta como agente no ar. Com agente publicado ela continua «Automático atendendo» e continua com a IA, e conversa com dono, conversa travada pelo contato, grupo e conversa encerrada não mudam.
 
-  O aviso é de correção de leitura: nada muda em quem já tem agente publicado, e a atualização não pede nenhuma ação. O caso do agente publicado em OUTRO número, ou do canal em teste (pré-go-live), é tratado na mesma versão, na nota "A conversa que nenhum agente vai responder deixa de aparecer como Automático atendendo".
+  O aviso é de correção de leitura: nada muda em quem já tem agente publicado, e a atualização não pede nenhuma ação. O caso do agente publicado em OUTRO número, ou do canal em teste (pré-go-live), é tratado na mesma versão, na nota "A conversa que nenhum agente vai responder deixa de aparecer como Automático atendendo". Contribuição de @webtecnica (#4012).
 
 - **A consulta de leitura ao servidor MCP externo conta como registro na conferência de promessa** O agente que consultava a agenda ou o pedido no sistema da empresa pelo servidor
   MCP externo recebia a data certa ("exame em 30/11 às 17:50") e a "Conferência de
@@ -298,7 +273,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Crédito: @luka1601, com revisão de @webtecnica.
 
-- **O horário na lista de conversas ficou legível** O horário de cada conversa na lista do Inbox usava um cinza claro demais (contraste 4,17:1) e ficava abaixo do mínimo de acessibilidade AA; passou para a cor de texto secundária. Nenhuma ação necessária na VPS.
+- **O horário na lista de conversas ficou legível** O horário de cada conversa na lista do Inbox usava um cinza claro demais (contraste 4,17:1) e ficava abaixo do mínimo de acessibilidade AA; passou para a cor de texto secundária. Nenhuma ação necessária na VPS. Contribuição de @paulolimajr77.
 
 - **Anonimizar um contato alcança também as fichas que foram fundidas nele** Ao anonimizar um contato, pelo botão da ficha ou por pedido de LGPD, as fichas que tinham sido juntadas nele passam a ser anonimizadas junto, com as mesmas regras e com a marca de apagamento dos telefones delas. Vale para fichas fundidas em cadeia, e só dentro da mesma organização. A foto de perfil e os anexos dos negócios de que o contato é o titular saem também, pela fila de remoção de arquivos, inclusive quando a anonimização vem do botão da ficha. Um negócio de outro titular, em que o contato é só pessoa relacionada, mantém os anexos.
 
@@ -743,7 +718,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Nada a fazer na VPS: sem migration, sem variável nova.
 
-- ****A agenda convida a equipe e leva o negócio para dentro do evento do Google**** O compromisso passa a aceitar **convidados da equipe** (`calendar_appointments.team_guest_user_ids`), além do responsável e do e-mail digitado à mão: cada pessoa recebe o convite no Google e vê o compromisso na própria agenda — inclusive no recorte "minha agenda" do CRM, que agora traz o que a pessoa vai atender E aquilo a que foi chamada. Quem não é da organização é recusado com mensagem na tela, e não descartado em silêncio; e-mail inválido ou vazio simplesmente não vai para o Google, porque um endereço malformado faz o Google recusar o evento INTEIRO. Tipo de **serviço** fica de fora: ali a tela não oferece convidados e a rota recusa a lista. A descrição do evento pode passar a levar, depois do texto que a pessoa escreveu, o **contexto do negócio**: negócio, etapa, produtos da proposta vigente, cliente, telefone e link do CRM. **Vem desligado**: liga-se por tipo de atendimento, em Configurações › Agenda, na chave "Levar os dados do negócio para o Google" — quando a ficha do cliente tem e-mail, ele também é convidado e lê a descrição, então atualizar não manda dado do cliente para fora sem alguém decidir. Compromisso sem negócio vinculado não ganha bloco nenhum. Editar o compromisso não duplica nem desconvida ninguém à toa: a lista publicada em `extendedProperties.private.deskcomm_guests` é o que permite tirar quem saiu, o RSVP de quem ficou é preservado, e um ajuste só de descrição não manda e-mail a ninguém.
+- **A agenda convida a equipe e leva o negócio para dentro do evento do Google** O compromisso passa a aceitar **convidados da equipe** (`calendar_appointments.team_guest_user_ids`), além do responsável e do e-mail digitado à mão: cada pessoa recebe o convite no Google e vê o compromisso na própria agenda — inclusive no recorte "minha agenda" do CRM, que agora traz o que a pessoa vai atender E aquilo a que foi chamada. Quem não é da organização é recusado com mensagem na tela, e não descartado em silêncio; e-mail inválido ou vazio simplesmente não vai para o Google, porque um endereço malformado faz o Google recusar o evento INTEIRO. Tipo de **serviço** fica de fora: ali a tela não oferece convidados e a rota recusa a lista. A descrição do evento pode passar a levar, depois do texto que a pessoa escreveu, o **contexto do negócio**: negócio, etapa, produtos da proposta vigente, cliente, telefone e link do CRM. **Vem desligado**: liga-se por tipo de atendimento, em Configurações › Agenda, na chave "Levar os dados do negócio para o Google" — quando a ficha do cliente tem e-mail, ele também é convidado e lê a descrição, então atualizar não manda dado do cliente para fora sem alguém decidir. Compromisso sem negócio vinculado não ganha bloco nenhum. Editar o compromisso não duplica nem desconvida ninguém à toa: a lista publicada em `extendedProperties.private.deskcomm_guests` é o que permite tirar quem saiu, o RSVP de quem ficou é preservado, e um ajuste só de descrição não manda e-mail a ninguém.
 
 - **O agente da prospecção sabe o que a campanha vende e oferece a automação junto do site** Na campanha de prospecção, as caixinhas de **O que esta campanha vende** agora chegam ao contexto das respostas do agente e à ferramenta de auditoria, na ordem marcada. Antes, essas escolhas só chegavam se o operador as repetisse no texto da instrução. Quando a campanha vende automação, a estratégia ganha uma frase sobre ela, exibida também na auditoria do site. Essa frase não apresenta site quando a oferta está desmarcada. Campanha que só vende site continua como antes. O bloco da primeira abordagem não foi alterado nesta fatia. Não é preciso mexer em nada na VPS. Contribuição de @paulolimajr77.
 
