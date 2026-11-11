@@ -71,6 +71,10 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // funil) ficam embaixo, na configuração da regra.
   "lead.silent_for": "Quando ficar N dias sem mensagem",
   "lead.stage_stale": "Quando um lead ficar N dias na mesma etapa",
+  // #4365 — a frase diz o DESFECHO para quem ligou ("não for atendida"), que é
+  // o fato que a regra escuta. "Recebida" separa da ligação FEITA que ninguém
+  // atendeu — essa não é perdida, e não dispara este gatilho.
+  "voice_call.missed": "Quando uma ligação recebida não for atendida",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {

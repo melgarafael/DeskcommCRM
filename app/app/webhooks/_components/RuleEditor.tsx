@@ -213,6 +213,9 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // funil (via etapa/tags) e tags do contato.
   "lead.silent_for": LEAD_FIELDS,
   "lead.stage_stale": [...LEAD_FIELDS, STAGE_FIELD],
+  // #4365 — as condições são as do CONTATO: quem monta a regra quer filtrar
+  // QUEM ligou (tags, nome), e o fato em si (a ligação perdida) já é o gatilho.
+  "voice_call.missed": CONTACT_FIELDS,
 };
 
 export const OP_LABELS: Record<Op, string> = {
