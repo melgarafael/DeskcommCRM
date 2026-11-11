@@ -241,7 +241,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse
   await ctx.params;
   const { verifyToken } = await appDaMeta();
   const challenge = verificationChallenge(req.nextUrl.searchParams, verifyToken ?? "");
-  if (challenge === null) return new NextResponse("forbidden", { status: 403 });
+  // A recusa sai pelo `fail()` (X-Request-Id no log, #3971): a plataforma só
+  // confere o corpo da resposta 200, então o envelope JSON não muda nada para ela.
+  if (challenge === null) return fail("forbidden", "verify_token não confere.", 403);
 
   // Texto puro, sem o wrapper `{data:…}` da nossa API: a plataforma compara o
   // corpo com o desafio que enviou, e um envelope JSON reprova a URL.
