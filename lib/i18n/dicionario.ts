@@ -20802,7 +20802,6 @@ export const DICIONARIO: Traducoes = {
     es: "Este aviso se envía automáticamente una vez cada 24 h mientras el consumo siga por encima del límite configurado.",
   },
   "Dashboard: {url}": { es: "Panel: {url}" },
-};
 
   // ─── o número oficial de pé, mas não inteiro (lib/channels/health.ts) ───
   // Não recebe mensagens, ou a Meta restringiu o envio: cartão de Conexões e
