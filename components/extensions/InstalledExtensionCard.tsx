@@ -81,6 +81,7 @@ export function InstalledExtensionCard({
   platformBlockedReason,
   onRevert,
   onRemove,
+  onSwitch,
 }: {
   extension: InstalledExtensionView;
   canManage: boolean;
@@ -102,12 +103,14 @@ export function InstalledExtensionCard({
   /** Quem administra a instalação: vê o bloco "Em todas as organizações". */
   canInstall?: boolean;
   /** Qual ação de plataforma está em curso, para o indicador ficar no botão certo. */
-  platformBusyAction?: "revert" | "remove" | null;
+  platformBusyAction?: "revert" | "remove" | "switch" | null;
   /** Há preparação de instalação ou atualização desta identidade: o banco recusa desfazer e remover. */
   preparationInProgress?: boolean;
   platformBlockedReason?: string;
   onRevert?: (extension: InstalledExtensionView) => Promise<void>;
   onRemove?: (extension: InstalledExtensionView) => Promise<void>;
+  /** O interruptor do módulo `connected`: `disabled` é o sentido pedido (true = desligar). */
+  onSwitch?: (extension: InstalledExtensionView, disabled: boolean) => Promise<void>;
 }) {
   const t = useT();
   const locale = useIdioma();
@@ -203,8 +206,25 @@ export function InstalledExtensionCard({
       </p>
     ) : null;
 
+  // O interruptor (spec 33, D8): só o módulo `connected` o tem. A F1 guarda e mostra o estado; quem o
+  // lê para negar acesso é a F2/F4. Visível a quem usa o módulo, e não só a quem administra.
+  const desligadoAqui =
+    extension.profile === "connected" && extension.disabled_at ? (
+      <div
+        className="mt-4 rounded-md border border-info/30 bg-info-bg p-3 text-sm"
+        data-testid={`extension-switch-off-${extension.id}`}
+      >
+        <p className="font-medium">{t("Desligado nesta instalação")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t(
+            "O responsável pela instalação desligou este módulo em {data}. Ele continua instalado e pode ser ligado de novo.",
+          ).replace("{data}", formatDate(extension.disabled_at))}
+        </p>
+      </div>
+    ) : null;
+
   // Rótulos em t() literal: passados por variável, escapavam do gate de espanhol.
-  const status = !extension.compatible
+  const status =!extension.compatible
     ? { label: t("Incompatível"), variant: "error" as const }
     : extension.enabled
       ? { label: t("Ativa"), variant: "success" as const }
@@ -247,6 +267,8 @@ export function InstalledExtensionCard({
       </dl>
 
       {deactivatedByRemoval}
+
+      {desligadoAqui}
 
       {canInstall ? (
         <h3 className="mt-4 text-sm font-semibold">{t("Nesta organização")}</h3>
@@ -431,6 +453,7 @@ export function InstalledExtensionCard({
           blockedReason={platformBlockedReason}
           onRevert={onRevert}
           onRemove={onRemove}
+          onSwitch={onSwitch}
         />
       ) : null}
     </Card>
@@ -451,15 +474,17 @@ function PlatformBlock({
   blockedReason,
   onRevert,
   onRemove,
+  onSwitch,
 }: {
   extension: InstalledExtensionView;
   title: string;
-  busyAction: "revert" | "remove" | null;
+  busyAction: "revert" | "remove" | "switch" | null;
   preparationInProgress: boolean;
   actionsDisabled: boolean;
   blockedReason?: string;
   onRevert: (extension: InstalledExtensionView) => Promise<void>;
   onRemove: (extension: InstalledExtensionView) => Promise<void>;
+  onSwitch?: (extension: InstalledExtensionView, disabled: boolean) => Promise<void>;
 }) {
   const t = useT();
   const [dialog, setDialog] = useState<"revert" | "remove" | null>(null);
@@ -500,6 +525,18 @@ function PlatformBlock({
             {t("Desfazer a última troca (volta para {versao})").replace("{versao}", previous.version)}
           </Button>
         ) : null}
+        {extension.profile === "connected" && onSwitch ? (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid={`extension-switch-${extension.id}`}
+            disabled={blocked}
+            onClick={() => void onSwitch(extension, !extension.disabled_at)}
+          >
+            {busyAction === "switch" ? <CircleNotch className="animate-spin" aria-hidden /> : null}
+            {extension.disabled_at ? t("Ligar") : t("Desligar")}
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           size="sm"
@@ -512,6 +549,11 @@ function PlatformBlock({
           {t("Remover da instalação")}
         </Button>
       </div>
+      {extension.profile === "connected" && onSwitch ? (
+        <p className="text-xs text-muted-foreground">
+          {t("Desligar não desinstala: o módulo continua instalado e pode ser ligado de novo.")}
+        </p>
+      ) : null}
       {previous && !previous.compatible ? (
         <p className="text-xs text-muted-foreground">
           {t("A versão {versao} não é compatível com esta versão do CRM.").replace(

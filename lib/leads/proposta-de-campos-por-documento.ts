@@ -363,7 +363,7 @@ export async function proporCamposDoNegocio(
     return r;
   }
 
-  const settings = await settingsDoFunil(db, (lead as { pipeline_id?: string | null }).pipeline_id);
+  const settings = await settingsDoFunil(db, (lead as { pipeline_id?: string | null }).pipeline_id, dados.organizationId);
   if (settings === null) {
     // Funil ilegível (sem linha, sem settings): fail-open da casa, igual a
     // `settingsDoFunil` — sem definição não há o que cobrar, e a recusa é o

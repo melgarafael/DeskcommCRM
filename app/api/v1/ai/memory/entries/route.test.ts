@@ -4,18 +4,30 @@ import { NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
+import { validateBearerToken } from "@/lib/mcp/auth";
 
 /**
  * Épico Operação Visível (F1, review T4) — POST /api/v1/ai/memory/entries:
  *  - cria entrada com organization_id do requireRole (nunca do body, mesmo se
  *    o body tentar mandar outro organization_id);
  *  - body inválido → 422 validation_failed.
+ *
+ * O handler agora resolve auth por `resolveAuthDual` (sessão OU token).
+ * Na sessão, `createClient()` é usado; no token, `createAdminClient()` e
+ * `validateBearerToken()`. Os testes de sessão mantêm `requireRole` e ganham
+ * `createClient` mockado com o mesmo dublê que `createAdminClient`.
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const OTHER_ORG_ID = "99999999-9999-4999-8999-999999999999";
@@ -60,6 +72,8 @@ function mockAuthzOk() {
     user,
     org: { orgId: ORG_ID, name: "Org", role: "manager" },
   });
+  vi.mocked(createClient).mockResolvedValue(makeAdminStub({ id: "entry-1" }, { payload: null }) as never);
+  vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 
 function postReq(body: unknown) {

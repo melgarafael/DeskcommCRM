@@ -67,6 +67,16 @@ export interface InstalledExtensionView {
   removed_at: string | null;
   /** O vínculo desta organização foi desligado pela remoção e ainda não foi reativado. */
   deactivated_by_removal_at: string | null;
+  /**
+   * O perfil do manifesto desta versão; `null` quando o pacote gravado não pôde ser lido. A tela só
+   * oferece o interruptor para `connected`: guia declarativo e módulo de dados não têm o que desligar.
+   */
+  profile: ExtensionManifest["profile"] | null;
+  /**
+   * O interruptor da instalação (spec 33, D8): quando o responsável a desligou. `null` = ligada.
+   * Só significa algo para o perfil `connected`; a F1 guarda e mostra, a F2/F4 leem para negar acesso.
+   */
+  disabled_at: string | null;
 }
 
 export interface RemovedInstallationView {

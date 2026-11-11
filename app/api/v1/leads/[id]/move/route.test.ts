@@ -69,15 +69,18 @@ function bancoFalso(
       return chain;
     }
     if (tabela === "crm_stages") {
+      // Só o filtro de `id` escolhe a etapa: o `.eq("organization_id", …)` que a
+      // rota também encadeia não pode sobrescrever o id da etapa.
+      let idDaEtapa: string | undefined;
       const chain = {
         select: () => chain,
-        eq: (_col: string, id: string) => {
-          (chain as { id?: string }).id = id;
+        eq: (coluna: string, valor: string) => {
+          if (coluna === "id") idDaEtapa = valor;
           return chain;
         },
         maybeSingle: async () => ({
           data: {
-            id: (chain as { id?: string }).id,
+            id: idDaEtapa,
             pipeline_id: PIPELINE_ID,
             name: "Etapa",
             is_won: false,

@@ -969,6 +969,10 @@ export const AUDIT_ACTIONS = [
   "extension.update_failed",
   "extension.reverted",
   "extension.removed",
+  // O interruptor, por instalação, do módulo `connected` (spec 33, D8): ligar ou desligar sem
+  // desinstalar. `metadata.disabled` diz o sentido. Uma linha só, da instância: não há vínculo por
+  // organização a desligar.
+  "extension.switched",
   // Nome próprio, e não `extension.deactivated`: na auditoria da organização, "nós desligamos" e
   // "o responsável pela instalação removeu" precisam ser distinguíveis sem abrir os metadados.
   "extension.deactivated_by_removal",

@@ -601,6 +601,44 @@ export function ExtensionsManager({
     [runMutation, staleInstallation, t],
   );
 
+  /**
+   * O interruptor do módulo `connected`. A chave do alvo leva o sentido: ligar e desligar sobre a mesma
+   * revisão são intenções diferentes, e o banco recusa o mesmo recibo com outro corpo.
+   */
+  const switchInstallation = useCallback(
+    async (extension: InstalledExtensionView, disabled: boolean) => {
+      const result = await runMutation({
+        kind: "switch",
+        label: `${extension.publisher}/${extension.name}@${extension.version}`,
+        targetKey: `switch:${extension.id}:${extension.installation_revision}:${disabled ? "off" : "on"}`,
+        request: (idempotencyKey) =>
+          requestExtensionApi(`/api/v1/extensions/${encodeURIComponent(extension.id)}/switch`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "Idempotency-Key": idempotencyKey,
+            },
+            body: JSON.stringify({
+              expected_installation_revision: extension.installation_revision,
+              disabled,
+            }),
+          }),
+      });
+      if (!result.ok) {
+        if (!(await staleInstallation(result.error)) && !result.uncertain) {
+          toast.error(t(result.error.message));
+        }
+        return;
+      }
+      toast.success(
+        disabled
+          ? t("Módulo desligado nesta instalação.")
+          : t("Módulo ligado de novo nesta instalação."),
+      );
+    },
+    [runMutation, staleInstallation, t],
+  );
+
   const configure = useCallback(
     async (
       extension: InstalledExtensionView,
@@ -1066,7 +1104,9 @@ export function ExtensionsManager({
                           ? "revert"
                           : ocupado(`removal:${extension.id}:${extension.installation_revision}`)
                             ? "remove"
-                            : null
+                            : emVoo.some((alvo) => alvo.startsWith(`switch:${extension.id}:`))
+                              ? "switch"
+                              : null
                       }
                       preparationInProgress={preparando(
                         extension.catalog_id,
@@ -1076,6 +1116,7 @@ export function ExtensionsManager({
                       platformBlockedReason={data.can_install ? mutationBlockedReason : undefined}
                       onRevert={(alvo) => changeInstallation(alvo, "revert")}
                       onRemove={(alvo) => changeInstallation(alvo, "remove")}
+                      onSwitch={switchInstallation}
                     />
                   ))}
                 </div>
@@ -1227,5 +1268,7 @@ function tituloDoPedido(kind: PendingReceipt["kind"], t: (texto: string) => stri
       return t("Configuração");
     case "module_install":
       return t("Instalação de módulo");
+    case "switch":
+      return t("Interruptor do módulo");
   }
 }

@@ -11,8 +11,8 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { carregarCampanha } from "@/lib/campanhas/acoes";
 import { ehEditavel, ehTerminal } from "@/lib/campanhas/maquina-de-estados";
 import { gravarPool, lerPoolExtra } from "@/lib/campanhas/pool-de-numeros";
@@ -25,10 +25,10 @@ import {
 import { variaveisDaCampanhaSchema } from "@/lib/campanhas/modelo";
 import { editarCampanhaSchema } from "@/lib/campanhas/schemas";
 import { ehVelocidadeDaCampanha } from "@/lib/campanhas/tipos";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -42,27 +42,35 @@ const COLUNAS =
   "provider_broadcast_id, split_messages";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_detalhe", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
   const { id } = await ctx.params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data } = await supabase
     .from("campaigns")
     .select(COLUNAS)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .eq("id", id)
     .maybeSingle();
   if (!data) return fail("campanha_nao_encontrada", t("Campanha não encontrada."), 404, { requestId });
 
   // O pool vem junto: a tela precisa dele para mostrar por quantos números a
   // campanha fala, e uma segunda chamada para isso seria round-trip à toa.
-  const extras = await lerPoolExtra(createAdminClient(), authz.org.orgId, id);
+  const extras = await lerPoolExtra(createAdminClient(), org.orgId, id);
   return ok({ ...(data as object), channel_session_ids: extras }, { requestId });
 }
 
@@ -74,9 +82,19 @@ export async function PATCH(
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_editar", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
+  // Autor só quando é uma pessoa logada; o token entra como NULL.
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
   const { id } = await ctx.params;
 
   const parsed = editarCampanhaSchema.safeParse(await req.json().catch(() => null));
@@ -92,7 +110,7 @@ export async function PATCH(
   // `authenticated` só tem SELECT. O GET acima segue na sessão de propósito —
   // ali a RLS é a segunda tranca, de graça.
   const supabase = createAdminClient();
-  const carregada = await carregarCampanha(supabase, authz.org.orgId, id);
+  const carregada = await carregarCampanha(supabase, org.orgId, id);
   if (!carregada.ok) {
     return fail(carregada.codigo, t(carregada.mensagem), carregada.status, { requestId });
   }
@@ -151,7 +169,7 @@ export async function PATCH(
     );
   }
 
-  const mudanca: Record<string, unknown> = { updated_by: authz.user.id };
+  const mudanca: Record<string, unknown> = { updated_by: autor };
   for (const campo of [
     "name",
     "description",
@@ -196,7 +214,7 @@ export async function PATCH(
   ).some((campo) => entrada[campo] !== undefined);
   if (tocaConteudo) {
     const canalAlvo = entrada.channel_session_id ?? campanha.channel_session_id;
-    const canal = await lerModoDoCanal(supabase, authz.org.orgId, canalAlvo);
+    const canal = await lerModoDoCanal(supabase, org.orgId, canalAlvo);
     if (!canal.existe) {
       return fail(
         "campanha_canal_indisponivel",
@@ -210,9 +228,9 @@ export async function PATCH(
       novo !== undefined ? novo : trocouDeNumero ? null : velho;
     const variaveisAntigas = variaveisDaCampanhaSchema.safeParse(campanha.provider_template_variables ?? {});
     const decisao = await decidirConteudo(supabase, {
-      organizationId: authz.org.orgId,
+      organizationId: org.orgId,
       channelSessionId: canalAlvo,
-      extras: entrada.channel_session_ids ?? (await lerPoolExtra(supabase, authz.org.orgId, id)),
+      extras: entrada.channel_session_ids ?? (await lerPoolExtra(supabase, org.orgId, id)),
       modoDoCanal: canal.modo,
       pedido: {
         message_mode: entrada.message_mode,
@@ -246,7 +264,7 @@ export async function PATCH(
   // — e por isso a decisão roda também quando o modelo ou o mapa mudam.
   if (entrada.velocidade !== undefined || tocaConteudo) {
     const canalAlvo = (mudanca.channel_session_id as string | undefined) ?? campanha.channel_session_id;
-    const canal = await lerModoDoCanal(supabase, authz.org.orgId, canalAlvo);
+    const canal = await lerModoDoCanal(supabase, authz.organizationId, canalAlvo);
     const variaveis = variaveisDaCampanhaSchema.safeParse(
       mudanca.provider_template_variables ?? campanha.provider_template_variables ?? {},
     );
@@ -279,7 +297,7 @@ export async function PATCH(
   const { data, error } = await supabase
     .from("campaigns")
     .update(mudanca)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .eq("id", id)
     .eq("status", campanha.status)
     .select(COLUNAS)
@@ -296,7 +314,7 @@ export async function PATCH(
 
   if (entrada.channel_session_ids !== undefined) {
     const r = await gravarPool(supabase, {
-      organizationId: authz.org.orgId,
+      organizationId: org.orgId,
       campanhaId: id,
       principal: (data as unknown as { channel_session_id: string }).channel_session_id,
       extras: entrada.channel_session_ids,
@@ -313,5 +331,5 @@ export async function PATCH(
 
   // Editar rascunho NÃO audita: nada saiu dele, e auditar cada tecla encheria o
   // log com o que não tem consequência. Quem audita são as mudanças de estado.
-  return ok({ ...(data as object), channel_session_ids: await lerPoolExtra(supabase, authz.org.orgId, id) }, { requestId });
+  return ok({ ...(data as object), channel_session_ids: await lerPoolExtra(supabase, org.orgId, id) }, { requestId });
 }

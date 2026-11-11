@@ -32,7 +32,10 @@ export type ApplyProposalErrorCode =
 
 export async function applyProposal(
   admin: SupabaseClient,
-  params: { orgId: string; agentId: string; proposalId: string; userId: string },
+  // `userId` é `null` quando quem aplica é um token de integração: `created_by`
+  // (versão e memória) e `applied_by` aceitam nulo, e id de token nunca vai
+  // para coluna de pessoa.
+  params: { orgId: string; agentId: string; proposalId: string; userId: string | null },
 ): Promise<ApplyProposalResult> {
   const { orgId, agentId, proposalId, userId } = params;
 

@@ -88,6 +88,43 @@ describe("montarInstalada", () => {
     });
   });
 
+  it("projeta o perfil do manifesto e o interruptor da instalação (spec 33, D8)", () => {
+    const conectado = JSON.stringify({
+      ...manifesto,
+      profile: "connected",
+      host_api: { min: 2, max: 2 },
+      permissions: ["area.contatos.leitura"],
+      configuration: {},
+      contributions: {},
+    });
+    const desligadoEm = "2026-11-04T12:00:00.000Z";
+
+    const desligado = montarInstalada({
+      item: { ...item, disabled_at: desligadoEm },
+      artifact: artefato(conectado),
+      catalog: catalogo,
+      binding: ativa,
+    });
+    expect(desligado).toMatchObject({ profile: "connected", disabled_at: desligadoEm, compatible: true });
+
+    // Sem a coluna na linha (lida antes da migration) ou com `null`, a instalação está ligada.
+    const ligado = montarInstalada({ item, artifact: artefato(conectado), catalog: catalogo, binding: ativa });
+    expect(ligado).toMatchObject({ profile: "connected", disabled_at: null });
+
+    const declarativo = montarInstalada({ item, artifact: artefato(), catalog: catalogo, binding: ativa });
+    expect(declarativo).toMatchObject({ profile: "declarative", disabled_at: null });
+  });
+
+  it("pacote ilegível não tem perfil, e o interruptor gravado continua visível", () => {
+    const view = montarInstalada({
+      item: { ...item, disabled_at: "2026-11-04T12:00:00.000Z" },
+      artifact: artefato("{}", "{ \"adulterado\": true }"),
+      catalog: catalogo,
+      binding: ativa,
+    });
+    expect(view).toMatchObject({ profile: null, disabled_at: "2026-11-04T12:00:00.000Z", compatible: false });
+  });
+
   it("instalação removida não oferece desfazer, mesmo com anterior gravado", () => {
     const anterior = montarAnterior(artefato(), item, []);
     const removida = { ...item, removed_at: "2026-09-16T10:00:00.000Z" };

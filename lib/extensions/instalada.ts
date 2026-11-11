@@ -98,6 +98,7 @@ export function montarInstalada({
     version: string;
     revision: number;
     removed_at: string | null;
+    disabled_at?: string | null;
   };
   artifact: ArtefatoGravado | undefined;
   catalog: { origin: string } | undefined;
@@ -130,6 +131,7 @@ export function montarInstalada({
     active_organizations: activeOrganizations,
     removed_at: item.removed_at,
     deactivated_by_removal_at: binding?.deactivated_by_removal_at ?? null,
+    disabled_at: item.disabled_at ?? null,
   };
   if (!leitura?.ok) {
     const identidade = `${item.publisher}/${item.name}`;
@@ -146,6 +148,8 @@ export function montarInstalada({
       // manifesto que o host recusou (a mesma razão pela qual a paleta gravada continua
       // preservada no vínculo — a tela só não a edita por aqui).
       theme_palette: null,
+      // Sem manifesto legível não há perfil, e a tela não oferece o interruptor.
+      profile: null,
       compatible: false,
       compatibility_reason: MOTIVO_PACOTE_ILEGIVEL,
     };
@@ -169,6 +173,7 @@ export function montarInstalada({
     // `contributions.theme` fica sem campo. O manifesto já passou pelo contrato desta
     // versão em `lerManifestoAdmitido`, então o valor é uma paleta conhecida.
     theme_palette: leitura.manifest.contributions.theme?.palette ?? null,
+    profile: leitura.manifest.profile,
     compatible: compatibility.compatible,
     compatibility_reason: compatibility.compatible ? null : MOTIVO_API_INCOMPATIVEL,
   };

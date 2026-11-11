@@ -11,7 +11,8 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { resolverItensDaProposta } from "@/lib/propostas/itens";
 import { decidirRevisao } from "@/lib/propostas/versao";
@@ -30,11 +31,13 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_proposals" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "crm_proposals", role: "manager", scope: "mcp:write" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "proposals_revisar", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
   const parsedBody = bodySchema.safeParse(await req.json().catch(() => ({})));
   const motivo = parsedBody.success ? (parsedBody.data.motivo ?? null) : null;
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data: proposta } = await admin
     .from("crm_proposals")
     .select("*")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (!proposta) return fail("not_found", t("Proposta não encontrada."), 404, { requestId });
@@ -58,7 +61,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data: itensDaV1 } = await admin
     .from("crm_proposal_items")
     .select("*")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("proposal_id", id)
     .order("position");
 
@@ -69,7 +72,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   // itens de proposta (criação, PATCH, ferramenta da IA).
   const resolvido = await resolverItensDaProposta(
     admin,
-    authz.org.orgId,
+    authz.organizationId,
     (itensDaV1 ?? []).map((it) => ({
       product_id: it.product_id,
       descricao: it.descricao,
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data: nova, error: novaErr } = await admin
     .from("crm_proposals")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: authz.organizationId,
       lead_id: proposta.lead_id,
       contact_id: proposta.contact_id,
       conversation_id: proposta.conversation_id,
@@ -128,7 +131,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     const { error: itensErr } = await admin.from("crm_proposal_items").insert(
       resolvido.itens.map((it) => ({
         proposal_id: nova.id,
-        organization_id: authz.org.orgId,
+        organization_id: authz.organizationId,
         product_id: it.product_id,
         descricao: it.descricao,
         quantidade: it.quantidade,
@@ -140,15 +143,16 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     if (itensErr) {
       // A v2 nasceu mas sem itens — descarta-a; a v1 continua `enviada` (D3,
       // mesmo raciocínio de "não substitui uma cadeia por uma v2 vazia").
-      await admin.from("crm_proposals").delete().eq("organization_id", authz.org.orgId).eq("id", nova.id);
+      await admin.from("crm_proposals").delete().eq("organization_id", authz.organizationId).eq("id", nova.id);
       return fail("internal_error", t("Falha ao copiar os itens da revisão."), 500, { requestId });
     }
   }
 
   void audit({
     action: "proposal.revised",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "crm_proposals",
     resourceId: nova.id,
     requestId,
