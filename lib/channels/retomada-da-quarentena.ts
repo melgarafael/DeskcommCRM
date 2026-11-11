@@ -34,6 +34,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 import { aplicarEfeitosPosEntrada, type EntradaDeMensagem } from "@/lib/channels/pos-entrada";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 export const ORIGEM_DA_RETOMADA = "retomada_de_quarentena";
 
@@ -114,7 +115,7 @@ export async function retomarFluxoDaMensagemLiberada(
       .maybeSingle();
     const { data: contato } = await admin
       .from("contacts")
-      .select("id, display_name")
+      .select("id, name, display_name")
       .eq("organization_id", pedido.organizationId)
       .eq("id", msg.contact_id)
       .maybeSingle();
@@ -126,7 +127,7 @@ export async function retomarFluxoDaMensagemLiberada(
       messageId: msg.id,
       channelSessionId: msg.channel_session_id,
       texto: msg.body,
-      nomeDoContato: (contato as { display_name: string | null } | null)?.display_name ?? null,
+      nomeDoContato: nomeDoContato(contato as { name?: string | null; display_name?: string | null } | null),
       origem: ORIGEM_DA_RETOMADA,
       canal: (conversa as { channel: string | null } | null)?.channel ?? undefined,
     };
