@@ -889,6 +889,12 @@ export const DICIONARIO: Traducoes = {
   "Ao ganhar": { es: "Al ganar" },
   "Ao perder": { es: "Al perder" },
   "arquivada": { es: "archivada" },
+  // ─── CAMPOS DO CARD NO RESUMO DA PASSAGEM (issue #4303) ───
+  "Mostrar no resumo da passagem": { es: "Mostrar en el resumen de la transferencia" },
+  "Quando a conversa passa para uma pessoa, o valor que este campo tem no card aparece no resumo do cartão de passagem. Desligado por padrão.":
+    {
+      es: "Cuando la conversación pasa a una persona, el valor que este campo tiene en la tarjeta aparece en el resumen de la transferencia. Desactivado por defecto.",
+    },
   "Sem marca nenhuma este campo nunca é exigido — é o comportamento de sempre. Marcado, ele precisa estar preenchido para o negócio entrar na etapa escolhida ou ser fechado como ganho/perdido.":
     {
       es: "Sin ninguna marca este campo nunca se exige — es el comportamiento de siempre. Marcado, debe estar completado para que el negocio entre en la etapa elegida o se cierre como ganado/perdido.",
@@ -1654,6 +1660,13 @@ export const DICIONARIO: Traducoes = {
   "Salvar lista de teste": { es: "Guardar lista de prueba" },
   "Ativar modo de teste": { es: "Activar modo de prueba" },
   "Liberar atendimento ao público": { es: "Habilitar atención al público" },
+  // #4170 — a pausa da Prospecção quando o canal está em modo de teste. A
+  // chave é a frase que `lib/prospecting/motivo-da-pausa.ts` grava em
+  // `prospecting_campaigns.error`; o cartão da campanha a mostra por `t()`.
+  "Este número está em modo de teste: a IA só fala com os números da lista de teste. Para liberar o atendimento ao público, abra Conexões, toque em \"Configurar acesso da IA\" no cartão do número e escolha \"Liberar atendimento ao público\".":
+    {
+      es: "Este número está en modo de prueba: la IA solo habla con los números de la lista de prueba. Para habilitar la atención al público, abre Conexiones, toca \"Configurar acceso de la IA\" en la tarjeta del número y elige \"Habilitar atención al público\".",
+    },
   "Liberar a IA para o público?": { es: "¿Habilitar la IA para el público?" },
   "A lista de teste deixará de limitar as respostas. A IA poderá atender qualquer pessoa que enviar mensagem neste canal, respeitando os demais bloqueios.": { es: "La lista de prueba dejará de limitar las respuestas. La IA podrá atender a cualquier persona que envíe mensajes en este canal, respetando los demás bloqueos." },
   "Continuar em teste": { es: "Continuar en prueba" },
@@ -4306,6 +4319,22 @@ export const DICIONARIO: Traducoes = {
   "Voice ID": { es: "Voice ID" },
   "Ouvir prévia": { es: "Escuchar vista previa" },
   "Salvar voz": { es: "Guardar voz" },
+  "Escolher da lista": { es: "Elegir de la lista" },
+  "escolha da lista": { es: "elija de la lista" },
+  "Informe um Voice ID.": { es: "Indique un Voice ID." },
+  "Voice ID inválido: use só letras, números, hífen e sublinhado (8 a 64 caracteres).":
+    {
+      es: "Voice ID inválido: use solo letras, números, guion y guion bajo (8 a 64 caracteres).",
+    },
+  "Escolha da lista ou cole o ID de qualquer voz da sua conta, inclusive uma que não apareça aqui.":
+    {
+      es: "Elija de la lista o pegue el ID de cualquier voz de su cuenta, incluso una que no aparezca aquí.",
+    },
+  "Não consegui listar as vozes no ElevenLabs agora. A lista abaixo é a da última validação da credencial — e colar um Voice ID continua funcionando.":
+    {
+      es: "No pude listar las voces en ElevenLabs ahora. La lista de abajo es la de la última validación de la credencial — y pegar un Voice ID sigue funcionando.",
+    },
+  "O provedor recusou esta voz:": { es: "El proveedor rechazó esta voz:" },
   "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.":
     {
       es: "Para que el agente escuche el audio que el cliente envía con más precisión (incluso diferenciando quién habla) y para responder hablando, en nota de voz, cuando tenga sentido.",
@@ -7555,6 +7584,22 @@ export const DICIONARIO: Traducoes = {
   // Motivo da perda no "mover lead" (etapa de perda exige motivo)
   "Motivo da perda": { es: "Motivo de pérdida" },
   "Escolha o motivo": { es: "Elige el motivo" },
+  // #4297 — a etapa de perda na AUTOMAÇÃO: o campo da ação e as duas frases
+  // (a recusa na porta de gravação e a explicação na aba Atividade).
+  "Escolha o motivo da perda": { es: "Elige el motivo de pérdida" },
+  "Esta etapa fecha o negócio como perdido: a automação precisa dizer por quê.": {
+    es: "Esta etapa cierra el negocio como perdido: la automatización debe decir por qué.",
+  },
+  "Escolha o “Motivo da perda” nesta ação: a etapa de destino fecha o negócio como perdido, e um negócio não pode ser perdido sem motivo.": {
+    es: "Elige el “Motivo de pérdida” en esta acción: la etapa de destino cierra el negocio como perdido, y un negocio no puede perderse sin motivo.",
+  },
+  "Etapa de perda: {etapas}.": { es: "Etapa de pérdida: {etapas}." },
+  "Esta automação move o card para uma etapa de perda sem dizer o motivo. Abra a automação e escolha o “Motivo da perda”.": {
+    es: "Esta automatización mueve la tarjeta a una etapa de pérdida sin decir el motivo. Abre la automatización y elige el “Motivo de pérdida”.",
+  },
+  "A etapa de destino exige campos que o card ainda não tem. Preencha-os no card e a automação move na próxima passada.": {
+    es: "La etapa de destino exige campos que la tarjeta todavía no tiene. Complétalos en la tarjeta y la automatización moverá en la próxima pasada.",
+  },
   "Escolha o motivo da perda.": { es: "Elige el motivo de pérdida." },
   "falta o motivo da perda": { es: "falta el motivo de pérdida" },
   "Texto da mensagem": { es: "Texto del mensaje" },

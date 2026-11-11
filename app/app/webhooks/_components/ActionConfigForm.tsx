@@ -31,6 +31,8 @@ import {
 } from "@/lib/agenda/escolha-no-envio";
 import { EscolhaQuandoHaCompromisso } from "@/components/agenda/EscolhaQuandoHaCompromisso";
 import { camposDeDataDoNegocio, camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { motivosDoFunil, opcoesDeMotivoDePerda } from "@/lib/leads/motivos-de-perda-do-funil";
+import { rotuloDoMotivoDePerda } from "@/lib/schemas/leads";
 import { apiClient } from "@/lib/api/client";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import {
@@ -92,7 +94,21 @@ export const DESTINOS_DO_ATRIBUIR = ["responsavel_do_negocio", "dono_da_carteira
 export type DestinoDoAtribuir = (typeof DESTINOS_DO_ATRIBUIR)[number];
 
 export type ActionItem =
-  | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
+  | {
+      type: "create_or_move_lead";
+      config: {
+        pipeline_id: string;
+        stage_id: string;
+        /**
+         * #4297 — o motivo da perda, exigido quando a etapa de destino é de
+         * perda (`is_lost`). O valor é o mesmo que o arrasto grava: canônico do
+         * produto ou um dos motivos cadastrados no funil. Ausente = regra que
+         * não passa por etapa de perda (ou regra antiga, que falha com o código
+         * real no recibo).
+         */
+        lost_reason?: string;
+      };
+    }
   | {
       type: "send_whatsapp_message";
       config: {
@@ -262,7 +278,7 @@ function configComEscolha<T extends object>(config: T, escolha: EscolhaNoEnvio):
 function CreateOrMoveLeadForm({
   config,
   onChange,
-}: FormProps<{ pipeline_id: string; stage_id: string }>) {
+}: FormProps<{ pipeline_id: string; stage_id: string; lost_reason?: string }>) {
   const t = useT();
   const { data: pipelinesRes, isLoading: pipelinesLoading } = usePipelines();
   const { data: boardRes, isLoading: stagesLoading } = usePipelineStages(
@@ -270,6 +286,18 @@ function CreateOrMoveLeadForm({
   );
   const pipelines = pipelinesRes?.data ?? [];
   const stages = boardRes?.data?.stages ?? [];
+  const funil = pipelines.find((p) => p.id === config.pipeline_id) ?? null;
+  /**
+   * #4297 — A ETAPA DE DESTINO FECHA O NEGÓCIO COMO PERDA?
+   *
+   * É a MESMA coluna que o #917 lê no servidor (`is_lost`), e a lista de
+   * motivos é a MESMA do arrasto (`opcoesDeMotivoDePerda` sobre os
+   * `settings.lost_reasons` do funil): canônicos do produto, ou os que o
+   * operador cadastrou em Configurações › Funis. Redigitar a lista aqui faria a
+   * regra oferecer um motivo que o banco recusa no clique.
+   */
+  const etapaDePerda = stages.find((s) => s.id === config.stage_id)?.is_lost === true;
+  const motivos = opcoesDeMotivoDePerda(motivosDoFunil(funil?.settings ?? null));
 
   return (
     <div className="grid gap-2 sm:grid-cols-2">
@@ -296,7 +324,16 @@ function CreateOrMoveLeadForm({
         <Label>{t("Etapa")}</Label>
         <Select
           value={config.stage_id}
-          onValueChange={(v) => onChange({ ...config, stage_id: v })}
+          onValueChange={(v) => {
+            if (stages.find((s) => s.id === v)?.is_lost !== true) {
+              // Sair da etapa de perda tira o motivo junto: guardar um motivo
+              // numa ação que não perde nada é dado morto, e ele voltaria a
+              // valer sozinho se alguém trocasse a etapa de novo.
+              onChange({ pipeline_id: config.pipeline_id, stage_id: v });
+              return;
+            }
+            onChange({ ...config, stage_id: v });
+          }}
           disabled={!config.pipeline_id || stagesLoading}
         >
           <SelectTrigger>
@@ -313,6 +350,33 @@ function CreateOrMoveLeadForm({
           </SelectContent>
         </Select>
       </div>
+      {etapaDePerda ? (
+        <div className="space-y-1 sm:col-span-2">
+          <Label htmlFor={`motivo-da-perda-${config.stage_id}`}>{t("Motivo da perda")}</Label>
+          <Select
+            value={config.lost_reason ?? ""}
+            onValueChange={(v) => onChange({ ...config, lost_reason: v })}
+          >
+            <SelectTrigger id={`motivo-da-perda-${config.stage_id}`}>
+              <SelectValue placeholder={t("Escolha o motivo da perda")} />
+            </SelectTrigger>
+            <SelectContent>
+              {motivos.map((opcao) => (
+                <SelectItem key={opcao.valor} value={opcao.valor}>
+                  {/* Motivo cadastrado pelo operador é DADO, não interface:
+                      aparece como ele escreveu, em qualquer idioma. O canônico
+                      é texto do produto e passa por t(), pelo mesmo rótulo do
+                      diálogo de perda (`rotuloDoMotivoDePerda`). */}
+                  {opcao.doFunil ? opcao.valor : t(rotuloDoMotivoDePerda(opcao.valor))}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t("Esta etapa fecha o negócio como perdido: a automação precisa dizer por quê.")}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

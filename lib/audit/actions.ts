@@ -197,6 +197,10 @@ export const AUDIT_ACTIONS = [
   "phone_number.created",
   "phone_number.updated",
   "ai.handoff_triggered",
+  // A pausa da IA por atendimento manual NÃO foi gravada (0 linhas / erro): a
+  // conversa pode ter ficado sem pausa e a IA falar por cima do atendente. O
+  // `metadata.motivo` nomeia corrida, conversa inexistente ou falha de escrita.
+  "ai.pausa_nao_gravada",
   "ai.reactivated_by_agent",
   "conversation.usable_for_rag_toggled",
   "rag.conversations_batch_run",
