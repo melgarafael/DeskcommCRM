@@ -56,7 +56,7 @@ function recuperar(log: string, tentativa = 1, ambiente = "github-hosted") {
     {
       cwd: RAIZ,
       env: {
-        PATH: `${bin}:${binariosDoSistema(path.join(raiz, "sistema"))}`,
+        ...process.env, PATH: `${bin}:${binariosDoSistema(path.join(raiz, "sistema"))}`,
         GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: ambiente, TEST_LOG: chamadas,
       },
       encoding: "utf-8",
