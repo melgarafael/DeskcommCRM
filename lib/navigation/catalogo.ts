@@ -1194,6 +1194,22 @@ export const NAV_CATALOG = [
     minRole: "admin",
   },
   {
+    // A tela de gestão da Ouvidoria (#3611, fatia 3). `admin` porque é a régua
+    // da leitura: a RLS da 9040 exige `fn_role_at_least(…, 'admin')` e a tela
+    // barra em `lib/ouvidoria/acesso.ts`. Oferecer a porta a `manager` criaria
+    // um item de menu que responde "não pode" ao clicar. Módulo de tabela
+    // (ADR-0002): a porta só existe depois que quem administra a instalação
+    // instala `ouvidoria` em `/admin/modulos`.
+    href: "/app/ouvidoria",
+    label: "Ouvidoria",
+    description: "Reclamações, denúncias e elogios recebidos pela empresa, com protocolo.",
+    icon: "Flag",
+    group: "organizacao",
+    section: "Dados e acesso",
+    minRole: "admin",
+    modulo: "ouvidoria",
+  },
+  {
     href: "/app/settings/api-tokens",
     label: "API Tokens",
     description: "Chaves para outro sistema conversar com o seu CRM.",

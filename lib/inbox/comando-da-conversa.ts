@@ -46,6 +46,9 @@
  * tela oferece um botão de "devolver" para um estado que já vai voltar sozinho.
  */
 
+import { formatDistanceStrict } from "date-fns";
+import type { Locale } from "date-fns";
+
 /** As colunas de que esta função precisa — nada além. */
 export interface FatosDoComando {
   status: string;
@@ -95,6 +98,22 @@ export interface FatosDoComando {
    * controle decorativo, que é pior que ausência de botão.
    */
   is_blocked?: boolean | null;
+  /**
+   * HÁ AGENTE QUE VAI RESPONDER ESTA CONVERSA? — o fato por NÚMERO que o banco
+   * passou a responder na migration 9331 (`automatico_da_conversa(c)`).
+   *
+   * `undefined` = "não sei" (cache antigo, resposta de antes do campo entrar no
+   * `SELECT_COLS`): cai no comportamento de antes, que é o da org. `false` =
+   * nenhum agente publicado no número da conversa, ou o contato fora da lista
+   * de teste do canal em pré-go-live — nos dois casos NINGUÉM vai responder, e
+   * a resposta certa é `aguardando` (a Fila), não `automatico`.
+   *
+   * A pergunta é a MESMA que o dreno faz antes de gastar
+   * (`haQuemAtendaASessao`) mais o portão de pré-go-live; o espelho SQL mora em
+   * `fn_automatico_da_conversa` e é casado por
+   * `tests/invariants/comando-da-conversa-por-numero.test.ts`.
+   */
+  automaticoDaConversa?: boolean;
 }
 
 export type Comando =
@@ -191,7 +210,86 @@ const MENOS_INFINITO = "-infinity";
  * `conversations.status='resolved'` (só há leitores), então isto não muda nada
  * hoje — e passa a importar no instante em que o banco calcular o mesmo comando.
  */
-export const STATUS_ENCERRADOS = new Set(["closed", "archived", "resolved"]);
+export const STATUS_ENCERRADOS_LISTA = ["closed", "archived", "resolved"] as const;
+export const STATUS_ENCERRADOS: ReadonlySet<string> = new Set(STATUS_ENCERRADOS_LISTA);
+
+/**
+ * O PRÉ-FILTRO DO COMANDO — o que o banco pode recusar ANTES de avaliar a função.
+ *
+ * ─── O desperdício que ele conserta (issue #4325) ───────────────────────────
+ * `comando_da_conversa` é `stable security definer` (`baseline.sql:51746-51765`):
+ * o Postgres NÃO faz inline, então a lista da Fila e as duas contagens a avaliam
+ * LINHA A LINHA, antes do `LIMIT`, em todo o histórico fechado da organização.
+ * Mas `fn_comando_da_conversa` (baseline:42674-42699) só chega a `aguardando` ou
+ * `automatico` quando `assigned_to_user_id is null` E o status está fora de
+ * `('closed','archived','resolved')`. Pedir essas duas condições ao banco tira do
+ * caminho as linhas que a função já recusaria.
+ *
+ * ─── O que ele NÃO é ───────────────────────────────────────────────────────
+ * Ele não substitui a função: o `comando_da_conversa.in.(…)` continua no `WHERE`
+ * e é quem DECIDE. O pré-filtro só reduz o conjunto que ela avalia, e é por isso
+ * que os dois têm de ser logicamente implicados um pelo outro — condição
+ * NECESSÁRIA de `aguardando`/`automatico`, nada além.
+ *
+ * ─── Quando ele vale ───────────────────────────────────────────────────────
+ * Só quando o comando pedido é subconjunto de `{aguardando, automatico, ninguem}`
+ * — `ninguem` (#4012) é o `automatico` rebaixado pelo wrapper quando a
+ * organização não tem agente no ar, então herda a mesma condição necessária; sem
+ * ele no conjunto a Fila, que pede `aguardando` e `ninguem`, perderia o
+ * pré-filtro. Comando
+ * vazio (ou qualquer valor fora do conjunto, ou mistura) devolve `null`: a
+ * consulta tem de ser, byte a byte, a de antes. A lista de status é a de
+ * `STATUS_ENCERRADOS_LISTA` — a MESMA da função SQL, com `resolved`; copiá-la de
+ * `CONVERSATION_TERMINAL_STATUSES` daria um filtro frouxo (aquela constante
+ * responde outra pergunta e não tem `resolved`).
+ */
+export const COMANDOS_SEM_DONO_E_ABERTOS = ["aguardando", "automatico", "ninguem"] as const;
+
+export interface PreFiltroDoComando {
+  /** `.is("assigned_to_user_id", null)` — sem dono é condição da função. */
+  semDono: true;
+  /** `.not("status", "in", "(closed,archived,resolved)")` — idem. */
+  statusEncerrados: readonly string[];
+}
+
+/** Os predicados do pré-filtro, ou `null` quando a consulta é a de sempre. */
+export function preFiltroDoComando(
+  comando: string | readonly string[] | null | undefined,
+): PreFiltroDoComando | null {
+  const pedidos = typeof comando === "string" ? [comando] : (comando ?? []);
+  if (pedidos.length === 0) return null;
+  const dentroDoConjunto = pedidos.every((c) =>
+    (COMANDOS_SEM_DONO_E_ABERTOS as readonly string[]).includes(c),
+  );
+  if (!dentroDoConjunto) return null;
+  return { semDono: true, statusEncerrados: STATUS_ENCERRADOS_LISTA };
+}
+
+/**
+ * Aplica o pré-filtro NA MESMA consulta — a lista e as duas contagens chamam esta
+ * função, e é ela que garante que o pedido seja um só em vez de três cópias.
+ *
+ * O tipo é o mínimo que o builder do PostgREST oferece (`.is`/`.not` encadeando
+ * sobre si mesmos), então serve tanto para o `supabase.from(...).select(...)` da
+ * lista quanto para a fábrica `countExact()` das contagens.
+ */
+export interface ConsultaComPreFiltro<Q> {
+  is(coluna: string, valor: null): Q;
+  not(coluna: string, operador: "in", valor: string): Q;
+}
+
+export function comPreFiltroDoComando<Q extends ConsultaComPreFiltro<Q>>(
+  consulta: Q,
+  comando: string | readonly string[] | null | undefined,
+): Q {
+  const pre = preFiltroDoComando(comando);
+  // Sem pré-filtro a consulta volta INTACTA — nenhum predicado a mais, nenhuma
+  // mudança de plano, nenhuma mudança de resposta.
+  if (!pre) return consulta;
+  return consulta
+    .is("assigned_to_user_id", null)
+    .not("status", "in", `(${pre.statusEncerrados.join(",")})`);
+}
 
 /**
  * O silêncio, lido do jeito que o Postgres o entrega.
@@ -246,9 +344,19 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
         // Grupo entra junto: o automático nunca o atende, é sempre de humano.
         grupo || silencio.vigente || travado || bloqueado
         ? { quem: "aguardando" }
-        : fatos.automaticoDaOrg === false
+        : // As duas perguntas da #4012, NA MESMA ORDEM do wrapper do banco
+          // (`comando_da_conversa`, migration 9331): primeiro a organização,
+          // depois o número. Organização sem agente no ar é `ninguem` — não há
+          // robô nenhum nesta instalação.
+          fatos.automaticoDaOrg === false
           ? { quem: "ninguem" }
-          : { quem: "automatico" };
+          : // Há agente na organização, mas não publicado NESTE número (ou o
+            // contato está fora da lista de teste do canal): a conversa espera
+            // uma PESSOA, que é a fila. Os dois valores estão em
+            // `comandosDaFila`, então a Fila mostra a conversa nos dois casos.
+            fatos.automaticoDaConversa === false
+            ? { quem: "aguardando" }
+            : { quem: "automatico" };
 
   /**
    * Encerrada COM dono continua nomeando quem atendeu.
@@ -261,7 +369,8 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
    */
   const comandoFinal: Comando = comando;
 
-  const automaticoAtivo = !grupo && !encerrada && !travado && !bloqueado && !silencio.vigente;
+  const automaticoAtivo =
+    !grupo && !encerrada && !travado && !bloqueado && !silencio.vigente && fatos.automaticoDaConversa !== false;
 
   const motivo: MotivoDoSilencio | null = automaticoAtivo
     ? null
@@ -269,6 +378,11 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
       ? null // Grupo não é automático pausado: o automático nunca o atende.
       : encerrada
       ? null // Encerrada não é silêncio: é ausência de assunto. O estado já diz.
+      : fatos.automaticoDaConversa === false && !silencio.vigente
+        ? // Sem agente NESTE número (ou fora da lista de teste) não há
+          // automático PAUSADO a explicar: não há automático aqui. Dizer
+          // "volta em instantes" seria a mesma mentira, ao contrário.
+          null
       : bloqueado
         ? // ANTES de `travado`, de propósito: quando as duas valem, é o opt-out que
           // decide a AÇÃO — não há nenhuma. Nomear a trava menor faria a tela
@@ -328,19 +442,29 @@ export const ROTULO_DO_MOTIVO: Record<MotivoDoSilencio, string> = {
 };
 
 /**
- * O VOCABULÁRIO QUE O BANCO FALA — quatro, não cinco.
+ * O VOCABULÁRIO QUE O BANCO FALA — cinco, desde a issue #4012.
  *
- * `fn_comando_da_conversa` (migration 0202) devolve estes quatro. `ninguem` fica
- * de fora de propósito: ele não é um estado diferente, é o mesmo balde do
- * `automatico` renomeado quando a ORG não tem nenhum agente no ar — e "a org tem
- * automático?" é um fato org-wide que o SQL só saberia reproduzindo
- * `agenteAtende` inteiro dentro do banco. Seria a regra duplicada de novo, agora
- * numa terceira encarnação.
+ * `fn_comando_da_conversa` (migration 0202) devolve os quatro primeiros; o quinto,
+ * `ninguem`, o banco passou a devolver quando a ORGANIZAÇÃO não tem agente no ar
+ * (`comando_da_conversa` rebaixa `automatico` → `ninguem` via
+ * `fn_org_tem_automatico`, migration 9330).
  *
- * Quem sabe o fato da org é o servidor, e ele o aplica escolhendo o CONJUNTO de
- * comandos que a aba pede — ver `comandosDaFila`.
+ * Até a #4012 `ninguem` era renomeação SÓ de TS, e a razão escrita aqui era que
+ * "a org tem automático?" só o servidor sabia responder. Era verdade pela metade:
+ * o servidor *compensava* na consulta (`comandosDaFila`), mas as funções do BANCO
+ * que decidem pelo comando (`fn_definir_carteira_do_cliente`, a adoção de
+ * `fn_conversation_assign`) não tinham como compensar — e aplicavam a regra "a
+ * conversa da IA fica com a IA" numa instalação sem IA. O fato virou SQL porque o
+ * banco precisa dele para decidir, e a régua é uma: o espelho de `agenteAtende`
+ * em `fn_org_tem_automatico`.
  */
-export const COMANDOS_DO_BANCO = ["humano", "automatico", "aguardando", "encerrada"] as const;
+export const COMANDOS_DO_BANCO = [
+  "humano",
+  "automatico",
+  "aguardando",
+  "encerrada",
+  "ninguem",
+] as const;
 export type ComandoDoBanco = (typeof COMANDOS_DO_BANCO)[number];
 
 /**
@@ -358,7 +482,21 @@ export type ComandoDoBanco = (typeof COMANDOS_DO_BANCO)[number];
  * linhas de trabalho humano que não existe.
  */
 export function comandosDaFila(automaticoDaOrg?: boolean): ComandoDoBanco[] {
-  return automaticoDaOrg === false ? ["aguardando", "automatico"] : ["aguardando"];
+  // `ninguem` está SEMPRE: desde a #4012 o banco é quem diz que a conversa sem dono
+  // não tem robô por trás (a organização não tem agente no ar), e essa conversa
+  // espera uma pessoa. Pedir o valor independe do fato org-wide que a TELA conhece,
+  // que pode estar carregando ou ter falhado. A conversa de um número sem agente,
+  // numa organização que tem agente em outro, sai `aguardando` (a segunda pergunta
+  // do mesmo wrapper, `fn_automatico_da_conversa`, migration 9331).
+  //
+  // `automatico` continua aqui quando o fato diz que NÃO há automático, e agora por
+  // um motivo com prazo: entre o deploy deste código e a migration 9330 aplicada, o
+  // banco ainda responde `automatico` para essas conversas. Sem o valor extra, a
+  // Fila de uma instalação sem IA nasceria vazia nessa janela — exatamente o P0 que
+  // o `ninguem` veio consertar.
+  return automaticoDaOrg === false
+    ? ["aguardando", "ninguem", "automatico"]
+    : ["aguardando", "ninguem"];
 }
 
 /**
@@ -441,4 +579,32 @@ export function esperaDaConversa(c: {
   created_at?: string | null;
 }): string | null {
   return c.awaiting_since ?? c.last_inbound_at ?? c.created_at ?? null;
+}
+
+/**
+ * O TEXTO da pílula ("Aguardando há 5 min"), a partir do MESMO instante.
+ *
+ * `esperaDaConversa` responde "desde quando?"; este formatador diz COMO a
+ * resposta aparece. Eles nasceram separados de propósito: enquanto o texto era
+ * uma função privada dentro de `ConversationListItem.tsx`, a única forma de
+ * provar que a pílula lia a régua certa era renderizar o componente inteiro — e
+ * foi assim que a #990 passou tanto tempo sem nenhum teste vermelho. Aqui a
+ * régua e o texto dela moram no mesmo módulo, e `agora` é PARÂMETRO: com
+ * `new Date()` escondido lá dentro, um caso que anda o relógio não teria como
+ * prender o arredondamento (dez minutos viram "há 9 minutos" no meio do teste).
+ *
+ * Sem instante (conversa que nunca recebeu mensagem do cliente), sai o rótulo
+ * seco "Aguardando" — inventar uma data seria pior que não dizer nenhuma.
+ */
+export function rotuloDaEspera(
+  desde: string | null,
+  agora: Date,
+  t: (texto: string) => string = (texto) => texto,
+  locale?: Locale,
+): string {
+  if (!desde) return t("Aguardando");
+  return `${t("Aguardando")} ${formatDistanceStrict(new Date(desde), agora, {
+    addSuffix: true,
+    ...(locale ? { locale } : {}),
+  })}`;
 }

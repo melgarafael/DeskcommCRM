@@ -17,7 +17,6 @@ import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth/require-role";
 import type { AuthUser } from "@/lib/auth/types";
 import type { EspecieDeAutor } from "@/lib/operacao/autoria";
-import type { OwnerKind } from "@/lib/types/leads";
 
 export const ORG_ID = "22222222-2222-4222-8222-222222222222";
 export const OUTRA_ORG = "33333333-3333-4333-8333-333333333333";
@@ -118,16 +117,19 @@ export interface LeadRow {
   title?: string;
   value_cents?: number;
   currency?: string;
-  /**
-   * #3945 (0070) — de quem é o card: `user` (pessoa da equipe), `ai` (agente)
-   * ou nulo (fila). O quadro lê `owner_kind` junto com `owner_user_id` e só o
-   * dono HUMANO vira nome no card (`lib/kanban/nome-do-dono.ts`); sem as duas
-   * colunas aqui o dublê reprovaria o seam novo por tipo, e o teste mediria o
-   * dublê em vez da regra.
-   */
-  owner_kind?: OwnerKind | null;
-  owner_user_id?: string | null;
   custom_fields?: Record<string, unknown> | null;
+  /**
+   * Fatia 1 do #3945 — as colunas do DONO e da recorrência, que o card desenha e
+   * a rota do quadro entrega no `select("*")`. Declaradas aqui (e não num `as`
+   * no teste) para o caso do payload medir o handler: sem elas, o dublê apagaria
+   * justamente os campos cuja entrega o teste prova.
+   */
+  owner_kind?: "user" | "ai" | null;
+  owner_user_id?: string | null;
+  owner_agent_id?: string | null;
+  recurring_value_cents?: number | null;
+  recurring_period?: string | null;
+  tags?: string[];
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {
@@ -197,6 +199,15 @@ export interface DbOpts {
    * precisa declarar que ele existe e de quem é.
    */
   contacts?: Array<Record<string, unknown>>;
+  /**
+   * Conversas — a última mensagem do card sai delas (fatia 1 do #3945): a rota
+   * do quadro lê `last_message_preview`/`last_message_at` por contato. Sem esta
+   * fonte, o caso do card mediria um quadro em que ninguém nunca escreveu. É
+   * também a tabela da cópia `assigned_to_user_name` por DONO (#3945,
+   * `lib/kanban/nome-do-dono.ts`) — duas consultas diferentes sobre a mesma
+   * tabela, e o teste de contagem de consultas é quem separa as duas.
+   */
+  conversations?: Array<Record<string, unknown>>;
   /** Erro do banco na n-ésima escrita (1-based), como o PostgREST devolveria. */
   writeError?: (n: number, table: string) => { code: string; message: string } | null;
   /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
@@ -212,13 +223,6 @@ export interface DbOpts {
   flowVersions?: Array<Record<string, unknown>>;
   /** `ai_agent_versions` — o `followup` da versão publicada diz quais fluxos o agente arma. */
   agentVersions?: Array<Record<string, unknown>>;
-  /**
-   * `conversations` — o quadro lê duas coisas dela: a conversa mais recente do
-   * CONTATO (#1993, `withConversas`) e a cópia `assigned_to_user_name` por DONO
-   * (#3945, `lib/kanban/nome-do-dono.ts`). Duas consultas diferentes sobre a
-   * mesma tabela; o teste de contagem de consultas é quem separa as duas.
-   */
-  conversations?: Array<Record<string, unknown>>;
   /**
    * O `max_rows` do PostgREST (1000 em `supabase/config.toml`): corta TODA
    * leitura nesse tamanho, sem erro, por maior que seja o `.limit`/`.range`.
@@ -289,12 +293,12 @@ export interface Registro {
     webhook_sources: Linha[];
     automation_rules: Linha[];
     contacts: Linha[];
+    conversations: Linha[];
     followup_flow_pointers: Linha[];
     followup_flow_versions: Linha[];
     ai_agent_versions: Linha[];
     organizations: Linha[];
     ouvidoria_manifestacoes: Linha[];
-    conversations: Linha[];
   };
 }
 
@@ -357,6 +361,11 @@ export function makeDb(opts: DbOpts = {}): Registro {
       webhook_sources: (opts.webhookSources ?? []) as Linha[],
       automation_rules: (opts.automationRules ?? []) as Linha[],
       contacts: (opts.contacts ?? []) as Linha[],
+      // UMA tabela, duas portas de entrada: `conversations` (a última mensagem
+      // do card, #3945) e `conversas` (o canal e o `metadata` da ouvidoria,
+      // #3611, fatia 2). Cada PR declarou a sua chave e o merge deixou duas
+      // propriedades com o mesmo nome — a segunda apagava a primeira.
+      conversations: [...(opts.conversations ?? []), ...(opts.conversas ?? [])] as Linha[],
       followup_flow_pointers: (opts.pointers ?? []) as Linha[],
       followup_flow_versions: (opts.flowVersions ?? []) as Linha[],
       ai_agent_versions: (opts.agentVersions ?? []) as Linha[],
@@ -367,14 +376,6 @@ export function makeDb(opts: DbOpts = {}): Registro {
         { id: OUTRA_ORG, settings: opts.organizationSettings ?? null },
       ],
       ouvidoria_manifestacoes: (opts.manifestacoes ?? []) as Linha[],
-      // As conversas vêm de DUAS origens que não se sobrepõem: a opção
-      // `conversations` (quadro — #1993/#3945) e a `conversas` (canal —
-      // #3611, fatia 2). Unir aqui mantém as duas leituras medidas; escolher
-      // uma calaria metade dos testes.
-      conversations: [
-        ...((opts.conversations ?? []) as Linha[]),
-        ...((opts.conversas ?? []) as Linha[]),
-      ],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
@@ -390,10 +391,15 @@ export function makeDb(opts: DbOpts = {}): Registro {
      * Postgres é ISO-8601 em UTC, e ISO ordena lexicograficamente.
      */
     const intervalos: Array<{ coluna: string; op: "gte" | "lte"; valor: string }> = [];
+    /**
+     * Os `.not(...)` encadeados — o caso real é o `next_action IS NOT NULL` da
+     * leitura de `lead_state` no quadro. Ausente do dublê até a fatia 1 do
+     * #3945: sem ela, medir o payload com lead que TEM contato estourava no
+     * dublê antes de chegar ao card.
+     */
+    const exclusoes: Array<{ coluna: string; op: "is" | "eq"; valor: unknown }> = [];
     const pertinencias: Array<[string, unknown[]]> = [];
     const negacoes: Array<[string, unknown]> = [];
-    /** `.not(col, "is", null)` — "só as linhas com valor nesta coluna". */
-    const naoNulos: string[] = [];
     const disjuncoes: Clausula[][] = [];
     let patch: Record<string, unknown> | null = null;
     let nova: Record<string, unknown> | Record<string, unknown>[] | null = null;
@@ -423,14 +429,21 @@ export function makeDb(opts: DbOpts = {}): Registro {
         // `neq` em SQL exclui NULL (`NULL <> v` nao e verdadeiro) — o duble
         // segue o banco, nao o JavaScript.
         .filter((r) => negacoes.every(([c, v]) => r[c] !== null && r[c] !== undefined && r[c] !== v))
-        // `.not(col, "is", null)` = `IS NOT NULL`, que é o que a leitura do nome
-        // do dono precisa (#3945): sem ele viriam todas as conversas do dono
-        // para descartar as sem cópia.
-        .filter((r) => naoNulos.every((c) => r[c] !== null && r[c] !== undefined))
         // `.or()` é OU entre as cláusulas da MESMA chamada e E com os outros
         // filtros — a mesma combinação do PostgREST.
         .filter((r) =>
           disjuncoes.every((clausulas) => clausulas.some((clausula) => casa(r, clausula))),
+        )
+        // `NOT (col IS NULL)` mantém só quem tem valor; `NOT (col = v)` segue o
+        // SQL e NÃO inclui o NULL (comparação com NULL não é verdadeira).
+        .filter((r) =>
+          exclusoes.every(({ coluna, op, valor }) => {
+            const v = valorDaColuna(r, coluna);
+            if (op === "is") {
+              return valor === null ? v !== null && v !== undefined : v !== valor;
+            }
+            return v !== null && v !== undefined && v !== valor;
+          }),
         )
         .filter((r) =>
           intervalos.every(({ coluna, op, valor }) => {
@@ -614,16 +627,12 @@ export function makeDb(opts: DbOpts = {}): Registro {
         negacoes.push([c, v]);
         return b;
       },
-      /**
-       * `.not(col, "is", null)` — o único uso real no repo é "só as linhas com
-       * nome" (#3945). Qualquer outra forma LANÇA: um dublê que engolisse o
-       * filtro devolveria as linhas nulas e o teste mediria o dublê.
-       */
+      /** `.not(col, "is"|"eq", v)` — a negação do `.is`/`.eq`, como no PostgREST. */
       not: (c: string, op: string, v: unknown) => {
-        if (op !== "is" || v !== null) {
-          throw new Error(`dublê: .not("${c}", "${op}", ${String(v)}) não é suportado`);
+        if (op !== "is" && op !== "eq") {
+          throw new Error(`dublê: .not(${c}, "${op}", ...) não suportado`);
         }
-        naoNulos.push(c);
+        exclusoes.push({ coluna: c, op, valor: v });
         return b;
       },
       limit: (n: number) => {

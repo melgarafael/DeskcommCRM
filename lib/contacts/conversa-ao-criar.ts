@@ -1,5 +1,5 @@
 /**
- * CRIAR CONTATO ABRE CONVERSA? — a regra das DUAS portas, num lugar só (#3718).
+ * CRIAR CONTATO ABRE CONVERSA? — a regra das portas, num lugar só (#3718).
  *
  * A pergunta morava em dois arquivos com duas respostas e nenhuma explicação: a
  * criação unitária (`app/api/v1/contacts/_handler.ts`) abria a conversa quando o
@@ -12,7 +12,20 @@
  * A RESPOSTA, agora única e escrita:
  *
  *   - ficha criada À MÃO abre a conversa (porta `manual`);
- *   - planilha importada NÃO abre, de propósito (porta `importacao_csv`).
+ *   - planilha importada NÃO abre, de propósito (porta `importacao_csv`);
+ *   - contato da PROSPECÇÃO não abre por aqui (porta `prospeccao`) — ver abaixo.
+ *
+ * ─── POR QUE A PROSPECÇÃO NÃO ABRE POR AQUI (#4341) ─────────────────────────
+ *
+ * A prospecção abre a conversa ELA MESMA, logo depois de criar o contato, no
+ * canal da CAMPANHA (`beginServiceAtOrigin(..., config.channel_session_id)`, em
+ * `lib/prospecting/store.ts`). Quando ela passava pela porta `manual`, a regra
+ * abaixo abria ANTES uma segunda conversa no canal de telefone mais antigo da
+ * organização — que é o canal da campanha só por coincidência. Medido numa
+ * instalação real com dois números (o oficial, mais antigo, e o chip da
+ * campanha): cada empresa abordada ganhou duas conversas na caixa, uma vazia no
+ * número oficial e a da abordagem no chip. Quem já escolhe o canal não pede à
+ * regra que escolha outro.
  *
  * ─── POR QUE A IMPORTAÇÃO NÃO ABRE: O PREÇO ──────────────────────────────────
  *
@@ -64,13 +77,14 @@ import { logger } from "@/lib/logger";
 /**
  * As portas que criam contato, e só elas.
  *
- * `manual` é a criação de UMA ficha por vez — o `POST /api/v1/contacts` e a
- * prospecção, que cria o contato e sai conversando com ele na mesma rodada.
- * O MCP não passa por aqui: abre conversa por `openSharedContactConversation`,
- * com a sessão escolhida por quem chama. `importacao_csv` é a planilha, que é o
- * único caminho em que "abrir conversa" acontece centenas de vezes de uma vez.
+ * `manual` é a criação de UMA ficha por vez — o `POST /api/v1/contacts`.
+ * `prospeccao` é a mesma criação unitária chamada pela prospecção, que abre a
+ * conversa no canal da campanha por conta própria. O MCP não passa por aqui:
+ * abre conversa por `openSharedContactConversation`, com a sessão escolhida por
+ * quem chama. `importacao_csv` é a planilha, que é o único caminho em que
+ * "abrir conversa" acontece centenas de vezes de uma vez.
  */
-export type PortaDaCriacao = "manual" | "importacao_csv";
+export type PortaDaCriacao = "manual" | "importacao_csv" | "prospeccao";
 
 /**
  * A REGRA. Uma linha por porta — mudar o comportamento é mudar aqui, e as duas
@@ -79,6 +93,7 @@ export type PortaDaCriacao = "manual" | "importacao_csv";
 const ABRE_CONVERSA: Readonly<Record<PortaDaCriacao, boolean>> = {
   manual: true,
   importacao_csv: false,
+  prospeccao: false,
 };
 
 /** A regra crua, para quem a precisa sem efeito (e para o teste medir). */
