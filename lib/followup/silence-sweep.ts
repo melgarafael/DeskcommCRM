@@ -758,6 +758,10 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
               // pediu para ficar com humano é reabrir o atendimento da IA por relógio.
               aiOptOut: row.contacts?.ai_opt_out ?? false,
               assigneeKind: null,
+              // O sweep responde por CONTATO (não por conversa) e passa
+              // `assigneeKind: null` de propósito — não há dono a soltar aqui, e
+              // o modo "IA com o dono" (#3967) é inerte nesta régua.
+              metadataDaConversa: null,
               botSilencedUntil: null,
               aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
               contactTags: row.contacts?.tags ?? null,

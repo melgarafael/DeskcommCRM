@@ -26,6 +26,7 @@ import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { evaluateConditions, usaFatosDoContato, type Conditions } from "@/lib/automation/conditions";
 import { carregarFatosDoContato } from "@/lib/automation/fatos-do-contato";
 import { hidratarCamposDoFunil } from "@/lib/automation/campos-do-render";
+import { anexarOpcoesDoRender } from "@/lib/automation/opcoes-do-render";
 import { getAction } from "@/lib/automation/actions";
 import { falhaDeExecucaoParaRecibo, resultadosParaRecibo } from "@/lib/automation/resultado-para-recibo";
 import { horasDoIntervaloNaConfig } from "@/lib/automation/limite-por-contato";
@@ -86,6 +87,18 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
   // Admin client bypassa RLS — todo lookup filtra organization_id do evento
   // (doutrina multi-tenant; um FK cross-org corrompido nunca vaza pro contexto).
   const org = row.organization_id;
+  // O idioma e o fuso da EMPRESA vão no contexto porque o interpolador é função
+  // pura (#4339): `{{campo|data}}` formata a data no idioma de quem lê e resolve
+  // a hora no fuso da organização. Uma leitura por evento, pela PK.
+  const { data: organizacao } = await admin
+    .from("organizations")
+    .select("locale, timezone")
+    .eq("id", org)
+    .maybeSingle();
+  anexarOpcoesDoRender(context, {
+    idioma: (organizacao as { locale?: string | null } | null)?.locale,
+    fuso: (organizacao as { timezone?: string | null } | null)?.timezone,
+  });
   // `lead` ≡ `crm_lead` para os gatilhos do trigger do banco (#1528): sem
   // isto, `lead.won`/`lead.lost`/`lead.reopened`/`lead.assigned` chegavam com a
   // entidade que o `fn_log_event` deriva e a regra rodava SEM o objeto `lead`
