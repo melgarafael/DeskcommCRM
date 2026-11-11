@@ -22,14 +22,17 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { confereGrupoDaConexao } from "@/lib/agenda/grupo-do-aviso-de-agendamento";
 import { lerEstadoDaTelaDoAvisoDeAgendamento } from "@/lib/agenda/tela-do-aviso-de-agendamento";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { mascara } from "@/lib/escalacao/aviso-ao-suporte";
 import { limparCacheDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
+import { criarDepsDeGrupos } from "@/lib/grupos/servico";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +54,19 @@ const corpo = z
       .regex(/^\+[1-9][0-9]{7,14}$/)
       .nullable()
       .optional(),
+    /** Um grupo da mesma conexão, destino EXTRA; `null` tira o grupo. */
+    grupo: z
+      .string()
+      .trim()
+      .regex(/^[\d-]+@g\.us$/)
+      .nullable()
+      .optional(),
     ligado: z.boolean(),
+    /**
+     * Também lembrar antes de cada horário (migration 9326). Ausente = não
+     * mexe na escolha salva — o formulário antigo continua valendo.
+     */
+    lembrar_antes: z.boolean().optional(),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
   })
@@ -92,6 +107,16 @@ const RECUSAS_DO_RPC = {
     status: 422 as const,
     frase:
       "Esse é um dos números conectados da sua conta. Ele não pode receber os avisos, senão um responde ao outro sem parar.",
+  },
+  aviso_de_agendamento_grupo_invalido: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Esse grupo não é válido. Escolha um grupo da lista.",
+  },
+  aviso_de_agendamento_sem_config: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Salve primeiro o número que recebe os avisos.",
   },
   aviso_de_agendamento_numero_de_cliente: {
     code: "aviso_numero_de_cliente",
@@ -138,6 +163,40 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   // Client de SESSÃO: o RPC lê `auth.uid()` para saber quem escreve.
   const db = await createClient();
+
+  // O RPC confere só o formato do grupo; que ele é desta conexão, só o canal
+  // sabe — a mesma lista que a tela mostra (`lib/agenda/grupo-do-aviso-de-agendamento.ts`).
+  if (dados.grupo) {
+    const antes = await lerEstadoDaTelaDoAvisoDeAgendamento(db, authz.org.orgId);
+    const conexao = dados.usa_numero_do_aviso_de_caso
+      ? (antes.aviso_de_caso?.channel_session_id ?? null)
+      : (dados.channel_session_id ?? null);
+    const conferencia = await confereGrupoDaConexao(criarDepsDeGrupos(createAdminClient()), {
+      organizationId: authz.org.orgId,
+      channelSessionId: conexao,
+      grupo: dados.grupo,
+      grupoAtual: antes.config?.grupo ?? null,
+      // A conexão EFETIVA de quando o grupo foi salvo: com o número do aviso
+      // de caso, é a conexão dele, não a coluna (que fica nula).
+      conexaoAtual: antes.config
+        ? antes.config.usa_numero_do_aviso_de_caso
+          ? (antes.aviso_de_caso?.channel_session_id ?? null)
+          : antes.config.channel_session_id
+        : null,
+    });
+    if (conferencia === "fora_da_conexao") {
+      const recusa = RECUSAS_DO_RPC.aviso_de_agendamento_grupo_invalido;
+      return fail(recusa.code, t(recusa.frase), recusa.status, { requestId });
+    }
+    if (conferencia === "sem_resposta") {
+      return fail(
+        "channel_unavailable",
+        t("O WhatsApp desta conexão não respondeu, e o grupo não pôde ser conferido. Tente de novo."),
+        502,
+        { requestId },
+      );
+    }
+  }
   const { data, error } = await db.rpc(
     "fn_definir_aviso_de_agendamento" as never,
     {
@@ -147,6 +206,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
       p_telefone: dados.usa_numero_do_aviso_de_caso ? null : (dados.telefone ?? null),
       p_ligado: dados.ligado,
       p_confirma_contato: dados.confirma_contato ?? false,
+      p_grupo: dados.grupo ?? null,
     } as never,
   );
 
@@ -158,6 +218,25 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   limparCacheDoNumeroInterno();
   const resultado = (data ?? {}) as { trocou_numero?: boolean; antes_ligado?: boolean };
+
+  // O lembrete antes do horário é uma segunda porta (9326), depois da primeira:
+  // a linha de configuração já existe aqui. Se ela recusar, o resto já foi
+  // salvo — a resposta diz o que faltou, e a tela relê o estado.
+  let antesLembrava: boolean | null = null;
+  if (dados.lembrar_antes !== undefined) {
+    const lembrete = await db.rpc(
+      "fn_definir_lembrete_do_aviso_de_agendamento" as never,
+      { p_org: authz.org.orgId, p_lembrar: dados.lembrar_antes } as never,
+    );
+    if (lembrete.error) {
+      const recusa = Object.entries(RECUSAS_DO_RPC).find(([nome]) =>
+        (lembrete.error?.message ?? "").includes(nome),
+      )?.[1];
+      if (recusa) return fail(recusa.code, t(recusa.frase), recusa.status, { requestId });
+      return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
+    }
+    antesLembrava = Boolean(lembrete.data);
+  }
 
   // O número entra MASCARADO: `api_audit_log` é append-only e a cascata de
   // LGPD não o alcança.
@@ -175,6 +254,10 @@ export async function PUT(req: NextRequest): Promise<Response> {
       antes_ligado: Boolean(resultado.antes_ligado),
       depois_ligado: dados.ligado,
       confirmou_contato: dados.confirma_contato ?? false,
+      com_grupo: Boolean(dados.grupo),
+      ...(dados.lembrar_antes !== undefined
+        ? { antes_lembrava: antesLembrava, depois_lembra: dados.lembrar_antes }
+        : {}),
     },
   });
 

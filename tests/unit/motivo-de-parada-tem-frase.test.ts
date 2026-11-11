@@ -94,6 +94,20 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
   },
   {
     arquivo: "lib/automation/actions/send-whatsapp.ts",
+    expressao: "MOTIVO_DO_PULO",
+    porque:
+      "#3813 — a escolha `nao_enviar` (\"quando o contato tiver horário marcado\") devolve o pulo pelo `reason` do resultado; o código possível é um só e está escrito em `MOTIVO_DO_PULO`, no produtor declarado ao lado",
+    produtor: { arquivo: "lib/agenda/escolha-no-envio.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/send-ai-message.ts",
+    expressao: "MOTIVO_DO_PULO",
+    porque:
+      "a irmã de IA devolve o MESMO código de pulo por compromisso na agenda (#3813), pelo `reason` do resultado; a constante é uma e mora no produtor declarado ao lado",
+    produtor: { arquivo: "lib/agenda/escolha-no-envio.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/send-whatsapp.ts",
     expressao: "classificada.motivo",
     porque:
       "a recusa da mídia que não é imagem nem PDF (#2734) chega à tela pelo `error` do resultado; o motivo é a frase de gente que o produtor escreve, e o produtor é varrido ao lado",
@@ -114,11 +128,25 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
     produtor: { arquivo: "lib/agent-engine/agent/abordagem-de-formulario.ts" },
   },
   {
+    arquivo: "lib/automation/actions/assign-owner.ts",
+    expressao: "elegibilidade.motivo",
+    porque:
+      "#3804 — o vínculo de quem vai receber virou UMA régua (`conferirElegibilidade`), usada pelo modo fixo de sempre e por cada elo do destino dinâmico; os dois códigos que ela devolve (`user_not_in_org`, `invalid_owner`) estão escritos no tipo `Elegibilidade` deste mesmo arquivo, têm frase no mapa desde a #2041/#3514, e o produtor varrido ao lado é o próprio arquivo",
+    produtor: { arquivo: "lib/automation/actions/assign-owner.ts" },
+  },
+  {
     arquivo: "lib/automation/actions/create-task.ts",
     expressao: "resultado.codigo",
     porque:
       "a recusa da tarefa (sem alvo, sem dono, título vazio, falha de gravação) chega à tela pelo `reason` do resultado; os códigos possíveis são quatro e estão escritos no tipo ResultadoDaTarefa",
     produtor: { arquivo: "lib/tarefas/criar-tarefa.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/define-sector.ts",
+    expressao: "resultado.motivo",
+    porque:
+      "#3881 — a recusa da régua do setor (conversa encerrada, setor de outra organização, setor escolhido por uma pessoa) chega à tela pelo `error` do resultado; os códigos possíveis estão escritos no tipo RecusaDoSetor, em lib/atendimento/setor-da-conversa.ts, e a frase que o operador lê é a do mapa MOTIVO_DA_PARADA — o detalhe da recusa não leva `explicacao`, que venceria a tradução",
+    produtor: { arquivo: "lib/atendimento/setor-da-conversa.ts" },
   },
   {
     arquivo: "lib/automation/actions/apply-task-plan.ts",

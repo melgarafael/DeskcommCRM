@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,13 @@ interface Props {
   bloqueio?: string | null;
   /** Conversa encerrada: desabilita o envio sem texto próprio, como o composer. */
   encerrada?: boolean;
+  /**
+   * Renderiza como ITEM DE MENU (#3003) em vez de botão da barra. A régua de
+   * existir continua sendo a daqui (`servidorDeVideo()`), não a do cabeçalho:
+   * quem decide se a instalação tem vídeo é esta peça, e ela devolve `null`
+   * quando não tem — inclusive dentro do menu.
+   */
+  comoItemDeMenu?: boolean;
 }
 
 /**
@@ -88,6 +96,7 @@ export function VideoCallButton({
   lastInboundAt,
   bloqueio,
   encerrada = false,
+  comoItemDeMenu = false,
 }: Props) {
   const t = useT();
   const servidor = useMemo(() => servidorDeVideo(), []);
@@ -118,15 +127,34 @@ export function VideoCallButton({
 
   return (
     <>
-      <Button
-        variant="outline"
-        className="shrink-0"
-        onClick={() => abrir(true)}
-        data-testid="btn-videochamada"
-      >
-        <VideoCamera size={16} weight="bold" aria-hidden />
-        <span>{t("Vídeo")}</span>
-      </Button>
+      {comoItemDeMenu ? (
+        <DropdownMenuItem
+          data-testid="btn-videochamada"
+          // GUIA CURTA (#3003): "Vídeo" não diz que o link vai pelo CHAT — e é
+          // ele que o cliente recebe, não uma chamada que toca sozinha.
+          title={t("Abre uma sala de vídeo e manda o link dela pelo chat desta conversa.")}
+          // O menu não fecha no clique: o diálogo é FILHO deste componente, e
+          // fechar o menu o desmontaria junto.
+          onSelect={(e) => {
+            e.preventDefault();
+            abrir(true);
+          }}
+        >
+          <VideoCamera size={16} weight="bold" aria-hidden className="mr-2" />
+          {t("Vídeo")}
+        </DropdownMenuItem>
+      ) : (
+        <Button
+          variant="outline"
+          className="shrink-0"
+          onClick={() => abrir(true)}
+          title={t("Abre uma sala de vídeo e manda o link dela pelo chat desta conversa.")}
+          data-testid="btn-videochamada"
+        >
+          <VideoCamera size={16} weight="bold" aria-hidden />
+          <span>{t("Vídeo")}</span>
+        </Button>
+      )}
 
       {/* O diálogo só existe ABERTO: é a condição que segura a mutação
           (`useSendMessage`) para dentro — ver o cabeçalho deste arquivo.

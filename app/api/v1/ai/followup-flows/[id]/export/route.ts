@@ -30,7 +30,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const SOURCE_COLUMNS =
-  "id, name, draft_graph, trigger_config, handoff_policy, surface, active_version_id";
+  "id, name, draft_graph, trigger_config, handoff_policy, send_when_assigned, surface, active_version_id";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -98,6 +98,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       name: String(origem.name),
       surface: (origem.surface as string | null) ?? null,
       handoff_policy: String(origem.handoff_policy ?? "pause"),
+      send_when_assigned: origem.send_when_assigned === true,
       trigger_config: origem.trigger_config,
       graph: grafo.data,
     },

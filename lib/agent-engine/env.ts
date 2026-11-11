@@ -12,6 +12,21 @@ import {
   RETORNO_STAGGER_WINDOW_MS_PADRAO,
 } from '@/lib/followup/janela';
 import { esforcoDeRaciocinioOpenAI } from '@/lib/agent-engine/edge/llm/providers';
+import { intervaloDoPollingDoEnv, tetoDoRecuoDoEnv } from '@/lib/agent-engine/queue/recuo';
+
+/**
+ * Aviso de env inválida que NÃO derruba o boot (#3878, sugestão 1).
+ *
+ * O `loadEnv` do worker lança quando o schema recusa, e um typo num knob de
+ * RITMO derrubava o processo inteiro — o oposto da doutrina de packaging deste
+ * repo ("atualização nunca exige edição manual de arquivo"). Os knobs de ritmo
+ * do polling degradam para o valor de hoje com uma linha no log, e é esta
+ * função que escreve a linha.
+ */
+const avisoDeEnv = (mensagem: string): void => {
+  console.warn(mensagem);
+};
+
 
 const envSchema = z.object({
   // Postgres do Supabase (connection string — Settings → Database). O motor usa
@@ -73,15 +88,40 @@ const envSchema = z.object({
   QUEUE_VISIBILITY_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
   // Porta do /healthz (bind 0.0.0.0 no container; 0 = porta efêmera em teste).
   HEALTH_PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
-  // TETO de espera do laço da fila: com a fila vazia é quanto ele dorme entre uma
-  // consulta ao relógio e a próxima; com job agendado, ele acorda no vencimento e
-  // este valor só limita a soneca. Era 250 e a fila era consultada abrindo uma
+  // PISO da espera ociosa do laço da fila: com a fila vazia é quanto ele dorme na
+  // PRIMEIRA rodada ociosa, e o valor dobra a cada rodada seguinte até
+  // QUEUE_IDLE_MAX_INTERVAL_MS; com job agendado, ele acorda no vencimento e este
+  // valor só limita a soneca. Era 250 e a fila era consultada abrindo uma
   // transação de claim inteira — 5 statements, ~17/s para sempre numa instalação
   // que não atende ninguém (issue #258: 8,09 GB/mês de egress medidos contra uma
   // cota de 5 GB do plano free do Supabase). O 2000 mantém o SIGNIFICADO da chave
   // para quem já a configurou, cabe 4× dentro do INBOUND_DEBOUNCE_MS (8000) e fica
   // abaixo do idleTimeoutMillis do pool (10s), acima do qual cada rodada reconecta.
-  QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
+  QUEUE_POLL_INTERVAL_MS: z
+    .string()
+    .optional()
+    .transform((bruto) =>
+      intervaloDoPollingDoEnv(bruto, {
+        nome: 'QUEUE_POLL_INTERVAL_MS',
+        padraoMs: 2_000,
+        avisar: avisoDeEnv,
+      }),
+    ),
+  // TETO do recuo exponencial com a fila VAZIA (issue #3688). OPCIONAL, e
+  // ausente = recuo DESLIGADO (a fila vazia dorme sempre o piso, como antes).
+  // Ligar economiza consultas: o autor da issue mediu 3.880 chamadas do relógio
+  // em 2h19 (~28/min) numa instalação parada; com 60000 a mesma instalação cai
+  // para ~1 consulta/min. O custo: só o inbound que passa pelo drain do worker
+  // acorda a soneca — job enfileirado pela API do app (resposta da equipe a um
+  // caso da IA) e os disparos agendados pelo cron podem esperar até o teto.
+  // Por isso não é default (doc 242, C).
+  // O teto fica ACIMA do idleTimeoutMillis do pool (10 s) de propósito: cada
+  // rodada depois de um sono longo reconecta (499 B medidos contra 66 B), mas
+  // 1 rodada/min a 499 B continua 4× mais barata que 30 rodadas/min a 66 B.
+  QUEUE_IDLE_MAX_INTERVAL_MS: z
+    .string()
+    .optional()
+    .transform((bruto) => tetoDoRecuoDoEnv(bruto, { nome: 'QUEUE_IDLE_MAX_INTERVAL_MS', avisar: avisoDeEnv })),
   // Ritmo do "havia trabalho e eu não peguei" — cap QUEUE_MAX_CONCURRENCY cheio ou
   // lane do contato ocupada. Aqui há job vencido esperando vaga, então recolher o
   // ritmo custaria throughput no pico sem economizar nada no ocioso: é o único
@@ -142,6 +182,17 @@ const envSchema = z.object({
   // `event-log-drain` (1×/min) — ver o cabeçalho de lib/event-log/drain-loop.ts.
   EVENT_LOG_DRAIN_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
   EVENT_LOG_DRAIN_IDLE_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+  // Teto do recuo do ocioso (#3693). O laço não fica em 10s para sempre: 10s →
+  // 20s → 30s e para aqui. Sem teto, uma instalação sem uso passaria a
+  // esperar horas entre ticks — e um evento que chegasse esperaria junto.
+  // 30s e não 60s é decisão do dono (doc 242, opção B): corta a maior parte das
+  // consultas vazias sem deixar automação e aviso ao atendente com cara de
+  // "travou". Preso por `lib/agent-engine/env.test.ts`.
+  EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  // De quanto em quanto tempo, no MÁXIMO, o laço procura evento preso em
+  // `processing`. A varredura procura linhas 10 min atrasadas: fazê-la a cada
+  // tick (2s) era consulta ao PostgREST sem chance de achar nada novo.
+  EVENT_LOG_DRAIN_STALE_SWEEP_MS: z.coerce.number().int().positive().default(60_000),
   EVENT_LOG_DRAIN_BATCH_SIZE: z.coerce.number().int().positive().default(50),
   // Coalescência de rajada inbound: mensagens do MESMO contato dentro desta
   // janela viram UM job (responder em rajada é gatilho de ban). 0 = sem debounce.
@@ -173,6 +224,21 @@ const envSchema = z.object({
   // 'disabled' injeta o desligamento no corpo das chamadas — e SÓ nas da
   // DeepSeek (a fábrica é dela; ver providers.ts).
   DEEPSEEK_THINKING: z.enum(['provider', 'disabled']).default('provider'),
+  // Pontos de cache e sessão fixa nos Claude pela OpenRouter oficial. Ligado por
+  // padrão: vazio, ausente ou `on` liga; `off` desliga. Validado AQUI para a
+  // grafia errada derrubar o boot com o nome da variável; quem lê em runtime é
+  // `createDefaultRegistry` (providers.ts), via process.env, como
+  // OPENAI_REASONING_EFFORT logo abaixo. A grafia é normalizada como a fábrica
+  // normaliza (trim + minúsculas): ` ON ` liga lá e tem de passar aqui.
+  OPENROUTER_PROMPT_CACHE: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toLowerCase() || undefined : v),
+    z.enum(['on', 'off']).optional(),
+  ),
+  // Esquema das ferramentas no fio: 'on' tira o `pattern` que só repete o
+  // `format` (o regex que o zod gera para uuid/data/e-mail). SEM `.default`: o
+  // default é a constante ESQUEMA_SEM_PADRAO_PADRAO (edge/llm/stable-prefix.ts),
+  // e dois defaults é como um deles fica para trás. Ausente = o de hoje.
+  LLM_TOOL_SCHEMA_SEM_PADRAO: z.enum(['on', 'off']).optional(),
   // Esforço de raciocínio das chamadas diretas à OpenAI (só modelos o*, gpt-5*,
   // gpt-6*). Opcional; validado AQUI, pela mesma função que o lê em runtime, para
   // um erro de grafia derrubar o boot com o nome da variável — e não cada turno
@@ -197,8 +263,20 @@ const envSchema = z.object({
   // Payload curado da tool get_lead_context.
   LEAD_CONTEXT_HISTORY_LIMIT: z.coerce.number().int().positive().default(20),
   LEAD_CONTEXT_MAX_TOKENS: z.coerce.number().int().positive().default(1_000),
+  // Formato do histórico na abertura do turno: `json` (o de sempre) ou `linhas`
+  // (uma linha por mensagem, ~25% menos tokens no histórico). DESLIGADO até a
+  // avaliação A/B — muda o texto que o modelo lê (ver abertura/ritual.ts). Vale
+  // para o inbound_turn e a prévia; follow-up e case_reply_turn seguem em json
+  // (cada chamador de `ritualBlocks` decide, como os blocos de compromissos e origem).
+  LEAD_CONTEXT_HISTORY_FORMAT: z.enum(['json', 'linhas']).default('json'),
   // Memória durável por contato — orçamento fixo do índice de notas.
   LEAD_NOTES_INDEX_MAX_TOKENS: z.coerce.number().int().positive().default(500),
+  // Base de conhecimento lida pelo próprio modelo (#4133) — orçamento do ÍNDICE
+  // de materiais no sufixo do prompt. É POR TURNO (não cabe no prefixo estável,
+  // que é cacheado): default conservador, ~23 materiais por nome com id e ~2 com
+  // resumo de uma linha na medição de 06/11; quem tem acervo maior sobe aqui ou
+  // fica no modo `busca`.
+  KNOWLEDGE_INDEX_MAX_TOKENS: z.coerce.number().int().positive().default(600),
   // Recall híbrido das notas (BM25 × vetorial × decay × MMR).
   LEAD_RECALL_HALF_LIFE_DAYS: z.coerce.number().positive().default(30),
   LEAD_RECALL_MMR_LAMBDA: z.coerce.number().min(0).max(1).default(0.7),
@@ -238,6 +316,11 @@ const envSchema = z.object({
   FOLLOWUP_AI_MODEL: z.string().min(1).optional(),
   // Loop do agente — teto de steps de tool-calls por run.
   AGENT_MAX_STEPS: z.coerce.number().int().positive().default(8),
+  // Parada do laço depois do envio que o modelo declara final (só inbound_turn).
+  // 'on' (padrão, depois da avaliação do runbook) = para; 'observe' = expõe o
+  // parâmetro e registra a marca no traço, sem parar; 'off' = o laço de sempre.
+  // Ver docs/runbooks/parada-apos-envio.md.
+  AGENT_STOP_AFTER_FINAL_SEND: z.enum(['off', 'observe', 'on']).default('on'),
   // Teto de mensagens FÍSICAS enviadas ao lead por turno (send_message + send_template
   // somados, bolhas incluídas) — nenhum gate de before-send limita CONTAGEM, só ritmo.
   MAX_SENDS_PER_TURN: z.coerce.number().int().positive().default(3),

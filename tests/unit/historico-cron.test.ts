@@ -37,6 +37,19 @@ vi.mock("@/lib/channels/historico/rodada", () => ({
     return { status: h.statusDaRodada[id] ?? "rodando", gravadas: 1, existentes: 0 };
   }),
 }));
+// Os passos da queda (Spec 32) têm o próprio teste: aqui só importa que o cron os chame
+// e que a falha de um deles não tire as rodadas.
+const quedasEspiao = vi.hoisted(() => ({
+  abrir: vi.fn(async () => ({ criadas: 0 })),
+  preparar: vi.fn(async () => ({ promovidas: 0, canceladas: 0 })),
+  operantes: vi.fn(async () => [] as string[]),
+}));
+vi.mock("@/lib/channels/historico/quedas", () => ({
+  abrirRecuperacoesDasQuedas: quedasEspiao.abrir,
+  prepararRecuperacoesAguardando: quedasEspiao.preparar,
+  organizacoesOperantes: quedasEspiao.operantes,
+}));
+vi.mock("@/lib/channels/historico/avisos-da-queda", () => ({ fecharAvisosDeClienteRespondido: vi.fn(async () => 0) }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: (t: string) => {
@@ -100,6 +113,15 @@ beforeEach(() => {
 });
 
 describe("cron da importação do histórico (#999)", () => {
+  it("um passo da queda que falha não para as rodadas", async () => {
+    quedasEspiao.abrir.mockRejectedValueOnce(new Error("event_log fora do ar"));
+    h.tabela = [linha("a")];
+    const r = await chamar();
+    expect(r.status).toBe(200);
+    expect(quedasEspiao.abrir).toHaveBeenCalledTimes(1);
+    expect(h.rodadas.map((x) => x.id)).toEqual(["a"]);
+  });
+
   it("sem segredo é 403 e não varre nada", async () => {
     h.autoriza = false;
     expect((await chamar()).status).toBe(403);

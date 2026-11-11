@@ -20,6 +20,7 @@
  * posição dele na fila e o devolve byte a byte, sem editar.
  */
 import { configAoSalvarDaTela } from "@/lib/automation/config-ao-salvar";
+import { horasDoIntervaloDaTela, horasDoIntervaloNaConfig } from "@/lib/automation/limite-por-contato";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
@@ -116,6 +117,16 @@ export type TelaDoGatilho = {
    * DESLIGAR a opção.
    */
   umaVezPorContato: boolean;
+  /**
+   * "Não repetir para o mesmo contato por N horas" (#2974, fatia 2), como
+   * TEXTO.
+   *
+   * Texto pelo mesmo motivo dos outros N da tela: o campo vazio precisa ser
+   * distinguível de um `0`, e `""` é "sem intervalo" — a chave não é gravada.
+   * Valor guardado que não passe na régua (1..720 inteiro) abre como vazio: a
+   * tela não inventa N que o motor não vai respeitar.
+   */
+  repetirAposHoras: string;
   data: { pipeline_id: string; campo: string; dias: string };
   tempo: { dias: string; direcao: DirecaoDoSilencio; proteger_pela_agenda: boolean };
 };
@@ -244,9 +255,14 @@ export function telaDoGatilho(config: unknown): TelaDoGatilho {
     config && typeof config === "object" && !Array.isArray(config)
       ? (config as Record<string, unknown>).uma_vez_por_contato
       : undefined;
+  // O intervalo é lido pela régua compartilhada (#2974, fatia 2): o mesmo 1..720
+  // inteiro que o motor usa. Fora dela, a tela abre o campo vazio — e gravar
+  // vazio não inventa a chave.
+  const intervalo = horasDoIntervaloNaConfig(config);
   return {
     fonte: typeof fonte === "string" ? fonte : null,
     umaVezPorContato: limite === true,
+    repetirAposHoras: intervalo === null ? "" : String(intervalo),
     data: data
       ? { pipeline_id: data.pipeline_id, campo: data.campo, dias: String(data.dias) }
       : { pipeline_id: "", campo: "", dias: DIAS_PADRAO },
@@ -293,7 +309,22 @@ export function triggerConfigDaTela(
     });
   }
   if (evento === "lead.created") {
-    return configAoSalvarDaTela({
+    // O intervalo mínimo por contato (#2974, fatia 2). Três cuidados:
+    //
+    //   - campo vazio = SEM intervalo, e isso precisa APAGAR o que está
+    //     gravado: `configAoSalvarDaTela` faz merge com o guardado, então
+    //     omitir a chave a manteria para sempre e o operador não teria como
+    //     desligar a opção (o mesmo defeito que o `false` explícito do
+    //     `uma_vez_por_contato` veio consertar). A chave sai DEPOIS do merge;
+    //   - `uma_vez_por_contato` ligado ⇒ o intervalo não é gravado: a tela não
+    //     configura as duas, e o campo fica desabilitado. Um valor guardado pela
+    //     API que fique por baixo do checkbox não pode sobreviver calado a um
+    //     salvar — o motor resolve pela régua do intervalo, e a tela diria
+    //     "uma vez por contato" enquanto a regra se comporta como "a cada N h";
+    //   - texto que não é inteiro de 1 a 720 não vira `NaN` nem `null` na
+    //     config: sai como ausência, que é a mesma resposta FAIL-OPEN do motor.
+    const horas = horasDoIntervaloDaTela(tela.repetirAposHoras, tela.umaVezPorContato);
+    const config = configAoSalvarDaTela({
       ...base,
       configDaTela: {
         webhook_source_id: tela.fonte,
@@ -302,8 +333,11 @@ export function triggerConfigDaTela(
         // desligar a opção, porque `configAoSalvarDaTela` faz merge com o que
         // está guardado.
         uma_vez_por_contato: tela.umaVezPorContato,
+        ...(horas !== null ? { repetir_apos_horas: horas } : {}),
       },
     });
+    if (horas === null) delete config.repetir_apos_horas;
+    return config;
   }
   // Gatilho sem configuração própria: nada é inventado aqui, mas o que a tela
   // NÃO desenha não pode sumir no salvar — `configAoSalvarDaTela` com
@@ -507,6 +541,13 @@ function problemaDaRecusa(recusa: Recusa, percurso: Percurso): ProblemaDoDesenho
     return { caixa: gatilho, mensagem: recusa.code === "custom" ? recusa.message : PROBLEMAS.gatilhoInvalido };
   }
   if (raiz === "conditions") {
+    // A condição do contato (#3814) tem recusa `custom` escrita em português
+    // pelo próprio schema ("Escolha “sim” ou “não” nesta condição.") — é a
+    // frase que a pessoa precisa ler, e ela aponta o conserto. As demais são
+    // as de tamanho, que já têm frase própria.
+    if (recusa.code === "custom") {
+      return { caixa: percurso.condicoes?.id ?? gatilho, mensagem: recusa.message };
+    }
     return {
       caixa: percurso.condicoes?.id ?? gatilho,
       mensagem: indice === undefined ? PROBLEMAS.condicoesDemais : PROBLEMAS.condicaoGrandeDemais,

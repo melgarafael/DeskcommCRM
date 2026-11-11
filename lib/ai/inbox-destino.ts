@@ -84,6 +84,12 @@ export const POLITICAS_DE_AVISO = {
   message_send_stuck: { refs: ["conversation"], orientacao: "Confira a resposta que não chegou antes de decidir se precisa enviar novamente." },
   midia_nao_lida: { refs: [], orientacao: "Peça ao gestor para revisar o provedor e as credenciais de leitura de fotos e áudios.", geral: { papel: "manager", href: "/app/ai/providers", rotulo: "Revisar provedores de IA" } },
   channel_template_review: { refs: [], orientacao: "Confira os modelos na conexão WhatsApp via Parceiro. Este aviso não identifica um modelo específico.", geral: { papel: "admin", href: "/app/connections?aba=parceiro&sub=templates", rotulo: "Revisar modelos do canal" } },
+  // (migration 9327, issue #3635) O mesmo evento no canal OFICIAL DIRETO. O
+  // `ref_kind='channel_session'` do produtor é o que responde "QUAL conexão" —
+  // a empresa pode ter dois números com modelos homônimos —, e o destino geral
+  // é a sub-aba de modelos da aba oficial, não a do parceiro: o modelo reprovado
+  // se conserta lá, e mandar para a outra aba é um aviso que leva ao lugar errado.
+  channel_template_review_direct: { refs: ["channel_session"], orientacao: "Abra Conexões › Modelos do canal oficial: o modelo reprovado precisa de correção no texto antes de voltar para revisão.", geral: { papel: "admin", href: "/app/connections?aba=oficial&sub=templates", rotulo: "Revisar modelos do canal oficial" } },
   channel_number_alert: { refs: ["channel_session"], orientacao: "Peça a quem administra para revisar a situação do número nas conexões.", geral: CONEXOES },
   // Sem `geral`, ao contrário do vizinho acima: o `canal-mudo-watcher` SEMPRE
   // nasce apontando para a conexão que ficou muda (`ref_kind: channel_session`),
@@ -186,7 +192,28 @@ export const POLITICAS_DE_AVISO = {
     refs: ["task"],
     orientacao: "A tarefa venceu sem conclusão. Abra e conclua, ou reagende o prazo se ele não for mais possível.",
   },
-  other: { refs: ["agenda_reminder_sender", "lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
+  // Spec 32. O resumo nasce SEMPRE apontando para a conexão (`ref_kind: channel_session`),
+  // como o `canal_pausado` e o `canal_mudo_sem_numero` — por isso sem `geral`. Papel
+  // admin pela entrada `channel_session` de REFERENCIAS_DE_AVISO: é a conexão e o
+  // histórico dela que o administrador confere, não a conversa de um cliente.
+  recuperacao_da_queda: { refs: ["channel_session"], orientacao: "Confira em Conexões se o número voltou e se o histórico do período fora do ar entrou como esperado." },
+  // Spec 32. Nasce SEMPRE com `ref_kind: conversation` (a conversa recuperada), como o
+  // `message_send_stuck` e o `promise_unfulfilled`. Papel agent pela entrada
+  // `conversation`: quem pode ver a conversa pode responder; não há "dono" a quem
+  // mandar, porque a conversa recuperada pode não ter responsável.
+  cliente_sem_resposta_na_queda: { refs: ["conversation"], orientacao: "Abra a conversa e responda o cliente — ele escreveu enquanto o número estava fora do ar." },
+  // (migration 9027, issue #3371) O aviso nasce SEM referência: o que o conserta
+  // não é uma linha do banco, é o login da conta — e o login mora na tela de
+  // Credenciais. O botão diz o que fazer ("Reconectar"), não "revisar", porque
+  // nada há para inspecionar: a conta precisa ser conectada de novo.
+  assinatura_desconectada: { refs: [], orientacao: "A conta que paga a assinatura recusou o login. Reconecte em IA › Credenciais; este aviso se resolve sozinho quando o login voltar.", geral: { papel: "admin", href: "/app/ai/credentials", rotulo: "Reconectar a assinatura" } },
+  // `conversation`: a apresentação do catálogo interrompida
+  // (`lib/catalogo/retomada-de-apresentacao.ts`) nasce `other` apontando para a
+  // conversa. Nenhum kind de conversa existente diz o que ela diz, e o
+  // `message_send_stuck` cala o aviso de automação aberto na mesma janela. A porta
+  // passa pela MESMA conferência dos outros kinds: RLS de `conversations` no
+  // client da request, papel `agent` da entrada `conversation`.
+  other: { refs: ["agenda_reminder_sender", "lead", "conversation", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
 /**

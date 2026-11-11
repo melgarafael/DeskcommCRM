@@ -20,9 +20,19 @@ import {
 import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSources";
 import { useAgentsList } from "@/hooks/ai/useAgents";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
-import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { useAssignableMembers, type AssignableMember } from "@/hooks/inbox/useAssignableMembers";
+import { useSectors } from "@/hooks/team/useSectors";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import {
+  CHAVE_DA_ESCOLHA,
+  ESCOLHA_PADRAO,
+  lerEscolhaNoEnvio,
+  type EscolhaNoEnvio,
+} from "@/lib/agenda/escolha-no-envio";
+import { EscolhaQuandoHaCompromisso } from "@/components/agenda/EscolhaQuandoHaCompromisso";
 import { camposDeDataDoNegocio, camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { motivosDoFunil, opcoesDeMotivoDePerda } from "@/lib/leads/motivos-de-perda-do-funil";
+import { rotuloDoMotivoDePerda } from "@/lib/schemas/leads";
 import { apiClient } from "@/lib/api/client";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import {
@@ -38,14 +48,76 @@ import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
  * a posição na `fila` é a ordem. Mesma forma do `configDoAtribuirSchema` da API.
  */
 export type ConfigDoAtribuir =
-  | { modo?: "fixo"; user_id: string }
-  | { modo: "rodizio"; fila: Array<{ user_id: string; pausado: boolean }> };
+  | {
+      modo?: "fixo";
+      user_id: string;
+      /**
+       * #3514 — a passagem SDR → Closer. O negócio muda de dono sempre; estas
+       * duas caixas decidem se o CLIENTE vai junto. Desligadas por padrão, e
+       * `undefined` (não `false`) é o que está gravado nas regras de antes: o
+       * payload antigo continua idêntico.
+       */
+      contato?: boolean;
+      conversas?: boolean;
+    }
+  | { modo: "rodizio"; fila: FilaDaAtribuicao }
+  /**
+   * #3804 — o destino dinâmico: quem recebe é o que o NEGÓCIO já tem
+   * (responsável e/ou dono da carteira do cliente), e o `fallback` decide quando
+   * ninguém serve. Mesma forma do `configDoAtribuirSchema` da API.
+   */
+  | {
+      modo: "destino";
+      destinos: DestinoDoAtribuir[];
+      fallback:
+        | { modo: "fixo"; user_id: string }
+        | { modo: "rodizio"; fila: FilaDaAtribuicao };
+      contato?: boolean;
+      conversas?: boolean;
+    };
+
+/** Uma pessoa da fila do rodízio — a posição no array é a ordem da vez. */
+export type FilaDaAtribuicao = Array<{ user_id: string; pausado: boolean }>;
+
+/** O `config` quando o modo é o destino dinâmico (#3804). */
+export type ConfigDoDestino = Extract<ConfigDoAtribuir, { modo: "destino" }>;
+
+/** Os três jeitos de a ação escolher quem recebe. */
+export type ModoDaAtribuicao = "fixo" | "rodizio" | "destino";
+
+/**
+ * Os destinos do #3804, na ordem em que são tentados — o MESMO vocabulário de
+ * `DESTINOS_DO_ATRIBUTO` no schema da API (`lib/schemas/webhooks`). Aqui como
+ * constante própria para a tela não puxar o zod para o bundle do cliente.
+ */
+export const DESTINOS_DO_ATRIBUIR = ["responsavel_do_negocio", "dono_da_carteira"] as const;
+export type DestinoDoAtribuir = (typeof DESTINOS_DO_ATRIBUIR)[number];
 
 export type ActionItem =
-  | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
+  | {
+      type: "create_or_move_lead";
+      config: {
+        pipeline_id: string;
+        stage_id: string;
+        /**
+         * #4297 — o motivo da perda, exigido quando a etapa de destino é de
+         * perda (`is_lost`). O valor é o mesmo que o arrasto grava: canônico do
+         * produto ou um dos motivos cadastrados no funil. Ausente = regra que
+         * não passa por etapa de perda (ou regra antiga, que falha com o código
+         * real no recibo).
+         */
+        lost_reason?: string;
+      };
+    }
   | {
       type: "send_whatsapp_message";
-      config: { channel_session_id: string; template: string; media_url?: string | null };
+      config: {
+        channel_session_id: string;
+        template: string;
+        media_url?: string | null;
+        /** #3813 — o que o passo faz com quem tem horário marcado. Ausente = `adiar`. */
+        quando_ha_compromisso?: EscolhaNoEnvio;
+      };
     }
   // #2726 — o e-mail de saída: mesmo campo que a irmã de WhatsApp (`assunto`/
   // `corpo` no lugar do `template`), e `email_fixo` só preenche quando o
@@ -64,17 +136,27 @@ export type ActionItem =
     }
   | {
       type: "send_ai_message";
-      config: { agent_id: string; channel_session_id: string; instruction: string };
+      config: {
+        agent_id: string;
+        channel_session_id: string;
+        instruction: string;
+        /** #3813 — mesma escolha da irmã de WhatsApp. Ausente = `adiar`. */
+        quando_ha_compromisso?: EscolhaNoEnvio;
+      };
     }
   | {
       type: "add_tag";
+      config: { tags: string[]; destino?: "card" | "contato" };
+    }
+  | {
+      type: "remove_tag";
       config: { tags: string[]; destino?: "card" | "contato" };
     }
   | { type: "assign_owner"; config: ConfigDoAtribuir }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string; include_owner?: boolean } }
   | {
       type: "start_message_flow";
-      config: { flow_pointer_id: string; surface?: "followup" | "atendimento" };
+      config: { flow_pointer_id: string; surface?: "followup" | "atendimento"; replace_live_flow?: boolean };
     }
   // #1540 — o lembrete interno: mesmos campos do schema da API e do nó de fluxo.
   | {
@@ -98,7 +180,11 @@ export type ActionItem =
   // isso não existe campo de número, de endereço, de pessoa nem de canal: a
   // configuração guarda só o canal, e é o executor que lê o destino
   // cadastrado. Mesmos campos do schema da API.
-  | { type: "notify_team"; config: { canal: "whatsapp" } };
+  | { type: "notify_team"; config: { canal: "whatsapp" } }
+  // #3881 — a conversa vai para um SETOR. Mesmos campos do schema da API: o
+  // setor escolhido e a caixa (desligada por padrão) que autoriza a regra a
+  // reclassificar o que uma pessoa classificou à mão.
+  | { type: "define_sector"; config: { sector_id: string; sobrescrever_setor_manual?: boolean } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -123,6 +209,7 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     case "send_ai_message":
       return { type, config: { agent_id: "", channel_session_id: "", instruction: "" } };
     case "add_tag":
+    case "remove_tag":
       return { type, config: { tags: [] } };
     case "assign_owner":
       return { type, config: { user_id: "" } };
@@ -149,6 +236,11 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     // por isso o `config` guarda apenas o canal (o schema exige o literal).
     case "notify_team":
       return { type, config: { canal: "whatsapp" } };
+    // #3881 — o setor nasce vazio: a lista é da INSTALAÇÃO (módulo `setores`) e
+    // quem escolhe é quem monta a regra. Sem escolha, a regra falha nomeada no
+    // disparo (`sector_id_ausente`) em vez de gravar qualquer coisa.
+    case "define_sector":
+      return { type, config: { sector_id: "" } };
   }
 }
 
@@ -157,10 +249,36 @@ interface FormProps<T> {
   onChange: (config: T) => void;
 }
 
+/**
+ * O CONFIG DO PASSO com a escolha nova — preservando o resto.
+ *
+ * #3813 — a escolha mora no `config` do PASSO que envia, e não no
+ * `trigger_config`: é de lá que `lerEscolhaNoEnvio` a lê no disparo
+ * (`send-whatsapp.ts:24`, `send-ai-message.ts:64`), e gravar no gatilho daria
+ * uma tela que o motor não obedece. Cada passo tem a sua — a mesma regra pode
+ * adiar o lembrete de cobrança e mandar o pós-atendimento na hora.
+ *
+ * `...config` é o que impede a escolha de apagar o número, a mensagem e a
+ * mídia que a pessoa acabou de preencher. `adiar` é o padrão declarado da
+ * leitura tolerante, então voltar para ele REMOVE a chave: a regra de antes
+ * desta entrega não a tem, e um payload sem ela é byte a byte o de sempre.
+ *
+ * (A lista de opções e o rádio vivem em
+ * `components/agenda/EscolhaQuandoHaCompromisso` — a MESMA tela serve ao
+ * follow-up do agente desde esta entrega.)
+ */
+function configComEscolha<T extends object>(config: T, escolha: EscolhaNoEnvio): T {
+  const { [CHAVE_DA_ESCOLHA]: _anterior, ...resto } = config as Record<string, unknown>;
+  return (
+    escolha === ESCOLHA_PADRAO ? resto : { ...resto, [CHAVE_DA_ESCOLHA]: escolha }
+  ) as T;
+}
+
+
 function CreateOrMoveLeadForm({
   config,
   onChange,
-}: FormProps<{ pipeline_id: string; stage_id: string }>) {
+}: FormProps<{ pipeline_id: string; stage_id: string; lost_reason?: string }>) {
   const t = useT();
   const { data: pipelinesRes, isLoading: pipelinesLoading } = usePipelines();
   const { data: boardRes, isLoading: stagesLoading } = usePipelineStages(
@@ -168,6 +286,18 @@ function CreateOrMoveLeadForm({
   );
   const pipelines = pipelinesRes?.data ?? [];
   const stages = boardRes?.data?.stages ?? [];
+  const funil = pipelines.find((p) => p.id === config.pipeline_id) ?? null;
+  /**
+   * #4297 — A ETAPA DE DESTINO FECHA O NEGÓCIO COMO PERDA?
+   *
+   * É a MESMA coluna que o #917 lê no servidor (`is_lost`), e a lista de
+   * motivos é a MESMA do arrasto (`opcoesDeMotivoDePerda` sobre os
+   * `settings.lost_reasons` do funil): canônicos do produto, ou os que o
+   * operador cadastrou em Configurações › Funis. Redigitar a lista aqui faria a
+   * regra oferecer um motivo que o banco recusa no clique.
+   */
+  const etapaDePerda = stages.find((s) => s.id === config.stage_id)?.is_lost === true;
+  const motivos = opcoesDeMotivoDePerda(motivosDoFunil(funil?.settings ?? null));
 
   return (
     <div className="grid gap-2 sm:grid-cols-2">
@@ -194,7 +324,16 @@ function CreateOrMoveLeadForm({
         <Label>{t("Etapa")}</Label>
         <Select
           value={config.stage_id}
-          onValueChange={(v) => onChange({ ...config, stage_id: v })}
+          onValueChange={(v) => {
+            if (stages.find((s) => s.id === v)?.is_lost !== true) {
+              // Sair da etapa de perda tira o motivo junto: guardar um motivo
+              // numa ação que não perde nada é dado morto, e ele voltaria a
+              // valer sozinho se alguém trocasse a etapa de novo.
+              onChange({ pipeline_id: config.pipeline_id, stage_id: v });
+              return;
+            }
+            onChange({ ...config, stage_id: v });
+          }}
           disabled={!config.pipeline_id || stagesLoading}
         >
           <SelectTrigger>
@@ -211,6 +350,33 @@ function CreateOrMoveLeadForm({
           </SelectContent>
         </Select>
       </div>
+      {etapaDePerda ? (
+        <div className="space-y-1 sm:col-span-2">
+          <Label htmlFor={`motivo-da-perda-${config.stage_id}`}>{t("Motivo da perda")}</Label>
+          <Select
+            value={config.lost_reason ?? ""}
+            onValueChange={(v) => onChange({ ...config, lost_reason: v })}
+          >
+            <SelectTrigger id={`motivo-da-perda-${config.stage_id}`}>
+              <SelectValue placeholder={t("Escolha o motivo da perda")} />
+            </SelectTrigger>
+            <SelectContent>
+              {motivos.map((opcao) => (
+                <SelectItem key={opcao.valor} value={opcao.valor}>
+                  {/* Motivo cadastrado pelo operador é DADO, não interface:
+                      aparece como ele escreveu, em qualquer idioma. O canônico
+                      é texto do produto e passa por t(), pelo mesmo rótulo do
+                      diálogo de perda (`rotuloDoMotivoDePerda`). */}
+                  {opcao.doFunil ? opcao.valor : t(rotuloDoMotivoDePerda(opcao.valor))}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t("Esta etapa fecha o negócio como perdido: a automação precisa dizer por quê.")}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -227,7 +393,12 @@ const TEMPLATE_VARS = [
 function SendWhatsappForm({
   config,
   onChange,
-}: FormProps<{ channel_session_id: string; template: string; media_url?: string | null }>) {
+}: FormProps<{
+  channel_session_id: string;
+  template: string;
+  media_url?: string | null;
+  quando_ha_compromisso?: EscolhaNoEnvio;
+}>) {
   const t = useT();
   const { data: sessions } = useChannelSessions();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -321,6 +492,11 @@ function SendWhatsappForm({
           {t("Com uma imagem, um vídeo, um áudio ou um documento, a mensagem acima vira a legenda do arquivo (o áudio sai como mensagem de voz, sem legenda — o texto não vai junto). Em número oficial, fora da janela de 24h a mídia não sai — só um modelo aprovado.")}
         </p>
       </div>
+      {/* #3813 — a escolha da agenda DESTE passo. */}
+      <EscolhaQuandoHaCompromisso
+        escolha={lerEscolhaNoEnvio(config)}
+        onChange={(escolha) => onChange(configComEscolha(config, escolha))}
+      />
     </div>
   );
 }
@@ -500,6 +676,9 @@ function SendEmailForm({
         {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
       </p>
       <p className="text-xs text-muted-foreground">
+        {t("Para escrever uma data no formato do cliente, use {{campo|data}}.")}
+      </p>
+      <p className="text-xs text-muted-foreground">
         {t(
           "A variável Resumo do negócio leva o nome da regra, o cliente, o telefone, o valor, a pontuação e um atalho para o negócio no CRM (quando a instalação tem endereço público), e nada do que foi conversado com o cliente. O resto do corpo vai como você escrever, inclusive as outras variáveis.",
         )}
@@ -527,7 +706,12 @@ function SendEmailForm({
 function SendAiMessageForm({
   config,
   onChange,
-}: FormProps<{ agent_id: string; channel_session_id: string; instruction: string }>) {
+}: FormProps<{
+  agent_id: string;
+  channel_session_id: string;
+  instruction: string;
+  quando_ha_compromisso?: EscolhaNoEnvio;
+}>) {
   const t = useT();
   const { data: agentes } = useAgentsList();
   const { data: sessions } = useChannelSessions();
@@ -595,6 +779,12 @@ function SendAiMessageForm({
           {t("O agente já sabe que é a PRIMEIRA mensagem, logo depois de a pessoa preencher o formulário, e recebe todos os campos que ela respondeu. Aqui você diz o que fazer com eles — quanto mais concreto, melhor a mensagem.")}
         </p>
       </div>
+
+      {/* #3813 — a mesma escolha da irmã de WhatsApp, no config DESTE passo. */}
+      <EscolhaQuandoHaCompromisso
+        escolha={lerEscolhaNoEnvio(config)}
+        onChange={(escolha) => onChange(configComEscolha(config, escolha))}
+      />
     </div>
   );
 }
@@ -611,14 +801,21 @@ function SendAiMessageForm({
 function AddTagForm({
   config,
   onChange,
-}: FormProps<{ tags: string[]; destino?: "card" | "contato" }>) {
+  tirar = false,
+}: FormProps<{ tags: string[]; destino?: "card" | "contato" }> & {
+  /** `remove_tag`: a mesma tela, com as frases de quem TIRA a etiqueta. */
+  tirar?: boolean;
+}) {
   const t = useT();
   const [text, setText] = React.useState(config.tags.join(", "));
   return (
     <div className="space-y-2">
       <div className="space-y-1">
-        <Label>{t("Tags (separadas por vírgula)")}</Label>
+        <Label htmlFor={tirar ? "remove-tag-tags" : "add-tag-tags"}>
+          {tirar ? t("Tags para tirar (separadas por vírgula)") : t("Tags (separadas por vírgula)")}
+        </Label>
         <Input
+          id={tirar ? "remove-tag-tags" : "add-tag-tags"}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -634,7 +831,7 @@ function AddTagForm({
         />
       </div>
       <div className="space-y-1">
-        <Label>{t("Destino da etiqueta")}</Label>
+        <Label>{tirar ? t("De onde tirar") : t("Destino da etiqueta")}</Label>
         <Select
           value={config.destino ?? "card"}
           onValueChange={(v) => onChange({ ...config, destino: v as "card" | "contato" })}
@@ -643,13 +840,15 @@ function AddTagForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="card">{t("Card (comportamento atual)")}</SelectItem>
-            <SelectItem value="contato">{t("Contato do lead")}</SelectItem>
+            <SelectItem value="card">{tirar ? t("Do card") : t("Card (comportamento atual)")}</SelectItem>
+            <SelectItem value="contato">{tirar ? t("Do contato do lead") : t("Contato do lead")}</SelectItem>
           </SelectContent>
         </Select>
         {config.destino === "contato" && (
           <p className="text-xs text-muted-foreground">
-            {t("Sem contato vinculado, a etiqueta não é aplicada.")}
+            {tirar
+              ? t("Sem contato vinculado, nenhuma etiqueta é tirada.")
+              : t("Sem contato vinculado, a etiqueta não é aplicada.")}
           </p>
         )}
       </div>
@@ -657,9 +856,28 @@ function AddTagForm({
   );
 }
 
-function AssignOwnerForm({ config, onChange }: FormProps<ConfigDoAtribuir>) {
+/**
+ * A fila do rodízio (#2041) — o editor de quem entra, em que ordem, e quem está
+ * pausado. Ele mora em UM lugar porque a fila mora em dois: o modo `rodizio` e o
+ * `fallback` do destino dinâmico (#3804) usam a MESMA fila e a mesma vez
+ * (`fn_automation_rodizio_atribuir`); duplicar o editor faria a segunda cópia
+ * envelhecer sozinha.
+ */
+function FilaDoRodizio({
+  fila,
+  members,
+  carregandoMembros,
+  onChange,
+  doFallback = false,
+}: {
+  fila: FilaDaAtribuicao;
+  members: AssignableMember[] | undefined;
+  carregandoMembros: boolean;
+  onChange: (fila: FilaDaAtribuicao) => void;
+  /** No fallback do destino dinâmico (#3804) o título diz de qual fila se trata. */
+  doFallback?: boolean;
+}) {
   const t = useT();
-  const { data: members, isLoading: carregandoMembros } = useAssignableMembers(true);
   // Enquanto a lista de membros não chega, o nome é `null` (a tela mostra um
   // esqueleto): o começo do user_id que aparecia ali não diz nada a ninguém.
   const nomeDe = (userId: string) => {
@@ -667,19 +885,313 @@ function AssignOwnerForm({ config, onChange }: FormProps<ConfigDoAtribuir>) {
     const membro = members?.find((m) => m.user_id === userId);
     return membro ? rotuloDoMembro(membro, t) : rotuloDoMembro({ user_id: userId }, t);
   };
+  const aoMudarFila = (nova: FilaDaAtribuicao) => onChange(nova);
+  const trocar = (de: number, para: number) => {
+    const nova = [...fila];
+    const [pessoa] = nova.splice(de, 1);
+    if (pessoa) nova.splice(para, 0, pessoa);
+    aoMudarFila(nova);
+  };
+  const foraDaFila = (members ?? []).filter((m) => !fila.some((p) => p.user_id === m.user_id));
 
-  if (config.modo !== "rodizio") {
-    return (
-      <div className="space-y-2">
-        <ModoDoAtribuir
-          modo="fixo"
-          onChange={() =>
-            onChange({ modo: "rodizio", fila: config.user_id ? [{ user_id: config.user_id, pausado: false }] : [] })
-          }
-        />
-        <div className="space-y-1">
-          <Label>{t("Atendente")}</Label>
-          <Select value={config.user_id} onValueChange={(v) => onChange({ user_id: v })}>
+  return (
+    <div className="space-y-2">
+  <div className="space-y-1">
+    <Label>{doFallback ? t("Fila do rodízio do fallback") : t("Fila do rodízio")}</Label>
+    <p className="text-xs text-muted-foreground">
+      {t("Cada lead vai para a próxima pessoa da fila, nesta ordem. Quem está pausado é pulado sem sair da fila.")}
+    </p>
+    {fila.length === 0 ? (
+      <p className="text-xs text-muted-foreground">{t("Ninguém na fila ainda. Adicione pelo menos uma pessoa.")}</p>
+    ) : (
+      <ol className="space-y-1" data-testid="fila-do-rodizio" aria-busy={carregandoMembros}>
+        {fila.map((pessoa, i) => {
+          const nomeCarregado = nomeDe(pessoa.user_id);
+          const nome = nomeCarregado ?? String(i + 1);
+          // Duas partes que QUEBRAM de linha quando a largura não cabe as
+          // duas (celular): o nome nunca disputa espaço com os 4 botões de
+          // 44px — a 360px ele ficava com 51px, e com 0px quando pausado.
+          return (
+            <li
+              key={pessoa.user_id}
+              className="flex flex-wrap items-center gap-x-1 gap-y-0.5 rounded-md border px-2 py-1"
+            >
+              <div className="flex min-w-0 grow basis-48 items-center gap-1" data-testid="pessoa-da-fila">
+                <span className="w-5 shrink-0 text-right text-xs text-muted-foreground">{i + 1}</span>
+                {nomeCarregado === null ? (
+                  <Skeleton aria-hidden className="h-4 w-24 max-w-full" />
+                ) : (
+                  <span
+                    className={`min-w-0 flex-1 truncate text-sm ${pessoa.pausado ? "text-muted-foreground line-through" : ""}`}
+                  >
+                    {nomeCarregado}
+                  </span>
+                )}
+                {pessoa.pausado ? (
+                  <span className="shrink-0 text-xs text-muted-foreground">{t("pausado")}</span>
+                ) : null}
+              </div>
+              <div className="ml-auto flex shrink-0 items-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`${t("Subir na fila")}: ${nome}`}
+                  disabled={i === 0}
+                  onClick={() => trocar(i, i - 1)}
+                >
+                  <CaretUp size={16} aria-hidden />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`${t("Descer na fila")}: ${nome}`}
+                  disabled={i === fila.length - 1}
+                  onClick={() => trocar(i, i + 1)}
+                >
+                  <CaretDown size={16} aria-hidden />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`${pessoa.pausado ? t("Voltar ao rodízio") : t("Pausar no rodízio")}: ${nome}`}
+                  onClick={() => aoMudarFila(fila.map((p, k) => (k === i ? { ...p, pausado: !p.pausado } : p)))}
+                >
+                  {pessoa.pausado ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`${t("Tirar da fila")}: ${nome}`}
+                  onClick={() => aoMudarFila(fila.filter((_, k) => k !== i))}
+                >
+                  <X size={16} aria-hidden />
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    )}
+  </div>
+  {foraDaFila.length > 0 ? (
+    <div className="space-y-1">
+      <Label>{t("Adicionar à fila")}</Label>
+      <Select value="" onValueChange={(v) => aoMudarFila([...fila, { user_id: v, pausado: false }])}>
+        <SelectTrigger>
+          <SelectValue placeholder={t("Escolha quem entra no rodízio")} />
+        </SelectTrigger>
+        <SelectContent>
+          {foraDaFila.map((m) => (
+            <SelectItem key={m.user_id} value={m.user_id}>
+              {rotuloDoMembro(m, t)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  ) : null}
+    </div>
+  );
+}
+
+/**
+ * As caixas da #3514 — a passagem SDR → Closer. OPT-IN, e o texto diz o que NÃO
+ * muda quando a caixa está desligada: quem já tem automação no ar não pode passar
+ * a mover conversa por causa de uma tela nova. As mesmas caixas valem para os
+ * destinos dinâmicos (#3804): lá a pessoa é resolvida no disparo, mas a passagem
+ * do cliente e das conversas é a mesma decisão do operador.
+ */
+function OpcoesDePassagem({
+  config,
+  onChange,
+}: {
+  config: { contato?: boolean; conversas?: boolean };
+  onChange: (patch: { contato?: boolean; conversas?: boolean }) => void;
+}) {
+  const t = useT();
+  return (
+    <>
+        {/* #3514 — a passagem SDR → Closer. OPT-IN, e o texto diz o que NÃO
+            muda quando a caixa está desligada: quem já tem automação no ar não
+            pode passar a mover conversa por causa de uma tela nova. */}
+        <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+          <div className="space-y-0.5">
+            <Label htmlFor="atribuir-passar-contato">{t("Passar também o contato (carteira)")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "O cliente passa a ser deste atendente, no lugar do dono atual, e leva junto as conversas abertas que estavam com o dono anterior ou sem dono (as que a IA está atendendo ficam com a IA). Desligado, o cliente e as conversas ficam como estão.",
+              )}
+            </p>
+          </div>
+          <Switch
+            id="atribuir-passar-contato"
+            checked={config.contato === true}
+            onCheckedChange={(v) => onChange({ ...config, contato: v ? true : undefined })}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+          <div className="space-y-0.5">
+            <Label htmlFor="atribuir-passar-conversas">{t("Passar também as conversas abertas do contato")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "As conversas abertas que hoje estão com qualquer outra pessoa vão para este atendente, como no botão Transferir. Esta opção não toca conversa encerrada nem conversa sem dono.",
+              )}
+            </p>
+          </div>
+          <Switch
+            id="atribuir-passar-conversas"
+            checked={config.conversas === true}
+            onCheckedChange={(v) => onChange({ ...config, conversas: v ? true : undefined })}
+          />
+        </div>
+    </>
+  );
+}
+
+/** De qual pessoa a regra parte ao trocar de modo — a que já estava escolhida. */
+function pessoaDaConfig(config: ConfigDoAtribuir): string {
+  if (config.modo === "rodizio") return config.fila[0]?.user_id ?? "";
+  if (config.modo === "destino") {
+    return config.fallback.modo === "fixo" ? config.fallback.user_id : (config.fallback.fila[0]?.user_id ?? "");
+  }
+  return config.user_id;
+}
+
+/**
+ * Troca o modo levando junto quem já estava escolhido: mudar de "pessoa fixa"
+ * para "rodízio" (ou para o fallback do destino) não pode obrigar o operador a
+ * escolher a pessoa de novo. As caixas da #3514 seguem com ele.
+ */
+function trocarModo(modo: ModoDaAtribuicao, config: ConfigDoAtribuir, onChange: (c: ConfigDoAtribuir) => void) {
+  const pessoa = pessoaDaConfig(config);
+  // Nem toda forma do union tem as caixas da #3514 (o rodízio puro não tem).
+  const caixas = config as { contato?: boolean; conversas?: boolean };
+  const passagem = {
+    ...(caixas.contato === true ? { contato: true } : {}),
+    ...(caixas.conversas === true ? { conversas: true } : {}),
+  };
+  if (modo === "rodizio") {
+    onChange({ modo: "rodizio", fila: pessoa ? [{ user_id: pessoa, pausado: false }] : [] });
+    return;
+  }
+  if (modo === "destino") {
+    onChange({
+      modo: "destino",
+      // A ordem é a da tentativa, não a do clique: o responsável do negócio
+      // primeiro, a carteira do contato depois.
+      destinos: [...DESTINOS_DO_ATRIBUIR],
+      fallback: { modo: "fixo", user_id: pessoa },
+      ...passagem,
+    });
+    return;
+  }
+  onChange({ user_id: pessoa, ...passagem });
+}
+
+/**
+ * O destino dinâmico (#3804): "responsável do negócio" e "dono da carteira do
+ * contato", na ordem em que são tentados, e um fallback OBRIGATÓRIO.
+ *
+ * O fallback não é enfeite de formulário: sem ele, a regra que não acha ninguém
+ * simplesmente não atribui e o negócio fica sem dono em silêncio — o defeito que
+ * a issue existe para eliminar. Por isso ele nunca fica vazio na tela: nasce com
+ * a pessoa que já estava escolhida e o rodízio com a fila de antes.
+ */
+function DestinoForm({ config, onChange }: { config: ConfigDoDestino; onChange: (c: ConfigDoAtribuir) => void }) {
+  const t = useT();
+  const { data: members, isLoading: carregandoMembros } = useAssignableMembers(true);
+
+  // Objetos do fallback sempre com o TIPO do fallback: `{ ...config, fallback }`
+  // com o literal solto alargava `modo` para `string` e o onChange recusava.
+  const trocarFallback = (modoDoFallback: "fixo" | "rodizio") => {
+    const pessoa = pessoaDaConfig(config);
+    const fallback: ConfigDoDestino["fallback"] =
+      modoDoFallback === "rodizio"
+        ? { modo: "rodizio", fila: pessoa ? [{ user_id: pessoa, pausado: false }] : [] }
+        : { modo: "fixo", user_id: pessoa };
+    onChange({ ...config, fallback });
+  };
+
+  const alternar = (destino: (typeof DESTINOS_DO_ATRIBUIR)[number]) => {
+    const ligado = config.destinos.includes(destino);
+    // Pelo menos um destino: desligar o último deixaria a regra sem o que tentar,
+    // e o schema da API recusa `destinos` vazio.
+    if (ligado && config.destinos.length === 1) return;
+    const proximos = ligado ? config.destinos.filter((d) => d !== destino) : [...config.destinos, destino];
+    onChange({ ...config, destinos: DESTINOS_DO_ATRIBUIR.filter((d) => proximos.includes(d)) });
+  };
+
+  return (
+    <div className="space-y-2">
+      <ModoDoAtribuir modo="destino" onChange={(modo) => trocarModo(modo, config, onChange)} />
+      <div className="space-y-1">
+        <Label>{t("Destinos, na ordem em que são tentados")}</Label>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Quem recebe é o que o negócio já tem: o responsável do negócio e, se ele não houver, o dono da carteira do cliente. Uma regra só para toda a equipe — o pós-venda de quem vendeu.",
+          )}
+        </p>
+        <ul className="space-y-1" data-testid="destinos-do-atribuir">
+          {DESTINOS_DO_ATRIBUIR.map((destino, i) => (
+            <li
+              key={destino}
+              className="flex items-center justify-between gap-3 rounded-md border p-3"
+              data-testid="destino-do-atribuir"
+            >
+              <div className="space-y-0.5">
+                <Label htmlFor={`atribuir-destino-${destino}`}>
+                  {i + 1}. {destino === "responsavel_do_negocio" ? t("Responsável do negócio") : t("Dono da carteira do contato")}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {destino === "responsavel_do_negocio"
+                    ? t("Quem está com o negócio hoje — no pós-venda, quem vendeu.")
+                    : t("Quem cuida do cliente, mesmo quando o negócio está com outra pessoa.")}
+                </p>
+              </div>
+              <Switch
+                id={`atribuir-destino-${destino}`}
+                checked={config.destinos.includes(destino)}
+                disabled={config.destinos.includes(destino) && config.destinos.length === 1}
+                onCheckedChange={() => alternar(destino)}
+              />
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a regra segue para o próximo. A Atividade mostra qual destino decidiu.",
+          )}
+        </p>
+      </div>
+      <div className="space-y-1">
+        <Label>{t("Se nenhum destino servir, atribuir a")}</Label>
+        <p className="text-xs text-muted-foreground">
+          {t("O fallback é obrigatório: é o que impede a regra de não atribuir e deixar o negócio sem dono em silêncio.")}
+        </p>
+        <Select
+          value={config.fallback.modo}
+          onValueChange={(v) => trocarFallback(v === "rodizio" ? "rodizio" : "fixo")}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="fixo">{t("Uma pessoa fixa")}</SelectItem>
+            <SelectItem value="rodizio">{t("Em rodízio entre estas pessoas")}</SelectItem>
+          </SelectContent>
+        </Select>
+        {config.fallback.modo === "fixo" ? (
+          <Select
+            value={config.fallback.user_id}
+            onValueChange={(v) => {
+              const fallback: ConfigDoDestino["fallback"] = { modo: "fixo", user_id: v };
+              onChange({ ...config, fallback });
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder={t("Escolha o atendente")} />
             </SelectTrigger>
@@ -691,139 +1203,86 @@ function AssignOwnerForm({ config, onChange }: FormProps<ConfigDoAtribuir>) {
               ))}
             </SelectContent>
           </Select>
-        </div>
-      </div>
-    );
-  }
-
-  const fila = config.fila;
-  const mudarFila = (nova: typeof fila) => onChange({ modo: "rodizio", fila: nova });
-  const trocar = (de: number, para: number) => {
-    const nova = [...fila];
-    const [pessoa] = nova.splice(de, 1);
-    if (pessoa) nova.splice(para, 0, pessoa);
-    mudarFila(nova);
-  };
-  const foraDaFila = (members ?? []).filter((m) => !fila.some((p) => p.user_id === m.user_id));
-
-  return (
-    <div className="space-y-2">
-      <ModoDoAtribuir modo="rodizio" onChange={() => onChange({ user_id: fila[0]?.user_id ?? "" })} />
-      <div className="space-y-1">
-        <Label>{t("Fila do rodízio")}</Label>
-        <p className="text-xs text-muted-foreground">
-          {t("Cada lead vai para a próxima pessoa da fila, nesta ordem. Quem está pausado é pulado sem sair da fila.")}
-        </p>
-        {fila.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{t("Ninguém na fila ainda. Adicione pelo menos uma pessoa.")}</p>
         ) : (
-          <ol className="space-y-1" data-testid="fila-do-rodizio" aria-busy={carregandoMembros}>
-            {fila.map((pessoa, i) => {
-              const nomeCarregado = nomeDe(pessoa.user_id);
-              const nome = nomeCarregado ?? String(i + 1);
-              // Duas partes que QUEBRAM de linha quando a largura não cabe as
-              // duas (celular): o nome nunca disputa espaço com os 4 botões de
-              // 44px — a 360px ele ficava com 51px, e com 0px quando pausado.
-              return (
-                <li
-                  key={pessoa.user_id}
-                  className="flex flex-wrap items-center gap-x-1 gap-y-0.5 rounded-md border px-2 py-1"
-                >
-                  <div className="flex min-w-0 grow basis-48 items-center gap-1" data-testid="pessoa-da-fila">
-                    <span className="w-5 shrink-0 text-right text-xs text-muted-foreground">{i + 1}</span>
-                    {nomeCarregado === null ? (
-                      <Skeleton aria-hidden className="h-4 w-24 max-w-full" />
-                    ) : (
-                      <span
-                        className={`min-w-0 flex-1 truncate text-sm ${pessoa.pausado ? "text-muted-foreground line-through" : ""}`}
-                      >
-                        {nomeCarregado}
-                      </span>
-                    )}
-                    {pessoa.pausado ? (
-                      <span className="shrink-0 text-xs text-muted-foreground">{t("pausado")}</span>
-                    ) : null}
-                  </div>
-                  <div className="ml-auto flex shrink-0 items-center">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`${t("Subir na fila")}: ${nome}`}
-                      disabled={i === 0}
-                      onClick={() => trocar(i, i - 1)}
-                    >
-                      <CaretUp size={16} aria-hidden />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`${t("Descer na fila")}: ${nome}`}
-                      disabled={i === fila.length - 1}
-                      onClick={() => trocar(i, i + 1)}
-                    >
-                      <CaretDown size={16} aria-hidden />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`${pessoa.pausado ? t("Voltar ao rodízio") : t("Pausar no rodízio")}: ${nome}`}
-                      onClick={() => mudarFila(fila.map((p, k) => (k === i ? { ...p, pausado: !p.pausado } : p)))}
-                    >
-                      {pessoa.pausado ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`${t("Tirar da fila")}: ${nome}`}
-                      onClick={() => mudarFila(fila.filter((_, k) => k !== i))}
-                    >
-                      <X size={16} aria-hidden />
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
+          <FilaDoRodizio
+            fila={config.fallback.fila}
+            members={members}
+            carregandoMembros={carregandoMembros}
+            doFallback
+            onChange={(fila) => {
+              const fallback: ConfigDoDestino["fallback"] = { modo: "rodizio", fila };
+              onChange({ ...config, fallback });
+            }}
+          />
         )}
       </div>
-      {foraDaFila.length > 0 ? (
-        <div className="space-y-1">
-          <Label>{t("Adicionar à fila")}</Label>
-          <Select value="" onValueChange={(v) => mudarFila([...fila, { user_id: v, pausado: false }])}>
-            <SelectTrigger>
-              <SelectValue placeholder={t("Escolha quem entra no rodízio")} />
-            </SelectTrigger>
-            <SelectContent>
-              {foraDaFila.map((m) => (
-                <SelectItem key={m.user_id} value={m.user_id}>
-                  {rotuloDoMembro(m, t)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : null}
+      <OpcoesDePassagem
+        config={config}
+        onChange={(patch) => onChange({ ...config, ...patch })}
+      />
     </div>
   );
 }
 
-/** A escolha entre um atendente fixo e o rodízio. Trocar de modo leva junto quem já estava escolhido. */
-function ModoDoAtribuir({ modo, onChange }: { modo: "fixo" | "rodizio"; onChange: () => void }) {
+function AssignOwnerForm({ config, onChange }: FormProps<ConfigDoAtribuir>) {
+  const t = useT();
+  const { data: members, isLoading: carregandoMembros } = useAssignableMembers(true);
+
+  if (config.modo === "destino") {
+    return <DestinoForm config={config} onChange={onChange} />;
+  }
+
+  if (config.modo === "rodizio") {
+    return (
+      <div className="space-y-2">
+        <ModoDoAtribuir modo="rodizio" onChange={(modo) => trocarModo(modo, config, onChange)} />
+        <FilaDoRodizio
+          fila={config.fila}
+          members={members}
+          carregandoMembros={carregandoMembros}
+          onChange={(fila) => onChange({ modo: "rodizio", fila })}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <ModoDoAtribuir modo="fixo" onChange={(modo) => trocarModo(modo, config, onChange)} />
+      <div className="space-y-1">
+        <Label>{t("Atendente")}</Label>
+        <Select value={config.user_id} onValueChange={(v) => onChange({ ...config, user_id: v })}>
+          <SelectTrigger>
+            <SelectValue placeholder={t("Escolha o atendente")} />
+          </SelectTrigger>
+          <SelectContent>
+            {(members ?? []).map((m) => (
+              <SelectItem key={m.user_id} value={m.user_id}>
+                {rotuloDoMembro(m, t)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <OpcoesDePassagem config={config} onChange={(patch) => onChange({ ...config, ...patch })} />
+    </div>
+  );
+}
+
+/** A escolha entre pessoa fixa, rodízio e destino dinâmico. Trocar leva junto quem já estava escolhido. */
+function ModoDoAtribuir({ modo, onChange }: { modo: ModoDaAtribuicao; onChange: (novo: ModoDaAtribuicao) => void }) {
   const t = useT();
   return (
     <div className="space-y-1">
       <Label>{t("Como atribuir")}</Label>
-      <Select value={modo} onValueChange={(v) => v !== modo && onChange()}>
+      <Select value={modo} onValueChange={(v) => v !== modo && onChange(v as ModoDaAtribuicao)}>
         <SelectTrigger>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="fixo">{t("Um atendente fixo")}</SelectItem>
           <SelectItem value="rodizio">{t("Em rodízio entre estas pessoas")}</SelectItem>
+          <SelectItem value="destino">{t("Responsável do negócio ou dono da carteira")}</SelectItem>
         </SelectContent>
       </Select>
     </div>
@@ -992,7 +1451,7 @@ function CallWebhookForm({
 function StartMessageFlowForm({
   config,
   onChange,
-}: FormProps<{ flow_pointer_id: string; surface?: "followup" | "atendimento" }>) {
+}: FormProps<{ flow_pointer_id: string; surface?: "followup" | "atendimento"; replace_live_flow?: boolean }>) {
   const t = useT();
   const superficie: "followup" | "atendimento" =
     config.surface === "atendimento" ? "atendimento" : "followup";
@@ -1082,6 +1541,27 @@ function StartMessageFlowForm({
               "O roteiro de atendimento acontece na conversa: a automação abre o atendimento e a primeira pergunta sai quando o cliente responder.",
             )}
           </p>
+        ) : null}
+        {/* Trocar de fluxo só existe no follow-up: o roteiro de atendimento tem a
+            própria regra de um por contato. Um contato só anda em UM follow-up
+            por vez; desligado, a regra perde para o fluxo que chegou antes — e
+            quem acabou de pedir pode ficar sem a confirmação porque já estava
+            num fluxo de remarketing. */}
+        {!ehRoteiro ? (
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label>{t("Tirar o contato de outro fluxo")}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Se o contato já estiver em outro fluxo, ele sai daquele e entra neste. Fluxo pausado por uma pessoa não é trocado.",
+                )}
+              </p>
+            </div>
+            <Switch
+              checked={config.replace_live_flow === true}
+              onCheckedChange={(v) => onChange({ ...config, replace_live_flow: v ? true : undefined })}
+            />
+          </div>
         ) : null}
       </div>
     </div>
@@ -1257,6 +1737,77 @@ function NotifyTeamForm() {
   );
 }
 
+/**
+ * `define_sector` (#3881) — a regra classifica a conversa num SETOR.
+ *
+ * A lista vem de `/api/v1/attendants/sectors` (o mesmo leitor da aba Equipe:
+ * uma pergunta, um dono). Módulo `setores` desligado ⇒ a rota responde 404 e a
+ * tela diz isso, em vez de oferecer uma escolha que não existe na instalação.
+ *
+ * A caixa de sobrescrita nasce DESMARCADA e o texto diz o que ela faz: sem ela,
+ * a regra só classifica conversa sem setor ou conversa que a própria automação
+ * classificou. É a precedência do trabalho manual, dita na tela de quem monta a
+ * regra — não escondida no executor.
+ */
+function DefineSectorForm({
+  config,
+  onChange,
+}: FormProps<{ sector_id: string; sobrescrever_setor_manual?: boolean }>) {
+  const t = useT();
+  const setores = useSectors();
+  const lista = setores.data?.data ?? [];
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <Label>{t("Setor da conversa")}</Label>
+        {setores.isError ? (
+          <p className="text-xs text-muted-foreground">
+            {t("Os setores de atendimento não estão disponíveis nesta instalação.")}
+          </p>
+        ) : (
+          <Select
+            value={config.sector_id || undefined}
+            onValueChange={(v) => onChange({ ...config, sector_id: v })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t("Escolha o setor")} />
+            </SelectTrigger>
+            <SelectContent>
+              {lista.map((setor) => (
+                <SelectItem key={setor.id} value={setor.id}>
+                  {setor.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "A conversa passa a ser distribuída para quem atende este setor. Se ela já tiver dono, continua com ele.",
+          )}
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <Label>{t("Sobrescrever o setor escolhido por uma pessoa")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Desligado, a regra só classifica conversa sem setor ou que ela mesma classificou antes.",
+            )}
+          </p>
+        </div>
+        <Switch
+          checked={config.sobrescrever_setor_manual === true}
+          onCheckedChange={(v) =>
+            onChange({ ...config, sobrescrever_setor_manual: v ? true : undefined })
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ActionConfigForm({
   action,
   onChange,
@@ -1296,6 +1847,14 @@ export function ActionConfigForm({
     case "add_tag":
       return (
         <AddTagForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "remove_tag":
+      return (
+        <AddTagForm
+          tirar
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />
@@ -1344,5 +1903,12 @@ export function ActionConfigForm({
       );
     case "notify_team":
       return <NotifyTeamForm />;
+    case "define_sector":
+      return (
+        <DefineSectorForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
   }
 }

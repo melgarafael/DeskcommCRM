@@ -905,6 +905,12 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da plataforma que roda o crawler do Google Places (`lib/prospecting/provider.ts`). É o destino do request, com a chave da PRÓPRIA organização — trocar pelo domínio do revendedor quebraria a chamada, e esconder o nome não esconde para onde o dado vai.",
   },
+  // ── prospecção (#1758): provedor `scavio`, escolhido por organização ──
+  "api.scavio.dev": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da API da Scavio que busca os lugares do Google Maps (`lib/prospecting/provedor-scavio.ts`), só para a organização que escolheu `scavio` em `settings.prospecting.provider`. É o destino do request, com a chave da PRÓPRIA organização — trocar pelo domínio do revendedor quebraria a chamada.",
+  },
   // ── identificador de fio: NÃO é destino de chamada nem texto de tela ──────
   "s.whatsapp.net": {
     categoria: "PROTOCOLO",
@@ -946,6 +952,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "FORNECEDOR",
     motivo:
       "endpoint da API da DeepSeek (OpenAI-compatível) no registry de produção, no runtime de ensaio, no validador de chave e na prova de crédito. É o destino do request, não texto de interface; trocar pelo domínio do revendedor faria a chamada não chegar.",
+  },
+  "api.elevenlabs.io": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint da API do ElevenLabs nos três caminhos que falam com ela: síntese da voz do agente (`lib/ai/voz/sintetizar.ts`), transcrição pelo Scribe (`lib/messaging/media/transcription-elevenlabs.ts`) e validação da chave (`GET /v1/voices`, em lib/ai/provider-validators.ts). É o destino do request, com a chave da PRÓPRIA organização; trocar pelo domínio do revendedor faria a chamada não chegar.",
   },
   "router.requesty.ai": {
     categoria: "FORNECEDOR",
@@ -1030,6 +1041,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
   "console.anthropic.com": {
     categoria: "CONSOLE",
     motivo: "painel de chaves da Anthropic. Mesmo caso: é de onde a credencial do usuário sai.",
+  },
+  "elevenlabs.io": {
+    categoria: "CONSOLE",
+    motivo:
+      "painel onde o usuário gera a PRÓPRIA chave do ElevenLabs (`ondePegarAChave` de PROVEDORES_DE_SERVICO em lib/ai/pontos/provedores-de-servico.ts). Endereço do fornecedor, não nosso.",
   },
   "console.typesafe.ai": {
     categoria: "CONSOLE",
@@ -1369,6 +1385,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // CONSOLE — o link "Onde pegar a chave" da tela de Credenciais.
       "console.typesafe.ai",
       "deskcomm.app",
+      // Decisão escrita: painel de chaves do ElevenLabs, o mesmo caso dos outros
+      // CONSOLE — o link "Onde pegar a chave" da tela de Credenciais.
+      "elevenlabs.io",
       // Decisão escrita (spec 24, auditoria de site): marca agregador e conta
       // como link social no raio-X — nunca chamada, nunca exibida (a tela mostra
       // o rótulo traduzido).

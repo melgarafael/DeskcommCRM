@@ -59,7 +59,7 @@ export function PreviaDaDefinicao({
           // COMO NO WHATSAPP: balão com a hora, e os botões FORA do balão, cada
           // um no seu bloco com o ícone do tipo — é assim que o cliente vê, e é
           // assim que a plataforma do provedor mostra a prévia.
-          <div className="max-w-[22rem]" data-previa-do-modelo>
+          <div className="max-w-full sm:max-w-[22rem]" data-previa-do-modelo>
             <div className="rounded-lg rounded-tl-none bg-background p-2.5 shadow-sm">
               {midiaUrl && (
                 // `unoptimized`: a URL é assinada e temporária, e o otimizador do
@@ -73,9 +73,9 @@ export function PreviaDaDefinicao({
                   className="mb-2 h-auto w-full rounded-md"
                 />
               )}
-              {cabecalho && <p className="mb-1 text-sm font-semibold">{cabecalho}</p>}
-              {corpo && <p className="whitespace-pre-wrap text-sm leading-snug">{corpo}</p>}
-              {rodape && <p className="mt-1 text-[11px] text-muted-foreground">{rodape}</p>}
+              {cabecalho && <p className="mb-1 break-words text-sm font-semibold">{cabecalho}</p>}
+              {corpo && <p className="whitespace-pre-wrap break-words text-sm leading-snug">{corpo}</p>}
+              {rodape && <p className="mt-1 break-words text-[11px] text-muted-foreground">{rodape}</p>}
               <p className="mt-1 flex items-center justify-end gap-0.5 text-[10px] text-muted-foreground">
                 12:00 <Checks size={12} aria-hidden />
               </p>
@@ -90,7 +90,7 @@ export function PreviaDaDefinicao({
                     return (
                       <span
                         key={i}
-                        className="flex items-center justify-center gap-1.5 rounded-lg bg-background py-2 text-sm font-medium text-primary shadow-sm"
+                        className="flex items-center justify-center gap-1.5 break-words rounded-lg bg-background px-2 py-2 text-center text-sm font-medium text-primary shadow-sm"
                       >
                         <Icone size={14} aria-hidden />
                         {b.texto}

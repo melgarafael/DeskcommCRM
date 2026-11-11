@@ -81,7 +81,19 @@ export const FUSOS_DO_ONBOARDING: { id: string; cidade: string }[] = [
   { id: "America/Manaus", cidade: "Manaus e Amazonas" },
   { id: "America/Cuiaba", cidade: "Cuiabá e Mato Grosso" },
   { id: "America/Rio_Branco", cidade: "Rio Branco e Acre" },
+  // A América hispânica, porque a empresa nasce no fuso de quem se cadastra
+  // (`lib/auth/perfil-da-empresa-nova.ts`): sem a cidade aqui, o primeiro passo
+  // do onboarding mostrava São Paulo e regravava o fuso da empresa com ele.
+  // Todos já estavam em `FUSOS_OFERECIDOS`, a lista de Configurações.
+  { id: "America/Asuncion", cidade: "Assunção" },
   { id: "America/Argentina/Buenos_Aires", cidade: "Buenos Aires" },
+  { id: "America/Montevideo", cidade: "Montevidéu" },
+  { id: "America/Santiago", cidade: "Santiago" },
+  { id: "America/La_Paz", cidade: "La Paz" },
+  { id: "America/Lima", cidade: "Lima" },
+  { id: "America/Bogota", cidade: "Bogotá" },
+  { id: "America/Guayaquil", cidade: "Quito e Guayaquil" },
+  { id: "America/Mexico_City", cidade: "Cidade do México" },
   { id: "Europe/Lisbon", cidade: "Lisboa" },
   { id: "Europe/Madrid", cidade: "Madri" },
   { id: "Europe/Rome", cidade: "Roma" },

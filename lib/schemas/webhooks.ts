@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
+import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
 import { conditionsSchema } from "@/lib/automation/conditions";
 import { configDoAniversario } from "@/lib/automation/aniversario-do-contato";
 import {
@@ -228,6 +229,35 @@ export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
 export { conditionSchema } from "@/lib/automation/conditions";
 
 /**
+ * A FILA do rodízio — a mesma forma em dois lugares: o modo `rodizio` (#2041) e
+ * o `fallback` do destino dinâmico (#3804). Uma regra, escrita uma vez: a fila
+ * não pode divergir entre os dois (o banco lê a mesma chave `fila` nos dois).
+ */
+const filaDoRodizioSchema = z
+  .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+  .min(1)
+  .max(50)
+  .superRefine((fila, ctx) => {
+    const vistos = new Set<string>();
+    for (const [indice, pessoa] of fila.entries()) {
+      if (vistos.has(pessoa.user_id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [indice, "user_id"],
+          message: "Cada pessoa entra uma vez só na fila do rodízio.",
+        });
+      }
+      vistos.add(pessoa.user_id);
+    }
+  });
+
+/**
+ * Os destinos que a regra pode pedir no modo `destino` (#3804) — o vocabulário
+ * é o MESMO de `CandidatoDoDestino`, em `lib/automation/destino-do-atribuir`.
+ */
+export const DESTINOS_DO_ATRIBUTO = ["responsavel_do_negocio", "dono_da_carteira"] as const;
+
+/**
  * O `config` de `assign_owner` (#2041): uma pessoa fixa, a forma de sempre, ou
  * um RODÍZIO, em que a posição na `fila` é a ordem e `pausado` tira a pessoa da
  * vez sem tirá-la da fila.
@@ -236,33 +266,84 @@ export { conditionSchema } from "@/lib/automation/conditions";
  * do rodízio têm só `{ user_id }` e continuam válidas sem migração de dados. O
  * union discriminado (e não `z.union`) mantém o caminho do erro no campo
  * (`fila`, `user_id`), que é o que a tela usa para dizer o que corrigir.
+ *
+ * ─── As duas opções da #3514, e por que são OPT-IN ────────────────────────
+ *
+ * `contato` passa também a carteira do cliente (`contacts.carteira_user_id`) e
+ * `conversas` passa as conversas ABERTAS do contato para o novo responsável —
+ * a passagem SDR → Closer. As duas são `optional()` e o executor só as lê com
+ * `=== true`: payload gravado antes desta mudança (sem as chaves) continua
+ * válido e continua fazendo SÓ o que fazia. Nenhuma automação existente passa a
+ * mover conversa porque o schema ganhou um campo.
+ *
+ * No rodízio elas não entram NESTA entrega, e não por acaso: a vez é decidida
+ * dentro de `fn_automation_rodizio_atribuir`, que grava o dono do negócio na
+ * MESMA transação em que registra a escolha. Passar cliente e conversas ali
+ * seria uma SEGUNDA passada, com um destinatário que o banco escolheu e que a
+ * ação só conhece depois do commit — desenho que merece issue própria em vez de
+ * vir de carona nesta.
+ *
+ * ─── O modo `destino` (#3804) ────────────────────────────────────────────
+ *
+ * `destinos` é a CADEIA, na ordem: o responsável do negócio e/ou o dono da
+ * carteira do contato. Quem decide é `resolverDestinoDoAtribuir` (função pura,
+ * mesmo módulo), e a mesma pessoa que ela devolve passa pela régua de vínculo da
+ * ação (membro ativo, não `viewer`).
+ *
+ * `fallback` é OBRIGATÓRIO aqui — e é o item 2 da issue: sem responsável e sem
+ * carteira, a regra atribui a uma pessoa fixa ou entra no rodízio, nunca "não
+ * atribui e segue em silêncio". A obrigatoriedade é da porta, não do executor:
+ * uma regra sem fallback salvaria e só falharia no disparo, que é a regra
+ * quebrada que ninguém percebe.
  */
 export const configDoAtribuirSchema = z.discriminatedUnion("modo", [
-  z.object({ modo: z.literal("fixo").optional(), user_id: z.string().uuid() }),
+  z.object({
+    modo: z.literal("fixo").optional(),
+    user_id: z.string().uuid(),
+    /** #3514 — o cliente vai junto com o negócio? Desligado por padrão. */
+    contato: z.boolean().optional(),
+    /** #3514 — as conversas abertas do cliente vão junto? Desligado por padrão. */
+    conversas: z.boolean().optional(),
+  }),
   z.object({
     modo: z.literal("rodizio"),
-    fila: z
-      .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+    fila: filaDoRodizioSchema,
+  }),
+  z.object({
+    modo: z.literal("destino"),
+    destinos: z
+      .array(z.enum(DESTINOS_DO_ATRIBUTO))
       .min(1)
-      .max(50)
-      .superRefine((fila, ctx) => {
-        const vistos = new Set<string>();
-        for (const [indice, pessoa] of fila.entries()) {
-          if (vistos.has(pessoa.user_id)) {
-            ctx.addIssue({
-              code: "custom",
-              path: [indice, "user_id"],
-              message: "Cada pessoa entra uma vez só na fila do rodízio.",
-            });
-          }
-          vistos.add(pessoa.user_id);
+      .max(DESTINOS_DO_ATRIBUTO.length)
+      .superRefine((destinos, ctx) => {
+        if (new Set(destinos).size !== destinos.length) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Cada destino entra uma vez só: a ordem deles é a ordem em que são tentados.",
+          });
         }
       }),
+    fallback: z.discriminatedUnion("modo", [
+      z.object({ modo: z.literal("fixo"), user_id: z.string().uuid() }),
+      z.object({ modo: z.literal("rodizio"), fila: filaDoRodizioSchema }),
+    ]),
+    contato: z.boolean().optional(),
+    conversas: z.boolean().optional(),
   }),
 ]);
 
-const ehRodizio = (acao: { type: string; config?: unknown }) =>
-  acao.type === "assign_owner" && (acao.config as { modo?: unknown } | undefined)?.modo === "rodizio";
+/**
+ * O rodízio está nesta ação? Vale para os DOIS lugares onde ele mora: o modo
+ * `rodizio` de sempre e o `fallback` do destino dinâmico (#3804). A vez é
+ * contada por REGRA (`fn_automation_rodizio_atribuir` lê a fila da própria
+ * regra), então um rodízio escondido no fallback de outra ação andaria pela
+ * fila do primeiro — o mesmo defeito que este teto existe para barrar.
+ */
+const ehRodizio = (acao: { type: string; config?: unknown }) => {
+  if (acao.type !== "assign_owner") return false;
+  const config = acao.config as { modo?: unknown; fallback?: { modo?: unknown } } | undefined;
+  return config?.modo === "rodizio" || config?.fallback?.modo === "rodizio";
+};
 
 export const MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR =
   "Uma automação tem no máximo um rodízio de atendentes, como ação direta: a vez de cada pessoa é contada pela automação.";
@@ -312,7 +393,31 @@ function umRodizioPorRegra(
  * Os objetos são os MESMOS de sempre, byte a byte — só mudou onde moram.
  */
 const acoesFixas = [
-  z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
+  z.object({
+    type: z.literal("create_or_move_lead"),
+    config: z.object({
+      pipeline_id: z.string().uuid(),
+      stage_id: z.string().uuid(),
+      /**
+       * #4297 — O MOTIVO DA PERDA, quando a etapa de destino é de perda.
+       *
+       * A etapa exige motivo (issue #917: `decideMotivoDaPerda`), e sem esta
+       * chave a ação não tinha como informá-lo: toda regra que apontava para a
+       * etapa de perda falhava em execução. Opcional aqui de propósito — as
+       * regras JÁ gravadas não têm a chave e continuam válidas; elas é que
+       * passam a falhar com o código real no recibo em vez de `internal_error`.
+       * Quem exige o preenchimento é a porta de gravação, que sabe ler
+       * `is_lost` da etapa (`lib/automation/motivo-da-perda-na-acao.ts`).
+       *
+       * O editor deixa o campo como "" quando a etapa não é de perda; "" vira
+       * AUSÊNCIA aqui, e não um motivo vazio que o trigger recusaria.
+       */
+      lost_reason: z.preprocess(
+        (v) => (v === "" ? undefined : v),
+        z.string().trim().min(1).max(500).optional(),
+      ),
+    }),
+  }),
   z.object({
     type: z.literal("send_whatsapp_message"),
     config: z.object({
@@ -331,6 +436,14 @@ const acoesFixas = [
        * que envelhece se a URL mudar.
        */
       media_url: z.string().url().max(2000).nullish(),
+      /**
+       * #3813 — "Quando o contato tiver horário marcado": `adiar` (padrão, o
+       * comportamento de hoje), `enviar` ou `nao_enviar` (pulo registrado com
+       * motivo). Opcional de propósito: toda regra já gravada não tem a chave e
+       * continua idêntica — sem esta linha o `z.object` abaixo DESCARTA a chave
+       * no save e a tela mostraria uma escolha que não foi gravada.
+       */
+      quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
     }),
   }),
   // #2726 — o e-mail como SAÍDA. O transporte não é configuração da regra: ele
@@ -408,7 +521,32 @@ const acoesFixas = [
       destino: z.enum(["card", "contato"]).optional(),
     }),
   }),
+  // A irmã da `add_tag`: TIRA as etiquetas, do card ou do contato, com a mesma
+  // forma de config e o mesmo destino padrão (`card`).
+  z.object({
+    type: z.literal("remove_tag"),
+    config: z.object({
+      tags: z.array(z.string().min(1).max(60)).min(1).max(10),
+      destino: z.enum(["card", "contato"]).optional(),
+    }),
+  }),
   z.object({ type: z.literal("assign_owner"), config: configDoAtribuirSchema }),
+  /**
+   * #3881 — a automação classifica a conversa num SETOR (a fila que decide para
+   * quem ela é distribuída, 9062). `sector_id` é obrigatório: setor é destino
+   * nomeado, e uma ação sem destino salvaria e só falharia no disparo.
+   *
+   * `sobrescrever_setor_manual` é OPT-IN e nasce desligado — a regra que já
+   * existe não ganha comportamento novo, e a escolha feita por uma pessoa não é
+   * apagada por uma regra sem que alguém tenha marcado a caixa.
+   */
+  z.object({
+    type: z.literal("define_sector"),
+    config: z.object({
+      sector_id: z.string().uuid(),
+      sobrescrever_setor_manual: z.boolean().optional(),
+    }),
+  }),
   z.object({
     type: z.literal("send_ai_message"),
     config: z.object({
@@ -421,6 +559,8 @@ const acoesFixas = [
        * mais que isso está tentando pôr o prompt do agente aqui dentro.
        */
       instruction: z.string().min(1).max(1000),
+      /** #3813 — mesma escolha da irmã `send_whatsapp_message`. */
+      quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
     }),
   }),
   z.object({
@@ -452,6 +592,14 @@ const acoesFixas = [
     config: z.object({
       flow_pointer_id: z.string().uuid(),
       surface: z.enum(["followup", "atendimento"]).optional(),
+      /**
+       * Se o contato já está em OUTRO fluxo (ativo ou esperando), encerra aquele
+       * e inscreve neste. Desligado por padrão: o contato só tem uma inscrição
+       * viva, e sem isto a regra perde para o fluxo que chegou antes. Só vale
+       * para o follow-up (`surface` ausente ou `followup`); o roteiro de
+       * atendimento não lê esta chave.
+       */
+      replace_live_flow: z.boolean().optional(),
     }),
   }),
   // #1540 — a ação que NUNCA fala com o cliente: grava `crm_tasks` e avisa o
@@ -635,6 +783,42 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
    * sistemas.
    */
   reuse_open_lead_on_capture: z.boolean().optional(),
+  /**
+   * A PÁGINA da Meta que esta fonte representa (issue #3768, migration 9320).
+   *
+   * É a chave de ROTEAMENTO do aviso: a plataforma tem UMA URL de destino para o
+   * objeto page, então o token do path não distingue de quem é o lead — a página
+   * distingue. `null` limpa a reivindicação e devolve a fonte ao modo "recebo o
+   * que chegar na minha URL".
+   *
+   * `string` de dígitos e não `number`: id de página da plataforma passa de
+   * 2^53 em alguns casos, e virar número perderia precisão em silêncio.
+   */
+  meta_page_id: z
+    .string()
+    .regex(/^\d{1,32}$/, "O id da página é só de dígitos.")
+    .nullish(),
+  /**
+   * O token de PÁGINA, em texto claro, só nesta entrada (issue #3768).
+   *
+   * Write-only, como `secret`: a leitura da fonte devolve `has_meta_page_token`.
+   * Ele é cifrado por `encryptWebhookSecret` antes de tocar a coluna, e sem a
+   * chave mestra de cifra o PATCH RECUSA em vez de degradar para texto claro.
+   * `null` remove o token.
+   *
+   * O mínimo é 32 porque o que a plataforma emite é bem maior: um valor curto
+   * aqui é quase sempre um id de página ou um token truncado ao copiar.
+   */
+  meta_page_token: z.string().min(32).max(1000).nullish(),
+  /**
+   * A opção da fatia 1-bis: quando o aviso chega sem as respostas (o normal),
+   * buscar as respostas na Graph API com o token da página.
+   *
+   * Nasce DESLIGADA por DEFAULT na coluna (migration 9320), pelo critério da doc
+   * 235: no núcleo, desligada por padrão, quem administra liga. Ligar sem token
+   * é recusado na rota do PATCH — a opção não promete o que não pode cumprir.
+   */
+  meta_lead_retrieval: z.boolean().optional(),
 });
 
 export const createAutomationRuleSchema = z

@@ -114,6 +114,24 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
   },
   {
     reason:
+      "`marca-do-canal` — aqui `telegram` é o nome da REDE SOCIAL, não o " +
+      "provider do bot: é o rótulo visível do aviso (`Canal: Telegram`), a " +
+      "variável de cor do ícone e o comentário que lista as redes de onde o " +
+      "aviso veio. O catálogo de redes (`lib/channels/social/catalog.ts`) já " +
+      "trata Telegram como rede; o provider `telegram` que a #3440 acrescentou " +
+      "é outro sujeito. A cerca casa a PALAVRA, não o sentido, e estes três " +
+      "arquivos vieram da main DEPOIS do PR — declarados em vez de renomeados " +
+      "porque trocar cópia de tela e ícone é mudança de comportamento " +
+      "observável. Sai quando a cerca souber distinguir rede de provider (ou " +
+      "quando o catálogo de redes deixar de precisar do literal).",
+    files: [
+      "lib/notifications/deliver.ts",
+      "lib/notifications/marca-do-aviso.test.tsx",
+      "lib/ui/icons.ts",
+    ],
+  },
+  {
+    reason:
       "Texto VISÍVEL ao usuário (cópia de tela) ou nome de campo de resposta de " +
       "API pública (`checks.waha`, `waha_ban`, `waha_sessions_count`, o código " +
       "de erro `waha_error`). Trocar é mudança de comportamento observável — " +

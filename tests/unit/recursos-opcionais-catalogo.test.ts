@@ -4,7 +4,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { DICIONARIO } from "@/lib/i18n/dicionario";
-import { MODULOS_OPCIONAIS } from "@/lib/instalacao/modulos";
+import { MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { moduloDoCatalogo } from "@/lib/modulos/catalogo";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { CAPACIDADES_DA_ORGANIZACAO } from "@/lib/organizacao/capacidades";
 import {
@@ -29,20 +30,31 @@ import {
  */
 
 const PORTAS = NAV_CATALOG as readonly NavMetadata[];
+const porFlag = (m: ModuloOpcional) => (MODULOS_OPCIONAIS_POR_FLAG as readonly ModuloOpcional[]).includes(m);
 const MODULOS_NO_CATALOGO = new Set(RECURSOS_OPCIONAIS.flatMap((r) => (r.modulo ? [r.modulo] : [])));
 const CAPACIDADES_NO_CATALOGO = new Set(
   RECURSOS_OPCIONAIS.flatMap((r) => (r.capacidade ? [r.capacidade] : [])),
 );
 
 describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
-  it("todo módulo de MODULOS_OPCIONAIS tem a sua linha, com nome e o que faz", () => {
+  it("todo módulo de MODULOS_OPCIONAIS que se liga ou se instala tem a sua linha, com nome e o que faz", () => {
     const semLinha = MODULOS_OPCIONAIS.filter(
-      (m) => !RECURSOS_OPCIONAIS.some((r) => r.nivel === "instalacao" && r.modulo === m && r.nome && r.oQueFaz),
+      (m) =>
+        (porFlag(m) || moduloDoCatalogo(m)) &&
+        !RECURSOS_OPCIONAIS.some((r) => r.nivel === "instalacao" && r.modulo === m && r.nome && r.oQueFaz),
     );
     expect(
       semLinha,
       `Módulo sem linha em lib/recursos-opcionais/catalogo.ts (TEXTO_DO_MODULO):\n  ${semLinha.join("\n  ")}`,
     ).toEqual([]);
+  });
+
+  // #3625: módulo de tabela que ainda não está em CATALOGO_DE_MODULOS não se instala,
+  // então não ganha linha que mande para /admin/modulos (primeira impressão quebrada).
+  it("módulo de tabela fora de CATALOGO_DE_MODULOS não gera linha", () => {
+    const foraDoCatalogo = MODULOS_OPCIONAIS.filter((m) => !porFlag(m) && !moduloDoCatalogo(m));
+    const comLinha = foraDoCatalogo.filter((m) => RECURSOS_OPCIONAIS.some((r) => r.modulo === m));
+    expect(comLinha, `Linha para módulo que /admin/modulos não oferece:\n  ${comLinha.join("\n  ")}`).toEqual([]);
   });
 
   it("toda porta do menu condicionada a módulo ou capacidade está no catálogo", () => {
@@ -89,7 +101,7 @@ describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
       href: "/app/ai/agents",
     });
     // `ler: varia` — o estado é por agente, não dá para ler "ligado" da empresa.
-    expect(linha!.ler?.({ modulos: [], settings: {}, servidor: {} })).toBe("varia");
+    expect(linha!.ler?.({ modulos: [], settings: {}, servidor: {}, telefonia: null })).toBe("varia");
     // O texto diferencia das duas chaves vizinhas, para ninguém ler as duas como
     // a mesma coisa (pedido do mantenedor na seção 6 do desenho).
     expect(linha!.oQueFaz).toContain("Ajustes de cada agente");
@@ -124,10 +136,10 @@ describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
 });
 
 describe("o estado nunca lança e nunca inventa 'desligado'", () => {
-  const vazio: FontesDeEstado = { modulos: [], settings: {}, servidor: {} };
+  const vazio: FontesDeEstado = { modulos: [], settings: {}, servidor: {}, telefonia: false };
 
   it("fonte que não respondeu vira 'não consegui ler', nunca 'desligado'", () => {
-    const semLeitura: FontesDeEstado = { modulos: null, settings: null, servidor: {} };
+    const semLeitura: FontesDeEstado = { modulos: null, settings: null, servidor: {}, telefonia: null };
     const conversa = RECURSOS_OPCIONAIS.find((r) => r.id === "conversa_fica_com_quem_atendeu")!;
     const email = RECURSOS_OPCIONAIS.find((r) => r.id === "email")!;
     const modulo = RECURSOS_OPCIONAIS.find((r) => r.id === "modulo:banco_externo")!;
@@ -141,6 +153,7 @@ describe("o estado nunca lança e nunca inventa 'desligado'", () => {
       modulos: [...MODULOS_OPCIONAIS],
       settings: { routing: "x", security: [1], crm: null, jev: 42, base_de_conhecimento: "google" },
       servidor: { email: true },
+      telefonia: null,
     };
     for (const r of RECURSOS_OPCIONAIS) expect(() => estadoDoRecurso(r, lixo)).not.toThrow();
   });
@@ -169,6 +182,21 @@ describe("o estado nunca lança e nunca inventa 'desligado'", () => {
     const chaveLigada = { proposals: { enabled: true } };
     expect(estadoDoRecurso(propostas, { ...vazio, settings: chaveLigada })).toBe("desligado");
     expect(estadoDoRecurso(propostas, { ...vazio, modulos: ["propostas"], settings: chaveLigada })).toBe("ligado");
+  });
+
+  it("telefonia da empresa (#1290): o sinal é o tronco, o mesmo que o menu lê", () => {
+    const telefonia = RECURSOS_OPCIONAIS.find((r) => r.id === "telefonia_da_empresa")!;
+    // Onde se liga: a tela que salva o tronco. Chamadas é a consequência, não a chave.
+    expect(telefonia).toMatchObject({
+      nivel: "organizacao",
+      quemDecide: "admin",
+      href: "/app/settings/voip-trunk",
+      capacidade: "telefonia",
+    });
+    expect(estadoDoRecurso(telefonia, { ...vazio, telefonia: true })).toBe("ligado");
+    expect(estadoDoRecurso(telefonia, { ...vazio, telefonia: false })).toBe("desligado");
+    // Não lido nunca vira "desligado" (falha aberta na informação).
+    expect(estadoDoRecurso(telefonia, { ...vazio, telefonia: null })).toBe("nao_lido");
   });
 });
 

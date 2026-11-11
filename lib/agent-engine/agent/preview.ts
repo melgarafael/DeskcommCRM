@@ -27,9 +27,13 @@ import { camadaLigada, lerCamadasDaOrg } from '../guardrails/camadas-da-org';
 import { loadDisclosureTemplate, countPriorAcceptedSends } from '../guardrails/disclosure/template';
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { getToolByName } from '@/lib/mcp/tools';
+import { ehLeituraRemota } from '@/lib/mcp/servidor-externo/leitura-remota';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
+import { formatoDeImagemPorUrl } from './imagem-por-url';
+import { countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
+import { renderNotesIndexBlock } from './lead-notes';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -38,11 +42,17 @@ export interface TurnPreview {
   agent: PublishedAgentConfig;
   context: Extract<LeadContextResult, { ok: true }>;
   previous?: LeadCheckpointRow | null;
-  notes?: Array<{ headline: string; body: string }>;
+  /** `id` endereça a nota no modo índice (`get_lead_note`) — ver `blocoDeNotasDaPrevia`. */
+  notes?: Array<{ id: string; headline: string; body: string }>;
   feedback?: string;
   /** Null means a scenario, never a synthetic identifier passed to SQL. */
   contactId: string | null;
   channelId: string | null;
+  /**
+   * Etiquetas SIMULADAS da conversa (spec 27, fatia 3): o Testar as passa ao matcher de skills
+   * no lugar das etiquetas reais, que a prévia não tem. Ausente = nenhuma.
+   */
+  tags?: string[];
   gateContext?: GateContext;
   result: PreviewResult;
 }
@@ -67,6 +77,56 @@ export interface PreviewResult {
    */
   midia: MidiaPreparada[];
 }
+/**
+ * Teto do bloco de notas INLINE da prévia (headline + corpo de cada nota).
+ *
+ * Abaixo dele a prévia segue como sempre foi: os corpos vão inteiros no prompt,
+ * byte a byte a string de antes. Acima — só no caso extremo, ~14 mil caracteres
+ * de notas — ela passa a usar o índice com id, a mesma receita do turno real
+ * (`renderNotesIndexBlock`), e o `get_lead_note` busca o corpo pelo id. Sem o
+ * teto, 20 notas de 4.000 caracteres entravam inteiras em todo passo.
+ */
+// ponytail: teto fixo, ~16x o maior caso medido (872 caracteres); vira knob se algum dono pedir
+export const PREVIEW_NOTES_INLINE_MAX_TOKENS = 4_000;
+
+export function blocoDeNotasDaPrevia(
+  notes: NonNullable<TurnPreview['notes']>,
+  indexBudget: number,
+): { bloco: string; inline: boolean } {
+  const inline = notes.map((n) => n.headline + ': ' + n.body).join('\n');
+  if (countPayloadTokens(inline) <= PREVIEW_NOTES_INLINE_MAX_TOKENS) return { bloco: inline, inline: true };
+  return { bloco: renderNotesIndexBlock(notes, indexBudget), inline: false };
+}
+
+/**
+ * O `get_lead_note` da prévia. No modo inline a resposta é a de sempre (todas as
+ * notas, sem o id); no modo índice ela tem o formato da ferramenta real — UM corpo,
+ * pelo id que o modelo leu no índice.
+ */
+export function lerNotaDaPrevia(
+  notes: NonNullable<TurnPreview['notes']>,
+  inline: boolean,
+  /** Os argumentos crus da chamada — `{ note_id }`, vindos do modelo. */
+  args: unknown,
+):
+  | { ok: true; notes: Array<{ headline: string; body: string }> }
+  | { ok: true; note_id: string; body: string }
+  | { ok: false; error: { code: 'note_not_found'; message: string } } {
+  if (inline) return { ok: true, notes: notes.map(({ headline, body }) => ({ headline, body })) };
+  const noteId = args && typeof args === 'object' && 'note_id' in args ? args.note_id : undefined;
+  const id = typeof noteId === 'string' ? noteId.trim() : '';
+  const nota = notes.find((n) => n.id === id);
+  return nota
+    ? { ok: true, note_id: nota.id, body: nota.body }
+    : {
+        ok: false,
+        error: {
+          code: 'note_not_found',
+          message: 'não há nota com esse id na memória deste lead — confira o id no índice de memória.',
+        },
+      };
+}
+
 export function newPreviewResult(): PreviewResult {
   return {
     candidates: [],
@@ -296,6 +356,8 @@ export function applyPreviewPolicy(
    * com a afirmação de fato sem conferência e sem observação para calibrar.
    */
   conferirAfirmacoes?: (candidata: string) => Promise<ConferenciaDeFato>,
+  /** A procedência da `imagem_url` no turno (`criarProcedenciaDeImagens().viu`), a mesma do envio real. */
+  imagemVistaNoTurno?: (url: string) => boolean,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -308,7 +370,12 @@ export function applyPreviewPolicy(
       const catalog = getToolByName(name);
       if (
         nativeRead ||
-        (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name)))
+        (catalog?.category === 'read' && (p.contactId !== null || SCENARIO_READS.has(name))) ||
+        // #2147/#4317 — leitura de servidor MCP externo (da organização ou do
+        // PRÓPRIO agente): só o objeto que `pickToolsFromMcp` marcou, com as
+        // duas metades (marca do admin E `readOnlyHint` do servidor). Nome
+        // igual ao catálogo nativo ou cópia do objeto continuam recusados.
+        (!catalog && ehLeituraRemota(definition))
       )
         return [name, definition];
       return [
@@ -321,6 +388,24 @@ export function applyPreviewPolicy(
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
+              // Duas fotos na mesma mensagem não existem (Spec 25 R4): mesma recusa do envio
+              // real, antes de qualquer preparo de mídia.
+              const pediuFotoDoCatalogo =
+                args &&
+                typeof args === 'object' &&
+                'produto_codigo' in args &&
+                typeof args.produto_codigo === 'string' &&
+                args.produto_codigo.trim() !== '';
+              const pediuImagemPorUrl =
+                args && typeof args === 'object' && 'imagem_url' in args && typeof args.imagem_url === 'string'
+                  ? args.imagem_url.trim() !== ''
+                  : false;
+              if (pediuFotoDoCatalogo && pediuImagemPorUrl) {
+                const message =
+                  'Use imagem_url OU produto_codigo, não os dois na mesma mensagem. Mande de novo só com um deles.';
+                p.result.impediments.push({ code: 'imagem_e_produto_juntos', message });
+                return { ok: false, error: { code: 'imagem_e_produto_juntos', message } };
+              }
               // #2490 — A MESMA preparação do envio real, e na MESMA ordem: o
               // `produto_codigo` que `crm_search_products` devolveu resolve o
               // produto no catálogo e prepara as fotos ANTES da cadeia (é o que
@@ -355,6 +440,34 @@ export function applyPreviewPolicy(
                       `O produto ${JSON.stringify(midia.codigo)} não tem fotos cadastradas: ` +
                       'nenhuma imagem seria enviada no envio real — só o texto.',
                   });
+              }
+              // Foto por URL (Spec 25 R4): na prévia NADA é buscado nem enviado, e a guarda de
+              // rede (C6) não roda aqui — só o formato e a procedência são conferidos, sem rede.
+              // Quem decide a foto de verdade é o envio real. O retorno diz o que sairia.
+              const imagemUrl =
+                args && typeof args === 'object' && 'imagem_url' in args && typeof args.imagem_url === 'string'
+                  ? args.imagem_url.trim()
+                  : '';
+              let imagemPrevista: string | undefined;
+              if (imagemUrl !== '') {
+                const formato = formatoDeImagemPorUrl(imagemUrl);
+                if (formato.ok && imagemVistaNoTurno && !imagemVistaNoTurno(imagemUrl)) {
+                  imagemPrevista = 'recusada: url_fora_dos_resultados';
+                  p.result.warnings.push({
+                    code: 'imagem_recusada',
+                    message:
+                      'A imagem desta resposta seria recusada (url_fora_dos_resultados): o texto sairia sem foto.',
+                  });
+                } else if (formato.ok) {
+                  imagemPrevista = 'formato_aceito';
+                } else {
+                  imagemPrevista = `recusada_pelo_formato: ${formato.motivo}`;
+                  p.result.warnings.push({
+                    code: 'imagem_recusada',
+                    message:
+                      `A imagem desta resposta seria recusada (${formato.motivo}): o texto sairia sem foto.`,
+                  });
+                }
               }
               const avisos: Array<{ code: string; message: string }> = [];
               // #2923 — as duas perguntas ao Jev da cadeia (promessa semântica,
@@ -404,6 +517,8 @@ export function applyPreviewPolicy(
                 ok: true,
                 status: p.kind === 'sandbox' ? 'simulated' : 'awaiting_approval',
                 message: 'Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.',
+                // Foto por URL: nada foi buscado nem enviado; `foto_prevista` diz o que o envio real faria.
+                ...(imagemPrevista !== undefined ? { foto_enviada: false, foto_prevista: imagemPrevista } : {}),
               };
             }
             if (catalog?.category === 'read')

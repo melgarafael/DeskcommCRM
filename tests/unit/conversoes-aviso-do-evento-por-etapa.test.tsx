@@ -3,15 +3,23 @@
  *
  * ─── O que acontecia antes ─────────────────────────────────────────────────
  *
- * `EVENTOS_DA_META` (a lista do seletor) é MAIOR que `EVENTOS_DE_ETAPA_NO_CANAL`
- * (o que o canal da conversa repassa): `QualifiedLead` e `ViewContent` estão na
- * primeira e fora da segunda — e o `QualifiedLead` é sugestão da própria tela
+ * `EVENTOS_DA_META` (a lista do seletor) era MAIOR que `EVENTOS_DE_ETAPA_NO_CANAL`
+ * (o que o canal da conversa repassa): `QualifiedLead` e `ViewContent` estavam
+ * na primeira e fora da segunda — e o `QualifiedLead` é sugestão da própria tela
  * para etapa de nome "qualificado". Numa instalação só-com-canal, sem conexão
  * direta, quem escolhia um desses salvava a regra e o evento ficava na pendência
  * `evento_fora_do_canal`: o aviso existia, nomeado, mas chegava DIAS depois, no
  * Histórico, que é onde ninguém procura a causa de um evento que não saiu.
  *
- * A tela agora avisa no ATO da escolha, com a lista que o envio de fato aceita.
+ * A tela passou a avisar no ATO da escolha, com a lista que o envio aceita.
+ *
+ * ─── E depois (27/10/2026) ─────────────────────────────────────────────────
+ *
+ * O provedor do canal passou a aceitar `QualifiedLead` e `ViewContent`, e os
+ * dois entraram na lista do canal. Hoje toda opção do seletor sai pelo canal —
+ * escolher "Lead qualificado" sem conexão direta não avisa mais nada. O aviso
+ * continua desenhado para o nome que o canal não conhece, e é por isso que o
+ * último caso de tela abaixo monta a regra com um nome fora da lista.
  *
  * ─── Por que o teste é de TELA, e não só da função ─────────────────────────
  *
@@ -53,8 +61,12 @@ const ETAPA: EtapaAberta = {
   primeira: false,
 };
 
-/** O evento que o canal NÃO repassa e a tela oferece — o caso do #2457. */
-const FORA_DO_CANAL: EventoDaMeta = "QualifiedLead";
+/**
+ * Um nome que o canal NÃO conhece. Nenhuma opção do seletor é assim desde
+ * 27/10/2026; a regra chega à tela com ele quando uma versão futura da tela o
+ * gravou — o caso que a guarda do #2457 ainda precisa pegar.
+ */
+const FORA_DO_CANAL = "OrderCreated" as EventoDaMeta;
 /** O evento que o canal repassa — o caso que NÃO pode avisar. */
 const NO_CANAL: EventoDaMeta = "InitiateCheckout";
 
@@ -82,15 +94,27 @@ function abrir(metaEvent: EventoDaMeta, conexaoDireta: boolean, enabled = true) 
 
 const aviso = () => screen.queryByTestId(ID_DO_AVISO);
 
+describe("Lead qualificado e Viu o conteúdo saem pelo canal (27/10/2026)", () => {
+  it.each(["QualifiedLead", "ViewContent"] as const)(
+    "⭐ %s sem conexão direta: escolhido na tela, e nenhum aviso de que não sai",
+    (evento) => {
+      abrir(evento, false);
+      // Não vacuidade: a regra ligada está na tela com o evento escolhido.
+      expect(screen.getByLabelText("Evento enviado à Meta")).toHaveValue(evento);
+      expect(aviso(), `avisou que ${evento} não sai pelo canal, e ele sai`).toBeNull();
+    },
+  );
+});
+
 describe("o aviso do evento que não sai pelo canal (#2457)", () => {
   it("fora do vocabulário e sem conexão direta: avisa NO ATO, com a lista do envio", () => {
     abrir(FORA_DO_CANAL, false);
 
     // Não vacuidade: é a tela das regras de etapa que está montada, com a regra
-    // ligada no evento escolhido — sem isto, o aviso poderia estar ausente por o
-    // componente não ter renderizado nada.
+    // ligada — sem isto, o aviso poderia estar ausente por o componente não ter
+    // renderizado nada.
     expect(screen.getByTestId("regras-meta-por-etapa")).toBeInTheDocument();
-    expect(screen.getByLabelText("Evento enviado à Meta")).toHaveValue(FORA_DO_CANAL);
+    expect(screen.getByLabelText("Evento enviado à Meta")).toBeInTheDocument();
 
     const caixa = aviso();
     expect(caixa, "o aviso do evento fora do canal não foi desenhado").not.toBeNull();
@@ -127,20 +151,14 @@ describe("o aviso do evento que não sai pelo canal (#2457)", () => {
 });
 
 describe("a decisão é a mesma lista que o envio usa", () => {
-  it("todo evento do canal tem saída; sem conexão direta, o de fora não tem", () => {
-    for (const evento of EVENTOS_DE_ETAPA_NO_CANAL) {
-      expect(eventoDaEtapaTemSaida(evento, false), `o canal repassa ${evento}`).toBe(true);
+  it("⭐ toda opção do seletor sai pelo canal, também sem conexão direta", () => {
+    for (const { valor } of EVENTOS_DA_META) {
+      expect(eventoDaEtapaTemSaida(valor, false), `o canal repassa ${valor}`).toBe(true);
     }
-    // Não vacuidade: existe evento na tela que o canal NÃO repassa — é ele que
-    // o aviso existe para pegar.
-    const deFora = EVENTOS_DA_META.map((e) => e.valor).filter(
-      (e) => !(EVENTOS_DE_ETAPA_NO_CANAL as readonly string[]).includes(e),
-    );
-    expect(deFora.length).toBeGreaterThan(0);
-    for (const evento of deFora) {
-      expect(eventoDaEtapaTemSaida(evento, false), `${evento} não sai pelo canal`).toBe(false);
-      // Com a conexão direta, todo evento da tela sai por ela.
-      expect(eventoDaEtapaTemSaida(evento, true)).toBe(true);
-    }
+  });
+
+  it("o nome que o canal não conhece não tem saída sem conexão direta, e tem com ela", () => {
+    expect(eventoDaEtapaTemSaida(FORA_DO_CANAL, false)).toBe(false);
+    expect(eventoDaEtapaTemSaida(FORA_DO_CANAL, true)).toBe(true);
   });
 });
