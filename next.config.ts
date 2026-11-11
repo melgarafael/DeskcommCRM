@@ -1,5 +1,6 @@
 import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
+import { MAX_MEDIA_BYTES } from "./lib/messaging/media/types";
 
 /** Performance budget (EPIC-12 §S-12.05):
  *  - LCP < 2.5s p75
@@ -78,10 +79,10 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
-    proxyClientMaxBodySize: "105mb",
-    serverActions: {
-      bodySizeLimit: "105mb",
-    },
+    // O proxy.ts casa /api e o Next só repassa à rota os primeiros N bytes do
+    // corpo; abaixo do teto da rota o upload chega cortado (padrão: 10 MB).
+    // A mesma folga de 1 MiB que o `lerCorpoComTeto` das rotas de mídia.
+    proxyClientMaxBodySize: MAX_MEDIA_BYTES + 1_048_576,
   },
   images: {
     // O app não usa next/image de fato (só <img> raw); desligar o otimizador
