@@ -96,11 +96,19 @@ describe("config de atendimento — routing + visibilidade na mesma porta", () =
     // quem atendeu", o prazo do silêncio manual nem a devolução AO RODÍZIO
     // (#2985): no PATCH eles ficam OMITIDOS (e a mescla preserva o que vale), no
     // schema do jsonb eles têm o padrão (null, false, null e null).
+    //
+    // `distribute_only_after_qualification` e `qualification_wait_minutes` são
+    // da #3966 e obedecem à MESMA regra: o corpo antigo não os conhece, então no
+    // PATCH chegam `undefined` (omitidos, mescla preserva) e no jsonb têm o
+    // padrão. Entram aqui pelo mesmo motivo dos quatro de cima — se um deles
+    // deixar de ser omitido no PATCH, a guarda de compatibilidade reprova.
     const {
       handoff_return_after_minutes: _padrao,
       conversation_stays_with_attendant: _fica,
       manual_reply_silence_minutes: _silencio,
       unanswered_return_minutes: _devolveAoRodizio,
+      distribute_only_after_qualification: _soDepoisDeQualificar,
+      qualification_wait_minutes: _prazoDaQualificacao,
       ...semPrazo
     } = routingConfigSchema.parse(antigo);
     expect(atendimentoConfigPatchSchema.parse(antigo)).toEqual(semPrazo);
