@@ -1290,7 +1290,11 @@ export function ProspectingClient() {
                 </div>
                 {campaign.error && (
                   <p role="alert" className="mt-4 rounded-md bg-destructive/10 p-3 text-sm">
-                    {campaign.error}
+                    {/* O motivo da pausa é gravado em português pelo worker
+                        (`lib/prospecting/motivo-da-pausa.ts`, #4170) e o
+                        dicionário devolve o espanhol; texto fora do dicionário
+                        volta como veio, então erro antigo não muda. */}
+                    {t(campaign.error)}
                   </p>
                 )}
                 {/* A grade mede o CARD, não a janela: em 1024px o card divide a tela com a

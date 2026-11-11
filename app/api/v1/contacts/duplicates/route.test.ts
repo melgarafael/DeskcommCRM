@@ -154,6 +154,8 @@ function contato(i: number, parcial: Linha = {}): Linha {
     email_normalized: null,
     phone_number: `+553198${String(1000000 + i)}`, // 8 dígitos iniciando em 1: sem nono dígito
     cpf_hash: null,
+    wa_identity: null,
+    wa_lid: null,
     is_merged_into: null,
     is_anonymized: false,
     source_metadata: null,
@@ -420,5 +422,68 @@ describe("CPF na varredura", () => {
 
     const leitura = sessao.consultas.find((c) => c.tabela === "contacts")!;
     expect(leitura.filtros).toContainEqual(["organization_id", ORG_ID]);
+  });
+});
+
+/**
+ * ─── O WhatsApp na varredura (#4081) ─────────────────────────────────────────
+ *
+ * `contacts.phone_whatsapp` NÃO é número (é `sim`/`nao`/`nao_sei`), e é por isso
+ * que a coluna não entra aqui. O que identifica a conta é `wa_identity` (0027) e
+ * `wa_lid` (0122) — as duas geradas, as duas com índice único nascido de
+ * `if not exists`. A rota passa a LER as duas e continua devolvendo só pessoa,
+ * telefone e e-mail: identificador de conta de WhatsApp não é dado de tela.
+ */
+describe("WhatsApp na varredura", () => {
+  const LID = "100000000000001";
+
+  function comOLid(linhas: Linha[]): Linha[] {
+    // Duas fichas nascidas do MESMO @lid — antes e depois da correção da 0027, ou
+    // num clone em que o índice único não nasceu. Nomes e telefones diferentes: o
+    // que prova que é a mesma pessoa é a conta do WhatsApp.
+    linhas[4] = contato(5, {
+      name: "Maria Souza",
+      wa_identity: `lid:${LID}`,
+      wa_lid: LID,
+    });
+    linhas[149] = contato(150, {
+      name: "M. Souza Atendimento",
+      wa_identity: `lid:${LID}`,
+      wa_lid: LID,
+    });
+    return linhas;
+  }
+
+  it("⭐ a conta de WhatsApp igual une o par com o motivo `whatsapp` — e a rota PEDE as duas colunas", async () => {
+    const { consultas, client } = fakeSupabase({ contacts: comOLid(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const json = await corpo(await chamar());
+    const grupos = json.data as Array<{ motivos: string[]; contatos: Array<{ id: string }> }>;
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.motivos).toEqual(["whatsapp"]);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["contato-0005", "contato-0150"]);
+
+    // Sabotagem: tirar `wa_identity`/`wa_lid` de `COLUNAS_DO_CONTATO` deixa esta
+    // asserção vermelha — e, no banco, o par nunca mais é encontrado.
+    const leitura = consultas.find((c) => c.tabela === "contacts")!;
+    expect(leitura.colunas).toContain("wa_identity");
+    expect(leitura.colunas).toContain("wa_lid");
+  });
+
+  it("`wa_identity` e `wa_lid` NÃO saem no JSON", async () => {
+    const { client } = fakeSupabase({ contacts: comOLid(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    const texto = await res.clone().text();
+
+    expect(texto).not.toContain("wa_identity");
+    expect(texto).not.toContain("wa_lid");
+    expect(texto).not.toContain(LID);
+    // Controle positivo: o grupo está lá (um payload vazio também não teria o lid).
+    const json = (await res.json()) as { data: unknown[] };
+    expect(json.data).toHaveLength(1);
   });
 });

@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { JanelaSelo } from "@/components/inbox/JanelaSelo";
 import { ChannelLogo } from "@/components/inbox/ChannelLogo";
-import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check } from "@/lib/ui/icons";
+import { Phone, MagnifyingGlass, DotsThree, Pause, Archive, EyeSlash, UserCircle, UsersThree, Robot, Check, DownloadSimple } from "@/lib/ui/icons";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useClaimConversation } from "@/hooks/inbox/useClaimConversation";
 import { useReleaseConversation } from "@/hooks/inbox/useReleaseConversation";
@@ -208,6 +208,20 @@ export function ConversationHeader({
   // Reservar exige papel de atendente (o mesmo gate da rota); grupo não é pessoa.
   const podeReservar =
     !conversation.is_group && !!c?.id && activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
+  /**
+   * EXPORTAR CONVERSA (#1982, F1) — o MESMO gate da rota, e nada além dele.
+   *
+   * `app/api/v1/conversations/[id]/export/route.ts` abre com
+   * `requireRole("agent")` e ainda dá passagem ao admin de plataforma
+   * (`full`), exatamente como as demais rotas de `conversations/[id]`. Repetir
+   * a régua aqui é o desenho que este componente já declarou: não oferecer o
+   * que a rota recusa — um `viewer` que clica e recebe 403 num download
+   * descobre o limite DEPOIS de pedir o arquivo. É a mesma comparação de
+   * `ChatThread` (`podeEnviar`, :112), sem hook novo e sem `usePermission`.
+   */
+  const podeExportar =
+    (user.is_platform_admin && !user.support) ||
+    (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent);
   const marcarPessoal = useMarkPersonalContact(c?.id ?? "");
   const desmarcarPessoal = useUnmarkPersonalContact(c?.id ?? "");
 
@@ -773,6 +787,36 @@ export function ConversationHeader({
                 <EyeSlash size={16} aria-hidden className="mr-2" />
                 {desmarcarPessoal.isPending ? t("Desmarcando...") : t("Desmarcar pessoal")}
               </DropdownMenuItem>
+            )}
+            {/* EXPORTAR CONVERSA (#1982, F1) — o PDF do histórico desta conversa.
+                A rota já existia (`app/api/v1/conversations/[id]/export`,
+                `?formato=pdf`) e nenhuma tela a chamava: o operador não tinha
+                por onde baixar. Aqui é ÂNCORA de download, não `fetch`: o
+                browser faz o GET com o cookie da sessão e grava o arquivo com o
+                nome que o `Content-Disposition` da rota manda (`no-store`).
+                É o mesmo gesto do "Exportar CSV" da auditoria.
+
+                O QUE ENTRA: o histórico legível, datado e em ordem, para o
+                operador arquivar no caso. O QUE NÃO ENTRA: nota interna — o
+                PDF é do histórico do cliente, e a rota não lê a tabela de
+                notas. O `title` diz isso a quem está começando; o gate é o da
+                rota (`podeExportar`), então o item não aparece para `viewer`. */}
+            {podeExportar && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <a
+                    href={`/api/v1/conversations/${conversation.id}/export?formato=pdf`}
+                    download
+                    data-testid="exportar-conversa"
+                    className="flex w-full items-center gap-2"
+                    title={t("Baixa o histórico desta conversa em PDF, datado e em ordem, para arquivar. Notas internas não entram.")}
+                  >
+                    <DownloadSimple size={16} aria-hidden />
+                    {t("Exportar conversa")}
+                  </a>
+                </DropdownMenuItem>
+              </>
             )}
           </DropdownMenuContent>
         </DropdownMenu>

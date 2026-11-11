@@ -119,6 +119,7 @@ const INVENTARIO = [
   "Marcar como pessoal",
   "Desmarcar pessoal",
   "Ver contato",
+  "Exportar conversa",
 ] as const;
 
 /**
@@ -177,6 +178,7 @@ const CENARIO_MAIS_COMPLETO: Cenario = {
     "Arquivar",
     "Marcar como pessoal",
     "Ver contato",
+    "Exportar conversa",
   ],
 };
 
@@ -193,6 +195,7 @@ const CENARIOS: Cenario[] = [
       "Arquivar",
       "Marcar como pessoal",
       "Ver contato",
+      "Exportar conversa",
     ],
   },
   CENARIO_MAIS_COMPLETO,
@@ -208,17 +211,18 @@ const CENARIOS: Cenario[] = [
       "Arquivar",
       "Marcar como pessoal",
       "Ver contato",
+      "Exportar conversa",
     ],
   },
   {
     nome: "encerrada — o par Fechar/Reabrir vira Reabrir",
     conversa: { status: "closed" },
-    esperadas: ["Assumir", "Reabrir", "Arquivar", "Marcar como pessoal", "Ver contato"],
+    esperadas: ["Assumir", "Reabrir", "Arquivar", "Marcar como pessoal", "Ver contato", "Exportar conversa"],
   },
   {
     nome: "arquivada — arquivar de novo não é gesto que exista",
     conversa: { status: "archived" },
-    esperadas: ["Assumir", "Reabrir", "Marcar como pessoal", "Ver contato"],
+    esperadas: ["Assumir", "Reabrir", "Marcar como pessoal", "Ver contato", "Exportar conversa"],
   },
   {
     nome: "contato marcado como pessoal — o par inverte",
@@ -232,6 +236,7 @@ const CENARIOS: Cenario[] = [
       "Arquivar",
       "Desmarcar pessoal",
       "Ver contato",
+      "Exportar conversa",
     ],
   },
 ];
