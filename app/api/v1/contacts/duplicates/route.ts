@@ -21,7 +21,9 @@
  * ─── O que sai daqui e o que não sai ─────────────────────────────────────────
  * `cpf_hash` é lido pelo SERVIDOR (a comparação precisa dele), só para as fichas
  * que a sessão já viu, e NÃO é devolvido: é PII derivada, e a tela de conferência
- * mostra pessoa, telefone e e-mail — não hash de documento. O mapeamento do
+ * mostra pessoa, telefone e e-mail — não hash de documento. O mesmo vale para `wa_identity`/`wa_lid`:
+ * identificam a CONTA do WhatsApp, não a pessoa para quem se liga; a tela mostra
+ * `phone_number`. O mapeamento do
  * `ok(...)` abaixo é a lista fechada do que o cliente recebe; campo novo em
  * `contacts` não vaza por acidente.
  *
@@ -77,7 +79,7 @@ const TETO_DE_VARREDURA = 2000;
 const TAMANHO_DA_PAGINA = 1000;
 
 const COLUNAS_DO_CONTATO =
-  "id, name, display_name, address_book_name, email, email_normalized, phone_number, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
+  "id, name, display_name, address_book_name, email, email_normalized, phone_number, wa_identity, wa_lid, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
 
 /** Cada id custa ~37 caracteres na URL do PostgREST; 100 ficam abaixo do limite comum de 8 KB de um proxy. */
 const LOTE_DE_IDS = 100;

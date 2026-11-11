@@ -30,7 +30,7 @@ import {
 } from "@/lib/contacts/conflito-unico";
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
-import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
+import { abrirConversaDoContatoNovo, type PortaDaCriacao } from "@/lib/contacts/conversa-ao-criar";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { listaLegivel } from "@/lib/leads/activity-vocabulary";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
@@ -654,11 +654,22 @@ export interface CreateContactResult {
   action: "created";
 }
 
+export interface CreateContactOptions {
+  /**
+   * Quem está criando, para a regra de "criar contato abre conversa"
+   * (`lib/contacts/conversa-ao-criar.ts`). Padrão `manual`: a rota e o cartão
+   * do negócio. A prospecção declara `prospeccao`, porque abre a conversa no
+   * canal da campanha por conta própria.
+   */
+  porta?: Extract<PortaDaCriacao, "manual" | "prospeccao">;
+}
+
 export async function createContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: ContactCreate,
   linkedLeadId?: string,
+  opcoes: CreateContactOptions = {},
 ): Promise<CreateContactResult> {
   // ── O PADRÃO (#2730) — a MESMA régua do formulário, aqui no SERVIDOR ──────
   //
@@ -766,7 +777,7 @@ export async function createContactHandler(
   // gravava e a conversa nunca abria. A organização já veio de fonte confiável
   // (sessão ou token) em `ctx`, e a escolha da sessão e a RPC filtram por ela.
   const conversa = await abrirConversaDoContatoNovo(createAdminClient(), {
-    porta: "manual",
+    porta: opcoes.porta ?? "manual",
     organizationId: ctx.organization_id,
     contactId: contact.id,
     phoneNumber: contact.phone_number,

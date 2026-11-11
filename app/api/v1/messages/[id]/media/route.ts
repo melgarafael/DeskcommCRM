@@ -17,7 +17,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -225,10 +225,10 @@ async function responder(
         nomeDoArquivo ? { download: nomeDoArquivo } : undefined,
       );
     if (!signErr && signed?.signedUrl) {
-      const response = NextResponse.redirect(
+      const response = comIdDaRequisicao(NextResponse.redirect(
         nomeDoArquivo ? urlAssinadaParaDownload(signed.signedUrl, nomeDoArquivo) : signed.signedUrl,
         302,
-      );
+      ), requestId);
       response.headers.set("X-Request-Id", requestId);
       return response;
     }
@@ -258,7 +258,7 @@ async function responder(
         // verdade ("não há o que servir"); 502 acusaria uma falha inexistente.
         return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
       }
-      return new Response(new Uint8Array(media.buffer), {
+      return comIdDaRequisicao(new Response(new Uint8Array(media.buffer), {
         status: 200,
         headers: {
           "Content-Type": media.mime,
@@ -270,7 +270,7 @@ async function responder(
           ...(nomeDoArquivo ? { "Content-Disposition": cabecalhoDeDownload(nomeDoArquivo) } : {}),
           "X-Request-Id": requestId,
         },
-      });
+      }), requestId);
     } catch {
       return fail("bad_gateway", t("Mídia indisponível no momento."), 502, { requestId });
     }

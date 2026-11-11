@@ -28,7 +28,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
-import { ok, fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
 import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { audit } from "@/lib/audit";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
@@ -407,11 +407,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     'Plano anual,Bruno Lima,(21) 97777-6666,,"1.200,00",site,,Veio pelo formulario',
   ].join("\n");
 
-  return new Response(`﻿${modelo}\n`, {
+  return comIdDaRequisicao(new Response(`﻿${modelo}\n`, {
     headers: {
       "content-type": "text/csv; charset=utf-8",
       "content-disposition": 'attachment; filename="modelo-leads.csv"',
       "x-request-id": requestId,
     },
-  });
+  }), requestId);
 }

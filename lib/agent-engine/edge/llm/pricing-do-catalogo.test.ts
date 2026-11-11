@@ -361,6 +361,46 @@ describe("as tolerâncias de id do motor valem para a consulta ao banco", () => 
     ]);
   });
 
+  it("as variantes com PONTO trocado por hífen entram no FIM, sem perder as de hoje", () => {
+    // Issue #1931: o OpenRouter publica `anthropic/claude-haiku-5.5` e a linha da
+    // instalação fica gravada `claude-haiku-5-5`. O id exato continua vencendo — as
+    // formas com hífen são o último recurso, não um atalho de prefixo.
+    expect(candidatosDeId("anthropic/claude-haiku-5.5")).toEqual([
+      "anthropic/claude-haiku-5.5",
+      "claude-haiku-5.5",
+      "claude-haiku-5-5",
+      "anthropic/claude-haiku-5-5",
+    ]);
+    // Com sufixo de data: o hífen vale também para a forma sem data.
+    expect(candidatosDeId("anthropic/claude-haiku-4.5-20251001")).toEqual([
+      "anthropic/claude-haiku-4.5-20251001",
+      "anthropic/claude-haiku-4.5",
+      "claude-haiku-4.5-20251001",
+      "claude-haiku-4.5",
+      "claude-haiku-4-5-20251001",
+      "claude-haiku-4-5",
+      "anthropic/claude-haiku-4-5-20251001",
+    ]);
+  });
+
+  it("o id com PONTO acha a linha do catálogo gravada com hífen", async () => {
+    // A linha da instalação: `claude-haiku-5-5` a 10/50 centavos por milhão.
+    const linhaDoHaiku: LinhaFalsa = {
+      id: "claude-haiku-5-5",
+      provider: "openrouter",
+      entrada: 10,
+      saida: 50,
+      origem: "catalogo",
+    };
+    expect(candidatosDeId("anthropic/claude-haiku-5.5")).toContain("claude-haiku-5-5");
+    const { db } = bancoFalso([linhaDoHaiku]);
+    expect(await precoDaInstalacao(db, "anthropic/claude-haiku-5.5", "openrouter")).toEqual({
+      entradaCentsPorMilhao: 10,
+      saidaCentsPorMilhao: 50,
+      origem: "catalogo",
+    });
+  });
+
   it("o id exato vence a forma sem prefixo quando as duas têm linha", async () => {
     const { db } = bancoFalso([
       { ...LINHA_DO_GPT_OSS, entrada: 15, saida: 60 },
