@@ -266,7 +266,7 @@ describe("RED que virou GREEN — o comentário com a palavra dispara UMA ação
     expect((r as { ok: true; body: Linha }).body).toMatchObject({ status: "ingested" });
 
     expect(estado.channel_comments).toHaveLength(1);
-    expect(estado.channel_comments[0]).toMatchObject({
+    expect(estado.channel_comments![0]).toMatchObject({
       organization_id: ORG_A,
       channel_session_id: SESSAO,
       provider: "zernio_social",
@@ -286,7 +286,7 @@ describe("RED que virou GREEN — o comentário com a palavra dispara UMA ação
       entity_id: "contacts-1",
       organization_id: ORG_A,
     });
-    expect(eventos[0].payload).toMatchObject({
+    expect(eventos[0]!.payload).toMatchObject({
       comment_id: "comentario-1",
       post_id: POST,
       text: "QUERO o link",
@@ -301,7 +301,7 @@ describe("RED que virou GREEN — o comentário com a palavra dispara UMA ação
 
     expect(execucoes).toEqual([REGRA]);
     expect(estado.automation_rule_runs).toHaveLength(1);
-    expect(estado.automation_rule_runs[0]).toMatchObject({
+    expect(estado.automation_rule_runs![0]).toMatchObject({
       organization_id: ORG_A,
       rule_id: REGRA,
       contact_id: "contacts-1",
