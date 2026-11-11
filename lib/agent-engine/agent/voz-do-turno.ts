@@ -20,8 +20,9 @@ import { chaveDeOrcamentoDaInstalacao } from '@/lib/instalacao/comportamento';
 import { logger } from '@/lib/logger';
 import type { ChannelCapabilities } from '@/lib/channels/types';
 import { formatoDaVozParaCanal, type FormatoDaVoz } from '@/lib/ai/voz/formato';
+import { lerPedidoDeAudio } from './pedido-de-audio';
 
-export type VozQuando = 'nunca' | 'espelhar' | 'sempre';
+export type VozQuando = 'nunca' | 'espelhar' | 'sempre' | 'quando_pede';
 
 export interface ResolverVozDoTurnoInput {
   pool: pg.Pool;
@@ -37,6 +38,13 @@ export interface ResolverVozDoTurnoInput {
   voiceNote: ChannelCapabilities['voiceNote'];
   /** `messages.type` da mensagem inbound que disparou o turno — `null` quando não há (ex.: follow-up proativo). */
   inboundType: string | null;
+  /**
+   * O TEXTO da mensagem inbound (#4345) — o que o cliente escreveu, já composto
+   * por `corpoDaMensagem` (num áudio, a transcrição; sem transcrição, o marcador
+   * `[audio]`). É daqui que sai o pedido de voz do `'quando_pede'`; ausente,
+   * `null`, e o turno só pode espelhar o canal.
+   */
+  inboundText?: string | null;
   /**
    * A voz PRÓPRIA deste agente (`ai_agents.config.voz_voice_id`, #4228) — a
    * escolha que a tela do agente grava. `null`/ausente = herda a voz da
@@ -72,9 +80,26 @@ interface VozSettings {
   model_id?: string;
 }
 
-function deveFalar(vozQuando: VozQuando, inboundType: string | null): boolean {
+/**
+ * "O agente fala NESTE turno?" — os quatro comportamentos de `voz_quando`.
+ *
+ * `'quando_pede'` (#4345) é o espelho MAIS a leitura do turno: fala quando o
+ * cliente mandou áudio (como `'espelhar'`) OU quando pediu áudio por escrito /
+ * avisou que não consegue ler. Quem pediu texto vence o espelho — o cliente que
+ * grava "prefiro texto" quer texto, mesmo tendo mandado áudio.
+ */
+function deveFalar(
+  vozQuando: VozQuando,
+  inboundType: string | null,
+  inboundText: string | null,
+): boolean {
   if (vozQuando === 'nunca') return false;
   if (vozQuando === 'sempre') return true;
+  if (vozQuando === 'quando_pede') {
+    const pedido = lerPedidoDeAudio(inboundText);
+    if (pedido === 'texto') return false;
+    return pedido === 'audio' || inboundType === 'audio';
+  }
   // 'espelhar': só quando o CLIENTE mandou áudio nesta mensagem.
   return inboundType === 'audio';
 }
@@ -113,7 +138,7 @@ export async function resolverVozDoTurno(
   input: ResolverVozDoTurnoInput,
 ): Promise<VozResolvidaDoTurno | null> {
   if (!input.vozEnabled) return null;
-  if (!deveFalar(input.vozQuando, input.inboundType)) return null;
+  if (!deveFalar(input.vozQuando, input.inboundType, input.inboundText ?? null)) return null;
 
   try {
     const { rows } = await input.pool.query<{ settings: Record<string, unknown> | null }>(

@@ -4340,6 +4340,13 @@ export const DICIONARIO: Traducoes = {
     { es: "Voz de este agente: pasa a usar la voz de la organización." },
   "Voz deste agente salva:": { es: "Voz de este agente guardada:" },
   "Só quando o cliente mandar áudio": { es: "Solo cuando el cliente envíe audio" },
+  "Quando o cliente mandar áudio ou pedir por escrito": {
+    es: "Cuando el cliente envíe audio o lo pida por escrito",
+  },
+  "Responde em áudio quando o cliente manda áudio, pede áudio por escrito ou avisa que não consegue ler. Quem pede para continuar no texto segue recebendo texto.":
+    {
+      es: "Responde en audio cuando el cliente envía audio, pide audio por escrito o avisa que no puede leer. Quien pide seguir por texto sigue recibiendo texto.",
+    },
   "Nunca (desligado, sem apagar a configuração)": {
     es: "Nunca (desactivado, sin borrar la configuración)",
   },

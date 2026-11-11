@@ -3269,6 +3269,10 @@ async function executarTurnoDoAgente(
           // na voz da organização — o comportamento de antes, byte a byte.
           vozVoiceId: agentConfig.vozVoiceId ?? null,
           voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
+          // #4345: o TEXTO do turno entra na decisão do `'quando_pede'`. É o
+          // mesmo corpo que o modelo já recebe (`currentInboundText`, lido uma
+          // vez no topo do turno) — nenhuma consulta nova ao banco.
+          inboundText: currentInboundText,
           inboundType:
             input.inboundMessageId === undefined
               ? null

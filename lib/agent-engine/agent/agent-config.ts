@@ -182,8 +182,8 @@ export interface PublishedAgentConfig {
    * não existe — Fase 7).
    */
   vozEnabled: boolean;
-  /** `'nunca' | 'espelhar' | 'sempre'` — decidido em `voz-do-turno.ts`. */
-  vozQuando: 'nunca' | 'espelhar' | 'sempre';
+  /** `'nunca' | 'espelhar' | 'sempre' | 'quando_pede'` — decidido em `voz-do-turno.ts`. */
+  vozQuando: 'nunca' | 'espelhar' | 'sempre' | 'quando_pede';
   /**
    * O PÚBLICO que a versão declara no `trigger_config` (#3722, fatia 2).
    * `null`/ausente = atende todo mundo.
@@ -391,9 +391,15 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `?? 'espelhar'` é o default do BANCO, repetido aqui só por simetria com
     // o resto do mapeamento — nunca deveria faltar (coluna NOT NULL), e um
     // valor fora do vocabulário (CHECK do banco impede, mas TS não confia
-    // cegamente num texto livre) cai no mesmo default seguro.
+    // cegamente num texto livre) cai no mesmo default seguro. `quando_pede`
+    // (#4345) entra na lista: sem ele aqui, a versão que pede a leitura do
+    // turno voltaria a espelhar só o canal, em silêncio.
     vozQuando:
-      r.voz_quando === 'nunca' || r.voz_quando === 'sempre' ? r.voz_quando : 'espelhar',
+      r.voz_quando === 'nunca' ||
+      r.voz_quando === 'sempre' ||
+      r.voz_quando === 'quando_pede'
+        ? r.voz_quando
+        : 'espelhar',
     // Mesma leitura defensiva de `janelaDeAtendimento`: lista torta ⇒ `null`
     // (atende todo mundo), nunca uma mordaça acidental.
     publico: lerPublicoDoGatilho(r.trigger_config),
