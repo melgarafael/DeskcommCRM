@@ -74291,30 +74291,38 @@ alter table public.entregas_de_aviso_de_agendamento
 alter table public.entregas_de_aviso_de_agendamento
   add column if not exists inicio_lembrado timestamptz;
 
-alter table public.entregas_de_aviso_de_agendamento
-  drop constraint if exists entregas_de_aviso_de_agendamento_tipo_check;
-alter table public.entregas_de_aviso_de_agendamento
-  add constraint entregas_de_aviso_de_agendamento_tipo_check
-  check (tipo in ('aviso', 'resumo', 'lembrete'));
+-- As três trocas vão num bloco DO só: o update.sh roda sem ON_ERROR_STOP, e um
+-- `add constraint` que falhasse depois do `drop` solto deixaria a tabela sem a
+-- guarda. Dentro do DO a troca é uma instrução: ou entram as três, ou fica a
+-- que já estava.
+do $trocar_constraints_do_lembrete$
+begin
+  alter table public.entregas_de_aviso_de_agendamento
+    drop constraint if exists entregas_de_aviso_de_agendamento_tipo_check;
+  alter table public.entregas_de_aviso_de_agendamento
+    add constraint entregas_de_aviso_de_agendamento_tipo_check
+    check (tipo in ('aviso', 'resumo', 'lembrete'));
 
-alter table public.entregas_de_aviso_de_agendamento
-  drop constraint if exists entregas_de_aviso_de_agendamento_forma_check;
-alter table public.entregas_de_aviso_de_agendamento
-  add constraint entregas_de_aviso_de_agendamento_forma_check
-  check (
-    (tipo = 'aviso' and event_id is not null and evento is not null and dia is null
-       and degrau_minutos is null and inicio_lembrado is null)
-    or (tipo = 'resumo' and dia is not null and event_id is null and appointment_id is null and evento is null
-       and degrau_minutos is null and inicio_lembrado is null)
-    or (tipo = 'lembrete' and appointment_id is not null and degrau_minutos is not null
-       and inicio_lembrado is not null and event_id is null and evento is null and dia is null)
-  );
+  alter table public.entregas_de_aviso_de_agendamento
+    drop constraint if exists entregas_de_aviso_de_agendamento_forma_check;
+  alter table public.entregas_de_aviso_de_agendamento
+    add constraint entregas_de_aviso_de_agendamento_forma_check
+    check (
+      (tipo = 'aviso' and event_id is not null and evento is not null and dia is null
+         and degrau_minutos is null and inicio_lembrado is null)
+      or (tipo = 'resumo' and dia is not null and event_id is null and appointment_id is null and evento is null
+         and degrau_minutos is null and inicio_lembrado is null)
+      or (tipo = 'lembrete' and appointment_id is not null and degrau_minutos is not null
+         and inicio_lembrado is not null and event_id is null and evento is null and dia is null)
+    );
 
-alter table public.entregas_de_aviso_de_agendamento
-  drop constraint if exists entregas_de_aviso_de_agendamento_degrau_check;
-alter table public.entregas_de_aviso_de_agendamento
-  add constraint entregas_de_aviso_de_agendamento_degrau_check
-  check (degrau_minutos is null or degrau_minutos between 1 and 43200);
+  alter table public.entregas_de_aviso_de_agendamento
+    drop constraint if exists entregas_de_aviso_de_agendamento_degrau_check;
+  alter table public.entregas_de_aviso_de_agendamento
+    add constraint entregas_de_aviso_de_agendamento_degrau_check
+    check (degrau_minutos is null or degrau_minutos between 1 and 43200);
+end
+$trocar_constraints_do_lembrete$;
 
 -- A CHAVE DA IDEMPOTÊNCIA DO LEMBRETE. O início entra na chave: remarcar dá à
 -- data nova os próprios lembretes, e o mesmo degrau da mesma data nunca sai
