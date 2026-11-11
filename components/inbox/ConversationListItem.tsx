@@ -14,6 +14,7 @@ import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import {
   comandoDaConversa,
   esperaDaConversa,
+  rotuloDaEspera,
   ROTULO_DO_COMANDO,
   STATUS_ENCERRADOS,
 } from "@/lib/inbox/comando-da-conversa";
@@ -151,9 +152,10 @@ function waitingLabel(
   conversation: ConversationWithContact,
   t: (texto: string) => string = (texto) => texto, locale: Locale,
 ): string {
-  const since = esperaDaConversa(conversation);
-  if (!since) return t("Aguardando");
-  return `${t("Aguardando")} ${formatDistanceToNowStrict(new Date(since), { addSuffix: true, locale: locale })}`;
+  // O texto mora em `rotuloDaEspera`, ao lado da régua (`esperaDaConversa`):
+  // enquanto ele era escrito aqui, privado, a pílula só podia ser provada
+  // renderizando a linha inteira — e a #990 ficou sem teste vermelho por isso.
+  return rotuloDaEspera(esperaDaConversa(conversation), new Date(), t, locale);
 }
 
 export function ConversationListItem({

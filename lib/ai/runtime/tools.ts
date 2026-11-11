@@ -738,7 +738,9 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         // para ser RECUSADA logo acima por `escrita_sem_escopo_do_turno`,
         // nunca executada — com ou sem identidade.
         if (input.contatoDoTurno && def.category === "read" && !identificado) continue;
-        result[def.name] = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+        const montada = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+        // A prévia libera só a remota marcada aqui (ver `leitura-remota.ts`).
+        result[def.name] = def.category === "read" ? marcarLeituraRemota(montada) : montada;
       }
     }
   }
