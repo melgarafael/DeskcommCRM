@@ -19,7 +19,9 @@ describe("hrefDaPaginaDoNegocio", () => {
       "tag=quente&status=open&visao=lista&lead=lead-1",
     );
     const url = new URL(href, "https://app.exemplo");
-    expect(url.pathname).toBe("/app/leads/lead-1");
+    // Caminho PRÓPRIO: `/app/leads/lead-1` puro segue sendo o link estável que
+    // abre o quadro com o painel.
+    expect(url.pathname).toBe("/app/leads/lead-1/pagina");
     // O filtro INTEIRO vive no `voltar` — é ele que o quadro vai reler.
     expect(url.searchParams.get("voltar")).toBe(
       "/app/pipelines/funil-1?tag=quente&status=open&visao=lista",

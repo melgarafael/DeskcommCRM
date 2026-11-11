@@ -1,52 +1,28 @@
 // app/app/leads/[id]/rota-estavel-do-negocio.test.tsx
 /**
- * #3062 / #4151 — a URL estável do negócio (`/app/leads/<id>`).
+ * #3062 — a URL estável do negócio (`/app/leads/<id>`) é quem resolve funil +
+ * card, e é para cá que Configurações › Conversões passou a apontar.
  *
- * ─── O que mudou aqui ───────────────────────────────────────────────────────
- *
- * Até a #4151 esta rota resolvia o funil e REDIRECIONAVA para
- * `/app/pipelines/<id>?lead=`, abrindo a gaveta. O teste vizinho cobrava
- * exatamente esse `redirect`.
- *
- * A #4151 pede o contrário: o negócio abre em PÁGINA INTEIRA, e a rota passa a
- * RENDERIZAR. O `redirect` sai — e com ele a asserção que o exigia. O que
- * continua valendo, e é o que este arquivo segue guardando:
- *
- *  - o controle de OUTRA organização (a consulta é filtrada pela org ativa; sem a
- *    linha da org, `notFound()` — nunca renderizar o negócio de outra org);
- *  - negócio sem funil também é `notFound()` (sem funil não há etapa, nem
- *    campos, nem o que a página desenha).
+ * O controle que importa aqui é o de OUTRA organização: a consulta é filtrada
+ * pela organização ativa, então um link para negócio de outra org continua
+ * respondendo `notFound()` — sem redirecionar para o funil de lá (o que trocaria
+ * a organização ativa por baixo de quem clicou).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const {
-  requireAuthMock,
-  resolveActiveOrgMock,
-  notFoundMock,
-  redirectMock,
-  eqMock,
-  orderMock,
-  limitMock,
-  maybeSingleMock,
-  paginaMock,
-} = vi.hoisted(() => ({
-  requireAuthMock: vi.fn(),
-  resolveActiveOrgMock: vi.fn(),
-  notFoundMock: vi.fn(),
-  redirectMock: vi.fn(),
-  eqMock: vi.fn(),
-  orderMock: vi.fn(),
-  limitMock: vi.fn(),
-  maybeSingleMock: vi.fn(),
-  paginaMock: vi.fn(() => null),
-}));
+const { requireAuthMock, resolveActiveOrgMock, notFoundMock, redirectMock, eqMock, maybeSingleMock } =
+  vi.hoisted(() => ({
+    requireAuthMock: vi.fn(),
+    resolveActiveOrgMock: vi.fn(),
+    notFoundMock: vi.fn(),
+    redirectMock: vi.fn(),
+    eqMock: vi.fn(),
+    maybeSingleMock: vi.fn(),
+  }));
 
 vi.mock("next/navigation", () => ({
   notFound: notFoundMock,
   redirect: redirectMock,
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
-  usePathname: () => "/app/leads/l-1",
-  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/lib/auth/server", () => ({
@@ -54,88 +30,42 @@ vi.mock("@/lib/auth/server", () => ({
   resolveActiveOrg: resolveActiveOrgMock,
 }));
 
-/**
- * O encadeamento do supabase-js: `select().eq().eq().order().limit().maybeSingle()`.
- * Uma corrente só, devolvendo a si mesma — o que muda é o que cada `maybeSingle`
- * da fila responde (lead, funil, score, conversa).
- */
-const corrente = {
-  eq: eqMock,
-  order: orderMock,
-  limit: limitMock,
-  maybeSingle: maybeSingleMock,
-};
-
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
-    from: () => ({ select: () => corrente }),
+    from: () => ({ select: () => ({ eq: eqMock }) }),
   }),
 }));
 
-// A página inteira é client e carrega os blocos do dossiê: aqui o objeto é a
-// ROTA (quem ela acha, o que ela entrega), não o desenho.
-vi.mock("./_pagina", () => ({ PaginaDoNegocio: paginaMock }));
-
 import LeadPage from "./page";
+
+/** O `.eq().eq().maybeSingle()` da consulta — o mesmo objeto em toda a corrente. */
+const consulta = {
+  eq: eqMock,
+  maybeSingle: maybeSingleMock,
+};
 
 afterEach(() => vi.clearAllMocks());
 
 function prepararSessao() {
-  // `mockReset` (e não `clear`) também descarta a FILA de `mockResolvedValueOnce`
-  // do teste anterior: uma sobra de duas linhas desalinha a leitura do lado e o
-  // teste mede a linha errada.
-  maybeSingleMock.mockReset();
-  eqMock.mockReset();
-  orderMock.mockReset();
-  limitMock.mockReset();
   requireAuthMock.mockResolvedValue({ id: "u-1" });
   resolveActiveOrgMock.mockResolvedValue({ orgId: "org-1", role: "admin" });
-  eqMock.mockReturnValue(corrente);
-  orderMock.mockReturnValue(corrente);
-  limitMock.mockReturnValue(corrente);
+  eqMock.mockReturnValue(consulta);
   // No Next, `notFound()` LANÇA — a execução para ali. Um mock silencioso
-  // deixaria a página seguir e o teste mediria o mock.
+  // deixaria a página seguir para o `redirect()` e o teste mediria o mock.
   notFoundMock.mockImplementation(() => {
     throw new Error("NEXT_NOT_FOUND");
   });
 }
 
-describe("#4151 — a rota estável do negócio agora RENDERIZA", () => {
-  it("monta a página do negócio em vez de redirecionar para o quadro", async () => {
+describe("#3062 — a rota estável do negócio", () => {
+  it("redireciona para o quadro do funil COM o negócio no `?lead=`", async () => {
     prepararSessao();
-    maybeSingleMock
-      .mockResolvedValueOnce({ data: { id: "l-1", title: "Viagem Rio", pipeline_id: "p-1" } })
-      .mockResolvedValueOnce({ data: { id: "p-1", name: "Comercial", settings: {} } })
-      .mockResolvedValueOnce({ data: null });
+    maybeSingleMock.mockResolvedValue({ data: { id: "l-1", pipeline_id: "p-1" } });
 
-    const el = (await LeadPage({ params: Promise.resolve({ id: "l-1" }) })) as unknown as {
-      type: unknown;
-      props: { lead: { id: string; title: string }; voltarHref: string };
-    };
+    await LeadPage({ params: Promise.resolve({ id: "l-1" }) });
 
-    expect(redirectMock).not.toHaveBeenCalled();
+    expect(redirectMock).toHaveBeenCalledWith("/app/pipelines/p-1?lead=l-1");
     expect(notFoundMock).not.toHaveBeenCalled();
-    // A página do negócio é o que a rota DEVOLVE — o antigo `redirect` saiu.
-    expect(el.type).toBe(paginaMock);
-    expect(el.props.lead.id).toBe("l-1");
-    expect(el.props.lead.title).toBe("Viagem Rio");
-    // Sem `?voltar=` (link direto), o voltar é o quadro DESTE negócio.
-    expect(el.props.voltarHref).toBe("/app/pipelines/p-1");
-  });
-
-  it("o `?voltar=` do quadro de origem chega à página, e é validado", async () => {
-    prepararSessao();
-    maybeSingleMock
-      .mockResolvedValueOnce({ data: { id: "l-1", title: "Viagem Rio", pipeline_id: "p-1" } })
-      .mockResolvedValueOnce({ data: { id: "p-1", name: "Comercial", settings: {} } })
-      .mockResolvedValueOnce({ data: null });
-
-    const el = (await LeadPage({
-      params: Promise.resolve({ id: "l-1" }),
-      searchParams: Promise.resolve({ voltar: "/app/pipelines/p-1?tag=quente" }),
-    })) as unknown as { props: { voltarHref: string } };
-
-    expect(el.props.voltarHref).toBe("/app/pipelines/p-1?tag=quente");
   });
 
   it("filtra pela ORGANIZAÇÃO ativa — o negócio de outra org não é encontrado", async () => {
@@ -155,10 +85,7 @@ describe("#4151 — a rota estável do negócio agora RENDERIZA", () => {
 
   it("negócio sem funil também responde `notFound()`", async () => {
     prepararSessao();
-    maybeSingleMock
-      .mockResolvedValueOnce({ data: { id: "l-2", title: "Sem funil", pipeline_id: null } })
-      // A consulta do funil com `id: null` não acha linha — que é o caso real.
-      .mockResolvedValueOnce({ data: null });
+    maybeSingleMock.mockResolvedValue({ data: { id: "l-2", pipeline_id: null } });
 
     await expect(LeadPage({ params: Promise.resolve({ id: "l-2" }) })).rejects.toThrow(
       "NEXT_NOT_FOUND",

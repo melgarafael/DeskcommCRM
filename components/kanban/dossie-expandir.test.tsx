@@ -18,7 +18,7 @@ import type { Lead } from "@/lib/types/leads";
  * seja a cerca do primeiro.
  *
  * O que NÃO é medido aqui (e é honesto dizer): a navegação de verdade — clicar e
- * cair em `/app/leads/[id]` com o documento novo — é e2e. Aqui o contrato é o
+ * cair em `/app/leads/[id]/pagina` com o documento novo — é e2e. Aqui o contrato é o
  * `href`, que é o que o `<Link>` do Next entrega ao navegador.
  */
 
@@ -92,7 +92,7 @@ function montar(opcoes: { expandirHref?: string; onOpenChange?: (v: boolean) => 
 
 describe("o botão Expandir (#4151)", () => {
   it("aparece no cabeçalho do painel e aponta para a página do negócio", () => {
-    const href = "/app/leads/lead-1?voltar=%2Fapp%2Fpipelines%2Ffunil-1%3Ftag%3Dquente";
+    const href = "/app/leads/lead-1/pagina?voltar=%2Fapp%2Fpipelines%2Ffunil-1%3Ftag%3Dquente";
     montar({ expandirHref: href });
 
     const link = screen.getByTestId("dossie-expandir");

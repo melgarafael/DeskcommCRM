@@ -61,7 +61,7 @@ interface Props {
    */
   variante?: "painel" | "pagina";
   /**
-   * O endereço da página inteira do negócio (`/app/leads/[id]?voltar=…`).
+   * O endereço da página inteira do negócio (`/app/leads/[id]/pagina?voltar=…`).
    * Só o QUADRO passa: a lista e o calendário continuam abrindo o painel, e o
    * botão não aparece onde não há página para onde ir.
    */

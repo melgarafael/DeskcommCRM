@@ -44,7 +44,10 @@ export function hrefDaPaginaDoNegocio(
   params.delete("lead");
   const qs = params.toString();
   const origem = qs ? `${pathname}?${qs}` : pathname;
-  return `/app/leads/${encodeURIComponent(leadId)}?voltar=${encodeURIComponent(origem)}`;
+  // `/pagina`, e não `/app/leads/<id>` puro: o endereço puro é o link estável
+  // que tarefas, agenda, captação e avisos já usam, e ele continua abrindo o
+  // quadro com o painel. A página inteira só se alcança pelo botão Expandir.
+  return `/app/leads/${encodeURIComponent(leadId)}/pagina?voltar=${encodeURIComponent(origem)}`;
 }
 
 /**

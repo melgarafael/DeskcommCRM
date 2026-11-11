@@ -16,6 +16,9 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { updateLeadSchema, validateRequest } from "@/lib/schemas";
 
@@ -38,7 +41,8 @@ export const dynamic = "force-dynamic";
  * etapa no mesmo minuto mandaria a régua de antes da edição — "modificado por
  * outro usuário" para a própria pessoa que acabou de editar. Esta leitura é a
  * que o `mover` da página faz antes de escrever, e é por isso que ela devolve a
- * LINHA INTEIRA (todas as colunas do lead), não um resumo.
+ * LINHA INTEIRA (todas as colunas do lead), não um resumo — com a mesma
+ * projeção de `source_metadata` que as rotas irmãs aplicam.
  *
  * `viewer` é o piso, como na lista do funil: ler um negócio é a mesma permissão
  * de abrir o quadro. Escrever continua sendo `agent`+ nas rotas de escrita.
@@ -51,6 +55,7 @@ export async function GET(
   const { id } = await ctx.params;
   const authz = await requireRole("viewer", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -63,9 +68,20 @@ export async function GET(
     .eq("id", id)
     .maybeSingle();
 
-  if (error) return fail("internal_error", error.message, 500, { requestId });
-  if (!data) return fail("resource_not_found", "Negócio não encontrado.", 404, { requestId });
-  return ok(data, { requestId });
+  if (error) {
+    // O detalhe do banco fica no log, casado pelo `requestId`; quem chamou
+    // recebe a mensagem genérica.
+    logger.error("[leads/get] leitura do negócio falhou", {
+      lead_id: id,
+      organization_id: authz.org.orgId,
+      error: error.message,
+      requestId,
+    });
+    return fail("internal_error", t("Erro interno. Tente de novo em instantes."), 500, { requestId });
+  }
+  if (!data) return fail("resource_not_found", t("Negócio não encontrado."), 404, { requestId });
+  // A mesma projeção das rotas irmãs (quadro, mover, clonar, `_handler`).
+  return ok(ocultarProvaMetaNaResposta(data as Record<string, unknown>), { requestId });
 }
 
 export async function PATCH(
