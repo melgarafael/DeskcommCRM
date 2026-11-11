@@ -28,6 +28,8 @@ export interface PlanoParaTroca {
   id: string;
   nome: string;
   preco_cents: number;
+  /** A moeda do plano (migration 9332): o preço se escreve nela. */
+  moeda: string;
   intervalo: string;
   max_assentos: number | null;
   max_canais: number | null;
@@ -40,6 +42,7 @@ export interface DadosDoPainel {
     id: string;
     nome: string;
     preco_cents: number;
+    moeda: string;
     intervalo: string;
     max_assentos: number | null;
     max_canais: number | null;
@@ -88,7 +91,7 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
   const [planos, uso, gasto, org, daInstalacao] = await Promise.all([
     db
       .from("cobranca_planos")
-      .select("id, nome, preco_cents, intervalo, max_assentos, max_canais, teto_ia_usd_cents, arquivado_em, oferecido_ao_cliente"),
+      .select("id, nome, preco_cents, moeda, intervalo, max_assentos, max_canais, teto_ia_usd_cents, arquivado_em, oferecido_ao_cliente"),
     lerUsoDaOrganizacao(db, orgId),
     db.rpc("fn_gasto_de_ia_do_mes", { p_org: orgId }),
     db.from("organizations").select("timezone, cnpj").eq("id", orgId).maybeSingle(),
@@ -121,7 +124,7 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
       : null,
     plano: plano
       ? {
-          id: plano.id, nome: plano.nome, preco_cents: plano.preco_cents, intervalo: plano.intervalo,
+          id: plano.id, nome: plano.nome, preco_cents: plano.preco_cents, moeda: plano.moeda, intervalo: plano.intervalo,
           // o teto de cada recurso DERIVA da declaração do plano (planos.ts): a
           // linha que não trouxe uma coluna lança aqui, em vez de a tela mostrar
           // "sem limite" para um SELECT que só esqueceu o campo.
@@ -137,8 +140,10 @@ export async function lerPainelDaAssinatura(db: SupabaseClient, orgId: string): 
     },
     planosParaTroca: plano
       ? todos
-          .filter((p) => p.arquivado_em === null && p.oferecido_ao_cliente && p.intervalo === plano.intervalo && p.id !== plano.id)
-          .map((p) => ({ id: p.id, nome: p.nome, preco_cents: p.preco_cents, intervalo: p.intervalo,
+          // Mesma moeda (migration 9332): a troca entre moedas é recusada em `troca.ts`,
+          // então a tela nem a oferece.
+          .filter((p) => p.arquivado_em === null && p.oferecido_ao_cliente && p.intervalo === plano.intervalo && p.moeda === plano.moeda && p.id !== plano.id)
+          .map((p) => ({ id: p.id, nome: p.nome, preco_cents: p.preco_cents, moeda: p.moeda, intervalo: p.intervalo,
             ...limitesDaTela(declararPlano(p)) }))
       : [],
   };

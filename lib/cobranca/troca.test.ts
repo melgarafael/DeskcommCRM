@@ -15,11 +15,12 @@ import { trocarPlanoDaOrg } from "./troca";
 const ORG = "eeeeeeee-0000-4000-8000-000000000001";
 const AGORA = new Date("2026-10-10T12:00:00Z");
 const plano = (id: string, extra: Record<string, unknown> = {}) => ({
-  id, nome: id, preco_cents: 4990, intervalo: "mes", max_assentos: 5, max_canais: 2, arquivado_em: null, oferecido_ao_cliente: true, ...extra,
+  id, nome: id, preco_cents: 4990, moeda: "BRL", intervalo: "mes", max_assentos: 5, max_canais: 2, arquivado_em: null, oferecido_ao_cliente: true, ...extra,
 });
 const PLANOS = [
   plano("basico"), plano("pro", { preco_cents: 9990 }), plano("mini", { max_assentos: 1 }), plano("anual", { intervalo: "ano" }),
   plano("negociado", { preco_cents: 2990, oferecido_ao_cliente: false }),
+  plano("dolar", { preco_cents: 9990, moeda: "USD" }),
 ];
 
 interface Mundo { linha: Record<string, unknown> | null; assentos: number; canais: number; casPerdido: boolean; falharAoRegistrarPagamento: boolean }
@@ -73,7 +74,7 @@ describe("trocarPlanoDaOrg", () => {
   it("⭐ teste grátis com provedor: o preço da 1ª cobrança muda no provedor e a troca vale na hora (D-13)", async () => {
     m.linha = { ...EM_TESTE, provedor: "stripe", provedor_assinatura_id: "sub_1" };
     expect(await trocar("pro")).toMatchObject({ ok: true, quando: "imediato", planoId: "pro" });
-    expect(trocarNoProvedor).toHaveBeenCalledWith({ assinaturaRef: "sub_1", plano: { id: "pro", nome: "pro", precoCents: 9990, intervalo: "mes" } });
+    expect(trocarNoProvedor).toHaveBeenCalledWith({ assinaturaRef: "sub_1", plano: { id: "pro", nome: "pro", precoCents: 9990, moeda: "BRL", intervalo: "mes" } });
   });
 
   // Se a assinatura está ativa, upgrade usa o fluxo proporcional. Sem dados
@@ -226,6 +227,12 @@ describe("trocarPlanoDaOrg", () => {
     expect(await trocar("anual")).toMatchObject({ ok: false, status: 422, code: "plano_invalido" });
   });
 
+  it("⭐ outra moeda (migration 9332): 422 plano_invalido, nem a empresa nem o dono trocam", async () => {
+    expect(await trocar("dolar")).toMatchObject({ ok: false, status: 422, code: "plano_invalido", message: "Escolha um plano na mesma moeda da assinatura atual." });
+    expect(await trocar("dolar", "dono")).toMatchObject({ ok: false, status: 422, code: "plano_invalido" });
+    expect(escritas()).toEqual([]);
+  });
+
   it("⭐ plano negociado (não oferecido): a EMPRESA não o escolhe; o DONO o atribui", async () => {
     expect(await trocar("negociado")).toMatchObject({ ok: false, status: 422, code: "plano_invalido" });
     expect(await trocar("negociado", "dono")).toMatchObject({ ok: true, quando: "imediato", planoId: "negociado" });
@@ -350,7 +357,7 @@ describe("troca no teste grátis com a assinatura já criada no provedor (Asaas,
   it("⭐ o provedor leva o preço novo à fatura aberta, e o link dela FICA (o próximo Assinar devolve a mesma fatura)", async () => {
     m.linha = { ...EM_TESTE, provedor: "asaas", provedor_assinatura_id: "sub_asaas_1", checkout_url: FATURA };
     expect(await trocar("pro")).toMatchObject({ ok: true, quando: "imediato", planoId: "pro" });
-    expect(trocarNoProvedor).toHaveBeenCalledWith({ assinaturaRef: "sub_asaas_1", plano: { id: "pro", nome: "pro", precoCents: 9990, intervalo: "mes" } });
+    expect(trocarNoProvedor).toHaveBeenCalledWith({ assinaturaRef: "sub_asaas_1", plano: { id: "pro", nome: "pro", precoCents: 9990, moeda: "BRL", intervalo: "mes" } });
     expect(Object.keys(argumentos(escritas()[0]!, "update")?.[0] as object).sort()).toEqual(["plano_agendado_id", "plano_id", "updated_at"]);
   });
 

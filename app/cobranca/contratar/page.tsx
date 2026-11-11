@@ -17,6 +17,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
+import { formatCents } from "@/lib/money";
 import { ehOperante } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
@@ -59,7 +60,7 @@ export default async function ContratarPage({ searchParams }: {
   if (ehOperante(org.data.status)) redirect("/onboarding/welcome");
   if (org.data.suspended_kind !== "cobranca" || !primeiroPagamentoPendente(assinatura.data)) redirect("/account-suspended");
   const a = assinatura.data!;
-  const { data: plano, error } = await db.from("cobranca_planos").select("id, nome, preco_cents, intervalo")
+  const { data: plano, error } = await db.from("cobranca_planos").select("id, nome, preco_cents, moeda, intervalo")
     .eq("id", a.plano_id).maybeSingle();
   if (error || !plano) return indisponivel("plano", error?.code ?? "plano_ausente");
   let intencao: Awaited<ReturnType<typeof lerIntencaoDeContratacao>> = null;
@@ -72,7 +73,7 @@ export default async function ContratarPage({ searchParams }: {
   }
   const params = await searchParams;
   const provedor = (a.provedor as ProvedorDeCobranca | null) ?? await provedorDaInstalacao();
-  const preco = new Intl.NumberFormat(user.idioma, { style: "currency", currency: "BRL" }).format(Number(plano.preco_cents) / 100);
+  const preco = formatCents(Number(plano.preco_cents), String(plano.moeda));
   // Quem já tem fatura ou cliente no provedor não é mandado de novo ao checkout
   // a cada visita: continua pelo botão ou pelo "Já paguei".
   const semCheckoutAnterior = a.checkout_url === null && a.provedor_cliente_id === null;

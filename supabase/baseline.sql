@@ -80919,3 +80919,12 @@ begin
   end loop;
 end
 $fichas_absorvidas$;
+
+-- ---- cobrança do revendedor: plano em real, dólar ou euro (migration 9332) ----
+-- Troca o CHECK de `cobranca_planos.moeda` (nascido sem nome na 0583, só BRL)
+-- por um que aceita BRL, USD e EUR. Idempotente: derruba e recria o mesmo nome.
+alter table public.cobranca_planos
+  drop constraint if exists cobranca_planos_moeda_check;
+alter table public.cobranca_planos
+  add constraint cobranca_planos_moeda_check
+  check (moeda = any (array['BRL'::text, 'USD'::text, 'EUR'::text]));
