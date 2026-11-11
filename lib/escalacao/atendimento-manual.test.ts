@@ -1,8 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { PRAZO_DO_SILENCIO_MS, pausarIaPorAtendimentoManual } from "./atendimento-manual";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import {
+  PRAZO_DO_SILENCIO_MS,
+  pausarIaPorAtendimentoManual,
+  pausarIaPorAtendimentoManualDetalhado,
+  type FalhaDaPausa,
+} from "./atendimento-manual";
 import { decidirElegibilidade, normalizarInstante } from "@/lib/ai/elegibilidade/gate";
 import { logger } from "@/lib/logger";
+
+/**
+ * Caminhos de ingestão descobertos em disco, sem dizer o nome de nenhum canal:
+ * a cerca `lint:channels` proíbe nome de provider fora de `lib/channels/`, e um
+ * teste não é exceção. Varre `lib/<x>/ingest.ts` e `lib/<x>/<y>/ingest.ts`.
+ */
+function arquivosDeIngestao(): string[] {
+  const raiz = join(process.cwd(), "lib");
+  const achados: string[] = [];
+  const considerar = (rel: string) => {
+    if (existsSync(join(raiz, rel))) achados.push(join("lib", rel));
+  };
+  for (const direto of readdirSync(raiz, { withFileTypes: true })) {
+    if (!direto.isDirectory()) continue;
+    considerar(join(direto.name, "ingest.ts"));
+    for (const filho of readdirSync(join(raiz, direto.name), { withFileTypes: true })) {
+      if (filho.isDirectory()) considerar(join(direto.name, filho.name, "ingest.ts"));
+    }
+  }
+  return achados;
+}
+
+const ler = (rel: string) => readFileSync(join(process.cwd(), rel), "utf8");
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const CONV = "22222222-2222-4222-8222-222222222222";
@@ -282,8 +313,10 @@ describe("pausarIaPorAtendimentoManual — a pausa precisa ser OBSERVÁVEL (#534
 
       expect(pausou).toBe(false);
       // A tentativa de UPDATE aconteceu: a mentira nunca foi "não tentou", era
-      // "não conferiu o que voltou".
-      expect(updates).toHaveLength(1);
+      // "não conferiu o que voltou". São DUAS desde o #534: zero linhas com a
+      // conversa ainda presente é CORRIDA, e corrida ganha uma repetição.
+      expect(updates).toHaveLength(2);
+      expect(updates[1]).toEqual(updates[0]);
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining("nenhuma linha afetada"),
         expect.objectContaining({ rows: 0 }),
@@ -392,3 +425,209 @@ describe("pausarIaPorAtendimentoManual — o prazo é o da EMPRESA (#2005)", () 
     );
   });
 });
+
+/**
+ * #534 — a pausa precisa ser GARANTIDA, não só observada.
+ *
+ * Zero linhas tem DOIS motivos e eles pedem tratamentos opostos: corrida (a
+ * linha existe, a escrita ainda não é visível — repetir UMA vez resolve) e
+ * conversa inexistente/organização errada (repetir nunca resolve). O dublê
+ * abaixo responde as duas perguntas que separam os casos — quantas linhas CADA
+ * escrita afetou (`linhasPorEscrita`, consumido em ordem) e se a conversa existe
+ * em cada leitura (`existencia`, idem) —, e é o mínimo para provar a distinção
+ * sem banco.
+ */
+function adminComCorrida(opts: { linhasPorEscrita: number[]; existencia?: boolean[] }) {
+  const updates: Array<Record<string, unknown>> = [];
+  /** Só as leituras de `conversations` — a de `organizations` é outra pergunta. */
+  const leituras: number[] = [];
+  let escrita = 0;
+  const chain = {
+    select: () => chain,
+    update: (patch: Record<string, unknown>) => {
+      updates.push(patch);
+      return chain;
+    },
+    eq: () => chain,
+    maybeSingle: () => {
+      leituras.push(1);
+      const existe = opts.existencia?.[leituras.length - 1] ?? true;
+      return Promise.resolve({
+        data: existe ? { bot_silenced_until: null } : null,
+        error: null,
+      });
+    },
+    // O UPDATE termina com `select("id")`: a resposta traz as LINHAS afetadas.
+    then: (r: (v: unknown) => unknown) => {
+      const linhas = opts.linhasPorEscrita[escrita++] ?? 0;
+      return Promise.resolve({
+        data: Array.from({ length: linhas }, (_, i) => ({ id: `linha-${i}` })),
+        error: null,
+      }).then(r);
+    },
+  };
+  // `prazoDoSilencioDaEmpresaMs` também faz um `maybeSingle` — em `organizations`.
+  const organizacao = {
+    select: () => organizacao,
+    eq: () => organizacao,
+    maybeSingle: () => Promise.resolve({ data: { settings: {} }, error: null }),
+  };
+  const admin = {
+    from: vi.fn((tabela: string) => (tabela === "organizations" ? organizacao : chain)),
+  } as never;
+  return { admin, updates, leituras };
+}
+
+describe("pausarIaPorAtendimentoManualDetalhado — 0 linhas: corrida × conversa inexistente (#534)", () => {
+  it("(a) 0 linhas e sucesso na repetição: pausa GRAVADA com UMA nova escrita", async () => {
+    const { admin, updates, leituras } = adminComCorrida({ linhasPorEscrita: [0, 1] });
+
+    const resultado = await pausarIaPorAtendimentoManualDetalhado(admin, {
+      organizationId: ORG,
+      conversationId: CONV,
+      agora: T0,
+    });
+
+    expect(resultado).toEqual({ pausada: true, gravada: true });
+    // Duas escritas no total: a que não casou e a repetição. Nada além disso.
+    expect(updates).toHaveLength(2);
+    expect(updates[1]).toEqual(updates[0]);
+    // Leitura inicial + releitura que separou corrida de inexistente.
+    expect(leituras).toHaveLength(2);
+  });
+
+  it("(b) 0 linhas DUAS vezes com a conversa existente: falha com o motivo da CORRIDA", async () => {
+    const { admin, updates } = adminComCorrida({ linhasPorEscrita: [0, 0] });
+
+    const resultado = await pausarIaPorAtendimentoManualDetalhado(admin, {
+      organizationId: ORG,
+      conversationId: CONV,
+      agora: T0,
+    });
+
+    expect(resultado).toEqual({ pausada: false, motivo: "corrida_persistente" });
+    // Repetiu UMA vez e parou: nada de laço.
+    expect(updates).toHaveLength(2);
+  });
+
+  it("(c) conversa inexistente: motivo próprio, SEM repetir a escrita", async () => {
+    const { admin, updates, leituras } = adminComCorrida({
+      linhasPorEscrita: [],
+      existencia: [false, false],
+    });
+
+    const resultado = await pausarIaPorAtendimentoManualDetalhado(admin, {
+      organizationId: ORG,
+      conversationId: CONV,
+      agora: T0,
+    });
+
+    expect(resultado).toEqual({ pausada: false, motivo: "conversa_inexistente" });
+    // Nenhuma escrita: repetir nunca resolveria organização errada.
+    expect(updates).toHaveLength(0);
+    // A releitura que decidiu aconteceu.
+    expect(leituras).toHaveLength(2);
+  });
+
+  it("(f) leitura não achou e a RELEITURA achou: é corrida de leitura, grava UMA vez", async () => {
+    const { admin, updates } = adminComCorrida({
+      linhasPorEscrita: [1],
+      existencia: [false, true],
+    });
+
+    const resultado = await pausarIaPorAtendimentoManualDetalhado(admin, {
+      organizationId: ORG,
+      conversationId: CONV,
+      agora: T0,
+    });
+
+    expect(resultado).toEqual({ pausada: true, gravada: true });
+    expect(updates).toHaveLength(1);
+  });
+
+  it("(d) o chamador que recebe falha NÃO segue como se a IA estivesse pausada", async () => {
+    const avisos: FalhaDaPausa[] = [];
+    const { admin } = adminComCorrida({ linhasPorEscrita: [0, 0] });
+
+    const pausou = await pausarIaPorAtendimentoManual(admin, {
+      organizationId: ORG,
+      conversationId: CONV,
+      canal: "teste",
+      agora: T0,
+      avisar: (falha) => {
+        avisos.push(falha);
+      },
+    });
+
+    expect(pausou).toBe(false);
+    // O aviso é a porta que impede o `false` anônimo de virar "segue o baile".
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]).toMatchObject({
+      organizationId: ORG,
+      conversationId: CONV,
+      canal: "teste",
+      motivo: "corrida_persistente",
+    });
+  });
+
+  it("(d2) conversa inexistente também avisa, com o motivo PRÓPRIO", async () => {
+    const avisos: FalhaDaPausa[] = [];
+    const { admin } = adminComCorrida({ linhasPorEscrita: [], existencia: [false, false] });
+
+    const pausou = await pausarIaPorAtendimentoManual(admin, {
+      organizationId: ORG,
+      conversationId: CONV,
+      agora: T0,
+      avisar: (falha) => {
+        avisos.push(falha);
+      },
+    });
+
+    expect(pausou).toBe(false);
+    expect(avisos.map((a) => a.motivo)).toEqual(["conversa_inexistente"]);
+  });
+
+  it("(d3) no caminho feliz NÃO há aviso — aviso é sinal de falha, não ruído", async () => {
+    const avisos: FalhaDaPausa[] = [];
+    const { admin } = adminComCorrida({ linhasPorEscrita: [1] });
+
+    const pausou = await pausarIaPorAtendimentoManual(admin, {
+      organizationId: ORG,
+      conversationId: CONV,
+      agora: T0,
+      avisar: (falha) => {
+        avisos.push(falha);
+      },
+    });
+
+    expect(pausou).toBe(true);
+    expect(avisos).toHaveLength(0);
+  });
+
+  /**
+   * O conserto só vale se os chamadores REAIS passarem pela porta que não engole
+   * a falha. Este caso lê os pontos de chamada da ingestão: nenhum pode voltar
+   * ao atalho booleano, e todos têm de ter o aviso durável no `audit`.
+   */
+  it("(d4) TODA chamada da ingestão passa um aviso — nenhuma engole o false", () => {
+    // Descoberta em tempo de execução, de propósito: nomear o caminho de um canal
+    // aqui escreveria o nome do provider fora de lib/channels/ e a cerca
+    // `lint:channels` (doutrina restricao-de-canal, invariante 1) reprova — com razão.
+    // Varrendo o diretório, a prova também passa a cobrir canal novo sem editar o teste.
+    const comPausa = arquivosDeIngestao().filter((rel) =>
+      /pausarIa(PorAtendimentoManual|Duravelmente)\(/.test(ler(rel)),
+    );
+    expect(comPausa.length, "nenhum ponto de chamada encontrado na ingestão").toBeGreaterThanOrEqual(3);
+    for (const rel of comPausa) {
+      const texto = ler(rel);
+      const chamadas = texto.match(/pausarIa(PorAtendimentoManual|Duravelmente)\(/g) ?? [];
+      const avisos = texto.match(/avisar:/g) ?? [];
+      expect(chamadas.length, `${rel} não chama a pausa?`).toBeGreaterThan(0);
+      // Uma chamada sem `avisar` é uma falha da pausa que ninguém vê.
+      expect(avisos.length, `${rel}: chamada de pausa sem aviso`).toBe(chamadas.length);
+      // O aviso é durável: audit, não log.
+      expect(texto, rel).toContain("ai.pausa_nao_gravada");
+    }
+  });
+});
+

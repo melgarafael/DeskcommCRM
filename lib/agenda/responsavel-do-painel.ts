@@ -11,6 +11,8 @@ import type { Pessoa } from "@/components/agenda/tipos";
  *
  * A ordem de resolução:
  *
+ *   0. o PROFISSIONAL ISOLADO no filtro da agenda (#4186) — quando há um, é ele
+ *      a pergunta da tela: "o que a Ana tem hoje?";
  *   1. o DONO DO TIPO (`default_owner_user_id`), que é quem de fato atende — a
  *      tela antes oferecia os horários de um e marcava na agenda de outro;
  *   2. quem está logado, quando ele está na lista;
@@ -26,10 +28,26 @@ export function resolverResponsavelDoPainel(entrada: {
   pessoas: Pessoa[];
   donoId: string | null;
   usuarioId: string;
+  /**
+   * O PROFISSIONAL ISOLADO no filtro da agenda (issue #4186) — `null` = "todos".
+   *
+   * Entra ANTES do dono do tipo porque é a pergunta que a pessoa acabou de
+   * fazer: ela clicou na Ana, a grade passou a mostrar só a Ana, e o painel que
+   * abre do bloco livre tem de ser o da Ana. Sem isto o filtro era cosmético —
+   * a tela dizia "só a Ana" e o painel dizia "com o Bruno" (dono do tipo), e o
+   * compromisso nascia na agenda do Bruno, fora da visão filtrada. Medido:
+   * `app/app/agenda/_client.test.tsx`, "isolando a Ana...".
+   *
+   * Só vale se a pessoa estiver na lista da equipe: id que não está em
+   * `pessoas` não tem nome nem trilha, e inventar um aqui devolveria o "Sem
+   * nome" que este módulo existe para não mostrar.
+   */
+  isoladaId?: string | null;
 }): Pessoa {
-  const { pessoas, donoId, usuarioId } = entrada;
+  const { pessoas, donoId, usuarioId, isoladaId } = entrada;
 
   const pessoa =
+    (isoladaId ? pessoas.find((p) => p.id === isoladaId) : undefined) ??
     pessoas.find((p) => p.id === donoId) ??
     pessoas.find((p) => p.id === usuarioId) ??
     // Nunca "Você": sem lista da equipe, o nome de outra pessoa é desconhecido.

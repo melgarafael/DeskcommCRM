@@ -34,7 +34,7 @@ import { valorDaInstalacao } from "@/lib/instalacao/config";
 import { citacaoDaLei, PAIS_PADRAO, perfilDoPais, type PerfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { idiomaDoTexto } from "@/lib/i18n/idiomas";
-import { diasAtePrazo, diasDeAtraso, prazoEmBr } from "./sla";
+import { diaDoPrazo, diasAtePrazo, diasDeAtraso, prazoEmBr } from "./sla";
 import type { LgpdRequest } from "./types";
 
 export type AlarmThreshold = "data_request_d5" | "redact_d10";
@@ -387,23 +387,53 @@ function prazoInternoForaDoBrasil(
  * de 40 dias o rodapé continuava prometendo um prazo legal à frente.
  *
  * "Um mês" é um MÊS DE CALENDÁRIO, não 30 dias: 31/01 + um mês acaba em 28/02,
- * e não em 03/03 como o estouro de `Date` faria. O instante do dia é o do
- * recebimento — o prazo corre da hora do pedido. `received_at` ausente ou
- * inválido devolve `false`: sem data não se afirma vencimento legal.
+ * e não em 03/03 como o estouro de `Date` faria.
+ *
+ * ─── O último dia VALE ATÉ O FIM DELE ──────────────────────────────────────
+ *
+ * O Regulamento (CEE) n.º 1182/71 conta prazo em meses até o FIM do dia que
+ * corresponde ao dia do evento inicial: pedido recebido em 20/08 às 12h tem o
+ * mês do art. 12.º, n.º 3 até o fim de 20/09. A primeira versão somava um mês ao
+ * INSTANTE (`setUTCMonth` na mesma hora) e anunciava vencimento legal às 12h de
+ * 20/09, com o dia legal ainda correndo — e ao lado de um `due_at` que este
+ * mesmo módulo lê como dia civil que vale até o fim do dia (`diasDeAtraso`).
+ * Eram duas réguas para o mesmo prazo.
+ *
+ * Agora a conta devolve o DIA do último dia legal e quem decide é
+ * `diasDeAtraso`, a mesma âncora dos outros prazos: só o dia civil seguinte
+ * conta como vencido. `received_at` ausente ou inválido devolve `false`: sem
+ * data não se afirma vencimento legal.
  */
 function mesLegalDoPedidoVencido(receivedAt: string | null | undefined, agora: Date): boolean {
-  if (!receivedAt) return false;
+  const ultimoDia = ultimoDiaDoMesLegal(receivedAt);
+  if (ultimoDia === null) return false;
+  // `diasDeAtraso` casa a unidade com a do resto do alarme e a do `due_at`:
+  // dias civis, contados a partir do dia seguinte ao do prazo. Comparar
+  // instantes aqui reintroduziria a hora do recebimento como vencimento.
+  return diasDeAtraso(ultimoDia, agora) > 0;
+}
+
+/**
+ * O DIA (`YYYY-MM-DD`) do último dia do mês legal — o dia em que o prazo do
+ * art. 12.º, n.º 3 ainda vale inteiro. `null` quando `received_at` não é data.
+ *
+ * O eixo é o mesmo do motor de prazo (`lib/lgpd/sla.ts`): dias civis em UTC, e
+ * o prazo vale até o fim do dia guardado. Um mês de calendário que não existe
+ * no mês seguinte é cortado no último dia dele (31/01 → 28/02).
+ */
+function ultimoDiaDoMesLegal(receivedAt: string | null | undefined): string | null {
+  if (!receivedAt) return null;
   const recebidoMs = Date.parse(receivedAt);
-  if (!Number.isFinite(recebidoMs)) return false;
+  if (!Number.isFinite(recebidoMs)) return null;
   const recebido = new Date(recebidoMs);
-  const vencimento = new Date(recebidoMs);
-  vencimento.setUTCMonth(vencimento.getUTCMonth() + 1);
-  if (vencimento.getUTCDate() !== recebido.getUTCDate()) {
+  const ultimo = new Date(recebidoMs);
+  ultimo.setUTCMonth(ultimo.getUTCMonth() + 1);
+  if (ultimo.getUTCDate() !== recebido.getUTCDate()) {
     // O dia não existe no mês seguinte (31/01 → 03/03): o mês legal acaba no
     // ÚLTIMO dia do mês seguinte.
-    vencimento.setUTCDate(0);
+    ultimo.setUTCDate(0);
   }
-  return agora.getTime() > vencimento.getTime();
+  return diaDoPrazo(ultimo);
 }
 
 /**
