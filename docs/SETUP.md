@@ -135,6 +135,8 @@ Se você quer rodar o app o mais rápido possível com o mínimo viável:
 
 **O que é:** Backend-as-a-service. Aqui mora seu Postgres, autenticação, storage de mídia e realtime. Sem isso, nada funciona. **Free tier:** 500MB DB + 1GB storage + 50k MAU. Suficiente pra dev e protótipos.
 
+> **Bateu no teto?** O que cada cota faz quando estoura (o que aparece na tela e no log), como medir no painel e as saídas em ordem de custo — limpar, subir de plano, autohospedar — estão no runbook [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md), seção 0.
+
 ### Passo a passo
 
 1. Acesse <https://supabase.com> → **Start your project** → faça login com GitHub.
