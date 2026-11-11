@@ -12,6 +12,8 @@
  * repassa ao ritual não chega ao modelo.
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   TITULO_DO_BLOCO_DE_PASSAGEM,
@@ -83,5 +85,26 @@ describe('o aviso chega ao prompt do turno', () => {
     expect(texto.indexOf(TITULO_DO_BLOCO_DE_PASSAGEM)).toBeLessThan(
       texto.indexOf('## Contexto do lead'),
     );
+  });
+});
+
+/**
+ * A última ponta do caminho: o turno inbound precisa CALCULAR o bloco a partir
+ * da resolução e REPASSÁ-LO ao `buildOpening` — sem isso, o texto existe, os
+ * testes de texto passam, e o modelo nunca o vê. Mesma régua do
+ * `o-agente-recebe-o-anuncio-do-contato` para o bloco de origem.
+ */
+describe('o turno inbound repassa o bloco ao buildOpening', () => {
+  const fonte = readFileSync(join(__dirname, 'inbound-turn.ts'), 'utf8');
+
+  it('calcula o bloco a partir de routed.passagemRecebida', () => {
+    expect(fonte).toContain("'passagemRecebida' in routed");
+    expect(fonte).toMatch(/montarBlocoDePassagemDoRoteador\(\s*passagemRecebida,/);
+    expect(fonte).toContain('idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog)');
+  });
+
+  it('entrega o bloco ao buildOpening pelo ritual da abertura', () => {
+    expect(fonte).toMatch(/origemBlock,\n\s+passagemBlock,\n\s+formatoDoHistorico/);
+    expect(fonte).toMatch(/origemBlock,\n\s+formatoDoHistorico,\n\s+passagemBlock,\n\s+\)/);
   });
 });
