@@ -32,9 +32,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
+import type { GatilhoDeAutomacao } from "@/lib/schemas/webhooks";
 
-/** O tipo no `event_log`, na regra e no rótulo da tela. */
-export const EVENTO_LIGACAO_PERDIDA = "voice_call.missed";
+/**
+ * O tipo no `event_log`, na regra e no rótulo da tela. O `satisfies` amarra o
+ * produtor ao catálogo: renomear a chave em `ENTIDADE_ESPERADA_POR_GATILHO`
+ * reprova a compilação aqui, em vez de deixar o worker publicando um tipo que
+ * nenhuma regra escuta.
+ */
+export const EVENTO_LIGACAO_PERDIDA = "voice_call.missed" satisfies GatilhoDeAutomacao;
 
 export interface ChamadaPerdida {
   organizationId: string;
