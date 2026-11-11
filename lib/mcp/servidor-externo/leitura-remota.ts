@@ -7,7 +7,13 @@
  * do `tool_ids` — deixaria passar uma remota que o servidor não declarou
  * `readOnlyHint`, ou uma ferramenta nativa com o mesmo nome. Por isso a marca
  * vai no OBJETO que `pickToolsFromMcp` montou, e só quando a definição saiu com
- * `category: "read"` (as duas metades de `lib/mcp/tools/externo.ts`).
+ * `category: "read"` (as duas metades de `lib/mcp/tools/externo.ts` — a marca
+ * do administrador E `declarouSomenteLeitura`, de `./chamada.ts`).
+ *
+ * A marca é por IDENTIDADE: uma cópia do objeto (`{ ...ferramenta }`) não está
+ * no conjunto e continua recusada, e a política só a consulta quando o nome não
+ * existe no catálogo nativo (`!catalog`). #4317 usa o mesmo contrato no laço dos
+ * servidores MCP do PRÓPRIO agente (migration 9095).
  */
 const leituras = new WeakSet<object>();
 

@@ -80,6 +80,7 @@ const ROTULO_DO_MOTIVO: Record<MotivoDeDuplicidade, string> = {
   email: "mesmo e-mail",
   telefone_em_conflito: "telefone que o WhatsApp deixou em conflito",
   cpf: "mesmo CPF",
+  whatsapp: "mesma conta de WhatsApp",
   nome_parecido: "nome parecido",
 };
 

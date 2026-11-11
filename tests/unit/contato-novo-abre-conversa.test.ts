@@ -243,3 +243,37 @@ describe("createContactHandler — o contato novo abre a conversa (#3718)", () =
     expect(grants.at(-1)).not.toMatch(/authenticated/i);
   });
 });
+
+describe("createContactHandler pela prospecção — o cadastro não abre a conversa", () => {
+  // O defeito (#4341): a prospecção criava o contato pela porta `manual`, a conversa
+  // nascia no telefone mais antigo da org, e a própria prospecção abria a
+  // segunda no canal da campanha. Duas conversas por empresa abordada.
+  it("porta prospeccao: nenhuma fn_service_begin e nenhuma leitura de sessão, e o contato é criado", async () => {
+    const doServico = cliente({ sessoes: [SESSAO_QUE_DISCA] });
+    const daSessao = cliente({ papel: "authenticated" });
+    servico.db = doServico.db;
+
+    const { contact, action } = await createContactHandler(
+      daSessao.db,
+      ctx(),
+      { name: "Clínica", phone_number: TELEFONE } as never,
+      undefined,
+      { porta: "prospeccao" },
+    );
+
+    expect(action).toBe("created");
+    expect(contact.id).toBe(CONTATO);
+    expect(doServico.rpcs.some((r) => r.nome === "fn_service_begin")).toBe(false);
+    expect(doServico.from).not.toHaveBeenCalledWith("channel_sessions");
+    // O resto do cadastro segue igual: o evento do contato continua saindo.
+    expect(daSessao.rpcs.some((r) => r.nome === "emit_event")).toBe(true);
+  });
+
+  it("controle: sem a opção, o mesmo cadastro abre a conversa (porta manual)", async () => {
+    const doServico = cliente({ sessoes: [SESSAO_QUE_DISCA] });
+
+    await criar(doServico);
+
+    expect(doServico.rpcs.some((r) => r.nome === "fn_service_begin")).toBe(true);
+  });
+});

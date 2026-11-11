@@ -107,13 +107,27 @@ export function _esquecerPrecosDoCatalogoParaTestes(): void {
  *
  * Nenhuma delas é heurística de nome: são as formas que o próprio repo já
  * tolera no outro lado da mesma conta.
+ *
+ * No FIM vêm as variantes com o PONTO trocado por hífen: o catálogo do OpenRouter
+ * publica `anthropic/claude-haiku-5.5` e a linha da instalação fica gravada como
+ * `claude-haiku-5-5`. Anexadas por último para o id exato (e as formas de hoje)
+ * continuarem vencendo (issue #1931).
  */
 export function candidatosDeId(model: string): string[] {
   const semPrefixo = model.includes("/") ? model.slice(model.indexOf("/") + 1) : model;
   const semData = (id: string) => id.replace(/-\d{8}$/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
-  return [...new Set([model, semData(model), semPrefixo, semData(semPrefixo)])].filter(
-    (id) => id !== "",
-  );
+  const comHifen = (id: string) => id.replace(/\./g, "-");
+  return [
+    ...new Set([
+      model,
+      semData(model),
+      semPrefixo,
+      semData(semPrefixo),
+      comHifen(semPrefixo),
+      semData(comHifen(semPrefixo)),
+      comHifen(model),
+    ]),
+  ].filter((id) => id !== "");
 }
 
 /**

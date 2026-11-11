@@ -33,6 +33,7 @@ import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { moverLeadParaEtapaDeHandoff } from "@/lib/leads/handoff-stage-move";
+import { camposDoCardDoLead } from "@/lib/leads/campos-do-resumo-da-passagem";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 
@@ -440,6 +441,14 @@ export async function triggerHandoff(
       //
       // Dentro do `guard()` que já existe, como os efeitos acima.
       await guard();
+      // #4303 — OS CAMPOS DO CARD NO RESUMO. Quem assume a conversa precisa do
+      // dado que decide a próxima frase (consumo, valor da conta) sem abrir o
+      // negócio. O card é o que a passagem DECLAROU (`leadId`); sem ele este
+      // motor não inventa um "mais recente" do contato — não há turno aqui
+      // para dizer qual card a conversa está tocando, e ler o errado mostraria
+      // dado de outra venda. `camposDoCardDoLead` nunca lança: leitura que
+      // falha devolve `{}` e o resumo sai como o de hoje.
+      const camposDoCard = await camposDoCardDoLead(admin, input.organizationId, input.leadId);
       const briefing = montarBriefingDaPassagem({
         checkpoint: await checkpointDuravel(admin, input.organizationId, contactId),
         pendentesDoCliente: await falasPendentes(
@@ -449,6 +458,7 @@ export async function triggerHandoff(
           (convNow as unknown as { last_outbound_at?: string | null }).last_outbound_at ?? null,
         ),
         ...(input.declarado !== undefined ? { declaradoPeloModelo: input.declarado } : {}),
+        ...(Object.keys(camposDoCard).length > 0 ? { camposColetados: camposDoCard } : {}),
         motivo: {
           codigo: motivoDaPassagem(input.reason),
           texto: input.motivoTexto ?? null,

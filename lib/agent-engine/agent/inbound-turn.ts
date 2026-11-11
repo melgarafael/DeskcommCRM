@@ -50,6 +50,7 @@ import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
 import { etiquetasParaOMatcher } from './etiquetas-do-matcher';
+import { emOrdemDeEscrita } from './fila-de-envio';
 import {
   criarColetorDeFerramentas,
   envolverFerramentasComTraco,
@@ -103,6 +104,12 @@ import {
   PASTA_DE_TESTE_DE_MIDIA,
   type FotoParaEnvio,
 } from './fotos-do-produto';
+import {
+  criarProcedenciaDeImagens,
+  descreverSemQuery,
+  FERRAMENTAS_QUE_TRAZEM_IMAGEM,
+} from './imagem-por-url';
+import { baixarImagemSegura, guardarImagemNaConversa } from './baixar-imagem-segura';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import { apresentacaoOferecidaNoTurno } from '@/lib/catalogo/apresentacao-ligada';
 import {
@@ -224,6 +231,7 @@ import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
+import { ferramentaDePassagemEntreAgentes } from './transferir-agente';
 import {
   hasOpenCaseForContact,
   blocoDoCasoAguardandoCliente,
@@ -268,7 +276,7 @@ import { isStatusSendable } from '../../channels/meta/template-binding';
 import { capabilitiesOf } from '@/lib/channels/capabilities';
 import { renderTemplateBody } from '@/lib/channels/meta/render-template';
 import { esperarComoHumano, manterDigitando } from './atraso-humano';
-import { instrucaoDeBolhas, sendInBubbles, splitForSend } from './split-message';
+import { instrucaoDeBolhas, OK_KINDS, sendInBubbles, splitForSend } from './split-message';
 import { semConteudoVisivel } from './conteudo-visivel';
 import { formatarParaWhatsApp } from './formato-whatsapp';
 import type { DisclosureMode } from '../guardrails/disclosure/template';
@@ -281,7 +289,9 @@ import {
 import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
 import { classifyPromise, memoizarPorCandidata, protegerRevisaoDeAgendamento } from '../guardrails/promise/semantic';
 import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
+import { deveAbrirCasoDoFailsafe } from '../guardrails/failsafe-do-caso';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
+import { montarResumoDoCaso } from '@/lib/escalacao/resumo-do-caso';
 import {
   montarBriefingDaPassagem,
   type BriefingDaPassagem,
@@ -444,6 +454,14 @@ export const AGENT_TOOL_DEFS = {
         .describe(
           'código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: ' +
             'as fotos dele vão junto, e o texto vira a legenda da primeira',
+        ),
+      imagem_url: z
+        .string()
+        .url()
+        .optional()
+        .describe(
+          'URL de imagem (jpg, png, webp) copiada de um resultado de dados deste turno; outra URL não é ' +
+            'buscada. O texto vira a legenda. Não use com produto_codigo.',
         ),
     }),
   },
@@ -2091,6 +2109,8 @@ export async function deteccoesDeterministicasDoAssistido(
       log,
       ...(lgpd !== undefined ? { lgpd } : {}),
       agentId: agent.agentId,
+      // #3725: a frase do tenant, quando ele escreveu uma (`ai_agents.config`).
+      fraseConfigurada: agent.fraseDoAviso ?? null,
       ...(deps.knobs.disclosureMode !== undefined
         ? { disclosureMode: deps.knobs.disclosureMode }
         : {}),
@@ -3255,6 +3275,8 @@ async function executarTurnoDoAgente(
       log: runLog,
       lgpd,
       agentId: agentConfig?.agentId ?? null,
+      // #3725: a frase do tenant, quando ele escreveu uma (`ai_agents.config`).
+      fraseConfigurada: agentConfig?.fraseDoAviso ?? null,
       ...(deps.knobs.disclosureMode !== undefined
         ? { disclosureMode: deps.knobs.disclosureMode }
         : {}),
@@ -3850,6 +3872,8 @@ async function executarTurnoDoAgente(
     return [];
   });
   const evidenciasComerciais = criarEvidenciasComerciaisDoTurno(fontesQueProvamOferta);
+  // `imagem_url` só vale para endereço que uma ferramenta de dados devolveu neste turno.
+  const procedenciaDeImagens = criarProcedenciaDeImagens();
   const efeitosDoTurno = criarEfeitoDasEscrituras();
   let evidenciasDeAgendamento: EvidenciaDeAgendamento[] = [];
   let reservasAlemDoTeto = false;
@@ -4490,7 +4514,7 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body: corpoDoModelo, produto_codigo }) => {
+      execute: async ({ body: corpoDoModelo, produto_codigo, imagem_url }) => {
         tentativasDeEnvio += 1;
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
@@ -4641,6 +4665,18 @@ async function executarTurnoDoAgente(
         // ele segue inteiramente síncrono do `checar` até a reserva.
         let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
+        // Foto por URL (`imagem_url`, Spec 25 R4): só uma das duas formas de foto vale
+        // por mensagem — `produto_codigo` e `imagem_url` juntos são recusados abaixo.
+        const temImagemPorUrl = imagem_url !== undefined && imagem_url.trim() !== '';
+        let motivoFotoRecusada: string | null = null;
+        let fotoUrlEnviada = false;
+        // Rastro `foto_enviada`: marca quando a foto por URL (já guardada na conversa) de fato saiu.
+        // `fotosDoProduto` leva UMA das duas fontes (exclusivas, ver o bloco abaixo): a foto do
+        // catálogo ou a foto por URL; o teto de envios e a legenda valem para as duas.
+        const marcarFoto = <R extends { kind: string }>(resultado: R): R => {
+          if (temImagemPorUrl && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;
+          return resultado;
+        };
         // O código que resolveu um produto ATIVO do catálogo — só com ele a
         // mensagem, se sair, etiqueta o negócio (ver o bloco depois do envio).
         let produtoApresentado: string | null = null;
@@ -4679,6 +4715,53 @@ async function executarTurnoDoAgente(
                   'NÃO chame send_message de novo neste turno — encerre agora. O próximo turno lê a conversa inteira e responde a tudo de uma vez.',
               },
             };
+          }
+          // Duas fotos na mesma mensagem não existem: `produto_codigo` (catálogo, copiado
+          // para a conversa) e `imagem_url` (baixada e guardada na conversa). Erro de
+          // ENSINO — nada sai; a reserva é liberada como nos outros retornos antes da cadeia.
+          const temFotoDoCatalogo = produto_codigo !== undefined && produto_codigo.trim() !== '';
+          if (temFotoDoCatalogo && temImagemPorUrl) {
+            dupTrava.liberar(body);
+            return {
+              ok: false,
+              error: {
+                code: 'imagem_e_produto_juntos',
+                message:
+                  'Use imagem_url OU produto_codigo, não os dois na mesma mensagem. Mande de novo só com um deles.',
+              },
+            };
+          }
+          // Foto por URL (Spec 25 R4): mesma regra de fora do lock, só fora da
+          // prévia. O CRM baixa a imagem com a própria rede (IP validado, sem redirect,
+          // teto de 5 MB, conteúdo conferido), guarda no Storage da conversa e manda ao
+          // canal só o storagePath. Falha nesses passos: a mensagem segue só com texto (D7) e o
+          // motivo volta ao modelo; o log leva host + caminho, nunca a query.
+          if (temImagemPorUrl && !preview) {
+            const url = (imagem_url ?? '').trim();
+            let motivo: string | null = null;
+            const baixada = procedenciaDeImagens.viu(url)
+              ? await baixarImagemSegura(url)
+              : ({ ok: false, motivo: 'url_fora_dos_resultados' } as const);
+            if (!baixada.ok) {
+              motivo = baixada.motivo;
+            } else {
+              const guardada = await guardarImagemNaConversa(createAdminClient(), {
+                tenantId,
+                conversationId: input.conversationId,
+                bytes: baixada.bytes,
+                mime: baixada.mime,
+              });
+              if (guardada.ok) fotosDoProduto = [{ kind: 'image', storagePath: guardada.storagePath, mime: guardada.mime }];
+              else motivo = guardada.motivo;
+            }
+            if (motivo !== null) {
+              motivoFotoRecusada = motivo;
+              runLog.warn('imagem_url recusada — a mensagem sai só com texto', {
+                job_id: job?.id ?? null,
+                imagem: descreverSemQuery(url),
+                motivo,
+              });
+            }
           }
           // A foto do produto (ideia de @vgamkt, #1130): preparada ANTES da cadeia e
           // fora do lock do número — a cópia no Storage é rede. Código errado volta
@@ -4941,7 +5024,7 @@ async function executarTurnoDoAgente(
                     sleep,
                     jitter,
                     restantes: () => maxSendsPerTurn - seq,
-                    enviarFoto: (foto, legenda) => enviar(legenda, foto),
+                    enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                     enviarTexto: (texto) => enviarVoz(texto) ?? sendInBubbles(texto, {
                         enabled: agentConfig?.splitMessages ?? false,
                         maxChars: agentConfig?.splitMaxChars ?? 600,
@@ -4960,6 +5043,19 @@ async function executarTurnoDoAgente(
               });
             },
           };
+          // #3725 — a régua do fail-safe de caso e o resumo do caso saem UMA vez
+          // aqui: a conversa e a candidata não mudam entre o 1º veto e o
+          // auto-abre-caso, e o porquê de cada um está nos módulos
+          // (`guardrails/failsafe-do-caso.ts`, `escalacao/resumo-do-caso.ts`).
+          const podeAbrirCasoNoFailsafe = deveAbrirCasoDoFailsafe({
+            mensagens: effectiveContext.messages,
+            corpo: body,
+            alvosExtras: agentConfig?.handoffKeywords ?? [],
+          });
+          const resumoDoFailsafe = montarResumoDoCaso(
+            [...effectiveContext.messages, { direction: 'outbound', body }],
+            'a IA prometeu humano sem caso aberto (fail-safe do guardrail)',
+          );
           let chain = await runBeforeSend(beforeSendArgs);
           if (
             chain.status === 'vetoed' &&
@@ -4972,8 +5068,20 @@ async function executarTurnoDoAgente(
             // humano sem caso aberto. 1ª vez no turno: erro-de-ensino (o modelo re-tenta —
             // abre o caso OU reformula sem prometer humano). Persistiu (2ª vez): o SISTEMA
             // abre um caso mínimo e libera o envio — nunca deixa a promessa passar sem caso.
+            // #3725: o auto-abre-caso exige pedido explícito do cliente ou promessa
+            // explícita de humano (`podeAbrirCasoNoFailsafe`); sem isso o veto ensina.
             casePromiseVetoCount += 1;
             if (casePromiseVetoCount < 2) {
+              return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+            // #3725: sem pedido explícito do cliente nem promessa explícita de
+            // humano, o caso NÃO abre — o veto segue ensinando o modelo. A régua
+            // inteira (e o porquê) está em `guardrails/failsafe-do-caso.ts`.
+            if (!podeAbrirCasoNoFailsafe) {
+              runLog.warn(
+                'fail-safe de caso: sem pedido explícito nem promessa explícita — caso NÃO aberto',
+                { vetos: casePromiseVetoCount },
+              );
               return { ok: false, error: { code: chain.code, message: chain.message } };
             }
             const auto = await openCase(
@@ -4985,7 +5093,7 @@ async function executarTurnoDoAgente(
               },
               {
                 title: 'Atendimento que precisa de um humano',
-                summary: body, // a mensagem-promessa que a IA tentou enviar
+                summary: resumoDoFailsafe,
                 blocker:
                   'Aberto automaticamente: a IA prometeu envolver um humano e não abriu o caso (fail-safe do guardrail).',
                 source: 'guardrail_autofallback',
@@ -5161,6 +5269,10 @@ async function executarTurnoDoAgente(
                 status: 'enviada',
                 message_id: outcome.messageId,
                 ...(produto_codigo !== undefined ? { fotos_enviadas: fotosDoProduto.length } : {}),
+                // Rastro da foto por URL (Spec 25 R4): `foto_enviada` diz se a foto saiu;
+                // `foto_recusada` diz por que não foi buscada (formato ou guarda de rede).
+                ...(temImagemPorUrl ? { foto_enviada: fotoUrlEnviada } : {}),
+                ...(motivoFotoRecusada !== null ? { foto_recusada: motivoFotoRecusada } : {}),
                 ...(fotosQueFaltaram > 0
                   ? {
                       aviso: `${fotosQueFaltaram} foto(s) do produto não puderam ser enviadas; o texto foi. Não diga ao cliente que mandou essas fotos.`,
@@ -5531,6 +5643,28 @@ async function executarTurnoDoAgente(
         }
       },
     });
+  }
+
+  // #3770 — `transfer_to_agent`: o agente em turno passa a conversa a outro
+  // membro do roteador (motivo `pedido_do_agente`). Só entra onde a passagem vale
+  // no turno seguinte — a mesma régua da ação (`roteadorDaPassagem`) — e o destino
+  // é um enum dos OUTROS membros. Falha ao montar = turno sem a ferramenta.
+  if (!preview && routed.routerId !== null && agentConfig !== null) {
+    try {
+      const passagem = await ferramentaDePassagemEntreAgentes(pool, {
+        organizationId: tenantId,
+        conversationId: input.conversationId,
+        channelSessionId: input.channelSessionId,
+        agenteAtualId: agentConfig.agentId,
+        jobId: liveJob().id,
+        noteRunError,
+      });
+      if (passagem !== null) rawTools.transfer_to_agent = passagem;
+    } catch (err) {
+      runLog.warn('ferramenta de passagem entre agentes não montada — turno segue sem ela', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      });
+    }
   }
 
   // Fase 2B: a tela pode DESLIGAR a tool de handoff do modelo (a detecção
@@ -5953,6 +6087,20 @@ async function executarTurnoDoAgente(
         execute: async (args: unknown) =>
           lerNotaDaPrevia(preview.notes ?? [], notasDaPrevia?.inline !== false, args),
       };
+    // Registra os endereços que as ferramentas de dados devolvem (a procedência da `imagem_url`).
+    for (const nome of FERRAMENTAS_QUE_TRAZEM_IMAGEM) {
+      const ferramenta = rawTools[nome];
+      if (typeof ferramenta?.execute !== 'function') continue;
+      const executeOriginal = ferramenta.execute.bind(ferramenta);
+      rawTools[nome] = {
+        ...ferramenta,
+        execute: (async (...args: Parameters<typeof executeOriginal>) => {
+          const resultado = await executeOriginal(...args);
+          procedenciaDeImagens.registrar(resultado, args[0]);
+          return resultado;
+        }) as typeof ferramenta.execute,
+      };
+    }
     const previewContext = preview
       ? {
           ...(await previewGateContext(pool, preview, runLog, clock())),
@@ -6012,6 +6160,7 @@ async function executarTurnoDoAgente(
             // `contradiz`/`nao_esta_na_base` aparecer para quem revisa o rascunho
             // (impedimento no assistido, aviso no Teste) em vez de sair calado.
             conferirAfirmacoes,
+            procedenciaDeImagens.viu,
           )
         : rawTools;
     const breakerTools = wrapToolsWithBreaker(previewTools, {
@@ -6027,11 +6176,15 @@ async function executarTurnoDoAgente(
           apresentacaoEncerraTurno,
         )
       : breakerTools;
-    const tools = envolverFerramentasComTraco(
-      presentationTools,
-      // O traço continua por fora: registra tanto o veto do breaker quanto o
-      // descarte de ferramentas após a apresentação terminal.
-      input.tracoDoTurno?.coletor,
+    // A fila fica por fora de tudo (prévia inclusive): chamadas paralelas do mesmo
+    // passo falam com o cliente na ordem em que o modelo as escreveu (`fila-de-envio.ts`).
+    const tools = emOrdemDeEscrita(
+      envolverFerramentasComTraco(
+        presentationTools,
+        // O traço continua por fora: registra tanto o veto do breaker quanto o
+        // descarte de ferramentas após a apresentação terminal.
+        input.tracoDoTurno?.coletor,
+      ),
     );
 
     // F3-11: stage-classifier auxiliar. Roda ANTES do turno (modelo BARATO pelo seam

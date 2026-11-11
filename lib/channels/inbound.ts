@@ -20,6 +20,8 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { logger } from "@/lib/logger";
+
 import { CANAIS_QUE_RESPONDEM_ANTES, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
@@ -31,6 +33,12 @@ import {
 import { sincronizarSaudeDaConexao } from "./health";
 import { lerEnvelopeMeta } from "./meta/envelope";
 import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
+import {
+  MOTIVO_CONTATO_ANONIMIZADO,
+  MOTIVO_TITULAR_APAGADO,
+  perguntarTitularesApagadosNoLote,
+  type ApagadosNoLote,
+} from "./meta/titular-apagado";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
 import {
@@ -487,6 +495,15 @@ async function datafyInbound(
   const eventos = parseMetaWebhook(leitura.envelope);
   const desfechos: string[] = [];
   const agora = new Date().toISOString();
+  /**
+   * A pergunta do apagado a pedido é do LOTE (uma consulta para todos os
+   * contatos desta entrega, migration 9321). `undefined` = ainda não perguntou;
+   * `null` = perguntou e falhou — aí cada evento cai na pergunta individual da
+   * ingestão, que falha fechada sem parar o lote.
+   */
+  let apagadosDaAgenda: ApagadosNoLote | null | undefined;
+  let puladosPorTitularApagado = 0;
+  let puladosPorContatoAnonimizado = 0;
 
   for (const e of eventos) {
     // Mesma régua da rota do canal oficial: evento carimbado com outra conta é
@@ -528,11 +545,33 @@ async function datafyInbound(
         desfechos.push("outro_numero");
         continue;
       }
-      const r = await ingestMetaAppContactSync(admin, e, {
-        organizationId: orgId,
-        channelSessionId: input.session.id,
-      });
+      if (apagadosDaAgenda === undefined) {
+        const lote = await perguntarTitularesApagadosNoLote(
+          admin,
+          orgId,
+          eventos.filter((x) => x.kind === "app_contact_sync").map((x) => x.phone),
+        );
+        apagadosDaAgenda = lote.erro ? null : lote.apagados;
+        if (lote.erro) {
+          logger.error("[meta.ingest] a pergunta do titular apagado no lote falhou", {
+            organization_id: orgId,
+            erro: lote.erro,
+          });
+        }
+      }
+      const r = await ingestMetaAppContactSync(
+        admin,
+        e,
+        { organizationId: orgId, channelSessionId: input.session.id },
+        apagadosDaAgenda ?? undefined,
+      );
       desfechos.push(`contato:${r.status}`);
+      if (r.status === "ignored" && r.reason === MOTIVO_TITULAR_APAGADO) {
+        puladosPorTitularApagado += 1;
+      }
+      if (r.status === "ignored" && r.reason === MOTIVO_CONTATO_ANONIMIZADO) {
+        puladosPorContatoAnonimizado += 1;
+      }
       continue;
     }
     if (e.kind === "message_status") {
@@ -560,6 +599,16 @@ async function datafyInbound(
       continue;
     }
     desfechos.push("ignorado");
+  }
+
+  // O que ficou de fora por LGPD não some em silêncio — `outcomes` só diz
+  // `contato:ignored`. Só o contador, nunca o telefone.
+  if (puladosPorTitularApagado > 0 || puladosPorContatoAnonimizado > 0) {
+    logger.info("[meta.ingest] contatos da agenda não sincronizados por LGPD", {
+      organization_id: orgId,
+      pulados_por_titular_apagado: puladosPorTitularApagado,
+      pulados_por_contato_anonimizado: puladosPorContatoAnonimizado,
+    });
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };

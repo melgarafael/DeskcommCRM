@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { googlePushCandidates } from "@/lib/agenda/google/candidates";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 import { reconcileAppointment } from "@/lib/agenda/google/sync-executor";
-import { ok } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -39,10 +39,10 @@ void PASSOS_DEPOIS_DO_PORTAO;
 
 async function executar(req: NextRequest) {
   if (!autorizaCron(req))
-    return NextResponse.json(
+    return comIdDaRequisicao(NextResponse.json(
       { error: { code: "unauthenticated", message: "cron secret inválido" } },
       { status: 401 },
-    );
+    ), req);
   // O PISO OCIOSO (#3731): sem compromisso que `googlePushCandidates` pegaria
   // (o mesmo `or`, sem filtro de status da conexão — a rota também não tem), a
   // leitura de pendências volta vazia em toda instalação que nunca usou a agenda
@@ -52,10 +52,10 @@ async function executar(req: NextRequest) {
   const db = createAdminClient();
   const { data, error } = await googlePushCandidates(db);
   if (error)
-    return NextResponse.json(
+    return comIdDaRequisicao(NextResponse.json(
       { error: { code: "internal_error", message: "Não foi possível ler a pendência Google." } },
       { status: 500 },
-    );
+    ), req);
   const effects = new Map<string, { processados: number; falhas: number }>();
   const active = await apenasDeMembrosAtivos(db, data ?? []);
   for (const item of active) {
@@ -79,7 +79,7 @@ async function executar(req: NextRequest) {
         metadata: { direcao: "ida", ...summary },
       });
   }
-  return NextResponse.json({ data: { candidatos: data?.length ?? 0, organizacoes: effects.size } });
+  return comIdDaRequisicao(NextResponse.json({ data: { candidatos: data?.length ?? 0, organizacoes: effects.size } }), req);
 }
 export const GET = executar;
 export const POST = executar;

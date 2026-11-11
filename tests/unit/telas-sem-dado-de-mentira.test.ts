@@ -143,24 +143,48 @@ function resolverLocal(especificador: string, deOndeVeio: string): string | null
  * `vistos` corta ciclo — import circular entre componentes existe e não pode
  * pendurar a suíte.
  */
-function cadeiaDeImports(arquivo: string, vistos = new Set<string>()): string[] {
-  if (vistos.has(arquivo)) return [];
-  vistos.add(arquivo);
-  const achados: string[] = [];
-  let fonte: string;
+/**
+ * As arestas de UM arquivo, lidas uma vez só.
+ *
+ * Sem este cache, cada tela relia do disco e repassava a regex em todo arquivo
+ * da própria cadeia: o custo era telas × grafo, crescia com o repositório, e a
+ * varredura passou dos 15 s do teto no runner (16 s medidos na main em
+ * 10/11/2026), reprovando o `verify` de PR que não tocava nada disto. O que é
+ * guardado é só o que o arquivo importa; o caminho continua sendo percorrido
+ * por tela, com o `vistos` próprio dela, então o resultado é o mesmo.
+ */
+const ARESTAS = new Map<string, { proibidos: string[]; locais: string[] }>();
+
+function arestasDe(arquivo: string): { proibidos: string[]; locais: string[] } {
+  const guardado = ARESTAS.get(arquivo);
+  if (guardado) return guardado;
+  const arestas = { proibidos: [] as string[], locais: [] as string[] };
+  let fonte: string | null = null;
   try {
     fonte = readFileSync(arquivo, "utf8");
   } catch {
-    return [];
+    /* não deu para ler: arquivo sem arestas, como antes */
   }
-  for (const especificador of importesDe(fonte)) {
-    if (PROIBIDOS.test(especificador)) {
-      achados.push(`${relativoEmBarraNormal(RAIZ, arquivo)} → ${especificador}`);
-      continue;
+  if (fonte !== null) {
+    for (const especificador of importesDe(fonte)) {
+      if (PROIBIDOS.test(especificador)) {
+        arestas.proibidos.push(`${relativoEmBarraNormal(RAIZ, arquivo)} → ${especificador}`);
+        continue;
+      }
+      const local = resolverLocal(especificador, arquivo);
+      if (local) arestas.locais.push(local);
     }
-    const local = resolverLocal(especificador, arquivo);
-    if (local) achados.push(...cadeiaDeImports(local, vistos));
   }
+  ARESTAS.set(arquivo, arestas);
+  return arestas;
+}
+
+function cadeiaDeImports(arquivo: string, vistos = new Set<string>()): string[] {
+  if (vistos.has(arquivo)) return [];
+  vistos.add(arquivo);
+  const { proibidos, locais } = arestasDe(arquivo);
+  const achados = [...proibidos];
+  for (const local of locais) achados.push(...cadeiaDeImports(local, vistos));
   return achados;
 }
 
