@@ -1377,6 +1377,10 @@ export const AUDIT_ACTIONS = [
   // as gravações que ela deixou passar.
   "crm.telefone_de_ficha_vazia_alterado",
   "crm.nome_informado_alterado",
+  // O admin ligou/desligou a SUGESTÃO de duplicado pelo nome (#4138). É a opção
+  // que decide se a tela de limpeza de contatos mostra "Parecidos — confira" —
+  // o ato administrativo que abriu (ou fechou) essa seção para a organização.
+  "crm.duplicados_por_nome_alterado",
   // O admin ligou/desligou o aviso das transferências para atendimento humano
   // (#3784) — o mesmo número e o mesmo teto diário do Aviso de caso.
   "crm.aviso_de_transferencia_alterado",

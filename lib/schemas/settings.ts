@@ -828,6 +828,22 @@ export const crmSettingsSchema = z
      * de um dígito a mais.
      */
     pos_venda_dias: z.number().int().min(0).max(365).catch(0),
+    /**
+     * `duplicados_por_nome` (#4138): a tela Contatos › Duplicados também sugere
+     * pares pelo NOME, na seção "Parecidos — confira".
+     *
+     * ⚠️ NASCE DESLIGADA em toda organização — e a régua é a mesma das vizinhas:
+     * só o booleano `true` liga. Desligada, a rota não chama
+     * `encontrarParecidosPorNome` nem lê as dispensas, e a seção nem aparece.
+     *
+     * O motivo de existir é o inverso do que a torna perigosa: em base de pessoa
+     * física o nome repete e a sugestão vira ruído; em base de empresas
+     * prospectadas é o único caminho medido para achar a mesma empresa com dois
+     * telefones (spec 31, B1). Quem sabe qual dos dois mundos é o seu é quem
+     * opera — não o produto. Nada aqui funde sozinho: a sugestão só abre a
+     * conferência, e juntar continua sendo um clique de gestor.
+     */
+    duplicados_por_nome: z.boolean().catch(false),
   })
   .catch({
     cliente_pela_agenda: false,
@@ -838,6 +854,7 @@ export const crmSettingsSchema = z
     avisar_transferencia_no_whatsapp: true,
     cliente_pela_venda: false,
     pos_venda_dias: 0,
+    duplicados_por_nome: false,
   });
 
 /**
@@ -965,6 +982,27 @@ export function regrasDeCliente(settings: unknown): RegrasDeCliente {
 /** A regra "cliente pela venda" está ligada nesta organização? Nunca lança. */
 export function clientePelaVendaLigado(settings: unknown): boolean {
   return regrasDeCliente(settings).pelaVenda;
+}
+
+/**
+ * A SUGESTÃO DE DUPLICADO PELO NOME está ligada nesta organização? **Desligada
+ * por padrão**, e nunca lança (#4138).
+ *
+ * A régua é a mesma das outras chaves de `settings.crm`: só o booleano `true`
+ * liga. Ausente — toda organização que já existia antes desta chave —, `false`,
+ * a string `"true"` ou qualquer lixo é DESLIGADO, e a tela de Duplicados volta a
+ * mostrar só os motivos fortes (telefone, e-mail, CPF, telefone em conflito).
+ *
+ * Lido pela rota da varredura (`app/api/v1/contacts/duplicates/route.ts`), que é
+ * quem decide se chama `encontrarParecidosPorNome` e se lê as dispensas: a tela
+ * não filtra nada por conta própria.
+ */
+export function duplicadosPorNomeLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).duplicados_por_nome === true;
 }
 
 /**
