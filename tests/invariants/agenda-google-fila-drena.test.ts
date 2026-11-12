@@ -294,8 +294,9 @@ async function idsDaFilaDoSistema(): Promise<string[]> {
 describe("a fila do push drena: o que já terminou sai, o que falta fazer fica (#4448)", () => {
   it("o controle do instrumento: o predicado ANTIGO enxerga os mortos", () => {
     // Sem este número o resto passaria num banco sem candidato nenhum. 14 = os
-    // 13 publicados (9 encerrados + 2 futuros + 1 cancelado futuro + 1 desfecho
-    // futuro) + o futuro nunca publicado; o cancelado sem evento não entra.
+    // 13 publicados (9 encerrados + 1 futuro publicado e convergido + 1
+    // cancelado futuro com evento + os 2 desfechos no futuro) + o futuro nunca
+    // publicado; o cancelado sem evento não entra.
     expect(contagemAntiga(), "o predicado antigo não mediu nada — a fixture não exercita o defeito").toBe(14);
   });
 
