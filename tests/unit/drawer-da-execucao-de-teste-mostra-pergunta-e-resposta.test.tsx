@@ -79,6 +79,19 @@ function desenhar(linha: Record<string, unknown>) {
   );
 }
 
+/**
+ * O MESMO formatador da tela: `RunDetailDrawer.tsx:83` passa os contadores por
+ * `toLocaleString()` SEM locale fixo, então o separador de milhar segue o
+ * locale do runtime — "1.234" no pt-BR da VPS, "1,234" no en-US do runner do
+ * CI. Escrever o literal aqui foi o que fez este arquivo passar local e
+ * reprovar em `verify-parte (4)`; a régua passa a ser o formatador do produto
+ * (mesmo padrão de `lib/automation/actions/notify-team.test.ts`).
+ */
+const formatarTokens = (n: number) => n.toLocaleString();
+
+/** A célula (`div`) que desenha o rótulo e o par de contadores. */
+const celulaDeTokens = () => screen.getByText("Tokens (in/out)").closest("div");
+
 afterEach(() => {
   cleanup();
 });
@@ -92,7 +105,10 @@ describe("drawer da execução de teste (#4426)", () => {
 
     // O que já existia não pode sair da tela por causa do texto novo.
     // (o par de tokens é desenhado em dois nós — texto + " / " + texto)
-    expect(screen.getByText("Tokens (in/out)").closest("div")).toHaveTextContent("1.234 / 56");
+    // O valor de teste tem de DIFERIR do cru neste runtime: num locale sem
+    // agrupamento a asserção viraria identidade e passaria até sem formatação.
+    expect(formatarTokens(1234), "o locale do runtime não agrupa 1234 — a régua perderia o poder de discriminar").not.toBe("1234");
+    expect(celulaDeTokens()).toHaveTextContent(`${formatarTokens(1234)} / ${formatarTokens(56)}`);
     expect(screen.getByText("US$ 0.0700")).toBeInTheDocument();
     expect(screen.getByText("1.25s")).toBeInTheDocument();
     // E não sobra o vazio de antes.
@@ -128,6 +144,7 @@ describe("drawer da execução de teste (#4426)", () => {
     // Sem texto e sem passos, o trace continua dizendo o que dizia.
     expect(screen.getByText("Sem trace disponível.")).toBeInTheDocument();
     // E as métricas continuam na tela.
-    expect(screen.getByText("Tokens (in/out)").closest("div")).toHaveTextContent("1.234 / 56");
+    expect(formatarTokens(1234), "o locale do runtime não agrupa 1234 — a régua perderia o poder de discriminar").not.toBe("1234");
+    expect(celulaDeTokens()).toHaveTextContent(`${formatarTokens(1234)} / ${formatarTokens(56)}`);
   });
 });
