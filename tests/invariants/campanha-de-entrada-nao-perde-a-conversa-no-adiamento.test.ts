@@ -13,9 +13,9 @@ import type * as ResolveTurnAgent from "@/lib/agent-engine/agent/resolve-turn-ag
  * ─── O defeito que este arquivo impede de voltar ────────────────────────────
  *
  * A primeira versão do degrau 0b da campanha de ENTRADA carimbava o próprio uso
- * num `update … set campaign_entry_agent_claimed_at = now() … returning` e valia
- * só no primeiro turno. Medido: o turno que o adiamento pegou gastava o carimbo
- * sem responder NADA, e a conversa — que nunca tinha sido atendida pelo agente da
+ * num `update … set <coluna de carimbo> = now() … returning` e valia só no
+ * primeiro turno. Medido: o turno que o adiamento pegou gastava o carimbo sem
+ * responder NADA, e a conversa — que nunca tinha sido atendida pelo agente da
  * campanha — voltava para o agente do número, que é exatamente o nicho errado
  * que a issue #4024 existe para consertar.
  *
