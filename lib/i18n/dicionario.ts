@@ -6742,7 +6742,7 @@ export const DICIONARIO: Traducoes = {
     es: "No se aplicó el CSS guardado porque contiene una regla no válida.",
   },
   "Regras CSS": { es: "Reglas CSS" },
-  "CSS do tema claro": { es: "CSS del tema claro" },
+  "CSS dos dois temas": { es: "CSS de los dos temas" },
   "CSS do tema escuro": { es: "CSS del tema oscuro" },
   "Estas regras valem nos dois temas. As do tema escuro vencem quando ele está ativo.": {
     es: "Estas reglas valen en los dos temas. Las del tema oscuro ganan cuando está activo.",

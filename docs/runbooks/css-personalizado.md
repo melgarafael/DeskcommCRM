@@ -19,7 +19,7 @@ lê; ver `lib/branding/sem-css-personalizado.ts`).
 1. Abra `https://SEU-DOMINIO/login?sem_css=1` e entre.
 2. Digite na barra `https://SEU-DOMINIO/admin/marca?sem_css=1` (a navegação por
    link dentro do app não recarrega o layout; o endereço digitado, sim).
-3. Apague o conteúdo dos campos **CSS do tema claro** e **CSS do tema escuro** e
+3. Apague o conteúdo dos campos **CSS dos dois temas** e **CSS do tema escuro** e
    clique em **Salvar CSS**.
 
 ## Saída pelo servidor

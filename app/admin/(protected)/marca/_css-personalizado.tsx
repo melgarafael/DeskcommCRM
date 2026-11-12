@@ -66,7 +66,7 @@ export function CssPersonalizado({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="custom_css">{t("CSS do tema claro")}</Label>
+          <Label htmlFor="custom_css">{t("CSS dos dois temas")}</Label>
           <p className="text-xs text-text-muted">
             {t(
               "Estas regras valem nos dois temas. As do tema escuro vencem quando ele está ativo.",
