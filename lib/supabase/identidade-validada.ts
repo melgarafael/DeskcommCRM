@@ -16,12 +16,23 @@
  * ─── Por que aqui, e com a MESMA chave ──────────────────────────────────────
  *
  * Este módulo não inventa cache novo: usa `comCacheCurto`, a chave
- * `sessao:<hash-dos-cookies>` (`sessaoDosCookies`), o teto no `exp` do JWT com
- * a margem de 5 s e a regra de guardar SÓ o sucesso — exatamente o que
- * `lib/auth/server.ts` já faz. A chave ser a mesma é o ponto: proxy e handler
- * dividem a MESMA entrada, então a janela do proxy não é uma janela nova, é a
- * que o #3696 já tinha aberto. Quem invalida (`invalidarSessao` na saída,
- * `invalidarUsuario` em revogação) derruba as duas de uma vez.
+ * `sessao:<hash-dos-cookies>` (`sessaoDosCookies`) e a regra de guardar SÓ o
+ * sucesso — o que `lib/auth/server.ts` já faz. A chave ser a mesma é o ponto:
+ * proxy e handler dividem a MESMA entrada, então a janela do proxy não é uma
+ * janela nova, é a que o #3696 já tinha aberto. Quem invalida
+ * (`invalidarSessao` na saída, `invalidarUsuario` em revogação) derruba as
+ * duas de uma vez.
+ *
+ * ─── O teto é ANTES da margem de renovação, não no `exp` ────────────────────
+ *
+ * O `getUser()` do proxy é quem renova a sessão quando o token entra na margem
+ * do auth-js, e é o único ponto que devolve o cookie novo ao navegador: o
+ * Server Component não grava cookie (`lib/supabase/server.ts`). Se o proxy
+ * servisse o cache dentro dessa margem, a renovação passaria para a consulta
+ * do Server Component, que gira o refresh token e perde o cookie. Por isso o
+ * teto do proxy é `exp − MARGEM_DE_RENOVACAO_DO_AUTH_JS_MS`. Dividir a entrada
+ * com o handler não fura isso: em `comCacheCurto` é o `ate` de quem LÊ que
+ * decide se a leitura acontece.
  *
  * ─── O que continua SEM cache, de propósito ─────────────────────────────────
  *
@@ -47,6 +58,14 @@ import {
   etiquetaDeUsuario,
   sessaoDosCookies,
 } from "@/lib/auth/cache-curto";
+
+/**
+ * A margem em que o `@supabase/auth-js` renova a sessão dentro do `getUser()`:
+ * `EXPIRY_MARGIN_MS` em `dist/main/lib/constants.js` (3 ticks × 30 s), conferido
+ * na 2.119.0 do lockfile. O pacote não a exporta; se a versão nova mudar o
+ * valor, este número muda junto.
+ */
+export const MARGEM_DE_RENOVACAO_DO_AUTH_JS_MS = 90_000;
 
 /** O mínimo que o proxy usa da resposta de `auth.getUser()`. */
 export interface RespostaDeIdentidade {
@@ -80,7 +99,7 @@ export async function validarIdentidade(
     // A identidade também derruba a sessão: `invalidarUsuario` (sair de todos
     // os aparelhos, MFA novo, revogação) alcança as outras sessões da pessoa.
     etiquetasDoValor: (r) => (r.data.user ? [etiquetaDeUsuario(r.data.user.id)] : []),
-    ate: sessao.expiraEm,
+    ate: sessao.expiraEm - MARGEM_DE_RENOVACAO_DO_AUTH_JS_MS,
     guardar: (r) => !r.error && !!r.data.user,
     carregar,
   });

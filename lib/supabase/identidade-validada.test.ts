@@ -2,7 +2,8 @@
 /**
  * O cache curto da IDENTIDADE no proxy (#4326 item 1) — casos de borda que o
  * teste do proxy inteiro não isola: o que se guarda, o que não se guarda, o teto
- * no `exp` e a chave COMPARTILHADA com o handler do #3696.
+ * antes da margem de renovação do `exp` e a chave COMPARTILHADA com o handler
+ * do #3696.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
