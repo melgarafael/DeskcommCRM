@@ -222,8 +222,13 @@ describe("os caminhos de envio passam pelo proxy", () => {
     // prospecting: só a raiz; os irmãos de /agents (chat, prepare, session) seguem só-sessão.
     expect(isPublicPath("/api/v1/prospecting/agents")).toBe(false);
     expect(isPublicPath("/api/v1/prospecting/agents/chat")).toBe(false);
-    // agenda/tipos: o irmão /reativar segue só-sessão.
-    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(false);
+    // agenda/tipos: o /reativar passou a aceitar token (está em portas-de-token/operacao.ts).
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath("/api/v1/agenda/tipos/reativar")).toBe(true);
+    // agenda/aviso: o GET passou a aceitar token (Spec 33, R2); o PUT segue só de sessão no handler.
+    expect(isPublicPath("/api/v1/agenda/aviso")).toBe(true);
+    // Irmã que segue só-sessão (manda mensagem de teste; fora de operacao.ts e de public-paths).
+    expect(isPublicPath("/api/v1/agenda/aviso/teste")).toBe(false);
   });
 
   it("não dá carona a sub-paths que não têm suporte a Bearer", () => {

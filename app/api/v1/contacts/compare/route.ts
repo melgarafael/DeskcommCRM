@@ -20,13 +20,18 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { nomeDoContatoParaComparar } from "@/lib/contacts/duplicados";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Idioma } from "@/lib/i18n/idiomas";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -121,6 +126,19 @@ function prospeccaoDe(candidatos: Array<{ contact_id: string; data: unknown }>, 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "contacts",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+    if (teto) return teto;
+    return responderCompare(authz.supabase, authz.organizationId, req, authz.idioma, requestId);
+  }
+
   const user = await loadAuthUser();
   if (!user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
@@ -129,8 +147,21 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!ativa.ok) return ativa.response;
   const org = ativa.org;
   if (!org) {
+    const t = (texto: string) => traduzir(texto, user.idioma);
     return fail("forbidden_tenant", "Organização ativa não resolvida.", 403, { requestId });
   }
+
+  return responderCompare(await createClient(), org.orgId, req, user.idioma, requestId);
+}
+
+async function responderCompare(
+  supabase: SupabaseClient,
+  organizationId: string,
+  req: NextRequest,
+  idioma: Idioma | undefined,
+  requestId: string,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");
 
   const pedidos = (new URL(req.url).searchParams.get("ids") ?? "")
     .split(",")
@@ -144,11 +175,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   const ids = validos.data.map((id) => id.toLowerCase());
 
-  const supabase = await createClient();
   const { data, error } = await supabase
     .from("contacts")
     .select(COLUNAS_DA_FICHA)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .in("id", ids);
   if (error) {
     return fail("internal_error", "Não foi possível ler as fichas.", 500, { requestId });
@@ -172,12 +202,12 @@ export async function GET(req: NextRequest): Promise<Response> {
       supabase
         .from("conversations")
         .select("id", { count: "exact", head: true })
-        .eq("organization_id", org.orgId)
+        .eq("organization_id", organizationId)
         .eq("contact_id", ficha.id),
       supabase
         .from("crm_leads")
         .select("id", { count: "exact", head: true })
-        .eq("organization_id", org.orgId)
+        .eq("organization_id", organizationId)
         .eq("contact_id", ficha.id),
     ]);
     if (conversas.error || negocios.error) {
@@ -192,7 +222,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { data: candidatos, error: erroDaProspeccao } = await createAdminClient()
     .from("prospecting_candidates")
     .select("contact_id, data")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .in("contact_id", idsLidos);
   if (erroDaProspeccao) {
     return fail("internal_error", "Não foi possível ler os dados da prospecção.", 500, { requestId });

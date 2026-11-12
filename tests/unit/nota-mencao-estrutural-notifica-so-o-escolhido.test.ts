@@ -31,6 +31,11 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+// O nome de quem escreve vem de `loadAuthUser` (ramo de sessão da rota). Mockado
+// como nos demais testes de rota: o dublê de cliente não modela permissões.
+vi.mock("@/lib/auth/server", () => ({
+  loadAuthUser: vi.fn(async () => ({ id: AUTOR, idioma: "pt-BR", full_name: "Autor da Nota" })),
+}));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => {}) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -61,6 +66,9 @@ let idasAoAuth: string[];
 /** Cliente falso que APPLICA o mínimo que a rota usa: conversa existe, nota insere. */
 function clientFalso() {
   return {
+    auth: {
+      getUser: async () => ({ data: { user: { id: AUTOR, idioma: "pt-BR" } }, error: null }),
+    },
     from(tabela: string) {
       if (tabela === "conversations") {
         const cadeia = {

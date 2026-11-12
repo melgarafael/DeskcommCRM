@@ -13,11 +13,10 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -47,18 +46,27 @@ const criarSchema = z
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "honorarios_contratos" });
+  // Leitura: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "honorarios_contratos",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "honorarios_contratos_listar", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const leadId = url.searchParams.get("lead_id");
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let q = supabase
     .from("honorarios_contratos")
     .select(
       "id, lead_id, modelo, valor_fixo_cents, percentual_exito, repasse_advogado_pct, created_at",
     )
+    .eq("organization_id", authz.organizationId)
     .order("created_at", { ascending: false })
     .limit(200);
   if (leadId) q = q.eq("lead_id", leadId);
@@ -79,8 +87,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("manager", { requestId, resource: "honorarios_contratos" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "honorarios_contratos",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "honorarios_contratos_criar", requestId);
+  if (teto) return teto;
 
   const lido = criarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -89,7 +104,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // A FK de `lead_id` é conferida pelo dono da tabela, por cima da RLS: sem esta
   // leitura (com a sessão, recortada pela RLS) o contrato aceitaria o lead de
@@ -99,7 +114,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .from("crm_leads")
       .select("id")
       .eq("id", lido.data.lead_id)
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .maybeSingle();
     if (!lead) {
       return fail("validation_failed", "Lead inválido para esta organização.", 422, {
@@ -111,7 +126,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data, error } = await supabase
     .from("honorarios_contratos")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: authz.organizationId,
       lead_id: lido.data.lead_id ?? null,
       modelo: lido.data.modelo,
       valor_fixo_cents: lido.data.valor_fixo_cents ?? null,
@@ -135,6 +150,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "honorarios.contrato_criado",
+    organizationId: authz.organizationId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     resourceType: "honorarios_contrato",
     resourceId: data.id,
     requestId,

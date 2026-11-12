@@ -138,16 +138,20 @@ describe("GET /api/v1/metrics/serie", () => {
 
   it("granularidade fora da lista é recusada (422), nunca tratada como dia", async () => {
     permitido();
+    const { consultas, client } = fakeSupabase({});
+    vi.mocked(createClient).mockResolvedValue(client as never);
     const res = await chamar(`${JANELA}&granularidade=trimestre`);
     expect(res.status).toBe(422);
-    expect(createClient).not.toHaveBeenCalled();
+    expect(consultas).toHaveLength(0);
   });
 
   it("janela com from >= to é recusada (422)", async () => {
     permitido();
+    const { consultas, client } = fakeSupabase({});
+    vi.mocked(createClient).mockResolvedValue(client as never);
     const res = await chamar("from=2026-10-10T00:00:00.000Z&to=2026-10-10T00:00:00.000Z");
     expect(res.status).toBe(422);
-    expect(createClient).not.toHaveBeenCalled();
+    expect(consultas).toHaveLength(0);
   });
 
   it("acima do teto de 5 páginas responde truncado: true", async () => {

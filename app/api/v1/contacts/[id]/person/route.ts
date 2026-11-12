@@ -1,18 +1,16 @@
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { linkContactToPersonHandler } from "@/lib/crm-b2b/people-handler";
 import {
-  ctxFromAuthz,
   handleRouteError,
   ok,
   requestIdOf,
   seModuloB2bDesligado,
 } from "@/lib/crm-b2b/route-helpers";
-import { createClient } from "@/lib/supabase/server";
-
+import type { HandlerCtx } from "@/lib/api/handlers/types";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -28,19 +26,36 @@ export async function PATCH(req: NextRequest, { params }: Ctx): Promise<Response
   if (desligado) return desligado;
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+
+  // Sessão OU token de integração (Spec 33, R2): `mcp:write` e papel `agent`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
   const { id } = await params;
 
   try {
     const body = bodySchema.parse(await req.json());
-    const supabase = await createClient();
+    const supabase = authz.supabase;
+    const ctx: HandlerCtx = {
+      organization_id: authz.organizationId,
+      actor: authz.actor,
+      requestId,
+      idioma: authz.idioma,
+    };
     const data = await linkContactToPersonHandler(
       supabase,
-      ctxFromAuthz(authz, requestId),
-      authz.user.id,
+      ctx,
+      authz.actor.type === "user" ? authz.actor.id : null,
       id,
       body.person_id,
+      authz.apiTokenId ?? null,
     );
     return ok(data, { requestId });
   } catch (e) {

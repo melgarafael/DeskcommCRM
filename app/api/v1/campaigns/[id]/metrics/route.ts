@@ -22,11 +22,11 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { progresso, taxasDaCampanha, type ContagemDaCampanha } from "@/lib/campanhas/metricas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -46,23 +46,31 @@ type LinhaDeDestinatario = {
 };
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_metricas", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
   const { id } = await ctx.params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const consultaDeDestinatarios = () =>
     supabase
       .from("campaign_recipients")
       .select(
         "id, status, eligibility_status, sent_at, delivered_at, read_at, replied_at, opted_out_at",
       )
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", org.orgId)
       .eq("campaign_id", id)
       .order("id", { ascending: true });
 
@@ -102,7 +110,7 @@ export async function GET(
     const { data: existe } = await supabase
       .from("campaigns")
       .select("id")
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", org.orgId)
       .eq("id", id)
       .maybeSingle();
     if (!existe) {
