@@ -6,50 +6,60 @@
  * `skill_versions` é imutável, então restaurar = mover o ponteiro para uma
  * versão antiga (não cria versão nova).
  *
- * organization_id vem SEMPRE de requireRole — nunca de query.
+ * Aceita sessão de navegador OU Bearer `dsk_…` com escopo `config:read`
+ * e papel admin (`tokenRole`). A organização vem da linha do token, nunca de query.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { nomeDeSkillValido } from "@/lib/skills/nome-de-skill";
 
 export const dynamic = "force-dynamic";
 
 const nameSchema = z.string().min(1).max(120);
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ name: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "ai_skills" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_skills_versions",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const teto = await tetoDeEscritaDoToken(authz, "ai_skills_versions", requestId);
+  if (teto) return teto;
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
 
-  const admin = createAdminClient();
-  const { data: pointer } = await admin
+  const supabase = createAdminClient();
+  const { data: pointer } = await supabase
     .from("skill_pointers")
     .select("version_id")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("name", name)
     .maybeSingle();
 
-  const { data: versions, error } = await admin
+  const { data: versions, error } = await supabase
     .from("skill_versions")
     .select("id, created_at, forked_from_version_id")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("name", name)
     .order("created_at", { ascending: false });
 

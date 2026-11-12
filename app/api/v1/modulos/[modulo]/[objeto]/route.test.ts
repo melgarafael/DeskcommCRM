@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import type { ActiveOrg } from "@/lib/auth/types";
@@ -29,6 +30,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: mocks.requireRole }));
+// A rota agora passa por `resolveAuthDual`, que na sessão chama `createClient` do servidor. Este
+// teste só mede a sessão; o cliente de sessão é um objeto vazio, e a tabela vem do dublê de admin.
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/modulos/dados/tabela", () => ({ tabelaDoObjeto: mocks.tabelaDoObjeto }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
@@ -99,7 +104,7 @@ beforeEach(() => {
 
 async function chamar(url: string, params: { modulo: string; objeto: string }) {
   const { GET } = await import("./route");
-  return GET(new Request(url), { params: Promise.resolve(params) });
+  return GET(new NextRequest(url), { params: Promise.resolve(params) });
 }
 
 describe("GET /api/v1/modulos/[modulo]/[objeto]", () => {
@@ -224,5 +229,22 @@ describe("GET /api/v1/modulos/[modulo]/[objeto]", () => {
       objeto: "marcacao",
     });
     expect(r.status).toBe(400);
+  });
+
+  it("segmento inválido com sessão válida responde 400 com requestId", async () => {
+    const r = await chamar("https://x/api/v1/modulos/A/marcacao", { modulo: "A", objeto: "marcacao" });
+    expect(r.status).toBe(400);
+    // O requestId sai no cabeçalho X-Request-Id (é assim que `fail` o devolve).
+    expect(r.headers.get("X-Request-Id")).toBeTruthy();
+    expect(mocks.tabelaDoObjeto).not.toHaveBeenCalled();
+  });
+
+  it("segmento inválido SEM sessão recebe a recusa da auth, não 400 (a auth vem antes)", async () => {
+    mocks.requireRole.mockResolvedValue({
+      ok: false,
+      response: new Response(null, { status: 403 }),
+    });
+    const r = await chamar("https://x/api/v1/modulos/A/marcacao", { modulo: "A", objeto: "marcacao" });
+    expect(r.status).toBe(403);
   });
 });

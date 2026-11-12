@@ -13,13 +13,18 @@
  *
  * Mesmo papel do `GET /:id` (viewer): o arquivo não contém nada que a tela do
  * fluxo já não mostre a quem pode abri-la. É leitura — não audita.
+ *
+ * Sessão OU token de integração (Spec 33, R1): `config:read` e papel admin
+ * (`tokenRole`); a organização sai de `authz.organizationId`. No ramo do token
+ * o cliente é a service role e não há embed: os nomes dos itens citados vêm em
+ * consultas próprias filtradas pela organização (`nomesDaOrigem` já filtra).
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
 import { triggerConfigSchema } from "@/lib/followup/api-schemas";
 import { idsCitados, montarArquivoDeFluxo, nomeDoArquivo } from "@/lib/followup/portabilidade";
@@ -36,24 +41,32 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("viewer", { requestId, resource: "followup_flows" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_flows",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_flows", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: origem, error: fetchErr } = await supabase
     .from("followup_flow_pointers")
     .select(SOURCE_COLUMNS)
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!origem) return fail("not_found", t("Fluxo não encontrado."), 404, { requestId });
@@ -61,7 +74,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const bruto = await rascunhoDoFluxo(
     supabase,
     origem as { draft_graph: unknown; active_version_id: string | null },
-    activeOrg.orgId,
+    organizationId,
   );
   // Revalida em vez de confiar na coluna: `draft_graph` escrito por fora (SQL à
   // mão, versão antiga) que não passa no schema geraria um arquivo que a
@@ -84,7 +97,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   try {
     nomes = await nomesDaOrigem(
       supabase,
-      activeOrg.orgId,
+      organizationId,
       idsCitados(grafo.data, gatilho.success ? gatilho.data : null),
     );
   } catch (err) {

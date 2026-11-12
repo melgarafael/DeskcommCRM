@@ -8,15 +8,19 @@
  * `fn_attendant_metrics` (0037) e só troca o `group by` por
  * `channel_session_id`.
  *
- * ## Escopo = a PRÓPRIA RLS
+ * ## Escopo = a PRÓPRIA RLS (sessão) ou a linha do token (servidor)
  *
- * Igual à rota irmã: a RPC é SECURITY INVOKER e roda com o client de SESSÃO
- * (cookie validado), então a policy de `conversations` (0035) faz o recorte —
- * agent vê só as próprias conversas, manager+ a organização (e `owner_user_id`
- * restringe ainda mais quem compara). A organização vem de
- * `authz.org.orgId`, NUNCA da query: quem escreve a query é quem já está
- * logado nela. Piso de rota = `agent`, o mesmo da irmã — um piso maior
- * esconderia da pessoa as conversas dela.
+ * Igual à rota irmã: na sessão a RPC é SECURITY INVOKER e roda com o client de
+ * SESSÃO (cookie validado), então a policy de `conversations` (0035) faz o
+ * recorte — agent vê só as próprias conversas, manager+ a organização (e
+ * `owner_user_id` restringe ainda mais quem compara). A organização vem de
+ * `authz.organizationId`, NUNCA da query. Piso de rota = `agent`, o mesmo da
+ * irmã — um piso maior esconderia da pessoa as conversas dela.
+ *
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` (Spec 33, R3). Pelo token
+ * não há RLS por atendente: o cliente é o de serviço e a leitura é a da
+ * organização inteira, então o token exige papel `manager` (a tela de um agent
+ * não abre mais do que as conversas dele).
  *
  * ## Read-only ⇒ sem audit
  *
@@ -34,11 +38,11 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { montarLinhas, type LinhaCanalBruta } from "@/lib/metrics/canais";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -71,11 +75,20 @@ interface MetricsPayload {
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  // Piso `agent`: a RLS é quem separa "as suas" da "da organização".
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  // Piso `agent` na sessão: a RLS é quem separa "as suas" da "da organização".
+  // O token vê a organização inteira, então exige `manager`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -114,9 +127,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     );
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("fn_channel_metrics", {
-    p_org: activeOrg.orgId,
+  const { data, error } = await authz.supabase.rpc("fn_channel_metrics", {
+    p_org: authz.organizationId,
     p_from: from.toISOString(),
     p_to: to.toISOString(),
     p_owner: parsed.data.owner_user_id,
