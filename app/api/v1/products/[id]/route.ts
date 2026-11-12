@@ -16,7 +16,10 @@ import { requireRole } from "@/lib/auth/require-role";
 import { removeCatalogPresentationAudio } from "@/lib/catalogo/apresentacao-no-bucket";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
+import { MODULO_SERVICOS, sinaisFixosQueTravamPreco } from "@/lib/catalogo/servicos-supabase";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { COLUNAS_DO_PRODUTO, produtoPatchSchema } from "@/lib/schemas/produtos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -51,6 +54,25 @@ export async function PATCH(
   const { fotos, ...campos } = parsed.data;
 
   const supabase = await createClient();
+
+  // A porta do módulo de serviços (doc 212): este item pode ser serviço ou
+  // variação de um, e a família pode ter sinal FIXO. O preço novo não fica
+  // abaixo dele. Com o módulo desligado, nada é consultado. Sem conseguir
+  // conferir, nada é gravado.
+  if (campos.preco_cents !== undefined && (await moduloLigado(createAdminClient(), MODULO_SERVICOS))) {
+    let sinal: number | undefined;
+    try {
+      sinal = (await sinaisFixosQueTravamPreco(supabase, authz.org.orgId, [id])).get(id);
+    } catch {
+      return fail("internal_error", "Erro ao salvar o produto.", 500, { requestId });
+    }
+    if (sinal !== undefined && campos.preco_cents < sinal) {
+      return fail("validation_failed", t("O preço ficaria abaixo do sinal fixo do serviço."), 422, {
+        requestId,
+        details: { preco_cents: [t("O preço ficaria abaixo do sinal fixo do serviço.")] },
+      });
+    }
+  }
 
   /**
    * ─── PATCH com `fotos` SUBSTITUI o conjunto, não acrescenta ───────────────

@@ -155,12 +155,28 @@ export function criarEvidenciasComerciaisDoTurno(fontesHabilitadas: readonly str
       const nome = texto(p.nome);
       const descricao = texto(p.descricao);
       const preco = texto(p.preco);
-      if (!codigo || !nome || !descricao || !preco || p.disponivel !== true) continue;
+      // O bloco `servico` (módulo catálogo de serviços, #3480) é oferta do
+      // catálogo também: variações, sinal, prazo e "Grátis" que a busca entregou
+      // são o que a resposta certa vai dizer, e sem eles na evidência a guarda
+      // vetaria a frase verdadeira. As instruções internas NÃO entram: orientam
+      // o agente e nunca são oferta.
+      const servico = objeto(p.servico);
+      if (!codigo || !nome || (!descricao && !servico) || !preco || p.disponivel !== true) continue;
+      const ofertaDoServico = servico
+        ? Object.fromEntries(
+            Object.entries(servico).filter(([k]) => k !== "instrucoes_internas_nao_repita_ao_cliente"),
+          )
+        : null;
       guardar({
         origem: "catalogo",
         referencia: codigo,
         titulo: nome,
-        conteudo: JSON.stringify({ nome, preco, descricao }),
+        conteudo: JSON.stringify({
+          nome,
+          preco,
+          ...(descricao ? { descricao } : {}),
+          ...(ofertaDoServico ? { servico: ofertaDoServico } : {}),
+        }),
       });
     }
   }

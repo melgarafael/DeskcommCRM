@@ -867,6 +867,15 @@ export const AUDIT_ACTIONS = [
   "catalog_product.ai_presentation_audio_uploaded",
   "catalog_product.ai_presentation_audio_removed",
 
+  // O serviço no catálogo (#3372, migration 9248): sinal, prazo e preço do
+  // serviço são combinados com o cliente, e quem mudou precisa ficar registrado
+  // como no produto. A variação tem ação própria porque é outro preço — o valor
+  // que o cliente ouviu.
+  "catalog_service.created",
+  "catalog_service.updated",
+  "catalog_service.variation_created",
+  "catalog_service.variation_updated",
+
   // As tarefas do CRM (migration 0210). Tarefa é combinado de trabalho entre
   // pessoas do time — quem a criou, quem mudou o prazo e quem a apagou é
   // exatamente o que se disputa depois de um cliente ficar sem retorno.

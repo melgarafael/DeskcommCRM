@@ -204,6 +204,13 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "imutabilidade da parcela paga (status e financial_entry_id não mudam sem o caixa) e a " +
       "recusa de FK cross-org. A leitura cross-org por contagem é medida neste arquivo.",
   },
+  catalog_service_details: {
+    arquivo: "tests/invariants/catalogo-servicos.test.ts",
+    razao:
+      "JWT real: a organização lê só os próprios detalhes, a sessão não grava nem chama a função " +
+      "de escrita (42501), e o gatilho de vínculos recusa item e principal de outra organização " +
+      "mesmo na escrita do servidor.",
+  },
   calendar_waitlist: {
     arquivo: "tests/invariants/lista-de-espera-encaixe.test.ts",
     razao:

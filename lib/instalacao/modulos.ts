@@ -42,7 +42,7 @@ import { logger } from "@/lib/logger";
 
 /**
  * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento` e `campanha_por_email` ligam/desligam por uma linha em `platform_config`
- * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera` e `ouvidoria` são MÓDULOS DE TABELA (ADR-0002): a fonte da
+ * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera`, `cadencias`, `ouvidoria` e `catalogo_servicos` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
  * `deModuloDesligado` (catálogo de tools MCP) precisa: "este módulo, seja qual for o mecanismo
@@ -64,6 +64,10 @@ export const MODULOS_OPCIONAIS = [
   // Doc 208 (A): a lista de espera da agenda. A tabela nasce só onde o módulo é
   // instalado, e cada organização ainda escolhe os prazos antes de ligar.
   "lista_de_espera",
+  // Doc 212 (A/A): o catálogo de serviços do #3480 — tipo, unidade, prazo, sinal
+  // e variações de um item do catálogo. O preço continua no item; o detalhe nasce
+  // só onde o módulo é instalado.
+  "catalogo_servicos",
   // #3611 (fatia 1, PR #3625): a tabela `ouvidoria_manifestacoes` nasce só em
   // `fn_ouvidoria_provisionar`. Sem esta linha a chave da empresa
   // (`settings.ouvidoria.ativa`) ligava uma porta para uma tabela que não existe.
@@ -85,7 +89,7 @@ export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
 /** Os módulos de tabela do ADR-0002 dentro de `MODULOS_OPCIONAIS` — resolvidos por
  * `modulos_instalados.estado = 'ativo'`, nunca por `platform_config`. */
-const MODULOS_DE_TABELA = ["honorarios", "financeiro", "lista_de_espera", "cadencias", "ouvidoria"] as const satisfies readonly ModuloOpcional[];
+const MODULOS_DE_TABELA = ["honorarios", "financeiro", "lista_de_espera", "cadencias", "ouvidoria", "catalogo_servicos"] as const satisfies readonly ModuloOpcional[];
 
 /**
  * Só os módulos por FLAG — os que a tela `/admin/sistema` liga e desliga via

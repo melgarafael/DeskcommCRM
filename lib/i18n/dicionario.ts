@@ -14399,6 +14399,24 @@ export const DICIONARIO: Traducoes = {
   "Os funis desta lista estão empatados na ordenação. Recarregue a página e mova o funil para outro lugar.": { es: "Hay embudos con la misma posición en esta lista. Recarga la página y mueve el embudo a otra posición." },
   "Payload inválido.": { es: "Payload inválido." },
   "Produto não encontrado.": { es: "Producto no encontrado." },
+  "Serviço não encontrado.": { es: "Servicio no encontrado." },
+  "Serviço principal não encontrado para esta variação.": {
+    es: "No se encontró el servicio principal para esta variación.",
+  },
+  "Este serviço foi alterado por outra pessoa.": {
+    es: "Otra persona modificó este servicio.",
+  },
+  "Este serviço não passou nas regras do cadastro.": {
+    es: "Este servicio no cumple las reglas del catálogo.",
+  },
+  "Já existe um item com esse código.": { es: "Ya existe un artículo con ese código." },
+  "Erro ao salvar o serviço.": { es: "Error al guardar el servicio." },
+  "O preço ficaria abaixo do sinal fixo do serviço.": {
+    es: "El precio quedaría por debajo del anticipo fijo del servicio.",
+  },
+  ": o preço ficaria abaixo do sinal fixo do serviço.": {
+    es: ": el precio quedaría por debajo del anticipo fijo del servicio.",
+  },
   "Query inválida.": { es: "Query inválida." },
   "Responsável não é um atendente ativo desta organização.": { es: "El responsable no es un asesor activo de esta organización." },
   "Retomada de contato descartada — decisão registrada": { es: "Reanudación de contacto descartada — decisión registrada" },
@@ -17884,6 +17902,9 @@ export const DICIONARIO: Traducoes = {
   "Honorários": { es: "Honorarios" },
   "Lista de espera": { es: "Lista de espera" },
   "Lista de espera da agenda": { es: "Lista de espera de la agenda" },
+  "Catálogo de serviços": { es: "Catálogo de servicios" },
+  "Itens do catálogo que são serviço, com variações, prazo e sinal — e o agente responde com esses valores.": { es: "Artículos del catálogo que son servicios, con variaciones, plazo y anticipo — y el agente responde con esos valores." },
+  "Itens do catálogo que são serviço: hora marcada, projeto ou plano recorrente, com variações, prazo e sinal. O agente passa a responder 'a partir de', sinal e prazo. O preço continua o do item do catálogo.": { es: "Artículos del catálogo que son servicios: cita con hora, proyecto o plan recurrente, con variaciones, plazo y anticipo. El agente pasa a responder 'desde', anticipo y plazo. El precio sigue siendo el del artículo del catálogo." },
   "Ouvidoria": { es: "Defensoría del cliente" },
   "Registro de manifestações (reclamações, denúncias, elogios, sugestões) com protocolo próprio, leitura restrita a administradores e sem cartão no funil. Quem não instala o módulo não carrega a tabela.": {
     es: "Registro de manifestaciones (reclamos, denuncias, elogios, sugerencias) con protocolo propio, lectura restringida a administradores y sin tarjeta en el embudo. Quien no instala el módulo no carga la tabla.",
