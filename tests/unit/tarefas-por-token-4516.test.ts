@@ -70,11 +70,18 @@ type Linha = Record<string, unknown>;
  * chama — não que a segunda chamada deixou de criar a segunda tarefa.
  */
 function banco() {
-  const tabelas: Record<string, Linha[]> = { crm_tasks: [], idempotency_keys: [] };
+  // O índice por string continua valendo (`tabelas[tabela]` dentro de
+  // `consulta`), e `crm_tasks` é nomeado porque o teste o acessa direto: sem o
+  // cruzamento, `tabelas.crm_tasks` seria `Linha[] | undefined` e o `tsc` do CI
+  // reprovava em TS18048 (verify-parte (1), head a3df5dd70c).
+  const tabelas: Record<string, Linha[]> & { crm_tasks: Linha[] } = {
+    crm_tasks: [],
+    idempotency_keys: [],
+  };
   const estado = { insertsDeTarefa: 0, filtrosDaLista: [] as [string, unknown][] };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function consulta(tabela: string, op: "select" | "update" | "delete", payload?: Linha): any {
+  function consulta(tabela: string, op: "select" | "insert" | "update" | "delete", payload?: Linha): any {
     const filtros: [string, unknown][] = [];
     const linhas = tabelas[tabela] ?? [];
     const casam = () => linhas.filter((l) => filtros.every(([c, v]) => l[c] === v));
