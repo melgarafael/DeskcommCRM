@@ -27,7 +27,7 @@
 import { mkdirSync } from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
@@ -85,6 +85,7 @@ test.afterAll(async ({ browser }) => {
   // Rede de segurança: se um caso falhar no meio, a organização não pode ficar
   // simplificada para as specs seguintes da mesma parte.
   const page = await browser.newPage();
+  esperarARevelacaoNasCargas(page);
   try {
     await login(page);
     await escolherPerfil(page, "Completa");
