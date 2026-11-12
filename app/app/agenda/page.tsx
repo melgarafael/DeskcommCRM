@@ -9,10 +9,11 @@ import {
   origemLocalDosCabecalhos,
 } from "@/lib/agenda/google/config";
 import { funisComCamposDeData } from "@/lib/agenda/datas-dos-negocios";
+import { lerEscolhaDaCamada } from "@/lib/agenda/preferencia-da-camada";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
-import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { requireAuth, resolveActiveOrg, metadadosDaSessao } from "@/lib/auth/server";
 import { diaDeHojeNoFuso, semanaSemente } from "@/lib/agenda/semana-semente";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
@@ -267,6 +268,35 @@ export default async function AgendaPage() {
   const googleConfigurado = await googleEstaConfigurado();
   const faltaNoGoogle = googleConfigurado ? [] : await faltaParaConectarOGoogle();
 
+  // ─── A CAMADA "DATAS DOS NEGÓCIOS" (#3221, escolha guardada pela #4436) ────
+  //
+  // Os funis que declaram campo de data: a matéria-prima da camada, resolvida
+  // aqui com a mesma régua que o Calendário do funil usa.
+  const funisComDatas = funisComCamposDeData(
+    (
+      (funis ?? []) as Array<{
+        id: string;
+        name: string;
+        settings: Record<string, unknown> | null;
+      }>
+    ).map((f) => ({ id: f.id, nome: f.name, settings: f.settings })),
+  );
+
+  /**
+   * A ESCOLHA DA PESSOA (#4436), lida do `raw_user_meta_data` — e só quando há
+   * camada a oferecer. Instalação que não usa campo de data não paga nem a
+   * leitura: `funisComDatas` vazio e a camada nem aparece.
+   *
+   * `lerEscolhaDaCamada` sanea contra ESTA lista: funil arquivado não está nela
+   * (a consulta acima filtra `is_archived = false`) e campo que sumiu não está
+   * nos `campos`. O que sobra é só escolha que ainda existe — o resto volta ao
+   * padrão sem erro na tela.
+   */
+  const escolhaDaCamada =
+    funisComDatas.length > 0
+      ? lerEscolhaDaCamada(await metadadosDaSessao(), funisComDatas)
+      : undefined;
+
   return (
     <AgendaClient
       tituloDaAgenda={tituloDaAgenda(apresentacao?.settings)}
@@ -294,15 +324,10 @@ export default async function AgendaPage() {
       // a pessoa (a camada nasce desligada), e a escolha de QUAIS campos são
       // datas não é feita aqui — ela vem do funil, pela mesma função que o
       // Calendário do funil usa (`camposDeDataDoNegocio`).
-      funisComDatas={funisComCamposDeData(
-        (
-          (funis ?? []) as Array<{
-            id: string;
-            name: string;
-            settings: Record<string, unknown> | null;
-          }>
-        ).map((f) => ({ id: f.id, nome: f.name, settings: f.settings })),
-      )}
+      funisComDatas={funisComDatas}
+      // A escolha que a pessoa deixou (#4436): a camada volta ligada no funil
+      // e no campo dela, em qualquer aparelho. Saneada logo acima.
+      escolhaDaCamada={escolhaDaCamada}
       googleConfigurado={googleConfigurado}
       contaConectada={conexoes?.map((c) => c.account_email).join(", ") || null}
       enderecoDeRetorno={enderecoDeRetorno(origemLocal ?? undefined)}

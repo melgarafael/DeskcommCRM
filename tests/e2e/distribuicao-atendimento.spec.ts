@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page } from "./helpers/test";
 
 const CREDS_PATH = path.join(process.cwd(), ".e2e-creds.json");
 
@@ -63,6 +63,7 @@ test.describe("distribuição de atendimento — a tela que liga o rodízio e a 
     // herdaria `visibility_mode` alterado e mediria outro produto — e o vermelho
     // dela apontaria para o lugar errado.
     const page = await browser.newPage();
+    esperarARevelacaoNasCargas(page);
     await login(page, creds.users.manager!.email);
     await page.request.patch("/api/v1/settings/routing", {
       data: { mode: "manual", max_retries: 5, backoff_seconds: 60, visibility_mode: "own_and_unassigned" },
