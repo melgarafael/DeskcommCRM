@@ -431,6 +431,88 @@ describe("o histórico do Jev espera a TypeSafe (DEC-012, escolha 2)", () => {
   });
 });
 
+describe("#3917 — o contexto do CRM entra na pergunta feita ao Jev", () => {
+  const FATOS = {
+    funis: [{ funil: "Experiência", etapas: ["Pós-viagem"] }],
+    etiquetas: ["cliente", "viagem-fechada"],
+    funisOmitidos: 0,
+    etiquetasOmitidas: 0,
+  };
+
+  it("sem fatos a pergunta é a de antes — nem um caractere de contexto", () => {
+    const semFatos = perguntaDoRoteador(MEMBROS);
+    const vazio = perguntaDoRoteador(MEMBROS, {
+      funis: [],
+      etiquetas: [],
+      funisOmitidos: 0,
+      etiquetasOmitidas: 0,
+    });
+    expect(vazio).toEqual(semFatos);
+    expect(semFatos?.instrucao).not.toContain("Fatos do CRM");
+  });
+
+  it("com fatos, funil, etapa e etiqueta vão para a instrução, DEPOIS do que se pede", () => {
+    const p = perguntaDoRoteador(MEMBROS, FATOS);
+    expect(p?.instrucao).toContain("Fatos do CRM deste contato");
+    expect(p?.instrucao).toContain('Funil "Experiência"');
+    expect(p?.instrucao).toContain('"Pós-viagem"');
+    expect(p?.instrucao).toContain("negócio ABERTO");
+    expect(p?.instrucao).toContain("Etiquetas do contato: cliente, viagem-fechada");
+    // O pedido original continua primeiro: o bloco é contexto, não a tarefa.
+    expect(p?.instrucao?.indexOf("ÚLTIMA mensagem do cliente")).toBeLessThan(
+      p?.instrucao?.indexOf("Fatos do CRM deste contato") ?? -1,
+    );
+    // E a lista de intenções não muda — o contexto não vira critério novo.
+    expect(p?.criterios).toEqual(perguntaDoRoteador(MEMBROS)?.criterios);
+  });
+
+  it("o contexto chega ao Jev pela leitura do TURNO, e só uma vez por decisão", async () => {
+    const fatos = vi.fn(async () => FATOS);
+    const fetchImpl = vi.fn(async () => respostaCom("suporte"));
+    const jev = consultarJevNoRoteador(
+      poolCom(LIGADO).pool,
+      { ...entrada(novaOrg(), "Bom dia! Tudo bem?"), fatosDoCrmDoTurno: fatos },
+      { buscarChave: async () => "tsk_x", fetchImpl },
+    );
+    const escolha = await jev.escolha;
+
+    expect(escolha?.veredito).toEqual({ intentName: "suporte", confidence: 0.93 });
+    expect(fatos).toHaveBeenCalledTimes(1);
+    const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1].body)) as {
+      questions: { roteador: { instructions: string; criteria: Record<string, string> } };
+    };
+    expect(corpo.questions.roteador.instructions).toContain("Fatos do CRM deste contato");
+    expect(corpo.questions.roteador.instructions).toContain("Experiência");
+    expect(corpo.questions.roteador.instructions).toContain("viagem-fechada");
+    // O critério de cada intenção continua sendo só a descrição da empresa.
+    expect(corpo.questions.roteador.criteria.suporte).not.toContain("Experiência");
+  });
+
+  it("a tarefa desligada NÃO paga a leitura dos fatos", async () => {
+    const fatos = vi.fn(async () => FATOS);
+    const jev = consultarJevNoRoteador(
+      poolCom({}).pool,
+      { ...entrada(novaOrg(), "oi"), fatosDoCrmDoTurno: fatos },
+      { buscarChave: async () => "tsk_x" },
+    );
+    expect(await jev.escolha).toBeNull();
+    expect(fatos).not.toHaveBeenCalled();
+  });
+
+  it("a leitura que falha não derruba a pergunta: ela sai como antes", async () => {
+    const fatos = vi.fn(async () => {
+      throw new Error("banco fora");
+    });
+    const jev = consultarJevNoRoteador(
+      poolCom(LIGADO).pool,
+      { ...entrada(novaOrg()), fatosDoCrmDoTurno: fatos },
+      { buscarChave: async () => "tsk_x", fetchImpl: async () => respostaCom("vendas") },
+    );
+    expect((await jev.escolha)?.veredito.intentName).toBe("vendas");
+    expect(fatos).toHaveBeenCalledTimes(1);
+  });
+});
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * O PÚBLICO NO ROTEADOR (#3722, fatia 2) — a lista que vira a PERGUNTA.
  *
