@@ -1544,6 +1544,9 @@ export const AUDIT_ACTIONS = [
   // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
   // aceitável: a única porta da escrita deixa rastro.
   "ouvidoria.status_updated",
+  // Desfazer o vínculo pessoa ↔ empresa pela tela (issue #3198). O metadata
+  // leva só os dois ids da junção.
+  "company_people.unlinked",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

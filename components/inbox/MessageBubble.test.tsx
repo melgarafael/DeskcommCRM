@@ -146,6 +146,32 @@ describe("MessageBubble — ações sobre mensagem própria", () => {
     expect(screen.queryByRole("menuitem", { name: "Apagar para todos" })).not.toBeInTheDocument();
   });
 
+  // Relato de 09/11/2026: o menu da foto e do PDF não tinha "Baixar".
+  it("[DISCRIMINA] mídia recebida tem 'Baixar' no menu, pelo ?baixar=1", async () => {
+    const user = userEvent.setup();
+    render(<MessageBubble message={msg({
+      direction: "inbound", type: "image", body: null,
+      media_mime: "image/jpeg", media_storage_path: "org1/c1/m1.jpg",
+    })} />);
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    const item = await screen.findByRole("menuitem", { name: "Baixar" });
+    expect(item).toHaveAttribute("href", "/api/v1/messages/m1/media?baixar=1");
+  });
+
+  it("texto não ganha 'Baixar', e mídia apagada também não", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<MessageBubble message={msg({ external_id: "ABC" })}
+      onResponder={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+    expect(screen.queryByRole("menuitem", { name: "Baixar" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    rerender(<MessageBubble message={msg({
+      direction: "inbound", type: "image", body: null, media_mime: "image/jpeg",
+      media_storage_path: "org1/c1/m1.jpg", revoked_at: "2026-09-08T12:01:00.000Z",
+    })} />);
+    expect(screen.queryByRole("menuitem", { name: "Baixar" })).not.toBeInTheDocument();
+  });
+
   it("apagada pelo ATENDENTE: cinza, diz quem apagou e mantém o texto visível só no CRM", () => {
     render(<MessageBubble message={msg({ revoked_at: "2026-09-24T11:00:00Z", body: "valor combinado" })} />);
     expect(screen.getByText("Esta mensagem foi apagada pelo atendente")).toBeInTheDocument();
