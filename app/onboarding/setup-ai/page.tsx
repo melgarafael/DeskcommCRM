@@ -7,7 +7,7 @@ import { SetupAiForm } from "./_form";
 import { InteligenciaDele } from "./_inteligencia";
 import { capacidadesPadraoDoOnboarding } from "@/lib/ai/agents/capacidades-padrao";
 import { TOOL_CATALOG } from "@/lib/mcp/tools/catalog";
-import { CONFERENCIAS_DE_SAIDA } from "@/lib/ai/guardrails/lista-de-conferencia";
+import { NUNCA_FAZ } from "@/lib/ai/guardrails/lista-de-conferencia";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export default async function SetupAiPage() {
     .filter((r): r is string => Boolean(r))
     .map((r) => traduzir(r, idioma));
 
-  const conferencias = CONFERENCIAS_DE_SAIDA.map((c) => traduzir(c.rotulo, idioma));
+  const conferencias = Object.values(NUNCA_FAZ).map((frase) => traduzir(frase, idioma));
 
   return (
     <div className="space-y-6">
