@@ -26,8 +26,6 @@ Por segurança, não é um editor de CSS irrestrito: aceita seletores de classes
 
 O editor tem **dois campos**. O primeiro vale nos dois temas; o segundo, **CSS do tema escuro**, vale só com o tema escuro ativo — ele é aplicado com o escopo do tema, então uma regra escrita ali não aparece no claro. É assim que se escolhe uma cor que funcione no escuro sem estragar o claro. As duas folhas são validadas juntas: se qualquer uma tiver regra inválida, nenhuma é aplicada e a tela Marca mostra qual campo corrigir.
 
-O menu lateral tem classes estáveis, pensadas para este CSS: por grupo (`nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise`, `nav-grupo-organizacao`) e por destino (`nav-item-inbox`, `nav-item-kanban`, e assim por diante). Elas fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
-
 Exemplo:
 
 ```css
@@ -37,6 +35,20 @@ Exemplo:
 
 .rounded-md {
 	border-radius: 12px;
+}
+```
+
+**Cor por seção do menu lateral.** O menu tem classes estáveis, pensadas para este CSS. Todo grupo leva `nav-grupo`, e cada um leva também a sua: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` e `nav-grupo-organizacao` (a do rodapé, com Configurações e Ajuda). Cada destino tem a dele: `nav-item-inbox`, `nav-item-kanban`, e assim por diante. Essas classes fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
+
+Para pintar o texto do menu, mire `text-muted-foreground` dentro do grupo, não `rounded-md`. O título do grupo e os links têm as duas, mas o item da tela aberta só tem `rounded-md`: ele já tem fundo na cor de destaque, e uma cor de texto escolhida para o fundo do menu pode sumir sobre esse fundo. Como `text-muted-foreground` é do Tailwind, confira o menu depois de atualizar. A cor do exemplo é para o tema claro; no escuro, repita a regra no campo **CSS do tema escuro** com uma cor clara.
+
+```css
+.nav-grupo .text-muted-foreground {
+	color: #3d4f45;
+}
+
+.nav-grupo-crm .text-muted-foreground {
+	color: #2f6f8f;
 }
 ```
 

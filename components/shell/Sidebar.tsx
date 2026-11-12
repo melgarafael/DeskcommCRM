@@ -330,7 +330,12 @@ export function SidebarContent({
           // seus itens — não há onde desenhar cabeçalho nem seta para fechá-lo.
           const aberto = collapsed || !gruposFechados.has(group.id);
           return (
-            <div key={group.id} className={cn("space-y-1", classeDoGrupo(group.id))}>
+            // `nav-grupo` (comum a todo grupo) e `nav-grupo-<id>` são contrato
+            // público: é por elas que o CSS personalizado de /admin/marca, que só
+            // aceita seletor de classe, dá cor ao menu inteiro ou a uma seção dele
+            // (#4463). Renomear quebra a folha de quem já instalou; documentado em
+            // docs/white-label.md.
+            <div key={group.id} className={cn("space-y-1 nav-grupo", classeDoGrupo(group.id))}>
               {/* Colapsado, o sidebar tem 64px: seis rótulos ali seriam ilegíveis.
                   Vira um filete separador, que preserva o agrupamento sem texto. */}
               {collapsed ? (
@@ -427,7 +432,7 @@ export function SidebarContent({
           );
         })}
       </nav>
-      <div className={cn("border-t px-2 py-1", classeDoGrupo(GRUPO_NO_RODAPE))}>
+      <div className={cn("border-t px-2 py-1 nav-grupo", classeDoGrupo(GRUPO_NO_RODAPE))}>
         {rodape && (
           <Link
             href={rodape.href}
