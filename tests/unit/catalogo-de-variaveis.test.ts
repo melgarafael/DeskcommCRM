@@ -15,6 +15,7 @@ import { interpolateTemplate } from "@/lib/inbox/template-vars";
 import { substituirVariaveis } from "@/lib/propostas/documento/variaveis";
 import {
   ARQUIVOS_DOS_RESOLVEDORES,
+  DICA_DO_CURINGA,
   GRUPOS_DE_VARIAVEL,
   LACUNAS_CONHECIDAS,
   RAIZES_DE_CAMPO,
@@ -545,13 +546,14 @@ describe("a forma do catálogo", () => {
     expect(texto).not.toMatch(/export\s+function\s+(resolver|renderizar|interpolar)\b/);
   });
 
-  it("o que o seletor passa por t() tem espanhol: descrição de cada entrada e título de cada grupo", () => {
+  it("o que o seletor passa por t() tem espanhol: descrição, título de grupo e dica de curinga", () => {
     // O seletor traduz em runtime (`t(v.descricao)`, `t(ROTULO_DO_GRUPO[g])`):
     // a varredura de `t("literal")` não enxerga essas chaves, e sem linha no
     // dicionário a lista sairia em português para quem usa em espanhol.
     const textos = [
       ...VARIAVEIS_DO_CATALOGO.map((v) => v.descricao),
       ...GRUPOS_DE_VARIAVEL.map((g) => ROTULO_DO_GRUPO[g]),
+      ...Object.values(DICA_DO_CURINGA),
     ];
     expect(textos.filter((texto) => !DICIONARIO[texto]?.es)).toEqual([]);
   });

@@ -127,6 +127,17 @@ export const RAIZES_DE_CAMPO = ["lead", "contato", "contact"] as const;
 export type RaizDeCampo = (typeof RAIZES_DE_CAMPO)[number];
 
 /**
+ * O que o seletor mostra no lugar de um curinga. `{{lead.*}}` não é token: a
+ * marcação não casa com `*` e iria LITERAL para o cliente — então o curinga não
+ * é item de inserir, é DICA de como escrever o caminho. Chave do dicionário.
+ */
+export const DICA_DO_CURINGA: Readonly<Record<RaizDeCampo, string>> = {
+  lead: "Para outro dado do negócio, escreva {{lead.nome_do_campo}}",
+  contato: "Para um campo do contato, escreva {{contato.nome_do_campo}}",
+  contact: "Para uma coluna do contato, escreva {{contact.nome_da_coluna}}",
+};
+
+/**
  * O catálogo. A ORDEM é a de leitura na tela: primeiro o que toda mensagem usa,
  * depois os aliases que só a automação tem, e por último os caminhos — que não
  * são uma variável, são um mapa.
@@ -502,9 +513,9 @@ export const VOCABULARIOS_ABERTOS: readonly VocabularioAberto[] = [
   {
     arquivo: "app/app/webhooks/_components/ActionConfigForm.tsx",
     dialeto:
-      "Três botões fixos (`{{nome}}`, `{{telefone}}`, `{{lead.title}}`) mais os campos do funil.",
+      "Extras do seletor único: o título do card (`{{lead.title}}`) e os campos do funil.",
     motivo:
-      "É seletor de tela, não resolvedor: o teste de paridade confere que todo botão fixo é uma " +
-      "variável catalogada e que o motor resolve o token que ele insere.",
+      "É seletor de tela, não resolvedor: o catálogo só tem o curinga `lead.*`, que o seletor " +
+      "mostra como dica (não insere), e o caminho concreto que a tela oferece vem daqui.",
   },
 ];

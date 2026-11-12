@@ -20736,6 +20736,16 @@ export const DICIONARIO: Traducoes = {
   "Caminho do CONTATO na automação: `{{contact.<coluna>}}` ou `{{contact.custom_fields.<campo>}}`": {
     es: "Ruta del CONTACTO en la automatización: `{{contact.<coluna>}}` o `{{contact.custom_fields.<campo>}}`",
   },
+  // A dica que o seletor mostra no lugar do curinga (`DICA_DO_CURINGA`).
+  "Para outro dado do negócio, escreva {{lead.nome_do_campo}}": {
+    es: "Para otro dato del negocio, escribe {{lead.nombre_del_campo}}",
+  },
+  "Para um campo do contato, escreva {{contato.nome_do_campo}}": {
+    es: "Para un campo del contacto, escribe {{contato.nombre_del_campo}}",
+  },
+  "Para uma coluna do contato, escreva {{contact.nome_da_coluna}}": {
+    es: "Para una columna del contacto, escribe {{contact.nombre_de_la_columna}}",
+  },
 
 
   // ─── o número oficial de pé, mas não inteiro (lib/channels/health.ts) ───

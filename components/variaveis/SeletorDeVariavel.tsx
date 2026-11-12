@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useT } from "@/hooks/i18n/useT";
 import {
+  DICA_DO_CURINGA,
   GRUPOS_DE_VARIAVEL,
   ROTULO_DO_GRUPO,
   entradasDe,
+  raizDoCuringa,
   type GrupoDeVariavel,
   type Resolvedor,
 } from "@/lib/variaveis/catalogo";
@@ -58,11 +60,19 @@ export function SeletorDeVariavel({
   const idDoSeletor = React.useId();
 
   const grupos = React.useMemo(() => {
-    const doCatalogo = entradasDe(fonte).map((v) => ({
-      chave: v.nome,
-      rotulo: t(v.descricao),
-      grupo: v.grupo,
-    }));
+    // O curinga (`lead.*`) NÃO é item de inserir: `{{lead.*}}` não casa com a
+    // marcação e iria literal para o cliente. Ele aparece como dica de como
+    // escrever o caminho; o caminho concreto que a tela quer oferecer (o
+    // `{{lead.title}}` da automação) vem em `extras`.
+    const doCatalogo = entradasDe(fonte).map((v) => {
+      const raiz = raizDoCuringa(v.nome);
+      return {
+        chave: v.nome,
+        rotulo: t(v.descricao),
+        grupo: v.grupo,
+        dica: raiz === null ? null : t(DICA_DO_CURINGA[raiz]),
+      };
+    });
     // O extra sem grupo é campo do negócio (o padrão declarado em
     // `AtalhoDeVariavel`): sem ele, nenhum grupo o casava e os campos do funil
     // sumiam da lista. Extra com a MESMA chave de uma variável do catálogo fica
@@ -72,7 +82,11 @@ export function SeletorDeVariavel({
     const chavesDoCatalogo = new Set(doCatalogo.map((v) => v.chave));
     const dosExtras = extras
       .filter((item) => !chavesDoCatalogo.has(item.chave.toLowerCase()))
-      .map((item) => ({ ...item, grupo: item.grupo ?? ("campo-do-negocio" as const) }));
+      .map((item) => ({
+        ...item,
+        grupo: item.grupo ?? ("campo-do-negocio" as const),
+        dica: null,
+      }));
     const todos = [...doCatalogo, ...dosExtras];
     const termo = busca.trim().toLowerCase();
     const filtrados = termo
@@ -129,17 +143,24 @@ export function SeletorDeVariavel({
               >
                 {t(ROTULO_DO_GRUPO[grupo])}
               </p>
-              {itens.map((item) => (
-                <button
-                  key={item.chave}
-                  type="button"
-                  onClick={() => inserir(item.chave)}
-                  className="flex w-full items-baseline gap-2 rounded-md px-2 py-1 text-left hover:bg-surface-elevated"
-                >
-                  <span className="font-mono text-xs">{`{{${item.chave}}}`}</span>
-                  <span className="truncate text-xs text-muted-foreground">{item.rotulo}</span>
-                </button>
-              ))}
+              {itens.map((item) =>
+                item.dica !== null ? (
+                  <div key={item.chave} className="px-2 py-1 text-xs text-muted-foreground">
+                    <p>{item.dica}</p>
+                    <p className="truncate">{item.rotulo}</p>
+                  </div>
+                ) : (
+                  <button
+                    key={item.chave}
+                    type="button"
+                    onClick={() => inserir(item.chave)}
+                    className="flex w-full items-baseline gap-2 rounded-md px-2 py-1 text-left hover:bg-surface-elevated"
+                  >
+                    <span className="font-mono text-xs">{`{{${item.chave}}}`}</span>
+                    <span className="truncate text-xs text-muted-foreground">{item.rotulo}</span>
+                  </button>
+                ),
+              )}
             </div>
           ))}
           {grupos.length === 0 && (

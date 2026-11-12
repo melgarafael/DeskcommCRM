@@ -384,19 +384,27 @@ function CreateOrMoveLeadForm({
 }
 
 /**
- * Os campos que a organização criou no funil viram itens do seletor compartilhado
- * (#3687). Eles NÃO entram no catálogo: a chave nasce em runtime, e o rótulo é
- * texto que a pessoa escreveu — dado não se traduz.
+ * O que a automação oferece além do catálogo (#3687): o título do card e os
+ * campos que a organização criou no funil. Os campos NÃO entram no catálogo: a
+ * chave nasce em runtime, e o rótulo é texto que a pessoa escreveu — dado não se
+ * traduz.
  *
- * As variáveis de CRM (`{{nome}}`, `{{telefone}}`, `{{lead.title}}`…) não estão
- * mais nesta lista: quem as oferece é `SeletorDeVariavel`, lendo o catálogo. Uma
- * lista local aqui era o defeito que a issue #3687 mediu.
+ * `{{lead.title}}` está aqui porque o catálogo só conhece o CURINGA `lead.*`, e
+ * curinga não é token: o seletor o mostra como dica, nunca como item de inserir
+ * (`{{lead.*}}` iria literal para o cliente). O título é o caminho que o botão
+ * antigo « Título do lead » inseria, e continua a um clique.
+ *
+ * As variáveis fechadas de CRM (`{{nome}}`, `{{telefone}}`…) não estão nesta
+ * lista: quem as oferece é `SeletorDeVariavel`, lendo o catálogo.
  */
-function atalhosDoFunil(settings: unknown): AtalhoDeVariavel[] {
-  return camposDoFunil(settings as Parameters<typeof camposDoFunil>[0]).map((f) => ({
-    chave: f.key,
-    rotulo: f.label,
-  }));
+function atalhosDaAutomacao(settings: unknown, t: ReturnType<typeof useT>): AtalhoDeVariavel[] {
+  return [
+    { chave: "lead.title", rotulo: t("Título do lead"), grupo: "campo-do-negocio" },
+    ...camposDoFunil(settings as Parameters<typeof camposDoFunil>[0]).map((f) => ({
+      chave: f.key,
+      rotulo: f.label,
+    })),
+  ];
 }
 
 function SendWhatsappForm({
@@ -417,7 +425,7 @@ function SendWhatsappForm({
   // monta a mensagem clica em "Serviço" em vez de adivinhar o nome interno. O
   // token é só a chave — `renderTemplate` a resolve em `lead.custom_fields`.
   const pipeline = useDefaultPipeline(true);
-  const atalhos = atalhosDoFunil(pipeline.data?.pipeline.settings ?? null);
+  const atalhos = atalhosDaAutomacao(pipeline.data?.pipeline.settings ?? null, t);
 
   const insertVar = (token: string) => {
     const el = textareaRef.current;
@@ -534,7 +542,7 @@ function SendEmailForm({
   const { data: membros } = useAssignableMembers(true);
   const pipeline = useDefaultPipeline(true);
   const atalhos: AtalhoDeVariavel[] = [
-    ...atalhosDoFunil(pipeline.data?.pipeline.settings ?? null),
+    ...atalhosDaAutomacao(pipeline.data?.pipeline.settings ?? null, t),
     // #2642 — a variável desta ação: o resumo do negócio montado no disparo
     // (só dado de forma fixa + atalho para a ficha; doc 176 A). Fica só no
     // e-mail de propósito: no WhatsApp da equipe o corpo É o resumo, sem

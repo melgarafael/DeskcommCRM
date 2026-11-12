@@ -16,7 +16,7 @@
  * Em português, a tela sai como antes (salvo o cartão do e-mail).
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useState, type ComponentProps, type ReactNode } from "react";
@@ -36,6 +36,8 @@ import { CaixaDaAutomacao } from "@/app/app/webhooks/automacoes/[id]/_components
 import { PaletaDaAutomacao } from "@/app/app/webhooks/automacoes/[id]/_components/PaletaDaAutomacao";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
+import { SeletorDeVariavel } from "@/components/variaveis/SeletorDeVariavel";
+import { RESOLVEDORES } from "@/lib/variaveis/catalogo";
 
 afterEach(cleanup);
 
@@ -107,8 +109,10 @@ describe("os rótulos que a tela passava por t() sem serem chave", () => {
  * texto. O que este bloco passa a cobrar é o seletor — a lista abre, o item do
  * catálogo está lá com o token e com o rótulo no idioma de quem usa, e clicar
  * insere o token no corpo. As três variáveis antigas continuam alcançáveis:
- * `{{nome}}` e `{{telefone}}` são itens do catálogo e `{{lead.*}}` é o item de
- * caminho que cobre `{{lead.title}}`.
+ * `{{nome}}` e `{{telefone}}` são itens do catálogo e `{{lead.title}}` é item
+ * extra da automação. O curinga `{{lead.*}}` NÃO é item de inserir: a marcação
+ * não casa com `*` e o token iria literal para o cliente — ele aparece como dica
+ * de como escrever o caminho.
  */
 const ABRIR_SELETOR = { es: "Insertar variable", pt: "Inserir variável" } as const;
 
@@ -152,15 +156,52 @@ describe("as ações de uma automação", () => {
     await user.click(screen.getByRole("button", { name: ABRIR_SELETOR.pt }));
     expect(itemDoSeletor("{{nome}}", "Nome do contato, como está no cadastro")).toBeTruthy();
     expect(itemDoSeletor("{{telefone}}", "Telefone do contato, como está no cadastro")).toBeTruthy();
-    // O caminho do negócio (`{{lead.title}}` era um botão fixo) virou o item
-    // de curinga do catálogo; o token específico continua documentado nele.
-    expect(itemDoSeletor("{{lead.*}}", "Caminho do NEGÓCIO")).toBeTruthy();
     // O efeito do botão antigo continua sendo o do seletor: o token entra no corpo.
     await user.click(itemDoSeletor("{{nome}}", "Nome do contato, como está no cadastro"));
     const corpo = screen
       .getAllByRole("textbox")
       .find((campo) => (campo as HTMLTextAreaElement).value === "{{nome}}");
     expect(corpo).toBeTruthy();
+  });
+
+  it("o curinga {{lead.*}} é só dica e não insere (iria literal ao cliente); {{lead.title}}, como o botão antigo, insere", async () => {
+    const user = userEvent.setup();
+    render(noIdioma("pt-BR", <EmailComCorpo />));
+    await user.click(screen.getByRole("button", { name: ABRIR_SELETOR.pt }));
+    const lista = screen.getByRole("dialog", { name: ABRIR_SELETOR.pt });
+
+    // A dica existe, com o caminho escrito por extenso, e não é botão.
+    const dica = within(lista).getByText(/\{\{lead\.nome_do_campo\}\}/);
+    expect(dica).toBeTruthy();
+    expect(within(lista).queryByRole("button", { name: (nome) => nome.includes("{{lead.*}}") })).toBeNull();
+    // Clicar nela não escreve nada no corpo.
+    await user.click(dica);
+    expect(
+      screen.getAllByRole("textbox").some((campo) => (campo as HTMLTextAreaElement).value.includes("lead")),
+    ).toBe(false);
+
+    // O título do card continua a um clique, e o token que entra é o que o motor resolve.
+    await user.click(itemDoSeletor("{{lead.title}}", "Título do lead"));
+    const corpo = screen
+      .getAllByRole("textbox")
+      .find((campo) => (campo as HTMLTextAreaElement).value === "{{lead.title}}");
+    expect(corpo).toBeTruthy();
+  });
+
+  it("nenhum item inserível do seletor tem `*`, em nenhuma fonte: o token sairia literal", async () => {
+    const user = userEvent.setup();
+    for (const fonte of RESOLVEDORES) {
+      render(noIdioma("pt-BR", <SeletorDeVariavel fonte={fonte} onInserir={() => {}} />));
+      await user.click(screen.getByRole("button", { name: ABRIR_SELETOR.pt }));
+      const lista = screen.getByRole("dialog", { name: ABRIR_SELETOR.pt });
+      const itens = within(lista).queryAllByRole("button");
+      expect(itens.length, `a lista de ${fonte} abriu vazia`).toBeGreaterThan(0);
+      expect(
+        itens.map((b) => b.textContent ?? "").filter((texto) => texto.includes("*")),
+        `fonte ${fonte}`,
+      ).toEqual([]);
+      cleanup();
+    }
   });
 });
 
