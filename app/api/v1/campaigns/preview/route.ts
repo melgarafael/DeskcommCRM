@@ -74,10 +74,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     const resumo = await preverAudiencia(admin, {
       organizationId: authz.org.orgId,
       filtro: parsed.data.audience_filter,
+      // No e-mail o corpo é o do e-mail: as variáveis (`{{nome}}`) saem daqui,
+      // como no WhatsApp — o que muda é o endereço exigido (#3441).
       corpo: parsed.data.message_body,
       agora: new Date(),
       campanhaId: parsed.data.campaign_id,
       ...(modelo ? { modelo } : {}),
+      ...(parsed.data.canal === "email" ? { canal: "email" as const } : {}),
     });
     return ok(
       {
