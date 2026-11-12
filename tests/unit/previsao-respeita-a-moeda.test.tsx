@@ -134,4 +134,17 @@ describe("painel de previsão em Métricas", () => {
     expect(texto).toContain("Recorrência fora do mensal — não entra na projeção por mês");
     expect(texto).toContain("BRL: R$ 1.200,00 · 1 negócios");
   });
+
+  it("⭐ previsão de um recorte avisa na tela (#4322); a completa não ganha aviso", () => {
+    dados = { ...previsao(baldeDe("BRL", 100_000, 50_000)), truncado: true };
+    const { unmount } = render(<PrevisaoPanel />);
+    expect(screen.getByTestId("previsao-truncada").textContent).toContain(
+      "Os valores abaixo são parciais.",
+    );
+    unmount();
+
+    dados = previsao(baldeDe("BRL", 100_000, 50_000));
+    render(<PrevisaoPanel />);
+    expect(screen.queryByTestId("previsao-truncada")).toBeNull();
+  });
 });
