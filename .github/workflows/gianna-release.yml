@@ -149,3 +149,41 @@ jobs:
           gh release create "v${VERSION}" --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --latest --title "Gianna ${VERSION}" \
             --notes-file "$RUNNER_TEMP/gianna-release.md"
+
+  deploy:
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      VERSION: ${{ needs.version.outputs.number }}
+      SHA: ${{ github.sha }}
+    steps:
+      - name: Atualizar a VPS
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -p "$VPS_PORT" -o StrictHostKeyChecking=accept-new \
+            -o ServerAliveInterval=15 "root@$VPS_HOST" \
+            "VERSION='$VERSION' SHA='$SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/gianna
+          git fetch --tags origin
+          git checkout --detach "$SHA"
+          cp .env ".env.bak-pre-$VERSION"
+          sed -i -E \
+            -e "s|^(APP_IMAGE=ghcr.io/[^:]+/deskcommcrm):.*|\1:$VERSION|" \
+            -e "s|^(WORKER_IMAGE=ghcr.io/[^:]+/deskcomm-worker):.*|\1:$VERSION|" \
+            -e "s|^(SCHEDULER_IMAGE=ghcr.io/[^:]+/deskcomm-scheduler):.*|\1:$VERSION|" \
+            -e "s|^(VOICE_AGENT_IMAGE=ghcr.io/[^:]+/deskcomm-voice-agent):.*|\1:$VERSION|" \
+            .env
+          COMPOSE="docker compose -f docker-compose.prod.yml -f docker-compose.supabase-rede.yml -f docker-compose.tunel.yml"
+          $COMPOSE pull
+          $COMPOSE up -d
+          docker image prune -f >/dev/null
+          REMOTE
