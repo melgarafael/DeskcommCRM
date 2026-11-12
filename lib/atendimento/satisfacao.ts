@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoTexto } from "@/lib/i18n/idiomas";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 
 /**
@@ -24,6 +27,22 @@ import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
  * repetir o POST. O índice parcial `satisfacao_um_pedido_aberto_por_conversa`
  * é quem responde — o INSERT perde a corrida e a segunda pergunta NÃO sai. Sem
  * ele, uma guarda em memória responderia "não perguntei" nas duas chamadas.
+ *
+ * ─── Número solto não engole o atendimento ─────────────────────────────────
+ *
+ * Um "2" só vira nota enquanto a conversa está DE FATO esperando a nota: há
+ * pedido `aguardando`, a janela não venceu e, desde a pergunta, NADA mais foi
+ * enviado ao cliente. Se a equipe ou a IA voltou a falar (um menu, uma
+ * pergunta), o atendimento seguiu, e o "2" é resposta a ELA: o pedido fecha
+ * como `sem_nota` e a mensagem segue o caminho normal.
+ *
+ * ─── A pergunta passa pelos portões de qualquer envio ao cliente ──────────
+ *
+ * Contato bloqueado (STOP) ou pessoal não recebe a pergunta, e fora da janela
+ * de envio do número (`channel_knobs`, a mesma régua da automação) ela não
+ * sai — não é adiada: pesquisa feita horas depois não mede o atendimento.
+ * Qualquer recusa do envio fecha o pedido como `sem_nota`, para que nenhum
+ * pedido sem pergunta fique aberto capturando número.
  *
  * ─── Por que `sem_nota` existe ─────────────────────────────────────────────
  *
@@ -102,18 +121,31 @@ function venceu(expiraEm: string | null | undefined, quando: Date): boolean {
 
 export type DesfechoDoPedido =
   | { pedida: true; pedidoId: string }
-  | { pedida: false; motivo: "desligada" | "ja_pedida" | "falha_ao_enviar" | "sem_contato" | "org_parada" | "erro" };
+  | {
+      pedida: false;
+      motivo:
+        | "desligada"
+        | "ja_pedida"
+        | "falha_ao_enviar"
+        | "sem_contato"
+        | "contato_bloqueado"
+        | "contato_pessoal"
+        | "fora_da_janela"
+        | "org_parada"
+        | "erro";
+    };
 
-interface LinhaDeSettings {
+interface LinhaDaOrganizacao {
   settings?: unknown;
+  locale?: string | null;
 }
 
 /**
  * Pergunta UMA vez, ao encerrar. Nunca lança: fechar aconteceu antes e não pode
  * ser desfeito por causa da pesquisa.
  *
- * `settings` pode vir de quem já leu a organização (a rota de fechamento não
- * tem por que reler); quando não vem, é lida aqui.
+ * `settings` pode vir de quem já leu a organização; quando não vem, é lida
+ * aqui, junto com o idioma em que a pergunta padrão sai.
  */
 export async function pedirSatisfacaoAoEncerrar(
   admin: SupabaseClient,
@@ -121,25 +153,49 @@ export async function pedirSatisfacaoAoEncerrar(
     organizationId: string;
     conversationId: string;
     contactId: string | null;
+    /** O número da conversa: é dele a janela de envio. */
+    channelSessionId?: string | null;
     settings?: unknown;
     agora?: Date;
   },
 ): Promise<DesfechoDoPedido> {
+  let pedidoId: string | undefined;
   try {
     let settings = entrada.settings;
+    let locale: string | null = null;
     if (settings === undefined) {
       const { data } = await admin
         .from("organizations")
-        .select("settings")
+        .select("settings, locale")
         .eq("id", entrada.organizationId)
         .maybeSingle();
-      settings = (data as LinhaDeSettings | null)?.settings;
+      settings = (data as LinhaDaOrganizacao | null)?.settings;
+      locale = (data as LinhaDaOrganizacao | null)?.locale ?? null;
     }
     const opcao = lerOpcaoDaSatisfacao(settings);
     if (!opcao.ligado) return { pedida: false, motivo: "desligada" };
     if (!entrada.contactId) return { pedida: false, motivo: "sem_contato" };
 
+    // Os portões de qualquer envio ao cliente, ANTES de o pedido nascer: um
+    // pedido sem pergunta ficaria aberto à espera de um número.
+    const { data: contato } = await admin
+      .from("contacts")
+      .select("is_blocked, is_personal")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.contactId)
+      .maybeSingle();
+    const linhaDoContato = contato as { is_blocked?: boolean; is_personal?: boolean } | null;
+    if (!linhaDoContato) return { pedida: false, motivo: "sem_contato" };
+    if (linhaDoContato.is_blocked === true) return { pedida: false, motivo: "contato_bloqueado" };
+    if (linhaDoContato.is_personal === true) return { pedida: false, motivo: "contato_pessoal" };
+
     const agora = entrada.agora ?? new Date();
+    if (
+      entrada.channelSessionId &&
+      (await adiarAteAJanelaAbrir(admin, entrada.organizationId, entrada.channelSessionId, agora)) !== null
+    ) {
+      return { pedida: false, motivo: "fora_da_janela" };
+    }
     const expira = new Date(agora.getTime() + opcao.janela_horas * 60 * 60 * 1000);
 
     // O PEDIDO NASCE ANTES DO ENVIO. Se o envio falhar, existe um pedido que
@@ -163,8 +219,14 @@ export async function pedirSatisfacaoAoEncerrar(
       if (erroDoPedido.code === "23505") return { pedida: false, motivo: "ja_pedida" };
       return { pedida: false, motivo: "erro" };
     }
-    const pedidoId = (criado as { id?: string } | null)?.id;
+    pedidoId = (criado as { id?: string } | null)?.id;
     if (!pedidoId) return { pedida: false, motivo: "erro" };
+    // A pergunta padrão sai no idioma da organização; a escrita pela empresa
+    // sai como foi escrita.
+    const pergunta =
+      opcao.pergunta === TEXTO_DA_PERGUNTA_PADRAO
+        ? traduzir(TEXTO_DA_PERGUNTA_PADRAO, idiomaDoTexto(locale))
+        : opcao.pergunta;
 
     const { sendMessageHandler } = await import("@/app/api/v1/messages/_handler");
     const mensagem = await sendMessageHandler(
@@ -177,7 +239,7 @@ export async function pedirSatisfacaoAoEncerrar(
       {
         conversation_id: entrada.conversationId,
         type: "text",
-        body: opcao.pergunta,
+        body: pergunta,
         metadata: { pesquisa_de_satisfacao: true, pedido_id: pedidoId },
       },
     );
@@ -185,11 +247,7 @@ export async function pedirSatisfacaoAoEncerrar(
     // `queued` é canal fora do ar: a mensagem pode nunca sair. Fechar o pedido
     // como `sem_nota` é a verdade disponível — não há pergunta para responder.
     if (mensagem.status !== "sent" && mensagem.status !== "queued") {
-      await admin
-        .from("satisfacao_do_atendimento")
-        .update({ status: "sem_nota" })
-        .eq("id", pedidoId)
-        .eq("organization_id", entrada.organizationId);
+      await fecharSemNota(admin, entrada.organizationId, pedidoId);
       return { pedida: false, motivo: "falha_ao_enviar" };
     }
     return { pedida: true, pedidoId };
@@ -198,12 +256,31 @@ export async function pedirSatisfacaoAoEncerrar(
     // chamador; aqui a resposta é "não perguntei".
     //
     // `OrgNaoOperanteError` (org suspensa, redigida ou arquivada) cai aqui de
-    // propósito: a pergunta não sai e o pedido já fica com o desfecho que o
-    // banco sabe dar (`sem_nota` na varredura de vencidos). Nada é gravado como
-    // enviado e nada é retentado — o encerramento já aconteceu.
+    // propósito: a pergunta não sai e nada é retentado — o encerramento já
+    // aconteceu. Recusa do envio (contato bloqueado no meio do caminho, janela
+    // de 24h do canal oficial) também cai aqui. Em todos, o pedido que nasceu
+    // fecha como `sem_nota`: aberto, ele capturaria o próximo número do cliente
+    // como nota de uma pergunta que nunca saiu.
+    if (pedidoId) {
+      try {
+        await fecharSemNota(admin, entrada.organizationId, pedidoId);
+      } catch {
+        // O banco caiu entre o envio e o fechamento: o desfecho continua "não
+        // perguntei", e a varredura de vencidos fecha o pedido no fim da janela.
+      }
+    }
     if (erro instanceof OrgNaoOperanteError) return { pedida: false, motivo: "org_parada" };
     return { pedida: false, motivo: "erro" };
   }
+}
+
+async function fecharSemNota(admin: SupabaseClient, organizationId: string, pedidoId: string): Promise<void> {
+  await admin
+    .from("satisfacao_do_atendimento")
+    .update({ status: "sem_nota" })
+    .eq("id", pedidoId)
+    .eq("organization_id", organizationId)
+    .eq("status", "aguardando");
 }
 
 /**
@@ -223,19 +300,23 @@ export async function capturarRespostaDeSatisfacao(
     messageId?: string | null;
     enviadaEm?: Date;
   },
-): Promise<{ capturada: boolean; nota?: number; motivo?: "sem_pedido" | "nao_e_nota" | "vencida" }> {
+): Promise<{
+  capturada: boolean;
+  nota?: number;
+  motivo?: "sem_pedido" | "nao_e_nota" | "vencida" | "conversa_seguiu";
+}> {
   const nota = lerNotaDaResposta(entrada.texto);
   if (nota === null) return { capturada: false, motivo: "nao_e_nota" };
 
   try {
     const { data: pedido } = await admin
       .from("satisfacao_do_atendimento")
-      .select("id, expira_em")
+      .select("id, expira_em, perguntado_em")
       .eq("organization_id", entrada.organizationId)
       .eq("conversation_id", entrada.conversationId)
       .eq("status", "aguardando")
       .maybeSingle();
-    const linha = pedido as { id?: string; expira_em?: string } | null;
+    const linha = pedido as { id?: string; expira_em?: string; perguntado_em?: string } | null;
     if (!linha?.id) return { capturada: false, motivo: "sem_pedido" };
 
     const quando = entrada.enviadaEm ?? new Date();
@@ -246,6 +327,30 @@ export async function capturarRespostaDeSatisfacao(
         .eq("id", linha.id)
         .eq("status", "aguardando");
       return { capturada: false, motivo: "vencida" };
+    }
+
+    // A conversa ainda espera a nota? Se, desde a pergunta, saiu QUALQUER outra
+    // mensagem ao cliente (a equipe reabriu, a IA mandou um menu), o número é
+    // resposta a ela — fecha o pedido e deixa a mensagem seguir.
+    // (`perguntado_em` é `not null` no banco; sem ele, toda mensagem enviada
+    // conta, e o número segue como conversa.)
+    const { data: enviadasDepois, error: erroDasEnviadas } = await admin
+      .from("messages")
+      .select("id, metadata")
+      .eq("organization_id", entrada.organizationId)
+      .eq("conversation_id", entrada.conversationId)
+      .eq("direction", "outbound")
+      .gt("sent_at", linha.perguntado_em ?? "1970-01-01T00:00:00.000Z")
+      .limit(5);
+    // Sem saber se a conversa seguiu, o número NÃO vira nota: engolir uma
+    // resposta de menu é pior do que perder uma nota.
+    if (erroDasEnviadas) return { capturada: false, motivo: "sem_pedido" };
+    const outras = ((enviadasDepois ?? []) as Array<{ metadata?: Record<string, unknown> | null }>).filter(
+      (m) => m.metadata?.pesquisa_de_satisfacao !== true,
+    );
+    if (outras.length > 0) {
+      await fecharSemNota(admin, entrada.organizationId, linha.id);
+      return { capturada: false, motivo: "conversa_seguiu" };
     }
 
     // O `eq("status","aguardando")` é o CAS: duas mensagens "5" quase

@@ -4,7 +4,9 @@
  * Um `SupabaseClient` de mentira que guarda LINHAS de verdade em memória — é o
  * que permite provar o pedido e a nota em vez de só conferir que uma função foi
  * chamada. Cobre apenas o subconjunto que a fatia usa: `select/insert/update`
- * com `eq`, `order`, `limit`, `maybeSingle` e `rpc`.
+ * com `eq`, `gt`, `order`, `limit`, `maybeSingle` e `rpc` — e, fora da tabela
+ * do pedido, só o que a pesquisa lê: o contato (os portões do envio) e as
+ * mensagens ENVIADAS depois da pergunta (a conversa seguiu?).
  *
  * Não é genérico de propósito: um duplo genérico acabaria reimplementando
  * PostgREST, e o que se quer medir aqui é o comportamento do NOSSO código.
@@ -25,8 +27,21 @@ export interface LinhaSatisfacao {
   mensagem_da_resposta_id?: string | null;
 }
 
+/** Uma mensagem já gravada na conversa — só as colunas que a pesquisa lê. */
+export interface MensagemDaConversa {
+  id: string;
+  organization_id: string;
+  conversation_id: string;
+  direction: "inbound" | "outbound";
+  sent_at: string;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface EstadoDoBanco {
   settings: Record<string, unknown>;
+  /** O contato da conversa. `null` = o contato não existe na organização. */
+  contato: { is_blocked: boolean; is_personal: boolean } | null;
+  mensagens: MensagemDaConversa[];
   pedidos: LinhaSatisfacao[];
   atualizacoes: Array<{ tabela: string; filtros: Filtros; valores: Filtros }>;
   rpcs: Array<{ nome: string; args: Filtros }>;
@@ -44,10 +59,14 @@ function casa(linha: Record<string, unknown>, filtros: Filtros): boolean {
 
 export function bancoFake(inicial: {
   settings?: Record<string, unknown>;
+  contato?: { is_blocked: boolean; is_personal: boolean } | null;
+  mensagens?: MensagemDaConversa[];
   pedidos?: LinhaSatisfacao[];
 } = {}): DuploDeBanco {
   const estado: EstadoDoBanco = {
     settings: inicial.settings ?? {},
+    contato: inicial.contato === undefined ? { is_blocked: false, is_personal: false } : inicial.contato,
+    mensagens: [...(inicial.mensagens ?? [])],
     pedidos: [...(inicial.pedidos ?? [])],
     atualizacoes: [],
     rpcs: [],
@@ -57,7 +76,13 @@ export function bancoFake(inicial: {
   let sequencia = 0;
   const novoId = (prefixo: string) => `${prefixo}-${++sequencia}`;
 
-  function resolver(tabela: string, op: "select" | "insert" | "update", valores: Filtros, filtros: Filtros): {
+  function resolver(
+    tabela: string,
+    op: "select" | "insert" | "update",
+    valores: Filtros,
+    filtros: Filtros,
+    maioresQue: Record<string, string>,
+  ): {
     data: unknown;
     error: { code?: string; message: string } | null;
   } {
@@ -73,6 +98,19 @@ export function bancoFake(inicial: {
         return { data: { id: "org", settings: estado.settings }, error: null };
       }
       return { data: { settings: estado.settings }, error: null };
+    }
+
+    if (tabela === "contacts") return { data: estado.contato, error: null };
+
+    if (tabela === "messages") {
+      const lista = estado.mensagens.filter(
+        (m) =>
+          casa(m as unknown as Record<string, unknown>, filtros) &&
+          Object.entries(maioresQue).every(
+            ([coluna, valor]) => String((m as unknown as Record<string, unknown>)[coluna]) > valor,
+          ),
+      );
+      return { data: lista, error: null };
     }
 
     if (tabela === "satisfacao_do_atendimento") {
@@ -116,8 +154,9 @@ export function bancoFake(inicial: {
     let op: "select" | "insert" | "update" = "select";
     let valores: Filtros = {};
     const filtros: Filtros = {};
+    const maioresQue: Record<string, string> = {};
 
-    const terminar = () => resolver(tabela, op, valores, filtros);
+    const terminar = () => resolver(tabela, op, valores, filtros, maioresQue);
 
     const api: Record<string, unknown> = {
       select: () => api,
@@ -133,6 +172,10 @@ export function bancoFake(inicial: {
       },
       eq: (coluna: string, valor: unknown) => {
         filtros[coluna] = valor;
+        return api;
+      },
+      gt: (coluna: string, valor: string) => {
+        maioresQue[coluna] = valor;
         return api;
       },
       order: () => api,

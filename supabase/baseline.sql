@@ -75059,7 +75059,7 @@ create trigger trg_routing_nova_mensagem_do_cliente
 -- `status` tem três valores, e o terceiro é o que impede a conta de mentir:
 -- `aguardando` (perguntou e o cliente ainda não respondeu), `respondida` (a
 -- mensagem de 1 a 5 chegou e a nota é dela) e `sem_nota` (a janela venceu sem
--- resposta). Quem calcula média usa só `respondida`; quem conta pedidos usa as
+-- resposta, a conversa seguiu antes da nota, ou a pergunta não saiu). Quem calcula média usa só `respondida`; quem conta pedidos usa as
 -- três. Tratar "sem resposta" como nota zero faria a média despencar por
 -- silêncio, que é o defeito clássico de CSAT.
 create table if not exists public.satisfacao_do_atendimento (
@@ -75121,7 +75121,7 @@ create policy satisfacao_so_quem_gerencia_select on public.satisfacao_do_atendim
   );
 
 comment on table public.satisfacao_do_atendimento is
-  'Um pedido de nota 1-5 por encerramento de atendimento (#4023). status aguardando → respondida (nota) ou sem_nota (janela vencida). Um pedido ABERTO por conversa. Leitura só manager+ (a média não é por conversa para quem não gerencia).';
+  'Um pedido de nota 1-5 por encerramento de atendimento (#4023). status aguardando → respondida (nota) ou sem_nota (janela vencida, conversa que seguiu antes da nota, ou pergunta que não saiu). Um pedido ABERTO por conversa. Leitura só manager+ (a média não é por conversa para quem não gerencia).';
 comment on column public.satisfacao_do_atendimento.expira_em is
   'Fim da janela de resposta. Vencido, o pedido vira sem_nota por fn_satisfacao_fechar_vencidas — nunca nota zero.';
 comment on column public.satisfacao_do_atendimento.mensagem_da_resposta_id is

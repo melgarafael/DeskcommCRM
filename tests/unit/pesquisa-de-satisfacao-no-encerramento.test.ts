@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { ApiError } from "@/lib/api/types";
+import { adiarAteAJanelaAbrir } from "@/lib/automation/janela-do-canal";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
@@ -19,6 +21,9 @@ import { bancoFake } from "./_duplo-de-banco-692";
 import { GET as metricsDaSatisfacao } from "@/app/api/v1/metrics/satisfacao/route";
 
 vi.mock("@/app/api/v1/messages/_handler", () => ({ sendMessageHandler: vi.fn() }));
+// A janela de envio do número (`channel_knobs`) é DUBLÊ: a régua real lê o
+// relógio e o fuso, e um teste que depende da hora real reprova de madrugada.
+vi.mock("@/lib/automation/janela-do-canal", () => ({ adiarAteAJanelaAbrir: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
@@ -40,7 +45,13 @@ vi.mock("@/lib/logger", () => ({
  *   - pedido vencido vira `sem_nota` e NUNCA entra na média: silêncio não é
  *     zero;
  *   - média e contagem com piso `manager`: o `agent` recebe 403 da rota de
- *     métricas.
+ *     métricas;
+ *   - NÚMERO SOLTO NÃO ENGOLE O ATENDIMENTO: o "2" logo depois da pergunta é
+ *     nota; o "2" depois que a equipe ou a IA voltou a falar é conversa, e o
+ *     pedido fecha como `sem_nota`;
+ *   - os portões de qualquer envio: contato bloqueado (STOP) ou pessoal não
+ *     recebe a pergunta, fora da janela de envio do número ela não sai, e a
+ *     recusa do envio fecha o pedido (aberto, ele capturaria o próximo número).
  *
  * ─── SABOTAGEM ──────────────────────────────────────────────────────────────
  *
@@ -48,7 +59,10 @@ vi.mock("@/lib/logger", () => ({
  *     fábrica acusa;
  *   - tirar o `status = aguardando` da leitura antes de gravar a nota: a
  *     segunda resposta sobrescreve a primeira e o caso do CAS acusa;
- *   - contar `sem_nota` como nota 0: a média do caso de vencido acusa.
+ *   - contar `sem_nota` como nota 0: a média do caso de vencido acusa;
+ *   - tirar a leitura das mensagens enviadas depois da pergunta: o caso "a
+ *     equipe voltou a falar" acusa (o "2" vira nota);
+ *   - tirar o `fecharSemNota` do `catch`: o caso da recusa do envio acusa.
  */
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -60,6 +74,7 @@ const LIGADA = { satisfacao: { ligado: true } };
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(sendMessageHandler).mockResolvedValue({ id: "msg-1", status: "sent" } as never);
+  vi.mocked(adiarAteAJanelaAbrir).mockResolvedValue(null);
 });
 
 describe("#4023 — a pergunta sai UMA vez, e só com a opção ligada", () => {
@@ -151,8 +166,179 @@ describe("#4023 — a pergunta sai UMA vez, e só com a opção ligada", () => {
     });
 
     expect(desfecho).toEqual({ pedida: false, motivo: "org_parada" });
-    expect(banco.estado.pedidos[0]?.status).toBe("aguardando");
+    // Fechado, não aberto: um pedido sem pergunta não pode esperar número.
+    expect(banco.estado.pedidos[0]?.status).toBe("sem_nota");
     expect(sendMessageHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("#4023 — a pergunta passa pelos portões de qualquer envio ao cliente", () => {
+  it("contato bloqueado (STOP) não recebe a pergunta e nenhum pedido nasce", async () => {
+    const banco = bancoFake({ settings: LIGADA, contato: { is_blocked: true, is_personal: false } });
+
+    const desfecho = await pedirSatisfacaoAoEncerrar(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      contactId: CONTATO,
+    });
+
+    expect(desfecho).toEqual({ pedida: false, motivo: "contato_bloqueado" });
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(banco.estado.pedidos).toHaveLength(0);
+  });
+
+  it("contato pessoal não recebe a pergunta e nenhum pedido nasce", async () => {
+    const banco = bancoFake({ settings: LIGADA, contato: { is_blocked: false, is_personal: true } });
+
+    const desfecho = await pedirSatisfacaoAoEncerrar(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      contactId: CONTATO,
+    });
+
+    expect(desfecho).toEqual({ pedida: false, motivo: "contato_pessoal" });
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(banco.estado.pedidos).toHaveLength(0);
+  });
+
+  it("fora da janela de envio do número a pergunta não sai (e não é adiada)", async () => {
+    vi.mocked(adiarAteAJanelaAbrir).mockResolvedValue("2026-11-13T10:00:00.000Z");
+    const banco = bancoFake({ settings: LIGADA });
+    const agora = new Date("2026-11-13T02:30:00.000Z");
+
+    const desfecho = await pedirSatisfacaoAoEncerrar(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      contactId: CONTATO,
+      channelSessionId: "sessao-1",
+      agora,
+    });
+
+    expect(desfecho).toEqual({ pedida: false, motivo: "fora_da_janela" });
+    expect(adiarAteAJanelaAbrir).toHaveBeenCalledWith(banco.client, ORG, "sessao-1", agora);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(banco.estado.pedidos).toHaveLength(0);
+  });
+
+  it("dentro da janela a pergunta sai", async () => {
+    const banco = bancoFake({ settings: LIGADA });
+
+    const desfecho = await pedirSatisfacaoAoEncerrar(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      contactId: CONTATO,
+      channelSessionId: "sessao-1",
+    });
+
+    expect(desfecho.pedida).toBe(true);
+    expect(adiarAteAJanelaAbrir).toHaveBeenCalledTimes(1);
+    expect(sendMessageHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("o envio recusado (ex.: janela de 24h do canal oficial) fecha o pedido como sem nota", async () => {
+    vi.mocked(sendMessageHandler).mockRejectedValue(
+      new ApiError(422, "janela_fechada", undefined, "req-1", "Janela de 24 horas fechada"),
+    );
+    const banco = bancoFake({ settings: LIGADA });
+
+    const desfecho = await pedirSatisfacaoAoEncerrar(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      contactId: CONTATO,
+    });
+
+    expect(desfecho).toEqual({ pedida: false, motivo: "erro" });
+    expect(banco.estado.pedidos[0]?.status).toBe("sem_nota");
+  });
+});
+
+describe("#4023 — número solto não engole o atendimento", () => {
+  const PERGUNTADO_EM = "2026-11-12T15:00:00.000Z";
+  const pedidoAberto = () => ({
+    id: "pedido-1",
+    organization_id: ORG,
+    conversation_id: CONVERSA,
+    contact_id: CONTATO,
+    status: "aguardando" as const,
+    perguntado_em: PERGUNTADO_EM,
+    expira_em: "2026-11-13T15:00:00.000Z",
+  });
+  const aPergunta = {
+    id: "msg-pergunta",
+    organization_id: ORG,
+    conversation_id: CONVERSA,
+    direction: "outbound" as const,
+    sent_at: "2026-11-12T15:00:01.000Z",
+    metadata: { pesquisa_de_satisfacao: true, pedido_id: "pedido-1" },
+  };
+
+  it("o '2' logo depois da pergunta é a NOTA", async () => {
+    const banco = bancoFake({ pedidos: [pedidoAberto()], mensagens: [aPergunta] });
+
+    const desfecho = await capturarRespostaDeSatisfacao(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      texto: "2",
+      messageId: "msg-do-cliente",
+      enviadaEm: new Date("2026-11-12T15:05:00.000Z"),
+    });
+
+    expect(desfecho).toEqual({ capturada: true, nota: 2 });
+    expect(banco.estado.pedidos[0]?.status).toBe("respondida");
+  });
+
+  it("o '2' depois que a equipe voltou a falar é CONVERSA: não vira nota e o pedido fecha", async () => {
+    const banco = bancoFake({
+      pedidos: [pedidoAberto()],
+      mensagens: [
+        aPergunta,
+        {
+          id: "msg-menu",
+          organization_id: ORG,
+          conversation_id: CONVERSA,
+          direction: "outbound",
+          sent_at: "2026-11-12T15:10:00.000Z",
+          metadata: {},
+        },
+      ],
+    });
+
+    const desfecho = await capturarRespostaDeSatisfacao(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      texto: "2",
+      messageId: "msg-do-cliente",
+      enviadaEm: new Date("2026-11-12T15:11:00.000Z"),
+    });
+
+    expect(desfecho).toEqual({ capturada: false, motivo: "conversa_seguiu" });
+    expect(banco.estado.pedidos[0]?.status).toBe("sem_nota");
+    expect(banco.estado.pedidos[0]?.nota ?? null).toBeNull();
+
+    // E o número SEGUINTE também é conversa: não há mais pedido esperando.
+    const depois = await capturarRespostaDeSatisfacao(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      texto: "5",
+      messageId: "msg-do-cliente-2",
+      enviadaEm: new Date("2026-11-12T15:12:00.000Z"),
+    });
+    expect(depois).toEqual({ capturada: false, motivo: "sem_pedido" });
+  });
+
+  it("o número depois da janela não vira nota (tempo limitado)", async () => {
+    const banco = bancoFake({ pedidos: [pedidoAberto()], mensagens: [aPergunta] });
+
+    const desfecho = await capturarRespostaDeSatisfacao(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      texto: "4",
+      messageId: "msg-do-cliente",
+      enviadaEm: new Date("2026-11-14T09:00:00.000Z"),
+    });
+
+    expect(desfecho).toEqual({ capturada: false, motivo: "vencida" });
+    expect(banco.estado.pedidos[0]?.status).toBe("sem_nota");
   });
 });
 
