@@ -57,4 +57,13 @@ describe("erro de banco no executor: permanente tem frase própria", () => {
       "Não foi possível sincronizar. Confira a conexão e tente novamente.",
     );
   });
+
+  it("falha de rede (`code` vazio ou indefinido) também não é guarda permanente", () => {
+    for (const code of ["", undefined]) {
+      const erro = Object.assign(new Error("TypeError: fetch failed"), { code });
+      expect(mensagemDaRecusaDePublicacao(erro, "PATCH"), String(code)).toBe(
+        "Não foi possível sincronizar. Confira a conexão e tente novamente.",
+      );
+    }
+  });
 });

@@ -55,7 +55,7 @@ const MENSAGEM_DA_VERSAO_ATUAL =
  * — duas camadas, um vocabulário só.
  */
 const MENSAGEM_DA_AGENDA_INDISPONIVEL =
-  "A agenda de destino não está disponível. Reative a agenda nas configurações para a sincronização voltar.";
+  'A agenda de destino não aparece mais na conta Google. A sincronização volta sozinha se ela reaparecer; para adiantar, use "Atualizar lista e sincronização" nas configurações da agenda.';
 
 /** Guarda que não é de versão: repetir não muda o resultado. */
 const MENSAGEM_DO_ERRO_PERMANENTE =
@@ -67,7 +67,11 @@ const MENSAGEM_DO_ERRO_PERMANENTE =
  * disponibilidade; `P0002`/`22023` são estado inválido.
  */
 function codigoDoBanco(erro: unknown): string | null {
-  return erro instanceof Error && "code" in erro ? String((erro as { code?: unknown }).code) : null;
+  if (!(erro instanceof Error)) return null;
+  // Falha de transporte do PostgREST chega com `code: ""`, e o `googleRpc` copia
+  // a chave mesmo quando ela é `undefined`: nenhum dos dois é SQLSTATE.
+  const codigo = (erro as { code?: unknown }).code;
+  return codigo === undefined || codigo === null || codigo === "" ? null : String(codigo);
 }
 
 /**
