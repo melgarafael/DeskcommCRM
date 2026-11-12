@@ -343,6 +343,9 @@ export function RouterEditorClient({
       await updateRouter.mutateAsync({ channel_session_id: novoNumero });
       toast.success(t("Roteador movido para o número novo."));
       setNovoNumero("");
+      // O aviso de número removido e os números livres vêm do SSR (page.tsx);
+      // invalidar o React Query não os recalcula.
+      nextRouter.refresh();
     } catch (err) {
       showApiError(err);
     } finally {

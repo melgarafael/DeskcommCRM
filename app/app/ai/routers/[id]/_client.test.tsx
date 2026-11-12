@@ -3,7 +3,7 @@
  * intenção aparecia com o módulo DESLIGADO — amarrar a um roteiro que a
  * instalação não roda.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +17,7 @@ const {
   stagesMock,
   estagiosMock,
   routerDataMock,
+  refreshMock,
 } = vi.hoisted(() => ({
   authMock: vi.fn(),
   flowsMock: vi.fn(),
@@ -33,9 +34,11 @@ const {
   saveMock: vi.fn(async () => ({})),
   // #2415 — o que o React Query devolve no refetch: undefined = sem query em cache.
   routerDataMock: vi.fn((): { data: unknown } => ({ data: undefined })),
+  // #4340 — estável entre renders, para o teste ver o refresh depois de mover.
+  refreshMock: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: refreshMock }) }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: authMock, usePermission: () => true, usePaisDaOrgAtiva: () => "BR" }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/followup/useFollowupFlows", () => ({ useFollowupFlows: flowsMock }));
@@ -610,6 +613,11 @@ describe("#4340 — mover o roteador para o número novo", () => {
     expect(updateMock, "o clique não pediu a mudança do roteador").toHaveBeenCalledWith({
       channel_session_id: "s2",
     });
+    // O aviso e o selo vêm do SSR: sem refresh, o "número removido" fica na
+    // tela ao lado do toast de sucesso.
+    await waitFor(() =>
+      expect(refreshMock, "a tela não recarregou o SSR depois de mover").toHaveBeenCalled(),
+    );
   });
 
   it("sem número livre, a tela explica em vez de oferecer um destino impossível", () => {
