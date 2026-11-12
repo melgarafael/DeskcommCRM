@@ -11,9 +11,12 @@
  * valor inválido cai no padrão e storage que lança não quebra a tela.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TabelaDeCampanhas } from "@/app/app/ads/meta/_components/TabelaDeCampanhas";
+import { lerOrdemLembrada } from "@/lib/plataformas-de-anuncio/meta/ordem-lembrada";
+import { ORDEM_PADRAO } from "@/lib/plataformas-de-anuncio/meta/tabela-de-campanhas";
 import type { LinhaDeCampanha } from "@/lib/plataformas-de-anuncio/types";
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => texto }));
@@ -102,5 +105,54 @@ describe("a ordenação escolhida é lembrada", () => {
 
     fireEvent.change(seletor(), { target: { value: "mais_antigas" } });
     expect(seletor().value).toBe("mais_antigas");
+  });
+
+  /**
+   * As duas provas abaixo fecham o que o DOM ESCONDE.
+   *
+   * O `<select>` mente por omissão: um `value` que não casa com nenhuma
+   * `option` não fica visível — o navegador exibe a primeira, e
+   * `ordenarCampanhas` também cai no padrão. Por isso ler o valor errado no
+   * inicializador do estado, ou deixar de validar o que veio do storage, passa
+   * despercebido pelos quatro casos acima. A prova do primeiro render é de
+   * SERVIDOR (não há `useEffect` nela) e a do contrato é direta na função.
+   */
+
+  it("o primeiro render é o do servidor: ORDEM_PADRAO, sem tocar o storage", () => {
+    // Há uma preferência salva — e mesmo assim o HTML servido nasce no padrão.
+    window.localStorage.setItem(CHAVE, "status");
+    const obter = vi.spyOn(Storage.prototype, "getItem");
+
+    const html = renderToStaticMarkup(<TabelaDeCampanhas linhas={LINHAS} moeda="BRL" />);
+
+    expect(html).toContain('<option value="mais_recentes" selected=""');
+    expect(html).not.toContain('<option value="status" selected=""');
+    // Ler no inicializador do `useState` faria o HTML do servidor divergir do
+    // primeiro render do cliente — e o storage só pode ser consultado depois.
+    expect(obter).not.toHaveBeenCalled();
+  });
+
+  it("o contrato da leitura cai no padrão em valor desconhecido, corrompido e storage que lança", () => {
+    const storage = window.localStorage;
+    for (const lixo of ["mais_urgentes", "MAIS_RECENTES", "status ", "", "{", "null"]) {
+      storage.setItem(CHAVE, lixo);
+      expect(lerOrdemLembrada(storage), `valor salvo: ${JSON.stringify(lixo)}`).toBe(
+        ORDEM_PADRAO,
+      );
+    }
+
+    // A validação não pode ser "ignorar tudo": o critério conhecido continua valendo.
+    storage.setItem(CHAVE, "status");
+    expect(lerOrdemLembrada(storage)).toBe("status");
+
+    // Storage bloqueado na LEITURA (`SecurityError`) e a ausência de storage.
+    const bloqueado: Pick<Storage, "getItem" | "setItem"> = {
+      getItem() {
+        throw new Error("SecurityError");
+      },
+      setItem() {},
+    };
+    expect(lerOrdemLembrada(bloqueado)).toBe(ORDEM_PADRAO);
+    expect(lerOrdemLembrada(null)).toBe(ORDEM_PADRAO);
   });
 });
