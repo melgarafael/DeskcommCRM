@@ -494,6 +494,42 @@ describe("#3917 — o contexto do CRM entra na pergunta feita ao Jev", () => {
     expect(corpo.questions.roteador.criteria.suporte).not.toContain("Experiência");
   });
 
+  it("dado do cliente digitado no nome de etapa ou etiqueta sai mascarado; nome comum sai igual", async () => {
+    const instrucaoEnviada = async (fatos: typeof FATOS): Promise<string> => {
+      const fetchImpl = vi.fn(async (_input: URL | RequestInfo, _init?: RequestInit) =>
+        respostaCom("suporte"),
+      );
+      const jev = consultarJevNoRoteador(
+        poolCom(LIGADO).pool,
+        { ...entrada(novaOrg(), "oi"), fatosDoCrmDoTurno: async () => fatos },
+        { buscarChave: async () => "tsk_x", fetchImpl },
+      );
+      await jev.escolha;
+      const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body)) as {
+        questions: { roteador: { instructions: string } };
+      };
+      return corpo.questions.roteador.instructions;
+    };
+
+    const comDado = await instrucaoEnviada({
+      funis: [{ funil: "Vendas", etapas: ["Ligar 11 98765-4321"] }],
+      etiquetas: ["cpf 123.456.789-09", "ana@exemplo.com"],
+      funisOmitidos: 0,
+      etiquetasOmitidas: 0,
+    });
+    expect(comDado).toContain("Fatos do CRM deste contato");
+    expect(comDado).toContain('Funil "Vendas"');
+    expect(comDado).not.toContain("98765");
+    expect(comDado).not.toContain("123.456.789-09");
+    expect(comDado).not.toContain("ana@exemplo.com");
+    expect(comDado).toContain("[EMAIL]");
+
+    // Controle: sem dado pessoal, o scrub não toca em nada.
+    const comum = await instrucaoEnviada(FATOS);
+    expect(comum).toContain('- Funil "Experiência", etapa "Pós-viagem": negócio ABERTO');
+    expect(comum).toContain("- Etiquetas do contato: cliente, viagem-fechada");
+  });
+
   it("a tarefa desligada NÃO paga a leitura dos fatos", async () => {
     const fatos = vi.fn(async () => FATOS);
     const jev = consultarJevNoRoteador(

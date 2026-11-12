@@ -33,7 +33,11 @@
  *
  * A última mensagem do cliente, sozinha (R4), passada pelo `scrubMessage`, e as
  * intenções do roteador — descrição e exemplos, que são textos da empresa, não
- * do cliente. Pergunta dinâmica, montada com os membros da organização, vai em
+ * do cliente. Com os fatos do CRM do contato (#3917), a instrução leva também
+ * nomes de funil e de etapa onde ele tem negócio aberto e as etiquetas dele —
+ * nunca título do card, telefone, e-mail ou documento do cadastro — e o bloco
+ * passa pelo mesmo `scrubMessage`, porque o nome é digitado pela empresa e pode
+ * conter dado do cliente. Pergunta dinâmica, montada com os membros da organização, vai em
  * chamada PRÓPRIA (R6): uma pergunta malformada derruba a chamada inteira
  * (medido), e ela não pode levar junto a de outra tarefa.
  *
@@ -104,7 +108,14 @@ export function perguntaDoRoteador(
     criterios[m.intentName] = `${m.intentDescription}.${exemplos}`;
   }
   criterios[NENHUMA] = "Nenhuma das intenções acima se aplica.";
-  const textoDosFatos = formatarFatosDoCrm(fatos);
+  // Nome de funil, etapa e etiqueta é digitado pela empresa e pode carregar
+  // telefone, CPF ou e-mail do cliente: o bloco passa pelo MESMO scrub do
+  // `estado` antes de sair da máquina. Fica na instrução, e não no `estado`,
+  // porque o `estado` é o que se classifica.
+  // ponytail: o scrub roda depois do corte de 40 caracteres por nome
+  // (`normalizarNome`); um número cortado no limite pode escapar do padrão.
+  // Se pesar, o scrub desce para `normalizarNome`, antes do corte.
+  const textoDosFatos = scrubMessage(formatarFatosDoCrm(fatos));
   // O cabeçalho é o mesmo do classificador de sempre, e diz em voz alta que o
   // bloco NÃO é o que se classifica: sem isso o Jev responderia sobre o funil.
   const instrucao =
