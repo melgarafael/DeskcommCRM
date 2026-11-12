@@ -79415,7 +79415,7 @@ do $campanha_modelo$
 begin
   alter table public.campaigns drop constraint if exists campaigns_message_mode_check;
   alter table public.campaigns
-    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template'));
+    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template', 'email'));
 
   -- Modelo sem nome ou sem idioma não sai: a plataforma identifica a definição
   -- pelos DOIS (o mesmo nome em `es` e `es_AR` são modelos diferentes).
@@ -80631,6 +80631,72 @@ comment on column public.campaigns.provider_broadcast_id is
   'Id da transmissão no provedor (velocidade = transmissao). O eco de cada mensagem traz este id e volta por ele à campanha e ao destinatário. Migration 0712.';
 
 notify pgrst, 'reload schema';
+
+-- ---- campanha por e-mail: assunto e campanha sem número (migration 9334, #3441) ----
+-- Apêndice idempotente, espelho de
+-- `supabase/migrations/20261111121038_9334_campanha_por_email.sql`. Não cria função
+-- e não devolve `anon`. Fica DEPOIS do bloco da 0710 porque depende da coluna
+-- `message_mode`, que nasce lá. Trabalho de @webtecnica (#4289).
+--
+-- ═══ Por que a coluna do número vira anulável, e só para o e-mail ═══
+--
+-- A FK composta `campaigns_channel_org_fk` (0375) amarra a campanha ao número da
+-- MESMA organização; e-mail não tem número, não tem `channel_sessions`, não tem
+-- janela de 24 horas e não é despachado por worker nenhum nesta fatia. Manter a
+-- coluna obrigatória obrigaria a inventar uma conexão falsa — e uma linha falsa
+-- em `channel_sessions` é pior que uma coluna nula: ela apareceria na tela de
+-- conexões e no rodízio.
+--
+-- O `not null` sai, mas a REGRA não: `campaigns_numero_ou_email_check` exige
+-- número em todo modo que não é `email`. Uma campanha de WhatsApp sem conexão
+-- continua impossível, no banco e não só na rota.
+--
+-- ═══ Por que o assunto mora em coluna própria ═══
+--
+-- O corpo do e-mail é o MESMO `message_body` do WhatsApp (texto puro, sem HTML
+-- nesta fatia); o assunto não é — e enfiá-lo no começo do corpo faria o texto
+-- enviado ter uma linha que ninguém escreveu como corpo. `email_subject` é
+-- nulo em todo modo que não é `email`, e o CHECK exige conteúdo nele quando é.
+
+alter table public.campaigns
+  add column if not exists email_subject text;
+
+do $campanha_email$
+begin
+  alter table public.campaigns alter column channel_session_id drop not null;
+
+  alter table public.campaigns drop constraint if exists campaigns_numero_ou_email_check;
+  alter table public.campaigns
+    add constraint campaigns_numero_ou_email_check check (
+      channel_session_id is not null or message_mode = 'email'
+    );
+
+  -- O valor 'email' de message_mode já está no bloco único da restrição (migration 0710, acima).
+
+  -- Assunto vazio não é rascunho: é um e-mail que o cliente abriria sem saber do
+  -- que se trata. A tela já recusa (`conferirConteudoDeEmail`); o CHECK é a
+  -- mesma régua no banco, para o caminho que um dia escrever por fora.
+  alter table public.campaigns drop constraint if exists campaigns_email_exige_assunto;
+  alter table public.campaigns
+    add constraint campaigns_email_exige_assunto check (
+      message_mode <> 'email' or coalesce(btrim(email_subject), '') <> ''
+    );
+
+  -- Assunto é do e-mail e de mais ninguém: nos outros modos a coluna é nula.
+  alter table public.campaigns drop constraint if exists campaigns_assunto_so_email;
+  alter table public.campaigns
+    add constraint campaigns_assunto_so_email check (
+      message_mode = 'email' or email_subject is null
+    );
+end
+$campanha_email$;
+
+comment on column public.campaigns.email_subject is
+  'Assunto do e-mail, quando message_mode = email (#3441). Nulo nos modos do WhatsApp; texto puro, até 150 caracteres.';
+comment on column public.campaigns.message_mode is
+  'text = corpo livre em message_body (número por QR); template = modelo aprovado (número oficial); email = assunto em email_subject + corpo em message_body, sem número (migration 9334).';
+comment on column public.campaigns.channel_session_id is
+  'O número principal da campanha. Nulo só em message_mode = email (#3441): campanha de e-mail não fala por conexão.';
 
 -- ---- conta Resend da organização (migration 0795) ----
 -- Espelho da 0795 no banco-molde: o test:invariants aplica SO o baseline,
