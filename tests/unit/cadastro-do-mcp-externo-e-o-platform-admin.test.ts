@@ -320,3 +320,68 @@ describe("o endereço não carrega segredo para a trilha (item 5)", () => {
     expect(trilha).not.toContain(CHAVE);
   });
 });
+
+// ─── #4445: a liberação de ESCRITA, por organização e por conexão ───────────
+
+describe("a escrita remota é liberada por LISTA, e curinga não é aceito (#4445)", () => {
+  it("grava os dois níveis no jsonb, preservando os outros bolsos", async () => {
+    const resultado = await definirServidorMcpExterno({
+      endpoint: "https://erp.loja/mcp",
+      chave: CHAVE,
+      escritasLiberadasOrganizacao: "cancelar_reserva",
+      escritasLiberadasConexao: "criar_agendamento\nremarcar_reserva",
+    });
+    expect(resultado).toEqual({ ok: true, chaveUltimos4: "abcd" });
+
+    const settings = estado.updates[0]!.settings as Record<string, unknown>;
+    expect(settings.conversions).toEqual({ meta_page_id: "111" });
+    expect(settings.mcp_externo_escrita).toEqual({
+      organizacao: ["cancelar_reserva"],
+      conexoes: { compartilhado: ["criar_agendamento", "remarcar_reserva"] },
+    });
+  });
+
+  it("CURINGA é recusado com código próprio e NADA é gravado", async () => {
+    // Sabotagem 1 pelo outro lado: se a action aceitasse `*`, a lista explícita
+    // morreria na porta de entrada da configuração.
+    for (const curinga of ["*", "all", "todos", "erp_*"]) {
+      estado.updates = [];
+      const resultado = await definirServidorMcpExterno({
+        endpoint: "https://erp.loja/mcp",
+        chave: CHAVE,
+        escritasLiberadasOrganizacao: curinga,
+      });
+      expect(resultado, `"${curinga}" foi aceito`).toEqual({ ok: false, error: "curinga_nao_aceito" });
+      expect(estado.updates, `"${curinga}" gravou alguma coisa`).toEqual([]);
+    }
+  });
+
+  it("revogar é apagar a lista: campo em branco tira o bolso do jsonb", async () => {
+    estado.linha = {
+      settings: {
+        conversions: { meta_page_id: "111" },
+        mcp_externo: { endpoint: "https://erp.loja/mcp" },
+        mcp_externo_escrita: { organizacao: ["cancelar_reserva"], conexoes: { compartilhado: ["criar_agendamento"] } },
+      },
+    };
+    await definirServidorMcpExterno({
+      endpoint: "https://erp.loja/mcp",
+      chave: CHAVE,
+      escritasLiberadasOrganizacao: "",
+      escritasLiberadasConexao: "",
+    });
+    const settings = estado.updates[0]!.settings as Record<string, unknown>;
+    expect(settings.mcp_externo_escrita).toBeUndefined();
+    expect(settings.mcp_externo).toEqual({ endpoint: "https://erp.loja/mcp" });
+  });
+
+  it("a trilha registra os NOMES liberados, nunca argumento nem chave", async () => {
+    await definirServidorMcpExterno({
+      endpoint: "https://erp.loja/mcp",
+      chave: CHAVE,
+      escritasLiberadasConexao: "criar_agendamento",
+    });
+    expect(estado.audits[0]!.metadata).toMatchObject({ escritas_liberadas_conexao: ["criar_agendamento"] });
+    expect(JSON.stringify(estado.audits)).not.toContain(CHAVE);
+  });
+});

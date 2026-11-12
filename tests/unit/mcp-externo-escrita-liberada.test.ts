@@ -438,7 +438,7 @@ describe("a carga do turno resolve a liberação da conexão `compartilhado`", (
       ORG,
       { fetch: fetchDoStub() },
     );
-    expect(montado?.escritasLiberadas?.sort()).toEqual(["cancelar_reserva", "criar_agendamento"]);
+    expect([...(montado?.escritasLiberadas ?? [])].sort()).toEqual(["cancelar_reserva", "criar_agendamento"]);
   });
 });
 

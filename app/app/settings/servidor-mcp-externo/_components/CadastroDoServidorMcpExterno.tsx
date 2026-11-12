@@ -254,7 +254,7 @@ export function CadastroDoServidorMcpExterno() {
           <CardTitle>{t("Ferramentas de escrita liberadas")}</CardTitle>
           <CardDescription>
             {t(
-              "A liberação nasce vazia: enquanto esta lista estiver em branco, nenhuma ferramenta de escrita roda durante o atendimento — a IA consulta, mas não altera nada no sistema de fora.",
+              "A liberação nasce vazia: enquanto esta lista estiver em branco, nenhuma ferramenta de escrita roda durante o atendimento — a IA consulta, mas não altera nada no sistema de fora. Deixar em branco e salvar revoga as liberações.",
             )}
           </CardDescription>
         </CardHeader>

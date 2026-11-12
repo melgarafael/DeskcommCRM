@@ -356,6 +356,7 @@ function wrapMcpTool(
         // na mensagem) e sobe para o modelo como texto, não como exceção: ele
         // aprende que a ação depende de configuração e segue a conversa, em vez
         // de repetir a chamada ou inventar que reservou.
+        //
         // A escrita DELEGADA ao contato fica de fora: ela não usa a chave da
         // empresa, e sim o token do próprio contato, concedido por ele no
         // step-up (`do-agente/`). Quem consente ali é o dono da conta no

@@ -43,7 +43,7 @@ import {
   type OpcoesDeChamada,
 } from "@/lib/mcp/servidor-externo/chamada";
 import type { EscolhaRemota } from "@/lib/mcp/servidor-externo/ids";
-import { CONEXAO_COMPARTILHADA } from "@/lib/mcp/servidor-externo/escrita-liberada";
+import { CONEXAO_COMPARTILHADA, escritaLiberada } from "@/lib/mcp/servidor-externo/escrita-liberada";
 import { hostDoEndpoint, type ServidorMcpExterno } from "@/lib/mcp/servidor-externo/registro";
 import type {
   ServidorDoAgenteNoTurno,
@@ -184,7 +184,7 @@ export function definirFerramentasRemotas(
       // recusa nomeada e para `metadata.conexao` na auditoria.
       remotoExterno: {
         conexao: CONEXAO_COMPARTILHADA,
-        escritaLiberada: !ehLeitura && escritasLiberadas.includes(ferramenta.name),
+        escritaLiberada: !ehLeitura && escritaLiberada(escritasLiberadas, ferramenta.name),
       },
       handler: async (input) => {
         // O ORÇAMENTO DO TURNO, aqui e não no cliente: a mesma chamada feita
@@ -270,7 +270,7 @@ export function definirFerramentasDoServidorDoAgente(
       // liberação diferente (a régua de `ids.ts`).
       remotoExterno: {
         conexao: servidor.id,
-        escritaLiberada: !ehLeitura && (montado.escritasLiberadas ?? []).includes(escolha.nome),
+        escritaLiberada: !ehLeitura && escritaLiberada(montado.escritasLiberadas ?? [], escolha.nome),
       },
       handler: async (input) => {
         const argumentos = (input ?? {}) as Record<string, unknown>;
