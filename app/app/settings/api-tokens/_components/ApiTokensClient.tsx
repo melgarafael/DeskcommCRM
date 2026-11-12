@@ -74,6 +74,11 @@ const SCOPES: { id: string; label: string }[] = [
   },
   { id: "contacts:read", label: "Ler contatos" },
   { id: "contacts:write", label: "Criar e editar contatos" },
+  // #4517 — pausar/retomar a IA e fechar/reabrir a conversa. Escopo separado de
+  // `contacts:write` de propósito: desligar o atendimento automático muda QUEM
+  // responde o cliente, não o cadastro. Sem esta linha, a permissão não existe
+  // para ser marcada e as ferramentas nascem inalcançáveis em produção.
+  { id: "conversations:write", label: "Pausar e retomar o atendimento automático" },
   { id: "leads:read", label: "Ler leads" },
   { id: "leads:write", label: "Criar e editar leads" },
   { id: "messages:read", label: "Ler mensagens" },

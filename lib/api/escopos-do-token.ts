@@ -25,6 +25,24 @@
 export const ESCOPO_DESFECHO_DA_AGENDA = "agenda:attendance";
 export const ESCOPO_TAREFAS_LEITURA = "tasks:read";
 export const ESCOPO_TAREFAS_ESCRITA = "tasks:write";
+/**
+ * A EDIÇÃO DIRETA DA FICHA (#4517). `contacts:write` já existia na TELA
+ * (`ApiTokensClient.tsx`) e no token; o que faltava era uma porta que a
+ * cobrasse — até aqui a edição por token parava em `crm_propose_contact_field`,
+ * que cria uma proposta e espera alguém abrir o CRM.
+ *
+ * ⚠️ Sem este escopo o dado continua virando PROPOSTA. É o comportamento de
+ * hoje, e continua sendo o de amanhã: quem emite o token decide se a integração
+ * SOBRESCREVE a ficha ou se só pede revisão.
+ */
+export const ESCOPO_CONTATOS_ESCRITA = "contacts:write";
+/**
+ * PAUSAR/RETOMAR A IA E FECHAR/REABRIR A CONVERSA (#4517). Escopo próprio, e
+ * não `contacts:write`: desligar o atendimento automático de uma conversa muda
+ * quem responde o cliente — poder diferente de corrigir um cadastro, decidido
+ * separadamente por quem emite o token.
+ */
+export const ESCOPO_CONVERSAS_ESCRITA = "conversations:write";
 
 /**
  * O token tem o escopo? `undefined` (sessão de navegador, que não tem escopos)

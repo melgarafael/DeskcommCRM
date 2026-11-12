@@ -12,6 +12,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
+import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { ESCOPO_CONTATOS_ESCRITA } from "@/lib/api/escopos-do-token";
+import type { Actor } from "@/lib/api/handlers/types";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -136,23 +139,49 @@ export async function PATCH(
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const supabase = await createClient();
-  // spec 13 §4: escrita é agent+ (viewer é read-only).
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  /**
+   * ─── A PORTA DO TOKEN (#4517) ────────────────────────────────────────────
+   *
+   * `contacts:write` é o escopo PRÓPRIO da edição direta. Ele já existia na
+   * tela de tokens; o que faltava era uma rota que o cobrasse — até aqui, a
+   * edição por integração parava em `crm_propose_contact_field`, uma proposta
+   * que espera alguém abrir o CRM.
+   *
+   * Três decisões, e cada uma custa um defeito se invertida:
+   *
+   *  1. **`resolveAuthDual`, não `requireRole`.** A sessão continua entrando
+   *     pelo MESMO gate (`requireRole("agent")`, rank + MFA); o Bearer entra
+   *     pelo autenticador dos tokens, e a organização sai da LINHA DO TOKEN —
+   *     nunca do corpo, nunca do path.
+   *  2. **Sem o escopo é 403, e não proposta silenciosa.** Esta rota é a porta
+   *     da ESCRITA DIRETA; um 200 criando proposta por baixo esconderia da
+   *     integração que o dado não foi gravado. Quem quer propor usa a
+   *     ferramenta de proposta, que diz isso no retorno.
+   *  3. **Mesmo handler da tela.** `patchContactHandler` é o de sempre: a
+   *     régua do documento do país, o merge de consentimento, a trava de
+   *     anonimização e o audit são os mesmos. Não existe segunda regra.
+   */
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "agent",
+    scope: ESCOPO_CONTATOS_ESCRITA,
+    tokenRole: "agent",
+  });
   if (!authz.ok) return authz.response;
-  const user = authz.user;
-  const activeOrg = authz.org;
+  const supabase = authz.supabase;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
 
   // O documento do titular é validado pela régua do PAÍS da organização (issue
   // #1033) — a mesma razão do POST: quem decide é a organização, não o corpo.
-  const perfil = await perfilDaOrganizacao(supabase, activeOrg.orgId);
+  const perfil = await perfilDaOrganizacao(supabase, authz.organizationId);
 
   let input;
   try {
     input = await validateRequest(contactPatchSchemaDoPais(perfil), req);
   } catch (err) {
     if (err instanceof ApiError) {
-      return fail(err.code, err.message, err.status, {
+      return fail(err.code, t(err.message), err.status, {
         details: err.details as Record<string, unknown> | undefined,
         requestId,
       });
@@ -164,10 +193,11 @@ export async function PATCH(
     const contact = await patchContactHandler(
       supabase,
       {
-        organization_id: activeOrg.orgId,
-        actor: { type: "user", id: user.id },
+        organization_id: authz.organizationId,
+        actor: authz.actor as Actor,
         requestId,
-        idioma: user.idioma,
+        idioma: authz.idioma,
+        ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
       },
       id,
       input,
@@ -175,7 +205,7 @@ export async function PATCH(
     return ok(contact, { requestId });
   } catch (err) {
     if (err instanceof ApiError) {
-      return fail(err.code, err.message, err.status, { requestId });
+      return fail(err.code, t(err.message), err.status, { requestId });
     }
     throw err;
   }

@@ -3,8 +3,8 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * POST /api/v1/conversations/[id]/reactivate-bot
  *
  * Devolve o atendimento ao agente. A REGRA vive em
- * `lib/escalacao/retomada.ts` — esta rota só resolve autenticação, org e a
- * tradução do resultado para HTTP.
+ * `lib/escalacao/retomada.ts` (+ a casca em `./_handler.ts`) — esta rota só
+ * resolve autenticação, org e a tradução do resultado para HTTP.
  *
  * Ela foi extraída (Decisão 4 do briefing IA 360: a tool é fachada fina sobre a
  * regra que já existe) porque a mesma devolução precisa acontecer por dois
@@ -16,17 +16,27 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * `contacts.force_human` e por `assignee_kind='user'`. O conserto está na função;
  * o histórico do defeito, no cabeçalho dela.
  *
- * Auth: cookie session, role >= agent. Audit: `ai.reactivated_by_agent`.
+ * ## #4517 — a terceira porta, e a diferença que ela exige
+ *
+ * A integração com `conversations:write` também retoma por aqui. Só que ela NÃO
+ * pode soltar o dono (`release`), porque a issue é explícita: pausar e retomar
+ * não trocam o responsável da conversa nem o do negócio. Então o modo token
+ * limpa SÓ o silêncio, e a resposta diz se o automático realmente voltou
+ * (`automacao_liberada`) — com dono humano, ele continua vetado, e fingir
+ * `reactivated: true` seria mentira. Detalhe e teste em `./_handler.ts`.
+ *
+ * Auth: cookie session, role >= agent — ou Bearer com `conversations:write`.
+ * Audit: `ai.reactivated_by_agent` (pessoa) / `conversation.ai_resumed_by_token`.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { roleAtLeast } from "@/lib/auth/types";
-import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { ESCOPO_CONVERSAS_ESCRITA } from "@/lib/api/escopos-do-token";
+import { ApiError } from "@/lib/api/types";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { retomarIaHandler } from "./_handler";
 
 export const dynamic = "force-dynamic";
 
@@ -34,118 +44,64 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "conversations" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "conversations",
+    role: "agent",
+    scope: ESCOPO_CONVERSAS_ESCRITA,
+    tokenRole: "agent",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org: activeOrg } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
 
-  const supabase = await createClient();
-
-  // #3436 — conversa que tem dono e o dono NÃO é quem pediu só volta ao agente
-  // pela mão de um `manager` ou acima (ou de quem a assumir antes: `claim`).
-  // A regra mora AQUI, e não em `devolverAtendimentoAoAgente`, porque o cron
-  // `handoff-devolucao` chama a mesma função SEM sessão — uma regra de dono lá
-  // dentro recusaria a devolução automática que o prazo venceu.
-  //
-  // A leitura é escopada por `organization_id` da sessão (nunca só por `id`):
-  // conversa de outro tenant não é "conversa de outro atendente", é inexistente
-  // — e quem decide isso é o filtro, não o `dono == null` que sobra dele.
-  const { data: donaDaConversa, error: erroDoDono } = await supabase
-    .from("conversations")
-    .select("assigned_to_user_id")
-    .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
-    .maybeSingle();
-  if (erroDoDono) {
-    return fail("internal_error", t("Erro ao validar conversa."), 500, { requestId });
-  }
-  if (!donaDaConversa) {
-    return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
-  }
-  const dono =
-    (donaDaConversa as { assigned_to_user_id: string | null } | null)?.assigned_to_user_id ?? null;
-  if (dono !== null && dono !== authUser.id && !roleAtLeast(activeOrg.role, "manager")) {
-    // Sem tocar no silêncio, no dono nem na autorização do contato: a recusa
-    // acontece antes de qualquer escrita, então a conversa do colega fica
-    // exatamente como estava.
-    return fail(
-      "forbidden",
-      t("Esta conversa é de outro atendente. Peça a um gerente ou assuma a conversa."),
-      403,
-      { requestId },
-    );
-  }
-
-  const resultado = await devolverAtendimentoAoAgente(
-    {
-      supabase,
-      organizationId: activeOrg.orgId,
-      actor: { type: "user", id: authUser.id, role: activeOrg.role },
+  try {
+    const resultado = await retomarIaHandler(authz.supabase, {
+      organization_id: authz.organizationId,
+      actor: authz.actor,
       requestId,
-    },
-    { conversationId: id, expectedAssignee: dono },
-  );
+      idioma: authz.idioma,
+      ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
+    }, id);
 
-  if (!resultado.ok) {
-    if (resultado.erro === "conversation_not_found") {
-      return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
-    }
-    if (resultado.erro === "assignment_conflict") {
-      return fail(
-        "state_conflict",
-        t("Alguém assumiu esta conversa agora — recarregue e tente de novo."),
-        409,
+    if (!resultado.automacao_liberada) {
+      // 200, e não erro: o gesto foi feito (o silêncio saiu) e o que impede o
+      // automático é um estado que a integração precisa VER — o dono humano ou a
+      // marca do contato. Erro faria a integração repetir um gesto já aplicado.
+      const motivo =
+        resultado.motivo_bloqueio === "contato_sempre_humano"
+          ? "Este contato está marcado como sempre atendimento humano. Para a IA voltar a atendê-lo, remova a marca na ficha do contato."
+          : "A conversa está com um atendente humano. O automático volta quando o atendimento for devolvido pela tela.";
+      return ok(
+        {
+          reactivated: false,
+          automacao_liberada: false,
+          motivo_bloqueio: resultado.motivo_bloqueio,
+          mensagem: t(motivo),
+        },
         { requestId },
       );
     }
-    // #2379: a marca permanente recusou ANTES de qualquer escrita — nada foi
-    // devolvido, então a mensagem genérica abaixo ("Atendimento devolvido…")
-    // mentiria e convidaria a repetir um gesto que vai recusar de novo.
-    if (resultado.erro === "contato_sempre_humano") {
-      return fail(
-        "state_conflict",
-        t("Este contato está marcado como sempre atendimento humano. Para a IA voltar a atendê-lo, remova a marca na ficha do contato."),
-        409,
-        { requestId },
-      );
-    }
-    if (resultado.erro === "contact_state_unreadable") {
-      return fail(
-        "internal_error",
-        t("Não foi possível conferir o contato desta conversa — nada foi alterado. Tente de novo."),
-        500,
-        { requestId },
-      );
-    }
-    // A devolução em si já aconteceu; o que falhou foi o sinal que retoma um
-    // acompanhamento pausado. Repetir a chamada é seguro (tudo é idempotente).
-    return fail(
-      "internal_error",
-      t("Atendimento devolvido, mas o sinal de retomada do acompanhamento falhou — tente de novo."),
-      500,
+
+    return ok(
+      {
+        reactivated: true,
+        automacao_liberada: true,
+        // O que a pessoa fez vai junto: quem chamou consegue mostrar na tela que
+        // o agente não voltou cego. O token não tem continuidade (não havia
+        // atendimento humano dele para resumir).
+        ...(resultado.continuidade !== undefined ? { continuidade: resultado.continuidade } : {}),
+      },
       { requestId },
     );
+  } catch (err) {
+    if (err instanceof ApiError) return fail(err.code, t(err.message), err.status, { requestId });
+    throw err;
   }
-
-  return ok(
-    {
-      reactivated: true,
-      // O que a pessoa fez vai junto: quem chamou consegue mostrar na tela que o
-      // agente não voltou cego.
-      continuidade: {
-        houve_atendimento_humano: resultado.continuidade.houveAtendimentoHumano,
-        resumo: resultado.continuidade.resumo,
-        decisoes: resultado.continuidade.decisoes.length,
-        notas: resultado.continuidade.notas.length,
-      },
-    },
-    { requestId },
-  );
 }
