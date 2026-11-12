@@ -79,6 +79,17 @@ export const sendMessageSchema = z
     media_url: z.string().url().optional(),
     media_storage_path: z.string().min(1).max(500).optional(),
     media_mime: z.string().optional(),
+    /**
+     * O nome que o DESTINATÁRIO vê no documento (#4524). Opcional e ADITIVO:
+     * sem ele, o nome sai de `metadata.media_filename` e, na falta deste, do
+     * último segmento da `media_url` — requisição antiga continua entrando.
+     *
+     * Sem `min`/`max` de propósito: nome vazio ou gigante é limpo no envio
+     * (trim, corte preservando a extensão, reserva legível), e recusar aqui
+     * transformaria um rótulo ruim em 400 na cara de quem integra. O nome do
+     * objeto no Storage não muda: isto é o rótulo, não a chave.
+     */
+    media_filename: z.string().optional(),
     media_size_bytes: z.number().int().positive().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
     /** Só em `type: "template"`. Nome exato aprovado na Meta. */

@@ -50,6 +50,11 @@ import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
+import {
+  nomeDeArquivoSeguro,
+  nomeDoDocumentoParaEnvio,
+} from "@/lib/messaging/media/nome-para-envio";
+import { CHAVE_DO_NOME_NA_METADATA } from "@/lib/messaging/media/nome-de-arquivo";
 import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
 import {
   buildVcard,
@@ -1010,6 +1015,12 @@ export async function sendMessageHandler(
         })
       : [];
 
+  // O nome que o destinatário vai ver, quando o cliente o DECLAROU (#4524): a
+  // linha guarda o mesmo nome que sai no payload, para o cartão e o download
+  // desta mensagem não contarem outra história. Só com o campo novo — a
+  // requisição antiga não ganha chave nova no JSONB.
+  const nomeExplicitoDoArquivo = nomeDeArquivoSeguro(input.media_filename);
+
   const insertRow = {
     ...(ctx.internalMessageId ? { id: ctx.internalMessageId } : {}),
     organization_id: c.organization_id,
@@ -1045,6 +1056,7 @@ export async function sendMessageHandler(
       // são do servidor: o dreno converte a âncora em data e o cron pede visão
       // paga pela marca. O cliente não as forja — ver `CHAVES_DA_DERIVACAO`.
       ...semChavesDaDerivacao(metadataDeEntrada),
+      ...(nomeExplicitoDoArquivo ? { [CHAVE_DO_NOME_NA_METADATA]: nomeExplicitoDoArquivo } : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
@@ -1341,6 +1353,20 @@ export async function sendMessageHandler(
         // pela guarda anti-SSRF antes de a linha existir
         // (`assertUrlDeMidiaSegura`): ela chega também pela API pública e
         // pelo MCP, e quem a baixa é o gateway, de dentro da rede do servidor.
+        //
+        // O NOME (#4524): sem `filename` no `media`, quem escolhia era o canal
+        // — e o WAHA grava o literal `file`, que no celular parece arquivo
+        // suspeito. A ordem está em `nomeDoDocumentoParaEnvio`: campo novo
+        // `media_filename`, depois o `metadata.media_filename` que a ingestão
+        // já grava (#2613), depois o último segmento da URL com extensão, e
+        // por fim uma reserva legível vinda do MIME. Nunca `file`, e nunca uma
+        // exceção: o nome é rótulo, não condição de envio.
+        const nomeDoDocumento = nomeDoDocumentoParaEnvio({
+          nomeExplicito: input.media_filename,
+          metadata: input.metadata,
+          url: input.media_url,
+          mime: input.media_mime,
+        });
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1352,6 +1378,7 @@ export async function sendMessageHandler(
           media: {
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
+            filename: nomeDoDocumento,
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,

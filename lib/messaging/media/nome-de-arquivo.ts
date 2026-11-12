@@ -8,6 +8,13 @@
  */
 const INVISIVEIS = /[\u0000-\u001F\u007F-\u009F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
+/**
+ * A mesma classe, exportada para o envio (#4524) — a limpeza é UMA. Uma segunda
+ * cópia da regex no caminho de saída divergiria da de entrada no primeiro
+ * caractere novo que alguém acrescentasse.
+ */
+export const INVISIVEIS_DO_NOME = INVISIVEIS;
+
 /** Teto em caracteres (code points) — o limite usual de nome de arquivo. */
 export const NOME_DE_ARQUIVO_MAX = 255;
 
