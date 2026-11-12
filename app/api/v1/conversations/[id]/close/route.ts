@@ -58,7 +58,7 @@ import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { ESCOPO_CONVERSAS_ESCRITA } from "@/lib/api/escopos-do-token";
 import { ApiError } from "@/lib/api/types";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { fecharConversaHandler } from "./_handler";
+import { fecharConversaHandler } from "../_handler";
 
 export const dynamic = "force-dynamic";
 

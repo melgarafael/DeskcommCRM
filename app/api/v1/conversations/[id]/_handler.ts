@@ -38,6 +38,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
+import { logger } from "@/lib/logger";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { roleAtLeast } from "@/lib/auth/types";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
@@ -87,7 +88,7 @@ async function lerConversa(
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (error) throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
-  if (!data) throw new ApiError(404, "not_found", "Conversa não encontrada.", ctx.requestId);
+  if (!data) throw new ApiError(404, "not_found", undefined, ctx.requestId, "Conversa não encontrada.");
   return data as unknown as LinhaDaConversa;
 }
 
@@ -126,6 +127,8 @@ export async function pausarIaHandler(
     throw new ApiError(
       409,
       "state_conflict",
+      undefined,
+      ctx.requestId,
       "Esta conversa está encerrada — não há atendimento automático a pausar.",
     );
   }
@@ -146,7 +149,13 @@ export async function pausarIaHandler(
     });
     if (rpcErr) throw new ApiError(500, "internal_error", undefined, ctx.requestId, rpcErr.message);
     if (!atribuida || (atribuida as unknown[]).length === 0) {
-      throw new ApiError(409, "state_conflict", "Outro atendente assumiu esta conversa agora.");
+      throw new ApiError(
+        409,
+        "state_conflict",
+        undefined,
+        ctx.requestId,
+        "Outro atendente assumiu esta conversa agora.",
+      );
     }
     assumiu = true;
   }
@@ -166,7 +175,7 @@ export async function pausarIaHandler(
     )
     .maybeSingle();
   if (updErr) throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
-  if (!atualizada) throw new ApiError(404, "not_found", "Conversa não encontrada.");
+  if (!atualizada) throw new ApiError(404, "not_found", undefined, ctx.requestId, "Conversa não encontrada.");
 
   const autor = autorDoAudit(ctx);
   await audit({
@@ -245,6 +254,8 @@ export async function retomarIaHandler(
     throw new ApiError(
       403,
       "forbidden",
+      undefined,
+      ctx.requestId,
       "Quem retoma o atendimento automático é uma pessoa ou uma integração autorizada — o próprio agente não se des-trava.",
     );
   }
@@ -262,6 +273,8 @@ export async function retomarIaHandler(
       throw new ApiError(
         403,
         "forbidden",
+        undefined,
+        ctx.requestId,
         "Esta conversa é de outro atendente. Peça a um gerente ou assuma a conversa.",
       );
     }
@@ -278,12 +291,14 @@ export async function retomarIaHandler(
 
     if (!resultado.ok) {
       if (resultado.erro === "conversation_not_found") {
-        throw new ApiError(404, "not_found", "Conversa não encontrada.");
+        throw new ApiError(404, "not_found", undefined, ctx.requestId, "Conversa não encontrada.");
       }
       if (resultado.erro === "assignment_conflict") {
         throw new ApiError(
           409,
           "state_conflict",
+          undefined,
+          ctx.requestId,
           "Alguém assumiu esta conversa agora — recarregue e tente de novo.",
         );
       }
@@ -294,6 +309,8 @@ export async function retomarIaHandler(
         throw new ApiError(
           409,
           "state_conflict",
+          undefined,
+          ctx.requestId,
           "Este contato está marcado como sempre atendimento humano. Para a IA voltar a atendê-lo, remova a marca na ficha do contato.",
         );
       }
@@ -301,12 +318,16 @@ export async function retomarIaHandler(
         throw new ApiError(
           500,
           "internal_error",
+          undefined,
+          ctx.requestId,
           "Não foi possível conferir o contato desta conversa — nada foi alterado. Tente de novo.",
         );
       }
       throw new ApiError(
         500,
         "internal_error",
+        undefined,
+        ctx.requestId,
         "Atendimento devolvido, mas o sinal de retomada do acompanhamento falhou — tente de novo.",
       );
     }
@@ -400,7 +421,13 @@ export async function fecharConversaHandler(
 
   const revisaoEsperada = opcoes.expectedRevision ?? conv.service_revision;
   if (revisaoEsperada !== conv.service_revision) {
-    throw new ApiError(409, "conflict", "O atendimento mudou. Atualize e tente novamente.");
+    throw new ApiError(
+      409,
+      "conflict",
+      undefined,
+      ctx.requestId,
+      "O atendimento mudou. Atualize e tente novamente.",
+    );
   }
 
   let devolucao: DesfechoDaDevolucao | null = null;
@@ -420,6 +447,18 @@ export async function fecharConversaHandler(
         },
         { conversationId, expectedAssignee: dono },
       );
+      if (!resultado.ok && resultado.erro !== "contato_sempre_humano") {
+        // A recusa esperada (`contato_sempre_humano`) não é notícia; o resto é
+        // falha de banco no meio do gesto e precisa de rastro — o fechamento já
+        // seguiu, então esta linha é o único lugar em que ela aparece.
+        logger.error("[conversations.close] devolução ao automático falhou antes de fechar", {
+          conversation_id: conversationId,
+          organization_id: ctx.organization_id,
+          erro: resultado.erro,
+          detalhe: resultado.detalhe,
+          requestId: ctx.requestId,
+        });
+      }
       devolucao = resultado.ok ? { ok: true } : { ok: false, motivo: resultado.erro };
     }
   }
@@ -435,6 +474,8 @@ export async function fecharConversaHandler(
     throw new ApiError(
       conflito ? 409 : 500,
       conflito ? "conflict" : "internal_error",
+      undefined,
+      ctx.requestId,
       conflito ? "O atendimento mudou. Atualize e tente novamente." : error.message,
     );
   }
@@ -475,7 +516,13 @@ export async function reabrirConversaHandler(
 
   const revisaoEsperada = opcoes.expectedRevision ?? conv.service_revision;
   if (revisaoEsperada !== conv.service_revision) {
-    throw new ApiError(409, "conflict", "O atendimento mudou. Atualize e tente novamente.");
+    throw new ApiError(
+      409,
+      "conflict",
+      undefined,
+      ctx.requestId,
+      "O atendimento mudou. Atualize e tente novamente.",
+    );
   }
 
   const { data, error } = await createAdminClient().rpc("fn_service_status", {
@@ -489,6 +536,8 @@ export async function reabrirConversaHandler(
     throw new ApiError(
       conflito ? 409 : 500,
       conflito ? "conflict" : "internal_error",
+      undefined,
+      ctx.requestId,
       conflito ? "O atendimento mudou. Atualize e tente novamente." : error.message,
     );
   }
