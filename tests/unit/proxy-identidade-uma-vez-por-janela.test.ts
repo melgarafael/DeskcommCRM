@@ -37,6 +37,7 @@ import {
   TTL_CURTO_MS,
   esquecerTudo,
   invalidarSessao,
+  invalidarUsuario,
   sessaoDosCookies,
 } from "@/lib/auth/cache-curto";
 
@@ -49,6 +50,8 @@ const estado = {
   usuarios: 0,
   /** chamadas a `fn_is_platform_admin` — autorização, que NÃO pode ser cacheada. */
   admins: 0,
+  /** idas a `/auth/v1/token` — a renovação que o auth-js faz dentro da margem. */
+  renovacoes: 0,
   goTrue: "ok" as "ok" | "revogado",
 };
 
@@ -59,9 +62,14 @@ function json(corpo: unknown, status = 200): Response {
   });
 }
 
+const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+
+function tokenDeAcesso(exp: number): string {
+  return `${b64({ alg: "HS256" })}.${b64({ sub: USER_ID, exp })}.assinatura`;
+}
+
 function cookieDeSessao(): { name: string; value: string } {
-  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
-  const token = `${b64({ alg: "HS256" })}.${b64({ sub: USER_ID, exp: EXPIRACAO_DO_TOKEN_S })}.assinatura`;
+  const token = tokenDeAcesso(EXPIRACAO_DO_TOKEN_S);
   // O formato que o `@supabase/ssr` grava (`base64-` + base64url do JSON) e o
   // que o `_isValidSession` do auth-js exige: access_token, refresh_token e
   // expires_at — sem qualquer um dos três, o cliente trata como "sem sessão".
@@ -94,6 +102,17 @@ function dublarSupabase() {
       }
       return json({ id: USER_ID, email: "membro@example.com", user_metadata: {}, app_metadata: {} });
     }
+    if (url.includes("/auth/v1/token")) {
+      estado.renovacoes += 1;
+      return json({
+        access_token: tokenDeAcesso(EXPIRACAO_DO_TOKEN_S + 3600),
+        refresh_token: "refresh-renovado",
+        token_type: "bearer",
+        expires_in: 3600,
+        expires_at: EXPIRACAO_DO_TOKEN_S + 3600,
+        user: { id: USER_ID, email: "membro@example.com", user_metadata: {}, app_metadata: {} },
+      });
+    }
     if (url.includes("/rpc/fn_is_platform_admin")) {
       estado.admins += 1;
       return json(true);
@@ -112,6 +131,7 @@ async function pedir(caminho: string, cookie: { name: string; value: string } | 
 beforeEach(() => {
   estado.usuarios = 0;
   estado.admins = 0;
+  estado.renovacoes = 0;
   estado.goTrue = "ok";
   relogio.agora = Date.UTC(2026, 10, 11, 12, 0, 0);
   vi.spyOn(Date, "now").mockImplementation(() => relogio.agora);
@@ -169,7 +189,8 @@ describe("#4326 item 1 — o proxy valida a identidade uma vez por janela", () =
     estado.goTrue = "revogado";
 
     // Dentro da janela: é o risco declarado no PR — a identidade em cache
-    // ainda abre o portão. O handler nega o dado (RLS com token morto).
+    // ainda abre o portão, e o handler lê a MESMA entrada. Quem fecha antes
+    // do TTL é a invalidação (`invalidarSessao`/`invalidarUsuario`), não o banco.
     const dentroDaJanela = await pedir("/app/inbox");
     expect(dentroDaJanela.headers.get("x-middleware-next")).toBe("1");
     expect(estado.usuarios).toBe(1);
@@ -205,6 +226,39 @@ describe("#4326 item 1 — o proxy valida a identidade uma vez por janela", () =
     invalidarSessao(sessao!.chave);
 
     await pedir("/app/inbox", cookie);
+    expect(estado.usuarios).toBe(2);
+  });
+
+  it("invalidarUsuario (sair de todos os aparelhos, MFA novo) derruba a entrada que o proxy escreveu", async () => {
+    // O proxy roda ANTES do handler: numa sessão nova é ele quem grava a entrada
+    // `sessao:<hash>`, e o handler só a lê. A etiqueta do usuário tem de estar
+    // nela, senão a revogação por identidade espera o TTL.
+    await pedir("/app/inbox");
+    expect(estado.usuarios).toBe(1);
+
+    invalidarUsuario(USER_ID);
+
+    await pedir("/app/inbox");
+    expect(estado.usuarios).toBe(2);
+  });
+
+  it("dentro da margem de renovação do auth-js o proxy não serve o cache: volta ao GoTrue e renova", async () => {
+    // O `getUser()` do proxy é quem renova a sessão quando faltam menos de
+    // `EXPIRY_MARGIN_MS` (90 s) para o `exp`, e só ele devolve o cookie novo
+    // ao navegador. Uma entrada gravada ANTES da margem vale até 25 s depois
+    // (TTL de 30 s menos a margem de 5 s do cache); se o proxy a servisse
+    // dentro da margem, a renovação passaria para o Server Component, que não
+    // consegue gravar cookie, e o navegador ficaria com o refresh token antigo.
+    const exp = EXPIRACAO_DO_TOKEN_S * 1000;
+    relogio.agora = exp - 100_000; // fora da margem: grava a entrada
+    await pedir("/app/inbox");
+    expect(estado.usuarios).toBe(1);
+    expect(estado.renovacoes).toBe(0);
+
+    relogio.agora = exp - 80_000; // dentro da margem, com a entrada ainda viva
+    const dentroDaMargem = await pedir("/app/inbox");
+    expect(dentroDaMargem.headers.get("x-middleware-next")).toBe("1");
+    expect(estado.renovacoes).toBe(1);
     expect(estado.usuarios).toBe(2);
   });
 

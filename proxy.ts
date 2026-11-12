@@ -107,10 +107,12 @@ export async function proxy(request: NextRequest) {
   //
   // #4326 item 1: esta chamada era uma ida ao GoTrue por aba, por fetch e por
   // navegação — o proxy roda ANTES do handler, que desde o #3696 já lê a mesma
-  // validação de um cache curto. `validarIdentidade` usa a MESMA chave e o
-  // MESMO teto (`sessao:<hash dos cookies>`, `exp` do JWT), então proxy e
-  // handler dividem a entrada: dentro da janela, uma ida ao `/auth/v1/user`
-  // serve as duas pontas. Sem sessão reconhecível o caminho é o de antes.
+  // validação de um cache curto. `validarIdentidade` usa a MESMA chave
+  // (`sessao:<hash dos cookies>`), então proxy e handler dividem a entrada:
+  // dentro da janela, uma ida ao `/auth/v1/user` serve as duas pontas. O teto
+  // do proxy para antes da margem de renovação do auth-js: é este `getUser()`
+  // que renova e devolve o cookie novo. Sem sessão reconhecível o caminho é o
+  // de antes.
   // A autorização segue por requisição — o RPC de platform admin abaixo não
   // entra nesse cache.
   const {
