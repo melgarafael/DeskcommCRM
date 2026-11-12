@@ -90,10 +90,11 @@ interface VozSettings {
 /**
  * "O agente fala NESTE turno?" — os quatro comportamentos de `voz_quando`.
  *
- * `'quando_pede'` (#4345) é o espelho MAIS a leitura do turno: fala quando o
+ * `'quando_pede'` (#4345) é o espelho MAIS a leitura da conversa: fala quando o
  * cliente mandou áudio (como `'espelhar'`) OU quando pediu áudio por escrito /
- * avisou que não consegue ler. Quem pediu texto vence o espelho — o cliente que
- * grava "prefiro texto" quer texto, mesmo tendo mandado áudio.
+ * avisou que não consegue ler — na mensagem atual OU em qualquer uma das últimas
+ * que o turno carregou. Quem pediu texto vence o espelho — inclusive quando a
+ * correção veio depois do pedido.
  */
 function deveFalar(
   vozQuando: VozQuando,

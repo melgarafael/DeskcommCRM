@@ -140,8 +140,12 @@ const NAO_OUVE =
 const PEDIDO_DE_TEXTO =
   /\b(?:prefiro|preferia|quero|queria|gostaria|pode|poderia|consegue|conseguiria|manda|mande|envia|envie|responde|responda|melhor|seria melhor|da para|tem como|favor)\b[^,]{0,32}\b(?:texto|textos|escrit[oa]s?|escrever|escrevendo|por escrito|em texto|por texto)\b/;
 
-/** O imperativo do canal escrito sozinho já basta: "não estou conseguindo ouvir agora, escreve". */
-const IMPERATIVO_DE_TEXTO = /\b(?:escreve|escreva|escrevam|digita|digite|digitam)\b/;
+/**
+ * O imperativo do canal escrito: "não estou conseguindo ouvir agora, escreve".
+ * Ancorado no começo da oração para não pegar a 3ª pessoa ("ela escreve bem"),
+ * que fala de outra pessoa, não do canal.
+ */
+const IMPERATIVO_DE_TEXTO = /^(?:(?:e|so|por favor)\s+)?(?:escreve|escreva|escrevam|digita|digite|digitam)\b/;
 
 /** Menção direta ao canal escrito, sem verbo: "por escrito, por favor". */
 const MENCAO_AO_TEXTO = /\b(?:por escrito|em texto|por texto|mensagem escrita)\b/;
