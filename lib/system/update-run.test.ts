@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   canTransition,
   isRunStale,
+  runAbandonado,
   rollbackDesmentidoPeloApp,
   rollbackFoiSuperado,
   sucessoJaInstalado,
@@ -233,5 +234,47 @@ describe("rollbackDesmentidoPeloApp", () => {
     );
     expect(rollbackDesmentidoPeloApp({ status: "failed_rolled_back" }, "1.33.0")).toBe(false);
     expect(rollbackDesmentidoPeloApp(null, "1.33.0")).toBe(false);
+  });
+});
+
+describe("runAbandonado — o relógio do abandono com a janela de manutenção (#4334)", () => {
+  const JANELA = "*/5 2-5 * * *";
+  const despachoDeDia = new Date(2026, 10, 12, 10, 0).toISOString();
+
+  it("sem janela continua exatamente o de antes: 15 min após o clique, abandonado", () => {
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 14))).toBe(false);
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 16))).toBe(true);
+    // Vazio e recusado são janela ABERTA, como no shell.
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 16), "")).toBe(true);
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 16), "02:00-05:00")).toBe(
+      true,
+    );
+  });
+
+  it("com janela, o segundo clique das 10h15 NÃO fecha o pedido da madrugada", () => {
+    // O defeito medido: 15 min de idade, zero oportunidades de execução.
+    // Antes: fechado como "Run abandonado". Depois: continua de pé.
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 12, 10, 16), JANELA)).toBe(false);
+    // Mesmo 16 horas depois do clique, o run segue esperando: a janela abre 02:00.
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 13, 1, 59), JANELA)).toBe(false);
+  });
+
+  it("mas a janela que já abriu conta: 15 min depois da primeira oportunidade, abandonado", () => {
+    // `*/5 2-5` abre às 02:00 (minuto 0 do passo 5) — a primeira oportunidade
+    // depois do clique das 10h. O limite é `>`: 02:15 ainda não é abandono,
+    // 02:16 é o primeiro minuto em que o run é desfecho desconhecido.
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 13, 2, 15), JANELA)).toBe(false);
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 13, 2, 16), JANELA)).toBe(true);
+    expect(runAbandonado(despachoDeDia, new Date(2026, 10, 13, 9, 0), JANELA)).toBe(true);
+  });
+
+  it("despacho já dentro da janela: o relógio começa no ciclo seguinte, não no clique", () => {
+    const despachoNaJanela = new Date(2026, 10, 12, 2, 0).toISOString();
+    expect(runAbandonado(despachoNaJanela, new Date(2026, 10, 12, 2, 16), JANELA)).toBe(false);
+    expect(runAbandonado(despachoNaJanela, new Date(2026, 10, 12, 2, 21), JANELA)).toBe(true);
+  });
+
+  it("data ilegível no run é desfecho desconhecido, com ou sem janela", () => {
+    expect(runAbandonado("nao-e-data", new Date(2026, 10, 12, 10, 16), JANELA)).toBe(true);
   });
 });

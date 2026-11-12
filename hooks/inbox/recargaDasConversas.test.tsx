@@ -37,7 +37,17 @@ import { useConversation } from "./useConversation";
 const FILTROS = {};
 const lista = () => fakes.get.mock.calls.filter(([u]) => String(u).startsWith("/api/v1/conversations?")).length;
 const aberta = () => fakes.get.mock.calls.filter(([u]) => u === "/api/v1/conversations/c1").length;
+const paginasNoCache = (qc: QueryClient) =>
+  ((qc.getQueryData(["conversations", FILTROS]) as { pages?: unknown[] } | undefined)?.pages ?? [])
+    .length;
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * O `waitFor` do vitest espera 1 s por padrão — menos que a janela de
+ * agrupamento (1,5 s, #4325 item 5). Quem espera a recarga agrupada precisa
+ * desta folga, senão o teste reprova por cronômetro, não por defeito.
+ */
+const ESPERA_DA_JANELA = { timeout: 5000 };
 
 function montar() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -57,8 +67,14 @@ function montar() {
 describe("recarga do inbox pedida pelo realtime", () => {
   beforeEach(() => {
     fakes.get.mockReset();
+    // `has_more` sempre verdadeiro: é o que mantém as páginas já carregadas no
+    // cache quando a query é refeita. Com `has_more: false` o react-query
+    // truncaria a lista na primeira página e a recarga custaria 1 GET nos dois
+    // mundos — o teste mediria o mock, não o corte.
     fakes.get.mockImplementation(async (url: string) =>
-      url.startsWith("/api/v1/conversations?") ? { data: [] } : { data: { id: "c1" } },
+      url.startsWith("/api/v1/conversations?")
+        ? { data: [], meta: { has_more: true, cursor: "proximo" } }
+        : { data: { id: "c1" } },
     );
   });
 
@@ -66,7 +82,9 @@ describe("recarga do inbox pedida pelo realtime", () => {
     montar();
     await waitFor(() => expect(lista()).toBe(1));
     for (let i = 0; i < 5; i++) fakes.onChange!({});
-    await esperar(400);
+    // A janela de agrupamento é 1,5 s (#4325 item 5): esperar menos que isso
+    // mediria a janela, não o agrupamento.
+    await esperar(1700);
     expect(lista()).toBe(2);
   });
 
@@ -74,7 +92,7 @@ describe("recarga do inbox pedida pelo realtime", () => {
     montar();
     await waitFor(() => expect(aberta()).toBe(1));
     fakes.onChange!({});
-    await waitFor(() => expect(aberta()).toBe(2));
+    await waitFor(() => expect(aberta()).toBe(2), ESPERA_DA_JANELA);
   });
 
   it("não cancela a busca em voo: espera ela terminar e recarrega depois", async () => {
@@ -87,9 +105,34 @@ describe("recarga do inbox pedida pelo realtime", () => {
     void qc.invalidateQueries({ queryKey: ["conversations"] });
     await waitFor(() => expect(lista()).toBe(2));
     fakes.onChange!({});
-    await esperar(400);
+    await esperar(1700);
     expect(lista(), "a busca em voo foi cancelada por uma nova").toBe(2);
     soltar();
-    await waitFor(() => expect(lista()).toBe(3));
+    await waitFor(() => expect(lista()).toBe(3), ESPERA_DA_JANELA);
+  });
+
+  it("com seis páginas carregadas, o evento refaz UMA página — não seis", async () => {
+    // O número que a issue mediu: quem clicou em "Carregar mais" cinco vezes
+    // pagava SEIS requisições por evento, porque invalidar uma
+    // `useInfiniteQuery` refaz todas as páginas em série.
+    const qc = montar();
+    await waitFor(() => expect(lista()).toBe(1));
+    const paginas = Array.from({ length: 6 }, (_, i) => ({
+      data: [{ id: `c${i}` }],
+      meta: { has_more: i < 5, cursor: `cur${i}` },
+    }));
+    qc.setQueryData(["conversations", FILTROS], {
+      pages: paginas,
+      pageParams: [undefined, "cur1", "cur2", "cur3", "cur4", "cur5"],
+    });
+    expect(paginasNoCache(qc)).toBe(6);
+
+    fakes.onChange!({});
+    await waitFor(() => expect(lista()).toBe(2), ESPERA_DA_JANELA);
+    // Folga para as outras cinco páginas aparecerem, se o cache não fosse cortado.
+    await esperar(300);
+
+    expect(lista(), "a recarga refez o histórico inteiro").toBe(2);
+    expect(paginasNoCache(qc), "o cache ficou com mais de uma página").toBe(1);
   });
 });
