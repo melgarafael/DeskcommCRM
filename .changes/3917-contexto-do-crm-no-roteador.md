@@ -16,3 +16,7 @@ ele recebe o mesmo bloco, pela leitura que o turno já fazia — uma consulta po
 turno, e nenhuma quando a tarefa do Jev está desligada. O bloco leva nome de
 funil, nome de etapa e etiqueta; nunca título do card, telefone, e-mail ou
 documento.
+
+Você não precisa fazer nada.
+
+Contribuição de @webtecnica (#4195, issue #3917).
