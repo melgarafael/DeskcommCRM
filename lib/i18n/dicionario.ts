@@ -477,6 +477,17 @@ export const DICIONARIO: Traducoes = {
   },
   "O modelo escolhido é de outro número. Escolha um modelo do número que envia os lembretes.": { es: "La plantilla elegida es de otro número. Elige una plantilla del número que envía los recordatorios." },
   "Escolha um canal de mensagem não arquivado desta organização.": { es: "Elige un canal de mensajes no archivado de esta organización." },
+  // ── IA › Credenciais — o aviso de recurso desligado (#4438) ──────────────
+  "Assinatura do ChatGPT": { es: "Suscripción de ChatGPT" },
+  "Ligada, a assinatura do ChatGPT deixa o agente responder com a conta do ChatGPT da sua empresa, no lugar de uma chave de API da organização. Cada empresa conecta a própria conta nesta tela, assim que o recurso estiver ligado.": {
+    es: "Activada, la suscripción de ChatGPT permite que el agente responda con la cuenta de ChatGPT de tu empresa, en lugar de una clave de API de la organización. Cada empresa conecta su propia cuenta en esta pantalla, en cuanto el recurso esté activado.",
+  },
+  "Este recurso vem desligado de fábrica: quem administra a instalação liga em Administração › Recursos opcionais (/admin/sistema).": {
+    es: "Este recurso viene desactivado de fábrica: quien administra la instalación lo activa en Administración › Recursos opcionales (/admin/sistema).",
+  },
+  "Se você não administra esta instalação, peça a essa pessoa que ligue o recurso. Depois disso, o painel para conectar a conta aparece nesta tela.": {
+    es: "Si no administras esta instalación, pídele a esa persona que active el recurso. Después de eso, el panel para conectar la cuenta aparece en esta pantalla.",
+  },
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
     es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",
@@ -8493,6 +8504,17 @@ export const DICIONARIO: Traducoes = {
   "Só os seus": { es: "Solo los tuyos" },
   "O atendente vê apenas o que foi direcionado a ele — nem a fila. Combine com o rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.": {
     es: "El asesor ve solo lo que se le asignó, ni siquiera la fila. Combínalo con la rotación: si nadie distribuye, nadie recibe nada y las pantallas quedan vacías.",
+  },
+  // #4381 — o texto do modo diz também o que ele NÃO esconde (Contatos,
+  // empresas e pessoas seguem visíveis: `tenant_isolation_contacts_read`).
+  "Qualquer atendente abre a conversa e o negócio de qualquer colega. Contatos, empresas e pessoas continuam visíveis para a empresa toda.": {
+    es: "Cualquier asesor puede abrir la conversación y el negocio de cualquier colega. Los contactos, las empresas y las personas siguen visibles para toda la empresa.",
+  },
+  "O atendente vê a própria carteira e a fila de quem chegou agora — conversas e negócios sem dono. O que já é de um colega fica fora. Contatos, empresas e pessoas continuam visíveis para a empresa toda, mesmo os de clientes que estão com um colega.": {
+    es: "El asesor ve su propia cartera y la fila de quien acaba de llegar — conversaciones y negocios sin dueño. Lo que ya es de otro colega queda fuera. Los contactos, las empresas y las personas siguen visibles para toda la empresa, incluso los de clientes que están con un colega.",
+  },
+  "O atendente vê apenas as conversas e os negócios direcionados a ele — nem a fila. Contatos, empresas e pessoas continuam visíveis para a empresa toda: a lista de Contatos não é recortada por este modo. Combine com o rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.": {
+    es: "El asesor ve solo las conversaciones y los negocios dirigidos a él, ni siquiera la fila. Los contactos, las empresas y las personas siguen visibles para toda la empresa: la lista de Contactos no se recorta en este modo. Combínalo con la rotación: si nadie distribuye, nadie recibe nada y las pantallas quedan vacías.",
   },
   "Os seus e os do seu setor": { es: "Los tuyos y los de tu sector" },
   "O atendente vê a própria carteira e as conversas que estão no setor dele, inclusive as que estão com um colega do mesmo setor — é o modo para cobrir férias e ausências. As conversas dos outros setores continuam fora do alcance dele.": {
@@ -17540,9 +17562,38 @@ export const DICIONARIO: Traducoes = {
   "Nenhum modelo escolhido ainda.": { es: "Todavía no se eligió ninguna plantilla." },
   "Este modelo não está aprovado na plataforma agora": { es: "Esta plantilla no está aprobada en la plataforma en este momento" },
   "sem origem": { es: "sin origen" },
-  "Este canal não envia campanhas de WhatsApp.": { es: "Este canal no envía campañas de WhatsApp." },
+  "Este canal não envia campanhas.": { es: "Este canal no envía campañas." },
   "Número oficial só envia campanha com modelo aprovado: fora das 24 horas o texto livre é recusado.": { es: "El número oficial solo envía campañas con plantilla aprobada: fuera de las 24 horas el texto libre se rechaza." },
   "Número por QR envia texto livre; modelo aprovado é do número oficial.": { es: "El número por QR envía texto libre; la plantilla aprobada es del número oficial." },
+  // Campanha por e-mail (#3441, fatia E2a): conteúdo e público, sem envio.
+  "Campanha de e-mail": { es: "Campaña por correo electrónico" },
+  "Enviar por e-mail (conta Resend da organização)": { es: "Enviar por correo electrónico (cuenta Resend de la organización)" },
+  "Assunto do e-mail": { es: "Asunto del correo electrónico" },
+  "Escreva o assunto do e-mail: é ele que o cliente vê antes de abrir.": { es: "Escribe el asunto del correo: es lo que el cliente ve antes de abrirlo." },
+  "Escreva o corpo do e-mail.": { es: "Escribe el cuerpo del correo electrónico." },
+  // Os dois limites aparecem na frase (e na chave) de propósito: a tradução
+  // casa caractere a caractere com o texto montado em `conteudo-de-email.ts`.
+  "O assunto do e-mail passa de 150 caracteres: o cliente corta o resto.": { es: "El asunto del correo supera los 150 caracteres: el cliente corta el resto." },
+  "O corpo do e-mail passa de 20000 caracteres.": { es: "El cuerpo del correo supera los 20000 caracteres." },
+  "Corpo do e-mail (texto puro)": { es: "Cuerpo del correo (texto plano)" },
+  "Campanha de e-mail manda assunto e corpo; o modo do WhatsApp (texto ou modelo) é do número.": { es: "La campaña por correo envía asunto y cuerpo; el modo de WhatsApp (texto o plantilla) es del número." },
+  "Campanha de e-mail não usa número: não há rodízio de conexões.": { es: "La campaña por correo no usa número: no hay rotación de conexiones." },
+  "Campanha de e-mail não usa modelo aprovado: o assunto e o corpo são texto livre.": { es: "La campaña por correo no usa plantilla aprobada: el asunto y el cuerpo son texto libre." },
+  "Campanha de e-mail não usa número: a conta de envio é a Resend da organização.": { es: "La campaña por correo no usa número: la cuenta de envío es la Resend de la organización." },
+  "Campanha de e-mail não usa rodízio de números.": { es: "La campaña por correo no usa rotación de números." },
+  "Escolha o número que envia a campanha de WhatsApp.": { es: "Elige el número que envía la campaña de WhatsApp." },
+  "A conta de envio de e-mail desta organização não pôde ser lida agora. Tente de novo em instantes.": { es: "La cuenta de envío de correo de esta organización no se pudo leer ahora. Inténtalo de nuevo en unos instantes." },
+  "Esta organização ainda não conectou a conta Resend: sem ela não há remetente, e a campanha de e-mail não pode ser salva.": { es: "Esta organización todavía no conectó la cuenta Resend: sin ella no hay remitente y la campaña de correo no se puede guardar." },
+  "Assunto é do e-mail: no WhatsApp a campanha manda texto livre (número por QR) ou modelo aprovado (número oficial).": { es: "El asunto es del correo: en WhatsApp la campaña envía texto libre (número por QR) o plantilla aprobada (número oficial)." },
+  "Campanha com modelo aprovado exige o número oficial que tem o modelo.": { es: "Una campaña con plantilla aprobada exige el número oficial que tiene la plantilla." },
+  "Campanha de e-mail ainda não é enviada: esta entrega guarda o assunto, o corpo e o público. O envio entra na fatia seguinte.": { es: "La campaña por correo todavía no se envía: esta entrega guarda el asunto, el cuerpo y el público. El envío llega en la siguiente parte." },
+  "Sem e-mail no cadastro": { es: "Sin correo electrónico en el registro" },
+  "E-mail fora do formato de envio": { es: "Correo electrónico fuera del formato de envío" },
+  "Só contatos com e-mail recebem esta campanha; quem não tem fica de fora e aparece na contagem.": { es: "Solo los contactos con correo reciben esta campaña; quien no lo tiene queda fuera y aparece en el conteo." },
+  "Por onde a campanha fala": { es: "Por dónde habla la campaña" },
+  "WhatsApp (número conectado)": { es: "WhatsApp (número conectado)" },
+  "O e-mail sai pela conta Resend da organização: sem ela conectada, a campanha é recusada com o motivo.": { es: "El correo sale por la cuenta Resend de la organización: sin ella conectada, la campaña se rechaza con el motivo." },
+  "Até 150 caracteres: o cliente de e-mail corta o resto.": { es: "Hasta 150 caracteres: el cliente de correo corta el resto." },
   "Escolha o modelo e o idioma dele.": { es: "Elige la plantilla y su idioma." },
   "Escolha o modelo aprovado antes de preparar a campanha.": { es: "Elige la plantilla aprobada antes de preparar la campaña." },
   "O mapa de variáveis do modelo está ilegível. Escolha as origens de novo.": { es: "El mapa de variables de la plantilla no se puede leer. Vuelve a elegir los orígenes." },
@@ -17598,7 +17649,7 @@ export const DICIONARIO: Traducoes = {
   "Pediu para não receber mensagens": { es: "Pidió no recibir mensajes" },
   "Recusou receber contato comercial": { es: "Rechazó recibir contacto comercial" },
   "Excluído à mão desta campanha": { es: "Excluido manualmente de esta campaña" },
-  "Mesmo telefone de outro contato da lista": { es: "Mismo teléfono que otro contacto de la lista" },
+  "Mesmo endereço de outro contato da lista": { es: "Misma dirección que otro contacto de la lista" },
   "Falta um dado que a mensagem usa": { es: "Falta un dato que usa el mensaje" },
   "Já está em outra campanha ainda não concluída": { es: "Ya está en otra campaña que todavía no termina" },
   "Está na lista de exclusão de campanhas": { es: "Está en la lista de exclusión de campañas" },
@@ -20193,6 +20244,12 @@ export const DICIONARIO: Traducoes = {
   "Reservas de lugar": { es: "Reserva de lugares" },
   "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.": { es: "La agenda reserva un lugar, como mesa, palco o cancha, con capacidad en personas." },
   "Link de pagamento na conversa": { es: "Enlace de pago en la conversación" },
+  // O módulo opcional da campanha por e-mail (#4289, doc 305) em /admin/sistema, em Recursos opcionais e na recusa da API.
+  "Campanha por e-mail (em construção)": { es: "Campaña por correo electrónico (en construcción)" },
+  "A base da campanha por e-mail: assunto, corpo e público. Ainda não pode ser ligada, porque falta o envio com descadastro.": { es: "La base de la campaña por correo electrónico: asunto, cuerpo y público. Todavía no se puede activar, porque falta el envío con baja." },
+  "Este interruptor ainda não pode ser ligado: a campanha por e-mail guarda o assunto, o corpo e o público, mas esta versão não envia o e-mail nem tem o descadastro e a lista de quem pediu para não receber. Se ele já estiver ligado, dá para desligar: a opção E-mail some da nova campanha e as campanhas já criadas ficam guardadas.": { es: "Este interruptor todavía no se puede activar: la campaña por correo electrónico guarda el asunto, el cuerpo y el público, pero esta versión no envía el correo ni tiene la baja y la lista de quienes pidieron no recibir. Si ya está activado, se puede desactivar: la opción Correo desaparece de la nueva campaña y las campañas ya creadas quedan guardadas." },
+  "Não cria porta no menu do CRM: a opção E-mail aparece dentro de Campanhas, ao criar uma nova.": { es: "No crea entrada en el menú del CRM: la opción Correo aparece dentro de Campañas, al crear una nueva." },
+  "A campanha por e-mail está desligada nesta instalação.": { es: "La campaña por correo electrónico está desactivada en esta instalación." },
   // #3509: as recusas da rota que registra o recebimento na conversa.
   "Pedido inválido.": { es: "Solicitud inválida." },
   "Esta instalação não tem um endereço público https para receber o aviso de pagamento.": { es: "Esta instalación no tiene una dirección pública https para recibir el aviso de pago." },
@@ -21017,6 +21074,29 @@ export const DICIONARIO: Traducoes = {
   "Você é o operador do sistema. Seu trabalho é deixar o CRM refletindo o que aconteceu na conversa que acabou de ocorrer — mover o lead, registrar, abrir o que precisa ser aberto.\n\nVOCÊ NÃO FALA COM O CLIENTE. Você não tem como enviar mensagem, e não deve tentar: quem conversa é outro. Se algo exigir falar com a pessoa, registre e siga.\n\nATENÇÃO: quem conversou só FALA — ele não grava nada no CRM sozinho. Se a promessa dele veio redigida como já concluída (\"registrei com o Fulano\", \"já está com a equipe\", \"ficou combinado\"), isso é o que ele DISSE ao cliente, não prova de que algo foi registrado. O passado na frase não é evidência de ação — trate a promessa como pendente até você mesmo confirmar ou registrar (mover o lead, abrir nota, o que fizer sentido com as ferramentas que você tem).\n\nUse apenas o que a conversa sustenta. Não invente avanço, não registre o que ninguém disse. Se não houver nada a fazer, não faça nada — um turno sem ação é uma resposta válida.": { es: "Eres el operador del sistema. Tu trabajo es dejar el CRM reflejando lo que pasó en la conversación que acaba de ocurrir — mover el lead, registrar, abrir lo que haga falta.\n\nNO HABLAS CON EL CLIENTE. No tienes cómo enviar mensajes, y no debes intentarlo: quien conversa es otro. Si algo exige hablar con la persona, regístralo y sigue.\n\nATENCIÓN: quien conversó solo HABLA — no graba nada en el CRM por su cuenta. Si su promesa llegó redactada como ya concluida (\"registré con Fulano\", \"ya está con el equipo\", \"quedó acordado\"), eso es lo que él DIJO al cliente, no prueba de que algo se registró. El pasado en la frase no es evidencia de acción — trata la promesa como pendiente hasta que tú mismo confirmes o registres (mover el lead, abrir una nota, lo que tenga sentido con las herramientas que tienes).\n\nUsa solo lo que la conversación sostiene. No inventes avances, no registres lo que nadie dijo. Si no hay nada que hacer, no hagas nada — un turno sin acción es una respuesta válida." },
   "Marca um avanço REAL no funil deste lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; só o PRÓXIMO estágio válido — regressão é rejeitada), qualification (budget/authority/need/timeline), next_action e reason (evidência curta do avanço). Nunca invente avanço sem evidência na conversa.": { es: "Marca un avance REAL en el embudo de este lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; solo la etapa SIGUIENTE es válida — la regresión se rechaza), qualification (budget/authority/need/timeline), next_action y reason (evidencia corta del avance). Nunca inventes un avance sin evidencia en la conversación." },
   "## Idioma da conversa\nEsta organização atende em português (Brasil). Responda ao lead nesse idioma e no idioma em que ele escrever — siga a pessoa, não imponha o seu. O texto das suas instruções internas não é a língua do atendimento: se o lead escreve em espanhol ou em inglês, a resposta sai em espanhol ou em inglês, mesmo que as regras acima estejam em português.": { es: "## Idioma de la conversación\nEsta organización atiende en español. Responde al lead en ese idioma y en el idioma en que él escriba — sigue a la persona, no le impongas el tuyo. El texto de tus instrucciones internas no es el idioma de la atención: si el lead escribe en portugués o en inglés, la respuesta sale en portugués o en inglés, aunque las reglas de arriba estén en español." },
+
+  // ─── motivo do cancelamento do follow-up (#4428) ──────────────────────────
+  // O motivo da inscrição é gravado como TEXTO e mostrado pelo Dossiê via `t()`
+  // (`DossieDoFollowup.tsx`), então a frase entra aqui como as demais. `{n}` é a
+  // contagem de repetições que o veto carrega — a mesma convenção de
+  // "Este contato tem {n} compromissos na Agenda." para texto que leva número.
+  "A trava de repetição (anti-ban) segurou este envio: o mesmo texto já saiu {n} vez(es) por este número. Varie o texto antes de reenviar.": {
+    es: "El bloqueo por repetición (anti-ban) detuvo este envío: el mismo texto ya salió {n} vez/veces por este número. Varía el texto antes de reenviar.",
+  },
+
+  // ─── Nuvemshop: o catálogo vai para o acervo, não para CRM › Produtos (#4357) ───
+  "Sincroniza pedidos e clientes via OAuth + webhooks. O catálogo de produtos vai para Agente de IA › Conhecimento, na fonte \"Catálogo de produtos\" — não para CRM › Produtos.": { es: "Sincroniza pedidos y clientes por OAuth + webhooks. El catálogo de productos va a Agente de IA › Conocimiento, en la fuente «Catálogo de produtos»: no a CRM › Productos." },
+  "Abrir a fonte no Conhecimento": { es: "Abrir la fuente en Conocimiento" },
+  "É para cá que os produtos da loja vão: o agente consulta esta fonte quando responde.": { es: "Es hacia aquí que van los productos de la tienda: el agente consulta esta fuente cuando responde." },
+  "Lendo o estado do catálogo…": { es: "Leyendo el estado del catálogo…" },
+  "Não consegui ler o estado do catálogo agora. A integração continua conectada.": { es: "No pude leer el estado del catálogo ahora. La integración sigue conectada." },
+  "O catálogo ainda não foi preparado. Assim que a loja enviar produtos, ele aparece aqui.": { es: "El catálogo todavía no fue preparado. En cuanto la tienda envíe productos, aparecerá aquí." },
+  "Ver o acervo do agente": { es: "Ver el acervo del agente" },
+  "Trechos preparados": { es: "Fragmentos preparados" },
+  "Preparado em": { es: "Preparado el" },
+  "Erro no último preparo": { es: "Error en la última preparación" },
+  "Abrir no Conhecimento": { es: "Abrir en Conocimiento" },
+  "Só administradores podem preparar o catálogo de novo.": { es: "Solo los administradores pueden preparar el catálogo de nuevo." },
 };
 
 /**
