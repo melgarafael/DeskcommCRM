@@ -10,6 +10,13 @@
  *      classifica MESMO ASSIM (barato, é o que detecta troca de assunto) —
  *      só troca se a intenção vier DIFERENTE da sticky E confiança >= min;
  *      senão mantém o agente sticky.
+ *   2b. a PASSAGEM EXPLÍCITA (#4318) é mais forte que o sticky comum: quando a
+ *      conversa foi passada de propósito (`transferir-agente`/`transfer_to_agent`)
+ *      e a marca dela ainda está pendente, a intenção diferente com confiança
+ *      NÃO troca de agente — o turno seguinte à passagem é atendido por quem
+ *      recebeu a conversa. A marca é consumida pelo primeiro turno roteado
+ *      (`passagemExplicitaPendente`); do segundo em diante vale a regra 2, para
+ *      o roteador continuar corrigindo roteamento em vez de virar inerte.
  *   3. sem sticky: classifica; intenção não-nula + confiança >= min ⇒ agente
  *      do membro.
  *   4. classificador falhou (null) COM sticky elegível ⇒ mantém o sticky
@@ -216,11 +223,40 @@ export function vereditoConfiavelDoRoteador(router: LoadedRouter, verdict: Inten
     router.members.some((m) => m.intentName === verdict.intentName);
 }
 
+/**
+ * A PASSAGEM EXPLÍCITA ainda está de pé? (#4318)
+ *
+ * A ação `transferir-agente` e a ferramenta `transfer_to_agent` gravam o agente
+ * de destino e a intenção dele em `conversations` — e, junto, carimbam
+ * `active_agent_transfer_at` com o MESMO `now()` de `active_agent_set_at`. Os
+ * dois iguais significam "esta conversa foi passada de propósito e o agente
+ * passado ainda não atendeu nenhum turno roteado". O primeiro turno roteado
+ * depois da passagem reescreve `active_agent_set_at` (`inbound-turn.ts`), e é o
+ * que CONSOME a passagem: do segundo turno em diante os carimbos divergem e o
+ * classificador volta a mandar. Sem escrita extra, sem cron, sem expiração
+ * inventada.
+ *
+ * O que isto protege é exatamente o turno que a issue #4318 mediu: a primeira
+ * mensagem do cliente que o classificador entende, com confiança, como OUTRO
+ * assunto — e que hoje desfazia a passagem que uma pessoa (ou o próprio agente)
+ * pediu.
+ */
+export function passagemExplicitaPendente(
+  activeAgentSetAt: string | Date | null,
+  activeAgentTransferAt: string | Date | null,
+): boolean {
+  if (activeAgentSetAt === null || activeAgentTransferAt === null) return false;
+  const passagem = new Date(activeAgentTransferAt).getTime();
+  if (!Number.isFinite(passagem)) return false;
+  return passagem === new Date(activeAgentSetAt).getTime();
+}
+
 export function destinoDoVeredito(
   router: LoadedRouter,
   stickyMember: RouterMember | undefined,
   stickyIntent: string | null,
   verdict: IntentVerdict | null,
+  passagemExplicita = false,
 ): DestinoDoVeredito {
   // regra 4: classificador falhou — um `null` é informação mais pobre que
   // "sem sinal", nunca deve derrubar a stickiness (review T4 finding 1).
@@ -239,6 +275,16 @@ export function destinoDoVeredito(
   if (stickyMember !== undefined) {
     // regra 2: só troca se a intenção vier DIFERENTE da sticky, com confiança.
     if (casado === undefined || verdict.intentName === stickyIntent) {
+      return { membro: stickyMember, outcome: 'sticky', intentName: stickyIntent, confidence: verdict.confidence };
+    }
+    // regra 2b (#4318): a passagem EXPLÍCITA é mais forte que o sticky comum.
+    // Quem decidiu foi uma pessoa (ação) ou o próprio agente (ferramenta), e o
+    // palpite de UM turno do classificador não desfaz essa decisão. Só vale
+    // enquanto a passagem está pendente (ver `passagemExplicitaPendente`), e o
+    // turno ainda confere se o agente passado tem versão publicada e não está
+    // pausado antes de segurar — passagem para agente que não responde não
+    // segura nada.
+    if (passagemExplicita) {
       return { membro: stickyMember, outcome: 'sticky', intentName: stickyIntent, confidence: verdict.confidence };
     }
     return { membro: casado, outcome: 'reclassified', intentName: verdict.intentName, confidence: verdict.confidence };
@@ -280,6 +326,14 @@ export async function resolveTurnAgent(
     signalMessageId?: string | null;
     stickyAgentId: string | null;
     stickyIntent: string | null;
+    /**
+     * A passagem EXPLÍCITA (#4318) ainda vale para este turno: a conversa foi
+     * passada de propósito para o agente sticky e ele ainda não atendeu nenhum
+     * turno roteado. Lido do banco por `resolveConversationTurn`
+     * (`passagemExplicitaPendente`); default `false` — quem chama
+     * `resolveTurnAgent` direto (prévia, harness) tem a régua de sempre.
+     */
+    passagemExplicita?: boolean;
     /** Mensagens anteriores ao signal, mais antiga → mais recente. Default []. */
     recentMessages?: ClassifierContextMessage[];
   },
@@ -752,7 +806,36 @@ export async function resolveTurnAgent(
     const doJev = independente
       ? jevConfiavel ? escolhaIndependente : null
       : estadoDoJev === 'decidindo' ? await jev.escolha : null;
-    const destino = destinoDoVeredito(router, stickyMember, input.stickyIntent, doJev?.veredito ?? verdict);
+    const vereditoDoTurno = doJev?.veredito ?? verdict;
+    // #4318: a passagem explícita entra na régua, e o turno confere o que ela
+    // NÃO consegue conferir sozinha (a régua é pura): se o agente passado tem
+    // versão publicada e não está pausado. Passagem para agente que não
+    // responde não segura nada — nesse caso vale o destino que o classificador
+    // apontou, em vez de calar a conversa.
+    const semPassagem = destinoDoVeredito(router, stickyMember, input.stickyIntent, vereditoDoTurno);
+    let destino = destinoDoVeredito(
+      router, stickyMember, input.stickyIntent, vereditoDoTurno, input.passagemExplicita === true,
+    );
+    if (input.passagemExplicita === true && destino.outcome === 'sticky' && semPassagem.outcome === 'reclassified' && stickyMember !== undefined) {
+      const configDoPassado = await _loadAgentById(db, input.tenantId, stickyMember.agentId);
+      if (configDoPassado === null || configDoPassado.pausedAt) {
+        destino = semPassagem;
+        deps.log.warn('a passagem explícita não segura o agente: o destino não responde — vale o classificador (#4318)', {
+          conversationId: input.conversationId,
+          agentePassadoId: stickyMember.agentId,
+          motivo: configDoPassado === null ? 'sem_versao_publicada' : 'pausado',
+          intentDoClassificador: vereditoDoTurno?.intentName ?? null,
+        });
+      } else {
+        deps.log.info('a passagem explícita segurou o agente contra a reclassificação (#4318)', {
+          conversationId: input.conversationId,
+          agentePassadoId: stickyMember.agentId,
+          intentDaPassagem: input.stickyIntent,
+          intentDoClassificador: vereditoDoTurno?.intentName ?? null,
+          confidence: vereditoDoTurno?.confidence ?? null,
+        });
+      }
+    }
 
     jev.observar({
       conversationId: input.conversationId,
@@ -828,11 +911,17 @@ export async function resolveConversationTurn(
   },
   deps: ResolveTurnAgentDeps,
 ): Promise<TurnAgentResolution> {
+  // O sticky da conversa e, com ele, a marca da PASSAGEM EXPLÍCITA (#4318): os
+  // dois carimbos iguais dizem que a conversa foi passada de propósito e que o
+  // agente passado ainda não atendeu nenhum turno roteado — o turno seguinte é
+  // o que a passagem protege. Uma leitura só: as colunas moram na mesma linha.
   const { rows } = await db.query<{
     active_ai_agent_id: string | null;
     active_intent: string | null;
+    active_agent_set_at: string | Date | null;
+    active_agent_transfer_at: string | Date | null;
   }>(
-    'select active_ai_agent_id,active_intent from conversations where organization_id=$1 and id=$2',
+    'select active_ai_agent_id,active_intent,active_agent_set_at,active_agent_transfer_at from conversations where organization_id=$1 and id=$2',
     [input.tenantId, input.conversationId],
   );
   const signalRow = input.inbound
@@ -877,5 +966,9 @@ export async function resolveConversationTurn(
     recentMessages,
     stickyAgentId: rows[0]?.active_ai_agent_id ?? null,
     stickyIntent: rows[0]?.active_intent ?? null,
+    passagemExplicita: passagemExplicitaPendente(
+      rows[0]?.active_agent_set_at ?? null,
+      rows[0]?.active_agent_transfer_at ?? null,
+    ),
   }, deps);
 }

@@ -9320,6 +9320,12 @@ create index if not exists idx_ai_router_decisions_router
 alter table conversations add column if not exists active_ai_agent_id uuid references ai_agents(id) on delete set null;
 alter table conversations add column if not exists active_intent text;
 alter table conversations add column if not exists active_agent_set_at timestamptz;
+-- Passagem EXPLÍCITA (migration 9355, #4318): gravada no mesmo `now()` de
+-- active_agent_set_at; iguais = passagem pendente, que vence o classificador no
+-- turno seguinte e é consumida pelo primeiro turno roteado.
+alter table conversations add column if not exists active_agent_transfer_at timestamptz;
+comment on column conversations.active_agent_transfer_at is
+  'Quando a conversa foi passada de propósito para outro agente de IA (#4318). Gravado no mesmo instante de active_agent_set_at; iguais = passagem pendente, que vence o classificador no turno seguinte. O primeiro turno roteado reescreve active_agent_set_at e consome a marca.';
 
 -- Triggers: audit de mutação + updated_at (padrão de ai_agents).
 drop trigger if exists trg_ai_routers_audit on ai_routers;

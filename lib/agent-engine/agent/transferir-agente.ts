@@ -43,6 +43,18 @@
  * (`sem_roteador`, `roteador_sem_sticky`, `roteador_por_remetente`,
  * `conversa_de_campanha`), em vez de responder "feito" e o turno ignorar.
  *
+ * ─── Por quanto tempo a passagem segura o agente (#4318) ───────────────────
+ *
+ * A passagem grava também `active_agent_transfer_at`, com o MESMO `now()` de
+ * `active_agent_set_at`. Enquanto os dois carimbos forem iguais, a passagem está
+ * PENDENTE e o turno a trata como mais forte que o sticky comum: uma intenção
+ * diferente, com confiança acima do mínimo, NÃO desfaz a passagem — o turno
+ * seguinte é de quem recebeu a conversa. O primeiro turno roteado reescreve
+ * `active_agent_set_at` (`inbound-turn.ts`) e consome a marca; do segundo turno
+ * em diante vale a régua de sempre, e o roteador volta a corrigir roteamento.
+ * É o "vale até a primeira mensagem de outro assunto" que a issue pediu, sem
+ * perder quem foi escolhido de propósito.
+ *
  * A fronteira entre números é "membro do roteador ativo deste número": o turno
  * carrega o membro pelo id, sem olhar em que número ele está publicado, então
  * qualquer membro desse roteador atende aqui. A passagem para um agente que não
@@ -275,10 +287,17 @@ export async function transferirAgenteDaConversa(
   const intentName = membro.intentName;
 
   // UMA escrita: o sticky e a linha de trilha nascem juntos, ou nada nasce.
+  //
+  // `active_agent_transfer_at` é a MARCA DA PASSAGEM (#4318): recebe o MESMO
+  // `now()` de `active_agent_set_at`, e é essa igualdade que diz ao turno
+  // seguinte "esta conversa foi passada de propósito". O primeiro turno roteado
+  // depois da passagem reescreve `active_agent_set_at` e consome a marca; a
+  // partir daí o classificador volta a poder reclassificar, como sempre.
   const { rowCount } = await db.query(
     `with destino as (
        update conversations
-          set active_ai_agent_id = $3, active_intent = $4, active_agent_set_at = now()
+          set active_ai_agent_id = $3, active_intent = $4, active_agent_set_at = now(),
+              active_agent_transfer_at = now()
         where organization_id = $1 and id = $2
         returning id
      )

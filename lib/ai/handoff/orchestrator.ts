@@ -314,6 +314,8 @@ export async function triggerHandoff(
         active_ai_agent_id: null,
         active_intent: null,
         active_agent_set_at: null,
+        // #4318: a passagem explícita pendente cai junto, pelo mesmo motivo.
+        active_agent_transfer_at: null,
       })
       .eq("id", input.conversationId)
       .eq("organization_id", input.organizationId);
