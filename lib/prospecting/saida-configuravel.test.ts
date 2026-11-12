@@ -257,7 +257,9 @@ describe("enviarComSaidaConfiguravel", () => {
     );
     expect(String(enviar.mock.calls[0]?.[0]).includes("PARAR")).toBe(leva);
     expect(query).toHaveBeenCalledTimes(1);
-    expect(query.mock.calls[0]?.[1]).toEqual(["org-a", "job-1", 1]);
+    // O 4º parâmetro é a CONVERSA: é ela que liga o ledger ao candidato e, por
+    // ele, à campanha que tem o texto próprio da saída (#4370).
+    expect(query.mock.calls[0]?.[1]).toEqual(["org-a", "job-1", 1, "conv-1"]);
     expect(auditMock).not.toHaveBeenCalled();
   });
 

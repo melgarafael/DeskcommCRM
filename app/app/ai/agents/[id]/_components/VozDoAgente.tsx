@@ -88,6 +88,11 @@ export function VozDoAgente({ agentId, inicial, disabled }: Props) {
     }
   }, []);
 
+  // A resposta pode chegar depois que a tela saiu: sem a guarda do `vivo`, o
+  // setState tardio lançava fora do React e virava rejeição não tratada (verify
+  // da 1.108.0) — e com o ambiente do teste desmontado virava `window is not
+  // defined` em `setCarregando(false)`. A guarda é do componente, não do teste:
+  // quem navega antes de /api/v1/ai/voz responder faz o mesmo caminho em produção.
   useEffect(() => {
     void carregar();
   }, [carregar]);
