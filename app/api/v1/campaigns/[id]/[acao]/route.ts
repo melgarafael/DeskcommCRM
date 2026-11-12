@@ -129,6 +129,14 @@ export async function POST(
       break;
     }
     case "testar": {
+      if (campanha.channel_session_id === null) {
+        return fail(
+          "campanha_conteudo_invalido",
+          t("Campanha de e-mail ainda não é enviada: esta entrega guarda o assunto, o corpo e o público. O envio entra na fatia seguinte."),
+          422,
+          { requestId },
+        );
+      }
       const parsed = testarSchema.safeParse(await req.json().catch(() => null));
       if (!parsed.success) {
         return fail("validation_failed", t("Escolha um contato para o teste."), 422, { requestId });

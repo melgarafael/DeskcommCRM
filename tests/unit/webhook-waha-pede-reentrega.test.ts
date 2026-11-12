@@ -46,8 +46,13 @@ let insertAvisoErro: { code: string; message: string } | null = null;
 function consulta(tabela: string, op: Op["op"], valores?: Record<string, unknown>) {
   const registro: Op = { tabela, op, filtros: [], ...(valores ? { valores } : {}) };
   ops.push(registro);
+  let retornarLinhas = false;
   const resultado = () => {
-    if (op === "update") return { data: null, error: updateFalha ? { message: "down" } : null };
+    if (op === "update") {
+      if (updateFalha) return { data: null, error: { message: "down" } };
+      const id = registro.filtros.find(([filtro]) => filtro === "eq:id")?.[1];
+      return { data: retornarLinhas ? arquivoPendente.filter((linha) => linha.id === id) : null, error: null };
+    }
     if (op === "insert" && tabela === "agent_inbox_items" && insertAvisoErro)
       return { data: null, error: insertAvisoErro };
     if (op === "insert") return { data: { id: `${tabela}-novo` }, error: null };
@@ -64,7 +69,10 @@ function consulta(tabela: string, op: Op["op"], valores?: Record<string, unknown
   }
   q.order = () => q;
   q.limit = () => q;
-  q.select = () => q;
+  q.select = () => {
+    retornarLinhas = true;
+    return q;
+  };
   q.maybeSingle = async () => resultado();
   q.then = (ok: (r: unknown) => unknown, ko?: (e: unknown) => unknown) =>
     Promise.resolve(resultado()).then(ok, ko);
@@ -246,6 +254,18 @@ describe("cron webhook-replay", () => {
         title: MENSAGEM_QUE_NAO_ENTROU.titulo,
       }),
     ]);
+  });
+
+  it("se a gravação de dead falhar, a linha fica pendente e o aviso não abre", async () => {
+    arquivoPendente = [linha("l1", MAX_TENTATIVAS - 1)];
+    roteiro = ["transitoria"];
+    updateFalha = true;
+
+    const r = await replay();
+
+    expect(desfechosGravados()).toContainEqual(expect.objectContaining({ status: "dead" }));
+    expect(r).toEqual({ lidas: 1, processadas: 0, ainda_falhando: 1, desistidas: 0 });
+    expect(avisosAbertos()).toEqual([]);
   });
 
   it("com aviso da mesma família já aberto, não abre outro", async () => {
