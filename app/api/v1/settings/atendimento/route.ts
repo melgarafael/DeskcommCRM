@@ -23,8 +23,11 @@ import {
  * uma vez, ao encerrar, e a resposta de 1 a 5 volta pela entrada normal do
  * WhatsApp (ver `lib/atendimento/satisfacao.ts`).
  *
- * Piso `manager`: é configuração da empresa, não preferência do atendente.
- * `/api/v1/metrics/satisfacao` lê o resultado com o mesmo piso.
+ * Ler é `manager`+ (é quem vê o resultado, em Configurações › Atendimento);
+ * LIGAR é de quem administra a empresa (`admin`, o mesmo piso das outras
+ * opções daquela tela, `podeAdministrarEmpresa`): a pergunta sai em nome da
+ * empresa para todo cliente que tiver o atendimento encerrado.
+ * `/api/v1/metrics/satisfacao` lê o resultado com piso `manager`.
  */
 
 export const dynamic = "force-dynamic";
@@ -57,7 +60,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "settings" });
+  const authz = await requireRole("admin", { requestId, resource: "settings", allowPlatformAdmin: true });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 

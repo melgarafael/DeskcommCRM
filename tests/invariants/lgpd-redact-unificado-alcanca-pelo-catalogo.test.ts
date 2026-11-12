@@ -316,7 +316,7 @@ const DECISOES: Record<string, Decisao> = {
   satisfacao_do_atendimento: {
     decidida: "manter",
     razao:
-      "Pesquisa de satisfacao (#4023): a linha guarda a NOTA (1 a 5), o estado e marcas de tempo — nenhum texto e nenhum dado pessoal. O vinculo com a pessoa e `contact_id` com `on delete set null`, entao o expurgo do contato zera sozinho e a nota continua servindo a media da empresa. Apagar a linha na anonimizacao destruiria a serie historica de qualidade do atendimento sem proteger ninguem.",
+      "Pesquisa de satisfacao (#4023): a linha guarda a NOTA (1 a 5), o estado e marcas de tempo — nenhum texto e nenhum dado pessoal. A anonimizacao reescreve o CONTATO e a linha passa a apontar para `Cliente Anonimizado #N`, que nao identifica ninguem; o texto da resposta mora em `messages`, que a cascata ja redige (`mensagem_da_resposta_id` e so um ponteiro, sem FK). No expurgo do contato, `contact_id` zera por `on delete set null` e a nota continua servindo a media da empresa. Apagar a linha na anonimizacao destruiria a serie historica de qualidade do atendimento sem proteger ninguem.",
   },
   automation_rule_contact_claims: {
     decidida: "manter",

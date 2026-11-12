@@ -437,8 +437,8 @@ const PROVA_PROPRIA: readonly Excecao[] = [
   {
     tabela: "satisfacao_do_atendimento",
     razao:
-      "tests/invariants/satisfacao-e-quarentena.test.ts — \"só manager lê a " +
-      "nota — agent e vizinho leem ZERO linhas\" (migration 4076, #4023): " +
+      "tests/invariants/satisfacao-do-atendimento.test.ts — \"só manager lê a " +
+      "nota — agent e vizinho leem ZERO linhas\" (migration 9352, #4023): " +
       "`countAs` com JWT real de `manager` lê as linhas da própria " +
       "organização, o `agent` da mesma organização lê ZERO e o admin da " +
       "organização vizinha lê ZERO. Fica fora de TABLES de propósito: a " +

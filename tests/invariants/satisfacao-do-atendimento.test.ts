@@ -47,10 +47,10 @@ function resumoDaSatisfacao(): Record<string, unknown> {
 beforeAll(() => {
   seedGov();
   sql(`
-    insert into auth.users (id, email) values ('${VIZINHA_ADMIN}', 'quarentena-vizinha@invariant.test')
+    insert into auth.users (id, email) values ('${VIZINHA_ADMIN}', 'satisfacao-vizinha@invariant.test')
       on conflict (id) do nothing;
     insert into public.organizations (id, slug, legal_name, display_name)
-      values ('${VIZINHA_ORG}', 'quarentena-vizinha', 'Vizinha Quarentena', 'Vizinha Q')
+      values ('${VIZINHA_ORG}', 'satisfacao-vizinha', 'Vizinha Satisfacao', 'Vizinha S')
       on conflict (id) do nothing;
     insert into public.user_organizations (user_id, organization_id, role, accepted_at)
       values ('${VIZINHA_ADMIN}', '${VIZINHA_ORG}', 'admin', now()) on conflict do nothing;
@@ -58,7 +58,7 @@ beforeAll(() => {
       values ('${VIZINHA_CONTACT}', '${VIZINHA_ORG}', 'Contato Vizinha') on conflict do nothing;
     do $q$ begin
       insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
-        values ('${VIZINHA_SESSION}', '${VIZINHA_ORG}', 'quarentena-vizinha', '\\x00'::bytea);
+        values ('${VIZINHA_SESSION}', '${VIZINHA_ORG}', 'satisfacao-vizinha', '\\x00'::bytea);
     exception when unique_violation then null; end $q$;
     insert into public.conversations (id, organization_id, contact_id, channel_session_id, status)
       values ('${VIZINHA_CONV}', '${VIZINHA_ORG}', '${VIZINHA_CONTACT}', '${VIZINHA_SESSION}', 'open')

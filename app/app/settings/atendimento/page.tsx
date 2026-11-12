@@ -33,6 +33,13 @@ import { AtendimentoForm } from "./_form";
 import { TelefoneDeFichaVazia } from "./_telefoneDeFichaVazia";
 import { NomeInformado } from "./_nomeInformado";
 import { DuplicadosPorNome } from "./_duplicadosPorNome";
+import { PesquisaDeSatisfacao } from "./_pesquisaDeSatisfacao";
+import {
+  fecharPedidosVencidos,
+  lerOpcaoDaSatisfacao,
+  resumoDaSatisfacao,
+  type ResumoDaSatisfacao,
+} from "@/lib/atendimento/satisfacao";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -83,6 +90,23 @@ export default async function AtendimentoSettingsPage() {
   // da varredura aplica (`duplicadosPorNomeLigado`): a tela não pode dizer
   // ligado o que a lista trata como desligado.
   const duplicadosPorNome = duplicadosPorNomeLigado({ crm: settings.crm });
+  // #4023 — a pesquisa lida pela MESMA régua do encerramento
+  // (`lerOpcaoDaSatisfacao`), e o resultado pela MESMA função da rota
+  // `/api/v1/metrics/satisfacao`, com a varredura de vencidos antes.
+  const satisfacao = lerOpcaoDaSatisfacao(data?.settings);
+  const admin = createAdminClient();
+  let resumoDaPesquisa: ResumoDaSatisfacao | null = null;
+  try {
+    await fecharPedidosVencidos(admin, activeOrg.orgId);
+    resumoDaPesquisa = await resumoDaSatisfacao(admin, {
+      organizationId: activeOrg.orgId,
+      de: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+  } catch {
+    // A leitura falhou: `resumoDaPesquisa` fica `null` e o cartão diz "não foi
+    // possível calcular" em vez de mostrar zero — e a tela, que serve para as
+    // outras opções, continua de pé.
+  }
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
@@ -100,7 +124,7 @@ export default async function AtendimentoSettingsPage() {
 
       <AtendimentoForm
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
-        setoresLigado={await moduloLigado(createAdminClient(), "setores")}
+        setoresLigado={await moduloLigado(admin, "setores")}
       />
       <ChannelRoutingForm initial={channels} />
       <AssinaturaForm initial={assinaturaInicial} />
@@ -118,6 +142,13 @@ export default async function AtendimentoSettingsPage() {
       />
       <DuplicadosPorNome
         ligada={duplicadosPorNome}
+        idioma={idioma}
+        podeMudar={podeAdministrarEmpresa(user, activeOrg)}
+      />
+      <PesquisaDeSatisfacao
+        ligada={satisfacao.ligado}
+        janelaHoras={satisfacao.janela_horas}
+        resumo={resumoDaPesquisa}
         idioma={idioma}
         podeMudar={podeAdministrarEmpresa(user, activeOrg)}
       />
