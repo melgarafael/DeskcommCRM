@@ -1,36 +1,38 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * PATCH  /api/v1/tasks/[id] — edita uma tarefa.
+ * PATCH  /api/v1/tasks/[id] — edita uma tarefa (inclusive concluir e reabrir).
  * DELETE /api/v1/tasks/[id] — apaga uma tarefa.
  *
  * Extraído do PR #418 (@clinicacentrodosorrisosc-code), sem o fallback para
  * `custom_fields.tasks` — o motivo inteiro está no cabeçalho de
  * `app/api/v1/tasks/route.ts`.
  *
- * ⚠️ O `.eq("organization_id", ...)` não é decoração: sem ele o PATCH casaria
- * 0 linhas numa tarefa de outra organização e o PostgREST devolveria `PGRST116`
- * — que esta rota já traduz para 404, o desfecho certo. Mantê-lo explícito é a
- * regra do CLAUDE.md e o que segura o dia em que alguém trocar o client.
+ * A ROTA É FINA (#4516): autentica, valida a forma e traduz. A decisão mora em
+ * `../_handler.ts`, que é a MESMA função que a ferramenta MCP chama — foi assim
+ * que a integração por token ganhou a porta sem uma segunda regra de negócio.
+ *
+ * ⚠️ O `.eq("organization_id", ...)` não é decoração e agora está DENTRO do
+ * handler: sem ele o PATCH casaria 0 linhas numa tarefa de outra organização e o
+ * PostgREST devolveria `PGRST116` — que o handler já traduz para 404, o desfecho
+ * certo. Pelo MCP o client é service-role e a RLS não vale, então o filtro
+ * explícito é a ÚNICA coisa que separa uma organização da outra.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { ok, fail } from "@/lib/api/wrappers";
-import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { ESCOPO_TAREFAS_ESCRITA } from "@/lib/api/escopos-do-token";
+import type { Actor } from "@/lib/api/handlers/types";
+import { ApiError } from "@/lib/api/types";
+import { fail, ok } from "@/lib/api/wrappers";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { portaDaAplicacao } from "@/lib/db";
-import { createClient } from "@/lib/supabase/server";
-import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
-import { conferirDemanda } from "@/lib/tarefas/demanda";
-import { conferirResponsavel } from "@/lib/tarefas/responsavel";
-import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA } from "@/lib/tarefas/tipos";
+
+import { editarTarefaHandler, excluirTarefaHandler } from "../_handler";
 
 export const dynamic = "force-dynamic";
-
-const COLUNAS =
-  "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
 
 const edicaoSchema = z
   .object({
@@ -53,6 +55,18 @@ interface Contexto {
   params: Promise<{ id: string }>;
 }
 
+function traduzErro(
+  err: unknown,
+  t: (texto: string) => string,
+  requestId: string,
+): Response | null {
+  if (!(err instanceof ApiError)) return null;
+  return fail(err.code, t(err.message), err.status, {
+    details: err.details as Record<string, unknown> | undefined,
+    requestId,
+  });
+}
+
 export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
@@ -60,9 +74,15 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "crm_tasks" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_tasks",
+    role: "agent",
+    scope: ESCOPO_TAREFAS_ESCRITA,
+    tokenRole: "agent",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const parsed = edicaoSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -72,161 +92,63 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     });
   }
 
-  if (parsed.data.assigned_to) {
-    // A chave estrangeira de `assigned_to` é só para `auth.users`: sem esta conferência, um id de
-    // outra organização (ou de quem saiu da equipe) gravaria sem erro. A régua
-    // e o porquê do filtro de organização estão em `lib/tarefas/responsavel.ts`
-    // (SQL direto na porta de `lib/db` — o pool NÃO passa por RLS).
-    const veredito = await conferirResponsavel(
-      portaDaAplicacao(),
-      authz.org.orgId,
-      parsed.data.assigned_to,
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "tasks", requestId);
+  if (tetoEstourado) return tetoEstourado;
+
+  try {
+    const resultado = await editarTarefaHandler(
+      authz.supabase,
+      {
+        organization_id: authz.organizationId,
+        actor: authz.actor as Actor,
+        requestId,
+        ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
+      },
+      { id, ...parsed.data },
     );
-    if (veredito === "falha_na_consulta") {
-      return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
-    }
-    if (veredito === "fora_da_equipe") {
-      return fail("validation_failed", t("O responsável escolhido não faz parte da equipe."), 422, {
-        requestId,
-      });
-    }
+    return ok(resultado, { requestId });
+  } catch (err) {
+    const resposta = traduzErro(err, t, requestId);
+    if (resposta) return resposta;
+    throw err;
   }
-
-  const supabase = await createClient();
-
-  if (parsed.data.demanda_id) {
-    // A chave estrangeira não passa pela RLS: sem esta conferência, a demanda
-    // de outra organização gravaria sem erro. A régua está em `lib/tarefas/demanda.ts`.
-    const veredito = await conferirDemanda(
-      portaDaAplicacao(),
-      authz.org.orgId,
-      parsed.data.demanda_id,
-    );
-    if (veredito === "falha_na_consulta") {
-      return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
-    }
-    if (veredito === "fora_da_organizacao") {
-      return fail("validation_failed", t("O negócio, o contato ou a demanda vinculada não existe."), 422, {
-        requestId,
-      });
-    }
-    if (veredito === "encerrada") {
-      return fail("state_conflict", t("Esta demanda já foi encerrada. Crie a tarefa numa demanda em andamento."), 409, {
-        requestId,
-      });
-    }
-  }
-
-  // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
-  // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
-  // timeline do negócio — e a segunda seria mentira.
-  const { data: antes } = await supabase
-    .from("crm_tasks")
-    .select("status")
-    .eq("id", id)
-    .eq("organization_id", authz.org.orgId)
-    .maybeSingle();
-
-  const { data, error } = await supabase
-    .from("crm_tasks")
-    .update(parsed.data)
-    .eq("id", id)
-    .eq("organization_id", authz.org.orgId)
-    .select(COLUNAS)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      return fail("not_found", t("Tarefa não encontrada."), 404, { requestId });
-    }
-    if (error.code === "23503") {
-      return fail("validation_failed", t("O negócio, o contato ou a demanda vinculada não existe."), 422, {
-        requestId,
-      });
-    }
-    return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
-  }
-
-  const tarefa = data as unknown as Tarefa;
-
-  /*
-   * A TRANSIÇÃO, quando houve uma (#4028).
-   *
-   * O `campos` dizia QUAIS campos mudaram, não PARA ONDE. Para o quadro isso é
-   * o registro que importa: arrastar o cartão é a única ação da tela de Tarefas
-   * que muda o estado da linha, e sem `de`/`para` o audit responderia "alguém
-   * tocou nesta tarefa" a quem perguntasse "quem a concluiu, e quando". O
-   * QUANDO é o `created_at` da própria linha de audit; o QUEM é o ator.
-   *
-   * Só entra quando `status` veio no corpo: editar o título não pode gravar uma
-   * transição que não existiu (`de: "pending", para: "pending"`).
-   */
-  const transicao =
-    parsed.data.status !== undefined
-      ? { de: (antes as { status?: string } | null)?.status ?? null, para: tarefa.status }
-      : {};
-
-  await audit({
-    organizationId: authz.org.orgId,
-    actorUserId: authz.user.id,
-    action: "crm_task.updated",
-    resourceType: "crm_tasks",
-    resourceId: tarefa.id,
-    requestId,
-    metadata: { campos: Object.keys(parsed.data), ...transicao },
-  });
-
-  const fechouAgora =
-    tarefa.status === "done" && (antes as { status?: string } | null)?.status !== "done";
-  if (fechouAgora) {
-    await registraAtividadeDaTarefa(portaDaAplicacao(), {
-      organizationId: authz.org.orgId,
-      tarefa,
-      tipo: "task_completed",
-      actor: { type: "user", id: authz.user.id },
-    });
-  }
-
-  return ok({ task: tarefa }, { requestId });
 }
 
-export async function DELETE(_req: NextRequest, ctx: Contexto): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "crm_tasks" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-
-  const supabase = await createClient();
-  // `.select()` no delete para saber se ALGUMA linha saiu. Sem isso, apagar uma
-  // tarefa de outra organização devolveria 200 — e a tela sumiria com a linha
-  // do próprio usuário na próxima recarga, sem que nada tivesse sido apagado.
-  const { data, error } = await supabase
-    .from("crm_tasks")
-    .delete()
-    .eq("id", id)
-    .eq("organization_id", authz.org.orgId)
-    .select("id");
-
-  if (error) {
-    return fail("internal_error", t("Erro ao apagar a tarefa."), 500, { requestId });
-  }
-  if (!data || data.length === 0) {
-    return fail("not_found", t("Tarefa não encontrada."), 404, { requestId });
-  }
-
-  await audit({
-    organizationId: authz.org.orgId,
-    actorUserId: authz.user.id,
-    action: "crm_task.deleted",
-    resourceType: "crm_tasks",
-    resourceId: id,
+  const authz = await resolveAuthDual(req, {
     requestId,
+    resource: "crm_tasks",
+    role: "agent",
+    scope: ESCOPO_TAREFAS_ESCRITA,
+    tokenRole: "agent",
   });
+  if (!authz.ok) return authz.response;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
-  return ok({ deleted: true }, { requestId });
+  const tetoEstourado = await tetoDeEscritaDoToken(authz, "tasks", requestId);
+  if (tetoEstourado) return tetoEstourado;
+
+  try {
+    const resultado = await excluirTarefaHandler(
+      authz.supabase,
+      {
+        organization_id: authz.organizationId,
+        actor: authz.actor as Actor,
+        requestId,
+        ...(authz.apiTokenId !== undefined ? { apiTokenId: authz.apiTokenId } : {}),
+      },
+      { id },
+    );
+    return ok(resultado, { requestId });
+  } catch (err) {
+    const resposta = traduzErro(err, t, requestId);
+    if (resposta) return resposta;
+    throw err;
+  }
 }

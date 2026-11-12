@@ -83,6 +83,23 @@ const SCOPES: { id: string; label: string }[] = [
       "Ler transcrições de áudios e textos extraídos de mídia no histórico MCP (pode conter dados pessoais)",
   },
   { id: "messages:write", label: "Enviar mensagens" },
+  // #4515: registrar comparecimento é escopo PRÓPRIO, nunca `mcp:write`. Quem
+  // emite o token decide se a integração diz que a pessoa veio ou faltou — o
+  // `no_show` devolve horário ao pool e o `completed` fecha a linha do tempo.
+  // Sem esta linha o escopo existiria na rota e ninguém conseguiria concedê-lo.
+  {
+    id: "agenda:attendance",
+    label:
+      "Registrar comparecimento em compromisso: marcar como realizado ou como falta, só em compromisso que já começou",
+  },
+  // #4516: as portas de tarefa por token. Leitura e escrita separadas porque
+  // consultar a lista de tarefas é inofensivo e apagar/concluir não é.
+  { id: "tasks:read", label: "Ler as tarefas da equipe" },
+  {
+    id: "tasks:write",
+    label:
+      "Criar, editar, concluir, reabrir e APAGAR tarefas da equipe (sem esta caixa o token só lê)",
+  },
   // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
   { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
   { id: "audit:read", label: "Ler o log de auditoria" },

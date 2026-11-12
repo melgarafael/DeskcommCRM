@@ -152,6 +152,24 @@ export const PUBLIC_PATHS: RegExp[] = [
   // verbos porque o proxy filtra por PATH, não por método; quem decide o
   // método é a própria rota, como sempre foi.
   /^\/api\/v1\/agenda\/agendamentos$/,
+  // TAREFAS SERVER-TO-SERVER (issue #4516). Mesma dualidade das linhas acima:
+  // sessão OU Bearer `dsk_…`, resolvidos por `lib/api/auth-dual.ts` DENTRO de
+  // cada rota (`app/api/v1/tasks/route.ts` e `app/api/v1/tasks/[id]/route.ts`),
+  // com a organização saindo da LINHA DO TOKEN e nunca do corpo. A listagem
+  // cobra `tasks:read`, as escritas cobram `tasks:write` — escopos próprios, e
+  // não `mcp:read`/`mcp:write`, porque quem emite o token decide se a
+  // integração mexe na rotina da equipe.
+  //
+  // Sem estas duas linhas o proxy responde 401 ao Bearer ANTES do handler: ele
+  // só reconhece cookie, e chamar o autenticador na rota não muda isso — o
+  // `proxy.ts` roda primeiro. Foi o modo de falha medido em `/api/v1/contacts`
+  // (/3417) e é a razão de a lista existir.
+  //
+  // Âncoras `$` de propósito: `/api/v1/tasks/` tem só o filho `[id]`, e um
+  // padrão largo deixaria qualquer sub-path futuro nascer público de carona. O
+  // segmento do id é FORMA DE UUID, nunca `[^/]+`.
+  /^\/api\/v1\/tasks$/,
+  /^\/api\/v1\/tasks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
   /^\/api\/v1\/conversations\/open-with-contact$/,
   // CRIAÇÃO DE RASCUNHO SUGERIDO SERVER-TO-SERVER (issue #1611). Mesma
   // dualidade da linha acima: sessão OU Bearer `dsk_…` com escopo `mcp:write`,
