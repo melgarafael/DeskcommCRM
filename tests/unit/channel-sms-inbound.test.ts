@@ -7,7 +7,12 @@ vi.mock("@/lib/channels/sms/ingest", () => ({
   ingerirSmsRecebido: (...a: unknown[]) => ingerirSmsRecebido(...a),
 }));
 
-import { acceptsInboundWebhook, handleInboundWebhook, verifyInboundWebhookSignature } from "@/lib/channels/inbound";
+import {
+  acceptsInboundWebhook,
+  handleInboundWebhook,
+  respostaDeRecebimentoDoCanal,
+  verifyInboundWebhookSignature,
+} from "@/lib/channels/inbound";
 
 // Montados em pedaços: o literal inteiro tem a forma de id real e o scanner
 // de segredos do GitHub recusa o push. São falsos.
@@ -129,5 +134,15 @@ describe("entrada do SMS", () => {
     });
     expect(r).toMatchObject({ ok: false, code: "contrato_violado", message: expect.stringContaining("From") });
     expect(ingerirSmsRecebido).not.toHaveBeenCalled();
+  });
+
+  it("o SMS recebe a resposta vazia que o fornecedor lê como instrução; os outros canais seguem no JSON", () => {
+    expect(respostaDeRecebimentoDoCanal("twilio")).toEqual({
+      corpo: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      contentType: "text/xml; charset=utf-8",
+    });
+    for (const outro of ["waha", "meta_cloud", "zernio", "zernio_social", "datafy"]) {
+      expect(respostaDeRecebimentoDoCanal(outro)).toBeNull();
+    }
   });
 });

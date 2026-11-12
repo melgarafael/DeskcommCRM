@@ -11,9 +11,17 @@
  *     reenvio desacelerado tenta de novo (app/api/v1/messages/_handler.ts);
  *   * sem credencial → `codes.notConfigured` → `queued` até reconectar;
  *   * o resto → `codes.sendFailed`, com a categoria no texto para o operador.
+ *
+ * A recusa por STOP (o destinatário pediu para sair na operadora) também
+ * BLOQUEIA o contato aqui, e não só falha a mensagem: todo envio passa por este
+ * adapter (Inbox, agente, follow-up, automação, campanha), então é o único lugar
+ * que cobre todos os caminhos. O bloqueio é o mesmo do STOP recebido
+ * (`aplicarOptOutPendente`), que não repete quem já está bloqueado.
  */
+import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { encontrarContatoPorTelefone } from "../contato-por-telefone";
 import { conexaoDeSms } from "../sms/credentials";
 import { consultarNumero, enviarSms, SmsRecusado } from "../sms/twilio";
 import type { ChannelAdapter, ChannelHealth, ChannelTenantScope, OutboundEnvelope, RecipientInput } from "../types";
@@ -71,6 +79,9 @@ export const twilioAdapter: ChannelAdapter = {
       return { externalId: enviado.sid };
     } catch (err) {
       if (err instanceof SmsRecusado) {
+        if (err.motivo === "destinatario_descadastrado") {
+          await bloquearQuemPediuParaSair(envelope.organizationId, `+${toE164Digits(envelope.to)}`);
+        }
         if (err.motivo === "desacelerar") throw new Error(`${CODES.throttled}: ${err.message}`);
         if (err.motivo === "credencial") throw new Error(`${CODES.notConfigured}: chave da conta recusada. ${err.message}`);
         throw new Error(`${CODES.sendFailed}: ${err.motivo}. ${err.message}`);
@@ -100,3 +111,38 @@ export const twilioAdapter: ChannelAdapter = {
 
   codes: CODES,
 };
+
+/**
+ * O fornecedor recusou porque o destinatário respondeu STOP na operadora. O
+ * pedido é o mesmo do STOP que entra pela Inbox, então o caminho também:
+ * `aplicarOptOutPendente` bloqueia, audita `contact.blocked`, fecha negócios e
+ * demandas abertos — e não faz nada com quem já está bloqueado.
+ *
+ * Nunca lança: o envio já falhou, e o erro que importa para quem chamou é o da
+ * recusa. Bloqueio que não grava vai para o log.
+ *
+ * `import()` dinâmico: `pos-entrada` puxa o motor de negócios, que alcança a
+ * camada de canais de volta; carregar na hora evita o ciclo de módulos.
+ */
+async function bloquearQuemPediuParaSair(organizationId: string, telefone: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const contato = await encontrarContatoPorTelefone(admin, organizationId, telefone);
+    if (!contato) return;
+    const { aplicarOptOutPendente } = await import("../pos-entrada");
+    await aplicarOptOutPendente(admin, {
+      organizationId,
+      contactId: contato.id,
+      // A palavra que o destinatário mandou à operadora — é ela que o
+      // fornecedor está relatando com a recusa.
+      texto: "STOP",
+      origem: "sms_recusa_stop",
+      conversationId: null,
+    });
+  } catch (err) {
+    logger.error("[sms] recusa por STOP: o contato NÃO foi bloqueado", {
+      organization_id: organizationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
+}

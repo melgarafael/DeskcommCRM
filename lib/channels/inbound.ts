@@ -665,6 +665,24 @@ async function datafyInbound(
 }
 
 /**
+ * O corpo do 200 que um canal ESPERA no webhook, quando não é o JSON padrão.
+ *
+ * O fornecedor de SMS lê a resposta do webhook como instrução (TwiML): um JSON
+ * ali é entregue, mas vira o aviso 12300 no painel dele a cada mensagem — o
+ * operador abre o painel e vê erro onde não há. A resposta vazia diz "recebido,
+ * não responda nada", e a resposta de verdade sai depois, pelo adapter.
+ *
+ * `null` = o canal aceita o JSON de `ok()`. Mora aqui, e não na rota, porque a
+ * rota não pode perguntar QUAL canal é (invariante 1).
+ */
+export function respostaDeRecebimentoDoCanal(provider: string): { corpo: string; contentType: string } | null {
+  if (provider === CHANNEL_PROVIDER_TWILIO) {
+    return { corpo: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', contentType: "text/xml; charset=utf-8" };
+  }
+  return null;
+}
+
+/**
  * SMS recebido (#4415). Confere a assinatura de novo (o handler também serve a
  * quem não passou pela rota HTTP), lê o formulário pelo Zod, confirma que a
  * conta e o número são os DESTA conexão, e entrega à ingestão por telefone.

@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const conexaoDeSms = vi.fn();
 vi.mock("@/lib/channels/sms/credentials", () => ({ conexaoDeSms: (...a: unknown[]) => conexaoDeSms(...a) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+const encontrarContatoPorTelefone = vi.fn();
+vi.mock("@/lib/channels/contato-por-telefone", () => ({
+  encontrarContatoPorTelefone: (...a: unknown[]) => encontrarContatoPorTelefone(...a),
+}));
+const aplicarOptOutPendente = vi.fn();
+vi.mock("@/lib/channels/pos-entrada", () => ({
+  aplicarOptOutPendente: (...a: unknown[]) => aplicarOptOutPendente(...a),
+}));
 
 import { capabilitiesOf, PROVIDERS_DE_TELEFONE } from "@/lib/channels/capabilities";
 import { getAdapter } from "@/lib/channels";
@@ -41,6 +49,9 @@ describe("adapter do SMS", () => {
   beforeEach(() => {
     conexaoDeSms.mockReset();
     conexaoDeSms.mockResolvedValue(CONEXAO);
+    encontrarContatoPorTelefone.mockReset();
+    encontrarContatoPorTelefone.mockResolvedValue({ id: "contato-1", phone_number: "+14155550100" });
+    aplicarOptOutPendente.mockReset();
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -103,6 +114,26 @@ describe("adapter do SMS", () => {
     )) as Error;
     expect(erro.message).toMatch(/^twilio_error: destinatario_descadastrado/);
     expect(erro.message).not.toContain("chave_de_teste");
+  });
+
+  it("STOP do destinatário também BLOQUEIA o contato, pelo mesmo caminho do STOP recebido", async () => {
+    responder(400, { code: 21610, message: "Attempt to send to unsubscribed recipient" });
+    await adapter.send(ENVELOPE).catch(() => undefined);
+    expect(encontrarContatoPorTelefone).toHaveBeenCalledWith(expect.anything(), "org-1", "+14155550100");
+    expect(aplicarOptOutPendente).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ organizationId: "org-1", contactId: "contato-1", texto: "STOP" }),
+    );
+  });
+
+  it("outra recusa não bloqueia ninguém; bloqueio que falha não troca o erro do envio", async () => {
+    responder(400, { code: 21211, message: "Invalid To" });
+    await adapter.send(ENVELOPE).catch(() => undefined);
+    expect(aplicarOptOutPendente).not.toHaveBeenCalled();
+
+    responder(400, { code: 21610, message: "unsubscribed" });
+    aplicarOptOutPendente.mockRejectedValue(new Error("banco fora"));
+    await expect(adapter.send(ENVELOPE)).rejects.toThrow(/^twilio_error: destinatario_descadastrado/);
   });
 
   it("mídia e texto vazio são recusados antes de buscar credencial", async () => {
