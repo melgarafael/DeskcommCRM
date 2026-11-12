@@ -269,6 +269,33 @@ export async function apontarRecebimentoDoNumero(
 }
 
 /**
+ * Devolve o recebimento do número (SmsUrl vazio): o par exato do que a conexão
+ * fez em `apontarRecebimentoDoNumero`. Sem isto, depois de desconectar o
+ * fornecedor seguiria entregando numa URL que virou 404.
+ */
+export async function limparRecebimentoDoNumero(
+  creds: SmsCredentials,
+  numeroId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true } | { ok: false; detalhe: string }> {
+  if (!ACCOUNT_SID.test(creds.accountSid) || !NUMERO_ID.test(numeroId)) {
+    return { ok: false, detalhe: "identificador fora do formato" };
+  }
+  try {
+    const res = await fetchImpl(`${API_BASE}/Accounts/${creds.accountSid}/IncomingPhoneNumbers/${numeroId}.json`, {
+      method: "POST",
+      headers: { Authorization: autorizacao(creds), "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ SmsUrl: "" }).toString(),
+      signal: AbortSignal.timeout(TETO_DE_ESPERA_MS),
+    });
+    if (res.ok) return { ok: true };
+    return { ok: false, detalhe: `${res.status}` };
+  } catch (err) {
+    return { ok: false, detalhe: err instanceof Error ? err.message.slice(0, 200) : "erro" };
+  }
+}
+
+/**
  * Confere que o webhook veio do fornecedor: HMAC-SHA1, com a chave da conta,
  * da URL pública EXATA seguida de cada parâmetro do formulário em ordem
  * alfabética de nome (nome + valor, sem separador), em base64.

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Canal de SMS (#4415)",
+    "subtitle": "Provider do fornecedor de SMS com conversa channel=sms: conexão conferida na conta, entrada assinada por URL + formulário, contato casado pelo telefone (o mesmo do WhatsApp), resposta pelo mesmo número; só texto na fatia 1",
+    "output": "canal-de-sms.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Operação" },
+    { "id": "servidor", "label": "Servidor" },
+    { "id": "banco", "label": "Persistência" },
+    { "id": "fornecedor", "label": "API do fornecedor de SMS" }
+  ],
+  "mainPath": ["aba", "conectar", "achar", "sessao", "apontar", "entrada", "ingestao", "inbox", "efeitos", "envio", "messages"],
+  "nodes": [
+    { "id": "aba", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões › SMS (CanalSmsClient) — Account SID, Auth Token e número E.164; avisa do registro A2P e do custo por parte" },
+    { "id": "conectar", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/channels/sms — admin, requireSupportWrite, Zod; importa por lib/channels/sms (porta neutra)" },
+    { "id": "achar", "lane": "fornecedor", "col": 4, "type": "external", "label": "IncomingPhoneNumbers?PhoneNumber= — a chave vale? o número é desta conta? devolve o id PN…" },
+    { "id": "sessao", "lane": "banco", "col": 3, "type": "database", "label": "channel_sessions provider twilio: twilio_phone_number_sid (sessionRef), twilio_account_sid, phone_number, a chave em webhook_secret_encrypted; índice único do número ativo (migration 9345)" },
+    { "id": "apontar", "lane": "fornecedor", "col": 4, "type": "external", "label": "IncomingPhoneNumbers/{PN} SmsUrl = URL pública de entrada (POST); falha não desfaz a conexão, a tela mostra a URL" },
+    { "id": "entrada", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/webhooks/channel/<token> — arquiva o corpo cru; assinatura HMAC-SHA1 da URL pública + formulário com a chave da conta; sem URL falha fechado" },
+    { "id": "conferencia", "lane": "servidor", "col": 2, "type": "service", "label": "smsInbound — Zod no formulário; AccountSid e To têm de ser os da conexão (a chave assina por conta)" },
+    { "id": "ingestao", "lane": "servidor", "col": 2, "type": "service", "label": "ingerirSmsRecebido — contato pelo telefone (principal e extras); novo nasce source=sms, sem phone_whatsapp; conversa carimbada channel=sms" },
+    { "id": "inbox", "lane": "banco", "col": 3, "type": "database", "label": "contacts (mesma ficha do WhatsApp), conversations channel sms (uma por contato × conexão), messages external_id SM… (unique por org)" },
+    { "id": "efeitos", "lane": "servidor", "col": 2, "type": "service", "label": "aplicarEfeitosPosEntrada canal sms — STOP/UNSUBSCRIBE bloqueia (lib/opt-out/deteccao.ts), negócio novo com origem sms, roteamento, turno do agente" },
+    { "id": "envio", "lane": "servidor", "col": 2, "type": "service", "label": "twilioAdapter.send — só texto; desacelerar → codes.throttled (reenvio desacelerado); chave ausente ou recusada → codes.notConfigured (fica na fila)" },
+    { "id": "messages", "lane": "fornecedor", "col": 4, "type": "external", "label": "Messages.json From = número da conexão, To = telefone do contato; recusa traduzida em categoria (21610 STOP, 30034 sem registro A2P)" },
+    { "id": "saude", "lane": "servidor", "col": 2, "type": "service", "label": "twilioAdapter.checkHealth — o número ainda existe na conta e a chave vale" },
+    { "id": "desconectar", "lane": "servidor", "col": 2, "type": "route", "label": "DELETE /api/v1/channel-sessions/[id] — devolve o SmsUrl do número antes de arquivar e gira o token do caminho" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "aba", "to": "conectar", "label": "três campos do painel da conta" },
+    { "id": "e2", "from": "conectar", "to": "achar", "label": "confere antes de gravar" },
+    { "id": "e3", "from": "conectar", "to": "sessao", "label": "grava ou reativa; auditoria channel.connected" },
+    { "id": "e4", "from": "conectar", "to": "apontar", "label": "depois de gravar: o token do caminho vem do banco" },
+    { "id": "e5", "from": "apontar", "to": "entrada", "label": "o fornecedor entrega cada SMS recebido" },
+    { "id": "e6", "from": "entrada", "to": "sessao", "label": "resolve organização e chave pelo token do caminho" },
+    { "id": "e7", "from": "entrada", "to": "conferencia", "label": "assinatura certa" },
+    { "id": "e8", "from": "conferencia", "to": "ingestao", "label": "conta e número da conexão" },
+    { "id": "e9", "from": "ingestao", "to": "inbox", "label": "idempotente por external_id" },
+    { "id": "e10", "from": "ingestao", "to": "efeitos", "label": "a mensagem gravada segue o funil comum" },
+    { "id": "e11", "from": "inbox", "to": "envio", "label": "atendente, agente, follow-up ou automação responde" },
+    { "id": "e12", "from": "envio", "to": "sessao", "label": "conexaoDeSms: número e chave decifrada, filtrando organização" },
+    { "id": "e13", "from": "envio", "to": "messages", "label": "Basic auth, formulário" },
+    { "id": "e14", "from": "saude", "to": "sessao", "label": "mesma leitura da conexão" },
+    { "id": "e15", "from": "aba", "to": "desconectar", "label": "Excluir conexão" },
+    { "id": "e16", "from": "desconectar", "to": "apontar", "label": "SmsUrl vazio, best-effort, antes do patch" },
+    { "id": "e17", "from": "desconectar", "to": "sessao", "label": "archived_at, webhook_path_token novo" }
+  ]
+}
