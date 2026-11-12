@@ -222,7 +222,7 @@ import {
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
-import { msAteAJanelaAbrir } from './janela-de-atendimento';
+import { msAteAJanelaAbrir, msAteAJanelaAbrirPulandoFeriado } from './janela-de-atendimento';
 import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { agenteJaRespondeuNoAtendimento } from './agente-ja-respondeu';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
@@ -333,7 +333,7 @@ import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fatosDaOrganizacao } from './fatos-da-organizacao';
 import { fusoDaOrganizacao } from './fuso-da-org';
-import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
+import { blocoDoFeriado, ehFeriadoNacionalNoFuso, lerFeriadoDoTurno } from './feriado-nacional';
 import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
@@ -3673,7 +3673,26 @@ async function executarTurnoDoAgente(
   // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
   // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
   if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
-    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
+    const janela = agentConfig.janelaDeAtendimento;
+    const agora = clock();
+    let esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, agora);
+    // NÃO ATENDER EM FERIADO NACIONAL (#3877, doc de decisão 316, alternativa A).
+    // Opção do agente, DESLIGADA de fábrica: desligada, o feriado é dia comum e
+    // nenhuma consulta extra acontece. Ligada, e com o calendário brasileiro
+    // valendo para a organização (`lerFeriadoDoTurno` devolve `null` para país
+    // fora do Brasil ou leitura que falhou — falha aberta), o feriado conta
+    // como dia fechado: o turno espera a próxima abertura que não é feriado E
+    // o aviso recebe o MESMO fato do dia, para os dois nunca discordarem.
+    let feriadoHoje: boolean | undefined;
+    if (agentConfig.naoAtenderEmFeriadoNacional === true) {
+      const calendario = await lerFeriadoDoTurno(pool, tenantId, agora, janela.timezone, runLog);
+      if (calendario !== null) {
+        feriadoHoje = calendario.hoje;
+        esperaMs = msAteAJanelaAbrirPulandoFeriado(janela, agora, (instante) =>
+          ehFeriadoNacionalNoFuso(instante, janela.timezone),
+        );
+      }
+    }
     if (esperaMs !== null) {
       // O AVISO DE FORA DO HORÁRIO (#1926) — ANTES do adiamento, para sair na
       // hora em que a mensagem chegou. É resposta a quem escreveu primeiro (o
@@ -3691,8 +3710,13 @@ async function executarTurnoDoAgente(
             contactId: leadId,
             channelSessionId: input.channelSessionId,
             texto: agentConfig.avisoForaDoHorario ?? null,
+            // O texto de feriado nacional (#3877): opcional, e o módulo só o
+            // usa quando o dia É feriado na organização — sem a chave, o
+            // aviso é o de sempre, byte a byte.
+            textoDeFeriado: agentConfig.avisoDeFeriadoForaDoHorario ?? null,
             janela: agentConfig.janelaDeAtendimento,
-            agora: clock(),
+            agora,
+            ehFeriadoNacional: feriadoHoje,
           },
         );
         runLog.info(
@@ -3718,6 +3742,7 @@ async function executarTurnoDoAgente(
           agent_id: agentConfig.agentId,
           espera_ms: esperaMs,
           janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
+          feriado_nacional_hoje: feriadoHoje ?? null,
         },
       );
       throw new JobSettledError(
