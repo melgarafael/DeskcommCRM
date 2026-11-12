@@ -194,7 +194,7 @@ async function responder(
           media_storage_path: msg.media_storage_path,
           sent_at: (msg as { sent_at?: string | null }).sent_at ?? null,
         },
-        nomeOriginal ? "UTC" : await fusoDaOrganizacao(supabase, activeOrg.orgId),
+        nomeOriginal ? "UTC" : await fusoDaOrganizacao(db, organizationId),
       );
   if (!msg.media_storage_path && !msg.media_url) {
     // A mídia foi podada pela retenção (o marcador `expired` da migration 0557 é
