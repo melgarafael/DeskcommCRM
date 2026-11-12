@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e862cd45e445 -->
+<!-- traduzido-de: docs/white-label.md@a5ce290dff0a -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -35,6 +35,18 @@ Example:
 
 .rounded-md {
 	border-radius: 12px;
+}
+```
+
+**Color per section of the side menu.** Each menu group has the class `nav-grupo` plus a class with its own name: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais` and `nav-grupo-analise`. They are stable: you can target a section without depending on the order of the items. Inside the group, the title and the link of each destination have the class `rounded-md`, and the icon follows the text color. The rule also applies to the item of the open screen, which has a background in the accent color; check its contrast after saving.
+
+```css
+.nav-grupo-crm .rounded-md {
+	color: #2f6f8f;
+}
+
+.nav-grupo-ia .rounded-md:hover {
+	color: var(--color-accent);
 }
 ```
 

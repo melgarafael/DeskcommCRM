@@ -329,7 +329,12 @@ export function SidebarContent({
           // seus itens — não há onde desenhar cabeçalho nem seta para fechá-lo.
           const aberto = collapsed || !gruposFechados.has(group.id);
           return (
-            <div key={group.id} className="space-y-1">
+            // `nav-grupo` e `nav-grupo-<id>` são contrato público: é por elas que o
+            // CSS personalizado de /admin/marca, que só aceita seletor de classe,
+            // dá cor a uma seção do menu (#4463). O `id` vem de `NavGroupId`, só
+            // letras minúsculas, e por isso passa no validador. Renomear quebra a
+            // folha de quem já instalou; documentado em docs/white-label.md.
+            <div key={group.id} className={cn("space-y-1 nav-grupo", `nav-grupo-${group.id}`)}>
               {/* Colapsado, o sidebar tem 64px: seis rótulos ali seriam ilegíveis.
                   Vira um filete separador, que preserva o agrupamento sem texto. */}
               {collapsed ? (

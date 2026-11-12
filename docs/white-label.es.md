@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e862cd45e445 -->
+<!-- traduzido-de: docs/white-label.md@a5ce290dff0a -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -35,6 +35,18 @@ Ejemplo:
 
 .rounded-md {
 	border-radius: 12px;
+}
+```
+
+**Color por sección del menú lateral.** Cada grupo del menú tiene la clase `nav-grupo` y una clase con su propio nombre: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais` y `nav-grupo-analise`. Son estables: se puede apuntar a una sección sin depender del orden de los ítems. Dentro del grupo, el título y el enlace de cada destino tienen la clase `rounded-md`, y el ícono sigue el color del texto. La regla también vale para el ítem de la pantalla abierta, que tiene fondo en el color de destaque; revisa su contraste después de guardar.
+
+```css
+.nav-grupo-crm .rounded-md {
+	color: #2f6f8f;
+}
+
+.nav-grupo-ia .rounded-md:hover {
+	color: var(--color-accent);
 }
 ```
 

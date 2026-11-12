@@ -36,6 +36,18 @@ Exemplo:
 }
 ```
 
+**Cor por seção do menu lateral.** Cada grupo do menu tem a classe `nav-grupo` e uma classe com o próprio nome: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais` e `nav-grupo-analise`. São estáveis: dá para mirar uma seção sem depender da ordem dos itens. Dentro do grupo, o título e os links de cada destino têm a classe `rounded-md`, e o ícone acompanha a cor do texto. A regra vale também para o item da tela aberta, que tem fundo na cor de destaque; confira o contraste dele depois de salvar.
+
+```css
+.nav-grupo-crm .rounded-md {
+	color: #2f6f8f;
+}
+
+.nav-grupo-ia .rounded-md:hover {
+	color: var(--color-accent);
+}
+```
+
 **Se o CSS deixar as telas ilegíveis.** Uma folha válida ainda pode esconder texto (cor transparente, fonte de tamanho zero) ou cobrir a tela com uma sombra — inclusive o login e a própria página Marca. Para sair disso, abra a página com `?sem_css=1` no endereço: ela vem sem o CSS personalizado, só para você. Entre por `/login?sem_css=1`, depois abra `/admin/marca?sem_css=1` digitando o endereço, apague o conteúdo do campo e salve. Sem acesso à tela, pelo servidor: `psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"` — o CSS deixa de valer em até 30 segundos. Passo a passo em [`runbooks/css-personalizado.md`](runbooks/css-personalizado.md).
 
 O arquivo é aceito **pelos bytes, não pela extensão**. Renomear um `.svg` para `.png` não engana: o sistema lê o conteúdo, recusa e diz por quê. Isso não é preciosismo — SVG é XML e pode carregar script, que executaria se alguém abrisse a imagem direto pelo endereço dela, num bucket que é público por necessidade.
