@@ -71,9 +71,10 @@ export function fichaDoGoogle(dados: DadosDaFicha): string | null {
  * O nome da rede a partir da URL publicada na ficha.
  *
  * O modelo precisa do NOME para poder dizer "vi o Instagram de vocês"; uma URL
- * crua entre parênteses ele copia ou ignora. Só os domínios que a descoberta
- * grava (`socials`: Instagram, Facebook, LinkedIn) têm nome aqui; qualquer outro
- * sai como está, sem rótulo inventado.
+ * crua entre parênteses ele copia ou ignora. Só os domínios de rede social que
+ * podem chegar em `socials` têm nome aqui — Instagram, Facebook e LinkedIn vêm da
+ * descoberta; TikTok, YouTube e o apelido `fb.com` vêm da planilha importada —;
+ * qualquer outro sai como está, sem rótulo inventado.
  */
 export function nomeDaRede(url: string): string | null {
   let host: string;
