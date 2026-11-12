@@ -122,6 +122,12 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // NÃO carrega valor de campo — e a condição por campo (#1749) foi desenhada
   // sobre os nomes justamente para manter isso (§9: nenhuma PII nova no evento).
   "lead.updated": "crm_lead",
+  // A LIGAÇÃO RECEBIDA QUE NINGUÉM ATENDEU (#4365). Nasce do worker de voz
+  // (`workers/voice-agent`, via `lib/voip/evento-de-ligacao-perdida.ts`), que é
+  // quem encerra a linha `ringing` como `timeout`. A entidade é o CONTATO — é
+  // ele que a ação de WhatsApp precisa no contexto do motor; o telefone e o
+  // `call_id` viajam no payload.
+  "voice_call.missed": "contact",
 } as const;
 
 export type GatilhoDeAutomacao = keyof typeof ENTIDADE_ESPERADA_POR_GATILHO;

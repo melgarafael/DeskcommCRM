@@ -4,6 +4,7 @@
  */
 import type { TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
+import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 
 export type TriggerEvent = (typeof TRIGGER_EVENTS)[number];
 export type ActionType =
@@ -76,6 +77,10 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // nasce só do PATCH de edição do negócio, e o detalhe do que mudou vai na
   // condição, embaixo.
   "lead.updated": "Quando um negócio for alterado",
+  // #4365 — a frase diz o DESFECHO para quem ligou ("não for atendida"), que é
+  // o fato que a regra escuta. "Recebida" separa da ligação FEITA que ninguém
+  // atendeu — essa não é perdida, e não dispara este gatilho.
+  "voice_call.missed": "Quando uma ligação recebida não for atendida",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {
@@ -119,4 +124,24 @@ const MODULO_DA_ACAO: Partial<Record<ActionType, ModuloOpcional>> = { define_sec
 export function acaoOferecida(tipo: ActionType, modulosLigados: readonly string[] | undefined): boolean {
   const modulo = MODULO_DA_ACAO[tipo];
   return !modulo || (modulosLigados ?? []).includes(modulo);
+}
+
+/**
+ * #4409 — o gatilho que só dispara com uma capacidade da organização ligada. A
+ * ligação perdida nasce do worker de voz, e quem não usa telefonia (o padrão)
+ * veria uma opção que nunca dispara. Mesmo desenho de `acaoOferecida`: o gatilho
+ * JÁ gravado na regra (`atual`) continua na lista, porque o que está salvo não
+ * some da tela.
+ */
+const CAPACIDADE_DO_GATILHO: Partial<Record<TriggerEvent, CapacidadeDaOrganizacao>> = {
+  "voice_call.missed": "telefonia",
+};
+
+export function gatilhoOferecido(
+  ev: TriggerEvent,
+  capacidadesLigadas: readonly string[] | undefined,
+  atual?: string,
+): boolean {
+  const capacidade = CAPACIDADE_DO_GATILHO[ev];
+  return !capacidade || ev === atual || (capacidadesLigadas ?? []).includes(capacidade);
 }

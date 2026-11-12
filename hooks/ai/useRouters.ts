@@ -91,6 +91,12 @@ export interface UpdateRouterInput {
   name?: string;
   is_active?: boolean;
   fallback_agent_id?: string | null;
+  /**
+   * #4340 — leva o roteador INTEIRO para o número novo. A rota só aceita quando
+   * o número atual está arquivado e o destino está vivo e sem roteador; a
+   * mudança sai auditada ("de X para Y").
+   */
+  channel_session_id?: string;
   /** Mesclada com a config existente pelo PATCH — mandar um campo não apaga os outros. */
   config?: Record<string, unknown>;
 }
