@@ -79,6 +79,28 @@ recuperar_apt_e2e() {
     echo '::error title=Falha fatal no preparo APT::assinatura, hash, pacote ou dpkg recusou a instalação; sem repetir nem trocar a fonte.'
     return 1
   fi
+  # Runner que não resolve nome não é espelho lento nem CDN: é a rede dele.
+  # Medido em 11/11/2026 (runs 43014074395, 43023280678, 43027136525): desde
+  # ~11:36Z o apt devolvia `Temporary failure resolving` para os três hosts
+  # (azure.archive, archive e security.ubuntu.com) e fechava com `W: Some index
+  # files failed to download` — frase que o ramo abaixo lê como download do
+  # browser (`Failed to download`, sem diferenciar caixa). A parte reprovava na
+  # tentativa 1 de 3, em 6 das 8 partes do mesmo run. Não troca espelho: os
+  # três hosts falham juntos, o destino da troca inclusive. Espera antes de
+  # repetir, porque DNS não volta no mesmo segundo. Vem DEPOIS do fatal acima:
+  # hash ou assinatura recusados continuam vermelhos mesmo com DNS no log.
+  if grep -Eq 'Temporary failure resolving|Could not resolve' "$log"; then
+    if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]; then
+      echo '::error title=Recuperação APT recusada::não mata processos nem altera fontes fora do runner descartável do GitHub.'
+      return 1
+    fi
+    if [ "$tentativa" -eq 3 ]; then return 0; fi
+    echo "::warning title=Preparo do e2e: runner sem DNS::a tentativa ${tentativa} de 3 falhou por resolução de nome (DNS) do runner, não por espelho nem pacote; repete em $((tentativa * 20)) s, sem trocar a fonte."
+    sudo pkill -KILL -x apt-get || :
+    sudo dpkg --configure -a
+    sleep "$((tentativa * 20))"
+    return 0
+  fi
   # Um timeout depois de começar o download do browser é do CDN, não do APT
   # que já terminou. Não troca fonte nem mata processo para esse caso.
   if grep -Eqi 'Downloading.*(Chrome|Chromium|FFMPEG|ffmpeg|Headless Shell).*https?://|Failed to download' "$log" ||
