@@ -64,12 +64,16 @@ begin
    -- `infinity` é o terminal: a fila (`google_next_attempt_at<=now()`) nunca
    -- reivindica de novo ENQUANTO a agenda estiver assim, e o gatilho
    -- `trg_google_agenda_disponivel_de_novo` devolve o compromisso à fila no
-   -- Compromisso com Meet PENDENTE volta no compasso do Meet: o gatilho
-   -- `trg_zz_meet_stamp` reancora a tentativa com `least(...)` (medido), então o
-   -- estacionamento não pega nele — mas também não há leitura no Google nem
-   -- `error`, e o motivo gravado é o certo.
    -- instante em que a agenda volta. O erro gravado é o MOTIVO, não a frase de
    -- "o compromisso mudou" que o executor mascarava.
+   --
+   -- UMA ressalva, medida: compromisso com Meet PENDENTE volta no compasso do
+   -- Meet — `fn_meet_stamp` (baseline:21928) reancora a tentativa com
+   -- `least(google_next_attempt_at, meeting_next_attempt_at)`, e `least` não
+   -- preserva `infinity`. Para ele o claim é recusado de novo a cada compasso do
+   -- Meet, mas SEM leitura no Google e SEM escrever `error`: o estado terminal
+   -- vale, o silêncio da fila é que não. O relato (#4448) é de compromissos
+   -- encerrados, que não têm Meet pendente.
    select * into c from public.calendar_connection_calendars where organization_id=p_org and connection_id=a.google_connection_id and external_calendar_id=a.google_calendar_id;
    if c.id is not null and not c.available then
     update public.calendar_appointments set google_sync_error='A agenda de destino não está disponível. Reative a agenda nas configurações para a sincronização voltar.',google_next_attempt_at='infinity'::timestamptz where organization_id=p_org and id=p_id;

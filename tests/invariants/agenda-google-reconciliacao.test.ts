@@ -829,19 +829,28 @@ it("compromisso encerrado em agenda indisponível sai da fila em vez de voltar a
     ]);
 
     // 3. rodada 1: o claim recusa — estado terminal, sem ler o Google, sem lease.
-    expect(await reconcileAppointment(db, GOV_ORG, f.id, options)).toBe("terminal");
-    expect(leituras).toBe(leiturasComAgendaBoa);
+    //    A PROVA DO LAÇO vem ANTES do rótulo de retorno: não é o `"terminal"` que
+    //    interessa, é o compromisso ter SAÍDO DA FILA. Na main ele volta com
+    //    `google_next_attempt_at = now() + 15 min` e a rodada das 5h05 o pega de
+    //    novo; com o conserto a tentativa fica em `infinity` e não há rodada
+    //    seguinte nenhuma.
+    const primeiraRodada = await reconcileAppointment(db, GOV_ORG, f.id, options);
     const guardado = (
       await pool.query(
         "select google_sync_error,google_claim_token,google_next_attempt_at='infinity'::timestamptz estacionado from calendar_appointments where id=$1",
         [f.id],
       )
     ).rows[0];
+    expect(
+      guardado.estacionado,
+      "a tentativa tem de ficar em `infinity`: é o que tira o compromisso da fila",
+    ).toBe(true);
+    expect(await candidato(), "a rodada seguinte não reivindica de novo").toBe(0);
+    expect(leituras, "o claim recusado não pode nem LER o Google").toBe(leiturasComAgendaBoa);
+    expect(primeiraRodada).toBe("terminal");
     expect(guardado.google_sync_error).toContain("agenda de destino");
     expect(guardado.google_sync_error).not.toContain("O compromisso mudou");
     expect(guardado.google_claim_token).toBeNull();
-    // Terminal é o compromisso sair da fila: a tentativa fica em `infinity`.
-    expect(guardado.estacionado).toBe(true);
 
     // 4. rodada 2 — a do cron (5 min depois): NÃO é mais candidato, então não há
     //    claim, não há leitura no Google e não há UPDATE em `calendar_appointments`.
