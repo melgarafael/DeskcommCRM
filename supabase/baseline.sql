@@ -81264,7 +81264,7 @@ end $fonte_do_lead_ads$;
 
 notify pgrst, 'reload schema';
 
--- ---- o bucket do material aceita XML como o upload do Inbox (migration 9350) ----
+-- ---- o bucket do material aceita XML como o upload do Inbox (migration 9356) ----
 -- A 9222 congelou no bucket a lista de `DOCUMENT_MIMES` de 06/11. Em 10/11 a main
 -- acrescentou `application/xml` e `text/xml` a essa lista (617635a5f7) e o
 -- espelho do bucket ficou para trás: o Inbox aceitava o XML do cliente e o
