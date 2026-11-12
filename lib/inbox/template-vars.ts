@@ -1,6 +1,7 @@
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
-import { RESERVA_DA_VARIAVEL } from "@/lib/texto/reserva-da-variavel";
 import type { MidiaDeTemplate } from "@/lib/templates/midias";
+import { VARIAVEIS_DE_NOME_DO_CONTATO } from "@/lib/variaveis/catalogo";
+import { resolverVariaveis, type InstanteDoEnvio } from "@/lib/variaveis/resolvedor";
 
 /**
  * Interpola variáveis de template com dados do contato da conversa (Onda 5).
@@ -21,12 +22,14 @@ export interface TemplateContact {
   displayName?: string | null;
 }
 
-/** Variáveis que o contato tem que preencher — as outras sempre ficam cruas. */
-const VARIAVEIS_DE_NOME = ["nome", "primeiro_nome"];
-
-function regexDaVariavel(key: string): RegExp {
-  return new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "i");
-}
+/**
+ * Variáveis que o contato tem que preencher — as outras sempre ficam cruas.
+ *
+ * A lista vem do CATÁLOGO (#3687), não de uma cópia local: quem muda o
+ * vocabulário do Inbox muda `disponivelEm` de uma entrada, e a trava de envio
+ * acompanha sem ninguém lembrar deste arquivo.
+ */
+const VARIAVEIS_DE_NOME = VARIAVEIS_DE_NOME_DO_CONTATO;
 
 /**
  * Nome completo a usar: a regra central de `nomeDoContato` — `name` (CRM) vence,
@@ -42,10 +45,23 @@ function nomeResolvido(contact: TemplateContact): string {
  * NENHUM dos dois nomes: o literal sobrevive à interpolação, e o operador
  * precisa saber disso antes de mandar (issue #2744). Chave desconhecida não
  * conta — `{{codigo}}` cru é comportamento esperado, não acidente de nome.
+ *
+ * A conta é a MESMA do texto que sai: quem decide se a marcação ficou sem valor
+ * é `resolverVariaveis`, e a lista `vazias` já exclui a marcação que trazia
+ * reserva (`{{primeiro_nome|"aluno"}}`). Ler as marcações por fora contaria a
+ * reserva como falta e travaria uma resposta que sai inteira.
  */
 export function faltouNomeDeContato(body: string, contact: TemplateContact): boolean {
   if (nomeResolvido(contact) !== "") return false;
-  return VARIAVEIS_DE_NOME.some((key) => regexDaVariavel(key).test(body));
+  const { vazias } = resolverVariaveis(
+    body,
+    {
+      nome: null,
+      contact: { name: contact.name, display_name: contact.displayName },
+    },
+    { fonte: "inbox", quandoVazio: "literal" },
+  );
+  return VARIAVEIS_DE_NOME.some((key) => vazias.includes(key));
 }
 
 /**
@@ -106,22 +122,36 @@ export interface RespostaRapida {
 export function payloadDeUso(
   template: RespostaRapida,
   contact: TemplateContact,
+  agora?: InstanteDoEnvio,
 ): { texto: string; midias: MidiaDeTemplate[] } {
   return {
-    texto: interpolateTemplate(template.body, contact),
+    texto: interpolateTemplate(template.body, contact, agora),
     midias: [...(template.midias ?? [])],
   };
 }
 
-export function interpolateTemplate(body: string, contact: TemplateContact): string {
-  const full = nomeResolvido(contact);
-  const first = full.split(/\s+/)[0] ?? "";
-  const marcacao = new RegExp(String.raw`\{\{\s*([a-zA-Z_]+)\s*${RESERVA_DA_VARIAVEL}\}\}`, "g");
-  return body.replace(marcacao, (literal, rawKey: string, reserva: string | undefined) => {
-    const key = rawKey.toLowerCase();
-    // Sem nome, a reserva (`{{nome|"aluno"}}`) cobre; sem reserva, o literal fica.
-    if (key === "nome") return full !== "" ? full : (reserva ?? literal);
-    if (key === "primeiro_nome") return first !== "" ? first : (reserva ?? literal);
-    return literal; // desconhecida: mantém
-  });
+/**
+ * O corpo da resposta rápida com o nome do contato (#2744, #3687).
+ *
+ * A conta é do resolvedor único com a política do Inbox — `literal`: variável
+ * sem valor e chave desconhecida continuam `{{x}}` no texto, porque o
+ * compositor deixa o operador VER o que não resolveu antes de mandar (é a
+ * mesma regra que `motivoDoCuringaLiteral` transforma em trava).
+ *
+ * `agora` é o instante em que a resposta é inserida no compositor: com ele
+ * `{{saudacao}}` sai igual à campanha, no fuso de quem atende.
+ */
+export function interpolateTemplate(
+  body: string,
+  contact: TemplateContact,
+  agora?: InstanteDoEnvio,
+): string {
+  return resolverVariaveis(
+    body,
+    {
+      nome: nomeResolvido(contact) || null,
+      contact: { name: contact.name, display_name: contact.displayName },
+    },
+    { fonte: "inbox", quandoVazio: "literal", agora },
+  ).texto;
 }

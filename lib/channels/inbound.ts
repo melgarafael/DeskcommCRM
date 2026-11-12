@@ -20,6 +20,8 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { logger } from "@/lib/logger";
+
 import { CANAIS_QUE_RESPONDEM_ANTES, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
@@ -30,7 +32,14 @@ import {
 } from "./graph-parceiro/webhook";
 import { sincronizarSaudeDaConexao } from "./health";
 import { lerEnvelopeMeta } from "./meta/envelope";
+import { avisarStatusDoModelo, desfechoDoAviso } from "./meta/aviso-do-modelo";
 import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
+import {
+  MOTIVO_CONTATO_ANONIMIZADO,
+  MOTIVO_TITULAR_APAGADO,
+  perguntarTitularesApagadosNoLote,
+  type ApagadosNoLote,
+} from "./meta/titular-apagado";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
 import {
@@ -487,6 +496,15 @@ async function datafyInbound(
   const eventos = parseMetaWebhook(leitura.envelope);
   const desfechos: string[] = [];
   const agora = new Date().toISOString();
+  /**
+   * A pergunta do apagado a pedido é do LOTE (uma consulta para todos os
+   * contatos desta entrega, migration 9321). `undefined` = ainda não perguntou;
+   * `null` = perguntou e falhou — aí cada evento cai na pergunta individual da
+   * ingestão, que falha fechada sem parar o lote.
+   */
+  let apagadosDaAgenda: ApagadosNoLote | null | undefined;
+  let puladosPorTitularApagado = 0;
+  let puladosPorContatoAnonimizado = 0;
 
   for (const e of eventos) {
     // Mesma régua da rota do canal oficial: evento carimbado com outra conta é
@@ -528,11 +546,33 @@ async function datafyInbound(
         desfechos.push("outro_numero");
         continue;
       }
-      const r = await ingestMetaAppContactSync(admin, e, {
-        organizationId: orgId,
-        channelSessionId: input.session.id,
-      });
+      if (apagadosDaAgenda === undefined) {
+        const lote = await perguntarTitularesApagadosNoLote(
+          admin,
+          orgId,
+          eventos.filter((x) => x.kind === "app_contact_sync").map((x) => x.phone),
+        );
+        apagadosDaAgenda = lote.erro ? null : lote.apagados;
+        if (lote.erro) {
+          logger.error("[meta.ingest] a pergunta do titular apagado no lote falhou", {
+            organization_id: orgId,
+            erro: lote.erro,
+          });
+        }
+      }
+      const r = await ingestMetaAppContactSync(
+        admin,
+        e,
+        { organizationId: orgId, channelSessionId: input.session.id },
+        apagadosDaAgenda ?? undefined,
+      );
       desfechos.push(`contato:${r.status}`);
+      if (r.status === "ignored" && r.reason === MOTIVO_TITULAR_APAGADO) {
+        puladosPorTitularApagado += 1;
+      }
+      if (r.status === "ignored" && r.reason === MOTIVO_CONTATO_ANONIMIZADO) {
+        puladosPorContatoAnonimizado += 1;
+      }
       continue;
     }
     if (e.kind === "message_status") {
@@ -549,17 +589,44 @@ async function datafyInbound(
       // ficava PENDING no espelho até alguém clicar em Sincronizar, e o seletor
       // do inbox não a oferecia. Escopo pela CONEXÃO desta entrega — a coluna
       // `waba_id` do espelho deste canal guarda o número, não a conta.
-      const { error } = await admin
+      const { data: espelhados, error } = await admin
         .from("meta_templates")
         .update({ status: e.event, rejected_reason: e.reason, updated_at: agora })
         .eq("organization_id", orgId)
         .eq("channel_session_id", input.session.id)
         .eq("name", e.templateName)
-        .eq("language", e.templateLanguage);
-      desfechos.push(error ? "modelo_nao_atualizado" : "modelo");
+        .eq("language", e.templateLanguage)
+        .select("id");
+      // O aviso vem DEPOIS do espelho: o empurrão para olhar não pode chegar
+      // antes de a tela que ele manda abrir já estar certa. Mesmo caminho do
+      // canal oficial direto (`meta/aviso-do-modelo`), e nunca uma segunda
+      // tabela de avisos — a Central é uma só.
+      // E só quando o update casou linha: zero linhas volta sem erro, e o aviso
+      // apontaria para um modelo que a tela não lista.
+      let desfecho = "modelo_nao_atualizado";
+      if (!error && (espelhados?.length ?? 0) > 0) {
+        desfecho = desfechoDoAviso(
+          await avisarStatusDoModelo(
+            admin,
+            { organizationId: orgId, channelSessionId: input.session.id },
+            e,
+          ),
+        );
+      }
+      desfechos.push(desfecho);
       continue;
     }
     desfechos.push("ignorado");
+  }
+
+  // O que ficou de fora por LGPD não some em silêncio — `outcomes` só diz
+  // `contato:ignored`. Só o contador, nunca o telefone.
+  if (puladosPorTitularApagado > 0 || puladosPorContatoAnonimizado > 0) {
+    logger.info("[meta.ingest] contatos da agenda não sincronizados por LGPD", {
+      organization_id: orgId,
+      pulados_por_titular_apagado: puladosPorTitularApagado,
+      pulados_por_contato_anonimizado: puladosPorContatoAnonimizado,
+    });
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -14,11 +15,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { CampoComVariaveis } from "@/components/variaveis/CampoComVariaveis";
 import type { FonteDeVariavel, VariaveisDoModelo } from "@/lib/channels/meta/variaveis-do-fluxo";
-import { actionConfigSchema } from "@/lib/followup/graph-schema";
+import { actionConfigSchema, MAX_VARIACOES_DO_PASSO } from "@/lib/followup/graph-schema";
 import type { VariavelDoModelo } from "@/lib/followup/modelos-aprovados";
 import { MODOS_DA_ACAO, opcoes, type ModoDaAcao } from "@/lib/followup/vocabulario";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { Plus, Trash } from "@/lib/ui/icons";
+import { eCuringa, variavelDoCatalogo, variaveisDe } from "@/lib/variaveis/catalogo";
 import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { useModelosAprovadosDoFluxo } from "@/hooks/followup/useModelosAprovadosDoFluxo";
@@ -143,6 +147,24 @@ function SeletorDeModelo({
 const FONTE_NOME = "__contact_name__";
 const FONTE_PRIMEIRO_NOME = "__contact_first_name__";
 const FONTE_LIVRE = "__livre__";
+/**
+ * A origem nova (#3687): um nome do CATÁLOGO resolvido pelo resolvedor único.
+ * As três origens de sempre continuam válidas — o que está gravado não muda.
+ */
+const FONTE_VARIAVEL = "__variavel__";
+
+/**
+ * As variáveis FECHADAS que o fluxo sabe preencher (`nome`, `primeiro_nome`).
+ * `lead.*` fica de fora de propósito: campo do negócio já é a origem `lead_custom`
+ * acima, com a chave escrita à mão.
+ */
+const VARIAVEIS_DO_SISTEMA = variaveisDe("fluxo").filter((nome) => !eCuringa(nome));
+
+/** O que é desta AÇÃO e não do CRM: o laço do follow-up conta as voltas. */
+const ATALHOS_DO_FOLLOWUP = [
+  { chave: "volta", rotulo: "Número da volta", grupo: "acao" as const },
+  { chave: "voltas", rotulo: "Total de voltas", grupo: "acao" as const },
+];
 
 /**
  * De onde sai cada variável de um modelo aprovado: nome do contato ou campo do
@@ -181,11 +203,13 @@ function MapaDeVariaveis({
             ? FONTE_NOME
             : fonte?.kind === "contact_first_name"
               ? FONTE_PRIMEIRO_NOME
-              : fonte?.kind === "lead_custom"
-                ? camposUnicos.some((c) => c.key === fonte.key)
-                  ? fonte.key
-                  : FONTE_LIVRE
-                : "";
+              : fonte?.kind === "variavel"
+                ? FONTE_VARIAVEL
+                : fonte?.kind === "lead_custom"
+                  ? camposUnicos.some((c) => c.key === fonte.key)
+                    ? fonte.key
+                    : FONTE_LIVRE
+                  : "";
         const id = `variavel-${v.chave.replace(/[^a-z0-9]/gi, "-")}`;
         return (
           <div key={v.chave} className="space-y-1">
@@ -204,6 +228,8 @@ function MapaDeVariaveis({
                 if (escolha === FONTE_NOME) definir(v.chave, { kind: "contact_name" });
                 else if (escolha === FONTE_PRIMEIRO_NOME) definir(v.chave, { kind: "contact_first_name" });
                 else if (escolha === FONTE_LIVRE) definir(v.chave, { kind: "lead_custom", key: "campo" });
+                else if (escolha === FONTE_VARIAVEL)
+                  definir(v.chave, { kind: "variavel", chave: VARIAVEIS_DO_SISTEMA[0] ?? "nome" });
                 else definir(v.chave, { kind: "lead_custom", key: escolha });
               }}
             >
@@ -219,8 +245,28 @@ function MapaDeVariaveis({
                   </SelectItem>
                 ))}
                 <SelectItem value={FONTE_LIVRE}>{t("Outro campo do negócio")}</SelectItem>
+                {/* #3687 — a MESMA variável das outras telas, resolvida pelo
+                    mesmo resolvedor. As origens acima continuam iguais. */}
+                <SelectItem value={FONTE_VARIAVEL}>{t("Variável do sistema")}</SelectItem>
               </SelectContent>
             </Select>
+            {fonte?.kind === "variavel" && (
+              <Select
+                value={fonte.chave}
+                onValueChange={(chave) => definir(v.chave, { kind: "variavel", chave })}
+              >
+                <SelectTrigger aria-label={t("Variável do sistema")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VARIAVEIS_DO_SISTEMA.map((nome) => (
+                    <SelectItem key={nome} value={nome}>
+                      {`{{${nome}}}`} — {t(variavelDoCatalogo(nome)?.descricao ?? nome)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {fonte?.kind === "lead_custom" && !camposUnicos.some((c) => c.key === fonte.key) && (
               <Input
                 aria-label={t("Chave do campo do negócio")}
@@ -250,6 +296,12 @@ export function ActionForm({
   const t = useT();
   const [mode, setMode] = useState(config.mode);
   const [body, setBody] = useState(config.mode === "text" ? config.body : "");
+  // #4429 — as OUTRAS redações do mesmo passo. A primeira continua sendo o
+  // `body` acima; estas o motor alterna a cada envio. O estado local guarda a
+  // caixa vazia recém-adicionada (o config só recebe as preenchidas).
+  const [variacoes, setVariacoes] = useState<string[]>(
+    config.mode === "text" ? (config.variacoes ?? []) : [],
+  );
   const [promptHint, setPromptHint] = useState(config.mode === "ai_message" ? config.prompt_hint : "");
   const [fallbackTemplateId, setFallbackTemplateId] = useState(
     config.mode === "ai_message" ? (config.fallback_template_id ?? "") : "",
@@ -271,6 +323,7 @@ export function ActionForm({
   const commit = (next: {
     mode: ModoDaAcao;
     body: string;
+    variacoes: string[];
     mediaUrl: string;
     promptHint: string;
     fallbackTemplateId: string;
@@ -285,11 +338,15 @@ export function ActionForm({
       aprovados.data === undefined
         ? next.templateValues
         : Object.fromEntries(Object.entries(next.templateValues).filter(([chave]) => chaves.includes(chave)));
+    // Caixa vazia (a que o botão "Redação" acabou de abrir) não vira variação:
+    // mandá-la crua reprovaria o schema inteiro e a tela não gravaria o texto.
+    const redacoesExtras = next.variacoes.map((redacao) => redacao.trim()).filter((redacao) => redacao.length > 0);
     const candidate =
       next.mode === "text"
         ? {
             mode: "text" as const,
             body: next.body,
+            ...(redacoesExtras.length > 0 ? { variacoes: redacoesExtras } : {}),
             ...(next.mediaUrl.trim() ? { media_url: next.mediaUrl.trim() } : {}),
           }
         : next.mode === "ai_message"
@@ -312,7 +369,7 @@ export function ActionForm({
     onChange(parsed.data);
   };
 
-  const fields = { body, mediaUrl, promptHint, fallbackTemplateId, templateId, templateValues };
+  const fields = { body, variacoes, mediaUrl, promptHint, fallbackTemplateId, templateId, templateValues };
   const variaveisDoEscolhido = variaveisDe(templateId);
 
   return (
@@ -342,15 +399,23 @@ export function ActionForm({
 
       {mode === "text" ? (
         <div className="space-y-2">
-          <Label htmlFor="action-body">{t("Texto enviado ao contato")}</Label>
-          <Textarea
+          {/*
+            O CAMPO COM VARIÁVEIS (#3687) — o MESMO da automação, da campanha e
+            da resposta rápida. Até aqui o follow-up não oferecia variável
+            nenhuma: quem escrevia tinha de adivinhar `{{primeiro_nome}}`.
+          */}
+          <CampoComVariaveis
             id="action-body"
-            maxLength={4000}
-            value={body}
-            onChange={(e) => {
-              setBody(e.target.value);
-              commit({ mode, ...fields, body: e.target.value });
+            rotulo={t("Texto enviado ao contato")}
+            fonte="automacao"
+            valor={body}
+            onChange={(texto) => {
+              setBody(texto);
+              commit({ mode, ...fields, body: texto });
             }}
+            linhas={4}
+            maxLength={4000}
+            extras={ATALHOS_DO_FOLLOWUP.map((a) => ({ ...a, rotulo: t(a.rotulo) }))}
           />
           <p className="text-xs text-text-muted">
             {t("Sai exatamente assim, sem IA. No laço,")} {t("{{volta}}")} {t("e")} {t("{{voltas}}")} {t("viram o número da volta.")}
@@ -358,6 +423,60 @@ export function ActionForm({
           <p className="text-xs text-text-muted">
             {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
           </p>
+          <p className="text-xs text-text-muted">
+            {t("Para escrever uma data no formato do cliente, use {{campo|data}}.")}
+          </p>
+          <div className="space-y-2 rounded-sm border border-border p-2" data-testid="action-variacoes">
+            <Label>{t("Outras redações do mesmo passo (opcional)")}</Label>
+            <p className="text-xs text-text-muted">
+              {t("O motor alterna entre o texto acima e as redações abaixo a cada envio — assim o contato não recebe a mesma frase duas vezes seguidas.")}
+            </p>
+            {variacoes.map((redacao, idx) => (
+              <div key={idx} className="flex items-start gap-2">
+                {/* Cada redação usa o MESMO campo com variáveis do texto principal
+                    (#3687): mesmo seletor, mesma prévia, mesmos atalhos da volta. */}
+                <div className="min-w-0 flex-1">
+                  <CampoComVariaveis
+                    id={`action-variacao-${idx}`}
+                    rotulo={`${t("Redação")} ${idx + 2}`}
+                    fonte="automacao"
+                    valor={redacao}
+                    onChange={(texto) => {
+                      const proximas = variacoes.map((atual, i) => (i === idx ? texto : atual));
+                      setVariacoes(proximas);
+                      commit({ mode, ...fields, variacoes: proximas });
+                    }}
+                    linhas={3}
+                    maxLength={4000}
+                    placeholder={t("Outra forma de dizer a mesma coisa")}
+                    extras={ATALHOS_DO_FOLLOWUP.map((a) => ({ ...a, rotulo: t(a.rotulo) }))}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t("Remover redação")}
+                  onClick={() => {
+                    const proximas = variacoes.filter((_, i) => i !== idx);
+                    setVariacoes(proximas);
+                    commit({ mode, ...fields, variacoes: proximas });
+                  }}
+                >
+                  <Trash size={14} aria-hidden />
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={variacoes.length >= MAX_VARIACOES_DO_PASSO}
+              onClick={() => setVariacoes([...variacoes, ""])}
+            >
+              <Plus size={14} aria-hidden className="mr-1" /> {t("Redação")}
+            </Button>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="action-media-url">{t("Imagem, vídeo, áudio ou documento (opcional)")}</Label>
             <Input

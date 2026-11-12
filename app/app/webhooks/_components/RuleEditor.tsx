@@ -41,6 +41,12 @@ import {
 } from "@/lib/automation/aniversario-do-contato";
 import { configAoSalvarDaTela } from "@/lib/automation/config-ao-salvar";
 import {
+  INTERVALO_POR_CONTATO_MAX_HORAS,
+  INTERVALO_POR_CONTATO_MIN_HORAS,
+  horasDoIntervaloDaTela,
+  horasDoIntervaloNaConfig,
+} from "@/lib/automation/limite-por-contato";
+import {
   CONDICOES_DO_CONTATO,
   OPERADORES_SEM_VALOR,
   valorPadraoDoCampo,
@@ -55,8 +61,15 @@ import {
   type AutomationRuleRow,
 } from "@/hooks/webhooks/useAutomationRules";
 import { usePipelines, usePipelineStages, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
-import { TRIGGER_LABELS, ACTION_LABELS, acaoOferecida, type TriggerEvent, type ActionType } from "./labels";
-import { useModulosLigados } from "@/hooks/auth/AuthProvider";
+import {
+  TRIGGER_LABELS,
+  ACTION_LABELS,
+  acaoOferecida,
+  gatilhoOferecido,
+  type TriggerEvent,
+  type ActionType,
+} from "./labels";
+import { useCapacidadesLigadas, useModulosLigados } from "@/hooks/auth/AuthProvider";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
 import { EtapaDeQualquerFunil } from "./EtapaDeQualquerFunil";
 import { ValorDaCondicaoDoContato } from "./CondicaoDoContato";
@@ -207,6 +220,9 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // funil (via etapa/tags) e tags do contato.
   "lead.silent_for": LEAD_FIELDS,
   "lead.stage_stale": [...LEAD_FIELDS, STAGE_FIELD],
+  // #4365 — as condições são as do CONTATO: quem monta a regra quer filtrar
+  // QUEM ligou (tags, nome), e o fato em si (a ligação perdida) já é o gatilho.
+  "voice_call.missed": CONTACT_FIELDS,
 };
 
 export const OP_LABELS: Record<Op, string> = {
@@ -288,6 +304,7 @@ const QUALQUER_FONTE = "__qualquer_fonte__";
 export function RuleEditor({ open, onOpenChange, rule }: Props) {
   const t = useT();
   const modulosLigados = useModulosLigados();
+  const capacidadesLigadas = useCapacidadesLigadas();
   const isEdit = !!rule;
   const [name, setName] = React.useState("");
   const [triggerEvent, setTriggerEvent] = React.useState<TriggerEvent | "">("");
@@ -325,6 +342,15 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
    * sobreviver, e o operador não conseguiria desligar.
    */
   const [umaVezPorContato, setUmaVezPorContato] = React.useState(false);
+  /**
+   * "Não repetir para o mesmo contato por N horas" (#2974, fatia 2), como TEXTO.
+   *
+   * Texto porque campo vazio é "sem intervalo" — `Number("")` é `0`, que viraria
+   * "não repete por zero hora" (ou seja, nada). O mesmo cuidado dos outros N da
+   * tela. A régua de leitura/gravação mora em `lib/automation/limite-por-contato`
+   * para a gaveta e o desenho não divergirem.
+   */
+  const [repetirAposHoras, setRepetirAposHoras] = React.useState("");
 
   const create = useCreateAutomationRule();
   const update = useUpdateAutomationRule();
@@ -358,6 +384,10 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     const sourceId = rule?.trigger_config?.webhook_source_id;
     setWebhookSourceId(typeof sourceId === "string" ? sourceId : QUALQUER_FONTE);
     setUmaVezPorContato(rule?.trigger_config?.uma_vez_por_contato === true);
+    // O intervalo pela MESMA régua do motor: valor guardado fora de 1..720 abre
+    // como vazio, em vez de a tela mostrar um N que o motor não vai respeitar.
+    const horas = horasDoIntervaloNaConfig(rule?.trigger_config);
+    setRepetirAposHoras(horas === null ? "" : String(horas));
     // #3726 — o leitor é o MESMO da varredura. Regra antiga (sem a chave) abre
     // com 0, que é o comportamento que ela já tem no banco.
     setAntecedenciaDoAniversario(
@@ -498,18 +528,28 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
               },
             })
           : ehGatilhoDeNovoContato
-            ? configAoSalvarDaTela({
-                gatilhoDaRegra: rule?.trigger_event,
-                configDaRegra: rule?.trigger_config,
-                gatilhoDaTela: triggerEvent,
-                configDaTela: {
-                  webhook_source_id: webhookSourceId === QUALQUER_FONTE ? null : webhookSourceId,
-                  // Ligado OU desligado, sempre gravado (#2974): omitir o
-                  // `false` faria o merge abaixo manter um `true` guardado e a
-                  // opção não poderia ser desligada pela tela.
-                  uma_vez_por_contato: umaVezPorContato,
-                },
-              })
+            ? (() => {
+                // Trilha idêntica à de `triggerConfigDaTela` (o desenho): o N vai
+                // pela régua compartilhada, e "sem intervalo" APAGA a chave
+                // depois do merge — omitir deixaria um `repetir_apos_horas`
+                // guardado para sempre, e o operador não teria como desligar.
+                const horas = horasDoIntervaloDaTela(repetirAposHoras, umaVezPorContato);
+                const config = configAoSalvarDaTela({
+                  gatilhoDaRegra: rule?.trigger_event,
+                  configDaRegra: rule?.trigger_config,
+                  gatilhoDaTela: triggerEvent,
+                  configDaTela: {
+                    webhook_source_id: webhookSourceId === QUALQUER_FONTE ? null : webhookSourceId,
+                    // Ligado OU desligado, sempre gravado (#2974): omitir o
+                    // `false` faria o merge abaixo manter um `true` guardado e a
+                    // opção não poderia ser desligada pela tela.
+                    uma_vez_por_contato: umaVezPorContato,
+                    ...(horas !== null ? { repetir_apos_horas: horas } : {}),
+                  },
+                });
+                if (horas === null) delete config.repetir_apos_horas;
+                return config;
+              })()
             : ehGatilhoDoAniversario
               ? configAoSalvarDaTela({
                   gatilhoDaRegra: rule?.trigger_event,
@@ -599,7 +639,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 <SelectValue placeholder={t("Escolha o gatilho")} />
               </SelectTrigger>
               <SelectContent>
-                {TRIGGER_EVENTS.map((ev) => (
+                {TRIGGER_EVENTS.filter((ev) => gatilhoOferecido(ev, capacidadesLigadas, triggerEvent)).map((ev) => (
                   <SelectItem key={ev} value={ev}>
                     {t(TRIGGER_LABELS[ev])}
                   </SelectItem>
@@ -641,6 +681,32 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 <p className="text-xs text-muted-foreground">
                   {t("Ligado, esta automação roda uma única vez para cada contato: se ele voltar pelo mesmo anúncio, a sequência não repete. A execução fica registrada na aba Atividade, e a próxima entrada deste contato só registra que a regra foi pulada.")}
                 </p>
+                {/* #2974, fatia 2 — o intervalo mínimo. Fica AO LADO do
+                    checkbox, e não numa terceira opção: são o mesmo limite por
+                    contato, com duas respostas possíveis para "quando pode de
+                    novo". Desabilitado com "uma vez" ligado porque as duas não
+                    convivem pela tela. */}
+                <div className="mt-3 space-y-1">
+                  <Label htmlFor="repetir-apos-horas">
+                    {t("Não repetir para o mesmo contato por (horas)")}
+                  </Label>
+                  <Input
+                    id="repetir-apos-horas"
+                    type="number"
+                    inputMode="numeric"
+                    className="w-40"
+                    value={repetirAposHoras}
+                    min={INTERVALO_POR_CONTATO_MIN_HORAS}
+                    max={INTERVALO_POR_CONTATO_MAX_HORAS}
+                    disabled={umaVezPorContato}
+                    onChange={(e) => setRepetirAposHoras(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {umaVezPorContato
+                      ? t("Desligue “rodar no máximo uma vez por contato” para usar um intervalo.")
+                      : t("Deixe vazio para não ter intervalo. Com um número, a automação não repete para o mesmo contato antes de passar esse tanto de horas (1 a 720, ou seja até 30 dias). O contador é por contato e por automação, e sobrevive a reinício.")}
+                  </p>
+                </div>
               </div>
             ) : null}
 

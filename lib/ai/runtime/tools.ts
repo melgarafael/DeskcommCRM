@@ -18,6 +18,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { auditMcpToolCall } from "@/lib/mcp/audit";
 import { McpAuthError, ensureRole, ensureScope } from "@/lib/mcp/auth";
 import type { McpAuthResult } from "@/lib/mcp/auth";
+import { recusaDaChamada, rotuloDaRecusa } from "@/lib/mcp/desfecho-da-chamada";
 import { logger } from "@/lib/logger";
 import { allTools, getToolByName } from "@/lib/mcp/tools";
 import {
@@ -28,6 +29,7 @@ import {
 import type { ServidorMcpExternoMontado } from "@/lib/mcp/servidor-externo/carregar";
 import type { ServidorDoAgenteNoTurno } from "@/lib/mcp/servidor-externo/do-agente/carregar";
 import { escolhasDoServidor, escolhasRemotas } from "@/lib/mcp/servidor-externo/ids";
+import { marcarLeituraRemota } from "@/lib/mcp/servidor-externo/leitura-remota";
 import { catalogEntry, deCapacidadeDesligada, deModuloDesligado } from "@/lib/mcp/tools/catalog";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
@@ -109,6 +111,14 @@ export interface PickToolsInput {
    * por `carregarServidoresDoAgenteNoTurno`. Ausente/vazio = nenhum.
    */
   servidoresDoAgente?: readonly ServidorDoAgenteNoTurno[];
+  /**
+   * Coletor: recebe o nome de cada remota do `servidorMcpExterno` MONTADA como
+   * LEITURA (`category: "read"` de `definirFerramentasRemotas`). Quem passa é
+   * o turno, que registra o resultado delas como evidência da conferência de
+   * promessa. Os servidores do agente ficam fora de propósito. Ausente =
+   * ninguém pergunta.
+   */
+  leiturasRemotas?: Set<string>;
   /**
    * O PREDICADO ÚNICO do efeito deste turno (#3333) — ver
    * `lib/ai/runtime/efeito-das-escritas.ts`.
@@ -538,11 +548,18 @@ function wrapMcpTool(
         // muda — a chave nem aparece no `metadata` (mesma disciplina do motivo).
         const termoBuscado = def.termoBuscado?.(argsRecord as never) ?? null;
 
-        // Recusa devolvida PELO HANDLER também não é sucesso (#2158): a ficha de
-        // outro cliente recusada em `crm_get_contact` volta no mesmo formato da
-        // recusa de escrita acima, e entra no audit como ela — `success: false`
-        // e o motivo em `error` —, senão a recusa some contada como acerto.
-        const recusa = recusaDoHandler(result);
+        // Recusa devolvida PELO HANDLER também não é sucesso (#2158, #4342): a
+        // ficha de outro cliente recusada em `crm_get_contact`, a escrita de
+        // funil e QUALQUER tool que recuse no formato do catálogo
+        // (`{ erro, mensagem }`) voltam no mesmo formato e entram no audit como
+        // recusa — `success: false`, o CÓDIGO em `error`/`motivo` —, senão a
+        // recusa some contada como acerto e o gate `registro_sem_efeito` lê
+        // `produziu_efeito` numa chamada que não criou nada.
+        //
+        // A régua é UMA (`lib/mcp/desfecho-da-chamada.ts`), a mesma do traço e
+        // da rota MCP externa: antes daqui, só `{ permitido: false }` era
+        // reconhecido, e o formato real das tools passava por sucesso.
+        const recusa = recusaDaChamada(result);
         if (recusa !== null) {
           void auditMcpToolCall({
             ctx: input.ctx,
@@ -550,7 +567,9 @@ function wrapMcpTool(
             args: argsAudit,
             durationMs: Date.now() - startedAt,
             success: false,
-            errorMessage: `contato_da_conversa:${recusa}`,
+            errorMessage: rotuloDaRecusa(recusa),
+            desfecho: "recusa",
+            ...(recusa.codigo === null ? {} : { motivo: recusa.codigo }),
           });
           anotarEfeito("falhou");
           return result;
@@ -630,13 +649,6 @@ function wrapMcpTool(
       }
     },
   });
-}
-
-/** O `motivo` de uma recusa `{ permitido: false, motivo }` devolvida pelo handler, ou `null`. */
-function recusaDoHandler(result: unknown): string | null {
-  if (typeof result !== "object" || result === null) return null;
-  const r = result as { permitido?: unknown; motivo?: unknown };
-  return r.permitido === false && typeof r.motivo === "string" ? r.motivo : null;
 }
 
 export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
@@ -763,7 +775,10 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         // para ser RECUSADA logo acima por `escrita_sem_escopo_do_turno`,
         // nunca executada — com ou sem identidade.
         if (input.contatoDoTurno && def.category === "read" && !identificado) continue;
-        result[def.name] = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+        const montada = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+        // A prévia libera só a remota marcada aqui (ver `leitura-remota.ts`).
+        result[def.name] = def.category === "read" ? marcarLeituraRemota(montada) : montada;
+        if (def.category === "read") input.leiturasRemotas?.add(def.name);
       }
     }
   }
@@ -790,7 +805,16 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         escolhasDoServidor(input.toolIds, montado.servidor.id),
         input.contatoDoTurno,
       );
-      for (const def of defs) result[def.name] = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+      for (const def of defs) {
+        const montada = wrapMcpTool(def, entradaDaRemota, executarEscrita);
+        // #4317 — a MESMA marca do servidor externo da organização (#3575):
+        // `category === "read"` aqui JÁ é as duas metades juntas, decididas em
+        // `definirFerramentasDoServidorDoAgente` (marca `leitura` do admin em
+        // `tool_ids` E `somenteLeitura` capturado por `declarouSomenteLeitura`
+        // — `readOnlyHint === true` exato). Sem as duas, a definição sai
+        // `write` e NÃO recebe a marca: a prévia continua recusando.
+        result[def.name] = def.category === "read" ? marcarLeituraRemota(montada) : montada;
+      }
     } else if (!input.contatoDoTurno || montado.contato !== input.contatoDoTurno) {
       continue;
     }

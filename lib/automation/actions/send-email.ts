@@ -66,6 +66,7 @@
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { carregarResumoParaAEquipe } from "@/lib/automation/resumo-do-evento";
+import { instanteDoEnvio } from "@/lib/automation/instante-do-envio";
 import { renderTemplate } from "@/lib/automation/template";
 import {
   remetenteDaOrganizacaoDeSettings,
@@ -78,6 +79,7 @@ import {
 } from "@/lib/email/resend-da-organizacao";
 import { sendEmail, type EmailDeliveryError } from "@/lib/email/roteador";
 import { logger } from "@/lib/logger";
+import { recusaRegistrada } from "@/lib/lgpd/recusa-registrada";
 import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 
 /**
@@ -131,7 +133,7 @@ interface ContatoDoContexto {
   id: string;
   is_blocked?: boolean;
   email?: string | null;
-  consent?: { marketing?: { declined_at?: string | null } | null } | null;
+  consent?: unknown;
 }
 
 /** O veredito do destinatário — o `motivo` é o que vira `detail.reason`. */
@@ -212,8 +214,8 @@ async function resolverDestinatario(
   const contact = ctx.context.contact as ContatoDoContexto | undefined;
   if (!contact) return { ok: false, motivo: "no_contact" };
   if (contact.is_blocked) return { ok: false, motivo: "contact_blocked" };
-  // Recusa registrada — não "grant ausente". Ver `guarda-do-contato.ts`.
-  if (contact.consent?.marketing?.declined_at) return { ok: false, motivo: "consent_declined" };
+  // Recusa registrada — não "grant ausente". Ver `guarda-do-contato.ts`. Nos dois formatos.
+  if (recusaRegistrada(contact.consent)) return { ok: false, motivo: "consent_declined" };
   const email = emailValido(contact.email);
   return email ? { ok: true, endereco: email } : { ok: false, motivo: "no_email" };
 }
@@ -377,10 +379,14 @@ async function execute(
   }
 
   const contexto = await contextoDoEnvio(ctx, assunto, corpo);
-  const assuntoPronto = renderTemplate(assunto, contexto);
-  const corpoPronto = renderTemplate(corpo, contexto);
+  // #3687 — `{{saudacao}}` resolve no instante do envio (o mesmo das outras
+  // telas). Sem o token no texto, nenhuma leitura extra: `undefined`.
+  const agora = await instanteDoEnvio(ctx.admin, ctx.organizationId, assunto, corpo);
+  const assuntoPronto = renderTemplate(assunto, contexto, undefined, agora);
+  const corpoPronto = renderTemplate(corpo, contexto, undefined, agora);
   // No HTML, cada valor de fora (contato, negócio) entra como texto.
-  const corpoHtml = formato === "html" ? renderTemplate(corpo, contexto, escaparHtml) : corpoPronto;
+  const corpoHtml =
+    formato === "html" ? renderTemplate(corpo, contexto, escaparHtml, agora) : corpoPronto;
 
   // A consulta do `postponeUntil` é só o atalho; quem decide é esta contagem.
   // `skipped`, não `postponed`: o motor não reexecuta um evento por resultado

@@ -39,6 +39,11 @@ import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
 import {
+  palavraDeSaida,
+  problemaNoTextoDaSaidaNoIdioma,
+  TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+} from "./rodape-de-saida";
+import {
   provedorDaOrganizacao,
   provedorExigeCredencialDaOrganizacao,
   validarCredencialDaOrganizacao,
@@ -582,8 +587,112 @@ export const MSG_CANAL_RECONECTANDO =
 export const MSG_CANAL_DESCONECTADO =
   "A conexão de saída está desconectada e precisa ser reconectada antes de a campanha continuar.";
 
+/**
+ * AS DUAS CAUSAS DO "O AGENTE AINDA NÃO SERVE" — SEPARADAS (issue #4118).
+ *
+ * A recusa existia numa frase só: "Publique o agente com a ferramenta de mover
+ * negócios e acesso ao funil escolhido." Uma frase para DUAS condições
+ * independentes (`tool_ids` sem `crm_move_lead_stage`, `pipeline_ids` sem o funil
+ * da campanha), nenhuma delas nomeada, e nenhuma pista de ONDE corrigir — a
+ * configuração fica em outra aba (`Organiza o sistema`), e as duas valem só para
+ * a versão PUBLICADA. Quem ligou o pacote "Vender e mover o funil" inteiro e viu
+ * a frase de novo não tinha como saber qual das duas faltava.
+ *
+ * Aqui a decisão é uma função pura sobre a linha que o banco devolve: cada falta
+ * vira uma frase com o nome do controle que a pessoa vê na tela ("Mover
+ * oportunidade de etapa", "Em que negócios ele pode mexer") e, no caso do funil,
+ * com o NOME do funil da campanha — o id não diz nada a quem configura.
+ *
+ * As duas podem faltar ao mesmo tempo: a lista devolve as duas, e a mensagem
+ * mostra as duas (parar na primeira faria o operador publicar, tentar de novo e
+ * bater na segunda).
+ */
+export type FaltaDoAgentePublicado = { causa: "ferramenta" | "funil"; frase: string };
+
+/** O id da ferramenta que a campanha precisa para mover o negócio de etapa. */
+export const FERRAMENTA_DE_MOVER_NEGOCIO = "crm_move_lead_stage";
+
+export function faltasDoAgentePublicado(
+  agent: { tool_ids?: string[] | null; pipeline_ids?: string[] | null },
+  funil: { id: string; name: string | null },
+): FaltaDoAgentePublicado[] {
+  const faltas: FaltaDoAgentePublicado[] = [];
+  if (!agent.tool_ids?.includes(FERRAMENTA_DE_MOVER_NEGOCIO))
+    faltas.push({
+      causa: "ferramenta",
+      frase:
+        'O agente publicado não pode mover oportunidade de etapa. Ligue "Mover oportunidade de etapa" na aba "Organiza o sistema" do agente.',
+    });
+  if (!agent.pipeline_ids?.includes(funil.id))
+    faltas.push({
+      causa: "funil",
+      frase: funil.name
+        ? `O agente publicado não tem acesso ao funil "${funil.name}". Marque esse funil em "Organiza o sistema" › "Em que negócios ele pode mexer".`
+        : 'O agente publicado não tem acesso ao funil desta campanha. Marque esse funil em "Organiza o sistema" › "Em que negócios ele pode mexer".',
+    });
+  return faltas;
+}
+
+/**
+ * O FECHO QUE FALA DA VERSÃO PUBLICADA — uma vez, depois das faltas.
+ *
+ * `validateConfig` lê `ai_agent_versions` pela `published_version_id`, então o
+ * rascunho não conta: quem liga a capacidade e salva vê a tela do agente mudada
+ * e a campanha continuar recusando. O fecho diz por que, sem repetir a instrução
+ * de publicar em cada frase.
+ */
+export const FECHO_DA_VERSAO_PUBLICADA =
+  "A campanha usa a versão publicada do agente: o ajuste só vale depois de publicar.";
+
+export function mensagemDoAgenteIncompleto(
+  faltas: readonly FaltaDoAgentePublicado[],
+): string {
+  return [...faltas.map((f) => f.frase), FECHO_DA_VERSAO_PUBLICADA].join(" ");
+}
+
+/**
+ * O TEXTO DA SAÍDA NO IDIOMA DA INSTALAÇÃO (#4370).
+ *
+ * O schema já recusa o texto sem NENHUMA palavra de saída, e o texto grande ou
+ * com link. Falta a parte que só existe onde o locale é conhecido: a palavra
+ * certa DESTA instalação. Um texto com PARAR numa organização em espanhol
+ * passaria na régua genérica e ofereceria uma palavra que ninguém ali responde —
+ * a pessoa escreveria "PARAR" e o detector, que exige a palavra sozinha, até
+ * bloquearia; mas o rodapé da plantilla em espanhol promete BAJA, e as duas
+ * redações convivendo na mesma campanha é o tipo de incoerência que o dono não vê.
+ *
+ * A recusa é da CAMPANHA (422, escopo `campanha`): é o mesmo escopo das outras
+ * recusas de configuração, e o operador conserta o campo e tenta de novo.
+ */
+async function validarTextoDaSaidaNoIdioma(
+  db: pg.PoolClient,
+  org: string,
+  texto: string | undefined,
+): Promise<void> {
+  const proprio = (texto ?? "").trim();
+  // Vazio é o contrato: usa a frase padrão, e nada há para recusar.
+  if (proprio === "") return;
+  const idioma = await idiomaDaOrganizacao(db, org);
+  const problema = problemaNoTextoDaSaidaNoIdioma(proprio, idioma);
+  if (problema === null) return;
+  if (problema === "sem_palavra")
+    throw new ProspectingError(
+      `O texto da opção de parar precisa conter "${palavraDeSaida(idioma)}", a palavra que a pessoa responde para sair nesta instalação.`,
+      422,
+      "campanha",
+    );
+  throw new ProspectingError(
+    problema === "longo"
+      ? `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`
+      : "O texto da opção de parar não pode ter link.",
+    422,
+    "campanha",
+  );
+}
+
 export async function validateConfig(db: pg.PoolClient, org: string, input: CampaignConfig) {
   const config = campaignConfigSchema.parse(input);
+  await validarTextoDaSaidaNoIdioma(db, org, config.texto_da_saida);
   const agent = (
     await db.query(
       "select v.tool_ids,v.pipeline_ids from ai_agents a join ai_agent_versions v on v.id=a.published_version_id and v.organization_id=a.organization_id where a.organization_id=$1 and a.id=$2 and v.status='published' and a.archived_at is null and a.paused_at is null and a.operation_mode='automatic'",
@@ -591,12 +700,35 @@ export async function validateConfig(db: pg.PoolClient, org: string, input: Camp
     )
   ).rows[0];
   if (!agent) throw new ProspectingError("Escolha um agente publicado e em operação automática.");
-  if (
-    !agent.tool_ids?.includes("crm_move_lead_stage") ||
-    !agent.pipeline_ids?.includes(config.pipeline_id)
-  )
+  // O NOME do funil só é buscado quando ele é a causa: o operador lê "Clínicas de
+  // Sorocaba", não um uuid — e a frase é a única coisa que ele tem para achar a
+  // caixa certa em "Em que negócios ele pode mexer".
+  const funilDaCampanha = agent.pipeline_ids?.includes(config.pipeline_id)
+    ? null
+    : ((
+        await db.query<{ name: string }>(
+          "select name from crm_pipelines where organization_id=$1 and id=$2",
+          [org, config.pipeline_id],
+        )
+      ).rows[0] ?? null);
+  const faltas = faltasDoAgentePublicado(agent, {
+    id: config.pipeline_id,
+    name: funilDaCampanha?.name ?? null,
+  });
+  if (faltas.length)
     throw new ProspectingError(
-      "Publique o agente com a ferramenta de mover negócios e acesso ao funil escolhido.",
+      mensagemDoAgenteIncompleto(faltas),
+      422,
+      "campanha",
+      // O código de wire: a tela usa `details.agent_id` para oferecer o link
+      // direto do agente. Sem ele, o aviso era só texto e o caminho da correção
+      // ficava a cargo de quem lê.
+      "prospecting_agent_incompleto",
+      {
+        agent_id: config.agent_id,
+        pipeline_id: config.pipeline_id,
+        faltando: faltas.map((f) => f.causa),
+      },
     );
   const channel = (
     await db.query<{ provider: ChannelProvider; status: string }>(
@@ -827,15 +959,24 @@ export async function criarPegadaDoCandidato(
   let contactId = contatoDaCampanha ?? p.contact_id;
   if (!contactId) {
     const linksDoNovo = linksParaContatoNovo(p);
-    const contact = await createContactHandler(admin, ctx, {
-      name: p.data.name,
-      display_name: p.data.name,
-      phone_number: p.phone,
-      source: "prospecting",
-      source_metadata: { campaign_id: c.id, place_id: p.data.key, maps_url: p.data.maps_url },
-      consent: { legitimate_interest: { ref: config.legal_basis_ref } },
-      ...(linksDoNovo ? { custom_fields: linksDoNovo } : {}),
-    });
+    // Porta `prospeccao`: a conversa abre logo abaixo, no canal da CAMPANHA. Pela
+    // porta `manual` o cadastro abria antes outra, no telefone mais antigo da
+    // organização, e cada empresa abordada aparecia duas vezes na caixa.
+    const contact = await createContactHandler(
+      admin,
+      ctx,
+      {
+        name: p.data.name,
+        display_name: p.data.name,
+        phone_number: p.phone,
+        source: "prospecting",
+        source_metadata: { campaign_id: c.id, place_id: p.data.key, maps_url: p.data.maps_url },
+        consent: { legitimate_interest: { ref: config.legal_basis_ref } },
+        ...(linksDoNovo ? { custom_fields: linksDoNovo } : {}),
+      },
+      undefined,
+      { porta: "prospeccao" },
+    );
     contactId = String(contact.contact.id);
     await db.query(
       "update prospecting_candidates set contact_id=$3 where organization_id=$1 and id=$2",

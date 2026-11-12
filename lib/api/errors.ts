@@ -394,6 +394,14 @@ export const ApiErrorCodes = {
   campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido ou broadcast pedido num número que não o faz
   campanha_transmissao_variavel: "campanha_transmissao_variavel", // 422: broadcast com variável que muda por pessoa (migration 0712)
   campanha_transmissao_entregue: "campanha_transmissao_entregue", // 409: a velocidade não muda depois que a lista foi entregue ao provedor
+  // Migration 9334 (#3441, fatia E2a): campanha por e-mail, sem número.
+  campanha_email_sem_conta: "campanha_email_sem_conta", // 409: a organização não conectou a conta Resend
+  campanha_email_conta_indisponivel: "campanha_email_conta_indisponivel", // 503: a conta existe e não pôde ser lida — não é ausência
+  campanha_email_assunto_vazio: "campanha_email_assunto_vazio", // 422: e-mail sem assunto não sai
+  campanha_email_assunto_longo: "campanha_email_assunto_longo", // 422: assunto acima do limite do envio
+  campanha_email_corpo_vazio: "campanha_email_corpo_vazio", // 422: e-mail sem corpo não sai
+  campanha_email_corpo_longo: "campanha_email_corpo_longo", // 422: corpo acima do limite do envio
+  campanha_email_desligada: "campanha_email_desligada", // 404: o módulo `campanha_por_email` está desligado na instalação (doc 305)
 
   // 500 / upstream
   internal_error: "internal_error",
@@ -412,6 +420,13 @@ export const ApiErrorCodes = {
   base_publica_nao_configurada: "base_publica_nao_configurada", // 503: NEXT_PUBLIC_APP_URL ausente, placeholder ou da própria máquina — o webhook único da instalação não é registrado
   waha_error: "waha_error",
   channel_unavailable: "channel_unavailable", // 502: o transporte do canal não respondeu (ex.: listar grupos com a sessão fora de WORKING)
+  // 409: a agenda do aparelho não é entregue com o store da sessão desligado
+  // (a opção "Guardar o histórico anterior à vinculação"). Código próprio, e
+  // não `channel_unavailable`, porque a AÇÃO é outra: ligar uma opção na tela
+  // de Conexões — não esperar a conexão voltar (#4102).
+  channel_acervo_desligado: "channel_acervo_desligado",
+  channel_timeout: "channel_timeout", // 504: o canal não respondeu dentro do teto (relógio, não recusa)
+  channel_session_rejected: "channel_session_rejected", // 502: o WhatsApp recusou a sessão do número (401/403)
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu
   wacalls_not_connected: "wacalls_not_connected", // 503 + Retry-After: sessão pareada cujo socket com o WhatsApp caiu por um instante (ver `wacallsSemConexao`)
   ai_provider_error: "ai_provider_error",

@@ -135,6 +135,25 @@ describe('formatarFatosDoCrm', () => {
     expect(normalizarNome('   ')).toBe('');
     expect(normalizarNome(' Pós  viagem ')).toBe('Pós viagem');
   });
+
+  it('telefone no ponto do corte sai mascarado: o scrub vem ANTES do corte em 40', () => {
+    // 28 caracteres de texto + " 11 98765-4321" = 42. Cortado antes do scrub,
+    // sobrava "… 11 98765-43…", que nenhum padrão de telefone ou CPF reconhece.
+    const texto = 'Retornar ligação da cliente';
+    const bruto = `${texto}x 11 98765-4321`;
+    expect(bruto.length).toBeGreaterThan(MAX_CARACTERES_DE_NOME);
+    const nome = normalizarNome(bruto);
+    expect(nome).not.toContain('98765');
+    expect(nome).toContain('[PHONE]');
+    expect(nome.length).toBeLessThanOrEqual(MAX_CARACTERES_DE_NOME);
+  });
+
+  it('CPF e e-mail no nome saem mascarados; nome comum sai igual', () => {
+    expect(normalizarNome('cpf 123.456.789-09')).not.toContain('123.456.789-09');
+    expect(normalizarNome('ana@exemplo.com')).toBe('[EMAIL]');
+    expect(normalizarNome('Pós-viagem')).toBe('Pós-viagem');
+    expect(normalizarNome('Funil 01')).toBe('Funil 01');
+  });
 });
 
 describe('carregarFatosDoCrmDoContato', () => {

@@ -51,7 +51,7 @@ const PROIBIDOS = ["authorization", "cookie", "x-api-key", "asaas-access-token"]
  * recusado tinha mesmo assinatura errada, ou se o segredo é que estava errado —
  * e é assinatura, não credencial: não abre nada sozinha.
  */
-function cabecalhosSeguros(headers: Headers): Record<string, string> {
+export function cabecalhosSeguros(headers: Headers): Record<string, string> {
   const out: Record<string, string> = {};
   headers.forEach((valor, chave) => {
     if (PROIBIDOS.includes(chave.toLowerCase())) return;
@@ -152,4 +152,36 @@ export async function fecharArquivoDoWebhook(
     // A linha `received` já está gravada com o corpo cru, que é o que importa.
     // Falhar aqui não pode derrubar a resposta ao provedor.
   }
+}
+
+/** Só a rodada que encontrou a linha ainda pendente pode registrar a desistência. */
+export async function marcarArquivoDoWebhookComoMorto(
+  admin: SupabaseClient,
+  linha: { id: string; organization_id: string | null },
+  pendente: { status: "received" | "error"; attempts: number },
+  desfecho: { motivo: string; tentativas: number },
+): Promise<"gravado" | "mudou" | "falhou"> {
+  const update = admin
+    .from("webhook_events_log")
+    .update({
+      status: "dead",
+      attempts: desfecho.tentativas,
+      error_message: desfecho.motivo.slice(0, 500),
+    })
+    .eq("id", linha.id)
+    .eq("status", pendente.status)
+    .eq("attempts", pendente.attempts);
+  const daOrg =
+    linha.organization_id === null
+      ? update.is("organization_id", null)
+      : update.eq("organization_id", linha.organization_id);
+  const { data, error } = await daOrg.select("id");
+  if (error) {
+    logger.error("[webhook-replay] não marcou a linha como morta", {
+      log_id: linha.id,
+      detail: error.message,
+    });
+    return "falhou";
+  }
+  return data?.length ? "gravado" : "mudou";
 }
