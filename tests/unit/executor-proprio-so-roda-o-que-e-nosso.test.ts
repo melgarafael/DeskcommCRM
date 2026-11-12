@@ -10,6 +10,11 @@
  *   2. O ROTEAMENTO nos nossos workflows: decide para quem não o edita. Só os
  *      jobs pesados vão para a máquina, e a publicação na `main` nunca vai —
  *      imagem que o parque instala se constrói nas máquinas do GitHub.
+ *
+ * Desde 12/11/2026 há um SEGUNDO executor, os runners da VPS (`deskcomm-vps`),
+ * e ele recebe só a matriz `invariants-majors`. O roteamento dele é vigiado
+ * aqui com a mesma régua; a guarda de entrada é o mesmo so-o-que-e-nosso.sh,
+ * instalado no `.env` de cada runner (fora do repositório).
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -78,12 +83,13 @@ describe("a guarda da máquina", () => {
 
 const TODOS =
   "${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}";
+const VPS =
+  "${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\",\"deskcomm-vps\"]') || 'ubuntu-latest' }}";
 const SO_PR =
   "${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || (vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest') }}";
 
 const ESPERADO: Record<string, string> = {
   "ci.yml::verify-parte": TODOS,
-  "ci.yml::invariants-majors": TODOS,
   "e2e.yml::e2e-parte": TODOS,
   "perf.yml::build-and-size": TODOS,
   "publish-image.yml::imagem-do-app-sobe": SO_PR,
@@ -121,6 +127,25 @@ describe("o roteamento dos workflows", () => {
     expect(naMaquina).toEqual(ESPERADO);
   });
 
+  it("só a matriz do banco vai para os runners da VPS, com a expressão declarada", () => {
+    const naVps = Object.fromEntries([...mapa].filter(([, v]) => v.includes("deskcomm-vps")));
+    expect(naVps).toEqual({ "ci.yml::invariants-majors": VPS });
+  });
+
+  it("o job na VPS separa o HOME por runner e limpa os contêineres dele mesmo em falha", () => {
+    const ci = readFileSync(".github/workflows/ci.yml", "utf-8");
+    const job = ci.slice(ci.indexOf("\n  invariants-majors:\n"), ci.indexOf("\n  invariants:\n"));
+    expect(job.length, "não achei o job invariants-majors").toBeGreaterThan(100);
+    expect(job).toMatch(/if: runner\.environment == 'self-hosted'\n\s+run: \|[\s\S]*?"HOME=\$casa" >> "\$GITHUB_ENV"/);
+    expect(job).toMatch(
+      /if: always\(\) && runner\.environment == 'self-hosted'\n\s+run: \|\n\s+ids="\$\(docker ps -aq --filter "label=deskcomm\.worktree=\$GITHUB_WORKSPACE"\)"/,
+    );
+    // O filtro só limpa o que os scripts rotulam: os dois têm de rotular.
+    for (const script of ["scripts/test-db.sh", "scripts/test-update-com-dados.sh"]) {
+      expect(readFileSync(script, "utf-8"), script).toMatch(/--label "deskcomm\.worktree=\$(ROOT|DONO_WORKTREE)"/);
+    }
+  });
+
   it("publica cada arquitetura em runner nativo do GitHub", () => {
     expect(mapa.get("publish-image.yml::build-and-push")).toBe(
       "${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}",
@@ -130,7 +155,9 @@ describe("o roteamento dos workflows", () => {
   it("nenhum workflow com pull_request_target manda job para a máquina", () => {
     for (const arquivo of readdirSync(".github/workflows")) {
       const texto = readFileSync(`.github/workflows/${arquivo}`, "utf-8");
-      if (/^\s+pull_request_target:/m.test(texto)) expect(texto, arquivo).not.toContain("deskcomm-proprio");
+      if (!/^\s+pull_request_target:/m.test(texto)) continue;
+      expect(texto, arquivo).not.toContain("deskcomm-proprio");
+      expect(texto, arquivo).not.toContain("deskcomm-vps");
     }
   });
 });
