@@ -3,7 +3,7 @@
  * intenção aparecia com o módulo DESLIGADO — amarrar a um roteiro que a
  * instalação não roda.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +17,7 @@ const {
   stagesMock,
   estagiosMock,
   routerDataMock,
+  refreshMock,
 } = vi.hoisted(() => ({
   authMock: vi.fn(),
   flowsMock: vi.fn(),
@@ -33,9 +34,11 @@ const {
   saveMock: vi.fn(async () => ({})),
   // #2415 — o que o React Query devolve no refetch: undefined = sem query em cache.
   routerDataMock: vi.fn((): { data: unknown } => ({ data: undefined })),
+  // #4340 — estável entre renders, para o teste ver o refresh depois de mover.
+  refreshMock: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: refreshMock }) }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: authMock, usePermission: () => true, usePaisDaOrgAtiva: () => "BR" }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/followup/useFollowupFlows", () => ({ useFollowupFlows: flowsMock }));
@@ -564,5 +567,63 @@ describe('regras por remetente', () => {
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({
       sender_routes: [{ phone: '+5511888887777', agent_id: agentId }],
     }) }));
+  });
+});
+
+describe("#4340 — mover o roteador para o número novo", () => {
+  function renderNumeroRemovido(numerosLivres: Array<{ id: string; rotulo: string }>) {
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+    routerDataMock.mockReturnValue({ data: undefined });
+    updateMock.mockClear();
+    return render(
+      <RouterEditorClient
+        routerId="r1"
+        initialState={{
+          router: {
+            id: "r1",
+            name: "Roteador do atendimento",
+            channel_session_id: "s1",
+            is_active: true,
+            config: {},
+            fallback_agent_id: null,
+          },
+          members: [],
+        }}
+        agents={[]}
+        // s1 não está entre os oferecíveis: o número antigo foi arquivado.
+        channelSessions={[]}
+        classifierModels={[]}
+        numeroRemovido
+        numerosLivres={numerosLivres}
+      />,
+    );
+  }
+
+  it("com um único número livre, o número já vem escolhido e o gesto é um clique", async () => {
+    renderNumeroRemovido([{ id: "s2", rotulo: "Atendimento · 5511999999999" }]);
+
+    const botao = screen.getByTestId("mover-roteador-de-numero") as HTMLButtonElement;
+    // Não há segundo campo a preencher: o único destino possível já está no
+    // seletor, então o botão nasce habilitado — o gesto é um clique só.
+    expect(botao.disabled).toBe(false);
+
+    fireEvent.click(botao);
+
+    expect(updateMock, "o clique não pediu a mudança do roteador").toHaveBeenCalledWith({
+      channel_session_id: "s2",
+    });
+    // O aviso e o selo vêm do SSR: sem refresh, o "número removido" fica na
+    // tela ao lado do toast de sucesso.
+    await waitFor(() =>
+      expect(refreshMock, "a tela não recarregou o SSR depois de mover").toHaveBeenCalled(),
+    );
+  });
+
+  it("sem número livre, a tela explica em vez de oferecer um destino impossível", () => {
+    renderNumeroRemovido([]);
+
+    expect(screen.queryByTestId("mover-roteador-de-numero")).toBeNull();
+    expect(screen.getByText("Nenhum número livre para mover: conecte o número novo em Canais.")).toBeTruthy();
   });
 });
