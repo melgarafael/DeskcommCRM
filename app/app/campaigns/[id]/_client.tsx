@@ -242,7 +242,14 @@ export function DetalheDaCampanha({ id }: { id: string }) {
         {c.message_mode === "template" ? (
           <ModeloDaCampanhaNoDetalhe campanha={c} />
         ) : (
-          <p className="text-sm whitespace-pre-wrap">{c.message_body}</p>
+          <>
+            {c.email_subject && (
+              <p className="text-sm">
+                <strong>{t("Assunto")}</strong>: {c.email_subject}
+              </p>
+            )}
+            <p className="text-sm whitespace-pre-wrap">{c.message_body}</p>
+          </>
         )}
         <p className="text-xs text-muted-foreground">
           {t("Base legal")}:{" "}
