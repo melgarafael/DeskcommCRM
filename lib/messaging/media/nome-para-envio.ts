@@ -3,7 +3,7 @@
  * (#4524).
  *
  * O caminho de `media_url` mandava `media` sem `filename`. Sem nome, quem
- * escolhe um é o canal: o WAHA grava o literal `file`, e no celular um PDF
+ * escolhe um é o canal: ele grava o literal `file`, e no celular um PDF
  * chamado `file` parece arquivo suspeito — quem recebe hesita em abrir. O
  * `metadata.media_filename` que a API já aceitava e já gravava na linha nunca
  * chegava ao envio; era o único elo faltando.

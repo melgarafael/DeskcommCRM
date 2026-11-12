@@ -1,7 +1,7 @@
 /**
  * O nome que o destinatário vê no documento enviado pela API (#4524).
  *
- * Antes: o ramo de `media_url` mandava `media` sem `filename`, e o WAHA gravava
+ * Antes: o ramo de `media_url` mandava `media` sem `filename`, e o adaptador gravava
  * o literal `file`. Medido no `_handler.ts:1352` de antes deste PR. O caso
  * "chega com o nome original" abaixo é o REPRO da issue; os de borda existem
  * porque o nome vem de fora — inclusive de uma URL de terceiro.

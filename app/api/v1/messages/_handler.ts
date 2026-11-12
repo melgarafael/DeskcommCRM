@@ -1355,7 +1355,7 @@ export async function sendMessageHandler(
         // pelo MCP, e quem a baixa é o gateway, de dentro da rede do servidor.
         //
         // O NOME (#4524): sem `filename` no `media`, quem escolhia era o canal
-        // — e o WAHA grava o literal `file`, que no celular parece arquivo
+        // — e o adaptador do canal grava o literal `file`, que no celular parece arquivo
         // suspeito. A ordem está em `nomeDoDocumentoParaEnvio`: campo novo
         // `media_filename`, depois o `metadata.media_filename` que a ingestão
         // já grava (#2613), depois o último segmento da URL com extensão, e
