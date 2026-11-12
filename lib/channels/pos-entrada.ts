@@ -66,6 +66,7 @@ import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
 import { aplicarRespostaNaCampanha } from "@/lib/campanhas/resposta";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
+import { capturarRespostaDeSatisfacao } from "@/lib/atendimento/satisfacao";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -164,6 +165,31 @@ export async function aplicarEfeitosPosEntrada(
   }
 
   await aplicarOptOut(admin, entrada);
+
+  // ── #4023: A RESPOSTA DA PESQUISA DE SATISFAÇÃO ────────────────────────
+  //
+  // A resposta do cliente à pergunta de 1 a 5 chega por AQUI, pelo caminho
+  // normal do WhatsApp — não existe segundo webhook nem número dedicado. Ela
+  // vira a nota do pedido aberto e a mensagem NÃO pede resposta: um "5" que
+  // acordasse o agente faria a IA responder a uma nota, e o cliente já tinha
+  // encerrado o atendimento. Só o dígito sozinho é capturado; "vcs demoraram"
+  // segue o fluxo de sempre, porque é conversa, não nota.
+  const notaDaPesquisa = await capturarRespostaDeSatisfacao(admin, {
+    organizationId: entrada.organizationId,
+    conversationId: entrada.conversationId,
+    texto: entrada.texto,
+    messageId: entrada.messageId,
+    enviadaEm: new Date(),
+  });
+  if (notaDaPesquisa.capturada) {
+    logger.info("[pos-entrada] nota da pesquisa de satisfação gravada", {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      nota: notaDaPesquisa.nota,
+    });
+    return;
+  }
+
   // Contato pessoal (spec 21, etapa 6): a mensagem já está gravada, com o
   // carimbo de não-lida que o ingest gravou — mas NADA nasce dela: sem negócio,
   // sem campanha, sem follow-up, sem IA (fila e resposta). O STOP continua na

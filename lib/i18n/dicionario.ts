@@ -12741,6 +12741,8 @@ export const DICIONARIO: Traducoes = {
   "corpo inválido": { es: "cuerpo inválido" },
   "Corpo inválido.": { es: "Cuerpo inválido." },
   "Corpo inválido para desconectar.": { es: "Cuerpo inválido para desconectar." },
+  // #4023 — pesquisa de satisfação.
+  "Não foi possível calcular a satisfação.": { es: "No fue posible calcular la satisfacción." },
   "Corpo não é JSON válido.": { es: "El cuerpo no es un JSON válido." },
   "Credential desativada.": { es: "Credencial desactivada." },
   "Credential não encontrada.": { es: "Credencial no encontrada." },
