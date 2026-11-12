@@ -79107,7 +79107,7 @@ notify pgrst, 'reload schema';
 -- `tests/unit/baseline-constraint-reconstruida.test.ts` reprova. Par de
 -- `MOTIVOS_DA_PASSAGEM`/`FRASE_DO_MOTIVO` em `lib/escalacao/passagem.ts`.
 
--- ---- motivo `restricao_comercial` na passagem (migration 9334) ----
+-- ---- motivo `restricao_comercial` na passagem (migration 9363) ----
 -- Mesmo desenho do `verificacao_manual` acima: o valor entrou no bloco ÚNICO de
 -- `passagens_de_atendimento_motivo_codigo_check` e no CHECK inline do `create
 -- table`, e não aqui — reconstruir a constraint num segundo bloco é o que
