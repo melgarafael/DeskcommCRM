@@ -80481,6 +80481,34 @@ alter table public.followup_flow_pointers
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
+-- ---- negócio não comercial (migration 9222) ----
+-- #4191: o negócio pode ser classificado como NÃO comercial sem desfecho — não
+-- vira perda, não é apagado, e sai do Radar comercial. Mesmo texto da migration
+-- 9222; fica no apêndice porque o `create table` do bloco 0019 é pulado em toda
+-- instalação que já tem a tabela.
+alter table public.crm_leads
+  add column if not exists nao_comercial_em timestamptz,
+  add column if not exists nao_comercial_motivo text,
+  add column if not exists nao_comercial_por uuid;
+
+alter table public.crm_leads
+  drop constraint if exists crm_leads_nao_comercial_coerente;
+alter table public.crm_leads
+  add constraint crm_leads_nao_comercial_coerente check (
+    nao_comercial_em is null
+    or (nao_comercial_motivo is not null and length(btrim(nao_comercial_motivo)) > 0)
+  );
+
+comment on column public.crm_leads.nao_comercial_em is
+  'Quando a equipe classificou o negócio como NÃO comercial (issue #4191, migration 9222). null = comercial, o estado de sempre. É a coluna que DECIDE: Radar e métricas de funil filtram por ela. Não é desfecho — status, etapa e closed_at não mudam.';
+comment on column public.crm_leads.nao_comercial_motivo is
+  'Por que o negócio foi classificado como não comercial (issue #4191). Texto declarado pela equipe (golpe, spam, contato sem finalidade comercial…), sem vocabulário fechado no banco: a lista está em discussão na issue e um CHECK travaria a correção de um caso novo.';
+comment on column public.crm_leads.nao_comercial_por is
+  'Quem classificou o negócio como não comercial (issue #4191). Sem FK, como created_by_user_id: apagar a pessoa não pode apagar a decisão.';
+
+create index if not exists crm_leads_nao_comerciais_idx
+  on public.crm_leads (organization_id, nao_comercial_em desc)
+  where nao_comercial_em is not null;
 -- ---- índice da mensagem que espera em `queued` (migration 9242) ----
 -- #3907: o portão do piso ocioso e a varredura da espera esquecida leem outbound
 -- `queued` por idade, e nenhum índice de `messages` cobria esse status.

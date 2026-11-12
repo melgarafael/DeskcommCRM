@@ -314,3 +314,71 @@ describe("reconstrução das passagens (#1750)", () => {
     expect(b?.passaram).toBe(1);
   });
 });
+
+describe("#4191 — negócio NÃO comercial fora da conta comercial", () => {
+  const CLASSIFICADO = "2026-09-20T12:00:00.000Z";
+
+  it("não entra na conversão, nem como criado na janela, nem pela passagem de etapa", () => {
+    const relatorio = montarRelatorioDeFunil({
+      janela: JANELA,
+      etapas: ETAPAS,
+      funis: FUNIS,
+      leads: [
+        lead({ id: "comercial" }),
+        lead({ id: "golpe", nao_comercial_em: CLASSIFICADO }),
+      ],
+      // A passagem do negócio não comercial aconteceu quando ele ainda era
+      // comercial: mesmo assim não pode continuar medindo conversão depois da
+      // classificação.
+      atividades: [
+        passagem("comercial", "A", "B", "2026-09-12T12:00:00.000Z"),
+        passagem("golpe", "A", "B", "2026-09-12T12:00:00.000Z"),
+      ],
+    });
+
+    const a = linha(relatorio, "A");
+    expect(a.entraram).toBe(1);
+    expect(a.passaram).toBe(1);
+    expect(a.taxa).toBe(1);
+    expect(relatorio.conversao.amostra).toBe(2);
+    expect(JSON.stringify(relatorio.conversao.etapas)).not.toContain("golpe");
+  });
+
+  it("não aparece na matriz de origem e o relatório DIZ que os classificados ficam fora", () => {
+    const relatorio = montarRelatorioDeFunil({
+      janela: JANELA,
+      etapas: ETAPAS,
+      funis: FUNIS,
+      leads: [
+        lead({ id: "comercial", status: "won", closed_at: "2026-09-15T12:00:00.000Z" }),
+        lead({ id: "golpe", nao_comercial_em: CLASSIFICADO }),
+      ],
+      atividades: [],
+    });
+
+    const abertos = relatorio.origem.linhas.filter((l) => l.status === "open");
+    expect(abertos).toHaveLength(0);
+    expect(relatorio.base).toContain("NÃO comerciais ficam fora");
+    // E não inventa perda: o classificado não vira `lost` em lugar nenhum.
+    expect(relatorio.origem.linhas.some((l) => l.status === "lost")).toBe(false);
+  });
+
+  it("a classificação NÃO muda a mediana de dias dos ganhos já apurados", () => {
+    const ganho = lead({
+      id: "ganho",
+      status: "won",
+      closed_at: "2026-09-15T12:00:00.000Z",
+    });
+    const antes = calcularDiasAteFechar([ganho], JANELA, FUNIS);
+    const depois = montarRelatorioDeFunil({
+      janela: JANELA,
+      etapas: ETAPAS,
+      funis: FUNIS,
+      // O MESMO ganho, agora ao lado de um negócio classificado: nada nele muda.
+      leads: [ganho, lead({ id: "golpe", nao_comercial_em: CLASSIFICADO })],
+      atividades: [],
+    }).dias_ate_fechar;
+    expect(depois.mediana).toBe(antes.mediana);
+    expect(depois.amostra).toBe(antes.amostra);
+  });
+});

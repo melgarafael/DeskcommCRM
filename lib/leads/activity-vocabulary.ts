@@ -73,6 +73,13 @@ export type ActivityType =
   | "followup_snoozed"
   | "followup_step_skipped"
   | "demand_closed"
+  /**
+   * O NEGÓCIO FOI (OU DEIXOU DE SER) CLASSIFICADO COMO NÃO COMERCIAL (#4191).
+   * A classificação não é desfecho — não muda status, etapa nem `closed_at` —,
+   * então ela não cabe em `demand_closed`: quem lê a timeline precisa ver a
+   * classificação E a reversão sem confundir nenhuma das duas com uma perda.
+   */
+  | "demand_classified"
   | "promise_unowned"
   /**
    * O respondente disse NÃO no formulário de captação (ex.: Respondi). A
@@ -335,6 +342,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // invisível na timeline — só existia em audit e event_log, que ninguém lê na
   // tela — e o dossiê de um negócio fechado terminava sem dizer que fechou.
   demand_closed: "Demanda encerrada",
+  demand_classified: "Negócio classificado (não comercial / comercial)",
   consent_declined: "Consentimento de contato recusado no formulário",
   lead_disqualified: "Desqualificado na triagem inicial",
   lead_needs_review: "Aguardando revisão humana",

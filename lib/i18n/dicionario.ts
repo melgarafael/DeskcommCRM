@@ -12917,6 +12917,16 @@ export const DICIONARIO: Traducoes = {
   "Não há agenda do Google conectada para esta pessoa.": { es: "Esta persona no tiene un Google Calendar conectado." },
   "Não há proposta pendente para este negócio.": { es: "No hay una propuesta pendiente para este negocio." },
   "Negócio não encontrado.": { es: "Negocio no encontrado." },
+  // #4191 — classificação não comercial (mensagens da rota; o motivo e a
+  // timeline são texto do usuário e canônico em português, traduzidos na
+  // leitura). As duas com número vêm dos tetos de
+  // `lib/leads/elegibilidade-comercial.ts`: mudar o teto pede mudar a chave.
+  "Informe o motivo da classificação como não comercial.": { es: "Informe el motivo de la clasificación como no comercial." },
+  "O motivo precisa de pelo menos 3 caracteres.": { es: "El motivo necesita al menos 3 caracteres." },
+  "O motivo passa de 200 caracteres; resuma o que decide o caso.": { es: "El motivo supera los 200 caracteres; resuma lo que decide el caso." },
+  "Só um negócio aberto pode ser classificado como não comercial. Este já tem desfecho (ganho ou perda).": { es: "Solo un negocio abierto puede clasificarse como no comercial. Este ya tiene desenlace (ganancia o pérdida)." },
+  "Este negócio já foi classificado por outra pessoa com outro motivo. Reveja antes de mudar a classificação.": { es: "Este negocio ya fue clasificado por otra persona con otro motivo. Revise antes de cambiar la clasificación." },
+  "Este negócio foi classificado por outra pessoa enquanto você decidia. Reveja antes de mudar a classificação.": { es: "Este negocio fue clasificado por otra persona mientras decidía. Revise antes de cambiar la clasificación." },
   "Nenhuma conexão de parceiro ativa.": { es: "No hay ninguna conexión de partner activa." },
   "nenhuma organização ativa": { es: "no hay ninguna organización activa" },
   "Nenhuma organização ativa.": { es: "No hay ninguna organización activa." },
