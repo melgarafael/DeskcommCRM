@@ -62,7 +62,7 @@ export async function processCompaniesPeopleImport(
   let conflict = 0;
 
   for (let i = 0; i < sheet.rows.length; i++) {
-    const rowNumber = i + 2; // 1-based data with header on line 1
+    const rowNumber = sheet.rowNumbers?.[i] ?? i + 2;
     const rawCells = sheet.rows[i]!;
     const rawObj: Record<string, string> = {};
     sheet.headers.forEach((h, idx) => {

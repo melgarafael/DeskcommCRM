@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 
 import { MENSAGEM_DE_CNPJ_INVALIDO } from "@/lib/crm-b2b/normalize";
+import { parseImportFile } from "@/lib/planilha/ler-arquivo";
 
 import { processCompaniesPeopleImport } from "./import-process";
 
@@ -101,6 +102,26 @@ describe("importação distingue CNPJ inválido de ausente (#3497)", () => {
     const empresas = escritas.filter((e) => e.tabela === "companies");
     expect(empresas).toHaveLength(1);
     expect(empresas[0]!.dados).not.toHaveProperty("cnpj");
+  });
+
+  it("grava no histórico o número da linha mesmo depois de um registro vazio", async () => {
+    const csv = new TextEncoder().encode("Empresa;CNPJ\n\nEmpresa Alfa;12ABC34501DE36\n");
+    const arquivo = await parseImportFile(csv.buffer, "empresas.csv");
+    if (!arquivo.ok) throw new Error(arquivo.error);
+    const { cliente, escritas } = banco();
+
+    const resultado = await processCompaniesPeopleImport(cliente, {
+      organizationId: "11111111-1111-4111-8111-111111111111",
+      userId: "22222222-2222-4222-8222-222222222222",
+      batchId: "33333333-3333-4333-8333-333333333333",
+      sheet: arquivo.sheet,
+      mapping: { company_name: "Empresa", cnpj: "CNPJ" },
+      enrichCompanies: false,
+    });
+
+    expect(resultado).toMatchObject({ failed_rows: 1, processed_rows: 1 });
+    const insercao = escritas.find((e) => e.tabela === "import_rows" && e.operacao === "insert");
+    expect(insercao?.dados.row_number).toBe(3);
   });
 
   it("CNPJ válido com e sem máscara conserva dedupe e documento da empresa", async () => {
