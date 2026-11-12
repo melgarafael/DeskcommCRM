@@ -14917,6 +14917,7 @@ export type Database = {
       };
       calendar_service_google_candidates: {
         Row: {
+          ends_at: string;
           google_conflict: Json | null;
           google_event_id: string | null;
           google_next_attempt_at: string;
@@ -14924,6 +14925,7 @@ export type Database = {
           needs_google_push: boolean | null;
           organization_id: string;
           owner_user_id: string | null;
+          status: string;
         };
         ComputedFields: never;
         Relationships: [

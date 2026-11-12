@@ -58520,16 +58520,25 @@ begin
 end;$$;
 
 -- View nova: não acrescentar coluna à view histórica, pois seu a.* é reaplicado antes deste apêndice.
+-- #4448 (segunda porta): o recorte de status e de janela é o MESMO do bloco da
+-- migration 9357, no apêndice — a definição daqui tem de casar coluna por coluna
+-- com a de lá, senão a SEGUNDA passada do baseline (o modo update) tenta recriar
+-- esta view com menos colunas e o Postgres recusa com "cannot drop columns from
+-- view". `status` e `ends_at` entram no FIM pelo mesmo motivo (create or replace
+-- só aceita coluna nova no fim).
 create or replace view public.calendar_service_google_candidates with (security_invoker=true) as
  select a.id,a.organization_id,
   case when a.service_occurrence_id is null and not a.service_block then a.owner_user_id else coalesce(link.user_id,dest.user_id) end owner_user_id,
-  a.needs_google_push,a.google_event_id,a.google_conflict,a.google_next_attempt_at
+  a.needs_google_push,a.google_event_id,a.google_conflict,a.google_next_attempt_at,
+  a.status,a.ends_at
  from public.calendar_appointments a
  left join public.calendar_connections link on link.organization_id=a.organization_id and link.id=a.google_connection_id
  left join public.calendar_connection_calendars k on k.organization_id=a.organization_id and k.id=a.service_destination_calendar_id
  left join public.calendar_connections dest on dest.organization_id=k.organization_id and dest.id=k.connection_id
  where ((a.service_occurrence_id is null and not a.service_block) or a.service_publication_mode<>'none')
-  and not exists(select 1 from public.contacts c where c.organization_id=a.organization_id and c.id=a.contact_id and c.is_anonymized);
+  and not exists(select 1 from public.contacts c where c.organization_id=a.organization_id and c.id=a.contact_id and c.is_anonymized)
+  and a.status in ('pending','confirmed','cancelled')
+  and a.ends_at>now()-interval '1 day';
 revoke all on public.calendar_service_google_candidates from public,anon,authenticated;
 grant select on public.calendar_service_google_candidates to service_role;
 revoke all on function public.fn_google_appointment(uuid,uuid,text,jsonb) from public,anon,authenticated;
@@ -74873,6 +74882,36 @@ revoke all     on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uuid,boolean) to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- ---- a fila do push drena: o que já terminou sai, o que falta fazer fica (migration 9357, #4448) ----
+-- Espelho da 9357 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- VARREDURA anon e FORA da janela da cascata da 9243 (o invariante
+-- `lgpd-alcanca-fichas-fundidas` compara aquele trecho com a migration), por isso
+-- o lugar é aqui e não junto dos outros blocos de agenda.
+--
+-- `create or replace view`, corpo IDÊNTICO ao da definição mais acima (que
+-- também recebeu o recorte): as duas têm de casar coluna por coluna, senão a
+-- segunda passada do baseline tenta recriar a view com menos colunas e o
+-- Postgres recusa. `status` e `ends_at` entram no FIM (create or replace só
+-- aceita coluna nova no fim) e são o que `lib/agenda/google/candidates.ts`
+-- repete. `completed`/`no_show` não empurram (lib/agenda/laco.ts) e o que já
+-- saiu da janela do sync (`now()-interval '1 day'`, o `window_start` de
+-- `fn_google_calendar`) não tem o que mudar no Google.
+create or replace view public.calendar_service_google_candidates with (security_invoker=true) as
+ select a.id,a.organization_id,
+  case when a.service_occurrence_id is null and not a.service_block then a.owner_user_id else coalesce(link.user_id,dest.user_id) end owner_user_id,
+  a.needs_google_push,a.google_event_id,a.google_conflict,a.google_next_attempt_at,
+  a.status,a.ends_at
+ from public.calendar_appointments a
+ left join public.calendar_connections link on link.organization_id=a.organization_id and link.id=a.google_connection_id
+ left join public.calendar_connection_calendars k on k.organization_id=a.organization_id and k.id=a.service_destination_calendar_id
+ left join public.calendar_connections dest on dest.organization_id=k.organization_id and dest.id=k.connection_id
+ where ((a.service_occurrence_id is null and not a.service_block) or a.service_publication_mode<>'none')
+  and not exists(select 1 from public.contacts c where c.organization_id=a.organization_id and c.id=a.contact_id and c.is_anonymized)
+  and a.status in ('pending','confirmed','cancelled')
+  and a.ends_at>now()-interval '1 day';
+revoke all on public.calendar_service_google_candidates from public,anon,authenticated;
+grant select on public.calendar_service_google_candidates to service_role;
 
 -- ---- A conversa espera a IA qualificar: opção por número, com prazo (migration 9333, #3966) ----
 -- Espelho da 9333 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
