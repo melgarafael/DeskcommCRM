@@ -75042,6 +75042,25 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
 
+-- ---- índice da fila de espera do Inbox (migration 9357, #4325) ----
+-- Espelho de supabase/migrations/20261112152606_9357_indice_da_fila_de_espera.sql.
+-- A aba Fila pede `comando_da_conversa in ('aguardando','ninguem')` e ordena por
+-- `awaiting_since asc, id asc`; com o pré-filtro do item 1 (commit b64b3c4f64) os
+-- predicados do conjunto estão escritos na consulta, mas nenhum índice os servia —
+-- `idx_conversations_open_unassigned` é da Fila antiga (`status = 'open'`, ordem por
+-- `last_inbound_at`) e `conversations_org_sector_awaiting` é parcial em `sector_id`.
+-- Medido com 120.000 conversas (pg15, baseline aplicado): lista da Fila 4.343 ->
+-- 685 buffers e contagem 4.139 -> 485, com 120.000 -> 120 linhas lidas.
+create index if not exists idx_conversations_fila_espera
+  on public.conversations (organization_id, awaiting_since, id)
+  where assigned_to_user_id is null
+    and status not in ('closed', 'archived', 'resolved');
+
+comment on index public.idx_conversations_fila_espera is
+  'Fila de espera do Inbox (#4325): casa o pré-filtro do comando (sem dono, fora do histórico encerrado) e a ordem ORDEM_DA_ESPERA (awaiting_since asc, id asc). Medido: lista da Fila 4.343 -> 685 buffers com 120 mil conversas.';
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
