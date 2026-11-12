@@ -43,6 +43,15 @@ export interface ProvedorSuportado {
   ondePegarAChave: string;
   /** Como a chave começa — vira placeholder do campo, para a pessoa reconhecer que copiou a coisa certa. */
   prefixoDaChave: string;
+  /**
+   * Onde o texto é processado, quando o provedor declara. `local` é o modelo que
+   * roda no servidor do operador; `desconhecido` é o provedor que não fixa região
+   * (ou depende da configuração) — e quem consome precisa tratar esse caso, porque
+   * silêncio ali se confunde com garantia de que nada sai do país.
+   */
+  pais: string | "local" | "desconhecido";
+  /** De onde veio a declaração: fora de `local`/`desconhecido`, país sem URL e data não vale. */
+  fonteDoPais: { url: string; consultadoEm: string } | null;
 }
 
 /**
@@ -66,6 +75,10 @@ export const PROVEDORES = [
   {
     id: "anthropic",
     rotulo: "Anthropic (Claude)",
+    // A Anthropic não fixa no catálogo público a região de processamento da API: quem sabe é o
+    // contrato do operador. Sem fonte, não se declara país.
+    pais: "desconhecido",
+    fonteDoPais: null,
     quandoUsar:
       "O padrão recomendado para conversar com o cliente: é o que melhor segue instruções longas e usa as ferramentas do CRM.",
     aceitaEndpointProprio: false,
@@ -76,6 +89,10 @@ export const PROVEDORES = [
   {
     id: "openai",
     rotulo: "OpenAI (GPT)",
+    // A OpenAI declara data residency por PROJETO/REGIÃO (Estados Unidos, Europa, Reino Unido,
+    // Japão…), não um país fixo por API: com a chave padrão, depende da conta.
+    pais: "desconhecido",
+    fonteDoPais: null,
     quandoUsar:
       "Na configuração padrão, transcreve áudio. Para indexar material, uma chave OpenAI ou OpenRouter atende ao mesmo modelo de embedding.",
     aceitaEndpointProprio: true,
@@ -86,6 +103,9 @@ export const PROVEDORES = [
   {
     id: PROVEDOR_POR_ASSINATURA,
     rotulo: "OpenAI pela assinatura (ChatGPT)",
+    // Mesma situação do provedor acima: a região é a do projeto em que a assinatura roda.
+    pais: "desconhecido",
+    fonteDoPais: null,
     quandoUsar:
       "Conecte sua conta pessoal do ChatGPT dentro dos limites da assinatura; para operação em volume, prefira uma chave de API da organização. Uma chave da própria organização pode servir de reserva.",
     // A assinatura não se aponta para outro endereço nem sincroniza catálogo:
@@ -104,6 +124,10 @@ export const PROVEDORES = [
   {
     id: "google",
     rotulo: "Google (Gemini)",
+    // A Gemini Developer API não publica a lista de países de processamento; região explícita
+    // existe no Vertex AI, que não é o caminho desta chave.
+    pais: "desconhecido",
+    fonteDoPais: null,
     quandoUsar:
       "Alternativa com contexto muito longo e custo baixo para tarefas de classificação.",
     aceitaEndpointProprio: false,
@@ -114,6 +138,10 @@ export const PROVEDORES = [
   {
     id: "openrouter",
     rotulo: "OpenRouter",
+    // Roteia para dezenas de provedores: o país depende do modelo escolhido em cada chamada,
+    // então não há um país do provedor para declarar.
+    pais: "desconhecido",
+    fonteDoPais: null,
     quandoUsar:
       "Uma chave só dá acesso a centenas de modelos de dezenas de fabricantes, inclusive os gratuitos. É o caminho mais simples para experimentar sem abrir conta em cada provedor.",
     aceitaEndpointProprio: true,
@@ -124,6 +152,10 @@ export const PROVEDORES = [
   {
     id: "deepseek",
     rotulo: "DeepSeek",
+    // A política de privacidade da DeepSeek declara, em letra: processa e armazena os dados
+    // pessoais na República Popular da China. É o único do catálogo com país inequívoco.
+    pais: "China",
+    fonteDoPais: { url: "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html", consultadoEm: "2026-11-12" },
     quandoUsar:
       "Muito barata e desconta sozinha o trecho repetido da conversa, sem você configurar nada — o custo cai para quem atende com um roteiro que não muda.",
     aceitaEndpointProprio: true,
@@ -134,6 +166,10 @@ export const PROVEDORES = [
   {
     id: "requesty",
     rotulo: "Requesty",
+    // O tráfego pode ser mantido na Europa por configuração — quem decide é o operador, então
+    // o país não é propriedade do provedor.
+    pais: "desconhecido",
+    fonteDoPais: null,
     quandoUsar:
       "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.",
     aceitaEndpointProprio: true,
@@ -144,6 +180,9 @@ export const PROVEDORES = [
   {
     id: "custom",
     rotulo: "Provedor personalizado (compatível com OpenAI)",
+    // Endpoint do próprio operador: quem sabe onde ele fica é ele, não o CRM.
+    pais: "desconhecido",
+    fonteDoPais: null,
     quandoUsar:
       "Endpoint seu que fala a API da OpenAI — OmniRouter, 9Router, LiteLLM hospedado ou proxy corporativo, num endereço público. Você informa o endereço (base URL) e a chave, e o CRM conversa com ele como conversa com a OpenAI.",
     aceitaEndpointProprio: true,
@@ -204,6 +243,10 @@ export const PROVEDORES_DE_DECISAO = [
   {
     id: "typesafe",
     rotulo: "Jev (TypeSafe AI)",
+    // O Jev decide, não escreve; e a TypeSafe não declara a região no catálogo público.
+    // Sem fonte, o honesto é não declarar país.
+    pais: "desconhecido",
+    fonteDoPais: null,
     quandoUsar:
       "Não conversa com o cliente: toma decisões rápidas e baratas — como perceber se o cliente está irritado — geralmente em menos de um segundo. Trabalha junto com a sua IA principal.",
     aceitaEndpointProprio: false,
