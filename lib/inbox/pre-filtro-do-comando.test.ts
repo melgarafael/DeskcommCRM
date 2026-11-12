@@ -119,7 +119,16 @@ describe("o pré-filtro do comando", () => {
     ]);
   });
 
-  it.each([[["aguardando"]], [["automatico"]], [["aguardando", "automatico"]]])(
+  // `ninguem` (#4012) é o `automatico` rebaixado quando a organização não tem
+  // agente no ar: sem dono e aberta, como os outros dois. O par
+  // `aguardando`+`ninguem` é o que a Fila pede (`comandosDaFila`).
+  it.each([
+    [["aguardando"]],
+    [["automatico"]],
+    [["aguardando", "automatico"]],
+    [["aguardando", "ninguem"]],
+    [["aguardando", "ninguem", "automatico"]],
+  ])(
     "(a/b) comando %j pede dono nulo e os três status encerrados",
     (comando) => {
       const consulta = new ConsultaFalsa();

@@ -248,6 +248,25 @@ describe("'Liberar' não devolve a conversa ao rodízio (#3937)", () => {
     expect(await conversa(CONV_FECHADA)).toMatchObject({ assigned_to_user_id: ana, status: "claimed" });
   });
 
+  it("número com espera pela IA (#3966): liberar não pede, e a passagem para humano depois continua pedindo", async () => {
+    // A 9333 recriou o mesmo gatilho com um ramo a mais; a 9346 parte do corpo
+    // dela. Este caso prova as duas regras juntas no MESMO número.
+    await query("update channel_routing_policies set ai_wait_minutes=60 where organization_id=$1 and channel_session_id=$2", [
+      org,
+      channel,
+    ]);
+
+    await query("select public.fn_conversation_assign($1,$2,null,'release')", [org, CONV_CLIENTE]);
+    expect(await pedidos(CONV_CLIENTE)).toBe(0);
+
+    // O UPDATE de `performHumanHandoff`: o marcador muda, e o ramo da 9333 pede.
+    await query("update public.conversations set last_handoff_at=now() where organization_id=$1 and id=$2", [
+      org,
+      CONV_CLIENTE,
+    ]);
+    expect(await eventoDo(CONV_CLIENTE)).toMatchObject({ status: "pending" });
+  });
+
   it("disponibilidade/capacidade da equipe continua acordando a conversa sem dono", async () => {
     expect(await pedidos(CONV_ORFA)).toBe(0);
 
