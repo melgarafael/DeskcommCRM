@@ -4,11 +4,17 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import type { Actor } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
+import { extractBearer } from "@/lib/mcp/auth";
 import { listConversationsQuerySchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
@@ -19,6 +25,23 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+
+  // Token de integração (Spec 33, R2): o handler abaixo já filtra
+  // `organization_id` em toda consulta e é o mesmo que as tools MCP usam.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "viewer",
+      scope: "mcp:read",
+      tokenRole: "agent",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    return responderLista(authz.supabase, authz.organizationId, authz.actor, authz.idioma, req, requestId);
+  }
+
   const supabase = await createClient();
 
   const {
@@ -38,6 +61,25 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
 
+  return responderLista(
+    supabase,
+    activeOrg.orgId,
+    { type: "user", id: user.id },
+    authUser?.idioma,
+    req,
+    requestId,
+  );
+}
+
+async function responderLista(
+  supabase: SupabaseClient,
+  organizationId: string,
+  actor: Actor,
+  idioma: Idioma | undefined,
+  req: NextRequest,
+  requestId: string,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");
   const url = new URL(req.url);
   const qsParsed = listConversationsQuerySchema.safeParse({
     status: url.searchParams.get("status") ?? undefined,
@@ -96,10 +138,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     const { conversations, cursor, has_more } = await listConversationsHandler(
       supabase,
       {
-        organization_id: activeOrg.orgId,
-        actor: { type: "user", id: user.id },
+        organization_id: organizationId,
+        actor,
         requestId,
-        idioma: authUser?.idioma,
+        idioma,
       },
       qsParsed.data,
     );
@@ -107,7 +149,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // handler é compartilhado com as tools MCP, que já resolvem o nome por conta
     // própria (`lib/mcp/tools/conversations.ts`) — enriquecer lá faria a mesma
     // leitura duas vezes por chamada do agente.
-    return ok(await comNomeDoAtendente(activeOrg.orgId, conversations), {
+    return ok(await comNomeDoAtendente(organizationId, conversations), {
       requestId,
       meta: { cursor, has_more },
     });
