@@ -19,8 +19,15 @@
 //     → tirar o `return { ok: true }` do início.
 //  8. Metade da dupla (só funil ou só etapa) é recusada
 //     → tirar o ramo `temFunil !== temEtapa`.
+//  9. Item que não existe no banco de origem: recusa, com funil informado ou não,
+//     e o funil da receita NÃO é escrito nos argumentos
+//     → tirar qualquer uma das duas chamadas de `conferirItem`.
 
 import { describe, expect, it, vi } from "vitest";
+
+// A consulta do item tem o próprio teste (`item-da-referencia.test.ts`).
+const conferirItem = vi.hoisted(() => vi.fn(async () => ({ ok: true }) as const));
+vi.mock("./item-da-referencia", () => ({ conferirItemDaReferencia: conferirItem }));
 
 import { completarDestinoDoNegocio, destinoPelaReferencia } from "./destino-pela-referencia";
 
@@ -156,7 +163,7 @@ describe("destinoPelaReferencia", () => {
 });
 
 describe("completarDestinoDoNegocio", () => {
-  it("funil e etapa informados: não troca nada e nem consulta o banco", async () => {
+  it("funil e etapa informados: não troca nada e nem lê as receitas", async () => {
     const from = vi.fn();
     const args: Record<string, unknown> = { pipeline_id: FUNIL_2, stage_id: ETAPA_2, referencia_externa: REF };
 
@@ -199,5 +206,40 @@ describe("completarDestinoDoNegocio", () => {
     const r = await completarDestinoDoNegocio(cliente, ORG, { referencia_externa: REF });
 
     expect(r).toMatchObject({ ok: false, resposta: { erro: "sem_destino" } });
+  });
+
+  const INEXISTENTE = { ok: false, motivo: "item_inexistente", mensagem: "não existe" } as never;
+
+  it("item inexistente, só com a referência: recusa e não escreve o funil", async () => {
+    conferirItem.mockResolvedValueOnce(INEXISTENTE);
+    const { cliente } = supabaseCom({ conexoes: [{ receitas: [instancia()] }] });
+    const args: Record<string, unknown> = { referencia_externa: REF };
+
+    const r = await completarDestinoDoNegocio(cliente, ORG, args);
+
+    expect(r).toMatchObject({ ok: false, resposta: { erro: "item_inexistente" } });
+    expect(args.pipeline_id).toBeUndefined();
+    expect(conferirItem).toHaveBeenLastCalledWith(cliente, ORG, REF);
+  });
+
+  it("item inexistente, com funil e etapa informados: recusa também", async () => {
+    conferirItem.mockResolvedValueOnce(INEXISTENTE);
+    const from = vi.fn();
+
+    const r = await completarDestinoDoNegocio({ from } as never, ORG, {
+      pipeline_id: FUNIL_2,
+      stage_id: ETAPA_2,
+      referencia_externa: REF,
+    });
+
+    expect(r).toMatchObject({ ok: false, resposta: { erro: "item_inexistente" } });
+  });
+
+  it("sem referência, a existência nem é perguntada", async () => {
+    conferirItem.mockClear();
+
+    await completarDestinoDoNegocio({ from: vi.fn() } as never, ORG, { pipeline_id: FUNIL, stage_id: ETAPA });
+
+    expect(conferirItem).not.toHaveBeenCalled();
   });
 });

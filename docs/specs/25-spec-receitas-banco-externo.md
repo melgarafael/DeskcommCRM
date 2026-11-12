@@ -654,3 +654,16 @@ a orientação mora no resultado da consulta, que não acompanha a conversa. O e
 bloco residente do prompt, a cada turno, no molde dos blocos da agenda
 (`blocosDeInteresseExternoResidentes`, só com as duas ferramentas ligadas).
 Medido de novo no espelho com esta mudança: ver o resultado no PR.
+
+### Medido numa instalação fresca (10/11/2026): o agente inventa o código do item
+Em 2 de 2 turnos reais (gpt-4o-mini), o agente chamou `crm_create_lead` com um código que não
+existia no seed (`:1234`, e depois o número de exemplo que a descrição da ferramenta trazia), e
+com o destino configurado o negócio nasceu apontando para um item inexistente. Duas mudanças:
+- `lib/external-db/receitas/item-da-referencia.ts` (novo) — com `referencia_externa`, com ou sem
+  funil informado, `completarDestinoDoNegocio` consulta o item pelo id nas instâncias ativas da
+  receita na organização (o `montar` de cada receita aceita `idDoItem`, e a busca segue as regras
+  da listagem: só publicado, sem os escondidos). Não achou: `item_inexistente`, o negócio não
+  nasce e o gate `registro_sem_efeito` lê a escrita como falha. Banco de origem fora:
+  `indisponivel`, e o agente passa para a equipe.
+- Os textos que o modelo lê (descrição de `referencia_externa` e a recusa de formato) não trazem
+  mais número de exemplo.

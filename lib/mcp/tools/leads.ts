@@ -332,7 +332,7 @@ const createInputShape = {
     // em toda instalação, e este campo só serve a quem usa o banco externo.
     .refine(ehReferenciaExterna, "use o formato <receita>:<id>")
     .optional()
-    .describe("O item que o cliente escolheu num resultado de receita: <receita>:<id> (ex.: wordpress-conteudo:4821). Nunca invente."),
+    .describe("O item que o cliente escolheu num resultado de receita: <receita>:<id>, com o id da linha. Nunca invente."),
   /**
    * Os campos que o DONO declarou em `pipeline.settings.fields` (#2297).
    *

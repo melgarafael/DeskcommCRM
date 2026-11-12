@@ -424,9 +424,10 @@ describe("receita wordpress-conteudo contra MySQL 8 de verdade", () => {
     busca: Record<string, unknown>,
     limite = 5,
     fixos: unknown = FIXOS_IMOVEIS,
+    idDoItem?: string,
   ): Promise<Record<string, unknown>[]> {
     const pool = obterPoolMysql(conexaoDe(banco, { sslMode: "disable" }));
-    const { sql, valores } = RECEITA_WORDPRESS_CONTEUDO.montar(fixos, busca, limite);
+    const { sql, valores } = RECEITA_WORDPRESS_CONTEUDO.montar(fixos, busca, limite, idDoItem);
     const conexao = await pool.getConnection();
     try {
       await conexao.query("START TRANSACTION READ ONLY");
@@ -592,6 +593,14 @@ describe("receita wordpress-conteudo contra MySQL 8 de verdade", () => {
       `cidade 'votorantim' → ${titulos(votorantim).join(", ")}`,
     );
     expect(titulos(votorantim)).toEqual(["Apartamento Centro Votorantim"]);
+  });
+
+  it("preso no id (a conferência do item da referência): acha o item e só ele; id inventado, nada", async () => {
+    const todos = await consultar({}, 20);
+    const alvo = todos[1]!;
+    const achado = await consultar({}, 1, FIXOS_IMOVEIS, String(alvo.id));
+    expect(achado.map((l) => String(l.id))).toEqual([String(alvo.id)]);
+    expect(await consultar({}, 1, FIXOS_IMOVEIS, "987654")).toHaveLength(0);
   });
 
   it("rascunho e outro post_type nunca aparecem", async () => {

@@ -24,9 +24,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  *  5. A recusa do destino chega ao gate `registro_sem_efeito` como `falhou`, e o veto
  *     ensina a dizer a verdade em vez de mandar chamar de novo a ferramenta recusada
  *     → tirar o `anotarEfeito("falhou")` do bloco.
+ *  6. Item inventado (não existe no banco de origem): o handler não roda e o gate lê
+ *     `falhou` — foi o "registrado com sucesso" da prova de 10/11/2026
+ *     → tirar a conferência do item de `completarDestinoDoNegocio`.
  */
 
 vi.mock("@/lib/mcp/audit", () => ({ auditMcpToolCall: vi.fn().mockResolvedValue(undefined) }));
+// A consulta do item no banco de origem tem o próprio teste (`item-da-referencia.test.ts`).
+const conferirItem = vi.hoisted(() => vi.fn(async () => ({ ok: true }) as const));
+vi.mock("@/lib/external-db/receitas/item-da-referencia", () => ({ conferirItemDaReferencia: conferirItem }));
 
 const { pickToolsFromMcp } = await import("@/lib/ai/runtime/tools");
 const { getToolByName } = await import("@/lib/mcp/tools");
@@ -156,6 +162,16 @@ describe("crm_create_lead com a referência do item e sem funil", () => {
   it("receita sem destino: o gate lê que a escrita falhou, não que ninguém tentou", async () => {
     const { desfecho } = await executar(SO_A_REFERENCIA, tabelas(null));
 
+    expect(desfecho).toBe("falhou");
+  });
+
+  it("item inventado: o negócio não nasce e o gate lê que a escrita falhou", async () => {
+    conferirItem.mockResolvedValueOnce({ ok: false, motivo: "item_inexistente", mensagem: "não existe" } as never);
+
+    const { r, chamadas, desfecho } = await executar(SO_A_REFERENCIA, tabelas({ pipeline_id: FUNIL, stage_id: ETAPA }));
+
+    expect(chamadas).toHaveLength(0);
+    expect(r).toMatchObject({ erro: "item_inexistente" });
     expect(desfecho).toBe("falhou");
   });
 });

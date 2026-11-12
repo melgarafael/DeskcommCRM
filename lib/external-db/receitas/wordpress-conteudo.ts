@@ -476,7 +476,7 @@ export const RECEITA_WORDPRESS_CONTEUDO: DefinicaoDeReceita = {
     }
     return base;
   },
-  montar: (fixos, busca, limite) => {
+  montar: (fixos, busca, limite, idDoItem) => {
     const f = (fixos ?? {}) as FixosDaReceita;
     const p = f.prefixo ?? PREFIXO_PADRAO;
     const postType = f.post_type ?? "";
@@ -551,6 +551,7 @@ export const RECEITA_WORDPRESS_CONTEUDO: DefinicaoDeReceita = {
       `p.post_type = ${marcador(postType)}`,
       `p.post_status = ${marcador("publish")}`,
     ];
+    if (idDoItem !== undefined) clausulas.push(`p.ID = ${marcador(idDoItem)}`);
 
     const b = (busca ?? {}) as BuscaWordpress;
     const filtros = b.filtros ?? {};
