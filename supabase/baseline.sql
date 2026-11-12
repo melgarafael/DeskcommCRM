@@ -46888,6 +46888,22 @@ begin
   get diagnostics v_n = row_count;
   v_total := v_total + v_n;
 
+  -- #4426: o TEXTO do teste vence junto com a telemetria, e a linha FICA. O
+  -- `input_text is not null or output_text is not null` é o que impede a
+  -- varredura de reescrever (e contar) em toda rodada as linhas já anuladas.
+  with vencidas as (
+    select a.id from public.ai_agent_runs a
+     where a.created_at < v_corte
+       and (a.input_text is not null or a.output_text is not null)
+     order by a.created_at limit v_limite
+  )
+  update public.ai_agent_runs a
+     set input_text = null, output_text = null
+    from vencidas v
+   where a.id = v.id;
+  get diagnostics v_n = row_count;
+  v_total := v_total + v_n;
+
   return v_total;
 end;
 $$;
@@ -75876,6 +75892,30 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 -- Todo escritor da fila de remoção de arquivos é do servidor: a sessão só lê.
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
+
+-- ---- texto do teste do agente na aba Execuções (migration 9348, #4426) ----
+-- Espelho de supabase/migrations/20261112090000_9348_texto_do_teste_do_agente.sql.
+-- O corpo de `fn_expurgar_telemetria_de_ia_vencida` foi EDITADO NO LUGAR, no
+-- bloco da 0587 (é lá que a última definição dele mora): o expurgo passa a
+-- anular `input_text`/`output_text` vencidos. Aqui fica o DDL.
+alter table public.ai_agent_runs
+  add column if not exists input_text text,
+  add column if not exists output_text text;
+
+comment on column public.ai_agent_runs.input_text is
+  'A mensagem que a pessoa digitou no painel de teste (#4426). Nula em toda execução real. Limitada a 4000 caracteres pela rota (o mesmo teto do schema do POST).';
+comment on column public.ai_agent_runs.output_text is
+  'A resposta final que a IA deu no teste (#4426) — o MESMO texto que o painel mostrou. Nula em toda execução real. Limitada a 8000 caracteres pela rota.';
+
+alter table public.llm_calls
+  add column if not exists preview_run_id uuid;
+
+comment on column public.llm_calls.preview_run_id is
+  'O run de prévia (`ai_agent_runs.id`) que causou esta chamada (#4426). Nulo em toda execução real; é o elo que a aba "Execuções" usa para buscar a pergunta e a resposta gravadas no run.';
+
+create index if not exists idx_llm_calls_preview_run
+  on public.llm_calls (preview_run_id)
+  where preview_run_id is not null;
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --

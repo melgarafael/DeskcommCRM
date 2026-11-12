@@ -6673,6 +6673,9 @@ async function executarTurnoDoAgente(
         // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
         // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
         agentId: agentConfig?.agentId ?? null,
+        // #4426: na prévia, o run que guarda a pergunta e a resposta do teste.
+        // É o que liga esta linha de custo ao texto que a aba "Execuções" mostra.
+        previewRunId: preview?.runId ?? null,
         // O follow-up é o mesmo turno com o próprio ponto — e por isso com o
         // próprio binding (o seam o lê por `purpose`) e a própria linha de custo.
         // Literais no próprio `purpose:`, de propósito: é aqui que a cerca de
@@ -6852,6 +6855,7 @@ async function executarTurnoDoAgente(
           leadId: leadId || null,
           jobId: job?.id,
           agentId: agentConfig?.agentId ?? null,
+          previewRunId: preview?.runId ?? null,
           purpose: preview ? 'agent_preview' : 'agent_turn',
           system,
           messages: [...openingMessages, ...turn.result.responseMessages, pedidoDeCorrecao],

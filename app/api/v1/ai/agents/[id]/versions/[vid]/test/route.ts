@@ -33,6 +33,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testRunSchema } from "@/lib/ai/agents/validation";
+import { perguntaDoTeste, respostaDoTeste } from "@/lib/ai/agents/texto-do-teste";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 import { ehFalhaDoBanco } from "@/lib/ai/agents/falha-do-banco";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
@@ -180,6 +181,13 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       outbound_message_id: null,
       status: "running",
       is_dry_run: true,
+      // #4426: a PERGUNTA entra no nascimento da linha. É o que a aba
+      // "Execuções" não tinha: o custo do teste ficava registrado e o que se
+      // perguntou sumia com o próximo teste (`setResult(null)` no painel).
+      // A resposta vem no fechamento, logo abaixo — e se o turno falhar, esta
+      // metade fica: a pergunta que quebrou o teste é justamente a que se quer
+      // reler.
+      input_text: perguntaDoTeste(parsed.data.sample_message),
       started_at: startedAt.toISOString(),
     })
     .select("id")
@@ -228,6 +236,11 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       status: "completed",
       completed_at: new Date().toISOString(),
       latency_ms: Date.now() - startedAt.getTime(),
+      // #4426: a RESPOSTA final, o MESMO texto que o painel mostrou ao vivo.
+      // Antes ela só existia no corpo da resposta HTTP: quem abrisse a linha
+      // depois via tokens, custo e "Sem trace disponível." — o histórico
+      // guardava o preço do teste e não o que ele respondeu.
+      output_text: respostaDoTeste(finalText),
       // `steps_count`, `tokens_in`, `tokens_out` e `cost_cents` seguem em zero
       // de propósito: o turno de prévia não devolve essas contagens à rota, e
       // gravar `candidates.length` no lugar de passos seria um número errado com
