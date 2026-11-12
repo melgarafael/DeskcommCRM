@@ -10444,6 +10444,11 @@ alter table public.agent_inbox_items
     -- apontam para a aba do parceiro. Nasce com `ref_kind='channel_session'`,
     -- um aberto por conexão. Entra NESTA lista (#159, bloco único).
     'channel_template_review_direct',
+    -- (migration 9333, issue #3966) O número pediu para esperar a IA qualificar
+    -- antes de distribuir e o prazo venceu sem a IA passar a conversa. A conversa
+    -- entra na distribuição e este aviso conta a quem cuida do agente que ele
+    -- não está passando adiante. Entra NESTA lista (#159, bloco único).
+    'routing_ia_wait_expired',
     'other'
   ));
 
@@ -74868,6 +74873,174 @@ revoke all     on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uuid,boolean) to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- ---- A conversa espera a IA qualificar: opção por número, com prazo (migration 9333, #3966) ----
+-- Espelho da 9333 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- VARREDURA anon porque cria e recria função, e ANTES da cascata da 9243: o
+-- invariante `lgpd-alcanca-fichas-fundidas` compara o trecho que vai dela até a
+-- VARREDURA com a migration, e nada pode entrar no meio. Coluna nova nasce nula = opção
+-- DESLIGADA em todo número; nada muda para quem não ligar. A constraint entra em
+-- bloco DO com `if not exists`: reaplicar não a derruba nem a recria. O kind
+-- `routing_ia_wait_expired` NÃO está aqui: entrou no bloco ÚNICO de
+-- `agent_inbox_items_kind_check`, mais acima (#159).
+alter table public.channel_routing_policies add column if not exists ai_wait_minutes integer;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'channel_routing_policies_ai_wait_minutes_check'
+       and conrelid = 'public.channel_routing_policies'::regclass
+  ) then
+    alter table public.channel_routing_policies
+      add constraint channel_routing_policies_ai_wait_minutes_check
+      check (ai_wait_minutes is null or ai_wait_minutes between 15 and 10080);
+  end if;
+end;
+$$;
+
+create or replace function public.fn_set_channel_ai_wait(p_org uuid,p_channel uuid,p_minutes integer)
+returns integer language plpgsql security definer set search_path=public as $$
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'manager') or not public.fn_support_write_allowed(p_org)
+ then raise exception 'routing_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'routing_mfa_required' using errcode='42501';end if;
+ if p_minutes is not null and (p_minutes<15 or p_minutes>10080) then
+  raise exception 'routing_invalid_ai_wait' using errcode='22023';end if;
+ update public.channel_routing_policies set ai_wait_minutes=p_minutes,updated_at=now()
+  where organization_id=p_org and channel_session_id=p_channel;
+ if not found then raise exception 'routing_channel_not_found' using errcode='P0002';end if;
+ -- Quem estava esperando com a regra antiga é reavaliado agora, com a nova.
+ perform public.fn_wake_channel_routing(p_org,p_channel);
+ return p_minutes;
+end;
+$$;
+revoke all on function public.fn_set_channel_ai_wait(uuid,uuid,integer) from public,anon;
+grant execute on function public.fn_set_channel_ai_wait(uuid,uuid,integer) to authenticated;
+
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ elsif old.assigned_to_user_id is not null or old.status not in('open','pending','claimed','ai_handling')
+    -- #3966: a PASSAGEM PARA HUMANO traz o pedido de volta, mas só no número
+    -- que LIGOU a espera pela IA. Com a opção desligada este ramo é falso e o
+    -- gatilho decide exatamente como antes.
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at
+        and exists(select 1 from public.channel_routing_policies p
+                    where p.organization_id=new.organization_id
+                      and p.channel_session_id=new.channel_session_id
+                      and p.ai_wait_minutes is not null)) then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
+-- ---- "Liberar" não devolve a conversa ao rodízio (migration 9346, #3937) ----
+-- Espelho da 9346. Fica ACIMA da VARREDURA anon (só recria funções, nenhuma
+-- tabela nova), DEPOIS do bloco da 9333 (redefine a mesma função e tem de
+-- ganhar) e ANTES da cascata da 9243: o invariante `lgpd-alcanca-fichas-fundidas`
+-- compara o trecho que vai dela até a VARREDURA com a migration, e nada pode
+-- entrar no meio. O porquê inteiro está no cabeçalho da migration: o gatilho
+-- `trg_routing_assignment_changed` tratava "perdeu o dono" e "reabriu" como o
+-- mesmo fato, então liberar a conversa a devolvia à distribuição em ~1 min. A
+-- régua nova pede o rodízio só quando a conversa ENTRA no pool vindo de fora
+-- dele (`old.status` terminal) — a reabertura — ou, no número que ligou a
+-- espera pela IA (9333), quando a IA passa a conversa para humano. As portas
+-- que querem pedir seguem pedindo por conta própria: `fn_wake_channel_routing`
+-- (disponibilidade, política do número, revogação de membro) e o cron
+-- `rodizio-devolucao`.
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ -- #3937: só a REABERTURA (old.status terminal) pede o rodízio. Perder o dono
+ -- ("Liberar") não é chegada ao pool, e não pede.
+ elsif old.status not in('open','pending','claimed','ai_handling')
+    -- #3966: a PASSAGEM PARA HUMANO traz o pedido de volta, mas só no número
+    -- que LIGOU a espera pela IA. Com a opção desligada este ramo é falso e o
+    -- gatilho decide exatamente como antes.
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at
+        and exists(select 1 from public.channel_routing_policies p
+                    where p.organization_id=new.organization_id
+                      and p.channel_session_id=new.channel_session_id
+                      and p.ai_wait_minutes is not null)) then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
+-- ---- mensagem nova do cliente acorda o roteamento da conversa sem dono (migration 9347, #3916) ----
+-- Espelho da 9347 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- VARREDURA anon porque cria função, e DEPOIS de tudo que ele lê (`messages`,
+-- `conversations`, `event_log`, `channel_routing_policies`, `organizations`). O
+-- gatilho só pede quando a distribuição automática vale para a conversa (destino
+-- padrão do número, ou modo efetivo rodízio/menor carga) e pede pela porta
+-- única, `fn_request_channel_routing`, que deduplica o pedido pendente.
+create or replace function public.fn_pedir_roteamento_na_mensagem()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare
+  c record;
+  v_modo text;
+  v_destino uuid;
+begin
+  -- SECURITY DEFINER é o que permite o INSERT em `event_log` acontecer também
+  -- quando quem grava a mensagem é um membro da organização pela API: um
+  -- gatilho com os privilégios do invocador faria o INSERT da mensagem falhar
+  -- na RLS do barramento, e a mensagem se perderia por causa do aviso.
+  select organization_id,id,channel_session_id into c from public.conversations
+   where organization_id=new.organization_id and id=new.conversation_id
+     and assigned_to_user_id is null and is_group=false
+     and status in('open','pending','claimed','ai_handling');
+  if not found then return null; end if;
+
+  -- A DISTRIBUIÇÃO AUTOMÁTICA VALE PARA ESTA CONVERSA? A mesma régua do worker
+  -- (`resolverRoteamentoPorNumero`): o destino padrão do número entrega em
+  -- qualquer modo; sem ele, vale o modo do número e, se o número não tem modo
+  -- próprio, o da ORGANIZAÇÃO — cujo padrão é manual. Fora do rodízio e da
+  -- menor carga o worker fecharia o pedido sem entregar, então ele não nasce.
+  -- Condição nova de "não pedir" (por exemplo, uma opção do número) entra AQUI.
+  select p.distribution_mode,p.default_assignee_user_id into v_modo,v_destino
+    from public.channel_routing_policies p
+   where p.organization_id=c.organization_id and p.channel_session_id=c.channel_session_id;
+  if v_destino is null then
+    if v_modo is null then
+      select o.settings->'routing'->>'mode' into v_modo from public.organizations o where o.id=c.organization_id;
+    end if;
+    if coalesce(v_modo,'manual') not in('round_robin','load') then return null; end if;
+  end if;
+
+  -- A porta única do pedido. É ela que deduplica: com pedido `pending` ou
+  -- `processing` da conversa, o índice único parcial não deixa nascer outro —
+  -- a mensagem só traz `next_attempt_at` do pendente para agora.
+  perform public.fn_request_channel_routing(c.organization_id,c.id);
+  return null;
+end;
+$$;
+revoke all on function public.fn_pedir_roteamento_na_mensagem() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_nova_mensagem_do_cliente on public.messages;
+create trigger trg_routing_nova_mensagem_do_cliente
+  after insert on public.messages
+  for each row
+  when (new.direction='inbound'
+        and new.type <> 'reaction'
+        and coalesce(new.metadata->>'historico_importado','') <> 'true')
+  execute function public.fn_pedir_roteamento_na_mensagem();
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
