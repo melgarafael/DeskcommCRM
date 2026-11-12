@@ -55,7 +55,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
   "crm_list_pipelines": { tokens: 63, motivo: BASE },
-  "crm_get_pipeline_forecast": { tokens: 263, motivo: BASE },
+  "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
   "crm_list_improvement_proposals": { tokens: 85, motivo: BASE },
@@ -147,16 +147,17 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 };
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
-// modo `leitura_direta` — nunca junto de `search_knowledge`.
+// modo `leitura_direta` — nunca junto de `search_knowledge`; +54 com `imagem_url`
+// no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
+// (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
+// descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
+// mensagem (#4077).
 // +638 com o material da empresa (#4129): 231 do `send_message` (o `material_id`
 // e a sua descrição) e 407 da capacidade de wire `crm_send_material`, que entra
 // no catálogo lido pelo integrador.
-// +54 com `imagem_url` no `send_message` (Spec 25 R4, #3276); +464 com
-// `crm_publish_whatsapp_status` (#3463), que só entra no catálogo com o módulo
-// `status_whatsapp` ligado; +37 na descrição de `crm_get_conversation_history`,
-// que passou a dizer o AUTOR da mensagem (#4077). O total é MEDIDO no merge com
-// a main de 9ada417a7 — os dois ganhos no `send_message` somam uma descrição só.
-const TETO_TOTAL = 31286;
+// O total é MEDIDO no merge com a main (31305 = 30667 medidos nela + 638 deste
+// PR), não somado à mão: a descrição do `send_message` mudou dos dois lados.
+const TETO_TOTAL = 31305;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

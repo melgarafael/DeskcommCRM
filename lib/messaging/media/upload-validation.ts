@@ -63,6 +63,8 @@ export const DOCUMENT_MIMES = new Set([
   "text/plain",
   "text/csv",
   "application/zip",
+  "application/xml",
+  "text/xml",
 ]);
 
 /**

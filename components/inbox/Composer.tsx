@@ -69,6 +69,16 @@ export interface ComposerHandle {
 }
 
 /**
+ * #3687 — o instante do envio do lado de quem atende: o fuso do NAVEGADOR é o do
+ * canal que a pessoa está olhando, e é ele que faz `{{saudacao}}` sair igual à
+ * campanha. A resposta é inserida e enviada em seguida; o operador vê o texto
+ * resolvido antes de apertar.
+ */
+function instanteDoCompositor(): { instante: Date; fuso: string } {
+  return { instante: new Date(), fuso: Intl.DateTimeFormat().resolvedOptions().timeZone };
+}
+
+/**
  * O que a tela diz quando o rascunho NÃO vale mais (issue #1611: "a conversa
  * abre sem texto e com aviso").
  *
@@ -528,7 +538,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     // RESPOSTA passa por aqui: a nota interna não vai ao cliente e continua
     // levando o texto como escrito (fronteira do `janelaFechada`, #2744).
     const corpo =
-      mode === "note" ? embutirMencoes(legivel, mencoes) : interpolateTemplate(legivel, contato);
+      mode === "note"
+        ? embutirMencoes(legivel, mencoes)
+        : interpolateTemplate(legivel, contato, instanteDoCompositor());
 
     setText("");
     // #4148: o clique no "Enviar" deixa o foco no BOTÃO, e este mesmo commit o
@@ -727,7 +739,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       return;
     }
 
-    const payload = payloadDeUso(template, contato);
+    const payload = payloadDeUso(template, contato, instanteDoCompositor());
     setMenuDismissed(true);
 
     // O contato sem `name` NEM `display_name` (#2744): o `{{nome}}` sobrevive

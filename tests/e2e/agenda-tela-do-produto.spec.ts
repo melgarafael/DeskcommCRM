@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test, type Page } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 import { partesNoFuso } from "../../lib/agenda/fuso";
@@ -32,6 +32,7 @@ test.describe("a Agenda como o dono do produto a usa", () => {
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(240_000);
     page = await browser.newPage();
+    esperarARevelacaoNasCargas(page);
     await loginComoAdmin(page, lerCreds());
   });
 
