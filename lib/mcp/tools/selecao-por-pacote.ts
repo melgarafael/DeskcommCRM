@@ -79,8 +79,30 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * argumento (a heurística de degradação) que ninguém mediu, que é exatamente o
  * que o bloco ⚠️ acima diz. O dia em que o `evoluir` exigir 28, o passo volta a
  * ser ele.
+ *
+ * ═══ 27 → 28: a porta de desfecho por token entrou no `vender` (#4515/#4516) ═══
+ *
+ * Aconteceu o que o parágrafo acima previu. A porta de desfecho por token
+ * (`crm_set_appointment_status`) entrou no pacote `vender` — o MESMO default do
+ * onboarding, ao lado de `crm_set_appointment_outcome`, que já morava lá. Uma
+ * capacidade nova no default consome uma vaga de folga de TODO pacote, e a
+ * medição no worktree (catálogo 77 → 83, default do onboarding 22 → 23) foi:
+ *
+ *  - exigências DEPOIS do agente nascer: evoluir 27 → 28, reter 32 → 33,
+ *    escalar 36 → 37, atender 39 → 40, organizar 42 → 48 (as cinco tarefas
+ *    novas — `crm_create/update/complete/delete_task` — também entram em
+ *    `organizar`);
+ *  - antes da mudança cabia UM segundo pacote, o `evoluir`, com 27 exatas.
+ *    Depois, nenhum — o beco do D3 de novo, agora por uma vaga;
+ *  - 28 é o MENOR passo que restaura exatamente a mesma situação de antes: um
+ *    segundo pacote (`evoluir`, 28), e não dois. Subir até 40 para caber
+ *    `organizar` seria escolher qual jornada ganha cinco vagas — pergunta de
+ *    produto, não a conta que esta constante resolve.
+ *
+ * Pacote sozinho continua abaixo do teto: o que cresceu foi a SOMA com o
+ * default do onboarding, não o pacote.
  */
-export const TETO_TOOLS_POR_AGENTE = 27;
+export const TETO_TOOLS_POR_AGENTE = 28;
 
 /** O mínimo que a regra precisa saber de uma capacidade. */
 export interface CapacidadeSelecionavel {
