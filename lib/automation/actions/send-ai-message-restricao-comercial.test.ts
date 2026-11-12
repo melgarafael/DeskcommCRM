@@ -104,7 +104,11 @@ interface LeituraNoBanco {
  * leitura estoura — o caso da falha fechada). Toda ida ao banco entra em `idas`,
  * para o teste afirmar o que NÃO foi lido nem escrito.
  */
-function bancoFalso(camadaComercial: boolean | "falha") {
+function bancoFalso(
+  camadaComercial: boolean | "falha",
+  /** O que a última mensagem da conversa é: do cliente (esperando), nossa, ou a leitura estoura. */
+  ultimaMensagem: "inbound" | "outbound" | "falha" = "outbound",
+) {
   const idas: LeituraNoBanco[] = [];
   const from = (tabela: string) => {
     let operacao: "select" | "update" = "select";
@@ -122,6 +126,11 @@ function bancoFalso(camadaComercial: boolean | "falha") {
         return camadaComercial === "falha"
           ? { data: null, error: { message: "offline" } }
           : { data: { enabled: camadaComercial }, error: null };
+      }
+      if (tabela === "messages") {
+        return ultimaMensagem === "falha"
+          ? { data: null, error: { message: "offline" } }
+          : { data: { direction: ultimaMensagem }, error: null };
       }
       if (tabela === "conversations") return { data: { channel_session_id: CANAL }, error: null };
       if (tabela === "organizations") return { data: { settings: {} }, error: null };
@@ -223,7 +232,7 @@ describe("send_ai_message × camada comercial LIGADA", () => {
     expect(gerarAbordagemDeFormulario).toHaveBeenCalledTimes(2);
     expect(r.status).toBe("skipped");
     expect(r.detail).toMatchObject({
-      reason: "commercial_requires_human",
+      reason: "commercial_requires_human_duas_tentativas",
       conversation_id: "conversa-1",
       textos_barrados: [TEXTO_COMERCIAL, TEXTO_COMERCIAL],
     });
@@ -273,7 +282,56 @@ describe("send_ai_message × leitura da camada que FALHA", () => {
 
     expect(sendMessageHandler).not.toHaveBeenCalled();
     expect(r.status).toBe("skipped");
-    expect(r.detail?.reason).toBe("commercial_requires_human");
+    expect(r.detail?.reason).toBe("commercial_requires_human_duas_tentativas");
+    expect(triggerHandoff).not.toHaveBeenCalled();
+  });
+});
+
+describe("send_ai_message × cliente com mensagem esperando (message.received)", () => {
+  it("texto barrado: NÃO reescreve, nada sai e a conversa passa à equipe com o motivo restricao_comercial", async () => {
+    gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
+    const { cliente } = bancoFalso(true, "inbound");
+
+    const r = await executar(cliente);
+
+    expect(gerarAbordagemDeFormulario).toHaveBeenCalledTimes(1);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(triggerHandoff).toHaveBeenCalledTimes(1);
+    expect(triggerHandoff.mock.calls[0]?.[0]).toMatchObject({
+      reason: "restricao_comercial",
+      conversationId: "conversa-1",
+      organizationId: ORG,
+    });
+    expect(r.status).toBe("skipped");
+    expect(r.detail).toMatchObject({ reason: "commercial_requires_human", passagem_para_a_equipe: true });
+  });
+
+  it("a passagem recusada pelo orquestrador vira o motivo _sem_passagem — a tela não afirma o que não houve", async () => {
+    gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
+    triggerHandoff.mockResolvedValue({ triggered: false, reason: "conversation_not_found" });
+    const { cliente } = bancoFalso(true, "inbound");
+
+    const r = await executar(cliente);
+
+    expect(r.detail).toMatchObject({ reason: "commercial_requires_human_sem_passagem", passagem_para_a_equipe: false });
+  });
+
+  it("não deu para ler a última mensagem: vale o piso de antes — passa à equipe, nunca o silêncio", async () => {
+    gerarAbordagemDeFormulario.mockResolvedValue({ ok: true, texto: TEXTO_COMERCIAL });
+    const { cliente } = bancoFalso(true, "falha");
+
+    await executar(cliente);
+
+    expect(triggerHandoff).toHaveBeenCalledTimes(1);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+  });
+
+  it("texto neutro com cliente esperando sai normalmente, sem passagem", async () => {
+    const { cliente } = bancoFalso(true, "inbound");
+
+    const r = await executar(cliente);
+
+    expect(r.status).toBe("success");
     expect(triggerHandoff).not.toHaveBeenCalled();
   });
 });
@@ -285,6 +343,11 @@ describe("a aba Atividade ainda sabe traduzir as execuções antigas", () => {
     expect(fonte).toContain("commercial_requires_human_sem_passagem:");
     const m = /commercial_requires_human:\s*"([^"]+)"/.exec(fonte);
     expect(m?.[1]).toBeDefined();
-    expect(m![1]).not.toMatch(/passou para o atendimento humano/);
+    // A frase antiga continua afirmando a passagem à equipe (é o que as execuções
+    // antigas e o cliente-esperando fazem); o desfecho de duas tentativas tem código próprio.
+    expect(m![1]).toMatch(/passou para o atendimento humano/);
+    const duas = /commercial_requires_human_duas_tentativas:\s*"([^"]+)"/.exec(fonte);
+    expect(duas?.[1]).toBeDefined();
+    expect(duas![1]).not.toMatch(/passou para o atendimento humano/);
   });
 });

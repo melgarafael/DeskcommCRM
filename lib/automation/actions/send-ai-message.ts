@@ -45,8 +45,32 @@ import {
   restricaoComercialBarra,
   trechoComercialNaSaida,
 } from "@/lib/escalacao/assunto-comercial";
+import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 
 const TIPO = "send_ai_message";
+
+/**
+ * O cliente escreveu e ainda não foi respondido? É a mesma pergunta que o turno
+ * do agente faz (`temMensagemDoClienteSemResposta`): a última mensagem da
+ * conversa é dele. A leitura que falha vale como "esperando": o piso é a
+ * passagem à equipe, que era o comportamento de antes — nunca o silêncio.
+ */
+async function clienteEsperaResposta(ctx: ActionCtx, conversationId: string): Promise<boolean> {
+  try {
+    const { data, error } = await ctx.admin
+      .from("messages")
+      .select("direction")
+      .eq("organization_id", ctx.organizationId)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) return true;
+    return (data as { direction?: string } | null)?.direction === "inbound";
+  } catch {
+    return true;
+  }
+}
 
 /**
  * #3813 — o pulo por compromisso é `skipped` COM MOTIVO, não falha.
@@ -211,8 +235,9 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     // A regra e a falha FECHADA vivem em `lib/escalacao/assunto-comercial.ts`
     // (o dono): `restricaoComercialBarra` só vai ao banco quando o corpo tem cara
     // de preço, e leitura que estoura vale como camada LIGADA. O desfecho é o do
-    // veto de lá: motivo `commercial_requires_human`. Desde a Spec 34 NÃO passa
-    // a conversa para a equipe: ver o bloco que reescreve o texto, logo abaixo.
+    // veto de lá: motivo `commercial_requires_human`. Desde a Spec 34 só passa
+    // a conversa para a equipe quando o cliente tem mensagem esperando; sem
+    // ela, o texto é reescrito (bloco logo abaixo).
     //
     // Fica DEPOIS de `autorizarContatoParaIA` de propósito: o orquestrador só
     // passa bot→humano uma conversa que a IA poderia estar atendendo agora, e no
@@ -239,6 +264,41 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       );
     let vetoAnterior: { texto_barrado: string; trecho: string | null } | null = null;
     if (await barra(texto)) {
+      // `message.received` também dispara automação: ali o cliente PERGUNTOU, e
+      // reescrever sem passar à equipe o deixaria sem resposta e sem ninguém
+      // sabendo. Com mensagem dele esperando, vale a regra do turno do agente:
+      // a passagem segue como sempre, agora com o motivo próprio.
+      if (await clienteEsperaResposta(ctx, conversationId)) {
+        logger.info("[automation.send_ai_message] mensagem não enviada — restrição comercial, cliente esperando resposta", {
+          organizationId: ctx.organizationId,
+          ruleId: ctx.ruleId,
+          conversationId,
+        });
+        const lead = ctx.context.lead as { id?: string } | undefined;
+        const passagem = await triggerHandoff({
+          serviceBoundary: boundary,
+          conversationId,
+          organizationId: ctx.organizationId,
+          reason: "restricao_comercial",
+          origem: "runtime_nativo",
+          motivoTexto: "Resposta comercial barrada; valores e negociação são exclusivos da equipe.",
+          leadId: lead?.id ?? null,
+          metadata: { source: "automation_rule", acao: TIPO, rule_id: ctx.ruleId },
+        });
+        // O motivo diz o que ACONTECEU: se o orquestrador recusou a passagem, a
+        // mensagem também não saiu e ninguém foi avisado por esta execução.
+        return {
+          type: TIPO,
+          status: "skipped",
+          detail: passagem.triggered
+            ? { reason: "commercial_requires_human", conversation_id: conversationId, passagem_para_a_equipe: true }
+            : {
+                reason: "commercial_requires_human_sem_passagem",
+                conversation_id: conversationId,
+                passagem_para_a_equipe: false,
+              },
+        };
+      }
       const primeira = { texto, trecho: trechoComercialNaSaida(texto) };
       logger.info("[automation.send_ai_message] texto barrado pela restrição comercial — escrevendo de novo", {
         organizationId: ctx.organizationId,
@@ -270,7 +330,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
           type: TIPO,
           status: "skipped",
           detail: {
-            reason: "commercial_requires_human",
+            reason: "commercial_requires_human_duas_tentativas",
             conversation_id: conversationId,
             textos_barrados: [primeira.texto, gerado.texto],
             trecho: trechoComercialNaSaida(gerado.texto),
