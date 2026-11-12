@@ -15,7 +15,8 @@ caminho: quando o Jev decide sozinho, a pergunta ia sem contexto nenhum. Agora
 ele recebe o mesmo bloco, pela leitura que o turno já fazia — uma consulta por
 turno, e nenhuma quando a tarefa do Jev está desligada. O bloco leva nome de
 funil, nome de etapa e etiqueta; nunca título do card, telefone, e-mail ou
-documento.
+documento. Telefone, CPF ou e-mail digitado dentro de um desses nomes sai
+mascarado, nos dois caminhos.
 
 Você não precisa fazer nada.
 
