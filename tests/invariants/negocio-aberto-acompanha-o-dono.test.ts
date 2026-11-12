@@ -491,7 +491,7 @@ afterAll(() => {
 });
 
 describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
-  it("#4371 — caminho 1: o DONO do card transfere em own_and_unassigned e o card vai junto", () => {
+  it("caminho 1: atendente transfere em own_and_unassigned — #4371: o DONO do card transfere e o card vai junto", () => {
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(A);
     expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
 
