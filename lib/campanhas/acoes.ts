@@ -46,7 +46,8 @@ export interface CampanhaCarregada {
   organization_id: string;
   name: string;
   status: StatusDaCampanha;
-  channel_session_id: string;
+  /** `null` = campanha de E-MAIL (#3441): ela não fala por número nenhum. */
+  channel_session_id: string | null;
   message_body: string | null;
   base_legal: string;
   lia_ref: string | null;
@@ -60,8 +61,10 @@ export interface CampanhaCarregada {
   teto_diario: number | null;
   teto_horario: number | null;
   description: string | null;
-  /** Migration 0710: `template` = modelo aprovado pelo número oficial. */
+  /** Migration 0710: `template` = modelo aprovado pelo número oficial; 9334: `email`. */
   message_mode: ModoDaMensagem;
+  /** Migration 9334 (#3441): assunto do e-mail; `null` nos demais modos. */
+  email_subject: string | null;
   provider_template_name: string | null;
   provider_template_language: string | null;
   provider_template_variables: unknown;
@@ -80,8 +83,8 @@ const COLUNAS =
   "id, organization_id, name, status, channel_session_id, message_body, base_legal, lia_ref, " +
   "audience_filter, audience_version, content_version, scheduled_at, description, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, " +
-  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, " +
-  "provider_broadcast_id, split_messages";
+  "message_mode, email_subject, provider_template_name, provider_template_language, " +
+  "provider_template_variables, velocidade, provider_broadcast_id, split_messages";
 
 export async function carregarCampanha(
   admin: SupabaseClient,
@@ -121,6 +124,19 @@ function recusaDeTransicao(de: StatusDaCampanha, para: StatusDaCampanha): Recusa
 
 /** O que toda campanha precisa ter antes de qualquer envio — inclusive o de teste. */
 function faltaParaEnviar(c: CampanhaCarregada): Recusa | null {
+  // E2a (#3441) entrega CONTEÚDO e PÚBLICO; o despacho do e-mail é a fatia
+  // seguinte. Preparar/agendar uma campanha de e-mail agora só criaria um
+  // snapshot que nenhum worker sabe mandar — a recusa é explícita, e não um
+  // silêncio que alguém interpretaria como "quase pronto".
+  if (c.message_mode === "email") {
+    return {
+      ok: false,
+      codigo: "campanha_conteudo_invalido",
+      mensagem:
+        "Campanha de e-mail ainda não é enviada: esta entrega guarda o assunto, o corpo e o público. O envio entra na fatia seguinte.",
+      status: 422,
+    };
+  }
   if (c.message_mode === "template") {
     if ((c.provider_template_name ?? "").trim() === "" || (c.provider_template_language ?? "").trim() === "") {
       return {
@@ -162,6 +178,15 @@ export async function modeloDaCampanha(
   c: CampanhaCarregada,
 ): Promise<Desfecho<{ modelo?: ModeloPreparado }>> {
   if (c.message_mode !== "template") return { ok: true };
+  const numero = c.channel_session_id;
+  if (numero === null) {
+    return {
+      ok: false,
+      codigo: "campanha_canal_indisponivel",
+      mensagem: "Campanha com modelo aprovado exige o número oficial que tem o modelo.",
+      status: 409,
+    };
+  }
   const variaveis = variaveisDaCampanhaSchema.safeParse(c.provider_template_variables ?? {});
   if (!variaveis.success) {
     return {
@@ -175,7 +200,7 @@ export async function modeloDaCampanha(
     admin,
     {
       organizationId: c.organization_id,
-      channelSessionId: c.channel_session_id,
+      channelSessionId: numero,
       name: c.provider_template_name ?? "",
       language: c.provider_template_language ?? "",
     },
@@ -435,6 +460,7 @@ export async function duplicarAcao(
       channel_session_id: c.channel_session_id,
       message_body: c.message_body,
       message_mode: c.message_mode,
+      email_subject: c.email_subject,
       provider_template_name: c.provider_template_name,
       provider_template_language: c.provider_template_language,
       provider_template_variables: c.provider_template_variables ?? {},
@@ -581,7 +607,16 @@ export async function testarAcao(
     conteudo = { type: "text", body: render.texto };
   }
 
-  const boundary = await beginServiceAtOrigin(admin, c.organization_id, linha.id, c.channel_session_id);
+  const numeroDoTeste = c.channel_session_id;
+  if (numeroDoTeste === null) {
+    return {
+      ok: false,
+      codigo: "campanha_conteudo_invalido",
+      mensagem: "Campanha de e-mail não tem teste de envio: o despacho do e-mail é a fatia seguinte.",
+      status: 422,
+    };
+  }
+  const boundary = await beginServiceAtOrigin(admin, c.organization_id, linha.id, numeroDoTeste);
   // O teste divide como a rodada divide (`baloes.ts`): quem testa precisa ver
   // no aparelho os mesmos balões que o destinatário vai receber.
   const baloes = conteudo.type === "text" ? baloesDaCampanha(conteudo.body, c.split_messages === true) : [conteudo.body];
