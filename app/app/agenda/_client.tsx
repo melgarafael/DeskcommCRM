@@ -1220,15 +1220,20 @@ export function AgendaClient({
                 tipoId={tipo.id}
                 duracaoMin={duracaoDoCompromisso ?? tipo.duracaoMin}
                 /*
-                  A DURAÇÃO É ESCOLHIDA AQUI, E SÓ AQUI (issue #3709).
+                  A DURAÇÃO É ESCOLHIDA AQUI — na marcação E na remarcação
+                  (issues #3709 e #4450).
 
-                  Desligada em dois casos: num serviço, quem manda no comprimento
-                  é a agenda publicada (com capacidade e ocorrência) e a rota
-                  recusa `agenda_duracao_do_servico`; numa remarcação, o PATCH
-                  move o bloco e PRESERVA o comprimento que ele já tem. Nos dois,
-                  oferecer o campo seria oferecer um caminho que não existe.
+                  O padrão é `duracaoDoCompromisso` (o comprimento que o bloco
+                  já tem) na remarcação e o molde do tipo na marcação; a pessoa
+                  muda se este atendimento precisar de mais ou menos tempo, e o
+                  PATCH leva o número junto.
+
+                  Desligada num caso só: num SERVIÇO, quem manda no comprimento é
+                  a agenda publicada (com capacidade e ocorrência) e a rota
+                  recusa `agenda_duracao_do_servico`. Ali o campo seria um
+                  caminho que não existe.
                 */
-                permiteEscolherDuracao={!remarcandoId && !tipo.servico}
+                permiteEscolherDuracao={!tipo.servico}
                 onDuracaoMudar={setDuracaoEscolhida}
                 // O LOCAL e o FUSO de verdade, que a tela tinha e não passava.
                 //
@@ -1301,6 +1306,11 @@ export function AgendaClient({
                         id: remarcandoId,
                         revision: agendamentos.find((a) => a.id === remarcandoId)?.revision,
                         starts_at: instante,
+                        // ⚠️ A DURAÇÃO VAI JUNTO (#4450). O PATCH a preservava
+                        // e a tela a escondia: dava para remarcar, não para
+                        // corrigir o tempo. Num serviço ela NÃO vai (é a agenda
+                        // publicada que manda; a rota recusa).
+                        duration_minutes: tipo.servico ? undefined : duracaoDoAtendimento,
                         guest_email: convidado,
                         // SÓ A DIFERENÇA (#4006): `undefined` não mexe na lista,
                         // `[]` tira todo mundo. Sem o diff, o `starts_at` que

@@ -194,7 +194,11 @@ describe("num serviço a tela não oferece nem envia duração", () => {
   });
 
   it("o campo some em qualquer serviço — inclusive o individual por profissional", () => {
-    expect(tela).toContain("permiteEscolherDuracao={!remarcandoId && !tipo.servico}");
+    expect(tela).toContain("permiteEscolherDuracao={!tipo.servico}");
+    // E ele NÃO some ao remarcar (#4450): a remarcação passou a aceitar a
+    // duração, então desligar o campo ali seria oferecer um caminho que existe
+    // e esconder o botão.
+    expect(tela).not.toContain("permiteEscolherDuracao={!remarcandoId");
   });
 
   it("o POST de um serviço não leva duration_minutes", () => {
@@ -205,5 +209,14 @@ describe("num serviço a tela não oferece nem envia duração", () => {
 
   it("a consulta de horários de um serviço não manda duracao_minutos", () => {
     expect(tela).toMatch(/duracao_minutos: tipo\.servico\s*\?\s*undefined/);
+  });
+
+  it("⭐ o PATCH da remarcação LEVA a duração escolhida (#4450)", () => {
+    // A segunda porta da #3709: sem esta linha a tela desliga o campo ao
+    // remarcar e o cliente antigo que não manda duração preserva o bloco — mas
+    // quem QUER mudar o tempo continua sem caminho.
+    const inicio = tela.indexOf("return remarcar");
+    const bloco = tela.slice(inicio, tela.indexOf(".then((r) => {", inicio));
+    expect(bloco).toContain("duration_minutes: tipo.servico ? undefined : duracaoDoAtendimento");
   });
 });
