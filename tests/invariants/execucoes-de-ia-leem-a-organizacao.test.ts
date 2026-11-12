@@ -220,6 +220,31 @@ describe("IA › Execuções e Custo da IA leem na sessão do usuário (#4527)",
     expect(countAs(USER_A, `select count(*) from public.llm_calls where organization_id = '${ORG_A}'`)).toBe(2);
   });
 
+  it("o contorno aplicado à mão não deixa policy duplicada depois da migration", () => {
+    // A comunidade destravou a tela criando a policy direto no banco, com nome
+    // próprio — o comentário da issue pede que a correção seja idempotente
+    // nesse caso. Duas policies permissivas de SELECT somam em OR: o banco fica
+    // com duas regras dizendo a mesma coisa e ninguém sabe qual vale.
+    sql(`
+      create policy contorno_da_comunidade on public.llm_calls
+        for select to authenticated
+        using (organization_id in (select public.fn_user_org_ids()));
+    `);
+    expect(countAs(USER_A, `select count(*) from public.llm_calls where organization_id = '${ORG_A}'`)).toBe(2);
+
+    sql(readFileSync(MIGRATION, "utf8"));
+
+    const permissivas = sql(`
+      select coalesce(string_agg(policyname, ',' order by policyname), '')
+        from pg_policies
+       where schemaname = 'public' and tablename = 'llm_calls'
+         and permissive = 'PERMISSIVE' and cmd = 'SELECT';
+    `);
+    expect(permissivas).toBe("tenant_isolation_llm_calls_select");
+    // E a leitura continua de pé depois da limpeza.
+    expect(countAs(USER_A, `select count(*) from public.llm_calls where organization_id = '${ORG_A}'`)).toBe(2);
+  });
+
   it("reaplicar o `baseline.sql` (o caminho do `update.sh`) recria a policy — a varredura da 0325 não cura sozinha", () => {
     // Este é o caso que REPROVA sem o conserto, e é o que o membro vive: a
     // instalação já tem RLS ligada, então `fn_proteger_tabelas_de_organizacao()`

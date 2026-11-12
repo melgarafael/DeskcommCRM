@@ -34,18 +34,41 @@
 --
 -- Idempotente: rodar duas vezes converge. Sem `security definer`, sem view, sem
 -- backfill, sem dado tocado.
+--
+-- E IDEMPOTENTE TAMBÉM CONTRA O CONTORNO À MÃO: a comunidade aplicou a policy de
+-- SELECT direto no banco para ver a tela de novo. Se ela tiver outro nome, a
+-- nossa somaria com a dela (permissivas são OR) e o banco ficaria com duas
+-- regras dizendo a mesma coisa. O laço abaixo remove as policies de SELECT
+-- permissivas das três tabelas antes de criar a canônica — nunca a `_all` da
+-- instalação saudável (é `ALL`, não `SELECT`) nem as restritivas de escrita.
 
 drop policy if exists tenant_isolation_llm_calls_select on public.llm_calls;
+drop policy if exists tenant_isolation_before_send_traces_select on public.before_send_traces;
+drop policy if exists tenant_isolation_flywheel_judge_verdicts_select on public.flywheel_judge_verdicts;
+
+do $reparo$
+declare p record;
+begin
+  for p in
+    select tablename, policyname
+      from pg_policies
+     where schemaname = 'public'
+       and tablename in ('llm_calls', 'before_send_traces', 'flywheel_judge_verdicts')
+       and permissive = 'PERMISSIVE'
+       and cmd = 'SELECT'
+  loop
+    execute format('drop policy %I on public.%I', p.policyname, p.tablename);
+  end loop;
+end $reparo$;
+
 create policy tenant_isolation_llm_calls_select on public.llm_calls
   for select to authenticated
   using (organization_id in (select public.fn_user_org_ids()));
 
-drop policy if exists tenant_isolation_before_send_traces_select on public.before_send_traces;
 create policy tenant_isolation_before_send_traces_select on public.before_send_traces
   for select to authenticated
   using (organization_id in (select public.fn_user_org_ids()));
 
-drop policy if exists tenant_isolation_flywheel_judge_verdicts_select on public.flywheel_judge_verdicts;
 create policy tenant_isolation_flywheel_judge_verdicts_select on public.flywheel_judge_verdicts
   for select to authenticated
   using (organization_id in (select public.fn_user_org_ids()));
