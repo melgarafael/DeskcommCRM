@@ -4536,6 +4536,22 @@ export const DICIONARIO: Traducoes = {
     },
   "Criar meu primeiro roteador": { es: "Crear mi primer enrutador" },
   "Número removido": { es: "Número eliminado" },
+  // #4340 — mover o roteador para o número novo (ação da tela de roteadores).
+  "Nenhuma conversa chega neste roteador: o número foi removido do WhatsApp. Mova o roteador para o número novo para as conversas voltarem a ser classificadas — sem isso, elas caem no agente principal do número, sem decisão de intenção.": {
+    es: "Ninguna conversación llega a este enrutador: el número se eliminó de WhatsApp. Mueve el enrutador al número nuevo para que las conversaciones vuelvan a clasificarse; sin eso, caen en el agente principal del número, sin decisión de intención.",
+  },
+  "Número novo": { es: "Número nuevo" },
+  "Mover roteador para este número": { es: "Mover enrutador a este número" },
+  "Roteador movido para o número novo.": { es: "Enrutador movido al número nuevo." },
+  "Nenhum número livre para mover: conecte o número novo em Canais.": {
+    es: "Ningún número libre para mover: conecta el número nuevo en Canales.",
+  },
+  "Este roteador ainda aponta para um número conectado.": {
+    es: "Este enrutador todavía apunta a un número conectado.",
+  },
+  "Escolha um número conectado desta empresa.": { es: "Elige un número conectado de esta empresa." },
+  "Este número já tem um roteador.": { es: "Este número ya tiene un enrutador." },
+  "Erro ao mover o roteador de número.": { es: "Error al mover el enrutador de número." },
   "Números sem roteador": { es: "Números sin enrutador" },
   "As conversas destes números caem no agente principal do número — nenhum roteador decide a intenção delas, então elas não aparecem como roteadas. Crie um roteador para cada número que deve escolher o agente pelo que o cliente quer.":
     {
@@ -12215,6 +12231,13 @@ export const DICIONARIO: Traducoes = {
   "Nome do contato": { es: "Nombre del contacto" },
   "Chave do campo personalizado": { es: "Clave del campo personalizado" },
   "Texto enviado ao contato": { es: "Texto enviado al contacto" },
+  "Outras redações do mesmo passo (opcional)": { es: "Otras redacciones del mismo paso (opcional)" },
+  "O motor alterna entre o texto acima e as redações abaixo a cada envio — assim o contato não recebe a mesma frase duas vezes seguidas.": {
+    es: "El motor alterna entre el texto de arriba y las redacciones de abajo en cada envío, así el contacto no recibe la misma frase dos veces seguidas.",
+  },
+  "Redação": { es: "Redacción" },
+  "Outra forma de dizer a mesma coisa": { es: "Otra forma de decir lo mismo" },
+  "Remover redação": { es: "Eliminar redacción" },
   "Chave secreta do cliente": { es: "Clave secreta del cliente" },
   "Chave livre (use": { es: "Clave libre (usa" },
   "no laço)": { es: "en el ciclo)" },
@@ -20708,8 +20731,58 @@ export const DICIONARIO: Traducoes = {
   "A Meta não concluiu a conexão. Tente de novo.": { es: "Meta no completó la conexión. Inténtalo de nuevo." },
   "Chave da conta da instalação no provedor parceiro": { es: "Clave de la cuenta de la instalación en el proveedor asociado" },
   "Com ela, cada empresa conecta o número oficial do WhatsApp com um clique, sem ter conta no provedor. Os números ficam na conta da instalação e entram na fatura dela.": { es: "Con ella, cada empresa conecta el número oficial de WhatsApp con un clic, sin tener cuenta en el proveedor. Los números quedan en la cuenta de la instalación y entran en su factura." },
+  // O aviso PRÓPRIO de feriado nacional no horário de funcionamento (#3877).
+  "Mensagem em feriado nacional (opcional)": { es: "Mensaje en feriado nacional (opcional)" },
+  "Ex.: Hoje é feriado nacional e não estamos atendendo. Recebemos sua mensagem e respondemos no próximo dia útil.": {
+    es: "Ej.: Hoy es feriado nacional y no estamos atendiendo. Recibimos tu mensaje y respondemos el próximo día hábil.",
+  },
+  "Enviada no lugar da mensagem acima quando hoje é feriado nacional. Em branco, a mensagem de sempre continua valendo.": {
+    es: "Se envía en lugar del mensaje anterior cuando hoy es feriado nacional. En blanco, sigue valiendo el mensaje de siempre.",
+  },
+  // A opção "não atender em feriado nacional", desligada de fábrica (#3877, doc 316 A).
+  "Não atender em feriado nacional": { es: "No atender en feriado nacional" },
+  "Ligado, feriado nacional conta como dia fechado: quem escrever recebe a mensagem de fora do horário e o agente responde no próximo dia útil. Desligado, o feriado é um dia comum.": {
+    es: "Activado, el feriado nacional cuenta como día cerrado: quien escriba recibe el mensaje de fuera de horario y el agente responde el próximo día hábil. Desactivado, el feriado es un día común.",
+  },
   // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
   "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
+  // O seletor único de variável (#3687): o catálogo é o mesmo nas quatro telas,
+  // e os grupos são os rótulos que ele mostra.
+  "Inserir variável": { es: "Insertar variable" },
+  "Buscar variável": { es: "Buscar variable" },
+  "Nenhuma variável encontrada": { es: "No se encontró ninguna variable" },
+  "Prévia": { es: "Vista previa" },
+  // `Contato` já existe no dicionário (linha do bloco de contatos) — não repetir.
+  "Campo do contato": { es: "Campo del contacto" },
+  "Da ação": { es: "De la acción" },
+  "Variável do sistema": { es: "Variable del sistema" },
+  "Número da volta": { es: "Número de la vuelta" },
+  "Total de voltas": { es: "Total de vueltas" },
+  // As descrições do catálogo (`lib/variaveis/catalogo.ts`) que o seletor mostra
+  // por `t(v.descricao)`. Nome, primeiro nome e saudação já têm linha no bloco da
+  // campanha — não repetir.
+  "Telefone do contato, como está no cadastro": { es: "Teléfono del contacto, tal como está en el registro" },
+  "E-mail do contato, como está no cadastro": { es: "Correo del contacto, tal como está en el registro" },
+  "Caminho do NEGÓCIO: campo personalizado (campanha, fluxo) ou coluna do card (automação)": {
+    es: "Ruta del NEGOCIO: campo personalizado (campaña, flujo) o columna de la tarjeta (automatización)",
+  },
+  "Campo personalizado do CONTATO, escrito como `{{contato.<campo>}}`": {
+    es: "Campo personalizado del CONTACTO, escrito como `{{contato.<campo>}}`",
+  },
+  "Caminho do CONTATO na automação: `{{contact.<coluna>}}` ou `{{contact.custom_fields.<campo>}}`": {
+    es: "Ruta del CONTACTO en la automatización: `{{contact.<coluna>}}` o `{{contact.custom_fields.<campo>}}`",
+  },
+  // A dica que o seletor mostra no lugar do curinga (`DICA_DO_CURINGA`).
+  "Para outro dado do negócio, escreva {{lead.nome_do_campo}}": {
+    es: "Para otro dato del negocio, escribe {{lead.nombre_del_campo}}",
+  },
+  "Para um campo do contato, escreva {{contato.nome_do_campo}}": {
+    es: "Para un campo del contacto, escribe {{contato.nombre_del_campo}}",
+  },
+  "Para uma coluna do contato, escreva {{contact.nome_da_coluna}}": {
+    es: "Para una columna del contacto, escribe {{contact.nombre_de_la_columna}}",
+  },
+
 
   // ─── o número oficial de pé, mas não inteiro (lib/channels/health.ts) ───
   // Não recebe mensagens, ou a Meta restringiu o envio: cartão de Conexões e

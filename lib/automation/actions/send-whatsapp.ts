@@ -9,6 +9,7 @@ import {
 } from "@/lib/agenda/escolha-no-envio";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
+import { instanteDoEnvio } from "@/lib/automation/instante-do-envio";
 import { renderTemplate } from "@/lib/automation/template";
 import { serviceForAutomation } from "@/lib/atendimento/origem-automacao";
 import { checkDailyLimit, espacarEnvio } from "@/lib/automation/throttle";
@@ -119,7 +120,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       if (recusa) return { type: "send_whatsapp_message", status: "failed", error: recusa };
     }
     await espacarEnvio(sessionId);
-    const body = renderTemplate(template, ctx.context);
+    // #3687 — `{{saudacao}}` com o instante do envio, no fuso da organização;
+    // o token só custa leitura quando aparece no texto.
+    const agora = await instanteDoEnvio(ctx.admin, ctx.organizationId, template);
+    const body = renderTemplate(template, ctx.context, undefined, agora);
     const message = await sendMessageHandler(
       ctx.admin,
       {

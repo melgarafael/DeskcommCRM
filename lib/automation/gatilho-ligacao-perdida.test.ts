@@ -231,6 +231,13 @@ function ligacaoPerdida(contactId: string = CONTATO): EventRow {
 beforeEach(() => {
   enviados.length = 0;
   evento = 0;
+  // Relógio fixo DENTRO da janela 7h–22h do número (15:00Z = 12:00 em São
+  // Paulo). Com o relógio real, o CI que roda de madrugada caía em
+  // "fora_da_janela_de_envio" e os casos do motor viravam "retry"/"postponed"
+  // (medido em 12/11/2026, 01h BRT, nos PRs #4404 e #4420). O caso que quer a
+  // janela FECHADA continua fixando o próprio horário.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-11T15:00:00Z"));
 });
 
 afterEach(() => {
