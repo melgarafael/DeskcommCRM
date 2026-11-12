@@ -14,11 +14,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { CampoComVariaveis } from "@/components/variaveis/CampoComVariaveis";
 import type { FonteDeVariavel, VariaveisDoModelo } from "@/lib/channels/meta/variaveis-do-fluxo";
 import { actionConfigSchema } from "@/lib/followup/graph-schema";
 import type { VariavelDoModelo } from "@/lib/followup/modelos-aprovados";
 import { MODOS_DA_ACAO, opcoes, type ModoDaAcao } from "@/lib/followup/vocabulario";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { eCuringa, variavelDoCatalogo, variaveisDe } from "@/lib/variaveis/catalogo";
 import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { useModelosAprovadosDoFluxo } from "@/hooks/followup/useModelosAprovadosDoFluxo";
@@ -143,6 +145,24 @@ function SeletorDeModelo({
 const FONTE_NOME = "__contact_name__";
 const FONTE_PRIMEIRO_NOME = "__contact_first_name__";
 const FONTE_LIVRE = "__livre__";
+/**
+ * A origem nova (#3687): um nome do CATÁLOGO resolvido pelo resolvedor único.
+ * As três origens de sempre continuam válidas — o que está gravado não muda.
+ */
+const FONTE_VARIAVEL = "__variavel__";
+
+/**
+ * As variáveis FECHADAS que o fluxo sabe preencher (`nome`, `primeiro_nome`).
+ * `lead.*` fica de fora de propósito: campo do negócio já é a origem `lead_custom`
+ * acima, com a chave escrita à mão.
+ */
+const VARIAVEIS_DO_SISTEMA = variaveisDe("fluxo").filter((nome) => !eCuringa(nome));
+
+/** O que é desta AÇÃO e não do CRM: o laço do follow-up conta as voltas. */
+const ATALHOS_DO_FOLLOWUP = [
+  { chave: "volta", rotulo: "Número da volta", grupo: "acao" as const },
+  { chave: "voltas", rotulo: "Total de voltas", grupo: "acao" as const },
+];
 
 /**
  * De onde sai cada variável de um modelo aprovado: nome do contato ou campo do
@@ -181,11 +201,13 @@ function MapaDeVariaveis({
             ? FONTE_NOME
             : fonte?.kind === "contact_first_name"
               ? FONTE_PRIMEIRO_NOME
-              : fonte?.kind === "lead_custom"
-                ? camposUnicos.some((c) => c.key === fonte.key)
-                  ? fonte.key
-                  : FONTE_LIVRE
-                : "";
+              : fonte?.kind === "variavel"
+                ? FONTE_VARIAVEL
+                : fonte?.kind === "lead_custom"
+                  ? camposUnicos.some((c) => c.key === fonte.key)
+                    ? fonte.key
+                    : FONTE_LIVRE
+                  : "";
         const id = `variavel-${v.chave.replace(/[^a-z0-9]/gi, "-")}`;
         return (
           <div key={v.chave} className="space-y-1">
@@ -204,6 +226,8 @@ function MapaDeVariaveis({
                 if (escolha === FONTE_NOME) definir(v.chave, { kind: "contact_name" });
                 else if (escolha === FONTE_PRIMEIRO_NOME) definir(v.chave, { kind: "contact_first_name" });
                 else if (escolha === FONTE_LIVRE) definir(v.chave, { kind: "lead_custom", key: "campo" });
+                else if (escolha === FONTE_VARIAVEL)
+                  definir(v.chave, { kind: "variavel", chave: VARIAVEIS_DO_SISTEMA[0] ?? "nome" });
                 else definir(v.chave, { kind: "lead_custom", key: escolha });
               }}
             >
@@ -219,8 +243,28 @@ function MapaDeVariaveis({
                   </SelectItem>
                 ))}
                 <SelectItem value={FONTE_LIVRE}>{t("Outro campo do negócio")}</SelectItem>
+                {/* #3687 — a MESMA variável das outras telas, resolvida pelo
+                    mesmo resolvedor. As origens acima continuam iguais. */}
+                <SelectItem value={FONTE_VARIAVEL}>{t("Variável do sistema")}</SelectItem>
               </SelectContent>
             </Select>
+            {fonte?.kind === "variavel" && (
+              <Select
+                value={fonte.chave}
+                onValueChange={(chave) => definir(v.chave, { kind: "variavel", chave })}
+              >
+                <SelectTrigger aria-label={t("Variável do sistema")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VARIAVEIS_DO_SISTEMA.map((nome) => (
+                    <SelectItem key={nome} value={nome}>
+                      {`{{${nome}}}`} — {t(variavelDoCatalogo(nome)?.descricao ?? nome)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {fonte?.kind === "lead_custom" && !camposUnicos.some((c) => c.key === fonte.key) && (
               <Input
                 aria-label={t("Chave do campo do negócio")}
@@ -342,15 +386,23 @@ export function ActionForm({
 
       {mode === "text" ? (
         <div className="space-y-2">
-          <Label htmlFor="action-body">{t("Texto enviado ao contato")}</Label>
-          <Textarea
+          {/*
+            O CAMPO COM VARIÁVEIS (#3687) — o MESMO da automação, da campanha e
+            da resposta rápida. Até aqui o follow-up não oferecia variável
+            nenhuma: quem escrevia tinha de adivinhar `{{primeiro_nome}}`.
+          */}
+          <CampoComVariaveis
             id="action-body"
-            maxLength={4000}
-            value={body}
-            onChange={(e) => {
-              setBody(e.target.value);
-              commit({ mode, ...fields, body: e.target.value });
+            rotulo={t("Texto enviado ao contato")}
+            fonte="automacao"
+            valor={body}
+            onChange={(texto) => {
+              setBody(texto);
+              commit({ mode, ...fields, body: texto });
             }}
+            linhas={4}
+            maxLength={4000}
+            extras={ATALHOS_DO_FOLLOWUP.map((a) => ({ ...a, rotulo: t(a.rotulo) }))}
           />
           <p className="text-xs text-text-muted">
             {t("Sai exatamente assim, sem IA. No laço,")} {t("{{volta}}")} {t("e")} {t("{{voltas}}")} {t("viram o número da volta.")}
