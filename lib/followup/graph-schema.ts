@@ -266,6 +266,14 @@ export const aiClassifyConfigSchema = z
   );
 
 /**
+ * #4429 — quantas redações EXTRAS um passo de texto aceita (além do `body`).
+ * Teto de configuração, e não de motor: a tela usa o mesmo número para parar de
+ * oferecer "adicionar". Mora aqui (e não em `variacoes-do-passo.ts`, que
+ * importa `node:crypto`) porque o formulário é componente de cliente.
+ */
+export const MAX_VARIACOES_DO_PASSO = 5;
+
+/**
  * Action node configuration schema.
  * - text: send this body as-is (no model)
  * - ai_message: generate a message using AI with a prompt hint
@@ -275,6 +283,20 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
   z.strictObject({
     mode: z.literal('text'),
     body: z.string().min(1).max(4000),
+    /**
+     * #4429 — OUTRAS REDAÇÕES DO MESMO PASSO.
+     *
+     * O `body` continua sendo a PRIMEIRA redação (é o que todo leitor antigo — a
+     * tela, o cartão do nó, a prévia do fluxo — mostra, e o que um grafo já
+     * publicado tem). `variacoes` são redações ADICIONAIS, e o motor alterna
+     * entre `[body, ...variacoes]` a cada envio (`lib/followup/engine.ts` →
+     * `redacaoDaVez` em `lib/followup/variacoes-do-passo.ts`).
+     *
+     * Opcional de propósito: um passo de texto único — o de hoje — não tem a
+     * chave e continua válido byte a byte, sem migration e sem reescrita do
+     * grafo. Ausente ou vazia = comportamento de sempre.
+     */
+    variacoes: z.array(z.string().trim().min(1).max(4000)).max(MAX_VARIACOES_DO_PASSO).optional(),
     /**
      * #2734 — MÍDIA OPCIONAL (imagem, vídeo, áudio ou documento, #2972) por URL.
      * Presente, o `body` vira a
