@@ -439,7 +439,11 @@ export async function sendNextCandidate(
     // (é o `context.ts` que manda o agente só cumprimentar na primeira). Pôr o
     // rodapé aqui incondicionalmente ofereceria a saída DUAS vezes — e na
     // mensagem que o operador não escolheu.
-    if (cfg.exit_offer === "first_message") baloes[0] = comSaida(baloes[0]!, locale);
+    // O TEXTO é da campanha (`config.texto_da_saida`, #4370) e não do modelo:
+    // vazio cai na frase padrão de sempre, e texto sem a palavra que o detector
+    // reconhece é trocado pelo padrão em `rodape-de-saida.ts` — a saída não pode
+    // depender da redação ter dado certo.
+    if (cfg.exit_offer === "first_message") baloes[0] = comSaida(baloes[0]!, locale, cfg.texto_da_saida);
     let mensagem: Message | undefined;
     let falhouEm: Message | undefined;
     /** A conversa deixou de ser fria ENTRE bolhas: a pessoa respondeu ou um humano assumiu. */

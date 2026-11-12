@@ -34,6 +34,8 @@ import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
+import type { EscolhaDaCamada } from "@/lib/agenda/preferencia-da-camada";
+import { definirCamadaDatasDosNegocios } from "@/app/actions/settings/definirCamadaDatasDosNegocios";
 import { quadroDisponivel } from "@/lib/agenda/quadro-por-profissional";
 import { diasDoRecorte, recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
@@ -105,6 +107,7 @@ export function AgendaClient({
   agendamentosIniciais,
   podeMarcar,
   funisComDatas,
+  escolhaDaCamada,
 }: {
   tituloDaAgenda?: string | null;
   /**
@@ -166,6 +169,14 @@ export function AgendaClient({
    * vazia — a camada não aparece e a tela fica idêntica à de antes.
    */
   funisComDatas?: FunilComDatas[];
+  /**
+   * A escolha da camada "Datas dos negócios" que a pessoa deixou (#4436).
+   *
+   * Lida no servidor do `raw_user_meta_data` dela e já saneada contra
+   * `funisComDatas` — funil arquivado e campo que sumiu chegam como padrão.
+   * Ausente é o mesmo que "nunca escolheu": a camada desligada.
+   */
+  escolhaDaCamada?: EscolhaDaCamada;
 }) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -241,6 +252,21 @@ export function AgendaClient({
     setEquipeAoAbrir([]);
     setMarcando(true);
   }, [reiniciarVinculo]);
+  /**
+   * GRAVAR A ESCOLHA DA CAMADA "DATAS DOS NEGÓCIOS" (#4436).
+   *
+   * `useCallback` sem dependências, e não uma função nova a cada render: a
+   * camada grava num EFEITO que tem `aoEscolher` nas dependências, e uma função
+   * nova a cada repintura da Agenda regravaria a mesma escolha em toda
+   * navegação de semana.
+   *
+   * Falha de gravação NÃO interrompe a escolha na tela: a camada continua como
+   * a pessoa a deixou nesta visita, e o próximo gesto grava de novo. Erro de
+   * preferência não pode virar bloqueio de uso da Agenda.
+   */
+  const gravarEscolhaDaCamada = React.useCallback((escolha: EscolhaDaCamada) => {
+    void definirCamadaDatasDosNegocios(escolha);
+  }, []);
   // O horário que veio de um CLIQUE NA GRADE. Preenchido, o painel abre já em
   // "confirmando" naquele instante; vazio, ele abre pedindo o dia, como sempre.
   const [horarioEscolhido, setHorarioEscolhido] = React.useState<HorarioLivre | null>(null);
@@ -859,7 +885,12 @@ export function AgendaClient({
         `null` — nesse caso a tela não muda um byte em relação à de antes desta
         entrega.
       */}
-      <CamadaDatasDosNegocios funis={funisComDatas ?? []} janela={janelaDaCamada} />
+      <CamadaDatasDosNegocios
+        funis={funisComDatas ?? []}
+        janela={janelaDaCamada}
+        escolhaInicial={escolhaDaCamada}
+        aoEscolher={gravarEscolhaDaCamada}
+      />
 
       {/*
         O HISTÓRICO na tela do produto, e não só na vitrine. Ele aparece mesmo

@@ -42,6 +42,8 @@ export interface CampanhaDetalhada extends CampanhaDaLista {
   agent_id?: string | null;
   description: string | null;
   message_body: string | null;
+  /** Migration 9334 (#3441): assunto do e-mail; `null` nas campanhas de WhatsApp. */
+  email_subject?: string | null;
   base_legal: string;
   lia_ref: string | null;
   audience_filter: Record<string, unknown>;
