@@ -657,22 +657,24 @@ jobs:
     # que é a perna mais longa do CI. Dois runners numa VPS dedicada
     # (`vps-devops-1` e `-2`, rótulos `self-hosted, deskcomm-vps`) tiram as duas
     # majors dessa fila.
-    # Só execução CONFIÁVEL vai para lá: push (a `main`) ou PR cuja branch mora
-    # NESTE repositório. PR de fork, dispatch e qualquer outro evento ficam no
-    # `ubuntu-latest`. ⚠️ A expressão decide só para quem NÃO edita o workflow:
-    # num PR de fork o GitHub roda o ci.yml do fork, que pode reescrever este
-    # `runs-on`. Quem barra fork é a guarda de entrada na própria máquina
-    # (infra/executor-proprio/so-o-que-e-nosso.sh como
-    # ACTIONS_RUNNER_HOOK_JOB_STARTED no `.env` de cada runner).
+    # A expressão é só ROTEAMENTO: manda para lá push (a `main`) e PR de branch
+    # deste repositório, nunca de bot, e só com a variável de repositório
+    # `RUNNER_PROPRIO=ligado`. Todo o resto — fork, dependabot, dispatch, variável
+    # ausente — fica no `ubuntu-latest`. A TRAVA não mora aqui: num PR de fork o
+    # GitHub roda o ci.yml do fork, que pode reescrever este `runs-on`. Quem
+    # recusa fork e bot é o gancho de entrada no host
+    # (infra/executor-proprio/so-o-que-e-nosso.sh; ver o README de lá).
     # Dois jobs no MESMO host dividem o daemon Docker e o usuário: porta e nome
     # de contêiner já são únicos nos scripts (porta do daemon, `$$`), o HOME é
-    # separado por runner no passo abaixo, e a limpeza no fim é `always()`.
+    # do job (passo abaixo) e a limpeza no fim é `always()` aqui e no gancho de
+    # saída do host (infra/executor-proprio/limpa-depois.sh).
     # RISCO: se os dois runners caírem, estas pernas ESPERAM na fila (até o
     # GitHub desistir, ~24h) em vez de falhar — e o check `invariants` espera junto.
-    # COMO DESFAZER: trocar esta linha por `runs-on: ubuntu-latest` (os passos
-    # `if: runner.environment == 'self-hosted'` ficam inertes lá) e ajustar
-    # tests/unit/executor-proprio-so-roda-o-que-e-nosso.test.ts.
-    runs-on: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","deskcomm-vps"]') || 'ubuntu-latest' }}
+    # COMO DESLIGAR, sem PR: `gh variable set RUNNER_PROPRIO --body desligado`
+    # (vale para os jobs NOVOS; os que já estão na fila do runner próprio têm de
+    # ser cancelados e reexecutados). Para desfazer de vez: `runs-on: ubuntu-latest`
+    # aqui e ajustar tests/unit/executor-proprio-so-roda-o-que-e-nosso.test.ts.
+    runs-on: ${{ vars.RUNNER_PROPRIO == 'ligado' && !endsWith(github.actor, '[bot]') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","deskcomm-vps"]') || 'ubuntu-latest' }}
     needs: [invariants-alcance]
     concurrency:
       group: ${{ github.workflow }}-invariants-majors-pg${{ matrix.pg }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}
@@ -697,13 +699,15 @@ jobs:
       # Os dois runners da VPS rodam como o MESMO usuário, e as duas majors
       # começam no mesmo instante: com o HOME comum, o pnpm/action-setup
       # instalaria o pnpm em `~/setup-pnpm` e o cache restauraria `~/.npm` e o
-      # store do pnpm nos MESMOS diretórios, ao mesmo tempo. Um HOME por runner
-      # (persistente: é ele que guarda o cache entre jobs) tira a corrida.
-      - name: HOME próprio deste runner (só no runner próprio)
+      # store do pnpm nos MESMOS diretórios, ao mesmo tempo. O HOME vai para o
+      # RUNNER_TEMP, que é do job e que os ganchos do host esvaziam: nada que um
+      # PR grave em cache ou no pnpm chega ao job seguinte (a `main` inclusive).
+      # Custo: cache frio a cada job, pago no teto de 5 min do preâmbulo.
+      - name: HOME próprio deste job (só no runner próprio)
         if: runner.environment == 'self-hosted'
         run: |
           set -euo pipefail
-          casa="$(dirname "$RUNNER_TOOL_CACHE")/_home"
+          casa="$RUNNER_TEMP/home"
           mkdir -p "$casa"
           echo "HOME=$casa" >> "$GITHUB_ENV"
           echo "HOME=$casa"

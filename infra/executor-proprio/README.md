@@ -16,6 +16,7 @@ emergência: os jobs novos voltam na hora para as máquinas do GitHub.
 | `Dockerfile` | a imagem da vaga — o que os jobs pressupõem do `ubuntu-latest` |
 | `entrypoint.sh` | sobe o Docker de dentro da vaga e entrega ao runner |
 | `so-o-que-e-nosso.sh` | a guarda de entrada: recusa todo job que não seja nosso, antes do primeiro passo |
+| `limpa-depois.sh` | o gancho de saída dos runners persistentes da VPS (abaixo): limpa o que o job deixou no Docker do host |
 
 ## Por que a guarda mora aqui
 
@@ -26,6 +27,58 @@ só decide para quem não a edita. A guarda é gravada na imagem e registrada co
 
 Aceita: `push`, `workflow_dispatch`, `schedule`, `merge_group`, e `pull_request` cuja branch mora
 neste repositório. Recusa o resto, inclusive `pull_request_target` e payload ilegível.
+
+Também recusa ator cujo login termina em `[bot]`: o dependabot abre PR com branch **deste**
+repositório, e sem essa regra rodaria atualização de dependência com o Docker do host.
+
+## Runners persistentes da VPS (`deskcomm-vps`)
+
+Desde 12/11/2026 há um segundo executor, mais simples que as vagas: dois runners comuns
+(`vps-devops-1` e `-2`, rótulos `self-hosted, Linux, X64, deskcomm-vps`) numa VPS AlmaLinux 9,
+rodando como o usuário `gh-runner` (grupo `docker`, sem sudo). Só a matriz `invariants-majors` do
+`ci.yml` vai para lá, e só com a variável de repositório `RUNNER_PROPRIO=ligado`.
+
+**Desligar a rota, sem PR:** `gh variable set RUNNER_PROPRIO --body desligado`. Vale para os jobs
+novos; os que já estão na fila do runner próprio têm de ser cancelados e reexecutados.
+
+Os dois ganchos deste diretório são instalados pelo root, fora do alcance do `gh-runner`:
+
+```bash
+install -d -m 755 /opt/deskcomm
+install -m 755 -o root -g root so-o-que-e-nosso.sh limpa-depois.sh /opt/deskcomm/
+for r in 1 2; do
+  cat >> /home/gh-runner/runner-$r/.env <<'ENV'
+ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/deskcomm/so-o-que-e-nosso.sh
+ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/deskcomm/limpa-depois.sh
+ENV
+  systemctl restart actions.runner.melgarafael-DeskcommCRM.vps-devops-$r.service
+done
+```
+
+| gancho | quando | o que faz |
+|---|---|---|
+| `so-o-que-e-nosso.sh` | antes do primeiro passo | recusa fork, bot, outro repositório e evento fora da lista; recusado, o job não roda |
+| `limpa-depois.sh` | depois do job, mesmo cancelado | remove os contêineres com `deskcomm.worktree=$GITHUB_WORKSPACE` (o rótulo que `scripts/test-db.sh` e `scripts/test-update-com-dados.sh` gravam), contêineres parados há mais de 6 h, volumes sem dono, e esvazia o `RUNNER_TEMP` |
+
+A limpeza é pelo checkout, e não por run/job, porque as duas pernas da matriz têm o mesmo
+`GITHUB_RUN_ID` e o mesmo `GITHUB_JOB` e rodam juntas, uma em cada runner: um rótulo por run/job
+faria a primeira a terminar apagar o Postgres da outra. O checkout é de um runner só, e cada
+runner roda um job por vez.
+
+Pacotes que os jobs pressupõem: Docker, `git`, `jq` (da guarda), `curl`, `tar`. `psql` não: o
+`test:db` usa o `psql` de dentro do contêiner.
+
+**Riscos conhecidos**
+
+- O gancho impede código **de fora**, mas o runner é persistente e tem o Docker do host. Um PR
+  nosso malicioso, ou uma dependência comprometida num PR nosso, roda com acesso a esse Docker —
+  aceito porque só a equipe abre PR com branch deste repositório. Pelo mesmo motivo o job põe o
+  `HOME` no `RUNNER_TEMP`: nada que um PR grave em cache chega ao job seguinte.
+- Sem o `gh` na VPS, o `scripts/conferir-isolamento-do-kit.sh` pergunta a última release à API
+  anônima, com teto de 60 consultas/hora por IP, e os dois runners saem pelo mesmo IP. Instalar o
+  binário `gh` não põe segredo no host: ele usaria o `GH_TOKEN` que o próprio job passa.
+- Se os dois runners caírem, as pernas roteadas para eles esperam na fila (até ~24h) em vez de
+  falhar, e o check `invariants` espera junto. O botão é a variável acima.
 
 ## Por que uma vaga por contêiner (Sysbox)
 
