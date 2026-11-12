@@ -29,7 +29,7 @@ import type { TrechoDeBusca } from "@/lib/types/messaging";
  *
  * ─── O custo, medido (200.000 mensagens, 1 org, Postgres 15) ────────────────
  * Sem índice, `body ILIKE '%termo%'` é seq scan: 77 ms para um termo raro.
- * Com o índice GIN de trigrama (`idx_messages_body_trgm`, migration 9333):
+ * Com o índice GIN de trigrama (`idx_messages_body_trgm`, migration 9349):
  * 0,62 ms no termo raro e 22 ms no termo que casa 10% da tabela. O índice ocupa
  * 14 MB para uma tabela de 71 MB (20%) e a escrita paga ~8% (28,3 s contra
  * 26,3 s para 20.000 inserts). Full-text (`tsvector`) responderia a palavra

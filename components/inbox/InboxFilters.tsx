@@ -514,7 +514,7 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
             />
             {/* "texto das mensagens", e não "última mensagem": desde a #1355 a
                 busca alcança o CORPO de qualquer mensagem da conversa (índice
-                trigram em `messages.body`, migration 9333) e devolve o trecho
+                trigram em `messages.body`, migration 9349) e devolve o trecho
                 casado na linha. O que continua fora: anexo e áudio transcrito —
                 o placeholder promete o que o backend faz, nem mais nem menos. */}
             <Input
