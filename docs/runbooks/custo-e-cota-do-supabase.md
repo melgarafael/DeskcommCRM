@@ -282,10 +282,24 @@ O que produz essas chamadas, na ordem em que costuma aparecer:
 - **A fila ociosa.** Com `QUEUE_IDLE_MAX_INTERVAL_MS` desligado — o default da
   §2 —, a instalação parada consulta o banco a cada piso: 3.880 consultas em 2h19
   (~28/min), medido na **#3688**. Com `60000`, cai para ~1/min.
-- **Cron duplicado.** O `event-log-drain` é chamado pelo contêiner `scheduler` (de
-  minuto em minuto) **e** pelo crontab do host que o kit provisiona; na **#2235**,
-  ~62% das chamadas `service_role` ao PostgREST eram da `event_log`. Confira as
-  duas entradas antes de acusar o worker.
+- **Cron duplicado.** O `event-log-drain` era chamado pelo contêiner `scheduler`
+  (de minuto em minuto) **e** pelo crontab do host que o kit provisiona; na
+  **#2235**, ~62% das chamadas `service_role` ao PostgREST eram da `event_log`.
+  Desde a #2235 a linha do host é **vigia**: roda de 15 em 15 minutos e só
+  dispara o dreno quando o contêiner `scheduler` desta instalação não está de pé
+  (`hostgator-setup-kit/drain-watchdog.sh`). Instalação saudável: ~4 chamadas por
+  hora em vez de 60, e a redundância continua existindo para o dia em que o
+  scheduler cair. Se o seu número não caiu, confira as DUAS entradas antes de
+  acusar o worker:
+
+  ```bash
+  docker compose -f docker-compose.prod.yml exec scheduler crontab -l | grep event-log-drain   # a linha de 1 min
+  crontab -l | grep event-log-drain                                                             # a do host
+  ```
+
+  Uma linha de minuto no crontab do **host** é instalação anterior a este
+  conserto: rode o `update.sh` (ele regrava a linha como vigia) ou troque a
+  cadência à mão para `*/15`.
 - **Painel aberto.** Telas com refetch de 5 s (painel de atualização, detalhe do
   compromisso, revisão de resposta) chamam PostgREST e `getUser` em laço: na
   **#2235**, ~264 req/min com abas abertas contra ~85–91/min com todas fechadas.
