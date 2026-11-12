@@ -96,6 +96,21 @@ export async function GET(
       .order("performed_at", { ascending: false })
       .order("id", { ascending: false })
       .limit(FETCH);
+    // #4324 — a EMPRESA dona, junto do eixo. `contact_id` e `lead_id` são
+    // únicos por instalação, então este filtro não muda o que uma instalação
+    // correta devolve; ele muda duas coisas que importam:
+    //
+    //  1. o PLANO — todos os índices de `crm_lead_activities` começam por
+    //     `organization_id` (`supabase/baseline.sql:2736`, `:2740`, `:2744`), e
+    //     uma consulta que não diz a empresa não desce por nenhum deles;
+    //  2. a linha ERRADA — um `crm_lead_activities.contact_id` que aponte para
+    //     contato de outra empresa (o gatilho da tabela confere a organização do
+    //     LEAD, não a do contato) voltaria como se fosse deste dossiê.
+    //
+    // Aqui NÃO precisa do `and(...)` que a rota do negócio usa: os filtros desta
+    // consulta são `.eq`/`.in`, e o PostgREST os conjunta com o `.or` do cursor.
+    // O `organization_id` vem da linha do contato, que veio pela RLS do chamador.
+    q = q.eq("organization_id", contactRow.organization_id);
     if (Array.isArray(values)) q = q.in(column, values);
     else q = q.eq(column, values);
     if (types.length > 0) q = q.in("type", types);
