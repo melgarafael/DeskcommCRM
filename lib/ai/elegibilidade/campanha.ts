@@ -35,14 +35,15 @@ export const campanhaWhatsappSchema = z.object({
     valor: z.string().min(3).max(400),
   }),
   /**
-   * Quem atende o PRIMEIRO turno do contato que chegou por esta campanha (#4024).
+   * Quem atende a conversa que chegou por esta campanha (#4024).
    *
    * A ingestão grava este `agent_id` na CONVERSA
-   * (`conversations.campaign_entry_agent_id`, migration 9332) quando a frase
-   * casa; o `resolve-turn-agent` o lê num degrau acima do roteador e carimba o
-   * uso único (`campaign_entry_agent_claimed_at`) no primeiro turno. Da segunda
-   * resposta em diante a conversa volta à régua do número — dono humano,
-   * roteador, agente publicado da sessão.
+   * (`conversations.campaign_entry_agent_id`, migration 9348) quando a frase
+   * casa; o `resolve-turn-agent` o lê num degrau acima do roteador, em todo
+   * turno dessa conversa — a mesma regra da campanha de saída (decisão do
+   * mantenedor, 2026-11-05). Só a conversa em que a frase casou é afetada:
+   * uma conversa nova do mesmo contato volta à régua do número, e dono humano,
+   * silêncio e opt-out continuam barrando antes de o agente ser escolhido.
    *
    * Sem `agent_id` (ou com ele apontando para agente arquivado/sem versão
    * publicada/de outra organização) nada muda: o contato continua elegível e

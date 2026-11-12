@@ -74943,23 +74943,24 @@ drop trigger if exists trg_routing_assignment_changed on public.conversations;
 create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
  for each row execute function public.fn_routing_assignment_changed();
 
--- ---- a campanha de entrada declara quem atende o PRIMEIRO turno (migration 9332) ----
--- Espelho idempotente da 9332 (issue #4024). NÃO cria função nem gatilho: fica
+-- ---- a campanha de entrada declara quem atende a conversa (migration 9348) ----
+-- Espelho idempotente da 9348 (issue #4024). NÃO cria função nem gatilho: fica
 -- acima da VARREDURA anon por precaução, não por necessidade — a varredura só
 -- cura o que veio antes dela, e nenhum `create function` mora aqui.
 --
 -- `campaign_entry_agent_id`: o agente que a campanha de ENTRADA (frase do
--- anúncio) declarou para o contato que ela trouxe. `campaign_entry_agent_claimed_at`:
--- o carimbo de uso único do primeiro turno — depois dele o degrau não vale mais,
--- e o id fica como rastro de por que aquele atendimento começou com ele.
+-- anúncio) declarou para o contato que ela trouxe. A conversa em que a frase
+-- casou é atendida por ele em todo turno (decisão do mantenedor, 2026-11-05) —
+-- o turno LÊ a coluna, sem carimbo de uso: o carimbo que existia se gastava num
+-- turno adiado pela janela anti-ban e tirava a conversa do agente sem que ele
+-- tivesse respondido nada.
 --
 -- A FK é COMPOSTA (organização, agente) para que agente de OUTRA organização não
 -- possa nem ser gravado; `on delete set null (campaign_entry_agent_id)` com a
 -- lista de colunas porque o SET NULL sem ela tentaria anular `organization_id`,
 -- que é NOT NULL, e o delete do agente explodiria em produção.
 alter table public.conversations
-  add column if not exists campaign_entry_agent_id uuid,
-  add column if not exists campaign_entry_agent_claimed_at timestamptz;
+  add column if not exists campaign_entry_agent_id uuid;
 
 do $$
 begin
@@ -74973,9 +74974,7 @@ begin
 end $$;
 
 comment on column public.conversations.campaign_entry_agent_id is
-  'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, e só enquanto campaign_entry_agent_claimed_at é nulo. Nulo = conversa não veio de campanha de entrada. Migration 9332.';
-comment on column public.conversations.campaign_entry_agent_claimed_at is
-  'Quando o primeiro turno usou o agente da campanha de entrada (update … returning, uso único). Carimbado = o degrau não vale mais nesta conversa; o campaign_entry_agent_id fica como rastro. Migration 9332.';
+  'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, em todo turno desta conversa. Nulo = conversa não veio de campanha de entrada. Migration 9348.';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.

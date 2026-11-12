@@ -11,12 +11,14 @@ import { agenteDaCampanhaDaConversa, agenteDaCampanhaDeEntrada } from './agente-
  *
  *  1. **`organization_id = $1`** nas duas. Sem ele a leitura atravessa
  *     organizações: o turno de uma empresa responderia pelo agente de outra.
- *     A FK composta da 9332 recusa a GRAVAÇÃO, mas o degrau não pode depender
+ *     A FK composta da 9348 recusa a GRAVAÇÃO, mas o degrau não pode depender
  *     de a escrita ter sido a única porta.
- *  2. **O carimbo de uso único** da campanha de ENTRADA (`claimed_at is null`,
- *     no `update … returning`). Sem ele o degrau vale em TODO turno, e a
- *     conversa fica presa no agente do anúncio para sempre — o defeito oposto
- *     ao da issue #4024.
+ *  2. **Nenhuma escrita** na campanha de ENTRADA. A primeira versão carimbava
+ *     uso único (`update … set claimed_at = now()`); o carimbo se gastava num
+ *     turno ADIADO pela janela anti-ban, e a conversa — nunca atendida pelo
+ *     agente da campanha — voltava para o número. A decisão do mantenedor
+ *     (2026-11-05) é ler o agente em todo turno, como a campanha de saída já
+ *     faz: `select` puro, sem coluna de carimbo.
  */
 
 function pool(rows: Array<Record<string, unknown>>) {
@@ -27,8 +29,8 @@ function pool(rows: Array<Record<string, unknown>>) {
 const ORG = 'org-1';
 const CONVERSA = 'conversa-1';
 
-describe('agenteDaCampanhaDeEntrada — o primeiro turno da frase do anúncio (#4024)', () => {
-  it('carimba o uso e devolve o agente, sempre recortado pela organização e pela conversa', async () => {
+describe('agenteDaCampanhaDeEntrada — a conversa da frase do anúncio (#4024)', () => {
+  it('lê o agente da campanha, sempre recortado pela organização e pela conversa, sem escrever', async () => {
     const db = pool([{ agent_id: 'agente-implantes' }]) as unknown as {
       query: ReturnType<typeof vi.fn>;
     };
@@ -37,26 +39,44 @@ describe('agenteDaCampanhaDeEntrada — o primeiro turno da frase do anúncio (#
 
     expect(id).toBe('agente-implantes');
     const [sql, values] = db.query.mock.calls[0]!;
-    expect(sql).toContain('update public.conversations');
-    expect(sql).toContain('set campaign_entry_agent_claimed_at = now()');
-    expect(sql).toContain('organization_id = $1');
-    expect(sql).toContain('id = $2');
-    // O uso único: sem as duas condições o `update` carimbaria de novo e o
-    // degrau valeria em todo turno.
-    expect(sql).toContain('campaign_entry_agent_id is not null');
-    expect(sql).toContain('campaign_entry_agent_claimed_at is null');
-    expect(sql).toContain('returning campaign_entry_agent_id');
+    expect(sql).toContain('select c.campaign_entry_agent_id as agent_id');
+    expect(sql).toContain('from public.conversations c');
+    expect(sql).toContain('c.organization_id = $1');
+    expect(sql).toContain('c.id = $2');
+    // O uso único saiu com a decisão do mantenedor: um `select` não tem estado
+    // a gastar, então o turno adiado pela janela não tira a conversa do agente.
+    expect(sql).not.toContain('update');
+    expect(sql).not.toContain('claimed');
     expect(values).toEqual([ORG, CONVERSA]);
   });
 
-  it('o segundo turno não volta para o agente da campanha: sem linha, `null`', async () => {
-    // É o que o banco devolve quando `claimed_at` já está carimbado, quando a
-    // conversa não veio de campanha ou quando o par (org, id) não casa.
-    const id = await agenteDaCampanhaDeEntrada(pool([]) as never, ORG, CONVERSA);
-    expect(id).toBeNull();
+  it('o segundo turno da MESMA conversa continua no agente da campanha', async () => {
+    // A decisão do mantenedor: a conversa em que a frase casou fica com o
+    // agente da campanha, como a campanha de saída. Não há "primeiro turno".
+    const db = pool([{ agent_id: 'agente-implantes' }]) as unknown as {
+      query: ReturnType<typeof vi.fn>;
+    };
+
+    await expect(agenteDaCampanhaDeEntrada(db as never, ORG, CONVERSA)).resolves.toBe(
+      'agente-implantes',
+    );
+    await expect(agenteDaCampanhaDeEntrada(db as never, ORG, CONVERSA)).resolves.toBe(
+      'agente-implantes',
+    );
+    expect(db.query).toHaveBeenCalledTimes(2);
   });
 
-  it('falha de leitura/escrita vira `null` — o turno segue pela régua do número', async () => {
+  it('coluna nula (conversa que NÃO veio do anúncio) devolve `null`', async () => {
+    await expect(
+      agenteDaCampanhaDeEntrada(pool([{ agent_id: null }]) as never, ORG, CONVERSA),
+    ).resolves.toBeNull();
+  });
+
+  it('conversa que não casa o par (org, id) devolve `null`', async () => {
+    await expect(agenteDaCampanhaDeEntrada(pool([]) as never, ORG, CONVERSA)).resolves.toBeNull();
+  });
+
+  it('falha de leitura vira `null` — o turno segue pela régua do número', async () => {
     const db = {
       query: vi.fn(async () => {
         throw new Error('pool esgotado');
@@ -65,11 +85,9 @@ describe('agenteDaCampanhaDeEntrada — o primeiro turno da frase do anúncio (#
     await expect(agenteDaCampanhaDeEntrada(db, ORG, CONVERSA)).resolves.toBeNull();
   });
 
-  it('NÃO conta mensagens para descobrir "primeiro turno"', async () => {
-    // A definição de primeiro turno é o CARIMBO, não uma varredura em
-    // `messages`: a varredura erraria em qualquer conversa em que o cliente
-    // mande três mensagens antes da primeira resposta, e custaria uma leitura a
-    // mais em todo turno do produto.
+  it('NÃO varre `messages` para descobrir nada sobre o turno', async () => {
+    // A leitura é uma linha por PK (organização + conversa). Uma varredura em
+    // `messages` custaria uma leitura a mais em todo turno do produto.
     const db = pool([{ agent_id: 'agente-implantes' }]) as unknown as {
       query: ReturnType<typeof vi.fn>;
     };
@@ -91,8 +109,8 @@ describe('agenteDaCampanhaDaConversa — o degrau da campanha de SAÍDA continua
     expect(sql).toContain('from campaign_recipients r');
     expect(sql).toContain('r.organization_id = $1');
     expect(sql).toContain('r.conversation_id = $2');
-    // A de saída NÃO tem carimbo: o degrau vale em todo turno da conversa que
-    // nasceu da campanha (decisão do dono, 2026-09-19).
+    // As duas campanhas seguem a MESMA regra desde a decisão de 2026-11-05:
+    // valem em todo turno da conversa, sem carimbo de uso único.
     expect(sql).not.toContain('claimed_at');
     expect(values).toEqual([ORG, CONVERSA]);
   });

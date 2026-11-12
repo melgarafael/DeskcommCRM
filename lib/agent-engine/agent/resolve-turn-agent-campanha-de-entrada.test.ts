@@ -17,11 +17,12 @@ import type { LoadedRouter } from './router-config';
  *
  * ─── O que este arquivo mede, e o que ele NÃO deixa passar ───────────────────
  *
- * O primeiro turno sai pelo agente da campanha — e só ele. Os lados opostos são
- * a maior parte dos casos aqui, porque cada um deles é uma forma de a mudança
- * virar sequestro de conversa ou de quebrar o turno: sem campanha, campanha sem
- * agente válido (arquivado/sem versão publicada), segunda mensagem, e agente de
- * OUTRA organização.
+ * O primeiro turno sai pelo agente da campanha — e, por decisão do mantenedor
+ * (2026-11-05), todos os turnos seguintes da MESMA conversa também. Os lados
+ * opostos são a maior parte dos casos aqui, porque cada um deles é uma forma de
+ * a mudança virar sequestro de conversa ou de quebrar o turno: sem campanha,
+ * campanha sem agente válido (arquivado/sem versão publicada), conversa NOVA do
+ * mesmo contato e agente de OUTRA organização.
  */
 
 /** Config mínima válida — `agentId`/`versionId` são a identidade que importa. */
@@ -219,23 +220,38 @@ describe('degral 0b: o primeiro turno do contato que veio pela frase do anúncio
     expect(d.loadPublishedAgentConfigById).not.toHaveBeenCalled();
   });
 
-  it('(c) a SEGUNDA mensagem não volta para o agente da campanha', async () => {
-    // O que o banco devolve depois do carimbo de uso único: nenhuma linha, e
-    // portanto `null` no degrau. A conversa volta a ser do número.
+  it('(c) a SEGUNDA mensagem da MESMA conversa continua no agente da campanha', async () => {
+    // Decisão do mantenedor (2026-11-05): a conversa em que a frase casou fica
+    // com o agente da campanha, como a campanha de saída já faz. O degrau lê a
+    // coluna em todo turno, sem carimbo de uso único — e o turno adiado pela
+    // janela anti-ban não gasta nada, porque não há o que gastar.
     const primeira = deps({ daEntrada: 'agente-implantes', router: null, porId: (id) => fakeConfig(id) });
     const out1 = await resolveTurnAgent({} as never, {} as never, { ...baseInput, signal: 'Quero saber mais sobre implantes' }, primeira.deps);
     expect(out1.config?.agentId).toBe('agente-implantes');
 
-    const segunda = deps({ daEntrada: null, router: null, doNumero: fakeConfig('agent-do-numero') });
+    const segunda = deps({ daEntrada: 'agente-implantes', router: null, porId: (id) => fakeConfig(id) });
     const out2 = await resolveTurnAgent({} as never, {} as never, { ...baseInput, signal: 'e o valor?' }, segunda.deps);
-    expect(out2.outcome).toBe('no_router');
-    expect(out2.config?.agentId).toBe('agent-do-numero');
+    expect(out2.outcome).toBe('campanha');
+    expect(out2.config?.agentId).toBe('agente-implantes');
+    // E o agente do número nem é consultado no segundo turno.
+    expect(segunda.loadPublishedAgentConfig).not.toHaveBeenCalled();
+  });
+
+  it('(c2) uma conversa NOVA do mesmo contato volta à régua do número', async () => {
+    // A decisão é da CONVERSA em que a frase casou, não do contato: a ingestão
+    // grava na conversa, e a conversa seguinte não tem a coluna preenchida.
+    const d = deps({ daEntrada: null, router: null, doNumero: fakeConfig('agent-do-numero') });
+
+    const out = await resolveTurnAgent({} as never, {} as never, { ...baseInput, signal: 'oi, de novo' }, d.deps);
+
+    expect(out.outcome).toBe('no_router');
+    expect(out.config?.agentId).toBe('agent-do-numero');
   });
 
   it('(f) agente da campanha de OUTRA organização é RECUSADO e cai no agente do número', async () => {
     // A config da campanha vive no jsonb da organização e aceita qualquer uuid —
     // um id colado da outra empresa não pode virar atendimento. A FK composta da
-    // 9332 recusa a gravação; na leitura, `loadPublishedAgentConfigById` filtra
+    // 9348 recusa a gravação; na leitura, `loadPublishedAgentConfigById` filtra
     // por `organization_id` e devolve `null`, que é o que este dublê reproduz.
     const d = deps({
       daEntrada: 'agente-da-outra-org',

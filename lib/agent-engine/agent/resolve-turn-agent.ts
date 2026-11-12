@@ -161,8 +161,8 @@ export interface ResolveTurnAgentDeps {
   agenteDaCampanha?: typeof agenteDaCampanhaDaConversa;
   /**
    * O degrau da campanha de ENTRADA (frase do anúncio, #4024). Injetável pelo
-   * mesmo motivo — e porque ele CARIMBA o uso único, que nenhum dublê de `db`
-   * simples reproduz.
+   * mesmo motivo — e porque ele é o único degrau que depende de uma coluna
+   * gravada pela INGESTÃO, que nenhum dublê de `db` simples reproduz.
    */
   agenteDaCampanhaDeEntrada?: typeof agenteDaCampanhaDeEntrada;
   loadActiveRouter?: typeof loadActiveRouter;
@@ -393,13 +393,15 @@ export async function resolveTurnAgent(
     // conversa: o cliente chegou pela frase do anúncio ("quero saber mais sobre
     // implantes"), a ingestão casou a frase e gravou o `agent_id` declarado pela
     // campanha na CONVERSA (`conversations.campaign_entry_agent_id`, migration
-    // 9332). Quem atende vários nichos no mesmo número passa a ter a PRIMEIRA
-    // resposta do especialista daquele anúncio, em vez da do agente do número.
+    // 9348). Quem atende vários nichos no mesmo número passa a ter a resposta do
+    // especialista daquele anúncio, em vez da do agente do número.
     //
-    // Vale UMA vez: `agenteDaCampanhaDeEntrada` carimba o uso com um
-    // `update … returning` atômico e devolve `null` no turno seguinte. Sem isso a
-    // conversa ficaria presa no agente da campanha para sempre — o defeito
-    // oposto ao desta issue.
+    // Vale em TODO turno da conversa em que a frase casou — decisão do mantenedor
+    // (2026-11-05), a mesma regra da campanha de saída. O uso único que existia
+    // aqui antes se gastava num turno adiado pela janela anti-ban e tirava a
+    // conversa do agente sem que ele tivesse respondido nada; a leitura por turno
+    // não tem estado a gastar. Conversa NOVA do mesmo contato volta à régua do
+    // número, e a troca explícita de agente no meio da conversa continua valendo.
     //
     // O que NÃO muda: conversa que não veio de campanha (coluna nula), campanha
     // sem `agent_id`, agente arquivado/sem versão publicada (o `_loadAgentById`

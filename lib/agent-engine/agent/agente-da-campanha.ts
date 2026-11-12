@@ -34,10 +34,15 @@
  * `campaign_recipients`. O que ela tem é a FRASE, casada na ingestão
  * (`lib/ai/elegibilidade/campanha.ts`) com a config
  * `organizations.settings.campanhas_whatsapp`, que declara `agent_id` desde a
- * 0203 e não era lido por ninguém. Aqui ele é lido — com um detalhe que a de
- * saída não tem: vale só no PRIMEIRO turno, porque o pedido é que a primeira
- * resposta venha do especialista daquele anúncio, e não que a conversa inteira
- * fique presa nele.
+ * 0203 e não era lido por ninguém. Aqui ele é lido.
+ *
+ * A partir da decisão do mantenedor (2026-11-05) ela vale em TODO turno da
+ * conversa em que a frase casou — a mesma regra da de saída. Só essa conversa é
+ * afetada: uma conversa nova do mesmo contato volta à régua do número, e uma
+ * troca explícita de agente no meio da conversa continua possível. O mecanismo
+ * anterior (uso único, carimbado pelo próprio turno) foi medido gastando o
+ * carimbo num turno ADIADO pela janela anti-ban, e a conversa perdia o agente
+ * da campanha sem nunca ter sido atendida por ele — por isso ele saiu.
  *
  * As duas entram no MESMO degrau do `resolve-turn-agent`, acima do roteador: a
  * campanha é a razão de a conversa existir, e ela sabe algo que o classificador
@@ -108,39 +113,38 @@ async function comTeto<T extends { rows: Array<Record<string, unknown>> }>(
 
 /**
  * O agente declarado pela campanha de ENTRADA — a frase do anúncio (issue
- * #4024) — e o CARIMBO DE USO ÚNICO que faz o degrau valer só no primeiro turno.
+ * #4024).
  *
- * ═══ O que muda em relação à campanha de saída ═══
+ * ═══ Igual à campanha de saída, por decisão do mantenedor (2026-11-05) ═══
  *
  * A de saída nasce da conversa: `campaign_recipients.conversation_id` é a
  * prova, e o degrau vale em todo turno daquela conversa. A de ENTRADA não tem
  * vínculo nenhum — o cliente escreveu a frase do anúncio e a conversa podia
  * existir antes. O vínculo é a COLUNA que a ingestão gravou quando a frase
- * casou (`conversations.campaign_entry_agent_id`, migration 9332), e ele vale
- * UMA vez: quem chega pelo anúncio é atendido pelo agente daquela campanha na
- * PRIMEIRA resposta; da segunda em diante a conversa é do número (rota do
- * roteador, do dono humano, de quem assumiu). Sequestrar a conversa inteira
- * seria o defeito oposto ao desta issue.
+ * casou (`conversations.campaign_entry_agent_id`, migration 9348), e ele vale
+ * em todo turno DESSA conversa: quem chega pelo anúncio é atendido pelo agente
+ * daquela campanha, e não pelo agente do número que atende vários nichos.
  *
- * ═══ Por que um UPDATE, num caminho que "só escolhe" ═══
+ * ═══ Por que uma leitura, e não o carimbo de uso único que existia ═══
  *
- * O uso único precisa ser atômico, e `update … set claimed_at = now() where
- * claimed_at is null returning …` é a única forma que dois workers no mesmo
- * turno não furam: um carimba e leva o id, o outro não casa linha nenhuma e
- * segue pela régua normal. Um `select` seguido de `update` deixaria os dois
- * usarem o degrau. O `campaign_entry_agent_id` NÃO é apagado: ele fica na linha
- * como rastro de por que aquele atendimento começou com aquele agente.
+ * A primeira versão carimbava o uso num `update … returning` e valia só no
+ * primeiro turno. O defeito medido: o turno adiado pela janela anti-ban
+ * (`fora da janela anti-ban`) gastava o carimbo sem responder nada, e a
+ * conversa — que nunca tinha sido atendida pelo agente da campanha — voltava
+ * para o número. Sem escrita não existe estado a gastar: o adiamento não tira
+ * a conversa do agente da campanha, e o turno seguinte, dentro da janela,
+ * ainda sai por ele.
  *
  * ═══ O que NÃO passa por aqui ═══
  *
- * - Conversa que não veio do anúncio: `campaign_entry_agent_id` é nulo, e o
- *   `update` não casa nada;
- * - segundo turno: `claimed_at` já carimbado;
+ * - Conversa que não veio do anúncio: `campaign_entry_agent_id` é nulo;
  * - dono humano, silêncio, opt-out: a régua de elegibilidade barra ANTES, no
  *   drain e no início do turno (`decidirElegibilidadeDaConversa`) — este degrau
  *   não tem como passar por cima dela, porque nem chega a rodar;
- * - agente de outra organização: a FK composta da 9332 recusa a gravação, e o
- *   `loadPublishedAgentConfigById` filtra por `organization_id` na leitura.
+ * - agente de outra organização: a FK composta da 9348 recusa a gravação, e o
+ *   `loadPublishedAgentConfigById` filtra por `organization_id` na leitura;
+ * - agente arquivado ou sem versão publicada: `_loadAgentById` devolve `null` e
+ *   o turno segue pela régua do número (falha aberta).
  */
 export async function agenteDaCampanhaDeEntrada(
   db: pg.Pool,
@@ -148,13 +152,10 @@ export async function agenteDaCampanhaDeEntrada(
   conversationId: string,
 ): Promise<string | null> {
   return comTeto(() => db.query<{ campaign_entry_agent_id: string | null }>(
-    `update public.conversations
-        set campaign_entry_agent_claimed_at = now()
-      where organization_id = $1
-        and id = $2
-        and campaign_entry_agent_id is not null
-        and campaign_entry_agent_claimed_at is null
-      returning campaign_entry_agent_id as agent_id`,
+    `select c.campaign_entry_agent_id as agent_id
+       from public.conversations c
+      where c.organization_id = $1
+        and c.id = $2`,
     [tenantId, conversationId],
   ));
 }
