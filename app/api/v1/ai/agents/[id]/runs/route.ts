@@ -97,16 +97,23 @@ interface LlmCallRow {
   preview_run_id: string | null;
 }
 
-/** O texto que o run de PRÉVIA guarda (#4426): a pergunta e a resposta do teste. */
-export interface TextoDoTeste {
+/** O que o run de PRÉVIA guarda (#4426) e a linha de teste passa a mostrar. */
+export interface ConteudoDoTeste {
   input_text: string | null;
   output_text: string | null;
+  /**
+   * As AÇÕES que o teste propôs (`ai_agent_runs.tool_calls`, escrito pelo POST
+   * `/test`). Sem elas o trace da linha de teste cai em "Sem trace disponível.":
+   * as propostas existiam no banco e nenhuma tela as lia.
+   */
+  tool_calls: unknown;
 }
 
 type ClienteDeSessao = Awaited<ReturnType<typeof createClient>>;
 
 /**
- * Busca, para as linhas de TESTE desta página, o texto gravado no run de prévia.
+ * Busca, para as linhas de TESTE desta página, o que o run de prévia guardou:
+ * a pergunta, a resposta e as ações propostas.
  *
  * ─── Por que uma segunda consulta, e por que por `id` ──────────────────────
  *
@@ -129,8 +136,8 @@ async function textosDoTeste(
   supabase: ClienteDeSessao,
   chamadas: readonly LlmCallRow[],
   requestId: string,
-): Promise<Map<string, TextoDoTeste>> {
-  const mapa = new Map<string, TextoDoTeste>();
+): Promise<Map<string, ConteudoDoTeste>> {
+  const mapa = new Map<string, ConteudoDoTeste>();
   const ids = Array.from(
     new Set(
       chamadas
@@ -143,7 +150,7 @@ async function textosDoTeste(
 
   const { data, error } = await supabase
     .from("ai_agent_runs")
-    .select("id, input_text, output_text")
+    .select("id, input_text, output_text, tool_calls")
     .in("id", ids);
 
   if (error) {
@@ -155,8 +162,12 @@ async function textosDoTeste(
     return mapa;
   }
 
-  for (const linha of (data ?? []) as Array<{ id: string } & TextoDoTeste>) {
-    mapa.set(linha.id, { input_text: linha.input_text, output_text: linha.output_text });
+  for (const linha of (data ?? []) as Array<{ id: string } & ConteudoDoTeste>) {
+    mapa.set(linha.id, {
+      input_text: linha.input_text,
+      output_text: linha.output_text,
+      tool_calls: linha.tool_calls,
+    });
   }
   return mapa;
 }
@@ -167,7 +178,7 @@ async function textosDoTeste(
  */
 export function paraLinhaDeExecucao(
   c: LlmCallRow,
-  texto: TextoDoTeste | null = null,
+  texto: ConteudoDoTeste | null = null,
 ): Record<string, unknown> {
   return {
     id: c.id,
@@ -192,7 +203,10 @@ export function paraLinhaDeExecucao(
     // Nenhum dos três existe em `llm_calls`. Ver o cabeçalho: null é honesto,
     // zero seria uma afirmação falsa sobre o turno.
     steps_count: null,
-    tool_calls: null,
+    // #4426: a linha de TESTE recebe as ações que a prévia propôs — elas já
+    // estão gravadas em `ai_agent_runs.tool_calls` (é o que o drawer desenha no
+    // trace). Nada é copiado para `llm_calls`: a leitura é do mesmo run.
+    tool_calls: texto?.tool_calls ?? null,
     // `agent_preview` NÃO quer dizer teste: o rascunho do modo assistido
     // (`reply-drafts.ts`, `kind: "assisted"`) grava o mesmo purpose sobre conversa
     // real com contato real. O que separa o ensaio é o contato: o sandbox roda com
@@ -200,7 +214,7 @@ export function paraLinhaDeExecucao(
     // isso que chega a `llm_calls.contact_id`. Versão e run do teste não estão em
     // `llm_calls`.
     is_dry_run: c.purpose === "agent_preview" && c.contact_id === null,
-    // #4426: o texto do teste, quando a linha é de teste. `null` em toda
+    // #4426: o conteúdo do teste, quando a linha é de teste. `null` em toda
     // execução real — e não `""`, que a tela desenharia como caixa vazia.
     input_text: texto?.input_text ?? null,
     output_text: texto?.output_text ?? null,

@@ -114,7 +114,12 @@ function bancoDoTeste() {
  * buscado pelos ids que as linhas de `llm_calls` apontam, e não pela organização
  * inteira.
  */
-function bancoDaAba(textos: Record<string, { input_text: string | null; output_text: string | null }>) {
+function bancoDaAba(
+  textos: Record<
+    string,
+    { input_text: string | null; output_text: string | null; tool_calls?: unknown }
+  >,
+) {
   const chamadas = [
     {
       id: CALL_DO_TESTE,
@@ -314,5 +319,38 @@ describe("GET /runs — a linha do teste leva o texto; a execução real não (#
     expect(real?.["is_dry_run"]).toBe(false);
     expect(real?.["input_text"]).toBeNull();
     expect(real?.["output_text"]).toBeNull();
+  });
+
+  it("leva as ações propostas do teste para o trace — sem nada em `llm_calls`", async () => {
+    // O trace do drawer desenha `tool_calls`. A prévia grava as propostas em
+    // `ai_agent_runs.tool_calls`; a linha de teste só as mostra se a rota as
+    // trouxer do MESMO run. Antes desta fatia a linha chegava com `null` e o
+    // drawer dizia "Sem trace disponível." mesmo com as ações no banco.
+    const propostas = [
+      { tool: "save_lead_note", arguments: { headline: "Prefere ligação à tarde" } },
+    ];
+    const db = bancoDaAba({
+      [RUN]: {
+        input_text: PERGUNTA,
+        output_text: "Entregamos, sim: até as 18h.",
+        tool_calls: propostas,
+      },
+    });
+    mocks.createClient.mockResolvedValue(db.cliente);
+
+    const resposta = await GET(
+      new NextRequest(`http://localhost/api/v1/ai/agents/${AGENT}/runs`),
+      ctxDaAba,
+    );
+    const corpo = (await resposta.json()) as { data: Array<Record<string, unknown>> };
+    const doTeste = corpo.data.find((linha) => linha["id"] === CALL_DO_TESTE);
+    const real = corpo.data.find((linha) => linha["id"] === CALL_REAL);
+
+    expect(doTeste?.["tool_calls"]).toEqual(propostas);
+    // A execução real continua sem passos vindos de teste.
+    expect(real?.["tool_calls"]).toBeNull();
+    // E a única leitura é `llm_calls` (a lista) + `ai_agent_runs` (o conteúdo do
+    // run de prévia, pelos ids): nada é escrito nem copiado entre as tabelas.
+    expect(db.pedidos).toEqual([{ tabela: "ai_agent_runs", coluna: "id", valores: [RUN] }]);
   });
 });
