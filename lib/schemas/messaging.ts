@@ -442,6 +442,23 @@ export const listConversationsQuerySchema = z.object({
    */
   is_group: z.enum(["true", "false"]).optional(),
   /**
+   * A aba "Pessoal" (#4434). `"true"`/`"false"` como STRING, pelo MESMO motivo de
+   * `is_group` logo acima: `z.coerce.boolean()` transformaria `"false"` em `true`
+   * e a aba mostraria o oposto do pedido, sem erro nenhum.
+   *
+   * Ausente = o padrão de SEMPRE (pessoal fora da lista de trabalho). Presente e
+   * `true` = SÓ o pessoal de quem chama: a exclusão da spec 21 é invertida, e a
+   * régua passa a ser a titularidade da marca (`personal_owner_user_id`), nunca o
+   * papel — `admin` e `manager` não veem o pessoal de outra pessoa.
+   *
+   * Aceita boolean de verdade porque as tools MCP chamam o schema direto, sem
+   * URL no meio. SEM `.transform()` de propósito: transform troca o TIPO DE SAÍDA
+   * para `boolean` obrigatório, e a tool que monta os filtros a partir de
+   * `z.infer` passaria a exigir `pessoais` em toda chamada. Quem normaliza é o
+   * handler, uma vez.
+   */
+  pessoais: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
+  /**
    * Só as que têm mensagem não lida para o dono.
    *
    * NASCEU FORA DO CONTRATO E POR ISSO FORA DE TODO MECANISMO. Era `onlyUnread`,

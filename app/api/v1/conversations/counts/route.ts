@@ -20,7 +20,7 @@ import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
 import { comandosDaFila, comPreFiltroDoComando } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores, modoDeEtiqueta } from "@/lib/inbox/marcador-da-conversa";
 import { createClient } from "@/lib/supabase/server";
-import { idsDeContatosPessoais } from "../_handler";
+import { idsDeContatosPessoais, idsDeContatosPessoaisVisiveis } from "../_handler";
 
 export const dynamic = "force-dynamic";
 
@@ -131,7 +131,20 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Canal desativado nunca entra na inbox: o mesmo corte da lista, para badge
   // e aba nunca divergirem.
   const idsDesativados = await idsDosCanaisDesativados(supabase, org);
-  const countExact = (filtrosDaAba: readonly FiltroDeContagem[] = auxiliares) => {
+  const countExact = (
+    filtrosDaAba: readonly FiltroDeContagem[] = auxiliares,
+    /**
+     * #4434 — a aba "Pessoal" INVERTE a exclusão: em vez de subtrair os contatos
+     * pessoais, conta só os que ESTE usuário pode ver. Vem como argumento da
+     * fábrica, e não como consulta solta, porque montar contagem por fora de
+     * `countExact()` é a única forma de o badge deixar de herdar organização,
+     * auxiliares e não-lidas — e há cerca para isso.
+     *
+     * `undefined` = régua de sempre (pessoal fora). Conjunto vazio nunca chega
+     * aqui: quem chama responde zero sem consultar o banco.
+     */
+    pessoalVisivel?: readonly string[],
+  ) => {
     let q = supabase
       .from("conversations")
       .select("id", { count: "exact", head: true })
@@ -140,7 +153,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     for (const [coluna, valor] of filtrosDaAba) q = q.eq(coluna, valor);
     // O marcador entra pela régua da LISTA — a mesma função, não uma segunda.
     q = aplicarMarcadores(q, marcadores, modo);
-    if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);
+    if (pessoalVisivel) q = q.in("contact_id", [...pessoalVisivel]);
+    else if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);
     if (soNaoLidas) q = q.gt("unread_count_for_assignee", 0);
     return q;
   };
@@ -180,7 +194,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     idsParticipadas = [];
   }
 
-  const [fila, automatico, mine, all, closed, archived] = await Promise.all([
+  // Quem vê qual pessoal (#4434): só o DONO da marca. A MESMA função que a lista
+  // usa — duas réguas divergem na primeira condição nova, e aqui a divergência
+  // seria um badge contando o pessoal de outra pessoa.
+  const pessoaisVisiveis = await idsDeContatosPessoaisVisiveis(supabase, org, user.id);
+
+  const [fila, automatico, mine, all, closed, archived, pessoal] = await Promise.all([
     // A FILA DEIXOU DE SER "sem dono + status de espera".
     //
     // Aquele par contava como trabalho humano pendente tudo que o robô estava
@@ -235,6 +254,13 @@ export async function GET(req: NextRequest): Promise<Response> {
     // para que arquivar seja reversível e auditável sem se confundir com o
     // encerramento do atendimento.
     countExact().eq("status", "archived"),
+    // A aba "Pessoal" (#4434): conta o MESMO que ela lista — o pessoal DESTE
+    // usuário, em qualquer status, sem os canais desativados. NÃO pode usar a
+    // régua de `undefined`, que EXCLUI pessoal: badge que conta o que a aba
+    // esconde manda o atendente procurar trabalho que não existe.
+    pessoaisVisiveis.length === 0
+      ? Promise.resolve({ count: 0, error: null })
+      : countExact(auxiliares, pessoaisVisiveis),
   ]);
 
   // ─── A CONTAGEM POR FILA (#3876) ──────────────────────────────────────────
@@ -274,7 +300,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   );
 
   const firstErr =
-    fila.error ?? automatico.error ?? mine.error ?? all.error ?? closed.error ?? archived.error;
+    fila.error ??
+    automatico.error ??
+    mine.error ??
+    all.error ??
+    closed.error ??
+    archived.error ??
+    pessoal.error;
   if (firstErr) {
     return fail("internal_error", firstErr.message, 500, { requestId });
   }
@@ -292,6 +324,14 @@ export async function GET(req: NextRequest): Promise<Response> {
       all: all.count ?? 0,
       closed: closed.count ?? 0,
       archived: archived.count ?? 0,
+      /**
+       * A aba "Pessoal" (#4434): quantas conversas de contato pessoal ESTE
+       * usuário pode ler — as dele, e só as dele. Campo opcional do lado da tela
+       * pelo mesmo motivo de `closed`/`archived`: cache gravado antes deste
+       * deploy não tem a chave, e um `number` obrigatório imprimiria `NaN` no
+       * primeiro segundo.
+       */
+      pessoal: pessoal.count ?? 0,
       /**
        * Quantas conversas ESPERAM gente em cada fila (#3876), por id de setor.
        * Vem vazio quando a organização não tem fila — e é o que o seletor do
