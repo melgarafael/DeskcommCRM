@@ -40,8 +40,8 @@ type Linha = Record<string, unknown>;
 interface Estado {
   conversas: Linha[];
   membros: Linha[];
-  /** Toda RPC chamada pela rota, na ordem. */
-  rpcs: Array<{ nome: string; params: Linha }>;
+  /** Toda RPC chamada pela rota, na ordem — e por qual cliente (sessão ou admin). */
+  rpcs: Array<{ nome: string; params: Linha; cliente: "sessao" | "admin" }>;
   /** Tabelas tocadas por cada cliente — é assim que se prova quem escreveu. */
   tabelas: { sessao: string[]; admin: string[] };
   /**
@@ -49,6 +49,12 @@ interface Estado {
    * `fn_numero_da_transferencia` responderia). `null` = ela fica onde está.
    */
   numeroNovo: string | null;
+  /**
+   * #4312: a prévia do negócio aberto do contato (o que
+   * `fn_previa_do_negocio_na_transferencia` responderia). Ausente = sem linha,
+   * como quando o contato não tem exatamente um negócio aberto.
+   */
+  previaNegocio: { tem_negocio: boolean; leva: boolean; dono_user_id: string | null } | null;
   sessoes: Linha[];
 }
 
@@ -98,7 +104,10 @@ function clienteFalso(estado: Estado, rotulo: "sessao" | "admin") {
   return {
     from: builder,
     rpc: async (nome: string, params: Linha) => {
-      estado.rpcs.push({ nome, params });
+      estado.rpcs.push({ nome, params, cliente: rotulo });
+      if (nome === "fn_previa_do_negocio_na_transferencia") {
+        return { data: estado.previaNegocio ? [estado.previaNegocio] : [], error: null };
+      }
       if (nome === "fn_conversation_assign") {
         const conv = estado.conversas.find((c) => c.id === params.p_conversation_id);
         if (!conv) return { data: [], error: null };
@@ -158,6 +167,7 @@ beforeEach(() => {
     rpcs: [],
     tabelas: { sessao: [], admin: [] },
     numeroNovo: null,
+    previaNegocio: null,
     sessoes: [],
   };
   vi.mocked(createClient).mockResolvedValue(clienteFalso(estado, "sessao") as unknown as SupabaseClient);
@@ -315,6 +325,49 @@ describe("#3642 (doc 237, 2-A) — o número na transferência", () => {
     const res = await previa(DESTINO);
     const corpo = (await res.json()) as { data: { numero: unknown } };
     expect(corpo.data.numero).toBeNull();
+  });
+
+  it("#4312 — a prévia do diálogo diz com QUEM o negócio aberto fica", async () => {
+    estado.previaNegocio = { tem_negocio: true, leva: false, dono_user_id: DESTINO };
+    estado.numeroNovo = null;
+
+    const res = await previa(DESTINO);
+
+    expect(res.status).toBe(200);
+    const corpo = (await res.json()) as {
+      data: { negocio: { leva: boolean; dono_user_id: string | null } | null };
+    };
+    expect(corpo.data.negocio).toEqual({ leva: false, dono_user_id: DESTINO });
+    // A permissão de quem pergunta decide a resposta (o dono do card entrega o
+    // que é dele; quem não é dono vê o aviso): a consulta é da SESSÃO, não do admin.
+    const consulta = estado.rpcs.find((r) => r.nome === "fn_previa_do_negocio_na_transferencia");
+    expect(consulta?.cliente).toBe("sessao");
+    expect(consulta?.params).toEqual({
+      p_organization_id: ORG_A,
+      p_conversation_id: CONV_A,
+      p_to_user_id: DESTINO,
+    });
+    // Só leitura: ninguém mudou de dono.
+    expect(estado.rpcs.some((r) => r.nome === "fn_conversation_assign")).toBe(false);
+  });
+
+  it("#4312 — quando o negócio VAI JUNTO, a prévia diz `leva: true`", async () => {
+    estado.previaNegocio = { tem_negocio: true, leva: true, dono_user_id: USER };
+
+    const res = await previa(DESTINO);
+    const corpo = (await res.json()) as {
+      data: { negocio: { leva: boolean; dono_user_id: string | null } | null };
+    };
+    expect(corpo.data.negocio).toEqual({ leva: true, dono_user_id: USER });
+  });
+
+  it("#4312 CONTROLE: sem exatamente um negócio aberto, a prévia do negócio é `null`", async () => {
+    estado.previaNegocio = { tem_negocio: false, leva: false, dono_user_id: null };
+
+    const res = await previa(DESTINO);
+    const corpo = (await res.json()) as { data: { negocio: unknown } };
+    // Nada a avisar: nem "vai junto", nem "continua com fulano".
+    expect(corpo.data.negocio).toBeNull();
   });
 
   it("conversa que quem pergunta não enxerga: 404, e a regra nem é consultada", async () => {

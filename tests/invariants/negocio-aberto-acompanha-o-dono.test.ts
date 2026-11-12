@@ -15,9 +15,11 @@
  * ─── A regra (doc 178, letra B; reafirmada no doc 267, letra A) ────────────
  *
  *   · TRANSFERIR leva o negócio aberto do contato, dentro da permissão de quem
- *     clicou (a mesma de `crm_leads_update`): na visibilidade padrão, o
- *     Atendente que transfere para uma colega NÃO leva o negócio (caminho 1);
- *     gestor leva; o servidor (MCP, automação) leva (caminho 2);
+ *     clicou (a mesma de `crm_leads_update`) — mais a exceção do #4312: o DONO
+ *     do card entrega o próprio negócio, ainda que o destino não seja visível a
+ *     ele (caminho 1, que até o #4312 deixava o card para trás); gestor leva; o
+ *     servidor (MCP, automação) leva (caminho 2); e quem NÃO é dono do card
+ *     continua sem tomá-lo nem entregá-lo ("lado oposto (e)");
  *   · Assumir, Iniciar conversa, a fila automática e a passagem só dão dono a
  *     negócio SEM responsável — nunca tiram de um colega (caminho 3, fila).
  *
@@ -478,7 +480,7 @@ afterAll(() => {
 });
 
 describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
-  it("caminho 1: atendente transfere em own_and_unassigned; a conversa vai e o card fica (permissão de quem clicou)", () => {
+  it("caminho 1: atendente transfere em own_and_unassigned; a conversa vai e o card vai JUNTO (#4312)", () => {
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(A);
     expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
 
@@ -492,10 +494,16 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     );
     expect(evento).toBe(`${A}>${B}`);
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(B);
-    // Doc 267 (A): na visibilidade padrão, o Atendente não entrega o negócio a
-    // uma colega — é o que crm_leads_update já recusaria a ele (#2556).
-    expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
+    // #4312 mudou esta decisão. O #4019 (doc 267, A) deixava o card com quem
+    // saiu porque `crm_leads_update` recusaria a ele o card do destino — mas o
+    // card era DELE: sair da conversa levando o próprio negócio não é pegar o
+    // card do colega, é entregá-lo. Quem não é dono continua sem levar (é o
+    // caso do projeto dele abaixo, e o gate da tela é
+    // `tests/unit/transferir-aviso-do-negocio.test.tsx`). O limite — card de
+    // outra pessoa não é levado — continua provado em "lado oposto (e)".
+    expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(B);
   });
+
 
   it("caminho 1, gestor: quem pode entregar o card transfere e o card vai junto", () => {
     expect(donoDoNegocio(NEG.gestorTransfere)).toBe(A);
