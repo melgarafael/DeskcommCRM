@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { idsDosCanaisDesativados } from "@/lib/channels/desativado";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
@@ -151,6 +152,7 @@ function actorAuditPayload(actor: Actor): {
       ...(actor.type === "ai_agent" && actor.api_token_id
         ? { actor_api_token_id: actor.api_token_id }
         : {}),
+      ...metadataDoModulo(actor),
     },
   };
 }

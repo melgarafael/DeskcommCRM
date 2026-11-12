@@ -11,16 +11,22 @@
  *
  * Esta rota é a porta: autoriza, valida, chama, audita. Mesmo papel da fusão
  * (`manager`), mesmo `requireSupportWrite` antes do efeito. A organização é a da
- * SESSÃO: um `organization_id` no corpo não tem campo no schema e é descartado.
+ * SESSÃO ou a da LINHA DO TOKEN (Spec 33, R2): um `organization_id` no corpo não
+ * tem campo no schema e é descartado.
+ *
+ * Com token (`mcp:write`) a gravação segue pelo mesmo pool `pg`: o SQL de
+ * `dispensarParDeContatos` filtra `organization_id` em toda leitura e na
+ * escrita, e o par que não é da organização do token volta `nao_encontrado`.
+ * Token não é pessoa: `resolved_by_user_id` fica nulo e o ator vai no audit.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { ApiError } from "@/lib/api/types";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { dispensarParDeContatos } from "@/lib/contacts/dispensar-par";
 import { contactsDismissDuplicateSchema, validateRequest } from "@/lib/schemas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -33,9 +39,16 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "contact" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contact",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts_duplicates_dismiss", requestId); if (teto) return teto;
+  const organizationId = authz.organizationId;
+  const userId = authz.actor.type === "user" ? authz.actor.id : null;
 
   let input;
   try {
@@ -55,9 +68,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   let resultado: Awaited<ReturnType<typeof dispensarParDeContatos>>;
   try {
     resultado = await dispensarParDeContatos(getRequestPool(), {
-      organizationId: org.orgId,
+      organizationId,
       contactIds: input.contact_ids as [string, string],
-      userId: user.id,
+      userId,
     });
   } catch {
     return fail("internal_error", "Não foi possível dispensar a sugestão agora.", 500, { requestId });
@@ -87,8 +100,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     const [primeiroId] = resultado.candidatos;
     await audit({
       action: "contact.duplicate_dismissed",
-      actorUserId: user.id,
-      organizationId: org.orgId,
+      actorUserId: userId,
+      actorApiTokenId: authz.apiTokenId ?? null,
+      organizationId,
       resourceType: "contact",
       resourceId: primeiroId,
       requestId,

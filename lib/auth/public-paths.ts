@@ -1,3 +1,5 @@
+import { PORTAS_DE_TOKEN } from "@/lib/auth/portas-de-token";
+
 /**
  * Paths that bypass auth check in middleware.
  * Match precedence: array order. First match wins.
@@ -161,6 +163,19 @@ export const PUBLIC_PATHS: RegExp[] = [
   // cartão de fidelidade (a única das automações que não é texto) não teria
   // como sair depois do corte de gateway.
   /^\/api\/v1\/conversations\/[^/]+\/media$/,
+  // CONSUMIR RASCUNHO SUGERIDO SERVER-TO-SERVER. Mesma dualidade da linha
+  // acima: sessão OU Bearer `dsk_…` com escopo `mcp:write`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO da rota
+  // (`app/api/v1/conversations/[id]/drafts/consume/route.ts`). O id é uma
+  // FORMA DE UUID, nunca `[^/]+` — `conversations/abc/drafts/consume` não
+  // entra aqui nem de carona.
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/drafts\/consume$/i,
+  // ANEXO DA NOTA INTERNA SERVER-TO-SERVER. Mesma dualidade da rota irmã
+  // `media`: sessão OU Bearer `dsk_…`, resolvidos por `lib/api/auth-dual.ts`
+  // DENTRO da rota
+  // (`app/api/v1/conversations/[id]/notes/media/route.ts`). O id é uma FORMA
+  // DE UUID, nunca `[^/]+`.
+  /^\/api\/v1\/conversations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/notes\/media$/i,
   // CONFIGURAÇÃO DE IA, FOLLOW-UP E AGENDA SERVER-TO-SERVER (issue #1875).
   // Mesma dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
   // `lib/api/auth-dual.ts` DENTRO de cada rota (a org sai da linha do token e
@@ -182,6 +197,12 @@ export const PUBLIC_PATHS: RegExp[] = [
   // A configuração de serviços valida sessão/Bearer e papel na própria rota.
   // Só este endpoint: nenhum sub-path futuro herda a passagem pela borda.
   /^\/api\/v1\/agenda\/servicos$/,
+  // ATUALIZAR FONTES DO SERVIÇO SERVER-TO-SERVER. Mesma dualidade das linhas
+  // acima: sessão OU Bearer `dsk_…`, resolvidos por `lib/api/auth-dual.ts`
+  // DENTRO da rota (`app/api/v1/agenda/servicos/atualizar/route.ts`). O
+  // segmento `atualizar` é literal, então sem `$` um sub-path futuro
+  // (`/atualizar/x`) entraria por engano — âncora de propósito.
+  /^\/api\/v1\/agenda\/servicos\/atualizar$/,
   // VERSÃO, PUBLICAÇÃO E TESTE DO AGENTE SERVER-TO-SERVER (issue #2052).
   // Mesma dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
   // `lib/api/auth-dual.ts` DENTRO de cada rota (a org sai da linha do token e
@@ -206,6 +227,23 @@ export const PUBLIC_PATHS: RegExp[] = [
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/members$/i,
   /^\/api\/v1\/ai\/routers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/test$/i,
+  // BUSCA DO TOKEN DO MÓDULO `connected` (spec 33, F2). Quem chama é o servidor do módulo, que não tem
+  // cookie: a identidade é a assinatura HMAC com o segredo da instalação (`X-Module-*`), conferida DENTRO
+  // da rota (`app/api/v1/extensions/token/route.ts`), com carimbo, nonce de uso único e rate limit. Só
+  // este caminho exato: `/api/v1/extensions/` tem irmãos de sessão (`[id]/segredo`, `install`, etc.) que
+  // não podem nascer públicos de carona.
+  /^\/api\/v1\/extensions\/token$/,
+  // LEITURA DOS EVENTOS DO MÓDULO `connected` (spec 33, F5). Mesma identidade da busca de token: assinatura
+  // HMAC `X-Module-*`, conferida DENTRO da rota (`app/api/v1/extensions/events/route.ts`), mais a
+  // autorização do par organização × instalação pelo banco. Só este caminho exato, pelo mesmo motivo.
+  /^\/api\/v1\/extensions\/events$/,
+  // AS ROTAS DAS FATIAS R DA SPEC 33 (configuração, operação, leitura). Mesma
+  // dualidade das linhas acima: sessão OU Bearer `dsk_…`, resolvidos por
+  // `lib/api/auth-dual.ts` DENTRO de cada rota, com a organização saindo da
+  // linha do token. Os modelos ficam em `lib/auth/portas-de-token/`, um arquivo
+  // por fatia, no formato do caminho da pasta; `portaDeToken` monta cada um
+  // ancorado nos dois lados e com o segmento dinâmico em forma de UUID.
+  ...PORTAS_DE_TOKEN,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // O ícone da aba (`app/icon.tsx`), que o `<head>` de TODA página pede —

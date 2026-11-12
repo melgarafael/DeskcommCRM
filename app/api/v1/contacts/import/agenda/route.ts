@@ -28,8 +28,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
@@ -39,6 +39,8 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { criarDepsDeAgenda, sincronizarAgendaDoCelular } from "@/lib/contacts/agenda-do-celular";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -108,9 +110,18 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
   // Escrita agent+ — a mesma régua de `POST /api/v1/contacts/import`: sincronizar
-  // a agenda cria contato em bloco tanto quanto a planilha.
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  // a agenda cria contato em bloco tanto quanto a planilha. Sessão OU token de
+  // integração (Spec 33, R2): `mcp:write` e papel `agent`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const corpo = corpoSchema.safeParse(await req.json().catch(() => null));
   if (!corpo.success) {
@@ -122,7 +133,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     .from("channel_sessions")
     .select(`${CHANNEL_SESSION_REF_COLUMNS}, status`)
     .eq("id", corpo.data.channel_session_id)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
   // A ausência (outro tenant, id que não existe) e o erro de banco têm o MESMO
   // desfecho visível aqui — não vazar que o id existe em outra organização.
@@ -170,16 +181,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     const resumo = await sincronizarAgendaDoCelular(
       criarDepsDeAgenda(admin, (session, pagina) =>
         listar({
-          organizationId: authz.org.orgId,
+          organizationId: authz.organizationId,
           sessionRef: session,
           limit: pagina.limit,
           offset: pagina.offset,
         }),
       ),
       {
-        organizationId: authz.org.orgId,
+        organizationId: authz.organizationId,
         session: sessionRef,
-        actorUserId: authz.user.id,
+        actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
         // O cursor do clique anterior: a rota só repassa, quem lê é o serviço.
         offset: corpo.data.offset,

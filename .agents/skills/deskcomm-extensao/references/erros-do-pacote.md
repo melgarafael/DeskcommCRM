@@ -34,7 +34,7 @@ O motivo vem nomeado. Os seis:
 | `permission_unsupported` | permissão fora do vocabulário, **ou** um card usa uma porta que você não declarou |
 | `capability_unsupported` | `capability` fora do vocabulário |
 | `format_version_unsupported` | `format_version` diferente de 1 |
-| `profile_unsupported` | `profile` diferente de `"declarative"` |
+| `profile_unsupported` | `profile` fora da lista que o host aceita (`grep -n 'profile: z.enum' lib/extensions/manifest.ts`) |
 | `dependency_unsupported` | `dependencies` não vazia |
 
 A cobertura permissão × capacidade é a que mais pega gente honesta: acrescentar um card novo com uma

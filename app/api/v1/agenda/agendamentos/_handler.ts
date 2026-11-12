@@ -1258,7 +1258,7 @@ async function exigeSemSobreposicao(
  */
 function autorParaCriacao(actor: Actor): string {
   if (actor.type === "user") return "user";
-  if (actor.type === "api_token") return "system";
+  if (actor.type === "api_token" || actor.type === "module") return "system";
   return "ai";
 }
 

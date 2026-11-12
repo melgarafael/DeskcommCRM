@@ -10,6 +10,8 @@ vi.mock('@/lib/audit', () => ({ audit: vi.fn() }));
 vi.mock('@/lib/auth/require-role', () => ({ requireRole: vi.fn() }));
 vi.mock('@/lib/impersonate/support', () => ({ requireSupportWrite: vi.fn() }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+// A sessão passa por resolveAuthDual, que abre o cliente de sessão.
+vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn(async () => ({})) }));
 const ORG = '22222222-2222-4222-8222-222222222222';
 const ID = '33333333-3333-4333-8333-333333333333';
 const ROUTER = '44444444-4444-4444-8444-444444444444';
