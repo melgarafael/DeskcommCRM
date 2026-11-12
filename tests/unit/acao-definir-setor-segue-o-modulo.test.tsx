@@ -18,6 +18,7 @@ vi.mock("@/lib/api/client", () => ({
 }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useModulosLigados: () => h.modulos,
+  useCapacidadesLigadas: () => [],
   useAuth: () => ({ activeOrg: { modulos_ligados: h.modulos } }),
 }));
 vi.mock("@/hooks/team/useSectors", () => ({ useSectors: () => ({ data: { data: [] }, isError: false }) }));

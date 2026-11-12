@@ -38,6 +38,10 @@ export type InboxKind =
   | 'appointment_recovery_review'
   | 'qr_rescan'
   | 'routing_unassigned'
+  // (migration 9333, #3966) O número pediu para esperar a IA qualificar e o
+  // prazo venceu sem ela passar a conversa: a conversa entrou na distribuição,
+  // e quem cuida do agente precisa saber que ele não está passando adiante.
+  | 'routing_ia_wait_expired'
   | 'job_dead'
   | 'event_dead'
   | 'budget_exceeded'

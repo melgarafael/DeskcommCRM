@@ -10444,6 +10444,11 @@ alter table public.agent_inbox_items
     -- apontam para a aba do parceiro. Nasce com `ref_kind='channel_session'`,
     -- um aberto por conexão. Entra NESTA lista (#159, bloco único).
     'channel_template_review_direct',
+    -- (migration 9333, issue #3966) O número pediu para esperar a IA qualificar
+    -- antes de distribuir e o prazo venceu sem a IA passar a conversa. A conversa
+    -- entra na distribuição e este aviso conta a quem cuida do agente que ele
+    -- não está passando adiante. Entra NESTA lista (#159, bloco único).
+    'routing_ia_wait_expired',
     'other'
   ));
 
@@ -74868,6 +74873,75 @@ revoke all     on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uuid,boolean) to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- ---- A conversa espera a IA qualificar: opção por número, com prazo (migration 9333, #3966) ----
+-- Espelho da 9333 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- VARREDURA anon porque cria e recria função, e ANTES da cascata da 9243: o
+-- invariante `lgpd-alcanca-fichas-fundidas` compara o trecho que vai dela até a
+-- VARREDURA com a migration, e nada pode entrar no meio. Coluna nova nasce nula = opção
+-- DESLIGADA em todo número; nada muda para quem não ligar. A constraint entra em
+-- bloco DO com `if not exists`: reaplicar não a derruba nem a recria. O kind
+-- `routing_ia_wait_expired` NÃO está aqui: entrou no bloco ÚNICO de
+-- `agent_inbox_items_kind_check`, mais acima (#159).
+alter table public.channel_routing_policies add column if not exists ai_wait_minutes integer;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'channel_routing_policies_ai_wait_minutes_check'
+       and conrelid = 'public.channel_routing_policies'::regclass
+  ) then
+    alter table public.channel_routing_policies
+      add constraint channel_routing_policies_ai_wait_minutes_check
+      check (ai_wait_minutes is null or ai_wait_minutes between 15 and 10080);
+  end if;
+end;
+$$;
+
+create or replace function public.fn_set_channel_ai_wait(p_org uuid,p_channel uuid,p_minutes integer)
+returns integer language plpgsql security definer set search_path=public as $$
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'manager') or not public.fn_support_write_allowed(p_org)
+ then raise exception 'routing_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'routing_mfa_required' using errcode='42501';end if;
+ if p_minutes is not null and (p_minutes<15 or p_minutes>10080) then
+  raise exception 'routing_invalid_ai_wait' using errcode='22023';end if;
+ update public.channel_routing_policies set ai_wait_minutes=p_minutes,updated_at=now()
+  where organization_id=p_org and channel_session_id=p_channel;
+ if not found then raise exception 'routing_channel_not_found' using errcode='P0002';end if;
+ -- Quem estava esperando com a regra antiga é reavaliado agora, com a nova.
+ perform public.fn_wake_channel_routing(p_org,p_channel);
+ return p_minutes;
+end;
+$$;
+revoke all on function public.fn_set_channel_ai_wait(uuid,uuid,integer) from public,anon;
+grant execute on function public.fn_set_channel_ai_wait(uuid,uuid,integer) to authenticated;
+
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ elsif old.assigned_to_user_id is not null or old.status not in('open','pending','claimed','ai_handling')
+    -- #3966: a PASSAGEM PARA HUMANO traz o pedido de volta, mas só no número
+    -- que LIGOU a espera pela IA. Com a opção desligada este ramo é falso e o
+    -- gatilho decide exatamente como antes.
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at
+        and exists(select 1 from public.channel_routing_policies p
+                    where p.organization_id=new.organization_id
+                      and p.channel_session_id=new.channel_session_id
+                      and p.ai_wait_minutes is not null)) then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
 
 -- ---- a agenda indisponível é estado terminal no claim (migration 9343, #4448) ----
 -- Espelho idempotente da migration; o porquê inteiro está no cabeçalho dela.

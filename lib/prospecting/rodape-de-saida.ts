@@ -1,4 +1,4 @@
-import { PALAVRAS_DE_OPT_OUT } from "@/lib/opt-out/deteccao";
+import { PALAVRAS_DE_OPT_OUT, normalizarTexto } from "@/lib/opt-out/deteccao";
 
 /**
  * A SAÍDA, escrita na primeira mensagem fria.
@@ -86,20 +86,140 @@ export function rodapeDeSaida(locale?: string | null): string {
 }
 
 /**
- * O corpo final da abordagem: o texto do modelo + a saída.
+ * ─── O TEXTO PRÓPRIO DA CAMPANHA (#4370) ─────────────────────────────────────
  *
- * Idempotente de propósito — se o texto do modelo já terminar com o rodapé (por
- * exemplo porque alguém pôs a instrução no prompt também), não duplica. Repetir
- * a mesma frase duas vezes na primeira mensagem parece defeito e custa a
- * primeira impressão.
+ * O dono da campanha pode escrever a saída dele em `config.texto_da_saida`. O
+ * que NÃO muda, e é a razão de este módulo existir:
+ *
+ *   - o texto continua vindo da CONFIGURAÇÃO, nunca do modelo: mesma redação em
+ *     todos os envios, auditável (ver o cabeçalho, item 1);
+ *   - ele continua tendo de conter a palavra que `lib/opt-out/deteccao.ts`
+ *     reconhece SOZINHA, no idioma da instalação — "é só me avisar" é simpático e
+ *     não é detectado; a pessoa pediria para sair e seguiria recebendo;
+ *   - vazio = a frase padrão de sempre, byte por byte: quem não mexer não vê
+ *     diferença.
+ *
+ * As funções abaixo separam "este texto serve?" (validação) de "qual texto sai?"
+ * (envio). A segunda NUNCA devolve um texto que a primeira recusaria: se a
+ * configuração chegar inválida (gravada por fora, idioma da organização mudou
+ * depois), o envio cai na frase padrão em vez de prometer uma saída que não
+ * funciona. Oferecer saída quebrada é pior que oferecer a de sempre.
  */
-export function comSaida(texto: string, locale?: string | null): string {
-  const corpo = texto.trimEnd();
-  if (temSaida(corpo, locale)) return corpo;
-  return `${corpo}\n\n${rodapeDeSaida(locale)}`;
+
+/**
+ * Teto do texto próprio. 160 é o número do pedido: a saída é um parágrafo curto
+ * no fim de uma abordagem fria, não um segundo argumento de venda — e ela entra
+ * numa bolha que já foi fatiada.
+ */
+export const TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA = 160;
+
+/** Por que o texto do dono não pode ser usado; `null` quando pode. */
+export type ProblemaDoTextoDaSaida = "longo" | "link" | "sem_palavra";
+
+/**
+ * Link dentro da saída não passa. A saída existe para a pessoa ter como SAIR, não
+ * para levar tráfego; num texto que já nasce com cara de disparo, um endereço é o
+ * que mais parece spam — e o número queimado é o do cliente que instalou.
+ */
+const LINK_NO_TEXTO = /(?:https?:\/\/|www\.|\b[\w-]+\.(?:com|com\.br|net|org|io|app|link)\b)/iu;
+
+/** A palavra aparece como palavra no texto (minúscula, sem acento — a régua do detector). */
+function contemPalavra(texto: string, palavra: string): boolean {
+  return new RegExp(`\\b${normalizarTexto(palavra)}\\b`, "u").test(normalizarTexto(texto));
 }
 
-/** O texto já termina com o rodapé deste idioma (o mesmo critério do `comSaida`). */
-export function temSaida(texto: string, locale?: string | null): boolean {
-  return texto.trimEnd().toLowerCase().endsWith(rodapeDeSaida(locale).toLowerCase());
+/** O texto contém a palavra que ESTE idioma oferece (`palavraDeSaida`)? */
+export function contemPalavraDeSaida(texto: string, locale?: string | null): boolean {
+  return contemPalavra(texto, palavraDeSaida(locale));
+}
+
+/** O texto contém ALGUMA das palavras que a saída oferece — a régua de quem não sabe o idioma. */
+export function contemAlgumaPalavraDeSaida(texto: string): boolean {
+  return Object.values(PALAVRA_POR_IDIOMA).some((palavra) => contemPalavra(texto, palavra));
+}
+
+function problemaNoTexto(texto: string, temPalavra: boolean): ProblemaDoTextoDaSaida | null {
+  if (texto.length > TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA) return "longo";
+  if (LINK_NO_TEXTO.test(texto)) return "link";
+  if (!temPalavra) return "sem_palavra";
+  return null;
+}
+
+/**
+ * O problema do texto do dono SEM olhar o idioma — a régua do schema, que valida
+ * a configuração antes de saber de qual organização ela é (o locale mora em
+ * `organizations`, não no `config` da campanha).
+ *
+ * Vazio é válido em todas as réguas: significa "usa a frase padrão".
+ */
+export function problemaNoTextoDaSaida(
+  texto: string | null | undefined,
+): ProblemaDoTextoDaSaida | null {
+  const proprio = (texto ?? "").trim();
+  if (proprio === "") return null;
+  return problemaNoTexto(proprio, contemAlgumaPalavraDeSaida(proprio));
+}
+
+/**
+ * O problema do texto do dono NO IDIOMA da instalação. É esta a régua que a tela
+ * e o servidor aplicam: um texto com PARAR numa instalação em espanhol passaria
+ * na régua genérica e ofereceria uma palavra que ninguém ali responde.
+ */
+export function problemaNoTextoDaSaidaNoIdioma(
+  texto: string | null | undefined,
+  locale?: string | null,
+): ProblemaDoTextoDaSaida | null {
+  const proprio = (texto ?? "").trim();
+  if (proprio === "") return null;
+  return problemaNoTexto(proprio, contemPalavraDeSaida(proprio, locale));
+}
+
+/**
+ * O texto que ESTE envio leva: o do dono quando ele serve para este idioma, a
+ * frase padrão em qualquer outro caso. Determinístico de ponta a ponta — não há
+ * chamada de modelo nem sorteio aqui.
+ */
+export function textoDaSaidaEfetivo(
+  configurado?: string | null,
+  locale?: string | null,
+): string {
+  const proprio = (configurado ?? "").trim();
+  if (proprio === "" || problemaNoTextoDaSaidaNoIdioma(proprio, locale) !== null) {
+    return rodapeDeSaida(locale);
+  }
+  return proprio;
+}
+
+/**
+ * O corpo final da abordagem: o texto do modelo + a saída.
+ *
+ * `textoDaCampanha` é o `config.texto_da_saida` da campanha (opcional). Sem ele,
+ * o comportamento é EXATAMENTE o de antes — a assinatura antiga segue valendo.
+ *
+ * Idempotente de propósito — se o texto do modelo já terminar com a saída (por
+ * exemplo porque alguém pôs a instrução no prompt também), não duplica. Repetir
+ * a mesma frase duas vezes na primeira mensagem parece defeito e custa a
+ * primeira impressão. O critério é o texto EFETIVO: com texto do dono, é ele que
+ * não pode sair duas vezes.
+ */
+export function comSaida(
+  texto: string,
+  locale?: string | null,
+  textoDaCampanha?: string | null,
+): string {
+  const corpo = texto.trimEnd();
+  if (temSaida(corpo, locale, textoDaCampanha)) return corpo;
+  return `${corpo}\n\n${textoDaSaidaEfetivo(textoDaCampanha, locale)}`;
+}
+
+/** O texto já termina com a saída efetiva deste idioma (o mesmo critério do `comSaida`). */
+export function temSaida(
+  texto: string,
+  locale?: string | null,
+  textoDaCampanha?: string | null,
+): boolean {
+  return texto
+    .trimEnd()
+    .toLowerCase()
+    .endsWith(textoDaSaidaEfetivo(textoDaCampanha, locale).toLowerCase());
 }
