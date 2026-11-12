@@ -1824,6 +1824,22 @@ export const DICIONARIO: Traducoes = {
   "Detalhes para suporte": { es: "Detalles para soporte" },
   "Copiar detalhes": { es: "Copiar detalles" },
   "Conversa aguardando responsável": { es: "Conversación esperando responsable" },
+  "A IA não passou a conversa no prazo": { es: "La IA no pasó la conversación dentro del plazo" },
+  "Abra a conversa para ver até onde a IA foi. Se isso se repetir, confira o agente de IA deste número.": {
+    es: "Abre la conversación para ver hasta dónde llegó la IA. Si se repite, revisa el agente de IA de este número.",
+  },
+  "Esperar a IA qualificar antes de distribuir (minutos)": {
+    es: "Esperar a que la IA califique antes de distribuir (minutos)",
+  },
+  "Vazio, vale a regra de sempre: a conversa nova é distribuída na hora. Com um prazo, entre 15 minutos e 7 dias, a conversa deste número fica com a IA até ela passar para uma pessoa. Se o prazo vencer sem a IA passar, a conversa entra na distribuição e a Central avisa. Só vale no rodízio ou na menor carga, e não vale quando o número tem atendente de destino padrão.": {
+    es: "Vacío, rige la regla de siempre: la conversación nueva se distribuye en el acto. Con un plazo, entre 15 minutos y 7 días, la conversación de este número queda con la IA hasta que ella la pase a una persona. Si el plazo vence sin que la IA la pase, la conversación entra en la distribución y la Central avisa. Solo aplica en la rotación o en la menor carga, y no aplica cuando el número tiene un asesor de destino predeterminado.",
+  },
+  "Confira o prazo de espera pela IA deste número.": {
+    es: "Revisa el plazo de espera por la IA de este número.",
+  },
+  "Os responsáveis foram salvos, mas o prazo de espera pela IA não. Tente novamente.": {
+    es: "Los responsables se guardaron, pero el plazo de espera por la IA no. Inténtalo de nuevo.",
+  },
   "Confira os responsáveis em Configurações → Atendimento.": { es: "Revisa los responsables en Configuración → Atención." },
 
   "Suas agendas Google": { es: "Tus calendarios de Google" },
