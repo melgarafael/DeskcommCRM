@@ -72475,6 +72475,60 @@ create trigger trg_cobrancas_avulsas_updated_at
   before update on public.cobrancas_avulsas
   for each row execute function public.fn_set_updated_at();
 
+-- ─── LGPD: a cobrança guarda o valor, não o nome de quem foi cobrado ─────────
+--
+-- `cobrancas_avulsas` é registro FINANCEIRO: valor, moeda, vencimento, estado,
+-- as datas de desfecho e o VÍNCULO (negócio, conversa, contato) FICAM. É a
+-- mesma régua do passo 6b da cascata para `sales`: desligar o contato faria o
+-- relatório por cliente deixar de fechar com o faturamento do período — e não
+-- apagaria o caminho, porque a âncora obrigatória (`lead_id` ou
+-- `conversation_id`) chega à mesma pessoa por `crm_leads.contact_id` e
+-- `conversations.contact_id`, que a anonimização preserva de propósito. A ficha
+-- apontada já é `Cliente Anonimizado #N`.
+--
+-- O que sai é `descricao`, o ÚNICO texto livre da tabela — "Consulta da Maria
+-- Silva, outubro" é onde a pessoa é nomeada de novo depois de `contacts` já
+-- estar redigido. Valor, vencimento e estado são o documento; a descrição é
+-- texto de quem digitou.
+--
+-- Pela VIRADA de `is_anonymized`, e não por um passo dentro de
+-- `fn_lgpd_cascade_redact_contact`: a cascata é `create or replace` de corpo
+-- inteiro, a última definição dela no baseline mora no bloco da 9243, e a cerca
+-- `lgpd-alcanca-fichas-fundidas` compara aquele trecho letra a letra com a
+-- migration já mergeada. O gatilho é o desenho da 0391 e alcança os DOIS
+-- caminhos — o pedido formal e o botão da ficha — com o mesmo efeito.
+create or replace function public.fn_redigir_cobrancas_do_contato_anonimizado()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  update public.cobrancas_avulsas set
+    descricao = '[redigido]',
+    updated_at = now()
+  where organization_id = new.organization_id
+    and contact_id = new.id
+    and descricao <> '[redigido]';
+
+  return new;
+end
+$$;
+
+-- As DUAS origens de EXECUTE (item 9 do CLAUDE.md): o grant a PUBLIC da criação
+-- e o grant nominal a anon do ALTER DEFAULT PRIVILEGES do baseline. Gatilho não
+-- precisa de EXECUTE para disparar; ninguém chama esta função à mão.
+revoke all on function public.fn_redigir_cobrancas_do_contato_anonimizado() from public;
+revoke execute on function public.fn_redigir_cobrancas_do_contato_anonimizado() from anon;
+revoke execute on function public.fn_redigir_cobrancas_do_contato_anonimizado() from authenticated;
+
+drop trigger if exists trg_redigir_cobrancas_ao_anonimizar on public.contacts;
+create trigger trg_redigir_cobrancas_ao_anonimizar
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
+  execute function public.fn_redigir_cobrancas_do_contato_anonimizado();
+
 notify pgrst, 'reload schema';
 
 -- ---- lista de espera como módulo opcional (migration 9235) ----

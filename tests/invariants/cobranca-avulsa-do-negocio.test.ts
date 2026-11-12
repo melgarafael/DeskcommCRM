@@ -449,3 +449,124 @@ describe("cobrancas_avulsas — âncora, estado e isolamento", () => {
     ).toBe(1);
   });
 });
+
+/**
+ * A COBRANÇA GUARDA O VALOR, NÃO O NOME DE QUEM FOI COBRADO.
+ *
+ * A decisão está escrita em
+ * `lgpd-redact-unificado-alcanca-pelo-catalogo` (`cobrancas_avulsas`, caminho
+ * `gatilho`). Aqui se mede o COMPORTAMENTO, e a régua é a do passo 6b da cascata
+ * para `sales`: registro financeiro preserva valor, moeda, vencimento, estado e
+ * vínculo (o relatório por cliente tem de continuar fechando com o faturamento);
+ * o texto livre — `descricao`, onde a pessoa é nomeada de novo depois de
+ * `contacts` já estar redigido — sai na virada de `is_anonymized`.
+ *
+ * Sem o gatilho, anonimizar devolve SUCESSO, o SLA D+15 é marcado como cumprido,
+ * e "Consulta da Maria Silva, outubro" continua legível: é exatamente o defeito
+ * que a entrada do catálogo existe para impedir.
+ */
+describe("LGPD: a cobrança avulsa não fica legível depois da anonimização", () => {
+  interface Linha {
+    organization_id: string;
+    contact_id: string | null;
+    conversation_id: string | null;
+    descricao: string;
+    valor_cents: number;
+    moeda: string;
+    vencimento: string | null;
+    estado: string;
+    updated_at: string;
+  }
+
+  function linha(id: string): Linha {
+    const out = sql(`select row_to_json(x) from (
+      select organization_id, contact_id, conversation_id, descricao, valor_cents,
+             moeda, vencimento, estado, updated_at
+        from public.cobrancas_avulsas where id = '${id}') x;`);
+    return JSON.parse(out) as Linha;
+  }
+
+  it("a virada de is_anonymized redige a descrição e preserva o documento financeiro", () => {
+    const alvo = "c0b0c000-0000-4000-8000-000000000001";
+    const controle = "c0b0c000-0000-4000-8000-000000000002";
+    const vizinha = "c0b0c000-0000-4000-8000-000000000003";
+    const conversaAlvo = "c0b0c111-0000-4000-8000-000000000001";
+    const conversaControle = "c0b0c111-0000-4000-8000-000000000002";
+    const conversaVizinha = "c0b0c111-0000-4000-8000-000000000003";
+    const cobrancaAlvo = "c0b0c222-0000-4000-8000-000000000001";
+    const cobrancaControle = "c0b0c222-0000-4000-8000-000000000002";
+    const cobrancaVizinha = "c0b0c222-0000-4000-8000-000000000003";
+
+    // Fichas, conversas e cobranças próprias: anonimizar o contato da semente
+    // derrubaria as cercas de RLS do resto do arquivo, que dividem o banco.
+    sql(`
+      insert into public.contacts (id, organization_id, name, display_name) values
+        ('${alvo}', '${ORG_A}', 'Maria Silva', 'Maria Silva'),
+        ('${controle}', '${ORG_A}', 'Joao Souza', 'Joao Souza'),
+        ('${vizinha}', '${ORG_B}', 'Ana Lima', 'Ana Lima');
+
+      insert into public.conversations (id, organization_id, contact_id, channel_session_id)
+      select '${conversaAlvo}', '${ORG_A}', '${alvo}', id
+        from public.channel_sessions where organization_id = '${ORG_A}' limit 1;
+      insert into public.conversations (id, organization_id, contact_id, channel_session_id)
+      select '${conversaControle}', '${ORG_A}', '${controle}', id
+        from public.channel_sessions where organization_id = '${ORG_A}' limit 1;
+      insert into public.conversations (id, organization_id, contact_id, channel_session_id)
+      select '${conversaVizinha}', '${ORG_B}', '${vizinha}', id
+        from public.channel_sessions where organization_id = '${ORG_B}' limit 1;
+
+      insert into public.cobrancas_avulsas
+        (id, organization_id, conversation_id, contact_id, descricao, valor_cents, vencimento)
+      values
+        ('${cobrancaAlvo}', '${ORG_A}', '${conversaAlvo}', '${alvo}',
+         'Consulta da Maria Silva, outubro', 45000, '2026-12-10'),
+        ('${cobrancaControle}', '${ORG_A}', '${conversaControle}', '${controle}',
+         'Mensalidade do Joao Souza', 30000, '2026-12-05'),
+        ('${cobrancaVizinha}', '${ORG_B}', '${conversaVizinha}', '${vizinha}',
+         'Consulta da Ana Lima', 99000, '2026-12-01');
+    `);
+
+    // CONTROLE: antes da virada o texto livre está legível, e é ele que identifica
+    // a pessoa — `contacts` ainda tem nome e telefone para isso.
+    expect(linha(cobrancaAlvo)).toMatchObject({
+      descricao: "Consulta da Maria Silva, outubro",
+      contact_id: alvo,
+      estado: "pendente",
+    });
+
+    sql(`select public.fn_lgpd_cascade_redact_contact('${ORG_A}', '${alvo}', null);`);
+
+    // A ficha foi anonimizada (é o que dá a partida no gatilho)...
+    expect(
+      sql(`select name from public.contacts where id = '${alvo}';`),
+    ).toMatch(/^Cliente Anonimizado/);
+
+    // ...e o texto livre sai, enquanto o DOCUMENTO FINANCEIRO fica inteiro: valor,
+    // moeda, vencimento, estado e o vínculo (que é o que faz o relatório por
+    // cliente fechar com o faturamento, a mesma régua do passo 6b para `sales`).
+    expect(linha(cobrancaAlvo)).toMatchObject({
+      organization_id: ORG_A,
+      contact_id: alvo,
+      conversation_id: conversaAlvo,
+      descricao: "[redigido]",
+      valor_cents: 45000,
+      moeda: "BRL",
+      vencimento: "2026-12-10",
+      estado: "pendente",
+    });
+
+    // O contato vizinho da MESMA organização e a linha do outro tenant não são
+    // tocados: o gatilho filtra organização e contato, não "toda a tabela".
+    expect(linha(cobrancaControle).descricao).toBe("Mensalidade do Joao Souza");
+    expect(linha(cobrancaVizinha).descricao).toBe("Consulta da Ana Lima");
+
+    // Idempotente: repetir a anonimização não reescreve a linha de novo.
+    const depois = linha(cobrancaAlvo).updated_at;
+    sql(`select public.fn_lgpd_cascade_redact_contact('${ORG_A}', '${alvo}', null);`);
+    expect(linha(cobrancaAlvo)).toMatchObject({
+      descricao: "[redigido]",
+      valor_cents: 45000,
+      updated_at: depois,
+    });
+  });
+});
