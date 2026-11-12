@@ -1522,6 +1522,7 @@ jobs:
         capacidades-do-agente.spec.ts
         equipe-no-celular.spec.ts
         extensoes-versao.spec.ts
+        modulo-conectado.spec.ts
         ia-no-celular.spec.ts
         inbox-mensagem-por-modelo.spec.ts
         navegacao.spec.ts
@@ -2060,6 +2061,23 @@ jobs:
       # bloco `env:` fixava e que o app recusa.
       - name: Publicar o .env.e2e no ambiente do job
         run: grep -vE '^[[:space:]]*(#|$)' .env.e2e >> "$GITHUB_ENV"
+
+      # A chave que assina o JWT de contexto do módulo conectado (Spec 33). É um PEM de várias linhas
+      # com espaços no cabeçalho, e o `.env.e2e` não guarda valor assim; por isso nasce aqui, descartável,
+      # a cada rodada, e entra no ambiente do job pela sintaxe de várias linhas do `$GITHUB_ENV` (o
+      # `webServer.env` do Playwright mescla o ambiente herdado, então o `next start` a recebe). Sem ela
+      # o CRM responde 503 `module_context_unavailable` e `modulo-conectado.spec.ts` falha alto.
+      - if: matrix.parte == 7
+        name: Gerar a chave do JWT de contexto do módulo conectado
+        shell: bash
+        run: |
+          CHAVE=$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)
+          DELIM="FIM_$(openssl rand -hex 8)"
+          {
+            echo "MODULE_JWT_PRIVATE_KEY<<${DELIM}"
+            echo "${CHAVE}"
+            echo "${DELIM}"
+          } >> "$GITHUB_ENV"
 
       - if: matrix.parte == 1
         name: Provar importação após chat inválido (HTTP e banco reais)

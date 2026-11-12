@@ -26,7 +26,6 @@ import type { Actor } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { chaveDaRequisicao } from "@/lib/api/idempotency";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
@@ -226,15 +225,24 @@ const cancelarSchema = z.object({
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  // `viewer`: olhar a agenda é o menor privilégio desta feature. E SEGUE
-  // SÓ-SESSÃO — `requireRole` não lê Bearer, e abrir isto a token é decisão de
-  // produto, não de implementação (a própria suíte da rota trava este estado;
-  // ver o cabeçalho de `GET … continua só-sessão` em `route.test.ts`). Quem
-  // integra agenda por token continua saindo pela ferramenta MCP.
-  const authz = await requireRole("viewer", { requestId, resource: "agenda" });
+  // `viewer`: olhar a agenda é o menor privilégio desta feature, e é o piso da
+  // SESSÃO. Aceita também token de integração (Spec 33, R2), com `mcp:read` e
+  // papel `manager`: a sessão de um atendente pode ver só a própria agenda (a
+  // RLS de `calendar_appointments` respeita a opção da #978), e o token usa a
+  // service role e lê a organização inteira — o piso de gerente evita que o
+  // token enxergue mais do que a tela mostra àquele papel.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "agenda",
+    role: "viewer",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "agenda", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const activeOrg = { orgId: authz.organizationId };
 
   const url = new URL(req.url);
   const parsed = listarSchema.safeParse({
@@ -255,7 +263,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const resultado = await listaAgendamentos(supabase, activeOrg.orgId, {
     ...(parsed.data.collective_only !== undefined ? { somenteColetivas: parsed.data.collective_only } : {}),
     contactId: parsed.data.contact_id ?? null,

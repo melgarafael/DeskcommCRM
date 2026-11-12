@@ -8,6 +8,7 @@
  * Fire-and-forget: falha de write nunca bloqueia retorno da tool.
  */
 import { audit } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import type { McpContext } from "./types";
 
 interface AuditMcpToolCallInput {
@@ -107,6 +108,8 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
   if (ctx.actor.type === "ai_agent" && ctx.actor.api_token_id) {
     metadata.actor_api_token_id = ctx.actor.api_token_id;
   }
+  // Módulo conectado: o token vai em `actor_api_token_id` e o módulo em `metadata.module`.
+  Object.assign(metadata, metadataDoModulo(ctx.actor));
 
   await audit({
     action: "mcp.tool_called",

@@ -14,12 +14,16 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { extractBearer } from "@/lib/mcp/auth";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
-import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import { cabecalhoDeDownload, urlAssinadaParaDownload } from "@/lib/messaging/media/download-com-nome";
 import { VALIDADE_DO_LINK_DE_MIDIA_S } from "@/lib/messaging/media/link-temporario";
@@ -70,6 +74,16 @@ type Linha = {
   channel_session_id: string | null;
 };
 
+type ResponderDeps = {
+  db: SupabaseClient;
+  organizationId: string;
+  idioma: Idioma;
+  messageId: string;
+  requestId: string;
+  /** Sujeito do limite de conversão AAC: `user.id` na sessão, o id do token no Bearer. */
+  chaveDoUsuario: string;
+};
+
 /**
  * Os bytes que o worker ainda não persistiu, pelo ADAPTER do canal — nunca por
  * uma função fixa de um provedor. `null` = canal sem mídia de entrada, que é
@@ -102,26 +116,11 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
-  const requestId = randomUUID();
-  const { id: messageId } = await ctx.params;
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return fail("unauthenticated", "Auth required.", 401, { requestId });
-  }
-  const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
-  const ativa = await orgAtivaDaApi(authUser, requestId);
-  if (!ativa.ok) return ativa.response;
-  const activeOrg = ativa.org;
-  if (!activeOrg) {
-    return fail("no_active_org", t("No active organization."), 403, { requestId });
-  }
+async function responder(
+  req: NextRequest,
+  { db, organizationId, idioma, messageId, requestId, chaveDoUsuario }: ResponderDeps,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma);
 
   // Validação DEPOIS da autorização: quem não está logado recebe 401, não 422.
   const params = new URL(req.url).searchParams;
@@ -139,13 +138,13 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const baixar = consulta.data.baixar === "1" && !paraTocar;
   if (paraTocar) {
     const porUsuario = await checkRateLimit(
-      `midia-aac:${user.id}`,
+      `midia-aac:${chaveDoUsuario}`,
       TETO_CONVERSAO_POR_USUARIO,
       JANELA_CONVERSAO_S,
     );
     const barrou = porUsuario.allowed
       ? await checkRateLimit(
-          `midia-aac-org:${activeOrg.orgId}`,
+          `midia-aac-org:${organizationId}`,
           TETO_CONVERSAO_POR_ORGANIZACAO,
           JANELA_CONVERSAO_S,
         )
@@ -162,13 +161,13 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     }
   }
 
-  // Client de sessão: RLS garante que a mensagem pertence a uma org do usuário.
-  // Filtro explícito de organization_id por doutrina (defense-in-depth).
-  const { data: msg, error } = await supabase
+  // Client passado pelo chamador: sessão (createClient) ou token (admin do
+  // resolveAuthDual). Filtro explícito de organization_id por doutrina.
+  const { data: msg, error } = await db
     .from("messages")
     .select("id, media_url, media_mime, media_size_bytes, media_storage_path, metadata, channel_session_id")
     .eq("id", messageId)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (error) {
     return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
@@ -207,11 +206,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // A RLS autoriza a linha, não o objeto apontado por ela. O cliente admin
   // ignora a RLS do Storage: valide ANTES de assinar ou baixar para conversão.
   // Caminho inválido não pode cair no fallback do canal.
-  if (msg.media_storage_path != null && !isMediaPathInOrganization(msg.media_storage_path, activeOrg.orgId)) {
+  if (msg.media_storage_path != null && !isMediaPathInOrganization(msg.media_storage_path, organizationId)) {
     return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
   }
 
-  if (paraTocar) return converterParaTocar(activeOrg.orgId, msg, requestId, t);
+  if (paraTocar) return converterParaTocar(organizationId, msg, requestId, t);
 
   if (msg.media_storage_path) {
     const admin = createAdminClient();
@@ -253,7 +252,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // contêiner do canal por QR — 404, e a tela dizia "mídia indisponível".
   if (msg.media_url) {
     try {
-      const media = await buscarNoCanal(activeOrg.orgId, msg);
+      const media = await buscarNoCanal(organizationId, msg);
       if (!media) {
         // Canal sem mídia de entrada não é defeito: é estado normal. 404 diz a
         // verdade ("não há o que servir"); 502 acusaria uma falha inexistente.
@@ -343,5 +342,60 @@ async function converterParaTocar(
       "Cache-Control": "private, no-store",
       "X-Request-Id": requestId,
     },
+  });
+}
+
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  const requestId = randomUUID();
+  const { id: messageId } = await ctx.params;
+
+  // Ramo do token: Bearer `dsk_…` chega direto ao handler (o caminho está em
+  // PUBLIC_PATHS). A identidade e a organização saem da linha do token.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "messages",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "messages_media", requestId);
+    if (teto) return teto;
+    return responder(req, {
+      db: authz.supabase,
+      organizationId: authz.organizationId,
+      idioma: authz.idioma ?? IDIOMA_PADRAO,
+      messageId,
+      requestId,
+      chaveDoUsuario: authz.apiTokenId ?? authz.actor.id,
+    });
+  }
+
+  // Ramo da sessão: byte a byte igual ao que a rota já fazia hoje.
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    return fail("unauthenticated", "Auth required.", 401, { requestId });
+  }
+  const authUser = await loadAuthUser();
+  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  const ativa = await orgAtivaDaApi(authUser, requestId);
+  if (!ativa.ok) return ativa.response;
+  const activeOrg = ativa.org;
+  if (!activeOrg) {
+    return fail("no_active_org", t("No active organization."), 403, { requestId });
+  }
+
+  return responder(req, {
+    db: supabase,
+    organizationId: activeOrg.orgId,
+    idioma: authUser?.idioma ?? "pt-BR",
+    messageId,
+    requestId,
+    chaveDoUsuario: user.id,
   });
 }

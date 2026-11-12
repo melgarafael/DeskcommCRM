@@ -4,18 +4,18 @@ import { z } from "zod";
 
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { fail, ok } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
-import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { customFieldSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import { isLeadAttachmentPathOwnedBy } from "@/lib/messaging/media/upload-validation";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -85,16 +85,22 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // LER o anexo é ler o negócio (#3431): quem enxerga o lead enxerga o
   // documento dele — o `viewer` inclusive. A escrita (POST/DELETE, abaixo)
   // segue em `agent`: lista é leitura, upload e remoção não são.
-  const authz = await requireRole("viewer", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_attachments", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
   const { id: leadId } = await ctx.params;
-  const orgId = authz.org.orgId;
+  const orgId = organizationId;
 
   const url = new URL(req.url);
   const fieldKey = url.searchParams.get("field_key");
-
-  const supabase = await createClient();
 
   // Verifica existência e posse do lead
   const { data: lead, error: leadErr } = await supabase
@@ -134,16 +140,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_attachments", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
   const { id: leadId } = await ctx.params;
-  const orgId = authz.org.orgId;
+  const orgId = organizationId;
 
   // 1 MB de folga para o envelope multipart; o file.size abaixo é o check do anexo.
   const corpo = await lerCorpoComTeto(req, MAX_BYTES + 1_048_576, {
     requestId,
-    idioma: authz.user.idioma,
+    idioma: authz.idioma,
     acimaDoTeto: t("O arquivo excede o limite de 50 MB."),
   });
   if (!corpo.ok) return corpo.response;
@@ -179,7 +193,6 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
   const { data: lead, error: leadErr } = await supabase
     .from("crm_leads")
     .select("id, pipeline_id")
@@ -192,7 +205,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   // Só se anexa a um campo `file` do NEGÓCIO que o funil deste lead declara.
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id, orgId);
   const campo = camposDoFunil(settings as Record<string, unknown> | null).find(
     (c) => c.key === fieldKey,
   );
@@ -233,7 +246,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       file_size: file.size,
       mime_type: file.type,
       storage_path: storagePath,
-      created_by: authz.user.id,
+      created_by: actor.type === "user" ? actor.id : null,
     })
     .select("id, file_name, storage_path, file_size, mime_type, created_at")
     .single();
@@ -247,6 +260,9 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   await audit({
     action: "lead.attachment_uploaded",
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "crm_leads",
     resourceId: leadId,
     metadata: {
@@ -270,7 +286,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     type: "document_attached",
     sourceModule: "leads/attachments",
     sourceId: attachmentId,
-    actor: { type: "user", id: authz.user.id },
+    actor: authz.actor,
     reason: `Documento anexado ao campo ${campo.label ?? fieldKey}`,
     payload: { field_key: fieldKey, file_name: file.name, mime_type: file.type },
   }).catch(() => null);
@@ -295,11 +311,19 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_attachments", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
   const { id: leadId } = await ctx.params;
-  const orgId = authz.org.orgId;
+  const orgId = organizationId;
 
   let body: unknown;
   try {
@@ -316,8 +340,6 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   }
 
   const { field_key: fieldKey, attachment_id: attachmentId } = parsed.data;
-
-  const supabase = await createClient();
 
   // Mesmo portão do GET/POST/mídia: o negócio tem de ser visível para quem pede.
   const { data: lead, error: leadErr } = await supabase
@@ -372,6 +394,9 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
 
   await audit({
     action: "lead.attachment_deleted",
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "crm_leads",
     resourceId: leadId,
     metadata: {

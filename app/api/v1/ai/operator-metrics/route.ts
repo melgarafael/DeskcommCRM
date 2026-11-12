@@ -27,12 +27,19 @@
  * explícito por `organization_id` continua no SQL porque um usuário pode
  * pertencer a mais de uma organização — a RLS deixaria passar as duas.
  */
+import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { extractBearer } from "@/lib/mcp/auth";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -49,10 +56,39 @@ const DIAS = 30;
 const querySchema = z.object({ agent_id: z.string().uuid().optional() });
 
 export async function GET(req: Request): Promise<Response> {
+  // Token de integração (Bearer): cliente admin, filtrado pela organização do
+  // token. Sem Bearer, o fluxo de sessão segue exatamente como era.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const requestId = randomUUID();
+    const authz = await resolveAuthDual(req as NextRequest, {
+      requestId,
+      resource: "ai_operator_metrics",
+      role: "manager",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_operator_metrics", requestId);
+    if (teto) return teto;
+    return responder(req, authz.idioma ?? IDIOMA_PADRAO, authz.organizationId, async () => authz.supabase);
+  }
+
   const authz = await requireRole("manager", { resource: "ai_operator_metrics" });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  return responder(req, authz.user.idioma, authz.org.orgId, () => createClient());
+}
+
+/**
+ * O corpo da leitura, igual para os dois portões. O cliente vem por `obterDb`:
+ * na sessão ele é criado no mesmo ponto de antes, depois da validação.
+ */
+async function responder(
+  req: Request,
+  idioma: Idioma,
+  orgId: string,
+  obterDb: () => Promise<SupabaseClient>,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma);
 
   const parsed = querySchema.safeParse(
     Object.fromEntries(new URL(req.url).searchParams.entries()),
@@ -64,7 +100,7 @@ export async function GET(req: Request): Promise<Response> {
   }
   const agenteDaTela = parsed.data.agent_id ?? null;
 
-  const db = await createClient();
+  const db = await obterDb();
 
   // O agente pedido tem de ser da organização da sessão. O filtro por
   // `organization_id` abaixo já impede ler turno alheio, mas sem esta conferência
@@ -75,7 +111,7 @@ export async function GET(req: Request): Promise<Response> {
       .from("ai_agents")
       .select("id")
       .eq("id", agenteDaTela)
-      .eq("organization_id", org.orgId)
+      .eq("organization_id", orgId)
       .maybeSingle();
     if (error) return fail("read_failed", error.message, 500);
     if (!agente) return fail("not_found", t("Agente não encontrado."), 404);
@@ -95,7 +131,7 @@ export async function GET(req: Request): Promise<Response> {
     const q = db
       .from("event_log")
       .select("id", { count: "exact", head: true })
-      .eq("organization_id", org!.orgId)
+      .eq("organization_id", orgId)
       .eq("event_type", "agent.operator_turn")
       .gte("created_at", desde);
     // A chave é a que `registrarDesfecho` grava. Filtrar por uma que ninguém

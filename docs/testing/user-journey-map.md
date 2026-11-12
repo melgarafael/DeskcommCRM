@@ -4383,6 +4383,259 @@ e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nat
 [Registro da prova](ofertas-da-campanha.md). CNPJ já foi
 entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.
 
+## J68 — Módulo conectado: instalar, desligar e ligar de novo `[P0]` (2026-11-04)
+
+Specs: nenhuma spec de tela escrita ainda. Cobertura hoje: `tests/invariants/extensoes-conectado.test.ts`
+e `tests/invariants/extensoes-interruptor.test.ts` (banco, `pnpm test:db`, CI `invariants`) e
+`components/extensions/ExtensionsManager.test.tsx` (tela de componente, `pnpm test:unit`, CI `verify`).
+Nenhuma delas abre `/admin/extensoes` num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do fork.
+
+Ambiente previsto: banco fresco aplicado do `supabase/baseline.sql` (não das `migrations/`) com
+`scripts/bootstrap-owner.ts`, envs opcionais ausentes (sem `RESEND_API_KEY`), e um catálogo de laboratório
+com uma entrada `connected` que traz `service_origin` em `https://` (loopback só com a política de laboratório ligada).
+
+**O bloqueio do laboratório caiu.** O catálogo de laboratório (`experiments/extensoes/catalog/catalog.py`) agora
+admite o perfil `connected` (`publish --service-origin`, que grava `service_origin` na entrada do catálogo) e serve
+o módulo de ensaio (`serve --modulo-de-ensaio`, `modulo_de_ensaio.py`). Os casos J68.1, J68.2 e J68.4 são percorridos
+pela tela em `tests/e2e/modulo-conectado.spec.ts` (ver J73). Escrito, **não executado nesta máquina**: o veredito é o
+e2e do PR (parte 7).
+
+| Caso | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|
+| J68.1 | Admitir um catálogo de laboratório com entrada `connected` e `service_origin` | P0 | Catálogo exportado com `profile: connected` e `service_origin`; a admissão pela UI aceita; banco com a entrada e a origem | **coberto por e2e** (`modulo-conectado.spec.ts`, passo 2, parte 7 do `e2e.yml`); **NÃO EXECUTADO** nesta máquina |
+| J68.2 | Instalar pela UI em `/admin/extensoes` | P0 | A instalação aparece com perfil `connected`, revisão 1, sem `disabled_at`; banco com recibo `install` concluído | **coberto por e2e** (passo 2: instalação pelo catálogo até o cartão aparecer; o recibo no banco não é lido); **NÃO EXECUTADO** nesta máquina |
+| J68.3 | Cartão do módulo conectado instalado | P0 | O cartão mostra o botão Desligar e a nota "Desligar não desinstala: o módulo continua instalado e pode ser ligado de novo." Não há aviso de instalação próprio nesta fase | **NÃO EXECUTADO** |
+| J68.4 | Desligar | P0 | Toast "Módulo desligado nesta instalação."; o cartão mostra "Desligado nesta instalação" com a data e o botão passa a Ligar; banco com `disabled_at` e `disabled_by` preenchidos, revisão +1 e `api_audit_log` com `extension.switched` | **coberto por e2e em parte** (passo 6: o clique em Desligar, o toast e o efeito na tela, grupo e rota somem; o cartão "Desligado nesta instalação", `disabled_by` e a auditoria não são lidos); **NÃO EXECUTADO** nesta máquina |
+| J68.5 | Ligar de novo | P0 | Toast "Módulo ligado de novo nesta instalação."; o aviso some; `disabled_at` e `disabled_by` voltam a nulo; revisão +1 | **NÃO EXECUTADO** |
+| J68.6 | Recibo repetido e revisão velha | P1 | A repetição devolve `applied_now` falso sem mexer na revisão; uma revisão velha recarrega a tela e não anuncia sucesso | **CI `invariants`** (banco) e teste de componente escritos; **NÃO EXECUTADO** na tela |
+| J68.7 | Sem módulo conectado instalado | P0 | A tela de extensões é a de hoje: nenhum botão Ligar ou Desligar, nenhuma nota de interruptor | teste de componente escrito; **NÃO EXECUTADO** na tela |
+| J68.8 | Remover um módulo conectado desligado e reinstalar | P0 | Reinstalar reaproveita a mesma linha, zera `removed_at` e mantém `disabled_at`: a instalação volta DESLIGADA; os vínculos das organizações não voltam ativos | **NÃO EXECUTADO.** Verificado só por leitura: `fn_extensions_finish_install` faz `update ... removed_at=null` e não toca em `disabled_at`; nenhum teste cobre este caminho |
+
+**Comportamento declarado.** Reinstalar um módulo removido que estava desligado volta **desligado**. É a escolha do
+lado seguro: quem administra a instalação liga de novo, de propósito.
+
+**Não provado.** A tela inteira (nenhuma execução em navegador); que desligar corta o acesso do serviço (hoje o
+estado é só guardado e mostrado: a F2 e a F4 vão ler `disabled_at`); um aviso de instalação específico para o
+módulo conectado; e a chamada real ao endereço `service_origin`, que nenhuma peça da F1 faz.
+
+## J69 — Módulo conectado: segredo, busca do token e revogação `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; o laboratório local ainda não
+admite o perfil `connected` (ver J68.1), então nenhum caso abaixo roda nele. Quando J68.1 passar, os
+casos viram execução; até lá, cada linha descreve o que a tela e o banco devem fazer.
+
+Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-token-modulo.test.ts` e
+`tests/invariants/extensoes-token-modulo-funcoes.test.ts` (banco, `pnpm test:db`, CI `invariants`);
+`app/api/v1/extensions/token/route.test.ts` e `app/api/v1/extensions/[id]/segredo/route.test.ts`
+(rota, `pnpm test:unit`, CI `verify`); `lib/extensions/segredo-do-modulo.test.ts`;
+`lib/mcp/auth-ator-modulo.test.ts`; `tests/api/revogar-token-de-modulo-desativa-a-ativacao.test.ts`;
+`components/extensions/ExtensionsManager.test.tsx` e `tests/unit/tokens-lista-modulo-conectado.test.tsx`.
+Nenhuma delas abre `/admin/extensoes` nem `/app/settings/api-tokens` num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J68 (banco fresco do `supabase/baseline.sql`, `scripts/bootstrap-owner.ts`,
+envs opcionais ausentes), com `AI_CRED_AES_KEY` definida (sem ela, instalar `connected` falha antes de gravar;
+a mensagem exibida na tela ainda não foi conferida), um módulo de laboratório que assina com o segredo recebido e duas organizações
+para provar o isolamento.
+
+| Caso | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|
+| J69.1 | Instalar um módulo `connected` | P0 | A instalação aparece com perfil `connected`; banco com linha em `extension_installation_secrets` cujo `ciphertext` não é o segredo em claro | **NÃO EXECUTADO** (depende de J68.1) |
+| J69.2 | Gerar o segredo e vê-lo uma vez | P0 | Botão "Gerar segredo" no cartão abre a caixa com o segredo; fechar a caixa apaga o valor da tela; reabrir não mostra de novo; `api_audit_log` com `extension.secret_rotated` e sem o valor | **NÃO EXECUTADO** |
+| J69.3 | Gerar novo segredo | P0 | Botão "Gerar novo segredo"; os tokens vivos da instalação somem da tela de tokens; uma busca com o segredo antigo é recusada | **NÃO EXECUTADO** |
+| J69.4 | Ativar numa organização | P0 | Ativar reserva a vaga: a linha "Módulo <slug>" aparece na tela de tokens da organização. Previsto, não medido: a vaga ainda não tem texto utilizável, porque o banco guarda só um hash que ninguém conhece | **NÃO EXECUTADO** |
+| J69.5 | O módulo busca o token com a assinatura | P0 | `POST /api/v1/extensions/token` com `X-Module-*` assinados devolve `token` e `expires_at` (1 h); o token é aceito em `/api/v1` com escopo `mcp:read` e papel `viewer` | **NÃO EXECUTADO** |
+| J69.6 | Ver o token na tela de tokens | P0 | Linha "Módulo <slug>" com o prefixo, sem botão de copiar; nenhum texto do token aparece na tela | **NÃO EXECUTADO** |
+| J69.7 | Revogar na tela desativa o módulo | P0 | Botão "Revogar" na linha do módulo; a ativação daquela organização passa a desativada e o token fica revogado, na mesma transação | **NÃO EXECUTADO** |
+| J69.8 | Repetir a busca com o mesmo nonce | P1 | Segunda busca com o mesmo `X-Module-Nonce` recusa; a resposta é idêntica à de assinatura errada e à de instalação inexistente | **CI** (rota e banco) escritos; **NÃO EXECUTADO** |
+| J69.9 | Carimbo fora de ±5 min | P1 | Carimbo com 5 min exatos entra; com mais de 5 min recusa; a recusa não troca o hash da vaga | **CI** (unit e rota) escritos; **NÃO EXECUTADO** |
+| J69.10 | Desligar a instalação corta a busca | P1 | Com `disabled_at`, a busca recusa e não troca o hash; desligar revoga os tokens de todas as organizações da instalação | **CI** (banco) escrito; **NÃO EXECUTADO** |
+| J69.11 | Limite de 50 tokens vivos | P1 | Organização com 50 tokens vivos: ativar `connected` falha inteiro e `organization_extensions` não muda | **CI** (banco) escrito; **NÃO EXECUTADO** |
+| J69.12 | Duas buscas simultâneas | P1 | Duas buscas do mesmo par deixam um só token vivo; a outra recebe recusa ou o mesmo resultado | **só CI de banco** (`extensoes-token-modulo-funcoes.test.ts`); **NÃO EXECUTADO** |
+| J69.13 | Isolamento entre organizações | P0 | Token emitido para a organização A não existe para a B; a instalação ativa só na B não emite nada para a A | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** O token do módulo vale uma hora e é renovado por nova busca; não há token
+de longa duração na F2. Revogar na tela de tokens desativa a ativação daquela organização: para voltar,
+quem administra a organização ativa o módulo de novo, de propósito.
+
+**Não provado.** Nenhum caso acima foi executado num navegador; que o módulo real (fora do laboratório) consiga
+assinar e buscar; a concorrência entre buscas só é provada pelos invariantes de banco, nunca por uma
+jornada em tela; e que a autoridade do token seja limitada por área (isso é da F3, e o token da F2 só
+tem `mcp:read`).
+
+## J70 — Módulo conectado: consentimento por área e ator com pessoa `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; o laboratório local ainda não
+admite o perfil `connected` (ver J68.1), então nenhum caso abaixo roda nele. Quando J68.1 passar, os
+casos viram execução; até lá, cada linha descreve o que a tela e o banco devem fazer.
+
+Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-consentimento.test.ts`
+(banco, `pnpm test:db`, CI `invariants`); `app/api/v1/extensions/[id]/consentimento/route.test.ts`,
+`app/api/v1/extensions/[id]/contexto/route.test.ts`, `lib/auth/modulo-autorizado.test.ts`,
+`lib/auth/portas-de-token/areas.test.ts`, `lib/api/auth-dual-modulo.test.ts`,
+`lib/api/auth-dual-contexto.test.ts`, `lib/audit/ator-modulo.test.ts` (rota e lib, `pnpm test:unit`, CI
+`verify`); `components/extensions/ConsentimentoPorArea.test.tsx`. Nenhuma delas abre `/admin/extensoes`
+num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J69, mais `MODULE_JWT_PRIVATE_KEY` definida para os casos com pessoa, um
+módulo de laboratório que declara áreas de leitura e de escrita, uma pessoa `viewer`, uma `manager` e uma
+`admin`, e duas organizações para provar o isolamento.
+
+| Caso | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|
+| J70.1 | Ver as áreas declaradas ao ativar | P0 | A ativação lista, em frases legíveis, só as áreas que o pacote declarou, cada uma com caixa de seleção, nenhuma marcada de início | **NÃO EXECUTADO** (depende de J68.1) |
+| J70.2 | Consentir uma área | P0 | O admin marca e salva; o cartão mostra a área consentida; `api_audit_log` com `extension.consent_changed` e a lista de áreas, sem dado pessoal | **NÃO EXECUTADO** |
+| J70.3 | Manager e agent não alteram | P0 | Quem não é admin vê o consentimento atual, com o motivo de não poder mudar; a rota responde 403 | **CI** (rota) escrito; **NÃO EXECUTADO** |
+| J70.4 | Área não declarada | P1 | Consentir uma área que o pacote não declarou recusa com 409 e nada é gravado | **CI** (rota e banco) escritos; **NÃO EXECUTADO** |
+| J70.5 | Módulo sem consentimento | P0 | Chamada do módulo a uma área não consentida recusa com 403; o consentimento é lido do banco a cada chamada | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.6 | Modo da porta | P0 | Área consentida só para leitura aceita GET e recusa POST na mesma área | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.7 | Retirar o consentimento | P0 | O admin desmarca e salva; a chamada seguinte do mesmo token recusa, sem esperar o token expirar | **NÃO EXECUTADO** |
+| J70.8 | Pessoa limita o papel | P0 | Com JWT de contexto de pessoa `viewer`, uma rota que pede `manager` recusa mesmo que o token do módulo permita; o papel efetivo é o menor dos dois | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.9 | Pessoa admin passa, manager não | P1 | Com pessoa `admin`, uma rota que pede `admin` passa; com pessoa `manager`, recusa; sem JWT, recusa (ADR-0005 D4: o limite é o papel de quem clica; equipe, credencial e envio seguem sem área) | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.10 | Pessoa rebaixada entre duas chamadas | P1 | Rebaixar a pessoa muda o papel efetivo na chamada seguinte, com o mesmo JWT ainda válido | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.11 | Atribuição no audit | P0 | Mutação feita pelo módulo com JWT de pessoa grava `actor_api_token_id` e `metadata.module` como antes, mais `metadata.person_id`; `actor_user_id` continua nulo | **CI** (unit, `ator-modulo.test.ts`) escrito; **NÃO EXECUTADO** |
+| J70.12 | Isolamento entre organizações | P0 | Consentimento da organização A não vale na B; JWT de contexto de uma organização não abre a outra | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** Declarado pelo pacote e consentido pela organização, os dois, no modo certo:
+sem um deles, a chamada recusa. Quem consente é só o admin da organização. A pessoa do JWT só limita
+(nunca amplia) e só atribui no audit; ela não vira dono do registro criado.
+
+**Não provado.** Nenhum caso acima foi executado num navegador; que o módulo real consiga assinar o JWT
+de contexto e que a tela dele o repasse; que as mutações de todas as rotas gravem `person_id` (só o
+mecanismo comum, `metadataDoModulo`, foi coberto, e as rotas que não o usam não levam a pessoa); e o
+comportamento de quem já tem consentimento em edição ao mesmo tempo em duas abas.
+
+## J71 — Módulo conectado: o lugar na tela, a ponte e o painel lateral `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; ainda não existe módulo real com
+serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J68.1). Quando houver um
+módulo real, os casos viram execução; até lá, cada linha descreve o que a tela deve fazer.
+
+Cobertura hoje, só por escrita (não executada): `lib/extensions/modulos-na-tela.test.ts`,
+`lib/modulo/ponte.test.ts`, `components/modulo/QuadroDoModulo.test.tsx`,
+`components/modulo/PainelDoModulo.test.tsx`, `app/app/m/[modulo]/page.test.tsx`,
+`app/actions/modulo/moduloParaOPainel.test.ts`, `tests/unit/navegacao-modulos.test.ts`,
+`components/shell/CommandPalette.modulo.test.tsx` (`pnpm test:unit`, CI `verify`) e a cerca
+`tests/unit/modulo-quadro-so-pela-ponte.test.ts`. Nenhuma delas abre a tela do CRM num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J70, mais um módulo de laboratório com `service_origin` de outra origem que
+sirva `/embed`, uma pessoa `viewer`, uma `admin`, e duas organizações.
+
+| Caso | Nome | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|---|
+| J71.1 | Mensagem de outra origem | P0 | Uma mensagem vinda de origem diferente da do serviço é ignorada em silêncio: nada responde, nada navega, nenhum erro na tela | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.2 | Mensagem de outra janela, mesma origem | P0 | Uma mensagem da mesma origem do serviço, mas de outra janela (outra aba ou outro iframe), é ignorada | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.3 | `module:navigate` com id que não existe | P0 | O módulo pede uma tela inexistente: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.4 | `module:navigate` para tela que a pessoa não vê | P0 | Um `viewer` que o módulo manda para uma tela de administração: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.5 | `module:navigate` com endereço no lugar de id | P0 | O módulo manda um `href` ou endereço externo em vez do id: ignorado | **CI** (unit, `ponte.test.ts`) escrito; **NÃO EXECUTADO** |
+| J71.6 | Módulo que nunca manda `module:ready` | P0 | Em 10 s aparece "O serviço deste módulo não respondeu"; menu, topo e o resto do CRM seguem funcionando | **CI** (unit, relógio simulado) escrito; **coberto por e2e** (`modulo-conectado.spec.ts`, passo 5: serviço parado de verdade, aviso em até 25 s, `/app/inbox` abre); **NÃO EXECUTADO** nesta máquina |
+| J71.7 | Módulo desativado, removido, fora da faixa `host_api` ou sem `service_origin` | P0 | Não aparece no menu nem no ⌘K, e `/app/m/<slug>` responde 404 | **CI** (unit) escrito; **coberto por e2e em parte** (passo 6: módulo desligado pelo interruptor, `/app/m/<slug>` dá não encontrado; desativado, removido, faixa e sem origem seguem só por unit); **NÃO EXECUTADO** nesta máquina |
+| J71.8 | Pessoa sai da organização ou troca de organização com a tela aberta | P0 | O pedido de JWT novo é recusado (F3) e o iframe recebe `host:error`; a tela do módulo não ganha poder novo | **CI** (unit do Quadro e da rota de contexto) escrito; **NÃO EXECUTADO** |
+| J71.9 | Sem módulo, o CRM é o de antes | P0 | Sem nenhum módulo conectado: nenhum grupo "Módulos", nenhum item no ⌘K, nenhum botão no topo | **CI** (unit, comparação com a saída sem o parâmetro) escrito; **coberto por e2e** (passo 1: organização sem módulo, sem grupo "Módulos" e `/app/m/qualquer` dá não encontrado; ⌘K e botão do topo não são olhados); **NÃO EXECUTADO** nesta máquina |
+| J71.10 | Pedidos de JWT em sequência | P1 | Dois `module:request-jwt` em menos de 30 s: o segundo recebe `host:error` com `rate_limited` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.11 | Nada com poder na URL do iframe | P0 | O endereço do iframe leva só `organization` e `installation`; nenhum JWT, token ou segredo | **CI** (unit e cerca) escritos; **NÃO EXECUTADO** |
+| J71.12 | Painel lateral | P1 | O botão no topo abre o painel com o mesmo quadro; um módulo por vez; `Esc` fecha; com um só módulo o botão abre direto; com vários abre a escolha; sem módulo o botão não existe | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.13 | Painel em tela estreita | P2 | Abaixo de 768 px abrir leva à página `/app/m/<slug>`, sem painel | **CI** (unit, consulta de largura simulada) escrito; **NÃO EXECUTADO** |
+| J71.14 | Módulo que o painel não conhece | P1 | A ação `moduloParaOPainel` com slug de outra organização ou inexistente devolve nada; o painel mostra o aviso | **CI** (unit) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** O CRM é dono da moldura; o módulo é dono do conteúdo, numa origem diferente
+da do CRM. Só passam seis mensagens combinadas, e só da origem e da janela certas. O painel lateral não
+abre o CRM dentro do CRM: pede o módulo pelo slug a uma Server Action (`moduloParaOPainel`), que confere
+sessão, organização e papel e devolve só aquele módulo, e desenha o mesmo quadro da página. Nenhum header
+de segurança do CRM foi alterado.
+
+**Não provado.** Nenhum caso acima foi executado num navegador; que o módulo real fale a ponte (`/embed`,
+`JSON.parse` do que recebe); que o iframe de outra origem carregue de fato com o sandbox escolhido (não
+existe CSP no CRM, então nada foi medido contra uma); o painel em celular; e que `Esc` com o foco dentro
+do iframe não chega ao CRM, porque o navegador entrega a tecla ao iframe: o painel fecha pelo botão ou
+com o foco fora do quadro. A coluna de CI foi montada a partir dos nomes e da intenção dos testes das
+tarefas anteriores; cada teste não foi relido caso a caso nesta tarefa.
+
+## J72 — Módulo conectado: os eventos que o módulo busca e o atraso em `/admin/extensoes` `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; ainda não existe módulo real com
+serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J68.1). Quando houver um
+módulo real, os casos viram execução; até lá, cada linha descreve o que o módulo e a tela devem fazer.
+
+Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-eventos.test.ts` (banco real,
+`pnpm test:db`, CI `invariants`), `app/api/v1/extensions/events/route.test.ts`,
+`lib/extensions/eventos-do-modulo.test.ts`, `lib/extensions/token-do-modulo.test.ts`,
+`app/admin/(protected)/extensoes/page.test.tsx` (`pnpm test:unit`, CI `verify`) e a cerca
+`tests/unit/eventos-do-modulo-so-por-prova.test.ts`. Nenhuma delas fala com um módulo de verdade.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J70, mais um módulo de laboratório que assine as buscas com o segredo da
+instalação e guarde o cursor, duas organizações com o mesmo módulo ligado, um contato em cada uma, uma
+pessoa `admin` da organização e o dono do servidor.
+
+| Caso | Nome | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|---|
+| J72.1 | Leitura por cursor, só da organização | P0 | Com o mesmo módulo ligado nas organizações A e B, o módulo que assina como A lê só os eventos de A; nenhum identificador de B aparece, nem em páginas seguintes | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J72.2 | Anonimização chega em uma leitura | P0 | A organização A anonimiza um contato; na próxima busca do módulo vem um `contact_anonymized` com o id do contato, e anonimizar o mesmo contato de novo não cria um segundo evento | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J72.3 | Módulo atrasado 40 dias que volta | P0 | O módulo lê tudo desde o último cursor, em ordem, sem perder nem repetir evento | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J72.4 | Instalação desligada não prende a LGPD por 30 dias (D2) | P0 | Depois de desligar o módulo ou a organização, ele ainda lê por 30 dias, e o evento de desativação chega; com 31 dias a leitura é recusada com a mesma resposta genérica; ligar de novo volta a permitir | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J72.5 | Organização suspensa | P0 | Suspender (ou anonimizar a organização) gera `organization_suspended` e o módulo continua lendo para recebê-lo | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J72.6 | Cursor que não é do módulo | P0 | Cursor adulterado, de outra organização ou de outra instalação: `400 invalid_cursor`, e o módulo nunca lê de uma posição escolhida por ele | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.7 | Assinatura ruim, carimbo velho, nonce repetido, sem vínculo | P0 | Todas as recusas devolvem a mesma resposta genérica 401; erro nosso é 503 | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.8 | Selo "atrasado" em `/admin/extensoes` | P0 | Com atraso e última leitura há mais de 24 h (ou nunca leu e há evento com mais de 24 h), a linha da instalação mostra "Atrasado" e "Este módulo ainda não apagou os dados de N contato(s) anonimizado(s)."; em dia, sem selo | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.9 | O atraso não mistura organizações | P0 | Duas organizações com atrasos diferentes mostram cada uma o seu número; a tela não diz qual empresa é qual | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J72.10 | Sem módulo conectado, a tela é a de antes | P0 | Sem nenhum módulo `connected`: nenhuma leitura de atraso, nenhum bloco novo em `/admin/extensoes` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J72.11 | Quem pode ler as tabelas | P0 | `anon` e `authenticated` não executam as funções nem leem as tabelas de eventos e de cursor | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** O CRM não empurra nada ao módulo: gatilhos de banco escrevem uma linha e o
+módulo busca por cursor, com a mesma assinatura da busca de token. O cursor recebido reconhece o
+anterior, então o selo "atrasado" mede de verdade quanto o módulo ainda não leu. A tela do dono do
+servidor mostra números e datas, nunca o nome da empresa.
+
+**Não provado.** Nenhum caso acima foi executado com um módulo real nem num navegador; que um módulo
+real apague os dados ao receber `contact_anonymized` (isso é do módulo, fora do CRM); o tempo real entre
+a anonimização e a leitura (o plano promete "na próxima busca", não um prazo); o volume da tabela de
+eventos (não há expurgo nesta fase, D5); e a coluna de CI foi montada a partir dos nomes e da intenção
+dos testes das tarefas anteriores, sem reler cada teste caso a caso nesta tarefa.
+
+## J73 — Módulo conectado: a prova de aceite pela tela `[P0]` (2026-11-10)
+
+Spec: `tests/e2e/modulo-conectado.spec.ts` (uma jornada, seis passos), na `SPECS_PARTE_7` do `e2e.yml`, com a fixture
+`tests/e2e/fixtures/modulo-conectado.ts`. Evidência: `evidence/modulo-conectado-e2e/` (um screenshot por passo, gravado
+pela própria spec).
+
+Estado: **escrita, coberta por e2e no CI do PR, NÃO EXECUTADA nesta máquina** (a regra do projeto é teste só no GitHub). Nada
+abaixo foi visto rodando; os números e textos vêm da leitura do código.
+
+Ambiente: banco fresco do `baseline.sql` + as contas das specs de extensão (dono admin e plataforma, `viewer` da mesma
+organização), o laboratório de extensões na porta 56331 servindo, no MESMO processo, o catálogo e o módulo de ensaio
+(`lab/modulo-de-ensaio-<id>`, áreas `tarefas` leitura e escrita e `conversas` leitura). A chave do JWT de contexto
+(`MODULE_JWT_PRIVATE_KEY`) é gerada por um passo do `e2e.yml` (só na parte 7) e a spec falha alto sem ela. O segredo da
+instalação nasce no CRM, pelo botão "Gerar segredo", e a spec o entrega uma vez ao serviço de ensaio; nada fixo no repositório.
+O módulo vive num iframe real de outra "página" do mesmo laboratório, pede o JWT por `postMessage`, busca o token por HMAC e
+chama `/api/v1/tasks`; a página dele mostra o status HTTP e o código de erro, que é o que a spec lê.
+
+| Caso | Nome | Prioridade | Prova | Resultado |
+|---|---|---|---|---|
+| J73.1 | Zero módulos | P0 | Organização sem módulo: o menu não tem o grupo "Módulos" e `/app/m/qualquer` mostra "404 — Página não encontrada" | **coberto por e2e** (passo 1); **NÃO EXECUTADO** nesta máquina |
+| J73.2 | Instalar, ativar, consentir, abrir | P0 | O admin admite o catálogo, instala, gera o segredo, ativa, consente (a proposta traz `tarefas` e `conversas`), o grupo aparece, o iframe carrega e "Listar tarefas" mostra 200 | **coberto por e2e** (passo 2); **NÃO EXECUTADO** nesta máquina |
+| J73.3 | Viewer lê, não grava | P0 | A pessoa `viewer` da mesma organização: "Listar tarefas" 200; "Criar tarefa" 403 com `forbidden_role`. O admin, no mesmo botão, recebe 201 | **coberto por e2e** (passo 3); **NÃO EXECUTADO** nesta máquina |
+| J73.4 | Área retirada | P0 | O admin desmarca `tarefas` e salva; na tela do módulo, "Listar tarefas" mostra 403 com `module_area_not_granted` | **coberto por e2e** (passo 4); **NÃO EXECUTADO** nesta máquina |
+| J73.5 | Serviço fora do ar | P0 | Com o processo do laboratório parado, `/app/m/<slug>` mostra "O serviço deste módulo não respondeu" (10 s, folga de 25 s) e `/app/inbox` abre | **coberto por e2e** (passo 5); **NÃO EXECUTADO** nesta máquina |
+| J73.6 | Desligar | P0 | O interruptor desliga: o grupo "Módulos" some e `/app/m/<slug>` mostra "404 — Página não encontrada" | **coberto por e2e** (passo 6); **NÃO EXECUTADO** nesta máquina |
+| J73.7 | Atualizar com o serviço fora | P0 | O `update.sh` termina com sucesso sem chamar a origem do módulo, rota de extensões nem tabela do módulo | **coberto por shell** (`tests/shell/atualizar-com-modulo-conectado-fora.test.sh`, `pnpm test:shell`); **NÃO EXECUTADO** nesta máquina |
+
+**Não provado.** Que o passo 2 acha os controles do cartão do módulo conectado como previsto (nenhuma execução; o
+cartão e o fluxo de ativação foram lidos, não vistos); o formato exato do corpo de `GET /api/v1/tasks` (o campo "Tarefas na
+lista" da página de ensaio é opcional e a spec não o lê); o espaçamento de 30 s do JWT (a spec recarrega a página a cada
+leitura, o que reinicia a janela); o caso 7 não tem módulo instalado de verdade, porque o `update.sh` não lê o banco: ele
+prova o lado que o script tem como falhar (alcançar o serviço) e o texto dos scripts do kit é varrido por
+`tests/unit/atualizar-nao-depende-de-modulo-conectado.test.ts`; e o serviço parado é o MESMO processo do catálogo, porque a
+política de laboratório do host só aceita `http` em loopback na origem do catálogo, então o passo 5 também tira o catálogo
+do ar (o que não importa depois de instalado).
 ## Consultas MCP no Testar e no assistido — resgate #3564 (2026-10-27)
 
 Fonte preservada: `8088f3a65e3e3cece8d7427487ec4725f9aa23e8`, de @Denispds.

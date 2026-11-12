@@ -6,7 +6,90 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { tagDeIdioma } from "@/lib/i18n/datas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { lerAtrasoDoModulo, type AtrasoPorVinculo } from "@/lib/extensions/eventos-do-modulo";
+import { checkCompatibility } from "@/lib/extensions/manifest";
 import { createAdminClient } from "@/lib/supabase/admin";
+
+/** O manifesto do artefato diz o perfil; só `connected` tem quem busque eventos. */
+function ehConectada(artefato: unknown): boolean {
+  const a = Array.isArray(artefato) ? artefato[0] : artefato;
+  const manifesto = (a as { manifest?: { profile?: unknown } } | null | undefined)?.manifest;
+  return manifesto?.profile === "connected";
+}
+
+type MotivoDeSuspensao = "faixa" | "outro" | "ilegivel";
+
+/**
+ * Módulo conectado fora da faixa `host_api` deste CRM (spec 33, F6): suspenso. `null` = compatível ou não é
+ * conectado. Lê o mesmo `checkCompatibility` que o token do módulo e o menu usam; manifesto ilegível também
+ * é suspensão (a dúvida recusa).
+ */
+function motivoDeSuspensao(artefato: unknown): MotivoDeSuspensao | null {
+  if (!ehConectada(artefato)) return null;
+  const a = Array.isArray(artefato) ? artefato[0] : artefato;
+  const m = (a as { manifest?: { host_api?: { min?: unknown; max?: unknown }; permissions?: unknown } }).manifest;
+  const min = m?.host_api?.min;
+  const max = m?.host_api?.max;
+  if (typeof min !== "number" || typeof max !== "number" || !Array.isArray(m?.permissions)) return "ilegivel";
+  const r = checkCompatibility({ host_api: { min, max }, permissions: m.permissions as never, profile: "connected" });
+  if (r.compatible) return null;
+  return r.reason === "host_api_unsupported" ? "faixa" : "outro";
+}
+
+/**
+ * O último cursor lido, quando, e o atraso de cada vínculo. A empresa NÃO é nomeada (decisão: o dono do
+ * servidor vê o estado, não a lista de clientes). Selo só quando há atraso e faz mais de 24 h.
+ */
+function LeituraDosEventos({
+  chave,
+  vinculos,
+  t,
+  dataEHora,
+}: {
+  chave: string;
+  vinculos: AtrasoPorVinculo[];
+  t: (s: string) => string;
+  dataEHora: (iso: string) => string;
+}) {
+  return (
+    <div data-testid={`leitura-eventos-${chave}`} className="mt-2 space-y-1 text-xs">
+      <p className="font-medium">{t("Leitura dos avisos pelo módulo")}</p>
+      {vinculos.map((v, i) => (
+        <div key={i} data-testid={`leitura-eventos-${chave}-${i}`} className="text-text-muted">
+          <p>
+            {t("Empresa {n}").replace("{n}", String(i + 1))} ·{" "}
+            {v.lidoEm === null || v.ultimoCursor === null
+              ? t("ainda não leu nenhum aviso")
+              : `${t("último aviso lido")} #${v.ultimoCursor} · ${t("lido em")} ${dataEHora(v.lidoEm)}`}
+            {" · "}
+            {v.atraso === 0
+              ? t("em dia")
+              : t("{n} aviso(s) por ler").replace("{n}", String(v.atraso))}
+            {v.atrasado ? (
+              <span
+                data-testid={`selo-atrasado-${chave}-${i}`}
+                className="ml-2 rounded-md bg-warning-bg px-1.5 py-0.5 font-medium text-warning-fg"
+              >
+                {t("Atrasado")}
+              </span>
+            ) : null}
+          </p>
+          {v.contatosPendentes > 0 ? (
+            <p data-testid={`leitura-eventos-lgpd-${chave}-${i}`}>
+              {t("Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).").replace(
+                "{n}",
+                String(v.contatosPendentes),
+              )}
+              {v.atrasado
+                ? ` ${t("Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.")}`
+                : ""}
+            </p>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export const metadata = { title: "Extensões da instalação" };
 export const dynamic = "force-dynamic";
@@ -59,7 +142,9 @@ export default async function Page() {
     // (`lib/extensions/service.ts`) filtra no banco pelo mesmo motivo.
     db
       .from("extension_installations")
-      .select("id,publisher,name,version,installed_at")
+      .select(
+        "id,publisher,name,version,installed_at,disabled_at,extension_artifacts!extension_installations_artifact_id_fkey(manifest)",
+      )
       .is("removed_at", null)
       .order("installed_at", { ascending: false }),
     db.from("organization_extensions").select("installation_id,enabled"),
@@ -72,6 +157,27 @@ export default async function Page() {
     if (v.enabled) atual.ligadas += 1;
     porInstalacao.set(v.installation_id, atual);
   }
+
+  // O atraso do módulo conectado (spec 33, F5 T3): só para instalação `connected`, e só números e datas.
+  // Sem módulo conectado nada é lido e a tela fica idêntica à de antes.
+  const atrasoPorInstalacao = new Map<string, AtrasoPorVinculo[]>();
+  await Promise.all(
+    (instalacoes.data ?? [])
+      .filter((i) => ehConectada(i.extension_artifacts))
+      .map(async (i) => {
+        const atraso = await lerAtrasoDoModulo(i.id);
+        if (atraso && atraso.length > 0) atrasoPorInstalacao.set(i.id, atraso);
+      }),
+  );
+
+  const dataEHora = (iso: string) =>
+    new Date(iso).toLocaleString(tagDeIdioma(idioma), {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
   const dataLegivel = (iso: string) =>
     new Date(iso).toLocaleDateString(tagDeIdioma(idioma), {
@@ -149,6 +255,43 @@ export default async function Page() {
                     {" · "}
                     {t("instalada em")} {dataLegivel(e.installed_at)}
                   </p>
+                  {/* O interruptor do módulo conectado (spec 33, D8): desligado continua instalado.
+                      Só `connected` tem `disabled_at`; ligar e desligar se faz na tela da empresa. */}
+                  {e.disabled_at ? (
+                    <p data-testid={`extensao-desligada-${e.publisher}-${e.name}`} className="text-xs font-medium">
+                      {t("Desligado nesta instalação")} · {dataLegivel(e.disabled_at)}
+                    </p>
+                  ) : null}
+                  {(() => {
+                    const motivo = motivoDeSuspensao(e.extension_artifacts);
+                    if (!motivo) return null;
+                    return (
+                      <p
+                        data-testid={`extensao-suspensa-${e.publisher}-${e.name}`}
+                        className="mt-1 text-xs font-medium text-warning-fg"
+                      >
+                        {motivo === "faixa"
+                          ? t(
+                              "Suspenso: este módulo foi feito para outra versão do CRM. Ele some do menu e o acesso dele está recusado até você instalar uma versão compatível.",
+                            )
+                          : motivo === "ilegivel"
+                            ? t(
+                                "Suspenso: não foi possível conferir se este módulo é compatível com esta versão do CRM. Por segurança, o acesso dele está recusado.",
+                              )
+                            : t(
+                                "Suspenso: este módulo não é compatível com esta versão do CRM. Ele some do menu e o acesso dele está recusado.",
+                              )}
+                      </p>
+                    );
+                  })()}
+                  {atrasoPorInstalacao.has(e.id) ? (
+                    <LeituraDosEventos
+                      chave={`${e.publisher}-${e.name}`}
+                      vinculos={atrasoPorInstalacao.get(e.id) ?? []}
+                      t={t}
+                      dataEHora={dataEHora}
+                    />
+                  ) : null}
                 </div>
               );
             })

@@ -32,6 +32,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { Actor } from "@/lib/api/handlers/types";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import type { ActivityType } from "@/lib/leads/activity-vocabulary";
@@ -189,9 +190,21 @@ export interface DepsDaIntervencao {
    */
   admin: SupabaseClient;
   orgId: string;
-  userId: string;
+  /**
+   * Id da PESSOA da sessão — `null` quando quem age é um token de integração
+   * (não existe pessoa; `actorParaAtividade` grava a timeline como sistema).
+   */
+  userId: string | null;
+  /** Id do token, quando quem age é uma integração. Vai no evento e no audit. */
+  apiTokenId?: string | null;
   requestId: string;
   agora?: Date;
+}
+
+function atorDaIntervencao(deps: DepsDaIntervencao): Actor {
+  if (deps.userId) return { type: "user", id: deps.userId };
+  // Token de integração: a timeline grava como sistema; o audit leva o id do token.
+  return { type: "api_token", id: deps.apiTokenId ?? "desconhecido" };
 }
 
 export interface EnrollmentParaIntervir {
@@ -332,7 +345,12 @@ async function registraEvento(
     enrollment_id: alvo.id,
     node_id: alvo.current_node_id,
     event_type: eventType,
-    payload: { ...payload, actor_user_id: deps.userId },
+    payload: {
+      ...payload,
+      actor_user_id: deps.userId,
+      // Id de token nunca viaja em campo `*_user_id` — e continua visível.
+      ...(deps.apiTokenId ? { actor_api_token_id: deps.apiTokenId } : {}),
+    },
   });
   if (error) {
     logger.error("[followup.intervencao] evento não gravado", {
@@ -384,7 +402,7 @@ async function registraNaTimeline(
       type: tipo,
       sourceModule: "followup",
       sourceId: alvo.id,
-      actor: { type: "user", id: deps.userId },
+      actor: atorDaIntervencao(deps),
       reason,
       payload,
     });

@@ -18,12 +18,14 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { validarJanela } from "../route";
+import { validarJanela, type Chamador } from "../route";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string }> };
@@ -56,13 +58,46 @@ export async function PATCH(req: NextRequest, { params }: Context): Promise<Resp
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
+
+  // Token de integração (Spec 33, R1): só com Bearer. A sessão segue o portão de sempre.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_schedules",
+      role: "admin",
+      scope: "config:write",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_schedules_editar", requestId);
+    if (teto) return teto;
+    return editarJanela(req, requestId, params, {
+      organizationId: authz.organizationId,
+      obterDb: () => authz.supabase,
+      autorId: authz.actor.type === "user" ? authz.actor.id : null,
+      tokenId: authz.apiTokenId ?? null,
+    });
+  }
+
   const auth = await requireRole("admin", {
     requestId,
     resource: "channel_schedules",
     allowPlatformAdmin: true,
   });
   if (!auth.ok) return auth.response;
+  return editarJanela(req, requestId, params, {
+    organizationId: auth.org.orgId,
+    obterDb: () => createAdminClient(),
+    autorId: auth.user.id,
+  });
+}
 
+async function editarJanela(
+  req: NextRequest,
+  requestId: string,
+  params: Context["params"],
+  chamador: Chamador,
+): Promise<Response> {
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) return fail("not_found", "Janela não encontrada.", 404, { requestId });
 
@@ -81,11 +116,11 @@ export async function PATCH(req: NextRequest, { params }: Context): Promise<Resp
   const recusa = validarJanela(inicio, fim);
   if (recusa) return fail("validation_failed", recusa, 422, { requestId });
 
-  const db = createAdminClient();
+  const db = chamador.obterDb();
   const { data: atual, error } = await db
     .from("channel_schedules")
     .select("id, status")
-    .eq("organization_id", auth.org.orgId)
+    .eq("organization_id", chamador.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (error) return fail("internal_error", "Não foi possível carregar a janela.", 500, { requestId });
@@ -111,7 +146,7 @@ export async function PATCH(req: NextRequest, { params }: Context): Promise<Resp
       ends_at: fim.toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq("organization_id", auth.org.orgId)
+    .eq("organization_id", chamador.organizationId)
     .eq("id", id)
     .eq("status", "scheduled")
     .select("id, starts_at, ends_at, status");
@@ -129,12 +164,13 @@ export async function PATCH(req: NextRequest, { params }: Context): Promise<Resp
 
   void audit({
     action: "channel.schedule_updated",
-    actorUserId: auth.user.id,
-    organizationId: auth.org.orgId,
+    actorUserId: chamador.autorId,
+    organizationId: chamador.organizationId,
     resourceType: "channel_schedule",
     resourceId: id,
     requestId,
     metadata: { starts_at: inicio.toISOString(), ends_at: fim.toISOString() },
+    actorApiTokenId: chamador.tokenId,
   });
 
   return ok({ id, starts_at: inicio.toISOString(), ends_at: fim.toISOString(), mudou: true }, { requestId });
@@ -144,23 +180,51 @@ export async function DELETE(req: NextRequest, { params }: Context): Promise<Res
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
   const requestId = randomUUID();
+
+  // Token de integração (Spec 33, R1): só com Bearer. A sessão segue o portão de sempre.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_schedules",
+      role: "admin",
+      scope: "config:write",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_schedules_cancelar", requestId);
+    if (teto) return teto;
+    return cancelarJanela(requestId, params, {
+      organizationId: authz.organizationId,
+      obterDb: () => authz.supabase,
+      autorId: authz.actor.type === "user" ? authz.actor.id : null,
+      tokenId: authz.apiTokenId ?? null,
+    });
+  }
+
   const auth = await requireRole("admin", {
     requestId,
     resource: "channel_schedules",
     allowPlatformAdmin: true,
   });
   if (!auth.ok) return auth.response;
+  return cancelarJanela(requestId, params, {
+    organizationId: auth.org.orgId,
+    obterDb: () => createAdminClient(),
+    autorId: auth.user.id,
+  });
+}
 
+async function cancelarJanela(requestId: string, params: Context["params"], chamador: Chamador): Promise<Response> {
   const { id } = await params;
   // Depois do papel: sem ele, 403; com ele, id que não é uuid é janela que não
   // existe (404), e não o 500 do Postgres (22P02).
   if (!z.uuid().safeParse(id).success) return fail("not_found", "Janela não encontrada.", 404, { requestId });
-  const db = createAdminClient();
+  const db = chamador.obterDb();
 
   const { data: agenda, error } = await db
     .from("channel_schedules")
     .select("id, status")
-    .eq("organization_id", auth.org.orgId)
+    .eq("organization_id", chamador.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (error) return fail("internal_error", "Não foi possível carregar a janela.", 500, { requestId });
@@ -179,7 +243,7 @@ export async function DELETE(req: NextRequest, { params }: Context): Promise<Res
   const { data, error: erroUpdate } = await db
     .from("channel_schedules")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
-    .eq("organization_id", auth.org.orgId)
+    .eq("organization_id", chamador.organizationId)
     .eq("id", id)
     .in("status", ["scheduled", "running"])
     .select("id");
@@ -188,12 +252,13 @@ export async function DELETE(req: NextRequest, { params }: Context): Promise<Res
   if (mudou) {
     void audit({
       action: "channel.schedule_cancelled",
-      actorUserId: auth.user.id,
-      organizationId: auth.org.orgId,
+      actorUserId: chamador.autorId,
+      organizationId: chamador.organizationId,
       resourceType: "channel_schedule",
       resourceId: id,
       requestId,
       metadata: { status_anterior: statusAtual },
+      actorApiTokenId: chamador.tokenId,
     });
   }
 

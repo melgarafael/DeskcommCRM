@@ -74,7 +74,25 @@ export type Actor =
    * a REGRA que disparou, e a assinatura `por_agente` (#3310) precisa do nome
    * de quem escreveu, não do nome de quem mandou disparar.
    */
-  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string };
+  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string }
+  /**
+   * MÓDULO CONECTADO (spec 33, F2) — o token curto que um módulo `connected` busca com o segredo da
+   * instalação. Não é pessoa, nem agente, nem integração do cliente: é o módulo.
+   *
+   * `id` é o id do TOKEN (`api_tokens.id`) e `slug` é `<publisher>/<name>` da instalação. O `id` NUNCA
+   * pode ir para coluna de pessoa (`…_by_user_id`, `owner_user_id`): o audit grava o token em
+   * `actor_api_token_id` e o módulo em `metadata.module`. Quem decide pessoa compara com `"user"`.
+   */
+  | {
+      type: "module";
+      id: string;
+      slug: string;
+      /**
+       * A pessoa (`auth.users.id`) de quem a tela do módulo agiu, vinda do JWT de contexto (F3). Só
+       * vai para `metadata.person_id` do audit; NUNCA para coluna de pessoa com FK nem para decidir dono.
+       */
+      pessoaId?: string;
+    };
 
 export interface HandlerCtx {
   prospectingDelivery?: ProspectingDelivery;
@@ -105,6 +123,11 @@ export interface HandlerCtx {
   sourceJobId?: string;
   organization_id: string;
   actor: Actor;
+  /**
+   * Id da linha do token (`api_tokens.id`) quando a chamada veio por Bearer, nas
+   * rotas REST de integração. Vira `actorApiTokenId` do audit. Sessão não tem.
+   */
+  apiTokenId?: string;
   /**
    * Autoria "em nome de" (#1613): a PESSOA por cuja decisão o token envia.
    *

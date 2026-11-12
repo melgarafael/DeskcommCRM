@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { sePropostasDesligadas } from "@/lib/propostas/porta";
 import { montarPdfDaProposta, type PropostaParaPdf } from "@/lib/propostas/pdf-da-proposta";
@@ -24,14 +25,16 @@ type Ctx = { params: Promise<{ id: string }> };
  * (`lib/propostas/pdf-da-proposta.ts`): a prévia que não bate com o envio é
  * pior que não ter prévia, porque ela promete o que o cliente não vai receber.
  */
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
   // A mesma permissão de VER a proposta (`GET /api/v1/proposals/[id]`).
-  const authz = await requireRole("agent", { requestId, resource: "crm_proposals" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "crm_proposals", role: "agent", scope: "mcp:read" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "proposals_previa", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
   const admin = createAdminClient();
 
@@ -40,7 +43,7 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const { data } = await admin
     .from("crm_proposals")
     .select("*")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (!data) return fail("not_found", t("Proposta não encontrada."), 404, { requestId });
@@ -51,7 +54,7 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const proposta = data as PropostaParaPdf & { numero: number | null; ano: number | null };
   const numero = proposta.numero ?? null;
   const ano = proposta.ano ?? null;
-  const resultado = await montarPdfDaProposta(admin, authz.org.orgId, proposta, {
+  const resultado = await montarPdfDaProposta(admin, authz.organizationId, proposta, {
     numero,
     ano,
     t,

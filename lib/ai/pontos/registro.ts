@@ -294,6 +294,18 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     registraEm: "llm_calls",
   },
   {
+    id: "assistente_modulo",
+    rotulo: "Conversar com o assistente da empresa",
+    oQueFaz:
+      "Responde, por texto, a conversa que o administrador tem com o módulo Assistente. Só conversa: não altera nada no CRM por esta chamada.",
+    papel: "melhorar",
+    exige: {},
+    emissor: "app/api/v1/ai/assistente/conversa/route.ts",
+    sintomaDeFalha:
+      "A conversa do módulo Assistente mostra um aviso (modelo indisponível ou teto de gasto atingido) e a pessoa não recebe resposta; o resto do CRM segue normal.",
+    registraEm: "llm_calls",
+  },
+  {
     id: "draft_suggestion",
     rotulo: "Sugerir resposta ao atendente",
     oQueFaz:

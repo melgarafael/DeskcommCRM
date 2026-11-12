@@ -18,7 +18,19 @@ import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
  * Doutrina: docs/doctrine/sistema-vivo.md — "por qual porta se chega até mim?"
  */
 
-export type NavGroupId = "atendimento" | "crm" | "ia" | "canais" | "analise" | "organizacao";
+/**
+ * `modulos` é o único id que NÃO está em `NAV_GROUPS`: o grupo "Módulos" é GERADO em tempo de
+ * execução (um item por módulo conectado ativo da organização, Spec 33 F4), por
+ * `sidebarGroups`/`searchable` em `registry.ts`. Nenhuma entrada de `NAV_CATALOG` pode usá-lo.
+ */
+export type NavGroupId =
+  | "atendimento"
+  | "crm"
+  | "ia"
+  | "canais"
+  | "analise"
+  | "organizacao"
+  | "modulos";
 
 export interface NavGroup {
   id: NavGroupId;

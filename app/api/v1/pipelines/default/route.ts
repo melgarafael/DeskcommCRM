@@ -7,28 +7,37 @@
  * partir do painel do Inbox, onde quem atende é `agent`.
  */
 import { randomUUID } from "node:crypto";
+import { type NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import type { Pipeline, Stage } from "@/lib/kanban/types";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "pipelines" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "pipelines",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.default", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   const { data: pipeline, error: pipelineErr } = await supabase
     .from("crm_pipelines")
     .select("*")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", orgId)
     .eq("is_archived", false)
     .order("is_default", { ascending: false })
     .order("position", { ascending: true })
@@ -44,6 +53,7 @@ export async function GET(): Promise<Response> {
   const { data: stages, error: stagesErr } = await supabase
     .from("crm_stages")
     .select("*")
+    .eq("organization_id", orgId)
     .eq("pipeline_id", (pipeline as Pipeline).id)
     .eq("is_archived", false)
     .order("position");

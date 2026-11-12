@@ -20,13 +20,12 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -56,18 +55,26 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!(await moduloLigado(createAdminClient(), "financeiro"))) {
     return fail("not_found", "Not found", 404, { requestId });
   }
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura do saldo e do extrato: sessão OU token `mcp:read`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_fidelidade_saldo", requestId);
+  if (teto) return teto;
 
   const contactId = new URL(req.url).searchParams.get("contact_id");
   if (!contactId) {
     return fail("validation_failed", "Informe o contato.", 422, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   const { data: saldo, error: erroSaldo } = await supabase.rpc("fn_saldo_de_fidelidade", {
-    p_org: authz.org.orgId,
+    p_org: authz.organizationId,
     p_contact: contactId,
   });
   if (erroSaldo) return fail("internal_error", erroSaldo.message, 500, { requestId });
@@ -76,6 +83,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .from("loyalty_ledger")
     .select("id, points, reason, sale_id, created_at")
     .eq("contact_id", contactId)
+    .eq("organization_id", authz.organizationId)
     .order("created_at", { ascending: false })
     .limit(LIMITE_DO_EXTRATO);
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -93,8 +101,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
+  // Sessão OU token `mcp:write`. O token mexe no saldo como a sessão do atendente
+  // (`agent`): o ledger continua append-only, e o motivo fica só no ledger.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_fidelidade_movimento", requestId);
+  if (teto) return teto;
 
   const lido = movimentoSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -103,15 +120,31 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
+  const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+
+  // Com a service role, a FK de `contact_id` aceitaria o contato de OUTRA
+  // organização e o ponto cairia no saldo dele. Só o token precisa disto: a
+  // sessão passa pela RLS do banco.
+  if (authz.via === "token") {
+    const { data: contato } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("organization_id", authz.organizationId)
+      .eq("id", lido.data.contact_id)
+      .maybeSingle();
+    if (!contato) return fail("validation_failed", "Contato inválido.", 422, { requestId });
+  }
+
   const { data, error } = await supabase
     .from("loyalty_ledger")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: authz.organizationId,
       contact_id: lido.data.contact_id,
       points: lido.data.points,
       reason: lido.data.reason,
-      created_by_user_id: authz.user.id,
+      // Token não é pessoa: `created_by_user_id` só recebe id de `auth.users`.
+      created_by_user_id: atorUserId,
     })
     .select("id, points, reason, created_at")
     .single();
@@ -132,6 +165,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   // LGPD chega; o audit guarda só quantos pontos e que houve justificativa.
   await audit({
     action: lido.data.points > 0 ? "fidelidade.ponto_dado" : "fidelidade.ponto_resgatado",
+    actorUserId: atorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "contact",
     resourceId: lido.data.contact_id,
     requestId,

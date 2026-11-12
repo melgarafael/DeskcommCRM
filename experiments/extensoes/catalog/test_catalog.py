@@ -159,6 +159,125 @@ class CatalogFixtureTest(unittest.TestCase):
         )
         self.assertNotEqual(refused.returncode, 0)
 
+    # ── Módulo conectado (Spec 33, F1) ───────────────────────────────────────────────────────
+    def _manifesto_conectado(self) -> dict:
+        return {
+            "format_version": 1,
+            "profile": "connected",
+            "publisher": "lab",
+            "name": "modulo-de-ensaio",
+            "version": "1.0.0",
+            "license": "MIT",
+            "host_api": {"min": 2, "max": 2},
+            "permissions": [
+                "area.tarefas.leitura",
+                "area.tarefas.escrita",
+                "area.conversas.leitura",
+            ],
+            "dependencies": [],
+            "data": {"mode": "none"},
+            "display": {
+                "title": {"pt-BR": "Módulo de ensaio"},
+                "summary": {"pt-BR": "Serviço de exemplo para a prova em tela."},
+                "category": "productivity",
+                "icon": "ListChecks",
+            },
+            "configuration": {},
+            "contributions": {},
+        }
+
+    def _gravar(self, manifesto: dict) -> None:
+        self.package.write_text(
+            json.dumps(manifesto, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+        )
+
+    def test_publica_pacote_conectado_com_a_origem_do_servico_na_entrada(self) -> None:
+        self._gravar(self._manifesto_conectado())
+        self.run_cli(
+            "publish",
+            "--db",
+            self.db,
+            "--manifest",
+            self.package,
+            "--service-origin",
+            "http://127.0.0.1:8787",
+        )
+        self.run_cli("export", "--db", self.db, "--output", self.catalog)
+
+        entrada = json.loads(self.catalog.read_text(encoding="utf-8"))["entries"][0]
+        self.assertEqual(entrada["service_origin"], "http://127.0.0.1:8787")
+        self.assertEqual(
+            entrada["permissions"],
+            ["area.tarefas.leitura", "area.tarefas.escrita", "area.conversas.leitura"],
+        )
+        # O pacote não tem endereço nenhum: ele mora só na entrada do catálogo.
+        self.assertNotIn("service_origin", self.package.read_text(encoding="utf-8"))
+
+    def test_pacote_conectado_exige_origem_do_servico_igual_a_do_catalogo(self) -> None:
+        self._gravar(self._manifesto_conectado())
+        sem_origem = self.run_cli(
+            "publish", "--db", self.db, "--manifest", self.package, check=False
+        )
+        self.assertNotEqual(sem_origem.returncode, 0)
+        self.assertIn("--service-origin", sem_origem.stderr)
+
+        outra = self.run_cli(
+            "publish",
+            "--db",
+            self.db,
+            "--manifest",
+            self.package,
+            "--service-origin",
+            "http://127.0.0.1:9999",
+            check=False,
+        )
+        self.assertNotEqual(outra.returncode, 0)
+        self.assertIn("precisa ser a do catálogo", outra.stderr)
+
+    def test_perfil_conectado_recusa_card_e_permissao_que_nao_e_de_area(self) -> None:
+        com_card = self._manifesto_conectado()
+        com_card["contributions"] = {"crm_cards": []}
+        self._gravar(com_card)
+        recusado = self.run_cli(
+            "publish",
+            "--db",
+            self.db,
+            "--manifest",
+            self.package,
+            "--service-origin",
+            "http://127.0.0.1:8787",
+            check=False,
+        )
+        self.assertNotEqual(recusado.returncode, 0)
+
+        navegacao = self._manifesto_conectado()
+        navegacao["permissions"] = ["navigation.tasks"]
+        self._gravar(navegacao)
+        recusado = self.run_cli(
+            "publish",
+            "--db",
+            self.db,
+            "--manifest",
+            self.package,
+            "--service-origin",
+            "http://127.0.0.1:8787",
+            check=False,
+        )
+        self.assertNotEqual(recusado.returncode, 0)
+
+    def test_pacote_declarativo_recusa_origem_de_servico(self) -> None:
+        recusado = self.run_cli(
+            "publish",
+            "--db",
+            self.db,
+            "--manifest",
+            self.package,
+            "--service-origin",
+            "http://127.0.0.1:8787",
+            check=False,
+        )
+        self.assertNotEqual(recusado.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,13 +7,14 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import {
   MENSAGEM_CAMPO_DE_DATA_DO_CONTATO,
   campoDoGatilhoDeDataEhDoContato,
 } from "@/lib/automation/campo-do-gatilho-de-data";
+import { validarIdsDasAcoes, validarIdsDoGatilho } from "@/lib/automation/validar-ids-das-acoes";
 import {
   CAMPO_DO_MOTIVO_DA_PERDA,
   acoesDePerdaSemMotivo,
@@ -21,24 +22,31 @@ import {
   mensagemDaEtapaDePerdaSemMotivo,
 } from "@/lib/automation/motivo-da-perda-na-acao";
 import { createAutomationRuleSchema } from "@/lib/schemas";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "automation_rules" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "automation_rules",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "automation_rules_lista", requestId);
+  if (teto) return teto;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("automation_rules")
     .select("*")
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("created_at", { ascending: false });
   if (error) return fail("internal_error", error.message, 500, { requestId });
   return ok(data ?? [], { requestId });
@@ -49,10 +57,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "automation_rules" });
+  // Sessão OU token de integração (Spec 33, R1): `config:write` e papel `admin` na linha do token.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "automation_rules",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "automation_rules", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
   let raw: unknown = {};
   try {
@@ -68,6 +86,24 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  // Só o ramo do token: as ações e o gatilho carregam ids sem chave estrangeira (funil, etapa, canal,
+  // agente, fluxo, pessoa). A sessão só os recebe da tela, que oferece recurso da própria
+  // organização; o token vem de fora e usa a service role. Falha fechada (ver o módulo).
+  if (authz.via === "token") {
+    const dasAcoes = await validarIdsDasAcoes(authz.supabase, orgId, parsed.data.actions);
+    const doGatilho = dasAcoes.ok
+      ? await validarIdsDoGatilho(authz.supabase, orgId, parsed.data.trigger_config)
+      : dasAcoes;
+    if (!doGatilho.ok) {
+      return fail(
+        "invalid_request",
+        `${t("A regra aponta para um recurso que não pertence a esta empresa, ou que não foi possível conferir.")} (${doGatilho.campo})`,
+        422,
+        { requestId },
+      );
+    }
+  }
+
   // Secrets de call_webhook nunca ficam em claro no jsonb (migration 0041).
   const safeActions = await encryptRuleActionSecrets(createAdminClient(), parsed.data.actions);
   if (safeActions === null) {
@@ -79,7 +115,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // ── A ETAPA DE PERDA EXIGE MOTIVO — RECUSADA NO CADASTRO (#4297) ───────────
   //
@@ -87,25 +123,24 @@ export async function POST(req: NextRequest): Promise<Response> {
   // etapa de perda era SALVA e falhava em toda execução (o #917 recusa mover
   // sem motivo). A pergunta é da porta: a etapa de destino fecha o negócio como
   // perdido e a ação não diz por quê?
-  const etapasDaRegra = await lerEtapasDasAcoes(supabase, activeOrg.orgId, parsed.data.actions);
+  const etapasDaRegra = await lerEtapasDasAcoes(supabase, orgId, parsed.data.actions);
   if ("erro" in etapasDaRegra) return fail("internal_error", etapasDaRegra.erro, 500, { requestId });
   const semMotivo = acoesDePerdaSemMotivo(parsed.data.actions, etapasDaRegra.etapas);
   if (semMotivo.length > 0) {
     return fail(
       "invalid_request",
-      t(mensagemDaEtapaDePerdaSemMotivo(semMotivo.map((achado) => achado.etapa), authz.user.idioma)),
+      t(mensagemDaEtapaDePerdaSemMotivo(semMotivo.map((achado) => achado.etapa), authz.idioma ?? IDIOMA_PADRAO)),
       422,
       { requestId, details: { campo: CAMPO_DO_MOTIVO_DA_PERDA } },
     );
   }
-
   const webhookSourceId = parsed.data.trigger_config?.webhook_source_id;
   if (typeof webhookSourceId === "string") {
     const { data: source, error: sourceError } = await supabase
       .from("webhook_sources")
       .select("id")
       .eq("id", webhookSourceId)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", orgId)
       .maybeSingle();
     if (sourceError) return fail("internal_error", sourceError.message, 500, { requestId });
     if (!source) {
@@ -114,7 +149,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const campoDeData = await campoDoGatilhoDeDataEhDoContato(
     supabase,
-    activeOrg.orgId,
+    orgId,
     parsed.data.trigger_event,
     parsed.data.trigger_config,
   );
@@ -125,8 +160,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: created, error: insErr } = await supabase
     .from("automation_rules")
     .insert({
-      organization_id: activeOrg.orgId,
-      created_by_user_id: user.id,
+      organization_id: orgId,
+      created_by_user_id: actorUserId,
       name: parsed.data.name,
       trigger_event: parsed.data.trigger_event,
       conditions: parsed.data.conditions,
@@ -144,8 +179,10 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "automation.rule_created",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId,
+    // Só quando há token: a sessão segue com o objeto de sempre.
+    ...(authz.apiTokenId ? { actorApiTokenId: authz.apiTokenId } : {}),
+    organizationId: orgId,
     resourceType: "automation_rule",
     resourceId: created.id,
     requestId,
