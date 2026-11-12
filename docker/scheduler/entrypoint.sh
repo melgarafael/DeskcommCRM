@@ -174,7 +174,7 @@ CRONS="
 # De 2 em 2 horas: catalogo de loja muda no ritmo do estoque, preco errado por
 # duas horas e recuperavel, e 96 buscas por dia no site da revenda seriam abuso
 # sem ganho. Minuto 25, fora das outras varreduras. Sem fonte ativa, o portao
-# `catalogo_do_feed` (lib/cron/piso-ocioso.ts) faz a batida sair antes de
+# catalogo_do_feed (lib/cron/piso-ocioso.ts) faz a batida sair antes de
 # qualquer leitura no banco.
 25 */2 * * *|120|api/v1/cron/catalog-feed-sync
 "

@@ -13729,6 +13729,28 @@ export const DICIONARIO: Traducoes = {
   "o link redireciona vezes demais: {url}": { es: "el enlace redirige demasiadas veces: {url}" },
   "não consegui guardar a foto: {url}": { es: "no pude guardar la foto: {url}" },
 
+  // ─── lib/catalogo/feed.ts — o feed sincronizado (#3587, fatia 2) ───────────
+  // Os motivos de recusa por item do feed. A frase é a chave INTEIRA, com o
+  // valor como placeholder dentro dela: traduzida aos pedaços, cada trecho novo
+  // seria mais uma chave que pode faltar.
+  "o item traz {quantidade} fotos — o produto aceita até {limite}": {
+    es: "el artículo trae {quantidade} fotos — el producto acepta hasta {limite}",
+  },
+  "o item do feed não é um objeto": { es: "el artículo del feed no es un objeto" },
+  "item sem id externo — o feed precisa de uma coluna de identificação": {
+    es: "artículo sin id externo — el feed necesita una columna de identificación",
+  },
+  'id externo repetido no feed ("{id}") — só o primeiro vale': {
+    es: 'id externo repetido en el feed ("{id}") — solo el primero vale',
+  },
+  "item sem nome do produto": { es: "artículo sin nombre de producto" },
+  'preço não reconhecido ("{valor}") — escreva assim: 5.499,00': {
+    es: 'precio no reconocido ("{valor}") — escríbelo así: 5.499,00',
+  },
+  'quantidade inválida ("{valor}") — use um número inteiro': {
+    es: 'cantidad no válida ("{valor}") — usa un número entero',
+  },
+
   // ─── Análise → Meta Ads e Configurações → Meta Ads (0214) ───
   //
   // ⚠️ Boa parte deste bloco o teste `i18n-espanhol-cobre-a-tela` NÃO cobre, e
