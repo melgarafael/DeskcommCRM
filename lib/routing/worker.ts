@@ -24,6 +24,7 @@ import {
   type RegraDoNumero,
 } from "@/lib/routing/decide";
 import { motivoParaNaoRotear, type MotivoDoCaso } from "@/lib/routing/caso-da-conversa";
+import { lerEsperaPelaIA, lerQualificacaoDaIA, prazoDaEspera } from "@/lib/routing/qualificacao-da-ia";
 import { loadEligibleAttendants, InvalidRoutingChannel, InvalidRoutingSector } from "@/lib/routing/eligibles";
 import { routingConfigSchema } from "@/lib/schemas/routing";
 
@@ -47,6 +48,11 @@ export type RoutingOutcome =
   | "skipped_contato_fornecedor"
   /** #3717: o caso mais recente da conversa não pede uma pessoa agora. */
   | "skipped_caso_sem_humano"
+  /**
+   * #3966: o número pediu para esperar a IA qualificar. O pedido NÃO foi
+   * consumido — ficou guardado até o prazo máximo, ou até a passagem para humano.
+   */
+  | "waiting_ia_qualificando"
   | "assign_lost_race"
   | "error";
 
@@ -89,6 +95,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_contato_pessoal: 0,
   skipped_contato_fornecedor: 0,
   skipped_caso_sem_humano: 0,
+  waiting_ia_qualificando: 0,
   assign_lost_race: 0,
   error: 0,
 });
@@ -196,7 +203,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const { data: conv, error: convError } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id",
+      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id, bot_silenced_until, last_handoff_at, active_ai_agent_id",
     )
     .eq("id", conversationId)
     .eq("organization_id", orgId)
@@ -289,9 +296,60 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
    */
   const viaDestinoPadrao = !alreadyAssigned && Boolean(efetivo.defaultAssigneeUserId)
     && (!sectorId || await ehMembroDaFila(admin, orgId, sectorId, efetivo.defaultAssigneeUserId as string));
+
+  // A IA AINDA ESTÁ QUALIFICANDO? (#3966) — só é perguntado quando o NÚMERO
+  // ligou a opção (`ai_wait_minutes`, desligada de fábrica; doc 311). Com ela
+  // desligada nenhuma leitura a mais acontece e o caminho é o de sempre.
+  //
+  // Fica DEPOIS do destino padrão do número ("direto para uma pessoa" não
+  // espera, #2331) e só vale onde há distribuição automática. A leitura é
+  // fail-open (ver `qualificacao-da-ia.ts`).
+  //
+  // O PRAZO: a espera começa na primeira vez que este pedido é adiado e a marca
+  // vai no `metadata` do evento. Venceu sem a IA passar a conversa ⇒ ela segue
+  // para a distribuição logo abaixo e a Central avisa UMA vez.
+  let esperaPelaIAAte: string | null = null;
+  const minutosDeEspera = regraDoNumero?.ai_wait_minutes ?? null;
+  if (
+    minutosDeEspera !== null &&
+    !alreadyAssigned &&
+    !motivoDoCaso &&
+    !viaDestinoPadrao &&
+    (efetivo.mode === "round_robin" || efetivo.mode === "load")
+  ) {
+    const qualificando = await lerQualificacaoDaIA(admin, orgId, {
+      channel_session_id: conv.channel_session_id,
+      active_ai_agent_id:
+        (conv as { active_ai_agent_id?: string | null }).active_ai_agent_id ?? null,
+      bot_silenced_until:
+        (conv as { bot_silenced_until?: string | null }).bot_silenced_until ?? null,
+      last_handoff_at: (conv as { last_handoff_at?: string | null }).last_handoff_at ?? null,
+      assigned_to_user_id: conv.assigned_to_user_id ?? null,
+    }, now);
+    const marca = lerEsperaPelaIA(event.metadata);
+    if (qualificando) {
+      const prazo = prazoDaEspera(marca, now, minutosDeEspera);
+      if (!prazo.vencida) {
+        esperaPelaIAAte = prazo.ate;
+        event.metadata = { ...(event.metadata ?? {}), espera_pela_ia: { desde: prazo.desde } };
+      } else if (!prazo.avisada && (await avisarEsperaVencida(orgId, conversationId, minutosDeEspera))) {
+        event.metadata = {
+          ...(event.metadata ?? {}),
+          espera_pela_ia: { desde: prazo.desde, avisada: true },
+        };
+      }
+    } else if (marca) {
+      // A IA saiu do caminho (passou para humano, foi pausada): a espera
+      // acabou. Sem limpar, um episódio novo de qualificação neste MESMO pedido
+      // herdaria o relógio antigo e nasceria vencido.
+      event.metadata = { ...(event.metadata ?? {}), espera_pela_ia: null };
+    }
+  }
+
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
   if (
     !alreadyAssigned &&
+    esperaPelaIAAte === null &&
     !viaDestinoPadrao &&
     (efetivo.mode === "round_robin" || efetivo.mode === "load")
   ) {
@@ -338,6 +396,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     attempts: event.attempts,
     now,
     motivoDoCaso,
+    esperaPelaIAAte,
   });
 
   switch (action.kind) {
@@ -428,7 +487,58 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
       );
       return "requeued_no_eligible";
     }
+    case "wait_ai": {
+      // Um reagendamento só, para o PRAZO — não a cada minuto. O pedido some da
+      // varredura até lá, então não ocupa o lote nem gera rodada de trabalho.
+      // Não conta tentativa e não avisa: nada falhou. A passagem para humano
+      // traz `next_attempt_at` para agora (`fn_request_channel_routing`).
+      await requeueEvent(
+        event,
+        now,
+        event.attempts,
+        { reason: "ia_qualificando" },
+        action.nextAttemptAt,
+      );
+      return "waiting_ia_qualificando";
+    }
   }
+}
+
+/** Título fixo: é por ele que quem lê a Central reconhece o aviso. */
+const TITULO_DA_ESPERA_VENCIDA = "A IA não passou a conversa no prazo";
+
+/**
+ * O aviso do prazo vencido (#3966). Insere direto, sem `on conflict`: quem
+ * impede a repetição é a marca `avisada` no `metadata` do pedido. Devolve
+ * `false` quando não gravou — o worker então tenta de novo na próxima rodada —,
+ * e NUNCA lança: o aviso não pode segurar a conversa fora da distribuição.
+ */
+async function avisarEsperaVencida(
+  orgId: string,
+  conversationId: string,
+  minutos: number,
+): Promise<boolean> {
+  const { error } = await createAdminClient().from("agent_inbox_items").insert({
+    organization_id: orgId,
+    kind: "routing_ia_wait_expired",
+    severity: "warn",
+    title: TITULO_DA_ESPERA_VENCIDA,
+    body:
+      `A IA atendeu esta conversa por ${minutos} minutos, o prazo definido para este número, ` +
+      `e não a passou para a equipe. A conversa entrou na distribuição. ` +
+      `Se isso se repetir, confira o agente de IA deste número e o prazo em Configurações → Atendimento.`,
+    ref_kind: "conversation",
+    ref_id: conversationId,
+  });
+  if (error) {
+    logger.warn("[routing-worker] aviso de espera vencida não foi gravado", {
+      organization_id: orgId,
+      conversation_id: conversationId,
+      error: error.message,
+    });
+    return false;
+  }
+  return true;
 }
 
 // --- event lifecycle (mesma mecânica do agent-dispatcher; status ∈ pending|processing|done|dead) ---
@@ -567,16 +677,21 @@ export async function carregarRegraDoNumero(
   if (!channelSessionId) return null;
   const { data, error } = await admin
     .from("channel_routing_policies")
-    .select("distribution_mode, default_assignee_user_id")
+    .select("distribution_mode, default_assignee_user_id, ai_wait_minutes")
     .eq("organization_id", orgId)
     .eq("channel_session_id", channelSessionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const row = data as { distribution_mode: string | null; default_assignee_user_id: string | null };
+  const row = data as {
+    distribution_mode: string | null;
+    default_assignee_user_id: string | null;
+    ai_wait_minutes?: number | null;
+  };
   return {
     distribution_mode: (row.distribution_mode ?? null) as RegraDoNumero["distribution_mode"],
     default_assignee_user_id: row.default_assignee_user_id ?? null,
+    ai_wait_minutes: row.ai_wait_minutes ?? null,
   };
 }
 

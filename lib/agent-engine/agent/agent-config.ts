@@ -17,8 +17,15 @@ import type pg from 'pg';
 
 import { lerFraseDoAvisoConfigurada } from '@/lib/escalacao/frase-do-aviso-configurada';
 
-import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
-import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
+import {
+  lerFechadoEmFeriadoNacional,
+  lerJanelaDeAtendimento,
+  type JanelaDeAtendimento,
+} from './janela-de-atendimento';
+import {
+  lerTextoDoAvisoDeFeriadoForaDoHorario,
+  lerTextoDoAvisoForaDoHorario,
+} from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
 import { lerModoDeConhecimento } from './modo-de-conhecimento';
 import {
@@ -166,6 +173,19 @@ export interface PublishedAgentConfig {
    * aviso de passagem inválido não pode virar silêncio.
    */
   fraseDoAviso?: string | null;
+  /**
+   * Texto do aviso de FERIADO NACIONAL (#3877), da chave irmã
+   * `filters.business_hours.notice_feriado`. `null` = não configurado, e o
+   * feriado sai com o `notice` de sempre. Opcional pela mesma razão acima.
+   */
+  avisoDeFeriadoForaDoHorario?: string | null;
+  /**
+   * "Não atender em feriado nacional" (#3877, doc 316 A), da chave irmã
+   * `filters.business_hours.fechado_em_feriado_nacional`. Ligada, o feriado
+   * nacional conta como dia FECHADO da janela: sai o aviso e o turno espera o
+   * próximo dia útil. Opcional pela mesma razão acima; ausente = desligada.
+   */
+  naoAtenderEmFeriadoNacional?: boolean;
   /**
    * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
    * externo também carrega em turno com contato, com a identidade dele em
@@ -378,6 +398,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // #3725: `null` = sem frase própria, sai o padrão do produto. A leitura
     // valida tamanho e conteúdo (ver `frase-do-aviso-configurada.ts`).
     fraseDoAviso: lerFraseDoAvisoConfigurada(r.config),
+    avisoDeFeriadoForaDoHorario: lerTextoDoAvisoDeFeriadoForaDoHorario(r.trigger_config),
+    // `=== true` lá dentro: ausente/outro tipo é DESLIGADA (feriado = dia comum).
+    naoAtenderEmFeriadoNacional: lerFechadoEmFeriadoNacional(r.trigger_config),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`
