@@ -104,6 +104,13 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // regras do mesmo gatilho com N diferentes disparariam juntas.
   "lead.silent_for": "crm_lead",
   "lead.stage_stale": "crm_lead",
+  // A LIGAÇÃO RECEBIDA QUE NINGUÉM ATENDEU (#4365). Nasce do worker de voz
+  // (`workers/voice-agent`, via `lib/voip/evento-de-ligacao-perdida.ts`), que é
+  // quem encerra a linha `ringing` como `timeout`. A entidade é o CONTATO — é
+  // ele que a ação de WhatsApp precisa no contexto do motor; o telefone e o
+  // `call_id` viajam no payload.
+  "voice_call.missed": "contact",
+
   // O COMENTÁRIO de um post do Instagram (#4075): "comente QUERO que eu te
   // mando o link". Diferente de todos os outros, ele nasce FORA do CRM (no
   // webhook do canal social) e a entidade é o CONTATO que comentou — é ele que
