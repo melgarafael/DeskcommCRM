@@ -264,6 +264,15 @@ describe("catálogo: 'Ligação perdida' é um gatilho de primeira classe", () =
 });
 
 describe("motor: a ligação perdida manda UMA mensagem pelo caminho de sempre", () => {
+  // O relógio fica DENTRO da janela 7h–22h do número (15:00Z = 12:00 em São
+  // Paulo). Sem isso, o envio e o controle do contato bloqueado dependiam da
+  // hora em que a suíte rodava: fora da janela a ação vira `postponed` antes de
+  // chegar à guarda que o teste mede. O caso da janela FECHADA fixa o seu.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-11T15:00:00Z"));
+  });
+
   it("dispara a regra e envia uma vez, com o contato no contexto", async () => {
     const { cliente } = mundo();
 
