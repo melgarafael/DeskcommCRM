@@ -75269,6 +75269,105 @@ drop trigger if exists trg_routing_assignment_changed on public.conversations;
 create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
  for each row execute function public.fn_routing_assignment_changed();
 
+-- ---- "Liberar" não devolve a conversa ao rodízio (migration 9346, #3937) ----
+-- Espelho da 9346. Fica ACIMA da VARREDURA anon (só recria funções, nenhuma
+-- tabela nova), DEPOIS do bloco da 9333 (redefine a mesma função e tem de
+-- ganhar) e ANTES da cascata da 9243: o invariante `lgpd-alcanca-fichas-fundidas`
+-- compara o trecho que vai dela até a VARREDURA com a migration, e nada pode
+-- entrar no meio. O porquê inteiro está no cabeçalho da migration: o gatilho
+-- `trg_routing_assignment_changed` tratava "perdeu o dono" e "reabriu" como o
+-- mesmo fato, então liberar a conversa a devolvia à distribuição em ~1 min. A
+-- régua nova pede o rodízio só quando a conversa ENTRA no pool vindo de fora
+-- dele (`old.status` terminal) — a reabertura — ou, no número que ligou a
+-- espera pela IA (9333), quando a IA passa a conversa para humano. As portas
+-- que querem pedir seguem pedindo por conta própria: `fn_wake_channel_routing`
+-- (disponibilidade, política do número, revogação de membro) e o cron
+-- `rodizio-devolucao`.
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ -- #3937: só a REABERTURA (old.status terminal) pede o rodízio. Perder o dono
+ -- ("Liberar") não é chegada ao pool, e não pede.
+ elsif old.status not in('open','pending','claimed','ai_handling')
+    -- #3966: a PASSAGEM PARA HUMANO traz o pedido de volta, mas só no número
+    -- que LIGOU a espera pela IA. Com a opção desligada este ramo é falso e o
+    -- gatilho decide exatamente como antes.
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at
+        and exists(select 1 from public.channel_routing_policies p
+                    where p.organization_id=new.organization_id
+                      and p.channel_session_id=new.channel_session_id
+                      and p.ai_wait_minutes is not null)) then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
+-- ---- mensagem nova do cliente acorda o roteamento da conversa sem dono (migration 9347, #3916) ----
+-- Espelho da 9347 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- VARREDURA anon porque cria função, e DEPOIS de tudo que ele lê (`messages`,
+-- `conversations`, `event_log`, `channel_routing_policies`, `organizations`). O
+-- gatilho só pede quando a distribuição automática vale para a conversa (destino
+-- padrão do número, ou modo efetivo rodízio/menor carga) e pede pela porta
+-- única, `fn_request_channel_routing`, que deduplica o pedido pendente.
+create or replace function public.fn_pedir_roteamento_na_mensagem()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare
+  c record;
+  v_modo text;
+  v_destino uuid;
+begin
+  -- SECURITY DEFINER é o que permite o INSERT em `event_log` acontecer também
+  -- quando quem grava a mensagem é um membro da organização pela API: um
+  -- gatilho com os privilégios do invocador faria o INSERT da mensagem falhar
+  -- na RLS do barramento, e a mensagem se perderia por causa do aviso.
+  select organization_id,id,channel_session_id into c from public.conversations
+   where organization_id=new.organization_id and id=new.conversation_id
+     and assigned_to_user_id is null and is_group=false
+     and status in('open','pending','claimed','ai_handling');
+  if not found then return null; end if;
+
+  -- A DISTRIBUIÇÃO AUTOMÁTICA VALE PARA ESTA CONVERSA? A mesma régua do worker
+  -- (`resolverRoteamentoPorNumero`): o destino padrão do número entrega em
+  -- qualquer modo; sem ele, vale o modo do número e, se o número não tem modo
+  -- próprio, o da ORGANIZAÇÃO — cujo padrão é manual. Fora do rodízio e da
+  -- menor carga o worker fecharia o pedido sem entregar, então ele não nasce.
+  -- Condição nova de "não pedir" (por exemplo, uma opção do número) entra AQUI.
+  select p.distribution_mode,p.default_assignee_user_id into v_modo,v_destino
+    from public.channel_routing_policies p
+   where p.organization_id=c.organization_id and p.channel_session_id=c.channel_session_id;
+  if v_destino is null then
+    if v_modo is null then
+      select o.settings->'routing'->>'mode' into v_modo from public.organizations o where o.id=c.organization_id;
+    end if;
+    if coalesce(v_modo,'manual') not in('round_robin','load') then return null; end if;
+  end if;
+
+  -- A porta única do pedido. É ela que deduplica: com pedido `pending` ou
+  -- `processing` da conversa, o índice único parcial não deixa nascer outro —
+  -- a mensagem só traz `next_attempt_at` do pendente para agora.
+  perform public.fn_request_channel_routing(c.organization_id,c.id);
+  return null;
+end;
+$$;
+revoke all on function public.fn_pedir_roteamento_na_mensagem() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_nova_mensagem_do_cliente on public.messages;
+create trigger trg_routing_nova_mensagem_do_cliente
+  after insert on public.messages
+  for each row
+  when (new.direction='inbound'
+        and new.type <> 'reaction'
+        and coalesce(new.metadata->>'historico_importado','') <> 'true')
+  execute function public.fn_pedir_roteamento_na_mensagem();
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -79642,7 +79741,7 @@ do $campanha_modelo$
 begin
   alter table public.campaigns drop constraint if exists campaigns_message_mode_check;
   alter table public.campaigns
-    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template'));
+    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template', 'email'));
 
   -- Modelo sem nome ou sem idioma não sai: a plataforma identifica a definição
   -- pelos DOIS (o mesmo nome em `es` e `es_AR` são modelos diferentes).
@@ -80858,6 +80957,72 @@ comment on column public.campaigns.provider_broadcast_id is
   'Id da transmissão no provedor (velocidade = transmissao). O eco de cada mensagem traz este id e volta por ele à campanha e ao destinatário. Migration 0712.';
 
 notify pgrst, 'reload schema';
+
+-- ---- campanha por e-mail: assunto e campanha sem número (migration 9334, #3441) ----
+-- Apêndice idempotente, espelho de
+-- `supabase/migrations/20261111121038_9334_campanha_por_email.sql`. Não cria função
+-- e não devolve `anon`. Fica DEPOIS do bloco da 0710 porque depende da coluna
+-- `message_mode`, que nasce lá. Trabalho de @webtecnica (#4289).
+--
+-- ═══ Por que a coluna do número vira anulável, e só para o e-mail ═══
+--
+-- A FK composta `campaigns_channel_org_fk` (0375) amarra a campanha ao número da
+-- MESMA organização; e-mail não tem número, não tem `channel_sessions`, não tem
+-- janela de 24 horas e não é despachado por worker nenhum nesta fatia. Manter a
+-- coluna obrigatória obrigaria a inventar uma conexão falsa — e uma linha falsa
+-- em `channel_sessions` é pior que uma coluna nula: ela apareceria na tela de
+-- conexões e no rodízio.
+--
+-- O `not null` sai, mas a REGRA não: `campaigns_numero_ou_email_check` exige
+-- número em todo modo que não é `email`. Uma campanha de WhatsApp sem conexão
+-- continua impossível, no banco e não só na rota.
+--
+-- ═══ Por que o assunto mora em coluna própria ═══
+--
+-- O corpo do e-mail é o MESMO `message_body` do WhatsApp (texto puro, sem HTML
+-- nesta fatia); o assunto não é — e enfiá-lo no começo do corpo faria o texto
+-- enviado ter uma linha que ninguém escreveu como corpo. `email_subject` é
+-- nulo em todo modo que não é `email`, e o CHECK exige conteúdo nele quando é.
+
+alter table public.campaigns
+  add column if not exists email_subject text;
+
+do $campanha_email$
+begin
+  alter table public.campaigns alter column channel_session_id drop not null;
+
+  alter table public.campaigns drop constraint if exists campaigns_numero_ou_email_check;
+  alter table public.campaigns
+    add constraint campaigns_numero_ou_email_check check (
+      channel_session_id is not null or message_mode = 'email'
+    );
+
+  -- O valor 'email' de message_mode já está no bloco único da restrição (migration 0710, acima).
+
+  -- Assunto vazio não é rascunho: é um e-mail que o cliente abriria sem saber do
+  -- que se trata. A tela já recusa (`conferirConteudoDeEmail`); o CHECK é a
+  -- mesma régua no banco, para o caminho que um dia escrever por fora.
+  alter table public.campaigns drop constraint if exists campaigns_email_exige_assunto;
+  alter table public.campaigns
+    add constraint campaigns_email_exige_assunto check (
+      message_mode <> 'email' or coalesce(btrim(email_subject), '') <> ''
+    );
+
+  -- Assunto é do e-mail e de mais ninguém: nos outros modos a coluna é nula.
+  alter table public.campaigns drop constraint if exists campaigns_assunto_so_email;
+  alter table public.campaigns
+    add constraint campaigns_assunto_so_email check (
+      message_mode = 'email' or email_subject is null
+    );
+end
+$campanha_email$;
+
+comment on column public.campaigns.email_subject is
+  'Assunto do e-mail, quando message_mode = email (#3441). Nulo nos modos do WhatsApp; texto puro, até 150 caracteres.';
+comment on column public.campaigns.message_mode is
+  'text = corpo livre em message_body (número por QR); template = modelo aprovado (número oficial); email = assunto em email_subject + corpo em message_body, sem número (migration 9334).';
+comment on column public.campaigns.channel_session_id is
+  'O número principal da campanha. Nulo só em message_mode = email (#3441): campanha de e-mail não fala por conexão.';
 
 -- ---- conta Resend da organização (migration 0795) ----
 -- Espelho da 0795 no banco-molde: o test:invariants aplica SO o baseline,

@@ -5,6 +5,7 @@ import {
   classificarAudiencia,
   contarExclusoes,
   motivoParaExcluir,
+  normalizarEmail,
   recusouMarketing,
   statusDaSaida,
   type CandidatoDaAudiencia,
@@ -17,7 +18,10 @@ function candidato(over: Partial<CandidatoDaAudiencia> = {}): CandidatoDaAudienc
     // `null ?? default` o transformava em telefone VÁLIDO — o helper apagava o
     // caso e dois testes ficavam verdes medindo outra coisa.
     nome: "nome" in over ? (over.nome ?? null) : "Ana Souza",
-    telefone: "telefone" in over ? (over.telefone ?? null) : "+5548999990000",
+    telefone: "telefone" in over ? (over.telefone ?? null) : "+5511900000001",
+    // Mesmo motivo do telefone: `email: null` é caso testado, e `?? default` o
+    // apagaria.
+    email: "email" in over ? (over.email ?? null) : null,
     bloqueado: over.bloqueado ?? false,
     anonimizado: over.anonimizado ?? false,
     pessoal: over.pessoal ?? false,
@@ -172,5 +176,80 @@ describe("classificação da lista", () => {
       ctx(),
     );
     expect(contarExclusoes(linhas)).toEqual({ opt_out: 2, sem_telefone: 1 });
+  });
+});
+
+/**
+ * (c) O PÚBLICO DA CAMPANHA DE E-MAIL (#3441): o recorte é o mesmo, o endereço
+ * é outro. Quem não tem e-mail fica de fora COM MOTIVO, e a contagem por motivo
+ * é o "N com e-mail, M sem" que a prévia mostra — a mesma função
+ * (`contarExclusoes`) que `preverAudiencia` devolve.
+ */
+describe("audiência do canal de e-mail", () => {
+  it("sem e-mail sai como `sem_email`, mesmo tendo telefone", () => {
+    expect(motivoParaExcluir(candidato({ email: null, telefone: "+5511900000001" }), "email")).toBe(
+      "sem_email",
+    );
+    expect(motivoParaExcluir(candidato({ email: "   " }), "email")).toBe("sem_email");
+  });
+
+  it("e-mail fora do formato de envio tem motivo próprio", () => {
+    expect(motivoParaExcluir(candidato({ email: "ana.empresa.test" }), "email")).toBe(
+      "email_invalido",
+    );
+    expect(motivoParaExcluir(candidato({ email: "ana@empresa" }), "email")).toBe("email_invalido");
+    expect(motivoParaExcluir(candidato({ email: " Ana@Empresa.test " }), "email")).toBeNull();
+  });
+
+  it("contato sem telefone PODE receber e-mail, e o contrário também vale", () => {
+    const semTelefone = candidato({ telefone: null, email: "ana@empresa.test" });
+    expect(motivoParaExcluir(semTelefone, "email")).toBeNull();
+    expect(motivoParaExcluir(semTelefone, "whatsapp")).toBe("sem_telefone");
+    const semEmail = candidato({ telefone: "+5511900000001", email: null });
+    expect(motivoParaExcluir(semEmail, "whatsapp")).toBeNull();
+    expect(motivoParaExcluir(semEmail, "email")).toBe("sem_email");
+  });
+
+  it("a lista conta só quem tem e-mail e INFORMA quantos ficaram de fora", () => {
+    const linhas = classificarAudiencia(
+      [
+        candidato({ contactId: "c1", email: "ana@empresa.test", telefone: null }),
+        candidato({ contactId: "c2", email: "bruno@empresa.test" }),
+        candidato({ contactId: "c3", email: null }),
+        candidato({ contactId: "c4", email: "   " }),
+      ],
+      ctx({ canal: "email" }),
+    );
+    const elegiveis = linhas.filter((l) => l.elegivel);
+    expect(elegiveis.map((l) => normalizarEmail(l.candidato.email))).toEqual([
+      "ana@empresa.test",
+      "bruno@empresa.test",
+    ]);
+    expect(linhas.length - elegiveis.length).toBe(2);
+    expect(contarExclusoes(linhas)).toEqual({ sem_email: 2 });
+  });
+
+  it("dois cadastros com o mesmo e-mail recebem uma vez só — a unicidade é do canal", () => {
+    const linhas = classificarAudiencia(
+      [
+        candidato({ contactId: "c1", email: "Ana@Empresa.test" }),
+        candidato({ contactId: "c2", email: "ana@empresa.test " }),
+      ],
+      ctx({ canal: "email" }),
+    );
+    expect(linhas.filter((l) => l.elegivel)).toHaveLength(1);
+    expect(contarExclusoes(linhas)).toEqual({ duplicado: 1 });
+  });
+
+  it("o WhatsApp continua contando por telefone — não regride", () => {
+    const linhas = classificarAudiencia(
+      [
+        candidato({ contactId: "c1", telefone: "+5511900000001", email: null }),
+        candidato({ contactId: "c2", telefone: null, email: "bruno@empresa.test" }),
+      ],
+      ctx(),
+    );
+    expect(linhas.filter((l) => l.elegivel)).toHaveLength(1);
+    expect(contarExclusoes(linhas)).toEqual({ sem_telefone: 1 });
   });
 });
