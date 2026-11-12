@@ -394,10 +394,32 @@ export type ConversationSector = z.infer<typeof conversationSectorSchema>;
  * número fica sem regra própria (herda a organização). `null` explícito é
  * diferente de omitir na chamada da RPC — a tela manda sempre o que quer gravar.
  */
+/**
+ * Faixa do prazo máximo de "esperar a IA qualificar antes de distribuir"
+ * (#3966, doc 311): 15 minutos a 7 dias — a mesma faixa que o #4064 de
+ * @webtecnica propôs. O banco repete a faixa no CHECK de
+ * `channel_routing_policies.ai_wait_minutes` e em `fn_set_channel_ai_wait`.
+ */
+export const ESPERA_PELA_IA_MIN_MINUTOS = 15;
+export const ESPERA_PELA_IA_MAX_MINUTOS = 10_080;
+
 export const channelRoutingPatchSchema = z.object({
   channel_session_id: z.string().uuid(),
   user_ids: z.array(z.string().uuid()).max(1000),
   reset: z.boolean().default(false),
   distribution_mode: z.enum(ROUTING_MODES).nullable().optional(),
   default_assignee_user_id: z.string().uuid().nullable().optional(),
+  /**
+   * "Esperar a IA qualificar antes de distribuir" (#3966) — o prazo máximo da
+   * espera, em minutos. Um campo só de propósito: não existe "esperar sem
+   * prazo". `null` desliga (o padrão de fábrica); OMITIDO preserva o que o
+   * número já tinha, para um cliente antigo da API não desligar por omissão.
+   */
+  ai_wait_minutes: z
+    .number()
+    .int()
+    .min(ESPERA_PELA_IA_MIN_MINUTOS)
+    .max(ESPERA_PELA_IA_MAX_MINUTOS)
+    .nullable()
+    .optional(),
 }).strict();
