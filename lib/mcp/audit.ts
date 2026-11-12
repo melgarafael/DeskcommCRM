@@ -40,9 +40,22 @@ interface AuditMcpToolCallInput {
    * "a busca não achou" de "a ferramenta recusou" e de "a busca quebrou" no
    * dado gravado; separar os três na TELA pede um contador novo naquela
    * função — migration, trabalho do mantenedor.
+   *
+   * Nas ESCRITAS de servidor MCP externo (#4445) o vocabulário é o que o
+   * atendimento precisa para investigar: `ok` (o terceiro confirmou),
+   * `negado` (recusa NOMEADA — a configuração não libera, ou a própria ponte
+   * recusou antes de sair) e `erro_externo` (o terceiro não respondeu, recusou
+   * ou estourou o tempo). Os três com `conexao` ao lado.
    */
-  desfecho?: "sem_resultado" | "recusa";
+  desfecho?: "sem_resultado" | "recusa" | "ok" | "negado" | "erro_externo";
   motivo?: string;
+  /**
+   * A CONEXÃO de servidor MCP externo de onde a chamada saiu (#4445):
+   * `compartilhado` (o servidor da organização) ou o id do servidor do agente.
+   * Só escrito em `metadata.conexao` — nome de ferramenta igual em duas
+   * conexões é chamada diferente, e a trilha tem de deixar isso visível.
+   */
+  conexao?: string;
   /**
    * O TERMO desta chamada, quando a tool declara um (`termoBuscado`). É o que
    * permite a leitura por termo (`fn_agent_tool_usage_por_termo`) contar "não
@@ -79,7 +92,7 @@ function redactArgs(args: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<void> {
-  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, resultBytes, desfecho, motivo, termo } =
+  const { ctx, toolName, args, durationMs, success, errorMessage, resultSummary, resultBytes, desfecho, motivo, termo, conexao } =
     input;
 
   const metadata: Record<string, unknown> = {
@@ -98,6 +111,9 @@ export async function auditMcpToolCall(input: AuditMcpToolCallInput): Promise<vo
   if (errorMessage) metadata.error = errorMessage.slice(0, 500);
   if (desfecho) metadata.desfecho = desfecho;
   if (motivo) metadata.motivo = motivo.slice(0, 200);
+  // A conexão do servidor externo (#4445): o NOME dela, nunca o endpoint — o
+  // endereço pode ter querystring de terceiro e o audit é append-only.
+  if (conexao) metadata.conexao = conexao.slice(0, 120);
   // O termo, para a contagem "não achei POR TERMO" (`fn_agent_tool_usage_por_termo`).
   // Mesmo corte do motivo: é texto do cliente e o audit não guarda romance.
   if (termo) metadata.termo = termo.slice(0, 200);

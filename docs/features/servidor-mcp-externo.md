@@ -46,5 +46,42 @@ chave do cadastro (`Authorization: Bearer`).
 
 Se o contato não puder ser confirmado no banco naquele turno, o servidor fica
 fora do turno. Cada chamada feita em atendimento fica auditada com o
-`contact_id` da conversa (`metadata.contact_id`). Ferramentas marcadas como
-**escrita** continuam recusadas durante a conversa, com ou sem a opção.
+`contact_id` da conversa (`metadata.contact_id`).
+
+## Escrita durante o atendimento (#4445)
+
+A escrita nasce **fechada**. Consultar o sistema de fora e alterar o sistema de
+fora são decisões diferentes, e a segunda é uma lista, não uma chave:
+
+```
+organizations.settings.mcp_externo_escrita = {
+  "organizacao": ["cancelar_reserva"],                 // vale para toda conexão
+  "conexoes": { "compartilhado": ["criar_agendamento"] } // por conexão
+}
+```
+
+A conexão do servidor compartilhado da organização é `compartilhado`; a de um
+servidor do agente é o id dele em `ai_agent_mcp_servers`. O turno usa a **união**
+das duas listas para aquela conexão (`escrita-liberada.ts`). A tela do servidor
+externo (admin) tem os dois campos; o botão "Testar conexão" mostra os nomes que
+o servidor anuncia, que são os nomes a escrever na lista.
+
+Regras:
+
+| Situação | O que acontece |
+|---|---|
+| Ferramenta nomeada na lista | a escrita roda dentro do turno, com a identidade do contato nos cabeçalhos; falha do terceiro vira texto para o modelo, não exceção |
+| Ferramenta fora da lista | recusa **nomeada** `escrita_nao_liberada` (com ferramenta e conexão), sem byte de rede; o modelo conclui o que dá e passa o resto à equipe |
+| Curinga na lista (`*`, `all`, `todos`, `erp_*`) | **não é expandido nem gravado**: a leitura o descarta e nada é liberado. A tela recusa o salvamento com `curinga_nao_aceito` |
+| Falha do sistema de fora (timeout, 5xx, erro do ERP) | o turno **continua**: o modelo recebe `erro_externo` e a instrução de não confirmar a ação; a trilha guarda o motivo técnico |
+
+Toda escrita remota entra em `api_audit_log` com `metadata.conexao` e
+`metadata.desfecho` = `ok` | `negado` | `erro_externo`, além de
+`tool_name`, `contact_id` e `args` **resumidos** (identificador de sistema vai
+inteiro; nome, endereço e documento viram tipo e tamanho — ver
+`auditoria-da-escrita.ts`). O payload da chamada nunca é gravado.
+
+Escrita **delegada ao contato** (`ai_agent_mcp_servers` no modo
+`oauth_por_contato` com `escrita_delegada`) não passa por esta lista: quem
+autoriza ali é o dono da conta no terceiro, pelo step-up, e o token usado é o
+dele — não a chave da empresa.

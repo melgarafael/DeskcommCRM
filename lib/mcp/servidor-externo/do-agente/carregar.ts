@@ -29,6 +29,7 @@ import { logger } from "@/lib/logger";
 
 import { fetchDeSaida, listarFerramentasDoServidor, type FerramentaRemota } from "../chamada";
 import { cabecalhosDoContato } from "../carregar";
+import { escritasLiberadasDaConexao, lerEscritaLiberada } from "../escrita-liberada";
 import { servidoresEscolhidos } from "../ids";
 import { hostDoEndpoint } from "../registro";
 import { TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS } from "../tempos-do-turno";
@@ -66,6 +67,12 @@ export interface ServidorDoAgenteProntoNoTurno {
   renovarAcesso?: () => Promise<string | null>;
   /** Gera o link de step-up (oauth) — mesmo da ferramenta sintética. */
   pedirAcesso?: (escopos?: readonly string[]) => Promise<{ link: string; expiraEm: Date } | null>;
+  /**
+   * As ferramentas de ESCRITA liberadas para ESTA conexão (#4445), resolvidas
+   * de `organizations.settings.mcp_externo_escrita` pelo id do servidor.
+   * Ausente/vazia = nenhuma escrita roda no atendimento.
+   */
+  escritasLiberadas?: readonly string[];
 }
 
 /** Um servidor `oauth_por_contato` sem token válido para o contato do turno. */
@@ -124,6 +131,7 @@ async function carregarOauth(
   servidor: ServidorDoAgenteComSegredo,
   contato: string,
   opcoes: OpcoesDaCargaDoAgente,
+  escritasLiberadas: readonly string[],
 ): Promise<ServidorDoAgenteNoTurno | null> {
   const fetch = opcoes.fetch ?? fetchDeSaida(hostsDoServidor(servidor.endpoint, servidor.oauth));
   const rede = opcoes.fetch ? { fetch: opcoes.fetch } : {};
@@ -186,6 +194,7 @@ async function carregarOauth(
     contato,
     fetch,
     pedirAcesso,
+    escritasLiberadas,
     renovarAcesso: async () => {
       const nova = await renovarCredencial(supabase, servidor, contato, atual, rede);
       if (!nova) return null;
@@ -201,6 +210,7 @@ async function carregarComChave(
   supabase: SupabaseClient,
   servidor: ServidorDoAgenteComSegredo,
   opcoes: OpcoesDaCargaDoAgente,
+  escritasLiberadas: readonly string[],
 ): Promise<ServidorDoAgenteNoTurno | null> {
   if (servidor.modo === "chave_estatica" && !servidor.chave) return null;
   const contato = opcoes.contatoDoTurno;
@@ -225,6 +235,7 @@ async function carregarComChave(
       ferramentas,
       chamavel: { endpoint: servidor.endpoint, chave },
       fetch,
+      escritasLiberadas,
       ...(contato && cabecalhos ? { contato, cabecalhos } : {}),
     };
   } catch (err) {
@@ -261,14 +272,26 @@ export async function carregarServidoresDoAgenteNoTurno(
   const servidores = (await lerServidoresDoAgente(supabase, organizationId, agentId, { somenteAtivos: true })).filter(
     (s) => escolhidos.has(s.id),
   );
+  // A liberação de ESCRITA (#4445) é por ORGANIZAÇÃO e por CONEXÃO: uma
+  // leitura do jsonb por turno, e o recorte de cada servidor pelo id dele. Sem
+  // o bolso, lista vazia — nenhuma escrita remota roda no atendimento.
+  const { data: organizacao } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", organizationId)
+    .maybeSingle();
+  const liberacao = lerEscritaLiberada((organizacao as { settings?: unknown } | null)?.settings);
   const cargas = await Promise.all(
     servidores.map(async (servidor) => {
       try {
+        const liberadas = escritasLiberadasDaConexao(liberacao, servidor.id);
         if (servidor.modo === "oauth_por_contato") {
           // Turno sem contato (operador, automação): não há de QUEM ser o acesso.
-          return opcoes.contatoDoTurno ? await carregarOauth(supabase, servidor, opcoes.contatoDoTurno, opcoes) : null;
+          return opcoes.contatoDoTurno
+            ? await carregarOauth(supabase, servidor, opcoes.contatoDoTurno, opcoes, liberadas)
+            : null;
         }
-        return await carregarComChave(supabase, servidor, opcoes);
+        return await carregarComChave(supabase, servidor, opcoes, liberadas);
       } catch (err) {
         logger.warn("carga do servidor MCP do agente falhou — turno segue sem ele", {
           organization_id: organizationId,

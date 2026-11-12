@@ -17422,6 +17422,21 @@ export const DICIONARIO: Traducoes = {
   "Nenhum servidor externo respondeu. Salve o endereço e a chave e teste de novo.": {
     es: "Ningún servidor externo respondió. Guarda la dirección y la clave y prueba de nuevo.",
   },
+  // ─── Escrita liberada no atendimento (#4445) ───
+  "Ferramentas de escrita liberadas": { es: "Herramientas de escritura liberadas" },
+  "A liberação nasce vazia: enquanto esta lista estiver em branco, nenhuma ferramenta de escrita roda durante o atendimento — a IA consulta, mas não altera nada no sistema de fora.": {
+    es: "La liberación nace vacía: mientras esta lista esté en blanco, ninguna herramienta de escritura se ejecuta durante la atención — la IA consulta, pero no altera nada en el sistema externo.",
+  },
+  "Para toda conexão MCP desta empresa": { es: "Para toda conexión MCP de esta empresa" },
+  "Só para esta conexão (servidor compartilhado)": {
+    es: "Solo para esta conexión (servidor compartido)",
+  },
+  "Uma ferramenta por linha, com o nome exato que o servidor anuncia. A lista é explícita: curinga (*, all, todos) não é aceito.": {
+    es: "Una herramienta por línea, con el nombre exacto que anuncia el servidor. La lista es explícita: no se acepta comodín (*, all, todos).",
+  },
+  "Curinga não é aceito. Escreva o nome de cada ferramenta de escrita que pode rodar: * ou all liberariam também as ferramentas que o servidor ainda nem anuncia.": {
+    es: "No se acepta comodín. Escribe el nombre de cada herramienta de escritura que puede ejecutarse: * o all liberarían también las herramientas que el servidor aún no anuncia.",
+  },
 
   // ─── Campanhas (migration 0264) ───
   "Agendar": { es: "Programar" },

@@ -46,6 +46,12 @@ import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { regraPlatformAdmin } from "@/lib/extensions/http";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { BOLSO_MCP_EXTERNO, conferirEndpointSeguro, hostDoEndpoint, mesclarServidorMcpExterno } from "@/lib/mcp/servidor-externo/registro";
+import {
+  CONEXAO_COMPARTILHADA,
+  lerEscritaLiberada,
+  mesclarEscritaLiberada,
+  separarNomesDigitados,
+} from "@/lib/mcp/servidor-externo/escrita-liberada";
 import { SEGREDO_APAGADO, cifrarChaveMcpExterno } from "@/lib/mcp/servidor-externo/segredo";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -61,6 +67,7 @@ export type ResultadoRegistroDeServidorMcp =
         | "mfa_required"
         | "upstream_unavailable"
         | "endpoint_inseguro"
+        | "curinga_nao_aceito"
         | "erro_ao_gravar";
     };
 
@@ -73,6 +80,17 @@ export type ResultadoRegistroDeServidorMcp =
 const entradaSchema = z.object({
   endpoint: z.string().trim().max(500),
   chave: z.string().trim().max(500),
+  /**
+   * As ferramentas de ESCRITA liberadas (#4445), uma por linha (ou separadas
+   * por vírgula). Ausente = não mexe no que já está gravado — a tela manda
+   * sempre, quem chama a action por outro caminho pode não mandar.
+   *
+   * São DOIS níveis, os mesmos que a leitura entende
+   * (`lib/mcp/servidor-externo/escrita-liberada.ts`): o da organização, que vale
+   * para toda conexão, e o da conexão do servidor compartilhado.
+   */
+  escritasLiberadasOrganizacao: z.string().max(4000).optional(),
+  escritasLiberadasConexao: z.string().max(4000).optional(),
 });
 
 export type RegistroDeServidorMcpInput = z.infer<typeof entradaSchema>;
@@ -118,6 +136,18 @@ export async function definirServidorMcpExterno(
     }
   }
 
+  // 3b) A LISTA DE ESCRITA, antes de tocar no banco (#4445): curinga é recusado
+  // com código próprio. A lista é explícita — `*`, `all`, `todos` e
+  // `erp_*` significam "tudo o que o terceiro anunciar hoje e amanhã", que é
+  // exatamente o que esta configuração existe para NÃO ser.
+  const organizacaoDigitada = entrada.data.escritasLiberadasOrganizacao;
+  const conexaoDigitada = entrada.data.escritasLiberadasConexao;
+  const listaOrganizacao = organizacaoDigitada === undefined ? null : separarNomesDigitados(organizacaoDigitada);
+  const listaConexao = conexaoDigitada === undefined ? null : separarNomesDigitados(conexaoDigitada);
+  if ((listaOrganizacao?.curingas.length ?? 0) > 0 || (listaConexao?.curingas.length ?? 0) > 0) {
+    return { ok: false, error: "curinga_nao_aceito" };
+  }
+
   const admin = createAdminClient();
   const { data: atual, error: erroLeitura } = await admin
     .from("organizations")
@@ -128,7 +158,19 @@ export async function definirServidorMcpExterno(
 
   // `settings` é jsonb compartilhado: ler, mesclar SÓ o nosso bolso e gravar
   // preserva o que é dos outros — é a razão do merge em dois níveis.
-  const settings = mesclarServidorMcpExterno(atual?.settings ?? {}, { endpoint, chave });
+  let settings = mesclarServidorMcpExterno(atual?.settings ?? {}, { endpoint, chave });
+  if (listaOrganizacao !== null || listaConexao !== null) {
+    // As OUTRAS conexões (servidores do agente) saem daqui como entraram: a
+    // tela do servidor compartilhado não é dona da liberação delas.
+    const atualLiberacao = lerEscritaLiberada(settings);
+    settings = mesclarEscritaLiberada(settings, {
+      ...(listaOrganizacao === null ? { organizacao: atualLiberacao.organizacao } : { organizacao: listaOrganizacao.nomes }),
+      conexoes: {
+        ...atualLiberacao.conexoes,
+        ...(listaConexao === null ? {} : { [CONEXAO_COMPARTILHADA]: listaConexao.nomes }),
+      },
+    });
+  }
   const temRegistro = settings[BOLSO_MCP_EXTERNO] !== undefined;
   // A CHAVE nunca entra no jsonb: sai cifrada, ou zerada quando apagam.
   const colunas = temRegistro ? cifrarChaveMcpExterno(chave) : SEGREDO_APAGADO;
@@ -157,6 +199,14 @@ export async function definirServidorMcpExterno(
       endpoint: temRegistro ? hostDoEndpoint(endpoint) : null,
       registrado: temRegistro,
       chave_presente: temRegistro,
+      // As listas de ESCRITA liberadas (#4445): NOMES de ferramenta, nunca
+      // argumento nem payload. `null` = esta chamada não mexeu nas listas.
+      ...(listaOrganizacao === null
+        ? {}
+        : { escritas_liberadas_organizacao: listaOrganizacao.nomes.slice(0, 50) }),
+      ...(listaConexao === null
+        ? {}
+        : { escritas_liberadas_conexao: listaConexao.nomes.slice(0, 50) }),
     },
   });
 

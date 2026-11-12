@@ -43,6 +43,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/hooks/i18n/useT";
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
@@ -69,6 +70,8 @@ export const MENSAGEM_DA_RECUSA: Record<CodigoDeRecusa, string> = {
   validation_failed: "Confira o endereço e a chave: um dos dois passou do tamanho aceito.",
   endpoint_inseguro:
     "Endereço recusado por segurança: informe um servidor público em https, sem rede interna, sem localhost e sem segredo colado no endereço.",
+  curinga_nao_aceito:
+    "Curinga não é aceito. Escreva o nome de cada ferramenta de escrita que pode rodar: * ou all liberariam também as ferramentas que o servidor ainda nem anuncia.",
   upstream_unavailable: "Não foi possível falar com o servidor.",
   erro_ao_gravar: "Não foi possível salvar. Tente de novo em instantes.",
   sem_servidor:
@@ -84,6 +87,9 @@ export function CadastroDoServidorMcpExterno() {
   const t = useT();
   const [endpoint, setEndpoint] = useState("");
   const [chave, setChave] = useState("");
+  /** As ESCRITAS liberadas (#4445) — uma por linha, nos dois níveis. */
+  const [liberadasOrganizacao, setLiberadasOrganizacao] = useState("");
+  const [liberadasConexao, setLiberadasConexao] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   /** O desfecho que deu certo (salvou, testou ou removeu). */
   const [aviso, setAviso] = useState<string | null>(null);
@@ -118,7 +124,12 @@ export function CadastroDoServidorMcpExterno() {
       return;
     }
     iniciar(async () => {
-      const r = await definirServidorMcpExterno({ endpoint, chave });
+      const r = await definirServidorMcpExterno({
+        endpoint,
+        chave,
+        escritasLiberadasOrganizacao: liberadasOrganizacao,
+        escritasLiberadasConexao: liberadasConexao,
+      });
       if (!r.ok) {
         recusar(r.error);
         return;
@@ -144,6 +155,8 @@ export function CadastroDoServidorMcpExterno() {
       }
       setEndpoint("");
       setChave("");
+      // A liberação de escrita continua gravada (é decisão separada do
+      // cadastro): sem servidor registrado, ela não alcança nada.
       setAviso(t("Servidor externo removido. A IA desta empresa não alcança mais o sistema de fora."));
     });
   }
@@ -230,6 +243,51 @@ export function CadastroDoServidorMcpExterno() {
           >
             {t("Remover")}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* #4445 — a liberação de ESCRITA. Fica em card próprio porque é outra
+          decisão: o cadastro diz QUAL sistema a IA alcança; este diz o que ela
+          pode ALTERAR nele durante uma conversa. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("Ferramentas de escrita liberadas")}</CardTitle>
+          <CardDescription>
+            {t(
+              "A liberação nasce vazia: enquanto esta lista estiver em branco, nenhuma ferramenta de escrita roda durante o atendimento — a IA consulta, mas não altera nada no sistema de fora.",
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="mcp-escrita-organizacao">{t("Para toda conexão MCP desta empresa")}</Label>
+            <Textarea
+              id="mcp-escrita-organizacao"
+              data-testid="escritas-organizacao"
+              rows={3}
+              spellCheck={false}
+              placeholder="cancelar_reserva"
+              value={liberadasOrganizacao}
+              onChange={(e) => setLiberadasOrganizacao(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="mcp-escrita-conexao">{t("Só para esta conexão (servidor compartilhado)")}</Label>
+            <Textarea
+              id="mcp-escrita-conexao"
+              data-testid="escritas-conexao"
+              rows={3}
+              spellCheck={false}
+              placeholder="criar_agendamento"
+              value={liberadasConexao}
+              onChange={(e) => setLiberadasConexao(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Uma ferramenta por linha, com o nome exato que o servidor anuncia. A lista é explícita: curinga (*, all, todos) não é aceito.",
+              )}
+            </p>
+          </div>
         </CardContent>
       </Card>
 
