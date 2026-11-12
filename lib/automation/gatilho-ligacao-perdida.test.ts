@@ -265,7 +265,7 @@ describe("catálogo: 'Ligação perdida' é um gatilho de primeira classe", () =
 
 describe("motor: a ligação perdida manda UMA mensagem pelo caminho de sempre", () => {
   it("dispara a regra e envia uma vez, com o contato no contexto", async () => {
-    // RELÓGIO PRESO DENTRO DA JANELA (#782). O motor adia pela janela do
+    // RELÓGIO PRESO DENTRO DA JANELA (#4365). O motor adia pela janela do
     // NÚMERO (7h–22h em São Paulo), e este caso rodava com o relógio de
     // verdade: às 23h o disparo saía `retry` — decidir esperar está CORRETO —,
     // e o teste reprovava por causa da HORA em que a CI rodou, não do produto.
@@ -286,7 +286,7 @@ describe("motor: a ligação perdida manda UMA mensagem pelo caminho de sempre",
   });
 
   it("CONTROLE: contato BLOQUEADO continua barrando o envio", async () => {
-    // O CONTROLE VALE MAIS FORA DA JANELA (#782): é aí que o adiamento aparece
+    // O CONTROLE VALE MAIS FORA DA JANELA (#4365): é aí que o adiamento aparece
     // e engolia o bloqueio. 08:00Z = 05:00 em São Paulo — janela fechada. O
     // contato bloqueado tem de sair `skipped/contact_blocked` mesmo assim: não
     // há envio possível para esperar a janela abrir.

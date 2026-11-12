@@ -23,7 +23,7 @@ import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
   const escolha = lerEscolhaNoEnvio(config);
   const contato = checarGuardasDeContato(ctx);
-  // ═══ A GUARDA DO CONTATO VEM ANTES DA ESPERA (#782) ═══
+  // ═══ A GUARDA DO CONTATO VEM ANTES DA ESPERA (#4365) ═══
   //
   // Contato que a ação recusaria de qualquer jeito (bloqueado, sem telefone,
   // sem consentimento, inexistente) não tem o que esperar: adiar só empurra o

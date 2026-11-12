@@ -63,7 +63,7 @@ function puloPorAgenda(err: unknown): ActionResultDetail | null {
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
   const escolha = lerEscolhaNoEnvio(config);
   const contato = checarGuardasDeContato(ctx);
-  // A GUARDA VEM ANTES DA ESPERA (#782) — a irmã `send_whatsapp_message` tem o
+  // A GUARDA VEM ANTES DA ESPERA (#4365) — a irmã `send_whatsapp_message` tem o
   // mesmo conserto e o mesmo motivo: contato que a ação recusaria não tem o que
   // esperar, e adiar esconderia o motivo real (`contact_blocked`, `no_phone`)
   // atrás de `fora_da_janela_de_envio`. Quem passa na guarda continua adiando
