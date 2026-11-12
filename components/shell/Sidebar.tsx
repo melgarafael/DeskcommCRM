@@ -427,7 +427,7 @@ export function SidebarContent({
           );
         })}
       </nav>
-      <div className="border-t px-2 py-1">
+      <div className={cn("border-t px-2 py-1", classeDoGrupo(GRUPO_NO_RODAPE))}>
         {rodape && (
           <Link
             href={rodape.href}
@@ -437,6 +437,7 @@ export function SidebarContent({
             onClick={onNavigate}
             className={cn(
               "mb-0.5 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              classeDoItem(rodape.href),
               pathname.startsWith(rodape.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -460,6 +461,7 @@ export function SidebarContent({
             onClick={onNavigate}
             className={cn(
               "mb-0.5 flex items-center gap-3 rounded-md px-3 py-1 text-sm transition-colors",
+              classeDoItem(ajuda.href),
               pathname.startsWith(ajuda.href)
                 ? "bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",

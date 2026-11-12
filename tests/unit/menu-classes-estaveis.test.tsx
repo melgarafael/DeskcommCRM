@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Sidebar } from "@/components/shell/Sidebar";
 import { validarCssPersonalizado } from "@/lib/branding/css-personalizado";
-import { NAV_GROUPS, NAV_CATALOG } from "@/lib/navigation/catalogo";
+import { GRUPO_NO_RODAPE, NAV_GROUPS, NAV_CATALOG } from "@/lib/navigation/catalogo";
 import {
   CLASSES_DE_GRUPO,
   CLASSES_DE_ITEM,
@@ -105,7 +105,7 @@ describe("o menu desenha as classes do contrato", () => {
 
     const nav = screen.getByRole("navigation", { name: "Navegação principal" });
     for (const grupo of NAV_GROUPS) {
-      if (grupo.id === "organizacao") continue; // hub vive no rodapé fixo
+      if (grupo.id === GRUPO_NO_RODAPE) continue; // conferido no teste do rodapé, abaixo
       expect(nav.querySelector(`.${classeDoGrupo(grupo.id)}`), grupo.id).not.toBeNull();
     }
 
@@ -127,6 +127,24 @@ describe("o menu desenha as classes do contrato", () => {
     const funis = screen.getByRole("link", { name: "Funis" });
     expect(funis.className).toContain("nav-item-kanban");
     expect(funis.className).not.toContain("nav-item-inbox");
+  });
+
+  it("o grupo do rodapé fixo também carrega a sua classe, e os links dele a do destino", () => {
+    // `organizacao` não é desenhado no loop dos grupos: o Sidebar o tira da
+    // lista e o põe no rodapé, FORA da nav principal. A doc promete
+    // `nav-grupo-organizacao` nos três idiomas, então o rodapé tem de tê-la.
+    comoAdmin();
+    const { container } = render(<Sidebar collapsed={false} />);
+
+    const nav = screen.getByRole("navigation", { name: "Navegação principal" });
+    const rodape = container.querySelector(`.${classeDoGrupo(GRUPO_NO_RODAPE)}`);
+    if (!rodape) throw new Error("esperava a classe do grupo no rodapé fixo");
+    expect(nav.contains(rodape), "o rodapé fica fora da nav principal").toBe(false);
+
+    const configuracoes = within(rodape as HTMLElement).getByRole("link", { name: "Configurações" });
+    expect(configuracoes.className).toContain("nav-item-settings");
+    const ajuda = within(rodape as HTMLElement).getByRole("link", { name: "Ajuda" });
+    expect(ajuda.className).toContain("nav-item-ajuda");
   });
 
   it("a classe do grupo também existe recolhido (o CSS não pode depender do modo)", () => {
