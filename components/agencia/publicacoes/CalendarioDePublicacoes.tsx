@@ -1,28 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition, type PointerEvent as EventoDePonteiro } from "react";
+import { useState } from "react";
 
-import {
-  agendarPublicacao,
-  cancelarPublicacao,
-  marcarComoPublicada,
-  moverPublicacao,
-  pedirAprovacaoDaPublicacao,
-  salvarPublicacao,
-} from "@/app/actions/agencia/publicacoes";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { rotuloCurtoDoDia, rotuloLongoDoDia } from "@/lib/agencia/calendario/regras";
 import {
-  FORMATOS,
-  REDES,
   ROTULO_DA_REDE,
   ROTULO_DA_SITUACAO_DA_PUBLICACAO,
   ROTULO_DO_FORMATO,
-  publicaSozinho,
   somarMeses,
   type Formato,
   type Rede,
@@ -55,9 +40,7 @@ interface Props {
   grade: string[][];
   clienteFiltro: string;
   abrir: string | null;
-  podeEditar: boolean;
   clientes: Array<{ id: string; nome: string }>;
-  membros: Array<{ id: string; nome: string }>;
   publicacoes: PublicacaoNaTela[];
 }
 
@@ -74,8 +57,6 @@ const COR_DA_SITUACAO: Record<SituacaoDaPublicacao, string> = {
 
 const DIAS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
 
-type Rascunho = Omit<PublicacaoNaTela, "id" | "clienteNome" | "situacao" | "autoPublicar" | "comentario" | "postUrl" | "erro"> & { id: string | null };
-
 function nomeDoMes(mes: string): string {
   const [a, m] = mes.split("-").map(Number) as [number, number];
   const nome = new Date(Date.UTC(a, m - 1, 15)).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
@@ -83,119 +64,24 @@ function nomeDoMes(mes: string): string {
   return nome.charAt(0).toUpperCase() + nome.slice(1);
 }
 
+/** Calendário de publicações — somente visualização: navegar meses, filtrar por cliente e ver detalhes. */
 export function CalendarioDePublicacoes(p: Props) {
-  const router = useRouter();
   const [aberta, setAberta] = useState<string | null>(p.abrir && p.publicacoes.some((x) => x.id === p.abrir) ? p.abrir : null);
-  const [rascunho, setRascunho] = useState<Rascunho | null>(() => {
-    const x = p.publicacoes.find((q) => q.id === p.abrir);
-    return x ? deTela(x) : null;
-  });
-  const [mensagem, setMensagem] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
-  const [postUrl, setPostUrl] = useState("");
-  const [pendente, startTransition] = useTransition();
-  // Arrastar o post para outro dia (plano de 27/10, item 3). No toque, só depois de segurar.
-  const gesto = useRef<{ id: string; x0: number; y0: number; ativo: boolean; toque: boolean; timer: ReturnType<typeof setTimeout> | null } | null>(null);
-  const acabouDeArrastar = useRef(false);
-  const [diaAlvo, setDiaAlvo] = useState<string | null>(null);
-  const [movidas, setMovidas] = useState<Record<string, string>>({});
-  const encerrada = (x: PublicacaoNaTela) => x.situacao === "publicada" || x.situacao === "publicando" || x.situacao === "cancelada";
-  const arrastavel = (x: PublicacaoNaTela) => p.podeEditar && !encerrada(x);
-
-  function aoApertar(e: EventoDePonteiro<HTMLElement>, x: PublicacaoNaTela) {
-    if (!arrastavel(x) || e.button !== 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const g = { id: x.id, x0: e.clientX, y0: e.clientY, ativo: false, toque: e.pointerType === "touch", timer: null as ReturnType<typeof setTimeout> | null };
-    if (g.toque) g.timer = setTimeout(() => (g.ativo = true), 450);
-    gesto.current = g;
-  }
-  function aoMover(e: EventoDePonteiro<HTMLElement>) {
-    const g = gesto.current;
-    if (!g) return;
-    const d = Math.hypot(e.clientX - g.x0, e.clientY - g.y0);
-    if (!g.ativo) {
-      // No toque, só o "segurar" ativa; mexer antes disso é rolagem.
-      if (g.toque) return d > 8 ? cancelar() : undefined;
-      if (d < 4) return;
-      g.ativo = true;
-    }
-    const alvo = document.elementsFromPoint(e.clientX, e.clientY).find((el) => (el as HTMLElement).dataset?.dia) as HTMLElement | undefined;
-    setDiaAlvo(alvo?.dataset.dia ?? null);
-  }
-  function cancelar() {
-    if (gesto.current?.timer) clearTimeout(gesto.current.timer);
-    gesto.current = null;
-    setDiaAlvo(null);
-  }
-  function aoSoltar() {
-    const g = gesto.current;
-    const dia = diaAlvo;
-    cancelar();
-    if (!g?.ativo) return;
-    acabouDeArrastar.current = true;
-    setTimeout(() => (acabouDeArrastar.current = false), 0);
-    const x = p.publicacoes.find((q) => q.id === g.id);
-    if (!x || !dia || dia === (movidas[x.id] ?? x.dia)) return;
-    setMovidas((m) => ({ ...m, [x.id]: dia }));
-    startTransition(async () => {
-      const r = await moverPublicacao(x.id, dia);
-      if (!r.ok) {
-        setMovidas((m) => {
-          const { [x.id]: _sai, ...resto } = m;
-          return resto;
-        });
-        return setMensagem({ tipo: "erro", texto: r.erro });
-      }
-      setMensagem({ tipo: "ok", texto: `"${x.titulo}" foi para ${rotuloCurtoDoDia(dia)}, ${x.hora}.${r.dados.aviso ? ` ${r.dados.aviso}` : ""}` });
-      router.refresh();
-    });
-  }
 
   const atual = aberta ? p.publicacoes.find((x) => x.id === aberta) ?? null : null;
 
-  function deTela(x: PublicacaoNaTela): Rascunho {
-    return { id: x.id, clienteId: x.clienteId, titulo: x.titulo, rede: x.rede, formato: x.formato, dia: x.dia, hora: x.hora, legenda: x.legenda, midiaUrl: x.midiaUrl, responsavelId: x.responsavelId };
-  }
-  function url(mudar: { mes?: string; cliente?: string | null }) {
+  function url(mudar: { mes?: string; cliente?: string | null; abrir?: string | null }) {
     const q = new URLSearchParams();
     q.set("mes", mudar.mes ?? p.mes);
     const c = mudar.cliente === undefined ? p.clienteFiltro : mudar.cliente;
     if (c) q.set("cliente", c);
+    const a = mudar.abrir === undefined ? p.abrir : mudar.abrir;
+    if (a) q.set("abrir", a);
     return `/agencia/publicacoes?${q.toString()}`;
   }
-  function abrirPublicacao(x: PublicacaoNaTela) {
-    setAberta(x.id);
-    setRascunho(deTela(x));
-    setMensagem(null);
-    setPostUrl(x.postUrl ?? "");
-  }
-  function nova(dia: string) {
-    setAberta(null);
-    setMensagem(null);
-    setRascunho({ id: null, clienteId: p.clienteFiltro || p.clientes[0]?.id || "", titulo: "", rede: "instagram", formato: "feed", dia, hora: "18:00", legenda: "", midiaUrl: "", responsavelId: null });
-  }
-  function rodar(acao: () => Promise<{ ok: true } | { ok: false; erro: string }>, sucesso: string | ((r: unknown) => string)) {
-    startTransition(async () => {
-      const r = await acao();
-      if (!r.ok) return setMensagem({ tipo: "erro", texto: r.erro });
-      setMensagem({ tipo: "ok", texto: typeof sucesso === "string" ? sucesso : sucesso(r) });
-      router.refresh();
-    });
-  }
-  function salvar() {
-    if (!rascunho) return;
-    startTransition(async () => {
-      const r = await salvarPublicacao({ ...rascunho, responsavelId: rascunho.responsavelId || null });
-      if (!r.ok) return setMensagem({ tipo: "erro", texto: r.erro });
-      setAberta(r.dados.id);
-      setRascunho({ ...rascunho, id: r.dados.id });
-      setMensagem({ tipo: "ok", texto: r.dados.aviso ?? "Publicação salva." });
-      router.refresh();
-    });
-  }
 
-  const doDia = (dia: string) => p.publicacoes.filter((x) => (movidas[x.id] ?? x.dia) === dia);
+  const doDia = (dia: string) => p.publicacoes.filter((x) => x.dia === dia);
   const doMes = p.publicacoes.filter((x) => x.dia.startsWith(p.mes));
-  const editavel = p.podeEditar && (!atual || !["publicada", "publicando", "cancelada"].includes(atual.situacao));
 
   return (
     <div className="space-y-4" data-testid="calendario-de-publicacoes">
@@ -204,7 +90,7 @@ export function CalendarioDePublicacoes(p: Props) {
         <select
           aria-label="Filtrar por cliente"
           value={p.clienteFiltro}
-          onChange={(e) => router.push(url({ cliente: e.target.value || null }))}
+          onChange={(e) => window.location.href = url({ cliente: e.target.value || null, abrir: null })}
           className="h-9 max-w-[12rem] rounded-md border bg-background px-2 text-sm"
         >
           <option value="">Todos os clientes</option>
@@ -214,21 +100,16 @@ export function CalendarioDePublicacoes(p: Props) {
             </option>
           ))}
         </select>
-        {p.podeEditar && p.clientes.length > 0 && (
-          <Button type="button" onClick={() => nova(p.hoje.startsWith(p.mes) ? p.hoje : `${p.mes}-01`)}>
-            Nova publicação
-          </Button>
-        )}
       </div>
 
       <div className="flex items-center gap-2 text-sm">
-        <Link href={url({ mes: somarMeses(p.mes, -1) })} className="rounded-md border px-2 py-1 hover:bg-accent" aria-label="Mês anterior">
+        <Link href={url({ mes: somarMeses(p.mes, -1), abrir: null })} className="rounded-md border px-2 py-1 hover:bg-accent" aria-label="Mês anterior">
           ←
         </Link>
         <span className="min-w-[10rem] text-center font-medium" data-testid="mes-aberto">
           {nomeDoMes(p.mes)}
         </span>
-        <Link href={url({ mes: somarMeses(p.mes, 1) })} className="rounded-md border px-2 py-1 hover:bg-accent" aria-label="Próximo mês">
+        <Link href={url({ mes: somarMeses(p.mes, 1), abrir: null })} className="rounded-md border px-2 py-1 hover:bg-accent" aria-label="Próximo mês">
           →
         </Link>
         <span className="ml-auto text-xs text-muted-foreground">
@@ -249,39 +130,20 @@ export function CalendarioDePublicacoes(p: Props) {
           {p.grade.map((semana) => (
             <div key={semana[0]} className="grid grid-cols-7 border-b last:border-b-0">
               {semana.map((dia) => (
-                <div
-                  key={dia}
-                  data-dia={dia}
-                  className={cn("min-h-24 border-r p-1 last:border-r-0", !dia.startsWith(p.mes) && "bg-muted/30 text-muted-foreground", diaAlvo === dia && "bg-primary/10 ring-2 ring-inset ring-primary")}
-                >
+                <div key={dia} data-dia={dia} className={cn("min-h-24 border-r p-1 last:border-r-0", !dia.startsWith(p.mes) && "bg-muted/30 text-muted-foreground")}>
                   <div className="flex items-center justify-between">
                     <span className={cn("text-xs", dia === p.hoje && "rounded-sm bg-primary px-1 text-primary-foreground")}>{Number(dia.slice(8))}</span>
-                    {p.podeEditar && (
-                      <button type="button" onClick={() => nova(dia)} className="rounded-sm px-1 text-xs text-muted-foreground hover:bg-accent" aria-label={`Nova publicação em ${rotuloCurtoDoDia(dia)}`}>
-                        +
-                      </button>
-                    )}
                   </div>
                   <div className="mt-1 space-y-1">
                     {doDia(dia).map((x) => (
                       <button
                         key={x.id}
                         type="button"
-                        onClick={() => !acabouDeArrastar.current && abrirPublicacao(x)}
-                        onPointerDown={(e) => aoApertar(e, x)}
-                        onPointerMove={aoMover}
-                        onPointerUp={aoSoltar}
-                        onPointerCancel={cancelar}
-                        style={arrastavel(x) ? { touchAction: "none" } : undefined}
+                        onClick={() => window.location.href = url({ abrir: x.id })}
                         data-testid="publicacao-na-grade"
                         data-situacao={x.situacao}
                         data-publicacao={x.id}
-                        className={cn(
-                          "block w-full truncate rounded-sm border px-1 py-0.5 text-left text-[11px]",
-                          COR_DA_SITUACAO[x.situacao],
-                          aberta === x.id && "ring-2 ring-primary",
-                          arrastavel(x) && "cursor-grab active:cursor-grabbing",
-                        )}
+                        className={cn("block w-full truncate rounded-sm border px-1 py-0.5 text-left text-[11px]", COR_DA_SITUACAO[x.situacao], aberta === x.id && "ring-2 ring-primary")}
                         title={`${x.hora} ${x.titulo} — ${x.clienteNome}`}
                       >
                         {x.hora} {x.titulo}
@@ -299,7 +161,7 @@ export function CalendarioDePublicacoes(p: Props) {
           {doMes.length === 0 && <li className="rounded-md border p-3 text-sm text-muted-foreground">Nada neste mês.</li>}
           {doMes.map((x) => (
             <li key={x.id}>
-              <button type="button" onClick={() => abrirPublicacao(x)} className={cn("w-full rounded-md border p-3 text-left text-sm", COR_DA_SITUACAO[x.situacao])}>
+              <button type="button" onClick={() => window.location.href = url({ abrir: x.id })} className={cn("w-full rounded-md border p-3 text-left text-sm", COR_DA_SITUACAO[x.situacao])}>
                 <span className="block font-medium">{x.titulo}</span>
                 <span className="text-xs">
                   {rotuloCurtoDoDia(x.dia)} {x.hora} · {ROTULO_DA_REDE[x.rede]} · {x.clienteNome} · {ROTULO_DA_SITUACAO_DA_PUBLICACAO[x.situacao]}
@@ -310,159 +172,72 @@ export function CalendarioDePublicacoes(p: Props) {
         </ul>
 
         <aside className="space-y-3 rounded-md border p-4 text-sm" data-testid="painel-da-publicacao">
-          {!rascunho ? (
-            <p className="text-muted-foreground">Clique numa publicação para ver os detalhes{p.podeEditar ? ", ou em + num dia para criar uma." : "."}</p>
+          {!atual ? (
+            <p className="text-muted-foreground">Clique numa publicação para ver os detalhes.</p>
           ) : (
             <>
               <div className="flex items-center justify-between gap-2">
-                <h2 className="font-semibold">{rascunho.id ? "Publicação" : "Nova publicação"}</h2>
-                {atual && (
-                  <span className={cn("rounded border px-2 py-0.5 text-xs", COR_DA_SITUACAO[atual.situacao])} data-testid="situacao-da-publicacao">
-                    {ROTULO_DA_SITUACAO_DA_PUBLICACAO[atual.situacao]}
-                    {atual.situacao === "agendada" && (atual.autoPublicar ? " · publica sozinha" : " · postar à mão")}
-                  </span>
-                )}
+                <h2 className="font-semibold">{atual.titulo}</h2>
+                <span className={cn("rounded border px-2 py-0.5 text-xs", COR_DA_SITUACAO[atual.situacao])} data-testid="situacao-da-publicacao">
+                  {ROTULO_DA_SITUACAO_DA_PUBLICACAO[atual.situacao]}
+                  {atual.situacao === "agendada" && (atual.autoPublicar ? " · publica sozinha" : " · postar à mão")}
+                </span>
               </div>
-              {atual?.comentario && (
+              {atual.comentario && (
                 <p className="rounded-md bg-amber-50 p-2 text-amber-900 dark:bg-amber-950 dark:text-amber-200" data-testid="comentario-do-cliente">
                   Ajuste pedido pelo cliente: {atual.comentario}
                 </p>
               )}
-              {atual?.erro && (
+              {atual.erro && (
                 <p className="rounded-md bg-red-50 p-2 text-red-900 dark:bg-red-950 dark:text-red-200" data-testid="erro-da-publicacao">
                   {atual.erro}
                 </p>
               )}
-              {atual?.postUrl && (
+              {atual.postUrl && (
                 <a href={atual.postUrl} target="_blank" rel="noreferrer" className="block truncate text-primary underline">
                   Ver o post
                 </a>
               )}
 
-              <fieldset disabled={!editavel || pendente} className="space-y-3">
-                <div className="space-y-1">
-                  <Label htmlFor="pub-cliente">Cliente</Label>
-                  <select id="pub-cliente" value={rascunho.clienteId} disabled={!!rascunho.id} onChange={(e) => setRascunho({ ...rascunho, clienteId: e.target.value })} className="h-9 w-full rounded-md border bg-background px-2">
-                    {p.clientes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="pub-titulo">Nome</Label>
-                  <Input id="pub-titulo" value={rascunho.titulo} onChange={(e) => setRascunho({ ...rascunho, titulo: e.target.value })} placeholder="Ex.: Reels da promoção" />
+              <dl className="space-y-2">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Cliente</dt>
+                  <dd>{atual.clienteNome}</dd>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="pub-rede">Rede</Label>
-                    <select id="pub-rede" value={rascunho.rede} onChange={(e) => setRascunho({ ...rascunho, rede: e.target.value as Rede })} className="h-9 w-full rounded-md border bg-background px-2">
-                      {REDES.map((r) => (
-                        <option key={r} value={r}>
-                          {ROTULO_DA_REDE[r]}
-                        </option>
-                      ))}
-                    </select>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Rede</dt>
+                    <dd>{ROTULO_DA_REDE[atual.rede]}</dd>
                   </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="pub-formato">Formato</Label>
-                    <select id="pub-formato" value={rascunho.formato} onChange={(e) => setRascunho({ ...rascunho, formato: e.target.value as Formato })} className="h-9 w-full rounded-md border bg-background px-2">
-                      {FORMATOS.map((f) => (
-                        <option key={f} value={f}>
-                          {ROTULO_DO_FORMATO[f]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="pub-dia">Dia</Label>
-                    <Input id="pub-dia" type="date" value={rascunho.dia} onChange={(e) => setRascunho({ ...rascunho, dia: e.target.value })} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="pub-hora">Hora</Label>
-                    <Input id="pub-hora" type="time" value={rascunho.hora} onChange={(e) => setRascunho({ ...rascunho, hora: e.target.value })} />
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Formato</dt>
+                    <dd>{ROTULO_DO_FORMATO[atual.formato]}</dd>
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="pub-legenda">Legenda</Label>
-                  <textarea id="pub-legenda" value={rascunho.legenda} onChange={(e) => setRascunho({ ...rascunho, legenda: e.target.value })} rows={4} className="w-full rounded-md border bg-background p-2" />
+                <div>
+                  <dt className="text-xs text-muted-foreground">Quando</dt>
+                  <dd>
+                    {rotuloLongoDoDia(atual.dia)}, {atual.hora}
+                  </dd>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="pub-midia">Link da mídia</Label>
-                  <Input id="pub-midia" value={rascunho.midiaUrl} onChange={(e) => setRascunho({ ...rascunho, midiaUrl: e.target.value })} placeholder="https://…" />
-                  <p className="text-xs text-muted-foreground">Para publicar sozinho, o link precisa ser do próprio arquivo (.jpg, .png, .mp4), público.</p>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="pub-responsavel">Responsável</Label>
-                  <select id="pub-responsavel" value={rascunho.responsavelId ?? ""} onChange={(e) => setRascunho({ ...rascunho, responsavelId: e.target.value || null })} className="h-9 w-full rounded-md border bg-background px-2">
-                    <option value="">Ninguém</option>
-                    {p.membros.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {editavel && (
-                  <Button type="button" onClick={salvar} className="w-full">
-                    Salvar publicação
-                  </Button>
+                {atual.legenda && (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Legenda</dt>
+                    <dd className="whitespace-pre-wrap">{atual.legenda}</dd>
+                  </div>
                 )}
-              </fieldset>
-
-              {p.podeEditar && atual && (
-                <div className="space-y-2 border-t pt-3">
-                  {(atual.situacao === "rascunho" || atual.situacao === "falhou") && (
-                    <Button type="button" variant="outline" className="w-full" disabled={pendente} onClick={() => rodar(() => pedirAprovacaoDaPublicacao(atual.id), (r) => `Enviada para o cliente aprovar. ${(r as { dados: { aviso: string } }).dados.aviso}`)}>
-                      Pedir aprovação ao cliente
-                    </Button>
-                  )}
-                  {(atual.situacao === "aprovada" || atual.situacao === "falhou") && (
-                    <>
-                      <Button type="button" variant="outline" className="w-full" disabled={pendente} onClick={() => rodar(() => agendarPublicacao(atual.id, false), "Agendada: poste à mão no horário e marque como publicada.")}>
-                        Agendar (postar à mão)
-                      </Button>
-                      {publicaSozinho(atual.rede, atual.formato) && (
-                        <Button type="button" className="w-full" disabled={pendente} onClick={() => rodar(() => agendarPublicacao(atual.id, true), "Agendada: a central publica sozinha no horário.")}>
-                          Agendar e publicar sozinho
-                        </Button>
-                      )}
-                    </>
-                  )}
-                  {!["publicada", "publicando", "cancelada"].includes(atual.situacao) && (
-                    <div className="space-y-1">
-                      <Label htmlFor="pub-post-url">Link do post (opcional)</Label>
-                      <div className="flex gap-2">
-                        <Input id="pub-post-url" value={postUrl} onChange={(e) => setPostUrl(e.target.value)} placeholder="https://… (link do post)" />
-                        <Button type="button" variant="outline" disabled={pendente} onClick={() => rodar(() => marcarComoPublicada(atual.id, postUrl), "Marcada como publicada.")}>
-                          Publicada
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  {!["publicada", "publicando", "cancelada"].includes(atual.situacao) && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="w-full text-destructive"
-                      disabled={pendente}
-                      onClick={() => {
-                        if (window.confirm("Cancelar esta publicação?")) rodar(() => cancelarPublicacao(atual.id), "Publicação cancelada.");
-                      }}
-                    >
-                      Cancelar publicação
-                    </Button>
-                  )}
-                </div>
-              )}
-              {atual && <p className="text-xs text-muted-foreground">{rotuloLongoDoDia(atual.dia)}, {atual.hora} · {atual.clienteNome}</p>}
+                {atual.midiaUrl && (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Mídia</dt>
+                    <dd className="truncate">
+                      <a href={atual.midiaUrl} target="_blank" rel="noreferrer" className="text-primary underline">
+                        {atual.midiaUrl}
+                      </a>
+                    </dd>
+                  </div>
+                )}
+              </dl>
             </>
-          )}
-          {mensagem && (
-            <p role={mensagem.tipo === "erro" ? "alert" : "status"} data-testid="mensagem-da-publicacao" className={cn("text-sm", mensagem.tipo === "erro" ? "text-destructive" : "text-emerald-700 dark:text-emerald-400")}>
-              {mensagem.texto}
-            </p>
           )}
         </aside>
       </div>

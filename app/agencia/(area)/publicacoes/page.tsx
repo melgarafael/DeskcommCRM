@@ -50,10 +50,9 @@ export default async function PaginaDasPublicacoes({ searchParams }: { searchPar
     .order("quando")
     .limit(1000);
   if (clienteFiltro) consulta = consulta.eq("cliente_id", clienteFiltro);
-  const [{ data: pubs }, { data: clientes }, { data: membros }, aberta] = await Promise.all([
+  const [{ data: pubs }, { data: clientes }, aberta] = await Promise.all([
     consulta,
     db.from("agencia_clientes").select("id, nome").not("situacao", "in", "(encerrado,perdido)").order("nome"),
-    db.from("agencia_membros").select("id, nome").eq("situacao", "ativo").order("nome"),
     // A publicação do aviso pode estar fora do mês aberto.
     abrir ? db.from("agencia_publicacoes").select("quando").eq("id", abrir).maybeSingle() : Promise.resolve({ data: null }),
   ]);
@@ -72,9 +71,7 @@ export default async function PaginaDasPublicacoes({ searchParams }: { searchPar
       grade={grade}
       clienteFiltro={clienteFiltro}
       abrir={abrir}
-      podeEditar={ctx.permissoes.has("publicacoes.gerenciar")}
       clientes={opcoes}
-      membros={(membros ?? []) as Array<{ id: string; nome: string }>}
       publicacoes={visiveis.map((p) => ({
         id: p.id,
         clienteId: p.cliente_id,

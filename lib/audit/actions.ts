@@ -1180,6 +1180,7 @@ export const AUDIT_ACTIONS = [
   "agencia.cliente_importado",
   "agencia.cliente_organizacao_ligada",
   "agencia.cliente_equipe_alterada",
+  "agencia.cliente_excluido",
   "agencia.contratacao_criada",
   "agencia.contratacao_alterada",
   "agencia.drive_conectado",

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { importarOrganizacoes } from "@/app/actions/agencia/clientes";
+import { excluirCliente, importarOrganizacoes } from "@/app/actions/agencia/clientes";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -96,8 +96,11 @@ export function ListaDeClientes({
       ) : (
         <ul className="divide-y rounded-md border">
           {visiveis.map((c) => (
-            <li key={c.id}>
-              <Link href={`/agencia/clientes/${c.id}`} className="flex flex-col gap-1 p-4 hover:bg-accent/40 sm:flex-row sm:items-center sm:justify-between">
+            <li key={c.id} className="flex items-stretch">
+              <Link
+                href={`/agencia/clientes/${c.id}`}
+                className="flex min-w-0 flex-1 flex-col gap-1 p-4 hover:bg-accent/40 sm:flex-row sm:items-center sm:justify-between"
+              >
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{c.nome}</span>
@@ -113,6 +116,24 @@ export function ListaDeClientes({
                   <span>{c.temPasta ? "Pasta no Drive" : "Sem pasta"}</span>
                 </div>
               </Link>
+              {podeGerenciar && (
+                <button
+                  type="button"
+                  aria-label={`Excluir ${c.nome}`}
+                  disabled={pendente}
+                  className="shrink-0 px-4 text-xs text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  onClick={() => {
+                    if (!window.confirm(`Excluir o cliente "${c.nome}"? Isso remove também contratações, tarefas, arquivos e demais dados ligados a ele. Não dá para desfazer.`)) return;
+                    startTransition(async () => {
+                      const r = await excluirCliente(c.id);
+                      setMsg(r.ok ? { ok: true, texto: `Cliente "${c.nome}" excluído.` } : { ok: false, texto: r.erro });
+                      router.refresh();
+                    });
+                  }}
+                >
+                  Excluir
+                </button>
+              )}
             </li>
           ))}
         </ul>

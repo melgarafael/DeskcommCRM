@@ -192,6 +192,31 @@ export async function ligarOrganizacao(id: string, organizationId: string | null
 }
 
 /**
+ * Exclui o cliente (exclusão física). Todas as tabelas que referenciam
+ * `agencia_clientes.id` têm `on delete cascade` ou `on delete set null`
+ * (migrations 9004–9011), então a exclusão não deixa lixo órfão no banco: as
+ * contratações, membros, arquivos, tarefas, trilhas, cofre, formulários,
+ * contratos, aprovações, mapas mentais e publicações do cliente somem com ele.
+ * A pasta do cliente no Google Drive (se existir) NÃO é apagada: fica órfã lá,
+ * fora do alcance deste cadastro — quem gerencia pode apagá-la manualmente.
+ */
+export async function excluirCliente(id: string): Promise<ResultadoDaAcao> {
+  return falharSemLancar(async () => {
+    const ctx = await exigirPermissao("clientes.gerenciar");
+    if (!idSchema.safeParse(id).success) return { ok: false as const, erro: "Cliente inválido." };
+    const db = createAdminClient();
+    const { data } = await db.from("agencia_clientes").select("nome").eq("id", id).maybeSingle();
+    const cliente = data as { nome: string } | null;
+    if (!cliente) return { ok: false as const, erro: "Cliente não encontrado." };
+    const { error } = await db.from("agencia_clientes").delete().eq("id", id);
+    if (error) return { ok: false as const, erro: "Não deu para excluir. Tente de novo." };
+    await auditarAgencia("agencia.cliente_excluido", ctx.user.id, { tipo: "agencia_cliente", id }, { nome: cliente.nome });
+    revalidar();
+    return { ok: true as const };
+  });
+}
+
+/**
  * "Importar das organizações" (C2): um cliente por organização marcada, com o
  * nome dela e o vínculo. A que já virou cliente é ignorada, nunca duplicada.
  */

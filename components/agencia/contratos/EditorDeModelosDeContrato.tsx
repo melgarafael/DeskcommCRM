@@ -44,6 +44,20 @@ export function EditorDeModelosDeContrato({ modelos }: { modelos: Array<{ id: st
     setRascunho({ ...rascunho, corpo: rascunho.corpo.slice(0, ini) + marca + rascunho.corpo.slice(fim) });
   }
 
+  /** Remove a última ocorrência de {{campo}} do texto (desfaz a inserção mais recente). */
+  function remover(campo: CampoDoContrato) {
+    const marca = `{{${campo}}}`;
+    const idx = rascunho.corpo.lastIndexOf(marca);
+    if (idx === -1) return;
+    setRascunho({ ...rascunho, corpo: rascunho.corpo.slice(0, idx) + rascunho.corpo.slice(idx + marca.length) });
+  }
+
+  /** Clique no botão de campo: insere se ainda não usado, remove a última ocorrência se já usado. */
+  function alternar(campo: CampoDoContrato) {
+    if (usados.has(campo)) remover(campo);
+    else inserir(campo);
+  }
+
   return (
     <div className="grid gap-4 md:grid-cols-[14rem_1fr]">
       <nav className="flex gap-2 overflow-x-auto md:flex-col" aria-label="Modelos">
@@ -75,11 +89,12 @@ export function EditorDeModelosDeContrato({ modelos }: { modelos: Array<{ id: st
               <button
                 key={c}
                 type="button"
-                onClick={() => inserir(c)}
+                onClick={() => alternar(c)}
                 className={cn("rounded-md border px-2 py-0.5 text-xs", usados.has(c) && "border-primary text-primary")}
-                title={`{{${c}}}`}
+                title={usados.has(c) ? `{{${c}}} — clique para remover a última ocorrência` : `{{${c}}} — clique para inserir no cursor`}
               >
                 {CAMPOS_DO_CONTRATO[c]}
+                {usados.has(c) && <span className="ml-1">×</span>}
               </button>
             ))}
           </div>

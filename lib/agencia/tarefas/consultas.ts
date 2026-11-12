@@ -185,3 +185,47 @@ export async function apoioDoQuadro(quem: QuemOlha) {
     clientes: alcance.todos ? todosClientes : todosClientes.filter((c) => alcance.ids.has(c.id)),
   };
 }
+
+/** Versão simplificada de QuemOlha só para o dashboard (não precisa de tudo). */
+export async function carregarQuemOlhaTarefas(ctx: ContextoDaAgencia): Promise<QuemOlha> {
+  return carregarQuemOlha(ctx);
+}
+
+/** Lista de tarefas para o dashboard (todas as que a pessoa vê, sem filtro de 30 dias). */
+export async function listarTarefasParaDashboard(quem: QuemOlha): Promise<TarefaDoQuadro[]> {
+  const agora = new Date();
+  const q = createAdminClient().from("agencia_tarefas").select(SELECAO).order("posicao", { ascending: true }).limit(2000);
+  const { data } = await q;
+  return ((data ?? []) as unknown as LinhaBruta[])
+    .filter((l) =>
+      podeVerTarefa(quem, {
+        clienteId: l.cliente_id,
+        funcaoId: l.funcao_id,
+        responsaveis: (l.agencia_tarefas_responsaveis ?? []).map((r) => r.membro_id),
+      }),
+    )
+    .map((l) => paraQuadro(l, quem, agora));
+}
+
+/** Tarefas concluídas nos últimos N dias para série histórica. */
+export async function listarTarefasConcluidasRecentes(quem: QuemOlha, dias: number): Promise<TarefaDoQuadro[]> {
+  const agora = new Date();
+  const desde = new Date(agora.getTime() - dias * 86_400_000).toISOString();
+  const q = createAdminClient()
+    .from("agencia_tarefas")
+    .select(SELECAO)
+    .eq("coluna", "concluido")
+    .gte("concluida_em", desde)
+    .order("posicao", { ascending: true })
+    .limit(2000);
+  const { data } = await q;
+  return ((data ?? []) as unknown as LinhaBruta[])
+    .filter((l) =>
+      podeVerTarefa(quem, {
+        clienteId: l.cliente_id,
+        funcaoId: l.funcao_id,
+        responsaveis: (l.agencia_tarefas_responsaveis ?? []).map((r) => r.membro_id),
+      }),
+    )
+    .map((l) => paraQuadro(l, quem, agora));
+}

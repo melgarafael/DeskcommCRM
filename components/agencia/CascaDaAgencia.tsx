@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useTransition, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { signOut } from "@/app/actions/auth/signOut";
 import { useMarcaDaInstalacao } from "@/lib/branding/contexto";
-import { ArrowLeft, Buildings, CalendarBlank, FileText, Gear, Megaphone, PaperPlaneTilt, Path, TreeStructure, House, List, ListChecks, SignOut, UserCircle, UsersThree } from "@/lib/ui/icons";
+import { ArrowLeft, Buildings, CalendarBlank, CaretDoubleLeft, CaretDoubleRight, FileText, Gear, Megaphone, PaperPlaneTilt, Path, TreeStructure, House, List, ListChecks, SignOut, UserCircle, UsersThree } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -59,19 +59,52 @@ function ativa(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
+const CHAVE_MENU_RECOLHIDO = "agencia:menu-recolhido";
+
 export function CascaDaAgencia({ entradas, nomeDoUsuario, ehDono, membroId, children }: Props) {
   const pathname = usePathname();
   const marca = useMarcaDaInstalacao();
   const [saindo, startTransition] = useTransition();
 
+  // Começa expandido (evita mismatch de hidratação) e só aplica a
+  // preferência salva depois de montar no cliente — pode haver um flash
+  // inicial expandido para quem tinha escolhido recolher.
+  const [recolhido, setRecolhido] = useState(false);
+
+  useEffect(() => {
+    try {
+      const salvo = window.localStorage.getItem(CHAVE_MENU_RECOLHIDO);
+      if (salvo === "1") setRecolhido(true);
+    } catch {
+      // localStorage indisponível (ex.: navegação privada) — mantém expandido.
+    }
+  }, []);
+
+  const alternarRecolhido = () => {
+    setRecolhido((atual) => {
+      const novo = !atual;
+      try {
+        window.localStorage.setItem(CHAVE_MENU_RECOLHIDO, novo ? "1" : "0");
+      } catch {
+        // localStorage indisponível — a escolha só vale para esta sessão.
+      }
+      return novo;
+    });
+  };
+
   const sair = () => startTransition(async () => { await signOut(); });
 
   return (
     <div className="flex min-h-screen w-full bg-background">
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex">
-        <div className="flex h-14 flex-col justify-center border-b px-4">
-          <span className="text-xs uppercase tracking-wider text-muted-foreground">{marca.name}</span>
-          <span className="text-sm font-semibold tracking-tight">Agência</span>
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col border-r bg-card transition-[width] duration-150 md:flex",
+          recolhido ? "w-16" : "w-60",
+        )}
+      >
+        <div className={cn("flex h-14 flex-col justify-center border-b", recolhido ? "px-2" : "px-4")}>
+          {!recolhido && <span className="text-xs uppercase tracking-wider text-muted-foreground">{marca.name}</span>}
+          <span className="text-sm font-semibold tracking-tight">{recolhido ? marca.name.slice(0, 1) : "Agência"}</span>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto p-2" aria-label="Navegação da agência">
           {entradas.map((e) => {
@@ -82,15 +115,17 @@ export function CascaDaAgencia({ entradas, nomeDoUsuario, ehDono, membroId, chil
                 key={e.href}
                 href={e.href}
                 aria-current={atual ? "page" : undefined}
+                title={recolhido ? e.rotulo : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                  recolhido && "justify-center",
                   atual
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                 )}
               >
                 <Icone size={18} weight={atual ? "fill" : "regular"} aria-hidden />
-                <span className="truncate">{e.rotulo}</span>
+                {!recolhido && <span className="truncate">{e.rotulo}</span>}
               </Link>
             );
           })}
@@ -99,24 +134,47 @@ export function CascaDaAgencia({ entradas, nomeDoUsuario, ehDono, membroId, chil
           {ehDono && (
             <Link
               href="/admin"
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              title={recolhido ? "Voltar ao painel administrador" : undefined}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                recolhido && "justify-center",
+              )}
             >
               <ArrowLeft size={14} aria-hidden />
-              <span>Voltar ao painel administrador</span>
+              {!recolhido && <span>Voltar ao painel administrador</span>}
             </Link>
           )}
           <button
             type="button"
             onClick={sair}
             disabled={saindo}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground disabled:opacity-60"
+            title={recolhido ? "Sair" : undefined}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground disabled:opacity-60",
+              recolhido && "justify-center",
+            )}
           >
             <SignOut size={14} aria-hidden />
-            <span>Sair</span>
+            {!recolhido && <span>Sair</span>}
           </button>
-          <p className="truncate px-2 text-xs text-muted-foreground" title={nomeDoUsuario}>
-            {nomeDoUsuario}
-          </p>
+          {!recolhido && (
+            <p className="truncate px-2 text-xs text-muted-foreground" title={nomeDoUsuario}>
+              {nomeDoUsuario}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={alternarRecolhido}
+            aria-label={recolhido ? "Expandir menu" : "Recolher menu"}
+            title={recolhido ? "Expandir menu" : "Recolher menu"}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              recolhido && "justify-center",
+            )}
+          >
+            {recolhido ? <CaretDoubleRight size={14} aria-hidden /> : <CaretDoubleLeft size={14} aria-hidden />}
+            {!recolhido && <span>Recolher menu</span>}
+          </button>
         </div>
       </aside>
 
