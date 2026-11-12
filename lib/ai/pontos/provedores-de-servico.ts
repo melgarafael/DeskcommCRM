@@ -35,6 +35,13 @@ export interface ProvedorDeServico {
   ondePegarAChave: string;
   /** Como a chave começa — vira placeholder do campo, para a pessoa reconhecer que copiou a coisa certa. */
   prefixoDaChave: string;
+  /**
+   * Mesma pergunta do catálogo irmão: onde o áudio/texto é processado. Entra aqui
+   * porque a tela de Credenciais mostra a linha para TODA chave salva, e omitir
+   * o caso deste provedor seria dizer que ele não transfere nada (#4519).
+   */
+  pais: string | "local" | "desconhecido";
+  fonteDoPais: { url: string; consultadoEm: string } | null;
 }
 
 export const PROVEDORES_DE_SERVICO = [
@@ -45,6 +52,11 @@ export const PROVEDORES_DE_SERVICO = [
       "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.",
     ondePegarAChave: "https://elevenlabs.io/app/settings/api-keys",
     prefixoDaChave: "sk_…",
+    // Sem fonte oficial que afirme a região de processamento da voz, o campo fica
+    // `desconhecido` — e a tela diz isso, em vez de omitir a linha e deixar o
+    // operador concluir que o áudio do cliente não sai da instalação.
+    pais: "desconhecido",
+    fonteDoPais: null,
   },
 ] as const satisfies readonly ProvedorDeServico[];
 // `as const satisfies`, mesma razão do arquivo irmão: anotar o tipo apagaria os

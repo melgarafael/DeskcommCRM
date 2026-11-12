@@ -13,8 +13,15 @@
 import { describe, expect, it } from "vitest";
 
 import { PROVEDORES, PROVEDORES_DE_DECISAO } from "@/lib/ai/pontos/provedores";
+import { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 
-const TODOS = [...PROVEDORES, ...PROVEDORES_DE_DECISAO];
+/**
+ * TUDO o que a tela de IA oferece, inclusive o provedor de voz: a tela de
+ * Credenciais mostra a linha de residência em toda chave salva, então um
+ * provedor fora desta lista seria justamente o que a tela não saberia
+ * responder (#4519).
+ */
+const TODOS = [...PROVEDORES, ...PROVEDORES_DE_DECISAO, ...PROVEDORES_DE_SERVICO];
 
 describe("o catálogo declara onde o texto é processado", () => {
   it("todo provedor responde à pergunta, mesmo quando a resposta é 'não se sabe'", () => {
@@ -47,6 +54,23 @@ describe("o catálogo declara onde o texto é processado", () => {
     expect(deepseek?.pais).toBe("China");
     // A declaração é da própria DeepSeek: processa e armazena na República Popular da China.
     expect(deepseek?.fonteDoPais?.url).toContain("deepseek.com");
+  });
+
+  it("a data da consulta existe, é uma data de calendário e não está no futuro", () => {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const problemas: string[] = [];
+    for (const p of TODOS) {
+      if (!p.fonteDoPais) continue;
+      const { consultadoEm } = p.fonteDoPais;
+      const data = new Date(`${consultadoEm}T00:00:00Z`);
+      if (Number.isNaN(data.getTime()) || data.toISOString().slice(0, 10) !== consultadoEm) {
+        problemas.push(`${p.id}: "${consultadoEm}" não é data de calendário`);
+      }
+      // Data no futuro quer dizer que ninguém consultou de fato — é o formato
+      // mais elegante de fonte inventada.
+      if (consultadoEm > hoje) problemas.push(`${p.id}: consulta datada no futuro (${consultadoEm})`);
+    }
+    expect(problemas).toEqual([]);
   });
 
   it("gateway e endpoint próprio não fingem saber onde ficam", () => {

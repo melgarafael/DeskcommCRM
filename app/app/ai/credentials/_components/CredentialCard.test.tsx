@@ -119,3 +119,40 @@ describe("CredentialCard — erro de validação", () => {
     expect(screen.queryByRole("link", { name: "Onde pegar a chave" })).toBeNull();
   });
 });
+
+/**
+ * A CHAVE JÁ SALVA TAMBÉM DIZ PARA ONDE O TEXTO VAI (#4519).
+ *
+ * Quem cadastrou a chave ontem continua sem saber onde o texto é processado; a
+ * linha no cartão da credencial é onde ele descobre. E ela aparece nas duas
+ * respostas — o provedor que declara país e o que não declara —, porque o
+ * silêncio no segundo caso leria como "não sai daqui".
+ */
+describe("CredentialCard — onde o texto é processado", () => {
+  it("provedor com país declarado mostra país, fonte e data", () => {
+    montar(credencial({ provider: "deepseek", label: "DeepSeek" }));
+    const linha = screen.getByTestId("onde-o-texto-e-processado");
+    expect(linha).toHaveAttribute("data-situacao", "declarado");
+    expect(linha).toHaveTextContent("China");
+    expect(linha).toHaveTextContent("consultada em 12/11/2026");
+    expect(screen.getByRole("link", { name: "fonte: política do provedor" })).toHaveAttribute(
+      "href",
+      "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
+    );
+  });
+
+  it("provedor sem país declarado mostra o aviso, em vez de esconder a linha", () => {
+    montar(credencial({ provider: "anthropic" }));
+    const linha = screen.getByTestId("onde-o-texto-e-processado");
+    expect(linha).toHaveAttribute("data-situacao", "desconhecido");
+    expect(linha).toHaveTextContent("O provedor não declara o país; consulte a política dele");
+  });
+
+  it("provedor de voz também responde: a linha não some para quem não conversa", () => {
+    montar(credencial({ provider: "elevenlabs", label: "Voz" }));
+    expect(screen.getByTestId("onde-o-texto-e-processado")).toHaveAttribute(
+      "data-situacao",
+      "desconhecido",
+    );
+  });
+});
