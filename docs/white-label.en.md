@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@a5ce290dff0a -->
+<!-- traduzido-de: docs/white-label.md@e402509d6d62 -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -26,6 +26,8 @@ On the same **Installation Brand** page, the installation administrator can add 
 
 For safety, this is not an unrestricted CSS editor: it accepts class selectors and visual color, border, shadow, and typography properties. It rejects global or ID selectors, `@` rules, URLs and remote loading, functions other than `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comments, escapes, scripts, `!important`, and layout or positioning properties. The limit is 16 KB. If a saved stylesheet no longer passes validation, it is not applied and the Brand page shows the reason. Because this setting belongs to the installation, every organization it serves is affected; review the screens after saving.
 
+The editor has **two fields**. The first applies to both themes; the second, **Dark theme CSS**, applies only while the dark theme is active — it is emitted scoped to the theme, so a rule written there never shows up in the light theme. That is how to pick a color that works in the dark without ruining the light one. Both stylesheets are validated together: if either has an invalid rule, neither is applied and the Brand page says which field to fix.
+
 Example:
 
 ```css
@@ -38,15 +40,17 @@ Example:
 }
 ```
 
-**Color per section of the side menu.** Each menu group has the class `nav-grupo` plus a class with its own name: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais` and `nav-grupo-analise`. They are stable: you can target a section without depending on the order of the items. Inside the group, the title and the link of each destination have the class `rounded-md`, and the icon follows the text color. The rule also applies to the item of the open screen, which has a background in the accent color; check its contrast after saving.
+**Color per section of the side menu.** The menu has stable classes meant for this CSS. Every group has `nav-grupo`, and each one also has its own: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` and `nav-grupo-organizacao` (the footer, with Settings and Help). Each destination has its own too: `nav-item-inbox`, `nav-item-kanban`, and so on. These classes are part of the screen contract and do not change between releases; the Tailwind utility classes do.
+
+To color the menu text, target `text-muted-foreground` inside the group, not `rounded-md`. The group title and the links have both, but the item of the open screen only has `rounded-md`: it already has a background in the accent color, and a text color chosen for the menu background can disappear on top of it. Since `text-muted-foreground` comes from Tailwind, check the menu after updating. The color in the example is for the light theme; for the dark one, repeat the rule in the **Dark theme CSS** field with a light color.
 
 ```css
-.nav-grupo-crm .rounded-md {
-	color: #2f6f8f;
+.nav-grupo .text-muted-foreground {
+	color: #3d4f45;
 }
 
-.nav-grupo-ia .rounded-md:hover {
-	color: var(--color-accent);
+.nav-grupo-crm .text-muted-foreground {
+	color: #2f6f8f;
 }
 ```
 

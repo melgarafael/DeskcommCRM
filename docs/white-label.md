@@ -24,6 +24,8 @@ Na mesma página **Marca da instalação**, o administrador da instalação pode
 
 Por segurança, não é um editor de CSS irrestrito: aceita seletores de classes e propriedades visuais de cor, borda, sombra e tipografia. Recusa seletores globais ou por ID, regras `@`, URLs e carregamento remoto, funções fora de `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comentários, escapes, scripts, `!important` e propriedades de layout e posicionamento. O limite é 16 KB. Se uma folha já salva deixar de passar na validação, ela não é aplicada e a tela Marca mostra o motivo. Como a configuração é da instalação, qualquer ajuste também afeta as organizações atendidas por ela; confira as telas depois de salvar.
 
+O editor tem **dois campos**. O primeiro vale nos dois temas; o segundo, **CSS do tema escuro**, vale só com o tema escuro ativo — ele é aplicado com o escopo do tema, então uma regra escrita ali não aparece no claro. É assim que se escolhe uma cor que funcione no escuro sem estragar o claro. As duas folhas são validadas juntas: se qualquer uma tiver regra inválida, nenhuma é aplicada e a tela Marca mostra qual campo corrigir.
+
 Exemplo:
 
 ```css
@@ -36,15 +38,17 @@ Exemplo:
 }
 ```
 
-**Cor por seção do menu lateral.** Cada grupo do menu tem a classe `nav-grupo` e uma classe com o próprio nome: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais` e `nav-grupo-analise`. São estáveis: dá para mirar uma seção sem depender da ordem dos itens. Dentro do grupo, o título e os links de cada destino têm a classe `rounded-md`, e o ícone acompanha a cor do texto. A regra vale também para o item da tela aberta, que tem fundo na cor de destaque; confira o contraste dele depois de salvar.
+**Cor por seção do menu lateral.** O menu tem classes estáveis, pensadas para este CSS. Todo grupo leva `nav-grupo`, e cada um leva também a sua: `nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise` e `nav-grupo-organizacao` (a do rodapé, com Configurações e Ajuda). Cada destino tem a dele: `nav-item-inbox`, `nav-item-kanban`, e assim por diante. Essas classes fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
+
+Para pintar o texto do menu, mire `text-muted-foreground` dentro do grupo, não `rounded-md`. O título do grupo e os links têm as duas, mas o item da tela aberta só tem `rounded-md`: ele já tem fundo na cor de destaque, e uma cor de texto escolhida para o fundo do menu pode sumir sobre esse fundo. Como `text-muted-foreground` é do Tailwind, confira o menu depois de atualizar. A cor do exemplo é para o tema claro; no escuro, repita a regra no campo **CSS do tema escuro** com uma cor clara.
 
 ```css
-.nav-grupo-crm .rounded-md {
-	color: #2f6f8f;
+.nav-grupo .text-muted-foreground {
+	color: #3d4f45;
 }
 
-.nav-grupo-ia .rounded-md:hover {
-	color: var(--color-accent);
+.nav-grupo-crm .text-muted-foreground {
+	color: #2f6f8f;
 }
 ```
 

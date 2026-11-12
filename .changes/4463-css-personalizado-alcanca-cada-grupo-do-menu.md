@@ -1,11 +1,11 @@
 ---
 impacto: capacidade_nova
 secao: adicionado
-titulo: CSS personalizado alcança cada seção do menu lateral
+titulo: Uma classe comum a todos os grupos do menu lateral
 ---
 
-O CSS personalizado da tela Marca da instalação só aceita seletor de classe, e os grupos do menu lateral não tinham classe nenhuma: não dava para dar uma cor ao CRM e outra ao Agente de IA. Agora cada grupo leva a classe `nav-grupo` e uma com o próprio nome (`nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise`), com exemplo no guia de white label.
+Além da classe de cada grupo (`nav-grupo-crm`, `nav-grupo-ia`…), todo grupo do menu lateral, o rodapé inclusive, passa a levar também `nav-grupo`. Com ela, uma regra só do CSS personalizado da tela Marca vale para o menu inteiro. O guia de white label ganhou um exemplo que pinta o texto do menu sem pintar o item da tela aberta: o exemplo anterior pintava também esse item, e o texto dele ficava quase invisível sobre o fundo de destaque.
 
 Você não precisa fazer nada. Quem não usa CSS personalizado não vê diferença.
 
-Contribuição de @renatomprado, a partir da issue #4463.
+Contribuição de @renatomprado (#4528).
