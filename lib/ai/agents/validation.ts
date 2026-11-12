@@ -50,6 +50,11 @@ const triggerConfigSchema = z
             // schema com strip, como o `notice`) e o texto de feriado nunca
             // chegaria ao aviso.
             notice_feriado: z.string().max(1000).nullable().optional(),
+            // "Não atender em feriado nacional" (#3877, doc 316 A). DESLIGADA de
+            // fábrica: ausente vale `false` na leitura (`lerFechadoEmFeriadoNacional`).
+            // Sem esta linha o Zod descarta a chave ao salvar e a chave da tela
+            // nunca chegaria ao turno.
+            fechado_em_feriado_nacional: z.boolean().optional(),
           })
           .nullable()
           .optional()

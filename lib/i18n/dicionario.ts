@@ -20716,6 +20716,11 @@ export const DICIONARIO: Traducoes = {
   "Enviada no lugar da mensagem acima quando hoje é feriado nacional. Em branco, a mensagem de sempre continua valendo.": {
     es: "Se envía en lugar del mensaje anterior cuando hoy es feriado nacional. En blanco, sigue valiendo el mensaje de siempre.",
   },
+  // A opção "não atender em feriado nacional", desligada de fábrica (#3877, doc 316 A).
+  "Não atender em feriado nacional": { es: "No atender en feriado nacional" },
+  "Ligado, feriado nacional conta como dia fechado: quem escrever recebe a mensagem de fora do horário e o agente responde no próximo dia útil. Desligado, o feriado é um dia comum.": {
+    es: "Activado, el feriado nacional cuenta como día cerrado: quien escriba recibe el mensaje de fuera de horario y el agente responde el próximo día hábil. Desactivado, el feriado es un día común.",
+  },
   // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
   "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
 

@@ -46,19 +46,23 @@
  *
  * O feriado entra por DOIS lugares, e os dois são opcionais:
  *
- *   1. **O dia conta como FECHADO.** Feriado nacional não é dia útil: fora da
- *      janela semanal, o aviso sai como sempre saiu; DENTRO dela, ele também
- *      sai — o recado de "voltamos no próximo horário" é o que vale no dia em
- *      que ninguém atende. Sem a leitura do feriado (país fora do Brasil, falha
- *      de banco) o comportamento é exatamente o de antes.
+ *   1. **O dia conta como FECHADO — só com a opção do agente ligada.** A
+ *      chave `business_hours.fechado_em_feriado_nacional` ("não atender em
+ *      feriado nacional", doc de decisão 316, alternativa A) vem DESLIGADA:
+ *      sem ela o feriado é um dia comum da janela semanal e nada aqui muda.
+ *      Ligada, quem DECIDE é o turno (`inbound-turn.ts`): ele adia o job para
+ *      a próxima abertura que não é feriado (`msAteAJanelaAbrirPulandoFeriado`)
+ *      e passa o fato do dia em `ehFeriadoNacional` — por isso, dentro da
+ *      janela semanal num feriado, `preCheckDoAviso` deixa o aviso sair. Aviso
+ *      e adiamento andam juntos: o cliente não recebe "estamos fechados" e uma
+ *      resposta da IA logo depois.
  *   2. **O TEXTO próprio**, `filters.business_hours.notice_feriado`. Existe e
  *      hoje é feriado ⇒ sai esse; não existe ⇒ sai o `notice` de hoje, byte a
  *      byte (`textoDoAvisoHoje`, provado no teste). Quem não configurou o
- *      `notice` não recebe nada, nem no feriado.
+ *      `notice` não recebe nada, nem no feriado. Com a opção desligada, ele só
+ *      troca o texto de quem escreve FORA do horário num dia de feriado.
  *
- * O que este pedaço NÃO faz: adiar o turno no feriado. O adiamento continua
- * sendo o da janela semanal (`janela-de-atendimento.ts`); o fato do feriado no
- * PROMPT é o pedido 1, entregue em `feriado-nacional.ts`.
+ * O fato do feriado no PROMPT é o pedido 1, entregue em `feriado-nacional.ts`.
  *
  * ## Falha ABERTA, sempre
  *
@@ -206,7 +210,8 @@ export function preCheckDoAviso(input: PerguntaDeAviso): DecisaoDoAviso | null {
   if (input.janela === null) return { enviar: false, motivo: 'sem_janela' };
   // Dentro da janela não há aviso: a IA vai responder agora — SALVO no feriado
   // nacional, em que o dia inteiro está fechado mesmo que a janela semanal
-  // diga que abre (#3877: era exatamente esse o recado que mentia).
+  // diga que abre (#3877). O turno só chega aqui dentro da janela com a opção
+  // "não atender em feriado nacional" ligada — e aí ele já adiou o turno.
   if (msAteAJanelaAbrir(input.janela, input.agora) === null && input.ehFeriadoNacional !== true)
     return { enviar: false, motivo: 'dentro_da_janela' };
   // Sem texto configurado não há o que dizer, e inventar é proibido. Ter SÓ o
@@ -297,6 +302,13 @@ export interface EntradaDoAviso {
   textoDeFeriado?: string | null;
   janela: JanelaDeAtendimento | null;
   agora: Date;
+  /**
+   * O fato do dia JÁ decidido por quem chama. O turno passa quando a opção
+   * "não atender em feriado nacional" está ligada: é a MESMA régua que adiou o
+   * turno, e o aviso não pode discordar dela. Ausente ⇒ a porta
+   * `ehFeriadoNacionalHoje` responde (só troca o texto fora do horário).
+   */
+  ehFeriadoNacional?: boolean;
 }
 
 /**
@@ -337,7 +349,8 @@ export async function enviaAvisoForaDoHorario(
   //    fuso), só quando existe aviso configurado. Falha ⇒ `false`, e o aviso
   //    segue exatamente como antes: erro de leitura não inventa feriado nem
   //    cala o recado.
-  const ehFeriadoNacional = await perguntaSeHojeEhFeriado(deps, entrada);
+  const ehFeriadoNacional =
+    entrada.ehFeriadoNacional ?? (await perguntaSeHojeEhFeriado(deps, entrada));
 
   // 3. As perguntas baratas, agora com o fato do dia.
   const preco = preCheckDoAviso({ ...entrada, ehFeriadoNacional });

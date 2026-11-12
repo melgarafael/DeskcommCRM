@@ -116,6 +116,8 @@ async function dispara(entrada: {
   agora: Date;
   texto: string | null;
   textoDeFeriado?: string | null;
+  /** O fato do dia decidido pelo turno (opção "não atender em feriado nacional"). */
+  ehFeriadoNacional?: boolean;
   cenario?: Cenario;
 }) {
   const c = cenario(entrada.cenario);
@@ -128,6 +130,7 @@ async function dispara(entrada: {
     textoDeFeriado: entrada.textoDeFeriado ?? null,
     janela: JANELA,
     agora: entrada.agora,
+    ehFeriadoNacional: entrada.ehFeriadoNacional,
   });
   return { decisao, enviados: c.enviados };
 }
@@ -254,6 +257,35 @@ describe("aviso de fora do horário no feriado nacional (#3877)", () => {
     });
 
     expect(decisao).toEqual({ enviar: false, motivo: "sem_configuracao" });
+    expect(enviados).toHaveLength(0);
+  });
+
+  it("o fato do dia vindo do turno vence a porta: feriado decidido ⇒ o aviso sai dentro da janela", async () => {
+    // A opção "não atender em feriado nacional" ligada: o turno já adiou o job
+    // pelo feriado e passa o MESMO fato. A porta (aqui dizendo "não") não pode
+    // discordar dele — senão o turno fica adiado e o cliente sem aviso.
+    const { decisao, enviados } = await dispara({
+      agora: FINADOS_10H,
+      texto: NOTICE,
+      textoDeFeriado: NOTICE_FERIADO,
+      ehFeriadoNacional: true,
+      cenario: { feriadoHoje: false },
+    });
+
+    expect(decisao).toEqual({ enviar: true, texto: NOTICE_FERIADO });
+    expect(enviados).toHaveLength(1);
+  });
+
+  it("o fato do dia vindo do turno vence a porta: dia comum decidido ⇒ dentro da janela não avisa", async () => {
+    const { decisao, enviados } = await dispara({
+      agora: FINADOS_10H,
+      texto: NOTICE,
+      textoDeFeriado: NOTICE_FERIADO,
+      ehFeriadoNacional: false,
+      cenario: { feriadoHoje: true },
+    });
+
+    expect(decisao).toEqual({ enviar: false, motivo: "dentro_da_janela" });
     expect(enviados).toHaveLength(0);
   });
 
