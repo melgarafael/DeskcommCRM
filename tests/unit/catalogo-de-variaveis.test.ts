@@ -10,13 +10,16 @@ import {
   VARIAVEIS_DA_CAMPANHA,
 } from "@/lib/campanhas/renderizador";
 import { valorDaFonte, type FonteDeVariavel } from "@/lib/channels/meta/variaveis-do-fluxo";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 import { interpolateTemplate } from "@/lib/inbox/template-vars";
 import { substituirVariaveis } from "@/lib/propostas/documento/variaveis";
 import {
   ARQUIVOS_DOS_RESOLVEDORES,
+  GRUPOS_DE_VARIAVEL,
   LACUNAS_CONHECIDAS,
   RAIZES_DE_CAMPO,
   RESOLVEDORES,
+  ROTULO_DO_GRUPO,
   SENTIDOS_DIVERGENTES,
   SUFIXO_DE_CURINGA,
   VARIAVEIS_DO_CATALOGO,
@@ -540,6 +543,17 @@ describe("a forma do catálogo", () => {
     expect(texto).not.toMatch(/^\s*import\s/m);
     expect(texto).not.toMatch(/from\s+"react/m);
     expect(texto).not.toMatch(/export\s+function\s+(resolver|renderizar|interpolar)\b/);
+  });
+
+  it("o que o seletor passa por t() tem espanhol: descrição de cada entrada e título de cada grupo", () => {
+    // O seletor traduz em runtime (`t(v.descricao)`, `t(ROTULO_DO_GRUPO[g])`):
+    // a varredura de `t("literal")` não enxerga essas chaves, e sem linha no
+    // dicionário a lista sairia em português para quem usa em espanhol.
+    const textos = [
+      ...VARIAVEIS_DO_CATALOGO.map((v) => v.descricao),
+      ...GRUPOS_DE_VARIAVEL.map((g) => ROTULO_DO_GRUPO[g]),
+    ];
+    expect(textos.filter((texto) => !DICIONARIO[texto]?.es)).toEqual([]);
   });
 
   it("toda raiz de cada fonte está catalogada e toda fonte do catálogo é conhecida", () => {

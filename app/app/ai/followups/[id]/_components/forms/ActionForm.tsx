@@ -402,7 +402,7 @@ export function ActionForm({
             }}
             linhas={4}
             maxLength={4000}
-            extras={ATALHOS_DO_FOLLOWUP}
+            extras={ATALHOS_DO_FOLLOWUP.map((a) => ({ ...a, rotulo: t(a.rotulo) }))}
           />
           <p className="text-xs text-text-muted">
             {t("Sai exatamente assim, sem IA. No laço,")} {t("{{volta}}")} {t("e")} {t("{{voltas}}")} {t("viram o número da volta.")}

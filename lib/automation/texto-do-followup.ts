@@ -92,12 +92,12 @@ export async function contextoDoContato(
   // `{{saudacao}}` (#3687): o follow-up não tem a sessão do canal em mãos, então
   // o fuso é o da ORGANIZAÇÃO — o mesmo que a janela usa como reserva
   // (`fusoDaJanela`). Calculada aqui, no mesmo instante do envio: quem chama só
-  // tem o texto e o contexto.
-  const fuso = await pool.query<{ timezone: string | null }>(
-    `select timezone from organizations where id = $1 limit 1`,
-    [organizationId],
+  // tem o texto e o contexto. A linha da organização é a mesma lida acima para
+  // o `{{campo|data}}` — uma consulta só.
+  contexto.saudacao = saudacaoDaHora(
+    new Date(),
+    fusoDaOrganizacao(organizacao.rows[0]?.timezone),
   );
-  contexto.saudacao = saudacaoDaHora(new Date(), fusoDaOrganizacao(fuso.rows[0]?.timezone));
 
   // O rótulo das opções (#3605): a linha do negócio guarda o CÓDIGO
   // (`paris-franca`) e o funil guarda o que o cliente deve ler. Uma leitura a

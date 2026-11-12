@@ -55,6 +55,7 @@ export function SeletorDeVariavel({
   const t = useT();
   const [aberto, setAberto] = React.useState(false);
   const [busca, setBusca] = React.useState("");
+  const idDoSeletor = React.useId();
 
   const grupos = React.useMemo(() => {
     const doCatalogo = entradasDe(fonte).map((v) => ({
@@ -62,7 +63,17 @@ export function SeletorDeVariavel({
       rotulo: t(v.descricao),
       grupo: v.grupo,
     }));
-    const todos = [...doCatalogo, ...extras];
+    // O extra sem grupo é campo do negócio (o padrão declarado em
+    // `AtalhoDeVariavel`): sem ele, nenhum grupo o casava e os campos do funil
+    // sumiam da lista. Extra com a MESMA chave de uma variável do catálogo fica
+    // de fora, como a lista antiga da automação fazia: o resolvedor dá ao
+    // catálogo a vez, e o item mostraria o rótulo do campo com o valor da
+    // variável.
+    const chavesDoCatalogo = new Set(doCatalogo.map((v) => v.chave));
+    const dosExtras = extras
+      .filter((item) => !chavesDoCatalogo.has(item.chave.toLowerCase()))
+      .map((item) => ({ ...item, grupo: item.grupo ?? ("campo-do-negocio" as const) }));
+    const todos = [...doCatalogo, ...dosExtras];
     const termo = busca.trim().toLowerCase();
     const filtrados = termo
       ? todos.filter(
@@ -91,7 +102,9 @@ export function SeletorDeVariavel({
           <ChevronDown className="ml-1 h-3 w-3" aria-hidden />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-2">
+      {/* A lista abre num diálogo (Radix): sem nome, o leitor de tela anuncia só
+          "diálogo". Cada grupo vira `group` com o título que já está na tela. */}
+      <PopoverContent align="start" className="w-80 p-2" aria-label={t("Inserir variável")}>
         <div className="relative mb-2">
           <Search className="absolute top-2.5 left-2 h-3.5 w-3.5 text-muted-foreground" aria-hidden />
           <Input
@@ -104,8 +117,16 @@ export function SeletorDeVariavel({
         </div>
         <div className="max-h-72 space-y-2 overflow-y-auto">
           {grupos.map(({ grupo, itens }) => (
-            <div key={grupo} className="space-y-0.5">
-              <p className="px-2 pt-1 text-xs font-medium text-muted-foreground">
+            <div
+              key={grupo}
+              role="group"
+              aria-labelledby={`${idDoSeletor}-${grupo}`}
+              className="space-y-0.5"
+            >
+              <p
+                id={`${idDoSeletor}-${grupo}`}
+                className="px-2 pt-1 text-xs font-medium text-muted-foreground"
+              >
                 {t(ROTULO_DO_GRUPO[grupo])}
               </p>
               {itens.map((item) => (
