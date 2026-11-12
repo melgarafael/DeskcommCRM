@@ -61,8 +61,15 @@ import {
   type AutomationRuleRow,
 } from "@/hooks/webhooks/useAutomationRules";
 import { usePipelines, usePipelineStages, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
-import { TRIGGER_LABELS, ACTION_LABELS, acaoOferecida, type TriggerEvent, type ActionType } from "./labels";
-import { useModulosLigados } from "@/hooks/auth/AuthProvider";
+import {
+  TRIGGER_LABELS,
+  ACTION_LABELS,
+  acaoOferecida,
+  gatilhoOferecido,
+  type TriggerEvent,
+  type ActionType,
+} from "./labels";
+import { useCapacidadesLigadas, useModulosLigados } from "@/hooks/auth/AuthProvider";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
 import { EtapaDeQualquerFunil } from "./EtapaDeQualquerFunil";
 import { ValorDaCondicaoDoContato } from "./CondicaoDoContato";
@@ -213,6 +220,9 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // funil (via etapa/tags) e tags do contato.
   "lead.silent_for": LEAD_FIELDS,
   "lead.stage_stale": [...LEAD_FIELDS, STAGE_FIELD],
+  // #4365 — as condições são as do CONTATO: quem monta a regra quer filtrar
+  // QUEM ligou (tags, nome), e o fato em si (a ligação perdida) já é o gatilho.
+  "voice_call.missed": CONTACT_FIELDS,
 };
 
 export const OP_LABELS: Record<Op, string> = {
@@ -294,6 +304,7 @@ const QUALQUER_FONTE = "__qualquer_fonte__";
 export function RuleEditor({ open, onOpenChange, rule }: Props) {
   const t = useT();
   const modulosLigados = useModulosLigados();
+  const capacidadesLigadas = useCapacidadesLigadas();
   const isEdit = !!rule;
   const [name, setName] = React.useState("");
   const [triggerEvent, setTriggerEvent] = React.useState<TriggerEvent | "">("");
@@ -628,7 +639,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 <SelectValue placeholder={t("Escolha o gatilho")} />
               </SelectTrigger>
               <SelectContent>
-                {TRIGGER_EVENTS.map((ev) => (
+                {TRIGGER_EVENTS.filter((ev) => gatilhoOferecido(ev, capacidadesLigadas, triggerEvent)).map((ev) => (
                   <SelectItem key={ev} value={ev}>
                     {t(TRIGGER_LABELS[ev])}
                   </SelectItem>

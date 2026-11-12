@@ -36,6 +36,32 @@ describe("ImageMedia", () => {
     fireEvent.error(screen.getByAltText("Imagem recebida"));
     expect(screen.getByText("Mídia indisponível")).toBeInTheDocument();
   });
+
+  // Relato de 09/11/2026: a foto não tinha download em ponto nenhum do CRM.
+  it("[DISCRIMINA] a miniatura carregada tem 'Baixar imagem' pelo ?baixar=1", () => {
+    render(<ImageMedia messageId="m1" alt="Imagem recebida" />);
+    fireEvent.load(screen.getByAltText("Imagem recebida"));
+    const link = screen.getByRole("link", { name: /baixar imagem/i });
+    expect(link).toHaveAttribute("href", "/api/v1/messages/m1/media?baixar=1");
+  });
+
+  it("[DISCRIMINA] a foto ampliada tem o botão 'Baixar'", () => {
+    render(<ImageMedia messageId="m1" alt="Imagem recebida" />);
+    fireEvent.load(screen.getByAltText("Imagem recebida"));
+    fireEvent.click(screen.getByRole("button", { name: /ampliar imagem/i }));
+    const dialogo = screen.getByRole("dialog");
+    const link = Array.from(dialogo.querySelectorAll("a")).find((a) => a.textContent === "Baixar");
+    expect(link).toHaveAttribute("href", "/api/v1/messages/m1/media?baixar=1");
+  });
+
+  it("enquanto carrega não oferece baixar, e a mídia de nota (outra rota) nunca oferece", () => {
+    const { unmount } = render(<ImageMedia messageId="m1" alt="Imagem recebida" />);
+    expect(screen.queryByRole("link", { name: /baixar imagem/i })).toBeNull();
+    unmount();
+    render(<ImageMedia messageId="m1" alt="Imagem da nota" src="/api/v1/notas/n1/midia" />);
+    fireEvent.load(screen.getByAltText("Imagem da nota"));
+    expect(screen.queryByRole("link", { name: /baixar imagem/i })).toBeNull();
+  });
 });
 
 describe("StickerMedia", () => {
