@@ -4536,6 +4536,22 @@ export const DICIONARIO: Traducoes = {
     },
   "Criar meu primeiro roteador": { es: "Crear mi primer enrutador" },
   "Número removido": { es: "Número eliminado" },
+  // #4340 — mover o roteador para o número novo (ação da tela de roteadores).
+  "Nenhuma conversa chega neste roteador: o número foi removido do WhatsApp. Mova o roteador para o número novo para as conversas voltarem a ser classificadas — sem isso, elas caem no agente principal do número, sem decisão de intenção.": {
+    es: "Ninguna conversación llega a este enrutador: el número se eliminó de WhatsApp. Mueve el enrutador al número nuevo para que las conversaciones vuelvan a clasificarse; sin eso, caen en el agente principal del número, sin decisión de intención.",
+  },
+  "Número novo": { es: "Número nuevo" },
+  "Mover roteador para este número": { es: "Mover enrutador a este número" },
+  "Roteador movido para o número novo.": { es: "Enrutador movido al número nuevo." },
+  "Nenhum número livre para mover: conecte o número novo em Canais.": {
+    es: "Ningún número libre para mover: conecta el número nuevo en Canales.",
+  },
+  "Este roteador ainda aponta para um número conectado.": {
+    es: "Este enrutador todavía apunta a un número conectado.",
+  },
+  "Escolha um número conectado desta empresa.": { es: "Elige un número conectado de esta empresa." },
+  "Este número já tem um roteador.": { es: "Este número ya tiene un enrutador." },
+  "Erro ao mover o roteador de número.": { es: "Error al mover el enrutador de número." },
   "Números sem roteador": { es: "Números sin enrutador" },
   "As conversas destes números caem no agente principal do número — nenhum roteador decide a intenção delas, então elas não aparecem como roteadas. Crie um roteador para cada número que deve escolher o agente pelo que o cliente quer.":
     {
@@ -12215,6 +12231,13 @@ export const DICIONARIO: Traducoes = {
   "Nome do contato": { es: "Nombre del contacto" },
   "Chave do campo personalizado": { es: "Clave del campo personalizado" },
   "Texto enviado ao contato": { es: "Texto enviado al contacto" },
+  "Outras redações do mesmo passo (opcional)": { es: "Otras redacciones del mismo paso (opcional)" },
+  "O motor alterna entre o texto acima e as redações abaixo a cada envio — assim o contato não recebe a mesma frase duas vezes seguidas.": {
+    es: "El motor alterna entre el texto de arriba y las redacciones de abajo en cada envío, así el contacto no recibe la misma frase dos veces seguidas.",
+  },
+  "Redação": { es: "Redacción" },
+  "Outra forma de dizer a mesma coisa": { es: "Otra forma de decir lo mismo" },
+  "Remover redação": { es: "Eliminar redacción" },
   "Chave secreta do cliente": { es: "Clave secreta del cliente" },
   "Chave livre (use": { es: "Clave libre (usa" },
   "no laço)": { es: "en el ciclo)" },

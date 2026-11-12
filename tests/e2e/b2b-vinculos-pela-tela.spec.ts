@@ -35,7 +35,7 @@ import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
-import { test, expect, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page } from "./helpers/test";
 import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
 
 test.describe.configure({ mode: "serial", timeout: 90_000 });
@@ -133,6 +133,7 @@ test.beforeAll(async ({ browser }, testInfo) => {
     viewport: { width: 1440, height: 900 },
     reducedMotion: "reduce",
   });
+  esperarARevelacaoNasCargas(page);
   creds = await loginComoAdmin(page, creds);
 });
 
