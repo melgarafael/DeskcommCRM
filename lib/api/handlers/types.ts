@@ -106,6 +106,11 @@ export interface HandlerCtx {
   organization_id: string;
   actor: Actor;
   /**
+   * Id da linha do token (`api_tokens.id`) quando a chamada veio por Bearer, nas
+   * rotas REST de integração. Vira `actorApiTokenId` do audit. Sessão não tem.
+   */
+  apiTokenId?: string;
+  /**
    * Autoria "em nome de" (#1613): a PESSOA por cuja decisão o token envia.
    *
    * Vive no CTX, e não no input, de propósito: o mesmo input atravessa as tools

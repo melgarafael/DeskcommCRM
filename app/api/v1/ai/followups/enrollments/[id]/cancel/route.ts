@@ -1,4 +1,3 @@
-import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followups/enrollments/:id/cancel (manager+) — encerra um
  *   enrollment VIVO (active|waiting_reply|paused_handoff|paused_manual|
@@ -9,16 +8,21 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Promessas (`cron_jobs`) NÃO são canceláveis por aqui — fora de escopo desta
  *   task; só enrollments do motor.
+ *
+ * Sessão OU token de integração (Spec 33, R1): `config:write` e papel admin
+ * (`tokenRole`); a organização sai de `authz.organizationId`, e no ramo do
+ * token o cliente é a service role: todo `organization_id` é escrito à mão.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { statusCancelavel } from "@/lib/followup/vocabulario";
 import { logger } from "@/lib/logger";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +45,7 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -51,17 +55,26 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "followup_enrollments" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_enrollments",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_enrollments", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: existing, error: fetchErr } = await supabase
     .from("followup_enrollments")
     .select("id, status, current_node_id")
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Enrollment não encontrado."), 404, { requestId });
@@ -81,7 +94,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .select("id, status, cancel_reason, updated_at")
     .single();
   if (updErr || !updated) {
@@ -91,11 +104,11 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   }
 
   const { error: eventErr } = await supabase.from("followup_enrollment_events").insert({
-    organization_id: activeOrg.orgId,
+    organization_id: organizationId,
     enrollment_id: id,
     node_id: existing.current_node_id,
     event_type: "cancelled_manual",
-    payload: { actor_user_id: user.id },
+    payload: { actor_user_id: actorUserId },
   });
   if (eventErr) {
     logger.error("[followup.enrollment.cancel] event insert failed", { error: eventErr.message, requestId });
@@ -103,8 +116,9 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   void audit({
     action: "followup_enrollment.cancelled",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "followup_enrollment",
     resourceId: id,
     requestId,

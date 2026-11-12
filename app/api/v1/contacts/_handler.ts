@@ -121,13 +121,19 @@ function decodeCursor(raw: string): CursorPayload | null {
 
 function actorAuditPayload(actor: Actor): {
   actorUserId: string | null;
+  /** O token de integração por trás da ação, quando houver (`api_tokens.id`). */
+  actorApiTokenId: string | null;
   metadataActor: Record<string, unknown>;
 } {
   if (actor.type === "user") {
-    return { actorUserId: actor.id, metadataActor: { actor_type: "user" } };
+    return { actorUserId: actor.id, actorApiTokenId: null, metadataActor: { actor_type: "user" } };
   }
   return {
     actorUserId: null,
+    // Token de servidor sem escopo de agente (`api_token`): o `id` do ator É o
+    // id da linha do token. No agente de IA, o token vem em `api_token_id`.
+    actorApiTokenId:
+      actor.type === "api_token" ? actor.id : actor.type === "ai_agent" ? (actor.api_token_id ?? null) : null,
     metadataActor: {
       actor_type: actor.type,
       actor_id: actor.id,
@@ -1154,6 +1160,8 @@ export async function patchContactHandler(
   await audit({
     action: "contact.updated",
     actorUserId: a.actorUserId,
+    // Só quando há token: a sessão segue com o objeto de sempre.
+    ...(a.actorApiTokenId ? { actorApiTokenId: a.actorApiTokenId } : {}),
     organizationId: contact.organization_id,
     resourceType: "contact",
     resourceId: contact.id,

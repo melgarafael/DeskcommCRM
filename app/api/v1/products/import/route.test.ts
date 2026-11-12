@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/server";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -543,7 +544,7 @@ describe("POST /api/v1/products/import — foto por URL", () => {
   it("GET devolve o modelo com a coluna de foto, e o modelo é planilha que o importador lê", async () => {
     const { GET } = await import("./route");
 
-    const texto = (await (await GET()).text()).replace("\ufeff", "");
+    const texto = (await (await GET(new NextRequest("http://localhost/api/v1/products/import"))).text()).replace("\ufeff", "");
 
     expect(texto.split("\n")[0]).toBe("codigo,nome,marca,categoria,preco,custo,estoque,descricao,foto");
     const lido = lerPlanilha(texto);

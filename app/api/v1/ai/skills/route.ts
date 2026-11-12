@@ -11,7 +11,8 @@
  * runtime (`loadSkills`, que aplica skills de plataforma não-instaladas como fallback
  * global) — uma skill de catálogo já funciona pro agente antes de "instalada" aqui.
  *
- * organization_id vem SEMPRE de requireRole — nunca de query param.
+ * Aceita sessão de navegador OU Bearer `dsk_…` com escopo `config:read`
+ * e papel admin (`tokenRole`). A organização vem da linha do token, nunca do body.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -20,8 +21,9 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { compararSkill, type ComparativoEntrada } from "@/lib/ai/skills/comparativo";
 import { temPonteiroCanonico } from "@/lib/ai/skills/ponteiro-canonico";
 import { temVersaoNovaNoCatalogo } from "@/lib/ai/skills/versao-nova-catalogo";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { agentesComListaPropria } from "@/lib/ai/skills/skills-do-agente";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -42,24 +44,31 @@ interface VersionRow {
   forked_from_version_id: string | null;
 }
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "ai_skills" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_skills_list",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const teto = await tetoDeEscritaDoToken(authz, "ai_skills", requestId);
+  if (teto) return teto;
 
-  const admin = createAdminClient();
+  const supabase = createAdminClient();
 
-  const { data: orgPointers, error: orgErr } = await admin
+  const { data: orgPointers, error: orgErr } = await supabase
     .from("skill_pointers")
     .select("name, version_id, updated_at")
-    .eq("organization_id", org.orgId);
+    .eq("organization_id", authz.organizationId);
   if (orgErr) {
     return fail("internal_error", "Erro ao carregar skills instaladas.", 500, { requestId });
   }
 
-  const { data: platformPointers, error: platErr } = await admin
+  const { data: platformPointers, error: platErr } = await supabase
     .from("skill_pointers")
     .select("name, version_id")
     .is("organization_id", null);
@@ -82,10 +91,11 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const versionIds = [...new Set([...orgRows, ...platformRows].map((p) => p.version_id))];
   let versions: VersionRow[] = [];
   if (versionIds.length > 0) {
-    const { data: versionRows, error: verErr } = await admin
+    const { data: versionRows, error: verErr } = await supabase
       .from("skill_versions")
       .select("id, description, body, matcher, forked_from_version_id")
-      .in("id", versionIds);
+      .in("id", versionIds)
+      .or(`organization_id.eq.${authz.organizationId},organization_id.is.null`);
     if (verErr) {
       return fail("internal_error", t("Erro ao carregar descrição das skills."), 500, {
         requestId,
@@ -147,7 +157,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // nomeia esses agentes no aviso de instalação em vez de dizer que vale para todos.
   let agentes_com_lista_propria: Awaited<ReturnType<typeof agentesComListaPropria>>;
   try {
-    agentes_com_lista_propria = await agentesComListaPropria(admin, org.orgId);
+    agentes_com_lista_propria = await agentesComListaPropria(supabase, authz.organizationId);
   } catch {
     return fail("internal_error", t("Erro ao carregar os agentes com lista própria de skills."), 500, {
       requestId,
