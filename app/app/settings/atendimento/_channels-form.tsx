@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/hooks/i18n/useT";
 import { nomeDoCanal } from "@/lib/channels/estado";
-import { ROUTING_MODES, type RoutingMode } from "@/lib/schemas/routing";
+import { ESPERA_PELA_IA_MAX_MINUTOS, ESPERA_PELA_IA_MIN_MINUTOS, ROUTING_MODES, type RoutingMode } from "@/lib/schemas/routing";
 import type { ChannelRoutingSettings } from "@/lib/routing/channel-policies";
 import { MODO_COPY } from "./_form";
 
@@ -24,12 +24,15 @@ export function ChannelRoutingForm({ initial }: { initial: ChannelRoutingSetting
         // comportamento da organização.
         body: JSON.stringify({ channel_session_id: id, user_ids: alvo?.user_ids ?? [], reset,
           distribution_mode: alvo?.distribution_mode ?? null,
-          default_assignee_user_id: alvo?.default_assignee_user_id ?? null }) });
+          default_assignee_user_id: alvo?.default_assignee_user_id ?? null,
+          // #3966: `undefined` some do JSON e a rota preserva o que valia.
+          ai_wait_minutes: alvo?.ai_wait_minutes }) });
       const result = await response.json();
       if (!response.ok) { setFeedback(t(result.error?.message ?? "Não foi possível salvar. Tente novamente.")); return; }
       setChannels((current) => current.map((c) => c.id === id ? { ...c, mode: result.data.mode, user_ids: result.data.user_ids,
         distribution_mode: result.data.distribution_mode ?? null,
-        default_assignee_user_id: result.data.default_assignee_user_id ?? null } : c));
+        default_assignee_user_id: result.data.default_assignee_user_id ?? null,
+        ai_wait_minutes: result.data.ai_wait_minutes === undefined ? c.ai_wait_minutes : result.data.ai_wait_minutes } : c));
       setFeedback(t("Responsáveis salvos.")); router.refresh();
     } catch { setFeedback(t("Não foi possível salvar. Tente novamente.")); } finally { setBusy(null); }
   }
@@ -38,6 +41,9 @@ export function ChannelRoutingForm({ initial }: { initial: ChannelRoutingSetting
         // Sem modo próprio não há distribuição por modo: o destino padrão perde o
         // sentido (na organização o número volta a ser exatamente o de antes).
         default_assignee_user_id: valor === "" ? null : c.default_assignee_user_id } : c));
+  // Vazio = opção desligada (o padrão). Um campo só: não existe esperar sem prazo.
+  const trocarEspera = (id: string, valor: string) => setChannels((current) => current.map((c) => c.id === id
+    ? { ...c, ai_wait_minutes: valor.trim() === "" || !Number.isFinite(Number(valor)) ? null : Math.trunc(Number(valor)) } : c));
   const trocarDestino = (id: string, valor: string) => setChannels((current) => current.map((c) => c.id === id
     ? { ...c, default_assignee_user_id: valor === "" ? null : valor } : c));
   return <section className="space-y-4" aria-labelledby="channel-routing-title">
@@ -66,6 +72,14 @@ export function ChannelRoutingForm({ initial }: { initial: ChannelRoutingSetting
           </select>
           <p className="text-xs text-muted-foreground">{t("Escolhendo uma pessoa, todo cliente novo deste número vai direto para ela, sem passar pela distribuição. Precisa estar disponível para receber.")}</p>
         </div>
+      </div>
+      <div className="space-y-1">
+        <label className="block text-sm font-medium" htmlFor={`espera-ia-${channel.id}`}>{t("Esperar a IA qualificar antes de distribuir (minutos)")}</label>
+        <input id={`espera-ia-${channel.id}`} data-testid={`espera-pela-ia-${channel.id}`} type="number" inputMode="numeric"
+          min={ESPERA_PELA_IA_MIN_MINUTOS} max={ESPERA_PELA_IA_MAX_MINUTOS} step={1} placeholder={t("Desligado")}
+          className="w-full rounded-md border bg-background p-2 text-sm sm:w-48"
+          value={channel.ai_wait_minutes ?? ""} onChange={(e) => trocarEspera(channel.id, e.target.value)} />
+        <p className="text-xs text-muted-foreground">{t("Vazio, vale a regra de sempre: a conversa nova é distribuída na hora. Com um prazo, entre 15 minutos e 7 dias, a conversa deste número fica com a IA até ela passar para uma pessoa. Se o prazo vencer sem a IA passar, a conversa entra na distribuição e a Central avisa. Só vale no rodízio ou na menor carga, e não vale quando o número tem atendente de destino padrão.")}</p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         {initial.members.map((member) => <label key={member.id} className="flex items-center gap-2 rounded-md p-2 hover:bg-muted">

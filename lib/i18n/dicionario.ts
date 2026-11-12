@@ -675,6 +675,29 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma importação ainda.": {"es": "Ninguna importación todavía."},
   "Nenhuma pessoa ainda.": {"es": "Ninguna persona todavía."},
   "Nenhuma pessoa vinculada.": {"es": "Ninguna persona vinculada."},
+  // Vínculos pessoa ↔ empresa e contato ↔ pessoa pela tela (issue #3198).
+  "Adicionar a uma empresa": { es: "Agregar a una empresa" },
+  "Adicionar pessoa": { es: "Agregar persona" },
+  "Buscar contato por nome ou telefone": { es: "Buscar contacto por nombre o teléfono" },
+  "Buscar empresa por nome ou CNPJ": { es: "Buscar empresa por nombre o CNPJ" },
+  "Buscar pessoa por nome ou e-mail": { es: "Buscar persona por nombre o correo" },
+  "Criar nova pessoa": { es: "Crear nueva persona" },
+  "Decisor": { es: "Decisor" },
+  "Empresa (opcional)": { es: "Empresa (opcional)" },
+  "Este telefone ainda não está ligado a uma pessoa.": { es: "Este teléfono aún no está vinculado a una persona." },
+  "Ligar a uma pessoa": { es: "Vincular a una persona" },
+  "Nada encontrado.": { es: "No se encontró nada." },
+  "Nada encontrado. Confirme para criar.": { es: "No se encontró nada. Confirme para crear." },
+  "Editar vínculo": { es: "Editar vínculo" },
+  "Digite um telefone com DDD ou um e-mail.": { es: "Escriba un teléfono con código de área o un correo." },
+  "Telefones e e-mails": { es: "Teléfonos y correos" },
+  "Nenhum contato vinculado.": { es: "Ningún contacto vinculado." },
+  "Telefone inválido: use DDD e número.": { es: "Teléfono inválido: use código de área y número." },
+  "da ficha da pessoa": { es: "de la ficha de la persona" },
+  "E-mail inválido.": { es: "Correo inválido." },
+  "Juntar ao contato": { es: "Unir al contacto" },
+  "Juntar o e-mail a qual contato?": { es: "¿A qué contacto unir el correo?" },
+  "Sem telefone nem e-mail.": { es: "Sin teléfono ni correo." },
   "Nova pessoa": {"es": "Nueva persona"},
   "Pessoas": {"es": "Personas"},
   "Pessoas / decisores": {"es": "Personas / decisores"},
@@ -1801,6 +1824,22 @@ export const DICIONARIO: Traducoes = {
   "Detalhes para suporte": { es: "Detalles para soporte" },
   "Copiar detalhes": { es: "Copiar detalles" },
   "Conversa aguardando responsável": { es: "Conversación esperando responsable" },
+  "A IA não passou a conversa no prazo": { es: "La IA no pasó la conversación dentro del plazo" },
+  "Abra a conversa para ver até onde a IA foi. Se isso se repetir, confira o agente de IA deste número.": {
+    es: "Abre la conversación para ver hasta dónde llegó la IA. Si se repite, revisa el agente de IA de este número.",
+  },
+  "Esperar a IA qualificar antes de distribuir (minutos)": {
+    es: "Esperar a que la IA califique antes de distribuir (minutos)",
+  },
+  "Vazio, vale a regra de sempre: a conversa nova é distribuída na hora. Com um prazo, entre 15 minutos e 7 dias, a conversa deste número fica com a IA até ela passar para uma pessoa. Se o prazo vencer sem a IA passar, a conversa entra na distribuição e a Central avisa. Só vale no rodízio ou na menor carga, e não vale quando o número tem atendente de destino padrão.": {
+    es: "Vacío, rige la regla de siempre: la conversación nueva se distribuye en el acto. Con un plazo, entre 15 minutos y 7 días, la conversación de este número queda con la IA hasta que ella la pase a una persona. Si el plazo vence sin que la IA la pase, la conversación entra en la distribución y la Central avisa. Solo aplica en la rotación o en la menor carga, y no aplica cuando el número tiene un asesor de destino predeterminado.",
+  },
+  "Confira o prazo de espera pela IA deste número.": {
+    es: "Revisa el plazo de espera por la IA de este número.",
+  },
+  "Os responsáveis foram salvos, mas o prazo de espera pela IA não. Tente novamente.": {
+    es: "Los responsables se guardaron, pero el plazo de espera por la IA no. Inténtalo de nuevo.",
+  },
   "Confira os responsáveis em Configurações → Atendimento.": { es: "Revisa los responsables en Configuración → Atención." },
 
   "Suas agendas Google": { es: "Tus calendarios de Google" },
@@ -9631,6 +9670,7 @@ export const DICIONARIO: Traducoes = {
   // Segundo estágio do zoom do lightbox (#4149): a mesma imagem ampliada, um
   // clique a mais. O rótulo diz o que o clique FAZ — voltar ao tamanho original.
   "Reduzir imagem": { es: "Reducir imagen" },
+  "Baixar imagem": { es: "Descargar imagen" },
   "Imagem recebida": { es: "Imagen recibida" },
   // Transcrição do áudio no balão (#2133): rótulo e estado de carregamento.
   Transcrição: { es: "Transcripción" },
@@ -12151,7 +12191,13 @@ export const DICIONARIO: Traducoes = {
   "Ainda não configurado. Quem administra a instalação cadastra em Admin › API Oficial (Meta), e o token aparece lá pronto para copiar.": { es: "Todavía no está configurado. Quien administra la instalación lo registra en Admin › API Oficial (Meta) y ahí aparece el token, listo para copiar." },
   "cifra indisponível nesta instalação (GUC app.nuvemshop_oauth_key ausente) — o verify token não foi gravado": { es: "el cifrado no está disponible en esta instalación (falta el GUC app.nuvemshop_oauth_key); no se guardó el verify token" },
   "O que ele consulta antes de responder": { es: "Qué consulta antes de responder" },
-  "Marque o material do seu negócio que este assistente pode ler. Ele procura ali antes de responder, em vez de improvisar — e cita de onde tirou.": { es: "Marca el material de tu negocio que este asistente puede leer. Lo busca ahí antes de responder, en vez de improvisar, y cita de dónde sacó la información." },
+  "Marque o material do seu negócio que este assistente pode ler. Quem decide, a cada mensagem, é o modelo: ele pode responder sem consultar nada. Para cobrar a consulta, escreva nas instruções dele que ele consulte o material antes de responder.": { es: "Marca el material de tu negocio que este asistente puede leer. Quien decide, en cada mensaje, es el modelo: puede responder sin consultar nada. Para exigir la consulta, escribe en sus instrucciones que consulte el material antes de responder." },
+  "Como ele consulta esse material": { es: "Cómo consulta ese material" },
+  "Busca por assunto": { es: "Búsqueda por tema" },
+  "Leitura direta": { es: "Lectura directa" },
+  "O agente recebe a ferramenta de busca e escolhe, a cada mensagem, se usa. Ele pode responder sem consultar — as instruções do agente são o lugar de cobrar a consulta.": { es: "El agente recibe la herramienta de búsqueda y decide, en cada mensaje, si la usa. Puede responder sin consultar: las instrucciones del agente son el lugar para exigir la consulta." },
+  "A lista dos materiais (nome e resumo) entra no contexto de toda mensagem, sem depender da decisão do modelo; ele abre o material inteiro quando precisa. Não usa serviço de busca por vetores — só a mesma chave do modelo da conversa. Sem material marcado, ele volta sozinho à busca por assunto.": { es: "La lista de materiales (nombre y resumen) entra en el contexto de cada mensaje, sin depender de la decisión del modelo; él abre el material completo cuando lo necesita. No usa servicio de búsqueda por vectores: solo la misma clave del modelo de la conversación. Sin material marcado, vuelve solo a la búsqueda por tema." },
+  "Modo de consulta salvo — vale a partir da próxima mensagem.": { es: "Modo de consulta guardado: vale desde el próximo mensaje." },
   "Você ainda não cadastrou nenhum material.": { es: "Todavía no registraste ningún material." },
   "Comece pelo que ele mais vai precisar": { es: "Empieza por lo que más va a necesitar" },
   "— as perguntas que se repetem, e a política que você mais explica.": { es: "— las preguntas que se repiten y la política que más explicas." },
@@ -18164,6 +18210,7 @@ export const DICIONARIO: Traducoes = {
   "Não gerar lembrete quando o cliente tiver compromisso marcado": { es: "No generar recordatorio cuando el cliente tenga un compromiso marcado" },
   "Quando ficar N dias sem mensagem": { es: "Cuando pasen N días sin mensaje" },
   "Quando um lead ficar N dias na mesma etapa": { es: "Cuando un lead lleve N días en la misma etapa" },
+  "Quando uma ligação recebida não for atendida": { es: "Cuando una llamada recibida no sea atendida" },
   "Criar tarefa interna (sem mensagem ao cliente)": { es: "Crear tarea interna (sin mensaje al cliente)" },
   "A tarefa não foi criada: o evento que disparou a regra não trouxe um lead nem um contato para pendurar nela.": {
     es: "La tarea no se creó: el evento que disparó la regla no trajo un lead ni un contacto donde colgarla.",
@@ -18249,6 +18296,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Nenhum negócio aberto com valor neste funil.": {
     es: "Ningún negocio abierto con valor en este embudo.",
+  },
+  "Este funil tem mais negócios abertos do que a previsão consegue ler. Os valores abaixo são parciais.": {
+    es: "Este embudo tiene más negocios abiertos de los que la previsión logra leer. Los valores de abajo son parciales.",
   },
   "Sem data prevista — entram, mas sem mês no cronograma": {
     es: "Sin fecha prevista — entran, pero sin mes en el cronograma.",
@@ -18543,6 +18593,14 @@ export const DICIONARIO: Traducoes = {
   "Todas ao iniciar": { es: "Todas al iniciar" },
   "Contato, negócio e conversa de toda a fila são criados na hora de iniciar.": { es: "Contacto, negocio y conversación de toda la cola se crean al iniciar." },
   "Quando oferecer a opção de parar de receber": { es: "Cuándo ofrecer la opción de dejar de recibir" },
+  "Texto da opção de parar": { es: "Texto de la opción de dejar de recibir" },
+  "Opcional. Em branco, sai a frase padrão. Até 160 caracteres, sem link, e precisa conter a palavra que a pessoa responde para sair.": {
+    es: "Opcional. Si está en blanco, se envía la frase predeterminada. Hasta 160 caracteres, sin enlace, y debe incluir la palabra que la persona responde para salir.",
+  },
+  "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.": {
+    es: "Incluye la palabra que la persona responde para salir; sin ella, el pedido no se reconoce.",
+  },
+  "Use até 160 caracteres e nenhum link.": { es: "Usa hasta 160 caracteres y ningún enlace." },
   "Na primeira mensagem (recomendado)": { es: "En el primer mensaje (recomendado)" },
   "A abertura já diz como parar:": { es: "La apertura ya dice cómo detenerse:" },
   "Atrasar para a 2ª mensagem": { es: "Postergar al 2.º mensaje" },
