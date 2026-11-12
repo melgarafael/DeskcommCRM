@@ -39,6 +39,11 @@ import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
 import {
+  palavraDeSaida,
+  problemaNoTextoDaSaidaNoIdioma,
+  TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+} from "./rodape-de-saida";
+import {
   provedorDaOrganizacao,
   provedorExigeCredencialDaOrganizacao,
   validarCredencialDaOrganizacao,
@@ -645,8 +650,49 @@ export function mensagemDoAgenteIncompleto(
   return [...faltas.map((f) => f.frase), FECHO_DA_VERSAO_PUBLICADA].join(" ");
 }
 
+/**
+ * O TEXTO DA SAÍDA NO IDIOMA DA INSTALAÇÃO (#4370).
+ *
+ * O schema já recusa o texto sem NENHUMA palavra de saída, e o texto grande ou
+ * com link. Falta a parte que só existe onde o locale é conhecido: a palavra
+ * certa DESTA instalação. Um texto com PARAR numa organização em espanhol
+ * passaria na régua genérica e ofereceria uma palavra que ninguém ali responde —
+ * a pessoa escreveria "PARAR" e o detector, que exige a palavra sozinha, até
+ * bloquearia; mas o rodapé da plantilla em espanhol promete BAJA, e as duas
+ * redações convivendo na mesma campanha é o tipo de incoerência que o dono não vê.
+ *
+ * A recusa é da CAMPANHA (422, escopo `campanha`): é o mesmo escopo das outras
+ * recusas de configuração, e o operador conserta o campo e tenta de novo.
+ */
+async function validarTextoDaSaidaNoIdioma(
+  db: pg.PoolClient,
+  org: string,
+  texto: string | undefined,
+): Promise<void> {
+  const proprio = (texto ?? "").trim();
+  // Vazio é o contrato: usa a frase padrão, e nada há para recusar.
+  if (proprio === "") return;
+  const idioma = await idiomaDaOrganizacao(db, org);
+  const problema = problemaNoTextoDaSaidaNoIdioma(proprio, idioma);
+  if (problema === null) return;
+  if (problema === "sem_palavra")
+    throw new ProspectingError(
+      `O texto da opção de parar precisa conter "${palavraDeSaida(idioma)}", a palavra que a pessoa responde para sair nesta instalação.`,
+      422,
+      "campanha",
+    );
+  throw new ProspectingError(
+    problema === "longo"
+      ? `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`
+      : "O texto da opção de parar não pode ter link.",
+    422,
+    "campanha",
+  );
+}
+
 export async function validateConfig(db: pg.PoolClient, org: string, input: CampaignConfig) {
   const config = campaignConfigSchema.parse(input);
+  await validarTextoDaSaidaNoIdioma(db, org, config.texto_da_saida);
   const agent = (
     await db.query(
       "select v.tool_ids,v.pipeline_ids from ai_agents a join ai_agent_versions v on v.id=a.published_version_id and v.organization_id=a.organization_id where a.organization_id=$1 and a.id=$2 and v.status='published' and a.archived_at is null and a.paused_at is null and a.operation_mode='automatic'",
