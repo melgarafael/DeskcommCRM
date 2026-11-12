@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { montarFatosDoCrm } from '@/lib/leads/fatos-do-crm-no-prompt';
+
 import { buildClassifierPrompt, parseIntentVerdict, classifyIntent } from './intent-classifier';
 
 const members = [
@@ -49,6 +51,27 @@ describe('buildClassifierPrompt', () => {
     ].join('\n');
     expect(buildClassifierPrompt(members, 'oi')).toBe(antes);
     expect(buildClassifierPrompt(members, 'oi', [])).toBe(antes);
+  });
+
+  it('fatos do CRM com dado do cliente no nome saem mascarados no prompt; nome comum sai igual (#3917)', () => {
+    // Os fatos chegam aqui como o turno os lê: pelo `montarFatosDoCrm`, que
+    // passa cada nome pelo scrub antes do corte.
+    const comDado = buildClassifierPrompt(members, 'oi', [], montarFatosDoCrm(
+      [{ funil: 'Vendas', etapa: 'Ligar 11 98765-4321' }],
+      ['cpf 123.456.789-09', 'ana@exemplo.com'],
+    ));
+    expect(comDado).toContain('Fatos do CRM deste contato');
+    expect(comDado).toContain('- Funil "Vendas", etapa "Ligar [PHONE]": negócio ABERTO');
+    expect(comDado).not.toContain('98765');
+    expect(comDado).not.toContain('123.456.789-09');
+    expect(comDado).not.toContain('ana@exemplo.com');
+
+    const comum = buildClassifierPrompt(members, 'oi', [], montarFatosDoCrm(
+      [{ funil: 'Experiência', etapa: 'Pós-viagem' }],
+      ['cliente'],
+    ));
+    expect(comum).toContain('- Funil "Experiência", etapa "Pós-viagem": negócio ABERTO');
+    expect(comum).toContain('- Etiquetas do contato: cliente');
   });
 });
 
