@@ -90,6 +90,7 @@ export const RECURSOS_DO_CRON = [
   "mcp_a_revogar",
   "lembrete_de_tarefa",
   "lembrete_de_agenda",
+  "roteamento",
   "catalogo_do_feed",
 ] as const;
 export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
@@ -187,6 +188,18 @@ const TETO_DA_LEITURA_MS = 2_000;
  *   em `organizations`);
  * - `canal_vigiado`, `fila_de_soneca`, `redacao_de_storage`: a condição exata
  *   da consulta da rodada.
+ *
+ * ─── O ROTEAMENTO (#3878) ──────────────────────────────────────────────────
+ *
+ * `routing-worker` era a última rota de MINUTO A MINUTO sem saída barata: cada
+ * batida fazia duas leituras no PostgREST contra `event_log` (a varredura de
+ * `processing` preso e a de `pending`) e, ociosa, recebia dois vazios. O sinal
+ * `roteamento` é a UNIÃO EXATA dessas duas varreduras: `pending` com
+ * `next_attempt_at` vencido, ou `processing` acima da janela de 5 min de
+ * `PROCESSING_STALE_MS` (`lib/routing/worker.ts`). Diferente dos outros sinais,
+ * aqui não há "mais largo que a rodada": é o mesmo predicado, porque alargar
+ * manteria a rota acordada para sempre — o `processing` de um handler normal é
+ * trabalho de OUTRO consumidor, e é justamente o que a rodada também ignora.
  *
  * Duas rodadas fazem MAIS do que a consulta principal, e o portão cobre as duas
  * (medido em `tests/invariants/piso-ocioso-retrato.test.ts`):
@@ -324,6 +337,14 @@ select
     select 1 from agent_inbox_items
      where ref_kind = 'agenda_reminder_sender' and status = 'open'
   ) as lembrete_de_agenda,
+  exists (
+    select 1 from event_log
+     where event_type = 'conversation.routing_requested'
+       and (
+         (status = 'pending' and (next_attempt_at is null or next_attempt_at <= now()))
+         or (status = 'processing' and updated_at <= now() - interval '5 minutes')
+       )
+  ) as roteamento,
   exists (
     select 1 from catalog_feed_sources where ativo = true
   ) as catalogo_do_feed
