@@ -72678,7 +72678,7 @@ grant execute on function public.fn_lista_de_espera_ofertar(uuid, uuid, timestam
 notify pgrst, 'reload schema';
 
 -- ---- "Tornar principal" (migration 9048, Spec 31 parte B2) ----
--- manifest: **"Tornar principal" troca um telefone extra pelo principal numa operação só (Spec 31, parte B2, item 6).** Função `fn_tornar_telefone_principal(p_org, p_contato, p_extra)`: o extra vira `contacts.phone_number` levando tipo, WhatsApp, RÓTULO e o `lid` dele; o principal antigo vira extra (origem `manual`) levando os dele. Numa transação, com a ficha travada, e na ordem que a regra "um número, uma ficha" (9043) aceita: o extra sai antes de o principal mudar, e o principal antigo entra como extra depois. `waha_chat_id` sai do `source_metadata` (era o chat do número antigo). SECURITY INVOKER: quem chama é a rota pela sessão do usuário, e a RLS de `contacts` e `contact_phones` vale; a rota exige papel `agent`. Recusa (`P0002`) extra que não é desta ficha, ficha mesclada ou anonimizada. Idempotente: `create or replace` + revoke/grant. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon. Prova em `tests/invariants/tornar-telefone-principal.test.ts`.
+-- manifest: **"Tornar principal" troca um telefone extra pelo principal numa operação só (Spec 31, parte B2, item 6).** Função `fn_tornar_telefone_principal(p_org, p_contato, p_extra)`: o extra vira `contacts.phone_number` levando tipo, WhatsApp e o `lid` dele; o principal antigo vira extra (origem `manual`) levando os dele. Numa transação, com a ficha travada, e na ordem que a regra "um número, uma ficha" (9043) aceita: o extra sai antes de o principal mudar, e o principal antigo entra como extra depois. `waha_chat_id` sai do `source_metadata` (era o chat do número antigo). SECURITY INVOKER: quem chama é a rota pela sessão do usuário, e a RLS de `contacts` e `contact_phones` vale; a rota exige papel `agent`. Recusa (`P0002`) extra que não é desta ficha, ficha mesclada ou anonimizada. Idempotente: `create or replace` + revoke/grant. Espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon. Prova em `tests/invariants/tornar-telefone-principal.test.ts`.
 create or replace function public.fn_tornar_telefone_principal(p_org uuid, p_contato uuid, p_extra uuid)
 returns void
 language plpgsql
@@ -72689,7 +72689,7 @@ declare
   v_ficha record;
   v_extra record;
 begin
-  select c.id, c.phone_number, c.phone_type, c.phone_whatsapp, c.phone_label,
+  select c.id, c.phone_number, c.phone_type, c.phone_whatsapp,
          nullif(pg_catalog.regexp_replace(coalesce(c.source_metadata->>'waha_lid', ''), '@.*$', ''), '') as lid
     into v_ficha
     from public.contacts c
@@ -72700,7 +72700,7 @@ begin
     raise exception using errcode = 'P0002', message = 'contato_indisponivel';
   end if;
 
-  select t.id, t.phone_number, t.tipo, t.whatsapp, t.wa_lid, t.rotulo
+  select t.id, t.phone_number, t.tipo, t.whatsapp, t.wa_lid
     into v_extra
     from public.contact_phones t
    where t.id = p_extra and t.organization_id = p_org and t.contact_id = p_contato
@@ -72716,9 +72716,6 @@ begin
     phone_number = v_extra.phone_number,
     phone_type = v_extra.tipo,
     phone_whatsapp = v_extra.whatsapp,
-    -- O rótulo anda com o NÚMERO (#4242, item 2): quem foi promovido leva o seu
-    -- para o principal, e o principal antigo leva o dele para o extra abaixo.
-    phone_label = v_extra.rotulo,
     source_metadata = (source_metadata - 'waha_lid' - 'waha_chat_id')
       || case when v_extra.wa_lid is not null
               then pg_catalog.jsonb_build_object('waha_lid', v_extra.wa_lid)
@@ -72728,11 +72725,11 @@ begin
 
   if v_ficha.phone_number is not null then
     insert into public.contact_phones
-      (organization_id, contact_id, phone_number, tipo, whatsapp, rotulo, origem, wa_lid)
+      (organization_id, contact_id, phone_number, tipo, whatsapp, origem, wa_lid)
     values
       (p_org, p_contato, public.fn_telefone_canonico(v_ficha.phone_number),
        coalesce(v_ficha.phone_type, public.fn_tipo_do_telefone(v_ficha.phone_number)),
-       coalesce(v_ficha.phone_whatsapp, 'nao_sei'), v_ficha.phone_label, 'manual', v_ficha.lid);
+       coalesce(v_ficha.phone_whatsapp, 'nao_sei'), 'manual', v_ficha.lid);
   end if;
 end;
 $$;
@@ -75044,6 +75041,105 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and new.type <> 'reaction'
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
+
+-- ---- o rótulo do telefone principal (migration 9354, #4242) ----
+-- Espelho de supabase/migrations/20261112111129_9354_rotulo_do_telefone_principal.sql
+-- (o porquê inteiro está no cabeçalho dela). Fica ACIMA da VARREDURA anon porque
+-- cria função, e DEPOIS do bloco da 9048, cuja `fn_tornar_telefone_principal` esta
+-- REDEFINE (o `create or replace` daqui é o que vale). A coluna vem aqui, e não no
+-- create table de `contacts`, porque o `update.sh` pula aquele create em toda
+-- instalação que já tem a tabela.
+alter table public.contacts
+  add column if not exists phone_label text;
+
+comment on column public.contacts.phone_label is
+  'Rótulo do telefone PRINCIPAL ("casa", "trabalho"), como contact_phones.rotulo nos extras. Preenchido por "Tornar principal" com o rótulo do extra promovido (#4242, item 2); o principal antigo leva o rótulo dele para o extra que vira.';
+
+create or replace function public.fn_tornar_telefone_principal(p_org uuid, p_contato uuid, p_extra uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_ficha record;
+  v_extra record;
+begin
+  select c.id, c.phone_number, c.phone_type, c.phone_whatsapp, c.phone_label,
+         nullif(pg_catalog.regexp_replace(coalesce(c.source_metadata->>'waha_lid', ''), '@.*$', ''), '') as lid
+    into v_ficha
+    from public.contacts c
+   where c.id = p_contato and c.organization_id = p_org
+     and c.is_merged_into is null and c.is_anonymized = false
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'contato_indisponivel';
+  end if;
+
+  select t.id, t.phone_number, t.tipo, t.whatsapp, t.wa_lid, t.rotulo
+    into v_extra
+    from public.contact_phones t
+   where t.id = p_extra and t.organization_id = p_org and t.contact_id = p_contato
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'telefone_extra_indisponivel';
+  end if;
+
+  -- O extra sai ANTES: senão o principal novo colidiria com ele mesmo.
+  delete from public.contact_phones where id = v_extra.id and organization_id = p_org;
+
+  update public.contacts set
+    phone_number = v_extra.phone_number,
+    phone_type = v_extra.tipo,
+    phone_whatsapp = v_extra.whatsapp,
+    -- O rótulo anda com o NÚMERO (#4242, item 2): quem foi promovido leva o seu
+    -- para o principal, e o principal antigo leva o dele para o extra abaixo.
+    phone_label = v_extra.rotulo,
+    source_metadata = (source_metadata - 'waha_lid' - 'waha_chat_id')
+      || case when v_extra.wa_lid is not null
+              then pg_catalog.jsonb_build_object('waha_lid', v_extra.wa_lid)
+              else '{}'::jsonb end,
+    updated_at = now()
+  where id = p_contato and organization_id = p_org;
+
+  if v_ficha.phone_number is not null then
+    insert into public.contact_phones
+      (organization_id, contact_id, phone_number, tipo, whatsapp, rotulo, origem, wa_lid)
+    values
+      (p_org, p_contato, public.fn_telefone_canonico(v_ficha.phone_number),
+       coalesce(v_ficha.phone_type, public.fn_tipo_do_telefone(v_ficha.phone_number)),
+       coalesce(v_ficha.phone_whatsapp, 'nao_sei'), v_ficha.phone_label, 'manual', v_ficha.lid);
+  end if;
+end;
+$$;
+
+revoke execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) from public, anon;
+grant execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) to authenticated, service_role;
+
+-- O rótulo é do NÚMERO: quando o principal some (remoção, anonimização), ele
+-- sai junto, como o tipo e o WhatsApp que `fn_contacts_um_numero_uma_ficha` já
+-- zera. Sem isto, "casa da mãe" sobraria numa ficha anonimizada.
+create or replace function public.fn_contacts_rotulo_sai_com_o_numero()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  new.phone_label := null;
+  return new;
+end;
+$$;
+
+revoke all on function public.fn_contacts_rotulo_sai_com_o_numero() from public;
+revoke execute on function public.fn_contacts_rotulo_sai_com_o_numero() from anon, authenticated;
+
+drop trigger if exists trg_contacts_rotulo_sai_com_o_numero on public.contacts;
+create trigger trg_contacts_rotulo_sai_com_o_numero
+  before insert or update of phone_number, phone_label on public.contacts
+  for each row
+  when (new.phone_number is null and new.phone_label is not null)
+  execute function public.fn_contacts_rotulo_sai_com_o_numero();
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
@@ -80733,17 +80829,6 @@ revoke all on organization_resend_accounts from public, anon, authenticated;
 -- O worker recebe só CRUD, sem depender do DEFAULT ALL da instalação.
 revoke all on organization_resend_accounts from service_role;
 grant select, insert, update, delete on organization_resend_accounts to service_role;
-
--- ---- o rótulo do telefone principal (#4242, item 2, migration 9245) ----
--- "Tornar principal" descartava o rótulo do extra promovido: o rótulo mora em
--- `contact_phones.rotulo`, e o principal não tinha coluna para ele. Fica no
--- apêndice, e não no create table do bloco de `contacts`, porque o `update.sh`
--- pula aquele create em toda instalação que já tem a tabela.
-alter table public.contacts
-  add column if not exists phone_label text;
-
-comment on column public.contacts.phone_label is
-  'Rótulo do telefone PRINCIPAL ("casa", "trabalho"), como contact_phones.rotulo nos extras. Preenchido por "Tornar principal" com o rótulo do extra promovido (#4242, item 2); o principal antigo leva o rótulo dele para o extra que vira.';
 
 -- ---- apresentação estruturada do item do catálogo (migration 9250) ----
 -- manifest: Apresentação por texto ou áudio fica num agregado 1:1 do item, com RLS e mídia privada permanentes.

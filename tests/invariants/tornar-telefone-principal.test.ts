@@ -115,6 +115,27 @@ describe("fn_tornar_telefone_principal", () => {
     expect(t).toEqual([{ rotulo: "Casa" }]);
   });
 
+  it("ficha sem telefone não guarda rótulo: remoção e anonimização o levam junto (migration 9354)", async () => {
+    // Sabotagem: tirar o gatilho `trg_contacts_rotulo_sai_com_o_numero` deixa o
+    // texto livre do rótulo nas duas fichas — inclusive na anonimizada.
+    const removida = await ficha(ORG, "+5511942420101", null);
+    await pool.query("update contacts set phone_label = 'Casa da mãe' where id = $1", [removida]);
+    await pool.query("update contacts set phone_number = null where id = $1", [removida]);
+
+    const anonimizada = await ficha(ORG, "+5511942420102", null);
+    await pool.query("update contacts set phone_label = 'Casa da mãe' where id = $1", [anonimizada]);
+    await pool.query("select fn_lgpd_cascade_redact_contact($1, $2, null)", [ORG, anonimizada]);
+
+    const { rows } = await pool.query(
+      "select phone_number, phone_label from contacts where id = any($1::uuid[]) order by phone_label nulls first",
+      [[removida, anonimizada]],
+    );
+    expect(rows).toEqual([
+      { phone_number: null, phone_label: null },
+      { phone_number: null, phone_label: null },
+    ]);
+  });
+
   it("extra de outra organização é recusado e nada muda", async () => {
     const id = await ficha(ORG, "+551533330101", null);
     const alheia = await ficha(OUTRA, "+551533330102", null);
