@@ -20723,6 +20723,43 @@ export const DICIONARIO: Traducoes = {
   },
   // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
   "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
+  // O seletor único de variável (#3687): o catálogo é o mesmo nas quatro telas,
+  // e os grupos são os rótulos que ele mostra.
+  "Inserir variável": { es: "Insertar variable" },
+  "Buscar variável": { es: "Buscar variable" },
+  "Nenhuma variável encontrada": { es: "No se encontró ninguna variable" },
+  "Prévia": { es: "Vista previa" },
+  // `Contato` já existe no dicionário (linha do bloco de contatos) — não repetir.
+  "Campo do contato": { es: "Campo del contacto" },
+  "Da ação": { es: "De la acción" },
+  "Variável do sistema": { es: "Variable del sistema" },
+  "Número da volta": { es: "Número de la vuelta" },
+  "Total de voltas": { es: "Total de vueltas" },
+  // As descrições do catálogo (`lib/variaveis/catalogo.ts`) que o seletor mostra
+  // por `t(v.descricao)`. Nome, primeiro nome e saudação já têm linha no bloco da
+  // campanha — não repetir.
+  "Telefone do contato, como está no cadastro": { es: "Teléfono del contacto, tal como está en el registro" },
+  "E-mail do contato, como está no cadastro": { es: "Correo del contacto, tal como está en el registro" },
+  "Caminho do NEGÓCIO: campo personalizado (campanha, fluxo) ou coluna do card (automação)": {
+    es: "Ruta del NEGOCIO: campo personalizado (campaña, flujo) o columna de la tarjeta (automatización)",
+  },
+  "Campo personalizado do CONTATO, escrito como `{{contato.<campo>}}`": {
+    es: "Campo personalizado del CONTACTO, escrito como `{{contato.<campo>}}`",
+  },
+  "Caminho do CONTATO na automação: `{{contact.<coluna>}}` ou `{{contact.custom_fields.<campo>}}`": {
+    es: "Ruta del CONTACTO en la automatización: `{{contact.<coluna>}}` o `{{contact.custom_fields.<campo>}}`",
+  },
+  // A dica que o seletor mostra no lugar do curinga (`DICA_DO_CURINGA`).
+  "Para outro dado do negócio, escreva {{lead.nome_do_campo}}": {
+    es: "Para otro dato del negocio, escribe {{lead.nombre_del_campo}}",
+  },
+  "Para um campo do contato, escreva {{contato.nome_do_campo}}": {
+    es: "Para un campo del contacto, escribe {{contato.nombre_del_campo}}",
+  },
+  "Para uma coluna do contato, escreva {{contact.nome_da_coluna}}": {
+    es: "Para una columna del contacto, escribe {{contact.nombre_de_la_columna}}",
+  },
+
 
   // ─── o número oficial de pé, mas não inteiro (lib/channels/health.ts) ───
   // Não recebe mensagens, ou a Meta restringiu o envio: cartão de Conexões e

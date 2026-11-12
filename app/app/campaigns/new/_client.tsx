@@ -31,7 +31,8 @@ import {
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useT } from "@/hooks/i18n/useT";
 import { useAgentesPublicados, useEtapas, useFunis } from "@/hooks/campanhas/useDestinoDaCampanha";
-import { VARIAVEIS_DA_CAMPANHA, DESCRICAO_DA_VARIAVEL } from "@/lib/campanhas/renderizador";
+import { SeletorDeVariavel } from "@/components/variaveis/SeletorDeVariavel";
+import { PreviaComValores } from "@/components/variaveis/PreviaComValores";
 
 import {
   ModeloDaCampanha,
@@ -444,22 +445,15 @@ export function NovaCampanha() {
               placeholder={t("Escreva como você falaria com uma pessoa só.")}
               aria-label={t("Texto da mensagem")}
             />
+            <PreviaComValores texto={texto} fonte="campanha" />
             <div className="space-y-1 text-sm text-muted-foreground">
-              <p>{t("Você pode usar:")}</p>
-              <ul className="space-y-1">
-                {VARIAVEIS_DA_CAMPANHA.map((v) => (
-                  <li key={v}>
-                    <button
-                      type="button"
-                      className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
-                      onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
-                    >
-                      {`{{${v}}}`}
-                    </button>{" "}
-                    — {t(DESCRICAO_DA_VARIAVEL[v])}
-                  </li>
-                ))}
-              </ul>
+              <div className="flex items-center gap-2">
+                <p>{t("Você pode usar:")}</p>
+                <SeletorDeVariavel
+                  fonte="campanha"
+                  onInserir={(token) => setTexto((atual) => `${atual}${token}`)}
+                />
+              </div>
               <p>{t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}</p>
               <p>
                 {t(
