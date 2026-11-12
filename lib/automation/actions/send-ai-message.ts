@@ -63,14 +63,18 @@ function puloPorAgenda(err: unknown): ActionResultDetail | null {
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
   const escolha = lerEscolhaNoEnvio(config);
   const contato = checarGuardasDeContato(ctx);
-  if (contato.ok) {
-    const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
-    if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
-    // #3813 — `enviar`/`nao_enviar` não adiam o evento; só o padrão adia.
-    const decisao = decidirNoEnvio(protection, escolha);
-    if (decisao.acao === "adiar") return decisao.reavaliar_em;
-    if (decisao.acao === "pular") ctx.anotarPuloPelaAgenda?.(decisao.appointment_id);
-  }
+  // A GUARDA VEM ANTES DA ESPERA (#782) — a irmã `send_whatsapp_message` tem o
+  // mesmo conserto e o mesmo motivo: contato que a ação recusaria não tem o que
+  // esperar, e adiar esconderia o motivo real (`contact_blocked`, `no_phone`)
+  // atrás de `fora_da_janela_de_envio`. Quem passa na guarda continua adiando
+  // pela régua do número logo abaixo.
+  if (!contato.ok) return null;
+  const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
+  if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
+  // #3813 — `enviar`/`nao_enviar` não adiam o evento; só o padrão adia.
+  const decisao = decidirNoEnvio(protection, escolha);
+  if (decisao.acao === "adiar") return decisao.reavaliar_em;
+  if (decisao.acao === "pular") ctx.anotarPuloPelaAgenda?.(decisao.appointment_id);
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return null;
   const foraDaJanela = await adiarAteAJanelaAbrir(ctx.admin, ctx.organizationId, sessionId);
