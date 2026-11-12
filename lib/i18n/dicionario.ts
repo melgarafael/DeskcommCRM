@@ -20321,6 +20321,10 @@ export const DICIONARIO: Traducoes = {
   "Para escrever uma data no formato do cliente, use {{campo|data}}.": {
     es: "Para escribir una fecha en el formato del cliente, usa {{campo|data}}.",
   },
+  // #4339: o bloco condicional — a linha que só existe quando o campo existe.
+  "Para a linha sumir quando o campo estiver vazio, envolva-a: {{#campo}}rótulo {{campo}}{{/campo}}.": {
+    es: "Para que la línea desaparezca cuando el campo esté vacío, envuélvela: {{#campo}}etiqueta {{campo}}{{/campo}}.",
+  },
   // Installed runtime identity, distinct from an available release.
   "Versão ainda não confirmada": { es: "Versión aún no confirmada" },
   "Execução não confirmada": { es: "Ejecución no confirmada" },
