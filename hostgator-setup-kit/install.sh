@@ -15,7 +15,7 @@ set -euo pipefail
 # de qualquer 'cd' (step 2 pode entrar num repo clonado à parte).
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+REPO_URL="${REPO_URL:-https://github.com/jadsonlsouza/DeskcommCRM.git}"
 # Uma constante, dois usos (o fim feliz e o fim travado) — e o comecar.sh tem a
 # gêmea. Link repetido à mão vira link divergente na primeira troca.
 COMUNIDADE_URL="https://lp-comunidade.automatiklabs.com.br"
@@ -1065,7 +1065,16 @@ fi
 # sempre (mais abaixo): a sonda exige `docker buildx`, e toda imagem publicada
 # já tem amd64.
 PLATAFORMA_HOST="$(plataforma_oci_do_host "$(uname -m 2>/dev/null || true)" 2>/dev/null || true)"
-if [ "$PLATAFORMA_HOST" = linux/arm64 ]; then
+GIANNA_INSTALL_TAG=""
+if repositorio_gianna && ! build_local_pedido; then
+  GIANNA_INSTALL_TAG="$(release_gianna_no_checkout)" \
+    || die "Faça checkout da última release publicada do Gianna antes de instalar."
+  VERSAO_ALVO="${GIANNA_INSTALL_TAG#v}"
+  WAHA_EFETIVA="${WAHA_IMAGE:-$(imagem_waha_padrao_para_host)}"
+  preflight_instalacao "$VERSAO_ALVO" "$PLATAFORMA_HOST" "$WAHA_EFETIVA" \
+    || die "As imagens da release $GIANNA_INSTALL_TAG não estão disponíveis para $PLATAFORMA_HOST."
+  APP_IMAGE="${IMG_APP}:${VERSAO_ALVO}"
+elif [ "$PLATAFORMA_HOST" = linux/arm64 ]; then
   RELEASE_TAG="$(ultima_release_estavel)"
   VERSAO_ALVO="${RELEASE_TAG#v}"
   WAHA_EFETIVA="${WAHA_IMAGE:-$(imagem_waha_padrao_para_host)}"
@@ -1415,7 +1424,7 @@ fi
 #
 # Resolvido no REMOTO porque o clone é `--depth 1` e não traz tag nenhuma.
 # Em ARM64 a versão já foi resolvida e conferida pelo pré-voo, lá em cima.
-[ "$PLATAFORMA_HOST" = linux/arm64 ] || VERSAO_ALVO="$(ultima_versao_publicada "$REPO_URL")"
+[ -n "$GIANNA_INSTALL_TAG" ] || [ "$PLATAFORMA_HOST" = linux/arm64 ] || VERSAO_ALVO="$(ultima_versao_publicada "$REPO_URL")"
 
 # A tag do git é condição NECESSÁRIA, não suficiente: ela nasce minutos antes
 # das imagens, e `deskcomm-worker`/`deskcomm-scheduler` só passaram a existir
@@ -1427,7 +1436,7 @@ fi
 # Cascata, do mais específico ao mais disponível. Cada nível pergunta pelas TRÊS
 # imagens juntas, porque instalar com elas desalinhadas é o defeito, não a
 # solução.
-if [ "$PLATAFORMA_HOST" = linux/arm64 ]; then
+if [ -n "$GIANNA_INSTALL_TAG" ] || [ "$PLATAFORMA_HOST" = linux/arm64 ]; then
   : # pré-voo OCI já passou
 elif [ -n "$VERSAO_ALVO" ] && trio_publicado "$VERSAO_ALVO"; then
   : # o caminho normal: as três publicadas na última versão
@@ -1476,7 +1485,7 @@ FIELDS=(
   ${CAMPO_OPENAI_EXTRA:+"$CAMPO_OPENAI_EXTRA"}
   "OWNER_EMAIL|E-mail do primeiro admin (dono)||v_email||"
   "OWNER_PASSWORD|Senha do primeiro admin (mínimo 8 caracteres)||v_password|secret|"
-  "APP_NAME|Nome que aparece na interface (Enter para o padrão)|DeskcommCRM|||"
+  "APP_NAME|Nome que aparece na interface (Enter para o padrão)|Gianna|||"
   # Idioma da instalação. Fica JUNTO do nome do produto de propósito: as duas
   # perguntas são "como o sistema se apresenta", e separá-las faria a segunda
   # parecer configuração técnica.

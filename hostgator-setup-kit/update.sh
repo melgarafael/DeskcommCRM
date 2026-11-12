@@ -128,7 +128,7 @@ git fetch --tags --quiet origin 2>/dev/null || c_ylw "⚠ não consegui falar co
 [ -n "$TARGET_TAG" ] || die "Não encontrei nenhuma versão publicada para instalar. (Tag existir não basta: o alvo é a última release estável publicada no GitHub. Se o servidor não conseguiu falar com a API, tente de novo mais tarde; para instalar uma versão específica, passe --to vX.Y.Z.)"
 git rev-parse --verify --quiet "${TARGET_TAG}^{commit}" >/dev/null \
   || die "Não conheço a versão $TARGET_TAG aqui. Confira o nome (ex.: v1.1.0) ou tente de novo quando o servidor conseguir falar com o GitHub."
-CURRENT_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
+CURRENT_TAG="$(git describe --tags --match 'v[0-9]*' --exact-match HEAD 2>/dev/null || true)"
 
 # O código estar em dia NÃO significa que o app está: quem roda é a imagem.
 # Uma atualização interrompida depois do checkout (queda de rede, falta de

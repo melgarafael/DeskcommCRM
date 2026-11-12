@@ -13,7 +13,7 @@
 #
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/melgarafael/DeskcommCRM.git}"
+REPO_URL="${REPO_URL:-https://github.com/jadsonlsouza/DeskcommCRM.git}"
 # Link de parceria com a HostGator. Mesma URL e mesmo rótulo do README: uma
 # promessa só, num lugar só — duas redações da mesma oferta viram duas ofertas.
 VPS_URL="https://www.hostgator.com.br/52708-141-3-52.html"
@@ -141,6 +141,18 @@ REQ
 }
 
 comando_de_instalacao() {
+  if [ "$REPO_URL" = https://github.com/jadsonlsouza/DeskcommCRM.git ]; then
+    cat <<'CMD'
+
+  Para instalar o Gianna e o Supabase na mesma VPS, use a release publicada:
+
+       https://github.com/jadsonlsouza/DeskcommCRM/releases/latest
+
+  O guia de instalação está na branch codex/amigo-api, em docs/gianna-vps.md.
+
+CMD
+    return
+  fi
   cat <<CMD
 
   Já dentro do servidor, cole isto:

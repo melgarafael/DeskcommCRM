@@ -164,7 +164,7 @@ esc() {
 FETCH_OK=1
 git fetch --tags --quiet origin 2>/dev/null || FETCH_OK=0
 
-CURRENT_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
+CURRENT_TAG="$(git describe --tags --match 'v[0-9]*' --exact-match HEAD 2>/dev/null || true)"
 CURRENT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 # A AUTORIDADE é a release publicada, NUNCA a maior tag. Ver
 # `ultima_release_estavel` em _common.sh para o caso real que obrigou a troca
@@ -306,7 +306,9 @@ if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # (pnpm release:acervo-cabe, fora de pull_request) —, mas a régua é uma só:
   # duas cópias do número seriam duas fontes da verdade, e a que envelhece é
   # sempre a cópia.
-  CHANGELOG="$(git show "${LATEST_TAG}:CHANGELOG.md" 2>/dev/null | awk -v cur="## [${CURRENT#v}]" 'index($0, cur) == 1 { print; exit } { print }' | head -c 30000 || true)"
+  CHANGELOG_FILE=CHANGELOG.md
+  if repositorio_gianna; then CHANGELOG_FILE=CHANGELOG.gianna.md; fi
+  CHANGELOG="$(git show "${LATEST_TAG}:${CHANGELOG_FILE}" 2>/dev/null | awk -v cur="## [${CURRENT#v}]" 'index($0, cur) == 1 { print; exit } { print }' | head -c 30000 || true)"
   # `head -c` corta em byte fixo, e o CHANGELOG tem emoji/acento multi-byte
   # (UTF-8) — um corte no meio de um caractere quebraria o JSON de um jeito
   # difícil de rastrear. `iconv -c` descarta o byte incompleto do final sem

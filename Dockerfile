@@ -89,9 +89,9 @@ WORKDIR /app
 # OCI via docker/metadata-action; estes aqui são defesa em profundidade — valem
 # para qualquer build, inclusive o local de docker-compose.build.yml, que não
 # passa pelo metadata-action e sem isto sairia sem origem nenhuma.
-LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCRM" \
+LABEL org.opencontainers.image.source="https://github.com/jadsonlsouza/DeskcommCRM" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.title="DeskcommCRM"
+      org.opencontainers.image.title="Gianna"
 
 # ⚠️ NADA de ARG de versão acima das camadas caras deste estágio. No BuildKit a
 # própria INSTRUÇÃO `ARG` entra na chave de cache das instruções seguintes —

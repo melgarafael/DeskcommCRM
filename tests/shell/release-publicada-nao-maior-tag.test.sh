@@ -70,5 +70,17 @@ check "update.sh não escolhe mais pela maior tag" \
 check "agent.sh anuncia por ultima_release_estavel" \
   grep -q 'LATEST_TAG="$(ultima_release_estavel)"' "$KIT_DIR/agent.sh"
 
+echo '── 6. Gianna instala com o schema do mesmo commit das imagens'
+checkout_gianna() (
+  cd "$REPO" || exit 1
+  git remote set-url origin git@github.com:jadsonlsouza/DeskcommCRM.git
+  git checkout -q --detach "$1" || exit 1
+  DESKCOMM_RELEASES_LATEST_URL="file://$WORK/latest.json" \
+    bash -c 'source "$0/_common.sh"; repositorio_gianna && release_gianna_no_checkout' "$KIT_DIR"
+)
+check "recusa checkout de uma tag ainda sem release" bash -c 'test "$1" = 1' _ \
+  "$(checkout_gianna v1.20.0 >/dev/null; echo "$?")"
+check "aceita checkout da release publicada" test "$(checkout_gianna v1.19.0)" = v1.19.0
+
 echo
 if [ "$FAILS" -eq 0 ]; then echo "OK — release publicada, nunca a maior tag"; else echo "FALHOU: $FAILS"; exit 1; fi

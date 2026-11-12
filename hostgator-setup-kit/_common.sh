@@ -2475,7 +2475,7 @@ ler_rodada_do_banco() {
 # `publish-image.yml` digam o mesmo. Se você é um fork, é lá que está a lista do
 # que trocar junto — e, desde 18/09/2026, o CI do SEU fork não cobra este valor:
 # a asserção só vale quando o dono do runner é o dono deste repositório.
-IMG_NS="ghcr.io/melgarafael"
+IMG_NS="ghcr.io/jadsonlsouza"
 IMG_APP="${IMG_NS}/deskcommcrm"
 IMG_WORKER="${IMG_NS}/deskcomm-worker"
 IMG_SCHEDULER="${IMG_NS}/deskcomm-scheduler"
@@ -2495,7 +2495,7 @@ IMG_VOICE_AGENT="${IMG_NS}/deskcomm-voice-agent"
 # alguém porque não deu para resolver um número de versão seria trocar um
 # problema de previsibilidade por um de disponibilidade.
 ultima_versao_publicada() {
-  local url="${1:-https://github.com/melgarafael/DeskcommCRM.git}" ref
+  local url="${1:-https://github.com/jadsonlsouza/DeskcommCRM.git}" ref
   command -v git >/dev/null 2>&1 || return 0
   # `grep -v -- -` descarta PRERELEASE (v1.11.0-rc1, v1.1.1-jmpo.1 — esta última
   # existe de verdade neste repo). O `--sort=-v:refname` do git põe o prerelease
@@ -3329,5 +3329,24 @@ ultima_release_estavel() {
   case "$tag" in
     v[0-9]*) printf '%s\n' "$tag" ;;
     *) printf '' ;;
+  esac
+}
+
+# Mantém o baseline do checkout e as imagens da mesma release na primeira instalação.
+release_gianna_no_checkout() {
+  local tag head release_commit
+  tag="$(ultima_release_estavel)"
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  head="$(git rev-parse --verify HEAD)" || return 1
+  release_commit="$(git rev-parse --verify "refs/tags/${tag}^{commit}" 2>/dev/null)" || return 1
+  [[ "$head" == "$release_commit" ]] || return 1
+  printf '%s\n' "$tag"
+}
+
+repositorio_gianna() {
+  case "$(git config --get remote.origin.url 2>/dev/null || true)" in
+    https://github.com/jadsonlsouza/DeskcommCRM|https://github.com/jadsonlsouza/DeskcommCRM.git|\
+    git@github.com:jadsonlsouza/DeskcommCRM|git@github.com:jadsonlsouza/DeskcommCRM.git) return 0 ;;
+    *) return 1 ;;
   esac
 }

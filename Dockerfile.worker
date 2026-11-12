@@ -6,9 +6,9 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Procedência (doutrina de packaging, invariante 2).
-LABEL org.opencontainers.image.source="https://github.com/melgarafael/DeskcommCRM" \
+LABEL org.opencontainers.image.source="https://github.com/jadsonlsouza/DeskcommCRM" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.title="DeskcommCRM worker"
+      org.opencontainers.image.title="Gianna worker"
 
 # pnpm fixado na versão do lockfile do repo (pnpm 10 bloquearia build scripts).
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate

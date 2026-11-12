@@ -49,7 +49,8 @@ const RAIZ = process.cwd();
 const RAW = fs.readFileSync(path.join(RAIZ, "CHANGELOG.md"), "utf8");
 const AGENT_SH = fs.readFileSync(path.join(RAIZ, "hostgator-setup-kit", "agent.sh"), "utf8");
 
-const CANDIDATAS = candidatasDoPr(RAW);
+const GIANNA = fs.readFileSync(path.join(RAIZ, "CHANGELOG.gianna.md"), "utf8");
+const CANDIDATAS = [...candidatasDoPr(RAW), ...candidatasDoPr(GIANNA)];
 
 describe("o CHANGELOG da versão nova cabe no que a VPS recebe", () => {
   it("há o que medir — o arquivo tem ao menos uma seção candidata", () => {

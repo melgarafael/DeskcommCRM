@@ -123,7 +123,18 @@ recusar_supabase_de_outra_arvore || die "Instalação interrompida para não der
 # preservada pela sonda, e o install.sh repetirá a mesma conferência antes de
 # subir o CRM. Em AMD64 segue como antes: a sonda exige `docker buildx`.
 plataforma="$(plataforma_oci_do_host "$(uname -m 2>/dev/null || true)" 2>/dev/null || true)"
-if [[ "$plataforma" = linux/arm64 ]]; then
+if (cd "$ROOT_DIR" && repositorio_gianna) && ! build_local_pedido; then
+  release_tag="$(cd "$ROOT_DIR" && release_gianna_no_checkout)" \
+    || die "Faça checkout da última release publicada do Gianna antes de instalar."
+  if [[ -f "$ROOT_DIR/.env" ]]; then load_env "$ROOT_DIR/.env"; fi
+  waha_efetiva="${WAHA_IMAGE:-$(imagem_waha_padrao_para_host)}"
+  preflight_instalacao "${release_tag#v}" "$plataforma" "$waha_efetiva" \
+    || die "As imagens da release $release_tag não estão disponíveis para $plataforma."
+  if [[ "$plataforma" = linux/arm64 ]]; then
+    preflight_supabase_da_ref "$SUPABASE_REF" "$plataforma" \
+      || die "Imagens do Supabase incompletas para $plataforma; nenhuma parte foi criada."
+  fi
+elif [[ "$plataforma" = linux/arm64 ]]; then
   if [[ -f "$ROOT_DIR/.env" ]]; then load_env "$ROOT_DIR/.env"; fi
   step "Conferindo imagens publicadas do CRM, WAHA e Supabase para $plataforma"
   release_tag="$(ultima_release_estavel)"
@@ -288,7 +299,9 @@ set_env_var "$app_env" SUPABASE_DB_URL "postgresql://postgres:${postgres_passwor
 # publicada das TRES imagens e grava numero de versao (nunca tag movel).
 set_env_var "$app_env" OWNER_EMAIL "$owner_email"
 set_env_var "$app_env" OWNER_PASSWORD "$owner_password"
-set_env_var "$app_env" APP_NAME DeskcommCRM
+if [[ -z "$(ler_env "$app_env" APP_NAME)" ]]; then
+  set_env_var "$app_env" APP_NAME Gianna
+fi
 set_env_var "$app_env" APP_LOCALE pt-BR
 # IA: nenhuma chave e gravada, entao ela nasce sem credencial (desligada) e o
 # fim do install.sh aponta o caminho em IA > Credenciais. Chaves NAO sao

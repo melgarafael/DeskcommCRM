@@ -45,7 +45,10 @@ const VERSAO_SIMULADA = "9.9.9";
  * calar o CI é trocar um vermelho honesto por um cliente sem aviso.)
  */
 export function tetoDoAgente(agentSh: string): number {
-  const m = /git show\s+"?\$\{?LATEST_TAG\}?"?:CHANGELOG\.md[^\n]*head -c (\d+)/.exec(agentSh);
+  const m =
+    /git show\s+"?\$\{?LATEST_TAG\}?"?:(?:CHANGELOG\.md|\$\{CHANGELOG_FILE\})[^\n]*head -c (\d+)/.exec(
+      agentSh,
+    );
   if (!m) {
     throw new Error(
       "não achei o corte do CHANGELOG em agent.sh — se o mecanismo mudou, esta medição precisa " +
