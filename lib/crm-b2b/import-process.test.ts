@@ -8,22 +8,25 @@ import { processCompaniesPeopleImport } from "./import-process";
 vi.mock("@/lib/crm-b2b/enrich", () => ({ enrichCompanyFromBrasilApi: vi.fn() }));
 
 type Escrita = { tabela: string; operacao: string; dados: Record<string, unknown> };
+type RespostaDeEscrita = { data: null; error: { code: string; message: string } | null };
 type Consulta = {
   insert(dados: Record<string, unknown>): Consulta;
   update(dados: Record<string, unknown>): Consulta;
+  upsert(dados: Record<string, unknown>): Consulta;
   select(): Consulta;
   eq(): Consulta;
   maybeSingle(): Promise<{ data: null; error: null }>;
   single(): Promise<{ data: { id: string }; error: null }>;
-  then(resolve: (valor: { data: null; error: null }) => unknown): Promise<unknown>;
+  then(resolve: (valor: RespostaDeEscrita) => unknown): Promise<unknown>;
 };
 
 /** Executa o processador público inteiro; só a persistência é dublada, sem rede. */
-function banco() {
+function banco(falhasDeVinculo: number) {
   const escritas: Escrita[] = [];
   let sequencia = 0;
   const cliente = {
     from(tabela: string) {
+      let error: RespostaDeEscrita["error"] = null;
       const consulta: Consulta = {
         insert(dados: Record<string, unknown>) {
           escritas.push({ tabela, operacao: "insert", dados });
@@ -31,6 +34,14 @@ function banco() {
         },
         update(dados: Record<string, unknown>) {
           escritas.push({ tabela, operacao: "update", dados });
+          return consulta;
+        },
+        upsert(dados: Record<string, unknown>) {
+          escritas.push({ tabela, operacao: "upsert", dados });
+          if (tabela === "company_people" && falhasDeVinculo > 0) {
+            falhasDeVinculo -= 1;
+            error = { code: "57014", message: "canceling statement due to statement timeout" };
+          }
           return consulta;
         },
         select() {
@@ -41,8 +52,8 @@ function banco() {
         },
         maybeSingle: async () => ({ data: null, error: null }),
         single: async () => ({ data: { id: `${tabela}-${++sequencia}` }, error: null }),
-        then(resolve: (valor: { data: null; error: null }) => unknown) {
-          return Promise.resolve({ data: null, error: null }).then(resolve);
+        then(resolve: (valor: RespostaDeEscrita) => unknown) {
+          return Promise.resolve({ data: null, error }).then(resolve);
         },
       };
       return consulta;
@@ -51,8 +62,8 @@ function banco() {
   return { cliente, escritas };
 }
 
-async function importar(rows: string[][]) {
-  const db = banco();
+async function importar(rows: string[][], falhasDeVinculo = 0) {
+  const db = banco(falhasDeVinculo);
   const resultado = await processCompaniesPeopleImport(db.cliente, {
     organizationId: "11111111-1111-4111-8111-111111111111",
     userId: "22222222-2222-4222-8222-222222222222",
@@ -148,5 +159,53 @@ describe("importação distingue CNPJ inválido de ausente (#3497)", () => {
       error:
         "CNPJ inválido: confira as 12 posições (dígitos ou letras) e os 2 dígitos verificadores.",
     });
+  });
+});
+
+describe("vínculo entre empresa e pessoa na importação", () => {
+  const linha = ["Empresa", "11222333000181", "Pessoa A", ""];
+
+  it("registra a falha de vínculo no histórico da linha e no total do lote", async () => {
+    const { resultado, escritas } = await importar([linha], 1);
+
+    expect(resultado).toEqual({
+      successful_rows: 0,
+      failed_rows: 1,
+      conflict_rows: 0,
+      processed_rows: 1,
+    });
+    expect(
+      escritas.find((e) => e.tabela === "import_rows" && e.operacao === "update")?.dados,
+    ).toMatchObject({
+      status: "failed",
+      error: "Falha ao vincular a pessoa à empresa.",
+      company_id: "companies-2",
+      person_id: "people-3",
+    });
+    expect(escritas.at(-1)?.dados).toMatchObject({
+      status: "completed",
+      successful_rows: 0,
+      failed_rows: 1,
+    });
+  });
+
+  it("tenta o vínculo na próxima linha com os mesmos IDs e reutiliza o vínculo confirmado", async () => {
+    const { resultado, escritas } = await importar([linha, linha, linha], 1);
+
+    expect(
+      escritas.filter((e) => e.tabela === "companies" && e.operacao === "insert"),
+    ).toHaveLength(1);
+    expect(escritas.filter((e) => e.tabela === "people" && e.operacao === "insert")).toHaveLength(
+      1,
+    );
+    const vinculos = escritas.filter((e) => e.tabela === "company_people");
+    expect(vinculos).toHaveLength(2);
+    expect(vinculos[1]).toEqual(vinculos[0]);
+    expect(
+      escritas
+        .filter((e) => e.tabela === "import_rows" && e.operacao === "update")
+        .map((e) => e.dados.status),
+    ).toEqual(["failed", "success", "success"]);
+    expect(resultado).toMatchObject({ successful_rows: 2, failed_rows: 1, processed_rows: 3 });
   });
 });
