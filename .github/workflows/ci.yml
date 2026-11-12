@@ -700,8 +700,10 @@ jobs:
       # começam no mesmo instante: com o HOME comum, o pnpm/action-setup
       # instalaria o pnpm em `~/setup-pnpm` e o cache restauraria `~/.npm` e o
       # store do pnpm nos MESMOS diretórios, ao mesmo tempo. O HOME vai para o
-      # RUNNER_TEMP, que é do job e que os ganchos do host esvaziam: nada que um
-      # PR grave em cache ou no pnpm chega ao job seguinte (a `main` inclusive).
+      # RUNNER_TEMP, que é do job e que os ganchos do host esvaziam: tira o
+      # caminho ACIDENTAL de um job herdar cache do anterior. Não é barreira — o
+      # runner está no grupo `docker` (equivale a root no host); o risco inteiro
+      # está em infra/executor-proprio/README.md.
       # Custo: cache frio a cada job, pago no teto de 5 min do preâmbulo.
       - name: HOME próprio deste job (só no runner próprio)
         if: runner.environment == 'self-hosted'
