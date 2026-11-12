@@ -45,6 +45,16 @@ const triggerConfigSchema = z
             // campo ao salvar e o aviso nunca liga pela tela. O teto é o mesmo
             // de TAMANHO_MAXIMO_DO_TEXTO em aviso-fora-do-horario.ts.
             notice: z.string().max(1000).nullable().optional(),
+            // Aviso PRÓPRIO de feriado nacional (#3877). Opcional e com o mesmo
+            // teto: sem esta linha o Zod DESCARTA a chave ao salvar (objeto de
+            // schema com strip, como o `notice`) e o texto de feriado nunca
+            // chegaria ao aviso.
+            notice_feriado: z.string().max(1000).nullable().optional(),
+            // "Não atender em feriado nacional" (#3877, doc 316 A). DESLIGADA de
+            // fábrica: ausente vale `false` na leitura (`lerFechadoEmFeriadoNacional`).
+            // Sem esta linha o Zod descarta a chave ao salvar e a chave da tela
+            // nunca chegaria ao turno.
+            fechado_em_feriado_nacional: z.boolean().optional(),
           })
           .nullable()
           .optional()

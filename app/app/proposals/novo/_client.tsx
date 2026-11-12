@@ -30,6 +30,7 @@ import { diaDeHojeLocal } from "@/lib/ai/pacing-knobs";
 import { apiClient } from "@/lib/api/client";
 import type { ApiSuccess } from "@/lib/api/wrappers";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { filtrarNegocios } from "@/lib/propostas/filtrar-negocios";
 
 export interface LeadOption {
   id: string;
@@ -82,22 +83,11 @@ export function NewProposalClient({
   const [condicoes, setCondicoes] = useState("");
   const [criando, setCriando] = useState(false);
 
-  // Filtro de leads para facilitar busca caso haja muitos negócios
-  const leadsFiltrados = useMemo(() => {
-    const termo = buscaLead.trim().toLowerCase();
-    if (!termo) return initialLeads;
-    return initialLeads.filter((l) => {
-      const leadTitle = (l.title ?? "").toLowerCase();
-      // Nome único da função central: remontar a cadeia aqui vira a sétima cópia.
-      const contactRotulo = rotuloDoContato(l.contact).toLowerCase();
-      const contactPhone = (l.contact?.phone_number ?? "").toLowerCase();
-      return (
-        leadTitle.includes(termo) ||
-        contactRotulo.includes(termo) ||
-        contactPhone.includes(termo)
-      );
-    });
-  }, [initialLeads, buscaLead]);
+  // Filtro de leads para facilitar busca caso haja muitos negócios (sem acento, #4413)
+  const leadsFiltrados = useMemo(
+    () => filtrarNegocios(initialLeads, buscaLead),
+    [initialLeads, buscaLead],
+  );
 
   function getLeadLabel(lead: LeadOption): string {
     const nomeContato = rotuloDoContato(lead.contact);

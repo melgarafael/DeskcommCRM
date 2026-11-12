@@ -1261,7 +1261,13 @@ async function pararNoProvedor(
  */
 export async function encerrarTransmissao(
   admin: SupabaseClient,
-  campanha: { id: string; organization_id: string; channel_session_id: string; provider_broadcast_id: string | null },
+  campanha: {
+    id: string;
+    organization_id: string;
+    /** `null` = campanha de e-mail (#3441), que nunca chega a uma transmissão. */
+    channel_session_id: string | null;
+    provider_broadcast_id: string | null;
+  },
   agora: Date,
 ): Promise<number> {
   // Sem id, nada foi entregue ao provedor — e a reserva (`sending`) só nasce
@@ -1269,6 +1275,8 @@ export async function encerrarTransmissao(
   // `sending` é mensagem que pode estar saindo neste instante.
   const id = campanha.provider_broadcast_id;
   if (!id) return 0;
+  // Sem número não há conexão a encerrar; o e-mail nem chega a ter broadcast.
+  if (campanha.channel_session_id === null) return 0;
   const ops = await transmissaoDaConexao(admin, {
     organizationId: campanha.organization_id,
     channelSessionId: campanha.channel_session_id,
