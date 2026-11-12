@@ -246,6 +246,18 @@ export interface DbOpts {
    * mensagem", e não o caso comum.
    */
   conversas?: Linha[];
+  /**
+   * `crm_tasks` — o selo de tarefas do card do quadro (#4321). É a tabela que
+   * cresce COM O FILHO (uma dúzia de tarefas por negócio), então é ela que
+   * mede se a leitura por lote prova o próprio fim em vez de aceitar o corte
+   * de `max_rows`.
+   */
+  tasks?: Linha[];
+  /**
+   * `crm_lead_attachments` — o anexo dos campos `file` do funil (#2829), lido
+   * pelo mesmo caminho das tarefas e pelo mesmo motivo.
+   */
+  attachments?: Linha[];
 }
 
 type Linha = Record<string, unknown>;
@@ -284,6 +296,8 @@ export interface Registro {
   /** As tabelas DEPOIS das escritas — é aqui que se confere que os negócios andaram. */
   tabelas: {
     crm_pipelines: Linha[];
+    crm_tasks: Linha[];
+    crm_lead_attachments: Linha[];
     crm_stages: Linha[];
     crm_leads: Linha[];
     crm_lead_activities: Linha[];
@@ -353,6 +367,8 @@ export function makeDb(opts: DbOpts = {}): Registro {
         { id: PIPE, name: "Pedidos", organization_id: opts.pipelineOrg ?? ORG_ID },
       ]) as unknown as Linha[],
       crm_stages: (opts.stages ?? []) as unknown as Linha[],
+      crm_tasks: (opts.tasks ?? []) as unknown as Linha[],
+      crm_lead_attachments: (opts.attachments ?? []) as unknown as Linha[],
       crm_leads: (opts.leads ?? []) as unknown as Linha[],
       crm_lead_activities: [],
       webhook_sources: (opts.webhookSources ?? []) as Linha[],

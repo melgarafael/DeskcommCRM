@@ -1,3 +1,5 @@
+import { IDS_POR_LOTE } from "./em-lotes";
+
 /**
  * Leitura de uma tabela por PÁGINAS, com o fim provado — nunca por página curta.
  *
@@ -47,4 +49,52 @@ export async function lerPaginado<T>(
     }
   }
   return { linhas, truncado: true, erro: null };
+}
+
+/**
+ * A MESMA prova de fim, aplicada a cada LOTE de um `.in(coluna, ids)`.
+ *
+ * ─── Por que existe (#4321, a metade que sobrou) ───────────────────────────
+ *
+ * `buscaEmLotes` (`lib/supabase/em-lotes.ts`) quebra o `.in()` em lotes de 100
+ * ids — pelo teto de URL do header, não pelo `max_rows`. Só que CADA lote
+ * continua sendo UMA consulta sem `.range()`: o PostgREST corta aquele lote em
+ * 1.000 linhas caladas. Para as leituras 1:1 (um contato, um score, um
+ * `lead_state`) 100 ids nunca passam de 100 linhas e o corte não existe. Para
+ * as que crescem COM O FILHO — `crm_tasks` de cada negócio,
+ * `crm_lead_attachments` de cada campo `file` — 100 negócios passam de mil
+ * linhas com folga, e o quadro perdia o selo de tarefas (ou o anexo) dos
+ * últimos cards do lote sem dizer nada.
+ *
+ * A ordem de cada lote é responsabilidade de quem chama (a coluna da janela e,
+ * no fim, `id`): é ela que faz a página seguinte ser determinística.
+ *
+ * `truncado` só é `true` quando ALGUM lote esgotou `PAGINAS_MAXIMAS` páginas
+ * sem provar o fim — quem chama decide se avisa (o quadro avisa, no
+ * `truncado` do corpo).
+ */
+export async function lerPaginadoEmLotes<T>(
+  ids: readonly string[],
+  pagina: (
+    lote: string[],
+    inicio: number,
+    fim: number,
+    contar: boolean,
+  ) => PromiseLike<{
+    data: T[] | null;
+    error: { message: string } | null;
+    count: number | null;
+  }>,
+): Promise<{ linhas: T[]; truncado: boolean; erro: string | null }> {
+  if (ids.length === 0) return { linhas: [], truncado: false, erro: null };
+  const linhas: T[] = [];
+  let truncado = false;
+  for (let i = 0; i < ids.length; i += IDS_POR_LOTE) {
+    const lote = ids.slice(i, i + IDS_POR_LOTE);
+    const r = await lerPaginado<T>((inicio, fim, contar) => pagina(lote, inicio, fim, contar));
+    if (r.erro) return { linhas, truncado: false, erro: r.erro };
+    linhas.push(...r.linhas);
+    if (r.truncado) truncado = true;
+  }
+  return { linhas, truncado, erro: null };
 }
