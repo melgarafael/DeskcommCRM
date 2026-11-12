@@ -307,6 +307,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     motivo: "o mesmo cookie de sessão, lido no servidor; tem de casar com o do browser",
     marcas: ["sb-deskcomm-auth"],
   },
+  "lib/supabase/identidade-validada.test.ts": {
+    categoria: "INFRA",
+    motivo:
+      "duplo de teste que monta o cookie de sessão para conferir que a chave do cache curto é o hash dos cookies. O nome tem de ser o mesmo de `lib/supabase/server.ts` e `browser.ts`, senão o teste validaria uma chave que produção nunca vê",
+    marcas: ["sb-deskcomm-auth", "sb-deskcomm-auth"],
+  },
   "lib/impersonate/cookie.ts": {
     categoria: "INFRA",
     motivo:

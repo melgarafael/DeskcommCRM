@@ -477,6 +477,17 @@ export const DICIONARIO: Traducoes = {
   },
   "O modelo escolhido é de outro número. Escolha um modelo do número que envia os lembretes.": { es: "La plantilla elegida es de otro número. Elige una plantilla del número que envía los recordatorios." },
   "Escolha um canal de mensagem não arquivado desta organização.": { es: "Elige un canal de mensajes no archivado de esta organización." },
+  // ── IA › Credenciais — o aviso de recurso desligado (#4438) ──────────────
+  "Assinatura do ChatGPT": { es: "Suscripción de ChatGPT" },
+  "Ligada, a assinatura do ChatGPT deixa o agente responder com a conta do ChatGPT da sua empresa, no lugar de uma chave de API da organização. Cada empresa conecta a própria conta nesta tela, assim que o recurso estiver ligado.": {
+    es: "Activada, la suscripción de ChatGPT permite que el agente responda con la cuenta de ChatGPT de tu empresa, en lugar de una clave de API de la organización. Cada empresa conecta su propia cuenta en esta pantalla, en cuanto el recurso esté activado.",
+  },
+  "Este recurso vem desligado de fábrica: quem administra a instalação liga em Administração › Recursos opcionais (/admin/sistema).": {
+    es: "Este recurso viene desactivado de fábrica: quien administra la instalación lo activa en Administración › Recursos opcionales (/admin/sistema).",
+  },
+  "Se você não administra esta instalação, peça a essa pessoa que ligue o recurso. Depois disso, o painel para conectar a conta aparece nesta tela.": {
+    es: "Si no administras esta instalación, pídele a esa persona que active el recurso. Después de eso, el panel para conectar la cuenta aparece en esta pantalla.",
+  },
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
     es: "Cada empresa conecta su propia cuenta de ChatGPT. Abre el enlace e inicia sesión con la cuenta que tiene la suscripción. Al final, el navegador irá a http://127.0.0.1:1455/auth/callback, que quizá no se abra — es normal. Copia la dirección completa de la barra del navegador y pégala aquí.",
@@ -8488,6 +8499,17 @@ export const DICIONARIO: Traducoes = {
   "Só os seus": { es: "Solo los tuyos" },
   "O atendente vê apenas o que foi direcionado a ele — nem a fila. Combine com o rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.": {
     es: "El asesor ve solo lo que se le asignó, ni siquiera la fila. Combínalo con la rotación: si nadie distribuye, nadie recibe nada y las pantallas quedan vacías.",
+  },
+  // #4381 — o texto do modo diz também o que ele NÃO esconde (Contatos,
+  // empresas e pessoas seguem visíveis: `tenant_isolation_contacts_read`).
+  "Qualquer atendente abre a conversa e o negócio de qualquer colega. Contatos, empresas e pessoas continuam visíveis para a empresa toda.": {
+    es: "Cualquier asesor puede abrir la conversación y el negocio de cualquier colega. Los contactos, las empresas y las personas siguen visibles para toda la empresa.",
+  },
+  "O atendente vê a própria carteira e a fila de quem chegou agora — conversas e negócios sem dono. O que já é de um colega fica fora. Contatos, empresas e pessoas continuam visíveis para a empresa toda, mesmo os de clientes que estão com um colega.": {
+    es: "El asesor ve su propia cartera y la fila de quien acaba de llegar — conversaciones y negocios sin dueño. Lo que ya es de otro colega queda fuera. Los contactos, las empresas y las personas siguen visibles para toda la empresa, incluso los de clientes que están con un colega.",
+  },
+  "O atendente vê apenas as conversas e os negócios direcionados a ele — nem a fila. Contatos, empresas e pessoas continuam visíveis para a empresa toda: a lista de Contatos não é recortada por este modo. Combine com o rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.": {
+    es: "El asesor ve solo las conversaciones y los negocios dirigidos a él, ni siquiera la fila. Los contactos, las empresas y las personas siguen visibles para toda la empresa: la lista de Contactos no se recorta en este modo. Combínalo con la rotación: si nadie distribuye, nadie recibe nada y las pantallas quedan vacías.",
   },
   "Os seus e os do seu setor": { es: "Los tuyos y los de tu sector" },
   "O atendente vê a própria carteira e as conversas que estão no setor dele, inclusive as que estão com um colega do mesmo setor — é o modo para cobrir férias e ausências. As conversas dos outros setores continuam fora do alcance dele.": {
@@ -21056,6 +21078,29 @@ export const DICIONARIO: Traducoes = {
   "Robô de mensagens (@BotFather)": { es: "Bot de mensajes (@BotFather)" },
   "Ligado, cada empresa ganha em Conexões uma aba para conectar um robô criado no @BotFather, colando o token dele. As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo robô; grupos e campanhas não passam por ele. Desligado, a aba some e ninguém conecta um robô novo; um robô já conectado segue atendendo, e para desconectá-lo basta ligar o módulo de novo.": { es: "Activado, cada empresa gana en Conexiones una pestaña para conectar un bot creado en @BotFather, pegando su token. Las conversaciones privadas con el bot llegan al Inbox y la respuesta sale por el mismo bot; los grupos y las campañas no pasan por él. Desactivado, la pestaña desaparece y nadie conecta un bot nuevo; un bot ya conectado sigue atendiendo, y para desconectarlo basta con activar el módulo de nuevo." },
   "Cada empresa conecta em Conexões um robô criado no @BotFather, e as conversas privadas com ele chegam ao Inbox.": { es: "Cada empresa conecta en Conexiones un bot creado en @BotFather, y las conversaciones privadas con él llegan al Inbox." },
+
+  // ─── motivo do cancelamento do follow-up (#4428) ──────────────────────────
+  // O motivo da inscrição é gravado como TEXTO e mostrado pelo Dossiê via `t()`
+  // (`DossieDoFollowup.tsx`), então a frase entra aqui como as demais. `{n}` é a
+  // contagem de repetições que o veto carrega — a mesma convenção de
+  // "Este contato tem {n} compromissos na Agenda." para texto que leva número.
+  "A trava de repetição (anti-ban) segurou este envio: o mesmo texto já saiu {n} vez(es) por este número. Varie o texto antes de reenviar.": {
+    es: "El bloqueo por repetición (anti-ban) detuvo este envío: el mismo texto ya salió {n} vez/veces por este número. Varía el texto antes de reenviar.",
+  },
+
+  // ─── Nuvemshop: o catálogo vai para o acervo, não para CRM › Produtos (#4357) ───
+  "Sincroniza pedidos e clientes via OAuth + webhooks. O catálogo de produtos vai para Agente de IA › Conhecimento, na fonte \"Catálogo de produtos\" — não para CRM › Produtos.": { es: "Sincroniza pedidos y clientes por OAuth + webhooks. El catálogo de productos va a Agente de IA › Conocimiento, en la fuente «Catálogo de produtos»: no a CRM › Productos." },
+  "Abrir a fonte no Conhecimento": { es: "Abrir la fuente en Conocimiento" },
+  "É para cá que os produtos da loja vão: o agente consulta esta fonte quando responde.": { es: "Es hacia aquí que van los productos de la tienda: el agente consulta esta fuente cuando responde." },
+  "Lendo o estado do catálogo…": { es: "Leyendo el estado del catálogo…" },
+  "Não consegui ler o estado do catálogo agora. A integração continua conectada.": { es: "No pude leer el estado del catálogo ahora. La integración sigue conectada." },
+  "O catálogo ainda não foi preparado. Assim que a loja enviar produtos, ele aparece aqui.": { es: "El catálogo todavía no fue preparado. En cuanto la tienda envíe productos, aparecerá aquí." },
+  "Ver o acervo do agente": { es: "Ver el acervo del agente" },
+  "Trechos preparados": { es: "Fragmentos preparados" },
+  "Preparado em": { es: "Preparado el" },
+  "Erro no último preparo": { es: "Error en la última preparación" },
+  "Abrir no Conhecimento": { es: "Abrir en Conocimiento" },
+  "Só administradores podem preparar o catálogo de novo.": { es: "Solo los administradores pueden preparar el catálogo de nuevo." },
 };
 
 /**
