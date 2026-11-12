@@ -182,10 +182,26 @@ export async function aplicarEfeitosPosEntrada(
     enviadaEm: new Date(),
   });
   if (notaDaPesquisa.capturada) {
+    const reencerrada = await devolverAoEncerramentoDepoisDaNota(admin, entrada);
     logger.info("[pos-entrada] nota da pesquisa de satisfação gravada", {
       organizationId: entrada.organizationId,
       conversationId: entrada.conversationId,
       nota: notaDaPesquisa.nota,
+      reencerrada,
+    });
+    await audit({
+      action: "satisfacao.nota_recebida",
+      organizationId: entrada.organizationId,
+      resourceType: "conversation",
+      resourceId: entrada.conversationId,
+      requestId: entrada.requestId ?? `satisfacao:${entrada.conversationId}`,
+      metadata: {
+        pedido_id: notaDaPesquisa.pedidoId ?? null,
+        message_id: entrada.messageId,
+        reencerrada,
+        actor_type: "system",
+        actor_id: "pesquisa-de-satisfacao",
+      },
     });
     return;
   }
@@ -225,6 +241,144 @@ export async function aplicarEfeitosPosEntrada(
   // o agente fala (o "cliente voltou" é previsto por `deveCederTurnoAoRetorno`
   // nas duas ordens), e cada evento drenado aqui atrasava o pedido do turno.
   await drenarEventosDoInbound(admin, sinal);
+}
+
+/**
+ * #4023 · A NOTA NÃO REABRE O ATENDIMENTO.
+ *
+ * A mensagem do cliente reabre a conversa encerrada ANTES de chegar aqui: o
+ * INSERT em `messages` roda `fn_service_inbound` (gatilho
+ * `trg_demanda_abre_no_inbound`), que põe a conversa em `open` (ou `claimed`,
+ * com "a conversa fica com quem atendeu"), sobe `service_revision`, carimba
+ * `service_started_at`, solta dono/agente ativo e abre uma DEMANDA nova
+ * ("Responder à nova mensagem do cliente") como `current_demanda_id`. Quando
+ * essa mensagem era só a nota da pesquisa, a equipe via uma conversa aberta
+ * com uma nota dentro.
+ *
+ * O desfazer passa pelas MESMAS portas de produção, e nada de SQL novo:
+ *   - `fn_service_status(…, 'closed', revisão lida)` encerra de novo, como o
+ *     botão "Encerrar" — o CAS da revisão recusa se alguém mexeu na conversa
+ *     entre a reabertura e aqui (aí ela fica aberta, e a pessoa decide);
+ *   - `fn_demanda_encerrar(…, 'nao_procede')` fecha a demanda que a nota abriu,
+ *     como o botão "encerrar" da demanda (timeline e revisão do banco).
+ *
+ * Só quando foi ESTA mensagem quem reabriu: a conversa não está encerrada e o
+ * episódio corrente (`service_revision`) tem esta mensagem e mais nenhuma. Se
+ * outra mensagem entrou no episódio (o cliente escreveu antes, a IA ou a
+ * equipe responderam), o atendimento é de verdade e não se mexe.
+ *
+ * O que NÃO se desfaz, porque não tem porta para isso: a revisão e
+ * `service_closed_at` andam para a frente (o reencerramento é um fechamento
+ * novo, e emite outro `conversation.closed`, que não tem consumidor); o dono
+ * humano que a reabertura soltou não volta (com "a conversa fica com quem
+ * atendeu" ele nunca saiu). O `message.received` desta mensagem já está no
+ * `event_log` desde o INSERT, e os consumidores dele rodam no dreno do cron;
+ * os que conferem a fronteira do atendimento (o worker de resposta da IA)
+ * pulam a conversa encerrada.
+ *
+ * NUNCA lança: a nota já foi gravada; falhar aqui deixa a conversa aberta, que
+ * é o comportamento de antes.
+ */
+async function devolverAoEncerramentoDepoisDaNota(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+): Promise<boolean> {
+  if (!entrada.messageId) return false;
+  try {
+    const { data: conversa, error: erroDaConversa } = await admin
+      .from("conversations")
+      .select("status, service_revision, current_demanda_id")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.conversationId)
+      .maybeSingle();
+    if (erroDaConversa || !conversa) return false;
+    const c = conversa as { status: string; service_revision: number; current_demanda_id: string | null };
+    if (["closed", "resolved", "archived"].includes(c.status)) return false;
+
+    const { data: doEpisodio, error: erroDoEpisodio } = await admin
+      .from("messages")
+      .select("id")
+      .eq("organization_id", entrada.organizationId)
+      .eq("conversation_id", entrada.conversationId)
+      .eq("service_revision", c.service_revision)
+      .limit(2);
+    if (erroDoEpisodio) return false;
+    const ids = ((doEpisodio ?? []) as Array<{ id: string }>).map((m) => m.id);
+    if (ids.length !== 1 || ids[0] !== entrada.messageId) return false;
+
+    const { error: erroAoEncerrar } = await admin.rpc("fn_service_status", {
+      p_org: entrada.organizationId,
+      p_conversation: entrada.conversationId,
+      p_status: "closed",
+      p_expected: c.service_revision,
+    });
+    if (erroAoEncerrar) {
+      logger.warn("[pos-entrada] a conversa reaberta pela nota não voltou a ser encerrada", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        code: erroAoEncerrar.code,
+        detail: erroAoEncerrar.message.slice(0, 160),
+      });
+      return false;
+    }
+
+    if (c.current_demanda_id) await encerrarDemandaAbertaPelaNota(admin, entrada, c.current_demanda_id);
+    return true;
+  } catch (err) {
+    logger.error("[pos-entrada] reencerrar depois da nota falhou (a conversa segue aberta)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+    return false;
+  }
+}
+
+/** A demanda que a nota abriu fecha pela porta do botão "encerrar" (`fn_demanda_encerrar`). */
+async function encerrarDemandaAbertaPelaNota(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+  demandaId: string,
+): Promise<void> {
+  const { data: demanda } = await admin
+    .from("demandas")
+    .select("id, revision, fechada_em")
+    .eq("organization_id", entrada.organizationId)
+    .eq("id", demandaId)
+    .maybeSingle();
+  const d = demanda as { id: string; revision: number; fechada_em: string | null } | null;
+  if (!d || d.fechada_em !== null) return;
+  const { error } = await admin.rpc("fn_demanda_encerrar", {
+    p_org: entrada.organizationId,
+    p_demanda: d.id,
+    p_expected: d.revision,
+    p_desfecho: "nao_procede",
+    // `null` = não foi uma pessoa (mesma regra do opt-out, abaixo).
+    p_actor: null as unknown as string,
+  });
+  if (error) {
+    logger.warn("[pos-entrada] a demanda aberta pela nota não foi encerrada", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      demanda_id: d.id,
+      detail: error.message.slice(0, 160),
+    });
+    return;
+  }
+  await audit({
+    action: "demanda.encerrada",
+    organizationId: entrada.organizationId,
+    resourceType: "demanda",
+    resourceId: d.id,
+    requestId: entrada.requestId ?? `satisfacao:${entrada.conversationId}`,
+    metadata: {
+      desfecho: "nao_procede",
+      motivo: "nota_da_pesquisa_de_satisfacao",
+      contact_id: entrada.contactId,
+      actor_type: "system",
+      actor_id: "pesquisa-de-satisfacao",
+    },
+  });
 }
 
 /**

@@ -283,7 +283,7 @@ describe("#4023 — número solto não engole o atendimento", () => {
       enviadaEm: new Date("2026-11-12T15:05:00.000Z"),
     });
 
-    expect(desfecho).toEqual({ capturada: true, nota: 2 });
+    expect(desfecho).toEqual({ capturada: true, nota: 2, pedidoId: "pedido-1" });
     expect(banco.estado.pedidos[0]?.status).toBe("respondida");
   });
 
@@ -376,7 +376,7 @@ describe("#4023 — a resposta vira nota do pedido", () => {
       messageId: "msg-resposta",
     });
 
-    expect(desfecho).toEqual({ capturada: true, nota: 4 });
+    expect(desfecho).toEqual({ capturada: true, nota: 4, pedidoId: "pedido-1" });
     expect(banco.estado.pedidos[0]?.status).toBe("respondida");
     expect(banco.estado.pedidos[0]?.nota).toBe(4);
     expect(banco.estado.pedidos[0]?.mensagem_da_resposta_id).toBe("msg-resposta");

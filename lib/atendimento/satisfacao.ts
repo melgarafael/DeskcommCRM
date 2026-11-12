@@ -303,6 +303,7 @@ export async function capturarRespostaDeSatisfacao(
 ): Promise<{
   capturada: boolean;
   nota?: number;
+  pedidoId?: string;
   motivo?: "sem_pedido" | "nao_e_nota" | "vencida" | "conversa_seguiu";
 }> {
   const nota = lerNotaDaResposta(entrada.texto);
@@ -368,7 +369,7 @@ export async function capturarRespostaDeSatisfacao(
       .select("id")
       .maybeSingle();
     if (!gravado) return { capturada: false, motivo: "sem_pedido" };
-    return { capturada: true, nota };
+    return { capturada: true, nota, pedidoId: linha.id };
   } catch {
     return { capturada: false, motivo: "nao_e_nota" };
   }
