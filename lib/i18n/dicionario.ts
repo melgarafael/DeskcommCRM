@@ -21041,6 +21041,20 @@ export const DICIONARIO: Traducoes = {
   "A trava de repetição (anti-ban) segurou este envio: o mesmo texto já saiu {n} vez(es) por este número. Varie o texto antes de reenviar.": {
     es: "El bloqueo por repetición (anti-ban) detuvo este envío: el mismo texto ya salió {n} vez/veces por este número. Varía el texto antes de reenviar.",
   },
+
+  // ─── Nuvemshop: o catálogo vai para o acervo, não para CRM › Produtos (#4357) ───
+  "Sincroniza pedidos e clientes via OAuth + webhooks. O catálogo de produtos vai para Agente de IA › Conhecimento, na fonte \"Catálogo de produtos\" — não para CRM › Produtos.": { es: "Sincroniza pedidos y clientes por OAuth + webhooks. El catálogo de productos va a Agente de IA › Conocimiento, en la fuente «Catálogo de produtos»: no a CRM › Productos." },
+  "Abrir a fonte no Conhecimento": { es: "Abrir la fuente en Conocimiento" },
+  "É para cá que os produtos da loja vão: o agente consulta esta fonte quando responde.": { es: "Es hacia aquí que van los productos de la tienda: el agente consulta esta fuente cuando responde." },
+  "Lendo o estado do catálogo…": { es: "Leyendo el estado del catálogo…" },
+  "Não consegui ler o estado do catálogo agora. A integração continua conectada.": { es: "No pude leer el estado del catálogo ahora. La integración sigue conectada." },
+  "O catálogo ainda não foi preparado. Assim que a loja enviar produtos, ele aparece aqui.": { es: "El catálogo todavía no fue preparado. En cuanto la tienda envíe productos, aparecerá aquí." },
+  "Ver o acervo do agente": { es: "Ver el acervo del agente" },
+  "Trechos preparados": { es: "Fragmentos preparados" },
+  "Preparado em": { es: "Preparado el" },
+  "Erro no último preparo": { es: "Error en la última preparación" },
+  "Abrir no Conhecimento": { es: "Abrir en Conocimiento" },
+  "Só administradores podem preparar o catálogo de novo.": { es: "Solo los administradores pueden preparar el catálogo de nuevo." },
 };
 
 /**

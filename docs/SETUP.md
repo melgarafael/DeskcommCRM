@@ -445,7 +445,7 @@ RESEND_FROM_EMAIL=onboarding@resend.dev
 
 ## 8. Nuvemshop — integração e-commerce
 
-**O que é:** Plataforma de e-commerce brasileira. Nossa integração OAuth importa pedidos, produtos, clientes pro CRM.
+**O que é:** Plataforma de e-commerce brasileira. Nossa integração OAuth importa pedidos e clientes, e indexa os produtos na base de conhecimento do agente, na fonte **"Catálogo de produtos"** (Agente de IA › Conhecimento — `/app/ai/knowledge/sources`). Os produtos **não** aparecem em CRM › Produtos: essa tela lê `catalog_products`, que só recebe cadastro manual ou planilha. A própria tela da integração mostra o estado dessa fonte — trechos preparados, último preparo e o erro, se houver — com o atalho **"Preparar de novo"**.
 
 > ℹ️ **Pode pular em dev.** Se essas vars ficarem vazias, a UI mostra "Integração não configurada" e você toca o resto do app normal.
 
