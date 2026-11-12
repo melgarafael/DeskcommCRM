@@ -46,7 +46,13 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       pipelineId: id,
       requestId,
     });
-    return ok(previsao, { requestId });
+    // Mesmo padrão do quadro (`X-Quadro-Truncado`, #4321): o corpo já carrega
+    // `truncado` quando a leitura não provou o fim, e o cabeçalho avisa quem
+    // não abre o corpo. Ausentes quando o fim foi provado.
+    return ok(previsao, {
+      requestId,
+      headers: previsao.truncado ? { "X-Previsao-Truncada": "1" } : undefined,
+    });
   } catch (e) {
     if (e instanceof ApiError) {
       return fail(e.code, e.message, e.status, { requestId, details: e.details });

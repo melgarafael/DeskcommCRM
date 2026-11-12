@@ -316,6 +316,9 @@ describe("o que é interno segue funcionando", () => {
     await listar(`?search=11144477735`);
     expect(estado.servidorComparou).toHaveLength(1);
     expect(estado.buscas.join(",")).not.toContain("id.in.");
-    expect(estado.buscas.join(",")).toContain("name.imatch.");
+    // "O resto" é a busca por nome. Desde a #3918 (fatia 2) ela sai pela coluna
+    // sem acento, e não mais por `name.imatch`: o que este caso prova é que a
+    // busca por nome CONTINUA quando o CPF não acha ninguém, não o operador.
+    expect(estado.buscas.join(",")).toContain("busca_sem_acento.like.");
   });
 });

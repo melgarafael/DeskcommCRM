@@ -473,7 +473,7 @@ describe("o gatilho só pede onde a distribuição automática vale", () => {
 });
 
 /**
- * O CASO QUE MOTIVOU A ENTRADA DESTE GATILHO (doc 309, A1). Desde a 9332
+ * O CASO QUE MOTIVOU A ENTRADA DESTE GATILHO (doc 309, A1). Desde a 9346
  * "Liberar" não pede rodízio: a conversa liberada fica sem dono e sem pedido.
  * Sem este gatilho, o cliente que escrevesse de novo esperaria a equipe mudar de
  * disponibilidade. Aqui a porta é a de produção: `fn_conversation_assign` com
@@ -509,6 +509,90 @@ describe("conversa LIBERADA volta à distribuição quando o cliente escreve de 
     } finally {
       await modoDaOrganizacao("round_robin");
     }
+  });
+});
+
+/**
+ * A ESPERA PELA IA (#3966, migration 9333). No número que ligou
+ * `ai_wait_minutes`, o worker guarda o pedido até o prazo enquanto a IA
+ * qualifica. A mensagem nova traz o pedido para agora, mas não pode furar a
+ * espera nem empurrar o prazo: o `desde` mora no `metadata` do evento, que
+ * `fn_request_channel_routing` não toca.
+ */
+describe("número com espera pela IA: a mensagem nova não fura o prazo", () => {
+  afterEach(async () => {
+    await query("delete from ai_agents where organization_id=$1", [ORG]);
+    await query("delete from ai_agent_versions where organization_id=$1", [ORG]);
+    await query("delete from agent_inbox_items where organization_id=$1 and kind='routing_ia_wait_expired'", [ORG]);
+  });
+
+  it("⭐ o pedido acordado pela mensagem volta para o MESMO prazo e não distribui antes dele", async () => {
+    await query(
+      "insert into channel_routing_policies(organization_id,channel_session_id,distribution_mode,ai_wait_minutes) values($1,$2,'round_robin',60)",
+      [ORG, SESSAO],
+    );
+    await query(
+      `insert into attendant_availability(organization_id,user_id,is_available,capacity,schedule)
+         values($1,$2,true,4,'{}') on conflict(organization_id,user_id) do update set is_available=true,capacity=4,schedule='{}'`,
+      [ORG, DONO],
+    );
+    // O agente publicado NESTE número: é o que faz a IA "estar qualificando".
+    const agente = await query(
+      "insert into ai_agents(organization_id,name,system_prompt,kind) values($1,'Qualificação RTA','Qualifique.','rag_bot') returning id",
+      [ORG],
+    );
+    const agenteId = (agente.rows[0] as { id: string }).id;
+    const versao = await query(
+      `insert into ai_agent_versions
+         (organization_id,agent_id,version_number,system_prompt,provider,model,channel_session_id,status,published_at)
+       values($1,$2,1,'Qualifique.','anthropic','claude-sonnet-4-6',$3,'published',now()) returning id`,
+      [ORG, agenteId, SESSAO],
+    );
+    await query("update ai_agents set published_version_id=$1 where id=$2", [
+      (versao.rows[0] as { id: string }).id,
+      agenteId,
+    ]);
+
+    const { id: conversation, contact } = await conversa({ pedidoInicial: "pending" });
+    const rodar = async (daquiAMs: number) => {
+      const adapter = routingPgSupabase(pool);
+      vi.mocked(createAdminClient).mockReturnValue(adapter.client as never);
+      const result = await runRoutingWorker({ now: new Date(Date.now() + daquiAMs), batchSize: 100 });
+      expect(adapter.errors).toEqual([]);
+      return result;
+    };
+    const dono = async () =>
+      (await query("select assigned_to_user_id from conversations where id=$1", [conversation])).rows[0]
+        ?.assigned_to_user_id as string | null;
+
+    // 1. Nascimento: a IA está qualificando, o pedido fica guardado até o prazo.
+    const primeira = await rodar(5_000);
+    expect(primeira.outcomes.waiting_ia_qualificando, JSON.stringify(primeira)).toBeGreaterThanOrEqual(1);
+    const [guardado] = await vivo(conversation);
+    const prazo = new Date(guardado!.next_attempt_at!).getTime();
+    expect(prazo).toBeGreaterThan(Date.now() + 50 * 60_000);
+
+    // 2. O cliente escreve: o MESMO pedido vem para agora.
+    await clienteEscreve(conversation, contact);
+    const acordados = await vivo(conversation);
+    expect(acordados.map((p) => p.id)).toEqual([guardado!.id]);
+    expect(new Date(acordados[0]!.next_attempt_at!).getTime()).toBeLessThanOrEqual(Date.now() + 5_000);
+
+    // 3. O worker NÃO distribui: devolve o pedido para o MESMO prazo.
+    const segunda = await rodar(5_000);
+    expect(segunda.outcomes.waiting_ia_qualificando, JSON.stringify(segunda)).toBeGreaterThanOrEqual(1);
+    expect(await dono()).toBeNull();
+    const [depois] = await vivo(conversation);
+    expect(new Date(depois!.next_attempt_at!).getTime()).toBe(prazo);
+
+    // 4. Controle: passado o prazo, a espera acaba e a Central avisa uma vez.
+    // (Contagens do worker são globais; a prova é desta conversa.)
+    await rodar(61 * 60_000);
+    const avisos = await query(
+      "select 1 from agent_inbox_items where organization_id=$1 and ref_id=$2 and kind='routing_ia_wait_expired'",
+      [ORG, conversation],
+    );
+    expect(avisos.rows).toHaveLength(1);
   });
 });
 

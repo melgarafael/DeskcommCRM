@@ -33,7 +33,7 @@
  *
  * O quarto caso media o caminho que o autor da issue descreve no defeito 2: o
  * `release` reenfileirava a conversa na MESMA transação, pelo gatilho, e a
- * distribuição a recusava de novo. Ele virou o CONTRATO com a migration 9332
+ * distribuição a recusava de novo. Ele virou o CONTRATO com a migration 9346
  * (decisão do mantenedor: "Liberar" não pede rodízio): a conversa liberada não
  * gera pedido nenhum e continua sem dono. A régua do tipo de contato não mudou
  * — o caso 2 prova que ela segue recusando quem pedir a distribuição.
@@ -220,7 +220,7 @@ describe("rodízio não distribui contato do tipo fornecedor (#3937)", () => {
     // `p_to_user_id` nulo e reason 'release' (release/route.ts:44-49).
     await query("select public.fn_conversation_assign($1,$2,null,'release')", [org, CONV_FORNECEDOR]);
 
-    // A porta do "Liberar" NÃO pede mais o rodízio (migration 9332, decisão do
+    // A porta do "Liberar" NÃO pede mais o rodízio (migration 9346, decisão do
     // mantenedor). Antes dela este caso afirmava `status='pending'`: a conversa
     // liberada era reenfileirada na mesma transação e voltava a girar até o
     // worker recusá-la — o defeito 2 da issue, medido e não consertado.
