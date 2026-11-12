@@ -5,7 +5,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { canalTemRiscoDeBanimento, modoDeCampanhaDoCanal } from "./capabilities";
+import {
+  CANAL_DE_CAMPANHA_EMAIL,
+  canalTemRiscoDeBanimento,
+  modoDeCampanhaDoCanal,
+} from "./capabilities";
 
 describe("modoDeCampanhaDoCanal", () => {
   it("QR manda texto livre; oficial direto e parceiro mandam modelo aprovado", () => {
@@ -16,6 +20,12 @@ describe("modoDeCampanhaDoCanal", () => {
 
   it("o chat da OLX não faz campanha: só existe na thread que o comprador abriu", () => {
     expect(modoDeCampanhaDoCanal("olx")).toBeNull();
+  });
+
+  it("e-mail é MODO de campanha: assunto + corpo, sem número (#3441)", () => {
+    // O canal de e-mail não é `channel_sessions`: quem o nomeia é a constante,
+    // porque o modo continua saindo da capability do canal.
+    expect(modoDeCampanhaDoCanal(CANAL_DE_CAMPANHA_EMAIL)).toBe("email");
   });
 
   it("rede social não faz campanha; provider desconhecido não derruba a tela", () => {

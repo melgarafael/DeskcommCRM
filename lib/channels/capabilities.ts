@@ -335,8 +335,27 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
 }
 
 /**
+ * O canal de campanha por E-MAIL (#3441, fatia E2a).
+ *
+ * Não é `ProviderDeMensagem`: e-mail não é um `channel_sessions` — ninguém pareia
+ * um aparelho, não há janela de 24 horas, não há modelo aprovado pela plataforma
+ * e não há número. O endereço vem de `contacts.email` e o remetente da conta
+ * Resend da organização. Mora AQUI, e não numa condição espalhada, porque a
+ * pergunta "a campanha fala por quê?" continua sendo do canal.
+ *
+ * A régua da conta de envio NÃO mora aqui: esta função responde só o FORMATO do
+ * conteúdo. Quem sabe se a organização tem conta Resend conectada é
+ * `decidirConteudo` (`lib/campanhas/conteudo-do-canal.ts`), que consulta
+ * `organization_resend_accounts` e recusa com motivo próprio.
+ */
+export const CANAL_DE_CAMPANHA_EMAIL = "email";
+
+/** O que uma campanha pode mandar por um canal. `null` = por este canal não há campanha. */
+export type ModoDeCampanha = "text" | "template" | "email";
+
+/**
  * Como uma CAMPANHA fala por este canal: texto livre (`text`), modelo aprovado
- * (`template`) ou não fala (`null`).
+ * (`template`), assunto + corpo (`email`) ou não fala (`null`).
  *
  * Campanha é contato que a empresa inicia — quase sempre fora das 24 horas da
  * última mensagem do cliente. Por isso a pergunta é `freeformOutsideWindow`, e
@@ -348,7 +367,12 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
  * responde `null` em vez de lançar — a tela de campanha lista conexões, e um
  * throw apagaria a lista inteira.
  */
-export function modoDeCampanhaDoCanal(provider: string | null | undefined): "text" | "template" | null {
+export function modoDeCampanhaDoCanal(
+  provider: string | null | undefined,
+): ModoDeCampanha | null {
+  // Antes de `transportaMensagem`: e-mail não transporta mensagem de conversa,
+  // e é justamente por isso que a pergunta anterior responderia `false` para ele.
+  if (provider === CANAL_DE_CAMPANHA_EMAIL) return "email";
   if (!transportaMensagem(provider)) return null;
   // O chat da OLX (#2927) só existe dentro da thread que o comprador abriu num
   // anúncio: não há para quem iniciar contato em lista. Texto livre fora da
