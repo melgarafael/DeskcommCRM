@@ -39,7 +39,7 @@ function cadeia(tabela: string) {
     if (tabela === "catalog_feed_sources" && tipo === "select") estado.ordem.push("leitura:fontes");
     return passo;
   };
-  for (const verbo of ["select", "insert", "update", "delete", "upsert", "order", "in", "is", "not", "limit"]) {
+  for (const verbo of ["select", "insert", "update", "delete", "upsert", "order", "in", "is", "not", "neq", "limit"]) {
     passo[verbo] = registrar(verbo);
   }
   passo.eq = () => passo;
@@ -47,6 +47,9 @@ function cadeia(tabela: string) {
   passo.maybeSingle = async () => ({ data: null, error: null });
   passo.then = (resolve: (v: unknown) => unknown) => {
     if (tabela === "catalog_feed_sources") return Promise.resolve({ data: estado.fontes, error: null }).then(resolve);
+    // A régua da organização operante lê `organizations` numa rodada com fonte:
+    // nenhuma org parada neste duplo, e a lista vazia é o que ela devolve.
+    if (tabela === "organizations") return Promise.resolve({ data: [], error: null }).then(resolve);
     return Promise.resolve({ data: estado.produtos, error: null }).then(resolve);
   };
   return passo;

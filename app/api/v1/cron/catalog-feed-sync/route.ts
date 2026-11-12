@@ -54,6 +54,7 @@ import { aplicarPlano, type BancoDoFeed, type CamposDoUpdate, type LinhaDoProdut
 import { buscarFeedDaUrl } from "@/lib/catalogo/feed-remoto";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
+import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -61,6 +62,14 @@ export const dynamic = "force-dynamic";
 
 /** O teto de fontes por batida — uma por organização, e o cron não é um varredor. */
 const MAXIMO_DE_FONTES = 200;
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso, na ordem do arquivo — lido pelo
+ * `tests/unit/cron-passa-pelo-portao.test.ts`. Aqui o passo é a rodada inteira:
+ * o `try` que lê as fontes, busca os feeds e aplica. É o desenho, não descuido:
+ * sem fonte ativa a batida sai antes, e é justamente o custo que o portão evita.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = ["try"] as const;
 
 interface FonteDoFeed {
   organization_id: string;
@@ -97,8 +106,27 @@ export async function sincronizarFontes(
   if (error) throw new Error(`fonte_do_catalogo_leitura_falhou: ${error.message}`);
 
   const resultados: ResultadoDaFonte[] = [];
+  const lista = (fontes ?? []) as unknown as FonteDoFeed[];
 
-  for (const fonte of (fontes ?? []) as unknown as FonteDoFeed[]) {
+  // Organização parada (suspensa, redigida ou arquivada) não gasta nem sai para
+  // a internet: a régua é a mesma dos outros crons (`lib/organizacao/operante`).
+  // A fonte continua na fila — a organização pode voltar a operar —, só não é
+  // lida nesta batida, e a rodada diz por quê no resumo.
+  const paradas = lista.length > 0 ? new Set(await idsDeOrgsParadas(admin)) : new Set<string>();
+
+  for (const fonte of lista) {
+    if (paradas.has(fonte.organization_id)) {
+      resultados.push({
+        organization_id: fonte.organization_id,
+        criados: 0,
+        atualizados: 0,
+        desativados: 0,
+        inalterados: 0,
+        erros: 0,
+        falhou: "organizacao_parada",
+      });
+      continue;
+    }
     const resumo: ResultadoDaFonte = {
       organization_id: fonte.organization_id,
       criados: 0,
@@ -135,7 +163,12 @@ export async function sincronizarFontes(
 
       const banco: BancoDoFeed = {
         criar: async (linha: LinhaDoProduto) => {
-          const { error: erroInsert } = await admin.from("catalog_products").insert(linha);
+          // O tenant vai EXPLÍCITO no payload, resolvido da fonte (não do plano):
+          // o service role contorna a RLS por desenho, então o `organization_id`
+          // é a única coisa que impede a linha de nascer no tenant errado.
+          const { error: erroInsert } = await admin
+            .from("catalog_products")
+            .insert({ ...linha, organization_id: fonte.organization_id });
           return erroInsert ? erroInsert.message : null;
         },
         atualizar: async (id: string, campos: CamposDoUpdate) => {
