@@ -400,6 +400,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
     painelEm: "/app/connections",
   },
+  {
+    modulo: "campanha_por_email",
+    id: "modulo-campanha-por-email",
+    rotulo: "Campanha por e-mail (em construção)",
+    descricao:
+      "Este interruptor ainda não pode ser ligado: a campanha por e-mail guarda o assunto, o corpo e o público, mas esta versão não envia o e-mail nem tem o descadastro e a lista de quem pediu para não receber. Se ele já estiver ligado, dá para desligar: a opção E-mail some da nova campanha e as campanhas já criadas ficam guardadas.",
+    foraDoMenu: "Não cria porta no menu do CRM: a opção E-mail aparece dentro de Campanhas, ao criar uma nova.",
+  },
 ];
 
 /**

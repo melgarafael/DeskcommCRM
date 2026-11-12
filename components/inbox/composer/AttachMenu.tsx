@@ -111,7 +111,7 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
         ref={docRef}
         type="file"
         multiple
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.xml"
         className="hidden"
         onChange={handle}
       />

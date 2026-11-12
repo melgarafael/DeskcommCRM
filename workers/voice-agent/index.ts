@@ -33,10 +33,13 @@
  * asterisk_channel_id (== o UUID, de propósito) e sobe UMA
  * AudioSocketCallBridge — não importa se a chamada é de entrada ou saída.
  *
- * Sem publicação em event_log (call.ended etc.): nenhum handler em
- * lib/event-log/register-handlers.ts consumiria esses tipos ainda — ver nota
- * na migration 0347. Sumarização/sentimento pós-chamada fica fora do escopo
- * deste esqueleto até existir consumidor real.
+ * O `event_log` ganhou UM tipo nesta fatia (#4365): `voice_call.missed`, quando
+ * a RECEBIDA termina tocando sem ninguém atender — ver
+ * `lib/voip/evento-de-ligacao-perdida.ts`. É o único fato daqui com consumidor
+ * real (o motor de automação); `call.ended`/`call.answered` continuam sem
+ * publicação porque nenhum handler em `lib/event-log/register-handlers.ts` os
+ * consome — ver nota na migration 0347. Sumarização/sentimento pós-chamada
+ * seguem fora do escopo deste esqueleto.
  */
 
 import net from "node:net";
@@ -64,6 +67,7 @@ import { buscarConhecimento, resolverAcervoDoAgente } from "@/lib/ai/knowledge/b
 import { ehOperante } from "@/lib/organizacao/operante";
 import { registrarChamadaDeIa } from "@/lib/ai/usage/registrar-chamada";
 import { logger } from "@/lib/logger";
+import { publicarLigacaoPerdida } from "@/lib/voip/evento-de-ligacao-perdida";
 import { linhaDaLigacao } from "./uso-da-sessao";
 
 const supabaseAdmin = createAdminClient();
@@ -536,23 +540,44 @@ export async function handleChannelDestroyed(event: AriEvent) {
   const channelId = event.channel?.id;
   if (!channelId) return;
 
+  // As colunas vêm no `select` do UPDATE porque é este o único ponto que sabe
+  // que a recebida morreu TOCANDO: quem publica o `voice_call.missed` precisa do
+  // contato, do telefone e da organização, e uma segunda leitura abriria a
+  // janela para a linha mudar entre o fechamento e o evento.
   const { data, error } = await supabaseAdmin
     .from("voice_calls")
     .update({ status: "ended", end_reason: "timeout", ended_at: new Date().toISOString() })
     .in("asterisk_channel_id", idsDaLinhaDoCanal(channelId))
     .eq("status", "ringing")
-    .select("id")
+    .select("id, organization_id, direction, contact_id, peer_phone")
     .maybeSingle();
 
   if (error) {
     console.error(`[voice-agent] falha ao marcar timeout pro canal ${channelId}:`, error.message);
     return;
   }
-  if (data) {
-    console.info(
-      `[voice-agent] chamada ${data.id} marcada sem resposta (${event.cause_txt ?? "motivo desconhecido"})`,
-    );
-  }
+  if (!data) return;
+
+  console.info(
+    `[voice-agent] chamada ${data.id} marcada sem resposta (${event.cause_txt ?? "motivo desconhecido"})`,
+  );
+
+  // SÓ A RECEBIDA É "PERDIDA" (#4365): quem ligou e não foi atendido é quem
+  // precisa de resposta. Uma ligação FEITA daqui que tocou e caiu não gera
+  // evento — quem discou já sabe, e disparar automação nela mandaria mensagem
+  // para um contato que nunca ligou.
+  //
+  // O filtro `status = 'ringing'` acima também é a idempotência: esta linha só
+  // casa uma vez, então o evento nasce uma vez por ligação. Atendida
+  // (`connected`) e recusada pela tela (`ended`) não casam e não publicam.
+  if (data.direction !== "inbound") return;
+  await publicarLigacaoPerdida(supabaseAdmin, {
+    organizationId: data.organization_id as string,
+    callId: data.id as string,
+    contactId: (data.contact_id as string | null) ?? null,
+    peerPhone: (data.peer_phone as string | null) ?? null,
+    endReason: "timeout",
+  });
 }
 
 function main() {

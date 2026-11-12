@@ -167,6 +167,7 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "reservas_de_lugar",
       "link_de_pagamento",
       "canal_bot",
+      "campanha_por_email",
     ]);
   });
 });

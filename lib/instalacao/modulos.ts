@@ -41,7 +41,7 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento` e `canal_bot` ligam/desligam por uma linha em `platform_config`
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot` e `campanha_por_email` ligam/desligam por uma linha em `platform_config`
  * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera` e `ouvidoria` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
@@ -80,6 +80,7 @@ export const MODULOS_OPCIONAIS = [
   "reservas_de_lugar",
   "link_de_pagamento",
   "canal_bot",
+  "campanha_por_email",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -111,6 +112,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "reservas_de_lugar",
   "link_de_pagamento",
   "canal_bot",
+  "campanha_por_email",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -184,6 +186,13 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // fornecedor a mais. Desligado, a aba de Conexões some e conectar responde
   // 404; um robô já conectado segue atendendo até a empresa desconectá-lo.
   canal_bot: "MODULO_CANAL_BOT",
+  // Doc 305 (A): a campanha por e-mail do #4289 chegou em partes. Esta guarda o
+  // assunto, o corpo e o público; o envio, o descadastro em um clique e a lista
+  // de quem pediu para não receber ainda não existem, e por isso o módulo está em
+  // `MODULOS_AINDA_NAO_LIGAVEIS`: a tela não oferece o interruptor. Desligado, a opção
+  // "E-mail" não aparece na nova campanha e criar ou editar uma responde 404
+  // (`decidirConteudo`, em `lib/campanhas/conteudo-do-canal.ts`).
+  campanha_por_email: "MODULO_CAMPANHA_POR_EMAIL",
 };
 
 const LIGADO = "ligado";
@@ -319,10 +328,14 @@ export function esquecerMemoDosModulos(): void {
 /**
  * Módulos que existem no código mas ainda NÃO podem ser ligados por quem opera
  * (a capacidade chega em partes e o que a torna usável ainda não entrou).
- * Vazia desde a PR 3a da cobrança do revendedor, que trouxe o provedor de
- * pagamento. O mecanismo fica: a próxima capacidade entregue em partes o usa.
+ * A cobrança saiu daqui na PR 3a, que trouxe o provedor de pagamento.
+ *
+ * `campanha_por_email` (doc 305, A): a base do #4289 guarda assunto, corpo e
+ * público, mas não envia. Ligar hoje levaria a pessoa a criar uma campanha que
+ * não sai. Sai desta lista quando existir o envio com descadastro em um clique
+ * e a lista de quem pediu para não receber.
  */
-export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = [];
+export const MODULOS_AINDA_NAO_LIGAVEIS: readonly ModuloOpcional[] = ["campanha_por_email"];
 
 /**
  * Módulos que são decisão SÓ de quem administra o servidor e não aparecem para a
