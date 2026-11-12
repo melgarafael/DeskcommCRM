@@ -6753,6 +6753,17 @@ export const DICIONARIO: Traducoes = {
     es: "No se aplicó el CSS guardado porque contiene una regla no válida.",
   },
   "Regras CSS": { es: "Reglas CSS" },
+  "CSS dos dois temas": { es: "CSS de los dos temas" },
+  "CSS do tema escuro": { es: "CSS del tema oscuro" },
+  "Estas regras valem nos dois temas. As do tema escuro vencem quando ele está ativo.": {
+    es: "Estas reglas valen en los dos temas. Las del tema oscuro ganan cuando está activo.",
+  },
+  "Estas regras valem só quando o tema escuro está ativo.": {
+    es: "Estas reglas valen solo cuando el tema oscuro está activo.",
+  },
+  "Mesmas regras de seletor e propriedades do campo acima.": {
+    es: "Las mismas reglas de selector y propiedades del campo de arriba.",
+  },
   "Use seletores de classe e propriedades visuais (cores, bordas, sombras e tipografia). Sem seletores globais ou por ID, @rules, URLs, scripts, !important ou propriedades de layout e posicionamento. Até 16 KB. Deixe vazio e salve para remover.": {
     es: "Usa selectores de clase y propiedades visuales (colores, bordes, sombras y tipografía). Sin selectores globales o por ID, reglas @, URL, scripts, !important ni propiedades de diseño o posicionamiento. Hasta 16 KB. Déjalo vacío y guarda para quitarlo.",
   },

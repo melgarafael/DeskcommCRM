@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e862cd45e445 -->
+<!-- traduzido-de: docs/white-label.md@b80821cd01bd -->
 
 [🇧🇷 Português](white-label.md) · [🇺🇸 English](white-label.en.md) · 🇪🇸 Español
 
@@ -25,6 +25,10 @@ El color es **derivado**, no aplicado en crudo: de un hex salen once tonos en lo
 En la misma página **Marca de la instalación**, el administrador de la instalación puede agregar CSS para ajustes visuales finos en el login y en las pantallas de todas las organizaciones. La hoja se aplica globalmente, sin reiniciar el servidor, y se puede quitar borrando el contenido y guardando.
 
 Por seguridad, no es un editor de CSS sin restricciones: acepta selectores de clase y propiedades visuales de color, borde, sombra y tipografía. Rechaza selectores globales o por ID, reglas `@`, URL y cargas remotas, funciones fuera de `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comentarios, escapes, scripts, `!important` y propiedades de diseño o posicionamiento. El límite es 16 KB. Si una hoja guardada deja de superar la validación, no se aplica y la página Marca muestra el motivo. Como esta configuración pertenece a la instalación, también afecta a todas las organizaciones que atiende; revisa las pantallas después de guardar.
+
+El editor tiene **dos campos**. El primero vale en los dos temas; el segundo, **CSS del tema oscuro**, vale solo con el tema oscuro activo — se aplica con el alcance del tema, así que una regla escrita allí no aparece en el claro. Es la forma de elegir un color que funcione en el oscuro sin estropear el claro. Las dos hojas se validan juntas: si cualquiera tiene una regla no válida, no se aplica ninguna y la página Marca indica qué campo corregir.
+
+El menú lateral tiene clases estables, pensadas para este CSS: por grupo (`nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise`, `nav-grupo-organizacao`) y por destino (`nav-item-inbox`, `nav-item-kanban`, etcétera). Forman parte del contrato de la pantalla y no cambian entre versiones; las clases utilitarias de Tailwind, sí.
 
 Ejemplo:
 

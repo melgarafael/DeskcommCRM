@@ -24,6 +24,10 @@ Na mesma página **Marca da instalação**, o administrador da instalação pode
 
 Por segurança, não é um editor de CSS irrestrito: aceita seletores de classes e propriedades visuais de cor, borda, sombra e tipografia. Recusa seletores globais ou por ID, regras `@`, URLs e carregamento remoto, funções fora de `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comentários, escapes, scripts, `!important` e propriedades de layout e posicionamento. O limite é 16 KB. Se uma folha já salva deixar de passar na validação, ela não é aplicada e a tela Marca mostra o motivo. Como a configuração é da instalação, qualquer ajuste também afeta as organizações atendidas por ela; confira as telas depois de salvar.
 
+O editor tem **dois campos**. O primeiro vale nos dois temas; o segundo, **CSS do tema escuro**, vale só com o tema escuro ativo — ele é aplicado com o escopo do tema, então uma regra escrita ali não aparece no claro. É assim que se escolhe uma cor que funcione no escuro sem estragar o claro. As duas folhas são validadas juntas: se qualquer uma tiver regra inválida, nenhuma é aplicada e a tela Marca mostra qual campo corrigir.
+
+O menu lateral tem classes estáveis, pensadas para este CSS: por grupo (`nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise`, `nav-grupo-organizacao`) e por destino (`nav-item-inbox`, `nav-item-kanban`, e assim por diante). Elas fazem parte do contrato da tela e não mudam entre versões; as classes utilitárias do Tailwind, sim.
+
 Exemplo:
 
 ```css
