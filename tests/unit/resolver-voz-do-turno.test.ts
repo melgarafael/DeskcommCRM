@@ -23,6 +23,7 @@ vi.mock("@/lib/agent-engine/edge/llm/run-model-call", () => ({
 }));
 
 import { resolverVozDoTurno } from "@/lib/agent-engine/agent/voz-do-turno";
+import { textosDoClienteNoHistorico, type MensagemDoHistorico } from "@/lib/agent-engine/agent/pedido-de-audio";
 import { LlmBudgetExceededError } from "@/lib/agent-engine/edge/llm/run-model-call";
 
 function pool(settings: Record<string, unknown> | null = { voz: { voice_id: "v1" } }) {
@@ -348,6 +349,63 @@ describe("resolverVozDoTurno", () => {
         vozQuando: "quando_pede",
         inboundType: "audio",
         inboundText: "prefiro texto, por favor",
+      });
+      expect(r).toBeNull();
+    });
+  });
+
+  /**
+   * A CONVERSA (#4345) — o arremate pedido pelo mantenedor em 12/11.
+   *
+   * A decisão não olha a mensagem atual: olha a janela de textos do cliente que
+   * o turno já carrega. Estes dois casos são de CONVERSA, não de frase — é a
+   * diferença entre "quem escreveu que não lê recebe áudio" e "quem escreveu que
+   * não lê continua recebendo áudio na mensagem seguinte".
+   */
+  describe("vozQuando='quando_pede': a conversa, não a mensagem (#4345)", () => {
+    function conversa(mensagens: MensagemDoHistorico[], atual: string): string[] {
+      return textosDoClienteNoHistorico(mensagens, atual);
+    }
+
+    it("pedido de áudio de duas mensagens atrás continua valendo no turno de agora", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const textos = conversa(
+        [
+          { direction: "inbound", body: "oi, boa tarde" },
+          { direction: "inbound", body: "não sei ler, manda áudio" },
+          { direction: "outbound", body: "Claro! Te mando por áudio." },
+          { direction: "inbound", body: "e quanto custa?" },
+        ],
+        "e quanto custa?",
+      );
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "text",
+        inboundTexts: textos,
+      });
+      expect(r).toMatchObject({ voiceId: "v1" });
+    });
+
+    it("'prefiro texto' depois do pedido volta ao texto", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const textos = conversa(
+        [
+          { direction: "inbound", body: "não sei ler, manda áudio" },
+          { direction: "outbound", body: "Te mando por áudio." },
+          { direction: "inbound", body: "pensando bem, prefiro texto" },
+        ],
+        "pensando bem, prefiro texto",
+      );
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "text",
+        inboundTexts: textos,
       });
       expect(r).toBeNull();
     });

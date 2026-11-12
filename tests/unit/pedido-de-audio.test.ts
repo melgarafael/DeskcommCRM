@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { lerPedidoDeAudio } from "@/lib/agent-engine/agent/pedido-de-audio";
+import {
+  lerPedidoDeAudio,
+  textosDoClienteNoHistorico,
+  type MensagemDoHistorico,
+} from "@/lib/agent-engine/agent/pedido-de-audio";
 
 /**
  * A RÉGUA DA LEITURA (#4345) — os quatro exemplos que o autor da issue deu
@@ -106,6 +110,109 @@ describe("lerPedidoDeAudio", () => {
 
     it("a última instrução do turno vence: 'não consigo ler, mas prefiro texto'", () => {
       expect(lerPedidoDeAudio("não consigo ler, mas prefiro texto")).toBe("texto");
+    });
+  });
+
+  /**
+   * AS NOVE FRASES DO MANTENEDOR (comentário de 12/11 05:54Z) — os dois sentidos
+   * do erro, frase por frase, com o veredito escrito ao lado.
+   *
+   * Cada caso é o contrato: nenhum pode ser afrouxado para passar. As quatro
+   * primeiras falhavam por não virar áudio, as quatro do meio por virar áudio
+   * sem pedido, e a última por não voltar ao texto.
+   */
+  describe("as frases medidas pelo mantenedor (12/11)", () => {
+    describe("deveria virar áudio e não virava", () => {
+      it("'manda um audiozinho' ⇒ áudio (o diminutivo é o mesmo pedido)", () => {
+        expect(lerPedidoDeAudio("manda um audiozinho")).toBe("audio");
+      });
+
+      it("'fala comigo por áudio' ⇒ áudio (o verbo é 'falar', não 'mandar')", () => {
+        expect(lerPedidoDeAudio("fala comigo por áudio")).toBe("audio");
+      });
+
+      it("'sou analfabeto' ⇒ áudio (a limitação é de leitura, sem o verbo 'ler')", () => {
+        expect(lerPedidoDeAudio("sou analfabeto")).toBe("audio");
+      });
+
+      it("'não consigo ler essa letra pequena' ⇒ áudio (o objeto é o tamanho da letra, não um documento)", () => {
+        expect(lerPedidoDeAudio("não consigo ler essa letra pequena")).toBe("audio");
+      });
+    });
+
+    describe("virava áudio sem ter pedido", () => {
+      it("'vou te mandar um áudio' ⇒ nenhum (o áudio é o que ELE vai mandar)", () => {
+        expect(lerPedidoDeAudio("vou te mandar um áudio")).toBe("nenhum");
+      });
+
+      it("'posso mandar um áudio?' ⇒ nenhum (pergunta permissão para ELE mandar)", () => {
+        expect(lerPedidoDeAudio("posso mandar um áudio?")).toBe("nenhum");
+      });
+
+      it("'consegue ouvir meu áudio?' ⇒ nenhum (pergunta se o áudio dele chegou)", () => {
+        expect(lerPedidoDeAudio("consegue ouvir meu áudio?")).toBe("nenhum");
+      });
+
+      it("'quero marcar consulta pra ouvir o resultado do exame' ⇒ nenhum (o 'ouvir' é do exame)", () => {
+        expect(lerPedidoDeAudio("quero marcar consulta pra ouvir o resultado do exame")).toBe("nenhum");
+      });
+    });
+
+    describe("deveria voltar ao texto e não voltava", () => {
+      it("'não estou conseguindo ouvir agora, escreve' ⇒ texto (recusa de agora + imperativo do texto)", () => {
+        expect(lerPedidoDeAudio("não estou conseguindo ouvir agora, escreve")).toBe("texto");
+      });
+    });
+  });
+
+  /**
+   * A CONVERSA, não a frase: a lista de textos do cliente, do mais antigo ao
+   * mais recente, como o turno a monta a partir do histórico que já carregou.
+   */
+  describe("a conversa inteira (#4345)", () => {
+    it("pedido de áudio feito duas mensagens atrás continua valendo no turno de agora", () => {
+      const historico: MensagemDoHistorico[] = [
+        { direction: "inbound", body: "oi, boa tarde" },
+        { direction: "inbound", body: "não sei ler, manda áudio" },
+        { direction: "outbound", body: "Claro! Te mando por áudio." },
+        { direction: "inbound", body: "e quanto custa?" },
+      ];
+      const textos = textosDoClienteNoHistorico(historico, "e quanto custa?");
+      expect(textos).toEqual(["oi, boa tarde", "não sei ler, manda áudio", "e quanto custa?"]);
+      expect(lerPedidoDeAudio(textos)).toBe("audio");
+    });
+
+    it("'prefiro texto' DEPOIS do pedido derruba o pedido e volta ao texto", () => {
+      const historico: MensagemDoHistorico[] = [
+        { direction: "inbound", body: "não sei ler, manda áudio" },
+        { direction: "outbound", body: "Te mando por áudio." },
+        { direction: "inbound", body: "pensando bem, prefiro texto" },
+      ];
+      expect(lerPedidoDeAudio(textosDoClienteNoHistorico(historico, "pensando bem, prefiro texto"))).toBe(
+        "texto",
+      );
+    });
+
+    it("o turno de agora que não está no histórico entra como o mais recente", () => {
+      const historico: MensagemDoHistorico[] = [{ direction: "inbound", body: "não sei ler, manda áudio" }];
+      expect(textosDoClienteNoHistorico(historico, "e quanto custa?")).toEqual([
+        "não sei ler, manda áudio",
+        "e quanto custa?",
+      ]);
+    });
+
+    it("a mesma mensagem não é contada duas vezes quando já é a última do histórico", () => {
+      const historico: MensagemDoHistorico[] = [{ direction: "inbound", body: "e quanto custa?" }];
+      expect(textosDoClienteNoHistorico(historico, "e quanto custa?")).toEqual(["e quanto custa?"]);
+    });
+
+    it("só as mensagens do cliente entram, e a janela corta as mais antigas", () => {
+      const historico: MensagemDoHistorico[] = [
+        { direction: "inbound", body: "primeira" },
+        { direction: "outbound", body: "resposta da loja" },
+        { direction: "inbound", body: "segunda" },
+      ];
+      expect(textosDoClienteNoHistorico(historico, null, 1)).toEqual(["segunda"]);
     });
   });
 });
