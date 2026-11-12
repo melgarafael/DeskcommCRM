@@ -22,7 +22,14 @@ const deps = vi.hoisted(() => ({
   audit: vi.fn(),
 }));
 
-vi.mock("@/lib/api/auth-dual", () => ({ resolveAuthDual: deps.auth }));
+vi.mock("@/lib/api/auth-dual", () => ({
+  resolveAuthDual: deps.auth,
+  // O teto de escrita é cobrado pela cerca `rotas-bearer-aplicam-teto-de-escrita`
+  // em TODA rota com `resolveAuthDual`; aqui ele devolve "dentro da cota" para o
+  // caso medir a exportação, não o limitador. O 429 de verdade é provado em
+  // `conversations/[id]/media/route.test.ts`.
+  tetoDeEscritaDoToken: vi.fn(async () => null),
+}));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: () => deps.pool() }));
 vi.mock("@/lib/audit", () => ({ audit: deps.audit }));
 

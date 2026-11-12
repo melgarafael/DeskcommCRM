@@ -40,7 +40,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import {
@@ -72,6 +72,15 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     scope: "mcp:read",
   });
   if (!auth.ok) return auth.response;
+
+  // TETO DO TOKEN (#1999). Exportar é leitura e o teto se chama "de escrita",
+  // mas o que ele conta é a chamada feita com Bearer — e a cerca
+  // `rotas-bearer-aplicam-teto-de-escrita` cobra o par chamada+return em TODA
+  // rota que chama `resolveAuthDual`, sem distinguir método: quando o proxy
+  // não decide (a porta abaixo), nada a montante conta a chamada. Mesmo
+  // recurso de `prospecting/route.ts`: a cota é da área, não da rota.
+  const teto = await tetoDeEscritaDoToken(auth, "prospecting", requestId);
+  if (teto) return teto;
 
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "Campanha inválida.", 400, { requestId, headers });
