@@ -127,7 +127,14 @@ describe("renomear o motivo carrega a categoria (#4437)", () => {
   });
 
   it("digitar letra a letra também mantém — cada tecla é um diff 1:1", () => {
-    let atual = { "Possível fraude": "Risco" };
+    // O mapa é anotado como `Record<string, string>` de propósito: o retorno de
+    // `categoriasQueSobrevivemAoTexto` é um record de strings, e deixar o tipo
+    // ser inferido do literal (`{ "Possível fraude": string }`) exigiria essa
+    // chave em TODA atribuição — o `tsc` do CI reprovava em TS2741 (run do head
+    // 355fb3c516, verify-parte (1)). A chave é o rótulo que o funil usa
+    // ("Possível fraude", ver `FUNIL_DA_ISSUE`); a categoria é a mesma do
+    // vínculo gravado à mão.
+    let atual: Record<string, string> = { "Possível fraude": "Risco" };
     let rotulos = ["Possível fraude"];
     for (const passo of ["Possível fraud", "Possível fraude r", "Possível fraude re", "Risco alto"]) {
       const proximos = [passo];
