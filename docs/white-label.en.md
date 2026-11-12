@@ -1,4 +1,4 @@
-<!-- traduzido-de: docs/white-label.md@e862cd45e445 -->
+<!-- traduzido-de: docs/white-label.md@b80821cd01bd -->
 
 [🇧🇷 Português](white-label.md) · 🇺🇸 English · [🇪🇸 Español](white-label.es.md)
 
@@ -25,6 +25,10 @@ The color is **derived**, not applied raw: one hex yields eleven shades in both 
 On the same **Installation Brand** page, the installation administrator can add CSS for fine visual adjustments to the login and the screens of every organization. The stylesheet applies globally without restarting the server, and can be removed by clearing the field and saving.
 
 For safety, this is not an unrestricted CSS editor: it accepts class selectors and visual color, border, shadow, and typography properties. It rejects global or ID selectors, `@` rules, URLs and remote loading, functions other than `rgb`/`rgba`/`hsl`/`hsla`/`var`/`calc`/`min`/`max`/`clamp`, comments, escapes, scripts, `!important`, and layout or positioning properties. The limit is 16 KB. If a saved stylesheet no longer passes validation, it is not applied and the Brand page shows the reason. Because this setting belongs to the installation, every organization it serves is affected; review the screens after saving.
+
+The editor has **two fields**. The first applies to both themes; the second, **Dark theme CSS**, applies only while the dark theme is active — it is emitted scoped to the theme, so a rule written there never shows up in the light theme. That is how to pick a color that works in the dark without ruining the light one. Both stylesheets are validated together: if either has an invalid rule, neither is applied and the Brand page says which field to fix.
+
+The sidebar has stable classes meant for this CSS: per group (`nav-grupo-atendimento`, `nav-grupo-crm`, `nav-grupo-ia`, `nav-grupo-canais`, `nav-grupo-analise`, `nav-grupo-organizacao`) and per destination (`nav-item-inbox`, `nav-item-kanban`, and so on). They are part of the screen contract and do not change between releases; the Tailwind utility classes do.
 
 Example:
 

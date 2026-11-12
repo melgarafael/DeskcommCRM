@@ -1,7 +1,9 @@
 # CSS personalizado: quando a folha tranca a tela
 
-O CSS personalizado da instalação (Marca da instalação › CSS personalizado, chave
-`APP_CUSTOM_CSS` em `public.platform_config`) vale no login e em todas as telas.
+O CSS personalizado da instalação (Marca da instalação › CSS personalizado) tem
+DUAS chaves em `public.platform_config`: `APP_CUSTOM_CSS`, que vale no login e em
+todas as telas nos dois temas, e `APP_CUSTOM_CSS_DARK`, que só vale com o tema
+escuro ativo (o app a aplica prefixada com `:root:root[data-theme="dark"]`).
 O validador recusa o que carrega recurso, sai da tag `<style>` ou mexe em layout,
 mas uma folha **válida** ainda pode deixar texto invisível (`color: transparent`,
 `font-size: 0`) ou cobrir a tela com `box-shadow` — inclusive o login e a tela
@@ -17,7 +19,8 @@ lê; ver `lib/branding/sem-css-personalizado.ts`).
 1. Abra `https://SEU-DOMINIO/login?sem_css=1` e entre.
 2. Digite na barra `https://SEU-DOMINIO/admin/marca?sem_css=1` (a navegação por
    link dentro do app não recarrega o layout; o endereço digitado, sim).
-3. Apague o conteúdo do campo **Regras CSS** e clique em **Salvar CSS**.
+3. Apague o conteúdo dos campos **CSS dos dois temas** e **CSS do tema escuro** e
+   clique em **Salvar CSS**.
 
 ## Saída pelo servidor
 
@@ -30,8 +33,11 @@ cliente de Postgres no host). O porquê de cada linha está em
 P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
 if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
 psql_vps() { bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && psql_run "$@"' _ "$@"; }
-psql_vps -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"
+psql_vps -c "delete from public.platform_config where chave in ('APP_CUSTOM_CSS', 'APP_CUSTOM_CSS_DARK');"
 ```
+
+Apagar só a chave do claro mantém a do escuro valendo quando o tema escuro está
+ativo — se a tela estiver ilegível nos dois temas, apague as duas.
 
 O app guarda a folha em memória por até 30 segundos; depois disso ela some de
 todas as telas, sem reiniciar nada. A remoção é auditada só quando feita pela
