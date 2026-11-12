@@ -17,8 +17,9 @@
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ReactFlowProvider } from "@xyflow/react";
-import type { ComponentProps, ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/hooks/webhooks/useWebhookSources", async (original) => ({
@@ -92,8 +93,41 @@ describe("os rótulos que a tela passava por t() sem serem chave", () => {
   });
 });
 
+/**
+ * ─── O DELTA (#3687) — declarado, não escondido ────────────────────────────
+ *
+ * Até o #3687, `ActionConfigForm` desenhava três botões inline na mensagem da
+ * ação: `Nome`, `Telefone` e `Título do lead` — uma lista local, uma por tela.
+ * O PR trocou isso DE PROPÓSITO pelo seletor compartilhado: um botão
+ * « Inserir variável » que abre a lista do catálogo (`SeletorDeVariavel`),
+ * porque a lista local era justamente o defeito que a issue #3687 mediu (a
+ * mesma variável existia numa tela e faltava na outra).
+ *
+ * O TRABALHO É O MESMO, A FORMA MUDOU: escolher a variável e inserir o token no
+ * texto. O que este bloco passa a cobrar é o seletor — a lista abre, o item do
+ * catálogo está lá com o token e com o rótulo no idioma de quem usa, e clicar
+ * insere o token no corpo. As três variáveis antigas continuam alcançáveis:
+ * `{{nome}}` e `{{telefone}}` são itens do catálogo e `{{lead.*}}` é o item de
+ * caminho que cobre `{{lead.title}}`.
+ */
+const ABRIR_SELETOR = { es: "Insertar variable", pt: "Inserir variável" } as const;
+
+/** O item da lista: o nome acessível concatena o token e o rótulo do catálogo. */
+function itemDoSeletor(token: string, rotulo: string) {
+  return screen.getByRole("button", {
+    name: (nome) => nome.includes(token) && nome.includes(rotulo),
+  });
+}
+
+/** O corpo do e-mail guardado em estado: clicar no item tem de mexer no texto. */
+function EmailComCorpo() {
+  const [acao, setAcao] = useState(() => defaultActionConfig("send_email"));
+  return <ActionConfigForm action={acao} onChange={setAcao} />;
+}
+
 describe("as ações de uma automação", () => {
-  it("em espanhol: os exemplos, o segredo e os botões de variável", () => {
+  it("em espanhol: os exemplos, o segredo e o seletor de variável", async () => {
+    const user = userEvent.setup();
     render(noIdioma("es", <ActionConfigForm action={defaultActionConfig("add_tag")} onChange={() => {}} />));
     expect(screen.getByPlaceholderText("bienvenida, nuevo-lead")).toBeTruthy();
     cleanup();
@@ -102,15 +136,31 @@ describe("as ações de uma automação", () => {
     expect(screen.getByPlaceholderText("una contraseña solo tuya")).toBeTruthy();
     cleanup();
     render(noIdioma("es", <ActionConfigForm action={defaultActionConfig("send_email")} onChange={() => {}} />));
-    for (const nome of ["Nombre", "Teléfono", "Título del lead"]) expect(screen.getByRole("button", { name: nome })).toBeTruthy();
+    // O botão do seletor é texto de tela: em espanhol, espanhol.
+    await user.click(screen.getByRole("button", { name: ABRIR_SELETOR.es }));
+    // A variável que antes era o botão « Nombre » agora é item do catálogo, com
+    // a descrição traduzida — o token e o rótulo têm de estar os dois.
+    expect(itemDoSeletor("{{nome}}", "Nombre del contacto, tal como está en el registro")).toBeTruthy();
   });
 
-  it("em português, como antes", () => {
+  it("em português, como antes", async () => {
+    const user = userEvent.setup();
     render(noIdioma("pt-BR", <ActionConfigForm action={defaultActionConfig("add_tag")} onChange={() => {}} />));
     expect(screen.getByPlaceholderText("boas-vindas, novo-lead")).toBeTruthy();
     cleanup();
-    render(noIdioma("pt-BR", <ActionConfigForm action={defaultActionConfig("send_email")} onChange={() => {}} />));
-    for (const nome of ["Nome", "Telefone", "Título do lead"]) expect(screen.getByRole("button", { name: nome })).toBeTruthy();
+    render(noIdioma("pt-BR", <EmailComCorpo />));
+    await user.click(screen.getByRole("button", { name: ABRIR_SELETOR.pt }));
+    expect(itemDoSeletor("{{nome}}", "Nome do contato, como está no cadastro")).toBeTruthy();
+    expect(itemDoSeletor("{{telefone}}", "Telefone do contato, como está no cadastro")).toBeTruthy();
+    // O caminho do negócio (`{{lead.title}}` era um botão fixo) virou o item
+    // de curinga do catálogo; o token específico continua documentado nele.
+    expect(itemDoSeletor("{{lead.*}}", "Caminho do NEGÓCIO")).toBeTruthy();
+    // O efeito do botão antigo continua sendo o do seletor: o token entra no corpo.
+    await user.click(itemDoSeletor("{{nome}}", "Nome do contato, como está no cadastro"));
+    const corpo = screen
+      .getAllByRole("textbox")
+      .find((campo) => (campo as HTMLTextAreaElement).value === "{{nome}}");
+    expect(corpo).toBeTruthy();
   });
 });
 
