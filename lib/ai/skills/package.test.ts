@@ -62,11 +62,70 @@ Apresente-se e pergunte sobre a agenda.`;
     if (!out.ok) expect(out.error.code).toBe('skill_md_missing');
   });
 
-  it('frontmatter inválido (sem any_keywords) → erro de ensino', () => {
-    const bad = `---\nname: x\ndescription: y\nmatcher: {}\n---\ncorpo`;
-    const out = parseSkillPackage(makeZip({ 'SKILL.md': bad }));
+  // #4458: o formato que o ecossistema publica (blader/humanizer e a maioria das
+  // skills de frontmatter solto) NÃO traz matcher. Sem matcher a skill não entra
+  // por palavra no turno — ela só roda quando o roteiro a puxa pelo nome.
+  it('#4458: SKILL.md sem matcher (formato do ecossistema) importa, com matcher vazio', () => {
+    const semMatcher = `---
+name: reescreve-prosa
+description: |
+  Reescreve texto com cara de IA para soar como a pessoa que escreveu.
+  Use ao revisar ou editar prosa.
+license: MIT
+metadata:
+  version: "1.0.0"
+---
+# Passo a passo
+Reescreva o texto mantendo o que ele diz.`;
+    const out = parseSkillPackage(makeZip({ 'humanizer-main/SKILL.md': semMatcher }));
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      // matcher vazio: nenhuma palavra-chave, nenhuma etiqueta — fora do roteamento automático.
+      expect(out.pkg.matcher).toEqual({});
+      expect(out.pkg.matcher.any_keywords).toBeUndefined();
+      expect(out.pkg.body).toContain('Reescreva o texto');
+      // `description: |` é bloco: o texto multilinha vira a descrição do índice, não "|".
+      expect(out.pkg.description).toBe(
+        'Reescreve texto com cara de IA para soar como a pessoa que escreveu. Use ao revisar ou editar prosa.',
+      );
+    }
+  });
+
+  it('#4458: matcher: {} no frontmatter é ausência de matcher (uso explícito), não erro', () => {
+    const soCorpo = `---\nname: x\ndescription: y\nmatcher: {}\n---\ncorpo`;
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': soCorpo }));
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.pkg.matcher).toEqual({});
+  });
+
+  it('#4458: matcher REALMENTE inválido (item vazio na lista) segue recusado nomeando o campo', () => {
+    const itemVazio = `---\nname: x\ndescription: y\nmatcher:\n  any_keywords: [""]\n---\ncorpo`;
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': itemVazio }));
     expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe('skill_frontmatter_invalid');
+    if (!out.ok) {
+      expect(out.error.code).toBe('skill_frontmatter_invalid');
+      expect(out.error.message).toContain('any_keywords');
+    }
+  });
+
+  it('#4458: matcher REALMENTE inválido (lista vazia declarada) segue recusado com o campo no nome', () => {
+    const listaVazia = `---\nname: x\ndescription: y\nmatcher:\n  any_keywords: []\n---\ncorpo`;
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': listaVazia }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.error.code).toBe('skill_frontmatter_invalid');
+      expect(out.error.message).toContain('any_keywords');
+    }
+  });
+
+  it('#4458: chave desconhecida dentro do matcher é erro (typo não vira "sem matcher")', () => {
+    const typo = `---\nname: x\ndescription: y\nmatcher:\n  any_tag: [odonto]\n---\ncorpo`;
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': typo }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.error.code).toBe('skill_frontmatter_invalid');
+      expect(out.error.message).toContain('any_tag');
+    }
   });
 
   it('path traversal é recusado', () => {

@@ -41,13 +41,20 @@ export const MAX_SKILL_BODY_LINES = 200;
  * near-miss (candidato ao golden). Sem sinal fraco, use só any_keywords.
  * `any_tags` (opcional): hard-match quando uma ETIQUETA da conversa ou do contato é igual a
  * uma delas. Serve para a prospecção, em que o cliente quase nunca escreve o nome do ramo.
- * `any_keywords` continua obrigatório: skill sem palavra-chave não passa no schema.
+ *
+ * O matcher é OPCIONAL (#4458): o ecossistema publica SKILL.md sem matcher nenhum
+ * (blader/humanizer é o caso real) e o CRM recusava o formato. Skill sem matcher — `{}` —
+ * NÃO entra no roteamento automático: `matchSkills` não tem palavra nem etiqueta para casar,
+ * então o corpo dela só é injetado quando o roteiro de atendimento a puxa PELO NOME
+ * (`skillsPuxadasPeloRoteiro`, nó `skill`). O que continua obrigatório é a FORMA: se uma
+ * chave do matcher aparece, ela precisa ser uma lista de pelo menos 1 texto não vazio —
+ * lista vazia ou item vazio seguem recusados, com o campo no nome do erro.
  * ponytail: matcher por keyword (substring normalizado) cobre os 4 tipos de skill do
  * blueprint; adicionar matcher temporal/por-stage quando uma skill precisar (ex.: D+30
  * "dias desde o último inbound") — o campo matcher é jsonb, extensível sem migration.
  */
 export const skillMatcherSchema = z.strictObject({
-  any_keywords: z.array(z.string().min(1).max(120)).min(1).max(50),
+  any_keywords: z.array(z.string().min(1).max(120)).min(1).max(50).optional(),
   probe_keywords: z.array(z.string().min(1).max(120)).max(50).optional(),
   // 40 = TAMANHO_MAXIMO_DA_TAG: etiqueta gravada nunca passa disso, então mais longa não casaria nunca.
   any_tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
@@ -323,7 +330,9 @@ export function matchSkills(
   const hit = (keywords: readonly string[]): boolean => keywords.some((k) => norm.includes(normalize(k)));
   for (const skill of skills) {
     const porEtiqueta = (skill.matcher.any_tags ?? []).some((t) => etiquetas.has(normalize(t.trim())));
-    if (porEtiqueta || (temTexto && hit(skill.matcher.any_keywords))) {
+    // Skill sem matcher (#4458) chega aqui com `any_keywords` ausente: sem lista, não há
+    // palavra para casar — o corpo dela só entra pelo roteiro, que puxa pelo nome.
+    if (porEtiqueta || (temTexto && hit(skill.matcher.any_keywords ?? []))) {
       matched.push(skill);
       // Etiqueta vence palavra quando os dois casam: é a telemetria que separa o `tag` do `hard`.
       motivos.set(skill, porEtiqueta ? 'etiqueta' : 'palavra');

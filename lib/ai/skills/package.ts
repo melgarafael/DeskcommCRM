@@ -68,12 +68,24 @@ function extensionOf(p: string): string {
  * matcher.probe_keywords, matcher.any_tags) — parser dedicado, não YAML genérico. Aceita a forma exata do
  * frontmatter de skill: `chave: valor` na raiz, `matcher:` seguido de `  any_keywords: [a, b]`
  * indentado por baixo.
+ *
+ * Duas formas do ecossistema que este parser aprendeu a ler (#4458): `description: |`
+ * (bloco multilinha — o texto vira UMA descrição, não o literal "|") e a AUSÊNCIA de
+ * `matcher` (skill publicada sem ativação por palavra). Chave desconhecida DENTRO do
+ * `matcher` não é ignorada: é devolvida em `chavesDeMatcherDesconhecidas` para virar erro
+ * de ensino — um typo (`any_tag`) não pode virar "skill sem matcher" em silêncio.
  */
-function parseFrontmatter(raw: string): { name?: string; description?: string; matcher: Record<string, unknown> } {
+function parseFrontmatter(raw: string): {
+  name?: string;
+  description?: string;
+  matcher: Record<string, unknown>;
+  chavesDeMatcherDesconhecidas: string[];
+} {
   const lines = raw.split('\n');
   let name: string | undefined;
   let description: string | undefined;
   const matcher: Record<string, unknown> = {};
+  const chavesDeMatcherDesconhecidas: string[] = [];
 
   const parseInlineArray = (value: string): string[] => {
     const trimmed = value.trim();
@@ -83,12 +95,40 @@ function parseFrontmatter(raw: string): { name?: string; description?: string; m
     return inner.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''));
   };
 
+  /** `|`, `>`, `|-`… — escalar de bloco: o valor são as linhas indentadas abaixo. */
+  const isBlockScalar = (value: string): boolean => /^[|>][+-]?$/.test(value.trim());
+
+  /** Junta as linhas indentadas de um escalar de bloco numa frase só. */
+  const readBlockScalar = (start: number): { text: string; next: number } => {
+    const parts: string[] = [];
+    let j = start;
+    while (j < lines.length) {
+      const sub = lines[j] ?? '';
+      if (sub.trim() === '') {
+        parts.push('');
+        j += 1;
+        continue;
+      }
+      if (!/^\s+\S/.test(sub)) break;
+      parts.push(sub.trim());
+      j += 1;
+    }
+    return { text: parts.join(' ').replace(/\s+/g, ' ').trim(), next: j };
+  };
+
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? '';
     if (/^name:/.test(line)) {
       name = line.slice(line.indexOf(':') + 1).trim();
     } else if (/^description:/.test(line)) {
-      description = line.slice(line.indexOf(':') + 1).trim();
+      const value = line.slice(line.indexOf(':') + 1).trim();
+      if (isBlockScalar(value)) {
+        const bloco = readBlockScalar(i + 1);
+        description = bloco.text;
+        i = bloco.next - 1;
+      } else {
+        description = value;
+      }
     } else if (/^matcher:/.test(line)) {
       // varre as linhas indentadas abaixo de `matcher:` (matcher inline tipo `matcher: {}` não tem sub-linhas)
       let j = i + 1;
@@ -102,13 +142,37 @@ function parseFrontmatter(raw: string): { name?: string; description?: string; m
         if (m) matcher.any_keywords = parseInlineArray(m[1] ?? '');
         else if (p) matcher.probe_keywords = parseInlineArray(p[1] ?? '');
         else if (t) matcher.any_tags = parseInlineArray(t[1] ?? '');
+        else {
+          const chave = /^([A-Za-z0-9_-]+):/.exec(subTrimmed);
+          if (chave?.[1] !== undefined && !chavesDeMatcherDesconhecidas.includes(chave[1])) {
+            chavesDeMatcherDesconhecidas.push(chave[1]);
+          }
+        }
         j += 1;
       }
       i = j - 1;
     }
   }
 
-  return { name, description, matcher };
+  return { name, description, matcher, chavesDeMatcherDesconhecidas };
+}
+
+/**
+ * Erro de ensino do matcher, com o CAMPO no nome (#4458). Antes a mensagem era uma só
+ * ("precisa de any_keywords"), inclusive quando o problema era outro campo — quem
+ * escrevia `any_tags: [""]` lia sobre any_keywords e não achava o defeito.
+ */
+function mensagemDoMatcherInvalido(campo: string): string {
+  if (campo === 'any_keywords') {
+    return 'O "matcher" do SKILL.md tem "any_keywords" inválido — use uma lista com pelo menos 1 palavra (cada uma de 1 a 120 caracteres). Para uma skill SEM ativação por palavra, tire o matcher do frontmatter.';
+  }
+  if (campo === 'probe_keywords') {
+    return 'O "matcher" do SKILL.md tem "probe_keywords" inválido — use uma lista de palavras não vazias (até 50).';
+  }
+  if (campo === 'any_tags') {
+    return 'O "matcher" do SKILL.md tem "any_tags" inválido — use uma lista de etiquetas não vazias (até 20, com até 40 caracteres cada).';
+  }
+  return 'O "matcher" do SKILL.md está inválido — os campos são any_keywords, probe_keywords e any_tags, cada um como lista de textos não vazios.';
 }
 
 /**
@@ -227,7 +291,7 @@ export function parseSkillPackage(zipBytes: Uint8Array): ParseSkillResult {
     return fail('skill_frontmatter_invalid', 'SKILL.md precisa começar com um frontmatter delimitado por "---".');
   }
   const [, frontmatterRaw, bodyRaw] = fmMatch;
-  const { name, description, matcher } = parseFrontmatter(frontmatterRaw ?? '');
+  const { name, description, matcher, chavesDeMatcherDesconhecidas } = parseFrontmatter(frontmatterRaw ?? '');
 
   if (name === undefined || name === '') {
     return fail('skill_frontmatter_invalid', 'SKILL.md precisa de um campo "name" no frontmatter.');
@@ -241,12 +305,22 @@ export function parseSkillPackage(zipBytes: Uint8Array): ParseSkillResult {
   if (description === undefined || description === '') {
     return fail('skill_frontmatter_invalid', 'SKILL.md precisa de um campo "description" no frontmatter.');
   }
-  const matcherResult = skillMatcherSchema.safeParse(matcher);
-  if (!matcherResult.success) {
+  // Typo dentro do matcher (`any_tag`) não vira "sem matcher": recusa nomeando a chave.
+  const chaveDesconhecida = chavesDeMatcherDesconhecidas[0];
+  if (chaveDesconhecida !== undefined) {
     return fail(
       'skill_frontmatter_invalid',
-      'O "matcher" do SKILL.md precisa de "any_keywords" (lista com pelo menos 1 palavra).',
+      `O "matcher" do SKILL.md tem campo desconhecido ("${chaveDesconhecida}") — os campos são any_keywords, probe_keywords e any_tags.`,
     );
+  }
+  // Matcher AUSENTE é legítimo (#4458): skill do ecossistema publica só name/description.
+  // `{}` significa "sem ativação automática" — o corpo entra pelo roteiro, que puxa pelo
+  // nome. O que não passa é matcher presente com a FORMA errada (item vazio, lista vazia,
+  // tipo errado): a mensagem nomeia o campo.
+  const matcherResult = skillMatcherSchema.safeParse(matcher);
+  if (!matcherResult.success) {
+    const campo = matcherResult.error.issues[0]?.path.join('.') ?? '';
+    return fail('skill_frontmatter_invalid', mensagemDoMatcherInvalido(campo));
   }
 
   const body = (bodyRaw ?? '').trim();
