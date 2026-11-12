@@ -56,6 +56,16 @@ async function execute(t: ReturnType<typeof applyPreviewPolicy>, name: string, a
   return t[name]!.execute!(args, { toolCallId: 'test', messages: [], context: undefined });
 }
 describe('preview policy shares gates and contains side effects', () => {
+  it('applies the prepared text before evaluating and recording a candidate', async () => {
+    const p = preview();
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) }, p, gate(), () => [],
+      undefined, undefined, undefined, undefined,
+      () => 'Olá! Sou a assistente virtual. Como posso ajudar?',
+    );
+    await execute(tools, 'send_message', { body: 'Oi!' });
+    expect(p.result.candidates[0]?.body).toBe('Olá! Sou a assistente virtual. Como posso ajudar?');
+  });
   it('registers text and mutation proposals without calling either operational executor', async () => {
     const send = vi.fn(),
       write = vi.fn(),

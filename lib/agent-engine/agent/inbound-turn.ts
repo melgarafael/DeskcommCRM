@@ -1,3 +1,4 @@
+import { respostaParaSaudacao } from './resposta-saudacao';
 import { contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
@@ -4391,7 +4392,10 @@ async function executarTurnoDoAgente(
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
         // para que o corpo vazio, as bolhas e a pausa humana meçam o que sai.
         // Ver `formato-whatsapp.ts`.
-        const body = formatarParaWhatsApp(corpoDoModelo);
+        const saudacao = agentConfig
+          ? respostaParaSaudacao(agentConfig.systemPrompt, inboundsPendentes)
+          : null;
+        const body = formatarParaWhatsApp(saudacao ?? corpoDoModelo);
         // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
         // chamou `send_message` várias vezes com corpo que virou vazio e o
         // WhatsApp do cliente recebeu bolhas em branco. O schema garante
@@ -5806,6 +5810,9 @@ async function executarTurnoDoAgente(
             // `contradiz`/`nao_esta_na_base` aparecer para quem revisa o rascunho
             // (impedimento no assistido, aviso no Teste) em vez de sair calado.
             conferirAfirmacoes,
+            (texto) => agentConfig
+              ? respostaParaSaudacao(agentConfig.systemPrompt, inboundsPendentes) ?? texto
+              : texto,
           )
         : rawTools;
     const tools = envolverFerramentasComTraco(

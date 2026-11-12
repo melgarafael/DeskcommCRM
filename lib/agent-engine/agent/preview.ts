@@ -349,6 +349,7 @@ export function applyPreviewPolicy(
    * com a afirmação de fato sem conferência e sem observação para calibrar.
    */
   conferirAfirmacoes?: (candidata: string) => Promise<ConferenciaDeFato>,
+  prepararTexto?: (texto: string) => string,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -370,10 +371,11 @@ export function applyPreviewPolicy(
           ...definition,
           execute: async (args: unknown) => {
             if (name === 'send_message') {
-              const body =
+              const texto =
                 args && typeof args === 'object' && 'body' in args && typeof args.body === 'string'
                   ? args.body
                   : '';
+              const body = prepararTexto ? prepararTexto(texto) : texto;
               // #2490 — A MESMA preparação do envio real, e na MESMA ordem: o
               // `produto_codigo` que `crm_search_products` devolveu resolve o
               // produto no catálogo e prepara as fotos ANTES da cadeia (é o que
