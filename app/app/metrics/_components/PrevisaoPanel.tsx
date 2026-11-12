@@ -70,6 +70,16 @@ export function PrevisaoPanel() {
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        {data.truncado ? (
+          // O corte é DITO. Sem esta frase, a soma de um recorte da carteira
+          // pareceria a previsão inteira (#4322).
+          <p className="text-xs text-warning-fg" data-testid="previsao-truncada">
+            {t(
+              "Este funil tem mais negócios abertos do que a previsão consegue ler. Os valores abaixo são parciais.",
+            )}
+          </p>
+        ) : null}
+
         {vazia ? (
           <p className="text-sm text-muted-foreground">
             {t("Nenhum negócio aberto com valor neste funil.")}

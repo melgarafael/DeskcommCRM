@@ -32,9 +32,17 @@
  * ═══ O limite desta varredura ════════════════════════════════════════════════
  *
  * Ela lê TEXTO, não executa a spec. Cobre `newContext` de contexto de
- * navegador; não cobre `browser.newPage()` (que cria contexto implícito), nem
- * contexto criado dentro de helper de outro arquivo — o registro ali é do
- * helper, e é o helper que a leitura teria de seguir.
+ * navegador e `browser.newPage()` — que cria um contexto IMPLÍCITO, igualmente
+ * fora do fixture, e cujo registro é na própria página:
+ * `esperarARevelacaoNasCargas(page)`. Não cobre contexto criado dentro de
+ * helper de outro arquivo — o registro ali é do helper, e é o helper que a
+ * leitura teria de seguir.
+ *
+ * O `browser.newPage()` ficou de fora até o PR #4454: as duas specs da Agenda
+ * que o usam (`agenda-tela-do-produto`, `agenda-conectar-google`) reprovaram
+ * nele por "resolved to 2 elements" — a segunda `tela-agenda` dentro de
+ * `<div hidden id="S:1">` — num PR que só deixou as respostas da API mais
+ * rápidas e, com isso, a corrida mais frequente.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,6 +51,8 @@ import { describe, expect, it } from "vitest";
 
 const RAIZ_E2E = join(__dirname, "../e2e");
 const CRIACAO = /\bnewContext\s*\(/;
+/** `browser.newPage()`: contexto implícito; o registro é na página, não num `.on("page")`. */
+const PAGINA_SOLTA = /\bbrowser\s*\.\s*newPage\s*\(/;
 /** `playwright.request.newContext()` devolve APIRequestContext, que não tem evento `page`. */
 const DA_API = /\brequest\s*\.\s*newContext\s*\(/;
 const DISPENSA = "dispensa-da-espera:";
@@ -79,14 +89,15 @@ export function contextosProprios(fonte: string): ContextoProprio[] {
   const achados: ContextoProprio[] = [];
 
   linhas.forEach((linha, indice) => {
-    if (!CRIACAO.test(linha) || DA_API.test(linha)) return;
-    const nome = nomeDoContexto(linha.split("newContext(", 1)[0]!);
+    const solta = PAGINA_SOLTA.test(linha);
+    if (!solta && (!CRIACAO.test(linha) || DA_API.test(linha))) return;
+    const nome = nomeDoContexto(linha.split(solta ? "newPage(" : "newContext(", 1)[0]!);
     if (nome === null) return;
 
     const janela = linhas.slice(Math.max(0, indice - 1), indice + JANELA_DE_BUSCA + 1).join("\n");
-    const registro = new RegExp(
-      `${escapar(nome)}\\s*\\.on\\(\\s*["']page["']\\s*,\\s*${REGISTRO}\\s*\\)`,
-    );
+    const registro = solta
+      ? new RegExp(`${REGISTRO}\\s*\\(\\s*${escapar(nome)}\\s*\\)`)
+      : new RegExp(`${escapar(nome)}\\s*\\.on\\(\\s*["']page["']\\s*,\\s*${REGISTRO}\\s*\\)`);
     const dispensadoEm = janela.split("\n").find((l) => l.includes(DISPENSA));
     const motivo = dispensadoEm?.split(DISPENSA)[1]?.trim() ?? "";
 
@@ -135,6 +146,16 @@ describe("contexto próprio das specs e2e espera a revelação (issue #4137)", (
     // APIRequestContext não tem evento `page`: nem entra na conta.
     expect(contextosProprios('const anon = await playwright.request.newContext({ baseURL });\n')).toEqual([]);
 
+    // `browser.newPage()` cria contexto implícito: sem registro na página, reprova.
+    expect(contextosProprios("page = await browser.newPage();\nawait page.goto('/app');\n")).toEqual([
+      { linha: 1, nome: "page", registrado: false, dispensado: false },
+    ]);
+    expect(
+      contextosProprios("const page = await browser.newPage();\nesperarARevelacaoNasCargas(page);\n")[0],
+    ).toMatchObject({ nome: "page", registrado: true });
+    // `contexto.newPage()` é página de contexto já coberto: não é criação nova.
+    expect(contextosProprios("const p = await contexto.newPage();\n")).toEqual([]);
+
     // Dispensa com motivo declarado.
     const dispensado = contextosProprios(
       [
@@ -162,6 +183,7 @@ describe("contexto próprio das specs e2e espera a revelação (issue #4137)", (
         if (contexto.registrado || contexto.dispensado) continue;
         pendentes.push(
           `tests/e2e/${arquivo}:${contexto.linha} — '${contexto.nome}' sem \`${contexto.nome}.on("page", ${REGISTRO})\` ` +
+            `(ou \`${REGISTRO}(${contexto.nome})\`, se é \`browser.newPage()\`) ` +
             `e sem \`// ${DISPENSA} <motivo>\``,
         );
       }

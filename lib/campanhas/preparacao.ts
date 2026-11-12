@@ -45,6 +45,8 @@ import { hashDoEndereco, hashesExcluidos } from "./exclusoes";
 import {
   classificarAudiencia,
   contarExclusoes,
+  normalizarEmail,
+  type CanalDaAudiencia,
   type CandidatoDaAudiencia,
 } from "./elegibilidade";
 import {
@@ -95,6 +97,12 @@ export async function preverAudiencia(
     /** Campanha a ignorar na conta de "já em campanha" (a que está sendo editada). */
     campanhaId?: string;
     modelo?: ModeloPreparado;
+    /**
+     * Por onde a campanha fala (#3441). Omitido = WhatsApp, que é toda campanha
+     * anterior ao canal de e-mail. Muda o ENDEREÇO exigido e contado, não o
+     * recorte: o filtro de público é exatamente o mesmo.
+     */
+    canal?: CanalDaAudiencia;
   },
 ): Promise<
   ResumoDoSnapshot & {
@@ -126,6 +134,7 @@ async function classificar(
     agora: Date;
     campanhaId?: string;
     modelo?: ModeloPreparado;
+    canal?: CanalDaAudiencia;
   },
 ): Promise<{
   linhas: ReturnType<typeof classificarAudiencia>;
@@ -162,6 +171,7 @@ async function classificar(
       jaEmCampanha,
       suprimidos,
       hashDoEndereco,
+      canal: entrada.canal ?? "whatsapp",
       renderizar: modelo
         ? (c: CandidatoDaAudiencia) => {
             const r = resolverValoresDaCampanha(modelo.contrato, modelo.variaveis, {
@@ -198,6 +208,8 @@ export async function prepararCampanha(
     contentVersion: number;
     agora: Date;
     modelo?: ModeloPreparado;
+    /** Por onde a campanha fala (#3441); omitido = WhatsApp. */
+    canal?: CanalDaAudiencia;
   },
 ): Promise<ResumoDoSnapshot> {
   const filtro = filtroDeAudienciaSchema.safeParse(entrada.filtro);
@@ -212,6 +224,7 @@ export async function prepararCampanha(
     agora: entrada.agora,
     campanhaId: entrada.campanhaId,
     ...(entrada.modelo ? { modelo: entrada.modelo } : {}),
+    ...(entrada.canal ? { canal: entrada.canal } : {}),
   });
 
   // Reconstrução limpa: a rota só chega aqui quando nada saiu, então apagar a
@@ -229,8 +242,13 @@ export async function prepararCampanha(
     campaign_id: entrada.campanhaId,
     contact_id: l.candidato.contactId,
     // Endereço só de quem vai receber: o excluído não precisa dele, e guardar
-    // telefone que ninguém vai usar é PII sem finalidade.
-    recipient_address: l.elegivel ? l.candidato.telefone : null,
+    // telefone que ninguém vai usar é PII sem finalidade. O endereço é o do
+    // CANAL: telefone no WhatsApp, e-mail normalizado no e-mail (#3441).
+    recipient_address: l.elegivel
+      ? entrada.canal === "email"
+        ? normalizarEmail(l.candidato.email)
+        : l.candidato.telefone
+      : null,
     status: l.elegivel ? "pending" : "skipped",
     eligibility_status: l.elegivel ? "eligible" : "excluded",
     exclusion_reason: l.motivo,
