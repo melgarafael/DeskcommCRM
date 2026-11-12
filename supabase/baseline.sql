@@ -75042,8 +75042,8 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
 
--- ---- uma ordem de locks na fusão de fichas (migration 9350, #2884) ----
--- Espelho da 9350 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- ---- uma ordem de locks na fusão de fichas (migration 9359, #2884) ----
+-- Espelho da 9359 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
 -- VARREDURA anon porque recria função, DEPOIS de tudo que a fusão toca
 -- (`contacts`, `conversations`, `contact_phones`, `crm_leads`) e ANTES da
 -- cascata da 9243: o invariante `lgpd-alcanca-fichas-fundidas` compara o trecho

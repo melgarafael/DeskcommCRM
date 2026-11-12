@@ -1,6 +1,7 @@
 -- manifest: **A fusão de fichas entra na ordem única de locks do serviço: CONTATO antes de CONVERSA (issue #2884).** A 0681 pôs `fn_mark_conversation_message` na ordem contato→conversa, a mesma do gatilho `trg_contato_atualiza_trava_nas_conversas` (0645, AFTER UPDATE). A 9043 (ficha com vários telefones, 29/10) reescreveu `fn_mesclar_contatos` travando as CONVERSAS dos contatos primeiro (`for no key update`) e os CONTATOS depois (passos 2 e 3): a ordem AB-BA voltou pela porta da fusão. Medido com duas sessões reais no pg15 do `pnpm test:db`: a passagem para humano (`force_human`, que dispara o gatilho do contato) contra a fusão dá 40P01 com a ordem da 9043 e ZERO com esta. O conserto sobe a trava dos contatos para antes da das conversas, na MESMA ordem (`order by id` — duas fusões sobre o mesmo par passam a pegar as linhas na mesma ordem), sem modo novo de lock: os passos 2 e 3 voltam a tocar linhas que a própria sessão já segura. Corpo idêntico em `supabase/baseline.sql`. Gate: `tests/invariants/fusao-fichas-uma-ordem-de-locks.test.ts` (VERMELHO com a ordem inversa).
 
--- 9350 — A FUSÃO DE FICHAS TAMBÉM TEM UMA ORDEM DE LOCKS SÓ (#2884).
+-- 9359 — A FUSÃO DE FICHAS TAMBÉM TEM UMA ORDEM DE LOCKS SÓ (#2884).
+-- Renumerada de 9350: o #4472 do próprio mantenedor reivindica esse número.
 --
 -- ═══ O ciclo que voltou pela porta da fusão ═══
 --
