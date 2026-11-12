@@ -30,10 +30,29 @@ type Linha = Record<string, unknown>;
 let tabela: Linha[] = [];
 let seq = 0;
 const escritas: Array<{ op: string; payload: Linha; filtros: Record<string, unknown> }> = [];
-const rpc = vi.fn(async (nome: string) => ({
-  data: nome === "fn_resumo_historico_analise"
-    ? { total: 0, pending: 0, running: 0, done: 0, failed: 0, dead: 0 }
-    : 1,
+// A prévia da rodada de análise (migration 9350) e o resumo dos jobs. O
+// enfileirar devolve o que caberia: o menor entre o limite pedido e a rodada.
+const PREVIA_DA_ANALISE = {
+  nesta_rodada: 50,
+  restantes: 70,
+  pulados_recusa: 3,
+  pulados_mais_novos: 2,
+  em_andamento: 0,
+  teto_da_rodada: 50,
+  estimativa_cents: 120.5,
+  gasto_do_mes_cents: 900,
+  teto_mensal_cents: 5000,
+};
+const RESUMO_DA_ANALISE = { total: 0, pending: 0, running: 0, done: 0, failed: 0, dead: 0, gasto_cents: 0 };
+let previaDaAnalise = { ...PREVIA_DA_ANALISE };
+let resumoDaAnalise = { ...RESUMO_DA_ANALISE };
+const rpc = vi.fn(async (nome: string, args: Record<string, unknown>) => ({
+  data:
+    nome === "fn_resumo_historico_analise"
+      ? resumoDaAnalise
+      : nome === "fn_previa_historico_analise"
+        ? previaDaAnalise
+        : Math.min(Number(args.p_limite), previaDaAnalise.nesta_rodada),
   error: null,
 }));
 
@@ -92,6 +111,8 @@ beforeEach(() => {
   tabela = [];
   seq = 0;
   escritas.length = 0;
+  previaDaAnalise = { ...PREVIA_DA_ANALISE };
+  resumoDaAnalise = { ...RESUMO_DA_ANALISE };
   vi.mocked(loadAuthUser).mockResolvedValue(null);
   vi.mocked(requireSupportWrite).mockResolvedValue(null);
   comoAdmin();
@@ -318,11 +339,12 @@ describe("importação do histórico: rotas (#999)", () => {
 
   it("análise só nasce para a importação manual concluída da organização", async () => {
     const concluida = linha({ status: "concluida", origem: "manual" });
-    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id }), context());
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 50 }), context());
     expect(r.status).toBe(200);
     expect(rpc).toHaveBeenCalledWith("fn_enqueue_historico_analise", {
       p_org: org,
       p_importacao: concluida.id,
+      p_limite: 50,
     });
     expect(acoes()).toEqual(["channel.historico_analysis_started"]);
   });
@@ -334,8 +356,100 @@ describe("importação do histórico: rotas (#999)", () => {
       { status: "concluida", origem: "queda" },
     ]) {
       const imp = linha(extra);
-      expect((await POST(req({ acao: "analisar", importacaoId: imp.id }), context())).status).toBe(409);
+      const r = await POST(req({ acao: "analisar", importacaoId: imp.id, clientesConfirmados: 10 }), context());
+      expect(r.status).toBe(409);
     }
     expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("análise de outra organização: 404, sem prévia nem fila", async () => {
+    const alheia = linha({ status: "concluida", organization_id: outraOrg });
+    const r = await POST(req({ acao: "analisar", importacaoId: alheia.id, clientesConfirmados: 10 }), context());
+    expect(r.status).toBe(404);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
+describe("análise do histórico: as três travas da decisão 315", () => {
+  it("trava 1: o GET entrega a contagem e a estimativa da rodada ANTES de qualquer análise", async () => {
+    linha({ status: "concluida" });
+    const { data } = await (await GET(req({}, "GET"), context())).json();
+    expect(rpc).toHaveBeenCalledWith("fn_previa_historico_analise", expect.objectContaining({ p_org: org, p_limite: 50 }));
+    expect(data.previa_analise).toMatchObject({
+      nesta_rodada: 50,
+      restantes: 70,
+      estimativa_cents: 120.5,
+      gasto_do_mes_cents: 900,
+      teto_mensal_cents: 5000,
+    });
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("trava 1: sem a contagem confirmada, nada é enfileirado nem auditado", async () => {
+    const concluida = linha({ status: "concluida" });
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id }), context());
+    expect(r.status).toBe(422);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("trava 2: confirmação acima do teto da rodada é recusada", async () => {
+    const concluida = linha({ status: "concluida" });
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 51 }), context());
+    expect(r.status).toBe(422);
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("trava 2: enfileira no máximo o que foi confirmado, e o resto fica para a próxima rodada", async () => {
+    const concluida = linha({ status: "concluida" });
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 30 }), context());
+    expect(r.status).toBe(200);
+    expect((await r.json()).data.clientes_na_rodada).toBe(30);
+    expect(rpc).toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.objectContaining({ p_limite: 30 }));
+    const meta = vi.mocked(audit).mock.calls[0]![0].metadata;
+    expect(meta).toMatchObject({ clientes_confirmados: 30, clientes_na_rodada: 30, clientes_para_a_proxima_rodada: 90 });
+  });
+
+  it("trava 2: uma rodada por vez — com análise em andamento, a nova é recusada", async () => {
+    const concluida = linha({ status: "concluida" });
+    previaDaAnalise = { ...PREVIA_DA_ANALISE, em_andamento: 4 };
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 50 }), context());
+    expect(r.status).toBe(409);
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("sem cliente elegível (todos recusaram IA ou têm estado mais novo): 409, nada enfileirado", async () => {
+    const concluida = linha({ status: "concluida" });
+    previaDaAnalise = { ...PREVIA_DA_ANALISE, nesta_rodada: 0, restantes: 0, pulados_recusa: 7 };
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 5 }), context());
+    expect(r.status).toBe(409);
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
+  });
+
+  it("durante uma rodada o GET não refaz a prévia (a tela não oferece rodada nova)", async () => {
+    linha({ status: "concluida" });
+    resumoDaAnalise = { ...RESUMO_DA_ANALISE, total: 10, pending: 4, running: 1, done: 5 };
+    const { data } = await (await GET(req({}, "GET"), context())).json();
+    expect(data.previa_analise).toBeNull();
+    expect(rpc).not.toHaveBeenCalledWith("fn_previa_historico_analise", expect.anything());
+  });
+
+  it("audita quem disparou, quantos, a estimativa e o gasto real das rodadas anteriores", async () => {
+    const concluida = linha({ status: "concluida" });
+    resumoDaAnalise = { ...RESUMO_DA_ANALISE, total: 50, done: 50, gasto_cents: 42.25 };
+    await POST(req({ acao: "analisar", importacaoId: concluida.id, clientesConfirmados: 50 }), context());
+    const chamada = vi.mocked(audit).mock.calls[0]![0];
+    expect(chamada).toMatchObject({ action: "channel.historico_analysis_started", actorUserId: "u1", organizationId: org });
+    expect(chamada.metadata).toMatchObject({
+      importacao_id: concluida.id,
+      clientes_na_rodada: 50,
+      pulados_por_recusa_de_ia: 3,
+      pulados_por_estado_mais_novo: 2,
+      estimativa_cents: 120.5,
+      gasto_ate_aqui_cents: 42.25,
+      gasto_do_mes_cents: 900,
+      teto_mensal_cents: 5000,
+    });
   });
 });

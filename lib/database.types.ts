@@ -15085,8 +15085,27 @@ export type Database = {
       };
 
       fn_enqueue_historico_analise: {
-        Args: { p_importacao: string; p_org: string };
+        Args: { p_importacao: string; p_limite: number; p_org: string };
         Returns: number;
+      };
+      fn_historico_analise_candidatos: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: {
+          caracteres: number;
+          contact_id: string;
+          conversation_id: string;
+          job_status: string;
+          motivo: string;
+          ultima_mensagem_em: string;
+        }[];
+      };
+      fn_historico_analise_motivo_para_pular: {
+        Args: { p_contato: string; p_importacao: string; p_org: string };
+        Returns: string;
+      };
+      fn_previa_historico_analise: {
+        Args: { p_importacao: string; p_limite: number; p_org: string };
+        Returns: Json;
       };
       fn_resumo_historico_analise: {
         Args: { p_importacao: string; p_org: string };

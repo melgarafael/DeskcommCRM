@@ -3,7 +3,43 @@ import { z } from "zod";
 import { extrairJsonDoTexto } from "@/lib/agent-engine/texto/extrair-json-do-texto";
 
 export const MAX_MENSAGENS_DA_ANALISE = 160;
+/** Espelhado em `fn_historico_analise_candidatos` (migration 9350), que estima o custo pelo mesmo corte. */
 export const MAX_CARACTERES_DA_ANALISE = 48_000;
+
+/**
+ * Teto de clientes por rodada (decisão 315, alternativa A). Cada cliente é uma
+ * chamada de IA paga do MESMO orçamento mensal do atendimento ao vivo: uma
+ * importação grande vira várias rodadas, cada uma confirmada pelo administrador
+ * com a contagem e a estimativa na tela.
+ * ponytail: constante, não knob por organização — vira configuração quando alguém pedir outro valor.
+ */
+export const TETO_DE_CLIENTES_POR_RODADA = 50;
+
+/**
+ * O que `fn_previa_historico_analise` devolve — o que a tela mostra antes da
+ * confirmação. Validado na leitura: é o número que o administrador confirma.
+ */
+export const previaDaAnaliseDoHistoricoSchema = z.object({
+  nesta_rodada: z.number().int().nonnegative(),
+  restantes: z.number().int().nonnegative(),
+  pulados_recusa: z.number().int().nonnegative(),
+  pulados_mais_novos: z.number().int().nonnegative(),
+  em_andamento: z.number().int().nonnegative(),
+  teto_da_rodada: z.number().int(),
+  /** Centavos de dólar; `null` quando a organização não tem chamada com preço para estimar. */
+  estimativa_cents: z.number().nullable(),
+  gasto_do_mes_cents: z.number(),
+  /** `null` quando o teto mensal de `ai_budgets` não está ligado. */
+  teto_mensal_cents: z.number().nullable(),
+});
+
+export type PreviaDaAnaliseDoHistorico = z.infer<typeof previaDaAnaliseDoHistoricoSchema>;
+
+/**
+ * Por que o contato fica de fora — `fn_historico_analise_motivo_para_pular`,
+ * a régua única no banco. `null` = pode ler.
+ */
+export type MotivoParaPularAnalise = "sem_contato" | "recusou_ia" | "estado_mais_novo";
 
 export interface MensagemDoHistoricoParaAnalise {
   id: string;

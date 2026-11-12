@@ -50,10 +50,19 @@ function dependencias(): InboundTurnDeps {
   } as unknown as InboundTurnDeps;
 }
 
-function banco(recibo = false) {
+/**
+ * `motivoAntes` é o que a régua do banco (`fn_historico_analise_motivo_para_pular`)
+ * responde antes de ler a conversa; `motivoNaEscrita`, o que ela responde dentro
+ * da transação que grava, depois da chamada de IA.
+ */
+function banco(
+  recibo = false,
+  { motivoAntes = null, motivoNaEscrita = null }: { motivoAntes?: string | null; motivoNaEscrita?: string | null } = {},
+) {
   const client = {
     query: vi.fn(async (sql: string) => {
       if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [] };
+      if (sql.includes("fn_historico_analise_motivo_para_pular")) return { rows: [{ motivo: motivoNaEscrita }] };
       if (sql.includes("from crm_leads")) {
         return {
           rows: [{
@@ -73,6 +82,7 @@ function banco(recibo = false) {
   const pool = {
     query: vi.fn(async (sql: string) => {
       if (sql.includes("from lead_checkpoints")) return { rows: recibo ? [{ id: "recibo" }] : [] };
+      if (sql.includes("fn_historico_analise_motivo_para_pular")) return { rows: [{ motivo: motivoAntes }] };
       if (sql.includes("from messages")) {
         return {
           rows: [{ id: MENSAGEM, direction: "inbound", sent_at: "2026-11-01T00:00:00Z", body: "Preciso de 500 cadeiras" }],
@@ -129,6 +139,7 @@ describe("handler da análise do histórico", () => {
     expect(mocks.recalculaScoreDoLead).toHaveBeenCalledWith(client, ORG, NEGOCIO);
     expect(client.query.mock.calls.map(([sql]) => sql)).toEqual([
       "begin",
+      expect.stringContaining("fn_historico_analise_motivo_para_pular"),
       expect.stringContaining("from crm_leads"),
       "commit",
     ]);
@@ -145,5 +156,38 @@ describe("handler da análise do histórico", () => {
 
     expect(mocks.runModelCall).not.toHaveBeenCalled();
     expect(pool.connect).not.toHaveBeenCalled();
+  });
+
+  it("trava 3: contato que recusou IA não tem a conversa lida nem gasta chamada de IA", async () => {
+    const { pool } = banco(false, { motivoAntes: "recusou_ia" });
+    await createHistoryAnalysisHandler(dependencias())(job, pool as never, { workerId: "worker-1" });
+
+    expect(pool.query.mock.calls.map(([sql]) => sql).some((sql) => sql.includes("from messages"))).toBe(false);
+    expect(mocks.runModelCall).not.toHaveBeenCalled();
+    expect(pool.connect).not.toHaveBeenCalled();
+  });
+
+  it("trava 3: contato com qualificação mais nova que o histórico não é analisado", async () => {
+    const { pool } = banco(false, { motivoAntes: "estado_mais_novo" });
+    await createHistoryAnalysisHandler(dependencias())(job, pool as never, { workerId: "worker-1" });
+
+    expect(mocks.runModelCall).not.toHaveBeenCalled();
+    expect(mocks.applyLeadStateUpdate).not.toHaveBeenCalled();
+  });
+
+  it("trava 3: se algo mais novo foi gravado durante a chamada de IA, nada é escrito por cima", async () => {
+    const { pool, client } = banco(false, { motivoNaEscrita: "estado_mais_novo" });
+    await createHistoryAnalysisHandler(dependencias())(job, pool as never, { workerId: "worker-1" });
+
+    expect(mocks.runModelCall).toHaveBeenCalledOnce();
+    expect(mocks.insertCheckpoint).not.toHaveBeenCalled();
+    expect(mocks.applyLeadStateUpdate).not.toHaveBeenCalled();
+    expect(mocks.recalculaScoreDoLead).not.toHaveBeenCalled();
+    expect(client.query.mock.calls.map(([sql]) => sql)).toEqual([
+      "begin",
+      expect.stringContaining("fn_historico_analise_motivo_para_pular"),
+      "rollback",
+    ]);
+    expect(client.release).toHaveBeenCalledOnce();
   });
 });

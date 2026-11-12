@@ -9,13 +9,14 @@ import {
   pedidoDaAnaliseDoHistorico,
   qualificationPreenchida,
   type MensagemDoHistoricoParaAnalise,
+  type MotivoParaPularAnalise,
 } from "@/lib/channels/historico/analise";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import { recalculaScoreDoLead } from "@/lib/leads/score-writer";
 
 import { runModelCall } from "../edge/llm/run-model-call";
 import { withFields } from "../obs/logger";
-import type { JobRow } from "../queue/queue";
+import type { JobRow, Queryable } from "../queue/queue";
 import { insertCheckpoint } from "./abertura/checkpoint";
 import type { InboundTurnDeps } from "./inbound-turn";
 import { applyLeadStateUpdate } from "./lead-state";
@@ -24,6 +25,24 @@ export const historyAnalysisPayloadSchema = z.object({
   importacao_id: z.string().uuid(),
   conversation_id: z.string().uuid(),
 }).passthrough();
+
+/**
+ * Pergunta à régua única do banco (`fn_historico_analise_motivo_para_pular`,
+ * migration 9350) se este contato pode ser lido: quem recusou IA nunca é lido,
+ * e quem já tem estado mais novo que o histórico nunca é sobrescrito.
+ */
+async function motivoParaPular(
+  db: Queryable,
+  organizationId: string,
+  contactId: string,
+  importacaoId: string,
+): Promise<MotivoParaPularAnalise | null> {
+  const { rows } = await db.query<{ motivo: MotivoParaPularAnalise | null }>(
+    `select public.fn_historico_analise_motivo_para_pular($1, $2, $3) as motivo`,
+    [organizationId, contactId, importacaoId],
+  );
+  return rows[0]?.motivo ?? null;
+}
 
 /**
  * Analisa o acervo sem qualquer capacidade de saída. Este módulo não importa
@@ -55,6 +74,16 @@ export function createHistoryAnalysisHandler(deps: InboundTurnDeps) {
       [job.organization_id, job.contact_id, job.id],
     );
     if (recibos.length > 0) return;
+
+    // Antes de LER a conversa e de gastar a chamada de IA. O estado pode ter
+    // mudado desde o enfileiramento (o contato pediu para sair, o agente ao vivo
+    // escreveu algo mais novo): o job termina sem ler e sem gravar.
+    const contactId = job.contact_id;
+    const motivoAntes = await motivoParaPular(pool, job.organization_id, contactId, payload.importacao_id);
+    if (motivoAntes !== null) {
+      log.info("histórico não analisado — contato fora da análise", { motivo: motivoAntes });
+      return;
+    }
 
     const { rows } = await pool.query<MensagemDoHistoricoParaAnalise>(
       `select id, direction, sent_at::text, body
@@ -93,6 +122,14 @@ export function createHistoryAnalysisHandler(deps: InboundTurnDeps) {
     const client = await pool.connect();
     try {
       await client.query("begin");
+      // De novo, dentro da transação que grava: a chamada de IA leva segundos, e
+      // o agente ao vivo pode ter escrito qualificação mais nova nesse meio-tempo.
+      const motivoNaEscrita = await motivoParaPular(client, job.organization_id, contactId, payload.importacao_id);
+      if (motivoNaEscrita !== null) {
+        await client.query("rollback");
+        log.info("análise descartada — o contato mudou durante a chamada de IA", { motivo: motivoNaEscrita });
+        return;
+      }
       await insertCheckpoint(client, {
         tenantId: job.organization_id,
         leadId: job.contact_id,

@@ -410,7 +410,7 @@
       "id": "historico-analysis",
       "from": "historicoImportado",
       "to": "history_analysis",
-      "label": "admin pede análise; um job idempotente por contato",
+      "label": "admin confirma a contagem; até 50 por rodada; pula quem recusou IA ou tem estado mais novo",
       "variant": "dashed"
     },
     {
