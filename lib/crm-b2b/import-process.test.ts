@@ -22,7 +22,7 @@ type Consulta = {
 };
 
 /** Executa o processador público inteiro; só a persistência é dublada, sem rede. */
-function banco(falhasDeVinculo: number) {
+function banco(falhasDeVinculo = 0) {
   const escritas: Escrita[] = [];
   let sequencia = 0;
   const cliente = {
