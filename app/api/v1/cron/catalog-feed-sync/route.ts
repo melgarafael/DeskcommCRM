@@ -70,6 +70,7 @@ const MAXIMO_DE_FONTES = 200;
  * sem fonte ativa a batida sai antes, e é justamente o custo que o portão evita.
  */
 const PASSOS_DEPOIS_DO_PORTAO = ["try"] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 interface FonteDoFeed {
   organization_id: string;
