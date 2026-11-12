@@ -74866,6 +74866,26 @@ grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 
 notify pgrst, 'reload schema';
 
+-- ---- o cliente pode PEDIR voz: voz_quando = 'quando_pede' (migration 9338, #4345) ----
+-- Espelho idêntico da 9338 (o porquê está no cabeçalho dela). Só o vocabulário
+-- do CHECK muda: nenhum valor renomeado, default continua 'espelhar'.
+alter table public.ai_agent_versions
+  drop constraint if exists ai_agent_versions_voz_quando_check;
+
+alter table public.ai_agent_versions
+  add constraint ai_agent_versions_voz_quando_check
+  check (voz_quando in ('nunca', 'espelhar', 'sempre', 'quando_pede'));
+
+comment on column public.ai_agent_versions.voz_quando is
+  'Migration 9338 (a coluna nasceu na 9052). ''nunca'' (nunca fala, mesmo com '
+  'voz_enabled=true — existe para desligar sem apagar a config), ''espelhar'' '
+  '(fala só quando o CLIENTE mandou áudio nesta mensagem — o default), '
+  '''sempre'', ou ''quando_pede'' (fala quando o cliente mandou áudio OU pediu '
+  'áudio por escrito / avisou que não consegue ler; quem pede texto continua '
+  'recebendo texto). Decidido em lib/agent-engine/agent/voz-do-turno.ts, com a '
+  'leitura do turno em lib/agent-engine/agent/pedido-de-audio.ts.';
+
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -75700,25 +75720,6 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 -- Todo escritor da fila de remoção de arquivos é do servidor: a sessão só lê.
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
-
--- ---- o cliente pode PEDIR voz: voz_quando = 'quando_pede' (migration 9338, #4345) ----
--- Espelho idêntico da 9338 (o porquê está no cabeçalho dela). Só o vocabulário
--- do CHECK muda: nenhum valor renomeado, default continua 'espelhar'.
-alter table public.ai_agent_versions
-  drop constraint if exists ai_agent_versions_voz_quando_check;
-
-alter table public.ai_agent_versions
-  add constraint ai_agent_versions_voz_quando_check
-  check (voz_quando in ('nunca', 'espelhar', 'sempre', 'quando_pede'));
-
-comment on column public.ai_agent_versions.voz_quando is
-  'Migration 9338 (a coluna nasceu na 9052). ''nunca'' (nunca fala, mesmo com '
-  'voz_enabled=true — existe para desligar sem apagar a config), ''espelhar'' '
-  '(fala só quando o CLIENTE mandou áudio nesta mensagem — o default), '
-  '''sempre'', ou ''quando_pede'' (fala quando o cliente mandou áudio OU pediu '
-  'áudio por escrito / avisou que não consegue ler; quem pede texto continua '
-  'recebendo texto). Decidido em lib/agent-engine/agent/voz-do-turno.ts, com a '
-  'leitura do turno em lib/agent-engine/agent/pedido-de-audio.ts.';
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
