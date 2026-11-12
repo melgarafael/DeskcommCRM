@@ -14,6 +14,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { BuscarEEscolher, mensagemDeErro, type Opcao } from "@/components/crm-b2b/BuscarEEscolher";
+import { CamposDoVinculo, VINCULO_VAZIO, type Vinculo } from "@/components/crm-b2b/CamposDoVinculo";
+import { EditarVinculo, type VinculoEmEdicao } from "@/components/crm-b2b/EditarVinculo";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -46,6 +50,17 @@ const CAMPOS = [
 type Campo = (typeof CAMPOS)[number];
 type Formulario = Record<Campo, string>;
 
+function opcaoDePessoa(linha: Record<string, unknown>): Opcao {
+  return {
+    id: linha.id as string,
+    titulo: linha.full_name as string,
+    detalhe:
+      (Array.isArray(linha.emails) ? (linha.emails as string[]).join(" · ") : null) ||
+      (linha.email as string) ||
+      null,
+  };
+}
+
 function formularioVazio(): Formulario {
   return Object.fromEntries(CAMPOS.map((c) => [c, ""])) as Formulario;
 }
@@ -76,6 +91,10 @@ export function CompanyDetailClient({ id }: Props) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [pessoaAberto, setPessoaAberto] = useState(false);
+  const [vinculo, setVinculo] = useState<Vinculo>(VINCULO_VAZIO);
+  const [erroDasPessoas, setErroDasPessoas] = useState<string | null>(null);
+  const [emEdicao, setEmEdicao] = useState<VinculoEmEdicao | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/v1/companies/${id}`);
@@ -149,6 +168,58 @@ export function CompanyDetailClient({ id }: Props) {
     Boolean(user.is_platform_admin && !user.support) ||
     Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
 
+  // Corrigir cargo/decisor é o PATCH company-people/:id, piso `agent`.
+  const podeEditarVinculo =
+    Boolean(user.is_platform_admin && !user.support) ||
+    Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent);
+
+  async function ligarPessoa(pessoa: Opcao) {
+    const res = await fetch("/api/v1/company-people", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_id: id,
+        person_id: pessoa.id,
+        job_title: vinculo.job_title.trim() || null,
+        is_decision_maker: vinculo.is_decision_maker,
+      }),
+    });
+    const falha = await mensagemDeErro(res, t("Não foi possível salvar."));
+    if (!falha) {
+      setVinculo(VINCULO_VAZIO);
+      void load();
+    }
+    return falha;
+  }
+
+  /** Cadastra a pessoa já ligada a esta empresa: o POST de pessoas aceita `company_id`. */
+  async function criarPessoa(nome: string) {
+    const res = await fetch("/api/v1/people", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        full_name: nome,
+        company_id: id,
+        job_title: vinculo.job_title.trim() || null,
+        is_decision_maker: vinculo.is_decision_maker,
+      }),
+    });
+    const falha = await mensagemDeErro(res, t("Não foi possível salvar."));
+    if (!falha) {
+      setVinculo(VINCULO_VAZIO);
+      void load();
+    }
+    return falha;
+  }
+
+  async function desligarPessoa(vinculoId: string) {
+    setErroDasPessoas(null);
+    const res = await fetch(`/api/v1/company-people/${vinculoId}`, { method: "DELETE" });
+    const falha = await mensagemDeErro(res, t("Não foi possível salvar."));
+    if (falha) setErroDasPessoas(falha);
+    void load();
+  }
+
   if (!data) {
     return <div className="p-6 text-muted-foreground">{t("Carregando…")}</div>;
   }
@@ -219,7 +290,20 @@ export function CompanyDetailClient({ id }: Props) {
         </Card>
 
         <Card className="space-y-2 p-4">
-          <h2 className="font-medium">{t("Pessoas / decisores")}</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-medium">{t("Pessoas / decisores")}</h2>
+            {/* Piso `manager`: o mesmo do POST/DELETE de company-people e da RLS. */}
+            {podeExcluir ? (
+              <Button size="sm" variant="outline" onClick={() => setPessoaAberto(true)}>
+                {t("Adicionar pessoa")}
+              </Button>
+            ) : null}
+          </div>
+          {erroDasPessoas ? (
+            <p className="text-sm text-destructive" role="alert">
+              {erroDasPessoas}
+            </p>
+          ) : null}
           {data.people.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("Nenhuma pessoa vinculada.")}</p>
           ) : (
@@ -229,16 +313,49 @@ export function CompanyDetailClient({ id }: Props) {
                 return (
                   <li key={p.id as string} className="flex justify-between gap-2 border-b pb-2">
                     {person ? (
-                      <Link
-                        className="font-medium hover:underline"
-                        href={`/app/people/${person.id}`}
-                      >
-                        {person.full_name}
-                      </Link>
+                      <div>
+                        <Link
+                          className="font-medium hover:underline"
+                          href={`/app/people/${person.id}`}
+                        >
+                          {person.full_name}
+                        </Link>
+                      </div>
                     ) : (
                       "—"
                     )}
-                    <div className="text-muted-foreground">{(p.job_title as string) || ""}</div>
+                    <div className="flex flex-wrap items-center justify-end gap-2 text-muted-foreground">
+                      {(p.job_title as string) || ""}
+                      {p.is_decision_maker ? (
+                        <Badge variant="secondary">{t("Decisor")}</Badge>
+                      ) : null}
+                      {podeEditarVinculo ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`${t("Editar vínculo")}: ${person?.full_name ?? ""}`}
+                          onClick={() =>
+                            setEmEdicao({
+                              id: p.id as string,
+                              nome: person?.full_name ?? "",
+                              job_title: (p.job_title as string | null) ?? null,
+                              is_decision_maker: Boolean(p.is_decision_maker),
+                            })
+                          }
+                        >
+                          {t("Editar")}
+                        </Button>
+                      ) : null}
+                      {podeExcluir ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void desligarPessoa(p.id as string)}
+                        >
+                          {t("Remover")}
+                        </Button>
+                      ) : null}
+                    </div>
                   </li>
                 );
               })}
@@ -246,28 +363,111 @@ export function CompanyDetailClient({ id }: Props) {
           )}
         </Card>
 
+        {/* Telefones e e-mails AGRUPADOS por pessoa: antes era uma lista solta,
+            e não dava para saber de quem era cada número (issue #3198). */}
         <Card className="space-y-2 p-4 md:col-span-2">
-          <h2 className="font-medium">{t("Telefones")}</h2>
-          {data.contacts.length === 0 ? (
+          <h2 className="font-medium">{t("Telefones e e-mails")}</h2>
+          {data.people.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {t("Nenhum telefone ligado às pessoas desta empresa.")}
             </p>
           ) : (
-            <ul className="grid gap-2 sm:grid-cols-2 text-sm">
-              {data.contacts.map((ct) => (
-                <li key={ct.id as string} className="rounded-md border px-3 py-2">
-                  <Link href={`/app/contacts/${ct.id}`} className="font-mono hover:underline">
-                    {(ct.phone_number as string) || "—"}
-                  </Link>
-                  <div className="text-muted-foreground">
-                    {(ct.display_name as string) || (ct.name as string) || ""}
-                  </div>
-                </li>
-              ))}
+            <ul className="grid gap-3 text-sm sm:grid-cols-2">
+              {data.people.map((p) => {
+                const person = p.people as { id: string; full_name: string; email?: string } | null;
+                if (!person) return null;
+                const dela = data.contacts.filter((ct) => ct.person_id === person.id);
+                const emailDaFicha =
+                  person.email &&
+                  !dela.some(
+                    (ct) => String(ct.email ?? "").toLowerCase() === person.email!.toLowerCase(),
+                  )
+                    ? person.email
+                    : null;
+                return (
+                  <li
+                    key={p.id as string}
+                    className="space-y-1 rounded-md border px-3 py-2"
+                    aria-label={`${t("Telefones e e-mails")}: ${person.full_name}`}
+                  >
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <Link href={`/app/people/${person.id}`} className="font-medium hover:underline">
+                        {person.full_name}
+                      </Link>
+                      {p.job_title ? (
+                        <span className="text-xs text-muted-foreground">{p.job_title as string}</span>
+                      ) : null}
+                    </div>
+                    {dela.length === 0 && !emailDaFicha ? (
+                      <p className="text-muted-foreground">{t("Sem telefone nem e-mail.")}</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {dela.map((ct) => (
+                          <li key={ct.id as string}>
+                            <Link href={`/app/contacts/${ct.id}`} className="font-mono hover:underline">
+                              {(ct.phone_number as string) || (ct.email as string) || "—"}
+                            </Link>
+                            {ct.phone_number && ct.email ? (
+                              <Link
+                                href={`/app/contacts/${ct.id}`}
+                                className="ml-2 text-muted-foreground hover:underline"
+                              >
+                                {ct.email as string}
+                              </Link>
+                            ) : null}
+                          </li>
+                        ))}
+                        {emailDaFicha ? (
+                          // Ainda não é contato: leva à ficha da pessoa, onde
+                          // "Juntar ao contato" o passa para o telefone dela.
+                          <li>
+                            <Link
+                              href={`/app/people/${person.id}`}
+                              className="font-mono hover:underline"
+                            >
+                              {emailDaFicha}
+                            </Link>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {t("da ficha da pessoa")}
+                            </span>
+                          </li>
+                        ) : null}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
       </div>
+
+      <BuscarEEscolher
+        aberto={pessoaAberto}
+        onAbertoChange={(a) => {
+          setPessoaAberto(a);
+          if (!a) setVinculo(VINCULO_VAZIO);
+        }}
+        titulo={t("Adicionar pessoa")}
+        endpoint="/api/v1/people"
+        mapear={opcaoDePessoa}
+        ocultar={data.people
+          .map((p) => (p.people as { id: string } | null)?.id)
+          .filter((x): x is string => Boolean(x))}
+        placeholder={t("Buscar pessoa por nome ou e-mail")}
+        rotuloConfirmar={t("Adicionar")}
+        onConfirmar={ligarPessoa}
+        criarNovo={{ rotulo: t("Criar nova pessoa"), acao: criarPessoa }}
+      >
+        <CamposDoVinculo valor={vinculo} onChange={setVinculo} />
+      </BuscarEEscolher>
+
+      <EditarVinculo
+        key={emEdicao ? `vinculo|${emEdicao.id}` : "vinculo-fechado"}
+        vinculo={emEdicao}
+        onFechar={() => setEmEdicao(null)}
+        onSalvo={() => void load()}
+      />
 
       <Dialog
         open={editOpen}

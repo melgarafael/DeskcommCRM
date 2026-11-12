@@ -33,6 +33,7 @@ const banco = vi.hoisted(() => ({
   seq: 0,
   /** Quando preenchido, o INSERT/UPDATE desta tabela devolve erro. */
   falhaDeEscrita: {} as Record<string, string>,
+  falhaAoDesistir: false,
 }));
 
 function filtrar(linhas: Linha[], filtros: Array<(l: Linha) => boolean>): Linha[] {
@@ -65,6 +66,9 @@ function consulta(tabela: string) {
     let alvo = filtrar(todas, filtros);
     if (op.tipo === "update") {
       if (banco.falhaDeEscrita[tabela]) return { data: null, error: { message: banco.falhaDeEscrita[tabela] } };
+      if (tabela === "webhook_events_log" && op.patch.status === "dead" && banco.falhaAoDesistir) {
+        return { data: null, error: { message: "canceling statement due to statement timeout" } };
+      }
       for (const l of alvo) Object.assign(l, op.patch);
       return { data: alvo.map((l) => ({ id: l.id })), error: null };
     }
@@ -344,6 +348,7 @@ beforeEach(() => {
   banco.tabelas = { channel_sessions: [{ ...SESSAO }] };
   banco.seq = 0;
   banco.falhaDeEscrita = {};
+  banco.falhaAoDesistir = false;
   depois.tarefas.length = 0;
   ingestao.chamadas = 0;
   ingestao.retomadas.length = 0;
@@ -755,6 +760,40 @@ describe("o cron reprocessa a entrada aceita que ficou no meio", () => {
     const r2 = await reprocessarEntradasAceitas(admin as never, agora);
     expect(r2.lidas).toBe(0);
     expect(avisos()).toHaveLength(1);
+  });
+
+  it("duas rodadas sobrepostas só contam uma desistência da mesma linha vencida", async () => {
+    const agora = new Date();
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000);
+
+    const rodadas = await Promise.all([
+      reprocessarEntradasAceitas(admin as never, agora),
+      reprocessarEntradasAceitas(admin as never, agora),
+    ]);
+
+    expect(rodadas.map((r) => r.lidas)).toEqual([1, 1]);
+    expect(rodadas.reduce((total, r) => total + r.desistidas, 0)).toBe(1);
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(avisos()).toHaveLength(1);
+  });
+
+  it("a gravação de dead falha no teto e a rodada seguinte recupera a mensagem sem aviso de perda", async () => {
+    const agora = new Date();
+    linhaAceita(agora, 10 * 60_000, { attempts: MAX_TENTATIVAS - 1 });
+    ingestao.falhasRestantes = 1;
+    banco.falhaAoDesistir = true;
+
+    const r1 = await reprocessarEntradasAceitas(admin as never, agora);
+    expect(arquivo()[0]).toMatchObject({ status: "received", attempts: MAX_TENTATIVAS });
+    expect(r1).toMatchObject({ ainda_falhando: 1, desistidas: 0 });
+    expect(avisos()).toHaveLength(0);
+
+    banco.falhaAoDesistir = false;
+    const r2 = await reprocessarEntradasAceitas(admin as never, agora);
+    expect(r2).toMatchObject({ processadas: 1, desistidas: 0 });
+    expect(arquivo()[0]).toMatchObject({ status: "processed" });
+    expect(ingestao.mensagens.size).toBe(1);
+    expect(avisos()).toHaveLength(0);
   });
 
   it("duas rodadas sobrepostas não processam a mesma linha com a mesma leitura", async () => {

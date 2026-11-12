@@ -23,6 +23,12 @@ export interface ConversationCounts {
   closed?: number;
   /** A aba "Arquivadas" (#923). Opcional pelo mesmo motivo: cache antigo não tem. */
   archived?: number;
+  /**
+   * Quantas conversas ESPERAM gente em cada fila (#3876), por id de setor. É o
+   * número que o seletor mostra ao lado do nome de cada fila. Opcional pela
+   * mesma razão dos de cima, e vazio quando a organização não usa setores.
+   */
+  por_fila?: Record<string, number>;
 }
 
 /** Os filtros auxiliares ligados na barra, que a contagem tem de aplicar junto. */
@@ -42,6 +48,11 @@ export interface FiltrosDaContagem {
   channel_session_id?: string;
   /** O atendente escolhido pelo gerente — as contagens olham só as dele. */
   assigned_to?: string;
+  /**
+   * A fila escolhida (#3876). Entra na chave da query como os outros: o badge
+   * tem de contar a fila que a lista mostra, não o total da aba.
+   */
+  sector_id?: string;
 }
 
 /**
@@ -63,6 +74,7 @@ export function useConversationCounts(
   if (filtros.tagMode === "ou") qs.set("modo", "ou");
   if (filtros.channel_session_id) qs.set("channel_session_id", filtros.channel_session_id);
   if (filtros.assigned_to) qs.set("assigned_to", filtros.assigned_to);
+  if (filtros.sector_id) qs.set("sector_id", filtros.sector_id);
   const sufixo = qs.toString();
 
   return useQuery({

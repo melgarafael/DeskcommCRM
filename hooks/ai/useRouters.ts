@@ -91,6 +91,12 @@ export interface UpdateRouterInput {
   name?: string;
   is_active?: boolean;
   fallback_agent_id?: string | null;
+  /**
+   * #4340 — leva o roteador INTEIRO para o número novo. A rota só aceita quando
+   * o número atual está arquivado e o destino está vivo e sem roteador; a
+   * mudança sai auditada ("de X para Y").
+   */
+  channel_session_id?: string;
   /** Mesclada com a config existente pelo PATCH — mandar um campo não apaga os outros. */
   config?: Record<string, unknown>;
 }
@@ -125,6 +131,44 @@ export function useRouter(id: string, initial?: RouterDetailState) {
       apiClient
         .get<{ data: RouterDetailState }>(`/api/v1/ai/routers/${encodeURIComponent(id)}`)
         .then((r) => r.data),
+  });
+}
+
+/** Uma etapa do funil, no recorte que o seletor de destino do roteador usa. */
+export interface EstagioDoFunil {
+  id: string;
+  name: string;
+  /** Etapa de fechamento: nenhum card NASCE em Ganho/Perdido. */
+  is_won: boolean;
+  is_lost: boolean;
+}
+
+/**
+ * #2569 — as etapas de UM funil, para o seletor "Etapa de destino" do roteador.
+ *
+ * Rota LEVE (`/api/v1/pipelines/<id>/stages`) de propósito. A porta vizinha,
+ * `usePipelineStages` (hooks/webhooks/useWebhookSources.ts), lê o QUADRO inteiro
+ * (`/board`): leads abertos, anexos, tarefas e a próxima ação de cada card. O
+ * editor do roteador só precisa dos nomes das colunas — e, enquanto o quadro não
+ * voltava, o seletor de etapa não existia na tela (metade do relato da issue);
+ * se aquela resposta falhasse, ele não aparecia nunca. Aqui a pergunta é a
+ * mesma, e a resposta é só ela.
+ *
+ * Etapa fechada fica de fora: o card nasce na etapa escolhida, e card não nasce
+ * em Ganho/Perdido (mesma regra de `lib/followup`, que recusa destino em etapa
+ * de fechamento).
+ */
+export function useEstagiosDoFunil(pipelineId: string | null) {
+  return useQuery({
+    queryKey: ["roteador-estagios-do-funil", pipelineId],
+    enabled: !!pipelineId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await apiClient.get<{ data: EstagioDoFunil[] }>(
+        `/api/v1/pipelines/${encodeURIComponent(pipelineId as string)}/stages`,
+      );
+      return (res.data ?? []).filter((e) => !e.is_won && !e.is_lost);
+    },
   });
 }
 

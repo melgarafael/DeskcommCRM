@@ -55,6 +55,7 @@ import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
 import { LimiarDeSentimento } from "./LimiarDeSentimento";
+import { VozDoAgente } from "./VozDoAgente";
 import { FollowupFlowPicker } from "./FollowupFlowPicker";
 import {
   FollowupWindowEditor,
@@ -89,6 +90,11 @@ import type { CredentialRow, Provider } from "@/hooks/ai/useCredentials";
 import { credentialStatus } from "@/hooks/ai/useCredentials";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { callbacksHabilitados } from "@/lib/followup/callback-policy";
+import {
+  EscolhaQuandoHaCompromisso,
+  lerEscolhaNoEnvio,
+} from "@/components/agenda/EscolhaQuandoHaCompromisso";
+import type { EscolhaNoEnvio } from "@/lib/agenda/escolha-no-envio";
 
 /**
  * O canal oferecido no seletor é exatamente o que `listSelectableChannels`
@@ -249,6 +255,17 @@ interface FollowupValue {
   callback_enabled: boolean;
   /** Ausente em versões antigas; null = sem janela própria. */
   send_window?: FollowupWindowValue | null;
+  /**
+   * #3813 — "Quando o contato tiver horário marcado" DESTE agente.
+   *
+   * Ausente nas versões gravadas antes desta entrega, e ausente é `adiar`: a
+   * leitura é tolerante (`lerEscolhaNoEnvio`), então quem nunca configurou não
+   * vê diferença e o jsonb que a tela grava continua sendo o de sempre.
+   *
+   * Mora ao lado de `send_window` porque as duas são regras de envio PROATIVO
+   * e é esta a configuração que o disparo lê (`lib/followup/janela-de-disparo`).
+   */
+  quando_ha_compromisso?: EscolhaNoEnvio;
 }
 
 const DEFAULT_FOLLOWUP: FollowupValue = {
@@ -1573,6 +1590,16 @@ export function AgentForm(props: Props) {
             ) : null}
           </Card>
 
+          {/* A voz DESTE agente (#4228): grava em `ai_agents.config.voz_voice_id`,
+              por isso só em edição — como o limiar de sentimento logo abaixo. */}
+          {isEdit && (
+            <VozDoAgente
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).voz_voice_id}
+              disabled={disabled}
+            />
+          )}
+
           {/* Capacidades */}
           <Card className="space-y-2 p-4">
             <h3 className="text-sm font-medium">{t("O que o agente pode fazer")}</h3>
@@ -1591,11 +1618,18 @@ export function AgentForm(props: Props) {
             ) : null}
           </Card>
 
-          {/* O acervo que este assistente consulta (0181) */}
+          {/* O acervo que este assistente consulta (0181). O MODO de leitura
+              (#4358) é `config` do agente: grava por PATCH imediato, como o
+              limiar de sentimento — por isso o cartão só recebe o id em
+              edição. */}
           <BasesDoAgente
             materiais={materiais}
             value={form.knowledge_source_ids}
             onChange={(ids) => patch({ knowledge_source_ids: ids })}
+            agentId={props.mode === "edit" ? props.agent.id : undefined}
+            modoInicial={
+              props.mode === "edit" ? (props.agent.config ?? {}).knowledge_mode : undefined
+            }
             disabled={disabled}
           />
 
@@ -1803,6 +1837,31 @@ export function AgentForm(props: Props) {
               }
               disabled={disabled || !form.followup.enabled}
             />
+            {/*
+              #3813 — o SELETOR que faltava: o disparo já lia
+              `followup.quando_ha_compromisso` (`lib/agenda/
+              escolha-no-envio.ts`), mas não havia onde escolhê-la aqui, então
+              todo follow-up adiava para sempre. A mesma tela do passo de
+              automação, no mesmo lugar em que `send_window` mora — é a
+              configuração publicada que o worker lê.
+
+              Grava SEMPRE a chave, inclusive `adiar`: o PATCH da versão funde
+              o `followup` (`{...existing, ...patch}`), então omitir o padrão
+              não apagaria a escolha anterior — quem voltasse de "enviar" para
+              "adiar" ficaria preso em "enviar".
+            */}
+            <EscolhaQuandoHaCompromisso
+              escolha={lerEscolhaNoEnvio(form.followup)}
+              onChange={(quando_ha_compromisso: EscolhaNoEnvio) =>
+                patch({ followup: { ...form.followup, quando_ha_compromisso } })
+              }
+              disabled={disabled || !form.followup.enabled}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Vale para todos os fluxos de follow-up deste agente. Cada passo de automação tem a escolha própria.",
+              )}
+            </p>
             <FollowupFlowPicker
               value={form.followup.flow_pointer_ids}
               onChange={(ids) =>

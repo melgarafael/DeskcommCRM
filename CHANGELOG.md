@@ -8,6 +8,687 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.108.0] — 2026-11-11
+
+### Adicionado
+
+- **Na consulta ao acervo dentro da conversa, o gestor abre o material de origem de cada trecho e o erro passa a dizer o motivo** Na aba de consulta ao acervo, dentro da conversa, cada trecho mostrava só o
+  nome do material. Agora quem é gestor (ou acima) clica no nome e abre o
+  material de onde a frase veio; quem só atende continua vendo o nome, sem um
+  link que terminaria em acesso negado. Quando a consulta falha, a tela mostra o
+  motivo que o sistema deu (sem chave de busca configurada, limite por minuto,
+  permissão), em vez de sempre "Não consegui consultar o acervo". Contribuição de
+  @webtecnica (#1869).
+
+- **A Central avisa quando a Meta aprova, rejeita ou pausa um modelo do WhatsApp oficial conectado direto** Quem conecta o número oficial direto pela Meta só descobria que um modelo de mensagem tinha sido rejeitado ou pausado quando o disparo não saía. Agora, quando a Meta muda o status de um modelo, a Central de avisos mostra qual modelo, em que idioma e o motivo em português, com o caminho para a tela de Modelos. O aviso é um por conexão: dois números da mesma empresa com modelos de mesmo nome não se misturam, e a mesma notícia entregue duas vezes pela Meta não abre dois avisos. Modelo que o CRM não lista não gera aviso. Nada a fazer na instalação.
+
+  Crédito: @webtecnica.
+
+- **O negócio mostra as conversas e as ligações de todos os números do cliente** Na venda B2B o cliente tem vários números, cada um um contato próprio, e o
+  negócio guardava só um deles.
+
+  Agora o dossiê do negócio ganha a seção **Conversas e ligações dos números**,
+  com as conversas e as ligações do contato principal **e** das pessoas
+  relacionadas que já existiam no negócio. Cada conversa abre direto no Inbox, e
+  cada ligação mostra se foi feita ou recebida, se foi atendida e quanto durou.
+
+  Negócio sem pessoa relacionada fica exatamente como era: a seção não aparece
+  para quem tem um número só. Nada muda na chegada das mensagens nem no envio —
+  cada número continua respondendo pelo próprio WhatsApp. Contribuição de @webtecnica (#3669).
+
+- **O público do agente passa a valer também no roteador de intenção** O público que o agente declara (funil, etiqueta, origem) valia só quando ele atendia o número sozinho. Agora vale também quando ele é membro de um roteador: o membro cujo público não aceita o contato deixa de ser oferecido à escolha, e o agente que vinha atendendo perde a vez quando o contato deixa de ser elegível. Se ninguém aceita o contato, nem o agente reserva, o turno fica em silêncio. Quem não declarou público em nenhum agente não muda nada. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+- **Leads dos formulários de anúncio da Meta entram no funil, ligados pela tela da fonte** Desligado por padrão. Quem administra a organização liga em **Webhooks › a fonte › Formulários de anúncio da Meta**: copia o endereço para a Meta, cola o token da página (a página é conferida pelo próprio token) e liga a busca das respostas. Lead que a Meta avisar e não entrar aparece em **Leads recebidos** da fonte dona da página, com o motivo, inclusive quando ela está pausada. A exceção é a fonte cujo endereço foi cadastrado na Meta: pausada, ela recusa os avisos de todas as páginas da instalação, sem registrar nada.
+
+  Uma fonte de captação cadastrada em Webhooks ganhou um endereço próprio para receber o aviso de formulário preenchido da Meta, aceito só com a assinatura do App da Meta da instalação (comparada por tempo constante) e verificado pelo `GET` de desafio que a Meta usa para aprovar a URL.
+
+  O aviso da Meta chega sem as respostas: traz o `leadgen_id` e os ids de página, formulário e anúncio. Por isso a fonte tem uma opção — **desligada por padrão** — de buscar as respostas na Graph API, com um token de página guardado cifrado (nunca devolvido pela API, só o fato de existir), colado por quem administra a organização. Desligada, o aviso sem respostas é registrado como ignorado com motivo nomeado; ligada e sem token, o mesmo. Em nenhum dos casos o lead entra com dado inventado.
+
+  Com as respostas na mão, o lead vira contato (reaproveitando a ficha que já existe, pelo telefone normalizado) e card na etapa configurada da fonte, com nome, telefone, e-mail e as demais respostas nos campos do negócio, e a origem "Meta_ads" marcada no card.
+
+  O dono do lead é a **página**: a Meta tem uma URL de destino só para o objeto `page`, então o aviso é roteado pelo `page_id` para a fonte que reivindica aquela página, e não pelo token do endereço. A página da fonte é a que o token lê, e só quem administra a troca. Aviso de página que nenhuma fonte reivindica fica só no log do servidor, e não entra na fonte errada.
+
+  Entrega que chega atrasada **entra**, com a idade marcada no rastro da captação: a Meta reentrega por horas, e recusar uma reentrega assinada perdia o lead de vez. O mesmo aviso entregue duas vezes responde como duplicado e não cria segundo contato nem segundo card.
+
+  Ainda fora: entrar com a conta da Meta e escolher a página por lista, listar os formulários e sincronizar campanhas. Contribuição de @webtecnica (#3768).
+
+- **Com o módulo Setores ligado, o Inbox filtra por fila, mostra quantas conversas esperam em cada uma e permite mover a conversa de fila pelo menu** Vale para quem ligou o módulo Setores em Recursos opcionais. O Inbox ganha
+  um seletor de fila, com a cor de cada uma e quantas conversas estão esperando
+  nela, e o menu ⋯ da conversa ganha "Mover para fila" para quem atende. Mover
+  uma conversa sem dono a devolve para a distribuição. Com o módulo desligado,
+  que é o padrão, o Inbox fica como estava. Contribuição de @webtecnica (#3876).
+
+- **A tela do canal oficial passa a mostrar por qual caminho o número foi conectado** A conexão do WhatsApp oficial passa a guardar de onde nasceu, e a tela do canal mostra isso num selo ao lado do número. Hoje o único caminho é o token colado à mão; as conexões feitas antes desta versão aparecem com esse mesmo caminho e a nota "(anterior ao registro)", porque ninguém o registrou na época. É a preparação para a conexão pelo login da Meta, que ainda não está disponível. Quem registra o caminho é o servidor, nunca o navegador. Nada a fazer na instalação.
+
+  Crédito: @webtecnica.
+
+- **O histórico de conversa pelo MCP diz quem da equipe enviou cada mensagem** O `crm_get_conversation_history` devolvia `sent_via`, que separa pessoa de IA e de automação, mas **não dizia de qual pessoa era a fala** — e nem o `sent_by_user_id`, que já estava na linha lida pelo handler. Quem consome por token (integração de cobrança, auditoria de atendimento) não tinha como saber se a promessa saiu de um atendente ou da IA, nem qual deles respondeu.
+
+  Agora cada mensagem traz `sent_by_user_id` e `sent_by_user_name`. O nome sai da mesma resolução que o balão do Inbox usa. Mensagem recebida do cliente, de IA, de automação, de sistema ou de celular sai com os dois campos vazios — vazio é "não há autor interno", não um "sistema" inventado. Id de quem não tem vínculo com a organização do chamador também sai sem nome: o `sent_by_user_id` continua sendo a verdade e o nome é a cortesia. Contribuição de @webtecnica (#4077).
+
+- **A sugestão de contato duplicado pelo nome vira opção da empresa, desligada por padrão** A tela Contatos › Duplicados mostrava "Parecidos — confira" para todo mundo: pares
+  sugeridos só pelo NOME, com a régua da Spec 31 (palavras raras em comum ou nome
+  inteiro contido). Em base de pessoa física o nome repete e a seção virava ruído; em
+  base de empresa prospectada ela é o único caminho medido para achar a mesma empresa
+  com dois telefones. Quem sabe qual dos dois mundos é o seu é quem opera.
+
+  Agora é uma opção por organização — Configurações › Atendimento, "Sugerir contatos
+  duplicados pelo nome" — e nasce **desligada**, inclusive para quem atualizar o
+  produto: desligada, a varredura por nome não roda, as dispensas nem são lidas, a
+  seção não aparece e a tela diz por quê. Ligada, o comportamento é o da Spec 31
+  inteiro, com "Não são a mesma empresa". Nada é fundido sozinho em nenhum dos dois
+  estados: a sugestão só abre a conferência, e juntar continua sendo um clique de
+  gestor.
+
+  O par com CPF que se **contradiz** deixa de ser sugerido: dois CPFs diferentes
+  são duas pessoas, e o nome sozinho não as junta. Telefone diferente não tira o
+  par da lista — a mesma empresa com dois números é justamente o par que a
+  sugestão existe para achar. Sem migration. Contribuição de @webtecnica (#4138).
+
+- **Agenda ganha a visão Quadro — uma linha por profissional, o dia na horizontal** Quando a empresa tem **dois ou mais profissionais com agenda**, o alternador da
+  Agenda ganha, ao lado de **Dia**, **Semana** e **Mês**, a opção **Quadro**: cada
+  profissional vira uma linha e os horários do dia correm nas colunas, como a
+  recepção de uma oficina ou de uma clínica com vários profissionais costuma
+  enxergar o dia. Dá para ver num relance quem está livre às 10h e encaixar o
+  cliente ali. Quem atende sozinho não vê o botão: com uma pessoa só, o quadro
+  seria a visão Dia deitada.
+
+  É a **mesma agenda**, vista de outro jeito: os mesmos compromissos, fechamentos,
+  filtro de pessoas e blocos livres do painel de marcação.
+
+  **Clicar num bloco livre abre o painel com aquela pessoa e horário**, e o
+  compromisso é gravado na agenda dela, mesmo com "Todos"
+  no filtro e o serviço pertencendo a outra pessoa. Tocar num compromisso abre o
+  detalhe. Quem só tem leitura vê o quadro sem bloco clicável.
+
+  Nesta versão o quadro **marca e mostra**; arrastar um compromisso para
+  remarcar e criar bloqueio direto pelo quadro vêm numa próxima versão (a
+  issue #4186 acompanha). Nada muda para quem continua usando Dia, Semana ou Mês.
+  Contribuição de @rglucchini-ai.
+
+- **O negócio abre em página inteira pelo botão Expandir do painel do funil** O painel lateral do negócio, no quadro do funil, ganhou o botão **Expandir**. Ele abre o mesmo negócio em página inteira: nome e etapa no cabeçalho, dados e descrição de um lado, tarefas e linha do tempo do outro (uma coluna só em tela estreita). São os mesmos blocos do painel, com mais espaço para quem passa o dia trabalhando o negócio. O **Voltar** da página devolve ao quadro com o filtro que estava aplicado.
+
+  Nada muda nos links que já existiam: tarefas, agenda, relatório de atividades, captação e avisos de passagem continuam abrindo o quadro do funil com o painel lateral, como antes. A página inteira só se alcança pelo botão Expandir. Contribuição de @webtecnica (#4275, #4151).
+
+- **A tela de Faturamento ganhou as etiquetas que mais vendem e os clientes que mais compram** A tela **Faturamento** (menu Análise) passa a mostrar, abaixo dos números do período, dois rankings dos negócios marcados como ganhos: **as etiquetas que mais vendem** e **os clientes que mais compram** — até dez linhas cada, com a quantidade de negócios e o valor.
+
+  Os dois seguem o período escolhido no topo. Estes rankings somam **negócios ganhos no funil**, e os cartões somam comandas e lançamentos: a tela avisa que os dois não precisam bater. Quando algo fica de fora (negócio em outra moeda, sem valor, sem contato, sem data de fechamento), a tela diz quantos.
+
+  Não muda nada no banco e não exige nenhuma ação na atualização. Contribuição de @webtecnica (#4295, pedido da #4280).
+
+- **Na troca automática do roteador, o agente novo sabe que herdou a conversa** Com roteador sticky, quando o classificador troca o agente no meio da conversa, o agente que assume agora recebe no contexto do turno da troca um aviso: ele herdou a conversa (e de qual agente, quando o nome pode ser lido) e o cliente ainda não foi avisado. Assim ele se apresenta no idioma da organização e continua de onde o outro parou, em vez de repetir perguntas que o histórico já respondeu. Nos turnos seguintes nada muda, e conversa que não troca de agente não paga nada a mais. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+- **Convidados da equipe: editar quem participa e ver quem foi convidado** O compromisso já nascia com convidados da equipe, mas a lista só podia ser escolhida na **criação**: abrir um compromisso existente para remarcar trazia o seletor em branco, e a alternativa era desconvidar todo mundo ou conviver com a equipe errada. Agora o painel de remarcação abre com **quem já está convidado marcado**, e o salvamento manda só a **diferença** — quem só trocou o horário não mexe na equipe, e quem tirou a última pessoa desconvida de verdade (`[]` é edição, campo ausente não é). O card do compromisso na grade mostra **com quem é a reunião** (`Com a equipe: Ana, Bruno`) e o rótulo acessível leva os nomes mesmo no bloco curto demais para a terceira linha. Id de quem saiu da organização não vira nome inventado no card, e a recusa de convidado de fora da equipe continua na rota, com mensagem na tela. Contribuição de @webtecnica (#4006).
+
+- **A Ajuda passa a dizer o que o seu papel pode fazer e o que ele não abre** A tela **Ajuda** (rodapé do menu) listava os atalhos que a pessoa alcança e não dizia o que ela **pode** naquele papel: quem entra como Somente leitura via o Inbox e não sabia se podia responder, e o Atendente não sabia que configurar o agente é do Gerente.
+
+  Agora a Ajuda abre com **"O que o seu papel pode fazer"**: o alcance do papel em uma linha, os atalhos que ele realmente abre e, embaixo, **"O que este papel não abre"** — para a pessoa parar de procurar o que não existe na tela dela. Cada item está preso à tela do menu que o sustenta, e esse vínculo é conferido por teste: um item de "pode" tem de apontar para tela que o papel alcança, um item de "não abre" tem de apontar para tela que ele não alcança. Os atalhos seguem o mesmo filtro do índice: porta que a empresa escondeu do menu não aparece.
+
+  Contribuição de @webtecnica (#3567).
+
+- **Data no formato de quem lê nas mensagens de automação** Nas mensagens de automação (WhatsApp e e-mail) e de follow-up, `{{campo|data}}` escreve a data no formato do idioma da organização (dd/mm/aaaa em português e em espanhol) e no fuso dela; `{{campo|data:aaaa-mm-dd}}` escolhe o formato. Valor que não é data sai como está. Campanha e Inbox ainda não leem esse formato: lá o texto sai como foi escrito. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+- **A IA responde numa conversa com dono sem tirar a conversa de quem atende** Um controle no cabeçalho da conversa liga a IA numa conversa que ja tem atendente, e o dono continua o mesmo: fila, carteira, contadores e visibilidade nao mudam, e a IA deixa de ser vetada pelo fato de haver um dono humano. Quando a IA passa a conversa para uma pessoa nesse modo, ela volta para o mesmo atendente — sem `release`, sem rodizio. O modo mora em `conversations.metadata.ai_com_dono`, e desligar remove a chave. Ligar nao chama `fn_conversation_assign`: nenhuma atribuicao e reescrita. Recusa 409 em conversa encerrada, sem dono ou com contato que pediu para a IA nao responder. Missao com instrucao, escolha de agente e modo de contexto ficam para a fatia seguinte. Contribuição de @webtecnica.
+
+- **Lembrete antes da reunião para você também, com o link do Google Meet** O lembrete do compromisso agora leva o link da videochamada. Quando a reunião é
+  pelo Google Meet, o cliente recebe no WhatsApp, 1 dia e 1 hora antes (ou nos
+  horários definidos no tipo de atendimento), a mensagem com o link para entrar.
+  Se o Meet ainda estiver sendo criado, o lembrete espera o link ficar pronto e,
+  perto da hora, sai avisando que o link chega pela própria conversa — nunca com
+  um link inventado.
+
+  Quem atende também pode ser lembrado. Em **Agenda › Avisos**, com os avisos de
+  agendamento ligados, a nova opção **"Também me lembrar antes de cada horário"**
+  manda para o seu WhatsApp, nos mesmos horários do lembrete do cliente, o nome do
+  cliente, o serviço, a hora no fuso da empresa e o link da reunião. A opção nasce
+  desligada. Remarcar dá à data nova os próprios lembretes, cancelar segura o que
+  ainda não saiu, e o mesmo lembrete nunca sai duas vezes. Contribuição de @ricagui.
+
+- **O botão + do Inbox aceita vários anexos de uma vez** No Inbox, o botão **+** do campo de mensagem só deixava escolher um arquivo por vez: o seletor do
+  sistema abria sem permitir marcar mais de um, e quem precisava mandar vários PDFs para o mesmo
+  cliente anexava um por um. Arrastar vários arquivos já funcionava desde a v1.95.0 — e no celular
+  não existe arraste.
+
+  Agora o **+** de Fotos e vídeos e o de Documento aceitam marcar vários arquivos no mesmo gesto. Eles
+  entram na mesma prévia do arraste, na ordem da escolha, e saem em sequência como antes. Nada muda no
+  limite de tamanho, na legenda nem no reenvio. Você não precisa fazer nada. Contribuição de @webtecnica (#4364).
+
+- **Cada agente pode ter a própria voz na resposta falada** Na tela do agente, o cartão "Voz deste agente" escolhe a voz usada nas notas de voz daquele agente. Sem escolha, o agente segue com a voz da organização, como antes. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+### Alterado
+
+- **Os limites do plano de cobrança passam a sair de uma declaração única, sem mudança para quem opera** Os limites de cada plano (assentos, canais e teto de IA) eram repetidos em
+  vários pontos do código. Agora saem de uma declaração única, com teste que
+  confere que cada plano de hoje continua com o mesmo limite. Nada muda nos
+  planos nem na tela. Contribuição de @webtecnica (#4172).
+
+- **Testes passam a prender a ordem da Fila pela espera real e a guarda do ramo curto do silêncio** Só testes e uma extração interna: o rótulo de espera da Fila saiu da tela
+  para uma função com teste ao lado, com o mesmo resultado de antes, e a guarda
+  que impede o acompanhamento de silêncio de reinscrever a conversa a cada minuto
+  ganhou teste próprio. Nada muda para quem opera. Contribuição de @webtecnica
+  (#990, #529).
+
+### Corrigido
+
+- **O aviso de cobrança não se perde quando a leitura da empresa lança** A rota do aviso de cobrança gravava o ponteiro quando a leitura da empresa
+  devolvia erro e quando não encontrava a empresa, mas não quando ela LANÇAVA —
+  cliente do banco sem rede, `fetch` abortado, resposta fora do contrato. Nesse
+  caso a exceção subia, a resposta era 500 e o aviso ia embora sem rastro nenhum
+  no arquivo de avisos.
+
+  Agora a exceção cai no mesmo caminho do erro: o aviso fica registrado com o
+  motivo, e a reentrega do provedor fecha a mesma linha. Contribuição de @webtecnica (#3870).
+
+- **A conversa que nenhum agente vai responder deixa de aparecer como "Automático atendendo"** O comando da conversa (`comando_da_conversa`, exposto pelo PostgREST) dizia `automatico`
+  para conversa sem dono e sem trava mesmo quando nenhum agente podia respondê-la
+  (agente em outro número, ou canal em pré-go-live). A conversa ficava fora da Fila, a troca de carteira a pulava e o dreno do
+  agente descartava o turno: ninguém a via e ninguém respondia.
+
+  Agora o `automatico` só vale quando há, de fato, quem atenda aquele número (agente
+  publicado na conexão ou roteador ativo, e o portão de pré-go-live do canal). Onde
+  não há, o comando é `aguardando`: a Fila mostra e a carteira leva.
+
+  Não muda nada onde já havia quem atendesse; conversa com dono, encerrada, grupo e
+  conversa calada continuam como estavam. Nada a fazer na instalação. Contribuição de @webtecnica (#4012).
+
+- **A busca de quatro telas passa a ignorar acento** Quatro buscas do produto comparavam texto com `toLowerCase().includes(...)`, que
+  ignora maiúscula e minúscula e **não** ignora acento. Quem digitava rápido e sem
+  acento ficava com a lista vazia e concluía que o item não existia: `pos-venda`
+  não achava o agente "Atendimento Pós-venda", `promocao` não sugeria a etiqueta
+  "Promoção" no lote do funil, `sao joao` não achava o negócio "Padaria São João"
+  no Cold call e `exclusao` não achava a empresa "Exclusão Fiscal" no filtro da
+  Auditoria.
+
+  As quatro passam a usar a régua da busca do Inbox nos dois lados da comparação,
+  o termo digitado e o texto do item.
+
+  Nada muda para quem já usa o sistema, e nenhuma ação é necessária na VPS: a busca
+  por telefone do Cold call, o filtro vazio mostrando a lista inteira e o filtro
+  por status dos agentes continuam como estavam. Contribuição de @webtecnica (#4165).
+
+- **A tela de Memória da IA avisa quando não conseguiu ler, em vez de dizer que a memória está vazia** Quando a leitura falhava, a tela Memória da IA mostrava "Nenhuma versão
+  publicada ainda" e "Nenhum aprendizado ainda", os mesmos textos de uma memória
+  vazia. Agora ela diz que não conseguiu ler, oferece "Tentar de novo" e o aviso
+  some quando a releitura dá certo. O que já estava publicado continua valendo
+  para os agentes nos dois casos. Contribuição de @webtecnica (#4171).
+
+- **Dois backups no mesmo segundo não escrevem mais no mesmo arquivo** O backup diário e o backup de segurança da atualização podiam começar no mesmo
+  segundo e escrever no mesmo arquivo temporário, o que podia estragar um backup
+  já aprovado. O `backup.sh` passa a usar uma trava na própria pasta de backups:
+  o backup de segurança da atualização espera o que está em curso terminar (até
+  5 minutos) e, se não der, a atualização para com aviso em vez de seguir sem
+  backup; o backup diário, se já houver outro rodando, sai avisando sem tocar em
+  nenhum arquivo. Nada a configurar. Contribuição de @webtecnica.
+
+- **As instruções internas do agente passam a acompanhar o idioma da organização** As instruções fixas que o sistema entrega ao agente a cada conversa eram
+  sempre em português, mesmo em organização configurada em espanhol — o que
+  puxava o agente para o português. Agora elas seguem o idioma da organização, e
+  o agente recebe também a orientação de responder no idioma em que o cliente
+  escrever. Em organizações em português as instruções são as mesmas de antes,
+  com essa orientação a mais. Contribuição de @webtecnica (#4260).
+
+- **A tela de roteadores avisa quando um número ficou sem roteador e mostra como inativo o roteador preso a um número removido** Ao trocar o número de WhatsApp, o roteador ficava no número antigo e
+  continuava aparecendo como ativo, enquanto as conversas do número novo iam
+  direto para o agente principal sem ninguém perceber. Agora a lista de
+  roteadores avisa qual número está sem roteador e mostra como inativo o que
+  ficou preso a um número removido; ao abrir esse roteador, a tela explica o
+  motivo. O atendimento em si não muda: o número sem roteador continua sendo
+  atendido pelo agente principal dele. Contribuição de @webtecnica (#4340).
+
+- **A busca do funil e a de contatos passam a achar o nome mesmo quando o acento está só de um lado** A busca do funil comparava o texto digitado com o do negócio em minúsculas, e acento é outra letra para essa comparação: quem digitava "Andreia" não achava o negócio da "Andréia" — e o contrário também não. As outras portas de busca de contato (a tela de Contatos, o seletor do negócio e a ferramenta do agente) já achavam os nomes em português, mas por uma régua própria, limitada às letras da língua: "Pena" não achava "Peña" e havia duas regras de acento convivendo no produto.
+
+  As duas passam a usar a mesma régua de acento da busca da Inbox, e a comparação normaliza os dois lados: **quem digita com acento também acha o nome cadastrado sem acento**. A busca por telefone e por e-mail segue igual. Nenhuma configuração muda. Contribuição de @webtecnica (#3918).
+
+- **O aviso de cache hit conta só as chamadas que podem ir para cache** O aviso "Cache hit de prompt abaixo do alvo" parava de fazer sentido em instalações com classificadores: a razão somava no denominador chamadas com menos de **1.024 tokens de entrada**, que nenhum provedor guarda em cache, e o aviso abria e reabria sozinho mesmo com o turno principal cacheando bem. A razão agora considera só as chamadas cacheáveis, ponderada pelos tokens de entrada, e o texto do aviso mostra o **recorte por finalidade e por provedor** — assim o operador vê onde a razão cai (por exemplo, um `checkpoint` a 0,2%) em vez de ler uma causa genérica sobre o prefixo do prompt. Contribuição de @webtecnica.
+
+- **Numa empresa sem agente no ar, a conversa sem dono deixa de dizer «Automático atendendo» e passa a esperar uma pessoa — na tela, na Fila e na troca de carteira** A conversa aberta, sem dono e sem trava, aparecia como «Automático atendendo» mesmo numa empresa que não tem nenhum agente configurado — nenhum agente publicado, ou o único pausado, arquivado ou ainda em rascunho. A tela do Inbox já sabia perguntar; o banco não, e é o banco que decide a aba, o contador e as passagens de conversa. Resultado: a conversa ficava fora da Fila e a troca de carteira do cliente não a levava para o vendedor novo — porque a regra «a conversa da IA fica com a IA» era aplicada onde não há IA.
+
+  Agora as duas pontas respondem a mesma coisa. **Sem agente no ar, conversa sem dono e sem trava é trabalho de gente: aparece na Fila e a troca de carteira a leva.** O banco passou a usar a mesma régua da tela: agente arquivado, pausado ou sem versão publicada não conta como agente no ar. Com agente publicado ela continua «Automático atendendo» e continua com a IA, e conversa com dono, conversa travada pelo contato, grupo e conversa encerrada não mudam.
+
+  O aviso é de correção de leitura: nada muda em quem já tem agente publicado, e a atualização não pede nenhuma ação. O caso do agente publicado em OUTRO número, ou do canal em teste (pré-go-live), é tratado na mesma versão, na nota "A conversa que nenhum agente vai responder deixa de aparecer como Automático atendendo". Contribuição de @webtecnica (#4012).
+
+- **A consulta de leitura ao servidor MCP externo conta como registro na conferência de promessa** O agente que consultava a agenda ou o pedido no sistema da empresa pelo servidor
+  MCP externo recebia a data certa ("exame em 30/11 às 17:50") e a "Conferência de
+  promessa antes de enviar" vetava a resposta como compromisso inventado, porque não
+  sabia de onde a data vinha. O agente acabava passando a conversa para a equipe.
+
+  Agora o resultado de uma ferramenta desse servidor montada como LEITURA (marcada
+  como leitura no agente e declarada só leitura pelo servidor) entra como registro
+  consultado no turno. Informar o que ele registra passa; garantir algo além dele,
+  ou uma oferta, desconto ou condição que o catálogo e o conhecimento não autorizam,
+  continua vetado. Escrita remota, consulta sem a identidade do contato e recusa de
+  escopo não contam.
+
+  Alcance: só o servidor MCP externo da instalação (Configurações › Servidor MCP
+  externo). Os servidores cadastrados por agente ainda não entram, e o follow-up não
+  monta ferramentas do servidor externo.
+
+  Crédito: @luka1601, com revisão de @webtecnica.
+
+- **O horário na lista de conversas ficou legível** O horário de cada conversa na lista do Inbox usava um cinza claro demais (contraste 4,17:1) e ficava abaixo do mínimo de acessibilidade AA; passou para a cor de texto secundária. Nenhuma ação necessária na VPS. Contribuição de @paulolimajr77.
+
+- **Anonimizar um contato alcança também as fichas que foram fundidas nele** Ao anonimizar um contato, pelo botão da ficha ou por pedido de LGPD, as fichas que tinham sido juntadas nele passam a ser anonimizadas junto, com as mesmas regras e com a marca de apagamento dos telefones delas. Vale para fichas fundidas em cadeia, e só dentro da mesma organização. A foto de perfil e os anexos dos negócios de que o contato é o titular saem também, pela fila de remoção de arquivos, inclusive quando a anonimização vem do botão da ficha. Um negócio de outro titular, em que o contato é só pessoa relacionada, mantém os anexos.
+
+  Na atualização, as fichas fundidas em contatos que já estavam anonimizados são anonimizadas uma vez, sem nenhum passo manual. Isso é irreversível, como toda anonimização, e cada ficha alcançada deixa uma linha `lgpd.redact_executed` no registro de auditoria, com a ficha de origem. Nessas linhas o autor fica vazio, porque quem as grava é a atualização.
+
+  Nada a fazer na instalação.
+
+- **O teste do agente e o modo assistido passam a usar as consultas do servidor MCP externo** Quando a empresa liga um servidor MCP externo (por exemplo, um catálogo de produtos) e marca as ferramentas dele como leitura no agente, o teste do agente e as sugestões do modo assistido recusavam essas consultas com "Ferramenta não autorizada no teste" e o agente passava a conversa para a equipe em vez de responder. Agora as consultas marcadas como leitura rodam no teste e no assistido como já rodavam no automático; as marcadas como escrita continuam bloqueadas. Crédito: @Denispds.
+
+## [1.107.0] — 2026-11-11
+
+### Adicionado
+
+- **O menu da conversa ganha 'Exportar conversa', que baixa o histórico em PDF** No menu "⋯" do cabeçalho da conversa, no Inbox, o item "Exportar conversa" baixa
+  o histórico daquela conversa em PDF, datado e em ordem. Notas internas não
+  entram no arquivo. Não é preciso mexer em nada na VPS. Contribuição de @webtecnica.
+
+- **A conversa em que você foi mencionado numa nota interna fica marcada na lista até ser aberta** Quando alguém menciona você numa nota interna, a conversa passa a aparecer na
+  lista do Inbox com o selo "Mencionado", que some quando a conversa é aberta. O
+  aviso pelo sino e pelo celular segue como antes; o selo mostra em qual conversa
+  está o recado. Não é preciso mexer em nada na VPS. Contribuição de @webtecnica.
+
+- **A previsão do funil passa a mostrar a recorrência nova, ao lado do valor único** A previsão do funil — painel **Previsão** em Métricas, `GET
+  /api/v1/pipelines/{id}/forecast` e a tool `crm_get_pipeline_forecast` — projetava
+  só `value_cents`. Quem vende setup + mensalidade via o contrato de R$ 3.000 +
+  R$ 500/mês como **R$ 3.000**, seis vezes menor, e a mensalidade nova não
+  aparecia em número nenhum do cronograma. Crédito: @webtecnica.
+
+  Cada balde (mês × moeda, total, "sem data" e "sem probabilidade") passa a trazer
+  **duas parcelas**, com o mesmo par bruto/ponderado e a mesma probabilidade:
+  `unico` (o setup) e `recorrente_mensal` (a mensalidade). Elas nunca são somadas
+  — entram em meses diferentes do caixa. Os campos antigos `bruto_cents` e
+  `ponderado_cents` continuam iguais (só o valor único), então nada que já lia a
+  resposta muda de número.
+
+  Recorrência que não é mensal não vira parcela mensal: aparece à parte em
+  `recorrencia_nao_mensal`, com o valor. A duração do contrato
+  (`recurring_months`) não multiplica a projeção: a previsão é do mês de
+  fechamento, não do contrato inteiro.
+
+- **O follow-up do agente ganha a escolha do que fazer quando o contato tem horário marcado: adiar, enviar mesmo assim ou não enviar** Na configuração de follow-up do agente aparece a pergunta "Quando o contato tiver
+  horário marcado", com três opções: adiar (o padrão, que é o comportamento de
+  antes), enviar mesmo assim ou não enviar. A escolha vale para todos os fluxos de
+  follow-up daquele agente; cada passo de automação segue com a escolha própria.
+  Quem não mexer continua adiando. Não é preciso mexer em nada na VPS.
+  Contribuição de @webtecnica.
+
+- **O card do funil mostra quando chegou a última mensagem do cliente, ao lado da prévia** O card do Kanban já mostrava o que o cliente disse por último; agora mostra
+  também quando foi. A mesma frase lida hoje e há três semanas pede decisões
+  diferentes de quem olha o funil. Layout, arrasto e ordenação do quadro seguem
+  iguais. Não é preciso mexer em nada na VPS. Contribuição de @webtecnica.
+
+- **A automação consegue mover o card para uma etapa de perda informando o motivo, e a aba Atividade mostra a recusa real em vez de erro interno** A ação de mover o card ganha o campo "Motivo da perda", pedido só quando a etapa
+  de destino fecha o negócio como perdido; os motivos são os mesmos do arrasto no
+  quadro. Uma automação nova que aponte para etapa de perda sem motivo é recusada
+  ao salvar. Automações antigas nessa situação continuam sem mover o card, como
+  já acontecia, e a aba Atividade agora diz o porquê em vez de "erro interno":
+  abra a automação e escolha o motivo. Contribuição de @webtecnica.
+
+- **O resumo da passagem para humano pode mostrar campos do card, escolhidos campo a campo no editor do funil (desligado por padrão)** No editor de campos do funil, cada campo do negócio ganha a opção "Mostrar no
+  resumo da passagem". Com ela ligada, o valor que o campo tem no card aparece no
+  resumo que a pessoa lê ao assumir a conversa. A opção nasce desligada, então
+  nenhum funil que já existe muda sozinho. Não é preciso mexer em nada na VPS.
+  Contribuição de @webtecnica.
+
+- **Duplicados reconhece a mesma conta de WhatsApp em duas fichas** A tela de juntar duplicados passa a reconhecer duas fichas da mesma conta de WhatsApp — a que nasceu do atendimento e a que foi criada por telefone, por exemplo — como a mesma pessoa, mesmo com nomes e telefones diferentes. O critério é a identidade do WhatsApp que a ingestão já grava em cada ficha; a lista mostra o motivo "mesma conta de WhatsApp". Crédito: @webtecnica.
+
+  O pareamento por mesmo telefone, mesmo e-mail e mesmo CPF continua como era, e um par ligado pela conta de WhatsApp também não pode ser dispensado como "não são a mesma pessoa". Nada muda no banco e não há nada a configurar. A conta em si não aparece na tela: a lista segue mostrando nome, telefone e e-mail.
+
+- **Ouvidoria, terceira parte: a tela de gestão, e o módulo já pode ser instalado** O módulo de **Ouvidoria** ganha a sua tela, em Configurações, na seção **Dados e acesso**: a lista das manifestações com protocolo, data, canal e status, filtro por status e paginação; o detalhe com o relato; e a mudança de status (`recebida → em análise → concluída`). Reabrir uma manifestação concluída exige um motivo, e toda mudança de status fica na trilha de auditoria, sem o texto do relato. Só administradores da empresa entram. Na mesma tela fica a chave **Receber manifestações nesta empresa**; desligá-la fecha só a entrada, e o que já chegou continua legível.
+
+  Com a tela, o módulo volta para **Módulos**: quem administra a instalação pode instalá-lo. Ele segue desligado por padrão — sem instalar, a tela não existe e nada muda. Nada a fazer na atualização.
+
+  Contribuição original de @webtecnica, PR #3636; adaptação ao molde dos módulos em commits separados.
+
+- **A voz do agente mostra o catálogo do ElevenLabs com nome e idioma — e aceita um Voice ID colado** A tela de voz em Agente de IA › Provedores passa a pedir ao ElevenLabs a lista de vozes da conta e a mostrar **nome e idioma**, não só o id congelado na última validação da credencial. Quem tem **voz própria ou contratada** na conta ElevenLabs e nunca a via na lista agora cola o id no campo e ele vale: a lista é atalho, não permissão — o `voice_id` salvo é usado como está no turno do agente, sem ser descartado nem "corrigido" por não constar do catálogo. Só o **formato** é conferido (letras, números, hífen e sublinhado, 8 a 64 caracteres), com a mensagem na tela antes de qualquer chamada paga. Se o provedor recusar a voz no uso — ou na prévia —, o motivo que **ele** devolveu aparece na tela, em vez de um "não foi possível" genérico. E se a listagem do ElevenLabs falhar, a tela não quebra: cai na lista da última validação da credencial, avisa que está nela, e o campo livre continua funcionando. Crédito: @webtecnica.
+
+### Alterado
+
+- **Aprendizados da memória recolhem — um aberto por vez** Cada aprendizado aparecia sempre aberto, com corpo, validade e ações na tela ao
+  mesmo tempo: com dez ou mais, a Memória da IA virava uma parede em que nada se
+  achava. Agora os aprendizados são um acordeão — todos fechados por padrão, abrir
+  um fecha o outro, clicar de novo fecha. O corpo, o campo **Vale até** e o botão
+  de arquivar/reativar continuam iguais; só passam a aparecer na linha aberta. Crédito: @webtecnica.
+
+  O acordeão é um componente de lista (`components/ui/accordion.tsx`), sem
+  biblioteca nova, com `aria-expanded`/`aria-controls` no cabeçalho e o painel
+  rotulado pelo botão — nasce pronto para a mesma recolha nas etapas do funil
+  (#4083). Nada muda para quem roda o sistema: não há migration nem ação a fazer.
+
+- **Listas de negócios ficam mais leves, porque a permissão de leitura passa a ser resolvida uma vez por consulta** Para decidir quem pode ver cada negócio, o banco refazia a mesma conta de permissão a cada linha lida, tanto nos negócios quanto no histórico, nos vínculos e nas cadências de e-mail. Agora a conta é feita uma vez por consulta e reaproveitada. Quem vê o quê não muda: as regras são as mesmas, conferidas linha a linha por teste. A atualização troca as regras de leitura sozinha, sem passo manual.
+
+  Crédito: @webtecnica.
+
+- **Os nomes da equipe passam a sair de uma consulta só, e as telas que mostram responsáveis carregam mais rápido** Para mostrar o nome de quem atende, o sistema perguntava ao serviço de login uma pessoa por vez. Numa equipe grande, cada tela ou resposta que lista responsáveis fazia dezenas de idas e voltas. Agora os nomes da equipe vêm do banco numa consulta só, com a mesma regra de antes: só aparece quem tem vínculo com a organização, inclusive quem já saiu, para o histórico continuar legível. Nada muda para quem usa.
+
+  Crédito: @webtecnica.
+
+### Corrigido
+
+- **O aviso de nota interna apagada passa a dizer de qual conversa ela era** A nota interna de uma conversa já chegava em tempo real para os outros
+  atendentes desde a correção anterior. Apagar, não: o aviso de remoção chegava
+  sem o identificador da conversa, então quem tinha a conversa aberta continuava
+  vendo a nota que já não existia até apertar F5. Agora o aviso leva a conversa. Crédito: @webtecnica.
+
+  Agora o aviso de remoção carrega a nota inteira, e a nota some da tela de todo
+  mundo na hora — como já acontecia com a nota recém-escrita. Nada muda para quem
+  usa: sem tela nova, sem configuração e sem migração de dados.
+
+- **O custo das chamadas de IA volta a ser calculado quando o modelo vem com ponto na versão (ex.: claude-haiku-5.5 pelo OpenRouter)** Chamadas feitas com um nome de modelo escrito com ponto na versão não achavam a
+  linha de preço, que é escrita com hífen, e ficavam com o custo em branco nos dois
+  caminhos que ainda não tratavam essa diferença. Agora o nome com ponto casa com o
+  preço. Vale para as chamadas novas; as já registradas sem custo não são
+  recalculadas. Contribuição de @webtecnica, a partir da medição de @mbiero.
+
+- **O alarme de pedido de titular fora do Brasil só afirma o vencimento do prazo legal de um mês depois do fim do último dia, e não na hora do recebimento** Nos países em que o prazo de resposta ao titular é contado em meses, o alarme
+  tratava o prazo como vencido na mesma hora do dia em que o pedido tinha chegado.
+  O último dia do prazo vale inteiro: agora o aviso de vencimento só aparece
+  depois que esse dia termina. Instalações no Brasil não mudam.
+  Contribuição de @webtecnica.
+
+- **O editor do roteador mostra o funil e a etapa de destino já gravados assim que abre, em vez de parecer sem destino** Ao abrir uma intenção do roteador que já tinha funil e etapa de destino, o campo
+  aparecia vazio por um instante e o seletor de etapa não era mostrado, o que se
+  lia como "sem destino". O destino sempre esteve gravado; o que mudou é que a
+  tela passa a mostrá-lo desde a abertura. Contribuição de @webtecnica.
+
+- **Webhook da Meta com payload fora do contrato responde 200, fica arquivado como erro e abre um aviso na Central, em vez de pedir reentrega** Quando a Meta mandava um conteúdo num formato que o sistema não reconhece, a
+  resposta era um erro, e a Meta reenviava o mesmo conteúdo por horas. Agora o
+  sistema confirma o recebimento, guarda o conteúdo recusado como erro e abre um
+  aviso na Central para alguém olhar. A mensagem recusada continua não entrando
+  na conversa. Contribuição de @webtecnica.
+
+- **Contato apagado a pedido não volta pela agenda do app, e a sincronização pergunta uma vez por lote** Quem pediu para ser apagado (LGPD) e continua na agenda do WhatsApp Business não volta mais ao CRM quando a Meta entrega a sincronização de contatos da coexistência (`smb_app_state_sync`): a sincronização agora **consulta a marca de apagamento antes de escrever qualquer coisa** — a mesma pergunta que o importador de histórico já fazia — e um número marcado é pulado.
+
+  A pergunta é feita **uma vez por entrega, não uma por contato**: um webhook pode trazer dezenas de contatos, e antes disso cada um custava uma consulta ao banco. Também deixou de haver escrita em ficha **já anonimizada** que ainda seja encontrada pelo número (anonimizações anteriores à marca, que não têm como ser reconhecidas de outro jeito), e o que foi pulado aparece no log com a contagem — sem telefone, sem nome.
+
+  Contato normal continua sincronizando exatamente como antes, com o nome da agenda no campo que só a equipe vê; outra organização não é afetada; e se a consulta falhar a sincronização não cria o contato na dúvida nem para os demais. Contribuição de @webtecnica (#3432).
+
+- **O Kanban atualiza na hora quando uma etapa é renomeada, reordenada ou desativada em Configurações, e o "Mover para…" do card segue a mesma ordem do quadro** Depois de renomear, reordenar ou desativar uma etapa em Configurações, o quadro
+  podia continuar mostrando a versão antiga até recarregar, e a lista "Mover para…"
+  do card podia vir em ordem diferente da do quadro. Agora os dois seguem a mesma
+  ordem e o quadro reflete a mudança na hora. Contribuição de @webtecnica.
+
+- **Valor inválido em QUEUE_POLL_INTERVAL_MS ou QUEUE_IDLE_MAX_INTERVAL_MS não impede mais o worker de subir: cai no padrão com aviso no log** Se uma dessas duas variáveis do .env tiver um valor que não é um número válido,
+  o worker passa a usar o valor padrão e registra um aviso no log, em vez de não
+  subir. Quem não define essas variáveis, ou define valores válidos, não vê
+  diferença. Não é preciso mexer em nada na VPS. Contribuição de @webtecnica.
+
+- **Toda resposta montada à mão sob /api leva o X-Request-Id da requisição** Desde o #3991, `ok()`/`fail()` já devolvem o `X-Request-Id`; as respostas
+  montadas à mão — arquivo (CSV, vCard, PDF, planilha), imagem, QR, página de
+  callback de OAuth, `405` de método não permitido, redirecionamento de login e
+  webhook de entrada — saíam sem ele, e o pedido ficava sem id correlacionável. Crédito: @webtecnica.
+
+  Agora essas saídas passam por `comIdDaRequisicao(res, req)`, em
+  `lib/api/wrappers.ts`: o id é o mesmo da requisição (o que o `proxy.ts` pôs no
+  cabeçalho e que a rota grava no `audit`/log), e um id que a própria rota já
+  resolveu para a auditoria é preservado. Corpo, status, `Location`, cookies e
+  `Content-Disposition` não mudam — só o cabeçalho é acrescentado.
+
+  Uma catraca estática varre os `route.ts` sob `app/api/` e reprova a próxima
+  resposta montada à mão sem carimbo. Duas exceções declaradas, com motivo, no
+  próprio teste: o pixel de abertura e a página de descadastro das cadências —
+  rotas públicas consumidas pelo cliente de e-mail, sem registro com `requestId`,
+  onde o cabeçalho publicaria um id que não existe em log nenhum.
+
+- **No Inbox, o campo de mensagem continua em foco depois de enviar pelo botão: a segunda mensagem sai sem clicar na caixa** Ao enviar clicando no botão Enviar, o cursor saía do campo de mensagem e era
+  preciso clicar na caixa de novo para escrever a próxima. Agora o cursor volta ao
+  campo logo depois do envio. Enviar com Enter já funcionava e segue igual.
+  Contribuição de @webtecnica.
+
+- **A busca dos filtros da Auditoria acha a empresa digitada sem acento** No painel de Auditoria da plataforma, o filtro de empresas ignorava maiúsculas,
+  mas não acento: digitar `clinica` não achava "Clínica Aurora". Agora a busca
+  usa a mesma régua da busca do Inbox, e `clinica` acha "Clínica Aurora". Crédito: @jay23606.
+
+  Issue #4168.
+
+- **A campanha de Prospecção pausada pelo modo de teste explica o motivo em linguagem simples e diz onde liberar o atendimento ao público** Quando a campanha pausava porque o número ainda estava em modo de teste, o
+  cartão mostrava um código interno. Agora ele diz que a IA só fala com os números
+  da lista de teste e indica o caminho para liberar: Conexões, "Configurar acesso
+  da IA" no cartão do número. Vale para as pausas que acontecerem daqui em diante;
+  os outros motivos de pausa aparecem como antes. Contribuição de @webtecnica.
+
+- **Na Agenda, filtrar por um profissional passa a valer também para os horários oferecidos e para quem recebe o compromisso marcado** Com a agenda filtrada em um profissional, clicar num horário livre abria o painel
+  com outra pessoa (o dono do tipo de compromisso), oferecia os horários dela e
+  gravava na agenda dela. Agora o painel, os horários livres e o compromisso
+  marcado seguem o profissional que está filtrado. Contribuição de @webtecnica.
+
+- **Importar skill aceita o .zip baixado do GitHub, que vem embrulhado numa pasta** O "Download ZIP" do GitHub põe tudo dentro de uma pasta, e a importação recusava
+  o pacote dizendo que faltava o SKILL.md na raiz, mesmo com o arquivo lá. Agora a
+  pasta de topo é reconhecida como a raiz do pacote quando é a única com SKILL.md.
+  Se houver mais de uma, a importação segue recusando e diz quais achou.
+  Contribuição de @webtecnica.
+
+- **Quem entra com Google e tem verificação em duas etapas volta a ver o pedido do código, em vez de cair de novo na tela de login** Quem tinha a verificação em duas etapas ativada e entrava pelo Google num
+  dispositivo ainda não confiável era devolvido à tela de login, sem chegar a ver
+  o pedido do código. Agora a tela do código aparece. A proteção do cookie de
+  sessão segue a mesma. Contribuição de @webtecnica.
+
+- **Quando a pausa da IA por atendimento manual não é gravada, o sistema tenta mais uma vez e registra o motivo na auditoria, em vez de seguir em silêncio** Quando uma pessoa responde pelo celular ou assume a conversa, a IA é pausada.
+  Se essa pausa não chegasse a ser gravada, nada avisava e o agente podia responder
+  por cima do atendente. Agora o sistema tenta gravar de novo uma vez e, se ainda
+  assim não conseguir, deixa o motivo registrado na auditoria.
+  Contribuição de @webtecnica.
+
+- **A Agenda atualiza a última sincronização ao gravar a página do Google** Se a sincronização precisar esperar outro processo terminar de atualizar um compromisso vinculado, a Agenda mostra o horário da última leitura gravada. A página continua disponível para a próxima tentativa. Crédito: @samirhvbr.
+
+- **Quando o agente responde em várias mensagens, elas chegam na ordem em que ele escreveu** O agente às vezes responde em mais de uma mensagem seguida. Até aqui, essas
+  mensagens podiam chegar ao cliente fora de ordem: a que abria a resposta (por
+  exemplo, "Boa pergunta! Pelo nome, acho que você quis dizer Enterprise") era
+  justamente a que esperava a pausa que imita alguém digitando, e as outras
+  passavam na frente.
+
+  Agora cada mensagem espera a anterior terminar antes de ser conferida e
+  enviada, e a conversa chega na ordem em que o agente escreveu. Vale também para
+  modelos de mensagem, catálogo e o aviso de passagem para humano, e para o botão
+  Testar. Quando a resposta tem várias mensagens, a segunda em diante pode sair
+  um pouco depois do que saía antes. Nada a configurar. Crédito: @maclevison.
+
+- **A lista de agentes mostra a cópia e o nome novo na hora, sem recarregar a página** Em **IA › Agentes**, usar **Duplicar** ou **Renomear** no menu de um agente
+  mostrava a mensagem de sucesso, mas a lista continuava igual: a cópia só
+  aparecia, e o nome novo só valia na tela, depois de recarregar o navegador.
+  Agora a lista se atualiza assim que a ação termina. O mesmo vale para Pausar,
+  Despausar e Arquivar.
+
+  O cartão de um agente duplicado também passa a mostrar o modelo de IA da cópia.
+  Antes ele podia mostrar o modelo padrão (por exemplo, Anthropic · Claude Sonnet)
+  para a cópia de um agente que usa a OpenAI, enquanto o editor mostrava o modelo
+  certo. O que o agente responde não mudou: o problema era só no cartão. Cópias
+  feitas antes desta versão voltam a mostrar o modelo certo quando forem
+  publicadas.
+
+  Crédito: @andradevander.
+
+- **A empresa abordada pela Prospecção aparece uma vez só na caixa de entrada** Numa organização com mais de um número conectado, cada empresa abordada pela
+  Prospecção ganhava duas conversas na caixa de entrada: a da abordagem, no número
+  escolhido na campanha, e outra vazia ("Sem mensagens") no número mais antigo da
+  organização. A conversa vazia nascia do cadastro do contato, que abria uma
+  conversa por conta própria antes de a Prospecção abrir a dela. Agora o cadastro
+  feito pela Prospecção não abre conversa, e a única é a do número da campanha.
+  Nenhuma mensagem saía pelo outro número; as conversas vazias que já existem podem
+  ser fechadas pela caixa de entrada. Não é preciso mexer em nada na VPS.
+  Contribuição de @mindflowai1.
+
+## [1.106.0] — 2026-11-10
+
+### Adicionado
+
+- **A automação pode não repetir para o mesmo contato por um número de horas** Nas automações com gatilho de novo contato, ao lado de "rodar no máximo uma vez por contato", há agora o campo "Não repetir para o mesmo contato por (horas)", de 1 a 720 (até 30 dias). Com um número, a automação não repete para o mesmo contato antes de esse tempo passar; a contagem é por contato e por automação e sobrevive a reinício. A entrada barrada fica registrada na aba Atividade com o motivo. Vazio, nada muda: a automação roda como sempre rodou. As duas opções não se combinam pela tela.
+
+  Crédito: @webtecnica.
+
+- **A camada de datas dos negócios na Agenda mostra também os dias do meio do intervalo** Quando a camada "Datas dos negócios" usa dois campos de data (início e fim), um negócio de 10 a 14 aparecia só em 10 e em 14. Agora ele aparece também em 11, 12 e 13, com o rótulo "Em andamento", para a grade responder quem está no meio do período em cada dia. Só entram os dias visíveis na grade, com limite de 366 dias por negócio. Com um campo só, ou com fim antes do início, nada muda.
+
+  Crédito: @webtecnica.
+
+- **O agente de IA passa a conversa para outro agente do roteador do mesmo número** Num número com roteador, o agente que está atendendo ganha a ferramenta
+  `transfer_to_agent`: quando o assunto é de outro agente da lista, ele passa a
+  conversa, e a partir da próxima mensagem do cliente quem responde é o agente
+  escolhido. O destino só pode ser um dos membros desse roteador. A mesma passagem
+  existe como ação para quem opera (`POST /api/v1/conversations/{id}/transferir-agente`,
+  papel `agent` ou acima).
+
+  A passagem só é aceita onde o turno seguinte a respeita: roteador ativo com
+  "manter o agente da conversa" ligado, fora do modo de regras por remetente, e
+  conversa que não nasceu de campanha com agente próprio. Fora disso ela é recusada
+  com o motivo, e nada muda. Destino pausado também é recusado, porque com ele o
+  cliente ficaria sem resposta. Com o roteador mantendo o agente, o classificador
+  ainda pode trocar de agente se vier outra intenção com confiança.
+
+  Cada passagem fica registrada na trilha do roteador como `transferred`, com quem
+  pediu (o agente ou a pessoa), de qual agente para qual e por quê. A trilha das
+  decisões passa a ser escrita só pelo servidor; os membros da organização seguem
+  lendo. Não é preciso mexer em nada na VPS. Contribuição de @webtecnica.
+
+- **Painel do dia mostra reservas, pessoas esperadas e confirmadas por turma** Quem usa a agenda com turmas passa a ver, na visão de dia, um resumo só de leitura com reservas, pessoas esperadas e percentual de confirmadas por turma, no fuso da organização. Confirmar e remarcar continuam no card da reserva. Quem não tem turma cadastrada não vê nada novo. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+- **Um clique a mais na imagem ampliada aproxima para ler texto pequeno** Na conversa, a imagem aberta em tela cheia ganha um segundo estágio de zoom (2x) ao clicar nela, para ler texto pequeno de print e comprovante. Clicar de novo volta ao tamanho original. Fechar continua no X, no ESC ou no clique fora. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+- **O agente pode mandar uma foto por endereço junto com a resposta** O agente ganha a capacidade de mandar uma foto no WhatsApp, com o texto da resposta como legenda, quando a foto tem um endereço na internet. Só vale endereço que uma consulta ao banco externo trouxe na mesma resposta do agente, num campo só dele. O próprio sistema baixa a foto, confere que é uma imagem jpg, png ou webp de até 5 MB, guarda na conversa e só então envia; o endereço nunca passa para fora. Se o download ou a conferência falhar, a resposta sai só com texto e o sistema registra o motivo. A foto depende de a consulta trazer o endereço: numa tabela com coluna de foto, lida pelo agente ou mapeada numa receita, ele já pode usar esse endereço. As receitas prontas de WordPress e WooCommerce ainda não trazem foto. Crédito: @paulolimajr77.
+
+- **A tabela de campanhas do Meta Ads mostra a data de início de cada campanha** Na aba Anúncios › Meta Ads, a tabela de campanhas ganhou a coluna «Início», logo depois de «Veiculação», com a data em que cada campanha começou a rodar, no idioma de quem está usando. Antes, para saber desde quando uma campanha estava no ar era preciso abrir o Gerenciador da Meta. Campanha sem data de início mostra «—», como as outras colunas sem valor. A data já vinha na leitura da plataforma: nenhuma chamada nova, nada a fazer na VPS. Crédito: @shu-chen-dot-ca.
+
+- **Novo módulo opcional Link de pagamento na conversa, desligado de fábrica, em que o aviso de "pago" da InfinitePay fecha o negócio** Antes, o vendedor mandava na conversa o link de pagamento da InfinitePay e depois precisava conferir no extrato se o cliente pagou, para então mover o negócio à mão.
+
+  Com o módulo **Link de pagamento na conversa** ligado em Administração › Sistema, a atendente registra numa conversa o valor a cobrar (por enquanto pela API, em `POST /api/v1/conversations/{id}/pagamentos`) e recebe um endereço de aviso próprio daquele recebimento. Ela cola esse endereço como "URL do Webhook" ao criar o link na InfinitePay e manda o link ao cliente como sempre. Quando o cliente paga, o aviso marca o recebimento como pago e leva o negócio para ganho pelo mesmo caminho do botão "Marcar como ganho": se o funil exige algum campo ou o motivo do ganho, o pagamento fica registrado, o negócio não anda, e a linha do tempo diz o que falta.
+
+  O aviso só vale se trouxer o segredo daquele recebimento e o mesmo valor registrado; aviso repetido não marca nada duas vezes. Não há segredo compartilhado da instalação: cada recebimento tem o seu, e a empresa não precisa configurar chave nenhuma. O endereço só é entregue quando a instalação tem um endereço público https. Registrar e confirmar entram na auditoria.
+
+  Desligado (o padrão), ninguém registra recebimento e os avisos são recusados. Quem não liga não vê diferença.
+
+  Trabalho original de @webtecnica (#3590), com as medições contra a InfinitePay de @franceschini-lucas e @webtecnica.
+
+- **Ouvidoria, segunda parte: o relato pelo WhatsApp, com protocolo só depois de gravar, ainda sem instalação** O módulo de **Ouvidoria** ganha a conversa pelo WhatsApp: quem escreve pedindo a ouvidoria tem o relato juntado em quantas mensagens precisar, recebe um resumo para confirmar e só recebe o número de protocolo depois que a manifestação está gravada — se a gravação falha, a pessoa é avisada de que nada foi registrado e pode confirmar de novo. A conversa da ouvidoria não abre cartão no funil, não entra em campanha nem em follow-up e não acorda o agente de IA. O módulo ainda **não aparece em Módulos** e não pode ser instalado: volta para a lista junto com a tela de gestão, numa parte seguinte. Nada muda para quem opera a VPS, e nada a fazer.
+
+  Contribuição original de @webtecnica, PR #3632; adaptação ao molde dos módulos em commits separados.
+
+- **Reações em mensagens do WhatsApp pelo inbox** No menu de cada mensagem elegível, o atendente pode reagir pelo WhatsApp oficial
+  ou WAHA. Cinco emojis frequentes ficam disponíveis antes de abrir o seletor
+  completo; a frequência é guardada neste navegador após envio confirmado.
+  A reação aparece sobre a mensagem original, não como um novo balão, e falhas
+  de envio não atualizam a lista de emojis frequentes. Crédito: @routeti.
+
+- **Status do WhatsApp por integração, módulo opcional para publicar imagem pelo servidor MCP** O Status do WhatsApp por integração é um módulo opcional e vem desligado de fábrica. Quem administra o servidor liga em /admin/sistema, em "Status do WhatsApp por integração"; desligado, a ferramenta não é oferecida e nada muda na instalação. Ligado, um sistema conectado ao servidor MCP com token de escrita e papel de gerente publica uma imagem no Status de um número conectado por QR Code. A imagem sai de verdade e some em 24 horas. Quem publica escolhe uma lista de contatos ou todos, e nunca sai para todos por omissão. Na lista, quem pediu para não ser incomodado, quem foi anonimizado e os contatos marcados como pessoais ficam de fora, e a resposta diz quantos saíram. Para todos os contatos, a conexão precisa ter "Guardar histórico" ligado, e quem vê é decidido pelo WhatsApp, inclusive quem pediu para não ser incomodado. A publicação usa o mesmo ritmo do número que o envio de mensagens, e a auditoria guarda só o modo e a contagem do público, sem telefone nem legenda. Criado por @webtecnica, a partir da ideia de @lucasprestes1 no #2668.
+
+### Alterado
+
+- **O aviso de passagem no celular vai só para quem responde pela conversa** Quando a IA passava uma conversa para uma pessoa, o aviso no celular ia para todo mundo com papel de atendente ou acima, mesmo com a conversa já em nome de alguém. Numa empresa com vários nichos e responsáveis diferentes, cada um recebia a passagem das conversas dos outros, e não havia como desligar.
+
+  Agora, se a conversa está atribuída, o aviso no celular vai só para essa pessoa. Se está na fila e o cliente tem negócio aberto com responsável, vai para o responsável do negócio. Sem responsável, ou se ele não tem celular inscrito, o aviso continua indo para o time. O item na Central e o som com o CRM aberto seguem iguais para todos, e nada precisa ser feito na instalação. Crédito: @mbiero.
+
+### Corrigido
+
+- **A fila de eventos deixa de ser varrida duas vezes por minuto** Em instalações com o agendador do contêiner e o cron do servidor ligados ao mesmo tempo, os dois varriam a fila de eventos no mesmo minuto. Agora só um trabalha por vez e o outro sai sem tocar em nada, o que reduz o tráfego com o banco. Nada a configurar.
+
+  Crédito: @webtecnica.
+
+- **O "esqueci a senha" deixa de recusar a recuperação na instalação que envia pela Resend** Numa instalação de servidor único com e-mail só pela Resend, o kit já levava a Resend ao serviço de login, mas o CRM olhava só o SMTP: a tela de "esqueci a senha" recusava uma recuperação que sairia, e a tarja de "sem SMTP" seguia acesa no painel de Atualização e no `/admin`. Agora "sem e-mail no login" é não ter SMTP nem Resend, e os três lugares respondem igual. A frase da tela perdeu o absoluto "não sai e-mail nenhum" e diz só o que o CRM sabe: não há SMTP nem Resend configurados nele. Sem SMTP e sem Resend, a recuperação continua sendo recusada do mesmo jeito.
+
+  O que segue valendo: SMTP ou Resend salvos pela tela só chegam ao serviço de login no próximo `update.sh`, e até lá a tela deixa de recusar e o envio pode falhar com o erro genérico. O SMTP posto à mão no `.env` do Supabase o CRM não enxerga, e a tela segue recusando nesse caso; o remédio é configurá-lo em `/admin/email`. Nada precisa ser feito na instalação. Contribuição de @webtecnica (#3188), cuja medição apontou este caminho.
+
+- **"Sincronizar agenda" diz o motivo certo quando a opção "Guardar o histórico" está desligada** O "Sincronizar agenda do celular" dava o mesmo aviso para QUALQUER falha da
+  leitura da agenda: que o WhatsApp do número **não teria respondido** e que era
+  para conferir se ele estava conectado. Só que o caso mais comum não era queda
+  nenhuma — era a opção **"Guardar o histórico anterior à vinculação"** desligada,
+  com o número conectado o tempo todo. A pessoa ia conferir a conexão, não achava
+  defeito e ficava travada sem saber o que fazer. Crédito: @webtecnica.
+
+  Agora cada motivo tem a sua frase, e a da opção desligada diz o caminho: ligar
+  **"Guardar o histórico anterior à vinculação"** em Conexões e conectar o número
+  de novo. Sem essa opção o aparelho não entrega a agenda — insistir no botão não
+  resolve. Um timeout de verdade continua dizendo que o WhatsApp não respondeu;
+  sessão recusada pede reconectar; falha do servidor do canal pede tentar de novo
+  em instantes. O aviso fica na tela do diálogo, não só no toast, e a causa
+  técnica segue no log do servidor para o diagnóstico.
+
+- **A Prospecção diz qual capacidade falta ao agente e abre o agente para corrigir** Quando uma campanha de Prospecção não inicia por causa do agente, o aviso deixa de
+  ser uma frase só para dois problemas. Ele passa a dizer qual falta: a ferramenta
+  "Mover oportunidade de etapa", o acesso ao funil da campanha (com o nome do funil),
+  ou as duas. O aviso lembra que vale a versão publicada do agente e traz o botão
+  "Abrir o agente", que leva direto à tela onde se corrige.
+
+  No formulário do agente, ligar o pacote "Vender e mover o funil" sem marcar nenhum
+  funil mostra um aviso. Ele não impede salvar nem publicar. Não é preciso mexer em
+  nada na VPS. Contribuição de @webtecnica.
+
+- **A ficha de telefones mostra a mensagem do servidor e avisa antes de descartar o rótulo** Ao recusar um telefone, a ficha trocava a explicação do servidor por um texto fixo que falava em DDD, mesmo em organização de outro país. Agora a mensagem do servidor aparece como veio, com o formato esperado para o país da organização. E "Tornar principal" num telefone extra que tem rótulo passa a avisar, antes da troca, que o rótulo será descartado (o telefone principal da ficha não guarda rótulo), com Continuar e Cancelar.
+
+  Crédito: @webtecnica.
+
+- **Quadro do funil deixa de cortar em mil negócios sem avisar** O quadro do funil lia os negócios numa consulta só, e o banco corta toda resposta em mil linhas sem erro: um funil maior chegava incompleto e a tela o apresentava como inteiro. A leitura agora é paginada, filtra pela organização (o que também faz o banco usar o índice certo) e pede só as colunas que o quadro mostra. Nada muda para funis pequenos.
+
+  Crédito: @webtecnica.
+
+- **A conversa encerrada volta a reabrir quando a mensagem do cliente chega atrasada** Quando a mensagem do cliente chega ao número de atendimento depois de a conversa
+  ter sido encerrada, mas com o horário de envio anterior ao encerramento — o
+  comum em entrega atrasada do canal, em lote do provedor ou com o relógio do
+  aparelho do cliente atrás —, a conversa continuava encerrada com a mensagem
+  dentro dela. A aba Fila não a mostrava, e o atendente perdia o cliente sem que
+  nada aparecesse como erro em lugar nenhum. Agora a conversa reabre e volta para
+  a Fila, independentemente da ordem em que a mensagem chegou. O horário original
+  continua ordenando a conversa, e o novo atendimento nunca começa antes do fim
+  do anterior, para a resposta antiga não contar como resposta à mensagem nova.
+  Reenvio da mesma mensagem pelo canal não abre atendimento novo, nem
+  uma segunda mensagem atrasada da mesma conversa reabre duas vezes. Na
+  atualização não há nada a fazer. Crédito: @webtecnica.
+
+- **Os e-mails de confirmação de conta, redefinição de senha e convite de time seguem o idioma da instalação e da empresa** Com a tela em espanhol, os e-mails do sistema continuavam chegando em português: o texto de cada
+  molde era fixo dentro do arquivo dele, fora do dicionário da interface.
+
+  Agora o corpo do e-mail de confirmação de conta e o de redefinição de senha saem no idioma da
+  instalação (`APP_LOCALE`), e o convite de time sai no idioma da empresa que convidou. Em português
+  nada muda. O assunto dos e-mails de confirmação e de redefinição continua sendo o que a instalação
+  configurou no serviço de autenticação. Você não precisa fazer nada.
+
+  Crédito: @webtecnica.
+
+- **Excluir uma empresa derruba na hora o acesso de quem era membro dela** Quando a plataforma excluía uma empresa, quem era membro dela seguia com o vínculo guardado no
+  cache curto da autorização (`lib/auth/cache-curto.ts`) por até 30 segundos, e o login que a
+  exclusão apagava seguia autenticado pelo mesmo tempo. A exclusão era o único caminho de
+  revogação que não chamava a invalidação. Crédito: @FabioMundoDigital.
+
+  Agora a empresa é invalidada no cache logo depois que o banco confirma a exclusão, e a sessão de
+  cada login removido, logo depois de removê-lo. Quem manteve o login (por ter vínculo com outra
+  empresa) segue com a sessão dele. Você não precisa fazer nada.
+
+- **O filtro de etiqueta do Inbox não some mais com o filtro aplicado nem fecha sozinho** No Inbox, quem chegava por um link já filtrado por etiqueta (por exemplo, vindo do relatório Por etiqueta) podia ficar com a lista filtrada e sem o seletor na tela para desfazer o filtro, e o menu de etiquetas às vezes fechava sozinho logo depois de aberto. Agora o seletor aparece desde o primeiro instante, avisa enquanto as etiquetas carregam, e a etiqueta aplicada sempre pode ser desmarcada. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+- **A tela de nova senha avisa quando a senha passa do limite de tamanho** Ao definir uma nova senha, uma senha acima de 72 bytes era aceita pelo formulário e recusada depois pelo serviço de autenticação, e a tela mostrava só um erro genérico. Agora o formulário recusa na hora e explica o limite. O limite é contado em bytes, então acento e emoji pesam mais que uma letra simples. Criado por @webtecnica, a partir do #4313.
+
+- **O teste do agente e o rascunho do modo assistido passam a usar as consultas dos servidores MCP do próprio agente** No Testar e no rascunho do modo assistido, as ferramentas dos servidores MCP cadastrados no próprio agente eram todas recusadas, mesmo as de consulta. Agora a consulta roda quando quem administra a marcou como Leitura e o servidor a declara somente leitura. Ferramenta de escrita, ou sem essa declaração do servidor, continua recusada na prévia. Criado por @webtecnica, a partir do #4317.
+
+- **Uma recusa registrada pela API da ficha do contato passa a bloquear os envios** Quando o consentimento de marketing de um contato era retirado pela API da ficha dele
+  (`PATCH /api/v1/contacts/{id}`, no formato `{ "granted": false }`), essa recusa não era lida na
+  hora de enviar: as automações (WhatsApp, mensagem escrita pela IA, e-mail), as campanhas e a
+  prospecção continuavam escrevendo para ele. Só a recusa recebida por um formulário era levada em
+  conta. Crédito: @FabioMundoDigital.
+
+  Agora a recusa é lida nos dois formatos, o dos formulários e o da ficha, e bloqueia esses envios.
+  Você não precisa fazer nada.
+
+- **O tique das mensagens do canal oficial do WhatsApp passa a mostrar Entregue e Lida** No canal oficial do WhatsApp (Cloud API), o tique da mensagem enviada ficava parado em "Enviada"
+  mesmo depois de a Meta confirmar a entrega e a leitura. Além disso, a confirmação de leitura
+  trocava a hora da entrega pela hora da leitura.
+
+  Agora o tique mostra "Entregue" e "Lida" conforme a Meta confirma, e a hora da entrega é gravada
+  uma vez só. Mensagem que falhou continua aparecendo como "Falhou". Você não precisa fazer nada.
+
+  Crédito: @webtecnica.
+
 ## [1.105.0] — 2026-11-10
 
 ### ⚠️ Requer atenção
@@ -37,7 +718,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Nada a fazer na VPS: sem migration, sem variável nova.
 
-- ****A agenda convida a equipe e leva o negócio para dentro do evento do Google**** O compromisso passa a aceitar **convidados da equipe** (`calendar_appointments.team_guest_user_ids`), além do responsável e do e-mail digitado à mão: cada pessoa recebe o convite no Google e vê o compromisso na própria agenda — inclusive no recorte "minha agenda" do CRM, que agora traz o que a pessoa vai atender E aquilo a que foi chamada. Quem não é da organização é recusado com mensagem na tela, e não descartado em silêncio; e-mail inválido ou vazio simplesmente não vai para o Google, porque um endereço malformado faz o Google recusar o evento INTEIRO. Tipo de **serviço** fica de fora: ali a tela não oferece convidados e a rota recusa a lista. A descrição do evento pode passar a levar, depois do texto que a pessoa escreveu, o **contexto do negócio**: negócio, etapa, produtos da proposta vigente, cliente, telefone e link do CRM. **Vem desligado**: liga-se por tipo de atendimento, em Configurações › Agenda, na chave "Levar os dados do negócio para o Google" — quando a ficha do cliente tem e-mail, ele também é convidado e lê a descrição, então atualizar não manda dado do cliente para fora sem alguém decidir. Compromisso sem negócio vinculado não ganha bloco nenhum. Editar o compromisso não duplica nem desconvida ninguém à toa: a lista publicada em `extendedProperties.private.deskcomm_guests` é o que permite tirar quem saiu, o RSVP de quem ficou é preservado, e um ajuste só de descrição não manda e-mail a ninguém.
+- **A agenda convida a equipe e leva o negócio para dentro do evento do Google** O compromisso passa a aceitar **convidados da equipe** (`calendar_appointments.team_guest_user_ids`), além do responsável e do e-mail digitado à mão: cada pessoa recebe o convite no Google e vê o compromisso na própria agenda — inclusive no recorte "minha agenda" do CRM, que agora traz o que a pessoa vai atender E aquilo a que foi chamada. Quem não é da organização é recusado com mensagem na tela, e não descartado em silêncio; e-mail inválido ou vazio simplesmente não vai para o Google, porque um endereço malformado faz o Google recusar o evento INTEIRO. Tipo de **serviço** fica de fora: ali a tela não oferece convidados e a rota recusa a lista. A descrição do evento pode passar a levar, depois do texto que a pessoa escreveu, o **contexto do negócio**: negócio, etapa, produtos da proposta vigente, cliente, telefone e link do CRM. **Vem desligado**: liga-se por tipo de atendimento, em Configurações › Agenda, na chave "Levar os dados do negócio para o Google" — quando a ficha do cliente tem e-mail, ele também é convidado e lê a descrição, então atualizar não manda dado do cliente para fora sem alguém decidir. Compromisso sem negócio vinculado não ganha bloco nenhum. Editar o compromisso não duplica nem desconvida ninguém à toa: a lista publicada em `extendedProperties.private.deskcomm_guests` é o que permite tirar quem saiu, o RSVP de quem ficou é preservado, e um ajuste só de descrição não manda e-mail a ninguém.
 
 - **O agente da prospecção sabe o que a campanha vende e oferece a automação junto do site** Na campanha de prospecção, as caixinhas de **O que esta campanha vende** agora chegam ao contexto das respostas do agente e à ferramenta de auditoria, na ordem marcada. Antes, essas escolhas só chegavam se o operador as repetisse no texto da instrução. Quando a campanha vende automação, a estratégia ganha uma frase sobre ela, exibida também na auditoria do site. Essa frase não apresenta site quando a oferta está desmarcada. Campanha que só vende site continua como antes. O bloco da primeira abordagem não foi alterado nesta fatia. Não é preciso mexer em nada na VPS. Contribuição de @paulolimajr77.
 
@@ -14965,7 +15646,10 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.105.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.108.0...HEAD
+[1.108.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.107.0...v1.108.0
+[1.107.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.106.0...v1.107.0
+[1.106.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.105.0...v1.106.0
 [1.105.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.104.0...v1.105.0
 [1.104.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.103.0...v1.104.0
 [1.103.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.102.0...v1.103.0

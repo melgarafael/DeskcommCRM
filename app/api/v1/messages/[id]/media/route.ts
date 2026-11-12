@@ -16,7 +16,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -35,6 +35,8 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { nomeParaBaixar } from "@/lib/messaging/media/nome-para-baixar";
+import { fusoDaOrganizacao } from "@/lib/propostas/data-no-fuso";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -166,7 +168,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Filtro explícito de organization_id por doutrina (defense-in-depth).
   const { data: msg, error } = await supabase
     .from("messages")
-    .select("id, media_url, media_mime, media_size_bytes, media_storage_path, metadata, channel_session_id")
+    .select("id, media_url, media_mime, media_size_bytes, media_storage_path, metadata, channel_session_id, sent_at")
     .eq("id", messageId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -177,11 +179,24 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
   }
 
-  // O nome original guardado pela ingestão (#2613), lido SÓ quando o pedido é
-  // download — o preview abre como sempre. `null` significa "não há nome a
-  // preservar": as duas respostas abaixo seguem exatamente como antes, sem
-  // inventar `documento.pdf` para o atendente.
-  const nomeDoArquivo = baixar ? nomeOriginalDaMensagem(msg.metadata) : null;
+  // O nome do arquivo SÓ no pedido de download — o preview abre como sempre.
+  // O original guardado pela ingestão (#2613) vence; sem ele (foto, vídeo e
+  // áudio da API oficial chegam sem nome), `nomeParaBaixar` monta um com tipo,
+  // data e hora. Antes, sem nome não havia `Content-Disposition`, e o
+  // "baixar" de uma foto só a abria no navegador.
+  const nomeOriginal = baixar ? nomeOriginalDaMensagem(msg.metadata) : null;
+  const nomeDoArquivo = !baixar
+    ? null
+    : nomeParaBaixar(
+        {
+          id: msg.id,
+          nomeOriginal,
+          media_mime: msg.media_mime,
+          media_storage_path: msg.media_storage_path,
+          sent_at: (msg as { sent_at?: string | null }).sent_at ?? null,
+        },
+        nomeOriginal ? "UTC" : await fusoDaOrganizacao(supabase, activeOrg.orgId),
+      );
   if (!msg.media_storage_path && !msg.media_url) {
     // A mídia foi podada pela retenção (o marcador `expired` da migration 0557 é
     // a prova escrita). 404 seria "não há o que servir" e deixaria a tela cair
@@ -226,10 +241,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         nomeDoArquivo ? { download: nomeDoArquivo } : undefined,
       );
     if (!signErr && signed?.signedUrl) {
-      const response = NextResponse.redirect(
+      const response = comIdDaRequisicao(NextResponse.redirect(
         nomeDoArquivo ? urlAssinadaParaDownload(signed.signedUrl, nomeDoArquivo) : signed.signedUrl,
         302,
-      );
+      ), requestId);
       response.headers.set("X-Request-Id", requestId);
       return response;
     }
@@ -259,7 +274,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         // verdade ("não há o que servir"); 502 acusaria uma falha inexistente.
         return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
       }
-      return new Response(new Uint8Array(media.buffer), {
+      return comIdDaRequisicao(new Response(new Uint8Array(media.buffer), {
         status: 200,
         headers: {
           "Content-Type": media.mime,
@@ -271,7 +286,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
           ...(nomeDoArquivo ? { "Content-Disposition": cabecalhoDeDownload(nomeDoArquivo) } : {}),
           "X-Request-Id": requestId,
         },
-      });
+      }), requestId);
     } catch {
       return fail("bad_gateway", t("Mídia indisponível no momento."), 502, { requestId });
     }

@@ -52,6 +52,8 @@ const SESSAO_A = "ffffffff-2222-4000-8000-000000000001";
 const SESSAO_B = "ffffffff-2222-4000-8000-000000000002";
 const SESSAO_SEM_POLICY = "ffffffff-2222-4000-8000-000000000003";
 const SESSAO_A_OFICIAL = "ffffffff-2222-4000-8000-000000000004"; // outro canal, também de A
+const AGENTE_DA_IA = "ffffffff-3333-4000-8000-0000000000a1";
+const VERSAO_DA_IA = "ffffffff-3333-4000-8000-0000000000a2";
 
 const POLITICA_A = "ffffffff-3333-4000-8000-000000000001";
 const POLITICA_B = "ffffffff-3333-4000-8000-000000000002";
@@ -149,6 +151,24 @@ describe("#3642 — a conversa segue o número do vendedor novo", () => {
       on conflict (user_id, organization_id) do update
         set role = excluded.role, revoked_at = null, accepted_at = now();
 
+      -- A ORGANIZACAO TEM AUTOMATICO DE PE. Sem esta linha a fixture nao media
+      -- mais o que diz medir: desde a #4012 o comando da conversa pergunta a
+      -- organizacao se existe agente atendendo, e numa org sem ai_agents a
+      -- resposta correta para conversa sem dono virou 'ninguem'. O caso aqui e
+      -- outro -- "o numero segue o vendedor" com a IA atendendo --, e para ele o
+      -- agente precisa existir e estar publicado.
+      insert into public.ai_agents (id, organization_id, name, system_prompt)
+      values ('ffffffff-4012-4000-8000-00000000000a', '${ORG}', 'Agente Inv', 'prompt')
+      on conflict (id) do update set archived_at = null, paused_at = null;
+      insert into public.ai_agent_versions
+        (id, organization_id, agent_id, version_number, system_prompt, provider, model, status, published_at)
+      values ('ffffffff-4012-4000-8000-00000000000b', '${ORG}',
+              'ffffffff-4012-4000-8000-00000000000a', 1, 'prompt', 'anthropic',
+              'claude-sonnet-4-6', 'published', now())
+      on conflict (id) do update set status = 'published', published_at = now();
+      update public.ai_agents set published_version_id = 'ffffffff-4012-4000-8000-00000000000b'
+       where id = 'ffffffff-4012-4000-8000-00000000000a';
+
       -- Três números: A e B com policy própria; o terceiro sem policy (legado).
       insert into public.channel_sessions
         (id, organization_id, provider, waha_session_name, webhook_secret_encrypted, status, display_name)
@@ -181,6 +201,20 @@ describe("#3642 — a conversa segue o número do vendedor novo", () => {
         ('${ORG}', '${POLITICA_A_OFICIAL}', '${VENDEDOR_A}')
       on conflict do nothing;
 
+      -- A IA atende o número A desde a #4012: 'comando_da_conversa' só diz
+      -- 'automatico' quando há agente PUBLICADO no número (senão rebaixa para
+      -- 'aguardando'). Os casos do doc 237 3-B medem a IA atendendo, então o
+      -- número precisa mesmo de um agente publicado — a régua da função nova
+      -- tem invariante próprio ('comando-da-conversa-por-numero').
+      insert into public.ai_agents (id, organization_id, name, system_prompt)
+        values ('${AGENTE_DA_IA}', '${ORG}', 'Agente do numero A', 'system')
+      on conflict (id) do nothing;
+      insert into public.ai_agent_versions
+        (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status)
+        values ('${VERSAO_DA_IA}', '${ORG}', '${AGENTE_DA_IA}', 1, 'system', 'anthropic', 'claude-sonnet-4-6', '${SESSAO_A}', 'published')
+      on conflict (id) do nothing;
+      update public.ai_agents set published_version_id = '${VERSAO_DA_IA}' where id = '${AGENTE_DA_IA}';
+
       insert into public.contacts (id, organization_id, display_name) values
         ('${CONTATO}', '${ORG}', 'Contato Numero'),
         ('${CONTATO_DA_CARTEIRA}', '${ORG}', 'Contato Carteira'),
@@ -204,6 +238,7 @@ describe("#3642 — a conversa segue o número do vendedor novo", () => {
       delete from public.conversations where organization_id = '${ORG}';
       delete from public.channel_routing_responsibles where organization_id = '${ORG}';
       delete from public.channel_routing_policies where organization_id = '${ORG}';
+      delete from public.ai_agents where organization_id = '${ORG}';
       delete from public.channel_sessions where organization_id = '${ORG}';
       delete from public.contacts where organization_id = '${ORG}';
       delete from public.user_organizations where organization_id = '${ORG}';

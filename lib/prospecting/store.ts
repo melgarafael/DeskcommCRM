@@ -39,6 +39,11 @@ import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
 import {
+  palavraDeSaida,
+  problemaNoTextoDaSaidaNoIdioma,
+  TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+} from "./rodape-de-saida";
+import {
   provedorDaOrganizacao,
   provedorExigeCredencialDaOrganizacao,
   validarCredencialDaOrganizacao,
@@ -645,8 +650,49 @@ export function mensagemDoAgenteIncompleto(
   return [...faltas.map((f) => f.frase), FECHO_DA_VERSAO_PUBLICADA].join(" ");
 }
 
+/**
+ * O TEXTO DA SAÍDA NO IDIOMA DA INSTALAÇÃO (#4370).
+ *
+ * O schema já recusa o texto sem NENHUMA palavra de saída, e o texto grande ou
+ * com link. Falta a parte que só existe onde o locale é conhecido: a palavra
+ * certa DESTA instalação. Um texto com PARAR numa organização em espanhol
+ * passaria na régua genérica e ofereceria uma palavra que ninguém ali responde —
+ * a pessoa escreveria "PARAR" e o detector, que exige a palavra sozinha, até
+ * bloquearia; mas o rodapé da plantilla em espanhol promete BAJA, e as duas
+ * redações convivendo na mesma campanha é o tipo de incoerência que o dono não vê.
+ *
+ * A recusa é da CAMPANHA (422, escopo `campanha`): é o mesmo escopo das outras
+ * recusas de configuração, e o operador conserta o campo e tenta de novo.
+ */
+async function validarTextoDaSaidaNoIdioma(
+  db: pg.PoolClient,
+  org: string,
+  texto: string | undefined,
+): Promise<void> {
+  const proprio = (texto ?? "").trim();
+  // Vazio é o contrato: usa a frase padrão, e nada há para recusar.
+  if (proprio === "") return;
+  const idioma = await idiomaDaOrganizacao(db, org);
+  const problema = problemaNoTextoDaSaidaNoIdioma(proprio, idioma);
+  if (problema === null) return;
+  if (problema === "sem_palavra")
+    throw new ProspectingError(
+      `O texto da opção de parar precisa conter "${palavraDeSaida(idioma)}", a palavra que a pessoa responde para sair nesta instalação.`,
+      422,
+      "campanha",
+    );
+  throw new ProspectingError(
+    problema === "longo"
+      ? `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`
+      : "O texto da opção de parar não pode ter link.",
+    422,
+    "campanha",
+  );
+}
+
 export async function validateConfig(db: pg.PoolClient, org: string, input: CampaignConfig) {
   const config = campaignConfigSchema.parse(input);
+  await validarTextoDaSaidaNoIdioma(db, org, config.texto_da_saida);
   const agent = (
     await db.query(
       "select v.tool_ids,v.pipeline_ids from ai_agents a join ai_agent_versions v on v.id=a.published_version_id and v.organization_id=a.organization_id where a.organization_id=$1 and a.id=$2 and v.status='published' and a.archived_at is null and a.paused_at is null and a.operation_mode='automatic'",
@@ -913,15 +959,24 @@ export async function criarPegadaDoCandidato(
   let contactId = contatoDaCampanha ?? p.contact_id;
   if (!contactId) {
     const linksDoNovo = linksParaContatoNovo(p);
-    const contact = await createContactHandler(admin, ctx, {
-      name: p.data.name,
-      display_name: p.data.name,
-      phone_number: p.phone,
-      source: "prospecting",
-      source_metadata: { campaign_id: c.id, place_id: p.data.key, maps_url: p.data.maps_url },
-      consent: { legitimate_interest: { ref: config.legal_basis_ref } },
-      ...(linksDoNovo ? { custom_fields: linksDoNovo } : {}),
-    });
+    // Porta `prospeccao`: a conversa abre logo abaixo, no canal da CAMPANHA. Pela
+    // porta `manual` o cadastro abria antes outra, no telefone mais antigo da
+    // organização, e cada empresa abordada aparecia duas vezes na caixa.
+    const contact = await createContactHandler(
+      admin,
+      ctx,
+      {
+        name: p.data.name,
+        display_name: p.data.name,
+        phone_number: p.phone,
+        source: "prospecting",
+        source_metadata: { campaign_id: c.id, place_id: p.data.key, maps_url: p.data.maps_url },
+        consent: { legitimate_interest: { ref: config.legal_basis_ref } },
+        ...(linksDoNovo ? { custom_fields: linksDoNovo } : {}),
+      },
+      undefined,
+      { porta: "prospeccao" },
+    );
     contactId = String(contact.contact.id);
     await db.query(
       "update prospecting_candidates set contact_id=$3 where organization_id=$1 and id=$2",
