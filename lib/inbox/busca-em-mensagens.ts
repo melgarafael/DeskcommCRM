@@ -191,6 +191,12 @@ export async function buscarConversasPorTextoDeMensagem(
   termo: string,
   teto: number = TETO_DE_CONVERSAS_NA_BUSCA_DE_MENSAGENS,
 ): Promise<Map<string, TrechoDeBusca>> {
+  // Sem palavra de 3+ letras o `pg_trgm` não extrai trigrama, o
+  // `idx_messages_body_trgm` não ajuda e o `ILIKE` varre `messages` inteira a
+  // cada tecla. O piso da busca é 2; abaixo de 3 ficam só nome, telefone e
+  // última mensagem, como antes da #1355.
+  if (!palavrasDoTermo(termo).some((p) => p.length >= 3)) return new Map();
+
   const { data, error } = await supabase
     .from("messages")
     .select("id, conversation_id, body, sent_at")

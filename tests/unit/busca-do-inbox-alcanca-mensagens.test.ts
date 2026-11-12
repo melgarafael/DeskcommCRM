@@ -196,4 +196,16 @@ describe("a busca do Inbox alcança o texto das mensagens (#1355)", () => {
     expect(texto, "sem casamento, nada de `id.in` deve ir para a URL").not.toContain("id.in.");
     expect(resultado.conversations[0]?.busca_em_mensagem).toBeUndefined();
   });
+
+  it("termo sem palavra de 3 letras não consulta `messages` (trigrama não atende: seria varredura)", async () => {
+    const { pedidos } = await buscar(
+      { conversations: [CONVERSA_ANTIGA], messages: [MENSAGEM_ANTIGA] },
+      "ta",
+    );
+
+    expect(pedidos.messages ?? [], "termo de 2 letras foi ao corpo das mensagens").toHaveLength(0);
+    expect(JSON.stringify(pedidos.conversations), "a busca de hoje sumiu junto").toContain(
+      "last_message_preview",
+    );
+  });
 });
