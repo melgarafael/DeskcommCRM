@@ -13,6 +13,8 @@ import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
 import { InboxDaEmpresaForm } from "./_inbox";
 import { TenantForm } from "./_form";
 import { InterfaceDaEmpresaForm } from "./_interface";
+import { PerfisDoTextoRetidoForm } from "./_permissoes";
+import { perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { camposDoNegocioDosFunis } from "@/lib/leads/compras-do-contato";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 
@@ -119,6 +121,9 @@ export default async function TenantSettingsPage() {
         />
       )}
       {row && <InboxDaEmpresaForm initial={row.interface_settings} />}
+      {/* Permissões (#4500): quem pode revelar o texto de uma mensagem que o
+          contato apagou. Abre VAZIA — o admin marca e salva. */}
+      {row && <PerfisDoTextoRetidoForm inicial={perfisDoTextoRetido(row.settings)} />}
       {row && (
         <CatalogoDaEmpresaForm
           inicial={capacidadesLigadas(row.settings, []).includes("apresentacao_do_catalogo")}

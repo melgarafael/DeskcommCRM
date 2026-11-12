@@ -9386,6 +9386,40 @@ export const DICIONARIO: Traducoes = {
   "Esta mensagem foi apagada pelo contato": { es: "Este mensaje fue eliminado por el contacto" },
   "Esta mensagem foi apagada pelo atendente": { es: "Este mensaje fue eliminado por el agente" },
   "Visível só aqui no CRM": { es: "Visible solo aquí en el CRM" },
+  // O TEXTO RETIDO DA APAGADA PELO CONTATO (#4500): o botão, os quatro estados
+  // e a tela de permissões. "Retido" aqui é o termo do produto — o corpo que o
+  // CRM guarda depois de o contato apagar.
+  "Ver texto retido": { es: "Ver texto retenido" },
+  "Verificando permissão…": { es: "Verificando permiso…" },
+  "Você não tem permissão para ver este texto": {
+    es: "No tienes permiso para ver este texto",
+  },
+  "Você não tem permissão para ver este texto.": {
+    es: "No tienes permiso para ver este texto.",
+  },
+  "Texto não disponível": { es: "Texto no disponible" },
+  "Texto não disponível.": { es: "Texto no disponible." },
+  "Não foi possível verificar a mensagem.": {
+    es: "No fue posible verificar el mensaje.",
+  },
+  "Não foi possível verificar a permissão.": {
+    es: "No fue posible verificar el permiso.",
+  },
+  "Não foi possível ler o texto.": { es: "No fue posible leer el texto." },
+  "Permissões": { es: "Permisos" },
+  "Ver o texto de mensagens apagadas pelo contato": {
+    es: "Ver el texto de mensajes eliminados por el contacto",
+  },
+  "Quando o contato apaga uma mensagem, o texto fica guardado e escondido. Marque os perfis que podem revelá-lo na conversa. Cada clique é registrado na auditoria, inclusive quando é negado. Sem nenhum perfil marcado, ninguém vê o texto.":
+    {
+      es: "Cuando el contacto elimina un mensaje, el texto queda guardado y oculto. Marca los perfiles que pueden revelarlo en la conversación. Cada clic se registra en la auditoría, incluso cuando es denegado. Sin ningún perfil marcado, nadie ve el texto.",
+    },
+  "Nenhum perfil autorizado.": { es: "Ningún perfil autorizado." },
+  "Salvar permissões": { es: "Guardar permisos" },
+  "Permissões salvas.": { es: "Permisos guardados." },
+  "Não foi possível salvar as permissões.": {
+    es: "No fue posible guardar los permisos.",
+  },
   editada: { es: "editado" },
   "O autor editou esta mensagem": { es: "El autor editó este mensaje" },
   "Erro desconhecido": { es: "Error desconocido" },

@@ -36,6 +36,7 @@ import { ApiError } from "@/lib/api/types";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { lerAnuncioDaMensagem } from "@/lib/leads/atribuicao-de-anuncio";
 import { marcadorDaApagada, textoDaApagadaApareceNaInbox } from "@/lib/messaging/apagada";
+import { TextoRetidoDaMensagem } from "@/components/inbox/TextoRetidoDaMensagem";
 import { AnuncioCard } from "@/components/inbox/AnuncioCard";
 import {
   extractCitations,
@@ -634,6 +635,10 @@ export function MessageBubble({
                 <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
               </div>
             )}
+            {/* Apagada pelo CONTATO: o corpo não vem no payload (#4500). Quem
+                decide se ele aparece é o servidor, ao clique — e o aviso de
+                exclusão CONTINUA acima, porque a mensagem segue apagada. */}
+            {!textoApagadoVisivel && <TextoRetidoDaMensagem mensagemId={message.id} />}
           </div>
         ) : ocultaNoCrm ? (
           <p className="whitespace-pre-wrap wrap-anywhere italic leading-snug opacity-60">

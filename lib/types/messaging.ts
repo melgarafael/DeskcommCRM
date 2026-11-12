@@ -175,6 +175,16 @@ export interface Message {
   edited_at: string | null;
   /** Quando o AUTOR apagou para todos. A linha fica; o texto não é mostrado. */
   revoked_at: string | null;
+  /**
+   * A linha apagada pelo CONTATO ainda tem texto guardado (#4500).
+   *
+   * Campo de PAYLOAD, calculado na leitura (`mascararTextoRetido`): o `body`
+   * dessa mensagem não sai mais no histórico — este booleano é o que resta dele,
+   * e é o que faz o botão "Ver texto retido" aparecer. Ausente = não há texto
+   * retido (ou a resposta é de antes desta mudança); nunca significa "o texto
+   * está logo abaixo".
+   */
+  texto_retido?: boolean;
   /** A mensagem que esta responde (citação). `null` = envio solto. */
   reply_to_message_id: string | null;
   created_at: string;
