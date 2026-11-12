@@ -53,8 +53,7 @@ export function lerPrefs(): NotifyPrefs {
   if (typeof window === "undefined") return base;
   try {
     const raw = window.localStorage.getItem(KEY);
-    if (!raw) return base;
-    const parsed = JSON.parse(raw) as Partial<NotifyPrefs>;
+    const parsed = (raw ? JSON.parse(raw) : {}) as Partial<NotifyPrefs>;
     for (const cat of NOTIFY_UI_CATEGORIES) {
       const row = parsed[cat];
       if (!row) continue;
@@ -64,7 +63,21 @@ export function lerPrefs(): NotifyPrefs {
   } catch {
     // JSON inválido — volta ao padrão
   }
+  // `alerts.enabled = "0"` é o aparelho fora do push. Antes de cada tipo ter o
+  // seu Push, desligar "Nova mensagem" gravava só isto e o `message.push`; os
+  // outros tipos ficavam `true` no storage e o `pushEfetivo` antigo os calava.
+  // Sem esta linha, quem desligou antes da atualização voltaria a receber a
+  // bandeja de todos os outros tipos sem ter mexido em nada.
+  if (aparelhoForaDoPush()) for (const cat of NOTIFY_UI_CATEGORIES) base[cat].push = false;
   return base;
+}
+
+function aparelhoForaDoPush(): boolean {
+  try {
+    return window.localStorage.getItem("alerts.enabled") === "0";
+  } catch {
+    return false;
+  }
 }
 
 /**
