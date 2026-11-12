@@ -272,6 +272,13 @@ describe("catálogo: 'Ligação perdida' é um gatilho de primeira classe", () =
 
 describe("motor: a ligação perdida manda UMA mensagem pelo caminho de sempre", () => {
   it("dispara a regra e envia uma vez, com o contato no contexto", async () => {
+    // RELÓGIO PRESO DENTRO DA JANELA (#4365). O motor adia pela janela do
+    // NÚMERO (7h–22h em São Paulo), e este caso rodava com o relógio de
+    // verdade: às 23h o disparo saía `retry` — decidir esperar está CORRETO —,
+    // e o teste reprovava por causa da HORA em que a CI rodou, não do produto.
+    // 15:00Z = 12:00 em São Paulo, meio da janela.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-11T15:00:00Z"));
     const { cliente } = mundo();
 
     const resultado = await runAutomationForEvent(cliente, ligacaoPerdida());
@@ -286,6 +293,12 @@ describe("motor: a ligação perdida manda UMA mensagem pelo caminho de sempre",
   });
 
   it("CONTROLE: contato BLOQUEADO continua barrando o envio", async () => {
+    // O CONTROLE VALE MAIS FORA DA JANELA (#4365): é aí que o adiamento aparece
+    // e engolia o bloqueio. 08:00Z = 05:00 em São Paulo — janela fechada. O
+    // contato bloqueado tem de sair `skipped/contact_blocked` mesmo assim: não
+    // há envio possível para esperar a janela abrir.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-11T08:00:00Z"));
     const { cliente, tabelas } = mundo({ contato: contato({ is_blocked: true }) });
 
     await runAutomationForEvent(cliente, ligacaoPerdida());
