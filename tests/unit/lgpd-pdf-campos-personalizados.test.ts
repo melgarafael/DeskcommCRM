@@ -35,6 +35,7 @@ function payload(): ExportPayload {
     honorarios_parcelas: [],
     orders: [],
     activities: [],
+    cobrancas_avulsas: [],
     appointments: [],
     sales: [],
     proposals: [],

@@ -166,6 +166,31 @@ export interface ActivityRow {
 }
 
 /**
+ * A cobrança avulsa do negócio (`cobrancas_avulsas`, migration 9345).
+ *
+ * Entra porque a anonimização a REDIGE: `descricao` é o único texto livre da
+ * tabela — "Consulta da Maria Silva, outubro" — e vira `[redigido]` na virada
+ * de `is_anonymized`. Valor, moeda, vencimento, estado e VÍNCULO ficam: são
+ * registro financeiro. Sem esta coleta, o Art. 18 II devolveria um export sem
+ * exatamente a linha que a casa redige a pedido dele — e a régua de
+ * `lgpd-exporta-o-que-redige` reprova por isso. Aqui vai o dado COMPLETO:
+ * redigir o texto livre é o outro caminho, não este.
+ */
+export interface CobrancaAvulsaRow {
+  id: string;
+  lead_id: string | null;
+  conversation_id: string | null;
+  descricao: string;
+  valor_cents: number;
+  moeda: string;
+  vencimento: string | null;
+  estado: string;
+  pago_em: string | null;
+  cancelada_em: string | null;
+  created_at: string;
+}
+
+/**
  * A proposta de campo lida num documento do negócio (`lead_field_proposals`,
  * migration 0772).
  *
@@ -777,6 +802,7 @@ export interface ExportPayload {
   lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
+  cobrancas_avulsas: CobrancaAvulsaRow[];
   checkpoints: CheckpointRow[];
   /** Opcionais: payload gerado antes da 9095 não os tem. */
   mcp_pedidos_de_acesso?: AcessoMcpRow[];
@@ -1683,6 +1709,33 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("activities", data, 500);
       activities = data;
+    }
+  }
+
+  // Cobranças avulsas — contact_id direto em cobrancas_avulsas (migration 9345).
+  //
+  // O QUE SE APAGA A PEDIDO DO TITULAR É O QUE SE ENTREGA A PEDIDO DELE. A
+  // anonimização redige `descricao` (o único texto livre da tabela) por gatilho
+  // na virada de `is_anonymized`; valor, moeda, vencimento, estado e vínculo
+  // ficam, porque a cobrança é registro financeiro. Aqui, no acesso (Art. 18
+  // II), vai a linha COMPLETA — inclusive a descrição, que só a redação apaga.
+  let cobrancas_avulsas: CobrancaAvulsaRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("cobrancas_avulsas")
+      .select("id, lead_id, conversation_id, descricao, valor_cents, moeda, vencimento, estado, pago_em, cancelada_em, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] cobrancas_avulsas load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("cobrancas_avulsas", data, 500);
+      cobrancas_avulsas = data;
     }
   }
 
@@ -2635,6 +2688,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
     orders,
     activities,
+    cobrancas_avulsas,
     checkpoints,
     mcp_pedidos_de_acesso: mcpPedidos,
     mcp_acessos: mcpAcessos,
@@ -2835,6 +2889,7 @@ function emptyPayload(
     honorarios_parcelas: [],
     orders: [],
     activities: [],
+    cobrancas_avulsas: [],
     checkpoints: [],
     mcp_pedidos_de_acesso: [],
     mcp_acessos: [],
