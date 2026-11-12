@@ -51,9 +51,16 @@ for r in 1 2; do
 ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/deskcomm/so-o-que-e-nosso.sh
 ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/deskcomm/limpa-depois.sh
 ENV
+  # O `.env` é o que liga os ganchos: o runner não pode reescrevê-lo.
+  chown root:root /home/gh-runner/runner-$r/.env
+  chmod 644 /home/gh-runner/runner-$r/.env
   systemctl restart actions.runner.melgarafael-DeskcommCRM.vps-devops-$r.service
 done
 ```
+
+Os scripts (`root:root 755`) e o `.env` (`root:root 644`) ficam fora do alcance de escrita do
+`gh-runner` **pelo sistema de arquivos**. Isso não resiste a quem tem o Docker do host (ver os
+riscos abaixo): é proteção contra engano e contra código de fora, não contra job nosso hostil.
 
 | gancho | quando | o que faz |
 |---|---|---|
@@ -70,10 +77,15 @@ Pacotes que os jobs pressupõem: Docker, `git`, `jq` (da guarda), `curl`, `tar`.
 
 **Riscos conhecidos**
 
-- O gancho impede código **de fora**, mas o runner é persistente e tem o Docker do host. Um PR
-  nosso malicioso, ou uma dependência comprometida num PR nosso, roda com acesso a esse Docker —
-  aceito porque só a equipe abre PR com branch deste repositório. Pelo mesmo motivo o job põe o
-  `HOME` no `RUNNER_TEMP`: nada que um PR grave em cache chega ao job seguinte.
+- **O gancho impede que código de FORA (fork, bot) rode no host. Não protege o host de um job
+  NOSSO.** O `gh-runner` está no grupo `docker`, o que na prática equivale a root no host: um job
+  nosso — ou uma dependência comprometida num PR nosso — pode montar `/` num contêiner, reescrever
+  os ganchos e o `.env` e deixar persistência para os jobs seguintes, a `main` inclusive. Aceito
+  porque só a equipe abre PR com branch deste repositório. O `HOME` no `RUNNER_TEMP` só tira o
+  caminho acidental (cache e pnpm gravados no HOME e lidos pelo job seguinte); não é barreira.
+  Próximos passos, **não feitos**: runner efêmero (JIT, um por job, como o `vaga.sh` daqui), Docker
+  sem root (rootless) para o `gh-runner`, ou levar estes jobs para o desenho de vaga em contêiner
+  descartável que este diretório já descreve.
 - Sem o `gh` na VPS, o `scripts/conferir-isolamento-do-kit.sh` pergunta a última release à API
   anônima, com teto de 60 consultas/hora por IP, e os dois runners saem pelo mesmo IP. Instalar o
   binário `gh` não põe segredo no host: ele usaria o `GH_TOKEN` que o próprio job passa.
