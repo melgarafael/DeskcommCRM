@@ -3645,6 +3645,10 @@ async function executarTurnoDoAgente(
             contactId: leadId,
             channelSessionId: input.channelSessionId,
             texto: agentConfig.avisoForaDoHorario ?? null,
+            // O texto de feriado nacional (#3877): opcional, e o módulo só o
+            // usa quando o dia É feriado na organização — sem a chave, o
+            // aviso é o de sempre, byte a byte.
+            textoDeFeriado: agentConfig.avisoDeFeriadoForaDoHorario ?? null,
             janela: agentConfig.janelaDeAtendimento,
             agora: clock(),
           },

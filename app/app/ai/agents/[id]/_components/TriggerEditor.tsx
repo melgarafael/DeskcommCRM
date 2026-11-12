@@ -27,6 +27,11 @@ export interface BusinessHoursValue {
    * Ausente/vazio = sem aviso (comportamento de antes).
    */
   notice?: string | null;
+  /**
+   * Aviso PRÓPRIO de feriado nacional (#3877) — a chave é opcional: em branco,
+   * o feriado sai com o `notice` de cima, sem texto novo nenhum.
+   */
+  notice_feriado?: string | null;
 }
 
 export interface TriggerValue {
@@ -585,6 +590,25 @@ export function TriggerEditor({ value, onChange, disabled, organizationTimezone,
               <p className="text-xs text-muted-foreground">
                 {t(
                   "Quando o cliente escrever fora do horário, esta mensagem é enviada na hora — uma vez por cliente por período fechado, e nunca para quem pediu para parar. Deixe em branco para não enviar.",
+                )}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="bh_notice_feriado">{t("Mensagem em feriado nacional (opcional)")}</Label>
+              <Textarea
+                id="bh_notice_feriado"
+                rows={3}
+                maxLength={1000}
+                value={bh.notice_feriado ?? ""}
+                onChange={(e) => patchBh({ notice_feriado: e.target.value })}
+                disabled={disabled}
+                placeholder={t(
+                  "Ex.: Hoje é feriado nacional e não estamos atendendo. Recebemos sua mensagem e respondemos no próximo dia útil.",
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Enviada no lugar da mensagem acima quando hoje é feriado nacional. Em branco, a mensagem de sempre continua valendo.",
                 )}
               </p>
             </div>
