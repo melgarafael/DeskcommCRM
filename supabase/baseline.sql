@@ -74999,7 +74999,7 @@ begin
    -- encerrados, que não têm Meet pendente.
    select * into c from public.calendar_connection_calendars where organization_id=p_org and connection_id=a.google_connection_id and external_calendar_id=a.google_calendar_id;
    if c.id is not null and not c.available then
-    update public.calendar_appointments set google_sync_error='A agenda de destino não está disponível. Reative a agenda nas configurações para a sincronização voltar.',google_next_attempt_at='infinity'::timestamptz where organization_id=p_org and id=p_id;
+    update public.calendar_appointments set google_sync_error='A agenda de destino não aparece mais na conta Google. A sincronização volta sozinha se ela reaparecer; para adiantar, use "Atualizar lista e sincronização" nas configurações da agenda.',google_next_attempt_at='infinity'::timestamptz where organization_id=p_org and id=p_id;
     return jsonb_build_object('terminal','calendar_unavailable');end if;
   end if;
   if a.google_event_id is null and a.status<>'cancelled' then
