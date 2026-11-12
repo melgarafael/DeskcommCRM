@@ -1618,11 +1618,18 @@ export function AgentForm(props: Props) {
             ) : null}
           </Card>
 
-          {/* O acervo que este assistente consulta (0181) */}
+          {/* O acervo que este assistente consulta (0181). O MODO de leitura
+              (#4358) é `config` do agente: grava por PATCH imediato, como o
+              limiar de sentimento — por isso o cartão só recebe o id em
+              edição. */}
           <BasesDoAgente
             materiais={materiais}
             value={form.knowledge_source_ids}
             onChange={(ids) => patch({ knowledge_source_ids: ids })}
+            agentId={props.mode === "edit" ? props.agent.id : undefined}
+            modoInicial={
+              props.mode === "edit" ? (props.agent.config ?? {}).knowledge_mode : undefined
+            }
             disabled={disabled}
           />
 
