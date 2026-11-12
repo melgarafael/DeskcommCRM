@@ -75877,8 +75877,8 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
--- ---- o contato pessoal ganha DONO (migration 9348, #4434) ----
--- Espelho da 9348 (o porquê inteiro está no cabeçalho dela). Não cria função,
+-- ---- o contato pessoal ganha DONO (migration 9360, #4434) ----
+-- Espelho da 9360 (o porquê inteiro está no cabeçalho dela). Não cria função,
 -- então a posição não é obrigatória — entra AQUI, antes da VARREDURA anon, para
 -- ficar junto dos apêndices das últimas migrations e na mesma ordem do
 -- `supabase/migrations`. Aditiva e idempotente: coluna, comentários e índice

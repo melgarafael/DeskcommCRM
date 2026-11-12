@@ -1,6 +1,6 @@
 -- manifest: **A aba Pessoal ganha DONO (issue #4434): `contacts.personal_owner_user_id`.** A spec 21 escondeu o contato pessoal da operação e, no mesmo gesto, o tornou inalcançável para TODOS — inclusive para quem marcou. O recorte aprovado na #4434 separa as duas coisas: esconder da operação continua valendo (fora de IA, automação, campanha, prospecção, funil, RAG, métricas, webhooks, busca da equipe e MCP), mas o dono da marca lê e responde o SEU. Sem esta coluna não existe "o seu": a aba só poderia listar todo o pessoal da organização para qualquer um que abrisse. `on delete set null` de propósito — usuário removido não apaga contato nem histórico; a linha fica órfã (`null`) e segue invisível para todos, inclusive `admin`, que NÃO é exceção neste recorte: papel não dá direito ao pessoal de outra pessoa. Preenchida só pela rota de marcar (`POST /api/v1/contacts/[id]/personal`), com quem marcou; marcar contato legado sem dono ADOTA a conversa, e desmarcar zera a posse. índice parcial em `is_personal` para a consulta da aba. Aditiva e idempotente (`add column if not exists`, `create index if not exists`). Apêndice espelhado no `baseline.sql` antes da VARREDURA anon; `MANIFEST.md` é histórico e não recebe linha. Gate: `tests/unit/pessoal-com-dono.test.ts`.
 
--- 9348 — O CONTATO PESSOAL GANHA DONO (issue #4434).
+-- 9360 — O CONTATO PESSOAL GANHA DONO (issue #4434).
 --
 -- ═══ O que faltava ═══
 --
