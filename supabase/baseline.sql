@@ -74943,6 +74943,47 @@ drop trigger if exists trg_routing_assignment_changed on public.conversations;
 create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
  for each row execute function public.fn_routing_assignment_changed();
 
+-- ---- "Liberar" não devolve a conversa ao rodízio (migration 9346, #3937) ----
+-- Espelho da 9346. Fica ACIMA da VARREDURA anon (só recria funções, nenhuma
+-- tabela nova), DEPOIS do bloco da 9333 (redefine a mesma função e tem de
+-- ganhar) e ANTES da cascata da 9243: o invariante `lgpd-alcanca-fichas-fundidas`
+-- compara o trecho que vai dela até a VARREDURA com a migration, e nada pode
+-- entrar no meio. O porquê inteiro está no cabeçalho da migration: o gatilho
+-- `trg_routing_assignment_changed` tratava "perdeu o dono" e "reabriu" como o
+-- mesmo fato, então liberar a conversa a devolvia à distribuição em ~1 min. A
+-- régua nova pede o rodízio só quando a conversa ENTRA no pool vindo de fora
+-- dele (`old.status` terminal) — a reabertura — ou, no número que ligou a
+-- espera pela IA (9333), quando a IA passa a conversa para humano. As portas
+-- que querem pedir seguem pedindo por conta própria: `fn_wake_channel_routing`
+-- (disponibilidade, política do número, revogação de membro) e o cron
+-- `rodizio-devolucao`.
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ -- #3937: só a REABERTURA (old.status terminal) pede o rodízio. Perder o dono
+ -- ("Liberar") não é chegada ao pool, e não pede.
+ elsif old.status not in('open','pending','claimed','ai_handling')
+    -- #3966: a PASSAGEM PARA HUMANO traz o pedido de volta, mas só no número
+    -- que LIGOU a espera pela IA. Com a opção desligada este ramo é falso e o
+    -- gatilho decide exatamente como antes.
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at
+        and exists(select 1 from public.channel_routing_policies p
+                    where p.organization_id=new.organization_id
+                      and p.channel_session_id=new.channel_session_id
+                      and p.ai_wait_minutes is not null)) then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
