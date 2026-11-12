@@ -8,6 +8,207 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.109.0] — 2026-11-12
+
+### Adicionado
+
+- **O agente pode não atender em feriado nacional, e o aviso de fora do horário ganha texto próprio de feriado (opção desligada de fábrica)** O horário de funcionamento do agente só olhava a janela semanal: em 02/11/2026
+  (Finados, segunda-feira) quem escrevia às 10h era atendido pela IA como num dia
+  comum, e o aviso de fora do horário dizia "atendemos hoje das 8h às 18h" com a
+  empresa fechada.
+
+  O horário de funcionamento do agente ganha a opção "Não atender em feriado
+  nacional". Ela vem desligada, e quem não ligar não vê nada mudar: o feriado
+  continua sendo um dia comum, e a IA atende no horário configurado. Ligada, o
+  feriado nacional conta como dia fechado, pela régua que o CRM já usa
+  (`isHolidayBR`, no fuso do horário de funcionamento): quem escreve no feriado,
+  mesmo dentro do horário semanal, recebe a mensagem de fora do horário, e a IA
+  só responde na abertura do próximo dia útil. Os dois andam juntos, para o
+  cliente não receber "estamos fechados" e uma resposta logo depois. A opção só
+  vale para organizações no Brasil.
+
+  Quem quiser um texto próprio escreve em "Mensagem em feriado nacional", ao lado
+  da mensagem de fora do horário. Ele substitui a mensagem de sempre quando o
+  aviso sai num dia de feriado: com a opção desligada, isso é só para quem escreve
+  fora do horário. Em branco, continua saindo a mesma mensagem de sempre, sem
+  nenhuma alteração de texto. Contato que pediu para parar, titular anonimizado,
+  aviso já enviado no período fechado e o limite de envio do número continuam
+  barrando o recado.
+
+  Crédito: @webtecnica, que mediu o defeito e escreveu o texto de feriado e a
+  régua do aviso (#4169, issue #3877).
+
+- **Cada número pode esperar a IA qualificar antes de distribuir a conversa, com prazo máximo (opção desligada de fábrica)** Com rodízio ou menor carga, a conversa nova ganha um atendente em menos de um minuto, e a partir daí a IA para de responder nela. Num número em que a IA faz a primeira triagem, o cliente ficava sem a primeira resposta até alguém olhar o Inbox.
+
+  Agora cada número tem uma opção em Configurações → Atendimento → Responsáveis por número: **Esperar a IA qualificar antes de distribuir (minutos)**. Ela vem desligada, e quem não ligar não vê nada mudar.
+
+  Com um prazo preenchido (de 15 minutos a 7 dias), a conversa daquele número fica com a IA e sem responsável até a IA passar para uma pessoa. Nessa hora ela entra na distribuição, uma vez, pelo modo escolhido. Se o prazo vencer sem a IA passar, a conversa entra na distribuição do mesmo jeito e a Central avisa: "A IA não passou a conversa no prazo".
+
+  A espera só vale onde há distribuição automática (rodízio ou menor carga) e um agente de IA publicado atendendo o número. Número com atendente de destino padrão continua entregando direto para essa pessoa, sem esperar. "Voltar ao padrão da organização" também desliga a espera do número.
+
+  Crédito: @webtecnica, que mediu o defeito e escreveu o mecanismo da volta à fila (#4238, issue #3966).
+
+- **O roteador de intenções pode ser movido para o número novo** Quando o número do roteador foi removido, a tela do roteador passa a oferecer "Mover roteador para este número". Se só há um número livre, ele já vem escolhido, e a mudança é um clique. O roteador só sai de um número removido e só entra num número ativo da mesma empresa que ainda não tem roteador. A mudança fica na auditoria com o número de origem e o de destino. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+- **O modo de consulta do material passa a ter seletor na tela do agente** A tela do agente dizia que ele "procura ali antes de responder, em vez de improvisar", mas no modo de busca quem decide consultar é o modelo, a cada mensagem. O texto agora diz isso e indica as instruções do agente como o lugar de cobrar a consulta. E o modo de leitura direta, que já existia na configuração, ganhou um seletor no cartão "O que ele consulta antes de responder" (só em agente já criado): a lista dos materiais entra no contexto de toda mensagem, sem serviço de busca por vetores. Quem não mexer continua na busca por assunto. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+- **Nas Automações, quem tem telefonia ganha o gatilho "Quando uma ligação recebida não for atendida"** Quando uma ligação recebida pelo tronco SIP termina tocando sem ninguém
+  atender, o sistema passa a registrar o fato, e nas Automações quem tem a
+  telefonia em uso ganha o gatilho "Quando uma ligação recebida não for
+  atendida". A regra pode mandar WhatsApp para quem ligou com a ação que já
+  existe, e as réguas de envio continuam valendo (contato bloqueado, janela do
+  canal, limites). Vale para ligação por SIP, ainda não para ligação de
+  WhatsApp. Quem não usa telefonia não vê o gatilho. Não muda nada no banco nem
+  exige ação na atualização. Contribuição de @webtecnica (#4409, pedido
+  da #4365).
+
+- **A camada "Datas dos negócios" da Agenda lembra a escolha de cada pessoa, também em outro aparelho** Ligar a camada, escolher o funil e o campo de data deixava de valer a cada
+  visita: a camada voltava desligada, e a mesma escolha era refeita toda vez. Agora
+  ela volta como a pessoa deixou — ligada ou desligada, no mesmo funil, com o mesmo
+  campo e o mesmo segundo campo —, em qualquer aparelho, porque a escolha fica no
+  perfil de quem escolheu, sem configuração de administrador. Funil arquivado,
+  campo renomeado ou removido voltam ao padrão em vez de abrir a Agenda quebrada:
+  a camada pede a escolha de novo, sem erro na tela. Contribuição de @webtecnica
+  (#4436).
+
+- **Ligar pessoa à empresa e telefone à pessoa pela tela, no módulo Empresas e pessoas** Com o módulo **Empresas e pessoas** ligado, os vínculos agora se fazem pela tela,
+  sem planilha, nos dois caminhos do dia a dia. Quem chegou pelo WhatsApp: na ficha
+  do contato, o cartão **Pessoa** mostra de quem é aquele número e em que empresa
+  ela está, e **Ligar a uma pessoa** acha alguém já cadastrado ou cria a pessoa com
+  o nome do contato. Cadastro manual: na ficha da empresa, **Adicionar pessoa**
+  escolhe alguém já cadastrado ou cria a pessoa na hora, com cargo e a marca de
+  decisor; na ficha da pessoa, **Vincular contato** liga um telefone ou e-mail já
+  cadastrado ou cria um novo, e **Adicionar a uma empresa** liga a pessoa a outra
+  empresa. **Editar** corrige cargo e decisor sem desfazer o vínculo, **Remover**
+  desfaz sem apagar a pessoa nem a empresa, e a ficha da pessoa mostra todos os
+  telefones e e-mails dela. **Nova pessoa** ganhou o campo Empresa. Com o módulo
+  desligado, nada muda: a ficha do contato continua igual e nenhuma dessas opções
+  aparece. Crédito: @xofrd, sobre a proposta em fatias de @paulolimajr77 e a
+  análise de @webtecnica no #3198.
+
+- **O passo de mensagem do follow-up aceita mais de uma redação, e o motor alterna entre elas** No passo de "Texto fixo" do construtor do follow-up apareceu "Outras redações do mesmo passo": além do texto principal, o operador cadastra outras formas de dizer a mesma coisa e o motor alterna entre elas a cada envio, partindo de um ponto diferente por contato. Duas mensagens seguidas na mesma conversa não saem com a mesma frase — o que ajuda a passar pela trava de repetição da prospecção em massa.
+
+  Passo com um texto só continua saindo exatamente como hoje, e nenhum fluxo já publicado precisa ser republicado.
+
+  Crédito: @webtecnica.
+
+### Alterado
+
+- **Campo de múltipla escolha compacto, com busca e chips** O campo personalizado de múltipla escolha mostrava uma caixinha por opção: um "Tipo de serviço" com 20 opções eram 20 caixinhas empilhadas no dossiê do negócio, na ficha do contato e no painel do Inbox. Agora ele usa o mesmo seletor da lista pesquisável com várias escolhas: as opções marcadas aparecem como chips (com um × para tirar) e as outras ficam numa lista suspensa com busca, que abre ao clicar no campo. O que o campo grava não muda (a lista das opções marcadas), então as condições "contém" das automações e o "mostrar só quando" seguem casando como antes.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @shu-chen-dot-ca, a partir da issue #2979.
+
+- **Um só catálogo de variáveis {{...}} para automação, follow-up, campanha e resposta rápida** A mesma frase escrita com `{{...}}` saía diferente dependendo da tela. Com o texto `{{saudacao}}, {{primeiro_nome}}! Seu pedido chegou.` e o mesmo contato, a automação e o follow-up mandavam `, Ana! Seu pedido chegou.` (a saudação virava vazio e a vírgula ficava órfã), a resposta rápida mandava `{{saudacao}}` literal para o cliente, e só a campanha escrevia `Boa tarde, Ana! Seu pedido chegou.`
+
+  Agora as quatro telas leem a variável do mesmo jeito. Cada uma mantém o que já fazia quando falta o dado (deixar vazio, tirar da frase, deixar a marcação à vista ou pular o envio na campanha), mas `{{saudacao}}` passa a sair também na automação, no follow-up e na resposta rápida, e o formato de data `{{campo|data}}` vale nas quatro.
+
+  Na automação, no follow-up, na campanha e nas respostas rápidas, o campo da mensagem ganha o botão "Inserir variável", com busca e grupos, que mostra as variáveis que aquela tela entende e os campos do funil, e uma prévia do texto com um contato de exemplo. Na automação ele substitui os três botões fixos de antes (Nome, Telefone e Título do lead). No passo de modelo aprovado do follow-up, a variável do modelo pode vir de "Variável do sistema". Mensagens já gravadas não precisam ser reescritas e nada muda na VPS.
+
+  Contribuição de @webtecnica (#3687).
+
+- **A base da campanha por e-mail entrou, ainda sem envio e sem interruptor para ligar** Nada muda nesta versão: a tela de nova campanha continua só com o WhatsApp, e não há interruptor para ligar a campanha por e-mail. Nada a fazer na VPS.
+
+  O que entrou é a base: o sistema já sabe guardar o assunto, o corpo e o público de uma campanha por e-mail. Ela fica desligada e ainda não pode ser ligada, porque esta versão não envia o e-mail. A opção aparece quando chegarem o envio, o descadastro em um clique e a lista de quem pediu para não receber.
+
+  Crédito: @webtecnica (#4289).
+
+- **Conversa sem responsável volta para a distribuição quando o cliente escreve de novo** O pedido de distribuição de uma conversa nascia em um lugar só: no momento em que
+  ela era criada sem responsável. Uma conversa que já existia e continuava sem
+  dono **não pedia nada quando o cliente escrevia outra vez** — ela só voltava para
+  a fila pelo laço de retentativa do distribuidor, que a reagenda de tempos em
+  tempos, para sempre.
+
+  Agora a mensagem nova do cliente em conversa aberta e sem responsável acorda a
+  distribuição na hora. Cinco mensagens seguidas continuam sendo **um** pedido só, e
+  a conversa com dono, encerrada, de grupo, ou em número cuja distribuição está
+  desligada não pede nada. Nada muda no número de tentativas nem no intervalo entre
+  elas: a mudança é ter por onde acordar a conversa.
+
+  Vale também para a conversa que alguém liberou: ela continua sem voltar sozinha
+  para o rodízio na hora do "Liberar", mas agora volta para a distribuição quando o
+  cliente escreve de novo. Onde a distribuição é manual (o padrão), nada muda.
+
+  Crédito: @webtecnica.
+
+- **A sessão é conferida uma vez por janela, não em toda requisição** Toda requisição que passa pelo portão do app ia ao serviço de autenticação só para confirmar a sessão — inclusive os contadores da casca, que batem a cada 30 segundos, em cada aba aberta. Agora o portão reaproveita por 30 segundos a mesma validação que a tela já reaproveitava: com a sessão intacta, o custo cai de uma ida por requisição para uma por janela. Sair da conta continua derrubando a sessão na hora, e a permissão de administrador de plataforma continua sendo conferida a cada requisição. Nada a fazer na VPS.
+
+  Crédito: @webtecnica.
+
+### Corrigido
+
+- **O roteador de intenção considera o negócio aberto no funil, também quando quem decide é o Jev** Numa agência com dois membros no mesmo número, uma cliente com a viagem já
+  fechada escreveu "Bom dia! Tudo bem?" e foi atendida por vendas; na mensagem
+  seguinte, "Agradeço", caiu no pós-venda. Duas despedidas diferentes, de dois
+  agentes, na mesma conversa — porque o classificador decidia só pelo texto.
+
+  A IA de sempre já recebia os fatos do CRM do contato (funis e etapas onde ele
+  tem negócio aberto, e as etiquetas) desde a entrega anterior. Faltava o outro
+  caminho: quando o Jev decide sozinho, a pergunta ia sem contexto nenhum. Agora
+  ele recebe o mesmo bloco, pela leitura que o turno já fazia — uma consulta por
+  turno, e nenhuma quando a tarefa do Jev está desligada. O bloco leva nome de
+  funil, nome de etapa e etiqueta; nunca título do card, telefone, e-mail ou
+  documento. Telefone, CPF ou e-mail digitado dentro de um desses nomes sai
+  mascarado, nos dois caminhos.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#4195, issue #3917).
+
+- **A previsão do funil soma todos os negócios abertos, mesmo acima de 1.000** Num funil com mais de mil negócios abertos, a previsão (a tela de Métricas, a rota `GET /api/v1/pipelines/{id}/forecast` e a ferramenta `crm_get_pipeline_forecast`) lia um pedaço arbitrário da carteira: o banco corta toda resposta em 1.000 linhas, sem erro, e a soma saía menor que a real sem nenhum aviso. Com a probabilidade vinda da inteligência artificial, a leitura das pontuações trazia a organização inteira, de todos os funis, e também era cortada.
+
+  Agora os negócios abertos e as pontuações do funil são lidos por páginas, em ordem estável, e a previsão soma todos. Se a carteira passar do teto de leitura (5.000 negócios), a resposta traz `truncado: true` (e o cabeçalho `X-Previsao-Truncada: 1`) e a tela de Métricas avisa que os valores são parciais, em vez de apresentar um recorte como o total. Funis menores respondem o mesmo de antes, com uma exceção: com a probabilidade da inteligência artificial, a pontuação deixa de se perder quando a organização tem mais de 1.000 pontuações somando todos os funis.
+
+- **Anexos entre 10 e 50 MB passam a sair, e XML de nota fiscal é aceito como documento** Anexos entre 10 e 50 MB, no chat, nas notas internas e nos anexos do lead, chegavam cortados ao servidor e falhavam, apesar de a tela prometer até 50 MB. Agora chegam inteiros. O menu Documento passa a aceitar arquivos `.xml`, como os de nota fiscal. E o envio de mídia pelo WhatsApp espera até 3 minutos antes de desistir, porque vídeos maiores levam mais tempo para sair; a tela espera junto, com o diálogo do anexo em "enviando" até a resposta, em vez de liberar o botão Enviar no meio e convidar a mandar o mesmo vídeo duas vezes. Crédito: @Villa-Nova-Cont.
+
+- **Automação de WhatsApp para contato que não pode receber é pulada na hora, com o motivo, em vez de esperar a janela de envio** Fora da janela de envio do número (7h às 22h, por padrão), as ações "Enviar mensagem de WhatsApp" e "Enviar mensagem escrita pela IA" adiavam o evento antes de olhar o contato. Um contato bloqueado, sem telefone, sem contato no evento ou com recusa de mensagens registrada ficava na aba Atividade como "esperando a janela de envio", e o motivo real só aparecia quando a janela abria.
+
+  Agora a guarda do contato vem antes da espera. O contato que a ação recusaria é pulado na hora, com o motivo (`contact_blocked`, `no_phone`, `no_contact`, `consent_declined`). Quem passa na guarda continua esperando a janela do número, como antes: nenhuma mensagem sai fora da janela.
+
+  Crédito: @webtecnica, que mediu o defeito e escreveu o conserto (#4467, issue #4365).
+
+- **O backup avisa quando a pasta de anexos está ausente** Em uma instalação com Supabase na própria VPS, o kit interrompe o backup se não encontrar a pasta de anexos. Assim, a atualização que depende desse backup para antes de alterar a instalação. Uma pasta existente e vazia ainda pode ser salva. Crédito: @samirhvbr.
+
+- **A busca do negócio na nova proposta passa a achar o nome mesmo quando o acento está só de um lado** Em Propostas → Nova proposta, a busca do negócio comparava o texto digitado em minúsculas, e acento é outra letra para essa comparação: quem digitava "joao" não achava o negócio de "João Conceição", nem "instalacao" achava "Instalação elétrica", e ficava sem o negócio para montar a proposta. A busca passa a usar a mesma régua de acento da Inbox nos dois lados, no título do negócio e no nome do contato, então quem digita com ou sem acento acha o mesmo negócio. Caixa (maiúscula e minúscula) continua ignorada, a busca por telefone segue igual e o termo vazio continua mostrando a lista inteira. Nenhuma configuração muda. Contribuição de @hskl18 (#4413).
+
+- **O dreno de eventos do kit deixa de rodar duas vezes por minuto** No self-host do kit, o `event-log-drain` era chamado pelo contêiner `scheduler` (de minuto em minuto) e também pela linha do crontab do host que o `install.sh`/`update.sh` grava: a mesma chamada, no mesmo minuto, duas vezes. Na issue #2235 isso era cerca de 62% das chamadas `service_role` ao PostgREST, com o sistema parado. A linha do host agora é vigia: roda de 15 em 15 minutos e só dispara o dreno quando o contêiner `scheduler` desta instalação não está rodando (`hostgator-setup-kit/drain-watchdog.sh`). Instalação saudável sai de cerca de 60 para cerca de 4 chamadas por hora; com o scheduler fora do ar o dreno continua, com atraso de até 15 minutos. A regra de falha é aberta: se o `docker` não responde, o vigia dispara o dreno em vez de calar. O `update.sh` regrava a linha sozinho; não é preciso mexer em nada na VPS.
+
+  Crédito: @webtecnica (#2235).
+
+- **Fotos recebidas ganham o botão Baixar, e mensagens do mesmo segundo aparecem na ordem certa** A foto que o cliente manda pelo WhatsApp agora se baixa pela miniatura, pela foto ampliada e pela opção "Baixar" do menu da mensagem, que também aparece em vídeos, áudios e documentos. Quando o WhatsApp não manda o nome do arquivo, como acontece com fotos, o arquivo salvo leva o tipo, a data e a hora no nome (por exemplo, começando por `foto-2026-11-09-14h14`). E várias fotos ou documentos enviados no mesmo segundo passam a aparecer na conversa na ordem em que o cliente mandou; antes podiam aparecer invertidos.
+
+  Crédito: @mbiero.
+
+- **"Liberar" tira a conversa do atendente e não a devolve mais ao rodízio** Ao liberar uma conversa, ela saía do atendente e voltava para a distribuição
+  automática em cerca de um minuto: quem clicou em "Liberar" via a mesma conversa
+  com dono de novo pouco depois — e, no caso de contato do tipo Fornecedor, ela
+  ainda ocupava a vez de um cliente no rodízio até ser recusada.
+
+  Agora liberar tira a conversa do atendente e ela fica na fila, sem responsável,
+  visível para todos. Ela volta a ser distribuída quando acontece um fato novo:
+  mensagem do cliente, mudança de disponibilidade ou capacidade da equipe, regra
+  do número, ou reabertura da conversa.
+
+  Crédito: @webtecnica.
+
+- **A Central avisa sobre uma mensagem perdida quando o encerramento é gravado** Se o banco recusar o encerramento de um webhook, ele continua pendente para o próximo reprocessamento. A Central e o relatório da rodada registram a desistência após a gravação no banco. Crédito: @samirhvbr.
+
+- **A restauração encontra as sessões do WhatsApp ao lado do backup do banco** Ao restaurar um backup de uma pasta como `db-backups`, o kit encontra o arquivo de sessões do WhatsApp junto ao dump e confere sua integridade antes de escrever no banco. Crédito: @samirhvbr.
+
+- **O routing-worker sai antes de consultar o PostgREST quando não há conversa a distribuir** A rota roda de minuto em minuto e fazia duas leituras de `event_log` (a varredura de `processing` preso e a de `pending`) em toda batida, mesmo numa instalação sem nada na fila: 2.880 requisições por dia contra o endpoint nº 1 do egress no relato da #3878. Agora ela pergunta ao portão do piso ocioso (`lib/cron/piso-ocioso.ts`) por um sinal novo, `roteamento`, que é a união exata das duas varreduras e vai pelo pool `pg` (não gasta a cota do PostgREST). Evento novo continua sendo distribuído na batida seguinte ao TTL de 30 s. Não é preciso mexer em nada na VPS.
+
+  Crédito: @webtecnica (#3878).
+
+- **Três rotas que já aceitavam token de integração deixam de ser recusadas antes de chegar a ela** Atualizar as fontes de um serviço da agenda, marcar como usado um rascunho sugerido e anexar arquivo a uma
+  nota interna agora funcionam com o token de integração (`dsk_…`), como as rotas irmãs. Antes, a borda do
+  sistema recusava o token com 401, embora a rota estivesse pronta para ele. Uma verificação automática passa
+  a reprovar toda rota que aceite token sem ter a porta aberta na borda. Crédito: @paulolimajr77.
+
 ## [1.108.0] — 2026-11-11
 
 ### Adicionado
@@ -15646,7 +15847,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.108.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.109.0...HEAD
+[1.109.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.108.0...v1.109.0
 [1.108.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.107.0...v1.108.0
 [1.107.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.106.0...v1.107.0
 [1.106.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.105.0...v1.106.0
