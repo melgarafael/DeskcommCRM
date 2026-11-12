@@ -5,9 +5,10 @@ quem trabalha com data: **que negócio tem data neste dia**. Ela lê os campos d
 do **negócio** — os mesmos que a aba Calendário do funil usa — e desenha o negócio no
 dia de cada data, acima da grade. Os rótulos são os que o funil declara.
 
-É a primeira fatia da #3221: a escolha é de cada pessoa, na própria tela, e não fica
-gravada. A configuração pelo administrador e os dias do meio de um intervalo seguem
-na issue.
+É a primeira fatia da #3221: a escolha é de cada pessoa, na própria tela, e é
+**lembrada** — ligada/desligada, funil, campo e campo-fim voltam como ela deixou,
+em qualquer aparelho. A configuração pelo administrador e os dias do meio de um
+intervalo seguem na issue.
 
 ## Como se usa
 
@@ -21,6 +22,23 @@ na issue.
 4. Cada item mostra o título do negócio, o rótulo do campo ("Embarque",
    "Retorno"), o funil e a etapa. Clicar abre o negócio no funil, onde a data é
    editada.
+5. A escolha é **lembrada por pessoa**: fechar a Agenda e voltar (aqui ou em
+   outro aparelho) reabre a camada como você deixou. Desligar não apaga a
+   escolha — religar volta ao mesmo funil e campo.
+
+## A escolha é guardada no `user_metadata` da pessoa
+
+O sítio é o `raw_user_meta_data` do Supabase, sob `camada_datas_dos_negocios` —
+o mesmo onde o perfil grava idioma e fuso e onde `lembretes_de_tarefa` mora.
+Sem migration, por PESSOA e não por navegador (a largura das colunas do Inbox é
+o caso oposto: ali a escolha é do monitor), e fora de `organizations.settings`,
+que seria a escolha de um valendo para os colegas da empresa.
+
+Na leitura, a escolha é **saneada contra os funis que a pessoa pode escolher
+hoje**: funil arquivado, campo que sumiu e id inválido voltam ao padrão, e a
+pessoa escolhe de novo — a Agenda nunca abre com erro por causa do que ficou
+gravado. `ligada` é a única que sobrevive a essas quedas: quem ligou a camada
+quis vê-la ligada, e o que não existe mais é só o funil/campo.
 
 ## Limites, de propósito
 
@@ -33,7 +51,8 @@ na issue.
   ocupação.
 - **Campo renomeado ou removido** deixa de valer: a camada esquece a escolha e
   volta a pedir o campo, com o motivo à vista (o servidor responde
-  `campo_nao_e_data`).
+  `campo_nao_e_data`). O esquecimento também é gravado — a visita seguinte não
+  repete o 422.
 - **Data que não existe no calendário** (`2026-02-31`, `2026-13-01`) é recusa
   explícita: o servidor responde `data_de_calendario_invalida` (422) antes de
   consultar o banco, e a camada diz o motivo — em vez de mostrar uma grade vazia

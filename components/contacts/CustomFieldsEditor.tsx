@@ -286,35 +286,13 @@ export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, cl
                 </Select>
               </div>
             );
-          case "multiselect": {
-            const current = Array.isArray(v) ? (v as string[]) : [];
-            return (
-              <div key={f.key} className="space-y-2">
-                {labelEl}
-                <div className="flex flex-col gap-1">
-                  {f.options?.map((o) => {
-                    const checked = current.includes(o.value);
-                    return (
-                      <label key={o.value} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const next = e.target.checked
-                              ? [...current, o.value]
-                              : current.filter((x) => x !== o.value);
-                            set(f.key, next);
-                          }}
-                          disabled={disabled}
-                        />
-                        {o.label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          }
+          // A MÚLTIPLA ESCOLHA (`multiselect`, #2979) usa o MESMO seletor
+          // compacto da lista pesquisável múltipla: busca e chips do que foi
+          // marcado, em vez de uma caixinha por opção — com 20 opções, eram 20
+          // caixinhas empilhadas no dossiê. O registro não muda: continua a
+          // lista dos `value` das opções, e as automações com `contains` sobre
+          // ela seguem casando.
+          case "multiselect":
           case "searchable_select": {
             // LISTA PESQUISÁVEL (#2521): um input com autocompletar sobre as
             // opções. Grava o `value` CANÔNICO da opção escolhida ("maceio" →
@@ -325,8 +303,12 @@ export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, cl
             // O MODO MÚLTIPLO da lista pesquisável (#3182): o registro é uma
             // LISTA de `value` canônicos e o que já foi escolhido aparece em
             // CHIPS, um por opção. No valor único o registro continua a string
-            // de sempre, e nada abaixo muda de comportamento.
-            const multiplo = f.multiple === true;
+            // de sempre, e nada abaixo muda de comportamento. O `multiselect`
+            // é sempre múltiplo.
+            const multiplo = f.type === "multiselect" || f.multiple === true;
+            // `allow_new` é chave da lista pesquisável: no `multiselect` só
+            // entra o que está nas opções, como nas caixinhas de antes.
+            const aceitaNovo = f.type === "searchable_select" && f.allow_new === true;
             // Um valor único já gravado (o campo virou múltiplo depois, ou o
             // diálogo de campos exigidos gravou uma escolha só) é uma lista de
             // UM — a mesma leitura de `validarValorPesquisavel`. Sem isso o
@@ -381,7 +363,7 @@ export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, cl
               // escolhidos são o registro, e limpar o texto do input não os apaga.
               else if (rascunho.trim() === "") {
                 if (!multiplo) set(f.key, "");
-              } else if (f.allow_new === true) gravar(rascunho.trim());
+              } else if (aceitaNovo) gravar(rascunho.trim());
               // Sem casar e sem `allow_new`, o valor não é gravado: o
               // input volta ao que estava, e o aviso abaixo explica.
               else setRecusados((current) => ({ ...current, [f.key]: true }));
@@ -513,7 +495,7 @@ export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, cl
                     {t("Esse valor não está na lista. Escolha uma das opções.")}
                   </p>
                 )}
-                {f.allow_new === true && (
+                {aceitaNovo && (
                   <p className="text-xs text-muted-foreground">
                     {t("Este campo aceita um valor novo, fora da lista.")}
                   </p>
