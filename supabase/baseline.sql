@@ -58521,7 +58521,7 @@ end;$$;
 
 -- View nova: não acrescentar coluna à view histórica, pois seu a.* é reaplicado antes deste apêndice.
 -- #4448 (segunda porta): o recorte de status e de janela é o MESMO do bloco da
--- migration 9357, no apêndice — a definição daqui tem de casar coluna por coluna
+-- migration 9358, no apêndice — a definição daqui tem de casar coluna por coluna
 -- com a de lá, senão a SEGUNDA passada do baseline (o modo update) tenta recriar
 -- esta view com menos colunas e o Postgres recusa com "cannot drop columns from
 -- view". `status` e `ends_at` entram no FIM pelo mesmo motivo (create or replace
@@ -74883,8 +74883,8 @@ grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 
 notify pgrst, 'reload schema';
 
--- ---- a fila do push drena: o que já terminou sai, o que falta fazer fica (migration 9357, #4448) ----
--- Espelho da 9357 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- ---- a fila do push drena: o que já terminou sai, o que falta fazer fica (migration 9358, #4448) ----
+-- Espelho da 9358 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
 -- VARREDURA anon e FORA da janela da cascata da 9243 (o invariante
 -- `lgpd-alcanca-fichas-fundidas` compara aquele trecho com a migration), por isso
 -- o lugar é aqui e não junto dos outros blocos de agenda.

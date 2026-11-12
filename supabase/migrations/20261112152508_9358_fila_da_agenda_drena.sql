@@ -1,6 +1,6 @@
 -- manifest: **A fila do push do Google drena: compromisso encerrado e cancelado já convergido saem da seleção (#4448, segunda porta).** `calendar_service_google_candidates` não filtrava `status` nem data, e o ramo `google_event_id is not null and google_conflict is null` da fila admitia TODO compromisso já publicado; na issue são 8 compromissos encerrados (6 `completed`, 1 `cancelled`, 1 `no_show`) presos a um ciclo de 5 minutos. A view passa a exigir `status in ('pending','confirmed','cancelled')` — `completed`/`no_show` não empurram (lib/agenda/laco.ts) — e `ends_at` depois do INÍCIO da janela que o sync já usa (`now()-interval '1 day'`, a mesma de `window_start` em `fn_google_calendar`). O `cancelled` fica porque é ele que pede a remoção do evento no Google. `status` e `ends_at` entram no FIM da view (create or replace só aceita coluna nova no fim) e são o que `lib/agenda/google/candidates.ts` repete, para o filtro valer também antes do `limit 50`. Idempotente (`create or replace view`, ACL preservada; grants repetidos). Prova em `tests/invariants/agenda-google-fila-drena.test.ts` e `tests/invariants/agenda-google-recovery.test.ts`.
 --
--- 9357 — A FILA DO PUSH DRENA (#4448, segunda porta).
+-- 9358 — A FILA DO PUSH DRENA (#4448, segunda porta).
 --
 -- ═══ O defeito, medido ═══
 --
