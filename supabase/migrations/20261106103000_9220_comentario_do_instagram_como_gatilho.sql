@@ -66,6 +66,12 @@ create index if not exists channel_comments_por_contato_idx
 alter table public.channel_comments enable row level security;
 revoke all on public.channel_comments from anon;
 
+-- Grant do tamanho do uso, explícito: tabela criada depois de 30/10/2026 nasce
+-- inalcançável pela Data API na Supabase da nuvem sem ele. A sessão só LÊ (a
+-- policy é de select); quem grava é o servidor, com a service role.
+grant select on table public.channel_comments to authenticated;
+grant select, insert, update, delete on table public.channel_comments to service_role;
+
 drop policy if exists channel_comments_select on public.channel_comments;
 create policy channel_comments_select
   on public.channel_comments

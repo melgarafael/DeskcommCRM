@@ -236,6 +236,11 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "cascata",
     razao: "0482 (grupos na inbox, #1647): subject é o NOME do grupo e vira null; contact_id aponta para o placeholder do grupo (contacts.kind = 'whatsapp_group'), e número, conversa e liga/desliga ficam. O que o TITULAR escreveu em grupo é redigido pelo gatilho fn_redigir_conversas_ao_anonimizar, em messages.",
   },
+  channel_comments: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9220 (#4075) + 9248: o texto do comentário e quem o escreveu (author_id, author_username, author_name) saem na virada de is_anonymized pelo gatilho fn_reply_redact (a porta da 0391/0494, a mesma de ai_reply_drafts); a LINHA fica porque a chave única (org, provider, external_id) é a trava de reentrega do provedor e o vínculo com o post é o histórico do gatilho.",
+  },
   // ── redigir pela virada de is_anonymized (gatilho) ────────────────────────
   ai_reply_drafts: {
     decidida: "redigir",
