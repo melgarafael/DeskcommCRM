@@ -81264,6 +81264,35 @@ end $fonte_do_lead_ads$;
 
 notify pgrst, 'reload schema';
 
+-- ---- o bucket do material aceita XML como o upload do Inbox (migration 9350) ----
+-- A 9222 congelou no bucket a lista de `DOCUMENT_MIMES` de 06/11. Em 10/11 a main
+-- acrescentou `application/xml` e `text/xml` a essa lista (617635a5f7) e o
+-- espelho do bucket ficou para trás: o Inbox aceitava o XML do cliente e o
+-- Storage recusava o material, antes de qualquer código rodar.
+-- `tests/invariants/crm-materiais-rls.test.ts:192` compara as duas listas.
+-- `update`, e não `insert ... on conflict`: o bucket já existe em quem aplicou a
+-- 9222; o que falta é a MIME list. Mesmo molde da 0310 (`ai-policy` + CSV).
+update storage.buckets
+   set allowed_mime_types = array[
+     'image/jpeg',
+     'image/png',
+     'image/webp',
+     'image/gif',
+     'application/pdf',
+     'application/msword',
+     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+     'application/vnd.ms-excel',
+     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     'application/vnd.ms-powerpoint',
+     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+     'text/plain',
+     'text/csv',
+     'application/zip',
+     'application/xml',
+     'text/xml'
+   ]
+ where id = 'crm-materiais';
+
 -- ---- anonimizar alcança as fichas fundidas: as que já ficaram para trás (migration 9243) ----
 -- A segunda metade da 9243. Fica no fim porque a cascata e os gatilhos que ela
 -- dispara precisam existir; não cria função, então pode ficar depois da VARREDURA anon.
