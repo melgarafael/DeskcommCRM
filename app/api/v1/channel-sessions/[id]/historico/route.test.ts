@@ -30,6 +30,12 @@ type Linha = Record<string, unknown>;
 let tabela: Linha[] = [];
 let seq = 0;
 const escritas: Array<{ op: string; payload: Linha; filtros: Record<string, unknown> }> = [];
+const rpc = vi.fn(async (nome: string) => ({
+  data: nome === "fn_resumo_historico_analise"
+    ? { total: 0, pending: 0, running: 0, done: 0, failed: 0, dead: 0 }
+    : 1,
+  error: null,
+}));
 
 function consulta(op: "select" | "insert" | "update", payload?: Linha) {
   const filtros: Array<(l: Linha) => boolean> = [];
@@ -94,6 +100,7 @@ beforeEach(() => {
   );
   vi.mocked(calcularPrevia).mockResolvedValue(previaOk);
   vi.mocked(createAdminClient).mockReturnValue({
+    rpc,
     from: (t: string) => {
       if (t !== "importacoes_de_historico") throw new Error(`tabela inesperada: ${t}`);
       return { select: () => consulta("select"), insert: (p: Linha) => consulta("insert", p), update: (p: Linha) => consulta("update", p) };
@@ -306,5 +313,29 @@ describe("importação do histórico: rotas (#999)", () => {
     const { data } = await r.json();
     expect(data.importacao).toMatchObject({ id: manual.id, origem: "manual" });
     expect(data.recuperacao_da_queda).toMatchObject({ id: daQueda.id, origem: "queda", status: "rodando" });
+    expect(data.analise).toMatchObject({ total: 0, done: 0 });
+  });
+
+  it("análise só nasce para a importação manual concluída da organização", async () => {
+    const concluida = linha({ status: "concluida", origem: "manual" });
+    const r = await POST(req({ acao: "analisar", importacaoId: concluida.id }), context());
+    expect(r.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("fn_enqueue_historico_analise", {
+      p_org: org,
+      p_importacao: concluida.id,
+    });
+    expect(acoes()).toEqual(["channel.historico_analysis_started"]);
+  });
+
+  it("análise recusa prévia, erro e recuperação da queda", async () => {
+    for (const extra of [
+      { status: "previa", origem: "manual" },
+      { status: "erro", origem: "manual" },
+      { status: "concluida", origem: "queda" },
+    ]) {
+      const imp = linha(extra);
+      expect((await POST(req({ acao: "analisar", importacaoId: imp.id }), context())).status).toBe(409);
+    }
+    expect(rpc).not.toHaveBeenCalledWith("fn_enqueue_historico_analise", expect.anything());
   });
 });

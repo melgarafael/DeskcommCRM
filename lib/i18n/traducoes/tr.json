@@ -11450,6 +11450,12 @@
   "Escrita": "Yazma",
   "Leitura": "Okuma",
   "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "Yetkilendirme bağlantısı otomatiktir: müşteri yetkilendirene kadar ajan, bağlantıyı üreten aracı kendiliğinden alır. Burada seçmeniz gerekmez.",
+  "Analisar perfis e oportunidades": "Profilleri ve fırsatları analiz et",
+  "Analisando clientes: {feitos} de {total}": "Müşteriler analiz ediliyor: {total} içinden {feitos}",
+  "Análise concluída para {total} clientes.": "{total} müşteri için analiz tamamlandı.",
+  "Ver oportunidades": "Fırsatları gör",
+  "{falhas} clientes não puderam ser analisados.": "{falhas} müşteri analiz edilemedi.",
+  "A análise atualiza o CRM e nunca envia mensagens ao cliente.": "Analiz CRM'yi günceller ve müşteriye asla mesaj göndermez.",
   "Este número já está em outra campanha em andamento.": "Bu numara zaten devam eden başka bir kampanyada kullanılıyor.",
   "Abrir essa campanha": "O kampanyayı aç"
 }

@@ -342,6 +342,7 @@ export const AUDIT_ACTIONS = [
   "channel.historico_import_resumed",
   "channel.historico_import_completed",
   "channel.historico_import_failed",
+  "channel.historico_analysis_started",
   "channel.reconnected",
   // Duas ações distintas de propósito: `deleted` apagou a linha (canal virgem),
   // `archived` só a escondeu porque conversas/mensagens ainda a referenciam.

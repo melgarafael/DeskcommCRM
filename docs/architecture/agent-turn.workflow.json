@@ -248,6 +248,31 @@
       "sublabel": "agent_stage_hint: passo → etapa"
     },
     {
+      "id": "historicoImportado",
+      "lane": "app",
+      "col": 1,
+      "type": "database",
+      "label": "Histórico importado",
+      "sublabel": "importação manual concluída; mensagens antigas nunca disparam o turno ao vivo"
+    },
+    {
+      "id": "history_analysis",
+      "lane": "worker",
+      "col": 2,
+      "type": "backend",
+      "label": "Análise do histórico",
+      "sublabel": "kind: history_analysis · sem adapter de canal nem tools · evidência por message_id",
+      "tag": "history_analysis"
+    },
+    {
+      "id": "historicoAnaliseResultado",
+      "lane": "funil",
+      "col": 3,
+      "type": "database",
+      "label": "Perfil e oportunidade",
+      "sublabel": "lead_checkpoints + lead_state.qualification + crm_lead_scores existentes"
+    },
+    {
       "id": "declaracao",
       "lane": "contrato",
       "col": 5,
@@ -381,6 +406,20 @@
     }
   ],
   "edges": [
+    {
+      "id": "historico-analysis",
+      "from": "historicoImportado",
+      "to": "history_analysis",
+      "label": "admin pede análise; um job idempotente por contato",
+      "variant": "dashed"
+    },
+    {
+      "id": "history-analysis-resultado",
+      "from": "history_analysis",
+      "to": "historicoAnaliseResultado",
+      "label": "checkpoint/BANT/score; zero saída ao cliente",
+      "variant": "dashed"
+    },
     {
       "id": "inbound-ingest",
       "from": "inbound",

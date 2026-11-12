@@ -9271,6 +9271,20 @@ export const DICIONARIO: Traducoes = {
   Aguardando: { es: "Esperando" },
   "Erro ao carregar conversas.": { es: "Error al cargar las conversaciones." },
   "Tentar novamente": { es: "Intentar de nuevo" },
+  "Analisar perfis e oportunidades": { es: "Analizar perfiles y oportunidades" },
+  "Analisando clientes: {feitos} de {total}": {
+    es: "Analizando clientes: {feitos} de {total}",
+  },
+  "Análise concluída para {total} clientes.": {
+    es: "Análisis completado para {total} clientes.",
+  },
+  "Ver oportunidades": { es: "Ver oportunidades" },
+  "{falhas} clientes não puderam ser analisados.": {
+    es: "No se pudieron analizar {falhas} clientes.",
+  },
+  "A análise atualiza o CRM e nunca envia mensagens ao cliente.": {
+    es: "El análisis actualiza el CRM y nunca envía mensajes al cliente.",
+  },
   "Buscar conversas": { es: "Buscar conversaciones" },
   "Filtrar por número de WhatsApp": { es: "Filtrar por número de WhatsApp" },
   "Filtrar por tag": { es: "Filtrar por etiqueta" },

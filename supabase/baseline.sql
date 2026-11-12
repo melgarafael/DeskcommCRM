@@ -7895,7 +7895,7 @@ alter table job_queue add constraint job_queue_kind_check
   -- antigos rodam antes e falham em cadeia. Vigiado por
   -- tests/unit/baseline-constraint-reconstruida.test.ts.
   -- 'transactional_delivery' (0226) segue a mesma consolidação de vocabulário.
-  check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','transactional_delivery','approved_reply'));
+  check (kind in ('inbound_turn','followup_turn','watchdog','flywheel','case_reply_turn','operator_turn','transactional_delivery','approved_reply','history_analysis'));
 alter table job_queue drop constraint if exists job_queue_turn_needs_contact;
 do $$
 declare c text;
@@ -7906,7 +7906,7 @@ begin
   if c is not null then execute format('alter table job_queue drop constraint %I', c); end if;
 end $$;
 alter table job_queue add constraint job_queue_turn_needs_contact
-  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','transactional_delivery','approved_reply')) = (contact_id is not null));
+  check ((kind in ('inbound_turn','followup_turn','case_reply_turn','operator_turn','transactional_delivery','approved_reply','history_analysis')) = (contact_id is not null));
 
 alter table cron_jobs drop constraint if exists cron_jobs_job_kind_check;
 alter table cron_jobs add constraint cron_jobs_job_kind_check
@@ -74942,6 +74942,129 @@ revoke all on function public.fn_routing_assignment_changed() from public,anon,a
 drop trigger if exists trg_routing_assignment_changed on public.conversations;
 create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
  for each row execute function public.fn_routing_assignment_changed();
+
+-- ---- histórico vira perfil e oportunidade: funções (migration 9350) ----
+-- A PRIMEIRA metade do espelho da 9350. Cria FUNÇÕES, então entra ANTES da
+-- VARREDURA anon. PL/pgSQL adia a resolução do corpo: a coluna
+-- importacoes_de_historico.origem nasce no apêndice da 9033, depois da varredura.
+-- A SEGUNDA metade (constraints e índice) fica no fim, com a estrutura final.
+create or replace function public.fn_enqueue_historico_analise(
+  p_org uuid,
+  p_importacao uuid
+) returns integer
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_total integer;
+begin
+  with importacao as (
+    select i.id
+      from public.importacoes_de_historico i
+     where i.id = p_importacao
+       and i.organization_id = p_org
+       and i.origem = 'manual'
+       and i.status = 'concluida'
+  ), conversas as (
+    select distinct on (m.contact_id)
+           m.contact_id,
+           m.conversation_id
+      from public.messages m
+      join importacao i
+        on m.metadata ->> 'importacao_id' = i.id::text
+     where m.organization_id = p_org
+       and m.contact_id is not null
+     order by m.contact_id, m.sent_at desc, m.id desc
+  ), reativados as (
+    update public.job_queue j
+       set status = 'pending',
+           attempts = 0,
+           run_after = now(),
+           last_error = null,
+           locked_by = null,
+           locked_at = null
+      from conversas c
+     where j.organization_id = p_org
+       and j.contact_id = c.contact_id
+       and j.kind = 'history_analysis'
+       and j.payload ->> 'importacao_id' = p_importacao::text
+       and j.status in ('failed', 'dead')
+    returning 1
+  ), inseridos as (
+    insert into public.job_queue (
+      organization_id,
+      contact_id,
+      kind,
+      payload,
+      priority,
+      max_attempts
+    )
+    select p_org,
+           c.contact_id,
+           'history_analysis',
+           jsonb_build_object(
+             'importacao_id', p_importacao,
+             'conversation_id', c.conversation_id
+           ),
+           140,
+           3
+      from conversas c
+    on conflict do nothing
+    returning 1
+  )
+  select ((select count(*) from reativados) + (select count(*) from inseridos))::integer
+    into v_total;
+
+  return v_total;
+end;
+$$;
+
+revoke all on function public.fn_enqueue_historico_analise(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_enqueue_historico_analise(uuid, uuid)
+  to service_role;
+
+create or replace function public.fn_resumo_historico_analise(
+  p_org uuid,
+  p_importacao uuid
+) returns jsonb
+language plpgsql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  return (
+  select jsonb_build_object(
+    'total', count(*),
+    'pending', count(*) filter (where status = 'pending'),
+    'running', count(*) filter (where status = 'running'),
+    'done', count(*) filter (where status = 'done'),
+    'failed', count(*) filter (where status = 'failed'),
+    'dead', count(*) filter (where status = 'dead')
+  )
+    from public.job_queue
+   where organization_id = p_org
+     and kind = 'history_analysis'
+     and payload ->> 'importacao_id' = p_importacao::text
+  );
+end;
+$$;
+
+revoke all on function public.fn_resumo_historico_analise(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_resumo_historico_analise(uuid, uuid)
+  to service_role;
+
+-- ---- histórico vira perfil e oportunidade: fila (migration 9350) ----
+-- A SEGUNDA metade do espelho. As funções estão antes da VARREDURA anon.
+-- Os dois CHECKs de job_queue são reconstruídos UMA vez só no bloco canônico
+-- acima; history_analysis foi acrescentado às listas finais naquele ponto.
+
+create unique index if not exists job_queue_historico_analise_unica_idx
+  on public.job_queue (organization_id, contact_id, ((payload ->> 'importacao_id')))
+  where kind = 'history_analysis';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.

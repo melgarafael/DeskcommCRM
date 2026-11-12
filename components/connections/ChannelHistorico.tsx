@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -46,6 +47,14 @@ interface Historico {
   importacao: Importacao | null;
   /** A recuperação aberta da queda (aguardando ou rodando), à parte da manual. */
   recuperacao_da_queda?: Importacao | null;
+  analise?: {
+    total: number;
+    pending: number;
+    running: number;
+    done: number;
+    failed: number;
+    dead: number;
+  } | null;
 }
 
 const DIAS = [30, 90, 180, 365] as const;
@@ -90,13 +99,15 @@ export function ChannelHistorico({ channelId }: { channelId: string }) {
     refetchOnWindowFocus: false,
     refetchInterval: (q) => {
       const d = q.state.data?.data;
-      return d?.importacao?.status === "rodando" || d?.recuperacao_da_queda ? 10_000 : false;
+      const analisando = (d?.analise?.pending ?? 0) + (d?.analise?.running ?? 0) > 0;
+      return d?.importacao?.status === "rodando" || d?.recuperacao_da_queda || analisando ? 10_000 : false;
     },
   });
 
   const guardar = query.data?.data.guardar_historico;
   const imp = query.data?.data.importacao ?? null;
   const daQueda = query.data?.data.recuperacao_da_queda ?? null;
+  const analise = query.data?.data.analise ?? null;
 
   async function acao(corpo: Record<string, unknown>) {
     setBusy(true);
@@ -248,6 +259,44 @@ export function ChannelHistorico({ channelId }: { channelId: string }) {
             {t("{gravadas} mensagens trazidas; {indisponiveis} áudios ou imagens não estavam mais disponíveis.")
               .replace("{gravadas}", String(imp.mensagens_gravadas ?? 0))
               .replace("{indisponiveis}", String(imp.midias_indisponiveis ?? 0))}
+          </p>
+          {(!analise || analise.total === 0) && (
+            <div>
+              <Button size="sm" disabled={busy} onClick={() => void acao({ acao: "analisar", importacaoId: imp.id })}>
+                {t("Analisar perfis e oportunidades")}
+              </Button>
+            </div>
+          )}
+          {analise && analise.total > 0 && analise.pending + analise.running > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {t("Analisando clientes: {feitos} de {total}")
+                .replace("{feitos}", String(analise.done))
+                .replace("{total}", String(analise.total))}
+            </p>
+          )}
+          {analise && analise.total > 0 && analise.pending + analise.running === 0 && analise.failed + analise.dead === 0 && (
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] text-muted-foreground">
+                {t("Análise concluída para {total} clientes.").replace("{total}", String(analise.done))}
+              </p>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/app/crm">{t("Ver oportunidades")}</Link>
+              </Button>
+            </div>
+          )}
+          {analise && analise.pending + analise.running === 0 && analise.failed + analise.dead > 0 && (
+            <div className="flex flex-col items-start gap-1">
+              <p role="alert" className="text-[11px] text-destructive">
+                {t("{falhas} clientes não puderam ser analisados.")
+                  .replace(/\{falhas\}/g, String(analise.failed + analise.dead))}
+              </p>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void acao({ acao: "analisar", importacaoId: imp.id })}>
+                {t("Tentar novamente")}
+              </Button>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            {t("A análise atualiza o CRM e nunca envia mensagens ao cliente.")}
           </p>
         </>
       )}

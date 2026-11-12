@@ -1,8 +1,7 @@
 import { protecaoAgendaPg } from "@/lib/agenda/protecao-followup";
-import type pg from "pg";
-
 import { calculaScore, type SinaisDoLead } from "@/lib/leads/score-formula";
 import { classifyRisk, resolveStageWindow } from "@/lib/leads/risk-radar";
+import type { Queryable } from "@/lib/agent-engine/queue/queue";
 
 /**
  * Lê os sinais de UM lead e grava (ou apaga) o score dele.
@@ -24,7 +23,7 @@ export interface ResultadoDaEscrita {
 }
 
 export async function recalculaScoreDoLead(
-  db: pg.Pool,
+  db: Queryable,
   organizationId: string,
   leadId: string,
   agora = new Date(),
