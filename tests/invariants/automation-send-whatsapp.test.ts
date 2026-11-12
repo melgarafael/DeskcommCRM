@@ -366,6 +366,7 @@ function rows(query: string): Array<Record<string, unknown>> {
 // Namespace próprio (44444444-) — reusa GOV_ORG (seedado por seedGov()).
 const SESSION_ID = "44444444-2222-4000-8000-000000000001";
 const CONTACT_ID = "44444444-3333-4000-8000-000000000001";
+const CONTATO_QUE_PASSA = { id: CONTACT_ID, is_blocked: false, phone_number: "+5511999990001" };
 const CONTACT_BLOCKED_ID = "44444444-3333-4000-8000-000000000002";
 const RULE_ID = "44444444-1111-4000-8000-000000000001";
 
@@ -503,7 +504,11 @@ describe("send_whatsapp_message — postponeUntil (Task 11)", () => {
     // 2026-07-18T02:00:00Z é 23:00 de 17/07 em São Paulo, em qualquer máquina.
     vi.setSystemTime(new Date("2026-07-18T02:00:00Z"));
     const executor = getAction("send_whatsapp_message")!;
-    const until = await executor.postponeUntil!(baseCtx(), {
+    // Contato que PASSA na guarda (#4467): a guarda vem antes da espera, e um
+    // contexto sem contato não tem o que esperar — `postponeUntil` devolve null
+    // e o execute o pula com `no_contact`. Sem ele, este caso mediria a guarda,
+    // não a janela.
+    const until = await executor.postponeUntil!(baseCtx({ context: { contact: CONTATO_QUE_PASSA } }), {
       channel_session_id: SESSION_ID,
       template: "x",
     });
@@ -549,7 +554,11 @@ describe("send_whatsapp_message — postponeUntil (Task 11)", () => {
         on conflict do nothing;
     `);
     const executor = getAction("send_whatsapp_message")!;
-    const until = await executor.postponeUntil!(baseCtx(), {
+    // Contato que PASSA na guarda (#4467): a guarda vem antes da espera, e um
+    // contexto sem contato não tem o que esperar — `postponeUntil` devolve null
+    // e o execute o pula com `no_contact`. Sem ele, este caso mediria a guarda,
+    // não a janela.
+    const until = await executor.postponeUntil!(baseCtx({ context: { contact: CONTATO_QUE_PASSA } }), {
       channel_session_id: SESSION_ID,
       template: "x",
     });
