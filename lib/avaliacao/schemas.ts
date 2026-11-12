@@ -29,7 +29,18 @@ export const criarAgendamentoSchema = agendamentoCorpoSchema.superRefine((v, ctx
   }
 });
 
+/**
+ * Campos só de criação (resolução de contato / distribuição). Não existem em
+ * `avaliacao_agendamentos` — se entrarem no `.update()`, o PostgREST responde
+ * `PGRST204` ("Could not find the 'consultant_auto' column…") e a edição falha
+ * depois do formulário ter enviado o mesmo corpo do POST.
+ */
 export const atualizarAgendamentoSchema = agendamentoCorpoSchema
+  .omit({
+    client_name: true,
+    client_phone: true,
+    consultant_auto: true,
+  })
   .partial()
   .extend({
     status: z.enum(STATUS_AVALIACAO).optional(),

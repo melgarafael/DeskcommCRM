@@ -42,10 +42,31 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Sem estes secrets o App não autentica — e o create-github-app-token@v3
+      # falha com "client-id … must be set to a non-empty string" (medido no
+      # fork gabriel-lima-git-hub/Salto, run 42517597590). Falhar AQUI, com o
+      # caminho do cadastro, é melhor do que o erro genérico da action.
+      - name: Credenciais do GitHub App presentes?
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+          APP_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_ID}" ] || [ -z "${APP_KEY}" ]; then
+            echo "::error::RELEASE_APP_ID e/ou RELEASE_APP_PRIVATE_KEY estão vazios neste repositório."
+            echo "::error::Cadastre em Settings → Secrets and variables → Actions:"
+            echo "::error::  RELEASE_APP_ID = Client ID do GitHub App de release"
+            echo "::error::  RELEASE_APP_PRIVATE_KEY = chave privada PEM do mesmo App"
+            echo "::error::O App é obrigatório: tag criada com GITHUB_TOKEN NÃO dispara publish-image.yml."
+            exit 1
+          fi
+
       - uses: actions/create-github-app-token@v3
         id: token
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
+          # v3 prefere `client-id` (o valor em RELEASE_APP_ID pode ser o Client ID
+          # ou o App ID legado — a action aceita os dois formatos neste input).
+          client-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
       - uses: actions/checkout@v7
@@ -108,16 +129,21 @@ jobs:
       # Leitura só — quem escreve continua sendo o token do App.
       pull-requests: read
     steps:
-      - uses: actions/create-github-app-token@v3
-        id: token
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
+      # ─── POR QUE O TOKEN DO APP NÃO NASCE AQUI ─────────────────────────────
+      #
+      # Todo push na `main` entra neste job. A maioria NÃO é corte de release —
+      # a guarda abaixo decide. Mintar o token do App ANTES da guarda fazia
+      # QUALQUER merge na main falhar quando `RELEASE_APP_ID` está vazio
+      # (fork/clone sem o App cadastrado). Medido: run 42517597590 no Salto —
+      # annotation "The 'client-id' (or deprecated 'app-id') input must be set
+      # to a non-empty string", step 2, antes de qualquer leitura do CHANGELOG.
+      #
+      # Checkout e a guarda usam o GITHUB_TOKEN (só leitura). O App só é mintado
+      # quando `cortar=sim`, porque só aí há tag/release a escrever — e evento
+      # disparado com GITHUB_TOKEN não cria novo workflow run (doc do GitHub).
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ steps.token.outputs.token }}
 
       - uses: ./.github/actions/preparar-node
         # O teto do preâmbulo mora aqui porque passo de composite action não
@@ -131,10 +157,9 @@ jobs:
           # origem do merge (issue #478). É o token do próprio workflow, e não
           # o do App: a guarda pergunta, ela não escreve nada.
           GH_TOKEN: ${{ github.token }}
-          # `app-slug` é o slug do App que emitiu o token do passo anterior; o
-          # login do bot é `<slug>[bot]` — a MESMA montagem que o passo da tag
-          # usa no e-mail do commit, no `git config user.email` lá embaixo.
-          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+          # Sem mint prévio o slug pode estar vazio: a guarda já cai na Prova 2
+          # (head `release/*` deste repositório), que cobre todo corte do ato 1.
+          APP_SLUG: ""
         run: |
           set -euo pipefail
 
@@ -351,6 +376,37 @@ jobs:
             echo "cortar=sim"       >> "$GITHUB_OUTPUT"
             echo "versao=${versao}" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Credenciais do GitHub App para o corte
+        if: steps.pendente.outputs.cortar == 'sim'
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+          APP_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_ID}" ] || [ -z "${APP_KEY}" ]; then
+            echo "::error::Este push É um corte de release, mas RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY estão vazios."
+            echo "::error::Cadastre em Settings → Secrets and variables → Actions:"
+            echo "::error::  RELEASE_APP_ID = Client ID do GitHub App de release"
+            echo "::error::  RELEASE_APP_PRIVATE_KEY = chave privada PEM do mesmo App"
+            echo "::error::Sem o App a tag NÃO pode nascer daqui: GITHUB_TOKEN não dispara publish-image.yml."
+            exit 1
+          fi
+
+      - uses: actions/create-github-app-token@v3
+        if: steps.pendente.outputs.cortar == 'sim'
+        id: token
+        with:
+          client-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Autenticar o remote com o token do App
+        if: steps.pendente.outputs.cortar == 'sim'
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
       - name: Criar e empurrar a tag
         if: steps.pendente.outputs.cortar == 'sim'

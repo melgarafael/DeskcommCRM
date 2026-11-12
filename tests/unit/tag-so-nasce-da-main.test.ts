@@ -64,6 +64,23 @@ describe("a tag nasce no CI, e nunca do GITHUB_TOKEN", () => {
     expect(release).toContain("actions/create-github-app-token");
     expect(release).toContain("secrets.RELEASE_APP_ID");
     expect(release).toContain("secrets.RELEASE_APP_PRIVATE_KEY");
+    // v3: `client-id` (app-id é deprecated). O secret continua RELEASE_APP_ID.
+    expect(release).toMatch(/client-id:\s*\$\{\{\s*secrets\.RELEASE_APP_ID\s*\}\}/);
+  });
+
+  it("cortar-tag só minta o App depois de decidir que é corte — senão todo push na main falha sem o secret", () => {
+    // Medido no fork Salto, run 42517597590: mintar o token no passo 2, antes
+    // da guarda, pintava de vermelho QUALQUER merge na main quando
+    // RELEASE_APP_ID estava vazio. A mint tem que viver sob `cortar == 'sim'`.
+    const t = job(release, "cortar-tag");
+    const iGuarda = t.indexOf("Este push foi um corte de release?");
+    const iMint = t.indexOf("actions/create-github-app-token");
+    expect(iGuarda, "a guarda sumiu").toBeGreaterThan(-1);
+    expect(iMint, "a mint do App sumiu").toBeGreaterThan(-1);
+    expect(iMint, "a mint do App voltou a rodar antes da guarda").toBeGreaterThan(iGuarda);
+    expect(t).toMatch(
+      /uses:\s*actions\/create-github-app-token@v3[\s\S]*?if:\s*steps\.pendente\.outputs\.cortar\s*==\s*'sim'/,
+    );
   });
 
   it("nenhum job do release pede escopo de escrita ao GITHUB_TOKEN", () => {

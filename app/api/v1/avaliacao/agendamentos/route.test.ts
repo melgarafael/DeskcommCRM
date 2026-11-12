@@ -114,6 +114,14 @@ describe("GET /api/v1/avaliacao/agendamentos", () => {
 
 describe("POST /api/v1/avaliacao/agendamentos", () => {
   const UNIT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const corpoValido = {
+    unit_id: UNIT,
+    scheduled_at: "2026-11-12T12:00:00.000Z",
+    duration_minutes: 20,
+    client_name: "Maria",
+    client_phone: "11999998888",
+    consultant_auto: true,
+  };
 
   function postReq(body: unknown): NextRequest {
     return new NextRequest("http://localhost/api/v1/avaliacao/agendamentos", {
@@ -131,5 +139,93 @@ describe("POST /api/v1/avaliacao/agendamentos", () => {
     const { POST } = await import("./route");
     const res = await POST(postReq({ unit_id: UNIT }));
     expect(res.status).toBe(422);
+  });
+
+  it("persistência ok → 201 com o registro", async () => {
+    autorizadoComo("agent");
+    const criado = {
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      status: "agendado",
+      unit_id: UNIT,
+      scheduled_at: corpoValido.scheduled_at,
+    };
+    const inserted: unknown[] = [];
+    const builder: Record<string, unknown> = {
+      select: () => builder,
+      insert: (row: unknown) => {
+        inserted.push(row);
+        return builder;
+      },
+      single: () => Promise.resolve({ data: criado, error: null }),
+    };
+    vi.mocked(createClient).mockResolvedValue({
+      from: () => builder,
+      rpc: vi.fn(async () => ({ data: USER_ID, error: null })),
+    } as never);
+
+    const { POST } = await import("./route");
+    const res = await POST(postReq(corpoValido));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.data).toEqual(criado);
+    expect(inserted[0]).toMatchObject({
+      organization_id: ORG_ID,
+      unit_id: UNIT,
+      contact_id: "cccccccc-3333-4000-8000-000000000001",
+      status: "agendado",
+      scheduled_at: corpoValido.scheduled_at,
+    });
+    expect(inserted[0]).not.toHaveProperty("consultant_auto");
+    expect(inserted[0]).not.toHaveProperty("client_name");
+    expect(inserted[0]).not.toHaveProperty("client_phone");
+  });
+
+  it("falha de persistência → 500 (não inventa sucesso)", async () => {
+    autorizadoComo("agent");
+    const builder: Record<string, unknown> = {
+      select: () => builder,
+      insert: () => builder,
+      single: () =>
+        Promise.resolve({
+          data: null,
+          error: { code: "23503", message: "insert or update violates foreign key" },
+        }),
+    };
+    vi.mocked(createClient).mockResolvedValue({
+      from: () => builder,
+      rpc: vi.fn(async () => ({ data: null, error: null })),
+    } as never);
+
+    const { POST } = await import("./route");
+    const res = await POST(postReq(corpoValido));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe("internal_error");
+  });
+
+  it("módulo sem tabela (PGRST205) → 409 module_not_installed", async () => {
+    autorizadoComo("agent");
+    const builder: Record<string, unknown> = {
+      select: () => builder,
+      insert: () => builder,
+      single: () =>
+        Promise.resolve({
+          data: null,
+          error: {
+            code: "PGRST205",
+            message: "Could not find the table 'public.avaliacao_agendamentos' in the schema cache",
+          },
+        }),
+    };
+    vi.mocked(createClient).mockResolvedValue({
+      from: () => builder,
+      rpc: vi.fn(async () => ({ data: null, error: null })),
+    } as never);
+
+    const { POST } = await import("./route");
+    const res = await POST(postReq(corpoValido));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe("module_not_installed");
   });
 });

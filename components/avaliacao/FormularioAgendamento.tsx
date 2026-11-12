@@ -123,16 +123,22 @@ export function FormularioAgendamento({
       if (!telefone.trim() || !nome.trim()) {
         throw new Error("Informe WhatsApp e nome do cliente.");
       }
-      const scheduledAt = new Date(`${data}T${hora}:00`).toISOString();
-      const corpoBase = {
+      if (!data || !hora) {
+        throw new Error("Informe data e horário do agendamento.");
+      }
+      const quando = new Date(`${data}T${hora}:00`);
+      if (Number.isNaN(quando.getTime())) {
+        throw new Error("Data ou horário inválidos.");
+      }
+      const scheduledAt = quando.toISOString();
+      // Só colunas de `avaliacao_agendamentos` (+ updated_at no servidor).
+      // `client_name` / `client_phone` / `consultant_auto` NÃO entram no PATCH:
+      // não existem na tabela e o PostgREST recusa com PGRST204.
+      const persistivel = {
         unit_id: unitId,
         scheduled_at: scheduledAt,
         duration_minutes: 20,
-        client_name: nome.trim() || undefined,
-        client_phone: telefone.trim() || undefined,
         client_email: email.trim() || undefined,
-        contact_id: contatoLookup.data?.id,
-        consultant_auto: consultantAuto,
         consultant_user_id: consultantAuto ? null : consultantId || null,
         attendant_user_id: attendantId || null,
         vehicle_plate: placa.trim() || undefined,
@@ -142,10 +148,16 @@ export function FormularioAgendamento({
       };
 
       if (edicao) {
-        await apiClient.patch(`/api/v1/avaliacao/agendamentos/${edicao.id}`, corpoBase);
+        await apiClient.patch(`/api/v1/avaliacao/agendamentos/${edicao.id}`, persistivel);
         return scheduledAt;
       }
-      await apiClient.post("/api/v1/avaliacao/agendamentos", corpoBase);
+      await apiClient.post("/api/v1/avaliacao/agendamentos", {
+        ...persistivel,
+        client_name: nome.trim(),
+        client_phone: telefone.trim(),
+        contact_id: contatoLookup.data?.id,
+        consultant_auto: consultantAuto,
+      });
       return scheduledAt;
     },
     onSuccess: (scheduledAt) => {
@@ -156,7 +168,9 @@ export function FormularioAgendamento({
       aoSalvar?.();
     },
     onError: (err) => {
-      if (err instanceof Error && err.message) {
+      // Erros locais (unidade/nome/telefone) são `Error` puro; erros da API são
+      // `ApiError` e passam por `showApiError` para preservar código + request id.
+      if (err instanceof Error && err.name !== "ApiError") {
         toast.error(err.message);
         return;
       }
