@@ -51,7 +51,12 @@
 #       janela não segura a vigília, que é o motivo da reprovação do desenho
 #       anterior
 set -uo pipefail
-unset $(git rev-parse --local-env-vars) 2>/dev/null || true
+# O idioma canônico do próprio git: `git rev-parse --local-env-vars` lista as
+# variáveis que fazem o git resolver OUTRO repositório, e o `unset` as tira
+# antes de qualquer `git init` descartável abaixo. A linha é exatamente a dos
+# irmãos (`atualizacao-*`, `colisao-de-migration`) porque a cerca
+# `testes-de-shell-nao-vazam-identidade` a reconhece pela forma.
+unset $(git rev-parse --local-env-vars)
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.t
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
