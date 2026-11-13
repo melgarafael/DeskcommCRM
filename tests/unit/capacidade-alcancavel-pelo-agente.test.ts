@@ -84,6 +84,11 @@ const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   "crm_move_lead_stage",
   // `app/api/v1/messages/` — exige `agent`. Responder cliente é o trabalho do dia.
   "crm_send_whatsapp_message",
+  // #4129 — `lib/mcp/tools/messages.ts`: mesma rota e mesmo papel da irmã acima
+  // (`app/api/v1/messages/`, `agent`), e é a MESMA capacidade de mandar arquivo
+  // ao cliente por uma conversa que já existe. Enviar o catálogo é o trabalho do
+  // dia; o dano máximo é um arquivo a mais para a pessoa que atende.
+  "crm_send_material",
   // `app/api/v1/ai/cases/[id]/reply/` — POST exige `agent`. Registrar no chamado
   // é o trabalho de quem atende (paridade medida na integração do papel novo).
   "crm_add_case_note",

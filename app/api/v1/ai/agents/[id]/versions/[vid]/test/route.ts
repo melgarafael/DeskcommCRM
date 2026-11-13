@@ -238,7 +238,11 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     // #2490 — mídia pendente é teste REPROVADO, mesmo com candidato na mão: o
     // `send_message` que falhou a foto devolveu erro ao modelo, e aprovar a tela
     // com aquela resposta seria exatamente o "passou sem preparar" da issue.
-    const midiaPendente = result.midia.some((m) => m.falha !== undefined);
+    const midiaPendente =
+      result.midia.some((m) => m.falha !== undefined) ||
+      // #4129 — o material da empresa entra na MESMA régua: dry-run com arquivo
+      // não preparado é teste reprovado, nunca "aprovado com pendência".
+      result.materiais.some((m) => m.falha !== undefined);
     resultPayload = {
       run_id: runRow.id,
       status: result.candidates.length && !midiaPendente ? "ok" : "blocked",

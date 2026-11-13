@@ -72,8 +72,32 @@ export interface ChannelSendInput {
    * mensagens, como em toda mídia — e é ele que confere a URL antes de buscar.
    */
   media?:
-    | { kind?: 'audio' | 'image'; storagePath: string; mime: string }
+    | {
+        storagePath: string;
+        mime: string;
+        /**
+         * Áudio × imagem de um arquivo que já mora na pasta da conversa (catálogo,
+         * apresentação). Ausente nas fotos do produto, que sempre foram imagem.
+         */
+        kind?: 'audio' | 'image';
+        /**
+         * Presente só quando o arquivo da conversa NÃO é imagem: material da
+         * empresa (#4129) pode ser PDF/planilha e vai como DOCUMENTO. Ausente =
+         * imagem, o comportamento de sempre das fotos do produto — um agente
+         * antigo, recompilado, continua enviando foto como foto.
+         */
+        type?: TipoDeMidiaComLegenda;
+      }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
+  /**
+   * O material da empresa que ESTA mensagem carrega (#4129), quando houver.
+   *
+   * Vai ao `metadata` da linha gravada pelo handler, e é por ele que os freios
+   * de reenvio contam (7 dias / 3 em 24 h) e que o Inbox mostra o documento da
+   * IA. Opcional pela mesma razão de `template`/`voz`: um adapter que o ignore
+   * ainda envia a mensagem — degrada, não quebra.
+   */
+  materialId?: string;
 }
 
 /**

@@ -109,8 +109,23 @@ export interface SendMessageInput {
    * aponta direto e o handler confere antes de buscar.
    */
   media?:
-    | { kind?: 'audio' | 'image'; storagePath: string; mime: string }
+    | {
+        storagePath: string;
+        mime: string;
+        /** Áudio × imagem do arquivo já no Storage (catálogo). Ausente = imagem. */
+        kind?: 'audio' | 'image';
+        /** Ausente = imagem (foto do produto). Ver `ChannelSendInput` no contrato do canal. */
+        type?: TipoDeMidiaComLegenda;
+      }
     | { url: string; mime: string; type: TipoDeMidiaComLegenda };
+  /**
+   * O material da empresa que ESTA mensagem carrega (#4129), quando houver.
+   *
+   * Vai para o `metadata` da linha: é por ele que a conversa sabe o que já
+   * recebeu (freio de 7 dias/3 em 24 h) e que a timeline mostra o documento da
+   * IA sem depender de cruzar o caminho do Storage.
+   */
+  materialId?: string;
 }
 
 /**
@@ -146,14 +161,22 @@ export function corpoDoEnvio(
               media_mime: input.media.mime,
             }
           : {
-              type: input.media.kind ?? 'image',
+              // Material da empresa (#4129) é documento; foto de produto não
+              // declara `type` e continua saindo como imagem. O `type` errado
+              // manda o PDF como foto — e o WhatsApp não entrega. `kind` é a
+              // marca do áudio/imagem do catálogo (apresentação); os dois
+              // convivem e `type` tem precedência por ser o mais específico.
+              type: input.media.type ?? input.media.kind ?? 'image',
               media_storage_path: input.media.storagePath,
               media_mime: input.media.mime,
             }
         : { type: 'text' as const }),
     // Foto sem legenda vai sem `body`: o schema do envio pede corpo não vazio.
     ...(input.body !== '' || !input.media ? { body: input.body } : {}),
-    metadata: { idempotency_key: idempotencyKey },
+    metadata: {
+      idempotency_key: idempotencyKey,
+      ...(input.materialId ? { material_id: input.materialId } : {}),
+    },
   };
 }
 

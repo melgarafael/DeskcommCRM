@@ -44,6 +44,12 @@ describe("send_message leva a foto do produto", () => {
 
   it("a foto sai de DENTRO do `send` do guardrail, com o corpo que a cadeia aprovou", () => {
     const send = corpoDoSend.slice(corpoDoSend.indexOf("send: (finalBody: string) =>"));
-    expect(send).toContain("enviarComFotos(finalBody, fotosDoProduto,");
+    // #4129 — a MESMA cadeia agora manda o anexo, e o material da empresa ocupa
+    // o lugar das fotos (`anexoDoMaterial !== null ? [anexoDoMaterial] : …`),
+    // porque os dois disputam a legenda. O que a cerca prende continua igual: o
+    // envio da foto sai de DENTRO do `send` do guardrail, com o `finalBody`
+    // aprovado pela cadeia.
+    expect(send).toMatch(/enviarComFotos\(\s*finalBody,/);
+    expect(send).toContain("anexoDoMaterial !== null ? [anexoDoMaterial] : fotosDoProduto");
   });
 });

@@ -47,7 +47,12 @@ export function isLeadAttachmentPathOwnedBy(path: string, orgId: string, leadId:
   return isMediaPathOwnedBy(path, orgId, `leads/${leadId}`);
 }
 
-const DOCUMENT_MIMES = new Set([
+/**
+ * A allowlist de documentos do upload outbound — exportada porque o bucket do
+ * material da empresa (#4129) promete a MESMA lista, e um teste de invariante
+ * precisa comparar as duas sem uma terceira cópia.
+ */
+export const DOCUMENT_MIMES = new Set([
   "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

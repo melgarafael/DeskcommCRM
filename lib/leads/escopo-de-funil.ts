@@ -133,6 +133,9 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
 
   // ---- não têm funil, e isso é declarado ----
   crm_send_whatsapp_message: "sem_funil",
+  // #4129 — envia o DOCUMENTO da empresa na conversa; não lê nem move negócio,
+  // e o material é catálogo da organização. Mesmo alvo da irmã acima.
+  crm_send_material: "sem_funil",
   // O Status do WhatsApp não toca negócio nenhum: é publicação de mídia no
   // canal. Declarado (e não ausente) porque a régua de vacuidade recusa a
   // ferramenta nova que ninguém classificou.

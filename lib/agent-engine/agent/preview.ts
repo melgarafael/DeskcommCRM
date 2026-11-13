@@ -32,6 +32,7 @@ import { ehLeituraRemota } from '@/lib/mcp/servidor-externo/leitura-remota';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
+import type { AnexoDeMaterial, MaterialPreparado } from './materiais-da-empresa';
 import { formatoDeImagemPorUrl } from './imagem-por-url';
 import { countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
 import { renderNotesIndexBlock } from './lead-notes';
@@ -57,6 +58,21 @@ export interface TurnPreview {
   gateContext?: GateContext;
   result: PreviewResult;
 }
+/**
+ * O que o dry-run apurou sobre o MATERIAL que a resposta usaria (#4129).
+ *
+ * `anexo` é o que sairia no envio real; `falha` presente significa teste
+ * VERMELHO — o dry-run não degrada para só texto nem aprova com o arquivo
+ * pendente, a mesma régua do #2490 para as fotos do produto.
+ */
+export interface MaterialPreparadoNoTeste {
+  materialId: string;
+  /** Nome do material, quando o preparo chegou a resolvê-lo. */
+  nome: string | null;
+  anexo: AnexoDeMaterial | null;
+  falha?: { code: string; message: string };
+}
+
 export interface PreviewResult {
   checkpoint?: unknown;
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
@@ -86,6 +102,13 @@ export interface PreviewResult {
    * Falha aqui vira `falha` no registro E impedimento no teste — nunca candidato.
    */
   midia: MidiaPreparada[];
+  /**
+   * O material da empresa que a resposta USARIA (#4129), preparado pelo MESMO
+   * `prepararMaterialDaEmpresa` do envio real — mesma query, mesmos freios,
+   * mesma cópia. `anexo` é o que sairia; `falha` presente reprova o teste, como
+   * no #2490: mídia que ninguém preparou não atravessa o dry-run como aprovada.
+   */
+  materiais: MaterialPreparadoNoTeste[];
 }
 /**
  * Teto do bloco de notas INLINE da prévia (headline + corpo de cada nota).
@@ -144,6 +167,7 @@ export function newPreviewResult(): PreviewResult {
     impediments: [],
     warnings: [],
     midia: [],
+    materiais: [],
     restrictions: [
       'preview_no_client_effects',
       'writes_require_separate_authorization',
@@ -368,6 +392,16 @@ export function applyPreviewPolicy(
   conferirAfirmacoes?: (candidata: string) => Promise<ConferenciaDeFato>,
   /** A procedência da `imagem_url` no turno (`criarProcedenciaDeImagens().viu`), a mesma do envio real. */
   imagemVistaNoTurno?: (url: string) => boolean,
+  /**
+   * #4129 — a `prepararMaterialDaEmpresa` do caminho de produção, injetada pelo
+   * turno que tem banco e Storage. Sem ela o `material_id` NÃO passa: o teste
+   * falha a mídia em vez de aprovar texto com o arquivo pendente.
+   *
+   * Fica por ÚLTIMO (e não junto do `prepararMidia`): os slots acima são
+   * chamados por POSIÇÃO, e enfiar este no meio deles deslocaria o conferidor e
+   * a procedência da `imagem_url` de quem já chamava assim.
+   */
+  prepararMaterial?: (materialId: string) => Promise<MaterialPreparado>,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -455,6 +489,58 @@ export function applyPreviewPolicy(
                       `O produto ${JSON.stringify(midia.codigo)} não tem fotos cadastradas: ` +
                       'nenhuma imagem seria enviada no envio real — só o texto.',
                   });
+              }
+              const materialId =
+                args && typeof args === 'object' && 'material_id' in args
+                  ? typeof args.material_id === 'string'
+                    ? args.material_id
+                    : undefined
+                  : undefined;
+              if (
+                materialId !== undefined &&
+                materialId.trim() !== '' &&
+                produtoCodigo !== undefined &&
+                produtoCodigo.trim() !== ''
+              ) {
+                // A MESMA recusa do turno real: as duas listas competem pela
+                // legenda, e o teste não pode aprovar o que a produção recusa.
+                const falha = {
+                  code: 'material_e_produto_juntos',
+                  message:
+                    'Escolha UM anexo: `material_id` (documento da empresa) OU `produto_codigo` (fotos do catálogo).',
+                };
+                p.result.impediments.push(falha);
+                return { ok: false, error: falha };
+              }
+              if (materialId !== undefined && materialId.trim() !== '') {
+                // #4129 — a MESMA `prepararMaterialDaEmpresa` do envio real: a
+                // lista do agente, os freios de reenvio e a cópia para a pasta
+                // `dry-run` da organização, como as fotos em #2490. Nada sai
+                // pelo canal e nada é gravado em conversa nenhuma.
+                const preparado = prepararMaterial
+                  ? await prepararMaterial(materialId.trim())
+                  : ({
+                      ok: false as const,
+                      code: 'material_nao_preparado',
+                      message:
+                        'A mídia desta resposta não foi preparada no teste — não há como afirmar ' +
+                        'que o material sairia no envio real. Corrija a preparação e execute o teste de novo.',
+                    } as const);
+                if (!preparado.ok) {
+                  p.result.materiais.push({
+                    materialId: materialId.trim(),
+                    nome: null,
+                    anexo: null,
+                    falha: { code: preparado.code, message: preparado.message },
+                  });
+                  p.result.impediments.push({ code: preparado.code, message: preparado.message });
+                  return { ok: false, error: { code: preparado.code, message: preparado.message } };
+                }
+                p.result.materiais.push({
+                  materialId: materialId.trim(),
+                  nome: preparado.material.nome,
+                  anexo: preparado.anexo,
+                });
               }
               // Foto por URL (Spec 25 R4): na prévia NADA é buscado nem enviado, e a guarda de
               // rede (C6) não roda aqui — só o formato e a procedência são conferidos, sem rede.

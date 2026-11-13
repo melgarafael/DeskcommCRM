@@ -250,6 +250,11 @@ async function previaComConferidor(
     undefined,
     undefined,
     conferir,
+    // #4129 — o slot do `prepararMaterial` é o ÚLTIMO (depois do conferidor e da
+    // procedência da imagem, que a main já chamava por posição). Aqui não há
+    // `material_id` na chamada, então o slot fica vazio de propósito.
+    undefined,
+    undefined,
   );
   const retorno = await chamar(tools, "send_message", { body: CANDIDATA });
   return { p, tools, retorno };

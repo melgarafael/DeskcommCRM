@@ -70526,6 +70526,140 @@ end $function$;
 revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
 grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
 
+-- ---- o material da empresa (#4129, migration 9222) ----
+-- Espelho da 9222, INTEIRO antes da VARREDURA anon porque cria FUNÇÃO (o
+-- gatilho da mesma-organização). O material é o arquivo pronto da empresa
+-- (catálogo em PDF, tabela de preços, ficha) que o agente envia na conversa pelo
+-- caminho de mídia do handler; NÃO entra no RAG — é enviado, não lido. A tela de
+-- cadastro fica para a fatia seguinte: aqui nascem a linha, a lista por agente e
+-- o bucket privado. Idempotente (if not exists / or replace / drop … if exists).
+create table if not exists public.crm_materiais (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  nome text not null check (length(btrim(nome)) between 1 and 200),
+  storage_path text not null,
+  mime text not null check (length(btrim(mime)) between 1 and 160),
+  tamanho bigint not null check (tamanho > 0 and tamanho <= 52428800),
+  quando_enviar text not null default '',
+  legenda text not null default '',
+  ativo boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint crm_materiais_caminho_da_organizacao
+    check (storage_path like organization_id::text || '/%'),
+  constraint crm_materiais_caminho_unico unique (organization_id, storage_path)
+);
+
+comment on table public.crm_materiais is
+  'Material pronto da empresa (catálogo em PDF, tabela de preços, ficha) que o agente envia na conversa pelo caminho de mídia do handler (#4129). NÃO entra no RAG: é enviado, não lido. A tela de cadastro fica para a fatia seguinte.';
+comment on column public.crm_materiais.storage_path is
+  'Caminho em storage/crm-materiais, sempre <organization_id>/<uuid>.<ext>. Quem lê confere o prefixo (lib/materiais/materiais.ts) e o CHECK repete a regra no banco: a cópia por service role não tem RLS.';
+comment on column public.crm_materiais.quando_enviar is
+  'A frase que o modelo lê na descrição de send_message ao lado do id: em que situação este material deve ser enviado (#4129).';
+
+create index if not exists crm_materiais_da_organizacao
+  on public.crm_materiais (organization_id, nome)
+  where ativo;
+
+drop trigger if exists trg_crm_materiais_updated_at on public.crm_materiais;
+create trigger trg_crm_materiais_updated_at
+  before update on public.crm_materiais
+  for each row execute function public.fn_set_updated_at();
+
+create table if not exists public.crm_materiais_do_agente (
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  agent_id uuid not null references public.ai_agents(id) on delete cascade,
+  material_id uuid not null references public.crm_materiais(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (agent_id, material_id)
+);
+
+comment on table public.crm_materiais_do_agente is
+  'Quais materiais CADA agente pode enviar (#4129). A ferramenta send_message só aceita material_id que esteja aqui E ativo — o mesmo desenho do filtro de dono das fotos do produto.';
+
+create index if not exists crm_materiais_do_agente_por_material
+  on public.crm_materiais_do_agente (organization_id, material_id);
+
+create or replace function public.fn_crm_materiais_do_agente_da_mesma_org()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1 from public.ai_agents a
+     where a.id = new.agent_id and a.organization_id = new.organization_id
+  ) then
+    raise exception 'crm_materiais_do_agente: agente % não é da organização %', new.agent_id, new.organization_id
+      using errcode = 'check_violation';
+  end if;
+  if not exists (
+    select 1 from public.crm_materiais m
+     where m.id = new.material_id and m.organization_id = new.organization_id
+  ) then
+    raise exception 'crm_materiais_do_agente: material % não é da organização %', new.material_id, new.organization_id
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_crm_materiais_do_agente_da_mesma_org() from public, anon, authenticated;
+
+drop trigger if exists trg_crm_materiais_do_agente_da_mesma_org on public.crm_materiais_do_agente;
+create trigger trg_crm_materiais_do_agente_da_mesma_org
+  before insert or update on public.crm_materiais_do_agente
+  for each row execute function public.fn_crm_materiais_do_agente_da_mesma_org();
+
+alter table public.crm_materiais enable row level security;
+drop policy if exists tenant_isolation_crm_materiais_select on public.crm_materiais;
+create policy tenant_isolation_crm_materiais_select on public.crm_materiais
+  for select using (organization_id in (select public.fn_user_org_ids()));
+revoke all on public.crm_materiais from public, anon, authenticated;
+grant select on public.crm_materiais to authenticated;
+grant all on public.crm_materiais to service_role;
+
+alter table public.crm_materiais_do_agente enable row level security;
+drop policy if exists tenant_isolation_crm_materiais_do_agente_select on public.crm_materiais_do_agente;
+create policy tenant_isolation_crm_materiais_do_agente_select on public.crm_materiais_do_agente
+  for select using (organization_id in (select public.fn_user_org_ids()));
+revoke all on public.crm_materiais_do_agente from public, anon, authenticated;
+grant select on public.crm_materiais_do_agente to authenticated;
+grant all on public.crm_materiais_do_agente to service_role;
+
+-- O bucket PRIVADO da empresa. Só o service_role lê e grava: nenhuma policy em
+-- storage.objects, molde do `catalog-photos` (0390). A allowlist é a MESMA do
+-- upload do Inbox (`DOCUMENT_MIMES` de lib/messaging/media/upload-validation.ts)
+-- mais as imagens que a régua de tipo conhece; duas cópias divergiriam caladas.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'crm-materiais',
+  'crm-materiais',
+  false,
+  52428800,
+  array[
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain',
+    'text/csv',
+    'application/zip'
+  ]
+)
+on conflict (id) do update
+  set public             = excluded.public,
+      file_size_limit    = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
 -- ---- o comando da conversa pergunta pelo NÚMERO (migration 9331, issue #4012) ----
 -- O wrapper `comando_da_conversa(c)` deixa de dizer `automatico` para conversa
 -- que nenhum agente vai responder. A régua NÃO é nova: é a do portão do dreno
@@ -81129,6 +81263,35 @@ begin
 end $fonte_do_lead_ads$;
 
 notify pgrst, 'reload schema';
+
+-- ---- o bucket do material aceita XML como o upload do Inbox (migration 9356) ----
+-- A 9222 congelou no bucket a lista de `DOCUMENT_MIMES` de 06/11. Em 10/11 a main
+-- acrescentou `application/xml` e `text/xml` a essa lista (617635a5f7) e o
+-- espelho do bucket ficou para trás: o Inbox aceitava o XML do cliente e o
+-- Storage recusava o material, antes de qualquer código rodar.
+-- `tests/invariants/crm-materiais-rls.test.ts:192` compara as duas listas.
+-- `update`, e não `insert ... on conflict`: o bucket já existe em quem aplicou a
+-- 9222; o que falta é a MIME list. Mesmo molde da 0310 (`ai-policy` + CSV).
+update storage.buckets
+   set allowed_mime_types = array[
+     'image/jpeg',
+     'image/png',
+     'image/webp',
+     'image/gif',
+     'application/pdf',
+     'application/msword',
+     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+     'application/vnd.ms-excel',
+     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     'application/vnd.ms-powerpoint',
+     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+     'text/plain',
+     'text/csv',
+     'application/zip',
+     'application/xml',
+     'text/xml'
+   ]
+ where id = 'crm-materiais';
 
 -- ---- anonimizar alcança as fichas fundidas: as que já ficaram para trás (migration 9243) ----
 -- A segunda metade da 9243. Fica no fim porque a cascata e os gatilhos que ela
