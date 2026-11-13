@@ -482,6 +482,6 @@ export const crmPrepararProposta: McpToolDefinition<typeof prepararPropostaInput
         }
       }
     }
-    return { ...resposta, campos_do_modelo: caminhos.map(rotuloDaVariavel) };
+    return { ...resposta, campos_do_modelo: caminhos.map((caminho) => rotuloDaVariavel(caminho)) };
   },
 };
