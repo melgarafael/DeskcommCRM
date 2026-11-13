@@ -290,6 +290,16 @@ const schema = z.object({
   // é `canalGraphParceiroLigado()` em `lib/channels/graph-parceiro/credentials.ts`.
   DATAFY_ENABLED: z.string().optional().default(""),
 
+  // ─── Canal do chat de vendedor da OLX (#2927) — OPCIONAL, DESLIGADO POR PADRÃO
+  //
+  // Mesma lei do bloco acima, no molde do #1459: só `true` liga. Vazio =
+  // a instalação não oferece o canal — rota de conexão 404, webhook recusado,
+  // envio com `olx_not_configured`. Quem lê é
+  // `canalChatDeVendedorLigado()` em `lib/channels/chat-de-vendedor/credentials.ts`.
+  OLX_ENABLED: z.string().optional().default(""),
+  // Só para apontar para homologação. Vazio usa a produção do provedor.
+  OLX_API_BASE_URL: z.string().optional().default(""),
+
   // ─── Número oficial com um clique (migration 9093) — OPCIONAL ───
   //
   // Chave da conta do provedor parceiro DA INSTALAÇÃO. Vazia = a tela de

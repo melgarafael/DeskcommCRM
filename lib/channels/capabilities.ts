@@ -173,6 +173,42 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
   },
+  // Canal de chat da OLX (issue #2927, fatia 1). O que a documentação do
+  // vendedor mostra é um chat de TEXTO: sem mídia e sem definição aprovada, o
+  // que dá `requiresTemplates: false` e `canManageTemplates: false`.
+  //
+  // `freeformOutsideWindow: true` é a leitura da doc, não um default herdado: a
+  // OLX não publica janela de 24h para o chat, então não há relógio a respeitar
+  // — o mesmo perfil auto-restrito do canal por QR, sem o anti-ban (a OLX não
+  // documenta risco de banimento por volume). `banRisk: false` mantém as duas
+  // famílias de restrição mutuamente exclusivas, como a doutrina exige.
+  //
+  // `costPerMessage: false` e `groups: "none"` também vêm da doc: não há
+  // cobrança por mensagem nem grupos neste chat. `voiceNote: "server-convert"` é
+  // placeholder honesto — o canal não manda áudio, e a capability existe só
+  // para o tipo; a ausência de mídia é o contrato, não a conversão.
+  olx: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: null,
+    voiceNote: "server-convert",
+    groups: "none",
+    costPerMessage: false,
+    alteraMensagemEnviada: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
+    // Só texto nos dois sentidos (resposta da OLX na #2927): não há reação, e
+    // não há envio em lista — o chat só existe na thread que o comprador abriu.
+    podeReagir: false,
+    transmissao: false,
+    // O chat da OLX não publica Status e não fala com aparelho pareado: o campo
+    // que a main acrescentou ao tipo entra aqui como `false`, a mesma leitura
+    // do canal oficial, em vez de ficar com o valor implícito.
+    statusUpdates: false,
+  },
 };
 
 /**
@@ -204,6 +240,8 @@ export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_ZERNIO];
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
+/** Chat da OLX (issue #2927) — canal de mensagem por thread própria, só texto. */
+export const CHANNEL_PROVIDER_OLX: ChannelProvider = "olx";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
@@ -237,6 +275,7 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio",
   "zernio_social",
   "datafy",
+  "olx",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
@@ -350,6 +389,10 @@ export function modoDeCampanhaDoCanal(
   // e é justamente por isso que a pergunta anterior responderia `false` para ele.
   if (provider === CANAL_DE_CAMPANHA_EMAIL) return "email";
   if (!transportaMensagem(provider)) return null;
+  // O chat da OLX (#2927) só existe dentro da thread que o comprador abriu num
+  // anúncio: não há para quem iniciar contato em lista. Texto livre fora da
+  // janela é verdade para a resposta, não para a campanha.
+  if (provider === CHANNEL_PROVIDER_OLX) return null;
   try {
     const caps = capabilitiesOf(provider as ProviderDeMensagem);
     if (caps.freeformOutsideWindow) return "text";

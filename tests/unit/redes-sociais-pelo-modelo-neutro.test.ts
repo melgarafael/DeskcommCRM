@@ -132,7 +132,8 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
   });
 
   it("o vocabulário de canal da conversa não mudou", () => {
-    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "instagram", "facebook"]);
+    // `olx` entrou com o chat da OLX (#2927): canal próprio, fora do catálogo social.
+    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "olx", "instagram", "facebook"]);
   });
 
   it("a matriz de capabilities segue respondendo por todos os canais de mensagem", () => {
@@ -142,6 +143,8 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
       "zernio",
       "zernio_social",
       "datafy",
+      // O chat da OLX (#2927): canal de mensagem opcional, com matriz própria.
+      "olx",
     ]);
     for (const provider of PROVIDERS_DE_MENSAGEM) {
       const caps = capabilitiesOf(provider);

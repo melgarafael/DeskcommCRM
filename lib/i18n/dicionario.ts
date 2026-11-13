@@ -8003,6 +8003,9 @@ export const DICIONARIO: Traducoes = {
   "Conecte o número com o token antes de gravar o segredo.": {
     es: "Conecta el número con el token antes de guardar el secreto.",
   },
+  "Informe o access token do provedor e a conta de vendedor.": {
+    es: "Indica el access token del proveedor y la cuenta de vendedor.",
+  },
   "Segredo gravado. O canal passa a receber mensagens.": {
     es: "Secreto guardado. El canal empieza a recibir mensajes.",
   },
@@ -10470,6 +10473,7 @@ export const DICIONARIO: Traducoes = {
   "primeira mensagem enviada pelo celular": { es: "primer mensaje enviado desde el celular" },
   "primeira mensagem recebida no Instagram": { es: "primer mensaje recibido en Instagram" },
   "primeira mensagem recebida no Facebook": { es: "primer mensaje recibido en Facebook" },
+  "primeira mensagem recebida no chat da OLX": { es: "primer mensaje recibido en el chat de OLX" },
   "primeira ligação recebida": { es: "primera llamada recibida" },
   "cliente conhecido voltou a escrever": { es: "un cliente conocido volvió a escribir" },
   "Mudou de estágio": { es: "Cambió de etapa" },

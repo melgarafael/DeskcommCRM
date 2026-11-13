@@ -18,6 +18,10 @@ describe("modoDeCampanhaDoCanal", () => {
     expect(modoDeCampanhaDoCanal("zernio")).toBe("template");
   });
 
+  it("o chat da OLX não faz campanha: só existe na thread que o comprador abriu", () => {
+    expect(modoDeCampanhaDoCanal("olx")).toBeNull();
+  });
+
   it("e-mail é MODO de campanha: assunto + corpo, sem número (#3441)", () => {
     // O canal de e-mail não é `channel_sessions`: quem o nomeia é a constante,
     // porque o modo continua saindo da capability do canal.
