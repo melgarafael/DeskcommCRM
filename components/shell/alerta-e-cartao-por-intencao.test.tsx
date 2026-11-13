@@ -145,8 +145,11 @@ describe("#3170 — a casca pede o destino por intenção, não na montagem", ()
   });
 
   it("cartão de proposta: aparecer não pede o destino — o foco no link pede", () => {
-    const { rerender } = render(<AvisoDePropostaEmDestaque />);
     // Primeira carga só registra ids; o cartão nasce quando chega um aviso novo.
+    // A primeira carga é uma LISTA (vazia aqui): "ainda sem resposta" não conta
+    // como carga, senão todo aviso aberto gritaria a cada F5.
+    caixa.data = abertos([]);
+    const { rerender } = render(<AvisoDePropostaEmDestaque />);
     caixa.data = abertos([NOVO]);
     rerender(<AvisoDePropostaEmDestaque />);
 

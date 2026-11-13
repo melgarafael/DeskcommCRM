@@ -127,6 +127,28 @@ describe("aviso de proposta em destaque", () => {
     expect(cartao()).toBeNull();
   });
 
+  it("a lista que chega DEPOIS da montagem é a primeira carga: aviso antigo não vira cartão", async () => {
+    // Na tela de verdade o `useAgentInbox` começa sem resposta (`data`
+    // undefined) e a lista chega um instante depois. Registrar os vistos nessa
+    // hora registrava um conjunto VAZIO, e a lista que chegava em seguida
+    // tinha todo aviso aberto por "novo": o cartão voltava a cada carga de
+    // página enquanto o aviso seguisse aberto (medido na prova de tela do #4510).
+    caixa.data = undefined;
+    const { rerender } = render(<AvisoDePropostaEmDestaque />);
+    expect(cartao()).toBeNull();
+
+    caixa.data = abertos([ANTIGO]);
+    rerender(<AvisoDePropostaEmDestaque />);
+    expect(cartao()).toBeNull();
+
+    // E o aviso que nasce DEPOIS dessa primeira lista continua gritando.
+    caixa.data = abertos([ANTIGO, NOVO]);
+    rerender(<AvisoDePropostaEmDestaque />);
+    expect(await screen.findByTestId("aviso-proposta-destaque")).toHaveTextContent(
+      "Proposta da Ana — Condomínio Alvorada",
+    );
+  });
+
   it("carga seguinte com aviso NOVO mostra o cartão com o título e o destino", async () => {
     caixa.data = abertos([ANTIGO]);
     const { rerender } = render(<AvisoDePropostaEmDestaque />);

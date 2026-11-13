@@ -77,7 +77,11 @@ function AvisoVisivel() {
   const corpo = t("A IA preparou uma proposta. Confira antes de enviar.");
 
   useEffect(() => {
-    const itens = data?.items ?? [];
+    // Sem resposta ainda não é "lista vazia": registrar os vistos aqui gravava
+    // um conjunto vazio, e a primeira lista de verdade tinha todo aviso aberto
+    // por novo — o cartão voltava a cada carga de página.
+    if (!data) return;
+    const itens = data.items;
     if (vistos.current === null) {
       vistos.current = new Set(itens.map((i) => i.id));
       return;
@@ -87,7 +91,6 @@ function AvisoVisivel() {
     for (const i of itens) registrados.add(i.id);
     if (!novo || dispensados.has(novo.id)) return;
     setAtual((anterior) => (anterior?.id === novo.id ? anterior : novo));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, dispensados]);
 
   // O aviso saiu da lista de abertos (resolveram ou reabriram em outra aba):
