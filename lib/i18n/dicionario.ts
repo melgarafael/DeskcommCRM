@@ -9107,6 +9107,8 @@ export const DICIONARIO: Traducoes = {
   "atualizado.": { es: "actualizado." },
   "Vocabulário e campos": { es: "Vocabulario y campos" },
   "Motivos de perda (separados por vírgula)": { es: "Motivos de pérdida (separados por comas)" },
+  "Motivos de perda": { es: "Motivos de pérdida" },
+  "Categoria do motivo": { es: "Categoría del motivo" },
   "Ex:": { es: "Ej.:" },
   "Salvar vocabulário e campos": { es: "Guardar vocabulario y campos" },
   // #2995 — o recorte de encerrados antigos do quadro, na tela do funil.
@@ -12117,6 +12119,23 @@ export const DICIONARIO: Traducoes = {
   "Valor por moeda": { es: "Valor por moneda" },
   "Moedas nunca são somadas entre si: cada balde é o total da própria moeda.": { es: "Las monedas nunca se suman entre sí: cada grupo es el total de su propia moneda." },
   "Sem categoria": { es: "Sin categoría" },
+  // Categorias de perda por funil (#4437).
+  "Categorias de perda deste funil": { es: "Categorías de pérdida de este embudo" },
+  "Agrupa o relatório de perdas e o filtro do quadro. Esconder uma categoria não tira do grupo o motivo que já a usa.": {
+    es: "Agrupa el informe de pérdidas y el filtro del tablero. Ocultar una categoría no saca del grupo el motivo que ya la usa.",
+  },
+  "Renomear categoria": { es: "Renombrar categoría" },
+  "Esconder categoria": { es: "Ocultar categoría" },
+  "Esconder": { es: "Ocultar" },
+  "sem uso": { es: "sin uso" },
+  "Nova categoria": { es: "Nueva categoría" },
+  "Acrescentar": { es: "Agregar" },
+  "Categoria longa demais.": { es: "Categoría demasiado larga." },
+  "Categoria vazia ou longa demais.": { es: "Categoría vacía o demasiado larga." },
+  "Esta categoria já existe neste funil.": { es: "Esta categoría ya existe en este embudo." },
+  "Limite de categorias deste funil atingido.": {
+    es: "Se alcanzó el límite de categorías de este embudo.",
+  },
   "Por motivo": { es: "Por motivo" },
   "Por categoria": { es: "Por categoría" },
   "Por etapa de saída": { es: "Por etapa de salida" },
