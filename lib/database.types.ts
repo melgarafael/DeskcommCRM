@@ -5309,6 +5309,8 @@ export type Database = {
           provider: string;
           status: string;
           status_reason: string | null;
+          twilio_account_sid: string | null;
+          twilio_phone_number_sid: string | null;
           updated_at: string;
           wacalls_jid: string | null;
           wacalls_paired_at: string | null;
@@ -5352,6 +5354,8 @@ export type Database = {
           provider?: string;
           status?: string;
           status_reason?: string | null;
+          twilio_account_sid?: string | null;
+          twilio_phone_number_sid?: string | null;
           updated_at?: string;
           wacalls_jid?: string | null;
           wacalls_paired_at?: string | null;
@@ -5394,6 +5398,8 @@ export type Database = {
           provider?: string;
           status?: string;
           status_reason?: string | null;
+          twilio_account_sid?: string | null;
+          twilio_phone_number_sid?: string | null;
           updated_at?: string;
           wacalls_jid?: string | null;
           wacalls_paired_at?: string | null;

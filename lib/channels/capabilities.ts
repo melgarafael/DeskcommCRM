@@ -173,6 +173,38 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
     reportaConversao: false,
   },
+  // SMS (#4415). Não há janela de 24h nem modelo aprovado: texto livre a
+  // qualquer hora, e o que a regra dos EUA exige (registro do remetente, A2P
+  // 10DLC) é feito no fornecedor ANTES de conectar — o número chega pronto.
+  //
+  // `banRisk: false`: o risco aqui não é ban por padrão de uso de um aparelho,
+  // é filtro de operadora por conteúdo e volume, que o fornecedor enfileira e
+  // reporta como recusa (`remetente_nao_registrado`, `desacelerar` em
+  // `lib/channels/sms/twilio.ts`). Throttle/warm-up/cap do WhatsApp por QR não
+  // protegeriam nada. Horário comercial e fuso continuam armados (invariante 3:
+  // cortesia não é anti-ban).
+  //
+  // `costPerMessage: true`: cada parte de 160 caracteres (70 com emoji) é
+  // cobrada, nas duas direções.
+  twilio: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: null,
+    // Sem nota de voz no SMS: o adapter recusa tudo que não é texto (fatia 1).
+    voiceNote: "server-convert",
+    groups: "none",
+    costPerMessage: true,
+    alteraMensagemEnviada: false,
+    podeReagir: false,
+    transmissao: false,
+    phonebook: false,
+    statusUpdates: false,
+    // Sem ponte de conversão no fornecedor de SMS: a venda de um lead que veio
+    // por SMS sai pela conexão direta (conjunto de dados e token), como no QR.
+    reportaConversao: false,
+  },
 };
 
 /**
@@ -206,6 +238,8 @@ export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_Z
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
+/** SMS (#4415) — o fornecedor; a conversa que ele abre é `channel = 'sms'`. */
+export const CHANNEL_PROVIDER_TWILIO: ChannelProvider = "twilio";
 
 /**
  * O provider em que o NÚMERO é a conexão: pareado por QR, a linha só vira
@@ -237,6 +271,7 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio",
   "zernio_social",
   "datafy",
+  "twilio",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
@@ -258,6 +293,7 @@ export const PROVIDERS_DE_TELEFONE = [
   "meta_cloud",
   "zernio",
   "datafy",
+  "twilio",
 ] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social">[];
 
 /**

@@ -9,6 +9,9 @@ export function channelBrand(
     case "datafy":
     case "wacalls":
       return "whatsapp";
+    // SMS (#4415): o fornecedor é transporte; a rede que a pessoa vê é "SMS".
+    case "twilio":
+      return "sms";
     case "zernio_social":
       if (session.social_platform === "instagram") return "instagram";
       if (session.social_platform === "facebook") return "messenger";

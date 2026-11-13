@@ -9578,14 +9578,21 @@ alter table public.channel_sessions
   add column if not exists datafy_waba_id text,
   add column if not exists datafy_token_encrypted bytea;
 
+-- twilio (migration 9364, canal de SMS — issue #4415) — colunas do fornecedor de
+-- SMS, nullable e antes das constraints que as referenciam.
+alter table public.channel_sessions
+  add column if not exists twilio_phone_number_sid text,
+  add column if not exists twilio_account_sid text;
+
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_check;
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-  -- 'wacalls' (0233), 'zernio_social' (0368) e 'datafy' (0387) somados AQUI —
-  -- UM bloco só por constraint (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text]));
+  -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'twilio'
+  -- (9364) somados AQUI — UM bloco só por constraint (não duplicar drop+add
+  -- por migration).
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'twilio'::text]));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -9598,7 +9605,9 @@ alter table public.channel_sessions
     -- é o mesmo intermediário, com outra superfície de canal.
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
-    (provider = 'datafy'     and datafy_phone_number_id is not null)
+    (provider = 'datafy'     and datafy_phone_number_id is not null) or
+    -- SMS (migration 9364): endereça pelo id do número no fornecedor.
+    (provider = 'twilio'     and twilio_phone_number_sid is not null)
   );
 
 comment on column public.channel_sessions.zernio_account_id is
@@ -14772,6 +14781,9 @@ alter table public.webhook_events_log
 alter table public.webhook_events_log
   add constraint webhook_events_log_provider_check check (provider in (
     'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy',
+    -- (migration 9364) o SMS: a rota genérica de canal arquiva o corpo cru
+    -- com o provider da sessão antes de conferir a assinatura.
+    'twilio',
     -- (migration 0601) os provedores de cobrança do revendedor. A linha deles
     -- nasce com organization_id nulo e corpo {id,type}: é ponteiro, nunca o
     -- corpo do provedor, e fica invisível ao tenant pela própria policy.
@@ -35566,7 +35578,7 @@ comment on column public.contacts.social_identity is
 -- primeira conexão de rede social.
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
-  check (channel in ('whatsapp', 'instagram', 'facebook'));
+  check (channel in ('whatsapp', 'instagram', 'facebook', 'sms'));
 
 
 -- APÊNDICE 20260921030100_0369_prospeccao_nativa.sql
@@ -75877,6 +75889,36 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
+-- ---- canal de SMS: o canal da conversa vem da conexão (migration 9364, #4415) ----
+-- A PRIMEIRA metade do espelho da 9364: a função fica antes da VARREDURA anon,
+-- que proíbe create function depois dela. É a ÚLTIMA definição de
+-- `fn_upsert_wa_conversation` no arquivo, e é a que o banco instala; a do dump
+-- gravava 'whatsapp' fixo. `create or replace` preserva dono e grants. A outra
+-- metade (índice e comentários) fica no fim do arquivo, no bloco do canal de SMS.
+create or replace function public.fn_upsert_wa_conversation(
+  p_org uuid, p_contact uuid, p_session uuid
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+  v_canal text;
+begin
+  -- O canal da conversa vem da CONEXÃO (#4415): numa conexão de SMS a conversa
+  -- nasce 'sms', em qualquer caminho que a abra (SMS recebido, automação,
+  -- lembrete da agenda, envio por telefone, campanha). Antes era 'whatsapp' fixo.
+  -- Conexão de outra organização ou inexistente cai no padrão de sempre.
+  select case when s.provider = 'twilio' then 'sms' else 'whatsapp' end
+    into v_canal
+    from public.channel_sessions s
+   where s.id = p_session and s.organization_id = p_org;
+
+  insert into public.conversations (organization_id, contact_id, channel_session_id, channel, status, is_group, unread_count_for_assignee, metadata)
+  values (p_org, p_contact, p_session, coalesce(v_canal, 'whatsapp'), 'open', false, 0, '{}'::jsonb)
+  on conflict (organization_id, contact_id, channel_session_id) where is_group = false
+  do update set updated_at = now()
+  returning id into v_id;
+  return v_id;
+end; $$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -81158,3 +81200,31 @@ begin
   end loop;
 end
 $fichas_absorvidas$;
+
+-- ---- canal de SMS (migration 9364, issue #4415) ----
+-- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`,
+-- `webhook_events_log_provider_check` e `conversations_channel_check`) e as
+-- colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima, e a
+-- `fn_upsert_wa_conversation` nova está antes da VARREDURA anon; este bloco só
+-- acrescenta o índice e os comentários. Não cria função, então pode ficar
+-- depois da VARREDURA anon. Os `comment on` vão guiados por `to_regclass`:
+-- um clone cujo `channel_sessions` não exista não pode derrubar a atualização
+-- inteira por causa de um comentário.
+create unique index if not exists channel_sessions_twilio_phone_number_sid_ativo_unique
+  on public.channel_sessions (twilio_phone_number_sid)
+  where archived_at is null and twilio_phone_number_sid is not null;
+
+do $canal_de_sms$
+begin
+  if to_regclass('public.channel_sessions') is not null then
+    comment on column public.channel_sessions.twilio_phone_number_sid is
+      'Id do número de SMS no fornecedor (PN…). É o sessionRef deste canal. Espelhado em lib/channels/session-ref.ts.';
+    comment on column public.channel_sessions.twilio_account_sid is
+      'Id da conta de SMS no fornecedor (AC…). Não é segredo; confere que o webhook é desta conta.';
+    comment on index public.channel_sessions_twilio_phone_number_sid_ativo_unique is
+      'Um número de SMS é UMA conexão ativa (#4415): duas disputariam o webhook do número e misturariam as caixas de entrada.';
+  end if;
+end
+$canal_de_sms$;
+
+notify pgrst, 'reload schema';

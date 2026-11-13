@@ -22,7 +22,7 @@ import { channelBrand } from "@/lib/channels/presentation";
 
 const CSS = fs.readFileSync(path.join(process.cwd(), "app/globals.css"), "utf8");
 
-const CANAIS = ["whatsapp", "instagram", "messenger", "telegram"] as const;
+const CANAIS = ["whatsapp", "instagram", "messenger", "telegram", "sms"] as const;
 
 /** Lê o bloco cujo seletor está SOZINHO na linha — `includes` pegaria variantes. */
 function blocoDe(seletor: string): Map<string, string> {

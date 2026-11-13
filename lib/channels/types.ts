@@ -16,7 +16,21 @@ import type { DefeitoDoNumero } from "./defeito-do-numero";
 // e o lint de canal reprovaria o caminho.
 export type { OutboundMedia, ContatoDoAparelho };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
+export type ChannelProvider =
+  | "waha"
+  | "meta_cloud"
+  | "zernio"
+  | "zernio_social"
+  | "wacalls"
+  | "datafy"
+  /**
+   * SMS (#4415). O provider é o FORNECEDOR (como `waha` e `datafy`), não o
+   * canal: a conversa que ele abre é `channel = 'sms'`, e um segundo
+   * fornecedor de SMS entra depois como outra linha, sem renomear nada. O
+   * endereço é o telefone, então ele está em `PROVIDERS_DE_TELEFONE` e o
+   * contato é o mesmo do WhatsApp. Ver `./adapters/twilio.ts`.
+   */
+  | "twilio";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz

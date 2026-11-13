@@ -42,6 +42,7 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import { acceptsInboundWebhook } from "@/lib/channels/inbound";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
 
 import { processarEntradaDoCanal } from "../../_entrada-do-canal";
 
@@ -110,5 +111,9 @@ export async function POST(
     headers: req.headers,
     secret,
     requestId,
+    // A URL que o canal chamou, montada pela base PÚBLICA (atrás de proxy a do
+    // request é a interna). É a mesma que a conexão registra no fornecedor de
+    // SMS, que assina por ela (#4415); os outros canais ignoram.
+    urlPublica: `${basePublicaDaInstalacao(req)}/api/v1/webhooks/channel/${token}`,
   });
 }

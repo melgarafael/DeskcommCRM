@@ -33,6 +33,7 @@ import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 import { desfazerWebhookDoNumero } from "@/lib/channels/meta/webhook-override";
 import { numeroObservadoDaSessao } from "@/lib/channels/numero-observado";
 import { apagarAssinaturaSocial } from "@/lib/channels/social/store";
+import { encerrarConexaoDeSms, PROVEDOR_DO_CANAL_SMS } from "@/lib/channels/sms";
 import { isChannelStatus } from "@/lib/schemas/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -370,6 +371,8 @@ export async function DELETE(
    */
   let socialWebhook: "apagada" | "sem_integracao" | "falhou" | "nao_social" = "nao_social";
   let parceiro: "desfeito" | "nada_a_desfazer" | "sem_credencial" | "falhou" | "nao_parceiro" = "nao_parceiro";
+  /** O que terminou sendo a devolução do recebimento do número de SMS (#4415). Vai para a auditoria. */
+  let recebimentoSms: "desfeito" | "sem_credencial" | "falhou" | "nao_sms" = "nao_sms";
 
   if (session.provider === CHANNEL_PROVIDER_WAHA) {
     const waha = getWahaClient();
@@ -419,6 +422,42 @@ export async function DELETE(
     // DEPOIS de apagar a assinatura, que pode ter sido achada pela URL dele.
     // (`meta_token_encrypted` não entra aqui de propósito: a linha social não
     // usa essa coluna — a credencial que autoriza a chamada vive na integração.)
+    patch.webhook_path_token = randomUUID().replace(/-/g, "");
+  } else if (session.provider === PROVEDOR_DO_CANAL_SMS) {
+    // ─── O NÚMERO DE SMS NÃO FICA APONTADO PARA UMA URL MORTA (#4415) ────────
+    //
+    // Conectar apontou o recebimento do número (SmsUrl) para a URL desta
+    // instalação. Daqui para baixo o token do caminho gira e a URL vira 404 —
+    // e o fornecedor seguiria entregando nela, sem erro do nosso lado.
+    // `encerrarConexaoDeSms` devolve o recebimento (best-effort, ANTES do patch:
+    // é a chave da linha intacta que autoriza a chamada) e entrega um segredo
+    // aleatório para o lugar da chave, que no SMS É o segredo do webhook e não
+    // pode ficar guardada numa conexão desligada. Este ramo existe para o SMS
+    // não cair no ramo do canal oficial abaixo, que zera colunas que não são
+    // dele e não desfaz nada no fornecedor certo.
+    try {
+      const fim = await encerrarConexaoDeSms(createAdminClient(), {
+        organizationId: activeOrg.orgId,
+        channelSessionId: id,
+      });
+      recebimentoSms = fim.recebimento;
+      if (fim.segredoNovoCifrado) patch.webhook_secret_encrypted = fim.segredoNovoCifrado;
+      if (fim.recebimento === "falhou") {
+        logger.warn("O fornecedor de SMS recusou devolver o recebimento do número", {
+          requestId,
+          channel_session_id: id,
+          organization_id: activeOrg.orgId,
+        });
+      }
+    } catch (err) {
+      recebimentoSms = "falhou";
+      logger.warn("Falha ao devolver o recebimento do número de SMS", {
+        requestId,
+        channel_session_id: id,
+        organization_id: activeOrg.orgId,
+        erro: err instanceof Error ? err.message : String(err),
+      });
+    }
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
   } else if (session.provider === PARTNER_CHANNEL_PROVIDER) {
     // ─── O QUE A INSTALAÇÃO FEZ NO PROVEDOR PARCEIRO NÃO FICA ÓRFÃO ──────────
@@ -546,7 +585,11 @@ export async function DELETE(
   // pelo service role (migration 9104). O filtro de organização abaixo é o
   // mesmo nos dois clientes, resolvido da sessão.
   const escritor =
-    session.zernio_credencial_da_instalacao === true || "meta_token_encrypted" in patch
+    session.zernio_credencial_da_instalacao === true ||
+    "meta_token_encrypted" in patch ||
+    // A chave do SMS trocada por segredo aleatório (#4415): coluna de segredo,
+    // gravada pelo service role como a credencial do canal oficial.
+    "webhook_secret_encrypted" in patch
       ? createAdminClient()
       : supabase;
   if (arquivar) {
@@ -618,6 +661,7 @@ export async function DELETE(
       provider: session.provider,
       avisos_fechados: avisosFechados,
       webhook_override: webhookOverride,
+      recebimento_sms: recebimentoSms,
       social_webhook: socialWebhook,
       parceiro,
       ...impact.history,

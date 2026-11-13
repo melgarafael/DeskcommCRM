@@ -24,6 +24,7 @@ ser fonte sem ninguém decidir isso.
 | `lista-de-espera.architecture.json` | módulo opcional da agenda: vaga que abre, oferta atômica, aviso pelo caminho proativo, aceite pela agenda, recusa e vencimento chamam o próximo |
 | `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |
 | `nomes-internos-das-conexoes.architecture.json` | renomeação interna dos canais — cartões de WhatsApp, parceiro e redes sociais → rota tenant-aware → `channel_sessions.display_name` → cartões e seletores, com auditoria e sem alterar o nome público no provedor |
+| `canal-de-sms.architecture.json` | canal de SMS (#4415) — 14 peças, 17 arestas, 4 faixas; a conexão conferida na conta do fornecedor antes de gravar, a entrada assinada pela URL pública + formulário (sem URL falha fechado), o contato casado pelo telefone sem afirmar WhatsApp, e a desconexão que devolve o recebimento do número |
 | `conversoes-de-anuncios.architecture.json` | Purchase, etapas e LeadSubmitted por clique CTWA; entrega, livro de cliques e reprocessamento |
 | `prospeccao-nativa.architecture.json` | busca comercial, fila gradual, configuração conversacional persistente, sandbox e assistente de voz opcional |
 | `pre-go-live-whatsapp.architecture.json` | modo de teste por canal (issue #573): configuração administrativa, gate compartilhado, releitura no envio e validação pelo Inbox |

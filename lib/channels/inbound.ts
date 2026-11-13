@@ -22,7 +22,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 
-import { CANAIS_QUE_RESPONDEM_ANTES, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import {
+  CANAIS_QUE_RESPONDEM_ANTES,
+  CHANNEL_PROVIDER_DATAFY,
+  CHANNEL_PROVIDER_TWILIO,
+  CHANNEL_PROVIDER_ZERNIO,
+} from "./capabilities";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -42,6 +47,8 @@ import {
 } from "./meta/titular-apagado";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
+import { ingerirSmsRecebido } from "./sms/ingest";
+import { assinaturaDoSmsValida, formularioDoWebhook, lerSmsRecebido } from "./sms/twilio";
 import {
   atualizarEspelhoDoTemplate,
   avisoDoEvento,
@@ -76,6 +83,13 @@ export interface InboundWebhookInput {
   headers: Headers;
   /** Segredo já decifrado pela rota, ou null quando não foi possível. */
   secret: string | null;
+  /**
+   * A URL pública EXATA em que o canal entregou este webhook. Só o SMS precisa
+   * dela (#4415): o fornecedor assina a URL junto com o corpo. Quem não tem a
+   * URL (reprocessamento de arquivo) não passa nada, e a conferência do SMS
+   * falha fechado.
+   */
+  urlPublica?: string | null;
 }
 
 export type InboundWebhookOutcome =
@@ -100,12 +114,28 @@ export function acceptsInboundWebhook(provider: string): boolean {
   // O canal Datafy é opcional da instalação: desligado, a entrada dele não
   // existe — nem para quem tem o token de uma sessão gravada antes.
   if (provider === CHANNEL_PROVIDER_DATAFY) return canalGraphParceiroLigado();
-  return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_SOCIAL;
+  return (
+    provider === CHANNEL_PROVIDER_ZERNIO ||
+    provider === CHANNEL_PROVIDER_SOCIAL ||
+    provider === CHANNEL_PROVIDER_TWILIO
+  );
 }
 
 /** Authenticate before archiving raw payloads. The handler repeats this guard for non-HTTP callers. */
-export function verifyInboundWebhookSignature(provider: string, raw: string, headers: Headers, secret: string | null): boolean {
+export function verifyInboundWebhookSignature(
+  provider: string,
+  raw: string,
+  headers: Headers,
+  secret: string | null,
+  urlPublica: string | null = null,
+): boolean {
   if (!acceptsInboundWebhook(provider) || !secret || secret.length < MIN_SECRET_LEN) return false;
+  // SMS (#4415): o fornecedor assina a URL + o formulário com a chave da conta,
+  // que é o segredo do webhook desta conexão. Sem a URL não há o que conferir.
+  if (provider === CHANNEL_PROVIDER_TWILIO) {
+    if (!urlPublica) return false;
+    return assinaturaDoSmsValida(secret, urlPublica, formularioDoWebhook(raw), headers.get("x-twilio-signature"));
+  }
   // Cada canal assina do seu jeito; o esquema do Datafy está em `graph-parceiro/webhook`.
   if (provider === CHANNEL_PROVIDER_DATAFY) {
     return verifyGraphPartnerSignature(raw, headers.get(HEADER_ASSINATURA), headers.get(HEADER_TIMESTAMP), secret);
@@ -208,6 +238,8 @@ export async function handleInboundWebhook(
       return zernioInbound(admin, input);
     case CHANNEL_PROVIDER_DATAFY:
       return datafyInbound(admin, input);
+    case CHANNEL_PROVIDER_TWILIO:
+      return smsInbound(admin, input);
     default:
       // Token de um canal que não entra por aqui. É configuração trocada, não
       // ataque — mas processar seria ler o payload com o parser errado.
@@ -630,4 +662,71 @@ async function datafyInbound(
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
+}
+
+/**
+ * O corpo do 200 que um canal ESPERA no webhook, quando não é o JSON padrão.
+ *
+ * O fornecedor de SMS lê a resposta do webhook como instrução (TwiML): um JSON
+ * ali é entregue, mas vira o aviso 12300 no painel dele a cada mensagem — o
+ * operador abre o painel e vê erro onde não há. A resposta vazia diz "recebido,
+ * não responda nada", e a resposta de verdade sai depois, pelo adapter.
+ *
+ * `null` = o canal aceita o JSON de `ok()`. Mora aqui, e não na rota, porque a
+ * rota não pode perguntar QUAL canal é (invariante 1).
+ */
+export function respostaDeRecebimentoDoCanal(provider: string): { corpo: string; contentType: string } | null {
+  if (provider === CHANNEL_PROVIDER_TWILIO) {
+    return { corpo: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', contentType: "text/xml; charset=utf-8" };
+  }
+  return null;
+}
+
+/**
+ * SMS recebido (#4415). Confere a assinatura de novo (o handler também serve a
+ * quem não passou pela rota HTTP), lê o formulário pelo Zod, confirma que a
+ * conta e o número são os DESTA conexão, e entrega à ingestão por telefone.
+ */
+async function smsInbound(admin: SupabaseClient, input: InboundWebhookInput): Promise<InboundWebhookOutcome> {
+  if (
+    !verifyInboundWebhookSignature(input.session.provider, input.rawBody, input.headers, input.secret, input.urlPublica ?? null)
+  ) {
+    return { ok: false, code: "unauthorized", message: "bad_signature" };
+  }
+
+  const leitura = lerSmsRecebido(formularioDoWebhook(input.rawBody));
+  if (!leitura.ok) {
+    return {
+      ok: false,
+      code: "contrato_violado",
+      message: `payload fora do contrato do canal: ${leitura.campos.join(", ")}`,
+    };
+  }
+  const { sms } = leitura;
+
+  const { data, error } = await admin
+    .from("channel_sessions")
+    .select("twilio_account_sid, phone_number")
+    .eq("organization_id", input.session.organization_id)
+    .eq("id", input.session.id)
+    .maybeSingle();
+  if (error) throw new Error("sms_session_lookup_failed");
+  const sessao = data as { twilio_account_sid: string | null; phone_number: string | null } | null;
+
+  // A chave assina por CONTA: um webhook de outro número da mesma conta,
+  // apontado para esta URL por engano, passaria pela assinatura. Por isso o
+  // número e a conta são conferidos contra a conexão.
+  if (!sessao || sessao.twilio_account_sid !== sms.contaId) {
+    return { ok: true, body: { status: "ignored", reason: "outra_conta" } };
+  }
+  if (!sessao.phone_number || !samePhone(sessao.phone_number, sms.para)) {
+    return { ok: true, body: { status: "ignored", reason: "outro_numero" } };
+  }
+
+  const r = await ingerirSmsRecebido(admin, {
+    organizationId: input.session.organization_id,
+    channelSessionId: input.session.id,
+    sms,
+  });
+  return { ok: true, body: { ...r } };
 }
