@@ -24,11 +24,19 @@
  *    porque STT e TTS não compartilham a mesma forma de chamada.
  */
 
+import type { PaisDoProvedor } from "@/lib/ai/pontos/provedores";
+
 /** Como a chave daquele serviço é validada e o que a tela precisa pedir. */
 export interface ProvedorDeServico {
   id: string;
   /** Nome como o operador conhece. */
   rotulo: string;
+  /**
+   * A sede declarada de quem recebe o dado — a cláusula 9 do documento do
+   * operador (`lib/legal/operador.ts`) lista também os serviços, porque o áudio
+   * do cliente sai do servidor do mesmo jeito que o texto. Ver `PaisDoProvedor`.
+   */
+  pais: PaisDoProvedor;
   /** Uma frase sobre quando escolher este, para quem não acompanha o mercado. */
   quandoUsar: string;
   /** Onde o operador pega a chave — a tela mostra o link. */
@@ -36,11 +44,11 @@ export interface ProvedorDeServico {
   /** Como a chave começa — vira placeholder do campo, para a pessoa reconhecer que copiou a coisa certa. */
   prefixoDaChave: string;
   /**
-   * Mesma pergunta do catálogo irmão: onde o áudio/texto é processado. Entra aqui
-   * porque a tela de Credenciais mostra a linha para TODA chave salva, e omitir
-   * o caso deste provedor seria dizer que ele não transfere nada (#4519).
+   * De onde veio a declaração de `pais` (#4519), no mesmo vocabulário do
+   * catálogo irmão: URL do documento público e data da consulta, ou `null`
+   * quando a declaração é a do catálogo (`CONSULTA_DOS_PAISES_EM`) — e sempre
+   * `null` para `desconhecido`/`operador`, que não têm documento a citar.
    */
-  pais: string | "local" | "desconhecido";
   fonteDoPais: { url: string; consultadoEm: string } | null;
 }
 
@@ -48,14 +56,15 @@ export const PROVEDORES_DE_SERVICO = [
   {
     id: "elevenlabs",
     rotulo: "ElevenLabs (voz)",
+    // NÃO DECLARADO, como a Requesty: a sede da empresa que responde a API não
+    // está numa fonte que este repo possa citar com data. A cláusula diz "não
+    // declara o país; consulte a política do provedor" em vez de omitir o
+    // serviço que recebe o áudio do cliente.
+    pais: "desconhecido",
     quandoUsar:
       "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.",
     ondePegarAChave: "https://elevenlabs.io/app/settings/api-keys",
     prefixoDaChave: "sk_…",
-    // Sem fonte oficial que afirme a região de processamento da voz, o campo fica
-    // `desconhecido` — e a tela diz isso, em vez de omitir a linha e deixar o
-    // operador concluir que o áudio do cliente não sai da instalação.
-    pais: "desconhecido",
     fonteDoPais: null,
   },
 ] as const satisfies readonly ProvedorDeServico[];

@@ -566,7 +566,7 @@ describe("PainelDeProvedores — onde o texto é processado", () => {
       quandoUsar: "Barata.",
       ondePegarAChave: "https://platform.deepseek.com/api_keys",
       aceitaEndpointProprio: true,
-      pais: "China",
+      pais: "CN",
       fonteDoPais: {
         url: "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
         consultadoEm: "2026-11-12",
@@ -578,6 +578,17 @@ describe("PainelDeProvedores — onde o texto é processado", () => {
       quandoUsar: "Padrão.",
       ondePegarAChave: "https://console.anthropic.com/settings/keys",
       aceitaEndpointProprio: false,
+      // A sede declarada vem do catálogo, sem fonte por provedor — como o #4520
+      // publicou.
+      pais: "US",
+      fonteDoPais: null,
+    },
+    {
+      id: "requesty",
+      rotulo: "Requesty",
+      quandoUsar: "Vários modelos.",
+      ondePegarAChave: "https://app.requesty.ai/api-keys",
+      aceitaEndpointProprio: true,
       pais: "desconhecido",
       fonteDoPais: null,
     },
@@ -616,7 +627,17 @@ describe("PainelDeProvedores — onde o texto é processado", () => {
   });
 
   it("no cartão do ponto, o provedor sem país aparece com o aviso — não some", async () => {
-    dublarProvedores();
+    // O ponto aponta para quem NÃO declara país (a Requesty); com a Anthropic o
+    // cartão mostraria a sede declarada pelo #4520.
+    dublarProvedores({
+      padrao: { provider: "requesty", defaultModel: null },
+      pontos: [
+        {
+          ...PROVEDORES.pontos[0]!,
+          efetivo: { ...PROVEDORES.pontos[0]!.efetivo, provider: "requesty", modelId: "auto", origem: "escolha" },
+        },
+      ],
+    });
     montar();
 
     await screen.findByTestId("cartao-do-padrao");

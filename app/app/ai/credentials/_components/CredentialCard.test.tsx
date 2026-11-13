@@ -142,10 +142,20 @@ describe("CredentialCard — onde o texto é processado", () => {
   });
 
   it("provedor sem país declarado mostra o aviso, em vez de esconder a linha", () => {
-    montar(credencial({ provider: "anthropic" }));
+    // A Requesty é quem não declara (o catálogo diz "desconhecido, e de
+    // propósito"); a Anthropic declara a sede desde o #4520.
+    montar(credencial({ provider: "requesty" }));
     const linha = screen.getByTestId("onde-o-texto-e-processado");
     expect(linha).toHaveAttribute("data-situacao", "desconhecido");
     expect(linha).toHaveTextContent("O provedor não declara o país; consulte a política dele");
+  });
+
+  it("país declarado pelo catálogo, sem fonte por provedor, mostra o NOME (não o código)", () => {
+    montar(credencial({ provider: "anthropic" }));
+    const linha = screen.getByTestId("onde-o-texto-e-processado");
+    expect(linha).toHaveAttribute("data-situacao", "declarado");
+    expect(linha).toHaveTextContent("Estados Unidos");
+    expect(linha).not.toHaveTextContent(/\bUS\b/);
   });
 
   it("provedor de voz também responde: a linha não some para quem não conversa", () => {

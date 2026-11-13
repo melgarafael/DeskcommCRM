@@ -289,7 +289,7 @@ export async function prepararAcao(
       };
     }
 
-    await admin
+    const { error: erroAoConcluir } = await admin
       .from("campaigns")
       .update({
         status: "ready",
@@ -301,6 +301,15 @@ export async function prepararAcao(
       })
       .eq("id", c.id)
       .eq("status", "preparing");
+    if (erroAoConcluir) {
+      await voltarAoRascunho(admin, c.id, "erro_na_preparacao");
+      return {
+        ok: false,
+        codigo: "internal_error",
+        mensagem: `Não foi possível concluir a preparação da campanha: ${erroAoConcluir.message}`,
+        status: 500,
+      };
+    }
 
     return { ok: true, resumo };
   } catch (err) {
