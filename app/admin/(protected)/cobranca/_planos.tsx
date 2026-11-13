@@ -47,7 +47,7 @@ interface Campos {
 
 const VAZIO: Campos = { nome: "", preco: "", moeda: "BRL", intervalo: "mes", trial_dias: "14", max_assentos: "", max_canais: "", teto_ia: "" };
 const AVISO_DE_CAMPOS =
-  "Confira os campos do plano: preço a partir de R$ 5,00, teste grátis de 0 a 90 dias e limites a partir de 1.";
+  "Confira os campos do plano: preço a partir de 5,00 na moeda do plano, teste grátis de 0 a 90 dias e limites a partir de 1.";
 
 const centavos = (v: string) => Math.round(Number(v.replace(",", ".")) * 100);
 const inteiroOuNulo = (v: string) => (v.trim() === "" ? null : Number(v));

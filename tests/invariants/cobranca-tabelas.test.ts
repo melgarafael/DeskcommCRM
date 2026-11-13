@@ -36,9 +36,9 @@ describe("cobranca_planos — a forma do plano", () => {
     expect(erroDe(`insert into public.cobranca_planos (nome, preco_cents, intervalo) values ('Piso', 500, 'mes');`)).toBe("");
   });
 
-  it("moeda só BRL, intervalo só mes|ano, teste grátis de 0 a 90 dias", () => {
+  it("moeda só BRL|USD|EUR, intervalo só mes|ano, teste grátis de 0 a 90 dias", () => {
     const casos: ReadonlyArray<readonly [string, string]> = [
-      [`insert into public.cobranca_planos (nome, preco_cents, intervalo, moeda) values ('Dólar', 900, 'mes', 'USD')`, "cobranca_planos_moeda_check"],
+      [`insert into public.cobranca_planos (nome, preco_cents, intervalo, moeda) values ('Iene', 900, 'mes', 'JPY')`, "cobranca_planos_moeda_check"],
       [`insert into public.cobranca_planos (nome, preco_cents, intervalo) values ('Semanal', 900, 'semana')`, "cobranca_planos_intervalo_check"],
       [`insert into public.cobranca_planos (nome, preco_cents, intervalo, trial_dias) values ('Longo', 900, 'mes', 91)`, "cobranca_planos_trial_dias_check"],
     ];
@@ -46,6 +46,9 @@ describe("cobranca_planos — a forma do plano", () => {
       const e = erroDe(`${comando};`);
       expect(e, restricao).toContain("23514");
       expect(e, restricao).toContain(restricao);
+    }
+    for (const moeda of ["USD", "EUR"]) {
+      expect(erroDe(`insert into public.cobranca_planos (nome, preco_cents, intervalo, moeda) values ('${moeda}', 900, 'mes', '${moeda}');`), moeda).toBe("");
     }
   });
 

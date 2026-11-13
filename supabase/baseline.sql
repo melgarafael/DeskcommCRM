@@ -74869,6 +74869,21 @@ grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 
 notify pgrst, 'reload schema';
 
+-- ---- cobrança do revendedor: plano em real, dólar ou euro (migration 9332) ----
+-- Troca o CHECK de `cobranca_planos.moeda` (nascido sem nome na 0583, só BRL)
+-- por um que aceita BRL, USD e EUR. Idempotente: derruba e recria o mesmo nome.
+-- Num bloco só: o update.sh aplica sem ON_ERROR_STOP e em autocommit, e um add
+-- que falhasse depois do drop solto deixaria a coluna sem CHECK nenhum.
+do $moeda_do_plano$
+begin
+  alter table public.cobranca_planos
+    drop constraint if exists cobranca_planos_moeda_check;
+  alter table public.cobranca_planos
+    add constraint cobranca_planos_moeda_check
+    check (moeda = any (array['BRL'::text, 'USD'::text, 'EUR'::text]));
+end
+$moeda_do_plano$;
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -80919,12 +80934,3 @@ begin
   end loop;
 end
 $fichas_absorvidas$;
-
--- ---- cobrança do revendedor: plano em real, dólar ou euro (migration 9332) ----
--- Troca o CHECK de `cobranca_planos.moeda` (nascido sem nome na 0583, só BRL)
--- por um que aceita BRL, USD e EUR. Idempotente: derruba e recria o mesmo nome.
-alter table public.cobranca_planos
-  drop constraint if exists cobranca_planos_moeda_check;
-alter table public.cobranca_planos
-  add constraint cobranca_planos_moeda_check
-  check (moeda = any (array['BRL'::text, 'USD'::text, 'EUR'::text]));

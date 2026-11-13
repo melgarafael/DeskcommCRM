@@ -18457,7 +18457,7 @@ export const DICIONARIO: Traducoes = {
   "Deixe um limite vazio para não limitar.": { es: "Deja un límite vacío para no limitar." },
   "Cancelar edição": { es: "Cancelar edición" },
   "Plano salvo.": { es: "Plan guardado." },
-  "Confira os campos do plano: preço a partir de R$ 5,00, teste grátis de 0 a 90 dias e limites a partir de 1.": { es: "Revisa los campos del plan: precio desde R$ 5,00, prueba gratis de 0 a 90 días y límites desde 1." },
+  "Confira os campos do plano: preço a partir de 5,00 na moeda do plano, teste grátis de 0 a 90 dias e limites a partir de 1.": { es: "Revisa los campos del plan: precio desde 5,00 en la moneda del plan, prueba gratis de 0 a 90 días y límites desde 1." },
   "O preço e o intervalo de um plano travam quando alguém o assina: para mudar, arquive e crie outro.": { es: "El precio y el intervalo de un plan se bloquean cuando alguien lo contrata: para cambiarlos, archívalo y crea otro." },
   "Nenhum plano ainda. Crie o primeiro no formulário acima: nome, preço, dias de teste grátis e, se quiser, os limites. Depois atribua-o a cada empresa no painel dela, em Tenants.": { es: "Todavía no hay planes. Crea el primero en el formulario de arriba: nombre, precio, días de prueba gratis y, si quieres, los límites. Después asígnalo a cada empresa en su panel, en Tenants." },
   "Plano do cadastro": { es: "Plan del registro" },
