@@ -1,4 +1,4 @@
--- manifest: canal de SMS (#4415) — colunas do número e da conta do fornecedor de SMS, provider 'twilio' nos CHECKs de channel_sessions e webhook_events_log, canal 'sms' em conversations, e um número de SMS = uma conexão ativa
+-- manifest: canal de SMS (#4415) — fn_upsert_wa_conversation tira o canal da conexão (sms), colunas do número e da conta do fornecedor de SMS, provider 'twilio' nos CHECKs de channel_sessions e webhook_events_log, canal 'sms' em conversations, e um número de SMS = uma conexão ativa
 --
 -- 9364 · Canal de SMS (issue #4415).
 --
@@ -90,5 +90,34 @@ create unique index if not exists channel_sessions_twilio_phone_number_sid_ativo
 
 comment on index public.channel_sessions_twilio_phone_number_sid_ativo_unique is
   'Um número de SMS é UMA conexão ativa (#4415): duas disputariam o webhook do número e misturariam as caixas de entrada.';
+
+-- ─── O canal da conversa vem da conexão ─────────────────────────────────────
+-- `fn_upsert_wa_conversation` é o ponto único de abertura de conversa 1:1 por
+-- conexão, e gravava `channel = 'whatsapp'` fixo. Conversa de SMS aberta pelo
+-- CRM (automação, lembrete, envio por telefone) nascia marcada WhatsApp. A
+-- assinatura, o dono e os grants não mudam (`create or replace` os preserva).
+create or replace function public.fn_upsert_wa_conversation(
+  p_org uuid, p_contact uuid, p_session uuid
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+  v_canal text;
+begin
+  -- O canal da conversa vem da CONEXÃO (#4415): numa conexão de SMS a conversa
+  -- nasce 'sms', em qualquer caminho que a abra (SMS recebido, automação,
+  -- lembrete da agenda, envio por telefone, campanha). Antes era 'whatsapp' fixo.
+  -- Conexão de outra organização ou inexistente cai no padrão de sempre.
+  select case when s.provider = 'twilio' then 'sms' else 'whatsapp' end
+    into v_canal
+    from public.channel_sessions s
+   where s.id = p_session and s.organization_id = p_org;
+
+  insert into public.conversations (organization_id, contact_id, channel_session_id, channel, status, is_group, unread_count_for_assignee, metadata)
+  values (p_org, p_contact, p_session, coalesce(v_canal, 'whatsapp'), 'open', false, 0, '{}'::jsonb)
+  on conflict (organization_id, contact_id, channel_session_id) where is_group = false
+  do update set updated_at = now()
+  returning id into v_id;
+  return v_id;
+end; $$;
 
 notify pgrst, 'reload schema';

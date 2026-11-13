@@ -12,9 +12,10 @@
  * principal e telefones extras); a criação é daqui.
  *
  * A conversa nasce pelo mesmo `fn_upsert_wa_conversation` (um par contato ×
- * conexão = uma conversa, índice `uniq_conversations_1to1_per_contact_session`)
- * e é carimbada `channel = 'sms'` logo em seguida — o mesmo desenho do canal do
- * Telegram (#3486), porque a função grava `whatsapp` fixo.
+ * conexão = uma conversa, índice `uniq_conversations_1to1_per_contact_session`),
+ * que desde a migration 9364 já tira o canal da conexão e grava `sms`. O
+ * carimbo logo em seguida fica como segunda linha de defesa, para conversa
+ * antiga que tenha nascido `whatsapp` numa conexão de SMS.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 

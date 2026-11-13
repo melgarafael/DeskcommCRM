@@ -75889,6 +75889,36 @@ create trigger trg_contacts_fusao_e_anonimizacao_so_pelo_servidor_ao_criar
 revoke all on table public.storage_redaction_queue from authenticated;
 grant select on table public.storage_redaction_queue to authenticated;
 
+-- ---- canal de SMS: o canal da conversa vem da conexão (migration 9364, #4415) ----
+-- A PRIMEIRA metade do espelho da 9364: a função fica antes da VARREDURA anon,
+-- que proíbe create function depois dela. É a ÚLTIMA definição de
+-- `fn_upsert_wa_conversation` no arquivo, e é a que o banco instala; a do dump
+-- gravava 'whatsapp' fixo. `create or replace` preserva dono e grants. A outra
+-- metade (índice e comentários) fica no fim do arquivo, no bloco do canal de SMS.
+create or replace function public.fn_upsert_wa_conversation(
+  p_org uuid, p_contact uuid, p_session uuid
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+  v_canal text;
+begin
+  -- O canal da conversa vem da CONEXÃO (#4415): numa conexão de SMS a conversa
+  -- nasce 'sms', em qualquer caminho que a abra (SMS recebido, automação,
+  -- lembrete da agenda, envio por telefone, campanha). Antes era 'whatsapp' fixo.
+  -- Conexão de outra organização ou inexistente cai no padrão de sempre.
+  select case when s.provider = 'twilio' then 'sms' else 'whatsapp' end
+    into v_canal
+    from public.channel_sessions s
+   where s.id = p_session and s.organization_id = p_org;
+
+  insert into public.conversations (organization_id, contact_id, channel_session_id, channel, status, is_group, unread_count_for_assignee, metadata)
+  values (p_org, p_contact, p_session, coalesce(v_canal, 'whatsapp'), 'open', false, 0, '{}'::jsonb)
+  on conflict (organization_id, contact_id, channel_session_id) where is_group = false
+  do update set updated_at = now()
+  returning id into v_id;
+  return v_id;
+end; $$;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -81174,9 +81204,10 @@ $fichas_absorvidas$;
 -- ---- canal de SMS (migration 9364, issue #4415) ----
 -- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`,
 -- `webhook_events_log_provider_check` e `conversations_channel_check`) e as
--- colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima; este
--- bloco só acrescenta o índice e os comentários. Não cria função, então pode
--- ficar depois da VARREDURA anon. Os `comment on` vão guiados por `to_regclass`:
+-- colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima, e a
+-- `fn_upsert_wa_conversation` nova está antes da VARREDURA anon; este bloco só
+-- acrescenta o índice e os comentários. Não cria função, então pode ficar
+-- depois da VARREDURA anon. Os `comment on` vão guiados por `to_regclass`:
 -- um clone cujo `channel_sessions` não exista não pode derrubar a atualização
 -- inteira por causa de um comentário.
 create unique index if not exists channel_sessions_twilio_phone_number_sid_ativo_unique
