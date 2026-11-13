@@ -20,7 +20,7 @@ const agregadoSchema = z.object({
   cache_read_tokens: numero,
   /**
    * Recorte CACHEÁVEL do mesmo bucket (entrada >= MIN_TOKENS_DE_ENTRADA_PARA_CACHE,
-   * `fn_uso_de_ia` da migration 9365). A taxa de cache da tela divide por estes,
+   * `fn_uso_de_ia` da migration 9366). A taxa de cache da tela divide por estes,
    * não pelos totais acima: chamada abaixo do piso do provedor nunca cacheia e
    * afundaria a taxa sem defeito de prefixo nenhum (#4362).
    */

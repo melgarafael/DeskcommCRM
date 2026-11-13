@@ -1,6 +1,6 @@
 -- manifest: **A taxa de cache da tela Uso de IA conta só as chamadas ELEGÍVEIS a cache (#4362, segunda porta do aviso consertado no #4383).** `fn_uso_de_ia` devolvia só os totais de todas as `llm_calls`, então a taxa dividia o cache lido pelos tokens de entrada de chamadas que o provedor NUNCA guarda (entrada abaixo de 1.024 tokens: classificadores, conferência de campo, extrações curtas) — elas entravam no denominador sem chance de entrar no numerador. A função passa a devolver também `chamadas_cacheaveis`, `input_tokens_cacheaveis` e `cache_read_tokens_cacheaveis` (filtro `input_tokens >= 1024`), e a tela divide por eles; os totais de custo, tokens e latência não mudam de definição. O corte é o mesmo do aviso, escrito uma vez em `lib/ai/cache-de-prompt.ts`. Gate: `tests/unit/uso-de-ia-tela-honesta.test.ts`.
 --
--- 9365 — a taxa de cache da tela "Uso de IA" só conta as chamadas que podem cachear.
+-- 9366 — a taxa de cache da tela "Uso de IA" só conta as chamadas que podem cachear.
 --
 -- A tela mostrava `cache_read / input` somando TODAS as `llm_calls` do período.
 -- Chamada com menos de 1.024 tokens de ENTRADA nunca vai para cache (é o caso dos

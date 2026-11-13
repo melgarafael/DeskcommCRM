@@ -18,8 +18,8 @@ import { montarPayloadDeUso, usoDeIaSchema, type UsoDeIaDoBanco } from "@/lib/ai
 
 const ROTA = readFileSync("app/api/v1/ai/usage/route.ts", "utf8");
 // A migration que define a função VIVA: a 0586 criou, a 9097 (#3897) redefiniu
-// contando o follow-up, e a 9365 (#4362) acrescentou o recorte cacheável.
-const MIGRATION = readFileSync("supabase/migrations/20261113140000_9365_uso_de_ia_cache_so_cacheaveis.sql", "utf8");
+// contando o follow-up, e a 9366 (#4362) acrescentou o recorte cacheável.
+const MIGRATION = readFileSync("supabase/migrations/20261113183000_9366_uso_de_ia_cache_so_cacheaveis.sql", "utf8");
 // A régua do que é cacheável, para a migration e o TypeScript não divergirem.
 const REGUA = readFileSync("lib/ai/cache-de-prompt.ts", "utf8");
 const BASELINE = readFileSync("supabase/baseline.sql", "utf8");

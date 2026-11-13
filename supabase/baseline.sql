@@ -75042,10 +75042,10 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
 
--- ---- a taxa de cache do uso de IA só conta as chamadas cacheáveis (migration 9365, #4362) ----
+-- ---- a taxa de cache do uso de IA só conta as chamadas cacheáveis (migration 9366, #4362) ----
 -- manifest: **A taxa de cache da tela Uso de IA conta só as chamadas ELEGÍVEIS a cache (#4362, segunda porta do aviso consertado no #4383).** `fn_uso_de_ia` devolvia só os totais de todas as `llm_calls`, então a taxa dividia o cache lido pelos tokens de entrada de chamadas que o provedor NUNCA guarda (entrada abaixo de 1.024 tokens: classificadores, conferência de campo, extrações curtas) — elas entravam no denominador sem chance de entrar no numerador. A função passa a devolver também `chamadas_cacheaveis`, `input_tokens_cacheaveis` e `cache_read_tokens_cacheaveis` (filtro `input_tokens >= 1024`), e a tela divide por eles; os totais de custo, tokens e latência não mudam de definição. O corte é o mesmo do aviso, escrito uma vez em `lib/ai/cache-de-prompt.ts`. Gate: `tests/unit/uso-de-ia-tela-honesta.test.ts`.
 --
--- Espelho da 9365 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da VARREDURA anon,
+-- Espelho da 9366 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da VARREDURA anon,
 -- porque cria função, e antes do bloco da 9243. Redefine a função viva — a última versão
 -- antes desta era a da 9097 — acrescentando as três colunas do recorte cacheável ao bucket.
 create or replace function public.fn_uso_de_ia(
