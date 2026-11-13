@@ -170,6 +170,46 @@ describe("POST /api/v1/ai/skills/import", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 
+  it("#4458: SKILL.md do ecossistema (sem matcher) → 201, com matcher {} entregue ao importador", async () => {
+    mockAuthzOk();
+    vi.mocked(importSkillPackage).mockResolvedValue({ versionId: "ver-1", name: "reescreve-prosa" });
+
+    const semMatcher = `---
+name: reescreve-prosa
+description: Reescreve texto com cara de IA para soar como a pessoa que escreveu.
+license: MIT
+---
+Reescreva o texto mantendo o que ele diz.`;
+
+    const { POST } = await import("./route");
+    const res = await POST(await postReq(makeZip({ "humanizer-main/SKILL.md": semMatcher })));
+
+    expect(res.status).toBe(201);
+    const [, input] = vi.mocked(importSkillPackage).mock.calls[0]!;
+    expect(input.pkg.matcher).toEqual({});
+    expect(input.pkg.matcher.any_keywords).toBeUndefined();
+  });
+
+  it("#4458: matcher inválido (any_keywords: [\"\"]) → 422 nomeando o campo, sem importar", async () => {
+    mockAuthzOk();
+    const invalido = `---
+name: frete-gratis
+description: Explica a política de frete grátis ao cliente.
+matcher:
+  any_keywords: [""]
+---
+corpo`;
+
+    const { POST } = await import("./route");
+    const res = await POST(await postReq(makeZip({ "SKILL.md": invalido })));
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("skill_frontmatter_invalid");
+    expect(body.error.message).toContain("any_keywords");
+    expect(importSkillPackage).not.toHaveBeenCalled();
+  });
+
   it("campo 'file' ausente → 400 invalid_request", async () => {
     mockAuthzOk();
     const form = new FormData();

@@ -38,7 +38,7 @@ interface VersionRow {
   id: string;
   description: string;
   body: string;
-  matcher: { any_keywords: string[]; probe_keywords?: string[]; any_tags?: string[] };
+  matcher: { any_keywords?: string[]; probe_keywords?: string[]; any_tags?: string[] };
   forked_from_version_id: string | null;
 }
 
