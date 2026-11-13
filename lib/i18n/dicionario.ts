@@ -820,6 +820,14 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Sin conexión directa con Meta, la venta de quien vino de un anuncio puede ir por el canal intermediado de WhatsApp, cuando este ya vincula tu conjunto de datos de Meta al número. Al proveedor del canal salen el valor, la moneda, el teléfono del cliente y la conversación. Viene desactivado: actívalo solo si tu política de privacidad cubre ese uso.",
     },
+  "Indisponível: nenhum canal desta organização consegue enviar a venda. Esse envio só existe para o WhatsApp conectado por um provedor intermediado. Com o número por QR Code ou pela API oficial direta, a venda sai pela conexão direta com a Meta (conjunto de dados e token), logo acima.":
+    {
+      es: "No disponible: ningún canal de esta organización puede enviar la venta. Este envío solo existe para el WhatsApp conectado por un proveedor intermediario. Con el número por código QR o por la API oficial directa, la venta sale por la conexión directa con Meta (conjunto de datos y token), justo arriba.",
+    },
+  "Nenhum canal desta organização consegue enviar a venda por aqui, então nada sai enquanto isto estiver ligado. Use a conexão direta com a Meta, logo acima, ou desligue a chave.":
+    {
+      es: "Ningún canal de esta organización puede enviar la venta por aquí, así que no sale nada mientras esto esté activado. Usa la conexión directa con Meta, justo arriba, o desactiva el interruptor.",
+    },
   "O telefone vai em SHA-256, nunca em claro, e ajuda o Google a ligar a conversão a quem clicou no anúncio. É dado pessoal: ligue só se a sua política de privacidade cobre esse uso.":
     {
       es: "El teléfono va en SHA-256, nunca en claro, y ayuda a Google a vincular la conversión con quien hizo clic en el anuncio. Es un dato personal: actívalo solo si tu política de privacidad cubre ese uso.",
@@ -3387,6 +3395,25 @@ export const DICIONARIO: Traducoes = {
   },
   "Tokens in/out": { es: "Tokens entrada/salida" },
   "Custo (cents)": { es: "Costo (centavos)" },
+  // ─── Testar agente como conversa (#4424) ───
+  turno: { es: "turno" },
+  turnos: { es: "turnos" },
+  "Recomeçar conversa": { es: "Reiniciar conversación" },
+  "A IA não devolveu texto neste turno.": {
+    es: "La IA no devolvió texto en este turno.",
+  },
+  "Ferramentas usadas": { es: "Herramientas usadas" },
+  "Ações propostas (não executadas)": {
+    es: "Acciones propuestas (no ejecutadas)",
+  },
+  "Detalhes do turno": { es: "Detalles del turno" },
+  "Sem ações propostas neste turno.": {
+    es: "Sin acciones propuestas en este turno.",
+  },
+  "O histórico da conversa passou do limite: até 30 mensagens e 20.000 caracteres. Recomece a conversa para seguir.":
+    {
+      es: "El historial de la conversación superó el límite: hasta 30 mensajes y 20.000 caracteres. Reinicia la conversación para continuar.",
+    },
   // ─── Agentes de IA: diff e histórico de versões, uso das capacidades ───
   Provider: { es: "Proveedor" },
   Model: { es: "Modelo" },
@@ -6753,6 +6780,17 @@ export const DICIONARIO: Traducoes = {
     es: "No se aplicó el CSS guardado porque contiene una regla no válida.",
   },
   "Regras CSS": { es: "Reglas CSS" },
+  "CSS dos dois temas": { es: "CSS de los dos temas" },
+  "CSS do tema escuro": { es: "CSS del tema oscuro" },
+  "Estas regras valem nos dois temas. As do tema escuro vencem quando ele está ativo.": {
+    es: "Estas reglas valen en los dos temas. Las del tema oscuro ganan cuando está activo.",
+  },
+  "Estas regras valem só quando o tema escuro está ativo.": {
+    es: "Estas reglas valen solo cuando el tema oscuro está activo.",
+  },
+  "Mesmas regras de seletor e propriedades do campo acima.": {
+    es: "Las mismas reglas de selector y propiedades del campo de arriba.",
+  },
   "Use seletores de classe e propriedades visuais (cores, bordas, sombras e tipografia). Sem seletores globais ou por ID, @rules, URLs, scripts, !important ou propriedades de layout e posicionamento. Até 16 KB. Deixe vazio e salve para remover.": {
     es: "Usa selectores de clase y propiedades visuales (colores, bordes, sombras y tipografía). Sin selectores globales o por ID, reglas @, URL, scripts, !important ni propiedades de diseño o posicionamiento. Hasta 16 KB. Déjalo vacío y guarda para quitarlo.",
   },
