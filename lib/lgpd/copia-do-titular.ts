@@ -99,6 +99,8 @@ export const O_QUE_FICA = {
     "os campos que a IA leu num documento do negocio dele e propos para o card (o documento e os valores ficam no anexo)",
   orders: "os pedidos dele na loja",
   activities: "o que foi registrado sobre ele e quando",
+  channel_comments:
+    "os comentários que ele escreveu nos posts do canal: o texto, o handle e quando comentou — o que a anonimização da 9248 apaga (seção só do data.json, como `activities`)",
   checkpoints: "o resumo que a máquina fez da conversa com ele (LGPD art. 20)",
   mcp_pedidos_de_acesso: "os links de autorização gerados para ele acessar sistemas externos, e quando foram usados",
   mcp_acessos: "os sistemas externos que ele autorizou o agente a acessar, com os escopos e as datas (nunca o token)",

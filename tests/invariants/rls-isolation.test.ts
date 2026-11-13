@@ -144,6 +144,18 @@ beforeAll(() => {
             values (v_org, v_conv, v_sess, v_contact, 'text', 'inbound', 'rls invariant probe');
         end if;
 
+        -- migration 9220 (#4075) — o comentário do Instagram guardado como fato.
+        -- O texto é o que o cliente escreveu PUBLICAMENTE num post; vazar a linha
+        -- entrega ao vizinho quem comentou o quê, e com que palavra — que é
+        -- exatamente o que o gatilho da automação usa para agir.
+        if not exists (select 1 from public.channel_comments where organization_id = v_org) then
+          insert into public.channel_comments
+            (organization_id, channel_session_id, provider, platform, external_id,
+             post_id, author_id, author_username, text, contact_id, comment_created_at)
+          values (v_org, v_sess, 'zernio', 'instagram', 'rls-inv-' || v_org::text,
+                  'rls-inv-post', 'rls-inv-author', 'rls_inv', 'comentário de prova', v_contact, now());
+        end if;
+
         -- migration 0419 — o rascunho sugerido por integração (#1611): o TEXTO
         -- que outro sistema escreveu para esta pessoa, guardado ANTES de alguém
         -- clicar em enviar. Vazar a linha entregaria ao vizinho a mensagem que a
@@ -695,6 +707,8 @@ beforeAll(() => {
  * cabeçalho do caso de `contact_field_proposals` abaixo.
  */
 export const TABLES = [
+  // migration 9220 (#4075) — comentário público do Instagram como fato do CRM.
+  "channel_comments",
   "conversations",
   "messages",
   "contacts",

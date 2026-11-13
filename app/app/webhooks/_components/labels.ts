@@ -76,6 +76,11 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // o fato que a regra escuta. "Recebida" separa da ligação FEITA que ninguém
   // atendeu — essa não é perdida, e não dispara este gatilho.
   "voice_call.missed": "Quando uma ligação recebida não for atendida",
+
+  // #4075 — o fato novo vem de FORA do CRM (comentário num post do Instagram):
+  // a frase diz o canal e o ato, e o post/palavra ficam na configuração logo
+  // abaixo. "Palavra-chave" é o termo que quem compra o produto usa.
+  "instagram.comment": "Quando alguém comentar uma palavra-chave num post do Instagram",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {

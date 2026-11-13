@@ -1013,8 +1013,15 @@ export async function aplicarEdicaoZernio(
   return (data ?? []).length > 0 ? "aplicado" : "sem_alvo";
 }
 
-/** Concurrent first messages share a database uniqueness constraint. */
-async function upsertSocialContact(
+/**
+ * A ficha do contato pela identidade social (`<plataforma>:<conta>:<autor>`).
+ *
+ * Exportada porque o COMENTÁRIO (#4075) resolve o contato pela MESMA chave: quem
+ * comentou um post e depois chamou no direct tem que cair na mesma ficha, e uma
+ * segunda cópia desta resolução divergiria no primeiro ajuste que só um lado
+ * recebesse.
+ */
+export async function upsertSocialContact(
   admin: SupabaseClient,
   org: string,
   identity: string,

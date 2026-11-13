@@ -49,6 +49,8 @@ import {
   saudeDoEvento,
 } from "./zernio/avisos";
 import { aplicarEdicaoZernio, ingestZernioInbound } from "./zernio/ingest";
+import { ingestZernioComment } from "./zernio/ingest-comentario";
+import { parseZernioComment } from "./zernio/comentario";
 import { lerEnvelopeZernio } from "./zernio/envelope";
 import {
   parseZernioEdicao,
@@ -172,7 +174,14 @@ export async function inboundPayloadBelongsToSession(admin: SupabaseClient, inpu
 }
 
 /** Prefixos de evento que o provedor documenta como SEMPRE trazendo a conta. */
-const EVENTOS_QUE_SEMPRE_TRAZEM_CONTA = ["message.", "whatsapp.template."];
+const EVENTOS_QUE_SEMPRE_TRAZEM_CONTA = [
+  "message.",
+  "whatsapp.template.",
+  // O comentário (#4075): sem `account.id` não há como dizer de QUAL perfil é o
+  // post comentado, e o webhook do provedor é por espaço de trabalho — aceitar
+  // às cegas jogaria o comentário na caixa de outra conta.
+  "comment.",
+];
 
 /** A conta que o provedor diz ter originado o evento — os mesmos três lugares que o parser lê. */
 export function contaDoEventoZernio(rawBody: string): string | null {
@@ -358,6 +367,24 @@ async function zernioEventoConferido(
     };
   }
   const payload = leitura.envelope;
+
+  // ─── COMENTÁRIO de post (#4075) ──────────────────────────────────────────
+  // Vem ANTES do ramo social porque não é mensagem: o caminho de mensagem
+  // recusaria o payload (`parseSocialMessage` exige `message`), e era assim que
+  // o comentário do cliente sumia com 200 `evento_sem_interesse`.
+  //
+  // A conta já foi conferida por `inboundPayloadBelongsToSession`; aqui só se
+  // grava. `comment.*` entrou em `EVENTOS_QUE_SEMPRE_TRAZEM_CONTA`, então um
+  // comentário sem `account.id` é anomalia e não entra.
+  if (parseZernioComment(payload)) {
+    const resultado = await ingestZernioComment(admin, {
+      organizationId: input.session.organization_id,
+      channelSessionId: input.session.id,
+      payload,
+    });
+    return { ok: true, body: { ...resultado } };
+  }
+
   if (input.session.provider === CHANNEL_PROVIDER_SOCIAL) {
     const result = await ingestSocialInbound(admin, input.session.organization_id, input.session.id, payload);
     return { ok: true, body: { ...result } };

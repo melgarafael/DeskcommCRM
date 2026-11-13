@@ -39,6 +39,7 @@ import {
   DIAS_DE_ANTECEDENCIA_MAX,
   configDoAniversario,
 } from "@/lib/automation/aniversario-do-contato";
+import { GATILHO_COMENTARIO, configDoComentario } from "@/lib/automation/gatilho-do-comentario";
 import { configAoSalvarDaTela } from "@/lib/automation/config-ao-salvar";
 import {
   INTERVALO_POR_CONTATO_MAX_HORAS,
@@ -223,6 +224,15 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // #4365 — as condições são as do CONTATO: quem monta a regra quer filtrar
   // QUEM ligou (tags, nome), e o fato em si (a ligação perdida) já é o gatilho.
   "voice_call.missed": CONTACT_FIELDS,
+
+  // #4075 — o comentário é de um CONTATO que pode nem ter ficha ainda: as
+  // condições perguntam por QUEM comentou (tags) e pelo TEXTO do comentário. O
+  // post e a palavra são a configuração do gatilho, não condição — como o campo
+  // de data no gatilho de data do funil.
+  "instagram.comment": [
+    { value: "event.text", label: "Texto do comentário", op: "contains" },
+    { value: "contact.tags", label: "Tags do contato", op: "contains", lista: true },
+  ],
 };
 
 export const OP_LABELS: Record<Op, string> = {
@@ -301,6 +311,20 @@ interface ConfigDoTempo {
 
 const QUALQUER_FONTE = "__qualquer_fonte__";
 
+/**
+ * Lista digitada com vírgula → lista de verdade (#4075).
+ *
+ * Espaços nas pontas e item vazio caem fora: "QUERO, , link" é o que sai de um
+ * teclado de celular, e uma palavra vazia no banco casaria TODO comentário
+ * (`includes("")`). Quem também recusa a lista vazia é o schema.
+ */
+function separarPorVirgula(texto: string): string[] {
+  return texto
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 export function RuleEditor({ open, onOpenChange, rule }: Props) {
   const t = useT();
   const modulosLigados = useModulosLigados();
@@ -323,6 +347,17 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     proteger_pela_agenda: false,
     pipeline_id: "",
     stage_id: "",
+  });
+  /**
+   * A configuração do gatilho do COMENTÁRIO (#4075), como TEXTO separado por
+   * vírgula — é o formato que o operador digita ("QUERO, link, preço").
+   *
+   * A conversão para lista acontece no salvar, e o schema é quem recusa lista
+   * vazia de palavras: campo vazio não vira "vale para todo comentário".
+   */
+  const [configDoComentarioNaTela, setConfigDoComentarioNaTela] = React.useState({
+    posts: "",
+    palavras: "",
   });
   const [webhookSourceId, setWebhookSourceId] = React.useState(QUALQUER_FONTE);
   /**
@@ -383,6 +418,14 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     setActions((rule?.actions as ActionItem[] | undefined) ?? []);
     const sourceId = rule?.trigger_config?.webhook_source_id;
     setWebhookSourceId(typeof sourceId === "string" ? sourceId : QUALQUER_FONTE);
+    // #4075 — o MESMO leitor que o motor usa (`comentarioCasa`). Regra antiga
+    // (sem as chaves) abre com os dois campos vazios, e o schema recusa salvar
+    // sem palavra — em vez de a tela inventar "qualquer palavra".
+    const comentarioGuardado = configDoComentario(rule?.trigger_config);
+    setConfigDoComentarioNaTela({
+      posts: (comentarioGuardado?.posts ?? []).join(", "),
+      palavras: (comentarioGuardado?.palavras ?? []).join(", "),
+    });
     setUmaVezPorContato(rule?.trigger_config?.uma_vez_por_contato === true);
     // O intervalo pela MESMA régua do motor: valor guardado fora de 1..720 abre
     // como vazio, em vez de a tela mostrar um N que o motor não vai respeitar.
@@ -431,6 +474,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     triggerEvent === GATILHO_SILENCIO || triggerEvent === GATILHO_ETAPA_PARADA;
   const ehGatilhoDeNovoContato = triggerEvent === "lead.created";
   const ehGatilhoDoAniversario = triggerEvent === "contact.birthday";
+  const ehGatilhoDoComentario = triggerEvent === GATILHO_COMENTARIO;
   const camposDeData = camposDeDataDoNegocio(
     (pipelinesRes?.data ?? []).find((p) => p.id === configDaData.pipeline_id)?.settings ?? null,
   );
@@ -567,7 +611,21 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                         : Number(antecedenciaDoAniversario),
                   },
                 })
-              : // Gatilho sem configuração própria: `configDaTela` vazio devolve o
+              : ehGatilhoDoComentario
+                ? configAoSalvarDaTela({
+                    gatilhoDaRegra: rule?.trigger_event,
+                    configDaRegra: rule?.trigger_config,
+                    gatilhoDaTela: triggerEvent,
+                    configDaTela: {
+                      // Lista vazia de POSTS é "qualquer post" (o caso do
+                      // anúncio). Lista vazia de PALAVRAS é recusada pelo
+                      // schema: sem palavra não há gatilho, e "qualquer
+                      // comentário" responderia até a reclamação.
+                      posts: separarPorVirgula(configDoComentarioNaTela.posts),
+                      palavras: separarPorVirgula(configDoComentarioNaTela.palavras),
+                    },
+                  })
+                : // Gatilho sem configuração própria: `configDaTela` vazio devolve o
               // que está guardado quando o gatilho não mudou — é assim que uma
               // opção gravada pela API (o "uma vez por contato", #2974, cujo
               // controle só é desenhado no gatilho de contato novo) sobrevive a
@@ -732,6 +790,52 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                     "O aviso sai N dias antes da data de nascimento, sempre às 9h no fuso da organização. Deixe 0 para avisar no próprio dia. Cada contato recebe um aviso por ano, por automação.",
                   )}
                 </p>
+              </div>
+            ) : null}
+
+            {/* #4075 — o comentário num post do Instagram. O post é o RECORTE
+                e a palavra é o GATILHO: posts vazios valem para o perfil
+                inteiro (o caso do anúncio), palavra vazia é recusada pelo
+                schema — uma regra sem palavra responderia até a reclamação. */}
+            {ehGatilhoDoComentario ? (
+              <div className="space-y-3 rounded-sm border border-border p-3">
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    "A automação roda quando alguém comentar um destes posts com uma destas palavras. Acentos e maiúsculas não importam.",
+                  )}
+                </p>
+                <div className="space-y-1">
+                  <Label htmlFor="posts-do-comentario">{t("Posts (opcional)")}</Label>
+                  <Input
+                    id="posts-do-comentario"
+                    value={configDoComentarioNaTela.posts}
+                    onChange={(e) =>
+                      setConfigDoComentarioNaTela((prev) => ({ ...prev, posts: e.target.value }))
+                    }
+                    placeholder={t("Qualquer post do perfil")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Cole o id do post (o número que aparece no endereço dele). Separe por vírgula. Deixe vazio para valer em qualquer post do perfil.",
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="palavras-do-comentario">{t("Palavras-chave")}</Label>
+                  <Input
+                    id="palavras-do-comentario"
+                    value={configDoComentarioNaTela.palavras}
+                    onChange={(e) =>
+                      setConfigDoComentarioNaTela((prev) => ({ ...prev, palavras: e.target.value }))
+                    }
+                    placeholder={t("ex.: QUERO")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Separe por vírgula. O comentário dispara quando o texto contiver uma destas palavras.",
+                    )}
+                  </p>
+                </div>
               </div>
             ) : null}
 

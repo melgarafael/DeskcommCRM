@@ -47,6 +47,23 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
   "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
+  // #4075 — o gatilho do comentário no Instagram com palavra-chave.
+  "A automação roda quando alguém comentar um destes posts com uma destas palavras. Acentos e maiúsculas não importam.": {
+    es: "La automatización se ejecuta cuando alguien comente una de estas publicaciones con una de estas palabras. Los acentos y las mayúsculas no importan.",
+  },
+  "Quando alguém comentar uma palavra-chave num post do Instagram": {
+    es: "Cuando alguien comente una palabra clave en una publicación de Instagram",
+  },
+  "Posts (opcional)": { es: "Publicaciones (opcional)" },
+  "Qualquer post do perfil": { es: "Cualquier publicación del perfil" },
+  "Cole o id do post (o número que aparece no endereço dele). Separe por vírgula. Deixe vazio para valer em qualquer post do perfil.": {
+    es: "Pega el id de la publicación (el número que aparece en su dirección). Separa con comas. Déjalo vacío para que valga en cualquier publicación del perfil.",
+  },
+  "Palavras-chave": { es: "Palabras clave" },
+  "ex.: QUERO": { es: "ej.: QUIERO" },
+  "Separe por vírgula. O comentário dispara quando o texto contiver uma destas palavras.": {
+    es: "Separa con comas. El comentario dispara cuando el texto contenga una de estas palabras.",
+  },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },

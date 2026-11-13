@@ -22,6 +22,7 @@ import {
   configDaEtapaParada,
   configDoSilencio,
 } from "@/lib/automation/gatilhos-de-tempo";
+import { GATILHO_COMENTARIO, configDoComentario } from "@/lib/automation/gatilho-do-comentario";
 
 /**
  * Os gatilhos que o motor reconhece, e a entidade que cada um tem que trazer.
@@ -109,6 +110,14 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // ele que a ação de WhatsApp precisa no contexto do motor; o telefone e o
   // `call_id` viajam no payload.
   "voice_call.missed": "contact",
+
+  // O COMENTÁRIO de um post do Instagram (#4075): "comente QUERO que eu te
+  // mando o link". Diferente de todos os outros, ele nasce FORA do CRM (no
+  // webhook do canal social) e a entidade é o CONTATO que comentou — é ele que
+  // as ações de mensagem/tag/atribuição alcançam. O recorte "só neste post, só
+  // com esta palavra" mora em `trigger_config` e é aplicado por
+  // `lib/automation/recorte-do-gatilho.ts`.
+  "instagram.comment": "contact",
 } as const;
 
 export type GatilhoDeAutomacao = keyof typeof ENTIDADE_ESPERADA_POR_GATILHO;
@@ -845,6 +854,7 @@ export const createAutomationRuleSchema = z
   })
   .superRefine(exigirConfigDoGatilhoDeData)
   .superRefine(exigirConfigDosGatilhosDeTempo)
+  .superRefine(exigirConfigDoComentario)
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(recusarLimitePorContatoTorto)
   .superRefine(recusarAntecedenciaTorta)
@@ -964,6 +974,28 @@ function exigirConfigDoGatilhoDeData(
   });
 }
 
+/**
+ * O gatilho do COMENTÁRIO sem a configuração dele é uma regra que NUNCA dispara
+ * (não há post nem palavra para casar) — ou, pior, uma regra que dispararia em
+ * TODO comentário, se o leitor tratasse ausência como "qualquer". Recusar na
+ * porta é o único desfecho honesto, como nos irmãos de data e de tempo.
+ */
+function exigirConfigDoComentario(
+  // `trigger_event` OPCIONAL: no PATCH parcial o campo pode faltar, e exigir o
+  // tipo obrigatório aqui fazia o `.superRefine` do update não casar com o
+  // schema (TS2345) — o irmão de tempo sobrevive a um cast, este não precisa.
+  regra: { trigger_event?: string; trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  if (regra.trigger_event !== GATILHO_COMENTARIO) return;
+  if (configDoComentario(regra.trigger_config)) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["trigger_config"],
+    message: "Escolha pelo menos uma palavra-chave (e, se quiser, os posts em que ela vale).",
+  });
+}
+
 export const updateAutomationRuleSchema = z
   .object({
     name: z.string().min(1).max(120).optional(),
@@ -994,6 +1026,9 @@ export const updateAutomationRuleSchema = z
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(recusarLimitePorContatoTorto)
   .superRefine(recusarAntecedenciaTorta)
+  // O PATCH que troca o gatilho PARA o do comentário sem a configuração: mesma
+  // recusa da criação (#4075).
+  .superRefine(exigirConfigDoComentario)
   // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
   // conferido contra a regra gravada na rota.
   .superRefine(recusarLacoDeLead);

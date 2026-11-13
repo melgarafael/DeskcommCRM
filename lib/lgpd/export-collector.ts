@@ -166,6 +166,28 @@ export interface ActivityRow {
 }
 
 /**
+ * O comentário que o titular escreveu num post do canal (`channel_comments`,
+ * migrations 9220/9248). A 9248 o põe no redator da virada — `author_id` vira
+ * `'removido'`, `author_username`/`author_name` viram nulo e `text` vira
+ * `'[comentário anonimizado]'`; a linha fica (é a trava de reentrega do
+ * provedor). O export entrega o que a redação apaga, e só para o `contact_id`
+ * da ficha: mesmo predicado da 9248 (`organization_id` + `contact_id`).
+ */
+export interface ChannelCommentRow {
+  id: string;
+  provider: string;
+  platform: string;
+  external_id: string;
+  post_id: string;
+  author_id: string;
+  author_username: string | null;
+  author_name: string | null;
+  text: string | null;
+  comment_created_at: string | null;
+  created_at: string;
+}
+
+/**
  * A proposta de campo lida num documento do negócio (`lead_field_proposals`,
  * migration 0772).
  *
@@ -777,6 +799,14 @@ export interface ExportPayload {
   lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
+  /**
+   * Os comentários do titular nos posts do canal (9220). A 9248 os põe no
+   * redator da virada, e esta é a outra metade: ausente quando vazio — quem
+   * nunca comentou não ganha uma chave a mais no `data.json` dourado —, e
+   * presente sempre que houver linha, porque é o texto que a anonimização
+   * apaga.
+   */
+  channel_comments?: ChannelCommentRow[];
   checkpoints: CheckpointRow[];
   /** Opcionais: payload gerado antes da 9095 não os tem. */
   mcp_pedidos_de_acesso?: AcessoMcpRow[];
@@ -1683,6 +1713,39 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("activities", data, 500);
       activities = data;
+    }
+  }
+
+  // Comentários nos posts — contact_id direto em channel_comments (9220/9248).
+  //
+  // ⚠️ ESTA É A OUTRA METADE DA 9248, e faltava: a migration põe
+  // `channel_comments` no redator da virada (`fn_reply_redact` — o comentário
+  // fica sem handle e sem texto quando o titular é anonimizado), mas ninguém
+  // acrescentou a tabela ao EXPORT. O titular exercia o Art. 18 II e recebia um
+  // relatório que não mencionava nenhum comentário que ele escreveu. O filtro é
+  // o MESMO predicado do `update` da 9248 (`organization_id` + `contact_id`),
+  // para que a leitura alcance exatamente as linhas que a redação alcança.
+  // `tests/unit/lgpd-exporta-o-que-redige.test.ts:146` é a cerca: vermelho
+  // antes deste bloco, com `channel_comments` como tabela faltando.
+  let channel_comments: ChannelCommentRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("channel_comments")
+      .select(
+        "id, provider, platform, external_id, post_id, author_id, author_username, author_name, text, comment_created_at, created_at",
+      )
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("comment_created_at", { ascending: false, nullsFirst: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] channel_comments load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("channel_comments", data, 500);
+      channel_comments = data;
     }
   }
 
@@ -2635,6 +2698,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     ...(cadenciasInstaladas ? { cadencias_inscricoes, cadencias_eventos } : {}),
     orders,
     activities,
+    ...(channel_comments.length > 0 ? { channel_comments } : {}),
     checkpoints,
     mcp_pedidos_de_acesso: mcpPedidos,
     mcp_acessos: mcpAcessos,
