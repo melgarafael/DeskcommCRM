@@ -32,7 +32,7 @@ import {
   type FlowNode,
 } from "./graph-schema";
 import { classificarInbound, type CampoPendenteParaCaptura } from "./captura-do-fluxo";
-import { armarProximaRevisaoPeloFluxo } from "@/lib/leads/armar-proxima-revisao-pelo-fluxo";
+import { armarProximaRevisaoPeloFluxo } from "@/lib/revisao-por-km/pelo-fluxo";
 import { logger } from "@/lib/logger";
 import {
   fixarNegocioDoRoteiro,
@@ -765,7 +765,7 @@ export async function gravarRespostaNoNegocio(
   //
   // A resposta a "quantos km?" pelo WhatsApp cai aqui. Com o km no card
   // e a data de retirada ao lado, a conta do passo 2 (ritmo → marco de 10 mil →
-  // data prevista) pode ser feita: `lib/leads/revisao-por-km.ts` calcula e
+  // data prevista) pode ser feita: `lib/revisao-por-km/conta.ts` calcula e
   // `fn_lead_anotar_campos` grava a data no campo de saída, armando o gatilho
   // `lead.date_field_due`. A resposta do cliente NÃO depende disso — o km já
   // está gravado; se a projeção falhar, o log diz e a próxima leitura refaz.

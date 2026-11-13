@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { armarProximaRevisaoPeloFluxo } from "@/lib/leads/armar-proxima-revisao-pelo-fluxo";
+import { armarProximaRevisaoPeloFluxo } from "@/lib/revisao-por-km/pelo-fluxo";
 import { casaNaData } from "@/lib/automation/gatilho-de-data-do-funil";
 
 /**
@@ -137,7 +137,7 @@ describe("armarProximaRevisaoPeloFluxo", () => {
 
     // Sem revisão anterior configurada a base é a retirada (km 0): 9.000 km é
     // avanço legítimo. O caso decrescente de verdade está coberto em
-    // `armar-proxima-revisao.test.ts`, com a última revisão no card.
+    // `decisao.test.ts`, com a última revisão no card.
     expect(resultado.status).toBe("armada");
     expect(chamadas.some((c) => c.sql.includes("fn_lead_anotar_campos"))).toBe(true);
   });

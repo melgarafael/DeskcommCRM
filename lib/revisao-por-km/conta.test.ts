@@ -7,7 +7,7 @@ import {
   projetarProximaRevisao,
   somarDias,
   somarMeses,
-} from "@/lib/leads/revisao-por-km";
+} from "@/lib/revisao-por-km/conta";
 
 /**
  * A TABELA DE CASOS da conta (#4376) — entrada → ritmo → data prevista.

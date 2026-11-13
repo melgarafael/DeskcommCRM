@@ -8,11 +8,11 @@
  * (o "hoje" é o dela, nunca o do servidor) e o gravador que usa a MESMA função —
  * o caminho que a ação `set_lead_date_field` (#3727) já usa.
  *
- * A decisão de gravar (e o que não gravar) mora em `armar-proxima-revisao.ts`;
+ * A decisão de gravar (e o que não gravar) mora em `decisao.ts`;
  * as portas entram por parâmetro para o teste não precisar de Supabase.
  */
 import { diaLocal, fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
-import { armarProximaRevisao, type ResultadoDaArmacao } from "@/lib/leads/armar-proxima-revisao";
+import { armarProximaRevisao, type ResultadoDaArmacao } from "@/lib/revisao-por-km/decisao";
 
 /** O que a porta precisa do mundo — o handler entrega o cliente já ligado. */
 export interface PortasDoCard {

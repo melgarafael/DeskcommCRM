@@ -1,7 +1,7 @@
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { armarProximaRevisaoNoCard } from "@/lib/leads/armar-proxima-revisao-no-card";
+import { armarProximaRevisaoNoCard } from "@/lib/revisao-por-km/no-card";
 import { logger } from "@/lib/logger";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 /**
@@ -1160,7 +1160,7 @@ export async function updateLeadHandler(
     //
     // Roda DEPOIS da escrita do km, e só quando o funil declarou a régua
     // (`pipelines.settings.revisao_por_km`). A conta em si mora em
-    // `lib/leads/revisao-por-km.ts`; aqui é só a porta, no fuso da organização.
+    // `lib/revisao-por-km/conta.ts`; aqui é só a porta, no fuso da organização.
     // Falha aqui NÃO derruba o PATCH: o km já está gravado, e a projeção é
     // consequência — o log diz que ela não saiu.
     if (settingsDaEdicao !== undefined) {

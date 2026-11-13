@@ -21,8 +21,8 @@
  *      linha e a auditoria moram naquela função.
  */
 import { diaLocal, fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
-import { armarProximaRevisao, type ResultadoDaArmacao } from "@/lib/leads/armar-proxima-revisao";
-import { configuracaoDeRevisaoPorKm } from "@/lib/leads/revisao-por-km";
+import { armarProximaRevisao, type ResultadoDaArmacao } from "@/lib/revisao-por-km/decisao";
+import { configuracaoDeRevisaoPorKm } from "@/lib/revisao-por-km/conta";
 
 /** O mínimo que a revisão precisa do pool — o teste injeta um dublê. */
 export interface BancoDaRevisao {

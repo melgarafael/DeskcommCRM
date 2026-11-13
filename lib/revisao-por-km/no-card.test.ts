@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { armarProximaRevisaoNoCard } from "@/lib/leads/armar-proxima-revisao-no-card";
+import { armarProximaRevisaoNoCard } from "@/lib/revisao-por-km/no-card";
 import { casaNaData } from "@/lib/automation/gatilho-de-data-do-funil";
 
 /**

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { armarProximaRevisao, mexeuNaQuilometragem } from "@/lib/leads/armar-proxima-revisao";
+import { armarProximaRevisao, mexeuNaQuilometragem } from "@/lib/revisao-por-km/decisao";
 import { casaNaData } from "@/lib/automation/gatilho-de-data-do-funil";
-import { configuracaoDeRevisaoPorKm, somarDias } from "@/lib/leads/revisao-por-km";
+import { configuracaoDeRevisaoPorKm, somarDias } from "@/lib/revisao-por-km/conta";
 
 /**
  * A ARMAÇÃO do aviso (#4376): a projeção vira ESCRITA no campo de data do

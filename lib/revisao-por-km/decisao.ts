@@ -2,7 +2,7 @@
  * A decisão de ARMAR a próxima revisão: quando projetar, o que gravar e o que
  * deixar como está (issue #4376).
  *
- * A conta mora em `revisao-por-km.ts` e não fala com o banco. Aqui fica a
+ * A conta mora em `conta.ts` e não fala com o banco. Aqui fica a
  * camada que decide se a projeção VIRA ESCRITA — e é a única, para que a regra
  * não divirja entre o card, a API, o MCP e a captura do roteiro.
  *
@@ -30,7 +30,7 @@ import {
   type ResultadoDaProjecao,
   configuracaoDeRevisaoPorKm,
   projetarProximaRevisao,
-} from "@/lib/leads/revisao-por-km";
+} from "@/lib/revisao-por-km/conta";
 
 /** O que a projeção virou, do ponto de vista de quem chamou. */
 export type ResultadoDaArmacao =
