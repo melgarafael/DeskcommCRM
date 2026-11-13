@@ -1154,6 +1154,11 @@ export async function patchContactHandler(
   await audit({
     action: "contact.updated",
     actorUserId: a.actorUserId,
+    // #4517 — QUEM AGIU, quando quem agiu foi um TOKEN. `actorApiTokenId` é a
+    // coluna que responde "qual token fez isto" no painel de auditoria; sem ela
+    // a edição por integração ficava anônima (o `metadata.actor_id` de hoje
+    // carrega o id do token, mas nenhum filtro lê metadata).
+    actorApiTokenId: ctx.actor.type === "user" ? null : (ctx.apiTokenId ?? null),
     organizationId: contact.organization_id,
     resourceType: "contact",
     resourceId: contact.id,

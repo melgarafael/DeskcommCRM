@@ -101,6 +101,28 @@ export interface HandlerCtx {
   aiVoiceDerivedText?: string | null;
   /** Chave HTTP validada na borda para replay de uma criação. */
   idempotencyKey?: string;
+  /**
+   * A LINHA DO TOKEN que autenticou a chamada (`api_tokens.id`), quando a
+   * identidade entrou por Bearer.
+   *
+   * Vive no CTX, e não no input, pela mesma razão de `onBehalfOf`: o input
+   * atravessa as tools MCP, e um campo gravável ali deixaria o chamador escolher
+   * de quem é a autoria no audit. Quem preenche é `resolveAuthDual` (rota) e o
+   * server MCP (`ctx.apiTokenId`); o audit grava em `actor_api_token_id`, que é
+   * o que responde "qual token fez isto" (#4515, #4516).
+   */
+  apiTokenId?: string;
+  /**
+   * O chamador é um TOKEN de integração e JÁ pagou o escopo de desfecho
+   * (`agenda:attendance`) na borda.
+   *
+   * `alterarAgendamentoHandler` recusa `completed`/`no_show` de ator que não é
+   * pessoa porque "uma interpretação de texto não registra o fato". A #4515
+   * abriu a exceção para a integração que TEM o escopo concedido pelo dono do
+   * token — e o sinal chega por aqui, nunca pelo input: campo no corpo deixaria
+   * qualquer chamador se declarar autorizado.
+   */
+  desfechoPorToken?: boolean;
   /** Identidade estável do job interno; não usar claim, que muda em cada reclaim. */
   sourceJobId?: string;
   organization_id: string;

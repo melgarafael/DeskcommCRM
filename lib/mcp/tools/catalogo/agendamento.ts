@@ -252,6 +252,19 @@ export const TOOLS_AGENDAMENTO = declararTools([
     pacotes: ["vender"],
   },
   {
+    name: "crm_set_appointment_status",
+    category: "write",
+    rotulo: "Marcar presença ou falta no horário",
+    explicacao:
+      "Grava se a pessoa foi atendida ou faltou num horário que já começou, para a integração que registra o atendimento não depender de alguém abrir a tela.",
+    oQueToca: "Agenda da equipe",
+    // Mesma régua da tool acima: registrar falta devolve o horário ao pool, mas
+    // o sistema recusa antes da hora. O que muda é a porta: esta exige o escopo
+    // próprio do token (`agenda:attendance`), não o `mcp:write` genérico.
+    risco: "atencao",
+    pacotes: ["vender"],
+  },
+  {
     name: "crm_cancel_appointment",
     category: "write",
     rotulo: "Desmarcar um compromisso",

@@ -97,6 +97,14 @@ const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // esse custo é limitado pelo índice único parcial da 0123: no máximo uma
   // proposta viva por contato e campo, ou seja três por contato.
   "crm_propose_contact_field",
+  // #4517 — `PATCH /api/v1/contacts/[id]/` exige `agent` (a mesma rota que
+  // originou a linha acima), e esta tool chama o MESMO `patchContactHandler`.
+  //
+  // ⚠️ O poder de SOBRESCREVER a ficha não vem deste nome nem do papel: vem do
+  // escopo `contacts:write` da linha do token. Sem ele, a tool cai no caminho de
+  // proposta — inclusive para o agente da casa (`tokenScopes` ausente), que
+  // continua proibido de gravar por interpretação de texto (spec 17 §4b).
+  "crm_update_contact",
   // `app/api/v1/ai/cases/[id]/` — exige `agent`.
   "crm_close_human_case",
   // `app/api/v1/conversations/[id]/reactivate-bot/` — POST exige `agent`.
@@ -105,6 +113,17 @@ const ESCRITA_QUE_E_TRABALHO_DE_ATENDENTE: ReadonlyArray<string> = [
   // ranking — e por isso sobreviveu à troca do papel do agente para `ai_operator`,
   // que um piso de `manager` teria transformado em bloqueio por coincidência.
   "crm_resume_ai_attendance",
+  // #4517 — o quarteto de comandos de conversa, e a paridade de cada um com a sua
+  // rota: `conversations/[id]/pause-ai` (agent), `/reactivate-bot` (agent),
+  // `/close` (agent) e `/reopen` (agent). Todos chamam o MESMO handler da rota.
+  //
+  // O poder extra que cada um carrega não vem do papel, vem do escopo
+  // `conversations:write` do token — e as quatro recusam `actor.type` igual a
+  // `ai_agent` no handler, em voz alta: o agente não comanda a própria automação.
+  "crm_pause_ai",
+  "crm_resume_ai",
+  "crm_close_conversation",
+  "crm_reopen_conversation",
   // `app/api/v1/leads/[id]/lose/` — POST exige `agent`. Encerrar demanda que o
   // cliente declarou encerrada é o trabalho do dia (paridade medida na W2→base).
   "crm_close_demand",

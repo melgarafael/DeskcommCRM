@@ -311,11 +311,17 @@ describe("POST /api/v1/agenda/servicos/atualizar — sessão de navegador", () =
     expect(checkRateLimit).not.toHaveBeenCalled();
 
     // A organização vem da sessão e o ator é a pessoa; as RPCs seguem pelo cliente admin.
+    //
+    // O ator carrega `role` desde a #4517 (`resolveAuthDual`), porque há handler
+    // que decide por hierarquia (#3436) e a regra tem de ver o papel no MESMO
+    // lugar em que o token o carrega. O payload do RPC ganhou a chave de carona;
+    // `fn_calendar_service_assert_actor` lê `type`/`id`/`api_token_id` e ignora
+    // o resto — medido na migration 0716.
     const assertores = rpcsDeAssertActor(falso);
     expect(assertores).toHaveLength(1);
     expect(assertores[0]?.args).toEqual({
       p_org: ORG_A,
-      p_actor: { type: "user", id: USER_ID },
+      p_actor: { type: "user", id: USER_ID, role: "agent" },
       p_role: "agent",
     });
     expect(organizacoesRecebidas()).toEqual([ORG_A]);

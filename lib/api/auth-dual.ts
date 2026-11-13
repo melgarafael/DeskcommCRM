@@ -144,7 +144,11 @@ export async function resolveAuthDual(
   return {
     ok: true,
     organizationId: authz.org.orgId,
-    actor: { type: "user", id: authz.user.id },
+    // O PAPEL vai no ator, e não fica só na sessão: handlers que decidem por
+    // hierarquia (devolver ao automático é `manager`+, #3436) precisam dele no
+    // MESMO lugar em que o token o carrega — senão a regra veria "agent" para
+    // todo mundo que entrou por cookie. Additivo: quem não lê, ignora.
+    actor: { type: "user", id: authz.user.id, role: authz.org.role },
     supabase: await createClient(),
     idioma: authz.user.idioma,
     via: "session",

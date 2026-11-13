@@ -22,6 +22,10 @@ import { DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN } from "@/lib/agenda/duracao-esc
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import {
+  ESCOPO_DESFECHO_DA_AGENDA,
+  tokenTemEscopo,
+} from "@/lib/api/escopos-do-token";
 import type { Actor } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { chaveDaRequisicao } from "@/lib/api/idempotency";
@@ -375,6 +379,18 @@ export async function GET(req: NextRequest): Promise<Response> {
   return ok([...resultado.agendamentos, ...externos], { requestId });
 }
 
+/**
+ * O status pedido é DESFECHO (`completed`/`no_show`)? Devolve o próprio status,
+ * ou `null`.
+ *
+ * Um `confirmar`/`cancelar`/remarcação NÃO passa por aqui — só o desfecho pede o
+ * escopo extra da #4515. Lê o corpo JÁ VALIDADO, então qualquer string fora do
+ * enum já morreu no schema e não tem como furar o gate.
+ */
+function statusDeDesfecho(status: unknown): "completed" | "no_show" | null {
+  return status === "completed" || status === "no_show" ? status : null;
+}
+
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
@@ -421,7 +437,16 @@ async function despachar<T>(
   schema: z.ZodType<T>,
   handler: (
     supabase: Awaited<ReturnType<typeof createClient>>,
-    ctx: { organization_id: string; actor: Actor; requestId: string; idempotencyKey?: string },
+    ctx: {
+      organization_id: string;
+      actor: Actor;
+      requestId: string;
+      idempotencyKey?: string;
+      /** Linha do token que autenticou (#4515) — só no ramo de Bearer. */
+      apiTokenId?: string;
+      /** O token pagou `agenda:attendance` e pode registrar desfecho (#4515). */
+      desfechoPorToken?: boolean;
+    },
     input: T,
   ) => Promise<Record<string, unknown>>,
   status: 200 | 201,
@@ -464,6 +489,26 @@ async function despachar<T>(
     });
   }
 
+  /**
+   * O DESFECHO POR TOKEN PAGA ESCOPO PRÓPRIO (#4515).
+   *
+   * `mcp:write` é "pode agir no CRM"; registrar se a pessoa veio ou faltou tem
+   * efeito FORA do registro (o `no_show` devolve horário ao pool, o `completed`
+   * fecha a linha do tempo), e o dono do token decide se a integração o tem.
+   * Sem `agenda:attendance`, o Bearer fecha em 403 antes de o handler rodar —
+   * inclusive para o token que já tem `mcp:write`. A sessão de navegador não tem
+   * escopos e segue exatamente como era.
+   */
+  const desfecho = statusDeDesfecho((parsed.data as { status?: unknown }).status);
+  if (desfecho && authz.via === "token" && !tokenTemEscopo(authz.scopes, ESCOPO_DESFECHO_DA_AGENDA)) {
+    return fail(
+      "forbidden_role",
+      `Este token não pode registrar comparecimento. Peça a quem emitiu o token para incluir o escopo ${ESCOPO_DESFECHO_DA_AGENDA}.`,
+      403,
+      { requestId },
+    );
+  }
+
   try {
     const resultado = await handler(
       supabase,
@@ -474,6 +519,13 @@ async function despachar<T>(
         actor,
         requestId,
         ...(idempotencyKey !== null ? { idempotencyKey } : {}),
+        // O rastro de QUEM agiu (#4515): só existe no ramo de token.
+        ...(authz.via === "token" && authz.apiTokenId !== undefined
+          ? { apiTokenId: authz.apiTokenId }
+          : {}),
+        // A exceção do desfecho é do TOKEN com escopo — nunca de um ator que se
+        // declarou pessoa no corpo.
+        ...(desfecho && authz.via === "token" ? { desfechoPorToken: true } : {}),
       },
       parsed.data,
     );

@@ -44,6 +44,30 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_search_contacts": { tokens: 135, motivo: BASE },
   "crm_get_contact": { tokens: 188, motivo: BASE },
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
+  // #4517 — os cinco nomes desta issue, medidos na criação (2026-11-12). Os
+  // quatro comandos de conversa são pequenos de propósito: um input só (o id da
+  // conversa, mais a revisão opcional) e uma descrição que ensina o EFEITO, não
+  // a rota. `crm_update_contact` pesa o triplo porque a ficha tem treze campos.
+  "crm_update_contact": {
+    tokens: 627,
+    motivo: "ferramenta nova de edição de ficha (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_pause_ai": {
+    tokens: 243,
+    motivo: "ferramenta nova de pausa da IA (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_resume_ai": {
+    tokens: 244,
+    motivo: "ferramenta nova de retomada da IA (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_close_conversation": {
+    tokens: 256,
+    motivo: "ferramenta nova de fechamento por token (#4517), medida na criação (2026-11-12)",
+  },
+  "crm_reopen_conversation": {
+    tokens: 242,
+    motivo: "ferramenta nova de reabertura por token (#4517), medida na criação (2026-11-12)",
+  },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
   "crm_get_conversation_history": {
@@ -95,6 +119,36 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
+  "crm_set_appointment_status": {
+    tokens: 331,
+    motivo:
+      "ferramenta nova da porta de desfecho por token (#4515), medida na criação (2026-11-12): o texto separa a integração do agente que só lê e diz que compromisso futuro é recusado",
+  },
+  "crm_list_tasks": {
+    tokens: 944,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12): a descrição ensina os filtros e o corte de 500",
+  },
+  "crm_create_task": {
+    tokens: 959,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12): a descrição explica o responsável opcional e a chave de idempotência",
+  },
+  "crm_update_task": {
+    tokens: 940,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12): os campos são os mesmos da criação e cada um custa o seu texto",
+  },
+  "crm_complete_task": {
+    tokens: 245,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12)",
+  },
+  "crm_delete_task": {
+    tokens: 186,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12)",
+  },
   "crm_create_lead": { tokens: 933, motivo: BASE },
   "crm_update_lead": { tokens: 817, motivo: BASE },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
@@ -148,7 +202,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
 // mensagem (#4077).
-const TETO_TOTAL = 30667;
+// +1.612 com as cinco ferramentas de #4517 (627 + 243 + 244 + 256 + 242),
+// medidas na criação em 2026-11-12. Nenhuma delas entra em todo turno: as quatro
+// de conversa dependem do pacote ligado, e o catálogo é a régua de quem as liga.
+const TETO_TOTAL = 35884;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

@@ -712,7 +712,15 @@ export async function alterarAgendamentoHandler(
 
   const mudanca: Record<string, unknown> = {};
   if (input.status === "completed" || input.status === "no_show") {
-    if (ctx.actor.type !== "user") throw new ApiError(403,"forbidden",undefined,ctx.requestId,"Peça à equipe para confirmar a presença no compromisso. Uma interpretação de texto não registra o fato.");
+    // A PORTA LEGÍTIMA DO TOKEN (#4515): um ator que não é pessoa só registra
+    // o desfecho quando a borda JÁ conferiu o escopo `agenda:attendance` e
+    // marcou `desfechoPorToken` no ctx. O sinal não vem do input de propósito —
+    // campo no corpo deixaria qualquer chamador se declarar autorizado. Quem
+    // não tem o escopo continua recebendo a recusa de sempre: uma interpretação
+    // de texto não registra o fato.
+    if (ctx.actor.type !== "user" && ctx.desfechoPorToken !== true) {
+      throw new ApiError(403,"forbidden",undefined,ctx.requestId,"Peça à equipe para confirmar a presença no compromisso. Uma interpretação de texto não registra o fato.");
+    }
     if (input.outcome_message_id) mudanca.outcome_message_id=input.outcome_message_id;
   }
   if(input.confirmation_next_at) mudanca.confirmation_next_at=input.confirmation_next_at;
@@ -870,10 +878,15 @@ export async function alterarAgendamentoHandler(
       outcome: {revision:salvo.revision,source_kind:salvo.outcome_source_kind,message_id:salvo.outcome_message_id,recorded_at:salvo.outcome_recorded_at},
     });
 
+    // QUAL TOKEN AGIU (#4515): o desfecho por integração precisa de rastro
+    // próprio, senão a trilha responde "alguém marcou" e o pedido da issue —"qual
+    // token" — fica sem resposta. `actorApiTokenId` é a coluna do audit para isso;
+    // `via: "token"` no metadata separa a marcação da integração da marcação da tela.
     void audit({action: transicao === "rescheduled" ? "agenda.appointment_rescheduled" : transicao === "completed" || transicao === "no_show" ? "agenda.appointment_outcome_recorded" : "agenda.appointment_updated",
       actorUserId:ctx.actor.type === "user" ? ctx.actor.id : null,organizationId:ctx.organization_id,
+      actorApiTokenId:ctx.actor.type === "user" ? null : (ctx.apiTokenId ?? (ctx.actor.type === "ai_agent" ? (ctx.actor.api_token_id ?? null) : (ctx.actor.type === "api_token" ? ctx.actor.id : null))),
       resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
-      metadata:{status:salvo.status,revision:salvo.revision,outcome_source_kind:salvo.outcome_source_kind,outcome_message_id:salvo.outcome_message_id}});
+      metadata:{status:salvo.status,revision:salvo.revision,outcome_source_kind:salvo.outcome_source_kind,outcome_message_id:salvo.outcome_message_id,...(ctx.actor.type === "user" ? {} : {via:"token"})}});
 
   }
 
