@@ -114,17 +114,17 @@ async function main(): Promise<void> {
     "crm_get_lead",
     "crm_move_lead_stage",
     "crm_list_leads",
-    // ⚠️ AS OITO ABAIXO NÃO SÃO ENFEITE: elas existem para o cenário ESTOURAR.
+    // ⚠️ AS NOVE ABAIXO NÃO SÃO ENFEITE: elas existem para o cenário ESTOURAR.
     //
     // A jornada do teto (issue #162) só existe se a soma passar do teto: eram 3
     // do seed + 18 de "Atender" = 21 contra teto 20, e a tela recusava dizendo
     // "faltam 1 vaga". Com teto 25 essas mesmas 21 passam, a recusa nunca acontece
     // e o caso vira um clique que sempre dá certo — verde sem medir nada.
     //
-    // A cada subida do teto a aritmética ameaçava caber de novo. Com teto 27
-    // (a proposta comercial entrou no `vender` e o teto subiu com ela) as oito
-    // reproduzem a MESMA conta: com os 3 do seed, 11 + 17 = 28 > 27, recusa por
-    // 1 vaga; desligar uma das oito deixa 10 + 17 = 27, que é o teto exato e
+    // A cada subida do teto a aritmética ameaçava caber de novo. Com teto 28
+    // (a porta de desfecho por token entrou no `vender`, #4515/#4516) as nove
+    // reproduzem a MESMA conta: com os 3 do seed, 12 + 17 = 29 > 28, recusa por
+    // 1 vaga; desligar uma das nove deixa 11 + 17 = 28, que é o teto exato e
     // passa. O que segura o caso é essa soma estourar por exatamente UMA vaga —
     // estourar por 2 muda o texto da tela e o caso morre, caber no teto faz a
     // recusa sumir e o caso virar verde sem medir nada.
@@ -136,8 +136,9 @@ async function main(): Promise<void> {
     // As escolhidas ficam FORA do pacote "Atender" de propósito — se alguma
     // estivesse dentro, a união seria menor que a soma e a conta acima não valeria.
     // Quatro são a família de agenda, que é o assunto do defeito que subiu o teto
-    // pela primeira vez; as quatro últimas são leitura pura de outros pacotes,
-    // para a aritmética continuar estourando a cada subida.
+    // pela primeira vez; as quatro seguintes são leitura pura de outros pacotes,
+    // para a aritmética continuar estourando a cada subida; e a nona é a leitura
+    // de tarefas do `organizar` (#4515), a vaga que o teto 28 abriu.
     "crm_find_free_slots",
     "crm_list_appointments",
     "crm_book_appointment",
@@ -146,6 +147,9 @@ async function main(): Promise<void> {
     "crm_list_event_types",
     "crm_list_human_cases",
     "crm_list_knowledge_sources",
+    // A nona: leitura pura do `organizar` (#4515). Com o teto 28 as outras oito
+    // sozinhas fariam 11 + 17 = 28, caberiam exatas e a recusa sumiria.
+    "crm_list_tasks",
   ];
 
   // REPÕE TODAS AS VERSÕES DRAFT DESTE AGENTE, não só a de maior número.

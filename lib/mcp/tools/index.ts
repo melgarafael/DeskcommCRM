@@ -86,7 +86,15 @@ import {
   crmListEventTypes,
   crmRescheduleAppointment,
   crmSetAppointmentOutcome,
+  crmSetAppointmentStatus,
 } from "./agendamento";
+import {
+  crmListTasks,
+  crmCreateTask,
+  crmUpdateTask,
+  crmCompleteTask,
+  crmDeleteTask,
+} from "./tarefas";
 import {
   crmScheduleFollowup,
   crmEnrollFollowupFlow,
@@ -158,6 +166,15 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCancelAppointment,
   crmConfirmAppointment,
   crmSetAppointmentOutcome,
+  crmSetAppointmentStatus,
+  // tarefas (#4516) — o CRUD que a integração por token pediu. Ficam juntas e
+  // depois da agenda de propósito: quem cria tarefa quase sempre vem de um
+  // compromisso ("ligar de volta amanhã").
+  crmListTasks,
+  crmCreateTask,
+  crmUpdateTask,
+  crmCompleteTask,
+  crmDeleteTask,
   crmCreateLead,
   crmUpdateLead,
   crmMoveLeadStage,

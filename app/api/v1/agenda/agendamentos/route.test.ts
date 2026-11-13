@@ -382,3 +382,115 @@ describe("GET /api/v1/agenda/agendamentos — continua só-sessão", () => {
     expect(createAdminClient).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * O GATE DE ESCOPO DO DESFECHO (#4515), na BORDA.
+ *
+ * `mcp:write` é "pode agir no CRM" e um token emitido para uma integração de
+ * ligações o recebe junto de tudo o mais. Registrar se a pessoa veio ou faltou
+ * tem efeito FORA do registro — `no_show` devolve horário ao pool —, então a
+ * rota cobra um escopo PRÓPRIO (`agenda:attendance`) só para o desfecho.
+ *
+ * Estes casos vivem na rota, e não no handler, porque é aqui que a identidade do
+ * token é conhecida: o handler recebe a exceção já decidida no ctx
+ * (`desfechoPorToken`) e continua recusando quem não passou por esta borda —
+ * coberto em `tests/unit/agenda-desfecho-por-token-4515.test.ts`.
+ */
+describe("PATCH /api/v1/agenda/agendamentos — escopo do desfecho por token (#4515)", () => {
+  const ID = "55555555-5555-4555-8555-555555555555";
+
+  function tokenOk(scopes: string[]): void {
+    vi.mocked(validateBearerToken).mockResolvedValue({
+      organizationId: ORG_ID,
+      role: "ai_operator" as never,
+      actor: { type: "api_token", id: "tok-1", role: "ai_operator" as never },
+      apiTokenId: "tok-1",
+      scopes,
+    });
+  }
+
+  function patchReq(body: unknown): NextRequest {
+    return new NextRequest("http://localhost/api/v1/agenda/agendamentos", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json", authorization: "Bearer dsk_abc_def" },
+    });
+  }
+
+  it("token com `mcp:write` e SEM `agenda:attendance` → 403 no desfecho, handler não roda", async () => {
+    tokenOk(["mcp:write"]);
+    vi.mocked(alterarAgendamentoHandler).mockResolvedValue({
+      id: ID,
+      status: "completed",
+    } as never);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patchReq({ id: ID, status: "completed" }));
+    const corpo = (await res.json()) as { error?: { code?: string } };
+
+    expect(res.status).toBe(403);
+    expect(corpo.error?.code).toBe("forbidden_role");
+    // O essencial: a recusa é ANTES do handler. Uma guarda que só reclamasse
+    // depois teria gravado o desfecho do mesmo jeito.
+    expect(alterarAgendamentoHandler).not.toHaveBeenCalled();
+  });
+
+  it("o MESMO token, com `agenda:attendance`, grava e leva a procedência no ctx", async () => {
+    tokenOk(["mcp:write", "agenda:attendance"]);
+    vi.mocked(alterarAgendamentoHandler).mockResolvedValue({
+      id: ID,
+      status: "no_show",
+    } as never);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patchReq({ id: ID, status: "no_show" }));
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(alterarAgendamentoHandler).mock.calls[0]?.[1]).toMatchObject({
+      organization_id: ORG_ID,
+      // O rastro de QUEM agiu e a exceção NOMEADA que o handler exige.
+      apiTokenId: "tok-1",
+      desfechoPorToken: true,
+    });
+  });
+
+  it("`confirmed` NÃO pede o escopo novo — só o desfecho pede", async () => {
+    // Se o gate pegasse todo status, ele quebraria a confirmação por token, que
+    // já funcionava antes desta issue.
+    tokenOk(["mcp:write"]);
+    vi.mocked(alterarAgendamentoHandler).mockResolvedValue({
+      id: ID,
+      status: "confirmed",
+    } as never);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patchReq({ id: ID, status: "confirmed" }));
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(alterarAgendamentoHandler).mock.calls[0]?.[1]).not.toMatchObject({
+      desfechoPorToken: true,
+    });
+  });
+
+  it("a SESSÃO de navegador não é afetada: grava desfecho sem escopo nenhum", async () => {
+    // A pessoa na tela sempre pôde; o escopo é da integração. Sem este caso, a
+    // cura poderia virar um muro para quem atende.
+    sessaoOk();
+    vi.mocked(alterarAgendamentoHandler).mockResolvedValue({
+      id: ID,
+      status: "completed",
+    } as never);
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(
+      new NextRequest("http://localhost/api/v1/agenda/agendamentos", {
+        method: "PATCH",
+        body: JSON.stringify({ id: ID, status: "completed" }),
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(alterarAgendamentoHandler).toHaveBeenCalled();
+  });
+});

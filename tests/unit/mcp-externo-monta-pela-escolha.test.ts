@@ -231,15 +231,23 @@ describe("o seletor de capacidades não apaga a escolha remota (#3586)", () => {
   });
 
   it("a remota conta no teto nas duas direções: vagas restantes e vaga exigida pelo pacote", () => {
-    // 26 nativas fora do pacote + 1 remota = teto cheio. O pacote `atender`
-    // traz 1 automática e 1 crítica (reservada): 27 + 2 = 29. Se a remota
+    // `teto - 1` nativas fora do pacote + 1 remota = teto cheio. O pacote
+    // `atender` traz 1 automática e 1 crítica (reservada): teto + 2. Se a remota
     // sumisse da conta (ligarPacote a descartando, ou o seletor a filtrando),
-    // daria 28 — e o seletor deixaria ligar uma capacidade além do zod.
-    const nativas: CapacidadeSelecionavel[] = Array.from({ length: 26 }, (_, i) => ({
-      name: `nativa_${i}`,
-      risco: "seguro",
-      pacotes: ["organizar"],
-    }));
+    // daria teto + 1 — e o seletor deixaria ligar uma capacidade além do zod.
+    //
+    // A conta sai da CONSTANTE e não de um literal: o caso fixava "26 nativas"
+    // e virou vermelho quando o teto subiu de 27 para 28 (a fixture ficou uma
+    // curta e a asserção acusou, corretamente, que a soma não fechava). O que se
+    // guarda é a RELAÇÃO com o teto, não o número de ontem.
+    const nativas: CapacidadeSelecionavel[] = Array.from(
+      { length: TETO_TOOLS_POR_AGENTE - 1 },
+      (_, i) => ({
+        name: `nativa_${i}`,
+        risco: "seguro",
+        pacotes: ["organizar"],
+      }),
+    );
     const cat = [...nativas, ...catalogo];
     const sel = [...nativas.map((c) => c.name), toolIdRemoto("buscar_carros", "leitura")];
 

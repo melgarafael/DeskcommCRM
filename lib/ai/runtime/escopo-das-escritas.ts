@@ -44,6 +44,10 @@ export type DonoDoCampo =
   | "chamado"
   /** `target_id` cujo dono depende de `target_kind` (conversation|contact|lead). */
   | "alvo_de_tag"
+  /** `crm_tasks.contact_id` OU, quando ela só tem negócio, o contato do `lead_id`. */
+  | "tarefa"
+  /** `demandas.contact_id` — a demanda é sempre de um solicitante. */
+  | "demanda"
   /** `lead_id`: quem guarda é `negocioDaEscritaDoTurno`, em `tools.ts`. */
   | "negocio"
   /** Não é registro de cliente: funil, etapa, usuário, fluxo. */
@@ -106,6 +110,24 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_schedule_followup: { lead_id: "negocio", contact_id: "contato" },
   crm_cancel_followup: { followup_id: "retorno" },
   crm_enroll_followup_flow: { contact_id: "contato", flow_id: "configuracao" },
+
+  // ---- tarefas (#4516) ----
+  // `crm_set_appointment_status` é a QUARTA porta da agenda por
+  // `appointment_id` (#4515): mesmo dono de remarcar/cancelar.
+  crm_set_appointment_status: { appointment_id: "compromisso" },
+  // Criar tarefa aceita negócio, contato e demanda; os três são conferidos, e
+  // o `lead_id` ainda passa por `negocioDaEscritaDoTurno` em `tools.ts`.
+  crm_create_task: { lead_id: "negocio", contact_id: "contato", demanda_id: "demanda" },
+  // Editar/concluir/apagar recebem `task_id`: o dono é a própria tarefa, que
+  // pode estar presa ao contato OU só ao negócio dele (ver `case "tarefa"`).
+  crm_update_task: {
+    task_id: "tarefa",
+    lead_id: "negocio",
+    contact_id: "contato",
+    demanda_id: "demanda",
+  },
+  crm_complete_task: { task_id: "tarefa" },
+  crm_delete_task: { task_id: "tarefa" },
 
   // ---- sem registro de cliente ----
   crm_save_org_memory: {},
@@ -198,6 +220,31 @@ async function campoEhDoContato(
         default:
           return false;
       }
+    case "demanda":
+      // `demandas.contact_id` é NOT NULL (migration 0136): a demanda tem
+      // solicitante, e é ele quem manda.
+      return existeDoContato(supabase, "demandas", organizationId, contato, id);
+    case "tarefa": {
+      // `crm_tasks.contact_id` é NULO quando a tarefa nasceu presa só a um
+      // negócio (ou avulsa). Ler as duas colunas e decidir em memória evita a
+      // recusa injusta de uma tarefa legítima do MESMO cliente vinculada pelo
+      // lead — e continua fechando na dúvida: sem contato nem lead, não é do
+      // turno.
+      const { data, error } = await supabase
+        .from("crm_tasks")
+        .select("contact_id, lead_id")
+        .eq("organization_id", organizationId)
+        .eq("id", id)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      const linha = data as { contact_id: string | null; lead_id: string | null } | null;
+      if (!linha) return false;
+      if (linha.contact_id) return linha.contact_id.toLowerCase() === contato.toLowerCase();
+      if (linha.lead_id) {
+        return existeDoContato(supabase, "crm_leads", organizationId, contato, linha.lead_id);
+      }
+      return false;
+    }
   }
 }
 

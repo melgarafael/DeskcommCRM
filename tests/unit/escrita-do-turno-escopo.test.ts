@@ -37,6 +37,9 @@ const RETORNO_DO_TURNO = "dddddddd-1111-4111-8111-111111111111";
 const RETORNO_DE_B = "dddddddd-2222-4222-8222-222222222222";
 const CASO_DO_TURNO = "bbbbbbbb-1111-4111-8111-111111111111";
 const CASO_DE_B = "bbbbbbbb-2222-4222-8222-222222222222";
+const TAREFA_DO_TURNO = "eeeeeeee-1111-4111-8111-111111111111";
+const TAREFA_DE_B = "eeeeeeee-2222-4222-8222-222222222222";
+const TAREFA_PELO_NEGOCIO = "eeeeeeee-3333-4333-8333-333333333333";
 
 type Linha = Record<string, unknown>;
 
@@ -60,6 +63,16 @@ const TABELAS: Record<string, Linha[]> = {
   crm_leads: [
     { id: NEGOCIO_DE_B, organization_id: ORG, contact_id: DE_B, pipeline_id: FUNIL, status: "open", last_activity_at: "2020-01-01T00:00:00Z", created_at: "2020-01-01T00:00:00Z" },
     { id: NEGOCIO_DO_TURNO, organization_id: ORG, contact_id: DO_TURNO, pipeline_id: FUNIL, status: "open", last_activity_at: "2020-01-01T00:00:00Z", created_at: "2020-01-01T00:00:00Z" },
+  ],
+  /**
+   * Tarefas (#4516): uma presa ao CONTATO e uma presa só ao NEGÓCIO — a segunda
+   * é o caso que o dono `tarefa` tem de resolver pelo lead, e não pelo
+   * `contact_id` (que é nulo).
+   */
+  crm_tasks: [
+    { id: TAREFA_DE_B, organization_id: ORG, contact_id: DE_B, lead_id: null },
+    { id: TAREFA_DO_TURNO, organization_id: ORG, contact_id: DO_TURNO, lead_id: null },
+    { id: TAREFA_PELO_NEGOCIO, organization_id: ORG, contact_id: null, lead_id: NEGOCIO_DO_TURNO },
   ],
 };
 
@@ -122,7 +135,7 @@ const CASOS: Array<{ nome: string; args: (alvo: string) => Linha; doTurno: strin
   { nome: "crm_enroll_followup_flow", args: (a) => ({ contact_id: a, flow_id: FUNIL }), doTurno: DO_TURNO, deB: DE_B },
   { nome: "crm_create_lead", args: (a) => ({ contact_id: a, pipeline_id: FUNIL }), doTurno: DO_TURNO, deB: DE_B },
   { nome: "crm_update_lead", args: (a) => ({ lead_id: NEGOCIO_DO_TURNO, contact_id: a }), doTurno: DO_TURNO, deB: DE_B },
-  ...["crm_reschedule_appointment", "crm_cancel_appointment", "crm_confirm_appointment", "crm_set_appointment_outcome"].map(
+  ...["crm_reschedule_appointment", "crm_cancel_appointment", "crm_confirm_appointment", "crm_set_appointment_outcome", "crm_set_appointment_status"].map(
     (nome) => ({ nome, args: (a: string) => ({ appointment_id: a }), doTurno: COMPROMISSO_DO_TURNO, deB: COMPROMISSO_DE_B }),
   ),
   ...[
@@ -143,6 +156,9 @@ const CASOS: Array<{ nome: string; args: (alvo: string) => Linha; doTurno: strin
   { nome: "crm_manage_tags", args: (a) => ({ target_kind: "contact", target_id: a }), doTurno: DO_TURNO, deB: DE_B },
   { nome: "crm_manage_tags", args: (a) => ({ target_kind: "conversation", target_id: a }), doTurno: CONVERSA_DO_TURNO, deB: CONVERSA_DE_B },
   { nome: "crm_manage_tags", args: (a) => ({ target_kind: "lead", target_id: a }), doTurno: NEGOCIO_DO_TURNO, deB: NEGOCIO_DE_B },
+  // #4516: a tarefa entra pela própria linha (`task_id`), e o dono dela é o
+  // contato do turno — ver o `case "tarefa"` de `escopo-das-escritas.ts`.
+  { nome: "crm_complete_task", args: (a) => ({ task_id: a }), doTurno: TAREFA_DO_TURNO, deB: TAREFA_DE_B },
 ];
 
 describe.each(CASOS)("$nome $args", ({ nome, args, doTurno, deB }) => {
@@ -164,6 +180,19 @@ describe.each(CASOS)("$nome $args", ({ nome, args, doTurno, deB }) => {
   it("controle sem turno: o registro de outro cliente chega ao handler, como antes", async () => {
     const semTurno = await executar(nome, args(deB));
     expect(semTurno.r).toEqual({ chegou_ao_handler: true });
+  });
+});
+
+describe("tarefa presa só ao NEGÓCIO (#4516)", () => {
+  it("o dono é o contato do lead, porque o `contact_id` da tarefa é nulo", async () => {
+    const propria = await executar("crm_complete_task", { task_id: TAREFA_PELO_NEGOCIO }, DO_TURNO);
+    expect(propria.r).toEqual({ chegou_ao_handler: true });
+  });
+
+  it("a mesma tarefa, no turno de outro cliente, é recusada", async () => {
+    const alheia = await executar("crm_complete_task", { task_id: TAREFA_PELO_NEGOCIO }, DE_B);
+    expect(alheia.r).toMatchObject({ permitido: false, motivo: "fora_da_conversa" });
+    expect(alheia.chamou).toBe(false);
   });
 });
 

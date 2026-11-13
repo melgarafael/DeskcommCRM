@@ -35,8 +35,10 @@ import {
   marcarAgendamentoHandler,
 } from "@/app/api/v1/agenda/agendamentos/_handler";
 import { ApiError } from "@/lib/api/types";
+import { ESCOPO_DESFECHO_DA_AGENDA } from "@/lib/api/escopos-do-token";
 import { SITUACOES_DO_AGENDAMENTO } from "@/lib/agenda/tipos";
 import { contatoDoNegocio } from "@/lib/operacao/modelos-de-mensagem";
+import { exigeEscopoDoTokenDeIntegracao } from "@/lib/mcp/escopo-do-token";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 
@@ -1232,6 +1234,64 @@ export const crmSetAppointmentOutcome: McpToolDefinition<typeof desfechoShape> =
         {
           id: input.appointment_id,
           status: input.outcome,
+          ...(input.notes ? { notes: input.notes } : {}),
+        },
+      );
+      return { registrado: true, compromisso: compromissoComHorarioLocal(r) };
+    }),
+};
+
+/**
+ * A PORTA DE ESCRITA DO DESFECHO PARA INTEGRAÇÃO (#4515).
+ *
+ * A tool acima (`crm_set_appointment_outcome`) é a do AGENTE: para ator que não
+ * é pessoa ela devolve "peça à equipe", porque um modelo que lê "não vou poder
+ * ir amanhã" não tem como saber se a consulta ACONTECEU. Esta é a da INTEGRAÇÃO
+ * por token — um app de ligações que gravou o atendimento e sabe o desfecho.
+ *
+ * O que separa as duas NÃO é o nome: é o ESCOPO. `agenda:attendance` só existe
+ * no token de quem pediu a porta (`ApiTokensClient`, a única tela que emite
+ * token), e é conferido aqui — token sem ele recebe 403 nomeado mesmo com
+ * `mcp:write`. A regra do desfecho continua sendo a do handler: compromisso que
+ * ainda não começou é recusado com `agenda_ainda_nao_aconteceu`, e o aviso de
+ * `no_show` prematuro (devolve horário ao pool) vale igual.
+ */
+const statusDoCompromissoShape = {
+  appointment_id: z.string().uuid().describe("o compromisso, vindo de `crm_list_appointments`"),
+  status: z
+    .enum(["completed", "no_show"])
+    .describe(
+      "`completed` = a pessoa foi atendida; `no_show` = não apareceu e não avisou. Só vale para compromisso que JÁ COMEÇOU.",
+    ),
+  notes: z.string().max(2000).optional(),
+};
+
+export const crmSetAppointmentStatus: McpToolDefinition<typeof statusDoCompromissoShape> = {
+  name: "crm_set_appointment_status",
+  description:
+    "Registra se a pessoa veio (`completed`) ou faltou (`no_show`) num compromisso que JÁ COMEÇOU. " +
+    "É a porta da integração por token com o escopo `agenda:attendance`, para o app que gravou o atendimento. " +
+    "Compromisso futuro é recusado com `agenda_ainda_nao_aconteceu` — registrar falta antes da hora devolve o horário para outra pessoa. " +
+    "Se a pessoa avisou que não vem, use `crm_cancel_appointment`; esta tool é sobre o que aconteceu, não sobre o que foi combinado.",
+  inputSchema: statusDoCompromissoShape,
+  category: "write",
+  requiresRole: "ai_operator",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) =>
+    semDerrubarOTurno("registrado", async () => {
+      exigeEscopoDoTokenDeIntegracao(ctx, ESCOPO_DESFECHO_DA_AGENDA);
+      const r = await alterarAgendamentoHandler(
+        ctx.supabase,
+        {
+          organization_id: ctx.organizationId,
+          actor: ctx.actor,
+          requestId: ctx.requestId,
+          apiTokenId: ctx.apiTokenId,
+          desfechoPorToken: true,
+        },
+        {
+          id: input.appointment_id,
+          status: input.status,
           ...(input.notes ? { notes: input.notes } : {}),
         },
       );

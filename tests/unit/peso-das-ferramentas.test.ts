@@ -95,6 +95,36 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
+  "crm_set_appointment_status": {
+    tokens: 331,
+    motivo:
+      "ferramenta nova da porta de desfecho por token (#4515), medida na criação (2026-11-12): o texto separa a integração do agente que só lê e diz que compromisso futuro é recusado",
+  },
+  "crm_list_tasks": {
+    tokens: 944,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12): a descrição ensina os filtros e o corte de 500",
+  },
+  "crm_create_task": {
+    tokens: 959,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12): a descrição explica o responsável opcional e a chave de idempotência",
+  },
+  "crm_update_task": {
+    tokens: 940,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12): os campos são os mesmos da criação e cada um custa o seu texto",
+  },
+  "crm_complete_task": {
+    tokens: 245,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12)",
+  },
+  "crm_delete_task": {
+    tokens: 186,
+    motivo:
+      "ferramenta nova do CRUD de tarefas por token (#4516), medida na criação (2026-11-12)",
+  },
   "crm_create_lead": { tokens: 933, motivo: BASE },
   "crm_update_lead": { tokens: 817, motivo: BASE },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
@@ -148,7 +178,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
 // mensagem (#4077).
-const TETO_TOTAL = 30667;
+const TETO_TOTAL = 34272;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
