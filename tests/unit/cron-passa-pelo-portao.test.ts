@@ -75,6 +75,7 @@ const ROTAS_CONHECIDAS = [
   "proposta-travada",
   "prospecting",
   "webhook-replay",
+  "routing-worker",
 ];
 
 const AJUDA =

@@ -71,7 +71,7 @@
  *     python3 -c "import re;y=open('$f').read();print('roda:','agenda-conectar-google.spec.ts' in {s for _,c in re.findall(r'(SPECS_PARTE_\d+):\s*>-\n((?:[ ]{8,}.*\n)+)',y) for s in re.findall(r'[a-z0-9-]+\.spec\.ts',c)})"
  *
  */
-import { expect, test, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test, type Page } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
@@ -99,6 +99,7 @@ test.describe("conectar a agenda do Google", () => {
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(240_000);
     page = await browser.newPage();
+    esperarARevelacaoNasCargas(page);
     await loginComoAdmin(page, lerCreds());
   });
 

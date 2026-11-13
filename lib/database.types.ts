@@ -4458,12 +4458,13 @@ export type Database = {
           audience_version: number;
           base_legal: string;
           cancelled_at: string | null;
-          channel_session_id: string;
+          channel_session_id: string | null;
           completed_at: string | null;
           content_version: number;
           created_at: string;
           created_by: string | null;
           description: string | null;
+          email_subject: string | null;
           failed_at: string | null;
           failure_code: string | null;
           failure_detail: string | null;
@@ -4503,12 +4504,13 @@ export type Database = {
           audience_version?: number;
           base_legal: string;
           cancelled_at?: string | null;
-          channel_session_id: string;
+          channel_session_id?: string | null;
           completed_at?: string | null;
           content_version?: number;
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
+          email_subject?: string | null;
           failed_at?: string | null;
           failure_code?: string | null;
           failure_detail?: string | null;
@@ -4547,12 +4549,13 @@ export type Database = {
           audience_version?: number;
           base_legal?: string;
           cancelled_at?: string | null;
-          channel_session_id?: string;
+          channel_session_id?: string | null;
           completed_at?: string | null;
           content_version?: number;
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
+          email_subject?: string | null;
           failed_at?: string | null;
           failure_code?: string | null;
           failure_detail?: string | null;
@@ -4943,6 +4946,7 @@ export type Database = {
       };
       channel_routing_policies: {
         Row: {
+          ai_wait_minutes: number | null;
           channel_session_id: string;
           created_at: string;
           default_assignee_user_id: string | null;
@@ -4953,6 +4957,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          ai_wait_minutes?: number | null;
           channel_session_id: string;
           created_at?: string;
           default_assignee_user_id?: string | null;
@@ -4962,6 +4967,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          ai_wait_minutes?: number | null;
           channel_session_id?: string;
           created_at?: string;
           default_assignee_user_id?: string | null;
@@ -16529,6 +16535,10 @@ export type Database = {
         };
       };
       fn_session_mfa_proven: { Args: Record<PropertyKey, never>; Returns: boolean };
+      fn_set_channel_ai_wait: {
+        Args: { p_channel: string; p_minutes: number; p_org: string };
+        Returns: number;
+      };
       fn_set_channel_routing: {
         Args: {
           p_channel: string;

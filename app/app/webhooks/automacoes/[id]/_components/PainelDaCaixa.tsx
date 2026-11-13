@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { useCapacidadesLigadas } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { usePipelineStages, usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
@@ -41,7 +42,13 @@ import {
   valorDaCondicaoNaTela,
 } from "@/app/app/webhooks/_components/CondicaoDoContato";
 import { CURATED_FIELDS, OP_LABELS, type CuratedField, type Op } from "@/app/app/webhooks/_components/RuleEditor";
-import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } from "@/app/app/webhooks/_components/labels";
+import {
+  ACTION_LABELS,
+  TRIGGER_LABELS,
+  gatilhoOferecido,
+  type ActionType,
+  type TriggerEvent,
+} from "@/app/app/webhooks/_components/labels";
 
 import { VISUAL_DAS_CONDICOES, VISUAL_DO_GATILHO, visualDaAcao, type VisualDaCaixa } from "./visual";
 
@@ -93,6 +100,7 @@ export function PainelDoGatilho({
   onTela: (tela: TelaDoGatilho) => void;
 }) {
   const t = useT();
+  const capacidadesLigadas = useCapacidadesLigadas();
   const { data: funisRes } = usePipelines();
   const { data: fontesRes } = useWebhookSources();
   const funis = funisRes?.data ?? [];
@@ -113,7 +121,7 @@ export function PainelDoGatilho({
             <SelectValue placeholder={t("Escolha o gatilho")} />
           </SelectTrigger>
           <SelectContent>
-            {TRIGGER_EVENTS.map((ev) => (
+            {TRIGGER_EVENTS.filter((ev) => gatilhoOferecido(ev, capacidadesLigadas, evento)).map((ev) => (
               <SelectItem key={ev} value={ev}>
                 {t(TRIGGER_LABELS[ev])}
               </SelectItem>
