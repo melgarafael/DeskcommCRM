@@ -275,6 +275,13 @@ export function AgendaClient({
   // coisas para manter em sincronia. Quando `remarcandoId` está preenchido, a
   // confirmação vira PATCH em vez de POST.
   const [remarcandoId, setRemarcandoId] = React.useState<string | null>(null);
+  // O TIPO DO COMPROMISSO REMARCADO (prova de tela do #4507). Remarcar é sobre
+  // AQUELE compromisso: painel, horários, campo de duração e PATCH seguem o tipo
+  // dele, não o que estiver selecionado na grade — com "Atendimento" na grade,
+  // remarcar uma "Aula Coletiva" mandava `duration_minutes` e levava 422
+  // `agenda_duracao_do_servico`. Só é lido com `remarcandoId` preenchido, e
+  // `onRemarcar` grava os dois juntos, então não precisa ser limpo ao fechar.
+  const [tipoDaRemarcacaoId, setTipoDaRemarcacaoId] = React.useState<string | null>(null);
   // CANCELAR pede motivo, e o motivo é obrigatório na rota. Não é burocracia: é
   // o que a equipe lê ao ver o horário vago.
   const [cancelandoId, setCancelandoId] = React.useState<string | null>(null);
@@ -341,7 +348,11 @@ export function AgendaClient({
   const [tipoId, setTipoId] = React.useState<string | null>(
     () => busca.get("tipo") ?? tiposIniciais[0]?.id ?? null,
   );
-  const tipo = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
+  const tipoSelecionado = tiposIniciais.find((t) => t.id === tipoId) ?? tiposIniciais[0] ?? null;
+  // ponytail: tipo inativo (fora de `tiposIniciais`) cai no selecionado, como antes.
+  const tipo =
+    (remarcandoId ? tiposIniciais.find((t) => t.id === tipoDaRemarcacaoId) : undefined) ??
+    tipoSelecionado;
   /**
    * ESCOLHER O TIPO GRAVA NA URL — a outra metade do `useState` acima.
    *
@@ -1534,6 +1545,7 @@ export function AgendaClient({
           const equipe = alvo?.convidadosDaEquipe ?? [];
           setEquipeAoAbrir(equipe);
           setConvidadosDaEquipe(equipe);
+          setTipoDaRemarcacaoId(alvo?.tipoId ?? null);
           setRemarcandoId(id);
           setMarcando(true);
         }}
@@ -1618,7 +1630,7 @@ export function AgendaClient({
         fechamentos={fechamentosDaGrade}
         recorte={recorteDaGrade}
         tipos={tiposIniciais.map((t) => ({ id: t.id, nome: t.nome, duracaoMin: t.duracaoMin }))}
-        tipo={tipo ? { id: tipo.id, duracaoMin: tipo.duracaoMin } : null}
+        tipo={tipoSelecionado ? { id: tipoSelecionado.id, duracaoMin: tipoSelecionado.duracaoMin } : null}
         // O filtro governa também a disponibilidade que a grade pinta (#4186):
         // com a Ana isolada, os blocos "livres" são os da jornada dela.
         donoId={isolada}
@@ -1672,7 +1684,7 @@ export function AgendaClient({
            primeiro (#1657). */
         onAbrirAgendamento={(id) => {
           const parametros = new URLSearchParams();
-          if (tipo) parametros.set("tipo", tipo.id);
+          if (tipoSelecionado) parametros.set("tipo", tipoSelecionado.id);
           parametros.set("compromisso", id);
           router.push(`/app/agenda?${parametros.toString()}`);
         }}

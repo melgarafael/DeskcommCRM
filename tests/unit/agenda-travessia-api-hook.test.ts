@@ -76,6 +76,7 @@ const MARIA: AgendamentoListado = {
   contatoId: "c-maria",
   contatoNome: "Maria Ferraz",
   convidadosDaEquipe: ["u-bia"],
+  tipo: { id: "t-consulta", slug: "consulta", nome: "Consulta" },
 };
 
 /** O corpo EXATO do wire: `ok()` é o mesmo wrapper que a rota chama no `return`. */
@@ -143,6 +144,11 @@ describe("o compromisso atravessa a rota até a grade", () => {
       bloco.convidadosDaEquipe,
       "sem a lista, 'ver só a agenda de' esconde o compromisso de quem foi convidado",
     ).toEqual(["u-bia"]);
+    expect(
+      bloco.tipoId,
+      "sem o tipo, remarcar depois de um refetch volta a usar o tipo selecionado na " +
+        "grade, e remarcar um serviço manda duração e leva 422 (#4507)",
+    ).toBe("t-consulta");
     expect(
       bloco.comeca,
       "sem início o bloco não tem onde pousar na grade e o horário some da tela",
