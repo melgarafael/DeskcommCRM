@@ -112,7 +112,7 @@ export interface ChannelCapabilities {
    *
    * A resposta declarativa é a da tela; quem executa confirma de novo pela
    * presença de `reportConversion` no adapter, e o teste de matriz reprova a
-   * divergência entre os dois.
+   * matriz que declara `true` sem o método.
    */
   reportaConversao: boolean;
 }
