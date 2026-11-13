@@ -509,6 +509,51 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     expect(sonda.uploads).toEqual([]);
   });
 
+  it.each(["conexao", "prazo", "redirecionamento"] as const)(
+    "falha de %s depois dos headers recusa a linha e deixa a seguinte entrar",
+    async (falha) => {
+      vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", []) as never);
+      const segundaFoto = URL_DA_FOTO + "?foto=2";
+      let pedacos = 0;
+      vi.stubGlobal("fetch", async (url: string) => {
+        if (url === URL_DA_FOTO) return new Response(corpoDe(JPEG), { status: 200 });
+        if (falha === "redirecionamento") {
+          return new Response(null, { status: 302, headers: { location: "http://[" } });
+        }
+        // Os headers chegaram: só a leitura do corpo revela a interrupção.
+        const corpo = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (pedacos++ === 0) controller.enqueue(JPEG);
+            else controller.error(falha === "prazo"
+              ? new DOMException("tempo esgotado", "AbortError")
+              : new TypeError("conexão interrompida"));
+          },
+        });
+        return new Response(corpo, { status: 200 });
+      });
+      const { POST } = await import("./route");
+
+      const resposta = await POST(await pedido(planilhaComFoto(
+        "RUIM,Carro incompleto,100.00," + URL_DA_FOTO + "|" + segundaFoto +
+        "\nBOA,Carro sem foto,200.00,",
+      )));
+      const corpo = await resposta.json();
+
+      expect(resposta.status).toBe(200);
+      expect(corpo.data).toMatchObject({ criados: 1, atualizados: 0, total_linhas: 2 });
+      expect(corpo.data.erros).toEqual([{
+        linha: 2,
+        motivo: expect.stringContaining(segundaFoto),
+      }]);
+      expect(upserts.flat().map((linha) => linha.codigo)).toEqual(["BOA"]);
+      expect(sonda.guardadas).toEqual([URL_DA_FOTO, segundaFoto]);
+      expect(pedacos).toBe(falha === "redirecionamento" ? 0 : 2);
+      // A primeira foto da linha recusada já subiu: a lista parcial sai inteira.
+      expect(sonda.uploads).toHaveLength(1);
+      expect(sonda.removidos.flat()).toEqual(sonda.uploads.map((foto) => foto.caminho));
+    },
+  );
+
   it("link que devolve HTML não vira foto no catálogo", async () => {
     servidorDeFotos({
       [URL_DA_FOTO]: { corpo: new TextEncoder().encode("<html>página</html>"), tipo: "text/html" },
