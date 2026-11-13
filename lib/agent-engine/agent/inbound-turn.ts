@@ -7609,6 +7609,11 @@ export async function runAgentPreview(
     erro = e;
     throw e;
   } finally {
+    // #4424 — o Testar mostra, turno a turno, as ferramentas que a IA USOU. As
+    // de leitura rodam de verdade na prévia, mas até aqui a lista só existia no
+    // traço gravado no banco; as ações propostas já saíam em `result.proposals`.
+    // Copiar para o resultado é o que leva o dado à tela, sem consulta nova.
+    preview.result.ferramentas = coletor.listar();
     await gravarTracoDoTurno(deps.log, pool, {
       organizationId: preview.organizationId,
       jobId: null,

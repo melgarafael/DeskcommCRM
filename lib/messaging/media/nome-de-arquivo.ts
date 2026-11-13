@@ -36,3 +36,23 @@ export function nomeOriginalDaMensagem(metadata: unknown): string | null {
     (metadata as Record<string, unknown>)[CHAVE_DO_NOME_NA_METADATA],
   );
 }
+
+/**
+ * O nome que um anexo ENVIADO leva para o WhatsApp (#4457).
+ *
+ * O caminho no bucket é `out-<uuid>.<ext>` — nasce aleatório de propósito, para
+ * dois arquivos de mesmo nome não se sobrescreverem. Usar o basename dele como
+ * `filename` do documento é o que fazia o cliente ver `out-3f9a2b.pdf` no lugar
+ * do nome que a pessoa escolheu.
+ *
+ * O nome original vence sempre que existir; o basename fica só como último
+ * recurso de quem chama a API sem nome (upload por token, que só manda o
+ * `media_storage_path`). É o mesmo caminho que a ingestão faz do outro lado
+ * (`nomeDeArquivoLimpo` antes de gravar e antes de exibir).
+ */
+export function nomeDoAnexoParaEnviar(
+  original: unknown,
+  storagePath: string,
+): string | undefined {
+  return nomeDeArquivoLimpo(original) ?? (storagePath.split("/").pop() || undefined);
+}

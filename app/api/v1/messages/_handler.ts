@@ -48,6 +48,11 @@ import { botoesDaDefinicao } from "@/lib/channels/botoes-da-definicao";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import {
+  CHAVE_DO_NOME_NA_METADATA,
+  nomeDeArquivoLimpo,
+  nomeDoAnexoParaEnviar,
+} from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
 import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
@@ -1000,6 +1005,16 @@ export async function sendMessageHandler(
   // Lidos do espelho da definição — nunca do `metadata` de entrada, que é do
   // cliente da API — e sem barrar nada: é dado de exibição.
   const { [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente, ...metadataDeEntrada } = input.metadata ?? {};
+  // O nome que a PESSOA deu ao arquivo (#4457). O caminho no bucket nasce
+  // `out-<uuid>.<ext>`, então não há nome legível nele; este é o único que
+  // sobra. Passa pela guarda da ingestão porque vem do multipart, e é gravado
+  // na linha porque o balão e o download leem `metadata.media_filename` — sem
+  // isso o histórico continuaria mostrando o nome aleatório. `null` quando o
+  // envio não traz nome (token que só manda o storage_path): aí o balão segue
+  // com o rótulo de sempre, em vez de exibir um `out-<uuid>`.
+  const nomeOriginalDoAnexo = input.media_storage_path
+    ? nomeDeArquivoLimpo(input.media_filename)
+    : null;
   const botoesDoModeloEnviado =
     input.type === "template"
       ? await botoesDaDefinicao(supabase, {
@@ -1045,6 +1060,9 @@ export async function sendMessageHandler(
       // são do servidor: o dreno converte a âncora em data e o cron pede visão
       // paga pela marca. O cliente não as forja — ver `CHAVES_DA_DERIVACAO`.
       ...semChavesDaDerivacao(metadataDeEntrada),
+      // Depois do `metadata` do cliente de propósito: o nome do arquivo é dado
+      // do ENVIO (#4457), e o cliente da API não o sobrescreve por metadata.
+      ...(nomeOriginalDoAnexo ? { [CHAVE_DO_NOME_NA_METADATA]: nomeOriginalDoAnexo } : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
@@ -1313,7 +1331,10 @@ export async function sendMessageHandler(
         if (signErr || !signed?.signedUrl) {
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
-        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        // O nome ORIGINAL vence o basename aleatório do bucket (#4457). Sem
+        // nome — chamada por token, que só conhece o storage_path —, o
+        // basename continua sendo o que sai, como sempre foi.
+        const filename = nomeDoAnexoParaEnviar(input.media_filename, input.media_storage_path);
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,

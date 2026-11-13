@@ -10,6 +10,7 @@
  * desta função.
  */
 import { HOLIDAYS_BR_ISO } from "../lgpd/holidays-br";
+import { instanteDe, partesNoFuso } from "@/lib/agenda/fuso";
 
 const FERIADOS = new Set(HOLIDAYS_BR_ISO);
 
@@ -23,15 +24,25 @@ function eDiaUtil(d: Date): boolean {
   return !FERIADOS.has(isoDia(d));
 }
 
-/** Soma `dias` dias úteis a `de`, mantendo hora/minuto/segundo. */
-export function avancarDiasUteis(de: Date, dias: number): Date {
-  let cursor = new Date(de.getTime());
+/** Soma dias no calendário do fuso, preservando a hora local. Sem fuso, mantém o contrato UTC. */
+export function avancarDiasUteis(de: Date, dias: number, fuso = "UTC"): Date {
   let restam = Math.max(0, Math.trunc(dias));
+  if (restam === 0) return new Date(de.getTime());
+  const parede = partesNoFuso(de, fuso);
+  // UTC aqui representa só o CALENDÁRIO local: somar 24h ao instante real
+  // mudaria a hora de parede nas viradas de horário de verão.
+  const cursor = new Date(Date.UTC(parede.ano, parede.mes - 1, parede.dia));
   while (restam > 0) {
-    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
     if (eDiaUtil(cursor)) restam--;
   }
-  return cursor;
+  const resultado = instanteDe({
+    ...parede,
+    ano: cursor.getUTCFullYear(),
+    mes: cursor.getUTCMonth() + 1,
+    dia: cursor.getUTCDate(),
+  }, fuso);
+  return new Date(resultado.getTime() + de.getUTCMilliseconds());
 }
 
 /** `de` já é dia útil? Usado pra decidir se um passo pode rodar hoje. */

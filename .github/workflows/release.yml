@@ -107,8 +107,18 @@ jobs:
       # sem esta linha a resposta é 403 e a guarda recusaria corte legítimo.
       # Leitura só — quem escreve continua sendo o token do App.
       pull-requests: read
+    # Todo push na `main` entra neste job, e quase nenhum é corte. Num fork ou
+    # clone sem o App de release cadastrado, pedir o token aqui reprovava TODO
+    # merge ("The 'client-id' (or deprecated 'app-id') input must be set to a
+    # non-empty string" — medido no fork de @gabriel-lima-git-hub, PR #4462).
+    # A condição mora no `env` do job porque `if:` de passo não lê `secrets`.
+    # Com o App cadastrado nada muda: o token nasce aqui, antes da guarda, e o
+    # `app-slug` dele segue alimentando a Prova 1.
+    env:
+      RELEASE_APP_CADASTRADO: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/create-github-app-token@v3
+        if: env.RELEASE_APP_CADASTRADO == 'true'
         id: token
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
@@ -117,7 +127,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ steps.token.outputs.token }}
+          # Sem App o passo acima é pulado e a saída vem vazia; o checkout
+          # recusa `token` vazio, então cai no token do workflow (só leitura).
+          token: ${{ steps.token.outputs.token || github.token }}
 
       - uses: ./.github/actions/preparar-node
         # O teto do preâmbulo mora aqui porque passo de composite action não
@@ -351,6 +363,15 @@ jobs:
             echo "cortar=sim"       >> "$GITHUB_OUTPUT"
             echo "versao=${versao}" >> "$GITHUB_OUTPUT"
           fi
+
+      # Corte sem App não tem como dar certo: a tag empurrada pelo token do
+      # workflow não dispara `publish-image.yml`. Falha aqui, dizendo o porquê,
+      # em vez de um 403 no push logo abaixo.
+      - name: Corte exige o App de release
+        if: steps.pendente.outputs.cortar == 'sim' && env.RELEASE_APP_CADASTRADO != 'true'
+        run: |
+          echo "::error::Este push é um corte de release, mas RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY não estão cadastrados neste repositório (Settings → Secrets and variables → Actions)."
+          exit 1
 
       - name: Criar e empurrar a tag
         if: steps.pendente.outputs.cortar == 'sim'

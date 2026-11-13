@@ -12,6 +12,7 @@ import {
   MODOS_DE_ETIQUETA,
 } from "@/lib/inbox/marcador-da-conversa";
 import { PISO_DA_BUSCA, buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
+import { NOME_DE_ARQUIVO_MAX } from "@/lib/messaging/media/nome-de-arquivo";
 
 /**
  * O que a API aceita ESCREVER. Cinco valores, e a ausência de `pending`/`resolved`
@@ -86,6 +87,15 @@ const camposDoEnvio = z.object({
   body: z.string().min(1).max(4096).optional(),
   media_url: z.string().url().optional(),
   media_storage_path: z.string().min(1).max(500).optional(),
+  /**
+   * O nome ORIGINAL do anexo (#4457) — o que a pessoa escolheu no seletor.
+   *
+   * `media_storage_path` é `out-<uuid>.<ext>` e não tem nome legível; é este
+   * campo que viaja como `filename` do documento e fica gravado na linha para
+   * o balão e o download mostrarem o mesmo nome. Opcional de propósito: quem
+   * chama a API só com o storage_path (token) continua no basename, como antes.
+   */
+  media_filename: z.string().min(1).max(NOME_DE_ARQUIVO_MAX).optional(),
   media_mime: z.string().optional(),
   media_size_bytes: z.number().int().positive().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
