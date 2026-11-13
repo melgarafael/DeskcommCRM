@@ -433,8 +433,18 @@ export async function fecharConversaHandler(
   let devolucao: DesfechoDaDevolucao | null = null;
   if (opcoes.devolverAoAutomatico === true) {
     const dono = conv.assigned_to_user_id;
-    const papel = ctx.actor.role ?? "agent";
-    if (ctx.actor.type === "user" && dono !== null && dono !== ctx.actor.id && !roleAtLeast(papel, "manager")) {
+    // ⚠️ O PAPEL SÓ EXISTE NO ATOR-PESSOA. `Actor` é discriminado
+    // (`lib/api/handlers/types.ts`) e `role` não está em `webhook_source`:
+    // ler `ctx.actor.role` ANTES do discriminante é erro de tipo (TS2339) e
+    // derrubou o build deste PR. Por isso o discriminante abre a condição e a
+    // leitura acontece já estreitada — a ordem daqui pra frente é contrato,
+    // não estilo.
+    if (
+      ctx.actor.type === "user" &&
+      dono !== null &&
+      dono !== ctx.actor.id &&
+      !roleAtLeast(ctx.actor.role ?? "agent", "manager")
+    ) {
       // A recusa não é erro: fechar é o gesto pedido e segue. O motivo viaja.
       devolucao = { ok: false, motivo: "conversa_de_outro_atendente" };
     } else {

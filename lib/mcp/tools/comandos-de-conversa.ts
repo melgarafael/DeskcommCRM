@@ -61,12 +61,23 @@ function ctxDoHandler(
   };
 }
 
-/** A recusa em voz alta: o agente não comanda a própria automação. */
-function recusarAgente(ctx: { actor: { type: string } }): void {
+/**
+ * A recusa em voz alta: o agente não comanda a própria automação.
+ *
+ * `ApiError` é `(status, code, details, requestId, message?)` — o texto É O
+ * QUINTO argumento. Passá-lo em terceiro publicava `forbidden` no lugar da
+ * frase (`super(message ?? code)`), que é o defeito que o commit anterior
+ * consertou nas rotas e deixou aqui: a varredura parou no `_handler` e não
+ * entrou nas tools MCP. Daí o `ctx.requestId` na assinatura: o 403 precisa
+ * voltar correlacionável como os outros.
+ */
+function recusarAgente(ctx: { actor: { type: string }; requestId: string }): void {
   if (ctx.actor.type === "ai_agent") {
     throw new ApiError(
       403,
       "forbidden",
+      undefined,
+      ctx.requestId,
       "Quem pausa, retoma, encerra ou reabre uma conversa é uma pessoa ou uma integração autorizada — o próprio agente não comanda a sua automação.",
     );
   }

@@ -62,6 +62,17 @@ const DONO = "ffffffff-4517-4000-8000-0000000000ff";
 type Linha = Record<string, unknown>;
 
 /**
+ * As tabelas que este dublê tem de verdade — lista FECHADA de propósito.
+ *
+ * `Record<string, Linha[]>` fazia `tabelas.conversations` valer `Linha[] |
+ * undefined` sob `noUncheckedIndexedAccess`, e o `pnpm typecheck` do CI
+ * reprovava com TS18048 nas asserções. Declarar as chaves aqui é a asserção de
+ * existência no ponto em que a fixture MONTA as tabelas: quem lê
+ * `tabelas.conversations` recebe o array, e um nome fora da lista vira erro.
+ */
+type NomeDeTabela = "conversations" | "contacts" | "crm_leads";
+
+/**
  * Banco mínimo, com MEMÓRIA DO QUE FOI TOCADO.
  *
  * `tabelasTocadas` é o que prova o item 2: não basta a linha do funil não mudar
@@ -73,7 +84,7 @@ function banco(estado: {
   contatos?: Linha[];
   negocios?: Linha[];
 }) {
-  const tabelas: Record<string, Linha[]> = {
+  const tabelas: Record<NomeDeTabela, Linha[]> = {
     conversations: estado.conversas,
     contacts: estado.contatos ?? [],
     crm_leads: estado.negocios ?? [],
@@ -83,7 +94,7 @@ function banco(estado: {
   const chamadasRpc: Array<{ fn: string; args: Linha }> = [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function cadeia(tabela: string, op: "select" | "update", payload?: Linha): any {
+  function cadeia(tabela: NomeDeTabela, op: "select" | "update", payload?: Linha): any {
     const filtros: [string, unknown][] = [];
     const linhas = tabelas[tabela] ?? [];
     const casam = () => linhas.filter((l) => filtros.every(([c, v]) => l[c] === v));
@@ -111,7 +122,7 @@ function banco(estado: {
   }
 
   const cliente = {
-    from: (tabela: string) => {
+    from: (tabela: NomeDeTabela) => {
       tocadas.push(tabela);
       return {
         select: () => cadeia(tabela, "select"),
@@ -209,7 +220,7 @@ describe("#4517 entrega 2 — pausar a IA por token não troca responsável", ()
 
     expect(b.tabelas.conversations[0]?.assigned_to_user_id).toBeNull();
     expect(b.chamadasRpc.filter((c) => c.fn === "fn_conversation_assign")).toHaveLength(0);
-    expect(r.assumiu_ao_pausar).toBe(false);
+    expect(r).toMatchObject({ assumiu_ao_pausar: false });
   });
 
   it("a TELA continua igual: pessoa pausando conversa sem dono assume", async () => {
@@ -315,6 +326,15 @@ describe("#4517 entrega 2 — pausar a IA por token não troca responsável", ()
 
     expect(erro).toBeInstanceOf(ApiError);
     expect((erro as InstanceType<typeof ApiError>).status).toBe(403);
+    // A recusa tem de RESPONDER A FRASE. Com o texto na 3ª posição
+    // (`details`), `super(message ?? code)` publicava `forbidden` e a
+    // integração ficava sem saber o que fazer — foi o defeito que o commit
+    // anterior consertou nas rotas e deixou aqui, nas tools MCP.
+    expect((erro as InstanceType<typeof ApiError>).message).toContain(
+      "não comanda a sua automação",
+    );
+    // E o 403 volta correlacionável, como os demais erros do handler.
+    expect((erro as InstanceType<typeof ApiError>).requestId).toBe("req-4517");
     expect(b.atualizacoes).toHaveLength(0);
   });
 

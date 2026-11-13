@@ -62,6 +62,18 @@ const CHAVE = "ffffffff-4516-4000-8000-00000000000f";
 type Linha = Record<string, unknown>;
 
 /**
+ * As tabelas que este dublê tem de verdade — e a lista é FECHADA de propósito.
+ *
+ * `Record<string, Linha[]>` fazia `tabelas.crm_tasks` valer `Linha[] |
+ * undefined` com `noUncheckedIndexedAccess` (ligado no `tsconfig.json`): cinco
+ * TS18048 no arquivo, e o `pnpm typecheck` do CI reprovava. Declarar as chaves
+ * aqui é a asserção de existência no ponto em que a fixture MONTA as tabelas —
+ * quem lê `tabelas.crm_tasks` recebe o array, e um nome fora da lista vira erro
+ * de tipo em vez de `undefined` silencioso na hora do teste.
+ */
+type NomeDeTabela = "crm_tasks" | "idempotency_keys";
+
+/**
  * Dublê de banco com DUAS tabelas de verdade em memória.
  *
  * É maior que o usual de propósito: o comportamento sob teste (não duplicar) é
@@ -70,11 +82,15 @@ type Linha = Record<string, unknown>;
  * chama — não que a segunda chamada deixou de criar a segunda tarefa.
  */
 function banco() {
-  const tabelas: Record<string, Linha[]> = { crm_tasks: [], idempotency_keys: [] };
+  const tabelas: Record<NomeDeTabela, Linha[]> = { crm_tasks: [], idempotency_keys: [] };
   const estado = { insertsDeTarefa: 0, filtrosDaLista: [] as [string, unknown][] };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function consulta(tabela: string, op: "select" | "update" | "delete", payload?: Linha): any {
+  function consulta(
+    tabela: NomeDeTabela,
+    op: "select" | "insert" | "update" | "delete",
+    payload?: Linha,
+  ): any {
     const filtros: [string, unknown][] = [];
     const linhas = tabelas[tabela] ?? [];
     const casam = () => linhas.filter((l) => filtros.every(([c, v]) => l[c] === v));
@@ -157,7 +173,7 @@ function banco() {
   }
 
   const cliente = {
-    from: (tabela: string) => ({
+    from: (tabela: NomeDeTabela) => ({
       select: (colunas?: string) => consulta(tabela, "select").select(colunas),
       insert: (linha: Linha) => consulta(tabela, "insert", linha).insert(linha),
       update: (payload: Linha) => consulta(tabela, "update", payload),

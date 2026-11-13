@@ -45,6 +45,17 @@ const CONTATO = "dddddddd-4517-4000-8000-00000000000d";
 type Linha = Record<string, unknown>;
 
 /**
+ * As tabelas que este dublê tem de verdade — lista FECHADA de propósito.
+ *
+ * `Record<string, Linha[]>` fazia `tabelas.contacts` valer `Linha[] |
+ * undefined` sob `noUncheckedIndexedAccess`, e o `pnpm typecheck` do CI
+ * reprovava com TS18048 nas asserções. Declarar as chaves aqui é a asserção de
+ * existência no ponto em que a fixture MONTA as tabelas: quem lê
+ * `tabelas.contacts` recebe o array, e um nome fora da lista vira erro de tipo.
+ */
+type NomeDeTabela = "contacts" | "contact_field_proposals";
+
+/**
  * Banco de duas tabelas em memória — o mínimo que a PROPOSTA real lê e grava.
  *
  * `proporDadoDoContato` é a função DE VERDADE (não um dublê): o desfecho que
@@ -53,10 +64,10 @@ type Linha = Record<string, unknown>;
  * cadastro ficou intacto e a fila ganhou a linha.
  */
 function banco(contatos: Linha[]) {
-  const tabelas: Record<string, Linha[]> = { contacts: contatos, contact_field_proposals: [] };
+  const tabelas: Record<NomeDeTabela, Linha[]> = { contacts: contatos, contact_field_proposals: [] };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function consulta(tabela: string, op: "select" | "insert", payload?: Linha): any {
+  function consulta(tabela: NomeDeTabela, op: "select" | "insert", payload?: Linha): any {
     const filtros: [string, unknown][] = [];
     const linhas = tabelas[tabela] ?? [];
     const casam = () => linhas.filter((l) => filtros.every(([c, v]) => l[c] === v));
@@ -81,7 +92,7 @@ function banco(contatos: Linha[]) {
   }
 
   const cliente = {
-    from: (tabela: string) => ({
+    from: (tabela: NomeDeTabela) => ({
       select: (colunas?: string) => consulta(tabela, "select").select(colunas),
       insert: (linha: Linha) => consulta(tabela, "insert").insert(linha),
     }),
