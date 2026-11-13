@@ -19,7 +19,7 @@
  *     "Todas" de quem tem direito a vê-la;
  *   - contadores — o badge lê `counts` por CHAVE (`fila`, `automatico`, …), e
  *     a ordem nova não muda quem conta o quê;
- *   - as seis na mesma quantidade — uma aba perdida na remontagem do array não
+ *   - as sete na mesma quantidade — uma aba perdida na remontagem do array não
  *     quebra nada visível para quem já estava na primeira.
  */
 import { readFileSync } from "node:fs";
@@ -49,7 +49,7 @@ vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
 // chave: `automatico` é a da "Automático", `fila` é a da "Fila".
 vi.mock("@/hooks/inbox/useConversationCounts", () => ({
   useConversationCounts: () => ({
-    data: { fila: 3, mine: 2, all: 5, automatico: 7, closed: 4, archived: 1 },
+    data: { fila: 3, mine: 2, all: 5, automatico: 7, closed: 4, archived: 1, pessoal: 6 },
   }),
 }));
 
@@ -67,8 +67,11 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("as seis abas, na ordem pedida pela #2498", () => {
-  it("Automático, Fila, Minhas, Todas, Fechadas, Arquivadas — nessa ordem", () => {
+describe("as sete abas, na ordem pedida pela #2498", () => {
+  it("Automático, Fila, Minhas, Todas, Fechadas, Arquivadas, Pessoal — nessa ordem", () => {
+    // A sétima é da #4434 e fecha a faixa de propósito (é o único lugar da tela
+    // que não é trabalho). As seis da #2498 continuam na MESMA ordem relativa:
+    // a aba nova entrou no fim, não no meio.
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
     expect(abasRenderizadas()).toEqual([
       "Automático",
@@ -77,10 +80,11 @@ describe("as seis abas, na ordem pedida pela #2498", () => {
       "Todas",
       "Fechadas",
       "Arquivadas",
+      "Pessoal",
     ]);
   });
 
-  it("os VALUES e os rótulos são os MESMOS de antes, só reordenados", () => {
+  it("os VALUES e os rótulos são os MESMOS de antes, mais a aba Pessoal no fim", () => {
     // Pares lidos da FONTE, e não da tela: `value` é o que a rota recebe
     // (`?filter=ai`) e nenhum deles é exposto como atributo no `TabsTrigger`.
     // Um par trocado de rótulo nasceria um filtro que a rota não lê, e um par
@@ -97,6 +101,7 @@ describe("as seis abas, na ordem pedida pela #2498", () => {
       "all=Todas",
       "closed=Fechadas",
       "archived=Arquivadas",
+      "pessoal=Pessoal",
     ]);
   });
 
@@ -108,11 +113,12 @@ describe("as seis abas, na ordem pedida pela #2498", () => {
     expect(screen.getByRole("tab", { name: /^Todas/ })).toHaveTextContent("5");
     expect(screen.getByRole("tab", { name: /^Fechadas/ })).toHaveTextContent("4");
     expect(screen.getByRole("tab", { name: /^Arquivadas/ })).toHaveTextContent("1");
+    expect(screen.getByRole("tab", { name: /^Pessoal/ })).toHaveTextContent("6");
   });
 });
 
 describe("só a ordem muda — as permissões continuam quem eram", () => {
-  it("manager vê as seis, com 'Todas' no meio", () => {
+  it("manager vê as sete, com 'Todas' no meio e 'Pessoal' no fim", () => {
     expect(visibleInboxTabs("manager", "all")).toEqual([
       "ai",
       "unassigned",
@@ -120,6 +126,7 @@ describe("só a ordem muda — as permissões continuam quem eram", () => {
       "all",
       "closed",
       "archived",
+      "pessoal",
     ]);
   });
 
@@ -146,7 +153,7 @@ describe("só a ordem muda — as permissões continuam quem eram", () => {
     ]);
   });
 
-  it("a aba ativa continua podendo ser QUALQUER uma das seis", () => {
+  it("a aba ativa continua podendo ser QUALQUER uma das sete", () => {
     // A faixa é navegável por seta (`moveTab` anda pelo array): uma ordem nova
     // que embaralhasse os índices devolveria o operador à vizinha errada.
     render(<InboxFilters value={{ ...VALUE, tab: "closed" }} onChange={() => {}} />);
