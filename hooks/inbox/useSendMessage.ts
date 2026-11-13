@@ -14,6 +14,7 @@ interface SendArgs {
   media_mime?: string;
   media_storage_path?: string;
   media_size_bytes?: number;
+  media_filename?: string;
   type?: string;
   /**
    * Definição aprovada — o caminho de volta quando a janela de 24h fechou. A

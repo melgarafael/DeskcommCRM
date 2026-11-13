@@ -51,6 +51,7 @@ import { estadoDaJanela } from "@/lib/channels/janela";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
 import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
+import { CHAVE_DO_NOME_NA_METADATA, nomeDeArquivoLimpo } from "@/lib/messaging/media/nome-de-arquivo";
 import {
   buildVcard,
   normalizePhoneForDisplay,
@@ -1045,6 +1046,9 @@ export async function sendMessageHandler(
       // são do servidor: o dreno converte a âncora em data e o cron pede visão
       // paga pela marca. O cliente não as forja — ver `CHAVES_DA_DERIVACAO`.
       ...semChavesDaDerivacao(metadataDeEntrada),
+      ...(nomeDeArquivoLimpo(input.media_filename)
+        ? { [CHAVE_DO_NOME_NA_METADATA]: nomeDeArquivoLimpo(input.media_filename) }
+        : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
@@ -1313,7 +1317,10 @@ export async function sendMessageHandler(
         if (signErr || !signed?.signedUrl) {
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
-        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        const filename =
+          nomeDeArquivoLimpo(input.media_filename) ??
+          input.media_storage_path.split("/").pop() ??
+          undefined;
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1341,6 +1348,7 @@ export async function sendMessageHandler(
         // pela guarda anti-SSRF antes de a linha existir
         // (`assertUrlDeMidiaSegura`): ela chega também pela API pública e
         // pelo MCP, e quem a baixa é o gateway, de dentro da rede do servidor.
+        const filename = nomeDeArquivoLimpo(input.media_filename) ?? undefined;
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1352,6 +1360,7 @@ export async function sendMessageHandler(
           media: {
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
+            filename,
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,

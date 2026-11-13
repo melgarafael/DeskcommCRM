@@ -80,6 +80,8 @@ export const sendMessageSchema = z
     media_storage_path: z.string().min(1).max(500).optional(),
     media_mime: z.string().optional(),
     media_size_bytes: z.number().int().positive().optional(),
+    /** Nome original do arquivo anexado (#4422, #2613) para preservar no WhatsApp e no download. */
+    media_filename: z.string().max(255).optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
     /** Só em `type: "template"`. Nome exato aprovado na Meta. */
     template_name: z.string().min(1).max(512).optional(),

@@ -9,6 +9,7 @@ export interface UploadedMedia {
   media_mime: string;
   media_size_bytes: number;
   kind: "image" | "video" | "audio" | "document";
+  media_filename?: string | null;
 }
 
 /**

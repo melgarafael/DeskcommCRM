@@ -83,6 +83,7 @@ export function DocumentCard({
         href={src ?? mediaDownloadSrc(messageId)}
         target="_blank"
         rel="noreferrer"
+        download={label}
         aria-label={`${t("Baixar")} ${label} (${tamanho})`}
         className="flex shrink-0 items-center justify-center p-2 opacity-70 transition-opacity hover:opacity-100 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
       >
