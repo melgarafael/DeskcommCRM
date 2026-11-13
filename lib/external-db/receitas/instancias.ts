@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 
+import { destinoDoInteresseSchema } from "./destino-do-interesse";
 import { IDS_DAS_RECEITAS, receitaDe } from "./registro";
 import type { InstanciaDeReceita } from "./tipos";
 
@@ -27,6 +28,8 @@ export const instanciaDeReceitaSchemaItem = z
     descricao: z.string().trim().max(300, "pode ter no máximo 300 caracteres"),
     fixos: z.unknown(),
     ativa: z.boolean(),
+    /** R5b: onde nasce o negócio quando o cliente se interessa por um item (opcional). */
+    destino_do_interesse: destinoDoInteresseSchema.nullable().optional(),
   })
   .strict();
 

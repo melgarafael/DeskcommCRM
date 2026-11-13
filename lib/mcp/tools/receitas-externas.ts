@@ -25,6 +25,8 @@ import { z } from "zod";
 import { redigirArgsReceita } from "@/lib/ai/runtime/serialize";
 import { abrirAcesso } from "@/lib/external-db/acesso";
 import { lerReceitasDoBanco } from "@/lib/external-db/receitas/instancias";
+import { orientacaoDeInteresse } from "@/lib/external-db/receitas/destino-do-interesse";
+import { nomesDoDestinoValido } from "@/lib/external-db/receitas/destino-no-banco";
 import { limiteDaReceita } from "@/lib/external-db/receitas/limite";
 import { receitaDe } from "@/lib/external-db/receitas/registro";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
@@ -268,8 +270,14 @@ export const crmConsultarReceita: McpToolDefinition<typeof consultaReceitaShape>
       return { erro: "falha_na_leitura", mensagem: "não foi possível consultar o banco de origem agora." };
     }
 
+    // R5b: para onde vai o interesse do cliente num destes itens. Lido na hora (o
+    // funil pode ter sido arquivado), com a organização do contexto.
+    const destino = instancia.destino_do_interesse ?? null;
+    const nomes = destino ? await nomesDoDestinoValido(admin, ctx.organizationId, destino) : null;
+
     return {
       instancia: { id: instancia.id, receita: instancia.receita, rotulo: instancia.rotulo },
+      interesse: orientacaoDeInteresse(instancia.receita, destino, nomes),
       colunas: resultado.colunas,
       linhas: resultado.linhas,
       linhas_devolvidas: resultado.linhas.length,

@@ -54,8 +54,14 @@ export interface DefinicaoDeReceita {
   tabelas: (fixos: unknown) => string[];
   /** Por tabela, as colunas que o JOIN usa — entra na lista de fontes liberadas. */
   colunas: (fixos: unknown) => Record<string, string[]>;
-  /** Monta `{ sql, valores }` a partir de fixos + busca + limite. Valor só por `?`. */
-  montar: (fixos: unknown, busca: unknown, limite: number) => { sql: string; valores: unknown[] };
+  /**
+   * Monta `{ sql, valores }` a partir de fixos + busca + limite. Valor só por `?`.
+   *
+   * `idDoItem` prende a consulta num item só, pelo campo `id` da saída. Não está
+   * no Zod da busca: o agente não o preenche; quem o usa é o sistema, para
+   * conferir que o item de uma referência existe (`item-da-referencia.ts`).
+   */
+  montar: (fixos: unknown, busca: unknown, limite: number, idDoItem?: string) => { sql: string; valores: unknown[] };
   /** Teto absoluto de itens desta fatia (5: o C2 de tokens não foi medido). */
   tetoDeItens: number;
 }
@@ -71,4 +77,6 @@ export interface InstanciaDeReceita {
   descricao: string; // 0..300
   fixos: unknown; // validado pelo parametrosFixos da receita escolhida
   ativa: boolean;
+  /** R5b: funil e etapa onde nasce o negócio do interesse. Ausente = sem destino. */
+  destino_do_interesse?: { pipeline_id: string; stage_id: string } | null;
 }

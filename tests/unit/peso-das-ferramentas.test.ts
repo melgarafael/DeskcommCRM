@@ -95,7 +95,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_cancel_appointment": { tokens: 275, motivo: BASE },
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
-  "crm_create_lead": { tokens: 933, motivo: BASE },
+  "crm_create_lead": { tokens: 1003, motivo: "referencia_externa (Spec 25 R5): +70 do item escolhido e do funil opcional; a forma é conferida por refine, sem padrão no esquema" },
   "crm_update_lead": { tokens: 817, motivo: BASE },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
@@ -147,8 +147,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
-// mensagem (#4077).
-const TETO_TOTAL = 30667;
+// mensagem (#4077); +70 com `referencia_externa` no `crm_create_lead` (Spec 25 R5,
+// #3328).
+const TETO_TOTAL = 30737;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

@@ -310,7 +310,7 @@ export const RECEITA_TABELA_DIRETA: DefinicaoDeReceita = {
     if (f.esconder_quando?.coluna) colunas.push(f.esconder_quando.coluna);
     return { [f.tabela ?? ""]: colunas };
   },
-  montar: (fixos, busca, limite) => {
+  montar: (fixos, busca, limite, idDoItem) => {
     const f = (fixos ?? {}) as FixosDaReceita;
     const tabela = quotarIdentificadorMysql(f.tabela ?? "");
     const colunaId = quotarIdentificadorMysql(f.coluna_id ?? "");
@@ -347,6 +347,7 @@ export const RECEITA_TABELA_DIRETA: DefinicaoDeReceita = {
 
     // ─── 3. ONDE ─────────────────────────────────────────────────────────────
     const clausulas: string[] = [];
+    if (idDoItem !== undefined) clausulas.push(`${colunaId} = ${marcador(idDoItem)}`);
 
     // Só mostrar quando a coluna é igual ao valor.
     if (soMostrar?.coluna?.trim() && soMostrar.valor.trim().length > 0) {

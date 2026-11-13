@@ -312,3 +312,77 @@ describe("PUT /connections/:id/recipes", () => {
     expect(texto).not.toContain("Produtos publicados do WooCommerce");
   });
 });
+
+describe("PUT /connections/:id/recipes — destino do interesse (R5b)", () => {
+  const PIPE = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const ETAPA = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const COM_DESTINO = { ...INSTANCIA, destino_do_interesse: { pipeline_id: PIPE, stage_id: ETAPA } };
+
+  /** Cliente por tabela: a conexão existe (mysql); funil e etapa respondem o que o caso mandar. */
+  function clientePorTabela(funil: unknown, etapa: unknown) {
+    const gravado: { payload?: { receitas?: unknown } } = {};
+    const orgs: string[] = [];
+    const client = {
+      from: (tabela: string) => {
+        let atualizou = false;
+        const q: Record<string, unknown> = {};
+        q.select = () => q;
+        q.update = (payload: { receitas?: unknown }) => {
+          gravado.payload = payload;
+          atualizou = true;
+          return q;
+        };
+        q.eq = (c: string, v: unknown) => {
+          if (c === "organization_id") orgs.push(`${tabela}:${String(v)}`);
+          return q;
+        };
+        q.maybeSingle = async () => {
+          if (tabela === "crm_pipelines") return { data: funil, error: null };
+          if (tabela === "crm_stages") return { data: etapa, error: null };
+          return atualizou
+            ? { data: { receitas: gravado.payload?.receitas }, error: null }
+            : { data: { db_type: "mysql", receitas: [] }, error: null };
+        };
+        return q;
+      },
+    };
+    return { client, gravado, orgs };
+  }
+
+  // Linha a reverter para o caso ficar vermelho: tirar a chamada `primeiroDestinoInvalido`
+  // (ou o `if (destinoRuim !== null)`) da rota.
+  it("funil ou etapa que não servem nesta organização: 422 e NADA é gravado", async () => {
+    const { client, gravado } = clientePorTabela(null, null);
+    deps.admin.mockReturnValue(client);
+
+    const res = await PUT(put({ receitas: [COM_DESTINO] }), ctx);
+
+    expect(res.status).toBe(422);
+    expect(gravado.payload).toBeUndefined();
+    expect(deps.audit).not.toHaveBeenCalled();
+  });
+
+  it("destino válido: grava a lista com o destino, conferido com a organização da SESSÃO", async () => {
+    const { client, gravado, orgs } = clientePorTabela(
+      { id: PIPE, name: "Imóveis" },
+      { id: ETAPA, name: "Interesse" },
+    );
+    deps.admin.mockReturnValue(client);
+
+    const res = await PUT(put({ receitas: [COM_DESTINO] }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(gravado.payload?.receitas).toEqual([COM_DESTINO]);
+    expect(orgs).toEqual(expect.arrayContaining([`crm_pipelines:${ORG}`, `crm_stages:${ORG}`]));
+  });
+
+  it("instância sem destino continua gravando, sem consultar funil nem etapa", async () => {
+    const { client, orgs } = clientePorTabela(null, null);
+    deps.admin.mockReturnValue(client);
+
+    const res = await PUT(put({ receitas: [INSTANCIA] }), ctx);
+
+    expect(res.status).toBe(200);
+    expect(orgs.filter((o) => o.startsWith("crm_"))).toEqual([]);
+  });
+});
