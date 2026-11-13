@@ -6,6 +6,12 @@ import { ApiError, type ApiErrorBody } from "@/lib/api/types";
 
 export interface UploadedMedia {
   storage_path: string;
+  /**
+   * O nome como a pessoa escolheu o arquivo (#4457) — o caminho no bucket é
+   * `out-<uuid>.<ext>`. Ausente na rota de nota interna, que não sai para o
+   * cliente.
+   */
+  media_filename?: string | null;
   media_mime: string;
   media_size_bytes: number;
   kind: "image" | "video" | "audio" | "document";
