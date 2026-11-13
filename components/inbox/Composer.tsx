@@ -1232,7 +1232,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             usuarioId={usuarioId}
           />
         )}
-        <div className="flex items-end gap-2">
+        {/* `@container`: o botão de mensagens agendadas decide pela largura
+            DESTA linha, não da janela. A 1280px com o painel do contato aberto
+            a coluna é tão estreita quanto no celular, e um breakpoint de tela
+            não enxerga isso. */}
+        <div className="@container flex items-end gap-2">
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
               documento — porque a nota passou a aceitar anexo. A terceira

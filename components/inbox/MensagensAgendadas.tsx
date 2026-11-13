@@ -83,10 +83,13 @@ function useAgendamentos(conversationId: string) {
 
 /** Botão ao lado do Enviar, com o número de mensagens agendadas pendentes da conversa. */
 /**
- * O estado de aberto mora no Composer: no celular a porta é o item do "+"
- * (AttachMenu), e este botão some abaixo de `sm` para o campo de mensagem
- * manter a largura — a 375px o ícone a mais quebrava o placeholder em duas
- * linhas. O diálogo continua montado aqui, então as duas portas abrem o mesmo.
+ * O estado de aberto mora no Composer. A porta garantida é o item do "+"
+ * (AttachMenu), presente em qualquer largura; este botão só aparece quando a
+ * LINHA do composer tem 25rem ou mais (container query, não breakpoint de
+ * tela). Abaixo disso o ícone a mais quebrava o placeholder em duas linhas — a
+ * 375px no celular e também a 1280px com o painel do contato aberto, onde a
+ * coluna fica estreita com a janela larga. O diálogo continua montado aqui,
+ * então as duas portas abrem o mesmo.
  */
 export function MensagensAgendadasBotao({
   conversationId,
@@ -109,7 +112,7 @@ export function MensagensAgendadasBotao({
         type="button"
         variant="ghost"
         size="icon"
-        className="relative hidden shrink-0 sm:inline-flex"
+        className="relative hidden shrink-0 @min-[25rem]:inline-flex"
         onClick={() => onAbertoChange(true)}
         aria-label={t("Mensagens agendadas")}
         title={t("Mensagens agendadas")}

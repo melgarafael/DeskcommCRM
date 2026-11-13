@@ -20,10 +20,11 @@ interface Props {
   onPick: (files: File[]) => void;
   onPickContact?: () => void;
   /**
-   * Abre as mensagens agendadas (#4131). O item só aparece abaixo de `sm`: no
-   * celular o botão de calendário sai da linha do campo, que não tem largura
-   * para mais um ícone de 44px, e entra aqui. Acima de `sm` o botão continua ao
-   * lado do Enviar.
+   * Abre as mensagens agendadas (#4131). O item aparece em qualquer largura:
+   * é a porta garantida. O botão de calendário ao lado do Enviar só aparece
+   * quando a linha do campo tem largura para ele (container query em
+   * MensagensAgendadas.tsx), e o conteúdo deste popover é renderizado fora
+   * dessa linha, então não teria como esconder-se pela mesma medida.
    */
   onAgendar?: () => void;
 }
@@ -98,7 +99,7 @@ export function AttachMenu({ disabled, onPick, onPickContact, onAgendar }: Props
             {onAgendar && (
               <button
                 type="button"
-                className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted sm:hidden"
+                className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted lg:min-h-0"
                 onClick={onAgendar}
               >
                 <CalendarDots size={18} weight="duotone" className="text-primary" aria-hidden />
