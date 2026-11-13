@@ -106,11 +106,20 @@ case "${1:-}" in
     # `docker buildx version`: o plugin existe, salvo no caso 7.
     if [ "${2:-}" = version ]; then [ -f "$DUB/sem-buildx" ] && exit 1; exit 0; fi
     # `docker buildx imagetools inspect` é a SONDA do registro: só responde
-    # enquanto `$DUB/registro` existir — e, com ele de pé, só para as imagens
-    # cuja publicação TERMINOU (`$DUB/voz-pronta` é o interruptor do caso 4).
+    # enquanto `$DUB/registro` existir — e, com ele de pé, uma tag JÁ PUBLICADA
+    # responde sempre. A voz da versão ALVO (0.9.0) é a única que depende de a
+    # publicação ter TERMINADO (`$DUB/voz-pronta`, o interruptor do caso 4).
+    #
+    # A distinção por TAG é o que a sonda de controle usa para separar "esta
+    # imagem não foi publicada" de "o registro está fora": na VPS real a tag
+    # INSTALADA (0.8.0) está no registro com certeza — é a que está rodando.
+    # Um shim que negasse 0.8.0 junto com 0.9.0 transformaria imagem faltando
+    # em apagão de rede e o caso 4 mediria outra coisa.
     [ -f "$DUB/registro" ] || exit 1
     case "$*" in
-      *deskcomm-voice-agent*) [ -f "$DUB/voz-pronta" ] || exit 1 ;;
+      *deskcomm-voice-agent*)
+        case "$*" in *:0.9.0*) [ -f "$DUB/voz-pronta" ] || exit 1 ;; esac
+        ;;
     esac
     exit 0 ;;
 esac
@@ -438,20 +447,25 @@ echo "── caso 4 — critério 1: release com imagem faltando NÃO é ofereci
 . "$RAIZ/hostgator-setup-kit/_common.sh"
 set +e
 preparar_vps
-v="$(veredito_das_imagens_da_release 0.9.0)"
+# A versão INSTALADA entra junto porque é ela a sonda de controle: `com_prazo`
+# devolve o mesmo silêncio para "a tag não existe" e "o registro não respondeu",
+# e só a tag que já está rodando (0.8.0) separa as duas — é assim que o
+# `agent.sh` chama (agent.sh:286). Sem ela, toda falha de sonda vira
+# `indisponivel` e `incompleta` fica inalcançável.
+v="$(veredito_das_imagens_da_release 0.9.0 0.8.0)"
 if [ "$v" = "prontas" ]; then ok "as quatro prontas: a release pode ser anunciada"
 else nao "as quatro prontas" "prontas" "$v"; fi
 
 rm -f "$DUB/voz-pronta"
-v="$(veredito_das_imagens_da_release 0.9.0)"
+v="$(veredito_das_imagens_da_release 0.9.0 0.8.0)"
 if [ "$v" = "incompleta" ]; then ok "voz sem publicar: a release está INCOMPLETA e não se oferece"
 else nao "release incompleta" "incompleta" "$v"; fi
-v="$(veredito_das_imagens_da_release v0.9.0)"
+v="$(veredito_das_imagens_da_release v0.9.0 0.8.0)"
 if [ "$v" = "incompleta" ]; then ok "e o 'v' da tag não confunde a sonda"
 else nao "sonda com o v da tag" "incompleta" "$v"; fi
 
 rm -f "$DUB/registro"
-v="$(veredito_das_imagens_da_release 0.9.0)"
+v="$(veredito_das_imagens_da_release 0.9.0 0.8.0)"
 if [ "$v" = "indisponivel" ]; then
   ok "CONTROLE: registro fora → indisponível, que é o estado que NÃO cala o agente"
 else nao "registro fora" "indisponivel" "$v"; fi

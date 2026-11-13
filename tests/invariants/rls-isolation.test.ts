@@ -666,6 +666,21 @@ beforeAll(() => {
           values (v_org, 'rls-invariant-' || v_org::text, v_conv, v_contact, true, 'completed', 0);
         end if;
 
+        -- migration 9222 (#4058, fatia 1): o gateway de pagamento PROPRIO da
+        -- organizacao. Vazar a linha entrega ao vizinho qual conta recebe o
+        -- dinheiro da empresa e o last4 da chave. A leitura e org-scoped sem
+        -- gate de papel (a tela de cobranca precisa saber se ha gateway), e a
+        -- escrita exige admin -- esse segundo eixo NAO e medido aqui.
+        if not exists (select 1 from public.organization_payment_gateways where organization_id = v_org) then
+          insert into public.organization_payment_gateways
+            (organization_id, provider, mode, api_key_encrypted, api_key_iv, api_key_tag,
+             api_key_last4, webhook_secret_encrypted, webhook_secret_iv, webhook_secret_tag,
+             webhook_secret_last4)
+          values
+            (v_org, 'stripe', 'teste', '\\x00'::bytea, '\\x00'::bytea, '\\x00'::bytea,
+             '0000', null, null, null, null);
+        end if;
+
         -- migration 9312 (#3509, degrau 1) -- o recebimento do cliente final
         -- registrado na conversa. A semente usa v_conv (a policy de leitura confere
         -- o par conversa/organizacao) e o estado 'pendente', unico que nao exige
@@ -740,6 +755,11 @@ export const TABLES = [
   // existe trunk configurado); a ESCRITA exige admin (mesmo nivel de
   // ai_provider_credentials) e NAO e medida aqui.
   "voip_trunk_settings",
+  // migration 9222 (#4058, fatia 1) — o gateway de pagamento PROPRIO da
+  // organizacao: qual conta recebe o dinheiro dela. A leitura e org-scoped sem
+  // gate de papel (a tela de cobranca precisa saber se ha gateway); a ESCRITA
+  // exige admin e NAO e medida aqui (sessao semeada e `agent`).
+  "organization_payment_gateways",
   // phone_numbers (SIP module, #677): numeros (DID) que recebem ligacao.
   // Leitura/escrita org-scoped (sem segundo eixo medido aqui -- ver a nota
   // de DIVIDA_RBAC_CONHECIDA em rbac-config-ia-canais.test.ts).
