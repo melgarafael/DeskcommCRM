@@ -55,7 +55,7 @@ describe("push usa o executor comum por compromisso", () => {
     expect(reconcileAppointment).toHaveBeenCalledWith(expect.anything(), org, "appointment");
     expect(filters[0]).toContain("needs_google_push.eq.true");
     // A cadeia inteira passa pelo dublê: o recorte de status é o mesmo da view
-    // (`calendar_service_google_candidates`), e é ele que o `.in()` aplica.
+    // (`calendar_service_google_push_queue`), e é ele que o `.in()` aplica.
     expect(filters).toContain("in:status=pending,confirmed,cancelled");
   });
   it("sem conexão/claim disponível não marca sucesso nem audita entrega", async () => {

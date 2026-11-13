@@ -14917,6 +14917,27 @@ export type Database = {
       };
       calendar_service_google_candidates: {
         Row: {
+          google_conflict: Json | null;
+          google_event_id: string | null;
+          google_next_attempt_at: string;
+          id: string;
+          needs_google_push: boolean | null;
+          organization_id: string;
+          owner_user_id: string | null;
+        };
+        ComputedFields: never;
+        Relationships: [
+          {
+            foreignKeyName: "calendar_appointments_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      calendar_service_google_push_queue: {
+        Row: {
           ends_at: string;
           google_conflict: Json | null;
           google_event_id: string | null;

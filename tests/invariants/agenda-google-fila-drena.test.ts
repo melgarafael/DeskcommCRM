@@ -185,7 +185,7 @@ function contagemAntiga(): number {
 /** A fila como o banco a entrega para quem lê a view direto (SQL). */
 function idsDaViewPelaFila(): string[] {
   const saida = sql(`
-    select a.id from public.calendar_service_google_candidates a
+    select a.id from public.calendar_service_google_push_queue a
      where ${O_DA_FILA}
        and a.google_next_attempt_at <= now()
        and a.owner_user_id is not null

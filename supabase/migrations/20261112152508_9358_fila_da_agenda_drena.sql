@@ -1,4 +1,4 @@
--- manifest: **A fila do push do Google drena: compromisso encerrado e cancelado já convergido saem da seleção (#4448, segunda porta).** `calendar_service_google_candidates` não filtrava `status` nem data, e o ramo `google_event_id is not null and google_conflict is null` da fila admitia TODO compromisso já publicado; na issue são 8 compromissos encerrados (6 `completed`, 1 `cancelled`, 1 `no_show`) presos a um ciclo de 5 minutos. A view passa a exigir `status in ('pending','confirmed','cancelled')` — `completed`/`no_show` não empurram (lib/agenda/laco.ts) — e `ends_at` depois do INÍCIO da janela que o sync já usa (`now()-interval '1 day'`, a mesma de `window_start` em `fn_google_calendar`). O `cancelled` fica porque é ele que pede a remoção do evento no Google. `status` e `ends_at` entram no FIM da view (create or replace só aceita coluna nova no fim) e são o que `lib/agenda/google/candidates.ts` repete, para o filtro valer também antes do `limit 50`. Idempotente (`create or replace view`, ACL preservada; grants repetidos). Prova em `tests/invariants/agenda-google-fila-drena.test.ts` e `tests/invariants/agenda-google-recovery.test.ts`.
+-- manifest: **A fila do push do Google drena: compromisso encerrado e cancelado já convergido saem da seleção (#4448, segunda porta).** `calendar_service_google_candidates` não filtrava `status` nem data, e o ramo `google_event_id is not null and google_conflict is null` da fila admitia TODO compromisso já publicado; na issue são 8 compromissos encerrados (6 `completed`, 1 `cancelled`, 1 `no_show`) presos a um ciclo de 5 minutos. A view da fila passa a exigir `status in ('pending','confirmed','cancelled')` — `completed`/`no_show` não empurram (lib/agenda/laco.ts) — e `ends_at` depois do INÍCIO da janela que o sync já usa (`now()-interval '1 day'`, a mesma de `window_start` em `fn_google_calendar`). O `cancelled` fica porque é ele que pede a remoção do evento no Google. `status` e `ends_at` entram no FIM da view (create or replace só aceita coluna nova no fim) e são o que `lib/agenda/google/candidates.ts` repete, para o filtro valer também antes do `limit 50`. Idempotente (`create or replace view`, ACL preservada; grants repetidos). Prova em `tests/invariants/agenda-google-fila-drena.test.ts` e `tests/invariants/agenda-google-recovery.test.ts`.
 --
 -- 9358 — A FILA DO PUSH DRENA (#4448, segunda porta).
 --
@@ -51,13 +51,24 @@
 -- `agenda-google-fila-drena` compara os dois conjuntos (SQL direto na view × a
 -- função de candidatos) e reprova se um lado ficar sem o recorte.
 --
--- ⚠️ NO `baseline.sql` O CORPO APARECE DUAS VEZES, e tem de ser idêntico: a
--- definição original da view (logo abaixo do `fn_google_appointment`) também
--- recebeu o recorte, porque o `update.sh` aplica o baseline inteiro DE NOVO
--- sobre o schema instalado — e `create or replace view` não aceita recriar com
--- menos colunas ("cannot drop columns from view"). O bloco do apêndice é o
--- espelho desta migration; os dois textos são os mesmos.
-create or replace view public.calendar_service_google_candidates with (security_invoker=true) as
+-- ⚠️ VIEW NOVA (`calendar_service_google_push_queue`), e NÃO coluna nova em
+-- `calendar_service_google_candidates`. Medido: aquela view é criada por
+-- `create or replace view` na 0716 — migration JÁ APLICADA, que não se edita
+-- (AGENTS.md) — e a cadeia de invariantes reaplica TODA migration sobre o estado
+-- de instalação, que traz o apêndice do baseline já com a forma final. Alargar a
+-- view histórica no apêndice faz a 0716 tentar recriá-la com a lista antiga e o
+-- Postgres responder `cannot drop columns from view` (linha 987 da 0716), o que
+-- derruba a transação inteira dela — e com ela `fn_appointment_change`,
+-- `fn_google_appointment` e `fn_google_resolve`. O recorte é da FILA, e a fila tem
+-- um consumidor só (`lib/agenda/google/candidates.ts`), então ele ganha view
+-- própria: nasce aqui, e é ela que pode evoluir com `create or replace`.
+--
+-- `status` e `ends_at` entram no FIM (create or replace só aceita coluna nova no
+-- fim) e são o que `candidates.ts` repete, para o filtro valer também antes do
+-- `limit 50`. O corpo aparece uma vez só no `baseline.sql`, no apêndice desta
+-- migration, e é idempotente (`create or replace view`, ACL preservada; grants
+-- repetidos) para o `update.sh`, que aplica o baseline inteiro de novo.
+create or replace view public.calendar_service_google_push_queue with (security_invoker=true) as
  select a.id,a.organization_id,
   case when a.service_occurrence_id is null and not a.service_block then a.owner_user_id else coalesce(link.user_id,dest.user_id) end owner_user_id,
   a.needs_google_push,a.google_event_id,a.google_conflict,a.google_next_attempt_at,
@@ -70,6 +81,6 @@ create or replace view public.calendar_service_google_candidates with (security_
   and not exists(select 1 from public.contacts c where c.organization_id=a.organization_id and c.id=a.contact_id and c.is_anonymized)
   and a.status in ('pending','confirmed','cancelled')
   and a.ends_at>now()-interval '1 day';
-revoke all on public.calendar_service_google_candidates from public,anon,authenticated;
-grant select on public.calendar_service_google_candidates to service_role;
+revoke all on public.calendar_service_google_push_queue from public,anon,authenticated;
+grant select on public.calendar_service_google_push_queue to service_role;
 notify pgrst,'reload schema';
