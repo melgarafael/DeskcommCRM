@@ -820,6 +820,14 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Sin conexión directa con Meta, la venta de quien vino de un anuncio puede ir por el canal intermediado de WhatsApp, cuando este ya vincula tu conjunto de datos de Meta al número. Al proveedor del canal salen el valor, la moneda, el teléfono del cliente y la conversación. Viene desactivado: actívalo solo si tu política de privacidad cubre ese uso.",
     },
+  "Indisponível: nenhum canal desta organização consegue enviar a venda. Esse envio só existe para o WhatsApp conectado por um provedor intermediado. Com o número por QR Code ou pela API oficial direta, a venda sai pela conexão direta com a Meta (conjunto de dados e token), logo acima.":
+    {
+      es: "No disponible: ningún canal de esta organización puede enviar la venta. Este envío solo existe para el WhatsApp conectado por un proveedor intermediario. Con el número por código QR o por la API oficial directa, la venta sale por la conexión directa con Meta (conjunto de datos y token), justo arriba.",
+    },
+  "Nenhum canal desta organização consegue enviar a venda por aqui, então nada sai enquanto isto estiver ligado. Use a conexão direta com a Meta, logo acima, ou desligue a chave.":
+    {
+      es: "Ningún canal de esta organización puede enviar la venta por aquí, así que no sale nada mientras esto esté activado. Usa la conexión directa con Meta, justo arriba, o desactiva el interruptor.",
+    },
   "O telefone vai em SHA-256, nunca em claro, e ajuda o Google a ligar a conversão a quem clicou no anúncio. É dado pessoal: ligue só se a sua política de privacidade cobre esse uso.":
     {
       es: "El teléfono va en SHA-256, nunca en claro, y ayuda a Google a vincular la conversión con quien hizo clic en el anuncio. Es un dato personal: actívalo solo si tu política de privacidad cubre ese uso.",
