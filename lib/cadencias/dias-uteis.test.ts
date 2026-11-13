@@ -3,6 +3,21 @@ import { describe, expect, it } from "vitest";
 import { avancarDiasUteis, eDiaUtilBR } from "./dias-uteis";
 
 describe("avancarDiasUteis", () => {
+  it.each([
+    ["sexta à noite em São Paulo", "2026-11-14T01:30:00.000Z", "America/Sao_Paulo", "2026-11-17T01:30:00.000Z"],
+    ["sexta de madrugada em Tóquio", "2026-01-08T15:30:00.000Z", "Asia/Tokyo", "2026-01-11T15:30:00.000Z"],
+    ["feriado de 20/11 no calendário local", "2026-11-20T01:30:00.000Z", "America/Sao_Paulo", "2026-11-24T01:30:00.000Z"],
+    ["virada de horário de verão", "2026-03-06T19:37:12.345Z", "America/New_York", "2026-03-09T18:37:12.345Z"],
+  ])("preserva a hora local e o calendário: %s", (_caso, de, fuso, esperado) => {
+    expect(avancarDiasUteis(new Date(de), 1, fuso).toISOString()).toBe(esperado);
+  });
+
+  it("preserva segundos e milissegundos no avanço sem mudança de offset", () => {
+    const de = new Date("2026-01-05T17:37:12.345Z");
+    expect(avancarDiasUteis(de, 1, "America/Sao_Paulo").toISOString()).toBe("2026-01-06T17:37:12.345Z");
+    expect(de.toISOString()).toBe("2026-01-05T17:37:12.345Z");
+  });
+
   it("pula fim de semana", () => {
     // sexta-feira 2026-01-02 14:00 UTC + 1 dia útil = segunda 2026-01-05 14:00
     const sexta = new Date("2026-01-02T14:00:00.000Z");
