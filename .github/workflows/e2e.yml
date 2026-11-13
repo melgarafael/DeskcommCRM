@@ -1487,6 +1487,7 @@ jobs:
         suspensao-administrativa.spec.ts
         integracao-dados-fontes-liberadas.spec.ts
         atender-pelo-celular.spec.ts
+        inbox-baixar-midia-e-ordem.spec.ts
 
       # ─── PARTE 7 — nasceu em 2026-10-22, uma parte COMUM ───
       #
@@ -1570,6 +1571,7 @@ jobs:
         webhooks.spec.ts
         system-update.spec.ts
         respostas-rapidas-conteudos.spec.ts
+        b2b-vinculos-pela-tela.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

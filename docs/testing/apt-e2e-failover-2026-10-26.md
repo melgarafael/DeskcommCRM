@@ -23,6 +23,30 @@ de fonte nem limpeza APT. Fora de `GITHUB_ACTIONS=true` e
 Após a troca, o próximo orçamento inclui `apt-get update --error-on=any` e a
 instalação; não se aceita índice parcialmente atualizado como sucesso.
 
+## 11/11/2026 — runner que não resolve nome
+
+**CONFIRMADO no log** (run 43014074395, criado 11:41Z; também 43023280678 e
+43027136525): o `apt-get update` do `playwright install --with-deps` devolveu
+`Temporary failure resolving` para `azure.archive.ubuntu.com`,
+`archive.ubuntu.com` e `security.ubuntu.com`, gastou 3min 20s (os 180 s do
+`timeout` mais os 20 s do `-k`) e fechou com `W: Some index files failed to
+download`. Seis das oito partes reprovaram na tentativa 1 de 3; as partes 5 e 7,
+em outros runners, passaram.
+
+A causa do vermelho sem repetição: o ramo "fora do transporte APT" procura
+`Failed to download` sem diferenciar caixa, para reconhecer o CDN do browser, e
+casava o aviso do próprio apt. Nenhum download de browser tinha começado.
+
+O helper agora reconhece `Temporary failure resolving` e `Could not resolve`
+antes desse ramo e depois do fatal: limpa o apt, espera 20 s e 40 s e repete,
+sem trocar a fonte — o destino da troca falhava junto. As mesmas recusas valem:
+só no runner descartável do GitHub, e hash, assinatura, pacote e dpkg continuam
+vermelhos na hora. Cercas em `tests/unit/e2e-apt-recupera-dns.test.ts`.
+
+**Limite:** três tentativas de 200 s mais 60 s de espera somam 660 s, dentro
+dos 12 min do passo por 60 s. Se a repetição de fato recupera num runner real
+não foi medido: só as próximas rodadas dizem.
+
 **Prova local:** corpos reais do workflow com fontes temporárias e shims de
 APT/sudo/timeout; nenhum apt da máquina de teste é executado. Antes do ajuste,
 o cenário inicial teve 8 falhas e 3 controles verdes. Desativar somente a chamada

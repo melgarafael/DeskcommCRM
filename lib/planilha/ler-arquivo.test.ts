@@ -148,6 +148,32 @@ describe("parseImportFile — CSV com os dois separadores", () => {
  * telefone gravado como NÚMERO (o Excel converte 11999990000 em número sem avisar).
  */
 describe("parseImportFile — XLSX", () => {
+  it("preserva a posição de linhas esparsas sem contar as lacunas no teto", async () => {
+    const r = await parseImportFile(
+      xlsx({
+        abas: [{ nome: "Lista", arquivo: "sheet1.xml" }],
+        compartilhados: ["Empresa", "Padaria Um", "Padaria Dois"],
+        celulas: () =>
+          "<sheetData>" +
+          '<row r="1"><c r="A1" t="s"><v>0</v></c></row>' +
+          '<row r="3"/>' +
+          '<row r="5"><c r="A5" t="s"><v>1</v></c></row>' +
+          '<row r="12"><c r="A12" t="s"><v>2</v></c></row>' +
+          "</sheetData>",
+      }),
+      "lista.xlsx",
+      { maxLinhas: 2 },
+    );
+    expect(r).toEqual({
+      ok: true,
+      sheet: {
+        headers: ["Empresa"],
+        rows: [["Padaria Um"], ["Padaria Dois"]],
+        rowNumbers: [5, 12],
+      },
+    });
+  });
+
   it("lê a primeira aba na ordem das abas, com texto compartilhado e número", async () => {
     const r = await parseImportFile(
       xlsx({
