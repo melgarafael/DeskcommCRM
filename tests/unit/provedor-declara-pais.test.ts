@@ -13,15 +13,30 @@
 import { describe, expect, it } from "vitest";
 
 import { PROVEDORES, PROVEDORES_DE_DECISAO } from "@/lib/ai/pontos/provedores";
+import type { ProvedorSuportado } from "@/lib/ai/pontos/provedores";
 import { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
+
+/** O que este teste lê de cada entrada: o id, o país declarado e a fonte dele. */
+type DeclaracaoDePais = Pick<ProvedorSuportado, "id" | "pais" | "fonteDoPais">;
 
 /**
  * TUDO o que a tela de IA oferece, inclusive o provedor de voz: a tela de
  * Credenciais mostra a linha de residência em toda chave salva, então um
  * provedor fora desta lista seria justamente o que a tela não saberia
  * responder (#4519).
+ *
+ * A lista é lida pela FORMA DO CONTRATO (`DeclaracaoDePais`), não pelos
+ * literais congelados de cada entrada: as listas são `as const`, então hoje a
+ * união de `pais` é só `"desconhecido" | "China"`. `"local"` é valor legítimo
+ * do contrato (modelo que roda no servidor do operador) e este teste precisa
+ * poder cobri-lo — comparar com ele sobre a união literal faria o TS estreitar
+ * `p` até `never` e apagar `id`/`pais`.
  */
-const TODOS = [...PROVEDORES, ...PROVEDORES_DE_DECISAO, ...PROVEDORES_DE_SERVICO];
+const TODOS: readonly DeclaracaoDePais[] = [
+  ...PROVEDORES,
+  ...PROVEDORES_DE_DECISAO,
+  ...PROVEDORES_DE_SERVICO,
+];
 
 describe("o catálogo declara onde o texto é processado", () => {
   it("todo provedor responde à pergunta, mesmo quando a resposta é 'não se sabe'", () => {
