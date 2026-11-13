@@ -75042,6 +75042,88 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
 
+-- ---- fonte do catálogo sincronizada (migration 9222, issue #3587) ----
+-- Espelho idempotente da 9222. A tabela e a coluna nascem no apêndice, e não no
+-- bloco do `create table catalog_products`, pelo mesmo motivo das outras
+-- entradas daqui: o `update.sh` pula o create de tabela que já existe, e a
+-- coluna nova precisa alcançar toda instalação já instalada.
+create table if not exists public.catalog_feed_sources (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  url text not null,
+  formato text not null default 'json',
+  mapeamento jsonb not null default '{}'::jsonb,
+  ativo boolean not null default true,
+  ultima_leitura_em timestamptz,
+  ultimo_resumo jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint catalog_feed_sources_url_http check (url ~* '^https?://')
+);
+
+-- UMA fonte por organização: duas disputariam o mesmo produto com dois preços.
+create unique index if not exists catalog_feed_sources_org_key
+  on public.catalog_feed_sources (organization_id);
+
+alter table public.catalog_products
+  add column if not exists id_externo text;
+
+create unique index if not exists catalog_products_org_id_externo_key
+  on public.catalog_products (organization_id, id_externo)
+  where id_externo is not null;
+
+comment on column public.catalog_products.id_externo is
+  'Identidade do produto no FEED da revenda (issue #3587). É a chave do casamento da sincronização: id externo igual = mesmo produto, atualiza em vez de criar. Nulo = produto que não veio de feed.';
+
+alter table public.catalog_feed_sources enable row level security;
+
+drop policy if exists catalog_feed_sources_select on public.catalog_feed_sources;
+create policy catalog_feed_sources_select on public.catalog_feed_sources
+  for select using (
+    (organization_id in (select public.fn_user_org_ids())) or (select public.fn_is_platform_admin())
+  );
+
+drop policy if exists catalog_feed_sources_insert on public.catalog_feed_sources;
+create policy catalog_feed_sources_insert on public.catalog_feed_sources
+  for insert with check (
+    (select public.fn_is_platform_admin_full())
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+drop policy if exists catalog_feed_sources_write on public.catalog_feed_sources;
+create policy catalog_feed_sources_write on public.catalog_feed_sources
+  for update using (
+    (select public.fn_is_platform_admin_full())
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  )
+  with check (
+    (select public.fn_is_platform_admin_full())
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+drop policy if exists catalog_feed_sources_delete on public.catalog_feed_sources;
+create policy catalog_feed_sources_delete on public.catalog_feed_sources
+  for delete using (
+    (select public.fn_is_platform_admin_full())
+    or ((organization_id in (select public.fn_user_org_ids()))
+        and public.fn_role_at_least(organization_id, 'manager'))
+  );
+
+revoke all on public.catalog_feed_sources from anon;
+grant select, insert, update, delete on public.catalog_feed_sources to authenticated;
+grant all on public.catalog_feed_sources to service_role;
+
+drop trigger if exists trg_catalog_feed_sources_updated_at on public.catalog_feed_sources;
+create trigger trg_catalog_feed_sources_updated_at
+  before update on public.catalog_feed_sources
+  for each row execute function public.fn_set_updated_at();
+
+comment on table public.catalog_feed_sources is
+  'A fonte do catálogo sincronizado (issue #3587): a URL do feed que a revenda publica, o formato e o mapeamento de campos. UMA por organização. O cron `catalog-feed-sync` lê as ativas; item que sai do feed vira `ativo = false`, nunca DELETE.';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.

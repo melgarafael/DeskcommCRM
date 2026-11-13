@@ -169,6 +169,14 @@ CRONS="
 # pagar, e a diferença entre nascer às 5h ou às 17h não muda nada para quem paga.
 # Barato: uma consulta por instalação, e quem não tem molde nenhum sai na hora.
 50 5 * * *|60|api/v1/cron/recurring-entries
+# O CATALOGO DA REVENDA. A revenda publica o estoque num feed JSON/CSV; este
+# cron e o que faz o catalogo acompanhar sem ninguem clicar (issue #3587).
+# De 2 em 2 horas: catalogo de loja muda no ritmo do estoque, preco errado por
+# duas horas e recuperavel, e 96 buscas por dia no site da revenda seriam abuso
+# sem ganho. Minuto 25, fora das outras varreduras. Sem fonte ativa, o portao
+# catalogo_do_feed (lib/cron/piso-ocioso.ts) faz a batida sair antes de
+# qualquer leitura no banco.
+25 */2 * * *|120|api/v1/cron/catalog-feed-sync
 "
 
 # CRONTAB_PATH é ponto de injeção do teste (tests/shell/scheduler-entrypoint.test.sh).
