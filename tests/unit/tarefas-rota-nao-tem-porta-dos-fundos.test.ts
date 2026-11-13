@@ -90,6 +90,7 @@ const COLUNA = { organization_id: 0, lead_id: 1, type: 3, reason: 9 } as const;
 function fazerSupabase(respostas: Resposta[]) {
   const tabelas: string[] = [];
   const filtros: Array<[string, unknown]> = [];
+  const atualizacoes: unknown[] = [];
   let i = 0;
   const proxima = (): Resposta => respostas[Math.min(i++, respostas.length - 1)] ?? { data: null };
 
@@ -100,9 +101,10 @@ function fazerSupabase(respostas: Resposta[]) {
       const r = proxima();
       return Promise.resolve({ data: r.data ?? null, error: r.error ?? null });
     };
-    for (const metodo of ["select", "insert", "update", "delete", "order", "limit", "in", "gte", "lte"]) {
+    for (const metodo of ["select", "insert", "delete", "order", "limit", "in", "gte", "lte"]) {
       elo[metodo] = () => elo;
     }
+    elo.update = (valores: unknown) => (atualizacoes.push(valores), elo);
     elo.eq = (coluna: string, valor: unknown) => {
       filtros.push([coluna, valor]);
       return elo;
@@ -132,7 +134,7 @@ function fazerSupabase(respostas: Resposta[]) {
   const atividades = () =>
     consultas.filter((c) => c.sql.includes("insert into crm_lead_activities"));
 
-  return { tabelas, filtros, consultas, atividades };
+  return { tabelas, filtros, consultas, atividades, atualizacoes };
 }
 
 const LINHA = {
@@ -345,6 +347,24 @@ describe("PATCH e DELETE /api/v1/tasks/[id]", () => {
     await PATCH(patch({ status: "done" }), ctx);
 
     expect(espiao.atividades()).toEqual([]);
+  });
+
+  it.each([
+    { caso: "editar o título de uma tarefa concluída", edicao: { title: "Título corrigido" } },
+    { caso: "salvar de novo como concluída", edicao: { status: "done" } },
+  ])("recusa $caso quando não leu a situação anterior", async ({ edicao }) => {
+    const espiao = fazerSupabase([
+      { error: { code: "57014", message: "canceling statement due to statement timeout" } },
+      { data: { ...LINHA, lead_id: LEAD, status: "done" } },
+    ]);
+    const { PATCH } = await import("@/app/api/v1/tasks/[id]/route");
+
+    const res = await PATCH(patch(edicao), ctx);
+
+    expect.soft(res.status).toBe(500);
+    expect.soft(espiao.atualizacoes).toEqual([]);
+    expect.soft(espiao.atividades()).toEqual([]);
+    expect.soft(audit).not.toHaveBeenCalled();
   });
 
   it("PATCH vazio é 422 — a tela não pode dizer 'salvo' sobre nada", async () => {

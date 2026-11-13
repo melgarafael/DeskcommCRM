@@ -227,6 +227,9 @@ export const DICIONARIO: Traducoes = {
   "Mais recentes": { es: "Más recientes" },
   "Mais antigas": { es: "Más antiguas" },
   "Ativas primeiro": { es: "Activas primero" },
+  // Filtro "Só ativas" da mesma tabela (#4412).
+  "Só ativas": { es: "Solo activas" },
+  "Nenhuma campanha ativa neste período.": { es: "Ninguna campaña activa en este período." },
   "Avisar também nas transferências para atendimento humano": { es: "Avisar también en las transferencias a atención humana" },
   "Cada transferência manda uma mensagem ao mesmo número e conta no limite diário dele. Desligue para receber só os avisos de casos.": { es: "Cada transferencia envía un mensaje al mismo número y cuenta en su límite diario. Desactívalo para recibir solo los avisos de casos." },
   "Também param de sair, até você cadastrar um número de novo: os avisos de transferência para atendimento humano, os avisos da Agenda que usam o mesmo número dos casos e as automações com a ação \"Mensagem para a equipe\".": { es: "También dejan de salir, hasta que registres otro número: los avisos de transferencia a atención humana, los avisos de la Agenda que usan el mismo número que los casos y las automatizaciones con la acción \"Mensaje para el equipo\"." },
@@ -11415,6 +11418,11 @@ export const DICIONARIO: Traducoes = {
   "Desmarcar todos em": { es: "Desmarcar todos en" },
   "Abrir esta conversa no Inbox": { es: "Abrir esta conversación en Inbox" },
   "conversa sem mensagens": { es: "conversación sin mensajes" },
+  // O VALOR DO NEGÓCIO editável no bloco do card (#4546): o campo vazio recusa
+  // gravar e o sucesso avisa que gravou. "Indica" é o mesmo verbo das outras
+  // frases de "Informe …" desta tela; "actualizado" é o particípio usado em es.
+  "Informe o valor.": { es: "Indica el valor." },
+  "Valor atualizado.": { es: "Valor actualizado." },
   "Valor inválido": { es: "Valor inválido" },
   // O VALOR RECORRENTE do negócio (#3602): setup + mensalidade no mesmo card.
   // "sem prazo" é o estado de omitir a duração — não é 12 meses, é contrato
