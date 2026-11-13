@@ -81,9 +81,9 @@ describe("a duração do serviço é o PADRÃO da marcação, não a única opç
   });
 
   it("o serviço de agenda própria (sem escolha) mostra a duração, e não um campo", () => {
-    // Serviço e remarcação não escolhem duração: a rota recusa num caso e o
-    // PATCH preserva o comprimento no outro. Oferecer o campo ali seria
-    // oferecer um caminho que não existe.
+    // Serviço não escolhe duração: a rota recusa `agenda_duracao_do_servico`,
+    // porque o comprimento é o da agenda publicada. Oferecer o campo ali seria
+    // oferecer um caminho que não existe. (A remarcação escolhe, desde #4450.)
     montar({ duracaoMin: 60, permiteEscolherDuracao: false });
     expect(screen.queryByTestId("duracao-do-atendimento")).not.toBeInTheDocument();
     expect(screen.getByText("60 minutos")).toBeInTheDocument();
@@ -218,5 +218,14 @@ describe("num serviço a tela não oferece nem envia duração", () => {
     const inicio = tela.indexOf("return remarcar");
     const bloco = tela.slice(inicio, tela.indexOf(".then((r) => {", inicio));
     expect(bloco).toContain("duration_minutes: tipo.servico ? undefined : duracaoDoAtendimento");
+  });
+
+  it("⭐ ao remarcar, a consulta de horários usa a duração DIGITADA, não a do bloco (#4450)", () => {
+    // O painel anuncia o número digitado; se o comprimento antigo do bloco
+    // vencesse na consulta, quem remarca 30 → 90 veria horários livres para 30
+    // e levaria 422 de conflito no Confirmar, porque o PATCH confere com 90.
+    expect(tela).toMatch(
+      /duracao_minutos: tipo\.servico\s*\?\s*undefined\s*:\s*\(duracaoEscolhida \?\? duracaoDoCompromisso \?\? tipo\.duracaoMin\)/,
+    );
   });
 });

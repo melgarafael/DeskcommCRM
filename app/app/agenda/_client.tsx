@@ -591,12 +591,14 @@ export function AgendaClient({
           ate: janelaDeBusca.ate,
           // A DURAÇÃO ENTRA NA CONSULTA (#3709): quem decide o que está livre é
           // o motor, no servidor, e ele precisa saber quanto tempo cada slot
-          // exige. Remarcando, é o comprimento do bloco que vai ser movido;
-          // marcando, é a escolha da tela (ou o padrão do serviço). Sem isso a
-          // lista e a escrita discordariam sobre o mesmo horário.
+          // exige. É SEMPRE a duração escolhida no painel, marcando ou
+          // remarcando (#4450): ao remarcar, o painel já a anuncia com o
+          // comprimento do bloco como padrão, e quem digita outro número tem de
+          // ver a lista recalculada para ELE — é esse número que o PATCH leva.
+          // Sem isso a lista e a escrita discordariam sobre o mesmo horário.
           duracao_minutos: tipo.servico
             ? undefined
-            : (duracaoDoCompromisso ?? duracaoEscolhida ?? tipo.duracaoMin),
+            : (duracaoEscolhida ?? duracaoDoCompromisso ?? tipo.duracaoMin),
         }
       : null,
   );
