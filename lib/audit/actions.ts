@@ -928,6 +928,14 @@ export const AUDIT_ACTIONS = [
   "voip_trunk.created",
   "voip_trunk.updated",
 
+  // Gateway de pagamento PRÓPRIO da organização (#4058, fatia 1): trocar a
+  // chave aqui muda para onde o dinheiro da empresa vai. As duas ações são o
+  // par ligar/desligar — desligar volta a herdar a instalação e NÃO apaga a
+  // credencial, então sem o registro de "desligado" não haveria como saber
+  // quando a conta que recebeu a cobrança deixou de ser a da organização.
+  "pagamento.gateway_configurado",
+  "pagamento.gateway_desligado",
+
   // Chamada de voz WhatsApp (spec 18, migration 0234). Ligá-la vincula um
   // SEGUNDO aparelho ao número que já atende, por um caminho que não é o
   // oficial — o risco é a conta ser bloqueada. Estas duas linhas são a resposta

@@ -11808,6 +11808,69 @@ export type Database = {
           },
         ];
       };
+      organization_payment_gateways: {
+        Row: {
+          api_key_encrypted: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at: string;
+          is_active: boolean;
+          mode: string;
+          organization_id: string;
+          provider: string;
+          updated_at: string;
+          updated_by: string | null;
+          webhook_secret_encrypted: string | null;
+          webhook_secret_iv: string | null;
+          webhook_secret_last4: string | null;
+          webhook_secret_tag: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          api_key_encrypted: string;
+          api_key_iv: string;
+          api_key_last4: string;
+          api_key_tag: string;
+          created_at?: string;
+          is_active?: boolean;
+          mode: string;
+          organization_id: string;
+          provider: string;
+          updated_at?: string;
+          updated_by?: string | null;
+          webhook_secret_encrypted?: string | null;
+          webhook_secret_iv?: string | null;
+          webhook_secret_last4?: string | null;
+          webhook_secret_tag?: string | null;
+        };
+        Update: {
+          api_key_encrypted?: string;
+          api_key_iv?: string;
+          api_key_last4?: string;
+          api_key_tag?: string;
+          created_at?: string;
+          is_active?: boolean;
+          mode?: string;
+          organization_id?: string;
+          provider?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+          webhook_secret_encrypted?: string | null;
+          webhook_secret_iv?: string | null;
+          webhook_secret_last4?: string | null;
+          webhook_secret_tag?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_payment_gateways_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       organization_extensions: {
         Row: {
           configuration: NonNullable<Json>;
@@ -15024,6 +15087,51 @@ export type Database = {
             foreignKeyName: "external_db_connections_organization_id_fkey";
             columns: ["organization_id"];
             isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      organization_payment_gateways_safe: {
+        Row: {
+          api_key_last4: string;
+          created_at: string;
+          is_active: boolean;
+          mode: string;
+          organization_id: string;
+          provider: string;
+          updated_at: string;
+          updated_by: string | null;
+          webhook_secret_last4: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          api_key_last4?: string | null;
+          created_at?: string | null;
+          is_active?: boolean | null;
+          mode?: string | null;
+          organization_id?: string | null;
+          provider?: string | null;
+          updated_at?: string | null;
+          updated_by?: string | null | null;
+          webhook_secret_last4?: string | null | null;
+        };
+        Update: {
+          api_key_last4?: string | null;
+          created_at?: string | null;
+          is_active?: boolean | null;
+          mode?: string | null;
+          organization_id?: string | null;
+          provider?: string | null;
+          updated_at?: string | null;
+          updated_by?: string | null | null;
+          webhook_secret_last4?: string | null | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_payment_gateways_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
             referencedRelation: "organizations";
             referencedColumns: ["id"];
           },

@@ -15216,6 +15216,46 @@ export const DICIONARIO: Traducoes = {
     es: "Solo se muestra ahora, justo después de guardar. La contraseña no se guarda en texto plano, así que este bloque completo no se puede reconstruir después.",
   },
 
+  // ─── app/app/settings/pagamentos (gateway de pagamento por organização, #4058) ───
+  "Gateway de pagamento": { es: "Pasarela de pago" },
+  "Com qual provedor esta organização cobra o cliente dela. A chave é conferida no provedor antes de ser gravada, fica cifrada e nunca volta para a tela — só os quatro últimos caracteres, e apenas os da chave desta organização.":
+    {
+      es: "Con qué proveedor cobra esta organización a su cliente. La clave se verifica en el proveedor antes de guardarse, queda cifrada y nunca vuelve a la pantalla: solo los cuatro últimos caracteres, y únicamente los de la clave de esta organización.",
+    },
+  "Com qual provedor (Stripe ou Asaas) esta empresa cobra o cliente dela.": {
+    es: "Con qué proveedor (Stripe o Asaas) esta empresa cobra a su cliente.",
+  },
+  "Gateway em vigor": { es: "Pasarela vigente" },
+  "Consultando o gateway em vigor…": { es: "Consultando la pasarela vigente…" },
+  "Nenhum gateway configurado — nem nesta organização, nem na instalação.": {
+    es: "Ninguna pasarela configurada: ni en esta organización ni en la instalación.",
+  },
+  "Configurado por esta organização.": { es: "Configurado por esta organización." },
+  "Herdado da instalação — nenhuma chave desta organização é usada.": {
+    es: "Heredado de la instalación: no se usa ninguna clave de esta organización.",
+  },
+  "A configuração herdada não expõe nem os últimos dígitos da chave.": {
+    es: "La configuración heredada no muestra ni los últimos dígitos de la clave.",
+  },
+  "A configuração própria desta organização está desligada; a cobrança volta a usar a da instalação.":
+    {
+      es: "La configuración propia de esta organización está desactivada; el cobro vuelve a usar la de la instalación.",
+    },
+  "Configuração desta organização": { es: "Configuración de esta organización" },
+  "Escolha o provedor": { es: "Elige el proveedor" },
+  "Chave do provedor": { es: "Clave del proveedor" },
+  Stripe: { es: "Stripe" },
+  "O modo (teste ou produção) vem da própria chave — não há campo para escolher. A chave desaparece desta tela assim que for salva.":
+    {
+      es: "El modo (prueba o producción) viene de la propia clave: no hay campo para elegirlo. La clave desaparece de esta pantalla en cuanto se guarda.",
+    },
+  "O gateway não foi salvo.": { es: "La pasarela no se guardó." },
+  "O gateway não foi desligado.": { es: "La pasarela no se desactivó." },
+  "Desligando...": { es: "Desactivando..." },
+  "Só administradores da organização alteram o gateway de pagamento.": {
+    es: "Solo los administradores de la organización cambian la pasarela de pago.",
+  },
+
   // ─── components/ai/AgentEditor.tsx (aba Voz do agente) ───
   Voz: { es: "Voz" },
   "Este agente fala pela Realtime API da OpenAI -- o modelo de voz se escolhe na aba Voz, não aqui.": {

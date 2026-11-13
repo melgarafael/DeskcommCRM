@@ -1185,6 +1185,27 @@ export const NAV_CATALOG = [
     minRole: "admin",
   },
   {
+    // A porta da tela do gateway da ORGANIZAÇÃO (#4058). Em "Sua empresa" ao
+    // lado de "Plano e cobrança" porque é o mesmo eixo de dinheiro, na direção
+    // oposta: ali a empresa PAGA a instalação; aqui ela RECEBE do cliente dela.
+    //
+    // `minRole: "admin"` é o que o catálogo consegue modelar, e é de propósito
+    // que a tela aceite MAIS: `manager` abre e VÊ qual gateway está em vigor (a
+    // tela de cobrança precisa saber antes de prometer um link), mas os botões
+    // de salvar e desligar só aparecem para `admin` — e quem recusa de verdade é
+    // a rota, com `requireRole("admin")`.
+    //
+    // SEM `sidebar`, como as vizinhas: trocar a conta que recebe o dinheiro é
+    // tarefa de uma vez, e o hub + o ⌘K já são porta suficiente.
+    href: "/app/settings/pagamentos",
+    label: "Gateway de pagamento",
+    description: "Com qual provedor (Stripe ou Asaas) esta empresa cobra o cliente dela.",
+    icon: "PlugsConnected",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "admin",
+  },
+  {
     href: "/app/lgpd/requests",
     label: "LGPD",
     description: "Pedidos de exportação e exclusão de dados feitos por clientes.",
