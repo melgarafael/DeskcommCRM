@@ -1280,6 +1280,14 @@ export const DICIONARIO: Traducoes = {
   "Ex.: clientes da feira X, lista da associação Y": { es: "Ej.: clientes de la feria X, lista de la asociación Y" },
   "Aceita .csv ou .xlsx (primeira aba), até 500 empresas. Colunas obrigatórias: nome da empresa e telefone. Quem já é contato do CRM não é abordado. Nenhuma abordagem começa nesta etapa.": { es: "Acepta .csv o .xlsx (primera hoja), hasta 500 empresas. Columnas obligatorias: nombre de la empresa y teléfono. Quien ya es contacto del CRM no recibe abordaje. Ningún abordaje comienza en esta etapa." },
   "Baixar modelo": { es: "Descargar modelo" },
+  // #4360 — a lista da campanha de volta em CSV (só o que ainda não foi abordado).
+  "Baixar lista": { es: "Descargar lista" },
+  "Baixar lista leva só as empresas que ainda não foram abordadas.": {
+    es: "Descargar lista incluye solo las empresas que aún no fueron contactadas.",
+  },
+  "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.": {
+    es: "Ninguna empresa de esta campaña puede ser contactada todavía: no hay lista para descargar.",
+  },
   "Linhas recusadas": { es: "Líneas rechazadas" },
   "Planilha": { es: "Planilla" },
   "Escolha o arquivo da planilha.": { es: "Elige el archivo de la planilla." },
