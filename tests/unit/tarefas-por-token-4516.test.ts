@@ -85,11 +85,11 @@ function banco() {
   const tabelas: Record<NomeDeTabela, Linha[]> = { crm_tasks: [], idempotency_keys: [] };
   const estado = { insertsDeTarefa: 0, filtrosDaLista: [] as [string, unknown][] };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function consulta(
     tabela: NomeDeTabela,
     op: "select" | "insert" | "update" | "delete",
     payload?: Linha,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): any {
     const filtros: [string, unknown][] = [];
     const linhas = tabelas[tabela] ?? [];
