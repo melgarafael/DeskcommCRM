@@ -180,7 +180,17 @@ describe("montarPayloadDeUso", () => {
 
   it("sem chamada cacheável no período a taxa é 0, não uma divisão por zero", () => {
     const p = montarPayloadDeUso(
-      { ...uso, totais: { ...zero, chamadas: 300, input_tokens: 90_000, cache_read_tokens: 400 } },
+      {
+        ...uso,
+        totais: {
+          ...zero,
+          chamadas: 300,
+          input_tokens: 90_000,
+          cache_read_tokens: 400,
+          turnos: 0,
+          custo_dos_turnos_cents: 0,
+        },
+      },
       range,
     );
     expect(p.totals.cache_hit_rate).toBe(0);
