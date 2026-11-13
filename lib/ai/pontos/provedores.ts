@@ -25,11 +25,32 @@
  * `PROVEDORES_DE_DECISAO`, no fim deste arquivo — e o porquê está lá.
  */
 
+/**
+ * Onde fica a empresa que recebe o dado — o que a cláusula de transferência
+ * internacional do documento do operador imprime (#4520).
+ *
+ * O valor é DECLARADO, não deduzido: não existe geolocalização de chamada de
+ * API que responda essa pergunta, e chutar país é pior do que dizer que o
+ * provedor não declara. `"desconhecido"` é resposta de primeira classe
+ * justamente por isso — o texto legal diz "não declara o país; consulte a
+ * política do provedor" em vez de omitir a linha.
+ *
+ * `"operador"` é o provedor personalizado: o endpoint é do próprio operador, e
+ * o dado não sai do servidor dele (o mesmo caso do modelo local que o roteiro
+ * prevê).
+ */
+export type PaisDoProvedor = "US" | "CN" | "UE" | "operador" | "desconhecido";
+
 /** Como a chave daquele provedor é validada e o que a tela precisa pedir. */
 export interface ProvedorSuportado {
   id: string;
   /** Nome como o operador conhece. */
   rotulo: string;
+  /**
+   * A sede declarada de quem processa o texto — lida pela cláusula 9 do
+   * documento do operador (`lib/legal/operador.ts`). Ver `PaisDoProvedor`.
+   */
+  pais: PaisDoProvedor;
   /** Uma frase sobre quando escolher este, para quem não acompanha o mercado. */
   quandoUsar: string;
   /**
@@ -66,6 +87,9 @@ export const PROVEDORES = [
   {
     id: "anthropic",
     rotulo: "Anthropic (Claude)",
+    // Sede da Anthropic PBC, em São Francisco. O texto da conversa sai do
+    // servidor do operador e é processado nos Estados Unidos.
+    pais: "US",
     quandoUsar:
       "O padrão recomendado para conversar com o cliente: é o que melhor segue instruções longas e usa as ferramentas do CRM.",
     aceitaEndpointProprio: false,
@@ -76,6 +100,8 @@ export const PROVEDORES = [
   {
     id: "openai",
     rotulo: "OpenAI (GPT)",
+    // OpenAI, em São Francisco.
+    pais: "US",
     quandoUsar:
       "Na configuração padrão, transcreve áudio. Para indexar material, uma chave OpenAI ou OpenRouter atende ao mesmo modelo de embedding.",
     aceitaEndpointProprio: true,
@@ -86,6 +112,8 @@ export const PROVEDORES = [
   {
     id: PROVEDOR_POR_ASSINATURA,
     rotulo: "OpenAI pela assinatura (ChatGPT)",
+    // A assinatura é da OpenAI: mesma sede do `openai`, mesmo destino do dado.
+    pais: "US",
     quandoUsar:
       "Conecte sua conta pessoal do ChatGPT dentro dos limites da assinatura; para operação em volume, prefira uma chave de API da organização. Uma chave da própria organização pode servir de reserva.",
     // A assinatura não se aponta para outro endereço nem sincroniza catálogo:
@@ -104,6 +132,8 @@ export const PROVEDORES = [
   {
     id: "google",
     rotulo: "Google (Gemini)",
+    // Google LLC, em Mountain View.
+    pais: "US",
     quandoUsar:
       "Alternativa com contexto muito longo e custo baixo para tarefas de classificação.",
     aceitaEndpointProprio: false,
@@ -114,6 +144,8 @@ export const PROVEDORES = [
   {
     id: "openrouter",
     rotulo: "OpenRouter",
+    // OpenRouter, Inc., nos Estados Unidos.
+    pais: "US",
     quandoUsar:
       "Uma chave só dá acesso a centenas de modelos de dezenas de fabricantes, inclusive os gratuitos. É o caminho mais simples para experimentar sem abrir conta em cada provedor.",
     aceitaEndpointProprio: true,
@@ -124,6 +156,8 @@ export const PROVEDORES = [
   {
     id: "deepseek",
     rotulo: "DeepSeek",
+    // DeepSeek (Hangzhou DeepSeek Artificial Intelligence), na China.
+    pais: "CN",
     quandoUsar:
       "Muito barata e desconta sozinha o trecho repetido da conversa, sem você configurar nada — o custo cai para quem atende com um roteiro que não muda.",
     aceitaEndpointProprio: true,
@@ -134,6 +168,12 @@ export const PROVEDORES = [
   {
     id: "requesty",
     rotulo: "Requesty",
+    // NÃO DECLARADO, e de propósito: a Requesty oferece manter o tráfego na
+    // Europa (`quandoUsar` acima), mas o país da empresa que responde a API
+    // não está numa fonte que este repo possa citar com data. O documento diz
+    // "não declara o país; consulte a política do provedor" em vez de inventar
+    // uma sede — a cláusula 9 é assinada por quem opera.
+    pais: "desconhecido",
     quandoUsar:
       "Uma chave só para centenas de modelos de vários fabricantes, com a opção de manter o tráfego na Europa. Bom para comparar modelos sem abrir conta em cada provedor.",
     aceitaEndpointProprio: true,
@@ -144,6 +184,9 @@ export const PROVEDORES = [
   {
     id: "custom",
     rotulo: "Provedor personalizado (compatível com OpenAI)",
+    // O endpoint é do próprio operador (gateway, LiteLLM, proxy corporativo):
+    // não há terceiro a nomear, e o dado fica no servidor dele.
+    pais: "operador",
     quandoUsar:
       "Endpoint seu que fala a API da OpenAI — OmniRouter, 9Router, LiteLLM hospedado ou proxy corporativo, num endereço público. Você informa o endereço (base URL) e a chave, e o CRM conversa com ele como conversa com a OpenAI.",
     aceitaEndpointProprio: true,
@@ -204,6 +247,9 @@ export const PROVEDORES_DE_DECISAO = [
   {
     id: "typesafe",
     rotulo: "Jev (TypeSafe AI)",
+    // A mesma declaração que a política de privacidade já publica: TypeSafe AI,
+    // nos Estados Unidos.
+    pais: "US",
     quandoUsar:
       "Não conversa com o cliente: toma decisões rápidas e baratas — como perceber se o cliente está irritado — geralmente em menos de um segundo. Trabalha junto com a sua IA principal.",
     aceitaEndpointProprio: false,

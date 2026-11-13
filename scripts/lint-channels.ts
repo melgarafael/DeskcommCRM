@@ -174,7 +174,9 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
       "app/api/v1/conversations/[id]/media/route.ts",
       "app/api/v1/webhook-sources/route.ts",
       "app/api/v1/webhooks/in/[token]/route.ts",
-      "app/app/ai/agents/[id]/_components/TestPanel.tsx",
+      // `app/app/ai/agents/[id]/_components/TestPanel.tsx` SAIU desta lista:
+      // o cabeçalho dizia "não toca WAHA" (prosa herdada) e o #4424 o
+      // reescreveu como "não toca o canal". A catraca só encolhe.
       "components/inbox/media/media-utils.ts",
       "lib/agent-engine/channel-adapter.ts",
       "lib/agent-engine/cron/scheduler.ts",

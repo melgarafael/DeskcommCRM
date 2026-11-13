@@ -1553,6 +1553,15 @@ export const AUDIT_ACTIONS = [
   "scheduled_message.cancelled",
   "scheduled_message.dispatched",
   "scheduled_message.failed",
+  // Desfazer o vínculo pessoa ↔ empresa pela tela (issue #3198). O metadata
+  // leva só os dois ids da junção.
+  "company_people.unlinked",
+  // O roteador de intenções acompanhando a troca de número (#4340). Metadata
+  // leva `de` e `para` (ids de `channel_sessions`) e o nome do roteador; o
+  // trigger da 0085 já guarda old/new da linha — este código é o que responde
+  // "quem moveu" no painel. Mover roteador em silêncio não existe: as duas
+  // camadas são gravadas na mesma operação.
+  "ai.router_channel_moved",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

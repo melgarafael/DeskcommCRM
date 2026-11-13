@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test, type Page } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
@@ -136,6 +136,7 @@ test.describe("kit visual da Agenda", () => {
     // mensagem apontando para a linha do `waitForURL` — que estava certa.
     test.setTimeout(240_000);
     page = await browser.newPage();
+    esperarARevelacaoNasCargas(page);
     await loginComoAdmin(page, lerCreds());
   });
 
