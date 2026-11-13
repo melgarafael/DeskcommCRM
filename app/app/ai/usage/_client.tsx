@@ -139,7 +139,9 @@ export function UsageDashboardClient({ agents, initial }: Props) {
               value={`${(q.data.totals.cache_hit_rate * 100).toLocaleString("pt-BR", {
                 maximumFractionDigits: 1,
               })}%`}
-              hint={t("do texto enviado à IA veio do cache, que custa bem menos")}
+              hint={t(
+                "do texto das chamadas que o provedor guarda em cache (entrada ≥ 1.024 tokens); as menores ficam fora da conta",
+              )}
             />
             <StatCard
               label={t("Passaram para uma pessoa")}
