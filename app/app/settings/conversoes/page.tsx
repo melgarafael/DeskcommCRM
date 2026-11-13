@@ -144,7 +144,7 @@ export default async function ConversoesPage({
     lerEstadoDaCaptura(admin, "meta_ads_landing_pages", activeOrg.orgId),
     // Os números conectados viram SUGESTÃO no formulário de captura. Falhar
     // aqui não pode derrubar a tela inteira: sem sugestão, a pessoa digita.
-    listSelectableChannels(admin, activeOrg.orgId).catch(() => []),
+    listSelectableChannels(admin, activeOrg.orgId).catch(() => null),
     // O `slug` é o `[org]` da rota pública, e não está no `ActiveOrg`.
     admin
       .from("organizations")
@@ -238,7 +238,10 @@ export default async function ConversoesPage({
   const metricas =
     aba === "links" ? await metricasLinks(admin, activeOrg.orgId).catch(() => null) : null;
 
-  const numerosConectados = canais
+  // Lista ilegível não é "nenhum canal": a chave continua à mostra, e só some
+  // quando a leitura deu certo e nenhum canal tem a ponte da venda.
+  const temCanalQueEnvia = canais === null || canais.some((c) => c.reportaConversao);
+  const numerosConectados = (canais ?? [])
     .map((c) => c.phone_number)
     .filter((n): n is string => Boolean(n));
   const idioma = user.idioma;
@@ -388,7 +391,11 @@ export default async function ConversoesPage({
               idioma={idioma}
             />
           )}
-          <VendaPeloCanal ligada={vendaPeloCanal} idioma={idioma} />
+          <VendaPeloCanal
+            ligada={vendaPeloCanal}
+            idioma={idioma}
+            temCanalQueEnvia={temCanalQueEnvia}
+          />
           {estado.conectada && (
             <IdentidadeDaConversao
               pageId={identidadeMeta.pageId}

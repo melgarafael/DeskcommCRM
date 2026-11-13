@@ -38,6 +38,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Status é do WhatsApp com aparelho atrás: só a linha por QR tem o
     // endpoint de publicação. Ver `publishStatus` em `./types`.
     statusUpdates: true,
+    // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
+    // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
   // Hetero-restrição: não me banem, mas a Meta me proíbe e me cobra.
   meta_cloud: {
@@ -61,6 +64,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
     // um botão que sempre falha (ver `publishStatus` em `./types`).
     statusUpdates: false,
+    // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
+    // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
   // Mesma hetero-restrição do canal oficial, por baixo: é um BSP: a WABA é da
   // Meta, os templates são aprovados pela Meta e a janela de 24h é da Meta. O
@@ -104,6 +110,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
     // um botão que sempre falha (ver `publishStatus` em `./types`).
     statusUpdates: false,
+    // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
+    // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
   zernio: {
     freeformOutsideWindow: false,
@@ -128,6 +137,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
     // um botão que sempre falha (ver `publishStatus` em `./types`).
     statusUpdates: false,
+    // O provedor tem a ponte: reporta a venda ao conjunto de dados da Meta pela
+    // conversa (`reportConversion` no adapter, `../zernio/conversoes.ts`).
+    reportaConversao: true,
   },
   // Parceiro homologado pela Meta que espelha a Cloud API (recorte do #1130):
   // a WABA, a janela de 24h e o custo são da Meta. O parceiro muda o TRANSPORTE
@@ -157,6 +169,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
     // um botão que sempre falha (ver `publishStatus` em `./types`).
     statusUpdates: false,
+    // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
+    // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
 };
 
