@@ -130,6 +130,12 @@ export interface ConversationsFilters {
   tagMode?: ModoDeEtiqueta;
   /** A aba "Grupos" do inbox (Task 10). Ausente = sem filtro, mostra tudo. */
   is_group?: boolean;
+  /**
+   * A aba "Pessoal" (#4434). `true` INVERTE a exclusão da spec 21: a lista
+   * devolve só o pessoal de quem chama. Ausente = o padrão de sempre — pessoal
+   * fora da lista de trabalho.
+   */
+  pessoais?: boolean;
 }
 
 interface ListResponse {
@@ -209,6 +215,10 @@ export function useConversationsRealtime(
       // `&modo=e` colado num link de hoje mudaria a URL sem mudar o sentido.
       if (filters.tagMode === "ou") qs.set("modo", "ou");
       if (filters.is_group !== undefined) qs.set("is_group", filters.is_group ? "true" : "false");
+      // A aba "Pessoal" (#4434). Só viaja quando LIGADA: ausente é o padrão de
+      // sempre (pessoal fora da lista), e um `&pessoais=false` colado num link
+      // de hoje mudaria a URL sem mudar o sentido.
+      if (filters.pessoais) qs.set("pessoais", "true");
       if (pageParam) qs.set("cursor", pageParam);
       qs.set("limit", "50");
       try {

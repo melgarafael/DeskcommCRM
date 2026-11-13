@@ -10,17 +10,19 @@ import type { SendMessageInput } from "@/lib/schemas";
 import { criarDubleDoHandler } from "@/tests/helpers/duble-do-handler";
 
 /**
- * ENVIO RECUSADO PARA PESSOAL (spec 21, etapa 11 — critério 7).
+ * ENVIO PARA PESSOAL — DONO SIM, RESTO NÃO (spec 21, etapa 11 + #4434).
  *
- * Toda rota de envio recusa contato marcado, manual ou automática, no mesmo
- * ponto onde o bloqueio já é recusado — sem exceção para gerente (gerente
- * marca e desmarca, mas não envia para marcado). O cartão compartilhado de
- * pessoal também não sai. O encontro humano (`humanMeetingCommand`) também
- * veta: pessoal não recebe nem por lá.
+ * A spec 21 recusava tudo: manual, automático, e sem exceção para gerente. A
+ * #4434 mantém a operação fora (IA, automação, campanha, token) e devolve o
+ * canal a quem marcou: o DONO da marca envia por ação humana; `admin` e
+ * `manager` não. O cartão compartilhado de pessoal continua não saindo, e o
+ * encontro humano (`humanMeetingCommand`) continua vetando: pessoal não recebe
+ * por caminho automático nenhum.
  *
  * ─── SABOTAGEM (prova no CI) ───────────────────────────────────────────────
- * - Liberar para gerente (`if role==manager skip`): o caso "todo papel" cai —
- *   a recusa está no handler, antes de qualquer olhar para o ator.
+ * - Liberar por papel (`if role==admin skip`, ou `roleAtLeast(role,"admin")`):
+ *   caem "admin não envia o do colega" e "gerente não envia o do colega".
+ * - Esquecer o dono (`autorizado = humano`): cai "o dono envia o seu".
  * - Tirar o `or is_personal` do `readStopFlags`: o caso do encontro cai.
  * - Tirar a recusa do cartão: o caso do cartão cai.
  * Linha para reverter: `app/api/v1/messages/_handler.ts` (recusa + cartão) e
@@ -37,8 +39,9 @@ const CONV = "22222222-2222-4222-8222-222222222222";
 const CONTACT = "33333333-3333-4333-8333-333333333333";
 const SESSION = "44444444-4444-4444-8444-444444444444";
 const USER = "55555555-5555-4555-8555-555555555555";
+const ADMIN = "66666666-6666-4666-8666-666666666666";
 
-function conversa(pessoal: boolean) {
+function conversa(pessoal: boolean, dono: string | null = null) {
   return {
     id: CONV,
     organization_id: ORG,
@@ -55,6 +58,7 @@ function conversa(pessoal: boolean) {
       wa_lid: null,
       is_blocked: false,
       is_personal: pessoal,
+      personal_owner_user_id: dono,
     },
     channel_sessions: { provider: "zernio", status: "WORKING", archived_at: null },
   };
@@ -63,8 +67,8 @@ function conversa(pessoal: boolean) {
 const texto = (): SendMessageInput =>
   ({ conversation_id: CONV, type: "text", body: "oi" }) as SendMessageInput;
 
-async function erroDoEnvio(actor: HandlerCtx["actor"], pessoal: boolean) {
-  const { supabase } = criarDubleDoHandler({ conversation: conversa(pessoal) });
+async function erroDoEnvio(actor: HandlerCtx["actor"], pessoal: boolean, dono: string | null = null) {
+  const { supabase } = criarDubleDoHandler({ conversation: conversa(pessoal, dono) });
   const ctx: HandlerCtx = { organization_id: ORG, actor, requestId: "req-1" };
   return sendMessageHandler(supabase, ctx, texto()).catch((e: unknown) => e);
 }
@@ -86,6 +90,29 @@ describe("envio para pessoal é recusado em todo papel (critério 7)", () => {
     const err = await erroDoEnvio({ type: "ai_agent", id: "ag-1", role: "agent" }, true);
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(403);
+  });
+
+  it("o ADMIN não envia o pessoal do colega", async () => {
+    const err = await erroDoEnvio({ type: "user", id: ADMIN, role: "admin" }, true, USER);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  it("o GERENTE não envia o pessoal do colega", async () => {
+    const err = await erroDoEnvio({ type: "user", id: "gerente-1", role: "manager" }, true, USER);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  it("contato legado (dono nulo) não é enviável por ninguém — nem pelo admin", async () => {
+    const err = await erroDoEnvio({ type: "user", id: USER, role: "admin" }, true, null);
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  it("o DONO envia o seu (a recusa de pessoal não o alcança)", async () => {
+    // O envio pode falhar adiante, no canal — o que este caso prova é que a
+    // porta de pessoal abre para o dono: o erro, se houver, não é o 403 mudo.
+    const err = await erroDoEnvio({ type: "user", id: USER }, true, USER).catch((e: unknown) => e);
+    if (err instanceof ApiError) expect(err.status).not.toBe(403);
   });
 
   it("a mensagem diz pessoal, sem vazar dado do contato", async () => {

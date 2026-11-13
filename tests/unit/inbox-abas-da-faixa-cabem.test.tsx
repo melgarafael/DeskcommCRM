@@ -1,5 +1,9 @@
 /**
- * CATRACA — as 6 abas da Inbox não podem voltar a ser cortadas na coluna (#2745).
+ * CATRACA — as abas da Inbox não podem voltar a ser cortadas na coluna (#2745).
+ *
+ * São SETE desde a #4434: a aba "Pessoal" fecha a faixa. Ela nasce DEPOIS das
+ * seis medidas em #2745, e é a sétima que a coluna de 272px precisa acomodar —
+ * a `flex-wrap` abaixo é o que impede a ponta direita de ficar atrás da seta.
  *
  * ## O defeito, medido
  *
@@ -63,7 +67,7 @@ vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
 // com elas que o corte foi medido.
 vi.mock("@/hooks/inbox/useConversationCounts", () => ({
   useConversationCounts: () => ({
-    data: { fila: 47, automatico: 12, mine: 8, all: 130, closed: 25, archived: 9 },
+    data: { fila: 47, automatico: 12, mine: 8, all: 130, closed: 25, archived: 9, pessoal: 3 },
   }),
 }));
 
@@ -99,14 +103,22 @@ describe("faixa da Inbox — quebra em vez de esconder aba (#2745)", () => {
     ).toContain("gap-x-1");
   });
 
-  it("as SEIS abas estão na faixa, com os rótulos inteiros", () => {
+  it("as SETE abas estão na faixa, com os rótulos inteiros", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
     // Guarda de vacuidade do caso acima e defesa do outro lado do defeito:
     // a saída fácil para \"não cabe\" é encurtar rótulo ou tirar aba, e aí a
     // catraca de classe continua verde com a tela errada.
     const abas = screen.getAllByRole("tab");
-    expect(abas).toHaveLength(6);
-    for (const rotulo of ["Automático", "Fila", "Minhas", "Todas", "Fechadas", "Arquivadas"]) {
+    expect(abas).toHaveLength(7);
+    for (const rotulo of [
+      "Automático",
+      "Fila",
+      "Minhas",
+      "Todas",
+      "Fechadas",
+      "Arquivadas",
+      "Pessoal",
+    ]) {
       expect(
         screen.getByRole("tab", { name: new RegExp(rotulo) }),
         `a aba "${rotulo}" não está na faixa`,
@@ -127,6 +139,8 @@ describe("faixa da Inbox — quebra em vez de esconder aba (#2745)", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
     // `visibleInboxTabs` é a fonte da ORDEM do trabalho; a largura não se paga
     // reordenando nem renomeando.
+    // #4434 acrescentou "pessoal" no FIM — as seis de trabalho mantêm ordem e
+    // nome, e é isso que a catraca de #2498 continua cobrando.
     expect(visibleInboxTabs("manager", "all")).toEqual([
       "ai",
       "unassigned",
@@ -134,6 +148,7 @@ describe("faixa da Inbox — quebra em vez de esconder aba (#2745)", () => {
       "all",
       "closed",
       "archived",
+      "pessoal",
     ]);
     expect(screen.getAllByRole("tab").map((a) => a.textContent?.replace(/\s+/g, ""))).toEqual([
       "Automático12",
@@ -142,6 +157,7 @@ describe("faixa da Inbox — quebra em vez de esconder aba (#2745)", () => {
       "Todas130",
       "Fechadas25",
       "Arquivadas9",
+      "Pessoal3",
     ]);
   });
 });

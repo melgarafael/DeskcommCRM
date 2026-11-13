@@ -82,6 +82,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     // A cerca `rota-le-todo-filtro-do-schema` cobra a chave: schema aceita,
     // rota lê, handler filtra. Esquecer aqui é invisível para todo gate de tipo.
     contact_id: url.searchParams.get("contact_id") ?? undefined,
+    // A aba "Pessoal" (#4434). Mesma rotura que `tag`/`comando`/`is_group` já
+    // tiveram aqui: schema aceita, hook serializa, handler filtra, e esta linha
+    // é o único lugar que pode esquecer sem erro nenhum. A cerca
+    // `rota-le-todo-filtro-do-schema` cobra a chave.
+    pessoais: url.searchParams.get("pessoais") ?? undefined,
     cursor: url.searchParams.get("cursor") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
   });

@@ -222,13 +222,28 @@ export function tabToFilter(
       // "Devolver ao automático"), então a aba vivia mostrando 2 enquanto o robô
       // atendia 47. Agora ela pergunta a régua do MOTOR.
       return { comando: ["automatico"] };
+    case "pessoal":
+      // A ABA PESSOAL (#4434) INVERTE a exclusão da spec 21: a lista devolve SÓ
+      // o pessoal de quem está olhando. Sem `status` de propósito — marcar um
+      // contato FECHA as conversas dele (rota de marcar, efeito 6), então
+      // filtrar por status deixaria a aba vazia justamente para quem acabou de
+      // marcar alguém.
+      return { pessoais: true };
     case "all":
     default:
       return {};
   }
 }
 
-const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archived", "ai"];
+const FILTER_TABS: InboxTab[] = [
+  "unassigned",
+  "mine",
+  "all",
+  "closed",
+  "archived",
+  "ai",
+  "pessoal",
+];
 
 /**
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
