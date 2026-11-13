@@ -15,9 +15,11 @@
  *
  * Sabotagem verificada ao escrever: trocando a chamada de `criarCloneNoFunil` de
  * volta por `createLeadHandler(...montaPayloadDoClone(...))` em
- * `create-or-move-lead.ts`, os casos 1 e 3 reprovam (nenhuma linha nova em
- * `crm_lead_attachments` e `anexos: 0` no recibo) e os controles seguem verdes.
- * Sabotagem revertida antes do commit.
+ * `create-or-move-lead.ts` (a linha de base da `main`), os três casos reprovam —
+ * os dois primeiros porque nenhuma linha nasce em `crm_lead_attachments`, e o
+ * controle porque o recibo não traz `anexos`; e desligando só a cópia dentro de
+ * `criarCloneNoFunil`, reprovam os casos 1 e 3 e o controle segue verde.
+ * Sabotagens revertidas antes do commit.
  */
 import { describe, expect, it, vi } from "vitest";
 
