@@ -33,7 +33,7 @@ import { camposDeArquivoDoNegocio } from "@/lib/leads/campos-do-funil";
 import { diasDeRecorte, recortaEncerradosAntigos } from "@/lib/kanban/recorte-de-encerrados";
 import { anexarTarefasAosNegocios, type LinhaDaTarefaNoQuadro } from "@/lib/kanban/tarefas-no-quadro";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
-import { lerPaginado } from "@/lib/supabase/pagina";
+import { lerPaginado, lerPaginadoEmLotes } from "@/lib/supabase/pagina";
 import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
@@ -463,23 +463,34 @@ async function withTarefas(
   supabase: Awaited<ReturnType<typeof createClient>>,
   organizationId: string,
   leads: Lead[],
-): Promise<{ leads: Lead[]; error: string | null }> {
+): Promise<{ leads: Lead[]; error: string | null; truncado: boolean }> {
   const leadIds = leads.map((l) => l.id);
-  if (leadIds.length === 0) return { leads, error: null };
+  if (leadIds.length === 0) return { leads, error: null, truncado: false };
 
-  const { data, error } = await buscaEmLotes(leadIds, (lote) =>
-    supabase
-      .from("crm_tasks")
-      .select("lead_id, due_date, status")
-      .eq("organization_id", organizationId)
-      .in("lead_id", lote)
-      .in("status", ["pending", "in_progress"]),
+  // PAGINADO (#4321): `buscaEmLotes` sozinho quebra o `.in()` em lotes de 100
+  // ids, mas cada lote era UMA consulta sem `.range()` — e o PostgREST corta
+  // aquela consulta em 1.000 linhas caladas. Para `crm_tasks` isso não é
+  // teórico: 100 negócios com uma dúzia de tarefas abertas cada já passam de
+  // mil, e os cards do fim do lote perdiam o selo sem aviso nenhum. A ordem
+  // `id` é o desempate que faz a página seguinte ser determinística.
+  const { linhas, truncado, erro } = await lerPaginadoEmLotes<LinhaDaTarefaNoQuadro>(
+    leadIds,
+    (lote, inicio, fim, contar) =>
+      supabase
+        .from("crm_tasks")
+        .select("lead_id, due_date, status", contar ? { count: "exact" } : undefined)
+        .eq("organization_id", organizationId)
+        .in("lead_id", lote)
+        .in("status", ["pending", "in_progress"])
+        .order("id")
+        .range(inicio, fim),
   );
-  if (error) return { leads, error: error.message };
+  if (erro) return { leads, error: erro, truncado: false };
 
   return {
-    leads: anexarTarefasAosNegocios(leads, (data ?? []) as LinhaDaTarefaNoQuadro[]),
+    leads: anexarTarefasAosNegocios(leads, linhas),
     error: null,
+    truncado,
   };
 }
 
@@ -503,26 +514,35 @@ async function withAnexos(
   organizationId: string,
   leads: Lead[],
   campos: ReturnType<typeof camposDeArquivoDoNegocio>,
-): Promise<{ leads: Lead[]; error: string | null }> {
-  if (leads.length === 0 || campos.length === 0) return { leads, error: null };
+): Promise<{ leads: Lead[]; error: string | null; truncado: boolean }> {
+  if (leads.length === 0 || campos.length === 0) return { leads, error: null, truncado: false };
 
   const leadIds = leads.map((l) => l.id);
   const chaves = campos.map((campo) => campo.key);
 
-  const { data, error } = await buscaEmLotes(leadIds, (lote) =>
-    supabase
-      .from("crm_lead_attachments")
-      .select("lead_id, field_key, id, file_name, mime_type, file_size, created_at")
-      .eq("organization_id", organizationId)
-      .in("lead_id", lote)
-      .in("field_key", chaves)
-      .order("created_at", { ascending: true }),
+  // Paginado pelo mesmo motivo das tarefas (#4321): os anexos de 100 negócios
+  // também crescem com o filho e também eram cortados em 1.000 por lote. A
+  // ordem é a que o card já esperava (`created_at`), com `id` como desempate
+  // para a página seguinte não repetir nem pular linha.
+  const { linhas, truncado, erro } = await lerPaginadoEmLotes<LinhaDoAnexoNoQuadro>(
+    leadIds,
+    (lote, inicio, fim, contar) =>
+      supabase
+        .from("crm_lead_attachments")
+        .select("lead_id, field_key, id, file_name, mime_type, file_size, created_at", contar ? { count: "exact" } : undefined)
+        .eq("organization_id", organizationId)
+        .in("lead_id", lote)
+        .in("field_key", chaves)
+        .order("created_at", { ascending: true })
+        .order("id")
+        .range(inicio, fim),
   );
-  if (error) return { leads, error: error.message };
+  if (erro) return { leads, error: erro, truncado: false };
 
   return {
-    leads: anexarAnexosAosNegocios(leads, (data ?? []) as LinhaDoAnexoNoQuadro[], campos) as Lead[],
+    leads: anexarAnexosAosNegocios(leads, linhas, campos) as Lead[],
     error: null,
+    truncado,
   };
 }
 
@@ -745,6 +765,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsComAnexos.error, 500, { requestId });
   }
 
+  // O AVISO de recorte (#4321) soma TODAS as leituras do quadro que provam o
+  // próprio fim: os negócios, as tarefas e os anexos. Antes, só a primeira
+  // sabia se tinha sido cortada — e as duas de apoio cortavam caladas.
+  const truncado = leituraDosLeads.truncado || leadsComTarefas.truncado || leadsComAnexos.truncado;
+
   const leadsComConversa = await withConversas(
     supabase,
     (pipeline as Pipeline).organization_id,
@@ -774,11 +799,11 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     // fim, quem desenha o quadro precisa saber que está vendo um recorte — o
     // resto do contrato fica igual. Ausente quando o fim foi provado, então o
     // quadro pequeno responde byte a byte o que respondia antes.
-    ...(leituraDosLeads.truncado ? { truncado: true as const } : {}),
+    ...(truncado ? { truncado: true as const } : {}),
   };
 
   return ok(board, {
     requestId,
-    headers: leituraDosLeads.truncado ? { "X-Quadro-Truncado": "1" } : undefined,
+    headers: truncado ? { "X-Quadro-Truncado": "1" } : undefined,
   });
 }
