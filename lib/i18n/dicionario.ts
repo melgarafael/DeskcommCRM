@@ -4308,7 +4308,8 @@ export const DICIONARIO: Traducoes = {
   // #4519 — a linha de residência de processamento. As frases das situações que
   // NÃO são país ficam aqui inteiras: `desconhecido` e `endereco_proprio` não
   // podem degradar para nada parecido com "fica nos EUA".
-  "Onde o texto é processado:": { es: "Dónde se procesa el texto:" },
+  "Para onde o texto vai:": { es: "Adónde va el texto:" },
+  "(sede do provedor)": { es: "(sede del proveedor)" },
   "fonte: política do provedor": { es: "fuente: política del proveedor" },
   "consultada em": { es: "consultada el" },
   "Neste servidor — nada sai da instalação": { es: "En este servidor — nada sale de la instalación" },

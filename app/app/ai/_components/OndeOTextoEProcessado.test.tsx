@@ -35,8 +35,10 @@ describe("OndeOTextoEProcessado — as quatro respostas, e nenhuma delas é sil�
 
     const el = linha(deepseek!);
     expect(el).toHaveAttribute("data-situacao", "declarado");
-    expect(el).toHaveTextContent("Onde o texto é processado: China");
+    expect(el).toHaveTextContent("Para onde o texto vai: China");
     expect(el).toHaveTextContent("consultada em 12/11/2026");
+    // Com fonte por provedor o país é o declarado por ele — não leva a marca de sede.
+    expect(el).not.toHaveTextContent("sede do provedor");
     const fonte = screen.getByRole("link", { name: "fonte: política do provedor" });
     expect(fonte).toHaveAttribute("href", deepseek!.fonteDoPais!.url);
   });
@@ -49,7 +51,9 @@ describe("OndeOTextoEProcessado — as quatro respostas, e nenhuma delas é sil�
 
     const el = linha(anthropic!);
     expect(el).toHaveAttribute("data-situacao", "declarado");
-    expect(el).toHaveTextContent("Onde o texto é processado: Estados Unidos");
+    // Sem fonte própria o código é a SEDE de quem recebe, não a região de
+    // processamento — a tela diz isso em vez de imprimir o país como declarado.
+    expect(el).toHaveTextContent("Para onde o texto vai: Estados Unidos (sede do provedor)");
     // Código cru não vaza para a tela: quem lê é o operador, não a cláusula.
     expect(el).not.toHaveTextContent(/\bUS\b/);
     expect(screen.queryByRole("link", { name: "fonte: política do provedor" })).toBeNull();
@@ -98,7 +102,7 @@ describe("OndeOTextoEProcessado — as quatro respostas, e nenhuma delas é sil�
       const el = screen.getByTestId("onde-o-texto-e-processado");
       // A linha existe e tem texto: `null` no componente reprova aqui.
       expect(el.textContent?.trim().length, `${provedor.id} ficou sem texto`).toBeGreaterThan(10);
-      expect(el).toHaveTextContent("Onde o texto é processado:");
+      expect(el).toHaveTextContent("Para onde o texto vai:");
       // E o código do catálogo nunca aparece cru para o operador.
       expect(el).not.toHaveTextContent(/:\s*(US|CN|UE)\b/);
       unmount();

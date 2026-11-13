@@ -1,9 +1,11 @@
 ---
 impacto: capacidade_nova
 secao: adicionado
-titulo: A tela de IA diz em que país o texto do cliente é processado, com a fonte e a data
+titulo: A tela de IA diz para que país vai o texto do cliente, com a fonte quando o provedor declara
 ---
 
+O país mostrado é a sede de quem recebe o texto; a região de processamento só aparece
+quando há fonte do próprio provedor, e sem ela a tela marca "(sede do provedor)".
 Cada provedor de IA declara o país em CÓDIGO do vocabulário fechado da cláusula 9
 (`US`/`CN`/`UE`/`operador`/`desconhecido`, o mesmo que o documento do operador imprime
 desde o #4520) mais a procedência em `fonteDoPais`: URL do documento e data da consulta,

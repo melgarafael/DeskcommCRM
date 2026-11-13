@@ -40,6 +40,14 @@
  * data. Quando não existe, a declaração é a do catálogo, datada em
  * `CONSULTA_DOS_PAISES_EM` e impressa pela cláusula 9 — esta linha não inventa
  * fonte nem repete uma data que não é dela.
+ *
+ * ## Sem fonte, o país é a SEDE — e a tela diz isso
+ *
+ * O catálogo registra em `pais` a sede de quem recebe o texto, não a região de
+ * processamento (que vários provedores não publicam, ou fazem variar por
+ * projeto ou por chamada). Por isso o rótulo pergunta "para onde vai", e o país
+ * sem fonte própria leva "(sede do provedor)": imprimir "Estados Unidos" sozinho
+ * leria como região declarada, que é o chute que a regra 1 da #4518 proíbe.
  */
 import { useT } from "@/hooks/i18n/useT";
 import { NOME_DO_PAIS } from "@/lib/ai/pontos/provedores";
@@ -106,10 +114,11 @@ export function OndeOTextoEProcessado({ provedor, enderecoProprio = null, classN
       data-testid="onde-o-texto-e-processado"
       data-situacao={situacao}
     >
-      <span className="font-medium">{t("Onde o texto é processado:")}</span>{" "}
+      <span className="font-medium">{t("Para onde o texto vai:")}</span>{" "}
       {situacao === "declarado" && nome ? (
         <>
           <span>{nome}</span>
+          {!provedor.fonteDoPais && <span> {t("(sede do provedor)")}</span>}
           {provedor.fonteDoPais && (
             <>
               {" · "}
