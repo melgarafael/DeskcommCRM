@@ -159,13 +159,19 @@ const DELIMITERS = [",", ";", "\t"] as const;
  * ponto-e-vírgula e tabulação — Excel pt-BR exporta com ";".
  */
 export function parseCsv(raw: string): string[][] {
+  return parseCsvComLinhas(raw).map((linha) => linha.cells);
+}
+
+/** Numera os registros antes de descartar os vazios. Uma quebra entre aspas pertence à célula. */
+export function parseCsvComLinhas(raw: string): { cells: string[]; rowNumber: number }[] {
   const text = raw.replace(/^\uFEFF/, "");
   const delimiter = detectDelimiter(text);
 
-  const rows: string[][] = [];
+  const rows: { cells: string[]; rowNumber: number }[] = [];
   let row: string[] = [];
   let field = "";
   let inQuotes = false;
+  let rowNumber = 1;
   let i = 0;
 
   while (i < text.length) {
@@ -199,7 +205,8 @@ export function parseCsv(raw: string): string[][] {
     if (ch === "\r" || ch === "\n") {
       if (ch === "\r" && text[i + 1] === "\n") i += 1;
       row.push(field);
-      rows.push(row);
+      rows.push({ cells: row, rowNumber });
+      rowNumber += 1;
       row = [];
       field = "";
       i += 1;
@@ -211,9 +218,9 @@ export function parseCsv(raw: string): string[][] {
   // Última linha sem quebra final ainda precisa entrar.
   if (field !== "" || row.length > 0) {
     row.push(field);
-    rows.push(row);
+    rows.push({ cells: row, rowNumber });
   }
-  return rows.filter((r) => !(r.length === 1 && r[0] === ""));
+  return rows.filter(({ cells }) => !(cells.length === 1 && cells[0] === ""));
 }
 
 function detectDelimiter(text: string): string {
