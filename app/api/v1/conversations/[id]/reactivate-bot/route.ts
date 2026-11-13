@@ -32,7 +32,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ESCOPO_CONVERSAS_ESCRITA } from "@/lib/api/escopos-do-token";
 import { ApiError } from "@/lib/api/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -59,6 +59,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     tokenRole: "agent",
   });
   if (!authz.ok) return authz.response;
+  // #1999 — rota de `PUBLIC_PATHS`: o `proxy.ts` não decide sobre ela e nada a
+  // montante conta as chamadas. Sem este teto, o Bearer escreve sem cota. A
+  // sessão passa sem contagem (quem digita é uma pessoa).
+  const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+  if (teto) return teto;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
 
   try {
@@ -74,16 +79,24 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       // 200, e não erro: o gesto foi feito (o silêncio saiu) e o que impede o
       // automático é um estado que a integração precisa VER — o dono humano ou a
       // marca do contato. Erro faria a integração repetir um gesto já aplicado.
-      const motivo =
+      //
+      // ⚠️ `t()` em CADA RAMO, e não `t(motivo)`: chave montada em runtime não
+      // está em dicionário nenhum, então quem escolheu espanhol receberia a
+      // frase em português (`tests/unit/i18n-espanhol-cobre-a-tela.test.ts`).
+      const mensagem =
         resultado.motivo_bloqueio === "contato_sempre_humano"
-          ? "Este contato está marcado como sempre atendimento humano. Para a IA voltar a atendê-lo, remova a marca na ficha do contato."
-          : "A conversa está com um atendente humano. O automático volta quando o atendimento for devolvido pela tela.";
+          ? t(
+              "Este contato está marcado como sempre atendimento humano. Para a IA voltar a atendê-lo, remova a marca na ficha do contato.",
+            )
+          : t(
+              "A conversa está com um atendente humano. O automático volta quando o atendimento for devolvido pela tela.",
+            );
       return ok(
         {
           reactivated: false,
           automacao_liberada: false,
           motivo_bloqueio: resultado.motivo_bloqueio,
-          mensagem: t(motivo),
+          mensagem,
         },
         { requestId },
       );

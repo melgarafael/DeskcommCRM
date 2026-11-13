@@ -22,7 +22,7 @@ import { z } from "zod";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ESCOPO_CONVERSAS_ESCRITA } from "@/lib/api/escopos-do-token";
 import { ApiError } from "@/lib/api/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -61,6 +61,11 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     tokenRole: "agent",
   });
   if (!authz.ok) return authz.response;
+  // #1999 — rota de `PUBLIC_PATHS`: o `proxy.ts` não decide sobre ela e nada a
+  // montante conta as chamadas. Sem este teto, o Bearer escreve sem cota. A
+  // sessão passa sem contagem (quem digita é uma pessoa).
+  const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+  if (teto) return teto;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
 
   try {

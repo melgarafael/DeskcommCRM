@@ -12,7 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail, noContent } from "@/lib/api/wrappers";
-import { resolveAuthDual } from "@/lib/api/auth-dual";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ESCOPO_CONTATOS_ESCRITA } from "@/lib/api/escopos-do-token";
 import type { Actor } from "@/lib/api/handlers/types";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
@@ -169,6 +169,11 @@ export async function PATCH(
     tokenRole: "agent",
   });
   if (!authz.ok) return authz.response;
+  // #1999 — a rota está em `PUBLIC_PATHS`, então o `proxy.ts` não decide sobre
+  // ela e nada a montante conta as chamadas: o que não for contado aqui não é
+  // contado em nenhum lugar. A sessão passa sem teto (quem digita é uma pessoa).
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
   const supabase = authz.supabase;
   const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
 

@@ -79,8 +79,33 @@ import { entraPorPacote, type ToolBundle, type ToolRisk } from "./pacotes";
  * argumento (a heurística de degradação) que ninguém mediu, que é exatamente o
  * que o bloco ⚠️ acima diz. O dia em que o `evoluir` exigir 28, o passo volta a
  * ser ele.
+ *
+ * ═══ 27 → 31: tasks, comandos de conversa e a ficha por token (#4515/#4516/#4517)
+ *
+ * O dia anunciado chegou: o `evoluir` passou a exigir 29. O catálogo cresceu de
+ * 77 para 88 capacidades (+11) e as duas contas que ancoram o número foram
+ * medidas no head de antes desta linha:
+ *
+ *  - `vender` — o pacote do onboarding — foi de 22 para 24 automáticas (a ficha
+ *    editável e o desfecho do compromisso). O agente NASCE com 24, então tudo o
+ *    que ele pode ganhar depois encareceu 2: evoluir 27 → 29, reter 32 → 34,
+ *    escalar 36 → 42, atender 39 → 45, organizar 42 → 49. No teto 27 NENHUMA
+ *    segunda jornada cabe — é o beco do defeito D3 outra vez, e o teste que o
+ *    guarda (`tests/unit/pacote-reserva-vaga-da-critica.test.ts`) reprovou;
+ *  - `atender` + o seed da e2e foi de 28 para 32, porque pausar, retomar,
+ *    encerrar e reabrir a conversa entraram nele. A spec
+ *    `tests/e2e/capacidades-do-agente.spec.ts` cobra o texto `/faltam? 1 vaga/`,
+ *    que é `exigidas - teto`: com 32 exigidas, 31 é o ÚNICO teto que mantém a
+ *    conta em 1. Foi esse vínculo, e não a folga, que fixou o passo.
+ *
+ * 31 é o menor número que satisfaz as DUAS pontas (uma jornada nova cabe, e a
+ * recusa da e2e continua com 1 vaga). A folga depois de ligar `vender` cai de
+ * 3 para 2 — as duas capacidades que o `vender` ganhou —, e é o mesmo
+ * raciocínio de sempre: restaurar folga, não escolher qual pacote ganha vaga.
+ * Subir além de 31 daria a segunda jornada a mais de um pacote, o que continua
+ * sendo decisão contra um argumento que ninguém mediu.
  */
-export const TETO_TOOLS_POR_AGENTE = 27;
+export const TETO_TOOLS_POR_AGENTE = 31;
 
 /** O mínimo que a regra precisa saber de uma capacidade. */
 export interface CapacidadeSelecionavel {

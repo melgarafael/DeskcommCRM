@@ -46,6 +46,14 @@ export type DonoDoCampo =
   | "alvo_de_tag"
   /** `lead_id`: quem guarda é `negocioDaEscritaDoTurno`, em `tools.ts`. */
   | "negocio"
+  /**
+   * `tasks.contact_id` OU o contato do `tasks.lead_id`. A tarefa pode nascer
+   * presa só ao negócio (#4516) — conferir apenas `contact_id` recusaria a
+   * tarefa legítima do próprio contato.
+   */
+  | "tarefa"
+  /** `demandas.contact_id` — o solicitante da demanda. */
+  | "demanda"
   /** Não é registro de cliente: funil, etapa, usuário, fluxo. */
   | "configuracao";
 
@@ -57,6 +65,29 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_cancel_appointment: { appointment_id: "compromisso" },
   crm_confirm_appointment: { appointment_id: "compromisso" },
   crm_set_appointment_outcome: { appointment_id: "compromisso" },
+  // #4515 — o desfecho do compromisso pela integração. Mesmo alvo das irmãs
+  // acima: operam por `appointment_id`, que é o único identificador que trazem.
+  crm_set_appointment_status: { appointment_id: "compromisso" },
+
+  // ---- tarefas (#4516) ----
+  // A tarefa é da EQUIPE, mas pode estar presa a um registro do cliente; cada
+  // vínculo é conferido pelo dono dele. `assigned_to` é pessoa da equipe, não
+  // registro de cliente — daí `configuracao`, como `to_user_id` acima.
+  crm_create_task: {
+    lead_id: "negocio",
+    contact_id: "contato",
+    demanda_id: "demanda",
+    assigned_to: "configuracao",
+  },
+  crm_update_task: {
+    task_id: "tarefa",
+    lead_id: "negocio",
+    contact_id: "contato",
+    demanda_id: "demanda",
+    assigned_to: "configuracao",
+  },
+  crm_complete_task: { task_id: "tarefa" },
+  crm_delete_task: { task_id: "tarefa" },
 
   // ---- contato e conversa ----
   crm_propose_contact_field: { contact_id: "contato" },
@@ -70,6 +101,15 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_send_whatsapp_message: { conversation_id: "conversa" },
   crm_request_human_handoff: { conversation_id: "conversa", target_user_id: "configuracao" },
   crm_resume_ai_attendance: { conversation_id: "conversa" },
+  // #4517 — os quatro comandos por token. A conversa é o único identificador
+  // que trazem, e cada um é uma transição de atendimento (`fn_service_status` ou
+  // o silêncio do bot), nunca escrita no cadastro nem no negócio.
+  crm_pause_ai: { conversation_id: "conversa" },
+  crm_resume_ai: { conversation_id: "conversa" },
+  crm_close_conversation: { conversation_id: "conversa" },
+  crm_reopen_conversation: { conversation_id: "conversa" },
+  // #4517 — a ficha editada por token. `contact_id` é o próprio alvo.
+  crm_update_contact: { contact_id: "contato" },
 
   // ---- casos humanos ----
   crm_add_case_note: { case_id: "chamado" },
@@ -187,6 +227,26 @@ async function campoEhDoContato(
       if (caso.error) throw new Error(caso.error.message);
       return caso.data !== null;
     }
+    case "tarefa": {
+      // A tarefa pode estar presa ao NEGÓCIO sem `contact_id` (#4516), então a
+      // conferência é por dois caminhos: o contato direto da linha ou o contato
+      // do negócio dela. Consultar só `contact_id` recusaria a tarefa do próprio
+      // cliente criada a partir do card.
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("id, contact_id, lead_id")
+        .eq("organization_id", organizationId)
+        .eq("id", id)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      const tarefa = data as { contact_id?: string | null; lead_id?: string | null } | null;
+      if (!tarefa) return false;
+      if (tarefa.contact_id === contato) return true;
+      if (tarefa.lead_id === null || tarefa.lead_id === undefined) return false;
+      return existeDoContato(supabase, "crm_leads", organizationId, contato, tarefa.lead_id);
+    }
+    case "demanda":
+      return existeDoContato(supabase, "demandas", organizationId, contato, id);
     case "alvo_de_tag":
       switch (args.target_kind) {
         case "contact":

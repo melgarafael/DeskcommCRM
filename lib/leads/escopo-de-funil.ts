@@ -130,6 +130,26 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // vem e liberaria 100% das vezes, com aparência de escopado.
   crm_confirm_appointment: "sem_funil",
   crm_set_appointment_outcome: "sem_funil",
+  // #4515 — o desfecho do compromisso por token. Mesmo argumento das três
+  // acima: opera por `appointment_id` e nunca recebe `lead_id`.
+  crm_set_appointment_status: "sem_funil",
+
+  // ---- tarefas (#4516) ----
+  // Criar e editar recebem `lead_id` OPCIONAL: quando vem, o funil sai do
+  // negócio (uma consulta); quando não vem, a tarefa não está em funil nenhum e
+  // `funil_vem_do_lead` libera — é a mesma consequência declarada em
+  // `crm_schedule_followup`, e por isso o alvo é o mesmo.
+  crm_create_task: "funil_vem_do_lead",
+  crm_update_task: "funil_vem_do_lead",
+  // Concluir e apagar operam só por `task_id`: não recebem `lead_id` nem
+  // `pipeline_id`, e a tarefa pode nem estar presa a negócio. Classificá-las
+  // `funil_vem_do_lead` seria TEATRO — o gate procuraria um argumento que nunca
+  // vem e liberaria 100% das vezes com aparência de escopado. Declarado
+  // `sem_funil` porque "não se aplica" e "ninguém decidiu" precisam ser
+  // distinguíveis; a barreira delas é outra (RBAC `ai_operator` + o filtro de
+  // organização no handler).
+  crm_complete_task: "sem_funil",
+  crm_delete_task: "sem_funil",
 
   // ---- não têm funil, e isso é declarado ----
   crm_send_whatsapp_message: "sem_funil",
@@ -152,6 +172,16 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
   // porque ausência aqui é recusa por vacuidade (`ferramenta_nao_classificada`).
   crm_set_conversation_sector: "sem_funil",
   crm_resume_ai_attendance: "sem_funil",
+  // #4517 — pausar, retomar, encerrar e reabrir por token. Operam por
+  // `conversation_id` e não tocam `crm_leads`: o dono do NEGÓCIO é do funil e só
+  // `transfer` o muda — é justamente a separação que a issue pede.
+  crm_pause_ai: "sem_funil",
+  crm_resume_ai: "sem_funil",
+  crm_close_conversation: "sem_funil",
+  crm_reopen_conversation: "sem_funil",
+  // #4517 — a ficha editada por token. Recebe `contact_id` e grava `contacts`,
+  // nunca `crm_leads`; o funil do contato não é tocado.
+  crm_update_contact: "sem_funil",
   crm_save_org_memory: "sem_funil",
   crm_propose_contact_field: "sem_funil",
   // Rascunho sugerido por integração (#1611): opera por `conversation_id`,

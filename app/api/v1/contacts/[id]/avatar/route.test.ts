@@ -359,8 +359,19 @@ describe("GET .../avatar — PUBLIC_PATHS (borda do proxy)", () => {
     expect(isPublicPath(`/api/v1/contacts/${ID_FORA_DA_FORMA}/avatar`)).toBe(false);
     expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}/avatar/extra`)).toBe(false);
     expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}/person`)).toBe(false);
-    expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}`)).toBe(false);
     expect(isPublicPath("/api/v1/contacts/bulk/avatar")).toBe(false);
+  });
+
+  it("a ficha `/contacts/{uuid}` passou a ser porta de token (#4517) — e só ela", () => {
+    // Até a #4517 esta linha era `false` AQUI, e a razão estava escrita no
+    // `public-paths.ts`: o `[id]` "ainda não tem suporte a Bearer". Agora tem:
+    // `PATCH /api/v1/contacts/{id}` cobra o escopo próprio `contacts:write` e
+    // resolve a identidade DENTRO da rota. O que este caso guarda é o RECORTE —
+    // a porta abriu para a forma de UUID, não para os irmãos literais.
+    expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}`)).toBe(true);
+    for (const irmao of ["bulk", "duplicates", "export", "import", "merge"]) {
+      expect(isPublicPath(`/api/v1/contacts/${irmao}`), `${irmao} nasceu público de carona`).toBe(false);
+    }
   });
 
   it("a listagem de contatos segue pública como estava", () => {
