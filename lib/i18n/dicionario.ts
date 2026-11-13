@@ -3387,6 +3387,25 @@ export const DICIONARIO: Traducoes = {
   },
   "Tokens in/out": { es: "Tokens entrada/salida" },
   "Custo (cents)": { es: "Costo (centavos)" },
+  // ─── Testar agente como conversa (#4424) ───
+  turno: { es: "turno" },
+  turnos: { es: "turnos" },
+  "Recomeçar conversa": { es: "Reiniciar conversación" },
+  "A IA não devolveu texto neste turno.": {
+    es: "La IA no devolvió texto en este turno.",
+  },
+  "Ferramentas usadas": { es: "Herramientas usadas" },
+  "Ações propostas (não executadas)": {
+    es: "Acciones propuestas (no ejecutadas)",
+  },
+  "Detalhes do turno": { es: "Detalles del turno" },
+  "Sem ações propostas neste turno.": {
+    es: "Sin acciones propuestas en este turno.",
+  },
+  "O histórico da conversa passou do limite: até 30 mensagens e 20.000 caracteres. Recomece a conversa para seguir.":
+    {
+      es: "El historial de la conversación superó el límite: hasta 30 mensajes y 20.000 caracteres. Reinicia la conversación para continuar.",
+    },
   // ─── Agentes de IA: diff e histórico de versões, uso das capacidades ───
   Provider: { es: "Proveedor" },
   Model: { es: "Modelo" },

@@ -6,6 +6,7 @@ import type { ToolSet } from '../edge/llm/run-model-call';
 import type { LeadContext, LeadContextResult } from '../edge/crm/get-lead-context';
 import type { PublishedAgentConfig } from './agent-config';
 import type { LeadCheckpointRow } from './inbound-turn';
+import type { FerramentaNoTraco } from './traco-do-turno';
 import { ferramentasDeAgendaDoAgente, temFerramentaDeAgenda } from './inbound-turn';
 import {
   BEFORE_SEND_GATES,
@@ -60,6 +61,15 @@ export interface PreviewResult {
   checkpoint?: unknown;
   candidates: Array<{ body: string; citations: Citation[]; trace: GateTraceEntry[] }>;
   proposals: Array<{ tool: string; arguments: unknown }>;
+  /**
+   * #4424 — as ferramentas que o turno REALMENTE chamou (as de leitura rodam de
+   * verdade na prévia). É a mesma lista que o traço do turno grava; ela passou a
+   * viajar na resposta para o Testar mostrar, turno a turno, o que a IA usou —
+   * antes quem lia o painel só via as ações PROPOSTAS.
+   *
+   * Opcional: `reply-drafts` não a preenche nem a lê.
+   */
+  ferramentas?: FerramentaNoTraco[];
   impediments: Array<{ code: string; message: string }>;
   /**
    * O que NÃO impediu o candidato, mas o operador precisa ver sobre o ENVIO real:
