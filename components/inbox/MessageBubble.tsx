@@ -91,6 +91,22 @@ interface Props {
   onEncaminhar?: (m: Message) => void;
   /** A mensagem citada por ESTA, quando houver — desenha o fio. */
   citada?: Message | null;
+  /**
+   * #4575 — o fio acabou de ser alcançado: o balão pisca por um instante.
+   *
+   * Quem sabe que a rolagem aconteceu é o `ChatThread` (dono do scroller), não
+   * esta bolha. Aqui só se desenha o destaque que ele liga e desliga.
+   */
+  destacada?: boolean;
+  /**
+   * #4575 — tocar no trecho citado leva à mensagem original.
+   *
+   * O gesto mora na bolha, mas a rolagem (e, quando a original ficou fora da
+   * página, o carregamento do histórico até ela) é do `ChatThread`: ele é quem
+   * tem o scroller e as páginas. Sem este callback o fio continua desenhado,
+   * só não é clicável — é a leitura do super-admin, que não tem o fio inteiro.
+   */
+  onIrParaCitada?: (id: string) => void;
   /** As reações a ESTA mensagem — marca no canto do balão, nunca balão próprio. */
   reacoes?: ReacaoNoBalao[];
   onReagir?: (emoji: string) => Promise<void>;
@@ -171,6 +187,8 @@ export function MessageBubble({
   onResponder,
   onEncaminhar,
   citada,
+  destacada = false,
+  onIrParaCitada,
   reacoes,
   onReagir,
   viewerUserId,
@@ -389,6 +407,17 @@ export function MessageBubble({
   // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
   // pelo anúncio, como o WhatsApp mostra no celular.
   const anuncio = !isOutbound ? lerAnuncioDaMensagem(message.metadata?.anuncio) : null;
+  /**
+   * #4575 — QUEM É A CITADA, mesmo quando ela não está carregada.
+   *
+   * O `citada` vem resolvido pela lista que já está na tela. Quando a original
+   * é antiga e ficou fora da página carregada, ele vem nulo — e o fio, até
+   * aqui, simplesmente desaparecia. Era o defeito registrado na issue: some o
+   * trecho E o gesto. Com o id do vínculo (`reply_to_message_id`, que a linha
+   * sempre traz) o bloco continua desenhado com um rótulo genérico, e o clique
+   * pede ao `ChatThread` que carregue o histórico até ela.
+   */
+  const idDaCitada = citada?.id ?? message.reply_to_message_id ?? null;
 
   async function reenviar(confirmado: boolean) {
     if (!onReenviar || ocupado) return;
@@ -417,6 +446,11 @@ export function MessageBubble({
   return (
     <div
       data-search-match={searchMatch || undefined}
+      // #4575 — a identidade da mensagem no DOM. É por este atributo que o
+      // clique na citação acha o alvo (o `id` do banco é uuid: nenhum
+      // caractere precisa de escape em seletor de atributo entre aspas).
+      data-message-id={message.id}
+      data-destacada={destacada || undefined}
       className={cn(
         "group flex w-full min-w-0 items-center gap-1 px-4 py-1",
         isOutbound ? "justify-end" : "justify-start",
@@ -453,6 +487,11 @@ export function MessageBubble({
           // A marca da busca é ANEL, não cor de fundo: o fundo já diz de quem é
           // a mensagem, e trocá-lo apagaria essa leitura justo na bolha achada.
           searchMatch && "ring-2 ring-foreground ring-offset-2 ring-offset-background",
+          // #4575 — o "achei" do clique na citação: o MESMO desenho do achado
+          // da busca, em cor de destaque e passageiro (quem liga e desliga é o
+          // ChatThread). Sem ele o fio rola até a original e ninguém sabe qual
+          // bolha era.
+          destacada && "ring-2 ring-primary ring-offset-2 ring-offset-background",
           // Espaço para a marca de reação, que fica metade para fora do balão.
           Boolean(reacoes?.length) && "mb-3",
         )}
@@ -544,19 +583,36 @@ export function MessageBubble({
 
           Mostra de quem era e um trecho. `line-clamp-2` porque serve para
           reconhecer, não para reler: a original está logo acima no histórico.
+
+          #4575 — e o trecho é um BOTÃO: tocar nele leva à mensagem original e
+          a destaca por um instante, como no WhatsApp. Quem rola é o
+          `ChatThread`; aqui só se avisa QUAL id foi pedido. Vale para as duas
+          direções (resposta do cliente e da equipe), porque o gesto é do fio,
+          não do autor.
         */}
-        {citada && (
-          <div
+        {idDaCitada && (
+          <button
+            type="button"
+            onClick={onIrParaCitada ? () => onIrParaCitada(idDaCitada) : undefined}
+            disabled={!onIrParaCitada}
+            aria-label={t("Ir para a mensagem citada")}
             className={cn(
-              "mb-1 rounded-md border-l-2 px-2 py-1 text-xs",
+              "mb-1 block w-full rounded-md border-l-2 px-2 py-1 text-left text-xs",
               isOutbound
                 ? "border-primary-foreground/50 bg-primary-foreground/10"
                 : "border-primary bg-background/60",
+              // O trecho inteiro é a área de toque — no celular o fio é estreito
+              // e o gesto é o ponto do pedido, então não se economiza alvo.
+              onIrParaCitada
+                ? "cursor-pointer hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-1"
+                : "cursor-default",
             )}
           >
-            <div className="font-medium opacity-80">
-              {citada.direction === "outbound" ? t("Você") : t("Cliente")}
-            </div>
+            <span className="block font-medium opacity-80">
+              {citada
+                ? citada.direction === "outbound" ? t("Você") : t("Cliente")
+                : t("Mensagem citada")}
+            </span>
             {/*
               A CITADA PODE TER SIDO APAGADA — e aí o texto dela não volta aqui.
 
@@ -567,16 +623,18 @@ export function MessageBubble({
               continuava legível dentro de cada resposta que a citou. O fio
               permanece (a citação some, não a resposta); o conteúdo, não.
             */}
-            <div className={cn("line-clamp-2 wrap-anywhere opacity-70", Boolean(citada.revoked_at || citada.metadata?.crm_hidden_at) && "italic")}>
-              {citada.revoked_at
+            <span className={cn("line-clamp-2 wrap-anywhere opacity-70", Boolean(citada?.revoked_at || citada?.metadata?.crm_hidden_at) && "italic")}>
+              {!citada
+                ? t("Toque para carregar a original")
+                : citada.revoked_at
                 ? t("Esta mensagem foi apagada")
                 : citada.metadata?.crm_hidden_at
                 ? t("Mensagem ocultada no CRM")
                 : citada.type === "contact"
                 ? resolveSharedContact(citada)?.name || t("Contato")
                 : citada.body?.trim() || t("(sem texto)")}
-            </div>
-          </div>
+            </span>
+          </button>
         )}
         {remetente && (
           <p className="mb-0.5 text-[11px] font-medium text-muted-foreground">

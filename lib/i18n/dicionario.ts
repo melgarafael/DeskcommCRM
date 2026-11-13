@@ -21141,6 +21141,10 @@ export const DICIONARIO: Traducoes = {
   "Erro no último preparo": { es: "Error en la última preparación" },
   "Abrir no Conhecimento": { es: "Abrir en Conocimiento" },
   "Só administradores podem preparar o catálogo de novo.": { es: "Solo los administradores pueden preparar el catálogo de nuevo." },
+  "Ir para a mensagem citada": { es: "Ir al mensaje citado" },
+  "Mensagem citada": { es: "Mensaje citado" },
+  "Toque para carregar a original": { es: "Toque para cargar el original" },
+  "A mensagem original não está mais na conversa.": { es: "El mensaje original ya no está en la conversación." },
 };
 
 /**
