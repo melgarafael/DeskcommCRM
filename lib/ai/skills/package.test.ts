@@ -128,6 +128,31 @@ Reescreva o texto mantendo o que ele diz.`;
     }
   });
 
+  it('#4458: matcher em linha (YAML válido que o parser não lê) é recusado, não vira matcher vazio', () => {
+    const emLinha = `---\nname: x\ndescription: y\nmatcher: { any_keywords: [frete] }\n---\ncorpo`;
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': emLinha }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.error.code).toBe('skill_frontmatter_invalid');
+      expect(out.error.message).toContain('em bloco');
+    }
+  });
+
+  it('#4458: linha em branco depois de matcher: não esconde as palavras-chave', () => {
+    const comBranco = `---\nname: x\ndescription: y\nmatcher:\n\n  any_keywords: [frete]\n---\ncorpo`;
+    const out = parseSkillPackage(makeZip({ 'SKILL.md': comBranco }));
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.pkg.matcher.any_keywords).toEqual(['frete']);
+  });
+
+  it('#4458: matcher ausente e matcher: {} seguem importando com matcher vazio', () => {
+    for (const fm of ['', 'matcher: {}\n', 'matcher: { }\n']) {
+      const out = parseSkillPackage(makeZip({ 'SKILL.md': `---\nname: x\ndescription: y\n${fm}---\ncorpo` }));
+      expect(out.ok, fm).toBe(true);
+      if (out.ok) expect(out.pkg.matcher).toEqual({});
+    }
+  });
+
   it('path traversal é recusado', () => {
     const out = parseSkillPackage(makeZip({ 'SKILL.md': validSkillMd, '../evil.md': 'x' }));
     expect(out.ok).toBe(false);

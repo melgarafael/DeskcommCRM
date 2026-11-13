@@ -74,18 +74,24 @@ function extensionOf(p: string): string {
  * `matcher` (skill publicada sem ativação por palavra). Chave desconhecida DENTRO do
  * `matcher` não é ignorada: é devolvida em `chavesDeMatcherDesconhecidas` para virar erro
  * de ensino — um typo (`any_tag`) não pode virar "skill sem matcher" em silêncio.
+ *
+ * Pela mesma razão, o mapa em linha (`matcher: { any_keywords: [frete] }`, YAML válido)
+ * não é lido: ele volta em `matcherEmLinha` para virar erro de ensino, em vez de importar
+ * como `{}` e nunca disparar. Linha em branco entre `matcher:` e as chaves é pulada.
  */
 function parseFrontmatter(raw: string): {
   name?: string;
   description?: string;
   matcher: Record<string, unknown>;
   chavesDeMatcherDesconhecidas: string[];
+  matcherEmLinha: boolean;
 } {
   const lines = raw.split('\n');
   let name: string | undefined;
   let description: string | undefined;
   const matcher: Record<string, unknown> = {};
   const chavesDeMatcherDesconhecidas: string[] = [];
+  let matcherEmLinha = false;
 
   const parseInlineArray = (value: string): string[] => {
     const trimmed = value.trim();
@@ -130,11 +136,17 @@ function parseFrontmatter(raw: string): {
         description = value;
       }
     } else if (/^matcher:/.test(line)) {
-      // varre as linhas indentadas abaixo de `matcher:` (matcher inline tipo `matcher: {}` não tem sub-linhas)
+      const resto = line.slice(line.indexOf(':') + 1).trim();
+      if (resto !== '' && !resto.startsWith('#') && resto.replace(/\s/g, '') !== '{}') matcherEmLinha = true;
+      // varre as linhas indentadas abaixo de `matcher:`, pulando linha em branco
       let j = i + 1;
       while (j < lines.length) {
         const sub = lines[j] ?? '';
-        if (sub === '' || !/^\s+\S/.test(sub)) break;
+        if (sub.trim() === '') {
+          j += 1;
+          continue;
+        }
+        if (!/^\s+\S/.test(sub)) break;
         const subTrimmed = sub.trim();
         const m = /^any_keywords:\s*(.*)$/.exec(subTrimmed);
         const p = /^probe_keywords:\s*(.*)$/.exec(subTrimmed);
@@ -154,7 +166,7 @@ function parseFrontmatter(raw: string): {
     }
   }
 
-  return { name, description, matcher, chavesDeMatcherDesconhecidas };
+  return { name, description, matcher, chavesDeMatcherDesconhecidas, matcherEmLinha };
 }
 
 /**
@@ -291,7 +303,9 @@ export function parseSkillPackage(zipBytes: Uint8Array): ParseSkillResult {
     return fail('skill_frontmatter_invalid', 'SKILL.md precisa começar com um frontmatter delimitado por "---".');
   }
   const [, frontmatterRaw, bodyRaw] = fmMatch;
-  const { name, description, matcher, chavesDeMatcherDesconhecidas } = parseFrontmatter(frontmatterRaw ?? '');
+  const { name, description, matcher, chavesDeMatcherDesconhecidas, matcherEmLinha } = parseFrontmatter(
+    frontmatterRaw ?? '',
+  );
 
   if (name === undefined || name === '') {
     return fail('skill_frontmatter_invalid', 'SKILL.md precisa de um campo "name" no frontmatter.');
@@ -304,6 +318,12 @@ export function parseSkillPackage(zipBytes: Uint8Array): ParseSkillResult {
   }
   if (description === undefined || description === '') {
     return fail('skill_frontmatter_invalid', 'SKILL.md precisa de um campo "description" no frontmatter.');
+  }
+  if (matcherEmLinha) {
+    return fail(
+      'skill_frontmatter_invalid',
+      'O "matcher" do SKILL.md precisa vir em bloco, uma chave por linha (ex.: "matcher:" e abaixo "  any_keywords: [frete, entrega]"); a forma em linha "matcher: { ... }" não é lida.',
+    );
   }
   // Typo dentro do matcher (`any_tag`) não vira "sem matcher": recusa nomeando a chave.
   const chaveDesconhecida = chavesDeMatcherDesconhecidas[0];
