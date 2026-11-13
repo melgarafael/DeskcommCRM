@@ -17,6 +17,10 @@ import { valorDaInstalacao } from "@/lib/instalacao/config";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { PROVEDORES, PROVEDOR_POR_ID, type PaisDoProvedor } from "@/lib/ai/pontos/provedores";
+import { lerAmbiente, type FonteDeAmbiente } from "@/lib/instalacao/ambiente";
 
 export interface Operador {
   /** Nome do sistema nesta instalação (respeita marca própria). */
@@ -164,4 +168,154 @@ export async function resolverOperador(): Promise<Operador> {
 /** Como o documento se refere ao operador quando não dá para saber quem é. */
 export function nomeDoOperador(op: Operador): string {
   return op.razaoSocial ?? op.nome ?? "o operador desta instalação";
+}
+
+// ── TRANSFERÊNCIA INTERNACIONAL — A CLÁUSULA SAI DO CATÁLOGO (#4520) ─────────
+//
+// A cláusula 9 do documento do operador dizia "as conversas vão para provedores
+// fora do Brasil" — uma frase escrita à mão, uma vez, para todo mundo. Quem
+// assina o contrato precisa dizer O QUE sai do país e PARA ONDE, e a frase
+// genérica não consegue cumprir isso; pior, ela continuaria igual numa
+// instalação cujo único provedor é um endpoint próprio, no servidor do próprio
+// operador.
+//
+// O dado que faltava é o país. Ele NÃO EXISTIA em lugar nenhum do repo (medido:
+// `PROVEDOR_POR_ID` não tinha país, e nenhum arquivo de `lib/ai` mapeava
+// provedor → país). Então ele passou a ser DECLARADO no catálogo
+// (`lib/ai/pontos/provedores.ts`, campo `pais`), e esta função só compõe: quem
+// lista provedor é uma fonte, quem escreve o texto é outra, e a data da
+// consulta vai junto porque dado sem data parece garantia.
+//
+// As regras são as da issue, nesta ordem:
+//  1. só entram provedores ATIVOS nesta instalação (`provedoresAtivosDaInstalacao`);
+//  2. provedor que não declara o país aparece, com a frase que manda consultar
+//     a política dele — omitir seria esconder uma transferência que existe;
+//  3. endpoint próprio/modelo local aparece como "no servidor do operador";
+//  4. a data da declaração vai no texto.
+
+/**
+ * Quando os países do catálogo foram conferidos pela última vez.
+ *
+ * Data, e não "atualizado sempre": o país da sede de um provedor muda por
+ * aquisição/reorganização, e o contrato precisa poder ser reconferido. Quem
+ * mudar um `pais` em `provedores.ts` muda esta data no mesmo commit.
+ */
+export const CONSULTA_DOS_PAISES_EM = "2026-11-13";
+
+/** O nome do país como o contrato escreve — não é ISO-3166 de tela. */
+const NOME_DO_PAIS: Record<Exclude<PaisDoProvedor, "desconhecido" | "operador">, string> = {
+  US: "Estados Unidos",
+  CN: "China",
+  UE: "União Europeia",
+};
+
+/** `"Anthropic (Claude)"` → `"Anthropic"`: o parêntese do rótulo é da tela. */
+function nomeCurtoDoProvedor(rotulo: string): string {
+  const corte = rotulo.indexOf(" (");
+  return corte > 0 ? rotulo.slice(0, corte) : rotulo;
+}
+
+/** Como uma linha da lista nomeia o provedor e o destino do dado. */
+function linhaDoProvedor(id: string): string | null {
+  const provedor = PROVEDOR_POR_ID.get(id);
+  if (!provedor) return null;
+  const nome = nomeCurtoDoProvedor(provedor.rotulo);
+  if (provedor.pais === "desconhecido") {
+    return `${nome} (não declara o país; consulte a política do provedor)`;
+  }
+  if (provedor.pais === "operador") {
+    return `${nome} (no servidor do operador)`;
+  }
+  return `${nome} (${NOME_DO_PAIS[provedor.pais]})`;
+}
+
+/**
+ * A cláusula 9, composta a partir dos provedores ATIVOS.
+ *
+ * `null` — e não lista vazia — é a leitura que FALHOU: dizer "não há
+ * transferência" porque o banco não respondeu seria a única frase desta
+ * cláusula capaz de criar obrigação falsa. Lista vazia é medição: a instalação
+ * não tem IA ligada, e aí a cláusula diz isso.
+ *
+ * A ordem é a do catálogo (`PROVEDORES`), não a de chegada: dois documentos
+ * gerados da mesma instalação saem iguais, e o diff de um contrato não muda de
+ * ordem porque o Postgres devolveu as linhas noutra.
+ */
+export function clausulaDeTransferenciaInternacional(
+  idsAtivos: readonly string[] | null,
+): string {
+  if (idsAtivos === null) {
+    return (
+      "Não foi possível confirmar agora, pelo banco desta instalação, quais provedores de " +
+      "inteligência artificial estão ativos; a lista corrente está em Agente de IA › Credenciais. " +
+      "O CRM e o banco ficam no servidor do operador, no Brasil. Você, como controlador, deve " +
+      "indicar na sua política o mecanismo de transferência que adota (Resolução CD/ANPD nº 19/2024)."
+    );
+  }
+
+  const ativos = new Set(idsAtivos);
+  const linhas = PROVEDORES.map((p) => p.id)
+    .filter((id) => ativos.has(id))
+    .map(linhaDoProvedor)
+    .filter((linha): linha is string => linha !== null);
+
+  if (linhas.length === 0) {
+    return (
+      "Com a IA desligada, nenhum texto de conversa é enviado a provedor externo: nada sai do " +
+      "servidor do operador, no Brasil. Se a IA for ligada, esta cláusula passa a listar os " +
+      "provedores usados e os países deles."
+    );
+  }
+
+  return (
+    `Com a IA ligada, o texto das conversas é processado por: ${linhas.join(", ")} — ` +
+    `conforme a declaração de cada provedor, consultada em ${dataDaConsulta()}. ` +
+    "O CRM e o banco ficam no servidor do operador, no Brasil. Você, como controlador, deve " +
+    "indicar na sua política o mecanismo de transferência que adota (Resolução CD/ANPD nº 19/2024)."
+  );
+}
+
+/** `2026-11-13` → `13/11/2026`, o formato que o contrato em português usa. */
+function dataDaConsulta(): string {
+  const [ano, mes, dia] = CONSULTA_DOS_PAISES_EM.split("-");
+  return `${dia}/${mes}/${ano}`;
+}
+
+/**
+ * Quais provedores de IA estão ATIVOS nesta instalação — a fonte da cláusula 9.
+ *
+ * Duas portas, porque o produto tem duas: a credencial cadastrada pela tela
+ * (`ai_provider_credentials`, ativa E já validada — a que o turno consegue usar)
+ * e a chave de plataforma do `.env` (`lerAmbiente`). Provedor só oferecido, sem
+ * chave, NÃO entra: listar o que não é usado assusta sem informar.
+ *
+ * `null` é falha de leitura, e não "nenhum" — quem chama decide como escrever
+ * isso (`clausulaDeTransferenciaInternacional` tem a frase própria).
+ *
+ * O `db` precisa ser o cliente de serviço: `ai_provider_credentials` é cifrada e
+ * a policy não a entrega a `authenticated`; com o cliente de sessão esta leitura
+ * volta vazia e a cláusula diria "nenhuma transferência" para uma instalação com
+ * IA ligada.
+ */
+export async function provedoresAtivosDaInstalacao(
+  db: SupabaseClient,
+  ambiente: FonteDeAmbiente = process.env,
+): Promise<string[] | null> {
+  const { data, error } = await db
+    .from("ai_provider_credentials")
+    .select("provider")
+    .eq("is_active", true)
+    .not("validated_at", "is", null);
+  if (error) return null;
+
+  const ativos = new Set<string>(
+    ((data ?? []) as { provider: string }[]).map((linha) => linha.provider),
+  );
+  for (const [id, temChave] of Object.entries(lerAmbiente(ambiente).chavesDeProvedor)) {
+    if (temChave) ativos.add(id);
+  }
+
+  // A ordem do catálogo, e só quem o catálogo conhece: uma linha órfã no banco
+  // (provedor removido do produto) não pode virar parágrafo de contrato.
+  return PROVEDORES.map((p) => p.id).filter((id) => ativos.has(id));
 }
