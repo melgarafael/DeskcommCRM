@@ -1,5 +1,5 @@
 ---
-impacto: capacidade_nova
+impacto: nada_mudou
 secao: corrigido
 titulo: Conversões só oferece "Enviar vendas pelo canal da conversa" a quem tem um canal que envia a venda
 ---
