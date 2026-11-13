@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { apiClient } from "@/lib/api/client";
 import { copyToClipboard } from "@/lib/clipboard";
 import { nomeDoCanal } from "@/lib/channels/estado";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 
@@ -72,6 +73,8 @@ function ParaColar({ rotulo, valor }: { rotulo: string; valor: string }) {
 
 export function CanalSmsClient() {
   const t = useT();
+  // O exemplo do campo segue o país da organização, como em toda tela.
+  const telefoneExemplo = useTelefoneExemplo();
   const qc = useQueryClient();
   const { data: estado = null } = useQuery({
     queryKey: ["canal-sms"],
@@ -174,7 +177,7 @@ export function CanalSmsClient() {
             id="sms-numero"
             value={numero}
             onChange={(e) => setNumero(e.target.value)}
-            placeholder="+14155550100"
+            placeholder={telefoneExemplo}
             autoComplete="off"
             inputMode="tel"
           />
