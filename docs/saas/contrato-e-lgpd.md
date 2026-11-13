@@ -36,7 +36,7 @@ vigiada por teste.
 | 6 | Cancelamento | O acesso vai até o fim do período já pago, sem reembolso proporcional |
 | 7 | Papéis na LGPD | O cliente é controlador; você é operador e só trata dados conforme as instruções dele |
 | 8 | Suboperadores | A empresa da VPS (onde ficam o CRM e o banco), o servidor de e-mail, os provedores de IA e o provedor de pagamento (Stripe ou Asaas) |
-| 9 | Transferência internacional | Com a IA ligada, as conversas vão para os provedores ativos, com o país de cada um (a lista sai de `lib/legal/operador.ts`) |
+| 9 | Transferência internacional | Com a IA ligada, as conversas vão para os provedores ativos, com o país de cada um (regras em `lib/legal/operador.ts`) |
 | 10 | Custo de IA | Chave do próprio cliente (BYOK) ou IA inclusa com teto mensal |
 | 11 | Segurança e backup | Frequência do backup e onde a cópia fica guardada |
 | 12 | Nota fiscal | Quem emite e quando (o sistema não emite) |
@@ -47,12 +47,15 @@ Na cláusula 9, liste os provedores de IA que você **de fato** usa: são os das
 em Agente de IA › Credenciais de cada empresa e os das chaves de IA no `.env` da instalação. Uma
 lista genérica copiada de outro contrato não descreve o seu tratamento.
 
-A lista não precisa ser escrita à mão: `clausulaDeTransferenciaInternacional`, em
-`lib/legal/operador.ts`, compõe a cláusula a partir do catálogo de provedores
-(`lib/ai/pontos/provedores.ts`, campo `pais`) e do que está ativo nesta instalação
-(`provedoresAtivosDaInstalacao` lê `ai_provider_credentials` — ativa e validada — e as chaves de
-plataforma do `.env`). Três regras vêm embutidas, e valem para quem escrever o texto à mão:
+As regras da lista estão codificadas em `clausulaDeTransferenciaInternacional`, em
+`lib/legal/operador.ts`, que compõe a cláusula a partir do catálogo de provedores (campo `pais` em
+`lib/ai/pontos/provedores.ts` e `lib/ai/pontos/provedores-de-servico.ts`) e do que está ativo
+nesta instalação (`provedoresAtivosDaInstalacao` lê `ai_provider_credentials` — ativa e validada —
+e as chaves de plataforma do `.env`). Enquanto nenhuma tela imprime a cláusula, escreva-a à mão
+seguindo as mesmas regras:
 
+- entram também os provedores que **não conversam** mas recebem dado da conversa: o Jev (a
+  TypeSafe AI recebe cada mensagem) e o serviço de voz (recebe o áudio do cliente);
 - provedor **sem credencial ativa** não entra: listar o que não é usado assusta sem informar;
 - provedor que **não declara o país** aparece assim mesmo, com "não declara o país; consulte a
   política do provedor" — omitir esconde uma transferência que existe;
@@ -62,7 +65,7 @@ A data da conferência dos países vai no texto (`CONSULTA_DOS_PAISES_EM`): dado
 garantia, e a sede de um provedor muda por aquisição ou reorganização. Ao mudar um país no
 catálogo, atualize a data no mesmo commit. Exemplo de saída, com Anthropic e Google ativos:
 
-> Com a IA ligada, o texto das conversas é processado por: Anthropic (Estados Unidos), Google
+> Com a IA ligada, o conteúdo das conversas é processado por: Anthropic (Estados Unidos), Google
 > (Estados Unidos) — conforme a declaração de cada provedor, consultada em 13/11/2026. O CRM e o
 > banco ficam no servidor do operador, no Brasil. Você, como controlador, deve indicar na sua
 > política o mecanismo de transferência que adota (Resolução CD/ANPD nº 19/2024).

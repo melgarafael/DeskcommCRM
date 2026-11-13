@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { PROVEDORES, PROVEDORES_DE_DECISAO } from "@/lib/ai/pontos/provedores";
+import { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 import {
   clausulaDeTransferenciaInternacional,
   CONSULTA_DOS_PAISES_EM,
@@ -80,7 +81,10 @@ describe("clausulaDeTransferenciaInternacional — o texto vem dos provedores at
     const texto = clausulaDeTransferenciaInternacional([]);
 
     expect(texto).toContain("Com a IA desligada");
-    expect(texto).toContain("nenhum texto de conversa é enviado a provedor externo");
+    expect(texto).toContain("nenhum dado de conversa é enviado a provedor de inteligência artificial");
+    // Não "nada sai do servidor": a chave de Mapas manda coordenadas ao Google
+    // sem IA ligada, e a Política de Privacidade declara isso.
+    expect(texto).not.toContain("nada sai do servidor");
     expect(texto).not.toContain("processado por:");
   });
 
@@ -116,7 +120,25 @@ describe("clausulaDeTransferenciaInternacional — o texto vem dos provedores at
     expect(texto.match(/DeepSeek \(China\)/g)).toHaveLength(1);
   });
 
-  it.each([...PROVEDORES, ...PROVEDORES_DE_DECISAO])(
+  it("só o Jev ligado: a TypeSafe AI aparece, pelo nome da empresa — nunca 'nada sai do servidor'", () => {
+    // O Jev não conversa (não está em `PROVEDORES`), mas recebe cada mensagem do
+    // cliente nos Estados Unidos — a Política de Privacidade já declara isso.
+    const texto = clausulaDeTransferenciaInternacional(["typesafe"]);
+
+    expect(texto).toContain("TypeSafe AI (Estados Unidos)");
+    expect(texto).not.toContain("Jev");
+    expect(texto).not.toContain("Com a IA desligada");
+    expect(texto).not.toContain("nada sai do servidor");
+  });
+
+  it("serviço de voz ligado: a ElevenLabs aparece, sem país inventado", () => {
+    const texto = clausulaDeTransferenciaInternacional(["anthropic", "elevenlabs"]);
+
+    expect(texto).toContain("Anthropic (Estados Unidos)");
+    expect(texto).toContain("ElevenLabs (não declara o país; consulte a política do provedor)");
+  });
+
+  it.each([...PROVEDORES, ...PROVEDORES_DE_DECISAO, ...PROVEDORES_DE_SERVICO])(
     "catraca: $id tem país declarado no catálogo",
     (provedor) => {
       // Sem isto, um provedor novo entraria no produto e sumiria da cláusula em
@@ -157,6 +179,16 @@ describe("provedoresAtivosDaInstalacao — o registro que a cláusula lê", () =
     ]);
 
     expect(await provedoresAtivosDaInstalacao(db, {})).toEqual([]);
+  });
+
+  it("credencial do Jev e da voz entram na lista, depois dos que conversam", async () => {
+    const db = dbDeCredenciais([
+      { provider: "elevenlabs", is_active: true, validated_at: "2026-11-01T10:00:00Z" },
+      { provider: "typesafe", is_active: true, validated_at: "2026-11-01T10:00:00Z" },
+      { provider: "google", is_active: true, validated_at: "2026-11-01T10:00:00Z" },
+    ]);
+
+    expect(await provedoresAtivosDaInstalacao(db, {})).toEqual(["google", "typesafe", "elevenlabs"]);
   });
 
   it("chave vazia no .env é ausente — o contrato do template de instalação", async () => {

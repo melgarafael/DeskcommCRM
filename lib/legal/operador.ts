@@ -19,7 +19,8 @@ import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { PROVEDORES, PROVEDOR_POR_ID, type PaisDoProvedor } from "@/lib/ai/pontos/provedores";
+import { PROVEDORES_COM_CHAVE, type PaisDoProvedor } from "@/lib/ai/pontos/provedores";
+import { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 import { lerAmbiente, type FonteDeAmbiente } from "@/lib/instalacao/ambiente";
 
 export interface Operador {
@@ -209,17 +210,41 @@ const NOME_DO_PAIS: Record<Exclude<PaisDoProvedor, "desconhecido" | "operador">,
   UE: "União Europeia",
 };
 
+/**
+ * Todo provedor com chave que recebe dado da conversa, e não só quem conversa.
+ *
+ * `PROVEDORES` é a lista de quem ESCREVE a resposta. O Jev (`PROVEDORES_DE_DECISAO`)
+ * recebe cada mensagem para decidir, e a ElevenLabs (`PROVEDORES_DE_SERVICO`)
+ * recebe o áudio do cliente: os dois tiram dado do servidor, e lendo só
+ * `PROVEDORES` a cláusula dizia "nada sai do servidor" com o Jev ligado. Esta
+ * leitura lista suboperadores, nunca escolhe modelo de conversa — por isso pode
+ * pedir a união (declarado em `tests/unit/provedores-de-decisao-catraca.test.ts`).
+ */
+const CATALOGO_DA_CLAUSULA: readonly { id: string; rotulo: string; pais: PaisDoProvedor }[] = [
+  ...PROVEDORES_COM_CHAVE,
+  ...PROVEDORES_DE_SERVICO,
+];
+const PROVEDOR_DA_CLAUSULA_POR_ID = new Map(CATALOGO_DA_CLAUSULA.map((p) => [p.id, p]));
+
+/**
+ * Onde o rótulo da tela não nomeia a EMPRESA que recebe o dado. O contrato
+ * nomeia quem trata, como a Política de Privacidade faz ("a TypeSafe AI"); o
+ * apelido do produto ("Jev") não identifica suboperador nenhum.
+ */
+const NOME_NO_CONTRATO: Readonly<Record<string, string>> = { typesafe: "TypeSafe AI" };
+
 /** `"Anthropic (Claude)"` → `"Anthropic"`: o parêntese do rótulo é da tela. */
-function nomeCurtoDoProvedor(rotulo: string): string {
+function nomeCurtoDoProvedor(id: string, rotulo: string): string {
+  if (NOME_NO_CONTRATO[id]) return NOME_NO_CONTRATO[id];
   const corte = rotulo.indexOf(" (");
   return corte > 0 ? rotulo.slice(0, corte) : rotulo;
 }
 
 /** Como uma linha da lista nomeia o provedor e o destino do dado. */
 function linhaDoProvedor(id: string): string | null {
-  const provedor = PROVEDOR_POR_ID.get(id);
+  const provedor = PROVEDOR_DA_CLAUSULA_POR_ID.get(id);
   if (!provedor) return null;
-  const nome = nomeCurtoDoProvedor(provedor.rotulo);
+  const nome = nomeCurtoDoProvedor(provedor.id, provedor.rotulo);
   if (provedor.pais === "desconhecido") {
     return `${nome} (não declara o país; consulte a política do provedor)`;
   }
@@ -237,7 +262,7 @@ function linhaDoProvedor(id: string): string | null {
  * cláusula capaz de criar obrigação falsa. Lista vazia é medição: a instalação
  * não tem IA ligada, e aí a cláusula diz isso.
  *
- * A ordem é a do catálogo (`PROVEDORES`), não a de chegada: dois documentos
+ * A ordem é a do catálogo (`CATALOGO_DA_CLAUSULA`), não a de chegada: dois documentos
  * gerados da mesma instalação saem iguais, e o diff de um contrato não muda de
  * ordem porque o Postgres devolveu as linhas noutra.
  */
@@ -254,21 +279,25 @@ export function clausulaDeTransferenciaInternacional(
   }
 
   const ativos = new Set(idsAtivos);
-  const linhas = PROVEDORES.map((p) => p.id)
+  const linhas = CATALOGO_DA_CLAUSULA.map((p) => p.id)
     .filter((id) => ativos.has(id))
     .map(linhaDoProvedor)
     .filter((linha): linha is string => linha !== null);
 
   if (linhas.length === 0) {
     return (
-      "Com a IA desligada, nenhum texto de conversa é enviado a provedor externo: nada sai do " +
-      "servidor do operador, no Brasil. Se a IA for ligada, esta cláusula passa a listar os " +
-      "provedores usados e os países deles."
+      // "provedor de inteligência artificial", e não "nada sai do servidor": a
+      // chave de Mapas manda coordenadas ao Google sem IA nenhuma ligada, e a
+      // Política de Privacidade declara isso.
+      "Com a IA desligada, nenhum dado de conversa é enviado a provedor de inteligência " +
+      "artificial. O CRM e o banco ficam no servidor do operador, no Brasil. Se a IA for " +
+      "ligada, esta cláusula passa a listar os provedores usados e os países deles."
     );
   }
 
   return (
-    `Com a IA ligada, o texto das conversas é processado por: ${linhas.join(", ")} — ` +
+    // "conteúdo", e não "texto": o serviço de voz recebe o áudio do cliente.
+    `Com a IA ligada, o conteúdo das conversas é processado por: ${linhas.join(", ")} — ` +
     `conforme a declaração de cada provedor, consultada em ${dataDaConsulta()}. ` +
     "O CRM e o banco ficam no servidor do operador, no Brasil. Você, como controlador, deve " +
     "indicar na sua política o mecanismo de transferência que adota (Resolução CD/ANPD nº 19/2024)."
@@ -317,5 +346,5 @@ export async function provedoresAtivosDaInstalacao(
 
   // A ordem do catálogo, e só quem o catálogo conhece: uma linha órfã no banco
   // (provedor removido do produto) não pode virar parágrafo de contrato.
-  return PROVEDORES.map((p) => p.id).filter((id) => ativos.has(id));
+  return CATALOGO_DA_CLAUSULA.map((p) => p.id).filter((id) => ativos.has(id));
 }
