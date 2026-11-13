@@ -105,8 +105,9 @@ jobs:
   # e `import` 415 s (run do head d8af02fee). Custo por arquivo se divide por
   # arquivo: cada parte roda metade (`--shard`) e paga metade do jsdom.
   #
-  # Os passos de arquivo inteiro rodam cada um numa parte só: typecheck e as
-  # três auditorias na 1; lint na 2; cercas e kit bash na última (na 3 até
+  # Os passos de arquivo inteiro rodam cada um numa parte só: as três
+  # auditorias na 1; lint na 2; typecheck na 8 (era na 1 até 13/11/2026, ver o
+  # fim deste bloco); cercas e kit bash na última (na 3 até
   # 08/10/2026) — é o que equilibra as partes (a conta está no fim deste bloco). O `--shard` corta por CONTAGEM de
   # arquivos, não por tempo; quem
   # equilibra o relógio é onde moram estes passos. A divisão em partes é o
@@ -283,8 +284,18 @@ jobs:
         if: matrix.parte == 7
         run: pnpm cercas
 
+      # NA PARTE 8, NÃO NA 1 (13/11/2026). O typecheck é custo FIXO de 139–201 s
+      # e a parte 1 é a que carrega o shard mais pesado do unit: medido na run
+      # 43416326622 da `main`, parte 1 = 9 min (unit 404 s + typecheck 139 s) e
+      # a parte 8 = 3,5 min. Em 13/11 a mesma parte 1, com 534 arquivos contra
+      # 533 da main (o PR não cresceu: unit 404 s → 566 s e typecheck 139 s →
+      # 201 s, TODAS as fases 1,4× — instância de runner mais lenta), estourou
+      # o orçamento com 13 min. Tirar o typecheck da 1 devolve 200 s a ela, o que
+      # a mantém abaixo do orçamento até nessa instância lenta, e a 8 fica em
+      # ~6 min com a folga que sobra. É o mesmo movimento do lint (1 → 2 em
+      # 22/09): o passo de arquivo inteiro mora na parte que tem folga.
       - name: Typecheck
-        if: matrix.parte == 1
+        if: matrix.parte == 8
         # O tsc do projeto inteiro passou a encostar no teto padrão do V8
         # (~4 GB): em 03/10 a main (run 37160218266) e os PRs #2229 e #2238
         # morreram com "JavaScript heap out of memory" (exit 134) neste passo,
@@ -502,6 +513,14 @@ jobs:
           # com a fila carregada, e o conserto foi a OITAVA parte (o arquivo mais
           # pesado do kit), de novo sem subir este número. A conta das duas
           # partes contra o 12 está no cabeçalho do job.
+          #
+          # 13/11/2026: a parte 1 estourou com 13 min numa instância de runner
+          # 1,4× mais lenta — mesma árvore, 533/534 arquivos, unit 404 s → 566 s
+          # e typecheck 139 s → 201 s (todas as fases na mesma proporção). O
+          # conserto foi REEQUILIBRAR: o typecheck saiu da parte 1 para a 8, que
+          # tinha 3,5 min de job. Reequilibrar voltou a caber porque agora existe
+          # uma parte com folga — em 08/10 nenhuma tinha 5 min. A conta está no
+          # passo do Typecheck.
           #
           # ── OS 100 CANCELADOS, E POR QUE ELES NÃO CENSURAM ESTA CONTA ────
           #
