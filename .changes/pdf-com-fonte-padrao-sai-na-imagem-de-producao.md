@@ -1,7 +1,7 @@
 ---
 impacto: nada_mudou
 secao: corrigido
-titulo: PDFs voltam a ser gerados na instalação em Docker
+titulo: PDFs saem também em imagem construída com webpack
 ---
 
-Exportar uma conversa em PDF e gerar a prévia ou o envio de uma proposta falhavam na imagem de produção com «Cannot find module … pdfkit/js/standard-fonts/Helvetica.cjs»: as fontes padrão do PDF não acompanhavam o build. Agora acompanham. Crédito: @berrub00.
+Quem constrói a própria imagem com `next build --webpack` tinha os PDFs (exportar conversa, prévia e envio de proposta) falhando com «Cannot find module … pdfkit/js/standard-fonts/Helvetica.cjs»: as fontes padrão do PDF não acompanhavam esse build. Agora acompanham. A imagem oficial, construída com o Turbopack, já as levava e não muda. Crédito: @berrub00.

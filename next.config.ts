@@ -73,11 +73,12 @@ const nextConfig: NextConfig = {
       "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/**",
       // pdfkit (dependência do @react-pdf/renderer): o build ESM registra as
       // fontes padrão com `createRequire(import.meta.url)("#standard-fonts/…")`.
-      // O tracer segue o `import` estático (os `.mjs`) e não esse `require` de
-      // runtime (os `.cjs`), então o standalone sobe sem eles e todo PDF com
-      // Helvetica/Times/Courier morre em `MODULE_NOT_FOUND …/pdfkit/js/
-      // standard-fonts/Helvetica.cjs` (exportar conversa, prévia e envio de
-      // proposta). Medido: 14 `.cjs` + 1 chunk ausentes; com eles o PDF sai.
+      // O Turbopack (o build padrão daqui) rastreia esses `.cjs`: medido na
+      // imagem oficial 1.109.0, os 14 estão lá e o PDF com Helvetica sai. O
+      // tracer do webpack (`next build --webpack`) segue só o `import`
+      // estático (os `.mjs`), e aí todo PDF com Helvetica/Times/Courier morre
+      // em `MODULE_NOT_FOUND …/pdfkit/js/standard-fonts/Helvetica.cjs`. A
+      // linha deixa os dois builds iguais (192 KB, já presentes no Turbopack).
       "./node_modules/.pnpm/pdfkit@*/node_modules/pdfkit/js/standard-fonts/**",
     ],
   },
