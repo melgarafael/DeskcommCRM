@@ -9359,6 +9359,24 @@ export const DICIONARIO: Traducoes = {
   // ─── Inbox (lado tenant): lista, filtros, cabeçalho da conversa ───
   Aguardando: { es: "Esperando" },
   "Erro ao carregar conversas.": { es: "Error al cargar las conversaciones." },
+  // #4508 — a lista diz QUAL falha foi, em vez de um genérico para todas.
+  // A régua é `lib/inbox/falha-da-lista.ts`; aqui só entra a frase.
+  "A consulta das conversas excedeu o tempo limite.": {
+    es: "La consulta de las conversaciones superó el tiempo límite.",
+  },
+  "Não foi possível falar com o servidor. Verifique a conexão.": {
+    es: "No fue posible comunicarse con el servidor. Verifica la conexión.",
+  },
+  "O servidor não respondeu agora.": { es: "El servidor no respondió ahora." },
+  "Você não tem permissão para ver estas conversas.": {
+    es: "No tienes permiso para ver estas conversaciones.",
+  },
+  "O pedido da lista de conversas foi recusado.": {
+    es: "La solicitud de la lista de conversaciones fue rechazada.",
+  },
+  "As conversas continuam salvas. Nada foi perdido.": {
+    es: "Las conversaciones siguen guardadas. No se perdió nada.",
+  },
   "Tentar novamente": { es: "Intentar de nuevo" },
   "Buscar conversas": { es: "Buscar conversaciones" },
   "Filtrar por número de WhatsApp": { es: "Filtrar por número de WhatsApp" },
@@ -11741,6 +11759,14 @@ export const DICIONARIO: Traducoes = {
   "Já tem conta?": { es: "¿Ya tienes cuenta?" },
   "Email ou senha incorretos.": { es: "Correo o contraseña incorrectos." },
   "Erro inesperado. Tente novamente.": { es: "Error inesperado. Intenta de nuevo." },
+  // #4508 — o aviso de falha TRANSITÓRIA (tempo esgotado, conexão caída) deixou
+  // de cair no "inesperado" acima: não é erro de produto, é espera.
+  "A consulta excedeu o tempo limite. Tente de novo.": {
+    es: "La consulta superó el tiempo límite. Intenta de nuevo.",
+  },
+  "Sem conexão com o servidor. Verifique a rede e tente de novo.": {
+    es: "Sin conexión con el servidor. Verifica la red e intenta de nuevo.",
+  },
   "Entrando...": { es: "Entrando..." },
   "Configurando autenticação em duas etapas...": {
     es: "Configurando autenticación en dos pasos...",
@@ -20423,6 +20449,10 @@ export const DICIONARIO: Traducoes = {
   // (automação e follow-up); campanha e Inbox ainda não leem o modificador.
   "Para escrever uma data no formato do cliente, use {{campo|data}}.": {
     es: "Para escribir una fecha en el formato del cliente, usa {{campo|data}}.",
+  },
+  // #4339: o bloco condicional — a linha que só existe quando o campo existe.
+  "Para a linha sumir quando o campo estiver vazio, envolva-a: {{#campo}}rótulo {{campo}}{{/campo}}.": {
+    es: "Para que la línea desaparezca cuando el campo esté vacío, envuélvela: {{#campo}}etiqueta {{campo}}{{/campo}}.",
   },
   // Installed runtime identity, distinct from an available release.
   "Versão ainda não confirmada": { es: "Versión aún no confirmada" },

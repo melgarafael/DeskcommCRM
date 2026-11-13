@@ -55,6 +55,10 @@ import {
 } from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
+import {
+  nomeDeArquivoSeguro,
+  nomeDoDocumentoParaEnvio,
+} from "@/lib/messaging/media/nome-para-envio";
 import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
 import {
   buildVcard,
@@ -1012,9 +1016,13 @@ export async function sendMessageHandler(
   // isso o histórico continuaria mostrando o nome aleatório. `null` quando o
   // envio não traz nome (token que só manda o storage_path): aí o balão segue
   // com o rótulo de sempre, em vez de exibir um `out-<uuid>`.
+  // Por `media_url` (#4524) o nome DECLARADO passa pela guarda do envio — a
+  // mesma que nomeia o documento no payload — e a linha guarda esse mesmo
+  // nome, para o cartão e o download não contarem outra história. Requisição
+  // antiga, sem o campo, não ganha chave nova no JSONB.
   const nomeOriginalDoAnexo = input.media_storage_path
     ? nomeDeArquivoLimpo(input.media_filename)
-    : null;
+    : nomeDeArquivoSeguro(input.media_filename);
   const botoesDoModeloEnviado =
     input.type === "template"
       ? await botoesDaDefinicao(supabase, {
@@ -1362,6 +1370,20 @@ export async function sendMessageHandler(
         // pela guarda anti-SSRF antes de a linha existir
         // (`assertUrlDeMidiaSegura`): ela chega também pela API pública e
         // pelo MCP, e quem a baixa é o gateway, de dentro da rede do servidor.
+        //
+        // O NOME (#4524): sem `filename` no `media`, quem escolhia era o canal
+        // — e o adaptador do canal grava o literal `file`, que no celular parece arquivo
+        // suspeito. A ordem está em `nomeDoDocumentoParaEnvio`: campo novo
+        // `media_filename`, depois o `metadata.media_filename` que a ingestão
+        // já grava (#2613), depois o último segmento da URL com extensão, e
+        // por fim uma reserva legível vinda do MIME. Nunca `file`, e nunca uma
+        // exceção: o nome é rótulo, não condição de envio.
+        const nomeDoDocumento = nomeDoDocumentoParaEnvio({
+          nomeExplicito: input.media_filename,
+          metadata: input.metadata,
+          url: input.media_url,
+          mime: input.media_mime,
+        });
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1373,6 +1395,7 @@ export async function sendMessageHandler(
           media: {
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
+            filename: nomeDoDocumento,
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,

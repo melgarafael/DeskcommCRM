@@ -46,6 +46,12 @@ vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 // O `Link` de verdade pede o router do App Router por contexto; no jsdom não há
 // nenhum, e o clique morreria antes de chegar ao `onClick`. A âncora simples
 // preserva o que o cartão faz de observável: o `href` e o dispensar.
+// O `useRouter` entra no dublê porque o `<Link>` do cartão agora pede o destino
+// POR INTENÇÃO (`usePrefetchPorIntencao`), e o hook chama `useRouter` (#3170).
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ prefetch: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/app/inbox",
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...p }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...p}>
