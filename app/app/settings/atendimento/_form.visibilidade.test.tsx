@@ -145,6 +145,15 @@ describe("#4381 — o texto dos modos diz o que fica de fora E o que continua vi
     renderizar("pt-BR");
 
     for (const modo of ["own_and_unassigned", "own"] as const) {
+      // A rodada ANTERIOR tem de ter TERMINADO antes da próxima interação.
+      // `waitFor(fetcher chamado)` espera o PATCH sair, não o salvamento
+      // terminar: enquanto ele está em voo, `isPending` desabilita o formulário
+      // inteiro e o botão se chama "Salvando…". Medido no CI (runner lento): o
+      // segundo clique caía nesse estado e o teste acusava "Unable to find the
+      // role button and name Salvar" — o botão estava lá, desabilitado e com o
+      // rótulo de salvamento em curso. Esperar o rótulo ocioso não afrouxa
+      // nenhuma asserção: o valor salvo continua sendo conferido abaixo.
+      await screen.findByRole("button", { name: "Salvar" });
       fetcher.mockClear();
       fireEvent.click(screen.getByTestId(`opcao-visibilidade-${modo}`));
       fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
