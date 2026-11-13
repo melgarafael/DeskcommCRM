@@ -80,11 +80,10 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { STATUS_ENCERRADOS } from "@/lib/inbox/comando-da-conversa";
 import { fusoValido } from "@/lib/reports/atividades";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -149,9 +148,16 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // Piso `viewer`: é leitura, e quem restringe por atendente é a RLS, não o
   // papel — mesmo contrato de `/reports/activities`.
-  const authz = await requireRole("viewer", { requestId, resource: "reports" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "reports",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "reports", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -206,7 +212,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     ate: inicioDoDia(proximoDia(ateTexto), tz).toISOString(),
   };
 
-  const supabase = await createClient();
+  // Token: cliente de serviço, sem RLS; o `p_org` e o filtro abaixo são a barreira.
+  const supabase = authz.supabase;
 
   // ─── A DIMENSÃO ────────────────────────────────────────────────────────────
   //
@@ -216,7 +223,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // leitura, que é a mentira mais cara deste relatório.
   const { data: emUso, error: erroDimensao } = await supabase.rpc(
     "fn_tags_de_conversa_em_uso",
-    { p_org: activeOrg.orgId },
+    { p_org: authz.organizationId },
   );
   if (erroDimensao) return fail("internal_error", erroDimensao.message, 500, { requestId });
   const dimensaoDoBanco = ((emUso ?? []) as Array<{ tag: string }>)
@@ -252,7 +259,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const { data, error, count } = await supabase
       .from("conversations")
       .select(COLUNAS, { count: "exact" })
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", authz.organizationId)
       .or(naJanela)
       .order("service_started_at", { ascending: false })
       .order("created_at", { ascending: false })

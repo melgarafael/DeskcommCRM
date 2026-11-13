@@ -16,16 +16,20 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * espera o QR, e o preflight custa seis contagens; quem precisa dele é o diálogo
  * de exclusão, uma vez, ao abrir. Contrato em `ChannelDeletionImpact`.
  *
- * Qualquer membro da org pode consultar. organization_id vem da sessão.
+ * Qualquer membro da org pode consultar. organization_id vem da sessão ou da
+ * linha do token — nunca do path.
  */
-import { assertWahaConnectionIdle, ChannelConnectionError } from "@/lib/channels/connect-waha";
-import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 
+import { assertWahaConnectionIdle, ChannelConnectionError } from "@/lib/channels/connect-waha";
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { extractBearer } from "@/lib/mcp/auth";
 import { CHANNEL_PROVIDER_SOCIAL, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { PARTNER_CHANNEL_PROVIDER, desfazerNoProvedor } from "@/lib/channels/connect";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
@@ -160,6 +164,23 @@ export async function GET(
   const requestId = randomUUID();
   const { id } = await params;
 
+  // DOIS PORTÕES, UM CORPO (Spec 33, R3). O token `dsk_…` (escopo `mcp:read`,
+  // papel membro) entra por `resolveAuthDual`; a sessão segue por
+  // `loadAuthUser` + `orgAtivaDaApi` de sempre. A organização vem da linha do
+  // token ou da sessão, nunca do path.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_sessions",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_sessions", requestId);
+    if (teto) return teto;
+    return responderGet(authz.supabase, authz.organizationId, undefined, requestId, id, req, true);
+  }
+
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Auth required.", 401, { requestId });
   const ativa = await orgAtivaDaApi(user, requestId);
@@ -168,22 +189,39 @@ export async function GET(
   if (!activeOrg) return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
 
   const supabase = await createClient();
-  const { data: session } = await supabase
+  return responderGet(supabase, activeOrg.orgId, user, requestId, id, req);
+}
+
+async function responderGet(
+  db: SupabaseClient,
+  organizationId: string,
+  user: { support?: { access_mode?: string | null } | null } | undefined,
+  requestId: string,
+  id: string,
+  req: NextRequest,
+  soLeitura = false,
+): Promise<Response> {
+  const { data: session } = await db
     .from("channel_sessions")
     .select("id, provider, waha_session_name, display_name, phone_number, status")
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .eq("id", id)
     .maybeSingle();
   if (!session) return fail("not_found", "Canal não encontrado.", 404, { requestId });
 
   const impact =
     req.nextUrl.searchParams.get("impact") === "1"
-      ? await loadDeletionImpact(activeOrg.orgId, id)
+      ? await loadDeletionImpact(organizationId, id)
       : null;
   const comImpacto = <T extends object>(corpo: T): T & { deletion_impact?: ChannelDeletionImpact } =>
     impact ? { ...corpo, deletion_impact: impact } : corpo;
 
-  if (user.support?.access_mode === "support_readonly") return ok(comImpacto({ ...session, waha_configured: false }), { requestId });
+  // Ramo do token (`soLeitura`): só lê a linha e responde. Não consulta o WAHA nem
+  // grava `channel_sessions` (carimbo de saúde, status, telefone): a convergência é
+  // da sessão. Pelo token, o estado vem do banco com `waha_configured: false`, o
+  // mesmo sinal de "não confirmado agora" do ramo abaixo.
+  if (soLeitura) return ok(comImpacto({ ...session, waha_configured: false }), { requestId });
+  if (user?.support?.access_mode === "support_readonly") return ok(comImpacto({ ...session, waha_configured: false }), { requestId });
   const waha = getWahaClient();
   // Canal oficial não tem sessão no transporte para consultar — `waha_session_name`
   // é NULL nele por CHECK, e perguntar assim mesmo pediria `/api/sessions/null`.
@@ -223,10 +261,10 @@ export async function GET(
   if (phoneNumber && phoneNumber !== session.phone_number) patch.phone_number = phoneNumber;
 
   const gravar = (corpo: Record<string, unknown>) =>
-    supabase
+    db
       .from("channel_sessions")
       .update(corpo)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", organizationId)
       .eq("id", id);
 
   let phoneConflict = false;
