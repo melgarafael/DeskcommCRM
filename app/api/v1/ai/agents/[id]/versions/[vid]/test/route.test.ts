@@ -18,6 +18,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
+import { newPreviewResult } from "@/lib/agent-engine/agent/preview";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { logger } from "@/lib/logger";
@@ -420,6 +421,41 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
       "[ai.test] o teste do agente falhou",
       expect.objectContaining({ error: cru }),
     );
+  });
+
+  // #4424 — as ferramentas do turno vão à tela, e o `erro` do coletor é texto
+  // livre (`erro.message`). Ele chega pelo vocabulário FECHADO do leitor do
+  // traço: o cru fica no traço gravado, a tela recebe o código.
+  it("#4424: erro de ferramenta chega à tela como código, nunca o texto cru", async () => {
+    const cru = "connect ECONNREFUSED — postgres://crm:segredo@db.interno:5432/crm";
+    vi.mocked(testAgentVersion).mockResolvedValueOnce({
+      ...newPreviewResult(),
+      candidates: [{ body: "Olá!", citations: [], trace: [] }],
+      ferramentas: [
+        { nome: "get_lead_context", estado: "falhou", erro: cru, duracao_ms: 12 },
+        { nome: "search_knowledge", estado: "ok", erro: null, duracao_ms: 5 },
+      ],
+    } as never);
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sample_message: "oi" }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+    const corpo = await res.text();
+    const { data } = JSON.parse(corpo) as {
+      data: { ferramentas: Array<{ nome: string; estado: string; erro: string | null }> };
+    };
+
+    expect(res.status).toBe(200);
+    expect(corpo).not.toContain("db.interno");
+    expect(corpo).not.toContain("segredo");
+    expect(data.ferramentas).toEqual([
+      { nome: "get_lead_context", estado: "falhou", erro: "internal_error", duracao_ms: 12 },
+      { nome: "search_knowledge", estado: "ok", erro: null, duracao_ms: 5 },
+    ]);
   });
 
   // #2237 — a config que o Testar usa (prompt, modelo, ferramentas e os

@@ -36,6 +36,7 @@ import { testRunSchema, LIMITE_DO_HISTORICO_EM_MENSAGENS, LIMITE_DO_HISTORICO_EM
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 import { ehFalhaDoBanco } from "@/lib/ai/agents/falha-do-banco";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
+import { codigo } from "@/lib/agent-engine/agent/recibo-do-traco";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -245,6 +246,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       final_text: finalText,
       tool_calls: result.proposals,
       ...result,
+      // #4424 — o `erro` de cada ferramenta é texto livre do coletor; a tela
+      // recebe o mesmo vocabulário fechado do leitor do traço (`codigo()`).
+      ferramentas: (result.ferramentas ?? []).map((f) => ({ ...f, erro: codigo(f.erro) })),
       stub: process.env.INTERNAL_AGENT_RUN_STUB === "true",
       guardrails: avaliarRespostaDeTeste(finalText, result.midia),
     };

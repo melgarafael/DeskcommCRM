@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
@@ -56,46 +56,30 @@ export function VozDoAgente({ agentId, inicial, disabled }: Props) {
   const [vozes, setVozes] = useState<string[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
-  // Atualização que chega depois do desmonte não é inofensiva: o React agenda a
-  // atualização e lê `window` no agendamento (resolveUpdatePriority). Com a tela
-  // já fora e o ambiente do teste desmontado, isso vira `window is not defined` —
-  // foi o vermelho do verify-parte (2) do #4447 e do verify-parte (3) do #4439,
-  // com a pilha em `setCarregando(false)`. A guarda é do componente, não do
-  // teste: quem navega antes de /api/v1/ai/voz responder faz o mesmo caminho em
-  // produção.
-  const vivo = useRef(true);
 
   useEffect(() => {
-    vivo.current = true;
+    // A resposta pode chegar depois que a tela saiu: sem esta guarda, o setState
+    // tardio lançava fora do React e virava rejeição não tratada (verify da 1.108.0).
+    let vivo = true;
+    void (async () => {
+      try {
+        const res = await apiClient.get<{
+          data: { voiceId: string | null; vozesDisponiveis: string[] };
+        }>("/api/v1/ai/voz");
+        if (!vivo) return;
+        setVozDaOrg(res.data.voiceId ?? "");
+        setVozes(res.data.vozesDisponiveis ?? []);
+      } catch (err) {
+        // Resposta incompleta não derruba o resto do editor: sem lista, cartão fica fora.
+        if (vivo) showApiError(err);
+      } finally {
+        if (vivo) setCarregando(false);
+      }
+    })();
     return () => {
-      vivo.current = false;
+      vivo = false;
     };
   }, []);
-
-  const carregar = useCallback(async () => {
-    try {
-      const res = await apiClient.get<{
-        data: { voiceId: string | null; vozesDisponiveis: string[] };
-      }>("/api/v1/ai/voz");
-      if (!vivo.current) return;
-      setVozDaOrg(res.data.voiceId ?? "");
-      setVozes(res.data.vozesDisponiveis ?? []);
-    } catch (err) {
-      // Resposta incompleta não derruba o resto do editor: sem lista, cartão fica fora.
-      if (vivo.current) showApiError(err);
-    } finally {
-      if (vivo.current) setCarregando(false);
-    }
-  }, []);
-
-  // A resposta pode chegar depois que a tela saiu: sem a guarda do `vivo`, o
-  // setState tardio lançava fora do React e virava rejeição não tratada (verify
-  // da 1.108.0) — e com o ambiente do teste desmontado virava `window is not
-  // defined` em `setCarregando(false)`. A guarda é do componente, não do teste:
-  // quem navega antes de /api/v1/ai/voz responder faz o mesmo caminho em produção.
-  useEffect(() => {
-    void carregar();
-  }, [carregar]);
 
   async function escolher(valor: string) {
     const anterior = vozDoAgente;
@@ -106,18 +90,16 @@ export function VozDoAgente({ agentId, inicial, disabled }: Props) {
       await apiClient.patch(`/api/v1/ai/agents/${agentId}`, {
         config: { voz_voice_id: nova === "" ? null : nova },
       });
-      if (!vivo.current) return;
       toast.success(
         nova === ""
           ? t("Voz deste agente: passa a usar a voz da organização.")
           : `${t("Voz deste agente salva:")} ${nova}`,
       );
     } catch (err) {
-      if (!vivo.current) return;
       setVozDoAgente(anterior);
       showApiError(err);
     } finally {
-      if (vivo.current) setSalvando(false);
+      setSalvando(false);
     }
   }
 
