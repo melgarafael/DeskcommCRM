@@ -3336,6 +3336,11 @@ export const DICIONARIO: Traducoes = {
   Trace: { es: "Traza" },
   "Selecione uma execução.": { es: "Selecciona una ejecución." },
   "Sem trace disponível.": { es: "Sin traza disponible." },
+  // A linha de TESTE do agente na aba Execuções (#4426): o que se perguntou e o
+  // que a IA respondeu. "Prueba" e não "test" — é o vocabulário desta tela para
+  // o ensaio de uma versão (o mesmo "dry-run" que ela já desenha).
+  "Mensagem do teste": { es: "Mensaje de la prueba" },
+  "Resposta da IA": { es: "Respuesta de la IA" },
   "(sem nome)": { es: "(sin nombre)" },
   erro: { es: "error" },
   Args: { es: "Argumentos" },

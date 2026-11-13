@@ -256,6 +256,17 @@ export interface RunModelCallInput {
    * (classificador, compaction, flywheel) e não pertence a um agente.
    */
   agentId?: string | null;
+  /**
+   * O run de PRÉVIA (`ai_agent_runs.id`) que causou esta chamada (#4426).
+   *
+   * Nulo em toda execução real — o turno de verdade é chaveado por `job_id`. Na
+   * prévia é o único elo entre a linha de `llm_calls` (custo, tokens, latência,
+   * o que a aba "Execuções" lê) e o `ai_agent_runs` que guarda a pergunta e a
+   * resposta do teste. Sem ele, a aba teria de adivinhar por horário qual run
+   * gerou qual chamada — e dois testes simultâneos do mesmo agente trocariam o
+   * texto entre si.
+   */
+  previewRunId?: string | null;
   /** atribuição de custo: 'agent_turn' (default) | 'classifier' | 'compaction' | 'connection_test' */
   purpose?: string;
   system?: string;
@@ -394,7 +405,10 @@ export function usosCrusDosPassos(result: { usage: { raw?: unknown }; steps?: Re
  */
 
 /** Só o que a linha de recusa em `llm_calls` grava — quem chama de fora do seam não tem mensagens. */
-export type RastroDaChamada = Pick<RunModelCallInput, 'tenantId' | 'leadId' | 'jobId' | 'variantId' | 'agentId'>;
+export type RastroDaChamada = Pick<
+  RunModelCallInput,
+  'tenantId' | 'leadId' | 'jobId' | 'variantId' | 'agentId' | 'previewRunId'
+>;
 
 /** O que o statement do gate devolve — uma ida ao banco, um snapshot. */
 interface LinhaDoOrcamento {
@@ -1523,9 +1537,9 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
         status, origem_da_escolha, agent_id,
         passos, entrada_do_primeiro_passo, chars_sistema, chars_ferramentas, chars_mensagens,
-        partes_de_midia, prefixo_hash)
+        partes_de_midia, prefixo_hash, preview_run_id)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ok', $14, $15,
-        $16, $17, $18, $19, $20, $21, $22)
+        $16, $17, $18, $19, $20, $21, $22, $23)
      returning id`,
     [
       input.tenantId,
@@ -1550,6 +1564,8 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       composicao?.charsMensagens ?? null,
       composicao?.partesDeMidia ?? null,
       composicao?.prefixoHash ?? null,
+      // #4426: na prévia, o run que guarda a pergunta e a resposta do teste.
+      input.previewRunId ?? null,
     ],
   );
 
@@ -1730,8 +1746,9 @@ async function registrarFalha(
     `insert into llm_calls
        (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_cents, latency_ms,
-        status, error_code, error_message, http_status, origem_da_escolha, agent_id)
-     values ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, null, $8, 'erro', $9, $10, $11, $12, $13)`,
+        status, error_code, error_message, http_status, origem_da_escolha, agent_id,
+        preview_run_id)
+     values ($1, $2, $3, $4, $5, $6, $7, 0, 0, 0, 0, null, $8, 'erro', $9, $10, $11, $12, $13, $14)`,
     [
       d.input.tenantId,
       d.input.leadId ?? null,
@@ -1746,6 +1763,10 @@ async function registrarFalha(
       http_status,
       d.origem,
       d.input.agentId ?? null,
+      // #4426: a linha de RECUSA também aponta para o run de prévia. Sem isso o
+      // teste que falhou (o caso em que mais se quer reler a pergunta) apareceria
+      // na aba sem texto nenhum.
+      d.input.previewRunId ?? null,
     ],
   );
 }
