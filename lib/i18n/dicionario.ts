@@ -11415,6 +11415,11 @@ export const DICIONARIO: Traducoes = {
   "Desmarcar todos em": { es: "Desmarcar todos en" },
   "Abrir esta conversa no Inbox": { es: "Abrir esta conversación en Inbox" },
   "conversa sem mensagens": { es: "conversación sin mensajes" },
+  // O VALOR DO NEGÓCIO editável no bloco do card (#4546): o campo vazio recusa
+  // gravar e o sucesso avisa que gravou. "Indica" é o mesmo verbo das outras
+  // frases de "Informe …" desta tela; "actualizado" é o particípio usado em es.
+  "Informe o valor.": { es: "Indica el valor." },
+  "Valor atualizado.": { es: "Valor actualizado." },
   "Valor inválido": { es: "Valor inválido" },
   // O VALOR RECORRENTE do negócio (#3602): setup + mensalidade no mesmo card.
   // "sem prazo" é o estado de omitir a duração — não é 12 meses, é contrato
