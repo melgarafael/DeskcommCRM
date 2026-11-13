@@ -101,15 +101,18 @@ describe("matriz capability × provider é exaustiva", () => {
     }
   });
 
-  it("reportaConversao só é verdadeira onde o adapter implementa reportConversion", () => {
-    // A tela de Conversões só oferece "Enviar vendas pelo canal da conversa" a
-    // quem tem um canal com a ponte. Se a matriz disser `true` sem o método, a
-    // chave volta a prometer o que não envia. A volta NÃO vale: o adapter do
-    // canal social herda o método do adapter do WhatsApp intermediado por
-    // espalhamento, mas a ponte é de WhatsApp — a capability fica `false`.
+  it("reportaConversao é verdadeira EXATAMENTE onde o adapter implementa reportConversion", () => {
+    // A tela de Conversões decide pela matriz; quem envia a venda
+    // (`canalQueReportaConversao`) decide pela presença do método. As duas
+    // respostas têm de ser a mesma, nos dois sentidos: matriz `true` sem o
+    // método é chave que promete o que não envia; método sem matriz `true` é
+    // venda saindo por um canal que a tela diz não ter ponte — foi o caso do
+    // adapter social, que herdava a ponte de WhatsApp por espalhamento.
     for (const p of PROVIDERS) {
-      if (!CHANNEL_CAPABILITIES[p].reportaConversao) continue;
-      expect(typeof getAdapter(p).reportConversion, `${p} declara sem implementar`).toBe("function");
+      expect(
+        typeof getAdapter(p).reportConversion === "function",
+        `${p}: matriz e adapter discordam sobre reportConversion`,
+      ).toBe(CHANNEL_CAPABILITIES[p].reportaConversao);
     }
     expect(CHANNEL_CAPABILITIES.zernio.reportaConversao).toBe(true);
     expect(CHANNEL_CAPABILITIES.waha.reportaConversao).toBe(false);
