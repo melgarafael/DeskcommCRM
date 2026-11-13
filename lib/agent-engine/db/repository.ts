@@ -38,6 +38,10 @@ export type InboxKind =
   | 'appointment_recovery_review'
   | 'qr_rescan'
   | 'routing_unassigned'
+  // (migration 9333, #3966) O número pediu para esperar a IA qualificar e o
+  // prazo venceu sem ela passar a conversa: a conversa entrou na distribuição,
+  // e quem cuida do agente precisa saber que ele não está passando adiante.
+  | 'routing_ia_wait_expired'
   | 'job_dead'
   | 'event_dead'
   | 'budget_exceeded'
@@ -60,6 +64,11 @@ export type InboxKind =
   // mesma coisa, e foi ele que pegou a primeira versão desta mudança — que
   // tinha o banco atualizado e o tipo não.
   | 'channel_template_review'
+  // (migration 9327, issue #3635) O MESMO evento, no canal OFICIAL DIRETO. Kind
+  // separado porque o rótulo e o destino do de cima apontam para a aba do
+  // parceiro: reaproveitá-lo mandaria quem conecta pela Cloud API para a tela
+  // errada. Nasce com `ref_kind='channel_session'`.
+  | 'channel_template_review_direct'
   | 'channel_number_alert'
   | 'midia_nao_lida'
   | 'promise_unfulfilled'

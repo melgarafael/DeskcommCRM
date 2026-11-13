@@ -55,6 +55,7 @@ import { RolagemDeChegada, type Chegada } from "@/lib/ui/rolagem-de-chegada";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
 import { LimiarDeSentimento } from "./LimiarDeSentimento";
+import { VozDoAgente } from "./VozDoAgente";
 import { FollowupFlowPicker } from "./FollowupFlowPicker";
 import {
   FollowupWindowEditor,
@@ -1589,6 +1590,16 @@ export function AgentForm(props: Props) {
             ) : null}
           </Card>
 
+          {/* A voz DESTE agente (#4228): grava em `ai_agents.config.voz_voice_id`,
+              por isso só em edição — como o limiar de sentimento logo abaixo. */}
+          {isEdit && (
+            <VozDoAgente
+              agentId={props.agent.id}
+              inicial={(props.agent.config ?? {}).voz_voice_id}
+              disabled={disabled}
+            />
+          )}
+
           {/* Capacidades */}
           <Card className="space-y-2 p-4">
             <h3 className="text-sm font-medium">{t("O que o agente pode fazer")}</h3>
@@ -1607,11 +1618,18 @@ export function AgentForm(props: Props) {
             ) : null}
           </Card>
 
-          {/* O acervo que este assistente consulta (0181) */}
+          {/* O acervo que este assistente consulta (0181). O MODO de leitura
+              (#4358) é `config` do agente: grava por PATCH imediato, como o
+              limiar de sentimento — por isso o cartão só recebe o id em
+              edição. */}
           <BasesDoAgente
             materiais={materiais}
             value={form.knowledge_source_ids}
             onChange={(ids) => patch({ knowledge_source_ids: ids })}
+            agentId={props.mode === "edit" ? props.agent.id : undefined}
+            modoInicial={
+              props.mode === "edit" ? (props.agent.config ?? {}).knowledge_mode : undefined
+            }
             disabled={disabled}
           />
 

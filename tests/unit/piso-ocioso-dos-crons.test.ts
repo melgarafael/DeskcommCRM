@@ -24,6 +24,7 @@ const h = vi.hoisted(() => ({
   rodadaDeCampanha: vi.fn(async () => ({ enviadas: 0, pulados: 0, concluidas: 0, promovidas: 0 })),
   rodadaDeHistorico: vi.fn(async () => ({ status: "concluida", gravadas: 0 })),
   candidatos: vi.fn(async () => ({ data: [], error: null })),
+  routing: vi.fn(async () => ({ batch_size: 0, outcomes: {}, errors: [] })),
 }));
 
 vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
@@ -47,6 +48,7 @@ vi.mock("@/lib/logger", () => ({
   logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
 }));
 vi.mock("@/lib/prospecting/worker", () => ({ tickProspecting: h.tickProspecting }));
+vi.mock("@/lib/routing/worker", () => ({ runRoutingWorker: h.routing }));
 vi.mock("@/lib/campanhas/rodada", () => ({ rodarUmaRodadaDeCampanha: h.rodadaDeCampanha }));
 vi.mock("@/lib/channels/historico/rodada", () => ({
   rodarUmaRodada: h.rodadaDeHistorico,
@@ -120,6 +122,19 @@ const CASOS: Caso[] = [
     trabalho: () => h.candidatos.mock.calls.length,
     exigeBanco: false,
     provaDoCaminhoNormal: () => h.candidatos.mock.calls.length,
+  },
+  {
+    // #3878: a ÚLTIMA rota de minuto a minuto sem saída barata. Cada batida
+    // fazia duas leituras de `event_log` (a varredura de `processing` preso e a
+    // de `pending`) mesmo ociosa — e `event_log` é o endpoint nº 1 do egress no
+    // relato. O trabalho é dublado; o caminho normal é provado pela LEITURA da
+    // fila, que é exatamente o que o portão economiza.
+    rota: "routing-worker",
+    trabalho: () => h.routing.mock.calls.length,
+    // O trabalho é dublado: `runRoutingWorker` É a fronteira do PostgREST, então
+    // quem prova o caminho normal é a chamada dele (a mesma régua da campanha).
+    exigeBanco: false,
+    provaDoCaminhoNormal: () => h.routing.mock.calls.length,
   },
 ];
 

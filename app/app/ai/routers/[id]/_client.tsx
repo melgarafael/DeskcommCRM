@@ -31,7 +31,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { ArrowRight, CaretLeft, Info, Plus, Trash } from "@/lib/ui/icons";
+import { ArrowRight, CaretLeft, Info, Plus, Trash, Warning } from "@/lib/ui/icons";
 import { randomId } from "@/lib/random-id";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
 import {
@@ -51,6 +51,7 @@ import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 // #2155 — funil/etapa de DESTINO da intenção: o card vai para o funil do produto.
 import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useT } from "@/hooks/i18n/useT";
+import type { NumeroSemRoteador } from "../estado-dos-numeros";
 
 interface AgentLite {
   id: string;
@@ -64,6 +65,19 @@ interface Props {
   channelSessions: ChannelSessionLite[];
   /** Só os modelos que esta organização consegue usar — ver lib/ai/classifier-models. */
   classifierModels: ClassifierModelOption[];
+  /**
+   * #4340 — o `channel_session` deste roteador saiu da lista de canais
+   * oferecíveis (arquivado/removido). O selo passa a dizer "inativo" e a tela
+   * diz o motivo. O `is_active` do formulário continua o GRAVADO: salvar outra
+   * coisa não pode desativar o roteador sem o operador ter escolhido.
+   */
+  numeroRemovido?: boolean;
+  /**
+   * #4340 — números vivos desta empresa que ainda não têm roteador: os destinos
+   * possíveis da ação "mover o roteador para o número novo". Vazio = nenhum
+   * número livre (a tela mantém só o aviso).
+   */
+  numerosLivres?: NumeroSemRoteador[];
 }
 
 interface DraftMember extends RouterMemberInput {
@@ -121,6 +135,8 @@ export function RouterEditorClient({
   agents,
   channelSessions,
   classifierModels,
+  numeroRemovido = false,
+  numerosLivres = [],
 }: Props) {
   const t = useT();
   const nextRouter = useNextRouter();
@@ -182,6 +198,12 @@ export function RouterEditorClient({
   }, [members]);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [testMessage, setTestMessage] = React.useState("");
+  // #4340 — destino da ação de mover. Com um número só livre, ele já vem
+  // escolhido: o caso comum (o número novo ÚNICO) vira um clique.
+  const [novoNumero, setNovoNumero] = React.useState(
+    numerosLivres.length === 1 ? numerosLivres[0]!.id : "",
+  );
+  const [movendoNumero, setMovendoNumero] = React.useState(false);
 
   const updateRouter = useUpdateRouter(routerId);
   const deleteRouter = useDeleteRouter();
@@ -308,6 +330,29 @@ export function RouterEditorClient({
     }
   }
 
+  /**
+   * #4340 — o gesto que faz o roteador acompanhar a troca de número. O PATCH
+   * leva `channel_session_id` e a rota aplica a régua (só sai de número
+   * removido / só entra em número vivo e sem roteador) e a auditoria "de X
+   * para Y". Aqui não há regra: só o pedido e o desfecho.
+   */
+  async function handleMoverParaNumero() {
+    if (!novoNumero) return;
+    setMovendoNumero(true);
+    try {
+      await updateRouter.mutateAsync({ channel_session_id: novoNumero });
+      toast.success(t("Roteador movido para o número novo."));
+      setNovoNumero("");
+      // O aviso de número removido e os números livres vêm do SSR (page.tsx);
+      // invalidar o React Query não os recalcula.
+      nextRouter.refresh();
+    } catch (err) {
+      showApiError(err);
+    } finally {
+      setMovendoNumero(false);
+    }
+  }
+
   function handleDelete() {
     deleteRouter.mutate(routerId, {
       onSuccess: () => {
@@ -333,8 +378,13 @@ export function RouterEditorClient({
           >
             <CaretLeft size={14} aria-hidden /> {t("Roteadores")}
           </Link>
-          <Badge variant={router.is_active ? "success" : "neutral"} className="text-xs">
-            {router.is_active ? t("ativo") : t("inativo")}
+          {/* Estado EFETIVO: número removido não roteia, diga o que disser a linha. */}
+          <Badge
+            variant={router.is_active && !numeroRemovido ? "success" : "neutral"}
+            className="text-xs"
+            data-testid="estado-do-roteador"
+          >
+            {router.is_active && !numeroRemovido ? t("ativo") : t("inativo")}
           </Badge>
         </div>
         {canManage && (
@@ -348,6 +398,54 @@ export function RouterEditorClient({
           </Button>
         )}
       </div>
+
+      {numeroRemovido && (
+        <Card
+          className="flex flex-col gap-1 border-amber-500/40 bg-amber-500/5 p-4"
+          data-testid="numero-removido"
+        >
+          <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <Warning size={16} aria-hidden /> {t("Este roteador aponta para um número removido")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Nenhuma conversa chega neste roteador: o número foi removido do WhatsApp. Mova o roteador para o número novo para as conversas voltarem a ser classificadas — sem isso, elas caem no agente principal do número, sem decisão de intenção.",
+            )}
+          </p>
+          {canManage && numerosLivres.length > 0 ? (
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="w-full space-y-1 sm:max-w-xs">
+                <Label htmlFor="router-novo-numero">{t("Número novo")}</Label>
+                <Select value={novoNumero || undefined} onValueChange={setNovoNumero}>
+                  <SelectTrigger id="router-novo-numero">
+                    <SelectValue placeholder={t("Selecione um número")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {numerosLivres.map((numero) => (
+                      <SelectItem key={numero.id} value={numero.id}>
+                        {numero.rotulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="button"
+                onClick={handleMoverParaNumero}
+                disabled={!novoNumero || movendoNumero || updateRouter.isPending}
+                data-testid="mover-roteador-de-numero"
+              >
+                <ArrowRight /> {t("Mover roteador para este número")}
+              </Button>
+            </div>
+          ) : null}
+          {canManage && numerosLivres.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t("Nenhum número livre para mover: conecte o número novo em Canais.")}
+            </p>
+          ) : null}
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="space-y-4">
