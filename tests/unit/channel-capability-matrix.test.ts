@@ -9,6 +9,7 @@
  * reprovaria o CI** — o oposto do que o invariante 2 da doutrina promete.
  */
 import { describe, expect, it } from "vitest";
+import { getAdapter } from "@/lib/channels";
 import {
   CHANNEL_CAPABILITIES,
   capabilitiesOf,
@@ -44,6 +45,7 @@ const CAPABILITIES = [
   "transmissao",
   "phonebook",
   "statusUpdates",
+  "reportaConversao",
 ] as const;
 
 describe("matriz capability × provider é exaustiva", () => {
@@ -97,5 +99,19 @@ describe("matriz capability × provider é exaustiva", () => {
       const c = CHANNEL_CAPABILITIES[p];
       expect(c.banRisk && c.requiresTemplates, `${p} declara as duas famílias`).toBe(false);
     }
+  });
+
+  it("reportaConversao só é verdadeira onde o adapter implementa reportConversion", () => {
+    // A tela de Conversões só oferece "Enviar vendas pelo canal da conversa" a
+    // quem tem um canal com a ponte. Se a matriz disser `true` sem o método, a
+    // chave volta a prometer o que não envia. A volta NÃO vale: o adapter do
+    // canal social herda o método do adapter do WhatsApp intermediado por
+    // espalhamento, mas a ponte é de WhatsApp — a capability fica `false`.
+    for (const p of PROVIDERS) {
+      if (!CHANNEL_CAPABILITIES[p].reportaConversao) continue;
+      expect(typeof getAdapter(p).reportConversion, `${p} declara sem implementar`).toBe("function");
+    }
+    expect(CHANNEL_CAPABILITIES.zernio.reportaConversao).toBe(true);
+    expect(CHANNEL_CAPABILITIES.waha.reportaConversao).toBe(false);
   });
 });
