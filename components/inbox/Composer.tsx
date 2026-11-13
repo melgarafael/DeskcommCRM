@@ -104,7 +104,7 @@ function avisoDeRascunhoIndisponivel(motivo: MotivoDeRecusa, t: (texto: string) 
 
 interface Props {
   conversationId: string;
-  /** Liga o botão de mensagem agendada ao lado do Enviar (a conversa tem contato e número). */
+  /** Liga as mensagens agendadas: botão ao lado do Enviar, ou item do "+" abaixo de `sm` (a conversa tem contato e número). */
   agendamentoLigado?: boolean;
   initialDraft?: string;
   initialMode?: "reply" | "note";
@@ -257,6 +257,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    */
   const [pendingEm, setPendingEm] = useState<"reply" | "note">("reply");
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [agendaAberta, setAgendaAberta] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">(initialMode);
   /**
@@ -1245,6 +1246,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             disabled={respostaBarrada}
             onPick={escolherArquivos}
             onPickContact={mode === "reply" ? () => setContactPickerOpen(true) : undefined}
+            onAgendar={agendamentoLigado && mode === "reply" ? () => setAgendaAberta(true) : undefined}
           />
           <EmojiButton
             disabled={isDisabled}
@@ -1354,7 +1356,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             aria-label={t("Mensagem")}
           />
           {agendamentoLigado && mode === "reply" ? (
-            <MensagensAgendadasBotao conversationId={conversationId} textoInicial={text} />
+            <MensagensAgendadasBotao
+              conversationId={conversationId}
+              textoInicial={text}
+              aberto={agendaAberta}
+              onAbertoChange={setAgendaAberta}
+            />
           ) : null}
           {text.trim() || mode === "note" ? (
             <Button

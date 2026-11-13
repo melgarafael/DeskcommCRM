@@ -69,6 +69,11 @@ export const DICIONARIO: Traducoes = {
   "Esperar reconectar e enviar": { es: "Esperar la reconexión y enviar" },
   "Cancelar este envio": { es: "Cancelar este envío" },
   "Agendamento atualizado.": { es: "Programación actualizada." },
+  // Chaves próprias: "Agendamento criado."/"Cancelar agendamento" são da Agenda
+  // e em espanhol viram "Cita…" — uma mensagem programada não é uma cita.
+  "Mensagem agendada.": { es: "Mensaje programado." },
+  "Mensagem agendada cancelada.": { es: "Mensaje programado cancelado." },
+  "Cancelar mensagem agendada": { es: "Cancelar mensaje programado" },
   "Não consegui cancelar o agendamento.": { es: "No pude cancelar la programación." },
   "Não consegui criar o agendamento. Confira os campos.": { es: "No pude crear la programación. Revise los campos." },
   "Não consegui salvar a edição. Confira os campos.": { es: "No pude guardar la edición. Revise los campos." },

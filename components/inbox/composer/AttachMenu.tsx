@@ -5,7 +5,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { FileText, ImageSquare, Plus, UserCircle } from "@/lib/ui/icons";
+import { CalendarDots, FileText, ImageSquare, Plus, UserCircle } from "@/lib/ui/icons";
 
 interface Props {
   disabled?: boolean;
@@ -19,10 +19,17 @@ interface Props {
    */
   onPick: (files: File[]) => void;
   onPickContact?: () => void;
+  /**
+   * Abre as mensagens agendadas (#4131). O item só aparece abaixo de `sm`: no
+   * celular o botão de calendário sai da linha do campo, que não tem largura
+   * para mais um ícone de 44px, e entra aqui. Acima de `sm` o botão continua ao
+   * lado do Enviar.
+   */
+  onAgendar?: () => void;
 }
 
 /** Menu "+" do composer (padrão WhatsApp): Fotos e vídeos / Documento / Contato. */
-export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
+export function AttachMenu({ disabled, onPick, onPickContact, onAgendar }: Props) {
   const t = useT();
   const mediaRef = useRef<HTMLInputElement | null>(null);
   const docRef = useRef<HTMLInputElement | null>(null);
@@ -86,6 +93,16 @@ export function AttachMenu({ disabled, onPick, onPickContact }: Props) {
               >
                 <UserCircle size={18} weight="duotone" className="text-primary" aria-hidden />
                 {t("Contato")}
+              </button>
+            )}
+            {onAgendar && (
+              <button
+                type="button"
+                className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted sm:hidden"
+                onClick={onAgendar}
+              >
+                <CalendarDots size={18} weight="duotone" className="text-primary" aria-hidden />
+                {t("Mensagens agendadas")}
               </button>
             )}
           </PopoverContent>

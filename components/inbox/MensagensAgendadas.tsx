@@ -82,9 +82,24 @@ function useAgendamentos(conversationId: string) {
 }
 
 /** Botão ao lado do Enviar, com o número de mensagens agendadas pendentes da conversa. */
-export function MensagensAgendadasBotao({ conversationId, textoInicial }: { conversationId: string; textoInicial?: string }) {
+/**
+ * O estado de aberto mora no Composer: no celular a porta é o item do "+"
+ * (AttachMenu), e este botão some abaixo de `sm` para o campo de mensagem
+ * manter a largura — a 375px o ícone a mais quebrava o placeholder em duas
+ * linhas. O diálogo continua montado aqui, então as duas portas abrem o mesmo.
+ */
+export function MensagensAgendadasBotao({
+  conversationId,
+  textoInicial,
+  aberto,
+  onAbertoChange,
+}: {
+  conversationId: string;
+  textoInicial?: string;
+  aberto: boolean;
+  onAbertoChange: (v: boolean) => void;
+}) {
   const t = useT();
-  const [aberto, setAberto] = useState(false);
   const consulta = useAgendamentos(conversationId);
   const pendentes = (consulta.data?.data ?? []).filter((a) => a.status === "agendada").length;
 
@@ -94,8 +109,8 @@ export function MensagensAgendadasBotao({ conversationId, textoInicial }: { conv
         type="button"
         variant="ghost"
         size="icon"
-        className="relative shrink-0"
-        onClick={() => setAberto(true)}
+        className="relative hidden shrink-0 sm:inline-flex"
+        onClick={() => onAbertoChange(true)}
         aria-label={t("Mensagens agendadas")}
         title={t("Mensagens agendadas")}
         data-testid="botao-mensagens-agendadas"
@@ -108,7 +123,7 @@ export function MensagensAgendadasBotao({ conversationId, textoInicial }: { conv
         ) : null}
       </Button>
       {aberto && (
-        <MensagensAgendadasDialog conversationId={conversationId} textoInicial={textoInicial ?? ""} onOpenChange={setAberto} />
+        <MensagensAgendadasDialog conversationId={conversationId} textoInicial={textoInicial ?? ""} onOpenChange={onAbertoChange} />
       )}
     </>
   );
@@ -139,7 +154,7 @@ function MensagensAgendadasDialog({
   async function cancelar(id: string) {
     try {
       await apiClient.delete(`/api/v1/mensagens-agendadas/${id}`);
-      toast.success(t("Agendamento cancelado."));
+      toast.success(t("Mensagem agendada cancelada."));
       await atualizar();
     } catch {
       toast.error(t("Não consegui cancelar o agendamento."));
@@ -240,8 +255,8 @@ function MensagensAgendadasDialog({
                       type="button"
                       size="icon"
                       variant="ghost"
-                      aria-label={t("Cancelar agendamento")}
-                      title={t("Cancelar agendamento")}
+                      aria-label={t("Cancelar mensagem agendada")}
+                      title={t("Cancelar mensagem agendada")}
                       onClick={() => void cancelar(a.id)}
                     >
                       <Trash size={16} weight="regular" aria-hidden />
@@ -315,7 +330,7 @@ function FormularioDeAgendamento({
         toast.success(t("Agendamento atualizado."));
       } else {
         await apiClient.post("/api/v1/mensagens-agendadas", { ...corpo, conversation_id: conversationId });
-        toast.success(t("Agendamento criado."));
+        toast.success(t("Mensagem agendada."));
       }
       await onSalvo();
     } catch {
