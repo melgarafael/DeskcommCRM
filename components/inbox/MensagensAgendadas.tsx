@@ -85,11 +85,17 @@ function useAgendamentos(conversationId: string) {
 /**
  * O estado de aberto mora no Composer. A porta garantida é o item do "+"
  * (AttachMenu), presente em qualquer largura; este botão só aparece quando a
- * LINHA do composer tem 25rem ou mais (container query, não breakpoint de
- * tela). Abaixo disso o ícone a mais quebrava o placeholder em duas linhas — a
+ * LINHA do composer tem 28rem ou mais (container query, não breakpoint de
+ * tela). Abaixo disso o ícone a mais quebra o placeholder em duas linhas — a
  * 375px no celular e também a 1280px com o painel do contato aberto, onde a
- * coluna fica estreita com a janela larga. O diálogo continua montado aqui,
- * então as duas portas abrem o mesmo.
+ * coluna fica estreita com a janela larga.
+ *
+ * O número é medido: com o botão, a largura útil do campo é a da linha menos
+ * ~246px, e o placeholder pede 162px. A 1280px com o painel aberto a linha
+ * mede 400px — exatamente 25rem, o limiar anterior, que deixou o botão
+ * aparecer e o texto quebrar. 28rem deixa ~40px de folga.
+ *
+ * O diálogo continua montado aqui, então as duas portas abrem o mesmo.
  */
 export function MensagensAgendadasBotao({
   conversationId,
@@ -112,7 +118,7 @@ export function MensagensAgendadasBotao({
         type="button"
         variant="ghost"
         size="icon"
-        className="relative hidden shrink-0 @min-[25rem]:inline-flex"
+        className="relative hidden shrink-0 @min-[28rem]:inline-flex"
         onClick={() => onAbertoChange(true)}
         aria-label={t("Mensagens agendadas")}
         title={t("Mensagens agendadas")}
