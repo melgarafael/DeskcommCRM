@@ -111,8 +111,8 @@ export interface ChannelCapabilities {
    * e token), e ligar a chave ali seria uma promessa que nada cumpre.
    *
    * A resposta declarativa é a da tela; quem executa confirma de novo pela
-   * presença de `reportConversion` no adapter, e o teste de matriz reprova a
-   * matriz que declara `true` sem o método.
+   * presença de `reportConversion` no adapter, e o teste de matriz reprova
+   * qualquer divergência entre as duas, nos dois sentidos.
    */
   reportaConversao: boolean;
 }
