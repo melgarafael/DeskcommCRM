@@ -5,6 +5,8 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { Input } from "@/components/ui/input";
+import { PreviaComValores } from "@/components/variaveis/PreviaComValores";
+import { SeletorDeVariavel, type AtalhoDeVariavel } from "@/components/variaveis/SeletorDeVariavel";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -381,14 +383,29 @@ function CreateOrMoveLeadForm({
   );
 }
 
-// O rótulo de cada variável é chave do dicionário e passa por t() onde vira botão: escrito cru, ele saía em
-// português em todo idioma. Só estas três: os campos do formulário que vêm junto são rótulos que a pessoa escreveu,
-// e dado não se traduz.
-const TEMPLATE_VARS = [
-  { token: "{{nome}}", label: "Nome" },
-  { token: "{{telefone}}", label: "Telefone" },
-  { token: "{{lead.title}}", label: "Título do lead" },
-];
+/**
+ * O que a automação oferece além do catálogo (#3687): o título do card e os
+ * campos que a organização criou no funil. Os campos NÃO entram no catálogo: a
+ * chave nasce em runtime, e o rótulo é texto que a pessoa escreveu — dado não se
+ * traduz.
+ *
+ * `{{lead.title}}` está aqui porque o catálogo só conhece o CURINGA `lead.*`, e
+ * curinga não é token: o seletor o mostra como dica, nunca como item de inserir
+ * (`{{lead.*}}` iria literal para o cliente). O título é o caminho que o botão
+ * antigo « Título do lead » inseria, e continua a um clique.
+ *
+ * As variáveis fechadas de CRM (`{{nome}}`, `{{telefone}}`…) não estão nesta
+ * lista: quem as oferece é `SeletorDeVariavel`, lendo o catálogo.
+ */
+function atalhosDaAutomacao(settings: unknown, t: ReturnType<typeof useT>): AtalhoDeVariavel[] {
+  return [
+    { chave: "lead.title", rotulo: t("Título do lead"), grupo: "campo-do-negocio" },
+    ...camposDoFunil(settings as Parameters<typeof camposDoFunil>[0]).map((f) => ({
+      chave: f.key,
+      rotulo: f.label,
+    })),
+  ];
+}
 
 function SendWhatsappForm({
   config,
@@ -408,9 +425,7 @@ function SendWhatsappForm({
   // monta a mensagem clica em "Serviço" em vez de adivinhar o nome interno. O
   // token é só a chave — `renderTemplate` a resolve em `lead.custom_fields`.
   const pipeline = useDefaultPipeline(true);
-  const camposDoFormulario = camposDoFunil(pipeline.data?.pipeline.settings ?? null)
-    .filter((f) => !TEMPLATE_VARS.some((v) => v.token === `{{${f.key}}}`))
-    .map((f) => ({ token: `{{${f.key}}}`, label: f.label }));
+  const atalhos = atalhosDaAutomacao(pipeline.data?.pipeline.settings ?? null, t);
 
   const insertVar = (token: string) => {
     const el = textareaRef.current;
@@ -451,19 +466,9 @@ function SendWhatsappForm({
         ) : null}
       </div>
       <div className="space-y-1">
-        <Label>{t("Mensagem")}</Label>
-        <div className="flex flex-wrap gap-1">
-          {[...TEMPLATE_VARS.map((v) => ({ ...v, label: t(v.label) })), ...camposDoFormulario].map((v) => (
-            <Button
-              key={v.token}
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => insertVar(v.token)}
-            >
-              {v.label}
-            </Button>
-          ))}
+        <div className="flex items-center justify-between gap-2">
+          <Label>{t("Mensagem")}</Label>
+          <SeletorDeVariavel fonte="automacao" onInserir={insertVar} extras={atalhos} />
         </div>
         <Textarea
           ref={textareaRef}
@@ -472,6 +477,7 @@ function SendWhatsappForm({
           onChange={(e) => onChange({ ...config, template: e.target.value })}
           placeholder={t("Oi {{nome}}, tudo bem?")}
         />
+        <PreviaComValores texto={config.template} fonte="automacao" />
         <p className="text-xs text-muted-foreground">
           {/* NÃO cravar "7h e 22h": a janela passou a vir dos ajustes DO NÚMERO
               (Conexões), no fuso da sua organização, e quem a mudou lá veria a
@@ -535,9 +541,15 @@ function SendEmailForm({
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const { data: membros } = useAssignableMembers(true);
   const pipeline = useDefaultPipeline(true);
-  const camposDoFormulario = camposDoFunil(pipeline.data?.pipeline.settings ?? null)
-    .filter((f) => !TEMPLATE_VARS.some((v) => v.token === `{{${f.key}}}`))
-    .map((f) => ({ token: `{{${f.key}}}`, label: f.label }));
+  const atalhos: AtalhoDeVariavel[] = [
+    ...atalhosDaAutomacao(pipeline.data?.pipeline.settings ?? null, t),
+    // #2642 — a variável desta ação: o resumo do negócio montado no disparo
+    // (só dado de forma fixa + atalho para a ficha; doc 176 A). Fica só no
+    // e-mail de propósito: no WhatsApp da equipe o corpo É o resumo, sem
+    // modelo. `{{resumo}}` entra no contexto em `send-email.ts` e o resolvedor
+    // a lê de lá; não é variável de CRM, por isso não está no catálogo.
+    { chave: "resumo", rotulo: t("Resumo do negócio"), grupo: "acao" },
+  ];
 
   const insertVar = (token: string) => {
     const el = textareaRef.current;
@@ -625,27 +637,9 @@ function SendEmailForm({
         </div>
       ) : null}
       <div className="space-y-1">
-        <Label>{t("Corpo do e-mail")}</Label>
-        <div className="flex flex-wrap gap-1">
-          {[
-            ...TEMPLATE_VARS.map((v) => ({ ...v, label: t(v.label) })),
-            // #2642 — a variável desta ação: o resumo do negócio montado no
-            // disparo (só dado de forma fixa + atalho para a ficha; doc 176 A).
-            // Fica só no e-mail de propósito: no WhatsApp da equipe o corpo É
-            // o resumo, sem modelo.
-            { token: "{{resumo}}", label: t("Resumo do negócio") },
-            ...camposDoFormulario,
-          ].map((v) => (
-            <Button
-              key={v.token}
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => insertVar(v.token)}
-            >
-              {v.label}
-            </Button>
-          ))}
+        <div className="flex items-center justify-between gap-2">
+          <Label>{t("Corpo do e-mail")}</Label>
+          <SeletorDeVariavel fonte="automacao" onInserir={insertVar} extras={atalhos} />
         </div>
         <Textarea
           ref={textareaRef}
@@ -654,6 +648,7 @@ function SendEmailForm({
           onChange={(e) => onChange({ ...config, corpo: e.target.value })}
           placeholder={t("Oi {{nome}}, tudo bem?")}
         />
+        <PreviaComValores texto={config.corpo} fonte="automacao" />
       </div>
       <div className="space-y-1">
         <Label>{t("Formato do corpo")}</Label>

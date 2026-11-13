@@ -115,6 +115,20 @@ export interface ChannelCapabilities {
    * canal dizendo que a operação não existe ali.
    */
   statusUpdates: boolean;
+  /**
+   * O canal devolve a VENDA à plataforma de anúncios (Meta) pela conversa?
+   *
+   * É a pergunta que a tela de Conversões faz antes de oferecer "Enviar vendas
+   * pelo canal da conversa": a chave só tem efeito quando alguma conexão da
+   * organização responde `true`. Quem conversa por QR Code ou pela API oficial
+   * direta não tem a ponte — a venda sai pela conexão direta (conjunto de dados
+   * e token), e ligar a chave ali seria uma promessa que nada cumpre.
+   *
+   * A resposta declarativa é a da tela; quem executa confirma de novo pela
+   * presença de `reportConversion` no adapter, e o teste de matriz reprova
+   * qualquer divergência entre as duas, nos dois sentidos.
+   */
+  reportaConversao: boolean;
 }
 
 /**

@@ -10,7 +10,7 @@
 # gravado na imagem do executor, fora do alcance de qualquer PR, e é lido pelo
 # processo do runner antes do checkout.
 #
-# Aceita só o que já exige permissão de escrita no repositório:
+# Aceita só o que já exige permissão de escrita no repositório, e nunca de bot:
 #   - push, workflow_dispatch, schedule, merge_group;
 #   - pull_request cuja branch mora NESTE repositório (não num fork).
 # Recusa todo o resto — inclusive pull_request_target e qualquer evento novo que
@@ -26,6 +26,14 @@ recusa() {
 
 [ "${GITHUB_REPOSITORY:-}" = "$REPO_ESPERADO" ] \
   || recusa "repositório '${GITHUB_REPOSITORY:-<vazio>}' não é ${REPO_ESPERADO}"
+
+# Bot nunca: o dependabot abre PR com branch DESTE repositório, então passaria
+# na regra de origem abaixo e rodaria atualização de dependência com o Docker do
+# host. O roteamento dos workflows já o manda ao GitHub; isto vale para quem não
+# segue o roteamento.
+case "${GITHUB_ACTOR:-}" in
+  *"[bot]") recusa "ator '${GITHUB_ACTOR}' é bot (bots rodam nas máquinas do GitHub)" ;;
+esac
 
 case "${GITHUB_EVENT_NAME:-}" in
   push | workflow_dispatch | schedule | merge_group)

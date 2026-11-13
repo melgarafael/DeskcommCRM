@@ -1,7 +1,7 @@
 "use client";
 
 import { format } from "date-fns";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   Table,
@@ -13,6 +13,11 @@ import {
 } from "@/components/ui/table";
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
+import {
+  armazenamentoLocal,
+  gravarOrdemLembrada,
+  lerOrdemLembrada,
+} from "@/lib/plataformas-de-anuncio/meta/ordem-lembrada";
 import {
   ORDEM_PADRAO,
   type CriterioDeOrdenacao,
@@ -140,17 +145,29 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
 
   /**
    * A ordenação é ESCOLHA DE LEITURA, não dado: mora no componente e não
-   * atravessa a requisição. Guardar por usuário (pedido 4 da issue) exige
-   * coluna de preferência — outra fatia.
+   * atravessa a requisição. Quem lembra dela é o NAVEGADOR (#4480), pelo mesmo
+   * `localStorage` do grupo fechado do menu — coluna de preferência no servidor
+   * ficou fora do escopo da issue.
    *
-   * `linhas` já chega na ordem padrão (`montarTabelaDeCampanhas` ordena), então
-   * a primeira renderização não depende deste estado.
+   * A leitura é num `useEffect`, nunca no inicializador do estado: no servidor
+   * não há `localStorage`, e ler na inicialização faria o HTML servido divergir
+   * do primeiro render do cliente (erro de hidratação). Antes do efeito vale
+   * `ORDEM_PADRAO`, que é também a ordem em que `linhas` já chega.
    */
   const [criterio, setCriterio] = useState<CriterioDeOrdenacao>(ORDEM_PADRAO);
+  useEffect(() => {
+    const lembrada = lerOrdemLembrada(armazenamentoLocal());
+    if (lembrada !== ORDEM_PADRAO) setCriterio(lembrada);
+  }, []);
   const linhasOrdenadas = useMemo(
     () => ordenarCampanhas(linhas, criterio),
     [linhas, criterio],
   );
+  /** Troca e grava no mesmo gesto: a escolha vale já e sobrevive ao próximo F5. */
+  function trocarCriterio(novo: CriterioDeOrdenacao) {
+    setCriterio(novo);
+    gravarOrdemLembrada(armazenamentoLocal(), novo);
+  }
 
   /**
    * A ressalva da leitura, quando existe: é o `title` do "—" da coluna do
@@ -236,7 +253,7 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
         <select
           id="ordem-das-campanhas"
           value={criterio}
-          onChange={(evento) => setCriterio(evento.target.value as CriterioDeOrdenacao)}
+          onChange={(evento) => trocarCriterio(evento.target.value as CriterioDeOrdenacao)}
           className="h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
         >
           {/*
@@ -299,9 +316,7 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
               */}
               <TableHead className="text-right" title={t("Reproduções de vídeo ÷ impressões")}>
                 {t("Hook Rate")}
-                <span className="ml-1 font-normal text-muted-foreground">
-                  {t("(reproduções)")}
-                </span>
+                <span className="ml-1 font-normal text-muted-foreground">{t("(reproduções)")}</span>
               </TableHead>
               <TableHead className="text-right">{t("ThruPlays")}</TableHead>
             </TableRow>
@@ -309,10 +324,13 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
           <TableBody>
             {linhasOrdenadas.map((linha) => {
               const rotulo = rotuloDoIndicador(linha.resultado.indicador);
-          return (
+              return (
                 <TableRow key={linha.campanhaId}>
                   <TableCell className="sticky left-0 z-10 max-w-[9rem] bg-bg font-medium md:max-w-[22rem]">
-                    <span className="block max-w-[9rem] truncate md:max-w-[22rem]" title={linha.nome}>
+                    <span
+                      className="block max-w-[9rem] truncate md:max-w-[22rem]"
+                      title={linha.nome}
+                    >
                       {linha.nome}
                     </span>
                   </TableCell>

@@ -45,6 +45,16 @@ const triggerConfigSchema = z
             // campo ao salvar e o aviso nunca liga pela tela. O teto é o mesmo
             // de TAMANHO_MAXIMO_DO_TEXTO em aviso-fora-do-horario.ts.
             notice: z.string().max(1000).nullable().optional(),
+            // Aviso PRÓPRIO de feriado nacional (#3877). Opcional e com o mesmo
+            // teto: sem esta linha o Zod DESCARTA a chave ao salvar (objeto de
+            // schema com strip, como o `notice`) e o texto de feriado nunca
+            // chegaria ao aviso.
+            notice_feriado: z.string().max(1000).nullable().optional(),
+            // "Não atender em feriado nacional" (#3877, doc 316 A). DESLIGADA de
+            // fábrica: ausente vale `false` na leitura (`lerFechadoEmFeriadoNacional`).
+            // Sem esta linha o Zod descarta a chave ao salvar e a chave da tela
+            // nunca chegaria ao turno.
+            fechado_em_feriado_nacional: z.boolean().optional(),
           })
           .nullable()
           .optional()
@@ -374,9 +384,38 @@ export const agentMcpPatchSchema = z
 
 export const publishSchema = z.object({ version_id: UUID }).strict();
 
+/**
+ * Limites do histórico do Testar como conversa (#4424).
+ *
+ * O histórico vive só no estado da tela e viaja no corpo do POST — não há
+ * tabela nova. Os números são os mesmos dos dois lados: o painel recorta a
+ * conversa para caber neles e esta rota RECUSA (400, com frase legível) o
+ * corpo que passar. Sem teto, cada turno reenviaria a conversa inteira e o
+ * custo por disparo cresceria sem limite.
+ *
+ * Depois deste recorte, o motor aplica ainda a janela da versão
+ * (`history_message_window`, default 20, e `history_token_window`, default
+ * 8.000 — ver `lib/agent-engine/agent/sandbox.ts`). Ou seja: 30 mensagens é o
+ * teto do TRANSPORTE; o que chega ao modelo é o menor dos dois.
+ */
+export const LIMITE_DO_HISTORICO_EM_MENSAGENS = 30;
+export const LIMITE_DO_HISTORICO_EM_CARACTERES = 20_000;
+
+/** Uma mensagem anterior do teste — o cliente digitou ou a IA respondeu. */
+export const testeHistoryMessageSchema = z
+  .object({
+    direction: z.enum(["inbound", "outbound"]),
+    body: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+
 export const testRunSchema = z
   .object({
     sample_message: z.string().trim().min(1).max(4000),
+    history: z
+      .array(testeHistoryMessageSchema)
+      .max(LIMITE_DO_HISTORICO_EM_MENSAGENS)
+      .optional(),
     sample_contact: z
       .object({
         name: z.string().trim().min(1).max(120).optional(),
