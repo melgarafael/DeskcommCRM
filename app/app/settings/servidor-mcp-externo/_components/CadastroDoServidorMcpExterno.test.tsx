@@ -38,6 +38,9 @@ import { CadastroDoServidorMcpExterno } from "./CadastroDoServidorMcpExterno";
 
 const ENDERECO = "https://erp.loja/mcp";
 const CHAVE = "segredo-do-erp-abcd";
+/** As listas de escrita liberada (#4445): a tela manda as duas no salvar. */
+const LIBERADAS_ORGANIZACAO = "listar_contratos, consultar_saldo";
+const LIBERADAS_CONEXAO = "criar_titulo";
 /** O de sempre: o endereço de metadados da nuvem que o guard recusa. */
 const ENDERECO_INSEGURO = "http://169.254.169.254/mcp";
 
@@ -51,6 +54,12 @@ function abrir() {
 function digitar(endpoint: string, chave = CHAVE) {
   fireEvent.change(screen.getByTestId("endpoint"), { target: { value: endpoint } });
   fireEvent.change(screen.getByTestId("chave"), { target: { value: chave } });
+}
+
+/** Os dois campos da liberação de escrita (#4445), que entram no mesmo salvar. */
+function digitarLiberacao(organizacao: string, conexao: string) {
+  fireEvent.change(screen.getByTestId("escritas-organizacao"), { target: { value: organizacao } });
+  fireEvent.change(screen.getByTestId("escritas-conexao"), { target: { value: conexao } });
 }
 
 const valorDoCampoDaChave = () => (screen.getByTestId("chave") as HTMLInputElement).value;
@@ -71,9 +80,19 @@ describe("cadastro: a chave só aparece na criação", () => {
     expect(screen.queryByTestId("chave-criada")).toBeNull();
 
     digitar(ENDERECO);
+    digitarLiberacao(LIBERADAS_ORGANIZACAO, LIBERADAS_CONEXAO);
     fireEvent.click(screen.getByTestId("salvar"));
 
-    await waitFor(() => expect(cadastro()).toHaveBeenCalledWith({ endpoint: ENDERECO, chave: CHAVE }));
+    // O salvar leva QUATRO campos desde a #4445: endereço, chave e as duas
+    // listas de escrita liberada, exatamente como foram digitadas.
+    await waitFor(() =>
+      expect(cadastro()).toHaveBeenCalledWith({
+        endpoint: ENDERECO,
+        chave: CHAVE,
+        escritasLiberadasOrganizacao: LIBERADAS_ORGANIZACAO,
+        escritasLiberadasConexao: LIBERADAS_CONEXAO,
+      }),
+    );
     await waitFor(() => expect(screen.getByTestId("chave-criada")).toBeInTheDocument());
     expect(screen.getByTestId("chave-criada").textContent).toContain("abcd");
     // A chave sai da tela junto com a revelação: deixá-la no campo faria o
@@ -94,7 +113,14 @@ describe("recusa do anti-SSRF: a tela diz o motivo, e nada mais", () => {
     // O endereço vai como foi digitado: quem recusa é o guard da action, não
     // uma regra paralela escrita nesta tela.
     await waitFor(() =>
-      expect(cadastro()).toHaveBeenCalledWith({ endpoint: ENDERECO_INSEGURO, chave: CHAVE }),
+      expect(cadastro()).toHaveBeenCalledWith({
+        endpoint: ENDERECO_INSEGURO,
+        chave: CHAVE,
+        // Nada digitado nas listas de escrita: elas vão vazias, e quem recusa o
+        // endereço inseguro é a action — a tela não inventa liberação.
+        escritasLiberadasOrganizacao: "",
+        escritasLiberadasConexao: "",
+      }),
     );
     await waitFor(() => expect(screen.getByTestId("erro")).toBeInTheDocument());
     expect(screen.getByRole("alert").textContent).toContain("recusado por segurança");
