@@ -65,7 +65,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 import { normalizePhoneBR, phoneForDisplay, samePhone } from "@/lib/channels/phone-variants";
-import { rotuloDoContato, rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
+import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { assumirConversaAoAbrir } from "@/lib/inbox/assumir-conversa-ao-abrir";
 import { ChatCircle, UserCircle, Users } from "@/lib/ui/icons";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";

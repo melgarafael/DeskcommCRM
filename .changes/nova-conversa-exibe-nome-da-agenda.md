@@ -1,5 +1,5 @@
 ---
-impacto: correcao
+impacto: nada_mudou
 secao: corrigido
 titulo: O diálogo Nova conversa no Inbox exibe o nome salvo na agenda do contato
 ---

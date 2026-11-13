@@ -84,11 +84,18 @@ function canal(overrides: Partial<ChannelSession> & { id: string }): ChannelSess
 }
 
 /** O mínimo de contato que a busca devolve e o painel lê. */
-function contato(overrides: { id: string; phone_number?: string | null; name?: string | null }) {
+function contato(overrides: {
+  id: string;
+  phone_number?: string | null;
+  name?: string | null;
+  display_name?: string | null;
+  address_book_name?: string | null;
+}) {
   return {
     id: overrides.id,
     name: overrides.name ?? null,
-    display_name: null,
+    display_name: overrides.display_name ?? null,
+    address_book_name: overrides.address_book_name ?? null,
     phone_number: overrides.phone_number ?? null,
     email: null,
     is_anonymized: false,
@@ -332,14 +339,13 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
     lerCanaisE(
       [canal({ id: "canal-1", display_name: "Principal", phone_number: "+5511999990001" })],
       [
-        {
+        contato({
           id: "contato-agenda",
           name: null,
           display_name: null,
           address_book_name: "Lucelia Celular Cliente",
           phone_number: "+5542999284633",
-          is_anonymized: false,
-        } as unknown as Contact,
+        }),
       ],
     );
 
@@ -353,6 +359,6 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
     const botaoContato = await screen.findByRole("button", { name: /Lucelia Celular Cliente/i });
     expect(botaoContato).toBeInTheDocument();
     expect(botaoContato).toHaveTextContent("Lucelia Celular Cliente");
-    expect(botaoContato).toHaveTextContent("+55 42 99928-4633");
+    expect(botaoContato).toHaveTextContent("+5542999284633");
   });
 });
