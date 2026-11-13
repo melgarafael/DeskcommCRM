@@ -47,7 +47,7 @@ const OPCOES = { toolCallId: "controle", messages: [], context: undefined };
 describe("Testar no modo leitura_direta", () => {
   it.each(["sandbox", "assisted"] as const)("%s: ler_documento executa a leitura original", async (kind) => {
     const documento = { ok: true, source_id: "doc-1", titulo: "Formas de pagamento", texto: "Pix e cartão em até 3x." };
-    const ler = vi.fn(async () => documento);
+    const ler = vi.fn(async (_args: unknown) => documento);
     const p = previa(kind);
     const tools = applyPreviewPolicy({ ler_documento: { execute: ler } } as unknown as ToolSet, p, gate(), () => []);
 
