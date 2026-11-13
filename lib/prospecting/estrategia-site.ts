@@ -17,6 +17,7 @@ import {
 } from "@/lib/prospecting/site-classify";
 import type { OfertaDaCampanha } from "./schema";
 import type { PreviaSalva } from "./previa";
+import { sinaisDaEmpresa } from "./sinais-da-empresa";
 export type { OfertaDaCampanha } from "./schema";
 
 export interface ObjecaoComResposta {
@@ -573,10 +574,17 @@ export function instrucaoDeAbordagemFria(
 }
 
 /**
- * Linha a linha para `gerarAbordagemDeFormulario`: os 6 campos que o envio já
- * usava (mesmos valores, mesma ordem) + `Auditoria` e `Detalhe` quando há
- * veredito + `Rascunho de abordagem` quando a tela guardou uma prévia válida.
- * Fonte única — worker e prévia bebem daqui.
+ * Linha a linha para `gerarAbordagemDeFormulario`: a identificação da empresa
+ * (`Empresa`, `Segmento`, `Endereço`, `Site`), **todos** os sinais que a
+ * descoberta já tinha e o prompt não recebia (`Ficha do Google` com nota e
+ * NÚMERO de avaliações, `Redes` com o nome de cada rede, `Telefone` com
+ * celular/fixo) e, quando há veredito medido, `Auditoria` e `Detalhe` +
+ * `Rascunho de abordagem` quando a tela guardou uma prévia válida.
+ *
+ * Fonte única — worker e prévia bebem daqui. Era aqui que o #4459 doía: a
+ * descoberta trazia cinco sinais e o prompt recebia a nota nua, as URLs cruas e
+ * o veredito do site. Numa empresa sem site sobrava "não tem site", e a
+ * mensagem saía igual à da empresa seguinte.
  */
 export function montarDadosDeAbordagem(
   data: {
@@ -585,7 +593,10 @@ export function montarDadosDeAbordagem(
     address: string | null;
     website: string | null;
     rating: number | null;
+    reviews?: number | null;
     socials: string[];
+    phone?: string | null;
+    whatsapp?: { existe: boolean; verificado_em: string } | null;
   },
   site: {
     classe: ClasseDeSite;
@@ -601,8 +612,11 @@ export function montarDadosDeAbordagem(
     Segmento: data.category ?? "",
     Endereço: data.address ?? "",
     Site: data.website ?? "",
-    Avaliação: String(data.rating ?? ""),
-    Redes: data.socials.join(", "),
+    // Cada linha traz a ORIGEM no próprio rótulo (`Ficha do Google`, `Redes`,
+    // `Telefone`) e só existe quando o fato foi coletado — ausência não vira
+    // "sem avaliações", que seria afirmação sobre o mundo, não sobre o nosso
+    // dado (ver `sinais-da-empresa.ts`).
+    ...sinaisDaEmpresa(data),
   };
   // Só o DEFINITIVO E MEDIDO é citável (`citavelNoArgumento`) — e com a data,
   // nunca "agora": o envio pode sair dias depois da medição, e "agora"
