@@ -23,11 +23,13 @@ const codigo = fs.readFileSync(origem, 'utf8');
 fs.writeFileSync(destino, codigo.replace(/,\\"supports_forced_update\\":\s*true/g, ''));
 NODE
 
-rodar() { # nome, força JSON (vazio = ausente), atual, alvo, ancestral, pedido, variante, helper, runtime
+rodar() { # nome, força JSON (vazio = ausente), atual, alvo, ancestral, pedido, variante, helper, runtime, origem
   local nome="$1" forca="$2" atual="$3" alvo="$4" ancestral="$5"
   local pedido="$6" variante="${7:-real}" helper="${8:-false}" caso="$WORK/$1"
-  local runtime="${9:-presente}"
+  local runtime="${9:-presente}" origem="${10:-}"
   mkdir -p "$caso/hostgator-setup-kit"
+  # A versão de onde a última ida para frente saiu, como o update.sh a grava.
+  [ -z "$origem" ] || printf '%s\n' "$origem" > "$caso/.update-de-onde-vim"
   cp "$WORK/agent-${variante}.sh" "$caso/hostgator-setup-kit/agent.sh"
   : > "$caso/.senha-trocada"
   # Este .env é uma fixture criada aqui, sem credenciais nem leitura do .env real.
@@ -196,11 +198,17 @@ if argv_igual falso '["--to","v1.90.0"]'; then ok 'false preserva atualização 
 rodar texto '"true"' v1.89.0 v1.90.0 1 true
 if argv_igual texto '["--to","v1.90.0"]'; then ok 'string true não vira booleano de força'; else falha 'string true não vira booleano de força'; fi
 
-rodar volta false v1.90.0 v1.89.0 0 true
+rodar volta false v1.90.0 v1.89.0 0 true real false presente v1.89.0
 if argv_igual volta '["--to","v1.89.0","--force"]'; then ok 'controle de volta mantém uma força'; else falha 'controle de volta mantém uma força'; fi
 
-rodar volta-forcada true v1.90.0 v1.89.0 0 true
+rodar volta-forcada true v1.90.0 v1.89.0 0 true real false presente v1.89.0
 if argv_igual volta-forcada '["--to","v1.89.0","--force"]'; then ok 'pedido explícito e volta não duplicam --force'; else falha 'pedido explícito e volta não duplicam --force'; fi
+
+rodar volta-para-outra false v1.90.0 v1.88.0 0 true real false presente v1.89.0
+if recusou_alvo volta-para-outra; then ok 'volta para versão que não é a de origem é recusada antes do updater'; else falha 'volta para versão que não é a de origem é recusada antes do updater'; fi
+
+rodar volta-sem-origem true v1.90.0 v1.89.0 0 true
+if recusou_alvo volta-sem-origem; then ok 'volta sem origem gravada é recusada antes do updater'; else falha 'volta sem origem gravada é recusada antes do updater'; fi
 
 rodar alvo-invalido true v1.89.0 'v1.89.0 --skip-backup' 0 true
 if recusou_alvo alvo-invalido; then ok 'alvo fora de tag é recusado antes do updater'; else falha 'alvo fora de tag é recusado antes do updater'; fi
