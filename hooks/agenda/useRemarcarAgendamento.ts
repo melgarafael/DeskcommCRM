@@ -44,6 +44,12 @@ export function useRemarcarAgendamento() {
        * mandado por omissão desconvidaria a equipe a cada remarcação.
        */
       team_guest_user_ids?: string[];
+      /**
+       * A duração do bloco, em minutos (#4450). Vai quando a pessoa mudou o
+       * tempo na remarcação; ausente mantém o comprimento que o bloco já tem e
+       * é o que o cliente antigo (sem o campo) continua mandando.
+       */
+      duration_minutes?: number;
     }) => apiClient.patch<{ data: { id: string } }>("/api/v1/agenda/agendamentos", entrada),
     onSuccess: () => {
       toast.success(t("Agendamento remarcado."));
