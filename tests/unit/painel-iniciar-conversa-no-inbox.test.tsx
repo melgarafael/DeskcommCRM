@@ -343,8 +343,8 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
           id: "contato-agenda",
           name: null,
           display_name: null,
-          address_book_name: "Lucelia Celular Cliente",
-          phone_number: "+5542999284633",
+          address_book_name: "Ana Souza (Agenda)",
+          phone_number: "+5511999990002",
         }),
       ],
     );
@@ -353,12 +353,12 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Iniciar conversa" }));
 
     const campo = await screen.findByPlaceholderText("Telefone ou nome do contato");
-    fireEvent.change(campo, { target: { value: "Lucelia" } });
+    fireEvent.change(campo, { target: { value: "Ana Souza" } });
 
     // O botão na listagem de outros contatos deve exibir o nome da agenda, e não apenas o número repetido
-    const botaoContato = await screen.findByRole("button", { name: /Lucelia Celular Cliente/i });
+    const botaoContato = await screen.findByRole("button", { name: /Ana Souza \(Agenda\)/i });
     expect(botaoContato).toBeInTheDocument();
-    expect(botaoContato).toHaveTextContent("Lucelia Celular Cliente");
-    expect(botaoContato).toHaveTextContent("+5542999284633");
+    expect(botaoContato).toHaveTextContent("Ana Souza (Agenda)");
+    expect(botaoContato).toHaveTextContent("+5511999990002");
   });
 });
