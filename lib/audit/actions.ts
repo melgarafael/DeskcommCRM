@@ -316,6 +316,11 @@ export const AUDIT_ACTIONS = [
   // A PERSONALIZAÇÃO que MUDOU (spec 24): voz do vendedor e vocabulário por
   // nicho em `organizations.settings.prospeccao`. Sem segredo no metadata.
   "prospecting.settings_updated",
+  // A LISTA que SAIU em arquivo (issue #4360). Responde "quem levou a base de
+  // prospecção embora": quantas empresas foram exportadas e quantas das da
+  // campanha ainda podiam ser abordadas. Sem telefone, sem nome, sem endereço —
+  // o arquivo em si não fica nesta trilha.
+  "prospecting.exported",
   // A SAÍDA ("responda PARAR") oferecida numa mensagem automática da prospecção
   // (modo da 2ª mensagem). Sem texto, sem telefone — só os ponteiros.
   // Emitida por inbound-turn e followup-turn quando o envio é aceito.
