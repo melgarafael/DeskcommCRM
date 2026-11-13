@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Adaptação para módulo opcional: aqui o módulo está LIGADO. O caminho
+// desligado (e a contagem de idas ao banco dele) é medido em `modulo.test.ts`.
+vi.mock("@/lib/revisao-por-km/modulo", () => ({
+  revisaoPorKmLigada: vi.fn(async () => true),
+  revisaoPorKmLigadaComMemo: vi.fn(async () => true),
+}));
+
 import { armarProximaRevisaoPeloFluxo } from "@/lib/revisao-por-km/pelo-fluxo";
 import { casaNaData } from "@/lib/automation/gatilho-de-data-do-funil";
 

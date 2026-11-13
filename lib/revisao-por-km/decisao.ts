@@ -35,7 +35,7 @@ import {
 /** O que a projeção virou, do ponto de vista de quem chamou. */
 export type ResultadoDaArmacao =
   | { status: "armada"; data: string; dia_do_aviso: string; campo: string; projecao: Extract<ResultadoDaProjecao, { status: "projetada" }> }
-  | { status: "nenhuma_escrita"; motivo: "ja_gravada" | "km_sem_avanco" | "sem_km" | "sem_data_de_retirada" | "sem_ritmo" | "sem_configuracao" | "configuracao_invalida"; detalhe?: string }
+  | { status: "nenhuma_escrita"; motivo: "ja_gravada" | "km_sem_avanco" | "sem_km" | "sem_data_de_retirada" | "sem_ritmo" | "sem_configuracao" | "configuracao_invalida" | "modulo_desligado"; detalhe?: string }
   | { status: "falhou"; motivo: "gravacao_recusada" | "gravacao_falhou"; detalhe?: string };
 
 export interface ContextoDaArmacao {

@@ -12,7 +12,9 @@
  * as portas entram por parâmetro para o teste não precisar de Supabase.
  */
 import { diaLocal, fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
+import { configuracaoDeRevisaoPorKm } from "@/lib/revisao-por-km/conta";
 import { armarProximaRevisao, type ResultadoDaArmacao } from "@/lib/revisao-por-km/decisao";
+import { revisaoPorKmLigada } from "@/lib/revisao-por-km/modulo";
 
 /** O que a porta precisa do mundo — o handler entrega o cliente já ligado. */
 export interface PortasDoCard {
@@ -30,6 +32,20 @@ export async function armarProximaRevisaoNoCard(args: {
   /** Injetável para o teste; em produção é o relógio do processo. */
   agora?: Date;
 }): Promise<ResultadoDaArmacao> {
+  // ── O PORTÃO (adaptação do #4536 para módulo opcional) ─────────────────────
+  //
+  // A ordem é o custo de quem não usa: (1) o funil declarou a régua? O `settings`
+  // já veio na mão do handler, então perguntar é de graça — e um PATCH em funil
+  // sem régua sai daqui sem nenhuma ida ao banco a mais que a `main`. (2) Só então
+  // a chave da instalação (`MODULO_REVISAO_POR_KM`), que custa uma leitura.
+  const declarada = configuracaoDeRevisaoPorKm(args.settings);
+  if (!declarada.ok && declarada.motivo === "ausente") {
+    return { status: "nenhuma_escrita", motivo: "sem_configuracao" };
+  }
+  if (!(await revisaoPorKmLigada())) {
+    return { status: "nenhuma_escrita", motivo: "modulo_desligado" };
+  }
+
   let fuso: string | null = null;
   try {
     fuso = await args.portas.fusoDaOrganizacao();

@@ -23,6 +23,7 @@
 import { diaLocal, fusoDaOrganizacao } from "@/lib/automation/cron-de-data";
 import { armarProximaRevisao, type ResultadoDaArmacao } from "@/lib/revisao-por-km/decisao";
 import { configuracaoDeRevisaoPorKm } from "@/lib/revisao-por-km/conta";
+import { revisaoPorKmLigadaComMemo } from "@/lib/revisao-por-km/modulo";
 
 /** O mínimo que a revisão precisa do pool — o teste injeta um dublê. */
 export interface BancoDaRevisao {
@@ -53,6 +54,16 @@ export async function armarProximaRevisaoPeloFluxo(
   db: BancoDaRevisao,
   args: { organizationId: string; leadId: string; campoGravado?: string },
 ): Promise<ResultadoDaArmacao> {
+  // ── O PORTÃO (adaptação do #4536 para módulo opcional) ─────────────────────
+  //
+  // ANTES da leitura do negócio: sem isto, toda resposta de roteiro de toda
+  // instalação pagaria a consulta abaixo para um módulo que ninguém ligou. Este é
+  // o caminho quente (o turno do agente), por isso a chave vem com memo de
+  // processo. Desligado, o caminho do WhatsApp não toca no pool `pg` a mais.
+  if (!(await revisaoPorKmLigadaComMemo())) {
+    return { status: "nenhuma_escrita", motivo: "modulo_desligado" };
+  }
+
   const { rows } = await db.query(
     `select l.custom_fields as campos, p.settings as settings, o.timezone as fuso
        from crm_leads l

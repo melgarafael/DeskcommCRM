@@ -1159,7 +1159,9 @@ export async function updateLeadHandler(
     // de disparo leva o valor da data (#1540).
     //
     // Roda DEPOIS da escrita do km, e só quando o funil declarou a régua
-    // (`pipelines.settings.revisao_por_km`). A conta em si mora em
+    // (`pipelines.settings.revisao_por_km`) E a instalação ligou o módulo
+    // opcional `revisao_por_km` — o portão mora dentro do módulo
+    // (`lib/revisao-por-km/no-card.ts`), não aqui. A conta em si mora em
     // `lib/revisao-por-km/conta.ts`; aqui é só a porta, no fuso da organização.
     // Falha aqui NÃO derruba o PATCH: o km já está gravado, e a projeção é
     // consequência — o log diz que ela não saiu.
