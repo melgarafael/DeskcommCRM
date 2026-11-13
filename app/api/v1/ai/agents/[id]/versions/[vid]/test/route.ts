@@ -32,11 +32,18 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { testRunSchema } from "@/lib/ai/agents/validation";
+// #4424 (main) e #4426 (este PR) se cruzam neste import: o teto do histórico
+// vem da `main`, o texto da pergunta/resposta vem daqui. Os dois convivem.
+import {
+  testRunSchema,
+  LIMITE_DO_HISTORICO_EM_MENSAGENS,
+  LIMITE_DO_HISTORICO_EM_CARACTERES,
+} from "@/lib/ai/agents/validation";
 import { perguntaDoTeste, respostaDoTeste } from "@/lib/ai/agents/texto-do-teste";
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 import { ehFalhaDoBanco } from "@/lib/ai/agents/falha-do-banco";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
+import { codigo } from "@/lib/agent-engine/agent/recibo-do-traco";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -137,6 +144,36 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   } catch {
     return fail("invalid_request", t("Body JSON inválido."), 400, { requestId });
   }
+  /**
+   * #4424 — o histórico do teste é recusado ANTES de qualquer trabalho, com uma
+   * frase legível e 400 (o corpo está semanticamente errado, não malformado em
+   * um campo). Os limites são os mesmos que o schema e o painel usam: sem eles,
+   * cada turno reenviaria a conversa inteira e o custo do teste cresceria sem
+   * teto. `sample_message` não entra na conta — history é só o PASSADO.
+   */
+  const historicoPedido = (raw as { history?: unknown } | null)?.history;
+  if (Array.isArray(historicoPedido)) {
+    const caracteres = historicoPedido.reduce<number>((total, m) => {
+      const corpo =
+        m && typeof m === "object" && "body" in m && typeof m.body === "string"
+          ? m.body.trim().length
+          : 0;
+      return total + corpo;
+    }, 0);
+    if (
+      historicoPedido.length > LIMITE_DO_HISTORICO_EM_MENSAGENS ||
+      caracteres > LIMITE_DO_HISTORICO_EM_CARACTERES
+    ) {
+      return fail(
+        "invalid_request",
+        t(
+          "O histórico da conversa passou do limite: até 30 mensagens e 20.000 caracteres. Recomece a conversa para seguir.",
+        ),
+        400,
+        { requestId },
+      );
+    }
+  }
   const parsed = testRunSchema.safeParse(raw);
   if (!parsed.success) {
     return fail("validation_failed", t("Campos inválidos."), 422, {
@@ -206,6 +243,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       versionId: vid,
       runId: runRow.id,
       sampleMessage: parsed.data.sample_message,
+      history: parsed.data.history,
       sampleContact: parsed.data.sample_contact,
       sampleTags: parsed.data.sample_tags,
       channelId: version.channel_session_id,
@@ -222,6 +260,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       final_text: finalText,
       tool_calls: result.proposals,
       ...result,
+      // #4424 — o `erro` de cada ferramenta é texto livre do coletor; a tela
+      // recebe o mesmo vocabulário fechado do leitor do traço (`codigo()`).
+      ferramentas: (result.ferramentas ?? []).map((f) => ({ ...f, erro: codigo(f.erro) })),
       stub: process.env.INTERNAL_AGENT_RUN_STUB === "true",
       guardrails: avaliarRespostaDeTeste(finalText, result.midia),
     };

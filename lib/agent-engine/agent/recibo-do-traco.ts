@@ -77,7 +77,13 @@ function registros(valor: Json): Registro[] {
     : [];
 }
 
-function codigo(valor: unknown): string | null {
+/**
+ * O vocabulário FECHADO de erro do recibo. Exportado porque o Testar (#4424)
+ * também leva as ferramentas do turno à tela, e o `erro` do coletor é texto
+ * livre (`erro.message`): passar por aqui é o que mantém as duas telas no
+ * mesmo vocabulário — o leitor do traço e a prévia não podem divergir.
+ */
+export function codigo(valor: unknown): string | null {
   return valor === null || valor === undefined || valor === ""
     ? null
     : typeof valor === "string" && CODIGOS.has(valor)
