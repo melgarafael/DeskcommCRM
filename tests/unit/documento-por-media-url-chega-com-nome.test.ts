@@ -240,6 +240,9 @@ describe("documento por media_url chega com o nome escolhido (#4524)", () => {
   });
 
   it("nome vazio, só barras ou gigante: envio sai, com reserva legível", async () => {
+    // Pela rota HTTP, `""` e o nome de 600 caracteres param antes, no schema
+    // (`media_filename` é 1–255, desde a #4457). Aqui o handler é chamado
+    // direto: a guarda dele vale para quem chega sem passar pela rota.
     for (const nomeExplicito of ["", "   ", "///", `${"a".repeat(600)}.pdf`]) {
       const fetchMock = respostaWaha("MEDIA8");
       vi.stubGlobal("fetch", fetchMock);
