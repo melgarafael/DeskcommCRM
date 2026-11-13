@@ -324,12 +324,23 @@ export async function editarTarefaHandler(
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
-  const { data: antes } = await supabase
+  //
+  // ⚠️ LEITURA QUE FALHA NÃO É "NÃO HAVIA ANTES". Com `antes` nulo a edição
+  // seguia, `fechouAgora` dava verdadeiro e o histórico do negócio ganhava uma
+  // conclusão que não aconteceu; o audit ainda gravava `de: null`. O conserto
+  // da main (1a9bb42465) devolvia 500 na rota; desde que a regra saiu da rota
+  // (#4516) ele mora AQUI, e os dois caminhos — tela e token — passam por este
+  // ponto.
+  const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
     .select("status")
     .eq("id", id)
     .eq("organization_id", ctx.organization_id)
     .maybeSingle();
+
+  if (erroDaLeitura) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Erro ao salvar a tarefa.");
+  }
 
   const { data, error } = await supabase
     .from("crm_tasks")

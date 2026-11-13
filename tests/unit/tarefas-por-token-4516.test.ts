@@ -51,6 +51,7 @@ const { criarTarefaHandler, editarTarefaHandler, excluirTarefaHandler, listarTar
   await import("@/app/api/v1/tasks/_handler");
 const { audit } = await import("@/lib/audit");
 const { ApiError } = await import("@/lib/api/types");
+const { conferirDemanda } = await import("@/lib/tarefas/demanda");
 
 const ORG = "aaaaaaaa-4516-4000-8000-00000000000a";
 const OUTRA_ORG = "bbbbbbbb-4516-4000-8000-00000000000b";
@@ -294,5 +295,72 @@ describe("#4516 — isolamento por organização", () => {
     expect(estado.filtrosDaLista).toContainEqual(["organization_id", ORG]);
     // O outro lado da régua: a organização alheia não aparece em NENHUM filtro.
     expect(estado.filtrosDaLista).not.toContainEqual(["organization_id", OUTRA_ORG]);
+  });
+});
+
+/**
+ * A CONFERÊNCIA DE DEMANDA VALE NOS DOIS CAMINHOS (#4523).
+ *
+ * `conferirDemanda` (app/api/v1/tasks/_handler.ts:182) protege uma FK que a RLS
+ * NÃO cobre: pelo MCP o client é service-role. Quando a regra saiu da rota, ela
+ * precisava continuar valendo para quem entra por cookie E para quem entra por
+ * token — se ficasse só num dos dois, o outro passaria a gravar `demanda_id` de
+ * outra organização (ou de demanda encerrada) sem erro.
+ *
+ * A prova é a mesma pergunta feita duas vezes: mesmo veredito, mesmo desfecho,
+ * ator diferente. Um dublê de `editarTarefaHandler` não serviria — o que se
+ * está medindo é que o handler REAL consulta a régua antes de escrever.
+ */
+describe("#4523 — conferência de demanda: 422 e 409 nos dois caminhos", () => {
+  const DEMANDA = "11111111-4523-4000-8000-000000000011";
+  const ctxDaPessoa = {
+    organization_id: ORG,
+    actor: { type: "user", id: USER, role: "agent" },
+    requestId: "req-4523",
+  } as unknown as HandlerCtx;
+
+  const entrar = async (
+    ctx: HandlerCtx,
+    veredito: "fora_da_organizacao" | "encerrada",
+  ): Promise<{
+    erro: unknown;
+    tabelas: Record<string, Linha[]> & { crm_tasks: Linha[] };
+    cliente: SupabaseClient;
+  }> => {
+    const { cliente, tabelas } = banco();
+    tabelas.crm_tasks.push({ id: TAREFA, organization_id: ORG, status: "pending", title: "intacta" });
+    vi.mocked(conferirDemanda).mockResolvedValueOnce(veredito);
+
+    const erro = await editarTarefaHandler(cliente, ctx, {
+      id: TAREFA,
+      demanda_id: DEMANDA,
+    }).catch((e: unknown) => e);
+
+    return { erro, tabelas, cliente };
+  };
+
+  it.each([
+    ["token", () => ctxDoToken()],
+    ["sessão", () => ctxDaPessoa],
+  ])("%s: demanda de outra organização → 422 `fora_da_organizacao`, nada gravado", async (_nome, ctx) => {
+    const { erro, tabelas } = await entrar(ctx(), "fora_da_organizacao");
+
+    expect(erro).toBeInstanceOf(ApiError);
+    expect((erro as InstanceType<typeof ApiError>).status).toBe(422);
+    expect((erro as InstanceType<typeof ApiError>).code).toBe("validation_failed");
+    expect(tabelas.crm_tasks[0]?.title).toBe("intacta");
+    expect(conferirDemanda).toHaveBeenCalledWith(expect.anything(), ORG, DEMANDA);
+  });
+
+  it.each([
+    ["token", () => ctxDoToken()],
+    ["sessão", () => ctxDaPessoa],
+  ])("%s: demanda encerrada → 409 `encerrada`, nada gravado", async (_nome, ctx) => {
+    const { erro, tabelas } = await entrar(ctx(), "encerrada");
+
+    expect(erro).toBeInstanceOf(ApiError);
+    expect((erro as InstanceType<typeof ApiError>).status).toBe(409);
+    expect((erro as InstanceType<typeof ApiError>).code).toBe("state_conflict");
+    expect(tabelas.crm_tasks[0]?.title).toBe("intacta");
   });
 });
