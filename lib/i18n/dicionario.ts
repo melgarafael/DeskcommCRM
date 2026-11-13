@@ -12801,6 +12801,41 @@ export const DICIONARIO: Traducoes = {
   "corpo inválido": { es: "cuerpo inválido" },
   "Corpo inválido.": { es: "Cuerpo inválido." },
   "Corpo inválido para desconectar.": { es: "Cuerpo inválido para desconectar." },
+  // #4023 — pesquisa de satisfação.
+  "Não foi possível calcular a satisfação.": { es: "No fue posible calcular la satisfacción." },
+  "De 1 a 5, como você avalia este atendimento? Responda só com o número.": {
+    es: "Del 1 al 5, ¿cómo calificas esta atención? Responde solo con el número.",
+  },
+  "Pesquisa de satisfação ao encerrar": {
+    es: "Encuesta de satisfacción al cerrar",
+  },
+  "Ligada, quem tem o atendimento encerrado recebe uma pergunta: de 1 a 5, como avalia o atendimento. A resposta vira nota só se vier logo em seguida: se a equipe ou a IA voltar a falar com o cliente, um número que ele mande é conversa normal. Não sai para contato bloqueado ou pessoal, nem fora do horário de envio do número.": {
+    es: "Activada, quien tiene la atención cerrada recibe una pregunta: del 1 al 5, cómo califica la atención. La respuesta se vuelve nota solo si llega enseguida: si el equipo o la IA vuelve a hablar con el cliente, un número que él envíe es conversación normal. No se envía a contactos bloqueados o personales, ni fuera del horario de envío del número.",
+  },
+  "Ligada: a pergunta sai ao encerrar o atendimento.": {
+    es: "Activada: la pregunta se envía al cerrar la atención.",
+  },
+  "Desligada: nenhuma pergunta sai ao encerrar.": {
+    es: "Desactivada: no se envía ninguna pregunta al cerrar.",
+  },
+  "Resultado dos últimos 30 dias": {
+    es: "Resultado de los últimos 30 días",
+  },
+  "Respostas": {
+    es: "Respuestas",
+  },
+  "Perguntas feitas": {
+    es: "Preguntas enviadas",
+  },
+  "Quem não respondeu conta em \"Sem resposta\", nunca como nota baixa. A média usa só as respostas.": {
+    es: "Quien no respondió cuenta en \"Sin respuesta\", nunca como nota baja. El promedio usa solo las respuestas.",
+  },
+  "Há perguntas ainda esperando resposta.": {
+    es: "Hay preguntas que aún esperan respuesta.",
+  },
+  "Prazo para o cliente responder:": {
+    es: "Plazo para que el cliente responda:",
+  },
   "Corpo não é JSON válido.": { es: "El cuerpo no es un JSON válido." },
   "Credential desativada.": { es: "Credencial desactivada." },
   "Credential não encontrada.": { es: "Credencial no encontrada." },
