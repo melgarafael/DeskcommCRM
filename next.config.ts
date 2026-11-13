@@ -71,6 +71,14 @@ const nextConfig: NextConfig = {
       "./node_modules/.pnpm/@napi-rs+canvas-*/node_modules/@napi-rs/*/*.node",
       // pdfjs-dist em si (ver comentário acima).
       "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/**",
+      // pdfkit (dependência do @react-pdf/renderer): o build ESM registra as
+      // fontes padrão com `createRequire(import.meta.url)("#standard-fonts/…")`.
+      // O tracer segue o `import` estático (os `.mjs`) e não esse `require` de
+      // runtime (os `.cjs`), então o standalone sobe sem eles e todo PDF com
+      // Helvetica/Times/Courier morre em `MODULE_NOT_FOUND …/pdfkit/js/
+      // standard-fonts/Helvetica.cjs` (exportar conversa, prévia e envio de
+      // proposta). Medido: 14 `.cjs` + 1 chunk ausentes; com eles o PDF sai.
+      "./node_modules/.pnpm/pdfkit@*/node_modules/pdfkit/js/standard-fonts/**",
     ],
   },
   reactStrictMode: true,
