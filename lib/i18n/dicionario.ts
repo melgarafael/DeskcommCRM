@@ -4314,6 +4314,20 @@ export const DICIONARIO: Traducoes = {
   },
   "Falha na validação": { es: "Falló la validación" },
   "Onde pegar a chave": { es: "Dónde obtener la clave" },
+  // #4519 — a linha de residência de processamento. As frases das situações que
+  // NÃO são país ficam aqui inteiras: `desconhecido` e `endereco_proprio` não
+  // podem degradar para nada parecido com "fica nos EUA".
+  "Para onde o texto vai:": { es: "Adónde va el texto:" },
+  "(sede do provedor)": { es: "(sede del proveedor)" },
+  "fonte: política do provedor": { es: "fuente: política del proveedor" },
+  "consultada em": { es: "consultada el" },
+  "Neste servidor — nada sai da instalação": { es: "En este servidor — nada sale de la instalación" },
+  "O provedor não declara o país; consulte a política dele": {
+    es: "El proveedor no declara el país; consulta su política",
+  },
+  "Endereço definido por você — o CRM não sabe onde ele fica": {
+    es: "Dirección definida por ti — el CRM no sabe dónde queda",
+  },
   "O padrão recomendado para conversar com o cliente: é o que melhor segue instruções longas e usa as ferramentas do CRM.": {
     es: "La opción recomendada por defecto para conversar con el cliente. Es la que mejor sigue instrucciones largas y usa las herramientas del CRM.",
   },

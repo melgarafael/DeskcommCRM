@@ -1064,6 +1064,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "painel onde o usuário gera a PRÓPRIA chave da DeepSeek (`ondePegarAChave` em lib/ai/pontos/provedores.ts). Endereço do fornecedor, não nosso.",
   },
+  "cdn.deepseek.com": {
+    categoria: "CONSOLE",
+    motivo:
+      "documento do fornecedor: é a política de privacidade da DeepSeek que `fonteDoPais` (lib/ai/pontos/provedores.ts) cita como prova do país de processamento. A tela (`OndeOTextoEProcessado.tsx`) só monta o link com a URL deste catálogo — o produto NUNCA busca o host, quem abre é a pessoa que quer ler a fonte. Endereço do fornecedor, não nosso: trocar pelo domínio do revendedor faria o link não provar nada.",
+  },
   "app.requesty.ai": {
     categoria: "CONSOLE",
     motivo:
@@ -1399,6 +1404,11 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita (spec 24, auditoria de site): agregador de bio-links,
       // marca agregador sem fetch — nunca chamado, nunca exibido.
       "carrd.co",
+      // Decisão escrita: o host é a CDN onde a DeepSeek publica a política de
+      // privacidade que `fonteDoPais` cita como prova do país de processamento.
+      // O produto não fala com ele — a tela monta o link da fonte e quem abre é
+      // a pessoa. CONSOLE porque é documento do fornecedor, não destino nosso.
+      "cdn.deepseek.com",
       // A pessoa abre o produto ChatGPT para autenticar a conta; o CRM chama
       // apenas `api.openai.com` no fluxo SIWC.
       "chatgpt.com",
