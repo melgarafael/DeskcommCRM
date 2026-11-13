@@ -7,7 +7,17 @@ const state = vi.hoisted(() => ({
   message: null as Record<string, unknown> | null,
   /** Filtros aplicados na ÚLTIMA consulta a `messages` — é o que prova o isolamento. */
   filtrosDaMensagem: [] as Array<[string, unknown]>,
+  /** Resposta da guarda de suporte; `null` = acompanhamento liberado. */
+  bloqueioDeSuporte: null as Response | null,
   audit: [] as Array<Record<string, unknown>>,
+}));
+
+// A guarda de EFEITO do acompanhamento administrativo lê a sessão por dentro
+// (`loadAuthUser`); aqui ela é substituída pelo caso liberado — quem a testa é
+// `suporte-cobertura-de-efeitos` (presença) e os casos dela em
+// `lib/impersonate`. Sem o dublê, a rota responderia 503 neste ambiente.
+vi.mock("@/lib/impersonate/support", () => ({
+  requireSupportWrite: async () => state.bloqueioDeSuporte,
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({
@@ -77,7 +87,24 @@ beforeEach(() => {
   state.settings = {};
   state.message = mensagemApagada();
   state.filtrosDaMensagem = [];
+  state.bloqueioDeSuporte = null;
   state.audit.length = 0;
+});
+
+describe("acompanhamento administrativo somente leitura", () => {
+  it("a guarda de efeito recusa ANTES de ler a mensagem e de auditar", async () => {
+    state.settings = { texto_retido: { perfis: ["manager"] } };
+    state.bloqueioDeSuporte = new Response("{}", { status: 403 });
+
+    const res = await POST(new NextRequest(url, { method: "POST" }), ctx);
+
+    expect(res.status).toBe(403);
+    // Nada foi lido do banco nem da trilha: `support_readonly` não chega ao
+    // conteúdo, e um clique recusado pela guarda não gera linha de auditoria
+    // (a guarda não é um desfecho da revelação, é a porta dela).
+    expect(state.filtrosDaMensagem).toEqual([]);
+    expect(state.audit.length).toBe(0);
+  });
 });
 
 describe("com permissão", () => {

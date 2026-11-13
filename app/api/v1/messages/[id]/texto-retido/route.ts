@@ -38,6 +38,7 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { podeVerTextoRetido } from "@/lib/messaging/texto-retido";
 import { createClient } from "@/lib/supabase/server";
@@ -66,6 +67,13 @@ interface LinhaDaMensagem {
 export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: messageId } = await ctx.params;
+
+  // Cerca de EFEITO do acompanhamento administrativo: revelar é escrita de
+  // trilha (e entrega conteúdo), então `support_readonly` não passa daqui — a
+  // guarda é chamada antes de qualquer leitura de conteúdo. Ela não substitui o
+  // `requireRole` abaixo nem o perfil autorizado por organização.
+  const support = await requireSupportWrite();
+  if (support) return support;
 
   const authz = await requireRole("agent", { requestId, resource: "messages" });
   if (!authz.ok) return authz.response;
