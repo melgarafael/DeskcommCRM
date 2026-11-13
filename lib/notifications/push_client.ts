@@ -1,5 +1,5 @@
 import { areAlertsEnabled, getPermission } from "./permission";
-import { canalLigado } from "./prefs";
+import { algumPushLigado, lerPrefs, tiposCalados } from "./prefs";
 import { ensureNotifyServiceWorker } from "./service_worker";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
@@ -59,11 +59,11 @@ export const MOTIVOS_DO_APARELHO = [
 /**
  * QUAIS CAUSAS DE APARELHO DESLIGAM O INTERRUPTOR (#3157, corrigindo a #3164).
  *
- * O interruptor de Push de mensagem governa DUAS entregas: o aviso com o site
+ * Os interruptores de Push governam DUAS entregas: o aviso com o site
  * fechado (Web Push: VAPID + inscrição) e o aviso na bandeja com a aba aberta
  * (`lib/notifications/emit.ts`, pelo service worker ou por `new Notification()`,
- * liberado por `canalLigado("message", "push")` em `deliver.ts`). Desligá-lo
- * mata as duas.
+ * liberado por `canalLigado(<tipo>, "push")` em `deliver.ts`). Desligar todos
+ * os tipos mata as duas.
  *
  * - `sem_vapid` NÃO desliga: sem o par de chaves o aviso com a aba aberta
  *   continua funcionando, e a página já diz isso e como conseguir as chaves
@@ -160,7 +160,7 @@ async function motivoDaRecusa(res: Response): Promise<string> {
 export async function syncPushSubscription(): Promise<ResultadoDaInscricao> {
   if (typeof window === "undefined") return ignorado("fora_do_navegador");
   // A preferência é a fonte: `alerts.enabled` é espelho que `request()` regrava.
-  if (getPermission() !== "granted" || !areAlertsEnabled() || !canalLigado("message", "push"))
+  if (getPermission() !== "granted" || !areAlertsEnabled() || !algumPushLigado(lerPrefs()))
     return ignorado("preferencia_do_usuario");
   const reg = await ensureNotifyServiceWorker();
   if (!reg?.pushManager) return ignorado("sem_service_worker");
@@ -220,6 +220,8 @@ export async function syncPushSubscription(): Promise<ResultadoDaInscricao> {
       body: JSON.stringify({
         endpoint: json.endpoint,
         keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+        // Os tipos que este aparelho calou: o servidor não manda esses.
+        tipos_calados: tiposCalados(lerPrefs()),
       }),
     });
   } catch {

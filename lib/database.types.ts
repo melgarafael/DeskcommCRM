@@ -13131,6 +13131,7 @@ export type Database = {
           id: string;
           organization_id: string;
           p256dh: string;
+          tipos_calados: string[];
           updated_at: string;
           user_id: string;
         };
@@ -13142,6 +13143,7 @@ export type Database = {
           id?: string;
           organization_id: string;
           p256dh: string;
+          tipos_calados?: string[];
           updated_at?: string;
           user_id: string;
         };
@@ -13152,6 +13154,7 @@ export type Database = {
           id?: string;
           organization_id?: string;
           p256dh?: string;
+          tipos_calados?: string[];
           updated_at?: string;
           user_id?: string;
         };

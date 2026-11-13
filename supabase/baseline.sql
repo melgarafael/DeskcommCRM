@@ -81130,6 +81130,17 @@ end $fonte_do_lead_ads$;
 
 notify pgrst, 'reload schema';
 
+-- ---- push_subscriptions.tipos_calados: o aparelho escolhe os tipos de aviso (migration 9351) ----
+-- Só `add column if not exists`: re-aplicar (o `update.sh`) não toca no que o
+-- aparelho já gravou. Quem calou um tipo continua com ele calado.
+alter table public.push_subscriptions
+  add column if not exists tipos_calados text[] not null default '{}';
+
+comment on column public.push_subscriptions.tipos_calados is
+  'Tipos de aviso que este aparelho não quer receber no celular (NOTIFY_UI_CATEGORIES). Vazio = recebe todos.';
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: as que já ficaram para trás (migration 9243) ----
 -- A segunda metade da 9243. Fica no fim porque a cascata e os gatilhos que ela
 -- dispara precisam existir; não cria função, então pode ficar depois da VARREDURA anon.

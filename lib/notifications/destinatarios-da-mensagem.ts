@@ -3,11 +3,15 @@
  *
  * ═══ A regra, em ordem de precedência ═══
  *
- * 1. Conversa COM responsável → SÓ o responsável e os ADMINISTRADORES da
+ * 1. Conversa ATRIBUÍDA a um atendente → SÓ ele e os ADMINISTRADORES da
  *    organização (`user_organizations.role = 'admin'`, vínculo não revogado).
- *    O resto do time não é interrompido por cliente que já tem dono. Esta
- *    regra vem antes de tudo e não lê agente nem plantão.
- * 2. Sem responsável e a IA ATENDENDO → NINGUÉM. "Atendendo" é a conversa
+ *    Esta regra vem antes de tudo e não lê agente nem plantão: conversa
+ *    atribuída já não é da IA (`comandoDaConversa` diz "humano").
+ * 2. Sem atendente e a IA ATENDENDO → NINGUÉM, nem o dono do negócio aberto.
+ *    O dono recebe o negócio cedo (a IA atribui no meio da triagem), e até
+ *    09/11/2026 cada mensagem da triagem ia ao celular dele: num atendimento
+ *    de teste, 4 avisos de "Nova mensagem" antes da passagem, que é quando
+ *    ele de fato precisa agir. "Atendendo" é a conversa
  *    sem silêncio nem trava (`comandoDaConversa(...).quem === 'automatico'`)
  *    E o turno do dreno rodaria nela: agente automático no ar no NÚMERO da
  *    conversa (versão publicada nele, ou roteador ativo nele com fallback ou
@@ -20,13 +24,15 @@
  *    silêncio e abre o aviso `handoff` da Central, que vai ao celular por
  *    `central.aviso_criado` (`./push-dos-avisos.ts`). Dali em diante o silêncio
  *    deixa o comando em "aguardando" e as mensagens seguintes caem na regra 3.
- * 3. Sem responsável, com distribuição automática (modo efetivo do canal
+ * 3. Sem atendente, com dono de negócio aberto → o dono e os administradores,
+ *    como na regra 1.
+ * 4. Sem responsável, com distribuição automática (modo efetivo do canal
  *    `round_robin` ou `load`) → quem está DE PLANTÃO (`estaDePlantao`: a chave
  *    `is_available` e a jornada, a mesma conta do roteador, recortada pelos
  *    responsáveis do canal quando ele os tem). Ninguém de plantão → gerentes e
  *    administradores — o mesmo público do aviso que o roteador abre quando
  *    não acha elegível (`fn_routing_unassigned_notice`).
- * 4. Senão (modo manual) → TODOS da organização: alguém precisa pegar a fila.
+ * 5. Senão (modo manual) → TODOS da organização: alguém precisa pegar a fila.
  *
  * ═══ Por que o plantão só vale na distribuição automática ═══
  *
@@ -83,9 +89,9 @@ export interface FatosDaAtribuicao {
   donosDeNegocioAberto: ReadonlyArray<string | null>;
   /** user_ids dos administradores da organização com vínculo ativo. */
   admins: ReadonlyArray<string>;
-  /** A IA está atendendo esta conversa (regra 2 do cabeçalho). */
+  /** A IA está atendendo esta conversa (regra 2 do cabeçalho). Só vale sem atendente. */
   iaConduz?: boolean;
-  /** Distribuição automática no canal (regra 3); `null`/ausente = modo manual. */
+  /** Distribuição automática no canal (regra 4); `null`/ausente = modo manual. */
   filaDistribuida?: { dePlantao: ReadonlyArray<string>; gestores: ReadonlyArray<string> } | null;
 }
 
@@ -100,11 +106,14 @@ export function responsaveisDaConversa(
 
 /** Decisão pura, na ordem do cabeçalho. */
 export function destinatariosDaMensagem(fatos: FatosDaAtribuicao): DestinatariosDaMensagem {
+  if (fatos.atribuidoA) {
+    return { tipo: "restrito", userIds: [...new Set([fatos.atribuidoA, ...fatos.admins])] };
+  }
+  if (fatos.iaConduz) return { tipo: "ninguem" };
   const responsaveis = responsaveisDaConversa(fatos);
   if (responsaveis.length > 0) {
     return { tipo: "restrito", userIds: [...new Set([...responsaveis, ...fatos.admins])] };
   }
-  if (fatos.iaConduz) return { tipo: "ninguem" };
   const fila = fatos.filaDistribuida;
   // Lista de gestores vazia não deveria acontecer; se acontecer, a fila avisa
   // todos em vez de sumir.
@@ -166,6 +175,11 @@ export async function carregarDestinatariosDaMensagem(
 
   let donos: Array<string | null> = [];
   const contato = contactId ?? conv.data.contact_id;
+  // Sem atendente, a IA vem antes do dono do negócio (regra 2): conversando
+  // com ela, ninguém é avisado, e nem o negócio precisa ser lido.
+  if (!conv.data.assigned_to_user_id && (await iaConduz(db, organizationId, conversationId, conv.data, contato, agora))) {
+    return { tipo: "ninguem" };
+  }
   if (!conv.data.assigned_to_user_id && contato) {
     const leads = await (db
       .from("crm_leads")
@@ -177,10 +191,8 @@ export async function carregarDestinatariosDaMensagem(
     donos = (leads.data ?? []).map((l) => l.owner_user_id);
   }
 
-  // Sem responsável: a IA, depois a fila. Os admins só são lidos quando há
-  // responsável.
+  // Sem responsável: a fila. Os admins só são lidos quando há responsável.
   if (responsaveisDaConversa({ atribuidoA: conv.data.assigned_to_user_id, donosDeNegocioAberto: donos }).length === 0) {
-    if (await iaConduz(db, organizationId, conversationId, conv.data, contato, agora)) return { tipo: "ninguem" };
     return destinatariosDaMensagem({
       atribuidoA: null,
       donosDeNegocioAberto: [],

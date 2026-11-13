@@ -15,6 +15,7 @@ import {
   syncPushSubscription,
   type MotivoDoIgnorado,
 } from "./push_client";
+import { NOTIFY_UI_CATEGORIES } from "./prefs";
 
 /** Todos os motivos de `ignorado`: a tabela abaixo não pode deixar nenhum de fora. */
 const TODOS_OS_MOTIVOS: MotivoDoIgnorado[] = [
@@ -120,8 +121,8 @@ describe("syncPushSubscription", () => {
 
   // `alerts.enabled` é espelho: a permissão concedida para outra linha da tela o
   // regrava como "1" sem tocar no interruptor de mensagem. A fonte é a preferência.
-  it("push de mensagem desligado: não inscreve nem manda PUT, mesmo com o espelho em 1", async () => {
-    window.localStorage.setItem("notify.prefs.v1", JSON.stringify({ message: { in_app: true, push: false } }));
+  it("todos os pushes desligados: não inscreve nem manda PUT, mesmo com o espelho em 1", async () => {
+    window.localStorage.setItem("notify.prefs.v1", JSON.stringify(Object.fromEntries(NOTIFY_UI_CATEGORIES.map((c) => [c, { in_app: true, push: false }]))));
     window.localStorage.setItem("alerts.enabled", "1");
     await syncPushSubscription();
     expect(subscribe).not.toHaveBeenCalled();
@@ -132,6 +133,14 @@ describe("syncPushSubscription", () => {
     await syncPushSubscription();
     expect(subscribe).toHaveBeenCalledTimes(1);
     expect(fetchFalso.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "PUT")).toBe(true);
+  });
+
+  it("só o de mensagem desligado: o aparelho segue inscrito e o PUT leva o tipo calado", async () => {
+    window.localStorage.setItem("notify.prefs.v1", JSON.stringify({ message: { in_app: true, push: false } }));
+    await syncPushSubscription();
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    const put = fetchFalso.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === "PUT");
+    expect(JSON.parse(String((put![1] as RequestInit).body)).tipos_calados).toEqual(["message"]);
   });
 
   /**
@@ -240,8 +249,8 @@ describe("syncPushSubscription", () => {
       expect(pushNaoEntrega(resultado)).toBe(true);
     });
 
-    it("preferência da pessoa (push de mensagem desligado): motivo `preferencia_do_usuario`", async () => {
-      window.localStorage.setItem("notify.prefs.v1", JSON.stringify({ message: { in_app: true, push: false } }));
+    it("preferência da pessoa (todos os pushes desligados): motivo `preferencia_do_usuario`", async () => {
+      window.localStorage.setItem("notify.prefs.v1", JSON.stringify(Object.fromEntries(NOTIFY_UI_CATEGORIES.map((c) => [c, { in_app: true, push: false }]))));
 
       const resultado = await syncPushSubscription();
 

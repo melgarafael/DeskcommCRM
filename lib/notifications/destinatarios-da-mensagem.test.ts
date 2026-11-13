@@ -169,7 +169,7 @@ describe("destinatariosDaMensagem — a IA e o plantão (regra pura)", () => {
     expect(usuarioRecebeAviso({ tipo: "ninguem" }, ADMIN)).toBe(false);
   });
 
-  it("responsável vence a IA e o plantão", () => {
+  it("atendente da conversa vence a IA e o plantão", () => {
     expect(
       destinatariosDaMensagem({
         atribuidoA: "u-ana",
@@ -179,6 +179,12 @@ describe("destinatariosDaMensagem — a IA e o plantão (regra pura)", () => {
         filaDistribuida: { dePlantao: [], gestores: ["u-gerente"] },
       }),
     ).toEqual({ tipo: "restrito", userIds: ["u-ana", ADMIN] });
+  });
+
+  it("IA conduzindo vence o dono do negócio aberto → ninguém, nem os admins", () => {
+    expect(
+      destinatariosDaMensagem({ atribuidoA: null, donosDeNegocioAberto: ["u-bia"], admins: [ADMIN], iaConduz: true }),
+    ).toEqual({ tipo: "ninguem" });
   });
 
   it("sem responsável e a IA conduzindo → ninguém", () => {
@@ -428,18 +434,28 @@ describe("carregarDestinatariosDaMensagem — fila, plantão e IA", () => {
     expect(tabelasLidas(consultas)).toEqual(["conversations", "user_organizations"]);
   });
 
-  it("(iv-b) dono de negócio aberto, com IA no ar → dono + admins (a precedência não muda)", async () => {
+  it("(iv-b) dono de negócio aberto e a IA atendendo → ninguém, sem ler o negócio nem os admins", async () => {
     const { db, consultas } = stub({
-      conversations: { data: SEM_DONO },
+      ...IA_NO_AR,
       crm_leads: { data: [{ owner_user_id: "u-bia" }] },
-      ai_agents: { data: [AGENTE_NO_AR] },
+      user_organizations: { data: [{ user_id: ADMIN }] },
+    });
+    expect(await carregarDestinatariosDaMensagem(db, "org-1", "conv-1")).toEqual({ tipo: "ninguem" });
+    expect(tabelasLidas(consultas)).not.toContain("crm_leads");
+    expect(tabelasLidas(consultas)).not.toContain("user_organizations");
+  });
+
+  it("(iv-c) controle: dono de negócio aberto depois da passagem (IA calada) → dono + admins", async () => {
+    const { db } = stub({
+      ...IA_NO_AR,
+      conversations: { data: { ...SEM_DONO, ...ELEGIVEL, bot_silenced_until: "infinity" } },
+      crm_leads: { data: [{ owner_user_id: "u-bia" }] },
       user_organizations: { data: [{ user_id: ADMIN }] },
     });
     expect(await carregarDestinatariosDaMensagem(db, "org-1", "conv-1")).toEqual({
       tipo: "restrito",
       userIds: ["u-bia", ADMIN],
     });
-    expect(tabelasLidas(consultas)).not.toContain("ai_agents");
   });
 
   // O filtro "Só responder quando a mensagem falar de algo específico"
