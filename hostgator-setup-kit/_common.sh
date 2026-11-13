@@ -1144,22 +1144,48 @@ com_prazo() {  # com_prazo <segundos> <comando...>
 #   incompleta    → ALGUMA falta e o registro respondeu = publicação incompleta;
 #   indisponivel  → NENHUMA respondeu = o registro/DNS está fora (ou a tag nem
 #                   existe, o que para o chamador dá no mesmo: não se sabe).
-veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão>
-  local versao="${1:-}" img total=0 achadas=0
+# Preenchida por veredito_das_imagens_da_release: quais imagens não responderam e
+# por quê (`nome:ausente` ou `nome:indeterminado`). Existe para o agent.sh poder
+# REGISTRAR o motivo de esconder uma release — antes disto, o silêncio da tela não
+# deixava rastro nenhum e o diagnóstico morria em "não apareceu".
+IMAGENS_SEM_RESPOSTA=""
+
+veredito_das_imagens_da_release() {  # veredito_das_imagens_da_release <versão alvo> [versão instalada]
+  local versao="${1:-}" instalada="${2:-}" img total=0 achadas=0 ausentes=0
+  IMAGENS_SEM_RESPOSTA=""
   versao="${versao#v}"
+  instalada="${instalada#v}"
   [ -n "$versao" ] || { printf 'indisponivel'; return 0; }
   for img in "$IMG_APP" "$IMG_WORKER" "$IMG_SCHEDULER" "$IMG_VOICE_AGENT"; do
     total=$((total + 1))
     if com_prazo 20 docker buildx imagetools inspect "${img}:${versao}" >/dev/null 2>&1; then
       achadas=$((achadas + 1))
+      continue
+    fi
+    # ⛔ A SONDA DE CONTROLE, pelo mesmo motivo da sonda do app.
+    #
+    # `com_prazo 20` transforma timeout e 429 do registro em "esta imagem não
+    # existe" — e a diferença entre as duas coisas é o que decide se a release é
+    # escondida. A tag INSTALADA é a sonda certa porque ela existe com certeza:
+    # está rodando aqui. Se nem ela responde, o que está fora é o registro, não
+    # a imagem; e aí esconder a atualização seria ligar o silêncio da tela a um
+    # problema de rede que ninguém vê.
+    if [ -n "$instalada" ] && com_prazo 20 docker buildx imagetools inspect "${img}:${instalada}" >/dev/null 2>&1; then
+      ausentes=$((ausentes + 1))
+      IMAGENS_SEM_RESPOSTA="${IMAGENS_SEM_RESPOSTA} ${img##*/}:ausente"
+    else
+      IMAGENS_SEM_RESPOSTA="${IMAGENS_SEM_RESPOSTA} ${img##*/}:indeterminado"
     fi
   done
   if [ "$achadas" -eq "$total" ]; then
     printf 'prontas'
-  elif [ "$achadas" -eq 0 ]; then
-    printf 'indisponivel'
-  else
+  elif [ "$ausentes" -gt 0 ]; then
+    # Há pelo menos uma imagem provadamente ausente: a release não está pronta.
+    # Isso cala o botão — e é o único caso que deve calar.
     printf 'incompleta'
+  else
+    # Nenhuma ausência provada: só falha de sonda. Anunciar, como sempre foi.
+    printf 'indisponivel'
   fi
 }
 

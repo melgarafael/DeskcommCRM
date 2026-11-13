@@ -264,7 +264,13 @@ if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # Só `ausente` cala. `indisponivel` é "não consegui perguntar ao registro", e
   # nesse caso anunciar é o que preserva o comportamento de sempre — uma VPS com
   # saída de rede ruim não pode ficar sem atualização para sempre, em silêncio.
-  [ "$VEREDITO_IMAGEM" = "ausente" ] && LATEST_TAG=""
+  if [ "$VEREDITO_IMAGEM" = "ausente" ]; then
+    # Calar é transitório, mas calar sem rastro não é diagnóstico: a tela diz
+    # "em dia" e o log não conta por quê. Uma linha aqui custa nada e responde
+    # a pergunta que sempre volta ("por que não apareceu?").
+    log_err "não anunciei a ${LATEST_TAG}: a sonda do app diz 'ausente' (a ${CURRENT_TAG} responde) — imagem do app não publicada"
+    LATEST_TAG=""
+  fi
   # ── E a release tem as QUATRO imagens? (#1955, critério 1) ──────────────
   # O veredito de cima olha SÓ a imagem do app. Um run de publicação que morre
   # no meio deixa a ETIQUETA publicada com o worker (ou o scheduler, ou a voz)
@@ -276,8 +282,15 @@ if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "$CURRENT" ]; then
   # Só `incompleta` cala, pelo MESMO motivo do `ausente`: `indisponivel` é o
   # registro fora do ar, e uma VPS com rede ruim não pode ficar sem
   # atualização para sempre, em silêncio.
-  if [ -n "$LATEST_TAG" ] && [ "$(veredito_das_imagens_da_release "${LATEST_TAG#v}")" = "incompleta" ]; then
-    LATEST_TAG=""
+  if [ -n "$LATEST_TAG" ]; then
+    VEREDITO_IMAGENS="$(veredito_das_imagens_da_release "${LATEST_TAG#v}" "${CURRENT_TAG#v}")"
+    if [ "$VEREDITO_IMAGENS" = "incompleta" ]; then
+      # Só cai aqui quando alguma imagem está PROVADAMENTE ausente (a tag
+      # instalada responde e a nova não). Falha de sonda já não chega como
+      # `incompleta` — vira `indisponivel`, que anuncia.
+      log_err "não anunciei a ${LATEST_TAG}: release incompleta — ${IMAGENS_SEM_RESPOSTA# }"
+      LATEST_TAG=""
+    fi
   fi
 fi
 
