@@ -66,7 +66,7 @@ import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import type { Logger } from '../obs/logger';
 import type { LlmEdgeConfig } from '../edge/llm/run-model-call';
 import { temIaDeSempre } from '../edge/llm/credentials';
-import { agenteDaCampanhaDaConversa } from './agente-da-campanha';
+import { agenteDaCampanhaDaConversa, agenteDaCampanhaDeEntrada } from './agente-da-campanha';
 import { agentePorRemetente } from './sender-routing';
 import { registrarDecisaoDoRoteador } from './router-decision-log';
 import { loadActiveRouter, type LoadedRouter, type RouterMember } from './router-config';
@@ -159,6 +159,12 @@ export interface ResolveTurnAgentDeps {
   log: Logger;
   /** Injetável para o teste não precisar de banco. */
   agenteDaCampanha?: typeof agenteDaCampanhaDaConversa;
+  /**
+   * O degrau da campanha de ENTRADA (frase do anúncio, #4024). Injetável pelo
+   * mesmo motivo — e porque ele é o único degrau que depende de uma coluna
+   * gravada pela INGESTÃO, que nenhum dublê de `db` simples reproduz.
+   */
+  agenteDaCampanhaDeEntrada?: typeof agenteDaCampanhaDeEntrada;
   loadActiveRouter?: typeof loadActiveRouter;
   loadPublishedAgentConfigById?: typeof loadPublishedAgentConfigById;
   loadPublishedAgentConfig?: typeof loadPublishedAgentConfig;
@@ -379,6 +385,51 @@ export async function resolveTurnAgent(
         tenantId: input.tenantId,
         conversationId: input.conversationId,
       });
+    }
+
+    // ─── Degrau 0b: a campanha de ENTRADA — a frase do anúncio (#4024) ───
+    //
+    // Mesmo lugar e mesmo porquê do degrau acima, com uma campanha que não cria a
+    // conversa: o cliente chegou pela frase do anúncio ("quero saber mais sobre
+    // implantes"), a ingestão casou a frase e gravou o `agent_id` declarado pela
+    // campanha na CONVERSA (`conversations.campaign_entry_agent_id`, migration
+    // 9348). Quem atende vários nichos no mesmo número passa a ter a resposta do
+    // especialista daquele anúncio, em vez da do agente do número.
+    //
+    // Vale em TODO turno da conversa em que a frase casou — decisão do mantenedor
+    // (2026-11-05), a mesma regra da campanha de saída. O uso único que existia
+    // aqui antes se gastava num turno adiado pela janela anti-ban e tirava a
+    // conversa do agente sem que ele tivesse respondido nada; a leitura por turno
+    // não tem estado a gastar. Conversa NOVA do mesmo contato volta à régua do
+    // número, e a troca explícita de agente no meio da conversa continua valendo.
+    //
+    // O que NÃO muda: conversa que não veio de campanha (coluna nula), campanha
+    // sem `agent_id`, agente arquivado/sem versão publicada (o `_loadAgentById`
+    // devolve `null` e o turno segue pela régua do número) e agente de OUTRA
+    // organização (o `_loadAgentById` filtra por `organization_id`). Dono humano,
+    // silêncio e opt-out nem chegam aqui: a régua de elegibilidade barra antes.
+    const _agenteDaCampanhaDeEntrada =
+      deps.agenteDaCampanhaDeEntrada ?? agenteDaCampanhaDeEntrada;
+    const idDaCampanhaDeEntrada = await _agenteDaCampanhaDeEntrada(
+      db,
+      input.tenantId,
+      input.conversationId,
+    );
+    if (idDaCampanhaDeEntrada !== null) {
+      const config = await _loadAgentById(db, input.tenantId, idDaCampanhaDeEntrada);
+      if (config !== null) {
+        deps.log.info('turno pelo agente da campanha de entrada (frase do anúncio)', {
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          agentId: config.agentId,
+          agentVersionId: config.versionId,
+        });
+        return { config, routerId: null, intentName: null, confidence: null, outcome: 'campanha' };
+      }
+      deps.log.warn(
+        'agente da campanha de entrada sem versão publicada; seguindo pela régua do número',
+        { tenantId: input.tenantId, conversationId: input.conversationId },
+      );
     }
 
     if (roteadorDoNumero === null) {

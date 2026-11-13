@@ -75042,6 +75042,39 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
 
+-- ---- a campanha de entrada declara quem atende a conversa (migration 9348) ----
+-- Espelho idempotente da 9348 (issue #4024). NÃO cria função nem gatilho: fica
+-- acima da VARREDURA anon por precaução, não por necessidade — a varredura só
+-- cura o que veio antes dela, e nenhum `create function` mora aqui.
+--
+-- `campaign_entry_agent_id`: o agente que a campanha de ENTRADA (frase do
+-- anúncio) declarou para o contato que ela trouxe. A conversa em que a frase
+-- casou é atendida por ele em todo turno (decisão do mantenedor, 2026-11-05) —
+-- o turno LÊ a coluna, sem carimbo de uso: o carimbo que existia se gastava num
+-- turno adiado pela janela anti-ban e tirava a conversa do agente sem que ele
+-- tivesse respondido nada.
+--
+-- A FK é COMPOSTA (organização, agente) para que agente de OUTRA organização não
+-- possa nem ser gravado; `on delete set null (campaign_entry_agent_id)` com a
+-- lista de colunas porque o SET NULL sem ela tentaria anular `organization_id`,
+-- que é NOT NULL, e o delete do agente explodiria em produção.
+alter table public.conversations
+  add column if not exists campaign_entry_agent_id uuid;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'conversations_campaign_entry_agent_org_fk') then
+    alter table public.conversations
+      add constraint conversations_campaign_entry_agent_org_fk
+      foreign key (organization_id, campaign_entry_agent_id)
+      references public.ai_agents (organization_id, id)
+      on delete set null (campaign_entry_agent_id);
+  end if;
+end $$;
+
+comment on column public.conversations.campaign_entry_agent_id is
+  'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, em todo turno desta conversa. Nulo = conversa não veio de campanha de entrada. Migration 9348.';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.

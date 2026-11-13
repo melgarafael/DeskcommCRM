@@ -451,10 +451,75 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
       conversation_id: entrada.conversationId,
       campanha: casada.id,
     });
+    // ─── 3º efeito: QUEM responde (#4024) ────────────────────────────────
+    //
+    // A elegibilidade é do CONTATO; a escolha do agente é da CONVERSA. A coluna
+    // é lida por `resolve-turn-agent` (degrau 0b, acima do roteador) em todo
+    // turno desta conversa — decisão do mantenedor (2026-11-05), a mesma regra
+    // da campanha de saída. Só a conversa em que a frase casou é afetada: uma
+    // conversa nova do mesmo contato volta à régua do número, e uma troca
+    // explícita de agente continua possível.
+    if (casada.agent_id !== undefined) {
+      await registrarAgenteDaCampanhaDeEntrada(admin, entrada, casada.agent_id);
+    }
   } catch (err) {
     logger.warn("pos-entrada: avaliação de campanha falhou (o despacho segue)", {
       organization_id: entrada.organizationId,
       conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
+}
+
+/**
+ * 2c · O agente que a campanha de ENTRADA declarou, gravado na CONVERSA (#4024).
+ *
+ * A elegibilidade (`autorizarContatoParaIA` acima) é do contato e é permanente:
+ * `ai_authorized_reason = campanha:<id>` continua respondendo "por que a IA pôde
+ * assumir". Já "quem responde" é outra pergunta, e a resposta vale para ESTA
+ * conversa: por isso o `agent_id` da campanha mora aqui, em
+ * `conversations.campaign_entry_agent_id`, e não numa releitura da `reason`.
+ *
+ * `is("campaign_entry_agent_id", null)` NÃO é preciosismo: a primeira campanha
+ * que casou é a que trouxe o cliente. Uma frase de outro anúncio escrita dias
+ * depois, na mesma conversa, não troca o agente que já abriu o atendimento.
+ *
+ * Best-effort, como o resto do arquivo: falha aqui vira log e o turno segue pelo
+ * agente do número — o lado seguro. A FK composta da 9348 ainda recusa, no
+ * banco, um `agent_id` de OUTRA organização (a coluna nem é gravada, e o
+ * `resolve-turn-agent` não tem como escolhê-lo).
+ */
+async function registrarAgenteDaCampanhaDeEntrada(
+  admin: Admin,
+  entrada: EntradaDeMensagem,
+  agentId: string,
+): Promise<void> {
+  try {
+    const { error } = await admin
+      .from("conversations")
+      .update({ campaign_entry_agent_id: agentId })
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.conversationId)
+      .is("campaign_entry_agent_id", null);
+    if (error) {
+      logger.warn("pos-entrada: agente da campanha de entrada NAO gravado (o turno segue pelo número)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        agent_id: agentId,
+        detail: error.message.slice(0, 160),
+      });
+      return;
+    }
+    logger.info("pos-entrada: conversa marcada com o agente da campanha de entrada", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      agent_id: agentId,
+    });
+  } catch (err) {
+    logger.warn("pos-entrada: agente da campanha de entrada NAO gravado (o turno segue pelo número)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      agent_id: agentId,
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
     });
   }
