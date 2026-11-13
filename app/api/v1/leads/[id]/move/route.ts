@@ -19,6 +19,7 @@ import { moveLeadSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
+import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
@@ -290,6 +291,36 @@ export async function POST(
       409,
       {
         details: { current_updated_at: current?.updated_at ?? null },
+        requestId,
+      },
+    );
+  }
+
+  // ── O FINANCEIRO DO FECHO (#3602, fatia 5) ─────────────────────────────────
+  //
+  // O arrasto é a porta mais usada do quadro: arrastar o card para a coluna
+  // Ganho fechava o negócio (o gatilho do banco põe `status='won'`) e o molde
+  // recorrente ficava só na tela. Aqui a MESMA função dos outros caminhos entra
+  // pelo módulo do cerco (`lib/financeiro/recorrencia-do-fecho`), que nunca
+  // lança: o card já moveu e o financeiro atrasado é melhor do que um arrasto
+  // que não acontece.
+  //
+  // `!mesmaEtapa` é a regra da fatia 3/4 valendo aqui também — arrastar dentro
+  // da própria coluna Ganho não cria um segundo molde. O lote já filtra os
+  // cards que não mudaram de etapa; o encerramento só chega no financeiro
+  // quando o desfecho muda.
+  if (!mesmaEtapa) {
+    await moveARecorrenciaNoFecho(
+      {
+        organizationId: lead.organization_id,
+        leadId,
+        pipelineId: lead.pipeline_id,
+        etapa: { is_won: stage.is_won === true, is_lost: stage.is_lost === true },
+        valorRecorrente: (lead as { recurring_value_cents?: number | string | null })
+          .recurring_value_cents ?? null,
+        criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+        userId: user.id,
+        origem: "leads/[id]/move",
         requestId,
       },
     );

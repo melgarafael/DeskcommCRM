@@ -15,6 +15,15 @@ vi.mock("@/lib/leads/activity-emitter", () => ({
 vi.mock("@/lib/leads/activity-write-failure", () => ({
   registraFalhaDeAtividade: vi.fn(async () => undefined),
 }));
+// O financeiro do fecho (#3602, fatia 5): o cerco é `recorrencia-do-fecho`, mas
+// quem é chamado de verdade são estas duas. O admin client é mockado porque o
+// arrasto não tem (nem deve ter) service role no teste.
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
+const molde = vi.hoisted(() => ({
+  recorrenciaDoNegocio: vi.fn(async () => ({ estado: "criado" })),
+  desativaRecorrenciaDoNegocio: vi.fn(async () => ({ estado: "desativado" })),
+}));
+vi.mock("@/lib/financeiro/recorrencia-do-negocio", () => molde);
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -28,6 +37,8 @@ const CARREGADO = "2026-09-15T12:00:00.000Z";
 const DEPOIS_DO_MOVE = "2026-09-15T12:00:01.000Z";
 /** O `updated_at` depois que a atividade, pelo gatilho de `last_activity_at`, escreve no lead de novo. */
 const DEPOIS_DA_ATIVIDADE = "2026-09-15T12:00:01.500Z";
+/** `crm_leads.created_at` — a origem do `day_of_month` do molde (#3602). */
+const CRIADO_EM = "2026-03-05T23:30:00.000Z";
 
 /**
  * Banco falso com a cascata real: gravar a atividade (`crm_lead_activities`)
@@ -40,6 +51,8 @@ function bancoFalso(
   stageExtra: Record<string, unknown> = {},
   /** `status` do lead (issue #1538); o padrão é aberto. */
   statusDoLead = "open",
+  /** Campos extras do negócio (ex.: `recurring_value_cents` da #3602). */
+  leadExtra: Record<string, unknown> = {},
 ) {
   const banco = { updatedAt: CARREGADO, stageId: STAGE_A, ultimoPatch: null as Record<string, unknown> | null };
   vi.mocked(emitLeadActivity).mockImplementation(async () => {
@@ -57,6 +70,8 @@ function bancoFalso(
     updated_at: banco.updatedAt,
     custom_fields: {} as Record<string, unknown>,
     won_reason: null,
+    created_at: CRIADO_EM,
+    ...leadExtra,
   });
 
   const from = (tabela: string) => {
@@ -376,3 +391,136 @@ vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));
+
+// ── O ARRASTO TAMBÉM FECHA O NEGÓCIO PARA O FINANCEIRO (#3602, fatia 5) ──────
+//
+// A fatia 3/4 ligou o molde no `moveLeadHandler` e o arrasto do quadro ficou
+// declarado fora. Aqui se prende o fio da porta mais usada: card arrastado para
+// a coluna Ganho com `recurring_value_cents` declarado cria o molde UMA vez, a
+// coluna Perdido desativa, e reordenar dentro da própria coluna não toca nada.
+//
+// A regra do molde em si (valor, dia, conta, módulo, idempotência de banco) é
+// medida em `lib/financeiro/recorrencia-do-negocio.test.ts`; o cerco (nunca
+// lançar, nunca derrubar o movimento) em `lib/financeiro/recorrencia-do-fecho.test.ts`.
+describe("POST /move — o financeiro do fecho (#3602, fatia 5)", () => {
+  beforeEach(() => {
+    vi.mocked(createClient).mockResolvedValue(bancoFalso() as never);
+  });
+
+  it("arrastar para a coluna Ganho cria o molde UMA vez, com negócio, valor e created_at", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      bancoFalso(null, { is_won: true }, "open", { recurring_value_cents: 50_000 }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(molde.recorrenciaDoNegocio).toHaveBeenCalledTimes(1);
+    expect(molde.recorrenciaDoNegocio).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: ORG_ID,
+        leadId: LEAD_ID,
+        pipelineId: PIPELINE_ID,
+        valorCents: 50_000,
+        criadoEm: CRIADO_EM,
+        userId: USER_ID,
+      }),
+    );
+    expect(molde.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("arrastar para a coluna Perdido desativa o molde DAQUELE negócio", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      bancoFalso(null, { is_lost: true }, "open", { recurring_value_cents: 50_000 }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({
+        stage_id: STAGE_B,
+        position_in_stage: 1500,
+        expected_updated_at: CARREGADO,
+        lost_reason: "sem resposta",
+      }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(molde.desativaRecorrenciaDoNegocio).toHaveBeenCalledTimes(1);
+    expect(molde.desativaRecorrenciaDoNegocio).toHaveBeenCalledWith(expect.anything(), {
+      organizationId: ORG_ID,
+      leadId: LEAD_ID,
+    });
+    expect(molde.recorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("reordenar dentro da coluna Ganho não cria molde de novo", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      bancoFalso({ won_reason_required: false }, { is_won: true }, "won", {
+        recurring_value_cents: 50_000,
+      }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_A, position_in_stage: 2500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(molde.recorrenciaDoNegocio).not.toHaveBeenCalled();
+    expect(molde.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("ganho SEM recorrência declarada não toca no financeiro", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      bancoFalso(null, { is_won: true }, "open", { recurring_value_cents: null }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(molde.recorrenciaDoNegocio).not.toHaveBeenCalled();
+    expect(molde.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("etapa comum (não é ganho nem perda) não chega ao financeiro", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      bancoFalso(null, {}, "open", { recurring_value_cents: 50_000 }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(molde.recorrenciaDoNegocio).not.toHaveBeenCalled();
+    expect(molde.desativaRecorrenciaDoNegocio).not.toHaveBeenCalled();
+  });
+
+  it("financeiro fora do ar NÃO derruba o arrasto: o card move e a resposta sai 200", async () => {
+    molde.recorrenciaDoNegocio.mockRejectedValueOnce(new Error("banco fora"));
+    const falso = bancoFalso(null, { is_won: true }, "open", { recurring_value_cents: 50_000 });
+    vi.mocked(createClient).mockResolvedValue(falso as never);
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(falso.banco.stageId).toBe(STAGE_B);
+  });
+});

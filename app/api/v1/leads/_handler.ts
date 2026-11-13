@@ -53,6 +53,7 @@ import {
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import { moveARecorrenciaNoFecho } from "@/lib/financeiro/recorrencia-do-fecho";
 import {
   decideMotivoDaPerda,
   recusaDeMotivoDaPerdaPeloBanco,
@@ -1629,6 +1630,42 @@ export async function moveLeadHandler(
       ctx.requestId,
       traduzir("Lead foi modificado concorrentemente.", ctx.idioma ?? "pt-BR"),
     );
+  }
+
+  // ── O FINANCEIRO DO FECHO (#3602, fatias 3 e 4) ────────────────────────────
+  //
+  // Ganhar com `recurring_value_cents` declarado cria o molde da receita
+  // mensal (`recurring_entries`) ligado a este negócio; perder desativa o molde
+  // DELE. Sem isto, a recorrência do card era só um número na tela: o cron que
+  // gera as contas a receber nunca ficava sabendo dela, e quem vendia "setup +
+  // mensalidade" continuava lançando a mensalidade à mão — até esquecer.
+  //
+  // ── Por que AQUI, e não só na rota do quadro ──────────────────────────────
+  //
+  // Este handler é o escritor de etapa de tudo que NÃO é o arrasto (MCP
+  // `crm_move_lead_stage`, ações de automação, IA). O arrasto, o botão
+  // Ganhar/Perder e o lote entram pela MESMA função do cerco
+  // (`lib/financeiro/recorrencia-do-fecho`), que guarda o "nunca derrubar o
+  // movimento" numa cópia só — fatia 5 da #3602.
+  //
+  // ── Falha BAIXA ───────────────────────────────────────────────────────────
+  //
+  // O card já moveu. Um financeiro que não nasceu vira log e um molde que
+  // alguém cria à mão; derrubar o fecho do negócio por causa dele seria pior.
+  // O `moveARecorrenciaNoFecho` não lança e loga cada desfecho de erro.
+  if (!mesmaEtapa && (stage.is_won || stage.is_lost)) {
+    await moveARecorrenciaNoFecho({
+      organizationId: lead.organization_id,
+      leadId,
+      pipelineId: lead.pipeline_id,
+      etapa: { is_won: stage.is_won === true, is_lost: stage.is_lost === true },
+      valorRecorrente:
+        (lead as { recurring_value_cents?: number | string | null }).recurring_value_cents ?? null,
+      criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+      userId: ctx.actor.type === "user" ? ctx.actor.id : null,
+      origem: "leads/_handler.moveLeadHandler",
+      requestId: ctx.requestId,
+    });
   }
 
   const a = actorAuditPayload(ctx.actor);
