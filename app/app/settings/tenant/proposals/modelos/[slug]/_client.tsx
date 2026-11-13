@@ -9,7 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
 import type { ApiSuccess } from "@/lib/api/wrappers";
-import { rotuloDaVariavel } from "@/lib/propostas/documento/rotulos-das-variaveis";
+import {
+  rotuloDaVariavel,
+  rotulosDoNegocio,
+  type CampoDoFunilParaRotulo,
+} from "@/lib/propostas/documento/rotulos-das-variaveis";
 import { CHAVE_DO_MODELO_IMPORTADO } from "../_client";
 
 interface Secao { id: string; title: string; body: string; required: boolean; conditional: boolean }
@@ -17,12 +21,29 @@ interface Modelo { nome: string; descricao: string | null; sections: Secao[]; se
 
 const VARIAVEL = /\{\{([a-zA-Z0-9_.]+)\}\}/g;
 
+/**
+ * O nome legível de uma variável na tela.
+ *
+ * Rótulo de campo do funil é TEXTO QUE A EMPRESA DIGITOU: passa direto, sem
+ * `t()` — traduzir dado do operador mudaria o dado na tela. Só o rótulo que o
+ * produto define (`ROTULO_DA_VARIAVEL`) é traduzido.
+ */
+function RotuloDaVariavel({ caminho, rotulos }: { caminho: string; rotulos: Record<string, string> }) {
+  const t = useT();
+  const doFunil = rotulos[caminho];
+  if (doFunil !== undefined) return <>{doFunil}</>;
+  return <>{t(rotuloDaVariavel(caminho))}</>;
+}
+
 /** Variável que o sistema preenche sozinho — nunca é pergunta ao cliente. */
 function ehCalculadaPeloSistema(caminho: string): boolean {
   return (
     caminho.startsWith("investment.") ||
     caminho.startsWith("commercial_terms.") ||
     caminho.startsWith("approval.") ||
+    // `{{lead.<chave>}}` vem do CARD do negócio (#4533), não da conversa.
+    caminho === "lead" ||
+    caminho.startsWith("lead.") ||
     caminho === "client.name" ||
     caminho === "client.company_or_name"
   );
@@ -34,13 +55,22 @@ function idLivre(secoes: Secao[]): string {
   return `secao_${n}`;
 }
 
-export function EditorDeModelo({ slug }: { slug: string }) {
+export function EditorDeModelo({
+  slug,
+  camposDoFunil = [],
+}: {
+  slug: string;
+  /** Os campos do negócio com o rótulo da empresa (#4533) — lidos no servidor. */
+  camposDoFunil?: CampoDoFunilParaRotulo[];
+}) {
   const t = useT();
   const router = useRouter();
   const [modelo, setModelo] = useState<Modelo | null>(null);
   const [erros, setErros] = useState<Array<{ campo: string; mensagem: string }>>([]);
   const [ocupado, setOcupado] = useState(false);
   const importado = slug === "novo";
+
+  const rotulosDoNegocioDoFunil = useMemo(() => rotulosDoNegocio(camposDoFunil), [camposDoFunil]);
 
   useEffect(() => {
     if (importado) {
@@ -153,7 +183,7 @@ export function EditorDeModelo({ slug }: { slug: string }) {
             <p className="font-medium">{t("Este modelo vai pedir ao cliente:")}</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
               {pedidasAoCliente.map((v) => (
-                <li key={v}><code className="text-xs">{`{{${v}}}`}</code> — {t(rotuloDaVariavel(v))}</li>
+                <li key={v}><code className="text-xs">{`{{${v}}}`}</code> — <RotuloDaVariavel caminho={v} rotulos={rotulosDoNegocioDoFunil} /></li>
               ))}
             </ul>
           </div>
@@ -204,9 +234,24 @@ export function EditorDeModelo({ slug }: { slug: string }) {
         <p className="text-xs text-muted-foreground">{t("Escreva {{campo}} no texto; a proposta troca pelo valor de cada cliente.")}</p>
         <ul className="space-y-1">
           {variaveisUsadas.map((v) => (
-            <li key={v}><code className="text-xs">{`{{${v}}}`}</code> — {t(rotuloDaVariavel(v))}</li>
+            <li key={v}><code className="text-xs">{`{{${v}}}`}</code> — <RotuloDaVariavel caminho={v} rotulos={rotulosDoNegocioDoFunil} /></li>
           ))}
         </ul>
+        {camposDoFunil.length > 0 ? (
+          <div className="space-y-1 pt-2">
+            <h2 className="font-medium">{t("Campos do negócio")}</h2>
+            <p className="text-xs text-muted-foreground">
+              {t("Vêm do card do negócio: quem preenche é o funil, não a proposta.")}
+            </p>
+            <ul className="space-y-1">
+              {Object.keys(rotulosDoNegocioDoFunil).map((variavel) => (
+                <li key={variavel}>
+                  <code className="text-xs">{`{{${variavel}}}`}</code> — <RotuloDaVariavel caminho={variavel} rotulos={rotulosDoNegocioDoFunil} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </aside>
     </div>
   );

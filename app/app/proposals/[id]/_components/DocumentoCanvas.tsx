@@ -20,7 +20,7 @@ interface SecaoDocumento {
   editada?: boolean;
 }
 
-type Onde = "briefing" | "campo_prazo" | "itens" | "contato" | "sistema";
+type Onde = "briefing" | "campo_prazo" | "itens" | "contato" | "negocio" | "sistema";
 
 interface ModeloDisponivel {
   slug: string;
@@ -90,6 +90,7 @@ const DICA_POR_ONDE: Record<Exclude<Onde, "briefing">, string> = {
   campo_prazo: "Preencha no campo Prazo (dias úteis), abaixo.",
   itens: "Vem do total dos itens da proposta.",
   contato: "Vem do cadastro do contato.",
+  negocio: "Vem do card do negócio, no funil.",
   sistema: "Calculado pelo sistema.",
 };
 
