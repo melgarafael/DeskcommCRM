@@ -231,7 +231,12 @@ describe("excluir tenant pelo painel: o provedor é relido antes da trava de ass
 
     // Outro resultado que o anterior: 0 gravado, 1 relido — e a trava viu 1.
     expect(h.ler).toHaveBeenCalledTimes(1);
-    expect(h.ler).toHaveBeenCalledWith({ clienteRef: "cus_1" });
+    // #4056: a releitura passou a levar TAMBÉM a referência da assinatura que já
+    // está na linha, porque o Efi não tem cliente nem lista assinaturas por
+    // cliente — ele lê a assinatura por essa referência. Stripe e Asaas ignoram
+    // o campo. O que o teste mede continua o mesmo: relê a linha gravada, com o
+    // cliente dela, antes da trava.
+    expect(h.ler).toHaveBeenCalledWith({ clienteRef: "cus_1", assinaturaRef: "sub_1" });
     expect(m.linha!.assinaturas_vivas).toBe(1);
     expect(h.viuNaTrava).toMatchObject({ assinaturas_vivas: 1 });
     // A ordem: reler, gravar e só ENTÃO disparar a trava.

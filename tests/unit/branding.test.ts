@@ -1024,6 +1024,16 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint do SANDBOX do Asaas (`lib/cobranca/provedores/asaas.ts`): a chave `$aact_hmlg_` do dono só funciona aqui, e é com ela que ele testa antes de publicar.",
   },
+  "cobrancas.api.efipay.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de PRODUÇÃO da API de cobranças do Efi Bank (`lib/cobranca/provedores/efi.ts`): Pix e boleto recorrentes com que o DONO da instalação cobra as empresas dele, com a credencial Efi DELE. Destino do request, não marca.",
+  },
+  "cobrancas-h.api.efipay.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint de HOMOLOGAÇÃO da API de cobranças do Efi Bank (`lib/cobranca/provedores/efi.ts`): o par de credenciais de teste do dono só funciona aqui, e é com ele que ele testa antes de publicar.",
+  },
   "www.tiendanube.com": {
     categoria: "FORNECEDOR",
     motivo:

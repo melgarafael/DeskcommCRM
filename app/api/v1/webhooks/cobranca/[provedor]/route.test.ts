@@ -10,12 +10,20 @@ const h = vi.hoisted(() => ({
   permitido: true,
   baldes: [] as string[],
   aviso: vi.fn(),
+  args: [] as unknown[],
   erro: vi.fn(),
   banco: undefined as unknown as BancoFalso,
 }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: async () => h.ligada }));
 vi.mock("@/lib/cobranca/configuracao", () => ({ segredoDoWebhook: async () => h.segredo }));
-vi.mock("@/lib/cobranca/provedores", () => ({ adaptador: () => ({ verificarWebhook: () => h.sinal }) }));
+vi.mock("@/lib/cobranca/provedores", () => ({
+  adaptador: () => ({
+    verificarWebhook: (...args: unknown[]) => {
+      h.args = args;
+      return h.sinal;
+    },
+  }),
+}));
 vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({
   checkRateLimit: async (balde: string) => {
     h.baldes.push(balde);
@@ -80,6 +88,7 @@ beforeEach(() => {
   h.sinal = { eventoId: "evt_1", tipo: "invoice.paid", clienteRef: "cus_1" };
   h.permitido = true;
   h.baldes = [];
+  h.args = [];
   m = { duplicado: false, statusExistente: "received", dona: { organization_id: ORG }, erroDona: false, lancaDona: false, emit: { data: "ev-1" } };
   h.banco = bancoFalso(responder, () => m.emit);
 });
@@ -145,6 +154,25 @@ describe("webhook da cobrança", () => {
     m.emit = { data: null, error: { code: "XX000", message: "boom" } };
     expect((await pedido()).status).toBe(503);
     expect(doLog("update")).toEqual([]);
+  });
+
+  it("⭐ Efi: a URL do aviso chega ao adaptador — é dela que saem o token e a empresa (o corpo não autentica nada)", async () => {
+    h.sinal = { eventoId: "efi:09027955:1", tipo: "notification", clienteRef: `org:${ORG}` };
+    const url = `http://localhost/api/v1/webhooks/cobranca/efi?org=org%3A${ORG}&token=tok-do-aviso`;
+    const res = await POST(new NextRequest(url, { method: "POST", body: "notification=09027955" }), { params: Promise.resolve({ provedor: "efi" }) });
+    expect(res.status).toBe(200);
+    const [corpoCru, , segredo, , recebida] = h.args as [string, Headers, string, Date, URL];
+    expect(corpoCru).toBe("notification=09027955");
+    expect(segredo).toBe("whsec_teste");
+    expect(recebida.searchParams.get("token")).toBe("tok-do-aviso");
+    expect(recebida.searchParams.get("org")).toBe(`org:${ORG}`);
+    // O ponteiro é do Efi e o id é o DELE: é o que a reentrega deduplica.
+    expect(argumentos(doLog("insert")[0]!, "insert")?.[0]).toMatchObject({
+      provider: "efi",
+      external_id: "efi:09027955:1",
+      event_type: "notification",
+      organization_id: null,
+    });
   });
 
   it("⭐ a leitura da empresa falha: 500 com o ponteiro received e o motivo, o erro no log, e sem emitir", async () => {

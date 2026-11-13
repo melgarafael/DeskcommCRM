@@ -188,7 +188,11 @@ export async function sincronizar(
   const lidoEm = agora();
   let situacao: Situacao;
   try {
-    situacao = await (deps.adaptador ?? adaptadorPadrao)(provedor).lerSituacao({ clienteRef: cliente });
+    situacao = await (deps.adaptador ?? adaptadorPadrao)(provedor).lerSituacao({
+      clienteRef: cliente,
+      // Já está na linha: o Efi lê a assinatura por aqui (não tem cliente).
+      assinaturaRef: primeira?.provedor_assinatura_id ?? null,
+    });
   } catch (e) {
     const erro = paraErroDeLeitura(e);
     const { error } = await admin

@@ -65,13 +65,16 @@ export function ConexaoDaCobranca({
 }) {
   const t = useT();
   const router = useRouter();
-  const [escolhido, setEscolhido] = useState<ProvedorDeCobranca>(provedor === "asaas" ? "asaas" : "stripe");
+  const [escolhido, setEscolhido] = useState<ProvedorDeCobranca>(
+    provedor === "asaas" || provedor === "efi" ? provedor : "stripe",
+  );
   const [chave, setChave] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [aPublicar, setAPublicar] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [manual, setManual] = useState<AvisoManual | null>(null);
   const asaas = escolhido === "asaas";
+  const efi = escolhido === "efi";
   // ponytail: o último segmento é o provedor (`urlDoWebhookDaCobranca`); trocá-lo aqui evita levar o env do servidor à tela.
   const urlDoEscolhido = urlDoWebhook === null ? null : urlDoWebhook.replace(/\/[a-z]+$/, `/${escolhido}`);
 
@@ -133,16 +136,22 @@ export function ConexaoDaCobranca({
           id="provedor"
           className="h-9 rounded-md border bg-background px-2 text-sm"
           value={escolhido}
-          onChange={(e) => setEscolhido(e.target.value === "asaas" ? "asaas" : "stripe")}
+          onChange={(e) => setEscolhido(e.target.value === "asaas" || e.target.value === "efi" ? e.target.value : "stripe")}
         >
           <option value="stripe">Stripe</option>
           <option value="asaas">Asaas</option>
+          <option value="efi">Efi Bank</option>
         </select>
         <ul className="space-y-1 pt-1 text-sm text-muted-foreground">
           <li>
             <span className="font-medium text-foreground">Asaas</span>
             {" — "}
             {t("todo mês o cliente recebe a cobrança e paga por Pix, boleto ou cartão: o jeito que o brasileiro paga. Pede o CPF ou CNPJ. Recomendado se seus clientes estão no Brasil.")}
+          </li>
+          <li>
+            <span className="font-medium text-foreground">Efi Bank</span>
+            {" — "}
+            {t("boleto recorrente com link de pagamento do próprio Efi, que também aceita Pix e cartão na página dele. Pede a credencial da aplicação (Client-Id e Client-Secret).")}
           </li>
           <li>
             <span className="font-medium text-foreground">Stripe</span>
@@ -152,19 +161,21 @@ export function ConexaoDaCobranca({
         </ul>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="chave-secreta">{asaas ? t("Chave de API do Asaas") : t("Chave secreta")}</Label>
+        <Label htmlFor="chave-secreta">{asaas ? t("Chave de API do Asaas") : efi ? t("Credencial do Efi") : t("Chave secreta")}</Label>
         <Input
           id="chave-secreta"
           type="password"
           autoComplete="off"
           value={chave}
           onChange={(e) => setChave(e.target.value)}
-          placeholder={asaas ? "$aact_hmlg_…" : "sk_test_… / rk_test_…"}
+          placeholder={asaas ? "$aact_hmlg_…" : efi ? "teste:client_id:client_secret" : "sk_test_… / rk_test_…"}
         />
         <p className="text-xs text-muted-foreground">
           {asaas
             ? t("No Asaas: menu Integrações › Chaves de API. Comece pela conta de sandbox do Asaas; troque pela chave de produção quando a compra de teste der certo.")
-            : t("Na Stripe: Desenvolvedores › Chaves de API. Comece pela chave de teste; troque pela de produção quando a compra de teste der certo.")}
+            : efi
+              ? t("No Efi: Aplicações › sua aplicação › API de Cobranças. Cole no formato ambiente:client_id:client_secret (ambiente = teste ou producao). Homologação e produção são pares DIFERENTES de chaves.")
+              : t("Na Stripe: Desenvolvedores › Chaves de API. Comece pela chave de teste; troque pela de produção quando a compra de teste der certo.")}
         </p>
       </div>
       {erro && (
@@ -195,37 +206,52 @@ export function ConexaoDaCobranca({
       )}
       {manual && (
         <section
-          aria-label={t("Falta um passo: cadastre o aviso de pagamento no Asaas")}
+          aria-label={t(efi ? "O aviso de pagamento no Efi" : "Falta um passo: cadastre o aviso de pagamento no Asaas")}
           className="space-y-3 rounded-md border bg-warning-bg p-4 text-sm text-warning-fg"
         >
-          <h3 className="font-semibold">{t("Falta um passo: cadastre o aviso de pagamento no Asaas")}</h3>
-          <p>
-            {t("O Asaas não deixou o sistema cadastrar o aviso sozinho. No Asaas, abra Integrações › Webhooks. Se já existir um aviso com o endereço abaixo, edite-o e troque só o token; se não, clique em Adicionar e preencha assim:")}
-          </p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>{t("Nome: Cobrança do sistema")}</li>
-            <li>{t("E-mail: o seu (o Asaas avisa por ele se os avisos pararem)")}</li>
-            <li>{t("Versão da API: v3")}</li>
-            <li>{t("Webhook ativado: Sim")}</li>
-            <li>{t("Fila de sincronização ativada: Sim")}</li>
-            <li>{t("Tipo de envio: Sequencial")}</li>
-          </ul>
+          <h3 className="font-semibold">
+            {t(efi ? "O aviso de pagamento no Efi" : "Falta um passo: cadastre o aviso de pagamento no Asaas")}
+          </h3>
+          {efi ? (
+            // O Efi não tem cadastro de endpoint: a URL e o token vão em CADA
+            // cobrança que este sistema cria. Não há passo no painel do Efi, e
+            // dizer "cadastre" seria mentira.
+            <p>
+              {t("O Efi não tem um cadastro de aviso no painel: a URL e o token abaixo viajam em cada cobrança que este sistema cria, e a chave fica guardada para conferir quem chamou. Nada a fazer no painel do Efi.")}
+            </p>
+          ) : (
+            <>
+              <p>
+                {t("O Asaas não deixou o sistema cadastrar o aviso sozinho. No Asaas, abra Integrações › Webhooks. Se já existir um aviso com o endereço abaixo, edite-o e troque só o token; se não, clique em Adicionar e preencha assim:")}
+              </p>
+              <ul className="list-disc space-y-1 pl-5">
+                <li>{t("Nome: Cobrança do sistema")}</li>
+                <li>{t("E-mail: o seu (o Asaas avisa por ele se os avisos pararem)")}</li>
+                <li>{t("Versão da API: v3")}</li>
+                <li>{t("Webhook ativado: Sim")}</li>
+                <li>{t("Fila de sincronização ativada: Sim")}</li>
+                <li>{t("Tipo de envio: Sequencial")}</li>
+              </ul>
+            </>
+          )}
           <CampoCopiavel rotulo={t("URL do aviso")} valor={manual.url} botao={t("Copiar URL")} />
           <CampoCopiavel rotulo={t("Token de autenticação")} valor={manual.segredo} botao={t("Copiar token")} />
-          <div className="space-y-1">
-            <p className="text-xs font-medium">{t("Eventos: marque estes, um por um")}</p>
-            <ul className="space-y-0.5 font-mono text-xs">
-              {manual.eventos.map((evento) => (
-                <li key={evento} data-evento>
-                  {evento}
-                </li>
-              ))}
-            </ul>
-          </div>
+          {!efi && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium">{t("Eventos: marque estes, um por um")}</p>
+              <ul className="space-y-0.5 font-mono text-xs">
+                {manual.eventos.map((evento) => (
+                  <li key={evento} data-evento>
+                    {evento}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p>{t("O token aparece só agora: se sair desta tela sem copiá-lo, conecte de novo para gerar outro.")}</p>
           <p>{t("Quando o primeiro aviso chegar, o passo fica marcado na Visão geral.")}</p>
           <Button variant="outline" onClick={() => setManual(null)}>
-            {t("Pronto, já cadastrei")}
+            {t(efi ? "Entendi" : "Pronto, já cadastrei")}
           </Button>
         </section>
       )}

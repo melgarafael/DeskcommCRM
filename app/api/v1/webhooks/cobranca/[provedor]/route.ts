@@ -60,7 +60,9 @@ export async function POST(req: NextRequest, { params }: Rota) {
     return fail("payload_too_large", "Aviso grande demais.", 413, { requestId });
   }
 
-  const sinal = adaptador(provedor).verificarWebhook(corpo, req.headers, segredo, new Date());
+  // `req.nextUrl` vai junto porque o aviso do Efi se autentica na URL (não assina o
+  // corpo): é dela que saem o token e a empresa dona. Stripe e Asaas a ignoram.
+  const sinal = adaptador(provedor).verificarWebhook(corpo, req.headers, segredo, new Date(), req.nextUrl);
   if (!sinal) {
     // Só RECUSAS contam no limite: aviso válido nunca leva 429, porque é ele que
     // reativa quem pagou. O balde é o IP (forjar só troca de balde); sem proxy à
