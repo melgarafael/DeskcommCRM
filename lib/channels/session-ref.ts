@@ -38,7 +38,7 @@ export function resolveSessionRef(session: ChannelSessionRef): string {
     // parceiro, porque os dois podem conviver e endereçam servidores diferentes.
     case "datafy":
       return session.datafy_phone_number_id;
-    // SMS (#4415): endereça pelo id do número no fornecedor (migration 9345).
+    // SMS (#4415): endereça pelo id do número no fornecedor (migration 9364).
     case "twilio":
       return session.twilio_phone_number_sid;
     case "waha":

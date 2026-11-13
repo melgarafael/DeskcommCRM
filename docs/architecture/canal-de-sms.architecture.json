@@ -18,7 +18,7 @@
     { "id": "aba", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões › SMS (CanalSmsClient) — Account SID, Auth Token e número E.164; avisa do registro A2P e do custo por parte" },
     { "id": "conectar", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/channels/sms — admin, requireSupportWrite, Zod; importa por lib/channels/sms (porta neutra)" },
     { "id": "achar", "lane": "fornecedor", "col": 4, "type": "external", "label": "IncomingPhoneNumbers?PhoneNumber= — a chave vale? o número é desta conta? devolve o id PN…" },
-    { "id": "sessao", "lane": "banco", "col": 3, "type": "database", "label": "channel_sessions provider twilio: twilio_phone_number_sid (sessionRef), twilio_account_sid, phone_number, a chave em webhook_secret_encrypted; índice único do número ativo (migration 9345)" },
+    { "id": "sessao", "lane": "banco", "col": 3, "type": "database", "label": "channel_sessions provider twilio: twilio_phone_number_sid (sessionRef), twilio_account_sid, phone_number, a chave em webhook_secret_encrypted; índice único do número ativo (migration 9364)" },
     { "id": "apontar", "lane": "fornecedor", "col": 4, "type": "external", "label": "IncomingPhoneNumbers/{PN} SmsUrl = URL pública de entrada (POST); falha não desfaz a conexão, a tela mostra a URL" },
     { "id": "entrada", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/webhooks/channel/<token> — arquiva o corpo cru; assinatura HMAC-SHA1 da URL pública + formulário com a chave da conta; sem URL falha fechado" },
     { "id": "conferencia", "lane": "servidor", "col": 2, "type": "service", "label": "smsInbound — Zod no formulário; AccountSid e To têm de ser os da conexão (a chave assina por conta)" },

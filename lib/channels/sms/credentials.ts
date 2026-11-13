@@ -3,7 +3,7 @@
  *
  * A chave da conta mora cifrada em `channel_sessions.webhook_secret_encrypted`:
  * no fornecedor de SMS, quem assina cada webhook é a própria chave da conta,
- * então ela É o segredo do webhook desta conexão (migration 9345). Uma coluna
+ * então ela É o segredo do webhook desta conexão (migration 9364). Uma coluna
  * só, uma fonte só — trocar a chave é reconectar, e a troca vale para o envio
  * e para a conferência do webhook ao mesmo tempo. Só existe decifrada dentro
  * do processo, pelo tempo de um envio.

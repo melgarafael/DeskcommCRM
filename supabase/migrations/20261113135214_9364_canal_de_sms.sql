@@ -1,6 +1,6 @@
 -- manifest: canal de SMS (#4415) — colunas do número e da conta do fornecedor de SMS, provider 'twilio' nos CHECKs de channel_sessions e webhook_events_log, canal 'sms' em conversations, e um número de SMS = uma conexão ativa
 --
--- 9345 · Canal de SMS (issue #4415).
+-- 9364 · Canal de SMS (issue #4415).
 --
 -- ─── O que entra ────────────────────────────────────────────────────────────
 -- Um provedor de canal de mensagem novo, ao lado de `waha`, `meta_cloud`,

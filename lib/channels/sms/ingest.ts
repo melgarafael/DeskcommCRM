@@ -41,12 +41,12 @@ export async function ingerirSmsRecebido(
   const { organizationId, channelSessionId, sms } = input;
 
   // Segunda linha de defesa: o CHECK do banco precisa conhecer `sms`
-  // (migration 9345). Sem ele o carimbo da conversa falharia DEPOIS de o
+  // (migration 9364). Sem ele o carimbo da conversa falharia DEPOIS de o
   // contato nascer — melhor recusar inteiro e dizer por quê no log.
   if (!ehCanalDeConversa(CANAL_SMS)) {
     logger.error("[sms] canal sem valor correspondente no banco — mensagem não gravada", {
       organization_id: organizationId,
-      detalhe: "falta 'sms' no CHECK de conversations.channel (migration 9345)",
+      detalhe: "falta 'sms' no CHECK de conversations.channel (migration 9364)",
     });
     return { status: "ignored", reason: "canal_desconhecido" };
   }

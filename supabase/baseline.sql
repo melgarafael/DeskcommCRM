@@ -9578,7 +9578,7 @@ alter table public.channel_sessions
   add column if not exists datafy_waba_id text,
   add column if not exists datafy_token_encrypted bytea;
 
--- twilio (migration 9345, canal de SMS — issue #4415) — colunas do fornecedor de
+-- twilio (migration 9364, canal de SMS — issue #4415) — colunas do fornecedor de
 -- SMS, nullable e antes das constraints que as referenciam.
 alter table public.channel_sessions
   add column if not exists twilio_phone_number_sid text,
@@ -9590,7 +9590,7 @@ alter table public.channel_sessions
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
   -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'twilio'
-  -- (9345) somados AQUI — UM bloco só por constraint (não duplicar drop+add
+  -- (9364) somados AQUI — UM bloco só por constraint (não duplicar drop+add
   -- por migration).
   check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'twilio'::text]));
 
@@ -9606,7 +9606,7 @@ alter table public.channel_sessions
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
     (provider = 'datafy'     and datafy_phone_number_id is not null) or
-    -- SMS (migration 9345): endereça pelo id do número no fornecedor.
+    -- SMS (migration 9364): endereça pelo id do número no fornecedor.
     (provider = 'twilio'     and twilio_phone_number_sid is not null)
   );
 
@@ -14776,7 +14776,7 @@ alter table public.webhook_events_log
 alter table public.webhook_events_log
   add constraint webhook_events_log_provider_check check (provider in (
     'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy',
-    -- (migration 9345) o SMS: a rota genérica de canal arquiva o corpo cru
+    -- (migration 9364) o SMS: a rota genérica de canal arquiva o corpo cru
     -- com o provider da sessão antes de conferir a assinatura.
     'twilio',
     -- (migration 0601) os provedores de cobrança do revendedor. A linha deles
@@ -80932,7 +80932,7 @@ begin
 end
 $fichas_absorvidas$;
 
--- ---- canal de SMS (migration 9345, issue #4415) ----
+-- ---- canal de SMS (migration 9364, issue #4415) ----
 -- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`,
 -- `webhook_events_log_provider_check` e `conversations_channel_check`) e as
 -- colunas foram somados nos blocos ÚNICOS de cada constraint, lá em cima; este
