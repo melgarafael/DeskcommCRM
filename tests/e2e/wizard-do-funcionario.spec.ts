@@ -219,7 +219,11 @@ test.describe("o wizard monta um funcionário", () => {
 
     await expect(page.getByRole("heading", { name: /treine seu funcionário/i })).toBeVisible();
     // As duas listas que não pedem configuração nenhuma.
-    await expect(page.getByText(/ele já vem sabendo/i)).toBeVisible();
+    // A frase deste título mudou nesta fatia (#4526): era "Ele já vem sabendo"
+    // e passou a "O que ele já sabe fazer", em linguagem de dono de negócio.
+    // A asserção segue o texto que a tela mostra — o que ela guarda (a lista da
+    // esquerda aparecer sem configuração nenhuma) não mudou.
+    await expect(page.getByText(/o que ele já sabe fazer/i)).toBeVisible();
     await expect(page.getByText(/e nunca vai fazer/i)).toBeVisible();
 
     await page.locator("#name").fill("Bia");
