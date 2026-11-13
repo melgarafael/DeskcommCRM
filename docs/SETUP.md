@@ -135,6 +135,8 @@ Se você quer rodar o app o mais rápido possível com o mínimo viável:
 
 **O que é:** Backend-as-a-service. Aqui mora seu Postgres, autenticação, storage de mídia e realtime. Sem isso, nada funciona. **Free tier:** 500MB DB + 1GB storage + 50k MAU. Suficiente pra dev e protótipos.
 
+> **Bateu no teto?** O que cada cota faz quando estoura (o que aparece na tela e no log), como medir no painel e as saídas em ordem de custo — limpar, subir de plano, autohospedar — estão no runbook [`runbooks/custo-e-cota-do-supabase.md`](runbooks/custo-e-cota-do-supabase.md), seção 0.
+
 ### Passo a passo
 
 1. Acesse <https://supabase.com> → **Start your project** → faça login com GitHub.
@@ -443,7 +445,7 @@ RESEND_FROM_EMAIL=onboarding@resend.dev
 
 ## 8. Nuvemshop — integração e-commerce
 
-**O que é:** Plataforma de e-commerce brasileira. Nossa integração OAuth importa pedidos, produtos, clientes pro CRM.
+**O que é:** Plataforma de e-commerce brasileira. Nossa integração OAuth importa pedidos e clientes, e indexa os produtos na base de conhecimento do agente, na fonte **"Catálogo de produtos"** (Agente de IA › Conhecimento — `/app/ai/knowledge/sources`). Os produtos **não** aparecem em CRM › Produtos: essa tela lê `catalog_products`, que só recebe cadastro manual ou planilha. A própria tela da integração mostra o estado dessa fonte — trechos preparados, último preparo e o erro, se houver — com o atalho **"Preparar de novo"**.
 
 > ℹ️ **Pode pular em dev.** Se essas vars ficarem vazias, a UI mostra "Integração não configurada" e você toca o resto do app normal.
 

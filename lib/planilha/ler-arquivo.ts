@@ -19,9 +19,15 @@
  */
 import { strFromU8, unzipSync } from "fflate";
 
-import { decodificarCsv, parseCsv } from "@/lib/contacts/csv";
+import { decodificarCsv, parseCsvComLinhas } from "@/lib/contacts/csv";
 
-export type SheetMatrix = { headers: string[]; rows: string[][] };
+export type SheetMatrix = {
+  headers: string[];
+  rows: string[][];
+  /** Posição original de cada entrada de `rows`, quando lida de um arquivo. */
+  rowNumbers?: number[];
+};
+type LinhaLida = { cells: string[]; rowNumber: number };
 
 export const IMPORT_MAX_BYTES = 2 * 1024 * 1024;
 export const IMPORT_MAX_DATA_ROWS = 2_000;
@@ -31,6 +37,7 @@ export const IMPORT_MAX_DATA_ROWS = 2_000;
  * megabytes de memória no servidor.
  */
 const XLSX_MAX_XML_BYTES = 40 * 1024 * 1024;
+const XLSX_MAX_ROW_NUMBER = 1_048_576;
 
 export type Leitura = { ok: true; sheet: SheetMatrix } | { ok: false; error: string };
 
@@ -59,28 +66,31 @@ export async function parseImportFile(
 }
 
 /** Cabeçalho + linhas, cada linha aparada ou completada até a largura do cabeçalho. */
-function matrizParaPlanilha(matrix: string[][], maxLinhas: number): Leitura {
+function matrizParaPlanilha(matrix: LinhaLida[], maxLinhas: number): Leitura {
   if (matrix.length < 2) {
     return { ok: false, error: "Preciso de cabeçalho e ao menos uma linha de dados." };
   }
-  const headers = matrix[0]!.map((h) => h.trim());
+  const headers = matrix[0]!.cells.map((h) => h.trim());
   const rows = matrix.slice(1);
   if (rows.length > maxLinhas) {
     return { ok: false, error: `Máximo de ${maxLinhas} linhas de dados.` };
   }
   const width = headers.length;
-  const normalized = rows.map((r) => {
-    const out = r.slice(0, width);
+  const normalized = rows.map(({ cells }) => {
+    const out = cells.slice(0, width);
     while (out.length < width) out.push("");
     return out;
   });
-  return { ok: true, sheet: { headers, rows: normalized } };
+  return {
+    ok: true,
+    sheet: { headers, rows: normalized, rowNumbers: rows.map(({ rowNumber }) => rowNumber) },
+  };
 }
 
 function parseCsvBytes(bytes: ArrayBuffer, maxLinhas: number): Leitura {
   const decoded = decodificarCsv(bytes);
   if ("erro" in decoded) return { ok: false, error: decoded.erro };
-  return matrizParaPlanilha(parseCsv(decoded.texto), maxLinhas);
+  return matrizParaPlanilha(parseCsvComLinhas(decoded.texto), maxLinhas);
 }
 
 const ENTIDADES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
@@ -165,17 +175,22 @@ function parseXlsx(bytes: ArrayBuffer, maxLinhas: number): Leitura {
     textoDosRuns(m[1] ?? ""),
   );
 
-  const matriz: string[][] = [];
-  for (const linha of aba.matchAll(/<row\b[^>]*?(?:\/>|>([\s\S]*?)<\/row>)/g)) {
+  const matriz: LinhaLida[] = [];
+  let rowNumber = 0;
+  for (const [, attrs, corpo] of aba.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
+    // O XLSX pode omitir os registros das linhas em branco. O atributo r é o
+    // índice na aba. Se estiver ausente, segue a sequência das linhas lidas.
+    const declarado = Number(/(?:^|\s)r="(\d+)"/.exec(attrs ?? "")?.[1]);
+    rowNumber = declarado > rowNumber && declarado <= XLSX_MAX_ROW_NUMBER ? declarado : rowNumber + 1;
     const celulas: string[] = [];
-    for (const c of (linha[1] ?? "").matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    for (const c of (corpo ?? "").matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
       const attrs = c[1] ?? "";
       const ref = /\br="([A-Z]+\d*)"/i.exec(attrs)?.[1];
       const i = ref ? indiceDaColuna(ref) : celulas.length;
       while (celulas.length < i) celulas.push("");
       celulas[i] = valorDaCelula(attrs, c[2] ?? "", compartilhados);
     }
-    if (celulas.some((v) => v.trim() !== "")) matriz.push(celulas);
+    if (celulas.some((v) => v.trim() !== "")) matriz.push({ cells: celulas, rowNumber });
   }
   return matrizParaPlanilha(matriz, maxLinhas);
 }
