@@ -326,4 +326,33 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
 
     expect(screen.queryByRole("button", { name: "Iniciar conversa" })).toBeNull();
   });
+
+  it("exibe o nome da agenda do celular (address_book_name) nos resultados da busca de contatos", async () => {
+    podeMock.mockReturnValue(true);
+    lerCanaisE(
+      [canal({ id: "canal-1", display_name: "Principal", phone_number: "+5511999990001" })],
+      [
+        {
+          id: "contato-agenda",
+          name: null,
+          display_name: null,
+          address_book_name: "Lucelia Celular Cliente",
+          phone_number: "+5542999284633",
+          is_anonymized: false,
+        } as unknown as Contact,
+      ],
+    );
+
+    montar();
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar conversa" }));
+
+    const campo = await screen.findByPlaceholderText("Telefone ou nome do contato");
+    fireEvent.change(campo, { target: { value: "Lucelia" } });
+
+    // O botão na listagem de outros contatos deve exibir o nome da agenda, e não apenas o número repetido
+    const botaoContato = await screen.findByRole("button", { name: /Lucelia Celular Cliente/i });
+    expect(botaoContato).toBeInTheDocument();
+    expect(botaoContato).toHaveTextContent("Lucelia Celular Cliente");
+    expect(botaoContato).toHaveTextContent("+55 42 99928-4633");
+  });
 });
