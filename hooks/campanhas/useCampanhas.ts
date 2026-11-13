@@ -186,7 +186,9 @@ export function useAcaoDeCampanha(id: string) {
         `/api/v1/campaigns/${id}/${entrada.acao}`,
         entrada.corpo ?? {},
       ),
-    onSuccess: () => {
+    // Também na falha: uma ação pode gravar parte antes de falhar (o
+    // cancelamento sem a fila fechada), e a tela tem de mostrar o estado real.
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["campanha", id] });
       void qc.invalidateQueries({ queryKey: ["campanha-metricas", id] });
       void qc.invalidateQueries({ queryKey: ["campanha-destinatarios", id] });
