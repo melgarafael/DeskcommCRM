@@ -385,7 +385,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const existentes = paraGravar.filter((p) => antigos.has(p.codigo));
-  const atualizados = existentes.length;
+  // Linha recusada pelo banco não conta como atualizada nem desconta um novo
+  // que entrou. O mesmo conjunto já governa a descrição e a troca das fotos.
+  const atualizados = existentes.filter((p) => gravadosPorCodigo.has(p.codigo)).length;
   const criados = Math.max(0, gravados - atualizados);
 
   await audit({
