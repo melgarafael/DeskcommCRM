@@ -50,6 +50,7 @@ describe("parseImportFile — XLSX", () => {
           ["Silva & Filhos", "11222333000181", "José Silva", "(85) 99999-1111"],
           ["Só a empresa", "", "", ""],
         ],
+        rowNumbers: [2, 4],
       },
     });
   });
@@ -65,6 +66,13 @@ describe("parseImportFile — XLSX", () => {
 
   it("CSV continua pelo parser dos contatos (Excel em português, com `;`)", async () => {
     const r = await parseImportFile(strToU8("Empresa;CNPJ\nACME;11.222.333/0001-81\n").buffer as ArrayBuffer, "a.csv");
-    expect(r).toEqual({ ok: true, sheet: { headers: ["Empresa", "CNPJ"], rows: [["ACME", "11.222.333/0001-81"]] } });
+    expect(r).toEqual({
+      ok: true,
+      sheet: {
+        headers: ["Empresa", "CNPJ"],
+        rows: [["ACME", "11.222.333/0001-81"]],
+        rowNumbers: [2],
+      },
+    });
   });
 });
