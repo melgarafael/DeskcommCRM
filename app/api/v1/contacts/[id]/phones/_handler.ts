@@ -203,6 +203,9 @@ export async function adicionarTelefone(
     };
     if (input.type !== undefined) patch.phone_type = input.type;
     if (input.whatsapp !== undefined) patch.phone_whatsapp = input.whatsapp;
+    // O rótulo digitado vai junto: desde a 9354 o principal guarda rótulo
+    // (`phone_label`), e um número que chega à ficha vazia vira o principal.
+    if (input.label) patch.phone_label = input.label;
     const { data, error } = await ctx.supabase
       .from("contacts")
       .update(patch)

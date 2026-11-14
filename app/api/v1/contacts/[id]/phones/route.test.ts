@@ -224,6 +224,24 @@ describe("POST /api/v1/contacts/[id]/phones", () => {
     );
   });
 
+  it("ficha SEM principal: o rótulo digitado vai para o principal (phone_label), não some", async () => {
+    // Medido na prova de tela do #4249: o primeiro número de uma ficha vazia
+    // virava principal e o rótulo "pessoal" terminava com phone_label null.
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase({
+        "contacts.select": { data: FICHA_SEM_PRINCIPAL },
+        "contacts.update": { data: { id: CONTATO } },
+      }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const res = await POST(reqPost({ phone_number: "11 99999-8888", label: "pessoal" }), CONTEXTO);
+
+    expect(res.status).toBe(200);
+    const atualizacao = chamadas.find((c) => c.tabela === "contacts" && c.op === "update");
+    expect(atualizacao?.valores).toMatchObject({ phone_number: "+5511999998888", phone_label: "pessoal" });
+  });
+
   it("ficha COM principal → insere extra com origem manual, 201, sem wa_lid na resposta", async () => {
     vi.mocked(createClient).mockResolvedValue(
       fakeSupabase({

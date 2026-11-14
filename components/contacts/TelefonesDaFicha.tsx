@@ -184,7 +184,6 @@ export function TelefonesDaFicha({
    * coluna nova — migration, que esta entrega não faz. Então a tela avisa antes
    * do clique, em vez de descartar a informação em silêncio.
    */
-  const [confirmacao, setConfirmacao] = useState<{ id: string; rotulo: string } | null>(null);
 
   const ocupado =
     adicionar.isPending ||
@@ -270,27 +269,18 @@ export function TelefonesDaFicha({
     }
   }
 
+  /**
+   * "Tornar principal" de um extra troca direto: desde a 9354 o rótulo acompanha
+   * o número nos dois sentidos (`contacts.phone_label`), então não há perda
+   * para avisar (#4242).
+   */
   async function tornarPrincipalDoExtra(id: string) {
     setErro(null);
-    setConfirmacao(null);
     try {
       await tornarPrincipal.mutateAsync(id);
     } catch (err) {
       setErro(mensagemDeErro(err, t));
     }
-  }
-
-  /**
-   * "Tornar principal" de um extra: sem rótulo, troca direto (é o caminho de
-   * sempre); com rótulo, abre o aviso — o rótulo se perde na troca (#4242).
-   */
-  function pedirTrocaDoPrincipal(extra: TelefoneExtraDaFicha) {
-    setErro(null);
-    if (!extra.label) {
-      void tornarPrincipalDoExtra(extra.id);
-      return;
-    }
-    setConfirmacao({ id: extra.id, rotulo: extra.label });
   }
 
   function formulario(modo: Edicao["modo"]) {
@@ -421,39 +411,13 @@ export function TelefonesDaFicha({
                   <Button type="button" size="sm" variant="ghost" onClick={() => abrirEdicaoDoExtra(extra)} disabled={ocupado}>
                     {t("Editar")}
                   </Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => pedirTrocaDoPrincipal(extra)} disabled={ocupado}>
+                  <Button type="button" size="sm" variant="outline" onClick={() => tornarPrincipalDoExtra(extra.id)} disabled={ocupado}>
                     {t("Tornar principal")}
                   </Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => remover(extra.id)} disabled={ocupado}>
                     {t("Remover")}
                   </Button>
                 </>
-              )}
-              {confirmacao?.id === extra.id && (
-                <div role="alert" className="w-full rounded-md border border-destructive/40 bg-destructive/5 p-3">
-                  <p className="text-sm">
-                    {t(
-                      "Este número vai virar o principal e o rótulo será descartado: o telefone principal da ficha não guarda rótulo.",
-                    )}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <span>{t("Rótulo que será descartado:")}</span> <span>{confirmacao.rotulo}</span>
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button type="button" size="sm" onClick={() => tornarPrincipalDoExtra(extra.id)} disabled={ocupado}>
-                      {t("Continuar")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setConfirmacao(null)}
-                      disabled={ocupado}
-                    >
-                      {t("Cancelar")}
-                    </Button>
-                  </div>
-                </div>
               )}
               {edicao?.modo === "extra" && edicao.id === extra.id && formulario("extra")}
             </li>
