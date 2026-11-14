@@ -872,7 +872,12 @@ function instanciar(
     // gateway para outro lugar.
     case "custom":
       return baseUrl
-        ? createOpenAI({ apiKey, baseURL: baseUrl, fetch: fetchParaDestinoDaOrganizacao() }).chat(modelId)
+        ? createOpenAI({
+            apiKey,
+            baseURL: baseUrl,
+            fetch: fetchParaDestinoDaOrganizacao(),
+            headers: { Accept: "application/json" }, // ver o provedor `custom` de providers.ts
+          }).chat(modelId)
         : null;
     default:
       return null;
