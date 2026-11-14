@@ -20665,6 +20665,17 @@ export const DICIONARIO: Traducoes = {
   "Renomear etapas e criar campos": {
     es: "Renombrar etapas y crear campos",
   },
+  // #3567, fatia F4 — a versão do artigo. As duas frases levam o número por
+  // `.replace("{versao}", …)`, o mesmo mecanismo da frase de sugestão barrada
+  // (ReplyReviewPanel): a CHAVE continua sendo o português, e o espanhol
+  // repete o marcador na mesma posição.
+  "Vale a partir da versão {versao}": {
+    es: "Vale a partir de la versión {versao}",
+  },
+  "Este caminho é da versão {versao}, e esta instalação está na {instalada}. Atualize antes de segui-lo.":
+    {
+      es: "Este camino es de la versión {versao}, y esta instalación está en la {instalada}. Actualiza antes de seguirlo.",
+    },
   "Para quem instala e mantém": {
     es: "Para quien instala y mantiene",
   },
