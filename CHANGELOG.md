@@ -90,7 +90,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   A cláusula de transferência internacional do documento do operador, que lista esses
   países em vez da frase genérica, vem do #4520 — este entrega o dado, a procedência e a
-  tela que leem o mesmo campo.
+  tela que leem o mesmo campo. Contribuição de @webtecnica (#4521).
 
 - **Campo opcional para a capacidade do produto (128GB, 1TB, 500ml)** O catálogo ganhou um campo Capacidade, opcional e com até 60 caracteres. Ele vem
   desligado em cada empresa, e quem administra liga em Configurações › Organização,
@@ -112,7 +112,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Nada muda para quem não usa o bloco: texto sem `{{#` continua saindo exatamente como hoje, e nenhuma automação já publicada precisa ser reeditada.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4497).
 
 ### Corrigido
 
@@ -120,7 +120,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Você não precisa fazer nada.
 
-  Ajuste a partir da issue #3432.
+  Ajuste a partir da issue #3432. Contribuição de @webtecnica (#4503).
 
 - **Quem é dono do negócio leva o negócio junto ao transferir a conversa** Na visibilidade padrão, o Atendente que transferia a conversa para uma colega via a conversa mudar de dono, mas o negócio aberto do contato ficava com ele. A colega não achava o negócio no filtro "Responsável", a meta contava para quem saiu, e tarefas e avisos iam para a pessoa errada.
 
@@ -132,7 +132,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   **Redação do follow-up x trava de repetição.** O passo de mensagem com mais de uma redação escolhia o texto sem olhar o que já foi enviado, e a trava de repetição barrava o envio: o contato ficava sem mensagem e o passo encerrava como pulado. Agora a escolha olha a janela de envios recentes e prefere a redação que menos colide; se nenhuma passar, o passo é adiado (como já acontecia do lado de fora da janela de envio), com teto de três adiamentos antes de encerrar.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4507).
 
 - **O anexo enviado pelo Inbox chega ao WhatsApp com o nome original do arquivo** Um documento anexado no Inbox chegava ao cliente com um nome interno aleatório (`out-<código>.pdf`) em vez do nome escolhido por quem enviou. Agora o nome original vai ao WhatsApp e também aparece no balão da conversa e no download. Para quem integra: a rota de upload (`POST /api/v1/conversations/{id}/media`) passa a devolver `media_filename`, e o envio (`POST /api/v1/messages`) aceita o campo opcional `media_filename`. Sem ele, o envio continua usando o nome do arquivo guardado, como antes. Contribuição de @webtecnica (#4457).
 
@@ -160,11 +160,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Nada muda para quem já está em dia: a primeira página preenche os números e a rodada encerra como hoje; nenhuma configuração precisa ser refeita.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4511).
 
 - **Cancelar campanha avisa quando a fila não fechou, e cancelar de novo termina o serviço** Se o banco falhasse no meio do cancelamento de uma campanha, a tela dizia que tinha dado certo com "0 cancelados", enquanto quem ainda não tinha recebido continuava na fila — e a campanha, já cancelada, não aceitava cancelar de novo. Agora o erro aparece na hora, a campanha cancelada que ainda tem gente na fila mostra o botão "Cancelar campanha" outra vez, e repetir fecha o que sobrou. A data do cancelamento e quem já estava sendo enviado não mudam.
 
-  Crédito: @shu-chen-dot-ca.
+  Contribuição de @shu-chen-dot-ca (#4505).
 
 - **Documento enviado pela API chega no WhatsApp com o nome do arquivo, não com "file"** Pela API (`POST /api/v1/messages` com `media_url`), um documento chegava ao
   WhatsApp chamado `file`: o envio não levava nome nenhum, e o nome era escolhido
@@ -209,9 +209,9 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Agora os dois pedem por INTENÇÃO — ponteiro e foco, os dois sinais que antecedem o clique —, pelo mesmo gancho do menu (`hooks/navigation/prefetchPorIntencao.ts`). Quem só passa o olho pela tela não gera render nenhum; quem vai clicar continua entrando pelo caminho rápido. O contador do sino e o cartão que aparece quando chega proposta nova continuam exatamente como eram: o que saiu foi o pedido antecipado da tela, não o dado que a pessoa vê.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4510).
 
-- **Espera e prazo de tarefa respeitam o fuso da cadência** Os dias úteis da espera e do prazo de tarefa passam a ser contados no fuso configurado na cadência, mantendo a hora local. Antes, uma etapa iniciada na sexta à noite no Brasil podia vencer no domingo, porque a contagem usava o calendário UTC. O calendário brasileiro de feriados continua o mesmo. Crédito: @samirhvbr.
+- **Espera e prazo de tarefa respeitam o fuso da cadência** Os dias úteis da espera e do prazo de tarefa passam a ser contados no fuso configurado na cadência, mantendo a hora local. Antes, uma etapa iniciada na sexta à noite no Brasil podia vencer no domingo, porque a contagem usava o calendário UTC. O calendário brasileiro de feriados continua o mesmo. Contribuição de @samirhvbr (#4501).
 
 - **O aviso de proposta pronta não reaparece a cada página aberta** O cartão "A IA preparou uma proposta" aparecia de novo em toda página que se
   abria enquanto o aviso continuava aberto na Central. Agora ele aparece uma vez,
@@ -223,7 +223,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   A atualização acrescenta uma coluna e um gatilho ao banco e não pede nenhuma ação de quem opera a instalação.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4249).
 
 - **O Inbox diz por que a lista não carregou e aguenta a API REST lenta sem perder as conversas na tela** Quando a chamada que carrega as conversas estoura o tempo ou o servidor fica fora do ar, o Inbox continuava insistindo sozinho (até três tentativas, com espera crescente) e agora, ao desistir, DIZ o que aconteceu: "a consulta excedeu o tempo limite", "o servidor não respondeu agora" ou "sua sessão expirou" — em vez de "Erro inesperado. Tente novamente.". A tela também avisa que as conversas continuam salvas, e oferece "Tentar novamente" sem recarregar a página, preservando filtro e conversa aberta.
 
@@ -231,11 +231,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Pedido inválido (400, 401, 403, 404, 422) não é repetido — repetir um pedido recusado só multiplica o erro. A repetição passou a cobrir também 502 e 504 na LEITURA; em ESCRITA ela continua restrita às respostas em que o servidor diz que nada foi processado (429 e 503), para não duplicar mensagem.
 
-  Crédito: @webtecnica.
+  Contribuição de @webtecnica (#4512).
 
 - **Editar um produto não zera mais o estoque nem reativa o produto** Mudar só o preço, ou qualquer outro campo, de um produto gravava junto estoque 0,
   controle de estoque ligado e produto ativo. Agora a edição grava só o que mudou.
   Quantidades que já foram zeradas por esse defeito não voltam sozinhas.
+  Contribuição de @adsinside e @igornewmedia (#3472), pelo #4144.
 
 ## [1.110.0] — 2026-11-13
 
