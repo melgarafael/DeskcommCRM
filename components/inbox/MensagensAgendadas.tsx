@@ -290,7 +290,10 @@ function MensagensAgendadasDialog({
                         <li key={a.id} className="flex items-center gap-3 p-3 text-sm">
                           <div className="min-w-0 flex-1">
                             <p className="truncate font-medium">{a.title || a.body}</p>
-                            <p className="truncate text-xs text-muted-foreground">
+                            {/* Sem `truncate`, como o subtítulo do histórico logo abaixo: com
+                                ele, a 375px o popup passava a rolar de lado (scrollWidth 381 x
+                                373, medido na prova de tela do #4604). Quebrar a linha cabe. */}
+                            <p className="text-xs text-muted-foreground">
                               {rotuloDoContato(a.contato, t)} · {quando(a.scheduled_at)}
                             </p>
                           </div>
