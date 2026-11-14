@@ -28,6 +28,7 @@ const ORDEM_ESPERADA = [
   "lgpd",
   "pacing",
   "messaging_window",
+  "teto_de_respostas",
   "spinning",
   "promise",
   "concessao_sem_lastro",
