@@ -45,6 +45,8 @@ interface LinhaDaProposta {
   id: string;
   organization_id: string;
   status: string;
+  /** O negócio da proposta (#4533): a rota faz `select("*")`, o campo já vem. */
+  lead_id: string | null;
   template_slug: string | null;
   template_slug_sugerido: string | null;
   briefing_json: unknown;

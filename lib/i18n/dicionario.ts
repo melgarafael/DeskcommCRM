@@ -4298,6 +4298,11 @@ export const DICIONARIO: Traducoes = {
   "+ Seção": { es: "+ Sección" },
   "Salvar modelo": { es: "Guardar modelo" },
   "Campos usados": { es: "Campos usados" },
+  "Campos do negócio": { es: "Campos del negocio" },
+  "Vêm do card do negócio: quem preenche é o funil, não a proposta.": {
+    es: "Vienen de la tarjeta del negocio: los llena el embudo, no la propuesta.",
+  },
+  "Vem do card do negócio, no funil.": { es: "Viene de la tarjeta del negocio, en el embudo." },
   "Escreva {{campo}} no texto; a proposta troca pelo valor de cada cliente.": {
     es: "Escribe {{campo}} en el texto; la propuesta lo cambia por el valor de cada cliente.",
   },
