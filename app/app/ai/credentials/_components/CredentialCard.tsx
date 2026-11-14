@@ -38,6 +38,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { ehProvedorDeDecisao, PROVEDORES_COM_CHAVE } from "@/lib/ai/pontos/provedores";
 import { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
+import { OndeOTextoEProcessado } from "../../_components/OndeOTextoEProcessado";
 import { RotateCredentialDialog } from "./RotateCredentialDialog";
 
 interface Props {
@@ -148,6 +149,16 @@ export function CredentialCard({ credential, canWrite, usageCount, usadaEm = [],
           </Badge>
         </div>
       </div>
+
+      {/*
+        A linha existe para TODA chave salva, inclusive as sem país declarado: o
+        operador que já cadastrou a chave continua sem saber para onde o texto
+        vai, e é aqui que ele descobre. Provedor fora do catálogo cai em
+        `desconhecido` — a tela diz "não declara" em vez de sumir com a linha.
+      */}
+      <OndeOTextoEProcessado
+        provedor={{ pais: provedor?.pais ?? "desconhecido", fonteDoPais: provedor?.fonteDoPais ?? null }}
+      />
 
       {credential.validation_error && (
         <p className="text-xs text-destructive" title={credential.validation_error}>

@@ -2,6 +2,8 @@ import { escritaComMarca, marcaDoAssistido } from "@/lib/automation/parada-no-as
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { armarProximaRevisaoNoCard } from "@/lib/revisao-por-km/no-card";
+import { logger } from "@/lib/logger";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
 /**
  * Core handlers para /api/v1/leads.
@@ -993,25 +995,31 @@ export async function updateLeadHandler(
   // Escopo `negocio` (#2852): o valor de um campo do CONTATO mora em
   // `contacts.custom_fields`, e o padrão dele é julgado na ficha do contato.
   // `settingsDoFunil` é fail-open: funil ilegível = lista vazia = grava como hoje.
+  //
+  // A variável vive FORA do bloco porque a revisão por quilometragem (#4376), no
+  // fim do handler, precisa dos mesmos `settings` — o funil que declara a régua
+  // é o mesmo que declara os campos. Ler duas vezes seria uma consulta a mais
+  // por PATCH, e a segunda leitura poderia ver outra versão do funil.
+  let settingsDaEdicao: unknown;
   if (input.custom_fields && Object.keys(input.custom_fields).length > 0) {
     const alterados = camposQueMudaram(
       input.custom_fields,
       (existing as { custom_fields?: unknown }).custom_fields,
     );
     if (Object.keys(alterados).length > 0) {
-      const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
+      settingsDaEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
       // ── A OPÇÃO (#3508) — a mesma régua da criação, no MESMO recorte ──────
       //
       // Só o que MUDOU é julgado (ver o bloco acima), e o que casa vira o
       // `value` da opção. O que não casa: 422 aqui, e `manterForaDaLista` na
       // captação. Roda ANTES do padrão porque o padrão tem de julgar o valor que
       // será gravado, não o texto que chegou.
-      const { mudados } = canonizaOpcoesDoFunil(settingsDoEdicao, alterados, ctx, opcoes);
+      const { mudados } = canonizaOpcoesDoFunil(settingsDaEdicao, alterados, ctx, opcoes);
       if (Object.keys(mudados).length > 0) {
         input = { ...input, custom_fields: { ...input.custom_fields, ...mudados } };
       }
       const recusas = recusasDePadrao(
-        defsDoPadraoDoFunil(settingsDoEdicao, "negocio"),
+        defsDoPadraoDoFunil(settingsDaEdicao, "negocio"),
         // O `value` canônico já aplicado é o que a próxima régua lê.
         camposQueMudaram(input.custom_fields, (existing as { custom_fields?: unknown }).custom_fields),
         testaComPrazo,
@@ -1148,8 +1156,74 @@ export async function updateLeadHandler(
     }
     // A resposta é o que EXISTE no banco, não o que esta requisição mandou: sob
     // concorrência as duas coisas diferem, e é a do banco que vale.
-    (updated as Record<string, unknown>).custom_fields =
-      (mesclados as Record<string, unknown> | null) ?? {};
+    const camposMesclados = (mesclados as Record<string, unknown> | null) ?? {};
+    (updated as Record<string, unknown>).custom_fields = camposMesclados;
+
+    // ── A REVISÃO POR QUILOMETRAGEM (#4376) ────────────────────────────────
+    //
+    // O km que chegou pelo card (tela, API, MCP, webhook de entrada) vira a
+    // DATA PREVISTA da próxima revisão, gravada pelo mesmo `fn_lead_anotar_campos`
+    // — e o gatilho `lead.date_field_due` (#989) rearma sozinho porque a chave
+    // de disparo leva o valor da data (#1540).
+    //
+    // Roda DEPOIS da escrita do km, e só quando o funil declarou a régua
+    // (`pipelines.settings.revisao_por_km`) E a instalação ligou o módulo
+    // opcional `revisao_por_km` — o portão mora dentro do módulo
+    // (`lib/revisao-por-km/no-card.ts`), não aqui. A conta em si mora em
+    // `lib/revisao-por-km/conta.ts`; aqui é só a porta, no fuso da organização.
+    // Falha aqui NÃO derruba o PATCH: o km já está gravado, e a projeção é
+    // consequência — o log diz que ela não saiu.
+    if (settingsDaEdicao !== undefined) {
+      try {
+        const settingsDaLoja =
+          settingsDaEdicao !== null && typeof settingsDaEdicao === "object" && !Array.isArray(settingsDaEdicao)
+            ? (settingsDaEdicao as Record<string, unknown>)
+            : null;
+        const armacao = await armarProximaRevisaoNoCard({
+          settings: settingsDaLoja,
+          camposAnteriores:
+            existing.custom_fields &&
+            typeof existing.custom_fields === "object" &&
+            !Array.isArray(existing.custom_fields)
+              ? (existing.custom_fields as Record<string, unknown>)
+              : {},
+          campos: camposMesclados,
+          portas: {
+            fusoDaOrganizacao: async () => {
+              const { data } = await createAdminClient()
+                .from("organizations")
+                .select("timezone")
+                .eq("id", ctx.organization_id)
+                .maybeSingle();
+              return (data as { timezone?: string | null } | null)?.timezone ?? null;
+            },
+            gravarCampos: async (campos) => {
+              const { data, error } = await createAdminClient().rpc("fn_lead_anotar_campos", {
+                p_org: ctx.organization_id,
+                p_lead: leadId,
+                p_campos: campos,
+              });
+              if (error) return false;
+              return data !== null && data !== undefined;
+            },
+          },
+        });
+        if (armacao.status === "falhou") {
+          logger.warn("[leads.update] revisão por km não foi armada", {
+            organization_id: ctx.organization_id,
+            lead_id: leadId,
+            motivo: armacao.motivo,
+            detalhe: armacao.detalhe,
+          });
+        }
+      } catch (erro) {
+        logger.warn("[leads.update] revisão por km falhou", {
+          organization_id: ctx.organization_id,
+          lead_id: leadId,
+          error: erro instanceof Error ? erro.message : String(erro),
+        });
+      }
+    }
   }
 
   const a = actorAuditPayload(ctx.actor);

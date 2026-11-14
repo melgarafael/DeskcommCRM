@@ -36,6 +36,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import {
   COLUNAS_DA_MENSAGEM,
   LIMITE_DE_MENSAGENS,
+  mensagensEmOrdemCronologica,
   montarPdfDaConversa,
   type ConversaParaPdf,
   type MensagemParaPdf,
@@ -107,10 +108,15 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   if (!conversa) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
-  // DESC + limite: o corte fica no FIM do histórico (as recentes entram), e a
-  // ordem da página é refeita por `linhasDoHistorico` — a garantia de ordem
-  // cronológica mora na função, não na ordem de leitura.
-  const [contato, mensagensLidas] = await Promise.all([
+  // Mensagem importada pode ter sido gravada muito depois do envio. Cada
+  // região oferece até limite + 1 candidatos pelo instante que o PDF exibe.
+  const mensagensDaConversa = () =>
+    supabase
+      .from("messages")
+      .select(COLUNAS_DA_MENSAGEM)
+      .eq("organization_id", authz.org.orgId)
+      .eq("conversation_id", id);
+  const [contato, semEnvio] = await Promise.all([
     conversa.contact_id
       ? supabase
           .from("contacts")
@@ -119,25 +125,37 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
           .eq("id", conversa.contact_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    supabase
-      .from("messages")
-      .select(COLUNAS_DA_MENSAGEM)
-      .eq("organization_id", authz.org.orgId)
-      .eq("conversation_id", id)
+    mensagensDaConversa()
+      .is("sent_at", null)
       .order("created_at", { ascending: false })
-      // Uma a mais que o limite: é ela que diz se a conversa passou do teto.
+      .order("id", { ascending: false })
       .limit(LIMITE_DE_MENSAGENS + 1),
   ]);
   if (contato.error) {
     return fail("internal_error", t("Erro ao ler o contato."), 500, { requestId });
   }
-  if (mensagensLidas.error) {
+  if (semEnvio.error) {
     return fail("internal_error", t("Erro ao ler as mensagens."), 500, { requestId });
   }
 
-  const lidas = (mensagensLidas.data ?? []) as unknown as MensagemParaPdf[];
+  // A confirmação de envio pode mover a linha de uma região para a outra.
+  // Lê as enviadas depois e conserva uma cópia por ID, preferindo a confirmada.
+  const comEnvio = await mensagensDaConversa()
+    .not("sent_at", "is", null)
+    .order("sent_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(LIMITE_DE_MENSAGENS + 1);
+  if (comEnvio.error) {
+    return fail("internal_error", t("Erro ao ler as mensagens."), 500, { requestId });
+  }
+  const candidatas = [
+    ...(semEnvio.data ?? []),
+    ...(comEnvio.data ?? []),
+  ] as unknown as MensagemParaPdf[];
+  const unicas = new Map(candidatas.map((mensagem) => [mensagem.id, mensagem]));
+  const lidas = mensagensEmOrdemCronologica([...unicas.values()]);
   const truncada = lidas.length > LIMITE_DE_MENSAGENS;
-  const mensagens = truncada ? lidas.slice(0, LIMITE_DE_MENSAGENS) : lidas;
+  const mensagens = truncada ? lidas.slice(-LIMITE_DE_MENSAGENS) : lidas;
 
   // Uma leitura por user id DISTINTO (o helper deduplica) — nome de quem
   // enviou não fica na linha da mensagem, e "Atendente" no PDF de prova é a

@@ -1,6 +1,7 @@
 import type { ZodSchema } from "zod";
 
 import { ApiError, type ApiErrorBody } from "@/lib/api/types";
+import { statusValeRepetir, statusValeRepetirEscrita } from "@/lib/api/retentativa";
 import { mostrarAvisoOrgDivergente } from "@/lib/auth/aviso-org-divergente";
 import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA, orgDaAba } from "@/lib/auth/org-da-aba";
 import { randomId } from "@/lib/random-id";
@@ -69,7 +70,11 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const MUTATION_TIMEOUT_MS = 30_000;
 
 const MAX_ATTEMPTS = 3;
-const RETRYABLE_STATUSES = new Set([429, 503]);
+/**
+ * Os status que valem outra tentativa moram em `lib/api/retentativa.ts` — a
+ * MESMA régua que a camada de queries consulta. Aqui fica só o degrau da
+ * escada; a lista de status, não.
+ */
 const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PATCH", "PUT", "DELETE"]);
 
 /**
@@ -315,8 +320,20 @@ async function request<T>(
         return parsed;
       }
 
-      // Retry on 429/503
-      if (RETRYABLE_STATUSES.has(res.status) && attempt < MAX_ATTEMPTS) {
+      // Repetição por STATUS: 429/502/503/504 em leitura; 429/503 em escrita.
+      //
+      // A régua mora em `lib/api/retentativa.ts` (uma só, para as duas
+      // camadas). A distinção entre leitura e escrita é sobre INCERTEZA, e já
+      // era a do repositório (`client.test.ts` t11/t11b): 429 e 503 são
+      // respostas — o servidor DISSE que não processou, repetir é seguro, e é
+      // o que segura o contrato do discador de voz. 502 e 504 vêm de um
+      // intermediário sem resposta do destino: o pedido PODE ter sido
+      // processado, e repetir uma escrita ali duplicaria a mensagem. Leitura
+      // não tem esse risco — repetir um GET é sempre seguro.
+      const valeRepetir = MUTATING_METHODS.has(method)
+        ? statusValeRepetirEscrita(res.status)
+        : statusValeRepetir(res.status);
+      if (valeRepetir && attempt < MAX_ATTEMPTS) {
         const retryAfter = parseRetryAfterSeconds(res.headers.get("Retry-After"));
         const delay = retryAfter !== null ? retryAfter * 1000 : backoffMs(attempt);
         await sleep(delay, opts.signal);

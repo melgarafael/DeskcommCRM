@@ -397,6 +397,14 @@ export const ApiErrorCodes = {
   campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido ou broadcast pedido num número que não o faz
   campanha_transmissao_variavel: "campanha_transmissao_variavel", // 422: broadcast com variável que muda por pessoa (migration 0712)
   campanha_transmissao_entregue: "campanha_transmissao_entregue", // 409: a velocidade não muda depois que a lista foi entregue ao provedor
+  // Migration 9334 (#3441, fatia E2a): campanha por e-mail, sem número.
+  campanha_email_sem_conta: "campanha_email_sem_conta", // 409: a organização não conectou a conta Resend
+  campanha_email_conta_indisponivel: "campanha_email_conta_indisponivel", // 503: a conta existe e não pôde ser lida — não é ausência
+  campanha_email_assunto_vazio: "campanha_email_assunto_vazio", // 422: e-mail sem assunto não sai
+  campanha_email_assunto_longo: "campanha_email_assunto_longo", // 422: assunto acima do limite do envio
+  campanha_email_corpo_vazio: "campanha_email_corpo_vazio", // 422: e-mail sem corpo não sai
+  campanha_email_corpo_longo: "campanha_email_corpo_longo", // 422: corpo acima do limite do envio
+  campanha_email_desligada: "campanha_email_desligada", // 404: o módulo `campanha_por_email` está desligado na instalação (doc 305)
 
   // 500 / upstream
   internal_error: "internal_error",

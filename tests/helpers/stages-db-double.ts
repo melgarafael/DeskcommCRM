@@ -39,6 +39,14 @@ export interface StageRow {
    * configuração, o estado que o radar trata como padrão de 24 h.
    */
   expected_duration_hours: number | null;
+  /**
+   * Chance de fechamento calibrada pela tela de Funis (#2999) e o aviso de
+   * equipe da etapa. Opcionais no dublê porque a etapa anterior a essas colunas
+   * (migration 0426/0440) é `null`/desligada — e é o estado que o caso de
+   * "campo vazio depois de salvar" precisa distinguir de "coluna não lida".
+   */
+  win_probability?: number | null;
+  avisar_na_central?: boolean;
 }
 
 /**

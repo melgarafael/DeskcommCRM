@@ -12,7 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
-import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
+import {
+  problemaNoTextoDaSaidaNoIdioma,
+  rodapeDeSaida,
+  TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+  textoDaSaidaEfetivo,
+} from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
   OFERTAS_DA_CAMPANHA,
@@ -35,6 +40,7 @@ import {
 } from "@/lib/prospecting/estrategia-site";
 import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
+import { naoAbordada } from "@/lib/prospecting/exportar";
 import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
 /** Uma linha que a importação recusou — o número é o da planilha (1 = cabeçalho). */
@@ -69,6 +75,13 @@ type Candidate = {
   data: Prospect;
   selected?: boolean;
   status?: string;
+  /**
+   * Quando a abordagem foi TENTADA (#4360). É o que separa "está na fila" de
+   * "já foi abordada" quando o status voltou para `queued` depois de uma falha:
+   * a empresa que já recebeu mensagem não entra no CSV da lista.
+   */
+  attempted_at?: string | null;
+  phone?: string | null;
   lead_id?: string | null;
   progress: string;
   message_status: string | null;
@@ -360,6 +373,14 @@ export function ProspectingClient() {
   const textoDasEtiquetas =
     (campaign && tagsDigitadas[campaign.id]) ?? (config.contact_tags ?? []).join(", ");
   const etiquetasComProblema = problemaNasEtiquetas(textoDasEtiquetas);
+  // O texto da saída (#4370) é validado no IDIOMA da instalação: o schema recusa
+  // o texto sem NENHUMA palavra de saída, mas só aqui se sabe qual palavra a
+  // pessoa daqui responde (PARAR em pt-BR, BAJA em espanhol). Recusar antes de
+  // enviar é o que impede a tela de prometer uma saída que o detector não pega.
+  const problemaDoTextoDaSaida = problemaNoTextoDaSaidaNoIdioma(
+    config.texto_da_saida,
+    data?.organization_locale,
+  );
   // "Configurada" é a campanha que TEM agente escolhido. Config parcial salva
   // pelo meio (instrução/qualificação sem agente) NÃO trava a etapa 2: medido na
   // VPS, 3 rascunhos assim ficavam sem como ser iniciados.
@@ -411,6 +432,13 @@ export function ProspectingClient() {
     );
   }
   const candidates = data?.candidates.filter((c) => c.campaign_id === campaign?.id) ?? [];
+  /**
+   * Quantas empresas desta campanha ainda podem ser abordadas (#4360) — e por
+   * isso quantas o "Baixar lista" leva. A régua é a do SERVIDOR
+   * (`naoAbordada`): um `filter` escrito de novo aqui faria o botão prometer um
+   * número que o arquivo não entrega.
+   */
+  const naoAbordadas = candidates.filter(naoAbordada).length;
   // `message` pode ser uma função que lê a resposta (o envelope `{ data }`): só o
   // "Completar fichas" precisa dela. Texto fixo segue igual para os outros botões.
   async function perform(body: unknown, message: string | ((resposta: unknown) => string)) {
@@ -809,7 +837,6 @@ export function ProspectingClient() {
       )}
       {!data && !query.error && <p role="status">{t("Carregando campanhas…")}</p>}
       {(settings || data?.configured === false) && (
-        <>
         <Card className="p-5">
           <form
             className="flex flex-col gap-3 sm:flex-row sm:items-end"
@@ -844,6 +871,19 @@ export function ProspectingClient() {
             </Button>
           </form>
         </Card>
+      )}
+      {/*
+        VOZ E VOCABULÁRIO À VISTA (issue #4360). O card é da ORGANIZAÇÃO
+        (`organizations.settings.prospeccao`, o mesmo PATCH
+        `/api/v1/settings/prospeccao` de sempre) e morava dentro do painel que
+        "Configurar busca" abre — então quem nunca clicava ali achava que
+        precisava reescrever a voz a cada prospecção. Saiu do painel; a chave da
+        busca continua lá. Um segundo lugar para a mesma configuração (campo
+        novo, estado local) faria a voz da tela divergir da que o envio usa.
+        Só aparece com `data` carregado: o formulário grava o que está na tela, e
+        abrir com os campos vazios apagaria a voz salva no primeiro "Salvar".
+      */}
+      {data && (
         <Card className="p-5">
           <h2 className="text-lg font-semibold">{t("Voz e vocabulário")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -935,7 +975,6 @@ export function ProspectingClient() {
             </Button>
           </form>
         </Card>
-        </>
       )}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <aside className="flex flex-col gap-5">
@@ -1286,7 +1325,26 @@ export function ProspectingClient() {
                       })()}
                     </p>
                   </div>
-                  <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
+                    {/*
+                      A LISTA DE VOLTA (#4360). Link direto para o CSV — a rota
+                      responde `attachment`, então o navegador baixa em vez de
+                      navegar. `download` no <a> dá o nome do arquivo também em
+                      quem ignora o `Content-Disposition`.
+                    */}
+                    {naoAbordadas > 0 && (
+                      <Button variant="outline" size="sm" asChild>
+                        <a
+                          data-testid="baixar-lista"
+                          download
+                          href={`/api/v1/prospecting/${campaign.id}/exportar`}
+                        >
+                          {`${t("Baixar lista")} (${naoAbordadas})`}
+                        </a>
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {campaign.error && (
                   <p role="alert" className="mt-4 rounded-md bg-destructive/10 p-3 text-sm">
@@ -1322,6 +1380,13 @@ export function ProspectingClient() {
                     {t("resultados repetidos ou indisponíveis foram desconsiderados.")}
                   </p>
                 )}
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {naoAbordadas > 0
+                    ? t("Baixar lista leva só as empresas que ainda não foram abordadas.")
+                    : t(
+                        "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.",
+                      )}
+                </p>
                 {configCompleta && (
                   <>
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
@@ -1800,7 +1865,7 @@ export function ProspectingClient() {
                                 <span className="block text-xs text-muted-foreground">
                                   {/* A frase é a ENVIADA: idioma da organização, não da interface. */}
                                   {t("A abertura já diz como parar:")}{" "}
-                                  {rodapeDeSaida(data?.organization_locale)}
+                                  {textoDaSaidaEfetivo(config.texto_da_saida, data?.organization_locale)}
                                 </span>
                               </span>
                             </label>
@@ -1828,6 +1893,34 @@ export function ProspectingClient() {
                                 )}
                               </p>
                             )}
+                            <div>
+                              <Label htmlFor="prospecting-texto-da-saida">
+                                {t("Texto da opção de parar")}
+                              </Label>
+                              <Input
+                                id="prospecting-texto-da-saida"
+                                value={config.texto_da_saida ?? ""}
+                                maxLength={TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA}
+                                aria-invalid={problemaDoTextoDaSaida !== null}
+                                onChange={(e) => update("texto_da_saida", e.target.value)}
+                                placeholder={rodapeDeSaida(data?.organization_locale)}
+                                className="mt-1"
+                              />
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {t(
+                                  "Opcional. Em branco, sai a frase padrão. Até 160 caracteres, sem link, e precisa conter a palavra que a pessoa responde para sair.",
+                                )}
+                              </p>
+                              {problemaDoTextoDaSaida && (
+                                <p className="mt-1 text-xs text-destructive" role="alert">
+                                  {problemaDoTextoDaSaida === "sem_palavra"
+                                    ? t(
+                                        "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.",
+                                      )
+                                    : t("Use até 160 caracteres e nenhum link.")}
+                                </p>
+                              )}
+                            </div>
                           </fieldset>
                           <div>
                             <Label htmlFor="prospecting-contact-tags">
@@ -1896,7 +1989,8 @@ export function ProspectingClient() {
                             busy ||
                             !agents.length ||
                             !data?.channels.some((c) => c.status === "WORKING") ||
-                            etiquetasComProblema !== null
+                            etiquetasComProblema !== null ||
+                            problemaDoTextoDaSaida !== null
                           }
                         >
                           {t("Iniciar abordagens com IA")}

@@ -48,8 +48,17 @@ import { botoesDaDefinicao } from "@/lib/channels/botoes-da-definicao";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { estadoDaJanela } from "@/lib/channels/janela";
+import {
+  CHAVE_DO_NOME_NA_METADATA,
+  nomeDeArquivoLimpo,
+  nomeDoAnexoParaEnviar,
+} from "@/lib/messaging/media/nome-de-arquivo";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
+import {
+  nomeDeArquivoSeguro,
+  nomeDoDocumentoParaEnvio,
+} from "@/lib/messaging/media/nome-para-envio";
 import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
 import {
   buildVcard,
@@ -287,15 +296,34 @@ function apiTokenIdDoActor(actor: Actor): string | undefined {
 interface MsgCursorPayload {
   sent_at: string;
   id: string;
+  /**
+   * O desempate do meio (ver a ordem em `listMessagesHandler`). Opcional porque
+   * um cursor emitido antes dele — numa aba aberta durante a atualização — não
+   * o traz, e tem de continuar paginando como antes em vez de virar 400.
+   */
+  created_at?: string;
 }
 
 function encodeMsgCursor(p: MsgCursorPayload): string {
   return Buffer.from(JSON.stringify(p), "utf8").toString("base64url");
 }
+/**
+ * Os valores do cursor entram por interpolação no `.or()` do PostgREST. Os
+ * filtros de organização e de conversa são parâmetros separados (somados com
+ * AND), então um cursor forjado não sai da conversa — mas vírgula ou parêntese
+ * ali reescreveria o filtro de dentro dela. Só passa o FORMATO que o servidor
+ * emite: UUID e instante ISO-8601.
+ */
+const UUID_DO_CURSOR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INSTANTE_DO_CURSOR = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
 function decodeMsgCursor(raw: string): MsgCursorPayload | null {
   try {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as MsgCursorPayload;
     if (typeof parsed.id !== "string" || typeof parsed.sent_at !== "string") return null;
+    if (parsed.created_at !== undefined && typeof parsed.created_at !== "string") return null;
+    if (!UUID_DO_CURSOR.test(parsed.id) || !INSTANTE_DO_CURSOR.test(parsed.sent_at)) return null;
+    if (parsed.created_at !== undefined && !INSTANTE_DO_CURSOR.test(parsed.created_at)) return null;
     return parsed;
   } catch {
     return null;
@@ -369,6 +397,16 @@ export async function listMessagesHandler(
     .eq("conversation_id", conversationId)
     .eq("organization_id", ctx.organization_id)
     .order("sent_at", { ascending: false })
+    // DESEMPATE PELA CHEGADA, não pelo id.
+    //
+    // `sent_at` vem do canal com precisão de SEGUNDO (a API oficial da Meta manda
+    // `timestamp` em segundos). Quem manda 3 fotos de uma vez gera 3 mensagens no
+    // mesmo `sent_at`, e o `id` é `uuid_generate_v4()` — sorteado. Desempatar por
+    // ele punha as fotos em ordem aleatória: medido numa instalação real em
+    // 09/11/2026, Foto 1-2-3 e PDF 1-2-3 apareceram 3-2-1. `created_at` é o
+    // instante (com microssegundos) em que cada uma foi gravada, na ordem em que
+    // o canal as entregou. O `id` fica por último, só para a ordem ser total.
+    .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
 
@@ -383,7 +421,14 @@ export async function listMessagesHandler(
         traduzir("Cursor inválido.", ctx.idioma ?? "pt-BR"),
       );
     }
-    query = query.or(`sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`);
+    query = query.or(
+      c.created_at
+        ? `sent_at.lt.${c.sent_at},` +
+            `and(sent_at.eq.${c.sent_at},created_at.lt.${c.created_at}),` +
+            `and(sent_at.eq.${c.sent_at},created_at.eq.${c.created_at},id.lt.${c.id})`
+        : // Cursor anterior ao desempate pela chegada: segue o critério antigo.
+          `sent_at.lt.${c.sent_at},and(sent_at.eq.${c.sent_at},id.lt.${c.id})`,
+    );
   }
 
   const { data, error } = await query;
@@ -399,7 +444,9 @@ export async function listMessagesHandler(
   // sai o cursor, porque a próxima página é a que vem ANTES no tempo.
   const oldest = page[page.length - 1];
   const cursor =
-    hasMore && oldest ? encodeMsgCursor({ sent_at: oldest.sent_at, id: oldest.id }) : null;
+    hasMore && oldest
+      ? encodeMsgCursor({ sent_at: oldest.sent_at, created_at: oldest.created_at, id: oldest.id })
+      : null;
 
   // A RESPOSTA continua cronológica (antigo → novo), igual a antes: o consumidor
   // renderiza de cima para baixo sem mudar nada. O que mudou foi QUAIS mensagens
@@ -962,6 +1009,20 @@ export async function sendMessageHandler(
   // Lidos do espelho da definição — nunca do `metadata` de entrada, que é do
   // cliente da API — e sem barrar nada: é dado de exibição.
   const { [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente, ...metadataDeEntrada } = input.metadata ?? {};
+  // O nome que a PESSOA deu ao arquivo (#4457). O caminho no bucket nasce
+  // `out-<uuid>.<ext>`, então não há nome legível nele; este é o único que
+  // sobra. Passa pela guarda da ingestão porque vem do multipart, e é gravado
+  // na linha porque o balão e o download leem `metadata.media_filename` — sem
+  // isso o histórico continuaria mostrando o nome aleatório. `null` quando o
+  // envio não traz nome (token que só manda o storage_path): aí o balão segue
+  // com o rótulo de sempre, em vez de exibir um `out-<uuid>`.
+  // Por `media_url` (#4524) o nome DECLARADO passa pela guarda do envio — a
+  // mesma que nomeia o documento no payload — e a linha guarda esse mesmo
+  // nome, para o cartão e o download não contarem outra história. Requisição
+  // antiga, sem o campo, não ganha chave nova no JSONB.
+  const nomeOriginalDoAnexo = input.media_storage_path
+    ? nomeDeArquivoLimpo(input.media_filename)
+    : nomeDeArquivoSeguro(input.media_filename);
   const botoesDoModeloEnviado =
     input.type === "template"
       ? await botoesDaDefinicao(supabase, {
@@ -1007,6 +1068,9 @@ export async function sendMessageHandler(
       // são do servidor: o dreno converte a âncora em data e o cron pede visão
       // paga pela marca. O cliente não as forja — ver `CHAVES_DA_DERIVACAO`.
       ...semChavesDaDerivacao(metadataDeEntrada),
+      // Depois do `metadata` do cliente de propósito: o nome do arquivo é dado
+      // do ENVIO (#4457), e o cliente da API não o sobrescreve por metadata.
+      ...(nomeOriginalDoAnexo ? { [CHAVE_DO_NOME_NA_METADATA]: nomeOriginalDoAnexo } : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
@@ -1275,7 +1339,10 @@ export async function sendMessageHandler(
         if (signErr || !signed?.signedUrl) {
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
-        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        // O nome ORIGINAL vence o basename aleatório do bucket (#4457). Sem
+        // nome — chamada por token, que só conhece o storage_path —, o
+        // basename continua sendo o que sai, como sempre foi.
+        const filename = nomeDoAnexoParaEnviar(input.media_filename, input.media_storage_path);
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1303,6 +1370,20 @@ export async function sendMessageHandler(
         // pela guarda anti-SSRF antes de a linha existir
         // (`assertUrlDeMidiaSegura`): ela chega também pela API pública e
         // pelo MCP, e quem a baixa é o gateway, de dentro da rede do servidor.
+        //
+        // O NOME (#4524): sem `filename` no `media`, quem escolhia era o canal
+        // — e o adaptador do canal grava o literal `file`, que no celular parece arquivo
+        // suspeito. A ordem está em `nomeDoDocumentoParaEnvio`: campo novo
+        // `media_filename`, depois o `metadata.media_filename` que a ingestão
+        // já grava (#2613), depois o último segmento da URL com extensão, e
+        // por fim uma reserva legível vinda do MIME. Nunca `file`, e nunca uma
+        // exceção: o nome é rótulo, não condição de envio.
+        const nomeDoDocumento = nomeDoDocumentoParaEnvio({
+          nomeExplicito: input.media_filename,
+          metadata: input.metadata,
+          url: input.media_url,
+          mime: input.media_mime,
+        });
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1314,6 +1395,7 @@ export async function sendMessageHandler(
           media: {
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
+            filename: nomeDoDocumento,
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,
