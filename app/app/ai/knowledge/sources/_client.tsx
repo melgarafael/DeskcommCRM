@@ -15,6 +15,7 @@ import {
   useKnowledgeSources,
   useReindexAll,
   useReindexSource,
+  useRestaurarSource,
   type SourceRow,
 } from "@/hooks/ai/useKnowledgeSources";
 import { KnowledgeSourceCard } from "@/components/ai/KnowledgeSourceCard";
@@ -44,6 +45,7 @@ export function AcervoClient({ initialSources, initialChave, agentes }: Props) {
   const reindex = useReindexSource();
   const reindexAll = useReindexAll();
   const arquivar = useArquivarSource();
+  const restaurar = useRestaurarSource();
 
   const recarregar = useCallback(() => {
     qc.invalidateQueries({ queryKey: sourcesQueryKey() });
@@ -153,8 +155,19 @@ export function AcervoClient({ initialSources, initialChave, agentes }: Props) {
           </p>
           <ul className="mt-3 space-y-1 text-sm">
             {arquivados.map((s) => (
-              <li key={s.id} className="text-text-muted">
-                {s.name}
+              <li key={s.id} className="flex items-center justify-between gap-3 text-text-muted">
+                <span className="truncate">{s.name}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => restaurar.mutate(s.id)}
+                  disabled={restaurar.isPending && restaurar.variables === s.id}
+                  data-testid="acervo-restaurar"
+                >
+                  {restaurar.isPending && restaurar.variables === s.id
+                    ? t("Tirando do arquivo…")
+                    : t("Tirar do arquivo")}
+                </Button>
               </li>
             ))}
           </ul>

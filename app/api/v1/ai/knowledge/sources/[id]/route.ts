@@ -1,6 +1,7 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * PATCH  /api/v1/ai/knowledge/sources/[id]  — update knowledge source
+ *                                            `{ status: 'active' }` tira do arquivo
  * DELETE /api/v1/ai/knowledge/sources/[id]  — soft-delete (status='archived')
  *
  * Auth: cookie session. Role >= manager required.
@@ -16,6 +17,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { canonizarTipoDeFonte } from "@/lib/ai/rag/tipos-de-fonte";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,13 @@ const patchSourceSchema = z.object({
   name: z.string().min(2).max(120).optional(),
   items: z.array(faqItemSchema).optional(),
   source_metadata: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * "Tirar do arquivo". O único valor aceito é `active`: arquivar continua
+   * sendo o DELETE, e um `status: "archived"` por PATCH seria uma segunda
+   * porta para a mesma coisa, sem a auditoria nem a coerência de `is_active`
+   * que o DELETE grava.
+   */
+  status: z.literal("active").optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -112,6 +121,10 @@ export async function PATCH(
   const ctx = await resolveContext(requestId);
   if (ctx.error) return ctx.error;
   const { authUser, activeOrg } = ctx as Exclude<typeof ctx, { error: Response }>;
+  // As recusas desta rota citam o material em conflito: o texto é traduzido
+  // AQUI, com «{nome}» por preencher, para quem escolheu espanhol não receber
+  // um 409 em português montado no servidor (#2559).
+  const t = (texto: string) => traduzir(texto, authUser.idioma);
 
   // Parse + validate body.
   let rawBody: unknown;
@@ -131,11 +144,30 @@ export async function PATCH(
 
   const input = parsed.data;
 
+  // Tirar do arquivo é uma ação só. Recusar o corpo misto ANTES de qualquer
+  // escrita é o que separa esta rota do defeito que o PATCH de `items` já teve:
+  // aplicar metade do pedido e responder 200 para a outra metade.
+  if (input.status !== undefined) {
+    const junto = (["name", "items", "source_metadata"] as const).filter(
+      (campo) => input[campo] !== undefined,
+    );
+    if (junto.length > 0) {
+      return fail(
+        "unprocessable_entity",
+        t(
+          'Para tirar do arquivo, envie apenas { "status": "active" }. Nome e conteúdo se alteram depois, com o material já de volta.',
+        ),
+        422,
+        { requestId },
+      );
+    }
+  }
+
   // Verify the source exists and belongs to the org (user-scoped client for RLS check).
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("ai_knowledge_sources")
-    .select("id, source_type, agent_id")
+    .select("id, source_type, agent_id, name, status, is_active")
     .eq("id", sourceId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -148,7 +180,14 @@ export async function PATCH(
     return fail("not_found", "Fonte de conhecimento não encontrada.", 404, { requestId });
   }
 
-  const ksRow = existing as { id: string; source_type: string; agent_id: string | null };
+  const ksRow = existing as {
+    id: string;
+    source_type: string;
+    agent_id: string | null;
+    name: string | null;
+    status: string | null;
+    is_active: boolean | null;
+  };
   const tipo = canonizarTipoDeFonte(ksRow.source_type);
 
   // `items` SÓ tem efeito em `faq`. A conferência vem antes de QUALQUER escrita.
@@ -174,6 +213,94 @@ export async function PATCH(
   if (input.source_metadata !== undefined) updatePayload.source_metadata = input.source_metadata;
 
   const admin = createAdminClient();
+
+  // ---------------------------------------------------------------------------
+  // Tirar do arquivo — PATCH { status: 'active' }
+  // ---------------------------------------------------------------------------
+  //
+  // Arquivar era um caminho só de ida: o DELETE grava `archived` + `is_active`
+  // false e não havia rota de volta, então quem arquivava por engano recriava o
+  // material à mão e perdia o histórico do que o agente já sabia.
+  //
+  // `is_active` vai JUNTO, e não é detalhe de simetria: o rag-indexer pula a
+  // fonte com `!is_active || status === 'archived'` (workers/rag-indexer.ts:707).
+  // Voltar só o `status` deixaria o material na lista, na cara do operador, e
+  // fora do que o agente consulta — pior que o arquivo, porque some sem aviso.
+  if (input.status === "active") {
+    const nome = (ksRow.name ?? "").trim();
+
+    // Já está no acervo: nada a escrever, nada a emitir, nada a auditar. Uma
+    // trilha cheia de "restaurado" para o que nunca esteve arquivado esconde
+    // exatamente o registro que se quer ler depois.
+    if (ksRow.status !== "archived") {
+      return ok({ id: sourceId, status: "active", restored: false }, { requestId });
+    }
+
+    const { error: restoreErr } = await admin
+      .from("ai_knowledge_sources")
+      .update({ status: "active", is_active: true })
+      .eq("id", sourceId)
+      .eq("organization_id", activeOrg.orgId);
+
+    if (restoreErr) {
+      // O nome é a identidade do material ATIVO. O índice único
+      // `ai_knowledge_sources_nome_unico_por_org` — (organization_id,
+      // lower(btrim(name))) WHERE is_active, da 0181 — recusa dois ativos
+      // homônimos: quem arquivou "FAQ da loja" e criou outro com o mesmo nome
+      // bate aqui ao voltar. Sem esta tradução o 23505 saía como 500 e a tela
+      // dizia "erro inesperado" para um conflito que a pessoa resolve sozinha.
+      if (restoreErr.code === "23505") {
+        return fail(
+          "knowledge_source_name_in_use",
+          t(
+            "Já existe um material ativo chamado «{nome}». Renomeie um dos dois antes de tirar este material do arquivo.",
+          ).replace("{nome}", nome),
+          409,
+          { requestId },
+        );
+      }
+      console.error("[ai-knowledge-sources] tirar do arquivo falhou:", restoreErr.message);
+      return fail("internal_error", "Erro ao tirar o material do arquivo.", 500, { requestId });
+    }
+
+    // O worker só reindexa o que ele sabe que mudou. De volta ao acervo, o
+    // índice daquele material pode estar velho (ou nunca ter existido): o evento
+    // é o pedido de reindexação, igual ao que a criação e o reindex manual emitem.
+    const { error: emitErr } = await admin.rpc("emit_event" as never, {
+      p_event_type: "knowledge_source.updated",
+      p_entity_kind: "ai_knowledge_source",
+      p_entity_id: sourceId,
+      p_payload: {
+        knowledge_source_id: sourceId,
+        agent_id: ksRow.agent_id,
+        source_type: ksRow.source_type,
+        triggered_by: "restored",
+      },
+      p_organization_id: activeOrg.orgId,
+    } as never);
+
+    if (emitErr) {
+      console.warn("[ai-knowledge-sources] emit_event failed (non-blocking):", emitErr.message);
+    }
+
+    // De/para explícito: "quem tirou do arquivo" e "de onde para onde" é o que
+    // a trilha precisa responder; o texto do material continua fora dela.
+    void audit({
+      action: "ai.knowledge_source_restored",
+      actorUserId: authUser.id,
+      organizationId: activeOrg.orgId,
+      resourceType: "ai_knowledge_source",
+      resourceId: sourceId,
+      requestId,
+      metadata: {
+        source_type: ksRow.source_type,
+        de: { status: "archived", is_active: false },
+        para: { status: "active", is_active: true },
+      },
+    });
+
+    return ok({ id: sourceId, status: "active", restored: true }, { requestId });
+  }
 
   if (Object.keys(updatePayload).length > 0) {
     const { error: updateErr } = await admin

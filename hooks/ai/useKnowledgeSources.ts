@@ -162,3 +162,34 @@ export function useArquivarSource() {
     },
   });
 }
+
+/**
+ * Tira o material do arquivo — `PATCH { status: 'active' }`.
+ *
+ * Arquivar era ida sem volta; o material arquivado ficava na lista só com o
+ * nome, e quem arquivava por engano recriava tudo. A rota devolve `active` +
+ * `is_active=true` e emite `knowledge_source.updated`, então o agente volta a
+ * consultá-lo. O erro da API aparece como veio — o 409 de nome repetido diz o
+ * que fazer, e uma frase genérica jogaria fora essa informação.
+ */
+export function useRestaurarSource() {
+  const t = useT();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ["ai", "knowledge", "sources", "restaurar"],
+    mutationFn: async (id: string) => {
+      const res = await apiClient.patch<{ data: { id: string; status: string; restored: boolean } }>(
+        `/api/v1/ai/knowledge/sources/${id}`,
+        { status: "active" },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success(t("Material de volta ao acervo. O agente volta a consultá-lo."));
+    },
+    onError: (err) => showApiError(err),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: sourcesQueryKey() });
+    },
+  });
+}
