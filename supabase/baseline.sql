@@ -66995,16 +66995,13 @@ alter table public.ai_agent_versions
 alter table public.ai_agent_versions
   add column if not exists voz_quando text not null default 'espelhar';
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'ai_agent_versions_voz_quando_check'
-  ) then
-    alter table public.ai_agent_versions
-      add constraint ai_agent_versions_voz_quando_check
-      check (voz_quando in ('nunca', 'espelhar', 'sempre'));
-  end if;
-end $$;
+-- A constraint NÃO é reconstruída aqui: o vocabulário FINAL dela (o de 9052
+-- mais o 'quando_pede' da 9338) mora no bloco único do fim deste apêndice,
+-- logo acima da VARREDURA anon. Um segundo bloco, com a lista desta época,
+-- é exatamente o padrão que `baseline-constraint-reconstruida.test.ts` proíbe:
+-- num clone que já tem linha com 'quando_pede', o `update.sh` falha ao
+-- re-aplicar o bloco velho e a tabela passa SEM constraint entre o drop e o
+-- add que funciona. O default continua 'espelhar' — nenhum valor renomeado.
 
 comment on column public.ai_agent_versions.voz_enabled is
   'Migration 9052. A resposta do agente pode saír como nota de voz nesta versão. '
@@ -75764,6 +75761,30 @@ create trigger trg_contacts_rotulo_sai_com_o_numero
   for each row
   when (new.phone_number is null and new.phone_label is not null)
   execute function public.fn_contacts_rotulo_sai_com_o_numero();
+
+-- ---- o cliente pode PEDIR voz: voz_quando = 'quando_pede' (migration 9338, #4345) ----
+-- Espelho idêntico da 9338 (o porquê está no cabeçalho dela). Só o vocabulário
+-- do CHECK muda: nenhum valor renomeado, default continua 'espelhar'.
+-- Drop e add num bloco só: o update.sh aplica sem ON_ERROR_STOP, e um add que
+-- falhasse depois de um drop solto deixaria a coluna sem guarda.
+do $voz_quando$
+begin
+  alter table public.ai_agent_versions
+    drop constraint if exists ai_agent_versions_voz_quando_check;
+  alter table public.ai_agent_versions
+    add constraint ai_agent_versions_voz_quando_check
+    check (voz_quando in ('nunca', 'espelhar', 'sempre', 'quando_pede'));
+end
+$voz_quando$;
+
+comment on column public.ai_agent_versions.voz_quando is
+  'Migration 9338 (a coluna nasceu na 9052). ''nunca'' (nunca fala, mesmo com '
+  'voz_enabled=true — existe para desligar sem apagar a config), ''espelhar'' '
+  '(fala só quando o CLIENTE mandou áudio nesta mensagem — o default), '
+  '''sempre'', ou ''quando_pede'' (fala quando o cliente mandou áudio OU pediu '
+  'áudio por escrito / avisou que não consegue ler; quem pede texto continua '
+  'recebendo texto). Decidido em lib/agent-engine/agent/voz-do-turno.ts, com a '
+  'leitura do turno em lib/agent-engine/agent/pedido-de-audio.ts.';
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
