@@ -237,7 +237,7 @@ interface FormState {
   reply_min_interval_ms: number | null;
   followup: FollowupValue;
   voz_enabled: boolean;
-  voz_quando: "nunca" | "espelhar" | "sempre";
+  voz_quando: "nunca" | "espelhar" | "sempre" | "quando_pede";
   // Papel OPERADOR (spec 16 §3.2) — o que mexe no sistema depois da conversa.
   operator_enabled: boolean;
   /** "" = herda o modelo do Conversador (vira null no payload). */
@@ -1580,12 +1580,22 @@ export function AgentForm(props: Props) {
                     <SelectItem value="espelhar">
                       {t("Só quando o cliente mandar áudio")}
                     </SelectItem>
+                    <SelectItem value="quando_pede">
+                      {t("Quando o cliente mandar ou pedir áudio")}
+                    </SelectItem>
                     <SelectItem value="sempre">{t("Sempre")}</SelectItem>
                     <SelectItem value="nunca">
                       {t("Nunca (desligado, sem apagar a configuração)")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
+                {form.voz_quando === "quando_pede" ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Responde em áudio quando o cliente manda áudio, pede áudio por escrito ou avisa que não consegue ler. Quem pede para continuar no texto segue recebendo texto.",
+                    )}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </Card>

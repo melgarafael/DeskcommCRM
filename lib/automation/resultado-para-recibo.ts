@@ -19,6 +19,7 @@ const CODIGOS_DAS_ACOES = new Set([
   "canal_sem_chave",
   "carteira_nao_passou",
   "commercial_requires_human",
+  "commercial_requires_human_duas_tentativas",
   "commercial_requires_human_sem_passagem",
   "compromisso_na_agenda",
   "config_invalida",

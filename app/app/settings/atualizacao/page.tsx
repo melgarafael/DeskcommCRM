@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { exigirProvaDeMfa, loadAuthUser, mfaEmDividaEstrita } from "@/lib/auth/server";
 import { UpdatePanel } from "./_components/UpdatePanel";
 
@@ -18,5 +19,12 @@ export default async function Page() {
   // nesta sessão (`requirePlatformAdminEscrita`); quem entrou pelo dispositivo
   // confiável vai a ele antes, como em Extensões e no Servidor MCP externo.
   if (!user.support) await exigirProvaDeMfa(mfaEmDividaEstrita);
-  return <UpdatePanel />;
+  return (
+    <>
+      <div className="mx-auto w-full max-w-2xl px-6 pt-6">
+        <CabecalhoDaSubTela idioma={user.idioma} />
+      </div>
+      <UpdatePanel />
+    </>
+  );
 }

@@ -12,6 +12,14 @@ export interface VetoActivityInput {
   gate: string;
   code: string;
   agentId?: string | null;
+  /**
+   * O texto que a IA ia mandar e a trava barrou. Só entra na linha da timeline
+   * (`payload.texto_barrado`) — nunca no rastro da cadeia, que não guarda corpo.
+   * A anonimização de LGPD esvazia o `payload` desta linha junto com o contato.
+   */
+  textoBarrado?: string;
+  /** O pedaço do texto que acionou a trava (`trechoComercialNaSaida`), quando a trava foi a comercial. */
+  trecho?: string | null;
 }
 
 /**
@@ -42,14 +50,25 @@ export async function emitVetoActivity(
     sourceId: input.traceId,
     evidence: { trace_ids: [input.traceId] },
     agentId: input.agentId ?? null,
-    reason: vetoReason(input.gate, input.code),
-    payload: { gate: input.gate, code: input.code },
+    reason: vetoReason(input.gate, input.code, input.trecho),
+    payload: {
+      gate: input.gate,
+      code: input.code,
+      ...(input.textoBarrado !== undefined ? { texto_barrado: input.textoBarrado } : {}),
+      ...(input.trecho ? { trecho: input.trecho } : {}),
+    },
   });
   return r.routed ? { routed: true } : { routed: false, reason: r.reason };
 }
 
 /** Motivo legível — o humano lê "não enviei porque", não um código de gate. */
-export function vetoReason(gate: string, code: string): string {
+export function vetoReason(gate: string, code: string, trecho?: string | null): string {
+  if (gate === "commercial_restriction") {
+    const base = "Não enviei: a mensagem tocava em valores ou negociação, que são só com a equipe";
+    return trecho ? `${base} (o texto tinha "${trecho}")` : base;
+  }
+  // A conversa passou para a equipe: o contato NÃO pediu para parar (#3310).
+  if (gate === "stop" && code === "atendimento_com_humano") return "Não enviei: a conversa está com a equipe";
   const porGate: Record<string, string> = {
     stop: "Não enviei: o contato pediu para parar de receber mensagens",
     window: "Não enviei: fora da janela de horário permitida",

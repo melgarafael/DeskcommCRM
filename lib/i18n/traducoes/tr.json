@@ -6595,6 +6595,7 @@
   "O assistente enxerga todas as tabelas que o usuário do banco enxerga.": "Asistan, veritabanı kullanıcısının gördüğü tüm tabloları görür.",
   "O assistente escreve, e o sistema confere. São": "Asistan yazar, sistem denetler. Toplam",
   "O assistente não teve confiança suficiente para responder": "Asistan yanıt vermek için yeterince emin olmadı",
+  "A trava de valores e negociação barrou a resposta": "Fiyat ve pazarlık kilidi yanıtı engelledi",
   "O assistente ouviu isto na conversa": "Asistan konuşmada bunu duydu",
   "O assistente passou um atendimento para um humano": "Asistan bir görüşmeyi bir çalışana aktardı",
   "O assistente perde as cinco consultas na hora: pergunta sobre fatura, contrato ou bloqueio volta a virar atendimento humano.": "Asistan beş sorgusunu hemen kaybeder: fatura, sözleşme veya engelleme sorusu yeniden insan görüşmesine döner.",

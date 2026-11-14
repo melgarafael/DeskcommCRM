@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { moduloLigado } from "@/lib/instalacao/modulos";
@@ -66,10 +67,7 @@ export default async function PipelinesSettingsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {traduzir("Etapas do funil", idioma)}
-        </h1>
+      <CabecalhoDaSubTela titulo={traduzir("Etapas do funil", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir("Para onde o agente leva o card em cada passo do atendimento", idioma)}
           {podeEditarConfig
@@ -77,7 +75,7 @@ export default async function PipelinesSettingsPage() {
             : ""}
           .
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       <PipelinesClient
         pipelines={pipelines}
         etapas={etapasPorFunil}

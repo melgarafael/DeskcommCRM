@@ -166,4 +166,42 @@ describe("aba Atividade: o motivo de parada chega em português, com o detalhe t
 
     expect(tela).toContain("Vez de Ana, posição 2 da fila do rodízio.");
   });
+
+  it("a automação que barrou duas vezes mostra a frase própria, os dois textos e o trecho (Spec 34)", () => {
+    const tela = telaDaAba(
+      corrida(
+        [
+          {
+            type: "send_ai_message",
+            status: "skipped",
+            detail: {
+              reason: "commercial_requires_human_duas_tentativas",
+              textos_barrados: ["A consulta fica R$ 300,00.", "Fica R$ 250,00 no pix."],
+              trecho: "R$ 250,00",
+            },
+          },
+        ],
+        "partial",
+      ),
+    );
+
+    expect(tela).toContain("nas duas tentativas: nada foi enviado");
+    expect(tela).not.toContain("passou para o atendimento humano");
+    expect(tela).toContain("Texto barrado: A consulta fica R$ 300,00.");
+    expect(tela).toContain("Texto barrado: Fica R$ 250,00 no pix.");
+    expect(tela).toContain("Trecho que acionou a trava: R$ 250,00");
+    expect(tela).not.toContain("commercial_requires_human");
+  });
+
+  it("a execução antiga, em que a conversa passou à equipe, mantém a frase que diz isso", () => {
+    const tela = telaDaAba(
+      corrida(
+        [{ type: "send_ai_message", status: "skipped", detail: { reason: "commercial_requires_human", passagem_para_a_equipe: true } }],
+        "partial",
+      ),
+    );
+
+    expect(tela).toContain("a conversa passou para o atendimento humano");
+    expect(tela).not.toContain("Texto barrado:");
+  });
 });

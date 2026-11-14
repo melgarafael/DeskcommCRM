@@ -77,6 +77,12 @@ export const DICIONARIO: Traducoes = {
   "Não consegui cancelar o agendamento.": { es: "No pude cancelar la programación." },
   "Não consegui criar o agendamento. Confira os campos.": { es: "No pude crear la programación. Revise los campos." },
   "Não consegui salvar a edição. Confira os campos.": { es: "No pude guardar la edición. Revise los campos." },
+  // "Exibir todos" (segunda parte, #4431): a lista que cruza as conversas visíveis.
+  "Exibir todos": { es: "Ver todos" },
+  "Só desta conversa": { es: "Solo de esta conversación" },
+  "Envios de todos os clientes": { es: "Envíos de todos los clientes" },
+  "Nenhum envio agendado nas conversas que você enxerga.": { es: "Ningún envío programado en las conversaciones que puedes ver." },
+  "Não consegui carregar os envios.": { es: "No pude cargar los envíos." },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },
@@ -2567,6 +2573,7 @@ export const DICIONARIO: Traducoes = {
   Excluir: { es: "Eliminar" },
   Editar: { es: "Editar" },
   Voltar: { es: "Volver" },
+  "Voltar para Configurações": { es: "Volver a Configuración" },
   // ─── Configurações: hub, perfil e tenant ───
   "Dados inválidos.": { es: "Datos inválidos." },
   "Perfil atualizado.": { es: "Perfil actualizado." },
@@ -4500,6 +4507,13 @@ export const DICIONARIO: Traducoes = {
     { es: "Voz de este agente: pasa a usar la voz de la organización." },
   "Voz deste agente salva:": { es: "Voz de este agente guardada:" },
   "Só quando o cliente mandar áudio": { es: "Solo cuando el cliente envíe audio" },
+  // Curto de propósito: a 375px a lista do seletor tem largura max-content, e o
+  // rótulo longo anterior passava 10px da borda (prova de tela do #4443).
+  "Quando o cliente mandar ou pedir áudio": { es: "Cuando el cliente envíe o pida audio" },
+  "Responde em áudio quando o cliente manda áudio, pede áudio por escrito ou avisa que não consegue ler. Quem pede para continuar no texto segue recebendo texto.":
+    {
+      es: "Responde en audio cuando el cliente envía audio, pide audio por escrito o avisa que no puede leer. Quien pide seguir por texto sigue recibiendo texto.",
+    },
   "Nunca (desligado, sem apagar a configuração)": {
     es: "Nunca (desactivado, sin borrar la configuración)",
   },
@@ -7624,6 +7638,11 @@ export const DICIONARIO: Traducoes = {
   "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada e a conversa passou para o atendimento humano.": {
     es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso: no se envió y la conversación pasó a la atención humana.",
   },
+  "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso nas duas tentativas: nada foi enviado, e a conversa continua com a IA.": {
+    es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso en los dos intentos: no se envió nada y la conversación sigue con la IA.",
+  },
+  "Texto barrado:": { es: "Texto bloqueado:" },
+  "Trecho que acionou a trava:": { es: "Fragmento que activó el bloqueo:" },
   "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada. A conversa não foi passada para a equipe nesta execução — abra a conversa e confira quem vai responder ao cliente.": {
     es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso: no se envió. La conversación no pasó al equipo en esta ejecución: abre la conversación y revisa quién va a responder al cliente.",
   },
@@ -16229,6 +16248,8 @@ export const DICIONARIO: Traducoes = {
   "(percebido pelo Jev)": { es: "(detectado por Jev)" },
   "O assistente não teve confiança suficiente para responder":
     { es: "El asistente no estaba lo bastante seguro para responder" },
+  "A trava de valores e negociação barrou a resposta":
+    { es: "El bloqueo de valores y negociación frenó la respuesta" },
   "O negócio chegou a uma etapa que pede uma pessoa":
     { es: "El negocio llegó a una etapa que requiere una persona" },
   "A conversa tocou em assunto jurídico":

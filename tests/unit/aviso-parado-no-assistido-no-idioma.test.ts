@@ -49,7 +49,7 @@ describe("aviso de automação parada no assistido", () => {
     organizationId: ORG,
     ruleName: 'Proposta $& "{acoes}"',
     runId: "run-1",
-    tipos: ["send_whatsapp_message", "send_email", "send_ai_message", "start_message_flow", "ai_decide"],
+    tipos: ["send_whatsapp_message", "send_email", "send_ai_message", "start_message_flow", "call_webhook", "ai_decide"],
   };
 
   it("organização em espanhol: título e corpo em espanhol, com a regra e as ações", async () => {
@@ -57,7 +57,7 @@ describe("aviso de automação parada no assistido", () => {
     expect(lidos).toContainEqual(["organizations.id", ORG]);
     expect(inseridos[0]!.title).toBe("Automatización esperando aprobación para hablar con el cliente");
     expect(String(inseridos[0]!.body)).toContain('"Proposta $& "{acoes}""');
-    expect(String(inseridos[0]!.body)).toContain("(WhatsApp, correo, mensaje de la IA, secuencia, decisión de la IA)");
+    expect(String(inseridos[0]!.body)).toContain("(WhatsApp, correo, mensaje de la IA, secuencia, Avisar a otro sistema (webhook), decisión de la IA)");
     expect(texto()).not.toMatch(PORTUGUES);
   });
 
