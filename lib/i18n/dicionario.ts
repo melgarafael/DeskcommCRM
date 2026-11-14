@@ -1045,11 +1045,18 @@ export const DICIONARIO: Traducoes = {
   "Número inválido. Informe o telefone no formato E.164, com o código do país.": {
     es: "Número no válido. Informe el teléfono en formato E.164, con el código del país.",
   },
-  "Este número vai virar o principal e o rótulo será descartado: o telefone principal da ficha não guarda rótulo.":
-    {
-      es: "Este número pasará a ser el principal y su etiqueta se descartará: el teléfono principal de la ficha no guarda etiqueta.",
-    },
-  "Rótulo que será descartado:": { es: "Etiqueta que se descartará:" },
+  // #4242, item 1: as três chaves abaixo são as que `lib/schemas/contacts.ts`
+  // traduz (a frase é a MESMA do schema e da API); o `{exemplo}` entra por
+  // `replace`, como `Dia {n}`.
+  "Telefone deve estar em formato E.164 ({exemplo})": {
+    es: "El teléfono debe estar en formato E.164 ({exemplo})",
+  },
+  "Telefone deve ter DDD + número (ex.: {exemplo}) ou o formato E.164 ({exemploE164})": {
+    es: "El teléfono debe tener código de área + número (ej.: {exemplo}) o el formato E.164 ({exemploE164})",
+  },
+  "Telefone inválido. Informe DDD e número.": {
+    es: "Teléfono no válido. Informa el código de área y el número.",
+  },
   "A resposta sai por:": { es: "La respuesta sale por:" },
   "Pontuação": { es: "Puntuación" },
   // #2642 — formulário da ação notify_team, depois do recorte: o destino é o
