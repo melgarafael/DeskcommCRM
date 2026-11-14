@@ -76,6 +76,14 @@ const DIVIDA_LGPD_CONHECIDA: Record<string, string> = {
     "estão aqui, as duas também já cobertas por trigger. Sai no dia em que " +
     "`tabelasNaCascata()` passar a derivar do catálogo também os triggers de " +
     "`contacts`, ou no dia em que a função ganhar o passo.",
+  mensagens_agendadas:
+    "Migration 9336 (#3118, primeira parte). Guarda `title` e `body` do texto agendado para a pessoa. " +
+    "⚠️ ELA JÁ ESTÁ PROTEGIDA: o gatilho `trg_contacts_anonimizado_mensagens_agendadas` troca o texto, " +
+    "apaga o título e cancela o pendente na virada de is_anonymized, e " +
+    "`tests/invariants/lgpd-mensagem-agendada-do-contato-anonimizado.test.ts` prova o efeito pela " +
+    "cascata real. A entrada existe só porque ESTE instrumento lê UMA função e não enxerga gatilho — " +
+    "a mesma razão de crm_tasks. Sai no mesmo dia que crm_tasks: quando `tabelasNaCascata()` derivar " +
+    "também os gatilhos de `contacts`.",
   webhook_lead_captures:
     "captured_name, captured_email e captured_phone — o payload cru de captação. " +
     "A própria migration 0174 escreveu que 'o cascade de anonimização precisa alcançar esta tabela' " +

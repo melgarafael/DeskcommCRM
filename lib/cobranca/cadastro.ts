@@ -17,6 +17,8 @@ export interface PlanoDoCadastro {
   id: string;
   nome: string;
   preco_cents: number;
+  /** A moeda do plano (migration 9332). */
+  moeda: string;
   intervalo: string;
   trial_dias: number;
 }
@@ -31,7 +33,7 @@ export async function lerPlanosDoCadastro(admin: SupabaseClient): Promise<Planos
   const [oferecidos, padrao] = await Promise.all([
     admin
       .from("cobranca_planos")
-      .select("id, nome, preco_cents, intervalo, trial_dias")
+      .select("id, nome, preco_cents, moeda, intervalo, trial_dias")
       .is("arquivado_em", null)
       .eq("oferecido_ao_cliente", true)
       .order("preco_cents"),
@@ -77,4 +79,25 @@ export async function lerCadastroNaTela(admin: SupabaseClient): Promise<Cadastro
 /** O plano que o seletor já traz marcado: o padrão, quando ele está entre os oferecidos. */
 export function planoInicialDoSeletor(oferecidos: readonly PlanoDoCadastro[], padraoId: string | null): string | undefined {
   return oferecidos.find((p) => p.id === padraoId)?.id ?? oferecidos[0]?.id;
+}
+
+/**
+ * A moeda que o link do cadastro pede (migration 9332). Uma instalação que vende
+ * em real, dólar e euro não mostra os três juntos: o site manda `?moeda=USD`, ou
+ * um `?plano=` cuja moeda decide. Sem pedido válido, nada se filtra — é o
+ * comportamento de sempre, e a instalação que só tem real não muda.
+ *
+ * Só ESCONDE da tela: quem decide se a escolha vale é a action (e o gatilho),
+ * com a lista inteira. Pedido que esvaziaria a lista também não filtra.
+ */
+export function planosNaMoedaDoLink(
+  oferecidos: readonly PlanoDoCadastro[],
+  link: { moeda?: string | string[]; plano?: string | string[] },
+): PlanoDoCadastro[] {
+  const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const pedida = primeiro(link.moeda)?.trim().toUpperCase();
+  const doPlano = oferecidos.find((p) => p.id === primeiro(link.plano))?.moeda;
+  const moeda = pedida && oferecidos.some((p) => p.moeda === pedida) ? pedida : doPlano;
+  if (!moeda) return [...oferecidos];
+  return oferecidos.filter((p) => p.moeda === moeda);
 }

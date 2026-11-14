@@ -110,7 +110,7 @@ export function lerPlanilhaDeProspeccao(sheet: SheetMatrix): LeituraDaPlanilhaDe
   const telefonesVistos = new Map<string, number>();
 
   sheet.rows.forEach((bruto, i) => {
-    const linha = i + 2;
+    const linha = sheet.rowNumbers?.[i] ?? i + 2;
     if (bruto.every((c) => c.trim() === "")) return;
 
     const name = primeiro(bruto, "name").replace(/\s+/g, " ").slice(0, 200);

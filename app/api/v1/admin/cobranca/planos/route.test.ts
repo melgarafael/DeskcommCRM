@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   escrita: vi.fn(),
   audit: vi.fn(),
   ligada: true,
+  provedor: "stripe" as "stripe" | "asaas" | null,
   banco: undefined as unknown as BancoFalso,
 }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/instalacao/modulos", async (importOriginal) => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
+vi.mock("@/lib/cobranca/configuracao", () => ({ provedorDaInstalacao: async () => h.provedor }));
 
 import { EscritaDePlatformAdminNegada } from "@/lib/auth/requirePlatformAdmin";
 
@@ -39,12 +41,32 @@ let resposta: Resposta;
 beforeEach(() => {
   vi.clearAllMocks();
   h.ligada = true;
+  h.provedor = "stripe";
   h.escrita.mockResolvedValue({ user: { id: h.ator }, platformAdmin: { user_id: h.ator, scope: "full", mfa_required: false } });
   resposta = { data: PLANO };
   h.banco = bancoFalso(() => resposta);
 });
 
 describe("POST /api/v1/admin/cobranca/planos", () => {
+  it("⭐ plano em dólar com a Stripe (migration 9332): grava a moeda pedida", async () => {
+    const res = await POST(pedido({ ...CORPO, moeda: "USD" }));
+    expect(res.status).toBe(201);
+    expect(argumentos(h.banco.cadeias[0]!, "insert")?.[0]).toEqual({ ...CORPO, moeda: "USD", updated_by: h.ator });
+  });
+
+  it("⭐ plano em euro com o Asaas: 422 com nome, nada gravado — o Asaas cobraria o número como real", async () => {
+    h.provedor = "asaas";
+    const res = await POST(pedido({ ...CORPO, moeda: "EUR" }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.message).toBe("O Asaas cobra só em real. Para dólar ou euro, conecte a Stripe.");
+    expect(h.banco.cadeias).toEqual([]);
+  });
+
+  it("plano em real com o Asaas segue como sempre", async () => {
+    h.provedor = "asaas";
+    expect((await POST(pedido(CORPO))).status).toBe(201);
+  });
+
   it("cria o plano com quem criou e audita cobranca.plano_salvo", async () => {
     const res = await POST(pedido(CORPO));
     expect(res.status).toBe(201);
@@ -77,7 +99,7 @@ describe("POST /api/v1/admin/cobranca/planos", () => {
     ["teste grátis acima de 90 dias", { ...CORPO, trial_dias: 91 }],
     ["intervalo fora do vocabulário", { ...CORPO, intervalo: "semana" }],
     ["teto de IA abaixo de US$ 1", { ...CORPO, teto_ia_usd_cents: 99 }],
-    ["moeda (só BRL, fixada no banco)", { ...CORPO, moeda: "USD" }],
+    ["moeda fora do vocabulário (BRL, USD, EUR)", { ...CORPO, moeda: "JPY" }],
     ["nome em branco", { ...CORPO, nome: "  " }],
   ])("%s → 400, nada gravado", async (_caso, corpo) => {
     expect((await POST(pedido(corpo))).status).toBe(400);

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Robô de mensagens (bot do Telegram)",
+    "subtitle": "Módulo opcional canal_bot: conexão pelo token, entrada autenticada por segredo de cabeçalho e caminho, resposta pelo mesmo robô; grupo e campanha recusados",
+    "output": "canal-do-robo.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Operação" },
+    { "id": "servidor", "label": "Servidor" },
+    { "id": "banco", "label": "Persistência" },
+    { "id": "fornecedor", "label": "Bot API do fornecedor" }
+  ],
+  "mainPath": ["modulo", "aba", "conectar", "setwebhook", "sessao", "entrada", "ingestao", "inbox", "resposta", "sendmessage"],
+  "nodes": [
+    { "id": "modulo", "lane": "operador", "col": 1, "type": "frontend", "label": "/admin/sistema — módulo canal_bot (platform_config MODULO_CANAL_BOT), desligado por padrão" },
+    { "id": "aba", "lane": "operador", "col": 1, "type": "frontend", "label": "Conexões › aba do robô (CanalBotClient) — só montada com o módulo ligado" },
+    { "id": "conectar", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/channels/bot — admin, 404 com o módulo desligado; conectarRobo" },
+    { "id": "unico", "lane": "servidor", "col": 2, "type": "service", "label": "roboLigadoEmOutraConexao — recusa 409 ANTES de mexer no webhook" },
+    { "id": "getme", "lane": "fornecedor", "col": 4, "type": "external", "label": "getMe — o token presta? devolve o id do robô" },
+    { "id": "setwebhook", "lane": "fornecedor", "col": 4, "type": "external", "label": "setWebhook — URL neutra + secret_token por conexão" },
+    { "id": "sessao", "lane": "banco", "col": 3, "type": "database", "label": "channel_sessions provider telegram: telegram_bot_id, token cifrado, webhook_secret_encrypted; índice único do robô ativo (migration 9342)" },
+    { "id": "entrada", "lane": "servidor", "col": 2, "type": "route", "label": "POST /api/v1/webhooks/channel/<token> → handleInboundWebhook: segredo do cabeçalho em tempo constante (exceção de protocolo, doc 216)" },
+    { "id": "ingestao", "lane": "servidor", "col": 2, "type": "service", "label": "ingestTelegramInbound — só conversa privada com texto; grupo e mídia = ignored (200)" },
+    { "id": "inbox", "lane": "banco", "col": 3, "type": "database", "label": "contacts.social_identity telegram:<robô>:<usuário>, conversations channel telegram, messages tg:<robô>:<chat>:<msg>" },
+    { "id": "resposta", "lane": "servidor", "col": 2, "type": "service", "label": "telegramAdapter.send — só texto (mídia é a T2)" },
+    { "id": "sendmessage", "lane": "fornecedor", "col": 4, "type": "external", "label": "sendMessage para o chat_id da conversa" },
+    { "id": "campanha", "lane": "servidor", "col": 2, "type": "service", "label": "modoDeCampanhaDoCanal → null (PROVIDERS_SEM_CAMPANHA): criar campanha responde 409" },
+    { "id": "desconectar", "lane": "servidor", "col": 2, "type": "route", "label": "DELETE /api/v1/channel-sessions/[id] → desligarRoboNoFornecedor (deleteWebhook), best-effort, auditado em robo" },
+    { "id": "deletewebhook", "lane": "fornecedor", "col": 4, "type": "external", "label": "deleteWebhook" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "modulo", "to": "aba", "label": "ligado: a aba aparece" },
+    { "id": "e2", "from": "aba", "to": "conectar", "label": "token do robô" },
+    { "id": "e3", "from": "conectar", "to": "getme", "label": "valida o token" },
+    { "id": "e4", "from": "conectar", "to": "unico", "label": "o robô já atende em outra conexão?" },
+    { "id": "e5", "from": "unico", "to": "sessao", "label": "consulta só ativas, por telegram_bot_id" },
+    { "id": "e6", "from": "conectar", "to": "setwebhook", "label": "só depois da conferência" },
+    { "id": "e7", "from": "conectar", "to": "sessao", "label": "grava depois do setWebhook; auditoria channel.connected" },
+    { "id": "e8", "from": "setwebhook", "to": "entrada", "label": "o fornecedor entrega cada update" },
+    { "id": "e9", "from": "entrada", "to": "sessao", "label": "resolve organização e segredo pelo token do caminho" },
+    { "id": "e10", "from": "entrada", "to": "ingestao", "label": "segredo certo" },
+    { "id": "e11", "from": "ingestao", "to": "inbox", "label": "idempotente por external_id" },
+    { "id": "e12", "from": "inbox", "to": "resposta", "label": "atendente ou agente responde" },
+    { "id": "e13", "from": "resposta", "to": "sendmessage", "label": "token decifrado da sessão" },
+    { "id": "e14", "from": "campanha", "to": "sessao", "label": "lerModoDoCanal pelo provider da conexão" },
+    { "id": "e15", "from": "aba", "to": "desconectar", "label": "Desconectar" },
+    { "id": "e16", "from": "desconectar", "to": "deletewebhook", "label": "antes de arquivar e girar o token do caminho" },
+    { "id": "e17", "from": "desconectar", "to": "sessao", "label": "archived_at, webhook_path_token novo" }
+  ]
+}

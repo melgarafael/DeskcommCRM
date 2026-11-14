@@ -37,6 +37,7 @@ import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { lerAnuncioDaMensagem } from "@/lib/leads/atribuicao-de-anuncio";
 import { marcadorDaApagada, textoDaApagadaApareceNaInbox } from "@/lib/messaging/apagada";
 import { AnuncioCard } from "@/components/inbox/AnuncioCard";
+import { TextoComLinks } from "@/components/inbox/TextoComLinks";
 import {
   extractCitations,
   isAiGeneratedMessage,
@@ -384,7 +385,7 @@ export function MessageBubble({
   // dois contatos chamados "João" não trocam de lugar. Sem menção conhecida, o
   // texto sai idêntico (o número que já estava lá é a informação disponível).
   const mencoes = lerMencoesDeGrupo(message.metadata);
-  const corpo = textoComMencoesResolvidas(message.body, mencoes);
+  const corpo = textoComMencoesResolvidas(message.body, mencoes) ?? "";
   // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
   // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
   // pelo anúncio, como o WhatsApp mostra no celular.
@@ -574,7 +575,7 @@ export function MessageBubble({
                 ? t("Mensagem ocultada no CRM")
                 : citada.type === "contact"
                 ? resolveSharedContact(citada)?.name || t("Contato")
-                : citada.body?.trim() || t("(sem texto)")}
+                : citada.body?.trim() ? <TextoComLinks texto={citada.body.trim()} /> : t("(sem texto)")}
             </div>
           </div>
         )}
@@ -631,7 +632,7 @@ export function MessageBubble({
             {textoApagadoVisivel && message.body && (
               <div className="border-t border-current/20 pt-1">
                 <p className="text-[10px] opacity-70">{t("Visível só aqui no CRM")}</p>
-                <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+                <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={message.body} /></p>
               </div>
             )}
           </div>
@@ -677,7 +678,7 @@ export function MessageBubble({
             )}
 
             {message.body && !isContact && !localizacao && (
-              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{corpo}</p>
+              <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={corpo} /></p>
             )}
 
             {botoesDoModelo.length > 0 && (

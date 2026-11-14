@@ -108,6 +108,7 @@ create table if not exists public.cobranca_planos (
   nome text not null check (char_length(nome) between 1 and 60),
   preco_cents bigint not null check (preco_cents >= 500),          -- R$5: mínimo de boleto nos dois provedores
   moeda text not null default 'BRL' check (moeda = 'BRL'),         -- Asaas não tem moeda; boleto Stripe só BRL
+                                                                   -- (a 9332 alargou para BRL, USD e EUR: a Stripe cobra na moeda do plano; o Asaas recusa fora de BRL)
   intervalo text not null check (intervalo in ('mes','ano')),
   trial_dias integer not null default 14 check (trial_dias between 0 and 90),
   max_assentos integer check (max_assentos >= 1),                   -- null = sem limite
@@ -402,7 +403,7 @@ export type ProvedorDeCobranca = (typeof PROVEDORES_DE_COBRANCA)[number];
 export type Modo = "teste" | "producao";
 
 export interface PlanoParaProvedor {
-  id: string; nome: string; precoCents: number; intervalo: "mes" | "ano";   // moeda sempre BRL (§2.2)
+  id: string; nome: string; precoCents: number; moeda: Moeda; intervalo: "mes" | "ano";   // moeda do plano desde a 9332 (era sempre BRL)
 }
 
 /** O que o webhook AUTORIZA: acordar a leitura. Nunca é fonte de estado. */
