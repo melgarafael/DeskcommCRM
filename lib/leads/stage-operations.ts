@@ -52,7 +52,7 @@ export interface DepsDeEtapa {
 
 /** As colunas que a tela e as regras usam. `position` entra: a reordenação calcula em cima dela. */
 const COLUNAS =
-  "id, name, slug, position, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
+  "id, name, slug, description, position, is_won, is_lost, is_archived, win_probability, agent_stage_hint, avisar_na_central, expected_duration_hours, last_change_actor_kind, last_change_at";
 
 /** A etapa como sai para quem lê — inclui a autoria da última mudança de configuração. */
 export interface EtapaVisivel {
@@ -80,6 +80,10 @@ export interface EtapaVisivel {
    * `validarJanelaDeEsfriamento`, aqui e nas rotas).
    */
   expected_duration_hours: number | null;
+  /** O CRITÉRIO da etapa, em texto livre (`crm_stages.description`): quando um card entra aqui. `null` = sem descrição. */
+  description: string | null;
+  /** A que passo do funil do agente a etapa corresponde (new|contacted|…|lost) ou null. */
+  agent_stage_hint: string | null;
   /** `user` | `ai` | `system` — `null` nas etapas anteriores a esta coluna. */
   last_change_actor_kind: string | null;
   last_change_at: string | null;
@@ -87,6 +91,8 @@ export interface EtapaVisivel {
 
 type EtapaLida = EtapaEditavel & {
   avisar_na_central?: boolean | null;
+  description?: string | null;
+  agent_stage_hint?: string | null;
   last_change_actor_kind: string | null;
   last_change_at: string | null;
 };
@@ -142,6 +148,8 @@ export function corpo(etapas: EtapaLida[]): { etapas: EtapaVisivel[] } {
         win_probability: e.win_probability ?? null,
         avisar_na_central: e.avisar_na_central === true,
         expected_duration_hours: e.expected_duration_hours ?? null,
+        description: e.description ?? null,
+        agent_stage_hint: e.agent_stage_hint ?? null,
         last_change_actor_kind: e.last_change_actor_kind ?? null,
         last_change_at: e.last_change_at ?? null,
       })),

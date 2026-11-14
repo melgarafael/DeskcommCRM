@@ -1549,6 +1549,9 @@ export const AUDIT_ACTIONS = [
   // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
   // aceitável: a única porta da escrita deixa rastro.
   "ouvidoria.status_updated",
+  // Doc 301 = B: alguém disparou pela Central o que a automação segurou porque
+  // a IA mexeu no modo assistido. Metadata leva só ids e os tipos de ação.
+  "automation.held_actions_dispatched",
   // Mensagem de texto agendada na conversa (#3118, primeira parte — envio único).
   // `dispatched` é o cron entregando ao envio, não "enviada": a mensagem pode
   // ficar em `queued` esperando o canal. `cancelled` vem da pessoa (com ator) ou
