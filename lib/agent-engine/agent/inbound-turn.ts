@@ -217,6 +217,7 @@ import { composeSystemPrompt, loadOrgMemory, memoriaEscritaPorPessoas, renderOrg
 import {
   loadConversationAgentConfig,
   matchesHandoffKeyword,
+  overrideLlmDoAgente,
   type PublishedAgentConfig,
 } from './agent-config';
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
@@ -6734,10 +6735,7 @@ async function executarTurnoDoAgente(
         ...(agentConfig !== null
           ? {
               model: agentConfig.model,
-              llmOverride: {
-                provider: agentConfig.provider,
-                credentialId: agentConfig.credentialId,
-              },
+              llmOverride: overrideLlmDoAgente(agentConfig),
             }
           : {}),
       },
@@ -6911,10 +6909,7 @@ async function executarTurnoDoAgente(
           ...(agentConfig !== null
             ? {
                 model: agentConfig.model,
-                llmOverride: {
-                  provider: agentConfig.provider,
-                  credentialId: agentConfig.credentialId,
-                },
+                llmOverride: overrideLlmDoAgente(agentConfig),
               }
             : {}),
         },
@@ -7210,10 +7205,7 @@ async function executarTurnoDoAgente(
           ...(agentConfig !== null
             ? {
                 model: agentConfig.model,
-                llmOverride: {
-                  provider: agentConfig.provider,
-                  credentialId: agentConfig.credentialId,
-                },
+                llmOverride: overrideLlmDoAgente(agentConfig),
               }
             : {}),
           ...(reservaDeFormato ? { reservaDeFormato } : {}),

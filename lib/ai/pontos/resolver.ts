@@ -67,6 +67,13 @@ export type OrigemDaEscolha =
    * a 3ª chamada foi ao modelo do agente, por cima do binding (`fecharOTurno`).
    */
   | "reserva_de_formato"
+  /**
+   * A reserva de MODELO CONFIGURADA na versão do agente atendeu a chamada
+   * depois de o principal falhar por cota, servidor ou tempo esgotado (#4600).
+   * Linha própria porque o custo e o modelo são OUTROS: sem ela, Execuções
+   * mostraria a chamada que falhou e não a que respondeu ao cliente.
+   */
+  | "reserva_do_modelo"
   | "padrao_da_organizacao"
   /** O Jev mediu e a nota dele decidiu. Também a linha de falha do clima sem reserva (ver Execuções). */
   | "jev"
@@ -103,6 +110,8 @@ export const EXPLICACAO_DA_ORIGEM: Record<OrigemDaEscolha, string> = {
     "O modelo econômico não respondeu; a chamada foi repetida no modelo de antes, e o resultado dessa repetição aparece numa linha própria.",
   reserva_de_formato:
     "O modelo escolhido para este ponto devolveu o resultado fora do formato duas vezes; a chamada foi repetida no modelo do agente.",
+  reserva_do_modelo:
+    "O modelo principal não estava disponível (cota, servidor ou tempo esgotado); a reserva configurada no agente respondeu esta chamada.",
   padrao_da_organizacao: "Usando o padrão da organização.",
   fixo_do_produto: "O produto resolve este ponto sozinho — não há modelo a escolher.",
   // Duas origens, uma por desfecho: a frase única ("se ele está em observação,

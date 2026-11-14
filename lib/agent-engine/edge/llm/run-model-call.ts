@@ -32,7 +32,7 @@ import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
 // este seam, a resolução dos pontos, a mídia, o embedding e o runtime do agente
 // importam daqui — não cada um a sua (issue #2377).
 import { ParProvedorModeloInvalidoError, validarParProvedorModelo } from '@/lib/ai/par-provedor-modelo';
-import { decidirQuedaDoProvedor } from '@/lib/ai/pontos/reserva-da-assinatura';
+import { decidirQuedaDoProvedor, decidirQuedaDoModeloDeReserva } from '@/lib/ai/pontos/reserva-da-assinatura';
 import { scrubMessage } from '@/lib/sentry/scrub';
 import { identificarConteudoBloqueado } from './conteudo-bloqueado';
 
@@ -1305,6 +1305,81 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     }
   };
 
+  /**
+   * A RESERVA DE MODELO CONFIGURADA (#4600) — o degrau que não depende de qual é
+   * o provedor principal.
+   *
+   * A reserva da assinatura acima só existe para UM provedor. Com provedor
+   * personalizado, OpenRouter, DeepSeek e afins, cota estourada (429), 5xx ou
+   * tempo esgotado derrubavam o turno e o cliente ficava sem resposta até a cota
+   * voltar. Aqui a reserva é o par (provedor, modelo) que a versão publicada do
+   * agente aponta — de qualquer provedor já cadastrado na instalação.
+   *
+   * Três freios, e todos antes de gastar a segunda chamada:
+   *  - desligado por padrão (sem configuração, `decidir…` devolve `null`);
+   *  - só cota, servidor e tempo esgotado — erro de pedido (400/422) e credencial
+   *    recusada (401/403) NÃO caem, porque o mesmo corpo seria recusado de novo;
+   *  - UMA tentativa: chamada daqui só existe no catch da chamada principal, e a
+   *    política recusa a segunda por construção (`jaCaiuParaAReserva`).
+   *
+   * Falhou a reserva também? O erro ORIGINAL é o que sobe — e a linha de
+   * `llm_calls` grava o provedor/modelo que falhou por último com origem
+   * `reserva_do_modelo`, que é o que explica a troca na aba Execuções.
+   */
+  const chamarNaReservaDoModelo = async (
+    falha: unknown,
+  ): Promise<Awaited<ReturnType<typeof generateText>>> => {
+    // Abort não é indisponibilidade: a pessoa cancelou, ou o worker parou.
+    if (input.abortSignal?.aborted) throw falha;
+    const { http_status: status, error_message: detalhe } = normalizarErro(falha);
+    const decisaoDaReserva = decidirQuedaDoModeloDeReserva({
+      reserva: input.llmOverride?.reservaDeModelo ?? null,
+      status,
+      detalhe,
+      // Esta função é chamada UMA vez, no catch da chamada principal: não há
+      // laço, e a política recusa a segunda tentativa se alguém a chamar de novo.
+      jaCaiuParaAReserva: false,
+    });
+    if (decisaoDaReserva === null) throw falha;
+    const fabricaDaReservaDoModelo = registry[decisaoDaReserva.provedorDeReserva];
+    // Sem fábrica para a reserva (registry de teste, provedor removido): o erro
+    // original é o que interessa, e ele não muda de mão.
+    if (fabricaDaReservaDoModelo === undefined) throw falha;
+    const parDaReserva = validarParProvedorModelo(
+      decisaoDaReserva.provedorDeReserva,
+      decisaoDaReserva.modeloDeReserva,
+    );
+    if (!parDaReserva.valido) throw falha;
+    let configDaReserva: OrgLlmConfig;
+    try {
+      configDaReserva = await resolveOrgLlmConfig(db, cfg, input.tenantId, {
+        provider: decisaoDaReserva.provedorDeReserva,
+        credentialId: null,
+      });
+    } catch {
+      // O provedor da reserva existe na configuração e não tem chave (revogou no
+      // meio do turno). Errar com o erro ORIGINAL é dizer a verdade ao operador.
+      throw falha;
+    }
+    // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
+    // `llm_calls` grava o provedor/modelo que de fato falhou por último.
+    config = configDaReserva;
+    model = decisaoDaReserva.modeloDeReserva;
+    origem = 'reserva_do_modelo';
+    await gateDeOrcamento(configDaReserva);
+    deps.log?.warn('llm: modelo principal indisponível — chamada caiu na reserva de modelo', {
+      organization_id: input.tenantId,
+      purpose,
+      provider: configDaReserva.provider,
+      modelo_principal: modeloDecidido,
+      modelo_de_reserva: decisaoDaReserva.modeloDeReserva,
+      motivo: decisaoDaReserva.motivo,
+      origem_da_escolha: origem,
+    });
+    startedAt = Date.now();
+    return chamarCom(configDaReserva, fabricaDaReservaDoModelo);
+  };
+
   try {
     input.abortSignal?.throwIfAborted();
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
@@ -1314,26 +1389,31 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
         config.provider === PROVEDOR_POR_ASSINATURA
           ? await chamarComRenovacaoNo401(config, factory)
           : await chamarCom(config, factory);
-    } catch (falhaDaAssinatura) {
-      const reserva = await reservaParaAFalha(falhaDaAssinatura);
-      if (reserva === null) throw falhaDaAssinatura;
-      const fabricaDaReserva = registry[reserva.provider];
+    } catch (falhaDoPrincipal) {
+      const reserva = await reservaParaAFalha(falhaDoPrincipal);
+      const fabricaDaReserva = reserva === null ? undefined : registry[reserva.provider];
       // Sem fábrica para a reserva (registry de teste, provedor removido):
-      // o erro original é o que interessa, e ele não muda de mão.
-      if (fabricaDaReserva === undefined) throw falhaDaAssinatura;
-      // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
-      // `llm_calls` grava o provedor que de fato falhou por último, e não o que
-      // a chamada começou a falar.
-      config = reserva;
-      await gateDeOrcamento(reserva);
-      deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
-        organization_id: input.tenantId,
-        purpose,
-        provider: reserva.provider,
-        model,
-        origem_da_escolha: decisao.origem,
-      });
-      result = await chamarCom(reserva, fabricaDaReserva);
+      // o erro original é o que interessa, e ele não muda de mão. Nesse caso a
+      // reserva CONFIGURADA ainda pode atender — mas nunca as duas.
+      if (reserva !== null && fabricaDaReserva !== undefined) {
+        // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
+        // `llm_calls` grava o provedor que de fato falhou por último, e não o que
+        // a chamada começou a falar.
+        config = reserva;
+        await gateDeOrcamento(reserva);
+        deps.log?.warn('llm: assinatura indisponível — chamada caiu na reserva', {
+          organization_id: input.tenantId,
+          purpose,
+          provider: reserva.provider,
+          model,
+          origem_da_escolha: decisao.origem,
+        });
+        result = await chamarCom(reserva, fabricaDaReserva);
+      } else {
+        // #4600: a assinatura não tem para onde cair, ou não é ela quem falhou.
+        // A reserva configurada é o único degrau — e é UMA tentativa.
+        result = await chamarNaReservaDoModelo(falhaDoPrincipal);
+      }
     }
   } catch (err) {
     err = identificarConteudoBloqueado(err) ?? err;
