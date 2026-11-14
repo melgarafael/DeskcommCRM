@@ -19,7 +19,7 @@ import { loadAuthUser, orgAtivaSemPortao } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { PROVEDORES_COM_CHAVE, type PaisDoProvedor } from "@/lib/ai/pontos/provedores";
+import { NOME_DO_PAIS, PROVEDORES_COM_CHAVE, type PaisDoProvedor } from "@/lib/ai/pontos/provedores";
 import { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 import { lerAmbiente, type FonteDeAmbiente } from "@/lib/instalacao/ambiente";
 
@@ -202,13 +202,6 @@ export function nomeDoOperador(op: Operador): string {
  * mudar um `pais` em `provedores.ts` muda esta data no mesmo commit.
  */
 export const CONSULTA_DOS_PAISES_EM = "2026-11-13";
-
-/** O nome do país como o contrato escreve — não é ISO-3166 de tela. */
-const NOME_DO_PAIS: Record<Exclude<PaisDoProvedor, "desconhecido" | "operador">, string> = {
-  US: "Estados Unidos",
-  CN: "China",
-  UE: "União Europeia",
-};
 
 /**
  * Todo provedor com chave que recebe dado da conversa, e não só quem conversa.

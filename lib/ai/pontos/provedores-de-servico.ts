@@ -43,6 +43,13 @@ export interface ProvedorDeServico {
   ondePegarAChave: string;
   /** Como a chave começa — vira placeholder do campo, para a pessoa reconhecer que copiou a coisa certa. */
   prefixoDaChave: string;
+  /**
+   * De onde veio a declaração de `pais` (#4519), no mesmo vocabulário do
+   * catálogo irmão: URL do documento público e data da consulta, ou `null`
+   * quando a declaração é a do catálogo (`CONSULTA_DOS_PAISES_EM`) — e sempre
+   * `null` para `desconhecido`/`operador`, que não têm documento a citar.
+   */
+  fonteDoPais: { url: string; consultadoEm: string } | null;
 }
 
 export const PROVEDORES_DE_SERVICO = [
@@ -58,6 +65,7 @@ export const PROVEDORES_DE_SERVICO = [
       "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.",
     ondePegarAChave: "https://elevenlabs.io/app/settings/api-keys",
     prefixoDaChave: "sk_…",
+    fonteDoPais: null,
   },
 ] as const satisfies readonly ProvedorDeServico[];
 // `as const satisfies`, mesma razão do arquivo irmão: anotar o tipo apagaria os

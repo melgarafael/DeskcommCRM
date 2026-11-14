@@ -72,7 +72,7 @@ export function textoDoWhatsappDoTelefone(
  * formato internacional, sem DDD, porque a tela não sabe o país de quem está
  * olhando — quem sabe é o servidor, e é ele quem fala primeiro.
  */
-function mensagemDeErro(err: unknown, t: (texto: string) => string): string {
+export function mensagemDeErro(err: unknown, t: (texto: string) => string): string {
   if (err instanceof ApiError) {
     const doServidor = err.message?.trim();
     // Sem `t()`: a frase já veio no idioma de quem opera (o servidor traduz com
@@ -175,16 +175,6 @@ export function TelefonesDaFicha({
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [rascunho, setRascunho] = useState<Rascunho>(RASCUNHO_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
-  /**
-   * O aviso antes de "Tornar principal" num extra COM rótulo (#4242).
-   *
-   * O telefone principal da ficha não tem onde guardar o rótulo: `contacts` só
-   * leva número, tipo e WhatsApp, e a função que troca os dois
-   * (`fn_tornar_telefone_principal`) não copia `rotulo`. Preservar exigiria
-   * coluna nova — migration, que esta entrega não faz. Então a tela avisa antes
-   * do clique, em vez de descartar a informação em silêncio.
-   */
-  const [confirmacao, setConfirmacao] = useState<{ id: string; rotulo: string } | null>(null);
 
   const ocupado =
     adicionar.isPending ||
@@ -270,27 +260,18 @@ export function TelefonesDaFicha({
     }
   }
 
+  /**
+   * "Tornar principal" de um extra troca direto: desde a 9354 o rótulo acompanha
+   * o número nos dois sentidos (`contacts.phone_label`), então não há perda
+   * para avisar (#4242).
+   */
   async function tornarPrincipalDoExtra(id: string) {
     setErro(null);
-    setConfirmacao(null);
     try {
       await tornarPrincipal.mutateAsync(id);
     } catch (err) {
       setErro(mensagemDeErro(err, t));
     }
-  }
-
-  /**
-   * "Tornar principal" de um extra: sem rótulo, troca direto (é o caminho de
-   * sempre); com rótulo, abre o aviso — o rótulo se perde na troca (#4242).
-   */
-  function pedirTrocaDoPrincipal(extra: TelefoneExtraDaFicha) {
-    setErro(null);
-    if (!extra.label) {
-      void tornarPrincipalDoExtra(extra.id);
-      return;
-    }
-    setConfirmacao({ id: extra.id, rotulo: extra.label });
   }
 
   function formulario(modo: Edicao["modo"]) {
@@ -371,6 +352,10 @@ export function TelefonesDaFicha({
                   {textoDoWhatsappDoTelefone(contato.phone_whatsapp, t)}
                 </span>
               )}
+              {/* #4242, item 2: o rótulo que veio do extra promovido. */}
+              {contato.phone_label && (
+                <span className="text-xs text-muted-foreground">{contato.phone_label}</span>
+              )}
               {podeEditar && edicao?.modo !== "principal" && (
                 <Button type="button" size="sm" variant="ghost" onClick={abrirEdicaoDoPrincipal} disabled={ocupado}>
                   {t("Editar")}
@@ -417,39 +402,13 @@ export function TelefonesDaFicha({
                   <Button type="button" size="sm" variant="ghost" onClick={() => abrirEdicaoDoExtra(extra)} disabled={ocupado}>
                     {t("Editar")}
                   </Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => pedirTrocaDoPrincipal(extra)} disabled={ocupado}>
+                  <Button type="button" size="sm" variant="outline" onClick={() => tornarPrincipalDoExtra(extra.id)} disabled={ocupado}>
                     {t("Tornar principal")}
                   </Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => remover(extra.id)} disabled={ocupado}>
                     {t("Remover")}
                   </Button>
                 </>
-              )}
-              {confirmacao?.id === extra.id && (
-                <div role="alert" className="w-full rounded-md border border-destructive/40 bg-destructive/5 p-3">
-                  <p className="text-sm">
-                    {t(
-                      "Este número vai virar o principal e o rótulo será descartado: o telefone principal da ficha não guarda rótulo.",
-                    )}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    <span>{t("Rótulo que será descartado:")}</span> <span>{confirmacao.rotulo}</span>
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button type="button" size="sm" onClick={() => tornarPrincipalDoExtra(extra.id)} disabled={ocupado}>
-                      {t("Continuar")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setConfirmacao(null)}
-                      disabled={ocupado}
-                    >
-                      {t("Cancelar")}
-                    </Button>
-                  </div>
-                </div>
               )}
               {edicao?.modo === "extra" && edicao.id === extra.id && formulario("extra")}
             </li>

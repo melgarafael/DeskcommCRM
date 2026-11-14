@@ -45,6 +45,35 @@ const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
   DELETE: "apagar",
 };
 
+/** A frase de versão vencida — a ÚNICA em que repetir é o conserto certo. */
+const MENSAGEM_DA_VERSAO_ATUAL =
+  "O compromisso mudou. A sincronização vai reler a versão atual.";
+
+/**
+ * A agenda de destino que o CRM marcou `available=false` (#4448). É a MESMA
+ * frase que o `claim` grava em `google_sync_error` quando recusa o compromisso
+ * — duas camadas, um vocabulário só.
+ */
+const MENSAGEM_DA_AGENDA_INDISPONIVEL =
+  'A agenda de destino não aparece mais na conta Google. A sincronização volta sozinha se ela reaparecer; para adiantar, use "Atualizar lista e sincronização" nas configurações da agenda.';
+
+/** Guarda que não é de versão: repetir não muda o resultado. */
+const MENSAGEM_DO_ERRO_PERMANENTE =
+  "A sincronização parou e não volta sozinha. Revise o compromisso e a conexão nas configurações.";
+
+/**
+ * O SQLSTATE de um erro de banco, quando há um. `PT409` é versão vencida (o
+ * único caso em que reler resolve); `42501` é guarda de autoridade/
+ * disponibilidade; `P0002`/`22023` são estado inválido.
+ */
+function codigoDoBanco(erro: unknown): string | null {
+  if (!(erro instanceof Error)) return null;
+  // Falha de transporte do PostgREST chega com `code: ""`, e o `googleRpc` copia
+  // a chave mesmo quando ela é `undefined`: nenhum dos dois é SQLSTATE.
+  const codigo = (erro as { code?: unknown }).code;
+  return codigo === undefined || codigo === null || codigo === "" ? null : String(codigo);
+}
+
 /**
  * A frase que o caminho de publicação PERSISTE quando o Google recusa (#950).
  *
@@ -61,6 +90,15 @@ const OPERACAO_POR_METODO: Record<PendingWrite["method"], OperacaoNoGoogle> = {
  * para ele ("O evento mudou no Google. Releia antes de publicar."), enquanto o
  * classificador não tem caso para 412 — cairia em `permanente`, "repetir não
  * muda o resultado", que é o oposto do que resolve uma pré-condição vencida.
+ *
+ * ⚠️ ERRO DE BANCO NÃO É RECUSA DO GOOGLE, e a frase tem de dizer o que ele
+ * significa (#4448). Antes, TODO erro com `code` virava "O compromisso mudou.
+ * A sincronização vai reler a versão atual." — verdade para o `PT409`
+ * (`google_stale`, que nasce de uma versão vencida e se resolve relendo) e
+ * MENTIRA para o `42501` (`google_connection_unavailable`): os oito
+ * compromissos do relato ficaram meses voltando a cada 15 min porque a frase
+ * mandava tentar de novo um compromisso que nada tinha de novo. Guarda que
+ * recusa por autoridade/disponibilidade não se conserta repetindo.
  */
 export function mensagemDaRecusaDePublicacao(
   erro: unknown,
@@ -70,9 +108,14 @@ export function mensagemDaRecusaDePublicacao(
     if (erro.status === 412) return erro.message;
     return classificarErroDoGoogle(erro, OPERACAO_POR_METODO[metodo]).mensagem;
   }
-  return erro instanceof Error && "code" in erro
-    ? "O compromisso mudou. A sincronização vai reler a versão atual."
-    : "Não foi possível sincronizar. Confira a conexão e tente novamente.";
+  const codigo = codigoDoBanco(erro);
+  if (codigo === null)
+    return "Não foi possível sincronizar. Confira a conexão e tente novamente.";
+  const texto = erro instanceof Error ? erro.message : "";
+  if (codigo === "PT409" || /google_stale|appointment_stale/.test(texto))
+    return MENSAGEM_DA_VERSAO_ATUAL;
+  if (texto.includes("google_connection_unavailable")) return MENSAGEM_DA_AGENDA_INDISPONIVEL;
+  return MENSAGEM_DO_ERRO_PERMANENTE;
 }
 
 /**
@@ -186,7 +229,15 @@ export async function reconcileAppointment(
     p_args: options.calendarFence ? { calendar_fence: options.calendarFence } : {},
   });
   if (!raw) return "busy";
-  if (typeof raw === "object" && "terminal" in raw && (raw.terminal === "redacted" || raw.terminal === "not_configured"))
+  if (
+    typeof raw === "object" &&
+    "terminal" in raw &&
+    (raw.terminal === "redacted" ||
+      raw.terminal === "not_configured" ||
+      // O claim recusou porque a agenda de destino está indisponível (#4448):
+      // o compromisso já está estacionado em `infinity` e com o motivo gravado.
+      raw.terminal === "calendar_unavailable")
+  )
     return "terminal";
   let a = appointmentSnapshotSchema.parse(raw);
   const call = (action: string, extra: Record<string, unknown> = {}) =>

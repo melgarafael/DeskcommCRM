@@ -12,6 +12,7 @@ import {
   MODOS_DE_ETIQUETA,
 } from "@/lib/inbox/marcador-da-conversa";
 import { PISO_DA_BUSCA, buscaValeConsulta } from "@/lib/inbox/termo-de-busca";
+import { NOME_DE_ARQUIVO_MAX } from "@/lib/messaging/media/nome-de-arquivo";
 
 /**
  * O que a API aceita ESCREVER. Cinco valores, e a ausência de `pending`/`resolved`
@@ -71,69 +72,163 @@ export const messageStatusSchema = z.enum([
   "failed",
 ]);
 
-export const sendMessageSchema = z
-  .object({
-    conversation_id: z.string().uuid(),
-    type: messageTypeSchema.default("text"),
-    body: z.string().min(1).max(4096).optional(),
-    media_url: z.string().url().optional(),
-    media_storage_path: z.string().min(1).max(500).optional(),
-    media_mime: z.string().optional(),
-    media_size_bytes: z.number().int().positive().optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-    /** Só em `type: "template"`. Nome exato aprovado na Meta. */
-    template_name: z.string().min(1).max(512).optional(),
-    /** Só em `type: "template"`. `pt_BR` e `pt` são templates DISTINTOS. */
-    template_language: z.string().min(2).max(16).optional(),
-    /**
-     * Só em `type: "template"`. Valor por slot, chaveado por `slotKey`
-     * (`lib/channels/meta/build-components.ts`) — a MESMA função que o formulário
-     * da tela usa. Chave montada de outro jeito é o mismatch voltando.
-     */
-    template_values: z.record(z.string(), z.string()).optional(),
-    /**
-     * A mensagem que esta responde — o id da NOSSA linha, não o do provider.
-     *
-     * Quem envia conhece o que está na tela, e na tela está o nosso id. A
-     * tradução para o id que a plataforma entende (`wamid`) é feita no handler,
-     * lendo a linha apontada: pedir o `wamid` aqui obrigaria a tela a conhecer
-     * o vocabulário do canal, que é justamente o que o seam existe para evitar.
-     */
-    reply_to_message_id: z.string().uuid().optional(),
-    /**
-     * Quem DECIDIU este envio, quando quem aperta é um token (#1613).
-     *
-     * O token é da organização, não de uma pessoa: sem este campo, a conversa
-     * perde que foi Fulano — do ERP, da agenda, do sistema de cobrança — que
-     * mandou a mensagem. O campo só CHEGA até o insert se a rota o validar
-     * (escopo `messages:on_behalf` no token + membro ativo desta org com papel
-     * de atendente ou acima): quem valida é a rota, porque o escopo mora na
-     * linha do token e o membership, no banco.
-     */
-    on_behalf_of_user_id: z.string().uuid().optional(),
-  })
-  .refine(
-    (d) => {
-      if (d.type === "contact") {
-        const id = d.metadata?.shared_contact_id;
-        if (typeof id === "string" && id.length > 0) return true;
-        const sc = d.metadata?.shared_contact;
-        if (sc && typeof sc === "object" && !Array.isArray(sc)) {
-          const phone = (sc as Record<string, unknown>).phone_number;
-          return typeof phone === "string" && phone.trim().length >= 8;
-        }
-        return false;
-      }
-      return !!d.body || !!d.media_url || !!d.media_storage_path;
-    },
-    {
-      message:
-        "body, media_url, media_storage_path, metadata.shared_contact_id or metadata.shared_contact.phone_number required",
-      path: ["body"],
-    },
-  );
+/**
+ * Os CAMPOS do envio, uma vez só.
+ *
+ * Existe separado do `.refine` porque a porta por telefone (#4513) precisa dos
+ * MESMOS campos com um identificador diferente — o `conversation_id` deixa de
+ * ser obrigatório e o telefone entra no lugar dele. Copiar o objeto seria
+ * copiar o contrato: dois lugares para o mesmo `type`, os mesmos tetos de mídia
+ * e o mesmo `on_behalf_of_user_id` divergindo na primeira mudança.
+ */
+const camposDoEnvio = z.object({
+  conversation_id: z.string().uuid(),
+  type: messageTypeSchema.default("text"),
+  body: z.string().min(1).max(4096).optional(),
+  media_url: z.string().url().optional(),
+  media_storage_path: z.string().min(1).max(500).optional(),
+  /**
+   * O nome ORIGINAL do anexo (#4457) — o que a pessoa escolheu no seletor.
+   *
+   * `media_storage_path` é `out-<uuid>.<ext>` e não tem nome legível; é este
+   * campo que viaja como `filename` do documento e fica gravado na linha para
+   * o balão e o download mostrarem o mesmo nome. Opcional de propósito: quem
+   * chama a API só com o storage_path (token) continua no basename, como antes.
+   *
+   * O mesmo campo nomeia o documento enviado por `media_url` (#4524): sem ele,
+   * o nome sai de `metadata.media_filename`, depois do último segmento da URL
+   * com extensão, e por fim de uma reserva legível pelo MIME — nunca `file`.
+   */
+  media_filename: z.string().min(1).max(NOME_DE_ARQUIVO_MAX).optional(),
+  media_mime: z.string().optional(),
+  media_size_bytes: z.number().int().positive().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Só em `type: "template"`. Nome exato aprovado na Meta. */
+  template_name: z.string().min(1).max(512).optional(),
+  /** Só em `type: "template"`. `pt_BR` e `pt` são templates DISTINTOS. */
+  template_language: z.string().min(2).max(16).optional(),
+  /**
+   * Só em `type: "template"`. Valor por slot, chaveado por `slotKey`
+   * (`lib/channels/meta/build-components.ts`) — a MESMA função que o formulário
+   * da tela usa. Chave montada de outro jeito é o mismatch voltando.
+   */
+  template_values: z.record(z.string(), z.string()).optional(),
+  /**
+   * A mensagem que esta responde — o id da NOSSA linha, não o do provider.
+   *
+   * Quem envia conhece o que está na tela, e na tela está o nosso id. A
+   * tradução para o id que a plataforma entende (`wamid`) é feita no handler,
+   * lendo a linha apontada: pedir o `wamid` aqui obrigaria a tela a conhecer
+   * o vocabulário do canal, que é justamente o que o seam existe para evitar.
+   */
+  reply_to_message_id: z.string().uuid().optional(),
+  /**
+   * Quem DECIDIU este envio, quando quem aperta é um token (#1613).
+   *
+   * O token é da organização, não de uma pessoa: sem este campo, a conversa
+   * perde que foi Fulano — do ERP, da agenda, do sistema de cobrança — que
+   * mandou a mensagem. O campo só CHEGA até o insert se a rota o validar
+   * (escopo `messages:on_behalf` no token + membro ativo desta org com papel
+   * de atendente ou acima): quem valida é a rota, porque o escopo mora na
+   * linha do token e o membership, no banco.
+   */
+  on_behalf_of_user_id: z.string().uuid().optional(),
+});
+
+/**
+ * O que a mensagem leva — o mesmo para os dois identificadores.
+ *
+ * Estrutural de propósito, e não `z.infer<typeof camposDoEnvio>`: os dois
+ * schemas diferem no IDENTIFICADOR (o `conversation_id` é obrigatório num e
+ * opcional no outro), e a regra do conteúdo não tem nada a ver com ele. Tipar
+ * pelo objeto inteiro amarraria a regra ao `conversation_id` obrigatório e
+ * faria o schema por telefone recusar a própria função.
+ */
+type ConteudoDoEnvio = {
+  type: z.infer<typeof messageTypeSchema>;
+  body?: string | undefined;
+  media_url?: string | undefined;
+  media_storage_path?: string | undefined;
+  metadata?: Record<string, unknown> | undefined;
+};
+
+/**
+ * A mensagem precisa levar ALGUMA coisa: texto, mídia ou o cartão de contato
+ * compartilhado. Vale igual para o envio por conversa e para o envio por
+ * telefone — o identificador não muda o que a mensagem é.
+ */
+function conteudoObrigatorio(d: ConteudoDoEnvio): boolean {
+  if (d.type === "contact") {
+    const id = d.metadata?.shared_contact_id;
+    if (typeof id === "string" && id.length > 0) return true;
+    const sc = d.metadata?.shared_contact;
+    if (sc && typeof sc === "object" && !Array.isArray(sc)) {
+      const phone = (sc as Record<string, unknown>).phone_number;
+      return typeof phone === "string" && phone.trim().length >= 8;
+    }
+    return false;
+  }
+  return !!d.body || !!d.media_url || !!d.media_storage_path;
+}
+
+export const sendMessageSchema = camposDoEnvio.refine(conteudoObrigatorio, {
+  message:
+    "body, media_url, media_storage_path, metadata.shared_contact_id or metadata.shared_contact.phone_number required",
+  path: ["body"],
+});
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
+/**
+ * O corpo da rota de envio aceita UM DOS DOIS identificadores (#4513).
+ *
+ * ─── Por que uma porta, e não uma rota nova ─────────────────────────────────
+ *
+ * O conector do DeskVoice manda telefone; a rota exigia `conversation_id`. A
+ * resolução de telefone já existe (`openSharedContactConversation` →
+ * `encontrarContatoPorTelefone` + `fn_upsert_wa_contact`), então o que faltava
+ * era a PORTA — não uma segunda regra de abertura de conversa. Uma rota irmã
+ * (`/messages/by-phone`) custaria um handler a mais, um caminho a manter e um
+ * `Idempotency-Key` a acertar em dobro; aqui a chave, o teto e o freio são os
+ * mesmos de sempre.
+ *
+ * ─── O contrato antigo não muda ────────────────────────────────────────────
+ *
+ * `sendMessageSchema` continua com `conversation_id` OBRIGATÓRIO e continua
+ * sendo o que a rota entrega ao handler. Quem já manda `conversation_id` não
+ * ganha campo novo, default novo nem chave nova no corpo validado — e é por
+ * isso que o hash da idempotência de quem já integra não muda de valor (o
+ * `phone_number` só existe no corpo de quem escolheu o caminho novo).
+ *
+ * ─── Os dois juntos são AMBIGUIDADE, não "o id vence" ──────────────────────
+ *
+ * Aqui o schema só exige que UM venha. Quem recusa a ambiguidade é a rota
+ * (`ambiguous_target`, 422), porque é ela que escolhe os identificadores — e
+ * escolher por conta própria é escolher errado em silêncio: mandar o telefone
+ * achando que está mandando para a conversa X é o tipo de engano que só
+ * aparece na caixa de entrada do cliente.
+ */
+export const sendMessagePorTelefoneSchema = camposDoEnvio
+  .extend({
+    conversation_id: z.string().uuid().optional(),
+    /**
+     * O número como o conector o tem (E.164 com `+`, ou só dígitos). Quem
+     * canoniza é a busca que já existe (`canonicalPhoneBR`) — este campo não
+     * normaliza nada, para o corpo validado continuar sendo o que chegou.
+     */
+    phone_number: z.string().min(8).max(32).optional(),
+  })
+  .refine(conteudoObrigatorio, {
+    message:
+      "body, media_url, media_storage_path, metadata.shared_contact_id or metadata.shared_contact.phone_number required",
+    path: ["body"],
+  })
+  .refine((d) => !!d.conversation_id || !!d.phone_number?.trim(), {
+    message: "Informe conversation_id ou phone_number.",
+    path: ["phone_number"],
+  });
+
+export type SendMessagePorTelefoneInput = z.infer<typeof sendMessagePorTelefoneSchema>;
 
 export const claimConversationSchema = z.object({
   expected_assignee: z.string().uuid().nullable().optional(),

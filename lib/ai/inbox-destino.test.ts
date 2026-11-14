@@ -55,6 +55,8 @@ describe("destinos da Central", () => {
     ["other", "ai_provider_credential", "/app/ai/credentials"],
     // O caso aberto na Central, na hora (`lib/escalacao/caso-na-central.handler.ts`).
     ["other", "agent_case", `/app/ai/cases?caso=${ID}`],
+    // Doc 301 = B: o run em que a automação segurou o que fala com o cliente.
+    ["other", "automation_rule_run", "/app/webhooks?aba=atividade"],
   ])("%s/%s abre somente contexto real", async (kind, ref, href) => {
     const l = leitor(); const [item] = await resolverDestinosDosAvisos(l.client, ORG, "admin", [aviso(kind, ref)]);
     expect(item?.destination).toMatchObject({ estado: "disponivel", href });

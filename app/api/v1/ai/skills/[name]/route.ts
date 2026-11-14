@@ -264,7 +264,7 @@ export async function PUT(
     requestId,
     metadata: {
       name,
-      keywords: parsed.data.matcher.any_keywords.length,
+      keywords: parsed.data.matcher.any_keywords?.length ?? 0,
       tags: parsed.data.matcher.any_tags?.length ?? 0,
     },
   });

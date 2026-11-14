@@ -39,6 +39,12 @@ export const REFERENCIAS_DE_AVISO = {
   // `lib/tarefas/criar-tarefa.ts`). Sem referência o botão cairia na Central,
   // meio caminho — quem recebe o aviso já está nela.
   task: { tabela: "crm_tasks", papel: "agent", rotulo: "Abrir tarefa", href: () => "/app/tasks" },
+  // Doc 301 = B: o run em que a automação SEGUROU o que fala com o cliente
+  // porque a IA mexeu no modo assistido (`lib/automation/parada-no-assistido.ts`).
+  // O botão de disparar mora na própria Central; este leva à aba Atividade, onde
+  // o run mostra o que rodou e o que ficou parado. `manager`: a mesma régua da
+  // tela de Webhooks e da rota que dispara.
+  automation_rule_run: { tabela: "automation_rule_runs", papel: "manager", rotulo: "Ver na atividade das automações", href: () => "/app/webhooks?aba=atividade" },
 } satisfies Record<string, Alvo>;
 
 export type InboxRefKind = keyof typeof REFERENCIAS_DE_AVISO | "organization" | "ai_budget" | "plano" | "job_queue" | "cron_jobs";
@@ -214,7 +220,7 @@ export const POLITICAS_DE_AVISO = {
   // `message_send_stuck` cala o aviso de automação aberto na mesma janela. A porta
   // passa pela MESMA conferência dos outros kinds: RLS de `conversations` no
   // client da request, papel `agent` da entrada `conversation`.
-  other: { refs: ["agenda_reminder_sender", "lead", "conversation", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
+  other: { refs: ["agenda_reminder_sender", "lead", "conversation", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case", "automation_rule_run"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 
 /**
