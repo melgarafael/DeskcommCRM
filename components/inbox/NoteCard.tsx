@@ -11,6 +11,7 @@ import { DocumentCard } from "@/components/inbox/media/DocumentCard";
 import { ImageMedia } from "@/components/inbox/media/ImageMedia";
 import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { VideoMedia } from "@/components/inbox/media/VideoMedia";
+import { TextoComLinks } from "@/components/inbox/TextoComLinks";
 import { kindFromMime } from "@/lib/messaging/media/upload-validation";
 import { partesDoCorpo } from "@/lib/notifications/mentions";
 
@@ -150,7 +151,7 @@ export function NoteCard({ note, onDelete }: Props) {
                   {`@${parte.mencao.nome}`}
                 </span>
               ) : (
-                <span key={i}>{parte.texto}</span>
+                <span key={i}><TextoComLinks texto={parte.texto} /></span>
               ),
             )}
           </p>
