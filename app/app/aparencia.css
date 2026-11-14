@@ -26,8 +26,10 @@ body:has([data-marca-org][data-aparencia-fonte]) {
   font-family: var(--aparencia-fonte-texto);
 }
 
-body:has([data-marca-org][data-aparencia]) :is(h1, h2, h3),
-body:has([data-marca-org][data-aparencia-fonte]) :is(h1, h2, h3) {
+/* Fora do menu: os rótulos de grupo do menu lateral também são `h2`, e lá a
+   fonte de título (uma serifa, em alguns templates) atrapalharia a leitura. */
+body:has([data-marca-org][data-aparencia]) :is(h1, h2, h3):not([data-casca="menu"] *),
+body:has([data-marca-org][data-aparencia-fonte]) :is(h1, h2, h3):not([data-casca="menu"] *) {
   font-family: var(--aparencia-fonte-titulo, var(--aparencia-fonte-texto));
   letter-spacing: var(--aparencia-titulo-espaco, normal);
 }
@@ -174,6 +176,24 @@ body:has([data-marca-org][data-aparencia]) [data-casca="menu"] {
   --color-text-muted: var(--aparencia-menu-texto-suave);
   --color-border: var(--aparencia-menu-borda);
   color: var(--aparencia-menu-texto);
+}
+
+/* O logotipo do PRODUTO (quando ninguém subiu logo) acompanha o texto do menu:
+   as cores dele são cravadas para o fundo de fábrica e sumiriam num menu
+   escuro de template claro. O logo enviado pela empresa é tratado pelo CSS do
+   template (`regrasDoLogo`, em `lib/aparencia/css.ts`). */
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] :is([data-marca-parte="nome"], [data-marca-parte="simbolo"]) {
+  fill: var(--aparencia-menu-texto);
+}
+body:has([data-marca-org][data-aparencia]) [data-casca="menu"] [data-marca-parte="sufixo"] {
+  fill: var(--aparencia-menu-texto-suave);
+}
+
+/* O esqueleto de carregamento lê a escala neutra de FÁBRICA, que nenhum
+   template troca; aqui ele passa a usar as superfícies do template. */
+body:has([data-marca-org][data-aparencia]) .ds-esqueleto {
+  --ds-esqueleto-corpo: var(--color-surface-elevated);
+  --ds-esqueleto-brilho: var(--color-border-strong);
 }
 
 body:has([data-marca-org][data-aparencia]) [data-casca="menu"] a {

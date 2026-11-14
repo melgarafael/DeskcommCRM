@@ -160,7 +160,10 @@ export function GaleriaDeAparencia({
       {emPrevia ? (
         <div
           role="status"
-          className="sticky top-2 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-accent bg-surface p-3 shadow-md"
+          // `fixed`, e não `sticky`: quem rola é o documento, e o `<main>` da casca
+          // (`overflow-auto`, sem altura própria) prenderia o sticky no lugar.
+          // Logo abaixo da barra do topo (h-14) e das faixas, em qualquer largura.
+          className="fixed top-[calc(var(--faixas-de-cima,0px)+4rem)] left-1/2 z-40 flex w-[min(44rem,calc(100vw-2rem))] -translate-x-1/2 flex-wrap items-center gap-3 rounded-lg border border-accent bg-surface p-3 shadow-lg"
         >
           <p className="min-w-0 flex-1 text-sm">
             <strong className="font-semibold">{t("Prévia")}</strong>{" "}

@@ -202,7 +202,7 @@ export const TEMPLATES: readonly Template[] = [
         acento: "#0d9488",
         casca: `radial-gradient(520px 420px at 4% 0%, #9ff0dd 0%, transparent 62%), radial-gradient(620px 460px at 98% 4%, ${tinta(sec("#9dbcff"), 70)} 0%, transparent 62%), radial-gradient(560px 460px at 55% 115%, #d9cbff 0%, transparent 62%), #eaf2f5`,
         cascaSutil: `linear-gradient(160deg, #e3f4f1, ${tinta(sec("#9dbcff"), 22)}), #eaf2f5`,
-        conteudo: "rgb(255 255 255 / 0.74)", conteudoSombra: "0 30px 60px -30px rgb(20 60 70 / 0.35)", topo: "transparent",
+        conteudo: "rgb(255 255 255 / 0.74)", conteudoSombra: "0 30px 60px -30px rgb(20 60 70 / 0.35)", topo: "rgb(255 255 255 / 0.72)",
         sombras: sombras("20 60 70", 1.6),
         menu: {
           fundo: "rgb(255 255 255 / 0.5)", fundoSolido: "#eef6f6", texto: "#13262b", textoSuave: "#56707a",
@@ -216,7 +216,7 @@ export const TEMPLATES: readonly Template[] = [
         acento: "#5eead4",
         casca: `radial-gradient(560px 440px at 4% 0%, rgb(45 212 191 / 0.42) 0%, transparent 62%), radial-gradient(640px 480px at 98% 4%, ${tinta(sec("#3b82f6"), 38)} 0%, transparent 62%), radial-gradient(560px 480px at 55% 118%, rgb(139 92 246 / 0.34) 0%, transparent 62%), #050912`,
         cascaSutil: `linear-gradient(160deg, #071a1c, ${tinta(sec("#3b82f6"), 10)}), #070b14`,
-        conteudo: "rgb(10 16 28 / 0.6)", conteudoSombra: "0 30px 70px -30px rgb(0 0 0 / 0.8)", topo: "transparent",
+        conteudo: "rgb(10 16 28 / 0.6)", conteudoSombra: "0 30px 70px -30px rgb(0 0 0 / 0.8)", topo: "rgb(10 16 28 / 0.72)",
         sombras: sombras("0 0 0", 4),
         menu: {
           fundo: "rgb(10 16 28 / 0.45)", fundoSolido: "#0b1424", texto: "#e2f2f1", textoSuave: "#86a1a7",
@@ -385,7 +385,7 @@ export const TEMPLATES: readonly Template[] = [
         acento: "#d6365f",
         casca: `linear-gradient(135deg, #ffb199 0%, ${sec("#ff8fab")} 45%, #ffc87a 100%)`,
         cascaSutil: `linear-gradient(135deg, #ffe7df, ${tinta(sec("#ff8fab"), 28)}), #fdf6f7`,
-        conteudo: "#fdf6f7", conteudoSombra: "0 30px 60px -28px rgb(120 20 50 / 0.5)", topo: "transparent",
+        conteudo: "#fdf6f7", conteudoSombra: "0 30px 60px -28px rgb(120 20 50 / 0.5)", topo: "rgb(253 246 247 / 0.88)",
         sombras: sombras("120 20 50", 1.3),
         menu: {
           fundo: "transparent", fundoSolido: "#ffb1a3", texto: "#3a1220", textoSuave: "#6b2a3d", borda: "transparent",
@@ -399,7 +399,7 @@ export const TEMPLATES: readonly Template[] = [
         acento: "#ff8f7a",
         casca: `radial-gradient(700px 500px at 0% 0%, rgb(255 122 89 / 0.45), transparent 60%), radial-gradient(700px 520px at 100% 100%, ${tinta(sec("#e2466f"), 42)}, transparent 60%), radial-gradient(500px 400px at 100% 0%, rgb(255 184 107 / 0.22), transparent 60%), #140a0e`,
         cascaSutil: `radial-gradient(700px 500px at 0% 0%, rgb(255 122 89 / 0.16), transparent 60%), #140a0e`,
-        conteudo: "#1a1014", conteudoSombra: "0 30px 70px -30px rgb(0 0 0 / 0.8)", topo: "transparent",
+        conteudo: "#1a1014", conteudoSombra: "0 30px 70px -30px rgb(0 0 0 / 0.8)", topo: "rgb(26 16 20 / 0.88)",
         sombras: sombras("0 0 0", 4),
         menu: {
           fundo: "transparent", fundoSolido: "#2a1218", texto: "#ffe4ea", textoSuave: "#c79aa6", borda: "transparent",
@@ -475,7 +475,7 @@ export const TEMPLATES: readonly Template[] = [
         acento: "#6d4fd6",
         casca: `radial-gradient(600px 460px at 0% 0%, #e2d6ff 0%, transparent 65%), radial-gradient(640px 480px at 100% 100%, ${tinta(sec("#ffc4e6"), 80)} 0%, transparent 62%), #f4f1fa`,
         cascaSutil: "#f4f1fa",
-        conteudo: "#ffffff", conteudoSombra: "0 30px 60px -30px rgb(80 50 140 / 0.35)", topo: "transparent",
+        conteudo: "#ffffff", conteudoSombra: "0 30px 60px -30px rgb(80 50 140 / 0.35)", topo: "rgb(255 255 255 / 0.85)",
         sombras: sombras("80 50 140", 1.3),
         menu: {
           fundo: "rgb(255 255 255 / 0.55)", fundoSolido: "#efeaf8", texto: "#2a2140", textoSuave: "#665c82",
@@ -489,7 +489,7 @@ export const TEMPLATES: readonly Template[] = [
         acento: "#a78bfa",
         casca: `radial-gradient(620px 480px at 0% 0%, rgb(139 92 246 / 0.32) 0%, transparent 65%), radial-gradient(640px 480px at 100% 100%, ${tinta(sec("#ec4899"), 20)} 0%, transparent 62%), #0d0a16`,
         cascaSutil: "#0d0a16",
-        conteudo: "#14101f", conteudoSombra: "0 30px 70px -30px rgb(0 0 0 / 0.8)", topo: "transparent",
+        conteudo: "#14101f", conteudoSombra: "0 30px 70px -30px rgb(0 0 0 / 0.8)", topo: "rgb(20 16 31 / 0.85)",
         sombras: sombras("0 0 0", 4),
         menu: {
           fundo: "rgb(255 255 255 / 0.04)", fundoSolido: "#151122", texto: "#e9e3fa", textoSuave: "#8f86ab",

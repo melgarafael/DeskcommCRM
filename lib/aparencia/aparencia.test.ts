@@ -204,7 +204,7 @@ describe("cssDoTemplate — o CSS que pinta a organização", () => {
   it("emite um bloco claro e um escuro, cada um no seu seletor", () => {
     const t = templatePorId("obsidiana")!;
     const css = cssDoTemplate(t, { escopo: escopoDoTemplate(t.id) })!;
-    const [[seletorClaro], [seletorEscuro]] = escopoDoTemplate(t.id) as [[string, string], [string, string]];
+    const [[seletorClaro], [seletorEscuro]] = escopoDoTemplate(t.id) as unknown as [[string, string], [string, string]];
     expect(css).toContain(`${seletorClaro} {`);
     expect(css).toContain(`${seletorEscuro} {`);
     expect(css).toContain(`--color-bg: ${t.cores.claro.fundo};`);
@@ -229,6 +229,13 @@ describe("cssDoTemplate — o CSS que pinta a organização", () => {
     }
   });
 
+  it("menu escuro em template claro troca o logo do revendedor (só nesses quatro)", () => {
+    const comTroca = TEMPLATES.filter((t) =>
+      cssDoTemplate(t, { escopo: escopoDoTemplate(t.id) })!.includes('[data-logo="escuro"]'),
+    ).map((t) => t.id);
+    expect(comTroca.sort()).toEqual(["neon", "obsidiana", "safira", "vinho"]);
+  });
+
   it("nenhum template vaza: todo seletor carrega o id do próprio template", () => {
     for (const t of TEMPLATES) {
       for (const escopo of [escopoDoTemplate(t.id), escopoDaAmostra(t.id)]) {
@@ -248,7 +255,9 @@ describe("cssDoTemplate — o CSS que pinta a organização", () => {
       const corpos = [...css.matchAll(/\{([^{}]*)\}/g)].map((m) => m[1]!);
       for (const corpo of corpos) {
         for (const linha of corpo.split("\n").filter((l) => l.trim())) {
-          expect(linha.trim()).toMatch(/^--[a-z0-9-]+: [^;{}<>]+;$/);
+          expect(linha.trim()).toMatch(
+            /^(--[a-z0-9-]+|display|background-color|padding|box-shadow): [^;{}<>]+;$/,
+          );
         }
       }
     }

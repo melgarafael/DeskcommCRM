@@ -160,6 +160,9 @@ export function SidebarContent({
         {(logo || logoEscuro) && !collapsed ? (
           // Sem arte própria para o escuro, preserva a proteção de contraste.
           <div
+            // `data-logo-selo`: sem logo do tema escuro, o selo branco do modo
+            // escuro também vale no menu escuro de um template (`aparencia.css`).
+            data-logo-selo={logoEscuro ? undefined : ""}
             className={cn(
               // `min-w-0`: item de flex não encolhe abaixo do `min-width: auto`,
               // que é o valor padrão — sem isso, uma arte própria larga empurra o
@@ -178,6 +181,7 @@ export function SidebarContent({
               <img
                 src={logo}
                 alt={nome}
+                data-logo={logoEscuro ? "claro" : undefined}
                 className={cn(
                   // `max-w-[min(10rem,100%)]` e não `max-w-[10rem]` sozinho, como o
                   // review mediu (#2723): a linha da logo tem ~207px úteis na barra
@@ -208,6 +212,7 @@ export function SidebarContent({
               <img
                 src={logoEscuro}
                 alt={nome}
+                data-logo="escuro"
                 className="hidden h-7 w-auto max-w-[min(10rem,100%)] object-contain dark:block"
               />
             ) : null}

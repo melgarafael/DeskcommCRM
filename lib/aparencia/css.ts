@@ -26,6 +26,7 @@
  * na tela Marca: a cor da empresa vence a do template, sempre.
  */
 
+import { luminanciaRelativa } from "@/lib/branding/contraste";
 import { cssDaMarca, escopoDeAparencia, type EscopoDeAparencia } from "@/lib/branding/css";
 import { REGUA_DO_PRODUTO } from "@/lib/branding/regua-do-produto";
 import { camadaDaOrganizacao, resolverMarca } from "@/lib/branding/resolve";
@@ -143,6 +144,45 @@ function bloco(seletor: string, decls: readonly Declaracao[]): string | null {
   return `${seletor} {\n${decls.map(([n, v]) => `  ${n}: ${v};`).join("\n")}\n}`;
 }
 
+/**
+ * O LOGO NUM MENU ESCURO DE TEMPLATE CLARO (Obsidiana, Safira, Néon, Vinho).
+ *
+ * O `Sidebar` escolhe entre o logo claro e o do escuro pelo modo da PÁGINA
+ * (`dark:hidden`/`dark:block`). Num template cujo menu é escuro no modo claro,
+ * isso poria o logo claro do revendedor sobre fundo escuro. Para esses, no
+ * bloco claro: o menu mostra o logo do escuro quando ele existe, e, quando não
+ * existe, o mesmo selo branco que o produto já usa no modo escuro.
+ *
+ * Declarações FIXAS, de uma lista fechada de propriedades; só o seletor varia,
+ * e ele carrega o id do template (o teste de vazamento confere).
+ */
+const PROPRIEDADES_DAS_REGRAS_FIXAS = new Set(["display", "background-color", "padding", "box-shadow"]);
+
+function regrasDoLogo(t: Template, escopo: EscopoDaAparencia): string | null {
+  if (luminanciaRelativa(t.cores.claro.menu.fundoSolido) >= 0.18) return null;
+  const [[claro]] = escopo;
+  const regras: [string, Declaracao[]][] = [
+    [`${claro} [data-casca="menu"] [data-logo="claro"]`, [["display", "none"]]],
+    [`${claro} [data-casca="menu"] [data-logo="escuro"]`, [["display", "block"]]],
+    [
+      `${claro} [data-casca="menu"] [data-logo-selo]`,
+      [
+        ["background-color", "#ffffff"],
+        ["padding", "4px 8px"],
+        ["box-shadow", "var(--shadow-sm)"],
+      ],
+    ],
+  ];
+  const blocos: string[] = [];
+  for (const [seletor, decls] of regras) {
+    for (const [nome, valor] of decls) {
+      if (!PROPRIEDADES_DAS_REGRAS_FIXAS.has(nome) || !VALOR_SEGURO.test(valor)) return null;
+    }
+    blocos.push(`${seletor} {\n${decls.map(([n, v]) => `  ${n}: ${v};`).join("\n")}\n}`);
+  }
+  return blocos.join("\n");
+}
+
 function reguaDoTemplate(t: Template): Regua {
   const base = (c: CoresDoModo) => [
     { chave: "--color-bg", hex: c.fundo },
@@ -196,6 +236,8 @@ export function cssDoTemplate(t: Template | null, { escopo, incluirAcento = true
     const acento = cssDoAcento(t, escopo);
     if (acento) blocos.push(acento);
   }
+  const logo = regrasDoLogo(t, escopo);
+  if (logo) blocos.push(logo);
   return blocos.join("\n");
 }
 
