@@ -30345,7 +30345,7 @@ create table if not exists public.passagens_de_atendimento (
   motivo_codigo    text not null check (motivo_codigo in (
                      'requested_human','suspected_optout','orcamento_de_ia','low_sentiment',
                      'low_confidence','critical_stage','legal_mention','refund_mention',
-                     'caso_escalado','verificacao_manual')),
+                     'caso_escalado','verificacao_manual','restricao_comercial')),
 
   -- ─── OS QUATRO NOMES QUE O GATE DE LGPD LÊ (ver o cabeçalho) ─────────────
   --   title   ← "o que o cliente quer", em uma linha (é o título do cartão)
@@ -30438,7 +30438,7 @@ alter table public.passagens_de_atendimento
   check (motivo_codigo in (
     'requested_human','suspected_optout','orcamento_de_ia','low_sentiment',
     'low_confidence','critical_stage','legal_mention','refund_mention',
-    'caso_escalado','verificacao_manual'));
+    'caso_escalado','verificacao_manual','restricao_comercial'));
 
 alter table public.passagens_de_atendimento
   drop constraint if exists passagens_de_atendimento_aviso_motivo_codigo_check;
@@ -75786,6 +75786,21 @@ comment on column public.ai_agent_versions.voz_quando is
   'recebendo texto). Decidido em lib/agent-engine/agent/voz-do-turno.ts, com a '
   'leitura do turno em lib/agent-engine/agent/pedido-de-audio.ts.';
 
+-- ---- cobrança do revendedor: plano em real, dólar ou euro (migration 9332) ----
+-- Troca o CHECK de `cobranca_planos.moeda` (nascido sem nome na 0583, só BRL)
+-- por um que aceita BRL, USD e EUR. Idempotente: derruba e recria o mesmo nome.
+-- Num bloco só: o update.sh aplica sem ON_ERROR_STOP e em autocommit, e um add
+-- que falhasse depois do drop solto deixaria a coluna sem CHECK nenhum.
+do $moeda_do_plano$
+begin
+  alter table public.cobranca_planos
+    drop constraint if exists cobranca_planos_moeda_check;
+  alter table public.cobranca_planos
+    add constraint cobranca_planos_moeda_check
+    check (moeda = any (array['BRL'::text, 'USD'::text, 'EUR'::text]));
+end
+$moeda_do_plano$;
+
 -- ---- a transferência de conversa leva o que anda junto (migration 9361, #4312) ----
 -- Espelho de supabase/migrations/20261112191200_9361_transferencia_leva_o_que_vai_junto.sql.
 -- Corpo idêntico ao da migration. Fica ACIMA da VARREDURA anon (cria/recria
@@ -80310,6 +80325,13 @@ notify pgrst, 'reload schema';
 -- O valor entrou no bloco ÚNICO de `passagens_de_atendimento_motivo_codigo_check`
 -- (logo depois do `create table public.passagens_de_atendimento`), e não aqui:
 -- reconstruir a constraint num segundo bloco é o que
+-- `tests/unit/baseline-constraint-reconstruida.test.ts` reprova. Par de
+-- `MOTIVOS_DA_PASSAGEM`/`FRASE_DO_MOTIVO` em `lib/escalacao/passagem.ts`.
+
+-- ---- motivo `restricao_comercial` na passagem (migration 9363) ----
+-- Mesmo desenho do `verificacao_manual` acima: o valor entrou no bloco ÚNICO de
+-- `passagens_de_atendimento_motivo_codigo_check` e no CHECK inline do `create
+-- table`, e não aqui — reconstruir a constraint num segundo bloco é o que
 -- `tests/unit/baseline-constraint-reconstruida.test.ts` reprova. Par de
 -- `MOTIVOS_DA_PASSAGEM`/`FRASE_DO_MOTIVO` em `lib/escalacao/passagem.ts`.
 

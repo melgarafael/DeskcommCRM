@@ -77,6 +77,12 @@ export const DICIONARIO: Traducoes = {
   "Não consegui cancelar o agendamento.": { es: "No pude cancelar la programación." },
   "Não consegui criar o agendamento. Confira os campos.": { es: "No pude crear la programación. Revise los campos." },
   "Não consegui salvar a edição. Confira os campos.": { es: "No pude guardar la edición. Revise los campos." },
+  // "Exibir todos" (segunda parte, #4431): a lista que cruza as conversas visíveis.
+  "Exibir todos": { es: "Ver todos" },
+  "Só desta conversa": { es: "Solo de esta conversación" },
+  "Envios de todos os clientes": { es: "Envíos de todos los clientes" },
+  "Nenhum envio agendado nas conversas que você enxerga.": { es: "Ningún envío programado en las conversaciones que puedes ver." },
+  "Não consegui carregar os envios.": { es: "No pude cargar los envíos." },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },
@@ -2567,6 +2573,7 @@ export const DICIONARIO: Traducoes = {
   Excluir: { es: "Eliminar" },
   Editar: { es: "Editar" },
   Voltar: { es: "Volver" },
+  "Voltar para Configurações": { es: "Volver a Configuración" },
   // ─── Configurações: hub, perfil e tenant ───
   "Dados inválidos.": { es: "Datos inválidos." },
   "Perfil atualizado.": { es: "Perfil actualizado." },
@@ -7631,6 +7638,11 @@ export const DICIONARIO: Traducoes = {
   "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada e a conversa passou para o atendimento humano.": {
     es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso: no se envió y la conversación pasó a la atención humana.",
   },
+  "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso nas duas tentativas: nada foi enviado, e a conversa continua com a IA.": {
+    es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso en los dos intentos: no se envió nada y la conversación sigue con la IA.",
+  },
+  "Texto barrado:": { es: "Texto bloqueado:" },
+  "Trecho que acionou a trava:": { es: "Fragmento que activó el bloqueo:" },
   "Esta empresa deixou valores e negociação só com a equipe, e a mensagem escrita pela IA falava disso: ela não foi enviada. A conversa não foi passada para a equipe nesta execução — abra a conversa e confira quem vai responder ao cliente.": {
     es: "Esta empresa dejó los valores y la negociación solo con el equipo, y el mensaje escrito por la IA hablaba de eso: no se envió. La conversación no pasó al equipo en esta ejecución: abre la conversación y revisa quién va a responder al cliente.",
   },
@@ -16234,6 +16246,8 @@ export const DICIONARIO: Traducoes = {
   "(percebido pelo Jev)": { es: "(detectado por Jev)" },
   "O assistente não teve confiança suficiente para responder":
     { es: "El asistente no estaba lo bastante seguro para responder" },
+  "A trava de valores e negociação barrou a resposta":
+    { es: "El bloqueo de valores y negociación frenó la respuesta" },
   "O negócio chegou a uma etapa que pede uma pessoa":
     { es: "El negocio llegó a una etapa que requiere una persona" },
   "A conversa tocou em assunto jurídico":
@@ -18778,7 +18792,7 @@ export const DICIONARIO: Traducoes = {
   "Deixe um limite vazio para não limitar.": { es: "Deja un límite vacío para no limitar." },
   "Cancelar edição": { es: "Cancelar edición" },
   "Plano salvo.": { es: "Plan guardado." },
-  "Confira os campos do plano: preço a partir de R$ 5,00, teste grátis de 0 a 90 dias e limites a partir de 1.": { es: "Revisa los campos del plan: precio desde R$ 5,00, prueba gratis de 0 a 90 días y límites desde 1." },
+  "Confira os campos do plano: preço a partir de 5,00 na moeda do plano, teste grátis de 0 a 90 dias e limites a partir de 1.": { es: "Revisa los campos del plan: precio desde 5,00 en la moneda del plan, prueba gratis de 0 a 90 días y límites desde 1." },
   "O preço e o intervalo de um plano travam quando alguém o assina: para mudar, arquive e crie outro.": { es: "El precio y el intervalo de un plan se bloquean cuando alguien lo contrata: para cambiarlos, archívalo y crea otro." },
   "Nenhum plano ainda. Crie o primeiro no formulário acima: nome, preço, dias de teste grátis e, se quiser, os limites. Depois atribua-o a cada empresa no painel dela, em Tenants.": { es: "Todavía no hay planes. Crea el primero en el formulario de arriba: nombre, precio, días de prueba gratis y, si quieres, los límites. Después asígnalo a cada empresa en su panel, en Tenants." },
   "Plano do cadastro": { es: "Plan del registro" },
