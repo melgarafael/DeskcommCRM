@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { BuscarEEscolher, mensagemDeErro, type Opcao } from "@/components/crm-b2b/BuscarEEscolher";
 import { CamposDoVinculo, VINCULO_VAZIO, type Vinculo } from "@/components/crm-b2b/CamposDoVinculo";
+import { AdicionarPessoaComContato } from "@/components/crm-b2b/AdicionarPessoaComContato";
 import { EditarVinculo, type VinculoEmEdicao } from "@/components/crm-b2b/EditarVinculo";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
@@ -92,6 +93,7 @@ export function CompanyDetailClient({ id }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pessoaAberto, setPessoaAberto] = useState(false);
+  const [contatoAberto, setContatoAberto] = useState(false);
   const [vinculo, setVinculo] = useState<Vinculo>(VINCULO_VAZIO);
   const [erroDasPessoas, setErroDasPessoas] = useState<string | null>(null);
   const [emEdicao, setEmEdicao] = useState<VinculoEmEdicao | null>(null);
@@ -292,11 +294,16 @@ export function CompanyDetailClient({ id }: Props) {
         <Card className="space-y-2 p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-medium">{t("Pessoas / decisores")}</h2>
-            {/* Piso `manager`: o mesmo do POST/DELETE de company-people e da RLS. */}
-            {podeExcluir ? (
-              <Button size="sm" variant="outline" onClick={() => setPessoaAberto(true)}>
-                {t("Adicionar pessoa")}
-              </Button>
+            {/* Piso `agent` para ADICIONAR (migration 9370); remover o vínculo segue `manager`. */}
+            {podeEditarVinculo ? (
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => setContatoAberto(true)}>
+                  {t("Adicionar pessoa com contato")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setPessoaAberto(true)}>
+                  {t("Adicionar pessoa")}
+                </Button>
+              </div>
             ) : null}
           </div>
           {erroDasPessoas ? (
@@ -461,6 +468,13 @@ export function CompanyDetailClient({ id }: Props) {
       >
         <CamposDoVinculo valor={vinculo} onChange={setVinculo} />
       </BuscarEEscolher>
+
+      <AdicionarPessoaComContato
+        empresaId={id}
+        aberto={contatoAberto}
+        onAbertoChange={setContatoAberto}
+        onSalvo={() => void load()}
+      />
 
       <EditarVinculo
         key={emEdicao ? `vinculo|${emEdicao.id}` : "vinculo-fechado"}
