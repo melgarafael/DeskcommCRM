@@ -109,7 +109,7 @@ CRONS="
 # com prazo na janela, com responsável, e que ainda não virou item da Central.
 */5 * * * *|45|api/v1/cron/task-reminder
 # A TAREFA QUE SE REPETE (#4595). De 10 em 10 minutos, e não de hora em hora: o
-# que ela decide é a hora de PAREDE escolhida pela pessoa ("toda segunda às 9h"),
+# que ela decide é a hora de PAREDE escolhida pela pessoa — toda segunda às 9h —,
 # e uma varredura horária criaria a ocorrência entre as 9h e as 10h. Barato:
 # um índice parcial sobre as séries, e quem não tem série não chega ao insert.
 # Idempotente pelo índice único (recurrence_source_id, due_date) — duas rodadas
