@@ -4954,7 +4954,9 @@ export const DICIONARIO: Traducoes = {
   "sem turnos no período": { es: "sin turnos en el período" },
   "conta só os turnos que a fila ainda guarda (padrão: 90 dias)": { es: "cuenta solo los turnos que la cola aún guarda (predeterminado: 90 días)" },
   "Taxa de cache": { es: "Tasa de caché" },
-  "do texto enviado à IA veio do cache, que custa bem menos": { es: "del texto enviado a la IA vino de la caché, que cuesta mucho menos" },
+  "do texto das chamadas que o provedor guarda em cache (entrada ≥ 1.024 tokens); as menores ficam fora da conta": {
+    es: "del texto de las llamadas que el proveedor guarda en caché (entrada ≥ 1.024 tokens); las menores quedan fuera de la cuenta",
+  },
   "Tempo de uma chamada à IA": { es: "Tiempo de una llamada a la IA" },
   "Tempo de uma chamada à IA por dia (segundos)": { es: "Tiempo de una llamada a la IA por día (segundos)" },
   "Quanto gastou por dia (US$)": { es: "Cuánto gastaste por día (US$)" },

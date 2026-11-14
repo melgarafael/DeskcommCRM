@@ -246,6 +246,53 @@ function poolDoAlerta(runs: number, grupos: GrupoFalso[]) {
   return { pool: pool as unknown as pg.Pool, consultas, inserts };
 }
 
+/**
+ * Dublê do alerta com as chamadas CRUAS: aplica o mesmo recorte que a consulta
+ * pediu e agrega como o `group by purpose, provider` do SQL. Sem o filtro na
+ * consulta, o classificador entra no denominador e a decisão muda — a falta da
+ * régua aparece como NÚMERO errado, não como um teste que só lê o texto do SQL.
+ */
+function poolDoAlertaDeChamadas(runs: number, chamadas: ChamadaFalsa[]) {
+  const consultas: Array<{ sql: string; params: unknown[] }> = [];
+  const inserts: unknown[][] = [];
+  const filtro = `input_tokens >= ${CACHEABLE_INPUT_TOKENS_MIN}`;
+  const pool = {
+    query: async (sql: string, params: unknown[] = []) => {
+      consultas.push({ sql, params });
+      if (sql.includes('from metrics')) {
+        return { rows: [{ runs, avg_ratio: 0.2 }] };
+      }
+      if (sql.includes('from llm_calls')) {
+        const elegiveis = sql.includes(filtro)
+          ? chamadas.filter((c) => c.input_tokens >= CACHEABLE_INPUT_TOKENS_MIN)
+          : chamadas;
+        const grupos = new Map<string, GrupoFalso>();
+        for (const c of elegiveis) {
+          const chave = `${c.purpose}|${c.provider}`;
+          const g = grupos.get(chave) ?? {
+            purpose: c.purpose,
+            provider: c.provider,
+            calls: 0,
+            input_tokens: 0,
+            cache_read_tokens: 0,
+          };
+          g.calls += 1;
+          g.input_tokens += c.input_tokens;
+          g.cache_read_tokens += c.cache_read_tokens;
+          grupos.set(chave, g);
+        }
+        return { rows: [...grupos.values()].sort((a, b) => b.input_tokens - a.input_tokens) };
+      }
+      if (sql.includes('insert into agent_inbox_items')) {
+        inserts.push(params);
+        return { rows: [], rowCount: 1 };
+      }
+      return { rows: [] };
+    },
+  };
+  return { pool: pool as unknown as pg.Pool, consultas, inserts };
+}
+
 const KNOBS = { windowMs: 86_400_000, cacheHitAlertThreshold: 0.4, cacheHitAlertMinRuns: 3 };
 
 describe('evaluateCacheHitAlert: decidido só pelas chamadas cacheáveis (#4362)', () => {
@@ -294,5 +341,33 @@ describe('evaluateCacheHitAlert: decidido só pelas chamadas cacheáveis (#4362)
     expect(body).toContain('anthropic 16.7% (328 chamadas)');
     // o texto antigo afirmava uma causa não medida
     expect(body).not.toContain('Prefixo do prompt possivelmente');
+  });
+
+  it('o classificador de 800 tokens não volta ao denominador: sem o filtro na consulta, o aviso dispararia', async () => {
+    // O caso do relato B da issue: 10 turnos grandes a 50% de cache (metade da
+    // entrada lida do cache) e 318 classificadores curtos que NUNCA cacheiam.
+    // Somando tudo, a razão é 25.000/304.400 = 8,2% e o aviso abre; só nas
+    // chamadas cacheáveis ela é 25.000/50.000 = 50,0% — acima do alvo.
+    const chamadas: ChamadaFalsa[] = [
+      ...Array.from({ length: 10 }, () => ({
+        purpose: 'agent_turn',
+        provider: 'openai',
+        input_tokens: 5_000,
+        cache_read_tokens: 2_500,
+      })),
+      ...Array.from({ length: 318 }, () => ({
+        purpose: 'classifier',
+        provider: 'openai',
+        input_tokens: 800,
+        cache_read_tokens: 0,
+      })),
+    ];
+    const { pool, inserts } = poolDoAlertaDeChamadas(318, chamadas);
+
+    const res = await evaluateCacheHitAlert(pool, 'org-1', KNOBS);
+
+    expect(res.avgRatio).toBeCloseTo(0.5, 6);
+    expect(res.alerted).toBe(false);
+    expect(inserts).toHaveLength(0);
   });
 });

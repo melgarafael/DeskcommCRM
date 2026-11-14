@@ -18,6 +18,15 @@ const agregadoSchema = z.object({
   input_tokens: numero,
   output_tokens: numero,
   cache_read_tokens: numero,
+  /**
+   * Recorte CACHEÁVEL do mesmo bucket (entrada >= MIN_TOKENS_DE_ENTRADA_PARA_CACHE,
+   * `fn_uso_de_ia` da migration 9366). A taxa de cache da tela divide por estes,
+   * não pelos totais acima: chamada abaixo do piso do provedor nunca cacheia e
+   * afundaria a taxa sem defeito de prefixo nenhum (#4362).
+   */
+  chamadas_cacheaveis: numero,
+  input_tokens_cacheaveis: numero,
+  cache_read_tokens_cacheaveis: numero,
   cache_write_tokens: numero,
   p50_latency_ms: numero,
   p95_latency_ms: numero,
@@ -45,8 +54,18 @@ export interface UsagePayload {
     invocations: number;
     input_tokens: number;
     cache_read_tokens: number;
-    /** cache_read / input (o input já inclui a parte lida do cache). */
+    /**
+     * cache_read / input das chamadas CACHEÁVEIS (o input já inclui a parte lida
+     * do cache). É a régua do #4362: entrada abaixo de
+     * MIN_TOKENS_DE_ENTRADA_PARA_CACHE não entra — o provedor não guarda prefixo
+     * desse tamanho, então ela não diz nada sobre o prefixo do prompt.
+     */
     cache_hit_rate: number;
+    /** tokens de entrada e de cache das chamadas cacheáveis, para quem quiser a conta crua */
+    cacheable_input_tokens: number;
+    cacheable_cache_read_tokens: number;
+    /** chamadas cacheáveis — o denominador de `cache_hit_rate` em contagem, não em tokens */
+    cacheable_invocations: number;
     agent_turns: number;
     /** null quando não houve turno: zero seria um custo inventado. */
     avg_cost_per_turn_cents: number | null;
@@ -110,7 +129,14 @@ export function montarPayloadDeUso(
       invocations: t.chamadas,
       input_tokens: t.input_tokens,
       cache_read_tokens: t.cache_read_tokens,
-      cache_hit_rate: razao(t.cache_read_tokens, t.input_tokens),
+      // A taxa NÃO é cache_read/input de tudo: as chamadas abaixo do piso do
+      // provedor (classificadores, conferências curtas) nunca cacheiam e
+      // entravam no denominador como "0% de cache" (#4362). Ver a régua em
+      // lib/ai/cache-de-prompt.ts.
+      cache_hit_rate: razao(t.cache_read_tokens_cacheaveis, t.input_tokens_cacheaveis),
+      cacheable_input_tokens: t.input_tokens_cacheaveis,
+      cacheable_cache_read_tokens: t.cache_read_tokens_cacheaveis,
+      cacheable_invocations: t.chamadas_cacheaveis,
       agent_turns: t.turnos,
       avg_cost_per_turn_cents: t.turnos > 0 ? t.custo_dos_turnos_cents / t.turnos : null,
       p50_latency_ms: t.p50_latency_ms,

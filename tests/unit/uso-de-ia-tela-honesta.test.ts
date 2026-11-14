@@ -17,8 +17,11 @@ import { describe, expect, it } from "vitest";
 import { montarPayloadDeUso, usoDeIaSchema, type UsoDeIaDoBanco } from "@/lib/ai/usage/aggregate";
 
 const ROTA = readFileSync("app/api/v1/ai/usage/route.ts", "utf8");
-// A migration que define a função VIVA: a 0586 criou, a 9097 (#3897) redefiniu contando o follow-up.
-const MIGRATION = readFileSync("supabase/migrations/20261103163315_9097_uso_de_ia_conta_followup_como_turno.sql", "utf8");
+// A migration que define a função VIVA: a 0586 criou, a 9097 (#3897) redefiniu
+// contando o follow-up, e a 9366 (#4362) acrescentou o recorte cacheável.
+const MIGRATION = readFileSync("supabase/migrations/20261113183000_9366_uso_de_ia_cache_so_cacheaveis.sql", "utf8");
+// A régua do que é cacheável, para a migration e o TypeScript não divergirem.
+const REGUA = readFileSync("lib/ai/cache-de-prompt.ts", "utf8");
 const BASELINE = readFileSync("supabase/baseline.sql", "utf8");
 const ASSINATURA = "public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)";
 
@@ -88,6 +91,9 @@ const zero = {
   output_tokens: 0,
   cache_read_tokens: 0,
   cache_write_tokens: 0,
+  chamadas_cacheaveis: 0,
+  input_tokens_cacheaveis: 0,
+  cache_read_tokens_cacheaveis: 0,
   p50_latency_ms: 0,
   p95_latency_ms: 0,
 };
@@ -103,6 +109,9 @@ describe("montarPayloadDeUso", () => {
       input_tokens: 10_000,
       output_tokens: 2_000,
       cache_read_tokens: 6_000,
+      chamadas_cacheaveis: 1500,
+      input_tokens_cacheaveis: 10_000,
+      cache_read_tokens_cacheaveis: 6_000,
       p50_latency_ms: 800,
       p95_latency_ms: 4000,
       turnos: 40,
@@ -136,6 +145,65 @@ describe("montarPayloadDeUso", () => {
     expect(p.totals.avg_cost_per_turn_cents).toBe(5);
     expect(p.totals.cache_hit_rate).toBe(0.6);
     expect(p.by_kind).toEqual({ agent_turn: 1200, intent_router: 300 });
+  });
+
+  it("a taxa de cache NÃO conta chamada que o provedor nunca guarda (#4362)", () => {
+    // O caso do relato B da issue: um turno grande cacheando bem e uma pilha de
+    // classificadores curtos. Somando TUDO, a taxa é 8,2% e a tela diz que o
+    // cache está péssimo; só nas cacheáveis ela é 50,0%. Se alguém voltar a
+    // dividir `cache_read_tokens` por `input_tokens`, este caso reprova.
+    const p = montarPayloadDeUso(
+      {
+        ...uso,
+        totais: {
+          ...zero,
+          chamadas: 328,
+          custo_cents: 900,
+          input_tokens: 304_400,
+          cache_read_tokens: 25_000,
+          chamadas_cacheaveis: 10,
+          input_tokens_cacheaveis: 50_000,
+          cache_read_tokens_cacheaveis: 25_000,
+          turnos: 10,
+          custo_dos_turnos_cents: 900,
+        },
+      },
+      range,
+    );
+    expect(p.totals.cache_hit_rate).toBe(0.5);
+    expect(p.totals.cache_hit_rate).not.toBe(0.0821);
+    // O bruto continua exposto: custo e volume não mudaram de definição.
+    expect(p.totals.input_tokens).toBe(304_400);
+    expect(p.totals.cache_read_tokens).toBe(25_000);
+    expect(p.totals.cacheable_invocations).toBe(10);
+  });
+
+  it("sem chamada cacheável no período a taxa é 0, não uma divisão por zero", () => {
+    const p = montarPayloadDeUso(
+      {
+        ...uso,
+        totais: {
+          ...zero,
+          chamadas: 300,
+          input_tokens: 90_000,
+          cache_read_tokens: 400,
+          turnos: 0,
+          custo_dos_turnos_cents: 0,
+        },
+      },
+      range,
+    );
+    expect(p.totals.cache_hit_rate).toBe(0);
+    expect(p.totals.cacheable_invocations).toBe(0);
+  });
+
+  it("a migration e a régua em TypeScript cortam no MESMO número", () => {
+    const naRegua = /MIN_TOKENS_DE_ENTRADA_PARA_CACHE = (\d+)/.exec(REGUA)?.[1];
+    expect(naRegua).toBe("1024");
+    expect(MIGRATION).toContain(`input_tokens >= ${naRegua}`);
+    expect(MIGRATION, "os três campos do recorte saíram do agregado").toContain("input_tokens_cacheaveis");
+    expect(MIGRATION).toContain("cache_read_tokens_cacheaveis");
+    expect(MIGRATION).toContain("chamadas_cacheaveis");
   });
 
   it("a taxa de passagem usa todos os inbounds do período", () => {
