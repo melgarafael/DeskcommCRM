@@ -264,12 +264,18 @@ export interface ResultadoDaGeracao {
 export async function gerarOcorrencias(
   porta: Db,
   agora: Date = new Date(),
+  orgsParadas: ReadonlySet<string> = new Set(),
 ): Promise<ResultadoDaGeracao> {
   const series = await lerSeries(porta, agora);
 
   let criadas = 0;
   let jaExistiam = 0;
   for (const serie of series) {
+    // Organização parada não gasta nem fala (`lib/organizacao/operante.ts`): a
+    // série dela continua guardada, e volta a gerar quando a org voltar. Sem
+    // esta linha a suspensão não teria efeito nenhum sobre a recorrência.
+    if (orgsParadas.has(serie.organization_id)) continue;
+
     const [resolvida] = ocorrenciasAResolver([serie], agora);
     if (!resolvida) continue;
 

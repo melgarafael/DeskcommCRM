@@ -135,6 +135,14 @@ describe("o que NUNCA vira ocorrência", () => {
     await gerarOcorrencias(db, SEGUNDA_8H);
     expect(await ocorrenciasDe(desligada)).toHaveLength(0);
   });
+
+  it("série de organização PARADA não gera — a suspensão vale para a recorrência", async () => {
+    const parada = await criarTarefa(ORG_MA, "Carteira da org suspensa", REGRA_SEGUNDA_9H);
+
+    await gerarOcorrencias(db, SEGUNDA_8H, new Set([ORG_MA]));
+
+    expect(await ocorrenciasDe(parada)).toHaveLength(0);
+  });
 });
 
 describe("o fuso é o da organização", () => {
