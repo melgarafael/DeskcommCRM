@@ -249,6 +249,12 @@ interface HistoryRow {
   sent_via?: string | null;
   /** #4580 — a PESSOA que enviou pelo CRM; nulo em IA, automação, sistema e celular. */
   sent_by_user_id?: string | null;
+  /**
+   * #1613 — a pessoa "em nome de" quem um token enviou. É a coluna que o servidor
+   * grava; `metadata.sent_on_behalf` só vale quando ela está preenchida (a mesma
+   * guarda do balão e do PDF).
+   */
+  sent_on_behalf_of_user_id?: string | null;
   /** #2729: `group_sender` do ingest de grupo — a única fonte de quem falou. */
   metadata: Record<string, unknown> | null;
   /** O último modelo aprovado da conversa, trazido de FORA da janela — ver `MODELO_FIXADO_DIAS`. */
@@ -314,16 +320,18 @@ function textoUtil(valor: unknown): string | null {
  * do atendente não resolve.
  */
 export function remetenteDaSaida(
-  m: Pick<HistoryRow, 'sent_via' | 'sent_by_user_id' | 'metadata'>,
+  m: Pick<HistoryRow, 'sent_via' | 'sent_by_user_id' | 'sent_on_behalf_of_user_id' | 'metadata'>,
   nomesDaEquipe: ReadonlyMap<string, string | null> = new Map(),
 ): { name: string; phone: null } | null {
   const sentVia = m.sent_via ?? null;
   if (sentVia === null) return null;
 
-  const emNomeDe = m.metadata?.sent_on_behalf;
+  // O nome gravado em `metadata.sent_on_behalf` só vale com a coluna preenchida:
+  // é a guarda do balão (`MessageBubble`) e do PDF (`exporta-pdf`).
+  const emNomeDe = m.sent_on_behalf_of_user_id ? m.metadata?.sent_on_behalf : undefined;
   if (emNomeDe !== null && typeof emNomeDe === 'object') {
-    const nome = textoUtil((emNomeDe as Record<string, unknown>).user_name);
-    if (nome !== null) return { name: `Atendente · ${nome}`, phone: null };
+    const nome = primeiroNomeDeQuemEnviou((emNomeDe as Record<string, unknown>).user_name);
+    return { name: nome !== null ? `Atendente · ${nome}` : 'Atendente', phone: null };
   }
 
   if (sentVia === 'ai') {
@@ -439,7 +447,7 @@ export async function getLeadContext(
             .query<HistoryRow>(
               `select * from (
                 (select id, direction, type, body, media_url, media_storage_path, media_mime,
-                        media_derived_text, sent_at, metadata, sent_via, sent_by_user_id, false as fixado
+                        media_derived_text, sent_at, metadata, sent_via, sent_by_user_id, sent_on_behalf_of_user_id, false as fixado
                  from messages
                  where organization_id = $1 and conversation_id = $2
                    and direction in ('inbound', 'outbound')
@@ -451,7 +459,7 @@ export async function getLeadContext(
                  limit $3)
                 union all
                 (select id, direction, type, body, media_url, media_storage_path, media_mime,
-                        media_derived_text, sent_at, metadata, sent_via, sent_by_user_id, true as fixado
+                        media_derived_text, sent_at, metadata, sent_via, sent_by_user_id, sent_on_behalf_of_user_id, true as fixado
                  from messages
                  where organization_id = $1 and conversation_id = $2
                    and direction = 'outbound' and type = 'template'

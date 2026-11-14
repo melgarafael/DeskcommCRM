@@ -190,7 +190,30 @@ describe("#4580 — o histórico diz quem escreveu cada mensagem enviada", () =>
     expect(historico).toBeDefined();
     // Duas janelas (últimas N mensagens e o modelo fixado): sem a coluna em UMA
     // delas, metade do histórico volta a não dizer quem escreveu — em silêncio.
-    expect(historico!.sql.split("sent_via, sent_by_user_id").length - 1).toBe(2);
+    expect(historico!.sql.split("sent_via, sent_by_user_id, sent_on_behalf_of_user_id").length - 1).toBe(2);
+  });
+
+  it("'em nome de' só vale com a coluna gravada pelo servidor, a mesma guarda do balão", async () => {
+    const { ctx } = await contexto([
+      linha({
+        id: "m2",
+        sent_via: "ai",
+        sent_on_behalf_of_user_id: null,
+        metadata: { ai_actor_name: "Clara", sent_on_behalf: { user_name: "Outro Nome" } },
+      }),
+      linha({
+        id: "m1",
+        sent_via: "system",
+        sent_on_behalf_of_user_id: PESSOA,
+        metadata: { sent_on_behalf: { user_name: "Andreia Cristina de Souza", token_name: "ERP" } },
+      }),
+    ]);
+    expect(ctx.messages.map((m) => m.sender)).toEqual([
+      // coluna preenchida: a pessoa, e só o primeiro nome, como nos outros ramos
+      { name: "Atendente · Andreia", phone: null },
+      // coluna nula: o metadata não decide o autor
+      { name: "IA · Clara", phone: null },
+    ]);
   });
 
   it("conversa sem enviada de gente não paga a consulta de nomes", async () => {
