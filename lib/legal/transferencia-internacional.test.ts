@@ -11,8 +11,10 @@
  * O que este arquivo prende:
  *   1. a lista sai do REGISTRO de provedores ativos (credencial ativa e validada
  *      + chave de plataforma do `.env`), não de uma constante paralela;
- *   2. cada provedor ativo entra com o país declarado no catálogo;
- *   3. provedor sem país declarado aparece com a frase própria — nunca sumido;
+ *   2. cada provedor ativo entra com o que o catálogo sabe dele: o país que ele
+ *      DECLARA para processamento (com fonte e data) ou a SEDE registrada — e a
+ *      cláusula diz qual dos dois é, porque não são a mesma coisa (#4588);
+ *   3. provedor sem sede e sem declaração aparece com a frase própria — nunca sumido;
  *   4. sem nenhum ativo, a cláusula diz que não há transferência por IA;
  *   5. leitura que falhou NÃO vira "não há transferência" — é `null`, e a
  *      cláusula tem frase própria para isso.
@@ -66,9 +68,11 @@ describe("clausulaDeTransferenciaInternacional — o texto vem dos provedores at
   it("dois provedores ativos: cita os DOIS países, com a data, e não cita os inativos", () => {
     const texto = clausulaDeTransferenciaInternacional(["anthropic", "google"]);
 
-    expect(texto).toContain("Anthropic (Estados Unidos)");
-    expect(texto).toContain("Google (Estados Unidos)");
-    expect(texto).toContain("consultada em 13/11/2026");
+    // Nenhum dos dois declara região de processamento: o que a cláusula tem
+    // deles é a SEDE registrada, e é assim que ela diz (#4588).
+    expect(texto).toContain("Anthropic (sede nos Estados Unidos");
+    expect(texto).toContain("Google (sede nos Estados Unidos");
+    expect(texto).toContain("conferidas no catálogo em 13/11/2026");
     expect(texto).toContain("Resolução CD/ANPD nº 19/2024");
     // O que NÃO está ativo não pode aparecer: listar provedor sem credencial
     // assusta sem informar (regra 1 da issue).
@@ -114,10 +118,10 @@ describe("clausulaDeTransferenciaInternacional — o texto vem dos provedores at
     // iguais.
     const texto = clausulaDeTransferenciaInternacional(["deepseek", "google", "deepseek"]);
 
-    expect(texto.indexOf("Google (Estados Unidos)")).toBeLessThan(
-      texto.indexOf("DeepSeek (China)"),
+    expect(texto.indexOf("Google (sede nos Estados Unidos")).toBeLessThan(
+      texto.indexOf("DeepSeek (China"),
     );
-    expect(texto.match(/DeepSeek \(China\)/g)).toHaveLength(1);
+    expect(texto.match(/DeepSeek \(China/g)).toHaveLength(1);
   });
 
   it("só o Jev ligado: a TypeSafe AI aparece, pelo nome da empresa — nunca 'nada sai do servidor'", () => {
@@ -125,7 +129,7 @@ describe("clausulaDeTransferenciaInternacional — o texto vem dos provedores at
     // cliente nos Estados Unidos — a Política de Privacidade já declara isso.
     const texto = clausulaDeTransferenciaInternacional(["typesafe"]);
 
-    expect(texto).toContain("TypeSafe AI (Estados Unidos)");
+    expect(texto).toContain("TypeSafe AI (sede nos Estados Unidos");
     expect(texto).not.toContain("Jev");
     expect(texto).not.toContain("Com a IA desligada");
     expect(texto).not.toContain("nada sai do servidor");
@@ -134,7 +138,7 @@ describe("clausulaDeTransferenciaInternacional — o texto vem dos provedores at
   it("serviço de voz ligado: a ElevenLabs aparece, sem país inventado", () => {
     const texto = clausulaDeTransferenciaInternacional(["anthropic", "elevenlabs"]);
 
-    expect(texto).toContain("Anthropic (Estados Unidos)");
+    expect(texto).toContain("Anthropic (sede nos Estados Unidos");
     expect(texto).toContain("ElevenLabs (não declara o país; consulte a política do provedor)");
   });
 
@@ -147,11 +151,14 @@ describe("clausulaDeTransferenciaInternacional — o texto vem dos provedores at
     },
   );
 
-  it("a data declarada é ISO e é a que sai no texto", () => {
+  it("a data do catálogo é ISO e sai no texto como conferência de SEDE", () => {
     expect(CONSULTA_DOS_PAISES_EM).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(clausulaDeTransferenciaInternacional(["anthropic"])).toContain(
-      CONSULTA_DOS_PAISES_EM.split("-").reverse().join("/"),
+      `As sedes foram conferidas no catálogo em ${CONSULTA_DOS_PAISES_EM.split("-").reverse().join("/")}.`,
     );
+    // Declaração do provedor tem a data DELA — a do catálogo não datam uma
+    // afirmação que o provedor não fez (#4588).
+    expect(clausulaDeTransferenciaInternacional(["anthropic"])).not.toContain("declaração do provedor");
   });
 });
 
@@ -167,9 +174,9 @@ describe("provedoresAtivosDaInstalacao — o registro que a cláusula lê", () =
     expect(ativos).toEqual(["anthropic", "openai", "deepseek"]);
     // E o texto composto a partir DESSE registro cita os três países.
     const texto = clausulaDeTransferenciaInternacional(ativos);
-    expect(texto).toContain("Anthropic (Estados Unidos)");
-    expect(texto).toContain("OpenAI (Estados Unidos)");
-    expect(texto).toContain("DeepSeek (China)");
+    expect(texto).toContain("Anthropic (sede nos Estados Unidos");
+    expect(texto).toContain("OpenAI (sede nos Estados Unidos");
+    expect(texto).toContain("DeepSeek (China — declaração do provedor, consultada em 12/11/2026)");
   });
 
   it("credencial desativada ou ainda não validada NÃO entra na lista", async () => {

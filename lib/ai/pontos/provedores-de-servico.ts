@@ -24,7 +24,7 @@
  *    porque STT e TTS não compartilham a mesma forma de chamada.
  */
 
-import type { PaisDoProvedor } from "@/lib/ai/pontos/provedores";
+import type { PaisDaSede, PaisDoProvedor } from "@/lib/ai/pontos/provedores";
 
 /** Como a chave daquele serviço é validada e o que a tela precisa pedir. */
 export interface ProvedorDeServico {
@@ -32,11 +32,21 @@ export interface ProvedorDeServico {
   /** Nome como o operador conhece. */
   rotulo: string;
   /**
-   * A sede declarada de quem recebe o dado — a cláusula 9 do documento do
-   * operador (`lib/legal/operador.ts`) lista também os serviços, porque o áudio
-   * do cliente sai do servidor do mesmo jeito que o texto. Ver `PaisDoProvedor`.
+   * O código que as superfícies imprimem: a declaração quando existe, senão a
+   * sede registrada (#4588). Ver `ProvedorSuportado.pais` no catálogo irmão.
    */
   pais: PaisDoProvedor;
+  /**
+   * A SEDE registrada pelo catálogo — onde fica a empresa que recebe o áudio,
+   * e não onde ele é processado (#4588). `null` em `desconhecido`/`operador`.
+   */
+  sede: PaisDaSede | null;
+  /**
+   * A declaração do provedor sobre a região de processamento, `null` quando
+   * ele não publica essa informação (#4588). Só vem preenchida com
+   * `fonteDoPais`, como no catálogo de conversa.
+   */
+  paisDeclarado: PaisDaSede | null;
   /** Uma frase sobre quando escolher este, para quem não acompanha o mercado. */
   quandoUsar: string;
   /** Onde o operador pega a chave — a tela mostra o link. */
@@ -44,10 +54,10 @@ export interface ProvedorDeServico {
   /** Como a chave começa — vira placeholder do campo, para a pessoa reconhecer que copiou a coisa certa. */
   prefixoDaChave: string;
   /**
-   * De onde veio a declaração de `pais` (#4519), no mesmo vocabulário do
-   * catálogo irmão: URL do documento público e data da consulta, ou `null`
-   * quando a declaração é a do catálogo (`CONSULTA_DOS_PAISES_EM`) — e sempre
-   * `null` para `desconhecido`/`operador`, que não têm documento a citar.
+   * De onde veio a declaração de processamento (#4519), no mesmo vocabulário
+   * do catálogo irmão: URL do documento público e data da consulta, ou `null`
+   * quando o provedor não publica a região — e sempre `null` para
+   * `desconhecido`/`operador`, que não têm documento a citar.
    */
   fonteDoPais: { url: string; consultadoEm: string } | null;
 }
@@ -61,6 +71,10 @@ export const PROVEDORES_DE_SERVICO = [
     // declara o país; consulte a política do provedor" em vez de omitir o
     // serviço que recebe o áudio do cliente.
     pais: "desconhecido",
+    // Sem sede citável e sem declaração de região: o áudio sai, e o contrato
+    // diz o que se sabe — que não se sabe (#4588).
+    sede: null,
+    paisDeclarado: null,
     quandoUsar:
       "Para o agente ouvir o áudio que o cliente manda com mais precisão (inclusive diferenciando quem fala) e para responder falando, em nota de voz, quando fizer sentido.",
     ondePegarAChave: "https://elevenlabs.io/app/settings/api-keys",

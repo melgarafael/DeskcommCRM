@@ -48,27 +48,41 @@ em Agente de IA › Credenciais de cada empresa e os das chaves de IA no `.env` 
 lista genérica copiada de outro contrato não descreve o seu tratamento.
 
 As regras da lista estão codificadas em `clausulaDeTransferenciaInternacional`, em
-`lib/legal/operador.ts`, que compõe a cláusula a partir do catálogo de provedores (campo `pais` em
-`lib/ai/pontos/provedores.ts` e `lib/ai/pontos/provedores-de-servico.ts`) e do que está ativo
-nesta instalação (`provedoresAtivosDaInstalacao` lê `ai_provider_credentials` — ativa e validada —
-e as chaves de plataforma do `.env`). Enquanto nenhuma tela imprime a cláusula, escreva-a à mão
-seguindo as mesmas regras:
+`lib/legal/operador.ts`, que compõe a cláusula a partir do catálogo de provedores (campos `sede` e
+`paisDeclarado` em `lib/ai/pontos/provedores.ts` e `lib/ai/pontos/provedores-de-servico.ts`) e do
+que está ativo nesta instalação (`provedoresAtivosDaInstalacao` lê `ai_provider_credentials` —
+ativa e validada — e as chaves de plataforma do `.env`). Enquanto nenhuma tela imprime a cláusula,
+escreva-a à mão seguindo as mesmas regras:
 
 - entram também os provedores que **não conversam** mas recebem dado da conversa: o Jev (a
   TypeSafe AI recebe cada mensagem) e o serviço de voz (recebe o áudio do cliente);
 - provedor **sem credencial ativa** não entra: listar o que não é usado assusta sem informar;
-- provedor que **não declara o país** aparece assim mesmo, com "não declara o país; consulte a
-  política do provedor" — omitir esconde uma transferência que existe;
+- provedor que **declara a região de processamento** aparece com o país declarado, a fonte e a data
+  da consulta — hoje só a DeepSeek (China, política da própria empresa, consultada em 12/11/2026);
+- provedor que **só tem sede registrada** (Anthropic, OpenAI, OpenAI pela assinatura, Google,
+  OpenRouter, TypeSafe) aparece com a **sede**, dito assim: a região de processamento dele deve ser
+  conferida na política do provedor, e o contrato **não** afirma que ele declarou algo. A OpenAI
+  declara região por projeto, o Gemini não publica a lista de países e o OpenRouter varia por
+  chamada; não invente fonte nem data para nenhum deles;
+- provedor **sem sede e sem declaração** (Requesty, ElevenLabs) aparece assim mesmo, com "não
+  declara o país; consulte a política do provedor" — omitir esconde uma transferência que existe;
 - endpoint próprio ou modelo local aparecem como **"no servidor do operador"**.
 
-A data da conferência dos países vai no texto (`CONSULTA_DOS_PAISES_EM`): dado sem data parece
-garantia, e a sede de um provedor muda por aquisição ou reorganização. Ao mudar um país no
-catálogo, atualize a data no mesmo commit. Exemplo de saída, com Anthropic e Google ativos:
+A data acompanha a **linha de quem declarou** (`fonteDoPais.consultadoEm`). A conferência das
+**sedes** pelo catálogo tem data própria (`CONSULTA_DOS_PAISES_EM`), e é essa que o parágrafo cita
+quando alguma linha fala de sede: ela diz quando ESTE catálogo conferiu as sedes, não que o
+provedor tenha declarado onde processa. Ao mudar uma `sede` no catálogo, atualize a data no mesmo
+commit. Exemplo de saída, com Anthropic e Google ativos:
 
-> Com a IA ligada, o conteúdo das conversas é processado por: Anthropic (Estados Unidos), Google
-> (Estados Unidos) — conforme a declaração de cada provedor, consultada em 13/11/2026. O CRM e o
-> banco ficam no servidor do operador, no Brasil. Você, como controlador, deve indicar na sua
-> política o mecanismo de transferência que adota (Resolução CD/ANPD nº 19/2024).
+> Com a IA ligada, o conteúdo das conversas é processado por: Anthropic (sede nos Estados Unidos —
+> de quem recebe o conteúdo; não declara a região de processamento, consulte a política do
+> provedor), Google (sede nos Estados Unidos — de quem recebe o conteúdo; não declara a região de
+> processamento, consulte a política do provedor). A data acompanha a linha do provedor que declara
+> a região de processamento; onde a linha diz sede, o país é o da empresa que recebe o conteúdo e a
+> região de processamento deve ser conferida na política do provedor. As sedes foram conferidas no
+> catálogo em 13/11/2026. O CRM e o banco ficam no servidor do operador, no Brasil. Você, como
+> controlador, deve indicar na sua política o mecanismo de transferência que adota (Resolução
+> CD/ANPD nº 19/2024).
 
 ## O argumento da ANPD, do jeito certo
 
