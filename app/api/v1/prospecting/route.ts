@@ -11,6 +11,7 @@ import { capabilitiesOf } from "@/lib/channels/capabilities";
 import type { ChannelProvider } from "@/lib/channels/types";
 import { ProspectingError } from "@/lib/prospecting/provider";
 import { campaignConfigSchema, prospectingInputSchema, type Prospect } from "@/lib/prospecting/schema";
+import { arquivadaEm } from "@/lib/prospecting/arquivamento";
 import { configPadraoDaOrganizacao } from "@/lib/prospecting/config-padrao";
 import { provedorExigeCredencialDaOrganizacao } from "@/lib/prospecting/provedor";
 import { auditarSite } from "@/lib/prospecting/site-fetch";
@@ -27,9 +28,11 @@ import {
   activateCampaign,
   adjustPace,
   adjustTags,
+  arquivarCampanha,
   assertCanalLivre,
   configureCredential,
   createSearch,
+  desarquivarCampanha,
   descartarDesmarcadas,
   selecionarNaFila,
   validateConfig,
@@ -104,7 +107,11 @@ export async function GET(req: NextRequest) {
     const [settings, campaigns, candidates, agents, channels, stages, organizacao] = await Promise.all([
       db.query("select organization_id from prospecting_settings where organization_id=$1", [org]),
       db.query(
-        "select id,name,search,config,status,search_status,run_id,cost_usd,result_count,skipped_count,error,next_send_at,created_at,channel_session_id from prospecting_campaigns where organization_id=$1 order by created_at desc limit 50",
+        // #4359: as NÃO arquivadas vêm primeiro porque a lista é limitada a 50 e a
+        // tela separa as duas. Sem esta ordem, uma campanha arquivada ontem roubaria
+        // a vaga de uma que ainda está trabalhando — e a arquivada só apareceria no
+        // fim do rolo, longe do filtro que a mostra.
+        "select id,name,search,config,status,search_status,run_id,cost_usd,result_count,skipped_count,error,next_send_at,created_at,channel_session_id from prospecting_campaigns where organization_id=$1 order by (config->>'arquivada_em' is null) desc, created_at desc limit 50",
         [org],
       ),
       db.query(
@@ -445,6 +452,23 @@ export async function POST(req: NextRequest) {
         ja_completas: resumo.ja_completas,
         sem_links: resumo.sem_links,
       };
+    } else if (body.action === "arquivar" || body.action === "desarquivar") {
+      // #4359 — ARQUIVAR NÃO EXCLUI. O único efeito é o marcador `config.arquivada_em`
+      // (e a pausa de uma campanha que estava `running`): negócio, conversa,
+      // candidato e custo ficam intactos. Fechada ao token, porque esconder campanha
+      // é gesto de quem está lendo a lista.
+      const arquivamento =
+        body.action === "arquivar"
+          ? await arquivarCampanha(pool, org, body.id)
+          : await desarquivarCampanha(pool, org, body.id);
+      result = arquivamento;
+      // O estado DEPOIS do gesto vai para a trilha: "arquivei" sem dizer que a
+      // campanha ficou pausada não deixa conferir, depois, se o envio parou.
+      auditMetadata = {
+        operation: body.action,
+        ja_estava: arquivamento.ja_estava,
+        status: arquivamento.status,
+      };
     } else {
       result = await withProspectingLock(pool, org, async (db) => {
         const c = (
@@ -454,6 +478,12 @@ export async function POST(req: NextRequest) {
           )
         ).rows[0];
         if (!c?.config) throw new ProspectingError("Campanha pausada não encontrada.", 404);
+        // #4359: campanha ARQUIVADA não retoma pelo servidor. Ela saiu da lista para
+        // não ser mais vista; voltar a enviar sem passar pelo "desarquivar" seria uma
+        // campanha invisível disparando mensagem. Desarquivar primeiro devolve o
+        // cartão à lista, e aí o Retomar vira um gesto de quem está vendo a campanha.
+        if (arquivadaEm(c.config))
+          throw new ProspectingError("Desarquive a campanha antes de retomar.", 409);
         const config = await validateConfig(db, org, c.config);
         // A MESMA régua do `start` (#3896): a retomada também é do NÚMERO. Com
         // a checagem só no início, retomar uma campanha pausada continuava

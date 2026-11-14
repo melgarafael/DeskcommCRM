@@ -24,6 +24,7 @@ import {
   type Prospect,
 } from "./schema";
 import { CanalReconectandoError, ProspectingError } from "./provider";
+import { arquivadaEm, semMarcadorDeArquivamento } from "./arquivamento";
 import type {
   LeituraComMotivos,
   LinhaExcluida,
@@ -1164,7 +1165,7 @@ export async function activateCampaign(
   input: CampaignConfig,
 ) {
   return withProspectingLock(pool, org, async (db) => {
-    const config = await validateConfig(db, org, input);
+    const config = await validateConfig(db, org, semMarcadorDeArquivamento(input));
     const c = (
       await db.query<Campaign>(
         "select * from prospecting_campaigns where organization_id=$1 and id=$2",
@@ -1172,6 +1173,10 @@ export async function activateCampaign(
       )
     ).rows[0];
     if (!c) throw new ProspectingError("Campanha não encontrada.", 404);
+    // A MESMA recusa da retomada (#4359): rascunho arquivado que inicia fica
+    // invisível na lista e enviando. Desarquivar primeiro.
+    if (arquivadaEm(c.config))
+      throw new ProspectingError("Desarquive a campanha antes de iniciar.", 409);
     if (c.status !== "draft" || c.search_status !== "succeeded")
       throw new ProspectingError(
         "Aguarde a busca terminar; uma campanha já iniciada deve ser retomada.",
@@ -1426,6 +1431,112 @@ export async function adjustTags(pool: pg.Pool, org: string, id: string, etiquet
     return {
       previous: { contact_tags: c.config.contact_tags ?? null },
       next: { contact_tags: etiquetas },
+    };
+  });
+}
+
+/**
+ * ARQUIVAR UMA CAMPANHA (#4359) — some da lista, NADA é apagado.
+ *
+ * O pedido é de quem tem a lista entupida de campanha que falhou ou veio zerada. O
+ * gesto NÃO pode ser exclusão: os negócios, as conversas, os candidatos e o custo
+ * daquela campanha ficam onde estão — quem já foi abordado continua no funil. Por
+ * isso o único `update` é na própria campanha, e só em duas coisas:
+ *
+ *   - `config.arquivada_em` — o marcador que a lista lê (sem coluna nova);
+ *   - `status` — e AQUI está a regra dura: campanha `running` vira `paused` no
+ *     mesmo `update` que a esconde. O tick relê a campanha exigindo
+ *     `status='running'` antes de cada envio (`worker.ts`, "RELÊ A CAMPANHA ANTES
+ *     DE ENVIAR"), então arquivar um clique depois do operador pausar teria o
+ *     mesmo efeito. Campanha invisível continuando a disparar mensagem seria o
+ *     pior desfecho possível.
+ *
+ * Idempotente pela guarda do `where` (`arquivada_em` vazio): clicar duas vezes, ou
+ * dois operadores ao mesmo tempo, não reescreve o marcador nem mexe no `status`.
+ */
+export const ARQUIVAR_CAMPANHA_SQL =
+  "update prospecting_campaigns set config = coalesce(config, '{}'::jsonb) || jsonb_build_object('arquivada_em', $3::text), status = case when status='running' then 'paused' else status end, updated_at=now() where organization_id=$1 and id=$2 and coalesce(config->>'arquivada_em','') = '' returning id,status";
+
+/**
+ * DESARQUIVAR (#4359): tira o marcador e a campanha volta para a lista — PAUSADA,
+ * como estava quando foi arquivada. Retomar é outro clique, de propósito: voltar a
+ * enviar sozinha porque alguém desarquivou para conferir o histórico seria enviar
+ * sem ninguém ter pedido.
+ */
+// O `nullif` devolve `null` ao rascunho que não tinha configuração: o arquivar
+// gravou `{arquivada_em}` sobre `null`, e um `{}` no lugar faria a tela tomá-lo como
+// configuração gravada e perder os padrões do rascunho (#4430).
+export const DESARQUIVAR_CAMPANHA_SQL =
+  "update prospecting_campaigns set config = nullif(coalesce(config, '{}'::jsonb) - 'arquivada_em', '{}'::jsonb), updated_at=now() where organization_id=$1 and id=$2 and coalesce(config->>'arquivada_em','') <> '' returning id,status";
+
+export interface ResultadoDoArquivamento {
+  arquivada: boolean;
+  /** A campanha já estava no estado pedido: nada foi escrito. */
+  ja_estava: boolean;
+  /** Estado DEPOIS do gesto. Arquivar campanha rodando devolve `paused`. */
+  status: string;
+  arquivada_em: string | null;
+}
+
+/** Lê o estado para o caminho idempotente — e é ele que transforma "outra organização" em 404. */
+const LER_ARQUIVAMENTO_SQL =
+  "select status, config->>'arquivada_em' as arquivada_em from prospecting_campaigns where organization_id=$1 and id=$2";
+
+async function lerArquivamento(
+  db: pg.PoolClient,
+  org: string,
+  id: string,
+): Promise<{ status: string; arquivada_em: string | null }> {
+  const { rows } = await db.query<{ status: string; arquivada_em: string | null }>(
+    LER_ARQUIVAMENTO_SQL,
+    [org, id],
+  );
+  // Sem linha = não é desta organização (o filtro é sempre `organization_id`): 404,
+  // nunca "arquivei a campanha de outro cliente".
+  if (!rows[0]) throw new ProspectingError("Campanha não encontrada.", 404);
+  return rows[0];
+}
+
+export async function arquivarCampanha(
+  pool: pg.Pool,
+  org: string,
+  id: string,
+): Promise<ResultadoDoArquivamento> {
+  return withProspectingLock(pool, org, async (db) => {
+    const agora = new Date().toISOString();
+    const mudou = await db.query<{ status: string }>(ARQUIVAR_CAMPANHA_SQL, [org, id, agora]);
+    if (mudou.rows.length)
+      return { arquivada: true, ja_estava: false, status: mudou.rows[0]!.status, arquivada_em: agora };
+    const atual = await lerArquivamento(db, org, id);
+    return {
+      arquivada: true,
+      ja_estava: true,
+      status: atual.status,
+      arquivada_em: atual.arquivada_em,
+    };
+  });
+}
+
+export async function desarquivarCampanha(
+  pool: pg.Pool,
+  org: string,
+  id: string,
+): Promise<ResultadoDoArquivamento> {
+  return withProspectingLock(pool, org, async (db) => {
+    const mudou = await db.query<{ status: string }>(DESARQUIVAR_CAMPANHA_SQL, [org, id]);
+    if (mudou.rows.length)
+      return {
+        arquivada: false,
+        ja_estava: false,
+        status: mudou.rows[0]!.status,
+        arquivada_em: null,
+      };
+    const atual = await lerArquivamento(db, org, id);
+    return {
+      arquivada: false,
+      ja_estava: true,
+      status: atual.status,
+      arquivada_em: atual.arquivada_em,
     };
   });
 }

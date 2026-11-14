@@ -50,7 +50,10 @@ const PEDE_PARA_SAIR = [
   // comunicativos, não apaga o padrão inteiro.
   "pare de mandar essas fotos",
   "quero sair da lista",
-  "quero cancelar a inscrição",
+  // `quero cancelar a inscrição` saiu daqui na #4579: sem objeto de
+  // comunicação, a frase é a matrícula de um curso ou a inscrição num concurso
+  // e agora ESCALA sem bloquear — o caso vive em
+  // `tests/unit/opt-out-cancelar-sozinho-e-compra.test.ts`.
   "me descadastra aí",
   // ─── Formas que passavam batido (medido por @deskcommopp4s-cmd, #1607) ─────
   //
@@ -492,14 +495,15 @@ describe("cancelar o PLANO escala sem bloquear — a palavra de duas caras (#288
       "sair da lista",
       "dar de baja la suscripcion",
       "quiero dar de baja la suscripcion",
-      "quero cancelar a inscrição",
+      "quero cancelar a inscrição das mensagens",
     ]) {
       expect(ehPedidoDeOptOut(texto), texto).toBe(true);
     }
   });
 
-  it("`cancelar` SOZINHO, sem objeto, continua bloqueando", () => {
-    expect(ehPedidoDeOptOut("cancelar")).toBe(true);
+  it("`cancelar` SOZINHO não bloqueia nem escala — é resposta de menu (#4579)", () => {
+    expect(ehPedidoDeOptOut("cancelar")).toBe(false);
+    expect(ehOptOutProvavel("cancelar")).toBe(false);
   });
 });
 
@@ -628,8 +632,10 @@ describe("ehPedidoDeOptOut — pedido INEQUÍVOCO, o que autoriza bloquear", () 
     expect(ehPedidoDeOptOut("tem como parar a dor?")).toBe(false);
   });
 
-  it("cancelar sozinho sai; cancelar UMA COISA fica", () => {
-    expect(ehPedidoDeOptOut("cancelar")).toBe(true);
+  it("cancelar sozinho não é palavra de saída; cancelar UMA COISA também não", () => {
+    // #4579: no atendimento, "cancelar" sozinho é resposta a um menu — não
+    // descadastro. "quero cancelar o pedido" é a compra, nunca o canal.
+    expect(ehPedidoDeOptOut("cancelar")).toBe(false);
     expect(ehPedidoDeOptOut("quero cancelar o pedido")).toBe(false);
   });
 });

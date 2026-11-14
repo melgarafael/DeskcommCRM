@@ -16,6 +16,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { removeCatalogPresentationAudio } from "@/lib/catalogo/apresentacao-no-bucket";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
+import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { COLUNAS_DO_PRODUTO, produtoPatchSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -51,6 +52,12 @@ export async function PATCH(
   const { fotos, ...campos } = parsed.data;
 
   const supabase = await createClient();
+  if (
+    campos.capacidade &&
+    !(await capacidadesDaOrganizacao(supabase, authz.org.orgId)).includes("capacidade_do_produto")
+  ) {
+    return fail("validation_failed", t("A capacidade do produto está desligada nesta empresa."), 422, { requestId });
+  }
 
   /**
    * ─── PATCH com `fotos` SUBSTITUI o conjunto, não acrescenta ───────────────

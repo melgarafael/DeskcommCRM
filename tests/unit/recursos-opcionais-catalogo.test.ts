@@ -174,6 +174,10 @@ describe("o estado nunca lança e nunca inventa 'desligado'", () => {
     // Ausente = ligada; só o `false` explícito desliga (régua do banco).
     expect(estadoDoRecurso(acha("colegas_mexem_na_agenda"), ligadas)).toBe("desligado");
     expect(estadoDoRecurso(acha("colegas_mexem_na_agenda"), vazio)).toBe("ligado");
+    expect(estadoDoRecurso(acha("capacidade_do_produto"), vazio)).toBe("desligado");
+    expect(
+      estadoDoRecurso(acha("capacidade_do_produto"), { ...vazio, settings: { catalogo: { capacidade: true } } }),
+    ).toBe("ligado");
     expect(estadoDoRecurso(acha("conversa_fica_com_quem_atendeu"), vazio)).toBe("desligado");
   });
 
