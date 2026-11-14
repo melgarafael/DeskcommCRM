@@ -294,7 +294,7 @@ export function CompanyDetailClient({ id }: Props) {
         <Card className="space-y-2 p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-medium">{t("Pessoas / decisores")}</h2>
-            {/* Piso `agent` para ADICIONAR (migration 9348); remover o vínculo segue `manager`. */}
+            {/* Piso `agent` para ADICIONAR (migration 9370); remover o vínculo segue `manager`. */}
             {podeEditarVinculo ? (
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => setContatoAberto(true)}>

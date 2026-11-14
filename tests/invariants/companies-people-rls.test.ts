@@ -117,7 +117,7 @@ describe("isolamento entre organizações", () => {
 });
 
 describe("escrita por papel no banco (RLS por operação)", () => {
-  // Migration 9348: o piso do INSERT desceu de `manager` para `agent`, para o
+  // Migration 9370: o piso do INSERT desceu de `manager` para `agent`, para o
   // Atendente cadastrar o cliente novo sem passar por um Gerente. EXCLUIR segue `manager`.
   it("viewer não cria empresa nem pessoa; agent e manager criam", () => {
     const criar = (nome: string) =>

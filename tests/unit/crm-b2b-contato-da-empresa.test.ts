@@ -5,7 +5,8 @@
  *   2. sem telefone nem e-mail só a pessoa é criada (nenhum contato);
  *   3. empresa que não existe → 404 e NADA é criado;
  *   4. contato falha (telefone repetido) → a pessoa é DESFEITA e o erro sobe;
- *   5. vínculo contato↔pessoa falha → contato E pessoa são desfeitos.
+ *   5. vínculo contato↔pessoa falha → contato E pessoa são desfeitos;
+ *   6. todo desfazer deixa rastro no audit (`*.deleted` com `reason: "rollback"`).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -40,6 +41,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 
+import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { createCompanyContactHandler } from "@/lib/crm-b2b/company-contact-handler";
@@ -120,6 +122,13 @@ describe("createCompanyContactHandler", () => {
 
     expect(apagados).toEqual([{ tabela: "people", id: "p-1" }]);
     expect(ligarContato).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "people.deleted",
+        resourceId: "p-1",
+        metadata: expect.objectContaining({ reason: "rollback" }),
+      }),
+    );
   });
 
   it("vínculo contato↔pessoa falha: desfaz o contato e a pessoa", async () => {
@@ -132,6 +141,11 @@ describe("createCompanyContactHandler", () => {
     expect(apagados).toEqual([
       { tabela: "contacts", id: "c-1" },
       { tabela: "people", id: "p-1" },
+    ]);
+    const acoes = vi.mocked(audit).mock.calls.map(([e]) => [e.action, e.resourceId, e.metadata?.reason]);
+    expect(acoes).toEqual([
+      ["contact.deleted", "c-1", "rollback"],
+      ["people.deleted", "p-1", "rollback"],
     ]);
   });
 });

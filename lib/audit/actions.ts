@@ -1214,6 +1214,7 @@ export const AUDIT_ACTIONS = [
   "companies.deleted",
   "companies.enriched",
   "people.created",
+  "people.deleted",
   "people.updated",
   "company_people.linked",
   "company_people.updated",

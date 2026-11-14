@@ -81962,7 +81962,7 @@ begin
 end
 $fichas_absorvidas$;
 
--- ---- Atendente cria empresa e pessoa (migration 9348) ----
+-- ---- Atendente cria empresa e pessoa (migration 9370) ----
 -- O piso do INSERT desce de `manager` para `agent` em companies, people e company_people.
 -- Excluir segue `manager`. Idempotente: drop policy if exists + create policy.
 drop policy if exists companies_insert on public.companies;

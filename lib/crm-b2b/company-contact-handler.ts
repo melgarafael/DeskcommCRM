@@ -17,6 +17,7 @@ import { z } from "zod";
 import { createContactHandler } from "@/app/api/v1/contacts/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
+import { audit } from "@/lib/audit";
 import { createPersonHandler, linkContactToPersonHandler } from "@/lib/crm-b2b/people-handler";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -50,9 +51,14 @@ function err(ctx: HandlerCtx, status: number, code: string, message: string): ne
  * Desfaz com a chave de serviço: o atendente que cadastrou pode não ter
  * permissão de apagar (RLS de delete é de gerente). Os ids são os que ESTA
  * chamada acabou de criar e o filtro de organização vem de `ctx`.
+ *
+ * Cada exclusão deixa rastro no audit com `reason: "rollback"`, para o histórico
+ * não mostrar duas criações e nenhuma exclusão (e para não se confundir com
+ * exclusão pedida por gente).
  */
 async function desfazer(
   ctx: HandlerCtx,
+  actorUserId: string,
   criados: { personId?: string; contactId?: string },
 ): Promise<void> {
   const admin = createAdminClient();
@@ -69,6 +75,17 @@ async function desfazer(
         request_id: ctx.requestId,
         code: error.code,
       });
+    } else {
+      await audit({
+        action: "contact.deleted",
+        actorUserId,
+        organizationId: ctx.organization_id,
+        resourceType: "contact",
+        resourceId: criados.contactId,
+        requestId: ctx.requestId,
+        bypassedRls: true,
+        metadata: { reason: "rollback", origin: "company_contact_create" },
+      });
     }
   }
   if (criados.personId) {
@@ -84,6 +101,17 @@ async function desfazer(
         person_id: criados.personId,
         request_id: ctx.requestId,
         code: error.code,
+      });
+    } else {
+      await audit({
+        action: "people.deleted",
+        actorUserId,
+        organizationId: ctx.organization_id,
+        resourceType: "people",
+        resourceId: criados.personId,
+        requestId: ctx.requestId,
+        bypassedRls: true,
+        metadata: { reason: "rollback", origin: "company_contact_create" },
       });
     }
   }
@@ -134,7 +162,7 @@ export async function createCompanyContactHandler(
 
     return { person, contact, company_id: companyId };
   } catch (e) {
-    await desfazer(ctx, criados);
+    await desfazer(ctx, actorUserId, criados);
     throw e;
   }
 }

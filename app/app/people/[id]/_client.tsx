@@ -63,7 +63,7 @@ export function PersonDetailClient({ id }: { id: string }) {
   }, [load]);
 
   // Mesmos pisos das rotas (issue #3198): ligar telefone é `agent`
-  // (PATCH contacts/:id/person); ligar empresa é `agent` (POST company-people, migration 9348);
+  // (PATCH contacts/:id/person); ligar empresa é `agent` (POST company-people, migration 9370);
   // desligar segue `manager` (DELETE company-people e a RLS de company_people).
   const souAdminDaPlataforma = Boolean(user.is_platform_admin && !user.support);
   const podeLigarContato =

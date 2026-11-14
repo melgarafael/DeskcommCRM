@@ -25,7 +25,7 @@ type Ctx = { params: Promise<{ id: string }> };
 /**
  * POST /api/v1/companies/:id/contatos — cadastra pessoa + contato e liga tudo
  * à empresa numa chamada só. Piso `agent`: quem atende cadastra o cliente novo
- * sem passar por três telas (a RLS de insert foi alinhada na migration 9348).
+ * sem passar por três telas (a RLS de insert foi alinhada na migration 9370).
  */
 export async function POST(req: NextRequest, { params }: Ctx): Promise<Response> {
   const requestId = requestIdOf(req);
