@@ -4,7 +4,9 @@
  * Usa o client user-scoped (cookie session) → toda contagem HERDA a RLS de
  * SELECT de `conversations` (fn_can_view_conversation, migration 0035). Um agent
  * em modo own* recebe a contagem do SEU escopo, NUNCA o total da org — a mesma
- * garantia do listing. Head count (count:'exact', head:true) não devolve linhas.
+ * garantia do listing. Head count (`count: 'exact' | 'planned'`, `head: true`)
+ * não devolve linhas; `planned` devolve a ESTIMATIVA do planejador e é usado só
+ * nas pastas de histórico (`CONTAGENS_APROXIMADAS`, #4325).
  */
 import { randomUUID } from "node:crypto";
 
@@ -23,6 +25,30 @@ import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "../_handler";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * A precisão de uma contagem, como o PostgREST entende:
+ *
+ * - `exact` varre as linhas que casam e devolve o número certo;
+ * - `planned` lê a ESTIMATIVA do planejador — custo de plano, não de varredura.
+ *
+ * A escolha é por ABA, não global (ver `CONTAGENS_APROXIMADAS`).
+ */
+export type PrecisaoDaContagem = "exact" | "planned";
+
+/**
+ * As abas cujo número é ESTIMATIVA — e a tela DIZ isso (#4325).
+ *
+ * "Fechadas" e "Arquivadas" são as pastas do histórico: todo atendimento
+ * encerrado entra numa delas e nenhum sai, então o conjunto cresce SEM LIMITE
+ * com a idade da instalação. Contá-las com `exact` é pagar O(histórico) a cada
+ * 30 s, por pessoa, em toda tela — o custo que o #4325 mediu (820 ms de média e
+ * 7,3 s de máximo numa instalação de 270 conversas).
+ *
+ * As abas ACIONÁVEIS (fila, automático, minhas, todas) continuam exatas: ali o
+ * número é trabalho a fazer, e "mais ou menos 30" não é resposta.
+ */
+export const CONTAGENS_APROXIMADAS = ["closed", "archived"] as const;
 
 /** Um par pronto para virar predicado: coluna e valor. */
 export type FiltroDeContagem = readonly [coluna: string, valor: string | boolean];
@@ -131,10 +157,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Canal desativado nunca entra na inbox: o mesmo corte da lista, para badge
   // e aba nunca divergirem.
   const idsDesativados = await idsDosCanaisDesativados(supabase, org);
-  const countExact = (filtrosDaAba: readonly FiltroDeContagem[] = auxiliares) => {
+  const countCom = (
+    precisao: PrecisaoDaContagem,
+    filtrosDaAba: readonly FiltroDeContagem[] = auxiliares,
+  ) => {
     let q = supabase
       .from("conversations")
-      .select("id", { count: "exact", head: true })
+      .select("id", { count: precisao, head: true })
       .eq("organization_id", org);
     if (idsDesativados.length > 0) q = q.not("channel_session_id", "in", `(${idsDesativados.join(",")})`);
     for (const [coluna, valor] of filtrosDaAba) q = q.eq(coluna, valor);
@@ -144,6 +173,19 @@ export async function GET(req: NextRequest): Promise<Response> {
     if (soNaoLidas) q = q.gt("unread_count_for_assignee", 0);
     return q;
   };
+  /** A contagem EXATA — a régua das abas em que alguém AGE. */
+  const countExact = (filtrosDaAba: readonly FiltroDeContagem[] = auxiliares) =>
+    countCom("exact", filtrosDaAba);
+  /**
+   * A contagem ESTIMADA — só para as pastas de histórico (`CONTAGENS_APROXIMADAS`).
+   *
+   * `planned` faz o PostgREST pedir ao planejador o número de linhas do plano, sem
+   * executá-lo: o custo passa a depender do PLANO, não do tamanho do histórico.
+   * O número deixa de ser exato — por isso a resposta declara `aproximadas` e a
+   * tela marca o badge (ver `InboxFilters`).
+   */
+  const countPlanejado = (filtrosDaAba: readonly FiltroDeContagem[] = auxiliares) =>
+    countCom("planned", filtrosDaAba);
 
   // Espelha tabToFilter (InboxLayout): unassigned = fila aberta sem dono;
   // mine = atribuídas a mim e ainda ABERTAS; all = tudo que o usuário VÊ.
@@ -230,11 +272,17 @@ export async function GET(req: NextRequest): Promise<Response> {
     // `status='closed'` — o badge dizia 120 e a lista mostrava 40. Era a mesma
     // classe de defeito que este arquivo já conserta desde a Fila, encontrada
     // aqui no caminho (#923).
-    countExact().eq("status", "closed"),
+    //
+    // #4325: ESTIMADA, não exata. É a pasta que cresce sem limite com o
+    // histórico (todo atendimento encerrado entra e nenhum sai), e o número só
+    // serve para dizer o TAMANHO do arquivo — não é fila de trabalho. O badge
+    // avisa que é aproximado; ver `CONTAGENS_APROXIMADAS`.
+    countPlanejado().eq("status", "closed"),
     // A aba "Arquivadas" (#923): a pasta do histórico, separada de "Fechadas"
     // para que arquivar seja reversível e auditável sem se confundir com o
-    // encerramento do atendimento.
-    countExact().eq("status", "archived"),
+    // encerramento do atendimento. Estimada pelo mesmo motivo do "Fechadas"
+    // (#4325): é a outra pasta que só cresce.
+    countPlanejado().eq("status", "archived"),
   ]);
 
   // ─── A CONTAGEM POR FILA (#3876) ──────────────────────────────────────────
@@ -292,6 +340,15 @@ export async function GET(req: NextRequest): Promise<Response> {
       all: all.count ?? 0,
       closed: closed.count ?? 0,
       archived: archived.count ?? 0,
+      /**
+       * Quais números desta resposta são ESTIMATIVA do planejador (#4325).
+       *
+       * Sai junto com os valores porque a tela precisa poder dizer isso: um
+       * badge aproximado que se apresenta como exato é pior que badge nenhum.
+       * Hoje são só as pastas de histórico — as abas acionáveis continuam
+       * exatas, e é essa distinção que o campo torna visível ao cliente.
+       */
+      aproximadas: CONTAGENS_APROXIMADAS,
       /**
        * Quantas conversas ESPERAM gente em cada fila (#3876), por id de setor.
        * Vem vazio quando a organização não tem fila — e é o que o seletor do

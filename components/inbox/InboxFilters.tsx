@@ -321,6 +321,15 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
     const next = tabs[tabs.indexOf(value.tab) + direction];
     if (next) onChange(comAba(value, next));
   };
+  /**
+   * Os badges que a rota declara ESTIMADOS (#4325).
+   *
+   * "Fechadas" e "Arquivadas" são contadas pelo planejador do PostgREST, não por
+   * varredura: o número é aproximado e o custo é previsível. A tela NÃO pode
+   * apresentá-lo como exato — o sufixo "(aprox.)" abaixo é a diferença entre um
+   * badge honesto e um badge que mente com precisão de unidade.
+   */
+  const contagensAproximadas = counts?.aproximadas ?? [];
   const countFor: Partial<Record<InboxTab, number>> = {
     // `fila` é o nome novo; `unassigned` é o alias que a rota versionada mantém.
     // O `??` cobre a janela em que a página ainda lê um cache de react-query
@@ -852,6 +861,8 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
             {tabs.map((tab) => {
               const meta = INBOX_TABS.find((t) => t.value === tab)!;
               const count = countFor[tab];
+              const aproximada =
+                (tab === "closed" || tab === "archived") && contagensAproximadas.includes(tab);
               return (
                 <TabsTrigger
                   key={tab}
@@ -860,7 +871,17 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
                 >
                   {t(meta.label)}
                   {depoisDeMontar && typeof count === "number" && count > 0 && (
-                    <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                    <>
+                      <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
+                      {aproximada && (
+                        <span
+                          className="text-[10px] text-text-subtle"
+                          title={t("Número aproximado: esta aba conta o histórico inteiro")}
+                        >
+                          ({t("aprox.")})
+                        </span>
+                      )}
+                    </>
                   )}
                 </TabsTrigger>
               );
