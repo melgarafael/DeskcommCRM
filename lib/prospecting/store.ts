@@ -24,7 +24,7 @@ import {
   type Prospect,
 } from "./schema";
 import { CanalReconectandoError, ProspectingError } from "./provider";
-import { semMarcadorDeArquivamento } from "./arquivamento";
+import { arquivadaEm, semMarcadorDeArquivamento } from "./arquivamento";
 import type {
   LeituraComMotivos,
   LinhaExcluida,
@@ -1151,7 +1151,7 @@ export async function activateCampaign(
   input: CampaignConfig,
 ) {
   return withProspectingLock(pool, org, async (db) => {
-    const config = await validateConfig(db, org, input);
+    const config = await validateConfig(db, org, semMarcadorDeArquivamento(input));
     const c = (
       await db.query<Campaign>(
         "select * from prospecting_campaigns where organization_id=$1 and id=$2",
@@ -1159,6 +1159,10 @@ export async function activateCampaign(
       )
     ).rows[0];
     if (!c) throw new ProspectingError("Campanha não encontrada.", 404);
+    // A MESMA recusa da retomada (#4359): rascunho arquivado que inicia fica
+    // invisível na lista e enviando. Desarquivar primeiro.
+    if (arquivadaEm(c.config))
+      throw new ProspectingError("Desarquive a campanha antes de iniciar.", 409);
     if (c.status !== "draft" || c.search_status !== "succeeded")
       throw new ProspectingError(
         "Aguarde a busca terminar; uma campanha já iniciada deve ser retomada.",
@@ -1173,13 +1177,7 @@ export async function activateCampaign(
       // o `parse` cru estourava ZodError antes de qualquer comparação e a
       // campanha ficava sem como ser iniciada (medido na VPS: 3 rascunhos).
       const salva = campaignConfigSchema.safeParse(c.config);
-      // O MARCADOR de arquivamento (#4359) não é configuração escolhida pela pessoa:
-      // se ele entrasse na comparação, um rascunho arquivado recusaria o próprio
-      // Iniciar ("retome com a mesma configuração") para sempre.
-      if (
-        salva.success &&
-        semMarcadorDeArquivamento(salva.data) !== semMarcadorDeArquivamento(config)
-      )
+      if (salva.success && JSON.stringify(salva.data) !== JSON.stringify(config))
         throw new ProspectingError(
           "A preparação já começou. Retome com a mesma configuração da campanha.",
           409,
@@ -1451,8 +1449,11 @@ export const ARQUIVAR_CAMPANHA_SQL =
  * enviar sozinha porque alguém desarquivou para conferir o histórico seria enviar
  * sem ninguém ter pedido.
  */
+// O `nullif` devolve `null` ao rascunho que não tinha configuração: o arquivar
+// gravou `{arquivada_em}` sobre `null`, e um `{}` no lugar faria a tela tomá-lo como
+// configuração gravada e perder os padrões do rascunho (#4430).
 export const DESARQUIVAR_CAMPANHA_SQL =
-  "update prospecting_campaigns set config = coalesce(config, '{}'::jsonb) - 'arquivada_em', updated_at=now() where organization_id=$1 and id=$2 and coalesce(config->>'arquivada_em','') <> '' returning id,status";
+  "update prospecting_campaigns set config = nullif(coalesce(config, '{}'::jsonb) - 'arquivada_em', '{}'::jsonb), updated_at=now() where organization_id=$1 and id=$2 and coalesce(config->>'arquivada_em','') <> '' returning id,status";
 
 export interface ResultadoDoArquivamento {
   arquivada: boolean;

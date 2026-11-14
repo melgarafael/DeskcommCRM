@@ -1379,6 +1379,9 @@ export const DICIONARIO: Traducoes = {
   "Desarquive a campanha para retomar os envios.": {
     es: "Desarchiva la campaña para reanudar los envíos.",
   },
+  "Desarquive a campanha para iniciar os envios.": {
+    es: "Desarchiva la campaña para iniciar los envíos.",
+  },
   "2. Preparar a abordagem": { es: "2. Preparar el contacto" },
   "A IA usa o agente escolhido para abrir a conversa e atender as respostas. As proteções do canal continuam valendo.": { es: "La IA usa el agente elegido para abrir la conversación y atender las respuestas. Las protecciones del canal siguen vigentes." },
   "Campanha iniciada. A primeira abordagem será preparada após um minuto.": { es: "Campaña iniciada. El primer contacto se preparará en un minuto." },

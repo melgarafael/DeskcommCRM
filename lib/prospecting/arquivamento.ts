@@ -39,7 +39,11 @@ export function campanhasVisiveis<T extends { config: unknown }>(
   return campanhas.filter((c) => estaArquivada(c) === verArquivadas);
 }
 
-/** A configuração sem o marcador, para comparar o que a pessoa escolheu. */
-export function semMarcadorDeArquivamento(config: CampaignConfig): string {
-  return JSON.stringify({ ...config, [CHAVE_ARQUIVADA]: undefined });
+/**
+ * A configuração sem o marcador. O marcador é do servidor, nunca da pessoa: uma aba
+ * aberta antes do desarquivar ainda manda `arquivada_em` no Iniciar, e gravá-lo junto
+ * com `status='running'` faria a campanha enviar escondida.
+ */
+export function semMarcadorDeArquivamento(config: CampaignConfig): CampaignConfig {
+  return { ...config, [CHAVE_ARQUIVADA]: undefined };
 }

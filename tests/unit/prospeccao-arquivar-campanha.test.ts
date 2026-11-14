@@ -29,11 +29,16 @@ vi.mock("@/lib/atendimento/origem", () => ({
   assertServiceBoundarySupabase: vi.fn(),
   beginServiceAtOrigin: vi.fn(),
 }));
+// A ativação confere que o agente atende o canal escolhido (#4430, `activateCampaign`).
+vi.mock("@/lib/agent-engine/agent/router-config", () => ({ loadActiveRouter: async () => null }));
+vi.mock("@/lib/agent-engine/agent/agent-config", () => ({
+  loadPublishedAgentConfig: async () => ({ agentId: CONFIG.agent_id }),
+}));
 
 import { arquivadaEm, campanhasVisiveis } from "@/lib/prospecting/arquivamento";
 import { campaignConfigSchema, prospectingInputSchema } from "@/lib/prospecting/schema";
 import { ProspectingError } from "@/lib/prospecting/provider";
-import { arquivarCampanha, desarquivarCampanha } from "@/lib/prospecting/store";
+import { activateCampaign, arquivarCampanha, desarquivarCampanha } from "@/lib/prospecting/store";
 
 const ORG = "0a110000-0000-4000-8000-000000000001";
 const CAMPANHA = "0a110000-1111-4000-8000-000000000001";
@@ -252,5 +257,51 @@ describe("ida e volta: arquivar, sair da lista, desarquivar, voltar", () => {
     expect(campanhasVisiveis([estado.get(CAMPANHA)!], true)).toHaveLength(1);
     await desarquivarCampanha(pool, ORG, CAMPANHA);
     expect(campanhasVisiveis([estado.get(CAMPANHA)!], false)).toHaveLength(1);
+  });
+});
+
+describe("activateCampaign: rascunho arquivado não inicia (#4430)", () => {
+  // O que a tela manda no Iniciar: a configuração da campanha, que carrega o marcador.
+  const comMarcador = campaignConfigSchema.parse({ ...CONFIG, arquivada_em: ISO });
+  /** O mínimo para `validateConfig` passar e a ativação chegar à campanha. */
+  function bancoDaAtivacao(configDaCampanha: Record<string, unknown> | null) {
+    const escritas: Chamada[] = [];
+    const query = vi.fn(async (text: string, params: unknown[] = []) => {
+      if (/^(update|insert|delete)/i.test(text)) escritas.push({ text, params });
+      const rows = (() => {
+        if (text.includes("pg_try_advisory_lock")) return [{ locked: true }];
+        if (text.includes("from ai_agents a join ai_agent_versions"))
+          return [{ tool_ids: ["crm_move_lead_stage"], pipeline_ids: [CONFIG.pipeline_id] }];
+        if (text.includes("from channel_sessions")) return [{ provider: "waha", status: "WORKING" }];
+        if (text.includes("from crm_stages"))
+          return [{ id: CONFIG.stage_id }, { id: CONFIG.qualified_stage_id }];
+        if (text.startsWith("select * from prospecting_campaigns"))
+          return [
+            { id: CAMPANHA, name: "C", status: "draft", search_status: "succeeded", config: configDaCampanha },
+          ];
+        return [];
+      })();
+      return { rows, rowCount: rows.length };
+    });
+    const pool = { connect: async () => ({ query, release: vi.fn() }) };
+    return { pool: pool as never, escritas };
+  }
+
+  it("recusa com 409 e não escreve nada: iniciado, ele sairia enviando fora da lista", async () => {
+    const { pool, escritas } = bancoDaAtivacao({ arquivada_em: ISO });
+    const erro = await activateCampaign(pool, {} as never, ORG, CAMPANHA, comMarcador).catch(
+      (e: unknown) => e,
+    );
+    expect(erro).toBeInstanceOf(ProspectingError);
+    expect((erro as ProspectingError).status).toBe(409);
+    expect(escritas).toEqual([]);
+  });
+
+  it("aba antiga que ainda manda o marcador não arquiva a campanha que está iniciando", async () => {
+    const { pool, escritas } = bancoDaAtivacao(null);
+    await activateCampaign(pool, {} as never, ORG, CAMPANHA, comMarcador);
+    const daCampanha = escritas.filter((e) => e.text.startsWith("update prospecting_campaigns"));
+    expect(daCampanha.some((e) => e.text.includes("status='running'"))).toBe(true);
+    for (const e of daCampanha) expect(arquivadaEm(e.params[2])).toBeNull();
   });
 });

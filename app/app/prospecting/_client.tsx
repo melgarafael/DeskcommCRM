@@ -1583,9 +1583,22 @@ export function ProspectingClient() {
                   </>
                 )}
               </Card>
+              {/* #4430: rascunho ARQUIVADO não inicia — iniciar o deixaria invisível e
+                  enviando. O servidor recusa (409), e a tela troca o formulário pelo aviso. */}
               {campaign.status === "draft" &&
                 campaign.search_status === "succeeded" &&
-                candidates.length > 0 && (
+                candidates.length > 0 &&
+                arquivadaEm(campaign.config) !== null && (
+                  <Card className="p-5">
+                    <p className="text-sm text-muted-foreground">
+                      {t("Desarquive a campanha para iniciar os envios.")}
+                    </p>
+                  </Card>
+                )}
+              {campaign.status === "draft" &&
+                campaign.search_status === "succeeded" &&
+                candidates.length > 0 &&
+                arquivadaEm(campaign.config) === null && (
                   <Card className="p-5">
                     <h2 className="text-lg font-semibold">{t("2. Preparar a abordagem")}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
