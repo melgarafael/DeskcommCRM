@@ -392,6 +392,15 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: por enquanto o recebimento é registrado pela API, em /api/v1/conversations/[id]/pagamentos.",
   },
   {
+    modulo: "canal_bot",
+    id: "modulo-canal-bot",
+    rotulo: "Robô de mensagens (@BotFather)",
+    descricao:
+      "Ligado, cada empresa ganha em Conexões uma aba para conectar um robô criado no @BotFather, colando o token dele. As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo robô; grupos e campanhas não passam por ele. Desligado, a aba some e ninguém conecta um robô novo; um robô já conectado segue atendendo, e para desconectá-lo basta ligar o módulo de novo.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
+    painelEm: "/app/connections",
+  },
+  {
     modulo: "campanha_por_email",
     id: "modulo-campanha-por-email",
     rotulo: "Campanha por e-mail (em construção)",

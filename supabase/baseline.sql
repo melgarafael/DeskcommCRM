@@ -9578,14 +9578,21 @@ alter table public.channel_sessions
   add column if not exists datafy_waba_id text,
   add column if not exists datafy_token_encrypted bytea;
 
+-- telegram (migration 9342, bot do @BotFather — issue #3440) — as colunas do
+-- provider novo nascem ANTES das constraints abaixo, que as referenciam.
+alter table public.channel_sessions
+  add column if not exists telegram_bot_id text,
+  add column if not exists telegram_token_encrypted bytea;
+
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_check;
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-  -- 'wacalls' (0233), 'zernio_social' (0368) e 'datafy' (0387) somados AQUI —
-  -- UM bloco só por constraint (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text]));
+  -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e 'telegram'
+  -- (9342) somados AQUI — UM bloco só por constraint (não duplicar drop+add
+  -- por migration).
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'telegram'::text]));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -9598,7 +9605,9 @@ alter table public.channel_sessions
     -- é o mesmo intermediário, com outra superfície de canal.
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
-    (provider = 'datafy'     and datafy_phone_number_id is not null)
+    (provider = 'datafy'     and datafy_phone_number_id is not null) or
+    -- Bot do Telegram (migration 9342): endereça pelo id do robô.
+    (provider = 'telegram'   and telegram_bot_id      is not null)
   );
 
 comment on column public.channel_sessions.zernio_account_id is
@@ -14775,7 +14784,11 @@ alter table public.webhook_events_log
     -- (migration 0601) os provedores de cobrança do revendedor. A linha deles
     -- nasce com organization_id nulo e corpo {id,type}: é ponteiro, nunca o
     -- corpo do provedor, e fica invisível ao tenant pela própria policy.
-    'stripe', 'asaas'
+    'stripe', 'asaas',
+    -- (migration 9342, #3486) o robô do Telegram. Sem ele aqui, todo update do
+    -- robô logava "não consegui abrir a linha" e o corpo cru não era guardado
+    -- (medido na prova de tela). O corpo do update não carrega o token.
+    'telegram'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----
@@ -35566,7 +35579,7 @@ comment on column public.contacts.social_identity is
 -- primeira conexão de rede social.
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
-  check (channel in ('whatsapp', 'instagram', 'facebook'));
+  check (channel in ('whatsapp', 'instagram', 'facebook', 'telegram'));
 
 
 -- APÊNDICE 20260921030100_0369_prospeccao_nativa.sql
@@ -81381,6 +81394,33 @@ $capacidade$;
 
 comment on column public.catalog_products.capacidade is
   'Capacidade do produto (opcional, texto livre: 128GB, 1TB, 500ml). A empresa liga em settings.catalogo.capacidade.';
+
+notify pgrst, 'reload schema';
+
+-- ---- canal do bot do Telegram (migration 9342, issue #3440) ----
+-- O vocabulário (`channel_sessions.provider`, `channel_sessions_provider_ref_check`
+-- e `conversations_channel_check`) e as colunas foram somados nos blocos ÚNICOS
+-- de cada constraint, lá em cima; este bloco só acrescenta o índice e os
+-- comentários. Não cria função, então pode ficar depois da VARREDURA anon.
+-- Os `comment on column` vão guiados por `to_regclass`: um clone cujo
+-- `channel_sessions` não exista não pode derrubar a atualização inteira por
+-- causa de um comentário.
+create unique index if not exists channel_sessions_telegram_bot_id_ativo_unique
+  on public.channel_sessions (telegram_bot_id)
+  where archived_at is null and telegram_bot_id is not null;
+
+do $canal_do_telegram$
+begin
+  if to_regclass('public.channel_sessions') is not null then
+    comment on column public.channel_sessions.telegram_bot_id is
+      'Id do bot no Telegram (getMe.id). É o sessionRef deste canal e a chave da social_identity do contato.';
+    comment on column public.channel_sessions.telegram_token_encrypted is
+      'Token do bot (@BotFather) cifrado por fn_encrypt_oauth. Nunca volta para a tela nem para o log.';
+    comment on index public.channel_sessions_telegram_bot_id_ativo_unique is
+      'Um bot do Telegram é UMA conexão ativa (#3440): dois webhooks do mesmo robô disputariam o setWebhook e misturariam as caixas de entrada.';
+  end if;
+end
+$canal_do_telegram$;
 
 notify pgrst, 'reload schema';
 
