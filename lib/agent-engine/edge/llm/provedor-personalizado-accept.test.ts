@@ -5,10 +5,20 @@ vi.mock('@/lib/automation/destinos-internos-autorizados', () => ({
   fetchParaDestinoDaOrganizacao: (interno: typeof fetch) => interno,
 }));
 
+import { buildModel } from '@/lib/ai/runtime/agent';
+
 import { createDefaultRegistry } from './providers';
 
+const ENDERECO = 'https://gateway.exemplo.test/v1';
+
 describe('provedor personalizado', () => {
-  it('pede JSON (Accept: application/json) na chamada sem streaming', async () => {
+  it.each([
+    [
+      'turno do agente',
+      () => createDefaultRegistry({ allowedHosts: ['gateway.exemplo.test'] }).custom!('chave', 'qualquer-modelo', ENDERECO),
+    ],
+    ['ensaio da aba Teste', () => buildModel('custom', 'chave', 'qualquer-modelo', ENDERECO)],
+  ])('pede JSON (Accept: application/json) na chamada sem streaming (%s)', async (_rotulo, montar) => {
     const visto: Record<string, string> = {};
     const fetchFalso = vi.fn(async (_url: unknown, init?: RequestInit) => {
       new Headers(init?.headers).forEach((v, k) => {
@@ -29,9 +39,7 @@ describe('provedor personalizado', () => {
     vi.stubGlobal('fetch', fetchFalso);
     try {
       const { generateText } = await import('ai');
-      const registry = createDefaultRegistry({ allowedHosts: ['gateway.exemplo.test'] });
-      const modelo = registry.custom('chave', 'qualquer-modelo', 'https://gateway.exemplo.test/v1');
-      await generateText({ model: modelo, prompt: 'oi' });
+      await generateText({ model: montar(), prompt: 'oi' });
       expect(visto.accept).toBe('application/json');
     } finally {
       vi.unstubAllGlobals();

@@ -242,7 +242,13 @@ export function buildModel(
       }
       // Endereço escolhido pela empresa: mesma régua de destino do turno do
       // agente (`providers.ts`), senão o ensaio seria a porta para a rede interna.
-      return createOpenAI({ apiKey, baseURL: baseUrl, fetch: fetchParaDestinoDaOrganizacao() }).chat(modelId);
+      // Accept: application/json — ver o provedor `custom` de `providers.ts`.
+      return createOpenAI({
+        apiKey,
+        baseURL: baseUrl,
+        fetch: fetchParaDestinoDaOrganizacao(),
+        headers: { Accept: "application/json" },
+      }).chat(modelId);
     default:
       throw new Error(`unsupported_provider: ${provider}`);
   }
