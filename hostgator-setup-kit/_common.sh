@@ -3272,12 +3272,182 @@ trocar_segredo_do_cron_vazado() {
   return 0
 }
 
+# ── Janela de manutenção da atualização: configurável (#4334) ────────────────
+#
+# O pedido da #4334: quem opera em horário comercial não quer a instalação ~5
+# minutos em manutenção no meio do expediente (clique 09:01, início 09:05, fim
+# 09:10). O primeiro desenho deste PR abria a janela mudando o HORÁRIO DA LINHA
+# do cron do agente — e o mantenedor recusou com a medição na mão: no `agent.sh`
+# a MESMA rodada manda o heartbeat ao painel e vigia a volta depois de uma
+# atualização (seção 3, #2757). Fora da janela, as duas paravam junto.
+#
+# A janela daqui segura SÓ a execução do pedido de atualização, dentro do
+# `agent.sh` (seção 4). O cron do agente continua `*/5 * * * *` — `install.sh` e
+# `update.sh` gravam a linha de sempre, e `setup_update_agent_cron` nem lê esta
+# variável —, então o batimento e a vigília seguem rodando o dia inteiro.
+#
+# Sintaxe: os CINCO campos do cron (minuto hora dia mês dia-da-semana), os
+# mesmos que quem já mexe em crontab conhece. A janela é de HORÁRIO, então os
+# três últimos têm de ser `*`: o cron da VPS casa dia-do-mês E dia-da-semana com
+# OU (regra do vixie-cron), e reproduzir essa regra aqui seria uma segunda
+# semântica com o mesmo nome — o tipo de divergência que só aparece de madrugada
+# na VPS de quem configurou. Recusar é mais honesto que adivinhar.
+#
+# Ausente ou vazia = sem janela = o comportamento de hoje, byte a byte: executa
+# assim que o app pede. Valor inválido = aviso em voz alta (no
+# `.update-agent.log`) e janela ABERTA, que é o de hoje: um erro de digitação
+# não pode deixar a instalação sem atualização para sempre, e o aviso diz
+# exatamente o que corrigir.
+SYSTEM_UPDATE_WINDOW_PADRAO=''
+
+# _item_cron <item> <min> <max> — analisa UM item de campo cron (`*`, `7`,
+# `2-5`, e o `/passo` opcional em qualquer um dos três) e deixa o resultado em
+# _CRON_INI/_CRON_FIM/_CRON_PASSO. Devolve 1 se o item não servir.
+_item_cron() {
+  local item="${1-}" min="$2" max="$3" passo="" n
+  case "$item" in
+    */*) passo="${item#*/}"; item="${item%%/*}" ;;
+  esac
+  case "$item" in
+    '*') _CRON_INI="$min"; _CRON_FIM="$max" ;;
+    *-*) _CRON_INI="${item%%-*}"; _CRON_FIM="${item#*-}" ;;
+    *)   _CRON_INI="$item";     _CRON_FIM="$item" ;;
+  esac
+  _CRON_PASSO="${passo:-1}"
+  # Numérico E não vazio nos três: `case` com `[!0-9]` sozinho deixa passar o
+  # vazio (nenhum caractere viola a classe), e a aritmética seguinte viraria
+  # erro de sintaxe do bash — dentro do `agent.sh`, isso é o `set -e` matando a
+  # rodada inteira, não uma recusa.
+  for n in "$_CRON_INI" "$_CRON_FIM" "$_CRON_PASSO"; do
+    [ -n "$n" ] || return 1
+    case "$n" in *[!0123456789]*) return 1 ;; esac
+  done
+  # `10#` porque zero à esquerda é octal para a aritmética do bash: `08` sem
+  # isto é "valor inválido" e a janela aberta às 8h nunca casaria.
+  _CRON_INI=$((10#$_CRON_INI)); _CRON_FIM=$((10#$_CRON_FIM)); _CRON_PASSO=$((10#$_CRON_PASSO))
+  [ "$_CRON_PASSO" -ge 1 ] || return 1
+  [ "$_CRON_INI" -ge "$min" ] && [ "$_CRON_FIM" -le "$max" ] || return 1
+  [ "$_CRON_INI" -le "$_CRON_FIM" ] || return 1
+  return 0
+}
+
+# _campo_cron_valido <campo> <min> <max> — o campo inteiro (lista separada por
+# vírgula) serve? É a régua de CONFIGURAÇÃO, e ela é mais dura que a de
+# casamento de propósito: campo malformado que passasse daqui nunca casaria, a
+# janela nunca abriria, e a instalação ficaria sem atualização para sempre, em
+# silêncio — o pior desfecho desta feature.
+_campo_cron_valido() {
+  local campo="${1-}" min="$2" max="$3" item
+  local -a itens=()
+  [ -n "$campo" ] || return 1
+  IFS=',' read -r -a itens <<<"$campo" || return 1
+  [ "${#itens[@]}" -ge 1 ] || return 1
+  for item in "${itens[@]}"; do
+    _item_cron "$item" "$min" "$max" || return 1
+  done
+  return 0
+}
+
+# _campo_cron_casa <campo> <valor> <min> <max> — o valor está coberto pelo campo?
+_campo_cron_casa() {
+  local campo="${1-}" valor="$2" min="$3" max="$4" item i
+  local -a itens=()
+  [ -n "$campo" ] || return 1
+  IFS=',' read -r -a itens <<<"$campo" || return 1
+  for item in "${itens[@]}"; do
+    _item_cron "$item" "$min" "$max" || return 1
+    i="$_CRON_INI"
+    while [ "$i" -le "$_CRON_FIM" ]; do
+      [ "$i" -eq "$valor" ] && return 0
+      i=$((i + _CRON_PASSO))
+    done
+  done
+  return 1
+}
+
+# Puro (sem `date`, sem aviso, sem tocar em disco): imprime a janela
+# normalizada — cinco campos com UM espaço entre eles — e devolve 0; devolve 1
+# SEM IMPRIMIR NADA quando o valor não serve. O silêncio é o contrato: quem
+# chama usa o comportamento de hoje, nunca o valor recusado.
+janela_normalizada() {  # janela_normalizada <valor>
+  local valor="${1-}" campo saida=""
+  local -a campos=()
+
+  # Quebra de linha (e CR, o que sobra de um `.env` editado no Windows) FORA
+  # antes de tudo: o valor não vira mais linha de crontab, então não há injeção
+  # a temer — mas um `\n` no meio de um campo só produziria uma recusa ilegível,
+  # e é mais barato recusar pelo motivo óbvio.
+  case "$valor" in
+    '' | *$'\n'* | *$'\r'*) return 1 ;;
+  esac
+
+  # Separa por branco e exige CINCO campos. `read -a` colapsa espaço/tab
+  # repetidos, e o normalizado sai com UM espaço entre campos.
+  IFS=$' \t' read -r -a campos <<<"$valor" || true
+  [ "${#campos[@]}" -eq 5 ] || return 1
+
+  # Alfabeto do cron e SÓ ele: dígitos, `*`, `,`, `-` e `/`. Qualquer outro
+  # caractere (`;`, crase, `$`, aspas) recusa o valor inteiro — este campo vem
+  # de um arquivo que qualquer um edita, e não é lugar de expressão de shell.
+  for campo in "${campos[@]}"; do
+    case "$campo" in
+      *[!0123456789*,/-]*) return 1 ;;
+    esac
+    [ -n "$saida" ] && saida="$saida "
+    saida="$saida$campo"
+  done
+
+  IFS=' ' read -r -a campos <<<"$saida"
+  # Minuto (0-59) e hora (0-23): as duas que a janela usa, validadas por
+  # inteiro — é o que impede `25:00` ou `*/0` de virarem janela que nunca abre.
+  _campo_cron_valido "${campos[0]}" 0 59 || return 1
+  _campo_cron_valido "${campos[1]}" 0 23 || return 1
+  # Dia, mês e dia-da-semana: só `*`. Está explicado no comentário do bloco.
+  for campo in "${campos[@]:2}"; do
+    [ "$campo" = '*' ] || return 1
+  done
+
+  printf '%s\n' "$saida"
+}
+
+# Puro: a janela (já normalizada) cobre o minuto e a hora dados? 0 = dentro.
+janela_contem() {  # janela_contem <expressao> <minuto> <hora>
+  local expressao="${1-}" minuto="${2-}" hora="${3-}"
+  local -a campos=()
+  case "$minuto$hora" in '' | *[!0123456789]*) return 1 ;; esac
+  IFS=' ' read -r -a campos <<<"$expressao" || return 1
+  [ "${#campos[@]}" -eq 5 ] || return 1
+  _campo_cron_casa "${campos[0]}" "$((10#$minuto))" 0 59 || return 1
+  _campo_cron_casa "${campos[1]}" "$((10#$hora))" 0 23 || return 1
+  return 0
+}
+
+# A pergunta do `agent.sh` (seção 4): posso executar o pedido AGORA?
+#   0 = pode (sem janela, ou dentro dela);
+#   1 = fora da janela — anuncia, vigia, NÃO executa;
+#   2 = valor recusado — avisa e executa, que é o comportamento de hoje.
+# Um único `date`: duas chamadas seguidas podem cair em minutos diferentes (o
+# relógio vira entre elas) e a janela seria lida com a hora de um e o minuto do
+# outro — justo na virada da janela, que é quando isso importa.
+janela_aberta() {  # janela_aberta [valor]
+  local bruto="${1-}" normalizada="" hora minuto agora
+  [ -n "$bruto" ] || return 0
+  janela_normalizada "$bruto" >/dev/null 2>&1 || return 2
+  normalizada="$(janela_normalizada "$bruto")" || return 2
+  agora="$(date +%H:%M)"
+  hora="${agora%%:*}"; minuto="${agora##*:}"
+  if janela_contem "$normalizada" "$minuto" "$hora"; then return 0; fi
+  return 1
+}
+
 # Ativa (idempotente) o cron do agente de atualização: a cada 5 minutos ele
 # avisa o app da versão instalada e, se alguém clicou em "Atualizar agora" na
-# tela, roda o update.sh sozinho. É o que faz o botão da tela existir de
-# verdade — sem cron, a tela mostra "atualização automática indisponível" pra
-# sempre. Chamada por install.sh e update.sh (bloco 7) — re-rodar não duplica
-# a linha do crontab.
+# tela, roda o update.sh sozinho — dentro da janela de manutenção, quando o
+# `.env` tem `SYSTEM_UPDATE_WINDOW` (a janela é decidida no `agent.sh`, não
+# aqui: o passo desta linha não muda nunca; #4334). É o que faz o botão da tela
+# existir de verdade — sem cron, a tela mostra "atualização automática
+# indisponível" pra sempre. Chamada por install.sh e update.sh (bloco 7) —
+# re-rodar não duplica a linha do crontab.
 setup_update_agent_cron() {
   command -v crontab >/dev/null 2>&1 || { c_ylw "$(t "⚠ 'crontab' não encontrado — o botão de atualizar pela tela não vai funcionar.")"; return 0; }
   local secret="${INTERNAL_CRON_SECRET:-${INTERNAL_SECRET:-}}"
