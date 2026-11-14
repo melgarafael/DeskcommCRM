@@ -1,11 +1,15 @@
 "use client";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
-import { agendarRecargaDasConversas } from "@/hooks/inbox/recargaDasConversas";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
+import {
+  aplicarEventoNoFio,
+  eventoDeMensagem,
+  type PaginaDeMensagens,
+} from "@/lib/inbox/mensagem-do-realtime";
 import type { Message } from "@/lib/types/messaging";
 
 interface MessagesResponse {
@@ -55,10 +59,43 @@ export function useMessagesRealtime(conversationId: string | null) {
     refetchOnWindowFocus: true,
   });
 
-  const onChange = useCallback(() => {
-    if (conversationId) qc.invalidateQueries({ queryKey: ["messages", conversationId] });
-    agendarRecargaDasConversas(qc);
-  }, [qc, conversationId]);
+  /**
+   * O EVENTO DE `messages` NÃO DECLARA O FIO VELHO (#4325 item 5).
+   *
+   * Antes: cada evento — inclusive os `UPDATE` de confirmação (enviada,
+   * entregue, lida), que chegam vários por mensagem enviada — invalidava
+   * `["messages", id]` e pedia a recarga da lista. Numa `useInfiniteQuery`
+   * invalidar refaz TODAS as páginas do histórico: a conversa aberta era a tela
+   * mais cara do inbox, e cada mensagem enviada pagava três GET de mensagens
+   * mais um da lista.
+   *
+   * Agora: o evento traz a linha inteira e ela entra no cache (`pages[0]` para
+   * `INSERT`, mescla por `id` para confirmação), sem rede — ver
+   * `lib/inbox/mensagem-do-realtime.ts` para por que isso é seguro no fio e não
+   * seria na lista de conversas.
+   *
+   * A recarga da lista SAI daqui de propósito: o canal de `conversations` já
+   * recebe o mesmo fato (o `UPDATE` em `conversations` que acompanha a
+   * mensagem), e pedir a mesma recarga por dois canais era metade da carga que
+   * a issue mediu.
+   */
+  const onChange = useCallback(
+    (payload: unknown) => {
+      if (!conversationId) return;
+      const evento = eventoDeMensagem(payload);
+      if (!evento) {
+        // Payload fora do formato esperado (canal trocado, versão do servidor
+        // diferente): o conservador é a recarga de antes.
+        void qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+        return;
+      }
+      qc.setQueryData<InfiniteData<PaginaDeMensagens>>(
+        ["messages", conversationId],
+        (dados) => aplicarEventoNoFio(dados, evento) ?? dados,
+      );
+    },
+    [qc, conversationId],
+  );
 
   const { status: realtimeStatus, ultimaEntrega } = useRealtimeChannel({
     name: conversationId ? `messages-${conversationId}` : "messages-disabled",
