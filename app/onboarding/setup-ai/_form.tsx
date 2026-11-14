@@ -187,7 +187,7 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
       */}
       <div className="grid gap-3 sm:grid-cols-2">
         <section className="rounded-lg border bg-background p-4">
-          <h3 className="text-sm font-medium">{t("Ele já vem sabendo")}</h3>
+          <h3 className="text-sm font-medium">{t("O que ele já sabe fazer")}</h3>
           <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
             {capacidades.map((c) => (
               <li key={c}>· {c}</li>
@@ -195,14 +195,14 @@ export function SetupAiForm({ capacidades, conferencias }: Props) {
           </ul>
         </section>
         <section className="rounded-lg border bg-background p-4">
-          <h3 className="text-sm font-medium">{t("E nunca vai fazer")}</h3>
+          <h3 className="text-sm font-medium">{t("O que ele nunca faz")}</h3>
           <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
             {conferencias.map((c) => (
               <li key={c}>· {c}</li>
             ))}
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
-            {t("Essas conferências acontecem antes de cada mensagem sair, e não têm interruptor.")}
+            {t("Essas conferências rodam antes de cada mensagem sair — as que podem ser desligadas ficam na configuração do agente.")}
           </p>
         </section>
       </div>

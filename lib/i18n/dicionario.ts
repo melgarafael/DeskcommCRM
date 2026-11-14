@@ -10115,10 +10115,10 @@ export const DICIONARIO: Traducoes = {
   "O que vale para qualquer atendimento aqui. Pode deixar em branco agora e escrever depois — ele aprende com você ao longo do tempo.": {
     es: "Lo que aplica en cualquier atención de tu empresa. Puedes dejarlo en blanco por ahora y escribirlo después: con el tiempo aprende de ti.",
   },
-  "Ele já vem sabendo": { es: "Ya sabe desde el inicio" },
-  "E nunca vai fazer": { es: "Y nunca va a hacer" },
-  "Essas conferências acontecem antes de cada mensagem sair, e não têm interruptor.": {
-    es: "Estas verificaciones se hacen antes de que salga cada mensaje y no se pueden desactivar.",
+  "O que ele já sabe fazer": { es: "Lo que ya sabe hacer" },
+  "O que ele nunca faz": { es: "Lo que nunca hace" },
+  "Essas conferências rodam antes de cada mensagem sair — as que podem ser desligadas ficam na configuração do agente.": {
+    es: "Estas verificaciones corren antes de que salga cada mensaje; las que se pueden desactivar quedan en la configuración del agente.",
   },
   "O atendente foi criado, mas as": { es: "El agente se creó, pero las" },
   "regras da casa": { es: "reglas de la casa" },
@@ -10450,7 +10450,7 @@ export const DICIONARIO: Traducoes = {
   "Loja — online ou de rua": { es: "Tienda en línea o física" },
   "Outro tipo de negócio": { es: "Otro tipo de negocio" },
 
-  // ─── Onboarding: tool catalog (capacidades) usadas em "Ele já vem sabendo" ───
+  // ─── Onboarding: tool catalog (capacidades) usadas em "O que ele já sabe fazer" ───
   "Listar oportunidades do funil": { es: "Listar oportunidades del embudo" },
   "Ver uma oportunidade": { es: "Ver una oportunidad" },
   "Listar funis": { es: "Listar embudos" },
@@ -10464,21 +10464,43 @@ export const DICIONARIO: Traducoes = {
   "Ver ficha do cliente": { es: "Ver ficha del cliente" },
   "Ver as etapas de um funil": { es: "Ver las etapas de un embudo" },
 
-  // ─── Onboarding: conferências de saída (guardrails), "E nunca vai fazer" ───
+  // ─── Onboarding: conferências de saída (guardrails), painel do agente ───
   "Respeitar quem pediu para parar": { es: "Respetar a quien pidió parar" },
   "Respeitar dados apagados e a base legal": { es: "Respetar datos borrados y la base legal" },
   "Segurar o ritmo de envio": { es: "Controlar el ritmo de envío" },
   "Respeitar a janela do WhatsApp": { es: "Respetar la ventana de WhatsApp" },
   "Variar o texto das mensagens iguais": { es: "Variar el texto de los mensajes iguales" },
   "Não prometer preço ou prazo por conta própria": { es: "No prometer precio o plazo por cuenta propia" },
+  "Não confirmar condição que só o cliente citou": { es: "No confirmar una condición que solo citó el cliente" },
   "Conferir promessas em texto livre": { es: "Verificar promesas en texto libre" },
   "Não fazer afirmação clínica": { es: "No hacer afirmaciones clínicas" },
   "Barra a mensagem em que o assistente diz o que a pessoa tem, indica remédio ou dose, garante resultado ou afirma que uma lesão é câncer.": { es: "Bloquea el mensaje en el que el asistente dice lo que la persona tiene, indica un medicamento o una dosis, garantiza un resultado o afirma que una lesión es cáncer." },
   "Não custa nada e reconhece frases em português e espanhol. Só serve para saúde: em outros negócios pode barrar frases normais, como \"passe o creme hidratante\".": { es: "No cuesta nada y reconoce frases en portugués y español. Solo sirve para salud: en otros negocios puede bloquear frases normales, como \"aplica la crema hidratante\"." },
   "Não prometer atendimento humano que não existe": { es: "No prometer atención humana que no existe" },
   "Não falar a nossa língua com o seu cliente": { es: "No hablar nuestro idioma con tu cliente" },
+  "Só oferecer horário que a agenda devolveu": { es: "Ofrecer solo horarios que devolvió la agenda" },
+  "Conferir a escrita antes de afirmar registro": { es: "Verificar la escritura antes de afirmar un registro" },
   "Dizer que é um assistente quando perguntam": { es: "Decir que es un asistente cuando preguntan" },
   "Detectar tentativa de manipular o assistente": { es: "Detectar intento de manipular al asistente" },
+
+  // ─── Onboarding: a coluna "O que ele nunca faz" (NUNCA_FAZ) ───
+  "Insistir com quem pediu para parar": { es: "Insistir con quien pidió parar" },
+  "Escrever para contato apagado ou sem base legal": { es: "Escribir a un contacto borrado o sin base legal" },
+  "Disparar mensagens sem espaçar o envio": { es: "Enviar mensajes sin espaciar el envío" },
+  "Furar a janela de 24 horas do WhatsApp": { es: "Saltarse la ventana de 24 horas de WhatsApp" },
+  "Repetir o texto idêntico para todo mundo": { es: "Repetir el mismo texto para todos" },
+  "Prometer preço ou prazo por conta própria": { es: "Prometer precio o plazo por cuenta propia" },
+  "Confirmar condição que só o cliente citou": { es: "Confirmar una condición que solo citó el cliente" },
+  "Deixar passar promessa escrita em texto livre": { es: "Dejar pasar una promesa escrita en texto libre" },
+  "Afirmar fato que o material consultado não tem": { es: "Afirmar un dato que el material consultado no tiene" },
+  "Prometer atendimento humano sem abrir chamado": { es: "Prometer atención humana sin abrir un caso" },
+  "Falar a nossa língua com o seu cliente": { es: "Hablar nuestro idioma con tu cliente" },
+  "Fazer afirmação clínica": { es: "Hacer afirmaciones clínicas" },
+  "Negociar valores no lugar da equipe": { es: "Negociar valores en lugar del equipo" },
+  "Prometer checar a agenda sem checar de verdade": { es: "Prometer revisar la agenda sin revisarla de verdad" },
+  "Oferecer horário que a agenda não devolveu": { es: "Ofrecer un horario que la agenda no devolvió" },
+  "Afirmar registro que a ferramenta não confirmou": { es: "Afirmar un registro que la herramienta no confirmó" },
+  "Esconder que é um assistente quando perguntam": { es: "Ocultar que es un asistente cuando preguntan" },
 
   // ─── Onboarding: welcome/_form.tsx — cidades do fuso horário ───
   "São Paulo, Rio, Brasília, Sul e Sudeste": { es: "São Paulo, Río, Brasilia, Sur y Sudeste" },

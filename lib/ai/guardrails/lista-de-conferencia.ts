@@ -270,6 +270,55 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
 ];
 
 /**
+ * A MESMA lista, na fala da tela de novo tenant — "o que ele nunca faz".
+ *
+ * ─── Por que não é o `rotulo` ──────────────────────────────────────────────
+ *
+ * O `rotulo` acima é o TÍTULO de uma proteção no painel do agente ("Respeitar
+ * quem pediu para parar", ao lado do porquê de não se desligar). No onboarding
+ * ele ia direto para debaixo do título "E nunca vai fazer", e a leitura saía ao
+ * contrário do que a conferência faz: "nunca vai fazer — Respeitar quem pediu
+ * para parar" (issue #4526). Metade da lista começava por "Não prometer…",
+ * outra parte por verbo afirmativo ("Conferir…", "Deixar…", "Só oferecer…") —
+ * quatro formas verbais na mesma coluna.
+ *
+ * Aqui cada item é a AÇÃO PROIBIDA, no infinitivo, e o título da coluna fica
+ * "O que ele nunca faz": "Prometer preço ou prazo por conta própria",
+ * "Insistir com quem pediu para parar". A forma casa com a coluna irmã, cujos
+ * itens também são ações no infinitivo ("Ver o que a empresa atende").
+ *
+ * ─── Por que uma TABELA com o `nome` do gate, e não um campo na conferência ─
+ *
+ * A chave é a mesma do runtime (`nome`), e `tests/unit/onboarding-frases-do-
+ * novo-tenant.test.tsx` exige a mesma lista de chaves, na mesma ordem: renomear
+ * gate, tirar conferência ou acrescentar uma sem dar-lhe fala reprova. É o que
+ * impede a tela de prometer proteção que não roda — e o inverso.
+ *
+ * O texto é traduzido em `app/onboarding/setup-ai/page.tsx` por
+ * `Object.values(...).map(traduzir)`: a varredura de espanhol resolve os
+ * valores da tabela e cobra cada um no dicionário.
+ */
+export const NUNCA_FAZ: Readonly<Record<string, string>> = {
+  stop: "Insistir com quem pediu para parar",
+  lgpd: "Escrever para contato apagado ou sem base legal",
+  pacing: "Disparar mensagens sem espaçar o envio",
+  messaging_window: "Furar a janela de 24 horas do WhatsApp",
+  spinning: "Repetir o texto idêntico para todo mundo",
+  promise: "Prometer preço ou prazo por conta própria",
+  concessao_sem_lastro: "Confirmar condição que só o cliente citou",
+  semantic_promise: "Deixar passar promessa escrita em texto livre",
+  factual_claim: "Afirmar fato que o material consultado não tem",
+  case_promise: "Prometer atendimento humano sem abrir chamado",
+  internal_vocabulary: "Falar a nossa língua com o seu cliente",
+  clinical_claim: "Fazer afirmação clínica",
+  commercial_restriction: "Negociar valores no lugar da equipe",
+  agenda_stall: "Prometer checar a agenda sem checar de verdade",
+  horario_da_agenda: "Oferecer horário que a agenda não devolveu",
+  registro_sem_efeito: "Afirmar registro que a ferramenta não confirmou",
+  disclosure: "Esconder que é um assistente quando perguntam",
+};
+
+/**
  * A conferência de ENTRADA, que não está na cadeia de saída.
  *
  * Ela roda antes, sobre o que o cliente escreveu, e por isso aparece à parte: a
