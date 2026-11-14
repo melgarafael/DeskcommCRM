@@ -3,7 +3,8 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 
 import type { Locale } from "date-fns";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
 import { format, isToday, isYesterday } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,19 @@ function dayLabel(d: Date, t: (texto: string) => string = (texto) => texto, loca
   if (isYesterday(d)) return t("Ontem");
   return format(d, "dd/MM/yyyy", { locale: locale });
 }
+
+/**
+ * #4575 — quanto tempo o "achei" fica aceso, e até onde se carrega o histórico
+ * atrás de uma citada.
+ *
+ * O destaque é curto de propósito: serve para responder "qual destas?" e sai da
+ * frente. O teto de páginas existe porque uma citada que não está em lugar
+ * nenhum (linha apagada de verdade) não pode arrastar a conversa inteira para a
+ * memória antes de avisar que ela não existe — dez páginas são 500 mensagens,
+ * muito acima do que a paginação já alcança com dois ou três toques manuais.
+ */
+const DESTAQUE_DA_CITADA_MS = 2400;
+const PAGINAS_ATE_A_CITADA = 10;
 
 export function ChatThread({
   conversationId,
@@ -188,6 +202,65 @@ export function ChatThread({
     searching: !!termo,
   }, soNaCaixa);
   const { scrollerRef, contentRef, bottomRef } = scroll;
+
+  /**
+   * #4575 — IR ATÉ A MENSAGEM CITADA.
+   *
+   * Duas situações, e o mesmo gesto resolve as duas:
+   *
+   *   1. a original já está carregada — basta rolar até ela e acender o
+   *      destaque por um instante;
+   *   2. a original é antiga e ficou fora da página (`hasNextPage`), então a
+   *      lista pagina PARA TRÁS até encontrá-la, e só então rola.
+   *
+   * Não vai ao servidor por fora: usa o `fetchNextPage` da própria lista, com o
+   * `beforeLoadOlder` do hook de rolagem, para o histórico não pular na tela de
+   * quem está lendo. Quando a mensagem não existe mais (linha apagada de
+   * verdade, ou além do teto de páginas), o clique diz isso em vez de não fazer
+   * nada — que era o defeito da issue.
+   */
+  const [citadaDestacada, setCitadaDestacada] = useState<string | null>(null);
+  const destaqueDaCitada = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (destaqueDaCitada.current) clearTimeout(destaqueDaCitada.current);
+    },
+    [],
+  );
+
+  function elementoDaMensagem(id: string): HTMLElement | null {
+    return scrollerRef.current?.querySelector<HTMLElement>(`[data-message-id="${id}"]`) ?? null;
+  }
+
+  async function irParaCitada(id: string) {
+    let alvo = elementoDaMensagem(id);
+    let paginas = 0;
+    let temMais = q.hasNextPage;
+    while (!alvo && temMais && paginas < PAGINAS_ATE_A_CITADA) {
+      scroll.beforeLoadOlder();
+      const proxima = await q.fetchNextPage();
+      paginas += 1;
+      temMais = proxima?.hasNextPage ?? false;
+      // A página nova só vira DOM depois do commit do React: procurar no mesmo
+      // instante acharia o fio antigo. Espera curta, com teto, em vez de
+      // adivinhar um número de frames.
+      for (let espera = 0; espera < 20 && !alvo; espera += 1) {
+        await new Promise((resolver) => setTimeout(resolver, 20));
+        alvo = elementoDaMensagem(id);
+      }
+    }
+    if (!alvo) {
+      toast.info(t("A mensagem original não está mais na conversa."));
+      return;
+    }
+    alvo.scrollIntoView({ block: "center" });
+    setCitadaDestacada(id);
+    if (destaqueDaCitada.current) clearTimeout(destaqueDaCitada.current);
+    destaqueDaCitada.current = setTimeout(
+      () => setCitadaDestacada(null),
+      DESTAQUE_DA_CITADA_MS,
+    );
+  }
 
   // Só o TERMO leva à ocorrência. Depender do conjunto de resultados faria cada
   // mensagem nova do tempo real arrancar quem lê de volta à primeira ocorrência.
@@ -348,6 +421,8 @@ export function ChatThread({
                   message={item.data}
                   searchMatch={resultados.has(item.data.id)}
                   debugCitations={debugCitations}
+                  destacada={citadaDestacada === item.data.id}
+                  onIrParaCitada={irParaCitada}
                   onResponder={onResponder}
                   onEncaminhar={onEncaminhar}
                   // A citada sai da MESMA lista já carregada: buscar no servidor
