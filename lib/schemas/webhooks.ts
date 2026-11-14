@@ -10,7 +10,8 @@ import { z } from "zod";
 import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
 import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
-import { conditionsSchema } from "@/lib/automation/conditions";
+import { condicoesDeCampo, conditionsSchema } from "@/lib/automation/conditions";
+import type { Conditions, RuleCondition } from "@/lib/automation/conditions";
 import { configDoAniversario } from "@/lib/automation/aniversario-do-contato";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
@@ -103,6 +104,24 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // regras do mesmo gatilho com N diferentes disparariam juntas.
   "lead.silent_for": "crm_lead",
   "lead.stage_stale": "crm_lead",
+  // O NEGÓCIO FOI EDITADO (#1749): o gatilho de "negócio alterado".
+  //
+  // O evento já existia e já era emitido — `updateLeadHandler` grava
+  // `lead.updated` com `payload: { fields }` (os NOMES das colunas que a edição
+  // mudou, por `lib/leads/campos-alterados.ts`) desde a wave 6. Faltava o
+  // consumidor: a linha nascia `done` porque o tipo estava na lista de REGISTRO
+  // (`fn_event_log_e_registro`, migration 0239), e nenhuma regra podia reagir a
+  // uma mudança de campo. A migration 1749 tira o tipo dessa lista — o mesmo
+  // conserto que a 0417 fez com `message.failed` —, e a partir daqui o motor o
+  // assina como qualquer outro gatilho de negócio.
+  //
+  // A entidade é `crm_lead` porque é o que `buildContext` hidrata: a regra vê o
+  // lead de AGORA (condições sobre valor atual, ex. `lead.custom_fields.status
+  // eq aprovado`, funcionam como em qualquer gatilho de lead), enquanto a lista
+  // de nomes em `event.fields` responde "o que mudou nesta edição". O payload
+  // NÃO carrega valor de campo — e a condição por campo (#1749) foi desenhada
+  // sobre os nomes justamente para manter isso (§9: nenhuma PII nova no evento).
+  "lead.updated": "crm_lead",
   // A LIGAÇÃO RECEBIDA QUE NINGUÉM ATENDEU (#4365). Nasce do worker de voz
   // (`workers/voice-agent`, via `lib/voip/evento-de-ligacao-perdida.ts`), que é
   // quem encerra a linha `ringing` como `timeout`. A entidade é o CONTATO — é
@@ -218,6 +237,52 @@ function recusarLacoDeLead(
 ): void {
   if (!acoesQueFechamLaco(regra.trigger_event, regra.actions).length) return;
   ctx.addIssue({ code: "custom", path: ["actions"], message: MENSAGEM_DO_LACO_DE_LEAD });
+}
+
+/**
+ * O gatilho cujo payload é a lista de NOMES de campo que a edição mudou (#1749).
+ *
+ * A condição `campo_alterado` lê `event.fields`, que SÓ o `lead.updated` carrega.
+ * Em qualquer outro evento ela seria sempre falsa — e uma regra salva que nunca
+ * dispara é o defeito que este repositório já pagou várias vezes (o operador
+ * acredita que configurou, e quem descobre é o cliente que não recebeu nada).
+ */
+export const GATILHO_DO_NEGOCIO_ALTERADO = "lead.updated" satisfies GatilhoDeAutomacao;
+
+/** A frase da recusa, a MESMA na porta da API (`t()`) e no desenho da regra. */
+export const MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO =
+  "A condição “foi alterado” só existe no gatilho “negócio alterado” (quando um negócio for editado): troque o gatilho ou escolha outro operador.";
+
+/**
+ * As condições `campo_alterado` que NÃO podem existir com este gatilho.
+ *
+ * Mora aqui, e não em `lib/automation/conditions.ts`, porque é o único lugar
+ * que conhece os dois lados: o avaliador sabe ler `event.fields` e não sabe (nem
+ * precisa saber) de que gatilho veio a regra. A porta da criação cobra o par
+ * inteiro; o PATCH cobra o par MESCLADO (o patch pode trazer só o gatilho e
+ * deixar as condições gravadas) — a mesma forma do veto de laço da #1528, na
+ * rota irmã.
+ */
+export function condicoesQueSoExistemNoNegocioAlterado(
+  triggerEvent: string | undefined,
+  conditions: Conditions | undefined,
+): RuleCondition[] {
+  if (!conditions) return [];
+  const doCampoAlterado = condicoesDeCampo(conditions).filter((c) => c.op === "campo_alterado");
+  if (!doCampoAlterado.length) return [];
+  return triggerEvent === GATILHO_DO_NEGOCIO_ALTERADO ? [] : doCampoAlterado;
+}
+
+function recusarCampoAlteradoForaDoGatilho(
+  regra: { trigger_event?: string; conditions?: Conditions },
+  ctx: z.RefinementCtx,
+): void {
+  if (!condicoesQueSoExistemNoNegocioAlterado(regra.trigger_event, regra.conditions).length) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["conditions"],
+    message: MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO,
+  });
 }
 
 export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
@@ -848,7 +913,8 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(recusarLimitePorContatoTorto)
   .superRefine(recusarAntecedenciaTorta)
-  .superRefine(recusarLacoDeLead);
+  .superRefine(recusarLacoDeLead)
+  .superRefine(recusarCampoAlteradoForaDoGatilho);
 
 /**
  * "Dias de antecedência" do aniversário (#3726) é um inteiro de 0 a 365.

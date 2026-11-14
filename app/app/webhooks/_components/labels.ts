@@ -72,6 +72,11 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // funil) ficam embaixo, na configuração da regra.
   "lead.silent_for": "Quando ficar N dias sem mensagem",
   "lead.stage_stale": "Quando um lead ficar N dias na mesma etapa",
+  // #1749 — "negócio alterado". A frase diz o FATO (a edição do negócio) e não
+  // "negócio atualizado", que sugeriria qualquer escrita do sistema: o evento
+  // nasce só do PATCH de edição do negócio, e o detalhe do que mudou vai na
+  // condição, embaixo.
+  "lead.updated": "Quando um negócio for alterado",
   // #4365 — a frase diz o DESFECHO para quem ligou ("não for atendida"), que é
   // o fato que a regra escuta. "Recebida" separa da ligação FEITA que ninguém
   // atendeu — essa não é perdida, e não dispara este gatilho.

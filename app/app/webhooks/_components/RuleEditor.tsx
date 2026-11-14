@@ -220,6 +220,14 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // funil (via etapa/tags) e tags do contato.
   "lead.silent_for": LEAD_FIELDS,
   "lead.stage_stale": [...LEAD_FIELDS, STAGE_FIELD],
+  // #1749 — "negócio alterado". A condição própria do gatilho é "o campo X está
+  // entre os nomes que a edição mudou"; os VALORES do negócio nunca viajam no
+  // evento, e para filtrar pelo valor ATUAL valem os campos do lead (hidratados
+  // no contexto), como em qualquer gatilho de negócio.
+  "lead.updated": [
+    { value: "event.fields", label: "Nome do campo alterado", op: "campo_alterado" },
+    ...LEAD_FIELDS,
+  ],
   // #4365 — as condições são as do CONTATO: quem monta a regra quer filtrar
   // QUEM ligou (tags, nome), e o fato em si (a ligação perdida) já é o gatilho.
   "voice_call.missed": CONTACT_FIELDS,
@@ -236,6 +244,10 @@ export const OP_LABELS: Record<Op, string> = {
   gte: "maior ou igual a",
   lt: "menor que",
   lte: "menor ou igual a",
+  // #1749 — o operador pergunta ao EVENTO quais campos a edição mudou; o valor
+  // da condição é o NOME do campo (ex.: `expected_close_date`), nunca o valor
+  // dele. Só existe no gatilho "negócio alterado" — a porta recusa nos outros.
+  campo_alterado: "foi alterado",
 };
 
 /**
