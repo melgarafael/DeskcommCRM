@@ -657,6 +657,12 @@ export const AUDIT_ACTIONS = [
   // "quem mexeu no cadastro dela?". Fundir as duas obrigaria a ler o metadata
   // para saber qual das duas coisas aconteceu.
   "org.branding_updated",
+  // A APARÊNCIA da organização (template visual e ajustes) trocada em
+  // `organizations.settings.aparencia` pela tela Configurações › Aparência —
+  // mesma forma da anterior (`organization_id` + `resource_id` = uuid da org).
+  // Ação própria porque a pergunta da trilha é outra: "quem trocou o visual
+  // desta empresa?", e não "quem trocou o nome ou a cor da marca?".
+  "org.aparencia_updated",
   // As ALÍNEAS a), c) e d) do art. 15.º preenchidas pelo controlador
   // (`organizations.settings.art15`, issue #2356) — mutação de TENANT com a
   // mesma forma da anterior: `organization_id` + `resource_id` = uuid da org.

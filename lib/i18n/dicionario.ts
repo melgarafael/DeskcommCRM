@@ -37,6 +37,7 @@ import { entradaDoCatalogo } from "./catalogos";
 import type { Idioma } from "./idiomas";
 import { TEXTOS_AGENDA_CONFIGURACAO } from "./agenda-configuracao";
 import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
+import { TEXTOS_APARENCIA } from "./aparencia";
 import { TEXTOS_CONTRATACAO } from "./contratacao";
 
 /** `pt-BR` não aparece: é a chave. Só o que DIFERE precisa de linha. */
@@ -46,6 +47,7 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_CONTRATACAO,
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
+  ...TEXTOS_APARENCIA,
   "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
   // Mensagens agendadas na conversa (issue #3118, primeira parte): textos do popup.
   "Mensagens agendadas": { es: "Mensajes programados" },

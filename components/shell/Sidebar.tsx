@@ -537,6 +537,10 @@ function BotaoDeRecolher({
 export function Sidebar({ collapsed }: { collapsed: boolean }) {
   return (
     <aside
+      // Ganchos da tela Aparência (`app/app/aparencia.css`): sem template
+      // escolhido nenhuma regra os usa, e o menu é exatamente o de antes.
+      data-casca="menu"
+      data-casca-lugar="lateral"
       className={cn(
         // ⚠️ `sticky`, e NUNCA `fixed`.
         //
@@ -577,7 +581,15 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
         collapsed ? "w-16" : "w-60",
       )}
     >
-      <SidebarContent collapsed={collapsed} />
+      {/*
+        O painel que DESENHA o menu num template de menu flutuante: o recuo vira
+        padding do `<aside>`, e é este painel que ganha fundo, raio e vidro — a
+        altura do `<aside>` (e do menu inteiro, medido por `navegacao.spec.ts`)
+        não muda. Sem template, é uma coluna flex que só repassa os filhos.
+      */}
+      <div data-casca="menu-painel" className="flex h-full min-h-0 flex-col">
+        <SidebarContent collapsed={collapsed} />
+      </div>
     </aside>
   );
 }

@@ -15636,6 +15636,10 @@ export type Database = {
         };
         Returns: string;
       };
+      fn_definir_aparencia_da_organizacao: {
+        Args: { p_aparencia: Json; p_org: string };
+        Returns: Json;
+      };
       fn_definir_cliente_pela_agenda: { Args: { p_ligado: boolean; p_org: string }; Returns: Json };
       fn_definir_colegas_podem_mexer_na_agenda: {
         Args: { p_ligado: boolean; p_org: string };
