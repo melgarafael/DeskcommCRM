@@ -512,16 +512,15 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-subtle"
               aria-hidden
             />
-            {/* "última mensagem", e não "mensagem": a busca alcança apenas
-                `conversations.last_message_preview` — a ÚLTIMA mensagem, truncada em 200
-                caracteres já na ingestão (`grep -rn 'slice(0, 200)' lib/channels/` mostra onde).
-                Medido numa conversa real de 32 mensagens: buscar o que o cliente pediu na
-                3ª devolve ZERO. Alcançar o histórico é projeto próprio (índice trigram +
-                retenção + LGPD); até lá, a tela não promete o que o backend não faz. */}
+            {/* "texto das mensagens", e não "última mensagem": desde a #1355 a
+                busca alcança o CORPO de qualquer mensagem da conversa (índice
+                trigram em `messages.body`, migration 9349) e devolve o trecho
+                casado na linha. O que continua fora: anexo e áudio transcrito —
+                o placeholder promete o que o backend faz, nem mais nem menos. */}
             <Input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder={t("Buscar por nome, telefone ou última mensagem…")}
+              placeholder={t("Buscar por nome, telefone ou texto das mensagens…")}
               className="h-9 rounded-full border-transparent bg-surface-elevated pl-9 shadow-none focus-visible:border-border focus-visible:bg-background"
               aria-label={t("Buscar conversas")}
             />

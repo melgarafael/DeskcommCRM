@@ -282,6 +282,7 @@ export function ConversationList({
             isSelected={c.id === selectedId}
             onSelect={abrirConversa}
             mencionado={mencionadas.has(c.id)}
+            termoDaBusca={filters.search ?? ""}
             queuePosition={isQueue ? i + 1 : undefined}
             mostrarCanal={maisDeUmCanal}
             mostrarAtendente={mostrarAtendente}
