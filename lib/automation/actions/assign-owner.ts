@@ -71,6 +71,7 @@ import {
 } from "@/lib/automation/destino-do-atribuir";
 import { resolveOwnerPatch } from "@/lib/leads/owner-patch";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
+import { conferirVinculoDoDestino, type VinculoDoDestino } from "@/lib/automation/vinculo-do-destino";
 
 /** O que `fn_automation_rodizio_atribuir` devolve: quem recebeu, ou o motivo de ninguém. */
 type DesfechoDoRodizio =
@@ -222,36 +223,15 @@ async function passarAsConversas(
 }
 
 /**
- * O vínculo de quem vai receber. A régua é a mesma nos dois modos que escolhem
- * pessoa fora da regra: no destino dinâmico ela é conferida a cada candidato, e
- * o recusado volta para a resolução continuar a cadeia.
+ * O vínculo de quem vai receber. A régua é a MESMA do item 3 da #3804 (o
+ * handoff da IA), e mora em `lib/automation/vinculo-do-destino`: no destino
+ * dinâmico ela é conferida a cada candidato, e o recusado volta para a
+ * resolução continuar a cadeia.
  */
-type Elegibilidade =
-  | { ok: true }
-  | { ok: false; motivo: "user_not_in_org" | "invalid_owner" }
-  | { ok: false; indeterminado: string };
+type Elegibilidade = VinculoDoDestino;
 
 async function conferirElegibilidade(ctx: ActionCtx, userId: string): Promise<Elegibilidade> {
-  const { data: member, error: erroDaConsulta } = await ctx.admin
-    .from("user_organizations")
-    .select("user_id, role")
-    .eq("organization_id", ctx.organizationId)
-    .eq("user_id", userId)
-    .is("revoked_at", null)
-    .maybeSingle();
-  if (erroDaConsulta) {
-    // A consulta de membro também pode NÃO VOLTAR (rede, banco fora). Isso não é
-    // "não é membro": culpar a configuração do operador por uma queda de
-    // infraestrutura manda ele mexer no que está certo. Falha fechada na ação,
-    // aberta na informação — código transitório e a mensagem do erro.
-    return { ok: false, indeterminado: erroDaConsulta.message };
-  }
-  if (!member) return { ok: false, motivo: "user_not_in_org" };
-  if (member.role === "viewer") {
-    // Mesma régua do bulk-assign (G3-04 invalid_owner): viewer não atende.
-    return { ok: false, motivo: "invalid_owner" };
-  }
-  return { ok: true };
+  return conferirVinculoDoDestino(ctx.admin, ctx.organizationId, userId);
 }
 
 /**

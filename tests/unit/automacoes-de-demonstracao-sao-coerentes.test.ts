@@ -316,10 +316,22 @@ describe("histórico de demonstração", () => {
         // A mensagem que o BANCO devolveu não é código da ação: ela a repassa
         // (`error: error.message`). Quem prova que ela chega assim é o caso acima.
         if (codigo === h.mundo.escritaFalhou) continue;
-        const fonte = readFileSync(
-          path.join(process.cwd(), "lib/automation/actions", `${a.type.replaceAll("_", "-")}.ts`),
-          "utf8",
+        const arquivoDaAcao = path.join(
+          "lib/automation/actions",
+          `${a.type.replaceAll("_", "-")}.ts`,
         );
+        // A ação pode DELEGAR a régua a outro módulo de `lib/automation` — e aí o
+        // código de erro mora lá, não no arquivo da ação. A lista é explícita de
+        // propósito: procurar em todo o diretório deixaria de provar que ESTA ação
+        // devolve o código (qualquer arquivo vizinho faria o teste passar).
+        const reguasDelegadas: Record<string, string[]> = {
+          // `assign-owner` confere o vínculo por `conferirVinculoDoDestino`, que é
+          // a mesma régua do handoff (#3804): `user_not_in_org` vem de lá.
+          assign_owner: ["lib/automation/vinculo-do-destino.ts"],
+        };
+        const fonte = [arquivoDaAcao, ...(reguasDelegadas[a.type] ?? [])]
+          .map((relativo) => readFileSync(path.join(process.cwd(), relativo), "utf8"))
+          .join("\n");
         expect(fonte, `${a.type} nunca devolve "${codigo}"`).toContain(`"${codigo}"`);
       }
     }

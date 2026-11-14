@@ -52,6 +52,8 @@ import {
   type OrigemDaPassagem,
 } from "@/lib/escalacao/passagem";
 import { CHAVES_DO_CLIMA, type MotorDoClima } from "@/lib/ai/decisao/metadados-do-clima";
+import { entregarAoDonoDoHandoff, type DesfechoDaEntrega } from "@/lib/escalacao/destino-do-handoff";
+import { portaDaEntregaSupabase } from "@/lib/escalacao/destino-do-handoff-supabase";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 
@@ -114,6 +116,17 @@ export interface TriggerHandoffResult {
    * já ter avisado, e o cliente recebia a mesma coisa duas vezes.
    */
   aviso?: DesfechoDoAvisoDoCrm | null;
+  /**
+   * O desfecho da entrega ao dono (#3804, item 3). Presente só quando houve
+   * passagem; `entregue: false` é o caminho de sempre (sem configuração, origem
+   * humana…).
+   *
+   * Sai daqui para a ferramenta MCP não repetir a escolha: ela fazia o rodízio
+   * do canal DEPOIS deste motor, e com a conversa já entregue ao dono o claim
+   * responderia `already_assigned` — um aviso de falha para uma entrega que deu
+   * certo. Quem sabe o dono é quem o resolveu.
+   */
+  entrega?: DesfechoDaEntrega | null;
 }
 
 /**
@@ -559,7 +572,52 @@ export async function triggerHandoff(
       }
     }
 
-    return { triggered: true, reason: input.reason, aviso };
+    // (f) A ENTREGA AO DONO — item 3 da #3804.
+    //
+    // Este motor devolvia a conversa à fila (`status='pending'`) e parava aí: a
+    // conversa ficava sem dono, e quem a pegava era o rodízio do canal ou a
+    // primeira pessoa — nunca necessariamente quem vendeu. Com a configuração
+    // `settings.atendimento.destino_do_handoff` ligada, ela vai para o
+    // responsável do negócio / dono da carteira do contato, pela MESMA decisão
+    // (`entregarAoDonoDoHandoff`) e pela mesma porta de atribuição que o botão
+    // Transferir usa (`fn_conversation_assign`, `reason = 'handoff'`).
+    //
+    // Sem a chave, o desfecho é `sem_configuracao` e nada muda; passagem feita
+    // por uma PESSOA (o "Assumir eu" dos casos, origem `caso_escalado`) é
+    // `origem_humana` e também não muda nada. Fire-and-forget: a passagem já
+    // aconteceu, e o erro vira log.
+    let entrega: DesfechoDaEntrega | null = null;
+    try {
+      await guard();
+      const desfecho = await entregarAoDonoDoHandoff(portaDaEntregaSupabase(admin), {
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        origem: input.origem,
+      });
+      entrega = desfecho;
+      if (desfecho.entregue) {
+        logger.info("[handoff-orchestrator] conversa entregue ao dono configurado", {
+          conversation_id: input.conversationId,
+          destino: desfecho.motivo,
+          para_user_id: desfecho.user_id,
+          descartes: desfecho.descartes.length,
+        });
+      } else if (desfecho.motivo !== "sem_configuracao" && desfecho.motivo !== "origem_humana") {
+        logger.warn("[handoff-orchestrator] conversa não entregue ao dono configurado", {
+          conversation_id: input.conversationId,
+          motivo: desfecho.motivo,
+          ...(desfecho.erro !== undefined ? { error: desfecho.erro.slice(0, 200) } : {}),
+          descartes: desfecho.descartes.length,
+        });
+      }
+    } catch (err) {
+      logger.warn("[handoff-orchestrator] entrega ao dono não concluída", {
+        conversation_id: input.conversationId,
+        error: err instanceof Error ? err.message.slice(0, 200) : String(err),
+      });
+    }
+
+    return { triggered: true, reason: input.reason, aviso, entrega };
   } catch (err) {
     logger.warn("[handoff-orchestrator] unexpected error", {
       conversation_id: input.conversationId,

@@ -54,6 +54,8 @@ import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
 import { CONVERSATION_TERMINAL_STATUSES } from '@/lib/schemas';
 import { ehOptOutProvavel } from '@/lib/opt-out/deteccao';
 import { emitAgentActivityForContact } from '@/lib/leads/agent-activity';
+import { entregarAoDonoDoHandoff } from '@/lib/escalacao/destino-do-handoff';
+import { portaDaEntregaPg } from '@/lib/escalacao/destino-do-handoff-pg';
 
 import type { DesfechoDoAviso } from './aviso-de-escalacao';
 
@@ -702,6 +704,52 @@ export async function performHumanHandoff(
     }
   } catch (err) {
     opts.log.warn('handoff: atividade da passagem não foi gravada', {
+      error: err instanceof Error ? err.message.slice(0, 200) : 'erro desconhecido',
+    });
+  }
+
+  // (f) A ENTREGA AO DONO — item 3 da #3804.
+  //
+  // A conversa que a IA passa para uma pessoa vai para QUEM É O DONO dela: o
+  // responsável do negócio e/ou o dono da carteira do contato, conforme a
+  // configuração da organização (`settings.atendimento.destino_do_handoff`, a
+  // MESMA forma do modo `destino` da ação de atribuir). A decisão inteira mora
+  // em `entregarAoDonoDoHandoff`; aqui só se entrega a porta do pool e o
+  // desfecho vira linha de log.
+  //
+  // Sem a chave, `entregarAoDonoDoHandoff` devolve `sem_configuracao` ANTES de
+  // qualquer leitura de negócio/contato e sem escrita nenhuma: o handoff de
+  // quem não configurou é byte a byte o de hoje. E passagem feita por uma
+  // PESSOA (o "Assumir eu" dos casos) devolve `origem_humana`: quem está na
+  // conversa não perde o dono por causa de uma configuração.
+  //
+  // Falhar AQUI não pode derrubar a passagem — `force_human` já está gravado, a
+  // conversa já saiu do automático e a Central já tem o aviso. O erro vira log,
+  // e a conversa fica na fila humana como ficava antes desta entrega.
+  try {
+    await guardServiceEffect();
+    const desfecho = await entregarAoDonoDoHandoff(portaDaEntregaPg(db), {
+      organizationId: ids.tenantId,
+      conversationId: ids.conversationId,
+      origem: opts.passagem?.origem ?? null,
+    });
+    if (desfecho.entregue) {
+      opts.log.info('handoff entregue ao dono configurado pela organização', {
+        destino: desfecho.motivo,
+        para_user_id: desfecho.user_id,
+        descartes: desfecho.descartes.length,
+      });
+    } else if (desfecho.motivo !== 'sem_configuracao' && desfecho.motivo !== 'origem_humana') {
+      // `sem_configuracao`/`origem_humana` são o caminho de sempre, não notícia.
+      // O resto é a entrega tentada e não concluída, e quem opera precisa saber.
+      opts.log.warn('handoff não entregue ao dono configurado', {
+        motivo: desfecho.motivo,
+        ...(desfecho.erro !== undefined ? { erro: desfecho.erro.slice(0, 200) } : {}),
+        descartes: desfecho.descartes.length,
+      });
+    }
+  } catch (err) {
+    opts.log.warn('handoff: entrega ao dono não concluída', {
       error: err instanceof Error ? err.message.slice(0, 200) : 'erro desconhecido',
     });
   }
