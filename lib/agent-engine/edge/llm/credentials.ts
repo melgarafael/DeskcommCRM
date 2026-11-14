@@ -300,6 +300,14 @@ function causaDoBanco(err: unknown): string {
 export interface LlmResolveOverride {
   provider?: string;
   credentialId?: string | null;
+  /**
+   * A RESERVA DE MODELO que a versão publicada do agente aponta (#4600), de
+   * QUALQUER provedor cadastrado. Opcional e ausente por padrão: quem não
+   * configura nada fica com o comportamento de antes, byte a byte. O par não é
+   * resolvido aqui — a decisão de cair é da política pura
+   * (`lib/ai/pontos/reserva-da-assinatura.ts`), e o seam só a executa.
+   */
+  reservaDeModelo?: { provider: string; model: string } | null;
 }
 
 export async function resolveOrgLlmConfig(

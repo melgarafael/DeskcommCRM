@@ -69313,6 +69313,47 @@ comment on column public.ai_agent_versions.image_vision_enabled is
   'Lido em lib/agent-engine/agent/agent-config.ts e no predicado '
   'lib/messaging/media/leitura-adiada.ts:haLeitorDaDescricao.';
 
+-- ---- Reserva de modelo configurável: reserve_provider + reserve_model (migration 9368) ----
+-- Espelho idêntico da 9368 (o porquê está no cabeçalho dela). Fica ANTES da
+-- VARREDURA anon porque recria `fn_ai_agent_version_content_immutable`; o corpo
+-- é o da 9108 (a última definição acima) mais as duas colunas de reserva.
+-- NULOS por padrão: quem não configura nada tem exatamente o comportamento de
+-- antes, inclusive o caminho da assinatura.
+alter table public.ai_agent_versions
+  add column if not exists reserve_provider text;
+
+alter table public.ai_agent_versions
+  add column if not exists reserve_model text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'ai_agent_versions_reserva_check'
+  ) then
+    alter table public.ai_agent_versions
+      add constraint ai_agent_versions_reserva_check
+      check (
+        (reserve_provider is null and reserve_model is null)
+        or (
+          reserve_provider is not null and btrim(reserve_provider) <> ''
+          and reserve_model is not null and btrim(reserve_model) <> ''
+        )
+      );
+  end if;
+end $$;
+
+comment on column public.ai_agent_versions.reserve_provider is
+  'Migration 9368. Provedor para onde a chamada cai quando o principal falha por '
+  'cota (429), servidor (5xx) ou tempo esgotado — qualquer provedor já cadastrado. '
+  'NULL (default) = sem reserva, comportamento de antes. Lido em '
+  'lib/agent-engine/agent/agent-config.ts e decidido em '
+  'lib/ai/pontos/reserva-da-assinatura.ts (decidirQuedaDoModeloDeReserva).';
+
+comment on column public.ai_agent_versions.reserve_model is
+  'Migration 9368. Modelo do provedor de reserva. Os dois campos são configurados '
+  'juntos (ai_agent_versions_reserva_check): provedor sem modelo é configuração '
+  'pela metade e não vira degrau nenhum.';
+
 create or replace function fn_ai_agent_version_content_immutable() returns trigger
 -- search_path fixo na PRÓPRIA definição: um create or replace sem a cláusula
 -- apaga o alter function ... set search_path da 0521 (invariante
@@ -69353,6 +69394,8 @@ begin
     or new.reply_min_interval_ms  is distinct from old.reply_min_interval_ms
     or new.voz_enabled            is distinct from old.voz_enabled
     or new.voz_quando             is distinct from old.voz_quando
+    or new.reserve_provider       is distinct from old.reserve_provider
+    or new.reserve_model          is distinct from old.reserve_model
     or new.version_number         is distinct from old.version_number
     or new.agent_id               is distinct from old.agent_id
     or new.organization_id        is distinct from old.organization_id

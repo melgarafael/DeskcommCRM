@@ -5809,6 +5809,9 @@ export const DICIONARIO: Traducoes = {
   "O modelo econômico não respondeu; a chamada foi repetida no modelo de antes, e o resultado dessa repetição aparece numa linha própria.": {
     es: "El modelo económico no respondió; la llamada se repitió con el modelo anterior, y el resultado de esa repetición aparece en una línea propia.",
   },
+  "O modelo principal não estava disponível (cota, servidor ou tempo esgotado); a reserva configurada no agente respondeu esta chamada.": {
+    es: "El modelo principal no estaba disponible (cuota, servidor o tiempo agotado); la reserva configurada en el agente respondió esta llamada.",
+  },
   "O modelo escolhido para este ponto devolveu o resultado fora do formato duas vezes; a chamada foi repetida no modelo do agente.": {
     es: "El modelo elegido para este punto devolvió el resultado fuera del formato dos veces; la llamada se repitió con el modelo del agente.",
   },
