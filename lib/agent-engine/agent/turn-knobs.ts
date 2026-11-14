@@ -14,6 +14,10 @@ export function turnKnobsFromEnv(env: Env): InboundTurnKnobs {
     knowledgeIndexMaxTokens: env.KNOWLEDGE_INDEX_MAX_TOKENS,
     maxSteps: env.AGENT_MAX_STEPS,
     maxSendsPerTurn: env.MAX_SENDS_PER_TURN,
+    tetoDeRespostas: {
+      porConversa: env.TETO_DE_RESPOSTAS_POR_CONVERSA,
+      janelaMinutos: env.TETO_DE_RESPOSTAS_JANELA_MIN,
+    },
     queuedRetryDelayMs: env.SEND_QUEUED_RETRY_MS,
     respostaObsoletaTetoMs: env.RESPOSTA_OBSOLETA_TETO_MS,
     paradaAposEnvioFinal: env.AGENT_STOP_AFTER_FINAL_SEND,
