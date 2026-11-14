@@ -722,6 +722,12 @@ export const DICIONARIO: Traducoes = {
   // Vínculos pessoa ↔ empresa e contato ↔ pessoa pela tela (issue #3198).
   "Adicionar a uma empresa": { es: "Agregar a una empresa" },
   "Adicionar pessoa": { es: "Agregar persona" },
+  "Adicionar pessoa com contato": { es: "Agregar persona con contacto" },
+  "É decisor": { es: "Es decisor" },
+  "Telefone / WhatsApp": { es: "Teléfono / WhatsApp" },
+  "Sem telefone nem e-mail, só a pessoa é cadastrada, ligada à empresa.": {
+    es: "Sin teléfono ni correo, solo se registra la persona, vinculada a la empresa.",
+  },
   "Buscar contato por nome ou telefone": { es: "Buscar contacto por nombre o teléfono" },
   "Buscar empresa por nome ou CNPJ": { es: "Buscar empresa por nombre o CNPJ" },
   "Buscar pessoa por nome ou e-mail": { es: "Buscar persona por nombre o correo" },
