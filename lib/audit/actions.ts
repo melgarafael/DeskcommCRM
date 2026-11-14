@@ -1549,6 +1549,15 @@ export const AUDIT_ACTIONS = [
   // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
   // aceitável: a única porta da escrita deixa rastro.
   "ouvidoria.status_updated",
+  // Mensagem de texto agendada na conversa (#3118, primeira parte — envio único).
+  // `dispatched` é o cron entregando ao envio, não "enviada": a mensagem pode
+  // ficar em `queued` esperando o canal. `cancelled` vem da pessoa (com ator) ou
+  // do cron (sem ator, com o motivo no metadata). Nunca o texto no metadata.
+  "scheduled_message.created",
+  "scheduled_message.updated",
+  "scheduled_message.cancelled",
+  "scheduled_message.dispatched",
+  "scheduled_message.failed",
   // Desfazer o vínculo pessoa ↔ empresa pela tela (issue #3198). O metadata
   // leva só os dois ids da junção.
   "company_people.unlinked",
