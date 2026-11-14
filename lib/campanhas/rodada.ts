@@ -87,6 +87,28 @@ const VAZIA: ResultadoDaRodada = {
 /** Teto de números atendidos por rodada — a rodada é de um minuto, não de um dia. */
 export const NUMEROS_POR_RODADA = 10;
 
+/**
+ * Campanhas por PÁGINA da varredura — o mesmo 3× o teto de números que a janela
+ * única lia de uma vez. O que muda (#4495) é que a página deixou de ser a
+ * varredura inteira: quem não ocupa número não pode consumir a vez de quem vem
+ * depois.
+ */
+export const CAMPANHAS_POR_PAGINA = NUMEROS_POR_RODADA * 3;
+
+/**
+ * Orçamento de varredura: páginas lidas por rodada, no máximo, quando as
+ * anteriores não preenchem o teto de números. Cada campanha lida custa as
+ * leituras dela (ritmo, fila) — sem este teto, uma instalação com centenas de
+ * campanhas paradas no próprio ritmo transformaria o tique de um minuto numa
+ * varredura sem fim, e o custo cairia justamente em quem tem fila grande.
+ *
+ * 10 × 30 = 300 campanhas por tique. Saúde normal nem chega à segunda página
+ * (a primeira preenche os 10 números e a rodada sai); quem chega ao teto ganha
+ * `varredura:orcamento` no detalhe, para o operador saber que a fila foi lida
+ * até o limite — e não que acabou.
+ */
+export const PAGINAS_POR_RODADA = 10;
+
 /** Teto de agendadas promovidas por rodada: a sobra vira `running` no minuto seguinte. */
 const PROMOVIDAS_POR_RODADA = 100;
 
@@ -147,75 +169,118 @@ export async function rodarUmaRodadaDeCampanha(
   // fila é `fn_suspender_organizacao`, que falha os jobs pendentes.
   const promovidas = await promoverAgendadas(admin, agora);
 
-  const { data: campanhas, error: falhaDaBusca } = await admin
-    .from("campaigns")
-    .select(COLUNAS_DA_CAMPANHA_COM_EMBED)
-    .eq("status", "running")
-    .eq("organizations.status", STATUS_OPERANTE)
-    .order("started_at", { ascending: true })
-    .limit(NUMEROS_POR_RODADA * 3);
-  if (falhaDaBusca) {
-    // Sem isto a falha virava "nada_a_fazer": indistinguível de rodada vazia.
-    logger.warn("[campanha] busca das campanhas em andamento falhou", { motivo: falhaDaBusca.message });
-    return { ...VAZIA, promovidas, detalhe: "busca_falhou" };
-  }
-  // `as unknown as`: a lista de colunas é montada por concatenação, e o tipo
-  // gerado do PostgREST só sabe inferir literal — o mesmo caminho que
-  // `lib/asaas/*` já usa para tabela que ainda não está em `database.types.ts`.
-  // ponytail: o `ehOperante` aqui é cinto — o banco já cortou; ele só segura o
-  // dia em que alguém tirar o filtro da consulta.
-  const emExecucao = ((campanhas ?? []) as unknown as Array<
-    CampanhaRow & { organizations?: { status?: string | null } | Array<{ status?: string | null }> | null }
-  >).filter((campanha) => ehOperante(statusDaOrgEmbutida(campanha.organizations)));
-  if (emExecucao.length === 0) {
-    return promovidas > 0 ? { ...VAZIA, promovidas, detalhe: "promovidas" } : VAZIA;
-  }
-
-  // Dois conjuntos, e não um (#3112). `principaisOcupados` decide se a campanha
-  // inteira espera a vez (regra do #3107, `ocupaONumero`); `numerosQueFalaram`
-  // só tira o número do RODÍZIO das campanhas seguintes. Juntá-los pulava a
-  // campanha cujo principal é o vinculado que outra usou, mesmo com outro número
-  // dela livre — e ela ficava em zero até a outra terminar.
+  // ─── A varredura: PÁGINAS, e não uma janela única (#4495) ───
+  //
+  // A leitura era `order(started_at asc).limit(30)`, e a decisão `ocupaONumero`
+  // vinha DEPOIS do corte. Trinta campanhas paradas no próprio ritmo (teto
+  // diário, janela, intervalo) não ocupam número nenhum — mas consumiam a janela
+  // inteira, e a 31ª não era lida em tique nenhum: nem para despachar, nem para
+  // revalidar o contato que pediu bloqueio.
+  //
+  // A paginação é por CURSOR `(started_at, id)`, não por `range()`: campanha que
+  // conclui ou é pausada sai do conjunto DURANTE a varredura, e um deslocamento
+  // numérico deslizaria e pularia a seguinte. A varredura para em três lugares:
+  // no teto de números (o anti-ban de sempre), na página VAZIA (fim provado) e
+  // no orçamento de páginas, que é o custo máximo por tique.
   const principaisOcupados = new Set<string>();
   const numerosQueFalaram = new Set<string>();
   const total: ResultadoDaRodada = { ...VAZIA, promovidas, detalhe: "" };
   const detalhes: string[] = [];
 
-  for (const campanha of emExecucao) {
-    // Um número, uma mensagem por rodada. A campanha mais antiga do número ganha
-    // a vez: sem isso, a última criada poderia monopolizar a fila para sempre.
-    if (principaisOcupados.has(campanha.channel_session_id)) continue;
-    // O teto conta os principais, não a união com `numerosQueFalaram`: toda
-    // campanha que fala ocupa o principal dela (e eles são distintos), então
-    // |numerosQueFalaram| <= |principaisOcupados|. A união contava 2 por campanha
-    // que sai pelo vinculado e matava de fome a 6ª em diante.
-    if (principaisOcupados.size >= NUMEROS_POR_RODADA) break;
+  let cursor: { startedAt: string; id: string } | null = null;
+  let paginas = 0;
+  let ultimaPaginaCheia = false;
 
-    try {
-      const r = emTransmissao(campanha)
-        ? await rodarCampanhaEmTransmissao(admin, campanha, agora)
-        : emRajada(campanha)
-          ? await rodarCampanhaEmRajada(admin, campanha, numerosQueFalaram)
-          : await rodarUmaCampanha(admin, campanha, agora, numerosQueFalaram);
-      total.enviadas += r.enviadas;
-      total.pulados += r.pulados;
-      total.concluidas += r.concluidas;
-      detalhes.push(`${campanha.id.slice(0, 8)}:${r.detalhe}`);
-      if (ocupaONumero(r)) principaisOcupados.add(campanha.channel_session_id);
-      // O número que FALOU nesta rodada, que no rodízio pode não ser o principal
-      // (#3112): sem isto, outra campanha que divide o vinculado mandava por ele
-      // de novo no mesmo tique. A rajada fala em vários envios, e pode ter saído
-      // por mais de um número: entram todos.
-      for (const numero of numerosQueAFalaUsou(r)) numerosQueFalaram.add(numero);
-    } catch (err) {
-      const motivo = err instanceof Error ? err.message : String(err);
-      logger.warn("[campanha] rodada falhou", { campanha: campanha.id, motivo });
-      detalhes.push(`${campanha.id.slice(0, 8)}:erro`);
-      principaisOcupados.add(campanha.channel_session_id);
+  while (paginas < PAGINAS_POR_RODADA) {
+    let consulta = admin
+      .from("campaigns")
+      .select(COLUNAS_DA_CAMPANHA_COM_EMBED)
+      .eq("status", "running")
+      .eq("organizations.status", STATUS_OPERANTE)
+      .order("started_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(CAMPANHAS_POR_PAGINA);
+    if (cursor) {
+      consulta = consulta.or(
+        `started_at.gt.${cursor.startedAt},and(started_at.eq.${cursor.startedAt},id.gt.${cursor.id})`,
+      );
     }
+    const { data: campanhas, error: falhaDaBusca } = await consulta;
+    if (falhaDaBusca) {
+      // Sem isto a falha virava "nada_a_fazer": indistinguível de rodada vazia.
+      logger.warn("[campanha] busca das campanhas em andamento falhou", { motivo: falhaDaBusca.message });
+      return { ...VAZIA, promovidas, detalhe: "busca_falhou" };
+    }
+    // `as unknown as`: a lista de colunas é montada por concatenação, e o tipo
+    // gerado do PostgREST só sabe inferir literal — o mesmo caminho que
+    // `lib/asaas/*` já usa para tabela que ainda não está em `database.types.ts`.
+    const linhas = (campanhas ?? []) as unknown as Array<
+      CampanhaRow & { organizations?: { status?: string | null } | Array<{ status?: string | null }> | null }
+    >;
+    if (linhas.length === 0) {
+      // Fim provado por página VAZIA — o mesmo critério de `lib/supabase/pagina.ts`.
+      // Página curta não serve: se `max_rows` for menor que a página, ela vem
+      // curta sem que a tabela tenha acabado.
+      ultimaPaginaCheia = false;
+      break;
+    }
+    paginas += 1;
+    ultimaPaginaCheia = linhas.length === CAMPANHAS_POR_PAGINA;
+    const ultimaDaLinha = linhas[linhas.length - 1];
+    cursor = ultimaDaLinha?.started_at ? { startedAt: ultimaDaLinha.started_at, id: ultimaDaLinha.id } : null;
+
+    // ponytail: o `ehOperante` aqui é cinto — o banco já cortou; ele só segura o
+    // dia em que alguém tirar o filtro da consulta.
+    const emExecucao = linhas.filter((campanha) => ehOperante(statusDaOrgEmbutida(campanha.organizations)));
+
+    for (const campanha of emExecucao) {
+      // Um número, uma mensagem por rodada. A campanha mais antiga do número ganha
+      // a vez: sem isso, a última criada poderia monopolizar a fila para sempre.
+      if (principaisOcupados.has(campanha.channel_session_id)) continue;
+      // O teto conta os principais, não a união com `numerosQueFalaram`: toda
+      // campanha que fala ocupa o principal dela (e eles são distintos), então
+      // |numerosQueFalaram| <= |principaisOcupados|. A união contava 2 por campanha
+      // que sai pelo vinculado e matava de fome a 6ª em diante.
+      if (principaisOcupados.size >= NUMEROS_POR_RODADA) break;
+
+      try {
+        const r = emTransmissao(campanha)
+          ? await rodarCampanhaEmTransmissao(admin, campanha, agora)
+          : emRajada(campanha)
+            ? await rodarCampanhaEmRajada(admin, campanha, numerosQueFalaram)
+            : await rodarUmaCampanha(admin, campanha, agora, numerosQueFalaram);
+        total.enviadas += r.enviadas;
+        total.pulados += r.pulados;
+        total.concluidas += r.concluidas;
+        detalhes.push(`${campanha.id.slice(0, 8)}:${r.detalhe}`);
+        if (ocupaONumero(r)) principaisOcupados.add(campanha.channel_session_id);
+        // O número que FALOU nesta rodada, que no rodízio pode não ser o principal
+        // (#3112): sem isto, outra campanha que divide o vinculado mandava por ele
+        // de novo no mesmo tique. A rajada fala em vários envios, e pode ter saído
+        // por mais de um número: entram todos.
+        for (const numero of numerosQueAFalaUsou(r)) numerosQueFalaram.add(numero);
+      } catch (err) {
+        const motivo = err instanceof Error ? err.message : String(err);
+        logger.warn("[campanha] rodada falhou", { campanha: campanha.id, motivo });
+        detalhes.push(`${campanha.id.slice(0, 8)}:erro`);
+        principaisOcupados.add(campanha.channel_session_id);
+      }
+    }
+
+    if (principaisOcupados.size >= NUMEROS_POR_RODADA) break;
+    // Sem `started_at` não há chave para a página seguinte: o cursor não anda, e
+    // insistir devolveria as mesmas linhas.
+    if (!cursor) break;
   }
 
-  total.detalhe = detalhes.join(" ") || "nada_a_fazer";
+  if (paginas >= PAGINAS_POR_RODADA && ultimaPaginaCheia && principaisOcupados.size < NUMEROS_POR_RODADA) {
+    // A fila foi lida até o limite do tique, e não até o fim. Dizer isso é o que
+    // impede o operador de concluir que não havia mais campanha.
+    logger.warn("[campanha] varredura parou no orçamento de páginas", { paginas, campanhas: detalhes.length });
+    detalhes.push("varredura:orcamento");
+  }
+
+  total.detalhe = detalhes.join(" ") || (promovidas > 0 ? "promovidas" : "nada_a_fazer");
   return total;
 }
 

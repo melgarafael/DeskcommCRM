@@ -121,7 +121,10 @@ export default async function TenantSettingsPage() {
       {row && <InboxDaEmpresaForm initial={row.interface_settings} />}
       {row && (
         <CatalogoDaEmpresaForm
-          inicial={capacidadesLigadas(row.settings, []).includes("apresentacao_do_catalogo")}
+          inicial={{
+            apresentacao: capacidadesLigadas(row.settings, []).includes("apresentacao_do_catalogo"),
+            capacidade: capacidadesLigadas(row.settings, []).includes("capacidade_do_produto"),
+          }}
         />
       )}
       {row && <ZonaDePerigoDaOrganizacao displayName={row.display_name} />}
