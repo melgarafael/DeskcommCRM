@@ -42,6 +42,8 @@ interface RawMembershipRow {
   interface_settings?: unknown;
   organization_id: string;
   role: string;
+  /** #3876: senha definida por quem administra, ainda não trocada. */
+  senha_provisoria?: boolean | null;
   /** Só para ORDENAR — a lista decide qual organização fica ativa sem cookie. */
   accepted_at?: string | null;
   organizations: OrgJoin | OrgJoin[] | null;
@@ -237,7 +239,7 @@ async function lerPermissoes(
           // issue #1341 acabou de engordar), e o alias traz só as portas da EMPRESA.
           // `timezone` veio do main (fuso da organização nas listas, #1290) e convive
           // com o alias: um embed por relação, sem renomear o que já existia.
-          "organization_id, role, interface_settings, accepted_at, organizations!user_organizations_organization_id_fkey(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations!user_organizations_organization_id_fkey(interface_settings)",
+          "organization_id, role, interface_settings, senha_provisoria, accepted_at, organizations!user_organizations_organization_id_fkey(display_name, locale, timezone, currency, country, status, suspended_kind), interface_da_empresa:organizations!user_organizations_organization_id_fkey(interface_settings)",
         )
         .eq("user_id", userId)
         .is("revoked_at", null)
@@ -302,6 +304,10 @@ async function lerPermissoes(
       country: org?.country ?? null,
       org_status: org?.status ?? null,
       suspended_kind: org?.suspended_kind ?? null,
+      // #3876: só `true` obriga a troca. Nulo (linha anterior a qualquer
+      // escrita nova, ou payload sem a coluna) é "não deve nada" — o passado,
+      // inclusive todo convite, continua exatamente como era.
+      senha_provisoria: row.senha_provisoria === true,
     };
   });
 

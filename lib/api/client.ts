@@ -4,6 +4,7 @@ import { ApiError, type ApiErrorBody } from "@/lib/api/types";
 import { statusValeRepetir, statusValeRepetirEscrita } from "@/lib/api/retentativa";
 import { mostrarAvisoOrgDivergente } from "@/lib/auth/aviso-org-divergente";
 import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA, orgDaAba } from "@/lib/auth/org-da-aba";
+import { CODIGO_SENHA_PROVISORIA } from "@/lib/auth/senha-provisoria";
 import { randomId } from "@/lib/random-id";
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -168,6 +169,20 @@ const HUB_DA_SUSPENSAO = "/account-suspended";
 function irParaOHubDaSuspensao(): void {
   if (typeof window === "undefined" || window.location.pathname === HUB_DA_SUSPENSAO) return;
   window.location.assign(HUB_DA_SUSPENSAO);
+}
+
+/**
+ * PRIMEIRO ACESSO COM SENHA PROVISÓRIA (#3876). O servidor recusa `/api/v1`
+ * inteiro até a troca; quem ainda está com uma tela aberta recebe a recusa e
+ * vai para a tela de troca, em vez de ver um erro vermelho em cada botão. A
+ * trava contra o laço é o próprio endereço — já lá, não navega de novo.
+ */
+const TELA_DE_TROCA_DE_SENHA = "/trocar-senha";
+
+function irParaATelaDeTrocaDeSenha(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === TELA_DE_TROCA_DE_SENHA) return;
+  window.location.assign(TELA_DE_TROCA_DE_SENHA);
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -352,6 +367,9 @@ async function request<T>(
         }
         if (res.status === 403 && e.code === "org_suspended") {
           irParaOHubDaSuspensao();
+        }
+        if (res.status === 403 && e.code === CODIGO_SENHA_PROVISORIA) {
+          irParaATelaDeTrocaDeSenha();
         }
         // #2335, metade 2: o servidor recusou a escrita porque a organização
         // que ESTA aba declarou diverge do cookie `active_org`. A tela traduz

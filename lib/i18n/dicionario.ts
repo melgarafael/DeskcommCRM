@@ -11343,6 +11343,63 @@ export const DICIONARIO: Traducoes = {
   },
   "Falhas": { es: "Fallas" },
   "Resultados aparecerão aqui após o envio.": { es: "Los resultados aparecerán aquí después del envío." },
+
+  // ─── #3876: criar a pessoa SEM convite (admin define a senha) ───
+  "Criar usuário com senha": { es: "Crear usuario con contraseña" },
+  "A conta já nasce pronta: você define a senha e a pessoa entra com ela. No primeiro acesso ela precisa escolher uma senha própria. Nenhum e-mail é enviado.": {
+    es: "La cuenta ya nace lista: tú defines la contraseña y la persona entra con ella. En el primer acceso debe elegir una contraseña propia. No se envía ningún correo.",
+  },
+  "Diferente do convite, aqui a conta já existe ao fim do formulário — sem depender de e-mail, SMTP ou de a pessoa clicar num link.": {
+    es: "A diferencia de la invitación, aquí la cuenta ya existe al terminar el formulario, sin depender de correo, SMTP ni de que la persona haga clic en un enlace.",
+  },
+  "Senha provisória": { es: "Contraseña provisional" },
+  "Confirmar senha provisória": { es: "Confirmar contraseña provisional" },
+  "Mínimo de 8 caracteres, com letra, número e símbolo.": {
+    es: "Mínimo 8 caracteres, con letra, número y símbolo.",
+  },
+  "A pessoa será obrigada a trocar esta senha no primeiro acesso.": {
+    es: "La persona deberá cambiar esta contraseña en el primer acceso.",
+  },
+  "Criar usuário": { es: "Crear usuario" },
+  // "Criando…" já existe no bloco de cadastro — a chave é a mesma frase.
+  "Usuário criado": { es: "Usuario creado" },
+  "Usuário criado. Entregue o e-mail e a senha para a pessoa.": {
+    es: "Usuario creado. Entrega el correo y la contraseña a la persona.",
+  },
+  "Nenhum e-mail foi enviado. Entregue o e-mail e a senha provisória para a pessoa; ela escolhe a senha dela no primeiro acesso.": {
+    es: "No se envió ningún correo. Entrega el correo y la contraseña provisional a la persona; ella elige su contraseña en el primer acceso.",
+  },
+  "Já existe uma conta com este e-mail.": { es: "Ya existe una cuenta con este correo." },
+  "Este e-mail já é a sua conta.": { es: "Este correo ya es tu cuenta." },
+  "Já existe uma conta com este e-mail. Para dar acesso a esta pessoa, convide-a.": {
+    es: "Ya existe una cuenta con este correo. Para dar acceso a esta persona, invítala.",
+  },
+  "Não foi possível criar a conta agora.": { es: "No se pudo crear la cuenta ahora." },
+  "Não foi possível incluir a pessoa na equipe.": {
+    es: "No se pudo incluir a la persona en el equipo.",
+  },
+
+  // ─── #3876: a troca obrigatória do primeiro acesso (/trocar-senha) ───
+  "Trocar senha": { es: "Cambiar contraseña" },
+  "Sua senha foi definida por quem administra a empresa. Escolha uma senha só sua para continuar.": {
+    es: "Tu contraseña fue definida por quien administra la empresa. Elige una contraseña solo tuya para continuar.",
+  },
+  "Sua senha foi definida por quem administra a empresa. Troque-a para continuar.": {
+    es: "Tu contraseña fue definida por quien administra la empresa. Cámbiala para continuar.",
+  },
+  "Trocar senha e entrar": { es: "Cambiar contraseña y entrar" },
+  "A senha nova precisa ser diferente da que você usou para entrar.": {
+    es: "La nueva contraseña debe ser diferente de la que usaste para entrar.",
+  },
+  "Sua senha já foi trocada. Entre novamente com a senha nova.": {
+    es: "Tu contraseña ya fue cambiada. Vuelve a entrar con la nueva.",
+  },
+  "Sua sessão expirou. Entre novamente com a senha que você recebeu.": {
+    es: "Tu sesión expiró. Vuelve a entrar con la contraseña que recibiste.",
+  },
+  "Não foi possível trocar a senha agora. Tente novamente.": {
+    es: "No se pudo cambiar la contraseña ahora. Inténtalo de nuevo.",
+  },
   "Erro ao carregar membros.": { es: "Error al cargar miembros." },
   "Nenhum membro ativo.": { es: "No hay miembros activos." },
   "Membro": { es: "Miembro" },

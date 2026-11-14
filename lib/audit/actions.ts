@@ -85,6 +85,11 @@ export const AUDIT_ACTIONS = [
   // A cascata retomando o que uma execução interrompida não terminou (#310).
   "lgpd.anonymize_catchup",
   "member.invited",
+  // A pessoa foi CRIADA por quem administra, com senha definida por ele
+  // (#3876) — não convidada. `member.invited` não serve: ali ninguém tinha
+  // conta e o e-mail era a prova; aqui a conta nasceu pronta e a trilha
+  // precisa responder "quem criou esta pessoa, com qual papel, e quando".
+  "member.created",
   "team.interface_changed",
   /**
    * A EMPRESA trocou as portas que mostra (issue #1341, migration 0367). É o
@@ -499,6 +504,12 @@ export const AUDIT_ACTIONS = [
   "auth.password_reset_request_failed",
   "auth.password_reset_completed",
   "auth.password_reset_failed",
+  // A troca OBRIGATÓRIA do primeiro acesso (#3876). Distinta de
+  // `auth.password_reset_completed`: ali a pessoa voltou por "esqueci a senha";
+  // aqui ela cumpriu a obrigação que o vínculo impunha — e a pergunta de
+  // auditoria é "quando a senha provisória deixou de valer".
+  "auth.password_change_completed",
+  "auth.password_change_failed",
   "tenant.created_by_signup",
   "tenant.created_by_recovery",
   "conversation.snoozed",

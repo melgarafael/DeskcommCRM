@@ -151,6 +151,10 @@ describe("loadAuthUser — falha de permissão não vira 'sem organização'", (
         org_status: null,
         suspended_kind: null,
         interface_settings: { preset: "completa" },
+        // A marca da senha provisória (#3876) viaja na membership. O dublê não
+        // devolve a coluna e a sessão recebe `false` — o `=== true` do mapeamento
+        // não inventa obrigação para quem não tem.
+        senha_provisoria: false,
       },
     ]);
   });

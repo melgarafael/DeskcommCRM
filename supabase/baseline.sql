@@ -80830,6 +80830,17 @@ alter table public.followup_flow_pointers
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
+-- ---- senha provisória do usuário criado sem convite (migration 9227) ----
+-- #3876: quem administra cria a pessoa já com senha; o vínculo nasce marcado e
+-- o servidor exige a troca no primeiro acesso. Fica no apêndice pelo mesmo
+-- motivo do bloco acima (o `create table` do bloco 1865 é pulado em instalação
+-- que já tem a tabela). `default false` preserva o fluxo de convite inteiro.
+alter table public.user_organizations
+  add column if not exists senha_provisoria boolean not null default false;
+
+comment on column public.user_organizations.senha_provisoria is
+  'true = a senha foi definida por quem administra e precisa ser trocada no primeiro acesso; o gate do servidor recusa /api/v1 até a troca.';
+
 -- ---- índice da mensagem que espera em `queued` (migration 9242) ----
 -- #3907: o portão do piso ocioso e a varredura da espera esquecida leem outbound
 -- `queued` por idade, e nenhum índice de `messages` cobria esse status.
