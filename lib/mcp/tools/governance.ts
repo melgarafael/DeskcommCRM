@@ -22,6 +22,7 @@ import { logger } from "@/lib/logger";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { conversationTagSchema, conversationTagsSchema } from "@/lib/schemas/messaging";
 import { getQueueStatus } from "@/lib/routing/queue";
+import { marcaDoAssistido } from "@/lib/automation/parada-no-assistido";
 import type { McpContext } from "../types";
 import type { McpToolDefinition } from "../types";
 
@@ -36,7 +37,7 @@ function actorAudit(ctx: McpContext): {
   }
   return {
     actorUserId: null,
-    metadataActor: { actor_type: actor.type, actor_id: actor.id },
+    metadataActor: { actor_type: actor.type, actor_id: actor.id, ...marcaDoAssistido(actor) },
   };
 }
 

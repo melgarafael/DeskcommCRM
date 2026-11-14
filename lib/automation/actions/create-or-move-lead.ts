@@ -10,6 +10,7 @@ import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
  * eventos derivados (anti-loop profundidade 1: regra→ação→handler→evento).
  */
 import { registerAction } from "@/lib/automation/actions";
+import { marcaHerdadaDoEvento } from "@/lib/automation/parada-no-assistido";
 import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
 import { ApiError } from "@/lib/api/types";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -54,7 +55,11 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
 
   const handlerCtx: HandlerCtx = {
     organization_id: ctx.organizationId,
-    actor: { type: "webhook_source", id: ctx.ruleId },
+    // Doc 301 = B: a regra que rodou por causa da IA no assistido passa a marca
+    // adiante — o card que ela move dispara o gatilho de etapa e, se a etapa
+    // fecha o negócio, `lead.won`/`lead.lost`; sem a marca, o que fala com o
+    // cliente nesses caminhos saía sem aprovação.
+    actor: { type: "webhook_source", id: ctx.ruleId, ...marcaHerdadaDoEvento(ctx.event) },
     requestId: `rule:${ctx.ruleId}`,
   };
   // A LINHA INTEIRA do negócio, como `buildContext` a lê (`select *` de
