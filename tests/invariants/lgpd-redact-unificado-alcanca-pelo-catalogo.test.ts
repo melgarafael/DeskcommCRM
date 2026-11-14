@@ -318,6 +318,16 @@ const DECISOES: Record<string, Decisao> = {
     razao: "Doc 199 (pergunta 2 = A): ctwa_clid liga a pessoa ao anúncio em que clicou na Meta; fn_apaga_cliques_ctwa_de_contato_anonimizado (0806) APAGA as linhas do contato na virada de is_anonymized. Custo aceito: clique antigo reenviado pela Meta seria contado de novo.",
   },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
+  satisfacao_do_atendimento: {
+    decidida: "manter",
+    razao:
+      "Pesquisa de satisfacao (#4023): a linha guarda a NOTA (1 a 5), o estado e marcas de tempo — nenhum texto e nenhum dado pessoal. O vinculo com a pessoa e `contact_id` com `on delete set null`, entao o expurgo do contato zera sozinho e a nota continua servindo a media da empresa. Apagar a linha na anonimizacao destruiria a serie historica de qualidade do atendimento sem proteger ninguem.",
+  },
+  quarentena_de_entrada: {
+    decidida: "manter",
+    razao:
+      "Fila de quarentena do filtro de spam (#4026): guarda `veredito`, `confianca`, os NOMES dos sinais lexicos que produziram o corte e `message_id` — o conteudo da mensagem mora em `messages`, que a cascata ja redige. O que fica aqui e o porque do corte, que e a prova de que a triagem foi feita; apagar a linha faria a mensagem voltar a ser classificavel como nova. `contact_id` zera sozinho no expurgo (`on delete set null`).",
+  },
   automation_rule_contact_claims: {
     decidida: "manter",
     razao:

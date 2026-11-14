@@ -66,6 +66,8 @@ import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
 import { aplicarRespostaNaCampanha } from "@/lib/campanhas/resposta";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
+import { capturarRespostaDeSatisfacao } from "@/lib/atendimento/satisfacao";
+import { avaliarQuarentenaDaEntrada } from "@/lib/entrada/quarentena";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -164,6 +166,58 @@ export async function aplicarEfeitosPosEntrada(
   }
 
   await aplicarOptOut(admin, entrada);
+
+  // ── #4023: A RESPOSTA DA PESQUISA DE SATISFAÇÃO ────────────────────────
+  //
+  // A resposta do cliente à pergunta de 1 a 5 chega por AQUI, pelo caminho
+  // normal do WhatsApp — não existe segundo webhook nem número dedicado. Ela
+  // vira a nota do pedido aberto e a mensagem NÃO pede resposta: um "5" que
+  // acordasse o agente faria a IA responder a uma nota, e o cliente já tinha
+  // encerrado o atendimento. Só o dígito sozinho é capturado; "vcs demoraram"
+  // segue o fluxo de sempre, porque é conversa, não nota.
+  //
+  // Antes da quarentena de propósito: a resposta da pesquisa é a mensagem mais
+  // previsível da conversa, e um classificador de spam não tem o que fazer com
+  // ela — mas se o filtro ligasse antes, um "1" (a pior nota) poderia ser
+  // retido como mensagem curta suspeita.
+  const notaDaPesquisa = await capturarRespostaDeSatisfacao(admin, {
+    organizationId: entrada.organizationId,
+    conversationId: entrada.conversationId,
+    texto: entrada.texto,
+    messageId: entrada.messageId,
+    enviadaEm: new Date(),
+  });
+  if (notaDaPesquisa.capturada) {
+    logger.info("[pos-entrada] nota da pesquisa de satisfação gravada", {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      nota: notaDaPesquisa.nota,
+    });
+    return;
+  }
+
+  // ── #4026: A QUARENTENA DE ENTRADA ─────────────────────────────────────
+  //
+  // A mensagem JÁ está gravada; o que se decide aqui é se ela PRODUZ trabalho.
+  // Retida, nada abaixo roda: sem demanda, sem campanha, sem follow-up, sem
+  // turno do agente, sem evento drenado. A fila (`/api/v1/quarentena`) mostra a
+  // mensagem e uma pessoa a libera; a liberação chama ESTA função de novo, com
+  // `origem = 'quarentena_liberada'`, e os efeitos rodam atrasados — nunca
+  // perdidos.
+  if (
+    await avaliarQuarentenaDaEntrada(admin, {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      contactId: entrada.contactId,
+      messageId: entrada.messageId,
+      channelSessionId: entrada.channelSessionId,
+      texto: entrada.texto,
+      origem: entrada.origem,
+    })
+  ) {
+    return;
+  }
+
   // Contato pessoal (spec 21, etapa 6): a mensagem já está gravada, com o
   // carimbo de não-lida que o ingest gravou — mas NADA nasce dela: sem negócio,
   // sem campanha, sem follow-up, sem IA (fila e resposta). O STOP continua na

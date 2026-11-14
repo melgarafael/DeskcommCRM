@@ -58,6 +58,7 @@ import type { Conversation } from "@/lib/types/messaging";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { ApiError } from "@/lib/api/types";
 import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
+import { pedirSatisfacaoAoEncerrar } from "@/lib/atendimento/satisfacao";
 
 export const dynamic = "force-dynamic";
 
@@ -155,7 +156,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // quando ele não mandou nenhuma). O CAS da `fn_service_status` (PT409) segue
   // sendo a última palavra: se alguém mexeu na conversa entre a leitura e este
   // UPDATE, a resposta é 409, e não um fechamento por cima de estado alheio.
-  const { data, error } = await createAdminClient().rpc("fn_service_status", {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("fn_service_status", {
     p_org: visible.organization_id, p_conversation: id, p_status: "closed",
     p_expected: revisaoEsperada,
   });
@@ -174,6 +176,34 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     resourceId: convFechada.id,
     requestId,
   });
+
+  // ── #4023: A PESQUISA DE SATISFAÇÃO, DEPOIS DO FECHAMENTO ────────────────
+  //
+  // O encerramento ACIMA é o gesto pedido e já aconteceu; a pesquisa vem depois e
+  // não pode desfazê-lo nem mudar a resposta desta rota (o corpo sai idêntico ao
+  // de antes, e é o que permite o lote reusar esta função). Desligada na
+  // organização, `pedirSatisfacaoAoEncerrar` devolve `desligada` sem tocar o
+  // banco além da leitura do settings — o caso de quem nunca ligou.
+  const pesquisa = await pedirSatisfacaoAoEncerrar(admin, {
+    organizationId: convFechada.organization_id,
+    conversationId: convFechada.id,
+    contactId: convFechada.contact_id ?? null,
+  });
+  if (pesquisa.pedida) {
+    logger.info("[conversations.close] pesquisa de satisfação enviada", {
+      conversation_id: convFechada.id,
+      organization_id: convFechada.organization_id,
+      pedido_id: pesquisa.pedidoId,
+      requestId,
+    });
+  } else if (pesquisa.motivo === "falha_ao_enviar" || pesquisa.motivo === "erro") {
+    logger.warn("[conversations.close] pesquisa de satisfação não saiu", {
+      conversation_id: convFechada.id,
+      organization_id: convFechada.organization_id,
+      motivo: pesquisa.motivo,
+      requestId,
+    });
+  }
 
   return ok(devolucao === null ? convFechada : { ...convFechada, devolucao }, { requestId });
 }

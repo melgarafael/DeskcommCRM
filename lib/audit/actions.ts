@@ -1521,6 +1521,16 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  // #4023: a organização ligou/desligou a pesquisa de satisfação e, quando
+  // ligada, mudou a janela ou o texto em `organizations.settings.satisfacao`.
+  // metadata só com o `ligado` — o texto é configuração, não dado de cliente.
+  "settings.satisfacao_alterada",
+  // #4026: a organização ligou/desligou o filtro de spam da entrada e, quando
+  // ligado, mudou o limiar em `organizations.settings.filtro_de_spam`.
+  "settings.filtro_de_spam_alterado",
+  // #4026: uma pessoa da equipe LIBEROU uma mensagem retida. `resource_id` = a
+  // linha da quarentena; metadata com a mensagem e a conversa, nunca o corpo.
+  "quarentena.mensagem_liberada",
   // A CONTA Resend da organização (#3287): conectar e desconectar. Códigos
   // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
   // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
