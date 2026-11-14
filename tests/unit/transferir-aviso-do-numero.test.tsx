@@ -37,8 +37,8 @@ vi.mock("@/hooks/inbox/useTransferConversation", () => ({
 vi.mock("@/hooks/inbox/useContinuarPorOutroNumero", () => ({
   useContinuarPorOutroNumero: () => ({ mutate: vi.fn(), isPending: false }),
 }));
-vi.mock("@/hooks/inbox/useNumeroDaTransferencia", () => ({
-  useNumeroDaTransferencia: () => numeroDaTransferencia.valor,
+vi.mock("@/hooks/inbox/usePreviaDaTransferencia", () => ({
+  usePreviaDaTransferencia: () => numeroDaTransferencia.valor,
 }));
 vi.mock("@/hooks/channels/useChannelSessions", () => ({
   useChannelSessions: () => ({ data: [] }),
@@ -77,7 +77,7 @@ async function escolherAna() {
 }
 
 beforeEach(() => {
-  numeroDaTransferencia.valor = { data: null, isSuccess: true };
+  numeroDaTransferencia.valor = { data: { numero: null, negocio: null }, isSuccess: true };
 });
 
 describe("#3732 — o aviso do número no diálogo de Transferir", () => {
@@ -93,7 +93,10 @@ describe("#3732 — o aviso do número no diálogo de Transferir", () => {
 
   it("CONTROLE: com número no destino, o aviso é o da troca (e o outro não aparece)", async () => {
     numeroDaTransferencia.valor = {
-      data: { channel_session_id: "sessao-b", display_name: "Vendas B", phone_number: "+5511999997777" },
+      data: {
+        numero: { channel_session_id: "sessao-b", display_name: "Vendas B", phone_number: "+551****7777" },
+        negocio: null,
+      },
       isSuccess: true,
     };
     abrirDialogo();

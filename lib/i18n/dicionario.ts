@@ -9646,6 +9646,15 @@ export const DICIONARIO: Traducoes = {
   },
   "Motivo (opcional)": { es: "Motivo (opcional)" },
   "Ex.: cliente pediu falar com o financeiro": { es: "Ej.: el cliente pidió hablar con finanzas" },
+  "O negócio aberto deste contato vai junto com a conversa.": {
+    es: "El negocio abierto de este contacto va junto con la conversación.",
+  },
+  "O negócio aberto deste contato continua com {nome} — a conversa vai sem ele.": {
+    es: "El negocio abierto de este contacto sigue con {nome} — la conversación va sin él.",
+  },
+  "Conversas deste contato": { es: "Conversaciones de este contacto" },
+  "Este contato não tem outra conversa.": { es: "Este contacto no tiene otra conversación." },
+  "Sem número": { es: "Sin número" },
   "Transferindo…": { es: "Transfiriendo…" },
   Gestor: { es: "Gestor" },
   "Atalhos de teclado": { es: "Atajos de teclado" },
