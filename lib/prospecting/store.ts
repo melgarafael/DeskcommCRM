@@ -39,6 +39,7 @@ import { aplicarLinks } from "@/lib/leads/links-de-contato";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
+import { isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
 import {
   palavraDeSaida,
   problemaNoTextoDaSaidaNoIdioma,
@@ -694,6 +695,20 @@ async function validarTextoDaSaidaNoIdioma(
 export async function validateConfig(db: pg.PoolClient, org: string, input: CampaignConfig) {
   const config = campaignConfigSchema.parse(input);
   await validarTextoDaSaidaNoIdioma(db, org, config.texto_da_saida);
+  // A MÍDIA DA ABORDAGEM (#4581) é um arquivo que JÁ EXISTE — e tem de ser DESTA
+  // organização. Tipo e tamanho já foram conferidos pelo schema (regra pura, sem
+  // organização); a posse do caminho só pode ser conferida aqui, onde a
+  // organização é conhecida. Sem esta linha, uma configuração gravada à mão
+  // (PostgREST) apontaria para o arquivo de outro cliente, e a abordagem sairia
+  // com a mídia alheia — a mesma classe de furo que `midiaPertenceAoTemplate`
+  // fecha no upload de resposta rápida.
+  const midia = config.midia_da_abordagem;
+  if (midia && !isMediaPathInOrganization(midia.storage_path, org))
+    throw new ProspectingError(
+      "A mídia da abordagem precisa ser um arquivo desta organização. Escolha o arquivo de novo.",
+      422,
+      "campanha",
+    );
   const agent = (
     await db.query(
       "select v.tool_ids,v.pipeline_ids from ai_agents a join ai_agent_versions v on v.id=a.published_version_id and v.organization_id=a.organization_id where a.organization_id=$1 and a.id=$2 and v.status='published' and a.archived_at is null and a.paused_at is null and a.operation_mode='automatic'",
