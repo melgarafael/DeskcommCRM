@@ -443,6 +443,11 @@ export function createDefaultRegistry(opts?: {
         apiKey,
         baseURL: baseUrl,
         fetch: fetchParaDestinoDaOrganizacao(contain(baseUrl)),
+        // Gateway OpenAI-compatível (9Router, LiteLLM...) pode assumir streaming quando o
+        // pedido não traz `stream`; o SDK não manda o campo em generateText, e a resposta
+        // vira SSE que o parse de JSON recusa ("Invalid JSON response" com HTTP 200). Pedir
+        // JSON explicitamente é o que a chamada sem streaming quer de qualquer forma.
+        headers: { Accept: 'application/json' },
       }).chat(modelId);
     },
   };
