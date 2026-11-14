@@ -81629,8 +81629,10 @@ drop policy if exists tenant_isolation_pagamento_recebimentos_write on public.pa
 -- sem esta linha a tabela fica sem `support_write_insert/update/delete`.
 do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 
+-- ---- índice de drenagem do event_log (migration 9344, #4406) ----
 -- Índice de drenagem assíncrona do worker em event_log: evita sort em memória
--- em drain multi-tenant global ordenado por created_at asc.
+-- em drain multi-tenant global ordenado por created_at asc. Não cria função,
+-- então pode ficar depois da VARREDURA anon.
 create index if not exists idx_event_log_worker_drain
   on public.event_log (created_at asc)
   where (status = 'pending'::text);
