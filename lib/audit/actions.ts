@@ -1481,6 +1481,11 @@ export const AUDIT_ACTIONS = [
   "ai.knowledge_source_created",
   "ai.knowledge_source_updated",
   "ai.knowledge_source_archived",
+  // De volta ao acervo (PATCH `{ status: 'active' }`). Arquivar era ida sem
+  // volta; a trilha guarda de onde para onde — `archived`/`is_active=false`
+  // para `active`/`is_active=true` —, porque "quem tirou do arquivo" não se
+  // responde com a linha atual.
+  "ai.knowledge_source_restored",
   "ai.knowledge_source_reindexed",
   "ai_models.synced",
   "ai_models.sync_failed",
