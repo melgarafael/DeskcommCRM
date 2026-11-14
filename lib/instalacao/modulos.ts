@@ -41,7 +41,7 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot` e `campanha_por_email` ligam/desligam por uma linha em `platform_config`
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `status_whatsapp`, `painel_atendimento`, `reservas_de_lugar`, `link_de_pagamento`, `canal_bot`, `campanha_por_email` e `revisao_por_km` ligam/desligam por uma linha em `platform_config`
  * (ver o resto deste arquivo). `honorarios`, `financeiro`, `lista_de_espera` e `ouvidoria` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
@@ -81,6 +81,7 @@ export const MODULOS_OPCIONAIS = [
   "link_de_pagamento",
   "canal_bot",
   "campanha_por_email",
+  "revisao_por_km",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -113,6 +114,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "link_de_pagamento",
   "canal_bot",
   "campanha_por_email",
+  "revisao_por_km",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -193,6 +195,13 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // "E-mail" não aparece na nova campanha e criar ou editar uma responde 404
   // (`decidirConteudo`, em `lib/campanhas/conteudo-do-canal.ts`).
   campanha_por_email: "MODULO_CAMPANHA_POR_EMAIL",
+  // #4376 (PR #4536 de @webtecnica): a quilometragem informada vira a data
+  // prevista da próxima revisão. Régua de oficina, concessionária e frota, não
+  // da maioria (régua do núcleo enxuto). Sem tabela: grava no campo de data do
+  // negócio que o funil declarou em `pipelines.settings.revisao_por_km`.
+  // Desligado, o km gravado não projeta nada e o roteiro não faz consulta a mais
+  // (`lib/revisao-por-km/modulo.ts`).
+  revisao_por_km: "MODULO_REVISAO_POR_KM",
 };
 
 const LIGADO = "ligado";

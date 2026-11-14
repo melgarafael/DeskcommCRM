@@ -21,6 +21,12 @@ describe("capacidadesLigadas — só o booleano true liga", () => {
       expect(capacidadesLigadas(s, ["propostas"]), JSON.stringify(s)).toEqual([]);
     }
   });
+  it("a capacidade do produto liga só com settings.catalogo.capacidade === true, sem módulo", () => {
+    expect(capacidadesLigadas({ catalogo: { capacidade: true } }, [])).toEqual(["capacidade_do_produto"]);
+    for (const s of [{ catalogo: { capacidade: false } }, { catalogo: { capacidade: "true" } }, { catalogo: true }, {}, null]) {
+      expect(capacidadesLigadas(s, []), JSON.stringify(s)).toEqual([]);
+    }
+  });
   // Doc 79: com a chave da INSTALAÇÃO desligada, a da empresa não liga nada.
   it("módulo da instalação desligado: a empresa ligada não conta", () => {
     expect(capacidadesLigadas({ proposals: { enabled: true } }, [])).toEqual([]);

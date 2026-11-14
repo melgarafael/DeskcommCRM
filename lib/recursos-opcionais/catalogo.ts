@@ -197,6 +197,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Campanha por e-mail (em construção)",
     oQueFaz: "A base da campanha por e-mail: assunto, corpo e público. Ainda não pode ser ligada, porque falta o envio com descadastro.",
   },
+  revisao_por_km: {
+    nome: "Revisão por quilometragem",
+    oQueFaz: "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.",
+  },
 };
 
 /**
@@ -722,6 +726,18 @@ const DA_EMPRESA: RecursoOpcional[] = [
     href: "/app/settings/tenant",
     capacidade: "apresentacao_do_catalogo",
     ler: peloSettings((s) => capacidadesLigadas(s, []).includes("apresentacao_do_catalogo")),
+  },
+  {
+    id: "capacidade_do_produto",
+    nome: "Capacidade do produto",
+    oQueFaz:
+      "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/tenant",
+    capacidade: "capacidade_do_produto",
+    ler: peloSettings((s) => capacidadesLigadas(s, []).includes("capacidade_do_produto")),
   },
   {
     id: "propostas_da_empresa",

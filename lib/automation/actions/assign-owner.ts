@@ -59,7 +59,9 @@
  * para a regra não virar caixa-preta.
  */
 import { registerAction } from "@/lib/automation/actions";
+import { escritaComMarca, marcaHerdadaDoEvento } from "@/lib/automation/parada-no-assistido";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
+import type { Actor } from "@/lib/api/handlers/types";
 import {
   resolverDestinoDoAtribuir,
   type ContatoDoDestino,
@@ -92,6 +94,16 @@ async function nomeDaPessoa(ctx: ActionCtx, userId: string): Promise<string> {
 }
 
 /**
+ * O ator desta regra, com a marca do assistido HERDADA do evento que a disparou
+ * (doc 301 = B, #4319). Trocar o dono vira `lead.assigned` pelo gatilho do
+ * banco, que só vê a marca pelo cabeçalho: sem ela, a regra B escolhida em
+ * `lead.assigned` mandava WhatsApp sem aprovação depois de a IA mover o card.
+ */
+function atorDaRegra(ctx: ActionCtx): Actor {
+  return { type: "webhook_source", id: ctx.ruleId, ...marcaHerdadaDoEvento(ctx.event) };
+}
+
+/**
  * Modo rodízio (#2041). A escolha, o registro da vez e a gravação do dono
  * acontecem na função SQL, numa transação só, com trava por regra: se o
  * registro ficasse aqui, depois da RPC, dois leads simultâneos leriam o mesmo
@@ -99,13 +111,18 @@ async function nomeDaPessoa(ctx: ActionCtx, userId: string): Promise<string> {
  * gravada — esta ação só passa QUAL regra e QUAL lead, e traduz o desfecho.
  */
 async function executarRodizio(ctx: ActionCtx, leadId: string): Promise<ActionResultDetail> {
-  const { data, error } = await ctx.admin.rpc("fn_automation_rodizio_atribuir", {
-    p_org: ctx.organizationId,
-    p_rule: ctx.ruleId,
-    p_lead: leadId,
-    // O mesmo evento reprocessado devolve a mesma pessoa em vez de andar a fila.
-    p_event: ctx.event.id,
-  });
+  // Doc 301 = B: a função grava o dono e o GATILHO emite `lead.assigned`; a marca
+  // do assistido herdada do evento chega a ele pelo cabeçalho (`atorDaRegra`).
+  const { data, error } = await escritaComMarca(
+    ctx.admin.rpc("fn_automation_rodizio_atribuir", {
+      p_org: ctx.organizationId,
+      p_rule: ctx.ruleId,
+      p_lead: leadId,
+      // O mesmo evento reprocessado devolve a mesma pessoa em vez de andar a fila.
+      p_event: ctx.event.id,
+    }),
+    atorDaRegra(ctx),
+  );
   if (error) return { type: "assign_owner", status: "failed", error: error.message };
   const desfecho = data as DesfechoDoRodizio | null;
   if (desfecho && "user_id" in desfecho) {
@@ -320,15 +337,18 @@ async function atribuirAPessoa(
     return { type: "assign_owner", status: "failed", error: "invalid_owner" };
   }
 
-  const { error } = await ctx.admin
-    .from("crm_leads")
-    .update({
-      ...patchResult.patch,
-      assigned_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", lead.id)
-    .eq("organization_id", ctx.organizationId);
+  const { error } = await escritaComMarca(
+    ctx.admin
+      .from("crm_leads")
+      .update({
+        ...patchResult.patch,
+        assigned_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", lead.id)
+      .eq("organization_id", ctx.organizationId),
+    atorDaRegra(ctx),
+  );
   if (error) return { type: "assign_owner", status: "failed", error: error.message };
 
   return aplicarPassagem(ctx, lead, userId, config);

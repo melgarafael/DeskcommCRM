@@ -13,6 +13,11 @@ interface SendArgs {
   media_url?: string;
   media_mime?: string;
   media_storage_path?: string;
+  /**
+   * O nome ORIGINAL do anexo (#4457). Sem ele o servidor só conhece o basename
+   * aleatório do bucket, e é esse nome que o cliente veria no WhatsApp.
+   */
+  media_filename?: string;
   media_size_bytes?: number;
   type?: string;
   /**
