@@ -2567,6 +2567,7 @@ export const DICIONARIO: Traducoes = {
   Excluir: { es: "Eliminar" },
   Editar: { es: "Editar" },
   Voltar: { es: "Volver" },
+  "Voltar para Configurações": { es: "Volver a Configuración" },
   // ─── Configurações: hub, perfil e tenant ───
   "Dados inválidos.": { es: "Datos inválidos." },
   "Perfil atualizado.": { es: "Perfil actualizado." },

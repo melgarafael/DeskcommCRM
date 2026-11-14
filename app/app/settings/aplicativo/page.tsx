@@ -1,3 +1,4 @@
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { AplicativoNoCelular } from "./_client";
@@ -15,12 +16,11 @@ export default async function AplicativoPage() {
   const t = (texto: string) => traduzir(texto, user.idioma);
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("App no celular")}</h1>
+      <CabecalhoDaSubTela titulo={t("App no celular")} idioma={user.idioma}>
         <p className="text-sm text-muted-foreground">
           {t("Instale o sistema na tela de início do celular e receba os avisos.")}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       <AplicativoNoCelular />
     </div>
   );

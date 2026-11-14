@@ -27,6 +27,7 @@
  */
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -56,14 +57,13 @@ export default async function MetaAdsSettingsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Meta Ads")}</h1>
+      <CabecalhoDaSubTela titulo={t("Meta Ads")} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {t(
             "Conecte um token de acesso para o sistema ler o desempenho das suas campanhas e mostrá-lo em Análise › Meta Ads. É uma conexão só de leitura: nada é criado, pausado ou alterado na sua conta de anúncios.",
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
       <div className="rounded-md border border-sky-500/40 bg-sky-500/10 p-4 text-sm">
         {/*
