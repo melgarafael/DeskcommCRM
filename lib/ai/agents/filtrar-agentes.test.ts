@@ -37,3 +37,39 @@ describe('Agentes: "pos-venda" acha "Pós-venda" (#4165)', () => {
     expect(nomes("venda")).toEqual(["Atendimento Pós-venda", "Pós Venda"]);
   });
 });
+
+const COM_DESCRICAO = [
+  { name: "Kelly", description: "Retomada de pré-vendas por WhatsApp" },
+  { name: "Suporte técnico", description: null },
+  { name: "Financeiro", description: "Cobrança e segunda via de boleto" },
+  { name: "Sem descrição" },
+];
+
+const achados = (termo: string) => filtrarAgentes(COM_DESCRICAO, termo).map((a) => a.name);
+
+describe("Agentes: o termo casa também com a descrição (#4593)", () => {
+  it("termo que só existe na descrição encontra o agente", () => {
+    expect(achados("boleto")).toEqual(["Financeiro"]);
+  });
+
+  it("a descrição usa a mesma régua do nome: sem acento e sem caixa", () => {
+    expect(achados("pre-vendas")).toEqual(["Kelly"]);
+    expect(achados("cobranca")).toEqual(["Financeiro"]);
+    expect(achados("SEGUNDA VIA")).toEqual(["Financeiro"]);
+  });
+
+  it("termo que existe no nome continua encontrando", () => {
+    expect(achados("kelly")).toEqual(["Kelly"]);
+    expect(achados("financeiro")).toEqual(["Financeiro"]);
+  });
+
+  it("termo inexistente devolve lista vazia", () => {
+    expect(achados("juridico")).toEqual([]);
+  });
+
+  it("descrição nula ou ausente não derruba a função", () => {
+    expect(() => filtrarAgentes(COM_DESCRICAO, "suporte")).not.toThrow();
+    expect(achados("suporte")).toEqual(["Suporte técnico"]);
+    expect(achados("sem descricao")).toEqual(["Sem descrição"]);
+  });
+});
