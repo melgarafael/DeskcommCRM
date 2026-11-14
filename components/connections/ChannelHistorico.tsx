@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -46,6 +47,30 @@ interface Historico {
   importacao: Importacao | null;
   /** A recuperação aberta da queda (aguardando ou rodando), à parte da manual. */
   recuperacao_da_queda?: Importacao | null;
+  analise?: {
+    total: number;
+    pending: number;
+    running: number;
+    done: number;
+    failed: number;
+    dead: number;
+    gasto_cents?: number;
+  } | null;
+  /**
+   * A contagem e a estimativa da PRÓXIMA rodada de análise — o que o
+   * administrador confirma antes de a IA ler qualquer conversa (decisão 315).
+   * Ausente enquanto uma rodada está em andamento.
+   */
+  previa_analise?: {
+    nesta_rodada: number;
+    restantes: number;
+    pulados_recusa: number;
+    pulados_mais_novos: number;
+    teto_da_rodada: number;
+    estimativa_cents: number | null;
+    gasto_do_mes_cents: number;
+    teto_mensal_cents: number | null;
+  } | null;
 }
 
 const DIAS = [30, 90, 180, 365] as const;
@@ -76,6 +101,7 @@ export function ChannelHistorico({ channelId }: { channelId: string }) {
   const [soCrm, setSoCrm] = useState(true);
   const [contando, setContando] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmandoAnalise, setConfirmandoAnalise] = useState(false);
   const [erroDaPrevia, setErroDaPrevia] = useState<"conflito" | "rede" | null>(null);
   const rota = `/api/v1/channel-sessions/${channelId}/historico`;
   const frase = (tipo: "conflito" | "rede") =>
@@ -90,13 +116,16 @@ export function ChannelHistorico({ channelId }: { channelId: string }) {
     refetchOnWindowFocus: false,
     refetchInterval: (q) => {
       const d = q.state.data?.data;
-      return d?.importacao?.status === "rodando" || d?.recuperacao_da_queda ? 10_000 : false;
+      const analisando = (d?.analise?.pending ?? 0) + (d?.analise?.running ?? 0) > 0;
+      return d?.importacao?.status === "rodando" || d?.recuperacao_da_queda || analisando ? 10_000 : false;
     },
   });
 
   const guardar = query.data?.data.guardar_historico;
   const imp = query.data?.data.importacao ?? null;
   const daQueda = query.data?.data.recuperacao_da_queda ?? null;
+  const analise = query.data?.data.analise ?? null;
+  const previaAnalise = query.data?.data.previa_analise ?? null;
 
   async function acao(corpo: Record<string, unknown>) {
     setBusy(true);
@@ -162,6 +191,12 @@ export function ChannelHistorico({ channelId }: { channelId: string }) {
         .replace("{audios}", String(p.audios))
         .replace("{imagens}", String(p.imagens))
     : null;
+  // Centavos de DÓLAR: é a moeda de `llm_calls.cost_cents` e do teto mensal.
+  const dolares = (cents: number) =>
+    (cents / 100).toLocaleString(tag, { style: "currency", currency: "USD" });
+  const analisando = !!analise && analise.pending + analise.running > 0;
+  const falhasDaAnalise = analise ? analise.failed + analise.dead : 0;
+  const puladosDaAnalise = previaAnalise ? previaAnalise.pulados_recusa + previaAnalise.pulados_mais_novos : 0;
   const formatarData = (iso: string | null | undefined) =>
     iso
       ? new Date(iso).toLocaleString(tag, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
@@ -248,6 +283,104 @@ export function ChannelHistorico({ channelId }: { channelId: string }) {
             {t("{gravadas} mensagens trazidas; {indisponiveis} áudios ou imagens não estavam mais disponíveis.")
               .replace("{gravadas}", String(imp.mensagens_gravadas ?? 0))
               .replace("{indisponiveis}", String(imp.midias_indisponiveis ?? 0))}
+          </p>
+          {analisando && analise && (
+            <p className="text-[11px] text-muted-foreground">
+              {t("Analisando clientes: {feitos} de {total}")
+                .replace("{feitos}", String(analise.done))
+                .replace("{total}", String(analise.total))}
+            </p>
+          )}
+          {!analisando && analise && analise.done > 0 && (
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] text-muted-foreground">
+                {t("Análise concluída para {total} clientes.").replace("{total}", String(analise.done))}
+              </p>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/app/crm">{t("Ver oportunidades")}</Link>
+              </Button>
+            </div>
+          )}
+          {!analisando && falhasDaAnalise > 0 && (
+            <p role="alert" className="text-[11px] text-destructive">
+              {t("{falhas} clientes não puderam ser analisados.").replace(/\{falhas\}/g, String(falhasDaAnalise))}
+            </p>
+          )}
+          {!analisando && analise && (analise.gasto_cents ?? 0) > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {t("Gasto de IA desta análise até agora: {valor}.").replace("{valor}", dolares(analise.gasto_cents ?? 0))}
+            </p>
+          )}
+          {!analisando && previaAnalise && previaAnalise.nesta_rodada > 0 && !confirmandoAnalise && (
+            <div className="flex flex-col items-start gap-1">
+              {analise && analise.total > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {t("Faltam {restantes} clientes para analisar.").replace(
+                    "{restantes}",
+                    String(previaAnalise.nesta_rodada + previaAnalise.restantes),
+                  )}
+                </p>
+              )}
+              <Button size="sm" disabled={busy} onClick={() => setConfirmandoAnalise(true)}>
+                {analise && analise.total > 0 ? t("Analisar a próxima rodada") : t("Analisar perfis e oportunidades")}
+              </Button>
+            </div>
+          )}
+          {!analisando && previaAnalise && previaAnalise.nesta_rodada > 0 && confirmandoAnalise && (
+            <div role="group" aria-label={t("Confirmar a análise")} className="flex flex-col gap-1 rounded-md border p-2">
+              <p className="text-[11px] font-medium">
+                {t("A IA vai ler a conversa de {n} clientes nesta rodada.").replace("{n}", String(previaAnalise.nesta_rodada))}
+              </p>
+              {previaAnalise.restantes > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {t("Cada rodada analisa no máximo {teto} clientes. Os outros {restantes} ficam para a próxima rodada.")
+                    .replace("{teto}", String(previaAnalise.teto_da_rodada))
+                    .replace("{restantes}", String(previaAnalise.restantes))}
+                </p>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {previaAnalise.estimativa_cents === null
+                  ? t("Ainda não há gasto de IA registrado para estimar o custo. O limite de {teto} clientes por rodada segura o gasto.")
+                      .replace("{teto}", String(previaAnalise.teto_da_rodada))
+                  : t("Custo estimado: até {valor}.").replace("{valor}", dolares(previaAnalise.estimativa_cents))}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {(previaAnalise.teto_mensal_cents === null
+                  ? t("Sai do mesmo saldo de IA do atendimento. Gasto deste mês: {gasto}.")
+                  : t("Sai do mesmo saldo de IA do atendimento. Gasto deste mês: {gasto} de {limite}.")
+                )
+                  .replace("{gasto}", dolares(previaAnalise.gasto_do_mes_cents))
+                  .replace("{limite}", dolares(previaAnalise.teto_mensal_cents ?? 0))}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setConfirmandoAnalise(false);
+                    void acao({
+                      acao: "analisar",
+                      importacaoId: imp.id,
+                      clientesConfirmados: previaAnalise.nesta_rodada,
+                    });
+                  }}
+                >
+                  {t("Confirmar e analisar {n} clientes").replace("{n}", String(previaAnalise.nesta_rodada))}
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmandoAnalise(false)}>
+                  {t("Cancelar")}
+                </Button>
+              </div>
+            </div>
+          )}
+          {!analisando && puladosDaAnalise > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {t("{n} clientes ficam de fora: recusaram atendimento por IA ou já têm informação mais nova no CRM.")
+                .replace("{n}", String(puladosDaAnalise))}
+            </p>
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            {t("A análise atualiza o CRM e nunca envia mensagens ao cliente.")}
           </p>
         </>
       )}
