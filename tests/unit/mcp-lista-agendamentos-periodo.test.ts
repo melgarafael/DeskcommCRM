@@ -77,7 +77,7 @@ const ITEM = {
   donoId: DONO,
   contatoId: CONTATO,
   contatoNome: "Maria Silva",
-  tipo: { slug: "consulta", nome: "Consulta" },
+  tipo: { id: "7c1f0000-0000-4000-8000-0000000000bb", slug: "consulta", nome: "Consulta" },
   local: { tipo: "in_person", descricao: "Sala 2" },
   leadIds: ["33333333-3333-4333-8333-333333333333"],
 };

@@ -358,7 +358,8 @@ describe("o que a resposta traz para um calendário desenhar (issue #1744)", () 
     // e segue a ordem DELE: `name` (o que a pessoa escolheu) antes de
     // `display_name` (o pushName do aparelho).
     expect(item.contatoNome).toBe("Maria");
-    expect(item.tipo).toEqual({ slug: "consulta", nome: "Consulta" });
+    // O `id` é o que a tela usa para remarcar no tipo DO compromisso (#4507).
+    expect(item.tipo).toEqual({ id: "t-1", slug: "consulta", nome: "Consulta" });
     expect(item.local).toEqual({ tipo: "in_person", descricao: "Sala 2" });
     expect(item.leadIds).toEqual([]);
   });

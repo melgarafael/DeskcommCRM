@@ -67,6 +67,8 @@ export type Agendamento = {
   comeca: string;
   termina: string;
   tipo?: string;
+  /** `calendar_event_types.id` — remarcar segue o tipo DO compromisso. Ausente no Google. */
+  tipoId?: string | null;
   local?: string;
   origem: OrigemDoAgendamento;
   situacao: SituacaoDoAgendamento;

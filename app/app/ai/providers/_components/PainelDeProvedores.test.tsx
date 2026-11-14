@@ -547,3 +547,104 @@ describe("PainelDeProvedores — voz do agente (#4260, item 2)", () => {
     );
   });
 });
+
+/**
+ * A RESIDÊNCIA DO TEXTO CHEGA À TELA PELO CATÁLOGO (#4519).
+ *
+ * O teste do componente (`app/app/ai/_components/OndeOTextoEProcessado.test.tsx`)
+ * prova as quatro respostas. Este prova o encanamento: a rota devolve
+ * `PROVEDORES` inteiro, e o painel tem de repassar o objeto do provedor
+ * ESCOLHIDO — inclusive quando a resposta é "não declara". Um `filter` na lista
+ * ou um `if (paisDeclarado)` aqui esconderia justamente o caso que precisa
+ * aparecer.
+ */
+describe("PainelDeProvedores — onde o texto é processado", () => {
+  const PROVEDORES_COM_PAIS = [
+    {
+      id: "deepseek",
+      rotulo: "DeepSeek",
+      quandoUsar: "Barata.",
+      ondePegarAChave: "https://platform.deepseek.com/api_keys",
+      aceitaEndpointProprio: true,
+      pais: "CN",
+      fonteDoPais: {
+        url: "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
+        consultadoEm: "2026-11-12",
+      },
+    },
+    {
+      id: "anthropic",
+      rotulo: "Anthropic (Claude)",
+      quandoUsar: "Padrão.",
+      ondePegarAChave: "https://console.anthropic.com/settings/keys",
+      aceitaEndpointProprio: false,
+      // A sede declarada vem do catálogo, sem fonte por provedor — como o #4520
+      // publicou.
+      pais: "US",
+      fonteDoPais: null,
+    },
+    {
+      id: "requesty",
+      rotulo: "Requesty",
+      quandoUsar: "Vários modelos.",
+      ondePegarAChave: "https://app.requesty.ai/api-keys",
+      aceitaEndpointProprio: true,
+      pais: "desconhecido",
+      fonteDoPais: null,
+    },
+  ];
+
+  function dublarProvedores(extra: Record<string, unknown> = {}) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const data =
+          url === "/api/v1/ai/jev"
+            ? jev(false)
+            : url === "/api/v1/ai/voz"
+              ? { voiceId: null, vozesDisponiveis: [], temCredencial: false }
+              : { ...PROVEDORES, provedores: PROVEDORES_COM_PAIS, podeEditar: true, ...extra };
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+  }
+
+  it("no cartão do padrão, o provedor escolhido mostra país, fonte e data", async () => {
+    dublarProvedores({
+      padrao: { provider: "deepseek", defaultModel: "deepseek-chat" },
+    });
+    montar();
+
+    const padrao = await screen.findByTestId("cartao-do-padrao");
+    const linha = within(padrao).getByTestId("onde-o-texto-e-processado");
+    expect(linha).toHaveAttribute("data-situacao", "declarado");
+    expect(linha).toHaveTextContent("China");
+    expect(linha).toHaveTextContent("consultada em 12/11/2026");
+    expect(within(padrao).getByRole("link", { name: "fonte: política do provedor" })).toHaveAttribute(
+      "href",
+      "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
+    );
+  });
+
+  it("no cartão do ponto, o provedor sem país aparece com o aviso — não some", async () => {
+    // O ponto aponta para quem NÃO declara país (a Requesty); com a Anthropic o
+    // cartão mostraria a sede declarada pelo #4520.
+    dublarProvedores({
+      padrao: { provider: "requesty", defaultModel: null },
+      pontos: [
+        {
+          ...PROVEDORES.pontos[0]!,
+          efetivo: { ...PROVEDORES.pontos[0]!.efetivo, provider: "requesty", modelId: "auto", origem: "escolha" },
+        },
+      ],
+    });
+    montar();
+
+    await screen.findByTestId("cartao-do-padrao");
+    fireEvent.click(screen.getByTestId("avancado-entender"));
+    const ponto = screen.getByTestId("ponto-sentiment_classify");
+    const linha = within(ponto).getByTestId("onde-o-texto-e-processado");
+    expect(linha).toHaveAttribute("data-situacao", "desconhecido");
+    expect(linha).toHaveTextContent("O provedor não declara o país; consulte a política dele");
+  });
+});

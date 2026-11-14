@@ -152,6 +152,12 @@ export const ApiErrorCodes = {
   agent_name_taken: "agent_name_taken",
   duplicate_external_id: "duplicate_external_id",
   event_gone: "event_gone", // resend de run cujo event_log original foi apagado (on delete set null)
+  // Doc 301 = B: o disparo do que ficou parado no assistido caiu fora da janela de envio
+  // (ou no limite do dia); nada saiu, o aviso volta a ficar aberto.
+  dispatch_postponed: "dispatch_postponed",
+  // Doc 301 = B: o disparo rodou e nenhuma ação parada saiu (todas falharam);
+  // o run fica na Atividade com o motivo e o aviso volta a ficar aberto.
+  dispatch_failed: "dispatch_failed",
   no_actions_to_resend: "no_actions_to_resend", // resend de regra que não tem mais nenhuma ação de webhook — reenviar nada não é sucesso
   next_action_absent: "next_action_absent", // decisão sobre proposta que não existe (mais) [wave 4]
   next_action_changed: "next_action_changed", // o agente reescreveu a proposta entre o render e o clique
