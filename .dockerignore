@@ -30,3 +30,8 @@ scratchpad
 evidence
 .superpowers
 *.tsbuildinfo
+
+# Backups da instalação (dump do banco, sessão do WhatsApp, anexos): o
+# backup.sh os grava ao lado do código na VPS, e o `COPY . .` os levaria para
+# dentro da imagem.
+backups

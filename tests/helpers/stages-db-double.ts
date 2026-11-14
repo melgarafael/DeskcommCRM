@@ -39,6 +39,14 @@ export interface StageRow {
    * configuração, o estado que o radar trata como padrão de 24 h.
    */
   expected_duration_hours: number | null;
+  /**
+   * Chance de fechamento calibrada pela tela de Funis (#2999) e o aviso de
+   * equipe da etapa. Opcionais no dublê porque a etapa anterior a essas colunas
+   * (migration 0426/0440) é `null`/desligada — e é o estado que o caso de
+   * "campo vazio depois de salvar" precisa distinguir de "coluna não lida".
+   */
+  win_probability?: number | null;
+  avisar_na_central?: boolean;
 }
 
 /**
@@ -180,6 +188,8 @@ export interface Escrita {
   /** O corpo como a rota o mandou: linha no update/insert simples, ARRAY no insert multi-linha. */
   patch: Record<string, unknown> | Record<string, unknown>[];
   filtros: Array<[string, unknown]>;
+  /** Cabeçalhos da requisição (`setHeader`) — o gatilho do banco os lê em `request.headers`. */
+  cabecalhos?: Record<string, string>;
 }
 
 export interface DbOpts {
@@ -413,6 +423,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
     let contar = false;
     let head = false;
     let apagar = false;
+    const cabecalhos: Record<string, string> = {};
     let teto: number | null = null;
     let desde = 0;
 
@@ -505,7 +516,13 @@ export function makeDb(opts: DbOpts = {}): Registro {
       aplica: () => void,
     ): Promise<{ data: unknown; error: unknown; count: number | null }> {
       const i = nEscrita++;
-      registro.escritas.push({ tipo, table, patch: corpo, filtros: [...filtros] });
+      registro.escritas.push({
+        tipo,
+        table,
+        patch: corpo,
+        filtros: [...filtros],
+        ...(Object.keys(cabecalhos).length ? { cabecalhos: { ...cabecalhos } } : {}),
+      });
       registro.eventos.push(`start:${table}:${i}`);
       // Folga real: sem ela, escritas disparadas em paralelo teriam o mesmo
       // intercalamento de um laço sequencial e o teste de ordem não mediria nada.
@@ -586,6 +603,10 @@ export function makeDb(opts: DbOpts = {}): Registro {
       },
       delete: () => {
         apagar = true;
+        return b;
+      },
+      setHeader: (nome: string, valor: string) => {
+        cabecalhos[nome] = valor;
         return b;
       },
       eq: (c: string, v: unknown) => {

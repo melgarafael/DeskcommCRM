@@ -50,6 +50,38 @@
  * 3. Valor com `{{` no meio não reabre expressão: `String.replace` não rescan
  *    o que inseriu, e a campanha — que renderiza duas vezes — pede
  *    `blindarValores` para a segunda passada.
+ *
+ * ═══ O BLOCO CONDICIONAL `{{#campo}}...{{/campo}}` (#4339) ══════════════════
+ *
+ * A linha que só existe quando o campo existe. Sem isto, quem escreve a
+ * mensagem tem duas saídas ruins: omitir o dado (e o cliente recebe "Apólice:"
+ * sem nada) ou criar uma regra por combinação de campos preenchidos. O bloco
+ * resolve os dois: o que está entre `{{#campo}}` e `{{/campo}}` sai quando o
+ * campo TEM valor e sai VAZIO quando não tem.
+ *
+ * ─── A LINHA INTEIRA SOME, e é o que a issue pede ──────────────────────────
+ *
+ * Bloco que resolve vazio e é o conteúdo da linha leva a linha junto (e o `\n`
+ * dela), então o cliente não recebe linha em branco nem rótulo órfão. O bloco
+ * tem de envolver a LINHA inteira:
+ *
+ *   `{{#seguro_apolice}}🔢 Apólice: {{seguro_apolice}}{{/seguro_apolice}}`
+ *
+ * Bloco no meio de uma linha com texto em volta só perde o miolo — a linha fica,
+ * e isso é declarado, não acidente.
+ *
+ * ─── Quem decide se o bloco fica é a POLÍTICA da tela ──────────────────────
+ *
+ * A condição é "a variável produziu texto?". Com valor, o bloco fica. Sem valor,
+ * quem responde é a política que a tela já usa: `vazio` (automação) e `remover`
+ * (follow-up) apagam o bloco; `literal` (Inbox) e `pular` (campanha) MANTÊM,
+ * porque nessas telas a variável sem valor continua aparecendo como token — e
+ * esconder a linha no rascunho esconderia do operador justamente o que ele
+ * precisa ver. Saudação pendente (sem instante do envio) também mantém.
+ *
+ * Não há aninhamento: o fechamento é o primeiro `{{/nome}}` do MESMO nome, e o
+ * miolo é resolvido pela passada normal, uma vez. Bloco sem fechamento é texto
+ * solto, como todo token que o render não conhece.
  */
 import { valorComRotulo } from "@/lib/automation/campos-do-render";
 import { COLUNAS_DE_CPF_DO_CONTATO, resolveField } from "@/lib/automation/conditions";
@@ -180,6 +212,23 @@ const CHAVES_DE_PROTOTIPO: ReadonlySet<string> = new Set(["__proto__", "construc
 /** Marca invisível (word joiner) depois de `{` — a segunda passada não a lê como token. */
 export const CHAVE_BLINDADA = "{\u2060";
 
+/**
+ * ABERTURA de bloco condicional: `{{#campo}}` (#4339). Sem grupo de reserva e
+ * sem modificador de propósito — o bloco PERGUNTA se o campo tem valor; quem
+ * imprime o valor é a marcação de dentro, com os modificadores dela.
+ */
+export const ABERTURA_DE_BLOCO = /\{\{#\s*([\w.]+)\s*\}\}/;
+
+/**
+ * O que fica no texto quando um bloco é apagado. Existe porque a linha inteira
+ * (`\n` inclusive) some junto, e para saber se o bloco era o conteúdo da linha
+ * é preciso uma marca que sobreviva à passada das marcações — o texto entre ele
+ * e as bordas da linha ainda não foi resolvido nesse ponto. Caractere de
+ * controle NUL: não é digitável no editor de mensagem, então não colide com
+ * nada que o operador escreva.
+ */
+const BLOCO_REMOVIDO = "\u0000";
+
 /** "Bom dia" / "Boa tarde" / "Boa noite" — no fuso do canal, nunca no do servidor. */
 export function saudacaoDaHora(agora: Date, fuso: string): string {
   const hora = horaNoFuso(agora, fuso);
@@ -204,9 +253,14 @@ export function resolverVariaveis(
   let cursor = 0;
   let removeu = false;
 
-  for (const marca of texto.matchAll(MARCACAO_DE_VARIAVEL)) {
+  // Os blocos são decididos ANTES das marcações: um bloco apagado não deve nem
+  // contar as variáveis do miolo (a linha não existe), e um bloco mantido
+  // devolve o miolo para a passada normal resolver uma vez só (#4339).
+  const corpo = resolverBlocos(texto, contexto, opcoes);
+
+  for (const marca of corpo.matchAll(MARCACAO_DE_VARIAVEL)) {
     const inicio = marca.index ?? cursor;
-    saida += texto.slice(cursor, inicio);
+    saida += corpo.slice(cursor, inicio);
     cursor = inicio + marca[0].length;
 
     const bruto = marca[1] ?? "";
@@ -261,10 +315,11 @@ export function resolverVariaveis(
     }
   }
 
-  saida += texto.slice(cursor);
+  saida += corpo.slice(cursor);
   // Sem valor no INÍCIO da frase ("{{nome}} chegou"), o espaço do segundo
   // pedaço também não pode sobrar — " chegou" não é frase.
   if (removeu) saida = saida.replace(/^\s+/, "");
+  if (saida.includes(BLOCO_REMOVIDO)) saida = textoSemLinhaDoBlocoRemovido(saida);
   if (opcoes.desblindarValores) saida = saida.replaceAll(CHAVE_BLINDADA, "{");
 
   return {
@@ -278,6 +333,76 @@ export function resolverVariaveis(
 function prepararValor(valor: string, opcoes: OpcoesDaResolucao): string {
   const formatado = opcoes.formatarValor ? opcoes.formatarValor(valor) : valor;
   return opcoes.blindarValores ? formatado.replaceAll("{", CHAVE_BLINDADA) : formatado;
+}
+
+/**
+ * Troca cada bloco `{{#campo}}...{{/campo}}` pelo MIOLO (campo com valor) ou pela
+ * marca de bloco apagado (#4339). O miolo resolvido sai daqui CRU: quem resolve
+ * as marcações dele é a passada normal, uma vez, com as contagens de sempre.
+ */
+function resolverBlocos(
+  texto: string,
+  contexto: ContextoDeVariaveis,
+  opcoes: OpcoesDaResolucao,
+): string {
+  let saida = texto;
+  // Um laço por bloco: o primeiro que aparece é o mais externo, e o miolo dele
+  // (que pode trazer outros blocos) volta para a próxima volta.
+  for (let voltas = 0; voltas < 50; voltas += 1) {
+    const abre = ABERTURA_DE_BLOCO.exec(saida);
+    if (!abre || abre.index === undefined) return saida;
+    const nome = abre[1] ?? "";
+    if (nome === "") return saida;
+    const depoisDaAbertura = abre.index + abre[0].length;
+    const fecha = new RegExp(String.raw`\{\{\/\s*${nome}\s*\}\}`).exec(
+      saida.slice(depoisDaAbertura),
+    );
+    // Sem fechamento, `{{#campo}}` é texto solto — o destino de todo token que
+    // o render não conhece. Não se apaga conteúdo de quem errou a sintaxe.
+    if (!fecha || fecha.index === undefined) return saida;
+    const miolo = saida.slice(depoisDaAbertura, depoisDaAbertura + fecha.index);
+    const depoisDoFechamento = depoisDaAbertura + fecha.index + fecha[0].length;
+    saida =
+      saida.slice(0, abre.index) +
+      (blocoFica(nome, contexto, opcoes) ? miolo : BLOCO_REMOVIDO) +
+      saida.slice(depoisDoFechamento);
+  }
+  return saida;
+}
+
+/**
+ * O bloco fica? "A variável produziu texto?" — e, sem valor, quem responde é a
+ * política da tela: `vazio`/`remover` apagam o bloco; `literal`/`pular` mantêm,
+ * porque nelas a variável sem valor continua visível como token e esconder a
+ * linha esconderia do operador o que ele precisa ver.
+ */
+function blocoFica(
+  nome: string,
+  contexto: ContextoDeVariaveis,
+  opcoes: OpcoesDaResolucao,
+): boolean {
+  const leitura = ler(nome, contexto, opcoes);
+  if (leitura.pendente || leitura.valor !== null) return true;
+  const politica = opcoes.quandoVazio ?? "literal";
+  return politica === "literal" || politica === "pular";
+}
+
+/**
+ * Apaga as LINHAS que ficaram só com a marca de bloco removido — é isto que faz
+ * a linha do rótulo sumir em vez de virar buraco na mensagem (#4339). Bloco no
+ * meio de uma linha com texto em volta só perde a marca: a linha fica, como o
+ * cabeçalho do resolvedor declara.
+ */
+function textoSemLinhaDoBlocoRemovido(texto: string): string {
+  const linhas = texto.split(/\r?\n/);
+  const mantidas: string[] = [];
+  for (const linha of linhas) {
+    if (linha.includes(BLOCO_REMOVIDO) && linha.replaceAll(BLOCO_REMOVIDO, "").trim() === "") {
+      continue;
+    }
+    mantidas.push(linha.replaceAll(BLOCO_REMOVIDO, ""));
+  }
+  return mantidas.join("\n");
 }
 
 /**

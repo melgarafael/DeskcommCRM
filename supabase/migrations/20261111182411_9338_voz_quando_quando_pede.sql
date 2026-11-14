@@ -34,12 +34,17 @@
 -- VARREDURA anon (0116). Não cria função (poderia ficar depois dela), e fica
 -- antes por vizinhança com o bloco da 9052, que é quem criou a coluna.
 
-alter table public.ai_agent_versions
-  drop constraint if exists ai_agent_versions_voz_quando_check;
-
-alter table public.ai_agent_versions
-  add constraint ai_agent_versions_voz_quando_check
-  check (voz_quando in ('nunca', 'espelhar', 'sempre', 'quando_pede'));
+-- Drop e add num bloco só: o update.sh aplica sem ON_ERROR_STOP, e um add que
+-- falhasse depois de um drop solto deixaria a coluna sem guarda.
+do $voz_quando$
+begin
+  alter table public.ai_agent_versions
+    drop constraint if exists ai_agent_versions_voz_quando_check;
+  alter table public.ai_agent_versions
+    add constraint ai_agent_versions_voz_quando_check
+    check (voz_quando in ('nunca', 'espelhar', 'sempre', 'quando_pede'));
+end
+$voz_quando$;
 
 comment on column public.ai_agent_versions.voz_quando is
   'Migration 9338 (a coluna nasceu na 9052). ''nunca'' (nunca fala, mesmo com '

@@ -1249,7 +1249,16 @@ const spinningGate: Gate = {
     });
     return decision.allow
       ? { pass: true }
-      : { pass: false, code: decision.code, reason: decision.reason };
+      : {
+          pass: false,
+          code: decision.code,
+          reason: decision.reason,
+          // #4428: a CONTAGEM de repetições vai junto no trace. O veto já sabia
+          // (`matchCount`); sem esta linha, quem lê a tentativa depois vê só o
+          // código `mass_identical` e não consegue dizer quantas cópias o número
+          // já tinha na janela — é esse número que o motivo do follow-up grava.
+          detail: { matchCount: decision.matchCount },
+        };
   },
 };
 

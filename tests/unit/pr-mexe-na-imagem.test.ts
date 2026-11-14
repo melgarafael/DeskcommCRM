@@ -110,6 +110,13 @@ describe("pr-mexe-na-imagem", () => {
     "scripts/smoke-asaas.ts",
   ]);
 
+  // O backup.sh grava em $PROJECT_DIR/backups por padrão (dump do banco, sessão
+  // do WhatsApp, anexos), ao lado do código que o `COPY . .` leva para a imagem.
+  it("a pasta de backups da instalação fica fora do contexto de build", () => {
+    expect(readFileSync("hostgator-setup-kit/backup.sh", "utf-8")).toContain("$PROJECT_DIR/backups");
+    expect(ignorados).toContain("backups");
+  });
+
   it("nenhum arquivo que entra na imagem importa de pasta que o .dockerignore exclui", () => {
     const pastasFora = new Set(ignorados.filter((e) => !e.includes("*") && !e.includes(".")));
     for (const p of ["docs", "tests", "tasks"]) expect(pastasFora.has(p)).toBe(true);

@@ -35,6 +35,7 @@ import {
   textoDoModeloParaAConversa,
   variaveisDaCampanhaSchema,
 } from "./modelo";
+import { logger } from "@/lib/logger";
 import { conferirModeloDaCampanha } from "./modelo-da-conexao";
 import type { ModeloPreparado } from "./preparacao";
 import { renderizar } from "./renderizador";
@@ -46,7 +47,8 @@ export interface CampanhaCarregada {
   organization_id: string;
   name: string;
   status: StatusDaCampanha;
-  channel_session_id: string;
+  /** `null` = campanha de E-MAIL (#3441): ela não fala por número nenhum. */
+  channel_session_id: string | null;
   message_body: string | null;
   base_legal: string;
   lia_ref: string | null;
@@ -60,8 +62,10 @@ export interface CampanhaCarregada {
   teto_diario: number | null;
   teto_horario: number | null;
   description: string | null;
-  /** Migration 0710: `template` = modelo aprovado pelo número oficial. */
+  /** Migration 0710: `template` = modelo aprovado pelo número oficial; 9334: `email`. */
   message_mode: ModoDaMensagem;
+  /** Migration 9334 (#3441): assunto do e-mail; `null` nos demais modos. */
+  email_subject: string | null;
   provider_template_name: string | null;
   provider_template_language: string | null;
   provider_template_variables: unknown;
@@ -73,15 +77,26 @@ export interface CampanhaCarregada {
   split_messages: boolean;
 }
 
-export type Recusa = { ok: false; codigo: ApiErrorCode; mensagem: string; status: number };
+export type Recusa = {
+  ok: false;
+  codigo: ApiErrorCode;
+  mensagem: string;
+  status: number;
+  /**
+   * O que a ação JÁ gravou antes de falhar. Só o cancelamento parcial preenche:
+   * a campanha virou `cancelled` e a fila não fechou. A rota audita isto — o
+   * estado mudou, e a trilha não pode dizer que nada aconteceu.
+   */
+  gravado?: Record<string, unknown>;
+};
 export type Desfecho<T = unknown> = ({ ok: true } & T) | Recusa;
 
 const COLUNAS =
   "id, organization_id, name, status, channel_session_id, message_body, base_legal, lia_ref, " +
   "audience_filter, audience_version, content_version, scheduled_at, description, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, " +
-  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, " +
-  "provider_broadcast_id, split_messages";
+  "message_mode, email_subject, provider_template_name, provider_template_language, " +
+  "provider_template_variables, velocidade, provider_broadcast_id, split_messages";
 
 export async function carregarCampanha(
   admin: SupabaseClient,
@@ -121,6 +136,19 @@ function recusaDeTransicao(de: StatusDaCampanha, para: StatusDaCampanha): Recusa
 
 /** O que toda campanha precisa ter antes de qualquer envio — inclusive o de teste. */
 function faltaParaEnviar(c: CampanhaCarregada): Recusa | null {
+  // E2a (#3441) entrega CONTEÚDO e PÚBLICO; o despacho do e-mail é a fatia
+  // seguinte. Preparar/agendar uma campanha de e-mail agora só criaria um
+  // snapshot que nenhum worker sabe mandar — a recusa é explícita, e não um
+  // silêncio que alguém interpretaria como "quase pronto".
+  if (c.message_mode === "email") {
+    return {
+      ok: false,
+      codigo: "campanha_conteudo_invalido",
+      mensagem:
+        "Campanha de e-mail ainda não é enviada: esta entrega guarda o assunto, o corpo e o público. O envio entra na fatia seguinte.",
+      status: 422,
+    };
+  }
   if (c.message_mode === "template") {
     if ((c.provider_template_name ?? "").trim() === "" || (c.provider_template_language ?? "").trim() === "") {
       return {
@@ -162,6 +190,15 @@ export async function modeloDaCampanha(
   c: CampanhaCarregada,
 ): Promise<Desfecho<{ modelo?: ModeloPreparado }>> {
   if (c.message_mode !== "template") return { ok: true };
+  const numero = c.channel_session_id;
+  if (numero === null) {
+    return {
+      ok: false,
+      codigo: "campanha_canal_indisponivel",
+      mensagem: "Campanha com modelo aprovado exige o número oficial que tem o modelo.",
+      status: 409,
+    };
+  }
   const variaveis = variaveisDaCampanhaSchema.safeParse(c.provider_template_variables ?? {});
   if (!variaveis.success) {
     return {
@@ -175,7 +212,7 @@ export async function modeloDaCampanha(
     admin,
     {
       organizationId: c.organization_id,
-      channelSessionId: c.channel_session_id,
+      channelSessionId: numero,
       name: c.provider_template_name ?? "",
       language: c.provider_template_language ?? "",
     },
@@ -264,7 +301,7 @@ export async function prepararAcao(
       };
     }
 
-    await admin
+    const { error: erroAoConcluir } = await admin
       .from("campaigns")
       .update({
         status: "ready",
@@ -276,6 +313,15 @@ export async function prepararAcao(
       })
       .eq("id", c.id)
       .eq("status", "preparing");
+    if (erroAoConcluir) {
+      await voltarAoRascunho(admin, c.id, "erro_na_preparacao");
+      return {
+        ok: false,
+        codigo: "internal_error",
+        mensagem: `Não foi possível concluir a preparação da campanha: ${erroAoConcluir.message}`,
+        status: 500,
+      };
+    }
 
     return { ok: true, resumo };
   } catch (err) {
@@ -394,7 +440,11 @@ export async function cancelarAcao(
   admin: SupabaseClient,
   c: CampanhaCarregada,
   agora: Date,
-): Promise<Desfecho<{ cancelados: number }>> {
+): Promise<Desfecho<{ cancelados: number; reconciliado?: true }>> {
+  // Repetir o cancelamento não desfaz nada: termina de fechar a fila que uma
+  // tentativa anterior deixou aberta (a campanha já estava gravada `cancelled`
+  // quando o fechamento dos destinatários falhou). Sem pendência, continua 409.
+  if (c.status === "cancelled") return reconciliarFila(admin, c, agora);
   const recusa = recusaDeTransicao(c.status, "cancelled");
   if (recusa) return recusa;
   const { data } = await admin
@@ -407,18 +457,64 @@ export async function cancelarAcao(
 
   // A campanha já está cancelada quando esta linha roda: a rodada não escolhe
   // mais esta campanha, então não há corrida com o worker por estes pendentes.
-  const { data: cancelados } = await admin
-    .from("campaign_recipients")
-    .update({ status: "cancelled", cancelled_at: agora.toISOString() })
-    .eq("campaign_id", c.id)
-    .in("status", ["pending", "queued"])
-    .select("id");
+  const fila = await fecharFila(admin, c.id, agora);
   // Por broadcast, a lista está com o provedor: cancelar lá o que ainda não
   // saiu, trazer o último retrato e fechar quem ficou `sending` (migration 0712).
   // Numa transmissão todo mundo está `sending` — sem somar estes, o operador
-  // via «0 cancelados» com o cancelamento feito.
+  // via «0 cancelados» com o cancelamento feito. Roda mesmo com a fila aberta:
+  // a repetição só fecha a fila, e o provedor não pode ficar mandando.
   const fechadosNaTransmissao = await encerrarTransmissao(admin, c, agora);
-  return { ok: true, cancelados: (cancelados ?? []).length + fechadosNaTransmissao };
+  if (!fila.ok) {
+    return filaNaoFechada({ cancelados: fechadosNaTransmissao, fila_fechada: false });
+  }
+  return { ok: true, cancelados: fila.fechados + fechadosNaTransmissao };
+}
+
+/** `pending`/`queued` da campanha → `cancelled`. Erro de banco não vira «0». */
+async function fecharFila(
+  admin: SupabaseClient,
+  campanhaId: string,
+  agora: Date,
+): Promise<{ ok: true; fechados: number } | { ok: false }> {
+  const { data, error } = await admin
+    .from("campaign_recipients")
+    .update({ status: "cancelled", cancelled_at: agora.toISOString() })
+    .eq("campaign_id", campanhaId)
+    .in("status", ["pending", "queued"])
+    .select("id");
+  if (error) {
+    logger.warn("[campanha] cancelada sem fechar a fila", { campanha: campanhaId, codigo: error.code ?? null });
+    return { ok: false };
+  }
+  return { ok: true, fechados: (data ?? []).length };
+}
+
+/**
+ * A campanha já está `cancelled`: só a fila que sobrou é fechada. Não mexe em
+ * `cancelled_at` da campanha (o histórico do cancelamento fica como foi), nem
+ * em quem está `sending` (pode estar na borda externa), nem no provedor — o
+ * broadcast foi encerrado na primeira tentativa.
+ */
+async function reconciliarFila(
+  admin: SupabaseClient,
+  c: CampanhaCarregada,
+  agora: Date,
+): Promise<Desfecho<{ cancelados: number; reconciliado: true }>> {
+  const fila = await fecharFila(admin, c.id, agora);
+  if (!fila.ok) return filaNaoFechada();
+  if (fila.fechados === 0) return recusaDeTransicao(c.status, "cancelled") ?? conflitoDeCorrida();
+  return { ok: true, cancelados: fila.fechados, reconciliado: true };
+}
+
+function filaNaoFechada(gravado?: Record<string, unknown>): Recusa {
+  return {
+    ok: false,
+    codigo: "internal_error",
+    mensagem:
+      "A campanha está cancelada, mas não foi possível fechar a fila de quem ainda não recebeu. Cancele de novo para concluir.",
+    status: 500,
+    ...(gravado ? { gravado } : {}),
+  };
 }
 
 export async function duplicarAcao(
@@ -435,6 +531,7 @@ export async function duplicarAcao(
       channel_session_id: c.channel_session_id,
       message_body: c.message_body,
       message_mode: c.message_mode,
+      email_subject: c.email_subject,
       provider_template_name: c.provider_template_name,
       provider_template_language: c.provider_template_language,
       provider_template_variables: c.provider_template_variables ?? {},
@@ -581,7 +678,16 @@ export async function testarAcao(
     conteudo = { type: "text", body: render.texto };
   }
 
-  const boundary = await beginServiceAtOrigin(admin, c.organization_id, linha.id, c.channel_session_id);
+  const numeroDoTeste = c.channel_session_id;
+  if (numeroDoTeste === null) {
+    return {
+      ok: false,
+      codigo: "campanha_conteudo_invalido",
+      mensagem: "Campanha de e-mail não tem teste de envio: o despacho do e-mail é a fatia seguinte.",
+      status: 422,
+    };
+  }
+  const boundary = await beginServiceAtOrigin(admin, c.organization_id, linha.id, numeroDoTeste);
   // O teste divide como a rodada divide (`baloes.ts`): quem testa precisa ver
   // no aparelho os mesmos balões que o destinatário vai receber.
   const baloes = conteudo.type === "text" ? baloesDaCampanha(conteudo.body, c.split_messages === true) : [conteudo.body];

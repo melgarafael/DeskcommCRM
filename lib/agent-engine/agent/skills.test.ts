@@ -6,6 +6,7 @@ import {
   loadSkills,
   matchSkills,
   recentInboundSignal,
+  renderMatchedSkillBodies,
   skillMatcherSchema,
   skillsDoAgente,
   skillsPuxadasPeloRoteiro,
@@ -158,8 +159,38 @@ describe('skillMatcherSchema — any_tags', () => {
     expect(skillMatcherSchema.safeParse({ any_keywords: ['a'], any_tags: vinteUm }).success).toBe(false);
   });
 
-  it('continua exigindo any_keywords: skill só com etiqueta não passa', () => {
-    expect(skillMatcherSchema.safeParse({ any_tags: ['odonto'] }).success).toBe(false);
+  it('#4458: skill sem nenhum sinal (matcher {}) passa — ela fica fora do roteamento automático', () => {
+    expect(skillMatcherSchema.safeParse({}).success).toBe(true);
+    // etiqueta sozinha é sinal legítimo: entra por etiqueta, sem palavra-chave.
+    expect(skillMatcherSchema.safeParse({ any_tags: ['odonto'] }).success).toBe(true);
+  });
+
+  it('#4458: lista declarada e vazia (ou item vazio) NÃO passa — erro claro continua', () => {
+    expect(skillMatcherSchema.safeParse({ any_keywords: [] }).success).toBe(false);
+    expect(skillMatcherSchema.safeParse({ any_keywords: [''] }).success).toBe(false);
+    expect(skillMatcherSchema.safeParse({ any_keywords: ['a'], any_tags: [''] }).success).toBe(false);
+  });
+});
+
+describe('skill sem matcher — só uso explícito, nunca pelo roteamento automático (#4458)', () => {
+  const semMatcher = skill('humanizer', {});
+
+  it('não casa por palavra nem por etiqueta: o turno não injeta o corpo sozinho', () => {
+    const r = matchSkills([semMatcher], 'reescreve esse texto, por favor', ['odonto']);
+    expect(r.matched).toEqual([]);
+    expect(r.missCandidates).toEqual([]);
+    expect(renderMatchedSkillBodies(r.matched)).toBe('');
+  });
+
+  it('e não vira near-miss: sem probe, não polui o golden', () => {
+    const r = matchSkills([semMatcher], 'texto com cara de IA');
+    expect(r.missCandidates).toEqual([]);
+  });
+
+  it('entra quando o roteiro do atendimento puxa a skill pelo nome (uso explícito)', () => {
+    const puxadas = skillsPuxadasPeloRoteiro([semMatcher], ['humanizer'], []);
+    expect(puxadas.map((s) => s.name)).toEqual(['humanizer']);
+    expect(renderMatchedSkillBodies(puxadas)).toContain('corpo de humanizer');
   });
 });
 

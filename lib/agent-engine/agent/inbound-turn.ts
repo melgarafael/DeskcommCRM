@@ -1794,6 +1794,54 @@ export function decidirSeEnfileiraOperador(input: {
 }
 
 /**
+ * MODO ASSISTIDO — o Conversador só gera rascunho e o turno saía sem Operador, então o
+ * card ficava parado no funil. Enfileira `operator_turn` com o MESMO agente que gerou o
+ * rascunho. Isto nunca manda mensagem: no assistido, `maoDoOperador` tira da mão
+ * do Operador toda ferramenta que faz algo sair (`saiSemAprovacao`).
+ * Mesma `sourceEventId` do turno (dedup no retry). Nunca lança.
+ */
+export async function enfileirarOperadorNoAssistido(
+  pool: pg.Pool,
+  log: Logger,
+  job: JobRow,
+  conversationId: string,
+  agente: PublishedAgentConfig,
+): Promise<void> {
+  // Pausado: o operator_turn o barraria de qualquer jeito; não gasta vaga de fila.
+  if (!job.contact_id || agente.pausedAt) return;
+  const disparo = decidirSeEnfileiraOperador({
+    temAgentePublicado: true,
+    papelLigado: agente.operatorEnabled,
+  });
+  if (!disparo.enfileira) {
+    log.info('turno do operador não enfileirado (assistido)', { porque: disparo.porque });
+    return;
+  }
+  try {
+    const { deduped } = await enqueueJob(pool, job.organization_id, {
+      kind: 'operator_turn',
+      leadId: job.contact_id,
+      sourceEventId: job.id,
+      payload: {
+        conversation_id: conversationId,
+        origin_job_id: job.id,
+        agent_id: agente.agentId,
+        trigger: 'assistido',
+      },
+    });
+    log.info('turno do operador enfileirado (assistido)', { deduped });
+  } catch (err) {
+    // Só log, e é deliberado — diferente do catch do enfileiramento do turno
+    // automático, que abre `promise_unfulfilled` na Central: lá o Conversador
+    // FALOU e pode ter prometido algo; aqui ele só escreveu um rascunho, sem
+    // declaração de promessa, então não há compromisso que fique sem dono.
+    log.error('turno do operador NÃO foi enfileirado (assistido; o turno segue)', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+}
+
+/**
  * A mensagem que acaba de chegar é uma fonte factual: se ela tem texto, o
  * agente não pode dizer ao cliente que ela veio vazia. Prompt reduz esse erro,
  * mas não é uma barreira de envio — o modelo ainda pode repetir um resumo
@@ -7619,6 +7667,11 @@ export async function runAgentPreview(
     erro = e;
     throw e;
   } finally {
+    // #4424 — o Testar mostra, turno a turno, as ferramentas que a IA USOU. As
+    // de leitura rodam de verdade na prévia, mas até aqui a lista só existia no
+    // traço gravado no banco; as ações propostas já saíam em `result.proposals`.
+    // Copiar para o resultado é o que leva o dado à tela, sem consulta nova.
+    preview.result.ferramentas = coletor.listar();
     await gravarTracoDoTurno(deps.log, pool, {
       organizationId: preview.organizationId,
       jobId: null,
@@ -7787,6 +7840,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         boundary: currentExecutionBoundary() ?? undefined,
         agent: operationAgent,
       });
+      // Depois do rascunho: falha do Operador nunca atrasa o rascunho.
+      await enfileirarOperadorNoAssistido(pool, deps.log, job, payload.conversation_id, operationAgent);
       return;
     }
     if (operationAgent?.pausedAt) return;

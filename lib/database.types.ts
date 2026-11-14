@@ -4458,12 +4458,13 @@ export type Database = {
           audience_version: number;
           base_legal: string;
           cancelled_at: string | null;
-          channel_session_id: string;
+          channel_session_id: string | null;
           completed_at: string | null;
           content_version: number;
           created_at: string;
           created_by: string | null;
           description: string | null;
+          email_subject: string | null;
           failed_at: string | null;
           failure_code: string | null;
           failure_detail: string | null;
@@ -4503,12 +4504,13 @@ export type Database = {
           audience_version?: number;
           base_legal: string;
           cancelled_at?: string | null;
-          channel_session_id: string;
+          channel_session_id?: string | null;
           completed_at?: string | null;
           content_version?: number;
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
+          email_subject?: string | null;
           failed_at?: string | null;
           failure_code?: string | null;
           failure_detail?: string | null;
@@ -4547,12 +4549,13 @@ export type Database = {
           audience_version?: number;
           base_legal?: string;
           cancelled_at?: string | null;
-          channel_session_id?: string;
+          channel_session_id?: string | null;
           completed_at?: string | null;
           content_version?: number;
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
+          email_subject?: string | null;
           failed_at?: string | null;
           failure_code?: string | null;
           failure_detail?: string | null;
@@ -4693,6 +4696,7 @@ export type Database = {
       catalog_products: {
         Row: {
           ativo: boolean;
+          capacidade: string | null;
           categoria: string | null;
           codigo: string;
           controla_estoque: boolean;
@@ -4714,6 +4718,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           ativo?: boolean;
+          capacidade?: string | null;
           categoria?: string | null;
           codigo: string;
           controla_estoque?: boolean;
@@ -4734,6 +4739,7 @@ export type Database = {
         };
         Update: {
           ativo?: boolean;
+          capacidade?: string | null;
           categoria?: string | null;
           codigo?: string;
           controla_estoque?: boolean;
@@ -6124,6 +6130,7 @@ export type Database = {
           name_lookup_at: string | null;
           organization_id: string;
           person_id: string | null;
+          phone_label: string | null;
           phone_lookup_at: string | null;
           phone_number: string | null;
           phone_type: string | null;
@@ -6186,6 +6193,7 @@ export type Database = {
           name_lookup_at?: string | null;
           organization_id: string;
           person_id?: string | null;
+          phone_label?: string | null;
           phone_lookup_at?: string | null;
           phone_number?: string | null;
           phone_type?: string | null;
@@ -6247,6 +6255,7 @@ export type Database = {
           name_lookup_at?: string | null;
           organization_id?: string;
           person_id?: string | null;
+          phone_label?: string | null;
           phone_lookup_at?: string | null;
           phone_number?: string | null;
           phone_type?: string | null;
