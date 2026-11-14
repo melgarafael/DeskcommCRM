@@ -1,16 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
-import { COR_DA_PRIORIDADE } from "./estilo-da-prioridade";
+import { useAttendants } from "@/hooks/team/useAttendants";
+import { useSectors, type Sector } from "@/hooks/team/useSectors";
+import { COR_DA_PRIORIDADE, ESTILO_DA_URGENCIA } from "./estilo-da-prioridade";
 import {
   agrupaPorPrazo,
+  calcularUrgenciaDoPrazo,
   estaAtrasada,
   estaEncerrada,
   type FaixaDePrazo,
@@ -42,6 +45,7 @@ function Linha({
   aoApagar,
   mostrarNegocio,
   nomeDoResponsavel,
+  setor,
 }: {
   tarefa: Tarefa;
   podeEditar: boolean;
@@ -51,6 +55,7 @@ function Linha({
   mostrarNegocio: boolean;
   /** Já resolvido por quem monta a lista; `null` = sem responsável conhecido. */
   nomeDoResponsavel: string | null;
+  setor?: Sector | null;
 }) {
   const t = useT();
   const tag = useTagDeIdioma();
@@ -59,6 +64,8 @@ function Linha({
 
   const encerrada = estaEncerrada(tarefa);
   const atrasada = estaAtrasada(tarefa);
+  const urgencia = calcularUrgenciaDoPrazo(tarefa);
+  const estiloUrgencia = ESTILO_DA_URGENCIA[urgencia];
 
   const rotuloDaPrioridade: Record<PrioridadeDaTarefa, string> = {
     low: t("Baixa"),
@@ -123,7 +130,15 @@ function Linha({
           >
             {rotuloDaPrioridade[tarefa.priority]}
           </span>
-          <span className={cn("text-muted-foreground", atrasada && "font-semibold text-destructive")}>
+          <span
+            className={cn(
+              "flex items-center gap-1",
+              estiloUrgencia.textoPrazo,
+            )}
+          >
+            {estiloUrgencia.icone ? (
+              <span aria-hidden>{estiloUrgencia.icone}</span>
+            ) : null}
             {tarefa.due_date
               ? new Date(tarefa.due_date).toLocaleString(tag, {
                   day: "2-digit",
@@ -137,6 +152,18 @@ function Linha({
             <span className="flex items-center gap-1 text-muted-foreground">
               <UserCircle size={12} aria-hidden />
               {nomeDoResponsavel}
+            </span>
+          ) : null}
+          {setor ? (
+            <span
+              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border"
+              style={{
+                backgroundColor: setor.color ? `${setor.color}18` : undefined,
+                color: setor.color ?? undefined,
+                borderColor: setor.color ? `${setor.color}35` : undefined,
+              }}
+            >
+              {setor.name}
             </span>
           ) : null}
           {mostrarNegocio && tarefa.lead ? (
@@ -215,6 +242,23 @@ export function ListaDeTarefas({
   const membros = useAssignableMembers(podeEditar);
   const nomes = new Map((membros.data ?? []).map((m) => [m.user_id, m.full_name]));
 
+  const { data: atendentesResp } = useAttendants();
+  const { data: setoresResp } = useSectors();
+  const atendentes = atendentesResp?.data ?? [];
+  const setores = setoresResp?.data ?? [];
+  const setoresMap = useMemo(() => new Map(setores.map((s) => [s.id, s])), [setores]);
+  const setorDoUsuario = useMemo(() => {
+    const map = new Map<string, Sector>();
+    for (const a of atendentes) {
+      const primeiroId = a.sector_ids?.[0];
+      if (primeiroId) {
+        const primeiroSetor = setoresMap.get(primeiroId);
+        if (primeiroSetor) map.set(a.user_id, primeiroSetor);
+      }
+    }
+    return map;
+  }, [atendentes, setoresMap]);
+
   function nomeDoResponsavel(tarefa: Tarefa): string | null {
     if (!tarefa.assigned_to) return null;
     if (tarefa.assigned_to === usuario.id) return t("Eu");
@@ -264,6 +308,7 @@ export function ListaDeTarefas({
                 aoApagar={aoApagar}
                 mostrarNegocio={mostrarNegocio}
                 nomeDoResponsavel={nomeDoResponsavel(tarefa)}
+                setor={tarefa.assigned_to ? setorDoUsuario.get(tarefa.assigned_to) : null}
               />
             ))}
           </div>

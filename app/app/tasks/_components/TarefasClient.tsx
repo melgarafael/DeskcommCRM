@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,8 @@ import { ArrowsClockwise, CalendarBlank, Kanban, ListChecks, Plus } from "@/lib/
 import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { useAttendants } from "@/hooks/team/useAttendants";
+import { useSectors } from "@/hooks/team/useSectors";
 import { responsavelDoFiltro, type FiltroDeResponsavel } from "@/lib/tarefas/filtro-de-responsavel";
 import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 
@@ -48,9 +50,28 @@ export function TarefasClient({
   const [modo, setModo] = useState<"lista" | "calendario" | "quadro">("lista");
   const [situacao, setSituacao] = useState<FiltroDeSituacao>("aberto");
   const [responsavel, setResponsavel] = useState<FiltroDeResponsavel>(minhasDeInicio ? "eu" : "todos");
+  // Setor de atendimento (Fiscal, Contábil, DP, TI, etc.). "todos" = sem filtro.
+  const [setor, setSetor] = useState<string>("todos");
+  const { data: setoresResp } = useSectors();
+  const setores = setoresResp?.data ?? [];
+  const { data: atendentesResp } = useAttendants();
+  const atendentes = atendentesResp?.data ?? [];
+
   // `/team/assignable` exige agent: o viewer tomaria 403 (e um authz.denied no
   // audit) a cada visita. Ele fica com Todos, Minhas e Sem responsável.
   const { data: membros } = useAssignableMembers(podeEditar);
+
+  // Se um setor foi filtrado, estreita a lista de responsáveis apenas aos membros daquele setor
+  const membrosDoSetor = useMemo(() => {
+    if (setor === "todos") return membros ?? [];
+    const idsNoSetor = new Set(
+      atendentes
+        .filter((a) => a.sector_ids?.includes(setor))
+        .map((a) => a.user_id),
+    );
+    return (membros ?? []).filter((m) => idsNoSetor.has(m.user_id));
+  }, [membros, atendentes, setor]);
+
   // "todos" = sem filtro (a tela abre assim). Qualquer outro valor é o id de um funil.
   const [funil, setFunil] = useState<string>("todos");
   const [emEdicao, setEmEdicao] = useState<Tarefa | null>(null);
@@ -76,6 +97,7 @@ export function TarefasClient({
       ...(situacao === "aberto" ? { aberto: true } : { status: situacao }),
       assigned_to: responsavelDoFiltro(responsavel),
       pipeline_id: funil === "todos" ? undefined : funil,
+      sector_id: setor === "todos" ? undefined : setor,
     },
     /*
      * No QUADRO esta busca fica parada. A visão em quadro faz a SUA própria
@@ -144,6 +166,42 @@ export function TarefasClient({
             </Select>
           )}
 
+          {setores.length > 0 && (
+            <Select
+              value={setor}
+              onValueChange={(novoSetor) => {
+                setSetor(novoSetor);
+                if (
+                  novoSetor !== "todos" &&
+                  responsavel !== "todos" &&
+                  responsavel !== "eu" &&
+                  responsavel !== "ninguem"
+                ) {
+                  const estaNoSetor = atendentes.some(
+                    (a) => a.user_id === responsavel && a.sector_ids?.includes(novoSetor),
+                  );
+                  if (!estaNoSetor) setResponsavel("todos");
+                }
+              }}
+            >
+              <SelectTrigger
+                aria-label={t("Setor")}
+                className="h-11 w-[168px] text-xs lg:h-9"
+                data-testid="tarefas-filtro-setor"
+              >
+                <SelectValue placeholder={t("Todos os setores")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">{t("Todos os setores")}</SelectItem>
+                {setores.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
           <Select value={responsavel} onValueChange={(v) => setResponsavel(v as FiltroDeResponsavel)}>
             <SelectTrigger aria-label={t("Responsável")} className="h-11 w-[168px] text-xs lg:h-9" data-testid="tarefas-filtro-responsavel">
               <SelectValue />
@@ -151,7 +209,7 @@ export function TarefasClient({
             <SelectContent>
               <SelectItem value="todos">{t("Todos")}</SelectItem>
               <SelectItem value="eu">{t("Minhas")}</SelectItem>
-              {(membros ?? [])
+              {(membrosDoSetor ?? [])
                 .filter((m) => m.user_id !== usuario.id)
                 .map((m) => (
                   <SelectItem key={m.user_id} value={m.user_id}>
@@ -279,6 +337,7 @@ export function TarefasClient({
                 filtros={{
                   assigned_to: responsavelDoFiltro(responsavel),
                   pipeline_id: funil === "todos" ? undefined : funil,
+                  sector_id: setor === "todos" ? undefined : setor,
                 }}
                 aoEditar={abrirEdicao}
               />

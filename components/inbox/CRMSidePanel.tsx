@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight } from "@/lib/ui/icons";
+import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight, CalendarCheck } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
@@ -33,6 +33,8 @@ import { rotuloDaRecorrencia } from "@/lib/leads/valor-recorrente";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
+import { FormularioDeTarefa } from "@/app/app/tasks/_components/FormularioDeTarefa";
+import { useTasks } from "@/hooks/tasks/useTasks";
 import { FollowupDoContato } from "./FollowupDoContato";
 import { DialogoDosModulos } from "./DialogoDosModulos";
 import {
@@ -812,12 +814,6 @@ export function CRMSidePanel({
   // quem responde "posso mudar a carteira DESTE cliente?" é o servidor, no
   // `pode_alterar` do GET, e o `CartaoDaCarteira` lê essa resposta (#3746).
   const podeVerCarteira = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
-  // A BIBLIOTECA do acervo é `manager`+ — a página `/app/ai/knowledge/sources`
-  // redireciona o resto para /403 e o GET do conteúdo cobra o mesmo papel. A
-  // CONSULTA ao lado é `agent`+ (a rota de busca). É por isso que a régua do
-  // botão "abrir o material de origem" no trecho é ESTA, e não a da busca: o
-  // painel mostra o nome da fonte a quem só pergunta, e o link a quem abre.
-  const podeAbrirAcervo = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "manager");
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
@@ -869,8 +865,13 @@ export function CRMSidePanel({
 
   const [tagEditorOpen, setTagEditorOpen] = useState(false);
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
+  const [tarefaDialogOpen, setTarefaDialogOpen] = useState(false);
   const [leadAtivoId, setLeadAtivoId] = useState<string | null>(null);
   const defaultPipeline = useDefaultPipeline(leadDialogOpen);
+  const { criarTarefa } = useTasks(
+    contactId ? { contact_id: contactId, aberto: true } : { aberto: true },
+    { enabled: Boolean(contactId) },
+  );
 
   useEffect(() => {
     if (leadDialogOpen && defaultPipeline.isError) {
@@ -1111,6 +1112,18 @@ export function CRMSidePanel({
               <Users size={12} className="mr-1" weight="regular" aria-hidden />
               {leadDialogOpen && defaultPipeline.isLoading ? t("Carregando…") : t("Novo negócio")}
             </Button>
+            {contactId && podeCriarTarefa && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-11 px-2 text-xs lg:h-7"
+                disabled={readonly}
+                onClick={() => setTarefaDialogOpen(true)}
+              >
+                <CalendarCheck size={12} className="mr-1" weight="regular" aria-hidden />
+                {t("Nova tarefa")}
+              </Button>
+            )}
             {contactId && (
               <Button asChild size="sm" variant="ghost" className="h-11 px-2 text-xs lg:h-7">
                 <Link href={`/app/contacts/${contactId}`}>
@@ -1447,7 +1460,7 @@ export function CRMSidePanel({
         <p className="mt-1 mb-2 text-xs text-muted-foreground">
           {t("Pergunte como a IA perguntaria — a resposta vem com a origem de cada trecho.")}
         </p>
-        <AcervoSearch podeAbrirFonte={podeAbrirAcervo} />
+        <AcervoSearch />
       </section>
     ),
   };
@@ -1492,6 +1505,20 @@ export function CRMSidePanel({
             setLeadAtivoId(null);
             recarregar();
           }}
+        />
+      )}
+
+      {contactId && (
+        <FormularioDeTarefa
+          aberto={tarefaDialogOpen}
+          aoMudarAbertura={setTarefaDialogOpen}
+          aoSalvar={async (entrada) => {
+            await criarTarefa(entrada);
+          }}
+          contactId={contactId}
+          leadId={negocioAtivoId ?? null}
+          demandaId={demandas?.find((d) => d.id === conversation.current_demanda_id)?.id ?? null}
+          responsavelPadrao={user.id}
         />
       )}
 

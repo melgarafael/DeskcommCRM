@@ -107,6 +107,11 @@ const listaSchema = z.object({
    */
   pipeline_id: z.string().uuid().optional(),
   /**
+   * Só as tarefas atribuídas a membros DESTE setor (`attendant_sectors`).
+   * Permite que a equipe fiscal, contábil, dp, ti filtre sua respectiva fila.
+   */
+  sector_id: z.string().uuid().optional(),
+  /**
    * Teto de linhas desta busca (#4028). Existe porque a visão em QUADRO desenha
    * todas as colunas de uma vez e pediria a base inteira: ela manda um número
    * menor que o teto da lista. O máximo é DAQUI, não do navegador — um cliente
@@ -156,6 +161,20 @@ export async function GET(req: NextRequest): Promise<Response> {
   else if (filtros.assigned_to === "ninguem") query = query.is("assigned_to", null);
   else if (filtros.assigned_to) query = query.eq("assigned_to", filtros.assigned_to);
   if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
+
+  if (filtros.sector_id) {
+    const { data: membrosDoSetor } = await supabase
+      .from("attendant_sector_members")
+      .select("user_id")
+      .eq("sector_id", filtros.sector_id)
+      .eq("organization_id", authz.org.orgId);
+    const ids = (membrosDoSetor ?? []).map((m: { user_id: string }) => m.user_id);
+    if (ids.length > 0) {
+      query = query.in("assigned_to", ids);
+    } else {
+      query = query.in("assigned_to", ["00000000-0000-0000-0000-000000000000"]);
+    }
+  }
 
   const { data, error } = await query;
   if (error) {
