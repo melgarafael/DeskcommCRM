@@ -59,6 +59,7 @@ import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
 import { PessoaDoContato } from "@/components/crm-b2b/PessoaDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
+import { DiagnosticoDoContato } from "@/components/contacts/DiagnosticoDoContato";
 
 interface Props {
   contactId: string;
@@ -414,6 +415,7 @@ export function ContactDetailClient({
         <TabsList>
           <TabsTrigger value="overview">{t("Visão geral")}</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="diagnostico">{t("Diagnóstico")}</TabsTrigger>
           {isAdmin && <TabsTrigger value="lgpd">LGPD</TabsTrigger>}
         </TabsList>
 
@@ -627,6 +629,23 @@ export function ContactDetailClient({
 
         <TabsContent value="timeline" className="mt-4">
           <TimelineView contactId={contactId} />
+        </TabsContent>
+
+        {/* Os dados da EMPRESA que a prospecção usa (segmento, CNPJ, links,
+            diagnóstico e oferta). Lidos e gravados só pelo esquema central,
+            lib/contacts/diagnostico-do-contato.ts. */}
+        <TabsContent value="diagnostico" className="mt-4">
+          <DiagnosticoDoContato
+            key={contact.updated_at}
+            contato={contact}
+            usuarioId={user.id}
+            podeEditar={Boolean(
+              !contact.is_anonymized &&
+                user.support?.access_mode !== "support_readonly" &&
+                activeOrg &&
+                ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent,
+            )}
+          />
         </TabsContent>
 
         {isAdmin && (
