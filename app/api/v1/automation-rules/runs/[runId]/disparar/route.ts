@@ -218,8 +218,14 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       return fail("internal_error", insErr?.message ?? "run_insert_failed", 500, { requestId });
     }
 
-    const saiuAlgo = results.some((r) => r.status === "success");
-    if (!saiuAlgo) await reabrir();
+    // "Nada saiu" só quando TODAS terminaram sem efeito: `failed`/`skipped` e
+    // sem mensagem criada. `postponed` vai sair mais tarde, e uma falha com
+    // `message_id` pode ter chegado ao canal — reabrir nesses casos convidaria
+    // a mandar em dobro, então o aviso fica resolvido.
+    const nadaSaiu = results.every(
+      (r) => (r.status === "failed" || r.status === "skipped") && r.detail?.message_id == null,
+    );
+    if (nadaSaiu) await reabrir();
 
     void audit({
       action: "automation.held_actions_dispatched",
@@ -231,7 +237,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       metadata: { held_run_id: runId, rule_id: rule.id, action_types: paradas.map(({ r }) => r.type) },
     });
 
-    if (!saiuAlgo) {
+    if (nadaSaiu) {
       return fail(
         "dispatch_failed",
         t("Não foi possível disparar. O aviso continua aberto se nada saiu; leia o motivo na atividade das automações."),

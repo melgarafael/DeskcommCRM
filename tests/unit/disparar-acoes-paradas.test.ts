@@ -94,6 +94,8 @@ const executadas: string[] = [];
 let foraDaJanela = false;
 /** Tipos cujo executor devolve `failed` (o envio não saiu), como o WhatsApp em `lead.won` medido na prova de tela. */
 let falham: string[] = [];
+/** Tipos cujo executor devolve `postponed`: a mensagem vai sair mais tarde. */
+let adiam: string[] = [];
 for (const tipo of ["add_tag", "send_whatsapp_message", "send_email"]) {
   registerAction({
     type: tipo,
@@ -102,6 +104,7 @@ for (const tipo of ["add_tag", "send_whatsapp_message", "send_email"]) {
       : {}),
     async execute() {
       executadas.push(tipo);
+      if (adiam.includes(tipo)) return { type: tipo, status: "postponed" };
       return falham.includes(tipo) ? { type: tipo, status: "failed", error: "internal_error" } : { type: tipo, status: "success" };
     },
   });
@@ -147,6 +150,7 @@ beforeEach(() => {
   executadas.length = 0;
   foraDaJanela = false;
   falham = [];
+  adiam = [];
   mundo();
 });
 
@@ -189,6 +193,15 @@ describe("disparar o que ficou parado no assistido", () => {
     const r = await clicar();
     expect(r.status).toBe(201);
     expect(executadas).toEqual(["send_whatsapp_message", "send_email"]);
+    expect(statusDoAviso()).toBe("resolved");
+  });
+
+  it("adiada conta como saída: o aviso fica resolvido, senão o segundo clique mandaria em dobro", async () => {
+    adiam = ["send_whatsapp_message"];
+    falham = ["send_email"];
+
+    const r = await clicar();
+    expect(r.status).toBe(201);
     expect(statusDoAviso()).toBe("resolved");
   });
 
