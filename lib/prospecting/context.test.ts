@@ -93,3 +93,21 @@ describe("prospectingConversationContext — o que o agente lê sobre as ofertas
     expect(consultas[0]).not.toContain(ORG_B);
   });
 });
+
+describe("prospectingConversationContext — qual campanha vale quando há mais de uma", () => {
+  it("a linha escolhida é a da abordagem MAIS RECENTE, e não a que o banco devolver primeiro", async () => {
+    // Com `limit 1` sem ordem, a campanha cujo objetivo o agente lê era a que o
+    // plano de execução devolvesse primeiro. A ordem pela tentativa mais recente
+    // (nulos no fim) torna a escolha determinística.
+    const sqls: string[] = [];
+    const db = {
+      query: async (sql: string) => {
+        sqls.push(sql);
+        return { rows: [{ config: configDaCampanha(), exit_offered_at: null }] };
+      },
+    } as unknown as Queryable;
+    await prospectingConversationContext(db, ORG_A, CONVERSA);
+    expect(sqls).toHaveLength(1);
+    expect(sqls[0]).toMatch(/order by p\.attempted_at desc nulls last limit 1$/);
+  });
+});

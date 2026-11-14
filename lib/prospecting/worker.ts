@@ -398,6 +398,16 @@ export async function sendNextCandidate(
     });
     if (!authorization.ok)
       throw new ProspectingError("Não foi possível preparar o atendimento da resposta.");
+    // `ok` é "o banco respondeu"; `autorizou` é "a IA pode assumir". Com
+    // `ai_opt_out` ("sempre atendimento humano") o update casa 0 linhas e volta
+    // `{ok:true, autorizou:false}` — e só olhar `ok` mandava a abordagem a quem a
+    // operação trancou. A recusa é DESTE contato: a campanha segue.
+    if (authorization.autorizou === false)
+      throw new ProspectingError(
+        "Não foi possível liberar a IA para este contato.",
+        409,
+        "candidato",
+      );
     // A SAÍDA é montada aqui — não pedida ao modelo — e vai JUNTO DA PRIMEIRA
     // BOLHA quando a CAMPANHA manda oferecê-la aí (`exit_offer`, migration 0705:
     // ver o `if` depois de `splitForSend`). Sem ela, a saída que a pessoa usa é
