@@ -9801,5 +9801,19 @@
   "Sequência esperando aprovação para falar com o cliente": "Sequence waiting for approval to talk to the customer",
   "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em uma sequência de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.": "An AI action in assisted mode moved the deal to a point that enrolls the contact in a follow-up sequence, and the enrollment was held. If you want the sequence to start, enroll the contact from their panel in the conversation; mark it as resolved to dismiss.",
   "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em {quantas} sequências de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.": "An AI action in assisted mode moved the deal to a point that enrolls the contact in {quantas} follow-up sequences, and the enrollment was held. If you want the sequences to start, enroll the contact from their panel in the conversation; mark it as resolved to dismiss.",
-  "Sem palavras-chave, a skill não entra sozinha na conversa — ela só roda quando o roteiro de atendimento a puxa pelo nome.": "Without keywords, the skill never joins the conversation on its own — it only runs when the service script pulls it by name."
+  "Sem palavras-chave, a skill não entra sozinha na conversa — ela só roda quando o roteiro de atendimento a puxa pelo nome.": "Without keywords, the skill never joins the conversation on its own — it only runs when the service script pulls it by name.",
+  "Sem interesse": "Not interested",
+  "Marcar sem interesse": "Mark as not interested",
+  "Marcar este contato como sem interesse?": "Mark this contact as not interested?",
+  "O contato sai da prospecção e das campanhas, e o negócio aberto da prospecção, se houver, vai para Perdido. A conversa continua aberta para a equipe responder. Só um administrador desfaz, na aba LGPD.": "The contact leaves prospecting and campaigns, and the open prospecting deal, if any, moves to Lost. The conversation stays open for the team to reply. Only an administrator can undo it, in the LGPD tab.",
+  "Recusa de ofertas": "Offers declined",
+  "Recusa registrada em": "Refusal recorded on",
+  "pela conversa da prospecção": "from the prospecting conversation",
+  "pela ficha do contato": "from the contact record",
+  "Este contato disse que não tem interesse e não entra em prospecção nem em campanhas.": "This contact said they are not interested and is left out of prospecting and campaigns.",
+  "Desfazer recusa": "Undo refusal",
+  "Desfazer a recusa de ofertas?": "Undo the offers refusal?",
+  "O contato volta a poder entrar em prospecção e campanhas. Se um negócio foi encerrado, ele continua como Perdido. A ação fica registrada na auditoria em seu nome.": "The contact can be included in prospecting and campaigns again. If a deal was closed, it stays Lost. The action is recorded in the audit log under your name.",
+  "Não foi possível registrar que o contato não tem interesse.": "Could not record that the contact is not interested.",
+  "Não foi possível desfazer a recusa.": "Could not undo the refusal."
 }
