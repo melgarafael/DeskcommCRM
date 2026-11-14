@@ -530,7 +530,10 @@ export async function performHumanHandoff(
                                  then metadata->>$7::text else gen_random_uuid()::text end),
             active_ai_agent_id = null,
             active_intent = null,
-            active_agent_set_at = null
+            active_agent_set_at = null,
+            -- #4318: a passagem explícita pendente também cai — se o bot voltar,
+            -- o roteador decide de novo em vez de reassumir por inércia.
+            active_agent_transfer_at = null
       where organization_id = $1 and id = $2
       returning metadata->>$7::text as aviso_episodio`,
     [ids.tenantId, ids.conversationId, SILENCE_INFINITY, opts.reason, CHAVE_DO_HANDOFF_TECNICO, marcaDaDerivacao, MARCA_EPISODIO_HANDOFF],
