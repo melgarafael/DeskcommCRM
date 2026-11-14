@@ -221,6 +221,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     phonebook: false,
     // Status é do WhatsApp: não existe neste canal.
     statusUpdates: false,
+    // A conversão de venda volta à Meta pela conversa de WhatsApp; o robô do
+    // Telegram não tem ponte, e `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
 };
 
