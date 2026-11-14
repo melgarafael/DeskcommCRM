@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import userEvent from "@testing-library/user-event";
 
 /**
  * Tela da Prospecção (ORDEM A): o contador do "Verificar agora" (A4), o erro da
@@ -799,41 +800,122 @@ describe("voz e vocabulário à vista (issue #4360)", () => {
 });
 
 /**
- * A LISTA DE VOLTA (issue #4360, parte 1).
+ * A LISTA DE VOLTA (issue #4360), agora com as duas listas.
  *
- * O link do arquivo carrega a contagem do que ele leva — e a contagem sai da
- * MESMA régua do servidor (`naoAbordada`, `lib/prospecting/exportar.ts`), não
- * de um `filter` escrito de novo aqui. Quem já foi abordado fica fora do
- * arquivo: a campanha nova recusaria essa empresa ("Contato já existe no CRM")
- * e o download prometeria uma reimportação que não acontece.
+ * REVISTO DE PROPÓSITO. A versão anterior deste bloco travava "só empresa
+ * abordada não gera link": era a decisão da #4360 (o arquivo levava só as não
+ * abordadas), e foi ela que deixou a campanha CONCLUÍDA sem saída — justamente
+ * a que se quer reaproveitar para outra oferta. Agora o botão aparece em
+ * qualquer campanha com empresas, e abre um menu com "Só as não abordadas (N)"
+ * e "Todas (M)".
+ *
+ * Os números vêm do SERVIDOR (`?resumo=1`), da mesma régua do arquivo: quem
+ * pediu para parar é achado também pelo telefone, e esse vínculo não está na
+ * lista de candidatos da tela. Por isso o resumo abaixo NÃO é o que um `filter`
+ * nos candidatos daria — se a tela contasse sozinha, o teste ficaria vermelho.
  */
 describe("baixar a lista da campanha (issue #4360)", () => {
-  it("o link aponta para o CSV da campanha e diz quantas ainda não foram abordadas", async () => {
+  const RESUMO_URL = `/api/v1/prospecting/${COMPLETA}/exportar?resumo=1`;
+
+  function comResumo(estado: unknown, resumo: unknown): (url: string) => Promise<unknown> {
+    return async (url: string) => (url === RESUMO_URL ? { data: resumo } : { data: estado });
+  }
+
+  async function abrirMenu() {
+    const user = userEvent.setup({ delay: null });
     openPage();
     fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
-    const link = await screen.findByTestId("baixar-lista");
-    expect(link).toHaveAttribute("href", `/api/v1/prospecting/${COMPLETA}/exportar`);
-    expect(link).toHaveTextContent("Baixar lista (5)");
+    await user.click(await screen.findByTestId("baixar-lista"));
+    return user;
+  }
+
+  it("campanha concluída: 'Todas (M)' baixa a lista inteira, e a tela diz quantas ficaram de fora", async () => {
+    const base = fixture();
+    const concluida = {
+      ...base,
+      campaigns: base.campaigns.map((c) => (c.id === COMPLETA ? { ...c, status: "completed" } : c)),
+      candidates: ["c1", "c2", "c3"].map((id) => ({
+        ...candidato(id, COMPLETA, empresa(`Abordada ${id}`, "https://a.test/", null)),
+        status: "sent",
+        attempted_at: "2026-11-01T12:00:00.000Z",
+        progress: "sent",
+      })),
+    };
+    api.get.mockImplementation(
+      comResumo(concluida, {
+        total: 3,
+        nao_abordadas: 0,
+        todas: 2,
+        fora_da_lista: { dados_apagados: 0, pediu_para_parar: 1, ficha_pessoal: 0 },
+        truncada: false,
+      }),
+    );
+    await abrirMenu();
+
+    const todas = await screen.findByRole("menuitem", { name: "Todas (2)" });
+    expect(todas).toHaveAttribute("href", `/api/v1/prospecting/${COMPLETA}/exportar?quem=todas`);
+    // Nada para abordar: o item existe, diz zero e não vira link de arquivo vazio.
+    const soNaoAbordadas = screen.getByRole("menuitem", { name: "Só as não abordadas (0)" });
+    expect(soNaoAbordadas).toHaveAttribute("aria-disabled", "true");
+    expect(soNaoAbordadas).not.toHaveAttribute("href");
+    expect(screen.getByTestId("baixar-lista-fora")).toHaveTextContent(
+      "1 empresa fica fora do arquivo porque pediu para parar, é contato pessoal ou teve os dados apagados.",
+    );
+    expect(api.get).toHaveBeenCalledWith(RESUMO_URL);
   });
 
-  it("só empresa abordada não gera link: não há lista para baixar", async () => {
-    const base = fixture();
-    api.get.mockImplementation(async () => ({
-      data: {
-        ...base,
-        candidates: [
-          {
-            ...candidato("c1", COMPLETA, empresa("Já abordada", "https://a.test/", null)),
-            status: "sent",
-            attempted_at: "2026-11-01T12:00:00.000Z",
-            progress: "replied",
-          },
-        ],
-      },
-    }));
+  it("os números do menu são os do servidor, não um filtro dos candidatos da tela", async () => {
+    // A tela tem 5 não abordadas na COMPLETA; o servidor achou 2 que pediram
+    // para parar pelo telefone. O menu mostra o que o arquivo leva.
+    api.get.mockImplementation(
+      comResumo(fixture(), {
+        total: 5,
+        nao_abordadas: 3,
+        todas: 3,
+        fora_da_lista: { dados_apagados: 0, pediu_para_parar: 2, ficha_pessoal: 0 },
+        truncada: false,
+      }),
+    );
+    await abrirMenu();
+
+    const naoAbordadas = await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" });
+    expect(naoAbordadas).toHaveAttribute(
+      "href",
+      `/api/v1/prospecting/${COMPLETA}/exportar?quem=nao_abordadas`,
+    );
+    expect(screen.getByRole("menuitem", { name: "Todas (3)" })).toBeVisible();
+    expect(screen.getByTestId("baixar-lista-fora")).toHaveTextContent(
+      "2 empresas ficam fora do arquivo porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.",
+    );
+  });
+
+  it("a contagem só é pedida quando o menu abre", async () => {
     openPage();
     fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
-    expect(await screen.findByText(/nenhuma empresa ainda pode ser abordada/i)).toBeVisible();
+    expect(await screen.findByTestId("baixar-lista")).toHaveTextContent("Baixar lista");
+    expect(api.get).not.toHaveBeenCalledWith(RESUMO_URL);
+  });
+
+  it("sem conseguir contar, o menu avisa e os dois arquivos seguem no menu", async () => {
+    api.get.mockImplementation(async (url: string) => {
+      if (url === RESUMO_URL) throw new Error("falhou");
+      return { data: fixture() };
+    });
+    await abrirMenu();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.",
+    );
+    expect(screen.getByRole("menuitem", { name: "Todas" })).toHaveAttribute(
+      "href",
+      `/api/v1/prospecting/${COMPLETA}/exportar?quem=todas`,
+    );
+  });
+
+  it("campanha sem nenhuma empresa não mostra o botão", async () => {
+    api.get.mockImplementation(async () => ({ data: { ...fixture(), candidates: [] } }));
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
+    await screen.findByRole("heading", { name: "Clínicas de estética" });
     expect(screen.queryByTestId("baixar-lista")).toBeNull();
   });
 });

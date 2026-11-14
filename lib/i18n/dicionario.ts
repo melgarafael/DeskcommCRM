@@ -1323,14 +1323,25 @@ export const DICIONARIO: Traducoes = {
   "Ex.: clientes da feira X, lista da associação Y": { es: "Ej.: clientes de la feria X, lista de la asociación Y" },
   "Aceita .csv ou .xlsx (primeira aba), até 500 empresas. Colunas obrigatórias: nome da empresa e telefone. Quem já é contato do CRM não é abordado. Nenhuma abordagem começa nesta etapa.": { es: "Acepta .csv o .xlsx (primera hoja), hasta 500 empresas. Columnas obligatorias: nombre de la empresa y teléfono. Quien ya es contacto del CRM no recibe abordaje. Ningún abordaje comienza en esta etapa." },
   "Baixar modelo": { es: "Descargar modelo" },
-  // #4360 — a lista da campanha de volta em CSV (só o que ainda não foi abordado).
+  // #4360 — a lista da campanha de volta em CSV: só as não abordadas ou todas,
+  // com a situação de cada empresa (a situação sai no idioma da organização).
   "Baixar lista": { es: "Descargar lista" },
-  "Baixar lista leva só as empresas que ainda não foram abordadas.": {
-    es: "Descargar lista incluye solo las empresas que aún no fueron contactadas.",
+  "Só as não abordadas": { es: "Solo las no contactadas" },
+  "Contando as empresas…": { es: "Contando las empresas…" },
+  "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.": {
+    es: "No fue posible contar las empresas. Cierra y abre el menú para intentarlo de nuevo.",
   },
-  "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.": {
-    es: "Ninguna empresa de esta campaña puede ser contactada todavía: no hay lista para descargar.",
+  "1 empresa fica fora do arquivo porque pediu para parar, é contato pessoal ou teve os dados apagados.": {
+    es: "1 empresa queda fuera del archivo porque pidió dejar de recibir mensajes, es un contacto personal o se borraron sus datos.",
   },
+  "empresas ficam fora do arquivo porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.": {
+    es: "empresas quedan fuera del archivo porque pidieron dejar de recibir mensajes, son contactos personales o se borraron sus datos.",
+  },
+  "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma (não abordada, abordada ou respondeu). Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.": {
+    es: "Descargar lista tiene dos opciones: solo las empresas que aún no fueron contactadas, o todas, con la situación de cada una (no contactada, contactada o respondió). Quien pidió dejar de recibir mensajes, los contactos personales y quien tuvo sus datos borrados nunca entran en el archivo.",
+  },
+  "não abordada": { es: "no contactada" },
+  "abordada": { es: "contactada" },
   "Linhas recusadas": { es: "Líneas rechazadas" },
   "Planilha": { es: "Planilla" },
   "Escolha o arquivo da planilha.": { es: "Elige el archivo de la planilla." },

@@ -32,6 +32,7 @@ import {
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { ProspectingAgentBuilder, type CreatedProspectingAgent } from "./_create-agent";
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
+import { BaixarLista } from "./_baixar-lista";
 import type { ProspectingAgentSetupInput } from "@/lib/prospecting/agent-setup-schema";
 import type { PersonalizacaoProspeccao } from "@/lib/prospecting/personalizar";
 import {
@@ -41,7 +42,6 @@ import {
 import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import { arquivadaEm, campanhasVisiveis } from "@/lib/prospecting/arquivamento";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
-import { naoAbordada } from "@/lib/prospecting/exportar";
 import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
 /** Uma linha que a importação recusou — o número é o da planilha (1 = cabeçalho). */
@@ -444,13 +444,6 @@ export function ProspectingClient() {
     );
   }
   const candidates = data?.candidates.filter((c) => c.campaign_id === campaign?.id) ?? [];
-  /**
-   * Quantas empresas desta campanha ainda podem ser abordadas (#4360) — e por
-   * isso quantas o "Baixar lista" leva. A régua é a do SERVIDOR
-   * (`naoAbordada`): um `filter` escrito de novo aqui faria o botão prometer um
-   * número que o arquivo não entrega.
-   */
-  const naoAbordadas = candidates.filter(naoAbordada).length;
   // `message` pode ser uma função que lê a resposta (o envelope `{ data }`): só o
   // "Completar fichas" precisa dela. Texto fixo segue igual para os outros botões.
   async function perform(body: unknown, message: string | ((resposta: unknown) => string)) {
@@ -1391,22 +1384,14 @@ export function ProspectingClient() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
                     {/*
-                      A LISTA DE VOLTA (#4360). Link direto para o CSV — a rota
-                      responde `attachment`, então o navegador baixa em vez de
-                      navegar. `download` no <a> dá o nome do arquivo também em
-                      quem ignora o `Content-Disposition`.
+                      A LISTA DE VOLTA (#4360), agora com as duas listas: só as
+                      não abordadas ou a campanha inteira, com a situação de
+                      cada empresa. Aparece em QUALQUER status — a campanha
+                      concluída é a que mais se quer reaproveitar, e com a
+                      lista só das não abordadas o botão sumia justamente nela.
+                      A contagem é do servidor (`_baixar-lista.tsx`).
                     */}
-                    {naoAbordadas > 0 && (
-                      <Button variant="outline" size="sm" asChild>
-                        <a
-                          data-testid="baixar-lista"
-                          download
-                          href={`/api/v1/prospecting/${campaign.id}/exportar`}
-                        >
-                          {`${t("Baixar lista")} (${naoAbordadas})`}
-                        </a>
-                      </Button>
-                    )}
+                    {candidates.length > 0 && <BaixarLista campaignId={campaign.id} />}
                     {/* #4359: o cartão aberto de uma campanha arquivada continua
                         acessível (a lista principal é que a esconde). */}
                     {arquivadaEm(campaign.config) !== null && (
@@ -1456,13 +1441,13 @@ export function ProspectingClient() {
                     {t("resultados repetidos ou indisponíveis foram desconsiderados.")}
                   </p>
                 )}
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {naoAbordadas > 0
-                    ? t("Baixar lista leva só as empresas que ainda não foram abordadas.")
-                    : t(
-                        "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.",
-                      )}
-                </p>
+                {candidates.length > 0 && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {t(
+                      "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma (não abordada, abordada ou respondeu). Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.",
+                    )}
+                  </p>
+                )}
                 {configCompleta && (
                   <>
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
