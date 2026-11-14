@@ -20,15 +20,3 @@
  * reprova se o número de lá deixar de ser este.
  */
 export const MIN_TOKENS_DE_ENTRADA_PARA_CACHE = 1024;
-
-/**
- * `true` quando a chamada pode produzir leitura de cache — ou seja, quando ela
- * pertence ao denominador honesto da razão de cache.
- *
- * Entrada desconhecida (`null`/`NaN`) NÃO é elegível: o número que não se sabe
- * não pode empurrar a razão para baixo nem para cima.
- */
-export function elegivelAoCacheDePrompt(inputTokens: number | null | undefined): boolean {
-  return typeof inputTokens === 'number' && Number.isFinite(inputTokens)
-    && inputTokens >= MIN_TOKENS_DE_ENTRADA_PARA_CACHE;
-}
