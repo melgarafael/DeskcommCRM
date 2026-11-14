@@ -1,7 +1,7 @@
 ---
-impacto: alterado
+impacto: nada_mudou
 secao: corrigido
-titulo: Webhook de saída espera aprovação no modo assistido
+titulo: O webhook de saída espera aprovação no modo assistido
 ---
 
-Quando uma automação da etapa de um card movido pelo agente contém `call_webhook`, a ação agora fica parada no modo assistido e aparece na Central para aprovação humana. A mesma proteção vale quando `ai_decide` pode escolher o webhook. No modo automático ou quando uma pessoa move o card, o webhook continua funcionando normalmente. Isso evita que um sistema externo receba um evento e envie mensagens ao cliente antes da aprovação.
+No modo assistido, quando a IA move o card e a automação da etapa tem a ação "Avisar outro sistema (webhook)", essa ação agora fica parada e aparece na Central para alguém aprovar, como já acontecia com WhatsApp, e-mail, mensagem da IA e sequência. Vale também quando a decisão da IA pode escolher o webhook. No modo automático, ou quando uma pessoa move o card, o webhook sai como antes. Isso evita que um sistema de fora receba o aviso e fale com o cliente antes da aprovação. Crédito: @CRYSCWK-code.
