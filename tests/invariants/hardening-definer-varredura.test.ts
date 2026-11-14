@@ -451,6 +451,7 @@ describe("varredura: SECURITY DEFINER de public não fica exposta", () => {
     const escrita = [
       "public.fn_upsert_wa_contact(uuid, text, text, text, text, text)",
       "public.fn_upsert_wa_conversation(uuid, uuid, uuid)",
+      "public.fn_conexao_nova_herda_configuracao(uuid, uuid)",
       "public.fn_mark_conversation_message(uuid, text, text, timestamptz)",
       "public.fn_publish_ai_agent_version(uuid, uuid, uuid)",
       "public.activate_kb_version(uuid, uuid)",

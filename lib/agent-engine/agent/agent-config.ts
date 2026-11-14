@@ -557,7 +557,21 @@ export async function escolherAgenteDoNumero(
        -- published_version_id preenchido + não arquivado. Pausar NÃO despublica
        -- (grava só paused_at): o pausado vem aqui, e o turno sai no pausedAt.
        and v.status = 'published'
-       and v.channel_session_id = $2
+       -- O número PRINCIPAL da versão, mais os que ela declarou em
+       -- ai_agent_version_channels (0665). O vínculo adicional nasce da
+       -- herança da conexão nova (#4013): a versão publicada que atende o
+       -- telefone passa a atender também a conexão por onde ele voltou, sem
+       -- tirar nada da conexão antiga.
+       and (
+         v.channel_session_id = $2
+         or exists (
+           select 1
+             from ai_agent_version_channels vc
+            where vc.organization_id = a.organization_id
+              and vc.agent_version_id = v.id
+              and vc.channel_session_id = $2
+         )
+       )
      -- Quem está NO AR vem antes de qualquer pausado: sem isto um pausado de
      -- prioridade maior calava o número inteiro, com outro agente publicado nele
      -- (produção, 2026-10-05). O pausado segue vindo quando é o único: null
