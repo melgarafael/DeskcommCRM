@@ -14784,7 +14784,11 @@ alter table public.webhook_events_log
     -- (migration 0601) os provedores de cobrança do revendedor. A linha deles
     -- nasce com organization_id nulo e corpo {id,type}: é ponteiro, nunca o
     -- corpo do provedor, e fica invisível ao tenant pela própria policy.
-    'stripe', 'asaas'
+    'stripe', 'asaas',
+    -- (migration 9342, #3486) o robô do Telegram. Sem ele aqui, todo update do
+    -- robô logava "não consegui abrir a linha" e o corpo cru não era guardado
+    -- (medido na prova de tela). O corpo do update não carrega o token.
+    'telegram'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----

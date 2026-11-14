@@ -85,6 +85,23 @@ begin
 end
 $$;
 
+-- ─── O arquivo do webhook aceita o robô ────────────────────────────────────
+-- Espelho do BLOCO ÚNICO de `webhook_events_log_provider_check` no baseline
+-- (0151/0601): sem 'telegram' na lista, todo update do robô deixava de guardar
+-- o corpo cru, o único lugar onde ele fica. Alargamento puro: não há linha que
+-- passava pela lista antiga e falhe nesta, então não precisa de backfill. Drop e
+-- add num bloco só: se o add falhar, a restrição de antes continua de pé.
+do $$
+begin
+  alter table public.webhook_events_log drop constraint if exists webhook_events_log_provider_check;
+  alter table public.webhook_events_log add constraint webhook_events_log_provider_check
+    check (provider in (
+      'waha', 'nuvemshop', 'generic', 'meta_cloud', 'zernio', 'datafy',
+      'stripe', 'asaas', 'telegram'
+    ));
+end
+$$;
+
 -- ─── Um bot, uma conexão ativa ─────────────────────────────────────────────
 create unique index if not exists channel_sessions_telegram_bot_id_ativo_unique
   on public.channel_sessions (telegram_bot_id)
