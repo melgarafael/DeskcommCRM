@@ -168,6 +168,9 @@ backups/
 # para o agente voltar sozinho. Mesmo estado da VPS das marcas acima.
 .update-vigia
 .update-vigia-falhas
+# De qual versão a última atualização para frente saiu: o único alvo de volta
+# que o agente aceita do app.
+.update-de-onde-vim
 
 # Dump de banco de QA. A doutrina já estava escrita duas linhas acima e só o
 # PADRÃO faltava: `backups/` não casa com `.qa-backups/`, e um dump de 1,1 MB de
