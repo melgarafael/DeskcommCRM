@@ -212,7 +212,10 @@ export interface DbOpts {
   /**
    * Conversas — a última mensagem do card sai delas (fatia 1 do #3945): a rota
    * do quadro lê `last_message_preview`/`last_message_at` por contato. Sem esta
-   * fonte, o caso do card mediria um quadro em que ninguém nunca escreveu.
+   * fonte, o caso do card mediria um quadro em que ninguém nunca escreveu. É
+   * também a tabela da cópia `assigned_to_user_name` por DONO (#3945,
+   * `lib/kanban/nome-do-dono.ts`) — duas consultas diferentes sobre a mesma
+   * tabela, e o teste de contagem de consultas é quem separa as duas.
    */
   conversations?: Array<Record<string, unknown>>;
   /** Erro do banco na n-ésima escrita (1-based), como o PostgREST devolveria. */
