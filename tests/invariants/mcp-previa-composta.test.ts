@@ -21,6 +21,8 @@ import * as ponte from "@/lib/ai/runtime/tools";
 import * as politica from "@/lib/agent-engine/agent/preview";
 import { ehLeituraRemota } from "@/lib/mcp/servidor-externo/leitura-remota";
 import { cifrarChaveMcpExterno } from "@/lib/mcp/servidor-externo/segredo";
+import { cifrar } from "@/lib/mcp/servidor-externo/cifra";
+import * as cargaDoAgente from "@/lib/mcp/servidor-externo/do-agente/carregar";
 import { toolIdRemoto } from "@/lib/mcp/servidor-externo/ids";
 import { loadAgentVersionConfig } from "@/lib/agent-engine/agent/agent-config";
 import { runAgentPreview, type InboundTurnDeps } from "@/lib/agent-engine/agent/inbound-turn";
@@ -64,6 +66,7 @@ let ultimaPrevia: politica.TurnPreview | undefined;
 const pickReal = ponte.pickToolsFromMcp;
 const policyReal = politica.applyPreviewPolicy;
 const carregarReal = carga.carregarServidorMcpExternoDoTurno;
+const carregarDoAgenteReal = cargaDoAgente.carregarServidoresDoAgenteNoTurno;
 
 beforeAll(async () => {
   seedGov();
@@ -79,6 +82,13 @@ beforeAll(async () => {
     return montado ? { ...montado, fetch: fornecedor!.fetch,
       ...(contatoMontado ? { contato: contatoMontado } : {}) } : null;
   });
+  // O servidor do PRÓPRIO agente (#4317): mesma decoração, mesma junta — só o
+  // transporte é sintético. Carga, leitura da linha, abertura da chave CIFRADA,
+  // descoberta e montagem são as de produção.
+  vi.spyOn(cargaDoAgente, "carregarServidoresDoAgenteNoTurno").mockImplementation(
+    async (db, org, agentId, ids, opcoes) =>
+      carregarDoAgenteReal(db, org, agentId, ids, { ...opcoes, fetch: fornecedor!.fetch }),
+  );
   vi.spyOn(ponte, "pickToolsFromMcp").mockImplementation((entrada) => {
     picked = pickReal(entrada); return picked;
   });
@@ -241,5 +251,97 @@ describe("MCP na prévia — composição inprocess com PG real", () => {
     const { preview, chamadas } = await executar("sandbox", { recusar: true });
     expect(chamadas.filter((c) => c.metodo === "tools/call")).toHaveLength(1);
     expect(preview.result.candidates).toEqual([]);
+  });
+});
+
+// ─── #4317 — o servidor MCP DO PRÓPRIO agente (migration 9095) ────────────────
+//
+// O #3575 abriu a prévia para o servidor MCP da ORGANIZAÇÃO; o do AGENTE chegava
+// ao mesmo ponto por outro laço (`servidoresDoAgente` em `lib/ai/runtime/tools`)
+// e caía em `unknown_preview_tool`. Este bloco é a prova COMPOSTA que a issue
+// pede: a fixture é uma linha real em `ai_agent_mcp_servers` com a chave
+// CIFRADA (AES-256-GCM, `cifrar("chave", …)`) aberta pela carga de produção, e
+// o caminho é o do motor INPROCESS até o socket. O que se prova: a Leitura com
+// as DUAS metades (marca do admin E `readOnlyHint` do servidor) executa; sem
+// qualquer uma delas — inclusive a Escrita — a prévia continua recusando.
+const SLUG_DO_AGENTE = "erpsint";
+const NOME_DO_MODELO = `${SLUG_DO_AGENTE}__${NOME}`;
+
+async function executarDoAgente(opcoes: {
+  kind?: politica.TurnPreview["kind"];
+  hint?: boolean | "ausente";
+  adminLeitura?: boolean;
+} = {}) {
+  const kind = opcoes.kind ?? "sandbox";
+  if (fornecedor) await fornecedor.fechar();
+  // O modelo chama o nome NAMESPACED; o socket recebe o nome do servidor.
+  nomeDoCaso = NOME_DO_MODELO;
+  fornecedor = await abrirMcpDaPrevia([
+    { name: NOME, ...(opcoes.hint === "ausente" ? {} : { leitura: opcoes.hint ?? true }) },
+  ]);
+  const f = await replyFixture(pool); orgs.push(f.org);
+  // A porta do módulo opcional (doc 252): desligado, o turno nem lê a tabela.
+  await pool.query(
+    `insert into platform_config(chave,valor) values($1,'ligado')
+     on conflict (chave) do update set valor='ligado'`,
+    ["MODULO_MCP_POR_AGENTE"],
+  );
+  const cifrada = cifrar("chave", fornecedor.chave);
+  const servidor = (await pool.query(
+    `insert into ai_agent_mcp_servers(organization_id,agent_id,nome,slug,endpoint,modo_autenticacao,
+       chave_encrypted,chave_iv,chave_tag,chave_last4)
+     values($1,$2,'ERP sintético',$3,$4,'chave_estatica',$5::bytea,$6::bytea,$7::bytea,$8)
+     returning id`,
+    [f.org, f.agent, SLUG_DO_AGENTE, fornecedor.endpoint, cifrada.chave_encrypted,
+      cifrada.chave_iv, cifrada.chave_tag, fornecedor.chave.slice(-4)],
+  )).rows[0].id as string;
+  const agent = (await loadAgentVersionConfig(pool, f.org, f.agent, f.version))!;
+  agent.toolIds = [toolIdRemoto(NOME, opcoes.adminLeitura === false ? "escrita" : "leitura", servidor)];
+  agent.mcpExternoNoAtendimento = true;
+  agent.versionCreatedBy = GOV_AGENT_A;
+  if (kind === "assisted") {
+    await pool.query(`insert into messages(organization_id,contact_id,conversation_id,channel_session_id,direction,type,status,body,sent_at)
+      values($1,$2,$3,$4,'inbound','text','received','Consulte o catálogo sintético.','2026-09-07T14:00:00Z')`, [f.org,f.contact,f.conversation,f.channel]);
+  }
+  const antes = await estadoDoCliente(f.org);
+  if (kind === "sandbox") {
+    await runAgentPreview(dependencias(), pool, { kind, organizationId: f.org, runId: randomUUID(), agent,
+      context: politica.scenarioContext([{ direction: "inbound", body: "Consulte o catálogo sintético.", sent_at: "2026-09-07T14:00:00Z" }]),
+      contactId: null, channelId: f.channel, result: politica.newPreviewResult() });
+  } else {
+    await generateReplyDraft(pool, dependencias(), { organizationId: f.org, contactId: f.contact,
+      conversationId: f.conversation, channelId: f.channel, boundary: f.boundary, agent });
+  }
+  expect(ultimaPrevia, "o motor real precisa ter alcançado a policy").toBeDefined();
+  expect(await estadoDoCliente(f.org)).toEqual(antes);
+  return { f, preview: ultimaPrevia!, chamadas: fornecedor.chamadas };
+}
+
+describe("MCP do próprio agente na prévia — fixture cifrada e transporte real", () => {
+  it.each(["sandbox", "assisted"] as const)(
+    "%s: Leitura marcada E declarada readOnlyHint executa no socket do servidor do agente",
+    async (kind) => {
+      const { preview, chamadas } = await executarDoAgente({ kind });
+      const escolhida = recebido[NOME_DO_MODELO];
+      expect(escolhida, "a ferramenta do servidor do agente precisa chegar à policy").toBeDefined();
+      expect(ehLeituraRemota(escolhida)).toBe(true);
+      expect(preview.result.impediments.some((i) => i.code === "unknown_preview_tool")).toBe(false);
+      expect(preview.result.candidates.some((c) => c.body.includes("O catálogo sintético está disponível."))).toBe(true);
+      const calls = chamadas.filter((c) => c.metodo === "tools/call");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.ferramenta).toBe(NOME);
+      // A chave da linha CIFRADA foi aberta pela carga real: o fornecedor só
+      // aceita o Bearer exato gravado (cifrado) no banco.
+      expect(chamadas.every((c) => c.autenticada)).toBe(true);
+    },
+  );
+  it.each([
+    { caso: "o servidor NÃO declara readOnlyHint", hint: "ausente" as const, adminLeitura: true },
+    { caso: "o admin marca a ferramenta como Escrita", hint: true, adminLeitura: false },
+  ])("$caso: segue recusada e o socket não é chamado", async ({ hint, adminLeitura }) => {
+    const { preview, chamadas } = await executarDoAgente({ hint, adminLeitura });
+    expect(ehLeituraRemota(recebido[NOME_DO_MODELO])).toBe(false);
+    expect(preview.result.impediments).toContainEqual({ code: "unknown_preview_tool", message: NOME_DO_MODELO });
+    expect(chamadas.filter((c) => c.metodo === "tools/call")).toEqual([]);
   });
 });

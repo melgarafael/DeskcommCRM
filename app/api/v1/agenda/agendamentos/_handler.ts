@@ -214,6 +214,21 @@ export interface AlterarInput {
    * régua da edição, e o porquê, estão em `tituloDoCompromisso` na rota.
    */
   title?: string;
+  /**
+   * A duração NOVA deste compromisso, em minutos — a SEGUNDA porta do mesmo
+   * campo da #3709 (#4450).
+   *
+   * ⚠️ A DURAÇÃO É O COMPRIMENTO DO BLOCO (`ends_at`), não uma coluna: mudá-la
+   * é reescrever o fim a partir do início que o compromisso já tem. Ausente NÃO
+   * MEXE — é o que mantém byte a byte o PATCH do cliente antigo, que não conhece
+   * o campo, e o de quem só está remarcando: o comprimento que o bloco já tem
+   * viaja com ele.
+   *
+   * A faixa é a MESMA da criação (`lib/agenda/duracao-escolhida.ts`), e num
+   * serviço a recusa é a mesma (`agenda_duracao_do_servico`): ali o comprimento
+   * é o da agenda publicada, com capacidade e ocorrência.
+   */
+  duration_minutes?: number;
 }
 
 export interface CancelarInput {
@@ -756,16 +771,56 @@ export async function alterarAgendamentoHandler(
   }
   let transicao: Transicao | null = null;
 
-  if (input.starts_at) {
-    const novoInicio = new Date(input.starts_at);
+  /**
+   * A DURAÇÃO NOVA (#4450) — a MESMA régua da criação.
+   *
+   * Fora de 5…1440 é recusa NOMEADA, não troca silenciosa pelo molde: quem
+   * digitou 3 ou 5000 minutos precisa saber que não mudou o que pediu. A
+   * conferência vem antes de qualquer leitura ou escrita.
+   */
+  if (input.duration_minutes !== undefined && !duracaoEscolhidaValida(input.duration_minutes)) {
+    throw new ApiError(
+      422,
+      "agenda_duracao_invalida",
+      undefined,
+      ctx.requestId,
+      `A duração precisa ser um número inteiro de minutos entre ${DURACAO_MINIMA_MIN} e ${DURACAO_MAXIMA_MIN}.`,
+    );
+  }
+
+  /**
+   * REMARCAR (início novo) E MUDAR O TEMPO (duração nova) SÃO A MESMA PERGUNTA:
+   * quanto do horário este compromisso ocupa, a partir de quando.
+   *
+   * `duration_minutes` AUSENTE não é zero nem o molde — é o comprimento que o
+   * bloco JÁ TEM (`duracaoDoBloco`). É o que mantém idêntico o PATCH do cliente
+   * antigo, que não conhece o campo, e o de quem só remarcou: o comprimento
+   * viaja com o horário.
+   */
+  if (input.starts_at || input.duration_minutes !== undefined) {
+    const novoInicio = input.starts_at ? new Date(input.starts_at) : new Date(atual.starts_at as string);
     const { data: tipo } = await supabase
       .from("calendar_event_types")
-      .select("id, duration_minutes")
+      .select("id, duration_minutes, service_enabled")
       .eq("organization_id", ctx.organization_id)
       .eq("id", (atual.event_type_id as string | null) ?? "")
       .maybeSingle();
     if (!tipo) {
       throw new ApiError(404, "not_found", undefined, ctx.requestId, "O tipo deste agendamento não existe mais.");
+    }
+
+    // Num SERVIÇO o comprimento é o da agenda publicada — a MESMA recusa da
+    // criação. Não é zelo: `fn_appointment_change_core` recalcula `ends_at` pelo
+    // `service_fact` quando há ocorrência, então aceitar aqui seria devolver
+    // "mudou" para um valor que o banco descartou em silêncio.
+    if (input.duration_minutes !== undefined && (tipo.service_enabled || atual.service_occurrence_id)) {
+      throw new ApiError(
+        422,
+        "agenda_duracao_do_servico",
+        undefined,
+        ctx.requestId,
+        "Neste serviço a duração é definida na agenda do serviço e não muda pelo compromisso.",
+      );
     }
 
     /**
@@ -777,41 +832,50 @@ export async function alterarAgendamentoHandler(
      * zero (issue #3709). Um intervalo ilegível (linha antiga, fim antes do
      * começo) cai no molde, que é o comportamento anterior.
      */
-    const duracaoDoBlocoMin = duracaoDoBloco(
+    const duracaoAtualMin = duracaoDoBloco(
       atual.starts_at as string,
       atual.ends_at as string | null,
       Number(tipo.duration_minutes),
     );
+    // A escolha da tela vence o que o bloco tinha; ausente, o bloco é a régua.
+    const duracaoDoBlocoMin = input.duration_minutes ?? duracaoAtualMin;
     const novoFim = new Date(novoInicio.getTime() + duracaoDoBlocoMin * 60_000);
 
     // ⚠️ O PRÓPRIO COMPROMISSO OCUPA O HORÁRIO DELE. Remarcar para o mesmo
-    // instante é no-op — sem esta guarda ele se veria como conflito e recusaria
-    // a si mesmo.
+    // instante, com o mesmo comprimento, é no-op — sem esta guarda ele se veria
+    // como conflito e recusaria a si mesmo.
     const mesmoHorario = new Date(atual.starts_at as string).getTime() === novoInicio.getTime();
-    if (!mesmoHorario) {
+    const mesmaDuracao = duracaoDoBlocoMin === duracaoAtualMin;
+    if (!mesmoHorario || !mesmaDuracao) {
       // REMARCAR segue a mesma assimetria de marcar (`exigeHorarioLivre`): a
       // pessoa que combinou o encaixe por fora da grade precisa poder movê-lo
       // também, senão o compromisso nasce possível e fica preso.
       if (atual.service_occurrence_id) {
         await atualizarFontesDoServico(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id, tipo.id, atual.owner_user_id as string | null);
-        mudanca.starts_at = novoInicio.toISOString();
+        if (input.starts_at) mudanca.starts_at = novoInicio.toISOString();
       } else {
       const consulta = await exigeHorarioLivre(supabase, ctx, {
         eventTypeId: tipo.id,
         donoId: atual.owner_user_id as string,
         inicio: novoInicio,
         fim: novoFim,
-        // A grade confere o tamanho do bloco que ESTE compromisso tem, não o do
-        // molde — senão remarcar um atendimento de 90 minutos passaria por cima
-        // de outro de 30 (issue #3709).
+        // A grade confere o tamanho do bloco que ESTE compromisso passa a ter —
+        // a duração nova, quando veio; senão, a que ele já tinha. Conferir o
+        // molde deixaria remarcar um atendimento de 90 minutos por cima de outro
+        // de 30 (issue #3709), e mudar o tempo sem conferir marcaria 90 em cima
+        // de um bloco de 30 (#4450).
         duracaoMin: duracaoDoBlocoMin,
         ignorarAgendamentoId: atual.id as string,
       });
-      mudanca.starts_at = novoInicio.toISOString();
-      mudanca.ends_at = novoFim.toISOString();
-      mudanca.time_zone = consulta.fusoDaRegra;
+      // O INÍCIO só é reescrito quando o pedido trouxe início: mudar só o tempo
+      // não é remarcação.
+      if (input.starts_at) {
+        mudanca.starts_at = novoInicio.toISOString();
+        mudanca.time_zone = consulta.fusoDaRegra;
       }
-      transicao = "rescheduled";
+      mudanca.ends_at = novoFim.toISOString();
+      }
+      if (input.starts_at) transicao = "rescheduled";
     }
   }
 

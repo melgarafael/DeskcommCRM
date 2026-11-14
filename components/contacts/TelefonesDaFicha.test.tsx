@@ -10,9 +10,10 @@
  *    mentir, e é o que a sabotagem do PR derruba.
  * 2. Erro da API SEM mensagem: cai no texto local — que agora não fala em DDD e
  *    não contradiz o E.164.
- * 3. "Tornar principal" num extra COM rótulo avisa antes do clique que o rótulo
- *    será descartado (o principal não tem onde guardá-lo: preservar exigiria
- *    coluna nova, ou seja, migration). Sem o aviso, a informação some calada.
+ * 3. "Tornar principal" num extra COM rótulo troca direto, sem aviso de
+ *    descarte: desde a 9354 o principal guarda rótulo (`contacts.phone_label`)
+ *    e ele acompanha o número. Um aviso de perda que não acontece faria a
+ *    pessoa cancelar sem motivo — medido na prova de tela do #4249.
  * 4. O caminho feliz de adicionar telefone continua igual.
  */
 import { render, screen } from "@testing-library/react";
@@ -148,7 +149,7 @@ describe("TelefonesDaFicha — a mensagem do servidor chega à tela (#4242)", ()
 });
 
 describe("TelefonesDaFicha — 'Tornar principal' com rótulo (#4242)", () => {
-  it("avisa antes do clique e só troca depois do 'Continuar'", async () => {
+  it("troca direto, sem aviso de descarte: o rótulo acompanha o número", async () => {
     const tornar = vi.fn().mockResolvedValue({});
     deps.tornar.mockReturnValue(mutacao(tornar));
 
@@ -157,13 +158,9 @@ describe("TelefonesDaFicha — 'Tornar principal' com rótulo (#4242)", () => {
 
     await user.click(screen.getByRole("button", { name: "Tornar principal" }));
 
-    const aviso = screen.getByRole("alert");
-    expect(aviso.textContent).toContain("casa");
-    expect(aviso.textContent).toContain("rótulo");
-    expect(tornar).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole("button", { name: "Continuar" }));
     expect(tornar).toHaveBeenCalledWith("p-casa");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/descartad/)).toBeNull();
   });
 });
 

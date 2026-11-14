@@ -119,6 +119,8 @@ export async function buildMcpTurnTools(
      * chamador antigo): nada sai, o comportamento de antes.
      */
     nativasDoTurno?: readonly string[];
+    /** Ver `remotasSoLeitura` em `pickToolsFromMcp` (a mão do Operador no assistido). */
+    remotasSoLeitura?: boolean;
   },
 ): Promise<McpTurnTools | null> {
   const callbackFiltered = filtrarToolsComCallbackDesabilitado(
@@ -178,6 +180,9 @@ export async function buildMcpTurnTools(
       agent_id: agentConfig.agentId,
       role: 'ai_operator',
       api_token_id: ephemeral.id,
+      // Doc 301 = B: no assistido, o que a IA mexe vai marcado no evento, e o
+      // motor de automação segura as ações que falam com o cliente.
+      ...(agentConfig.operationMode === 'assisted' ? { operation_mode: 'assisted' as const } : {}),
     },
     apiTokenId: ephemeral.id,
     requestId: ids.jobId,
@@ -253,6 +258,7 @@ export async function buildMcpTurnTools(
     ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
     ...(servidoresDoAgente.length > 0 ? { servidoresDoAgente } : {}),
     ...(options?.efeitos ? { efeitos: options.efeitos } : {}),
+    ...(options?.remotasSoLeitura ? { remotasSoLeitura: true } : {}),
     leiturasRemotas,
   });
 

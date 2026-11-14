@@ -108,6 +108,7 @@ export const O_QUE_FICA = {
   sales: "as compras dele e por que foram canceladas ou estornadas",
   proposals: "as propostas comerciais enviadas a ele",
   tasks: "o que se combinou fazer para ele",
+  scheduled_messages: "as mensagens agendadas para ele: o texto, o horário e se saíram",
   webhook_captures:
     "o que ele enviou num formulário, com o IP e o navegador de onde enviou: dado dele, origem do contato (art. 19, II)",
   audit_log_extract: "o registro de quem acessou e mudou os dados dele (o PDF já entrega)",
