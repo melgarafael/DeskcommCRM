@@ -271,3 +271,43 @@ describe("a marca passa adiante (doc 301 = B, achados 2 e a do cético)", () => 
     ]);
   });
 });
+
+describe("call_webhook no modo assistido (risco da 1.111.0)", () => {
+  // O servidor externo pode falar com o cliente: no assistido, espera aprovação.
+  registerAction({
+    type: "call_webhook",
+    async execute() {
+      executadas.push("call_webhook");
+      return { type: "call_webhook", status: "success" };
+    },
+  });
+
+  it("a call_webhook fica parada e o aviso nomeia o webhook", async () => {
+    await runAutomationForEvent(
+      banco([{ type: "add_tag", config: {} }, { type: "call_webhook", config: {} }]),
+      cardMovido(IA_NO_ASSISTIDO),
+    );
+
+    expect(executadas).toEqual(["add_tag"]);
+    expect(runGravado()!.actions_result.map((a) => [a.type, a.error ?? null])).toEqual([
+      ["add_tag", null],
+      ["call_webhook", MOTIVO_PARADA_NO_ASSISTIDO],
+    ]);
+    expect(avisos()).toHaveLength(1);
+    expect(String(avisos()[0]!.body)).toContain("Avisar outro sistema (webhook)");
+  });
+
+  it("a ai_decide que pode escolher call_webhook fica parada", async () => {
+    expect(acaoFicaParada({ metadata: IA_NO_ASSISTIDO }, decisao("add_tag", "call_webhook"))).toBe(true);
+    await runAutomationForEvent(banco([decisao("call_webhook")]), cardMovido(IA_NO_ASSISTIDO));
+    expect(executadas).toEqual([]);
+    expect(runGravado()!.actions_result.map((a) => a.error ?? null)).toEqual([MOTIVO_PARADA_NO_ASSISTIDO]);
+  });
+
+  it("CONTROLE: no automático e com pessoa a call_webhook roda", async () => {
+    await runAutomationForEvent(banco([{ type: "call_webhook", config: {} }]), cardMovido({ actor_type: "ai_agent", actor_id: "ag-1" }));
+    await runAutomationForEvent(banco([{ type: "call_webhook", config: {} }]), cardMovido({ actor_type: "user", actor_id: "u-1" }));
+    expect(executadas).toEqual(["call_webhook", "call_webhook"]);
+    expect(avisos()).toEqual([]);
+  });
+});
