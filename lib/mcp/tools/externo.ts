@@ -43,6 +43,7 @@ import {
   type OpcoesDeChamada,
 } from "@/lib/mcp/servidor-externo/chamada";
 import type { EscolhaRemota } from "@/lib/mcp/servidor-externo/ids";
+import { CONEXAO_COMPARTILHADA, escritaLiberada } from "@/lib/mcp/servidor-externo/escrita-liberada";
 import { hostDoEndpoint, type ServidorMcpExterno } from "@/lib/mcp/servidor-externo/registro";
 import type {
   ServidorDoAgenteNoTurno,
@@ -137,6 +138,13 @@ export function definirFerramentasRemotas(
   // do ERP mora em `127.0.0.1`, faixa que o guard anti-SSRF recusa. Quem chama
   // em produção NÃO passa isto, e a saída é `fetchDeSaida` (item 4).
   opcoes?: OpcoesDeChamada,
+  /**
+   * Os nomes liberados para ESCRITA nesta conexão (#4445), já resolvidos pela
+   * carga (`escritasLiberadas`) — a definição só carrega o veredito. Sem a
+   * lista, toda escrita remota sai `escritaLiberada: false` e a ponte a recusa
+   * com `escrita_nao_liberada`.
+   */
+  escritasLiberadas: readonly string[] = [],
 ): McpToolDefinition[] {
   const definicoes: McpToolDefinition[] = [];
   const anunciadas = new Map(ferramentas.map((f) => [f.name, f]));
@@ -170,6 +178,14 @@ export function definirFerramentasRemotas(
       category: ehLeitura ? "read" : "write",
       requiresRole: "agent",
       requiresScope: ehLeitura ? "mcp:read" : "mcp:write",
+      // #4445: a escrita desta conexão só roda no atendimento se a organização
+      // liberou ESTE nome (`escrita-liberada.ts`). A marca vai na definição
+      // porque é a ponte que decide — e ela precisa do nome da conexão para a
+      // recusa nomeada e para `metadata.conexao` na auditoria.
+      remotoExterno: {
+        conexao: CONEXAO_COMPARTILHADA,
+        escritaLiberada: !ehLeitura && escritaLiberada(escritasLiberadas, ferramenta.name),
+      },
       handler: async (input) => {
         // O ORÇAMENTO DO TURNO, aqui e não no cliente: a mesma chamada feita
         // pelo cadastro ("Testar conexão") pode esperar 15 s, quem está na
@@ -249,6 +265,13 @@ export function definirFerramentasDoServidorDoAgente(
       requiresRole: "agent",
       requiresScope: ehLeitura ? "mcp:read" : "mcp:write",
       ...(delegada ? { escritaDelegadaAoContato: true as const } : {}),
+      // #4445 — a mesma marca do servidor compartilhado, com o id DESTE
+      // servidor como conexão: nome igual em dois servidores do agente é
+      // liberação diferente (a régua de `ids.ts`).
+      remotoExterno: {
+        conexao: servidor.id,
+        escritaLiberada: !ehLeitura && escritaLiberada(montado.escritasLiberadas ?? [], escolha.nome),
+      },
       handler: async (input) => {
         const argumentos = (input ?? {}) as Record<string, unknown>;
         let desafio: { status: number; texto: string | null } | null = null;

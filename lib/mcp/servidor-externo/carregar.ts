@@ -43,6 +43,11 @@ import {
   type FerramentaRemota,
 } from "./chamada";
 import { escolhasRemotas } from "./ids";
+import {
+  CONEXAO_COMPARTILHADA,
+  escritasLiberadasDaConexao,
+  lerEscritaLiberada,
+} from "./escrita-liberada";
 import { TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS } from "./tempos-do-turno";
 import { hostDoEndpoint, lerEndpointMcpExterno, type ServidorMcpExterno } from "./registro";
 import { abrirChaveMcpExterno } from "./segredo";
@@ -70,6 +75,13 @@ export interface ServidorMcpExternoMontado {
   contato?: string;
   /** A identidade do contato (`CABECALHOS_DO_CONTATO`), lida do banco. */
   cabecalhos?: Readonly<Record<string, string>>;
+  /**
+   * As ferramentas de ESCRITA liberadas para ESTA conexão (#4445), já filtradas
+   * de `organizations.settings.mcp_externo_escrita` por
+   * `escrita-liberada.ts`. Ausente/vazia = nenhuma escrita roda no atendimento,
+   * que é o estado em que toda instalação nasce.
+   */
+  escritasLiberadas?: readonly string[];
 }
 
 export interface OpcoesDeCarga {
@@ -216,9 +228,17 @@ export async function carregarServidorMcpExterno(
       });
       return null;
     }
+    // A liberação de ESCRITA (#4445) vem do MESMO jsonb, lida pela MESMA
+    // linha da organização deste turno — lista explícita por organização e por
+    // conexão (`compartilhado`, aqui). Sem bolso configurado, `[]`: nenhuma
+    // escrita remota roda no atendimento, e o turno é o de antes.
+    const escritasLiberadas = escritasLiberadasDaConexao(
+      lerEscritaLiberada(linha?.settings),
+      CONEXAO_COMPARTILHADA,
+    );
     return contato && cabecalhos
-      ? { servidor, ferramentas, contato, cabecalhos }
-      : { servidor, ferramentas };
+      ? { servidor, ferramentas, contato, cabecalhos, escritasLiberadas }
+      : { servidor, ferramentas, escritasLiberadas };
   } catch (err) {
     logger.warn("servidor MCP externo registrado nao respondeu — turno segue sem as ferramentas dele", {
       organization_id: organizationId,
