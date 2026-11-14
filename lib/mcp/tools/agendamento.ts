@@ -136,6 +136,13 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
         // Traduzido: `in_person` é vocabulário de banco e o modelo repassa o que
         // recebe. `rotuloDoLocal` é o MESMO tradutor que a tela usa.
         onde: rotuloDoLocal(t.localKind, t.localDetalhes) ?? null,
+        // O preço que a RECEPÇÃO cobra por este tipo, em CENTAVOS e cru: é a
+        // MESMA coluna (`calendar_event_types.default_price_cents`) que a
+        // comanda lê para sugerir o valor. Formatar em reais aqui faria o
+        // modelo repassar o texto formatado e errar a conta em qualquer
+        // reajuste; `null` é "a clínica não definiu preço", e zero seria um
+        // preço — grátis — que ninguém cadastrou.
+        preco_padrao_cents: t.precoPadraoCents ?? null,
         precisa_confirmacao: t.precisaConfirmacao,
         ...(t.servico ? { servico: t.servico } : {}),
       })),

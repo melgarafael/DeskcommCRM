@@ -172,6 +172,96 @@ describe("crm_list_event_types — a capacidade que faltava", () => {
   });
 });
 
+/**
+ * ─── O preço que a RECEPÇÃO cobra ─────────────────────────────────────────
+ *
+ * A lista dizia nome, descrição, duração, local e confirmação — e nada de
+ * preço. O agente que só tem a lista respondia "vou confirmar o valor com a
+ * equipe" para o preço mais óbvio da clínica, que é justamente o
+ * `default_price_cents` do tipo: a MESMA coluna que a comanda lê para sugerir
+ * o valor da linha (`app/api/v1/financeiro/comandas/pendentes/route.ts`).
+ *
+ * Aqui o caminho é medido INTEIRO — a linha do banco atravessa a leitura real
+ * (`listaTiposDeAtendimento`) e chega ao que a tool publica. Mockar a coleta
+ * neste teste provaria só o miolo, e o elo que interessa é justamente "o que a
+ * coluna tem é o que o agente vê".
+ */
+function bancoComUmaLinha(linha: Record<string, unknown>): SupabaseClient {
+  const consulta: Record<string, unknown> = {};
+  consulta.select = () => consulta;
+  consulta.eq = () => consulta;
+  consulta.order = () => consulta;
+  consulta.then = (resolve: (v: unknown) => unknown) =>
+    Promise.resolve({ data: [linha], error: null }).then(resolve);
+  return { from: () => consulta } as unknown as SupabaseClient;
+}
+
+/** A linha como o SELECT de `COLUNAS_DO_TIPO_DE_AGENDAMENTO` a devolve. */
+function linhaDoBanco(preco: number | null): Record<string, unknown> {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "HOF e Botox",
+    slug: "hof-e-botox",
+    description: null,
+    category: "procedimento",
+    duration_minutes: 45,
+    location_kind: "in_person",
+    location_details: "Sala 2",
+    requires_confirmation: false,
+    is_active: true,
+    default_owner_user_id: null,
+    buffer_before_minutes: 0,
+    buffer_after_minutes: 0,
+    minimum_notice_minutes: 120,
+    booking_window_days: 60,
+    reminder_enabled: false,
+    levar_dados_do_negocio: false,
+    reminder_channel_session_id: null,
+    reminder_meta_template_id: null,
+    reminder_minutes_before: 1440,
+    reminder_extra_offsets_minutes: [],
+    reminder_body: null,
+    reminder_bodies: {},
+    default_price_cents: preco,
+    service_enabled: false,
+  };
+}
+
+async function tiposLidosDoBanco(preco: number | null): Promise<void> {
+  const real =
+    await vi.importActual<typeof import("@/lib/agenda/consulta")>("@/lib/agenda/consulta");
+  tiposRespondem(await real.listaTiposDeAtendimento(bancoComUmaLinha(linhaDoBanco(preco)), "org-1"));
+}
+
+describe("crm_list_event_types — o preço que a recepção cobra", () => {
+  it("chega em CENTAVOS, igual ao default_price_cents da coluna que a comanda lê", async () => {
+    await tiposLidosDoBanco(18000);
+
+    const r = (await crmListEventTypes.handler({}, ctx)) as {
+      tipos: { preco_padrao_cents: number | null }[];
+    };
+
+    expect(r.tipos[0]?.preco_padrao_cents).toBe(18000);
+    // Cru: nem "R$ 180,00" (texto que o modelo repassa errado), nem 180
+    // (reais, que ele multiplicaria de novo).
+    expect(Number.isInteger(r.tipos[0]?.preco_padrao_cents)).toBe(true);
+    expect(JSON.stringify(r.tipos)).not.toContain("R$");
+  });
+
+  it("Tipo sem preço devolve null — e NÃO zero, que seria 'de graça'", async () => {
+    await tiposLidosDoBanco(null);
+
+    const r = (await crmListEventTypes.handler({}, ctx)) as {
+      tipos: { preco_padrao_cents?: number | null }[];
+    };
+
+    // O campo existe e é nulo: ausente faria o modelo supor preço; zero faria
+    // ele anunciar atendimento gratuito que ninguém cadastrou.
+    expect(r.tipos[0]).toHaveProperty("preco_padrao_cents");
+    expect(r.tipos[0]?.preco_padrao_cents).toBeNull();
+  });
+});
+
 describe("crm_set_appointment_outcome — desfecho é sobre o passado", () => {
   it("compromisso que ainda não começou é RECUSADO, e a recusa ensina o caminho certo", async () => {
     // A guarda mora no handler; aqui prova-se que a tool a traduz em resposta ao
