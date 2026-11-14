@@ -1543,6 +1543,12 @@ export const AUDIT_ACTIONS = [
   // Reação enviada pelo inbox (#4194). Sem o emoji no metadata: a trilha guarda
   // o evento, não o conteúdo — mesma regra de message.edited/revoked.
   "message.reaction_sent",
+  // Blueprint de FUNIS (#1995, fatia 2): o arquivo de configuração que sai e o
+  // que entra. Códigos próprios (não `pipeline.created` repetido N vezes) porque
+  // a pergunta depois é "de onde veio esse quadro?" — e a resposta tem de caber
+  // numa linha do audit, com contagem de funis e etapas, nunca com os nomes.
+  "pipeline.exported",
+  "pipeline.imported",
   // A mudança de STATUS de uma manifestação (#3611, fatia 3). O metadata leva
   // `de`, `para`, `reabertura` e — só quando existe — o motivo da reabertura.
   // NUNCA o texto do relato: `api_audit_log` é append-only e a cascata de LGPD
