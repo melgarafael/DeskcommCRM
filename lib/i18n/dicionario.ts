@@ -1362,6 +1362,26 @@ export const DICIONARIO: Traducoes = {
   "Pausar abordagens": { es: "Pausar contactos" },
   "Campanha retomada.": { es: "Campaña reanudada." },
   "Retomar fila": { es: "Reanudar cola" },
+  "Campanhas arquivadas": { es: "Campañas archivadas" },
+  "Ver arquivadas": { es: "Ver archivadas" },
+  "Voltar para as ativas": { es: "Volver a las activas" },
+  "Nenhuma campanha arquivada.": { es: "Ninguna campaña archivada." },
+  "Nenhuma campanha aqui.": { es: "Ninguna campaña aquí." },
+  "Some da lista sem apagar negócios nem conversas": {
+    es: "Sale de la lista sin borrar negocios ni conversaciones",
+  },
+  "Campanha arquivada. Negócios, conversas e custo continuam lá.": {
+    es: "Campaña archivada. Negocios, conversaciones y costo siguen ahí.",
+  },
+  "Campanha de volta à lista. Nada do que ela criou mudou.": {
+    es: "Campaña de vuelta a la lista. Nada de lo que creó cambió.",
+  },
+  "Desarquive a campanha para retomar os envios.": {
+    es: "Desarchiva la campaña para reanudar los envíos.",
+  },
+  "Desarquive a campanha para iniciar os envios.": {
+    es: "Desarchiva la campaña para iniciar los envíos.",
+  },
   "2. Preparar a abordagem": { es: "2. Preparar el contacto" },
   "A IA usa o agente escolhido para abrir a conversa e atender as respostas. As proteções do canal continuam valendo.": { es: "La IA usa el agente elegido para abrir la conversación y atender las respuestas. Las protecciones del canal siguen vigentes." },
   "Campanha iniciada. A primeira abordagem será preparada após um minuto.": { es: "Campaña iniciada. El primer contacto se preparará en un minuto." },
@@ -21246,6 +21266,17 @@ export const DICIONARIO: Traducoes = {
   "Você é o operador do sistema. Seu trabalho é deixar o CRM refletindo o que aconteceu na conversa que acabou de ocorrer — mover o lead, registrar, abrir o que precisa ser aberto.\n\nVOCÊ NÃO FALA COM O CLIENTE. Você não tem como enviar mensagem, e não deve tentar: quem conversa é outro. Se algo exigir falar com a pessoa, registre e siga.\n\nATENÇÃO: quem conversou só FALA — ele não grava nada no CRM sozinho. Se a promessa dele veio redigida como já concluída (\"registrei com o Fulano\", \"já está com a equipe\", \"ficou combinado\"), isso é o que ele DISSE ao cliente, não prova de que algo foi registrado. O passado na frase não é evidência de ação — trate a promessa como pendente até você mesmo confirmar ou registrar (mover o lead, abrir nota, o que fizer sentido com as ferramentas que você tem).\n\nUse apenas o que a conversa sustenta. Não invente avanço, não registre o que ninguém disse. Se não houver nada a fazer, não faça nada — um turno sem ação é uma resposta válida.": { es: "Eres el operador del sistema. Tu trabajo es dejar el CRM reflejando lo que pasó en la conversación que acaba de ocurrir — mover el lead, registrar, abrir lo que haga falta.\n\nNO HABLAS CON EL CLIENTE. No tienes cómo enviar mensajes, y no debes intentarlo: quien conversa es otro. Si algo exige hablar con la persona, regístralo y sigue.\n\nATENCIÓN: quien conversó solo HABLA — no graba nada en el CRM por su cuenta. Si su promesa llegó redactada como ya concluida (\"registré con Fulano\", \"ya está con el equipo\", \"quedó acordado\"), eso es lo que él DIJO al cliente, no prueba de que algo se registró. El pasado en la frase no es evidencia de acción — trata la promesa como pendiente hasta que tú mismo confirmes o registres (mover el lead, abrir una nota, lo que tenga sentido con las herramientas que tienes).\n\nUsa solo lo que la conversación sostiene. No inventes avances, no registres lo que nadie dijo. Si no hay nada que hacer, no hagas nada — un turno sin acción es una respuesta válida." },
   "Marca um avanço REAL no funil deste lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; só o PRÓXIMO estágio válido — regressão é rejeitada), qualification (budget/authority/need/timeline), next_action e reason (evidência curta do avanço). Nunca invente avanço sem evidência na conversa.": { es: "Marca un avance REAL en el embudo de este lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; solo la etapa SIGUIENTE es válida — la regresión se rechaza), qualification (budget/authority/need/timeline), next_action y reason (evidencia corta del avance). Nunca inventes un avance sin evidencia en la conversación." },
   "## Idioma da conversa\nEsta organização atende em português (Brasil). Responda ao lead nesse idioma e no idioma em que ele escrever — siga a pessoa, não imponha o seu. O texto das suas instruções internas não é a língua do atendimento: se o lead escreve em espanhol ou em inglês, a resposta sai em espanhol ou em inglês, mesmo que as regras acima estejam em português.": { es: "## Idioma de la conversación\nEsta organización atiende en español. Responde al lead en ese idioma y en el idioma en que él escriba — sigue a la persona, no le impongas el tuyo. El texto de tus instrucciones internas no es el idioma de la atención: si el lead escribe en portugués o en inglés, la respuesta sale en portugués o en inglés, aunque las reglas de arriba estén en español." },
+  // #3486 — o robô de mensagens (módulo `canal_bot`).
+  "Robô conectado. As conversas privadas com ele chegam ao Inbox.": { es: "Bot conectado. Las conversaciones privadas con él llegan al Inbox." },
+  "Não foi possível desconectar.": { es: "No fue posible desconectar." },
+  "Robô desconectado.": { es: "Bot desconectado." },
+  "Conectar um robô": { es: "Conectar un bot" },
+  "Crie o robô no @BotFather e cole aqui o token que ele mostrar. As conversas privadas com o robô chegam ao Inbox, e a resposta sai pelo mesmo robô. Grupos e campanhas não passam por ele.": { es: "Cree el bot en @BotFather y pegue aquí el token que le muestre. Las conversaciones privadas con el bot llegan al Inbox, y la respuesta sale por el mismo bot. Los grupos y las campañas no pasan por él." },
+  "Token do robô": { es: "Token del bot" },
+  "O token é testado contra o serviço antes de ser gravado, e a entrega das mensagens é registrada no mesmo passo.": { es: "El token se prueba contra el servicio antes de guardarse, y la entrega de mensajes se registra en el mismo paso." },
+  "Robô de mensagens (@BotFather)": { es: "Bot de mensajes (@BotFather)" },
+  "Ligado, cada empresa ganha em Conexões uma aba para conectar um robô criado no @BotFather, colando o token dele. As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo robô; grupos e campanhas não passam por ele. Desligado, a aba some e ninguém conecta um robô novo; um robô já conectado segue atendendo, e para desconectá-lo basta ligar o módulo de novo.": { es: "Activado, cada empresa gana en Conexiones una pestaña para conectar un bot creado en @BotFather, pegando su token. Las conversaciones privadas con el bot llegan al Inbox y la respuesta sale por el mismo bot; los grupos y las campañas no pasan por él. Desactivado, la pestaña desaparece y nadie conecta un bot nuevo; un bot ya conectado sigue atendiendo, y para desconectarlo basta con activar el módulo de nuevo." },
+  "Cada empresa conecta em Conexões um robô criado no @BotFather, e as conversas privadas com ele chegam ao Inbox.": { es: "Cada empresa conecta en Conexiones un bot creado en @BotFather, y las conversaciones privadas con él llegan al Inbox." },
   // Doc 301 = B — o que a automação segura quando a IA mexe no modo assistido.
   "Quem disparou foi a IA no modo assistido, e no assistido nada fala com o cliente sem aprovação: esta ação ficou parada. O aviso na Central de avisos tem o botão para disparar.": { es: "Quien disparó fue la IA en modo asistido, y en el modo asistido nada le habla al cliente sin aprobación: esta acción quedó detenida. El aviso en la Central de avisos tiene el botón para dispararla." },
   "Não há nada parado para disparar neste aviso: ele já foi disparado ou descartado.": { es: "No hay nada detenido para disparar en este aviso: ya fue disparado o descartado." },

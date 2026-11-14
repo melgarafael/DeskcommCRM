@@ -181,9 +181,13 @@ async function trabalhar(
   deps: DependenciasDoPreparo,
 ): Promise<void> {
   if (Date.now() >= deadline) return;
+  // Campanha ARQUIVADA (#4359) fica fora do preparo automático: ela saiu da lista
+  // porque falhou ou veio zerada, e continuar gastando auditoria de site e prévia de
+  // IA nela seria cobrar por uma campanha que a pessoa não vê mais. `status` cobre o
+  // ENVIO (arquivar campanha rodando a pausa); este filtro cobre o TRABALHO de fundo.
   const campanhas = (
     await db.query<CampanhaDoPreparo>(
-      "select id, config, search from prospecting_campaigns where organization_id=$1 and status in ('draft','running','paused') order by created_at desc",
+      "select id, config, search from prospecting_campaigns where organization_id=$1 and status in ('draft','running','paused') and coalesce(config->>'arquivada_em','') = '' order by created_at desc",
       [org],
     )
   ).rows;
