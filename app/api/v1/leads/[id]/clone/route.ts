@@ -21,7 +21,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
-import { createLeadHandler } from "@/app/api/v1/leads/_handler";
+import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import {
@@ -40,7 +40,6 @@ import {
   FUNIL_DE_DESTINO_NAO_ENCONTRADO,
   ORIGEM_SEM_ETAPA_DE_PERDA,
   escolheEtapaDeDestino,
-  montaPayloadDoClone,
   recusaTrocaDeFunil,
   registroDoDestino,
   type EtapaDoFunil,
@@ -376,10 +375,16 @@ export async function POST(
       }
     }
 
-    const clone = await createLeadHandler(
+    // O card do destino nasce COM os anexos do card de origem (#4544): o
+    // voucher/apólice anexado no funil de Vendas é justamente o que o pós-venda
+    // precisa ler. A cópia é do passo único dos três caminhos de troca de funil,
+    // depois do INSERT do clone — o anexo mora em `crm_lead_attachments.lead_id`,
+    // e o id do card novo só existe aí.
+    const { clone, anexos } = await criarCloneNoFunil(
       supabase,
       handlerCtx,
-      montaPayloadDoClone(origem as OrigemParaClonar, destino.etapa),
+      origem as OrigemParaClonar,
+      destino.etapa,
     );
 
     const destination = registroDoDestino(clone);
@@ -494,6 +499,9 @@ export async function POST(
       {
         lead: clone,
         origem: ocultarProvaMetaNaResposta((origemFinal ?? origemEncerrada ?? origem) as Record<string, unknown>),
+        // Quantos anexos o card novo herdou da origem (#4544). Aditivo no
+        // contrato: quem já lia `lead`/`origem` não muda.
+        anexos: anexos.copiados,
       },
       { requestId, status: 201 },
     );

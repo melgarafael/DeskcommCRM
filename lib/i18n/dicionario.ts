@@ -1045,11 +1045,18 @@ export const DICIONARIO: Traducoes = {
   "Número inválido. Informe o telefone no formato E.164, com o código do país.": {
     es: "Número no válido. Informe el teléfono en formato E.164, con el código del país.",
   },
-  "Este número vai virar o principal e o rótulo será descartado: o telefone principal da ficha não guarda rótulo.":
-    {
-      es: "Este número pasará a ser el principal y su etiqueta se descartará: el teléfono principal de la ficha no guarda etiqueta.",
-    },
-  "Rótulo que será descartado:": { es: "Etiqueta que se descartará:" },
+  // #4242, item 1: as três chaves abaixo são as que `lib/schemas/contacts.ts`
+  // traduz (a frase é a MESMA do schema e da API); o `{exemplo}` entra por
+  // `replace`, como `Dia {n}`.
+  "Telefone deve estar em formato E.164 ({exemplo})": {
+    es: "El teléfono debe estar en formato E.164 ({exemplo})",
+  },
+  "Telefone deve ter DDD + número (ex.: {exemplo}) ou o formato E.164 ({exemploE164})": {
+    es: "El teléfono debe tener código de área + número (ej.: {exemplo}) o el formato E.164 ({exemploE164})",
+  },
+  "Telefone inválido. Informe DDD e número.": {
+    es: "Teléfono no válido. Informa el código de área y el número.",
+  },
   "A resposta sai por:": { es: "La respuesta sale por:" },
   "Pontuação": { es: "Puntuación" },
   // #2642 — formulário da ação notify_team, depois do recorte: o destino é o
@@ -1355,6 +1362,26 @@ export const DICIONARIO: Traducoes = {
   "Pausar abordagens": { es: "Pausar contactos" },
   "Campanha retomada.": { es: "Campaña reanudada." },
   "Retomar fila": { es: "Reanudar cola" },
+  "Campanhas arquivadas": { es: "Campañas archivadas" },
+  "Ver arquivadas": { es: "Ver archivadas" },
+  "Voltar para as ativas": { es: "Volver a las activas" },
+  "Nenhuma campanha arquivada.": { es: "Ninguna campaña archivada." },
+  "Nenhuma campanha aqui.": { es: "Ninguna campaña aquí." },
+  "Some da lista sem apagar negócios nem conversas": {
+    es: "Sale de la lista sin borrar negocios ni conversaciones",
+  },
+  "Campanha arquivada. Negócios, conversas e custo continuam lá.": {
+    es: "Campaña archivada. Negocios, conversaciones y costo siguen ahí.",
+  },
+  "Campanha de volta à lista. Nada do que ela criou mudou.": {
+    es: "Campaña de vuelta a la lista. Nada de lo que creó cambió.",
+  },
+  "Desarquive a campanha para retomar os envios.": {
+    es: "Desarchiva la campaña para reanudar los envíos.",
+  },
+  "Desarquive a campanha para iniciar os envios.": {
+    es: "Desarchiva la campaña para iniciar los envíos.",
+  },
   "2. Preparar a abordagem": { es: "2. Preparar el contacto" },
   "A IA usa o agente escolhido para abrir a conversa e atender as respostas. As proteções do canal continuam valendo.": { es: "La IA usa el agente elegido para abrir la conversación y atender las respuestas. Las protecciones del canal siguen vigentes." },
   "Campanha iniciada. A primeira abordagem será preparada após um minuto.": { es: "Campaña iniciada. El primer contacto se preparará en un minuto." },
@@ -11378,6 +11405,13 @@ export const DICIONARIO: Traducoes = {
   },
   "Carga": { es: "Carga" },
   "Capacidade": { es: "Capacidad" },
+  "Ex.: 128GB": { es: "Ej.: 128GB" },
+  "Capacidade do produto": { es: "Capacidad del producto" },
+  "capacidade com mais de 60 caracteres": { es: "capacidad con más de 60 caracteres" },
+  "A capacidade do produto está desligada nesta empresa.": { es: "La capacidad del producto está desactivada en esta empresa." },
+  "Usar o campo Capacidade nos produtos": { es: "Usar el campo Capacidad en los productos" },
+  "Mostra o campo em Produtos e na planilha, para 128GB, 1TB ou 500ml, e o atendente de IA passa a procurar por ele. Desligar esconde o campo, mas não apaga o que já foi cadastrado.": { es: "Muestra el campo en Productos y en la planilla, para 128GB, 1TB o 500ml, y el agente de IA pasa a buscar por él. Desactivarlo oculta el campo, pero no borra lo ya registrado." },
+  "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.": { es: "Un campo más en el catálogo para 128GB, 1TB o 500ml. El agente de IA pasa a encontrar el producto por él, aunque el nombre no repita la capacidad." },
   "Horário": { es: "Horario" },
   "Disponível": { es: "Disponible" },
   "Capacidade de": { es: "Capacidad de" },
@@ -21223,6 +21257,34 @@ export const DICIONARIO: Traducoes = {
   "Você é o operador do sistema. Seu trabalho é deixar o CRM refletindo o que aconteceu na conversa que acabou de ocorrer — mover o lead, registrar, abrir o que precisa ser aberto.\n\nVOCÊ NÃO FALA COM O CLIENTE. Você não tem como enviar mensagem, e não deve tentar: quem conversa é outro. Se algo exigir falar com a pessoa, registre e siga.\n\nATENÇÃO: quem conversou só FALA — ele não grava nada no CRM sozinho. Se a promessa dele veio redigida como já concluída (\"registrei com o Fulano\", \"já está com a equipe\", \"ficou combinado\"), isso é o que ele DISSE ao cliente, não prova de que algo foi registrado. O passado na frase não é evidência de ação — trate a promessa como pendente até você mesmo confirmar ou registrar (mover o lead, abrir nota, o que fizer sentido com as ferramentas que você tem).\n\nUse apenas o que a conversa sustenta. Não invente avanço, não registre o que ninguém disse. Se não houver nada a fazer, não faça nada — um turno sem ação é uma resposta válida.": { es: "Eres el operador del sistema. Tu trabajo es dejar el CRM reflejando lo que pasó en la conversación que acaba de ocurrir — mover el lead, registrar, abrir lo que haga falta.\n\nNO HABLAS CON EL CLIENTE. No tienes cómo enviar mensajes, y no debes intentarlo: quien conversa es otro. Si algo exige hablar con la persona, regístralo y sigue.\n\nATENCIÓN: quien conversó solo HABLA — no graba nada en el CRM por su cuenta. Si su promesa llegó redactada como ya concluida (\"registré con Fulano\", \"ya está con el equipo\", \"quedó acordado\"), eso es lo que él DIJO al cliente, no prueba de que algo se registró. El pasado en la frase no es evidencia de acción — trata la promesa como pendiente hasta que tú mismo confirmes o registres (mover el lead, abrir una nota, lo que tenga sentido con las herramientas que tienes).\n\nUsa solo lo que la conversación sostiene. No inventes avances, no registres lo que nadie dijo. Si no hay nada que hacer, no hagas nada — un turno sin acción es una respuesta válida." },
   "Marca um avanço REAL no funil deste lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; só o PRÓXIMO estágio válido — regressão é rejeitada), qualification (budget/authority/need/timeline), next_action e reason (evidência curta do avanço). Nunca invente avanço sem evidência na conversa.": { es: "Marca un avance REAL en el embudo de este lead: stage (new → contacted → qualifying → qualified → negotiating → won | lost; solo la etapa SIGUIENTE es válida — la regresión se rechaza), qualification (budget/authority/need/timeline), next_action y reason (evidencia corta del avance). Nunca inventes un avance sin evidencia en la conversación." },
   "## Idioma da conversa\nEsta organização atende em português (Brasil). Responda ao lead nesse idioma e no idioma em que ele escrever — siga a pessoa, não imponha o seu. O texto das suas instruções internas não é a língua do atendimento: se o lead escreve em espanhol ou em inglês, a resposta sai em espanhol ou em inglês, mesmo que as regras acima estejam em português.": { es: "## Idioma de la conversación\nEsta organización atiende en español. Responde al lead en ese idioma y en el idioma en que él escriba — sigue a la persona, no le impongas el tuyo. El texto de tus instrucciones internas no es el idioma de la atención: si el lead escribe en portugués o en inglés, la respuesta sale en portugués o en inglés, aunque las reglas de arriba estén en español." },
+  // #3486 — o robô de mensagens (módulo `canal_bot`).
+  "Robô conectado. As conversas privadas com ele chegam ao Inbox.": { es: "Bot conectado. Las conversaciones privadas con él llegan al Inbox." },
+  "Não foi possível desconectar.": { es: "No fue posible desconectar." },
+  "Robô desconectado.": { es: "Bot desconectado." },
+  "Conectar um robô": { es: "Conectar un bot" },
+  "Crie o robô no @BotFather e cole aqui o token que ele mostrar. As conversas privadas com o robô chegam ao Inbox, e a resposta sai pelo mesmo robô. Grupos e campanhas não passam por ele.": { es: "Cree el bot en @BotFather y pegue aquí el token que le muestre. Las conversaciones privadas con el bot llegan al Inbox, y la respuesta sale por el mismo bot. Los grupos y las campañas no pasan por él." },
+  "Token do robô": { es: "Token del bot" },
+  "O token é testado contra o serviço antes de ser gravado, e a entrega das mensagens é registrada no mesmo passo.": { es: "El token se prueba contra el servicio antes de guardarse, y la entrega de mensajes se registra en el mismo paso." },
+  "Robô de mensagens (@BotFather)": { es: "Bot de mensajes (@BotFather)" },
+  "Ligado, cada empresa ganha em Conexões uma aba para conectar um robô criado no @BotFather, colando o token dele. As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo robô; grupos e campanhas não passam por ele. Desligado, a aba some e ninguém conecta um robô novo; um robô já conectado segue atendendo, e para desconectá-lo basta ligar o módulo de novo.": { es: "Activado, cada empresa gana en Conexiones una pestaña para conectar un bot creado en @BotFather, pegando su token. Las conversaciones privadas con el bot llegan al Inbox y la respuesta sale por el mismo bot; los grupos y las campañas no pasan por él. Desactivado, la pestaña desaparece y nadie conecta un bot nuevo; un bot ya conectado sigue atendiendo, y para desconectarlo basta con activar el módulo de nuevo." },
+  "Cada empresa conecta em Conexões um robô criado no @BotFather, e as conversas privadas com ele chegam ao Inbox.": { es: "Cada empresa conecta en Conexiones un bot creado en @BotFather, y las conversaciones privadas con él llegan al Inbox." },
+  // Doc 301 = B — o que a automação segura quando a IA mexe no modo assistido.
+  "Quem disparou foi a IA no modo assistido, e no assistido nada fala com o cliente sem aprovação: esta ação ficou parada. O aviso na Central de avisos tem o botão para disparar.": { es: "Quien disparó fue la IA en modo asistido, y en el modo asistido nada le habla al cliente sin aprobación: esta acción quedó detenida. El aviso en la Central de avisos tiene el botón para dispararla." },
+  "Não há nada parado para disparar neste aviso: ele já foi disparado ou descartado.": { es: "No hay nada detenido para disparar en este aviso: ya fue disparado o descartado." },
+  "A automação mudou depois que a ação ficou parada. Abra a automação e confira antes de disparar.": { es: "La automatización cambió después de que la acción quedó detenida. Abre la automatización y revísala antes de dispararla." },
+  "Agora está fora da janela de envio deste número (ou no limite do dia). Nada foi enviado; tente depois do horário indicado.": { es: "Ahora está fuera de la ventana de envío de este número (o en el límite del día). No se envió nada; inténtalo después del horario indicado." },
+  "Disparar agora": { es: "Disparar ahora" },
+  "Não foi possível disparar. O aviso continua aberto se nada saiu; leia o motivo na atividade das automações.": { es: "No fue posible disparar. El aviso sigue abierto si no salió nada; lee el motivo en la actividad de las automatizaciones." },
+  "Ver na atividade das automações": { es: "Ver en la actividad de las automatizaciones" },
+  // lib/automation/parada-no-assistido.ts — os avisos da Central, gravados no idioma da organização.
+  "Automação esperando aprovação para falar com o cliente": { es: "Automatización esperando aprobación para hablar con el cliente" },
+  "Uma ação da IA no modo assistido disparou a automação \"{regra}\", e o que fala com o cliente ficou parado ({acoes}). O resto da automação já rodou. Dispare se quiser que a mensagem saia; marque como resolvido para descartar.": { es: "Una acción de la IA en modo asistido disparó la automatización \"{regra}\", y lo que le habla al cliente quedó detenido ({acoes}). El resto de la automatización ya se ejecutó. Dispárala si quieres que el mensaje salga; márcalo como resuelto para descartarlo." },
+  "mensagem da IA": { es: "mensaje de la IA" },
+  "sequência": { es: "secuencia" },
+  "decisão da IA": { es: "decisión de la IA" },
+  "Sequência esperando aprovação para falar com o cliente": { es: "Secuencia esperando aprobación para hablar con el cliente" },
+  "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em uma sequência de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.": { es: "Una acción de la IA en modo asistido llevó el negocio a un punto que inscribe al contacto en una secuencia de seguimiento, y la inscripción quedó detenida. Si quieres que la secuencia empiece, inscribe al contacto desde su panel en la conversación; márcalo como resuelto para descartarlo." },
+  "Uma ação da IA no modo assistido levou o negócio a um ponto que inscreve o contato em {quantas} sequências de follow-up, e a inscrição ficou parada. Se quiser que a sequência comece, inscreva o contato pelo painel dele na conversa; marque como resolvido para descartar.": { es: "Una acción de la IA en modo asistido llevó el negocio a un punto que inscribe al contacto en {quantas} secuencias de seguimiento, y la inscripción quedó detenida. Si quieres que la secuencia empiece, inscribe al contacto desde su panel en la conversación; márcalo como resuelto para descartarlo." },
 
   // ─── motivo do cancelamento do follow-up (#4428) ──────────────────────────
   // O motivo da inscrição é gravado como TEXTO e mostrado pelo Dossiê via `t()`
