@@ -120,6 +120,16 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
+    nome: "teto_de_respostas",
+    rotulo: "Parar a conversa que virou pingue-pongue",
+    oQueProtege:
+      "Se a mesma conversa já recebeu muitas respostas automáticas numa janela (padrão: 10 em 1 h), a próxima é barrada. É o que impede dois robôs de conversarem sozinhos — caso real de 216 respostas em uma hora para o mesmo contato.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Não é escolha de estilo: conversa entre robôs queima cota do modelo e é risco de bloqueio do seu número. O número de respostas e a janela se ajustam na configuração da instalação, não no desligamento.",
+     camada: null,
+  },
+  {
     nome: "spinning",
     rotulo: "Variar o texto das mensagens iguais",
     oQueProtege:

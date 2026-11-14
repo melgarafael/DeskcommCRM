@@ -324,6 +324,12 @@ const envSchema = z.object({
   // Teto de mensagens FÍSICAS enviadas ao lead por turno (send_message + send_template
   // somados, bolhas incluídas) — nenhum gate de before-send limita CONTAGEM, só ritmo.
   MAX_SENDS_PER_TURN: z.coerce.number().int().positive().default(3),
+  // #4590 — teto de RESPOSTAS automáticas por CONVERSA numa janela. É a trava que faltava
+  // quando dois robôs se responderam 216 vezes numa hora: cada resposta era legítima, e nem o
+  // pacing (que mede o número) nem o spinning (que mede cópia para muita gente) olham para a
+  // mesma conversa girando. Default conservador: 10 respostas em 1 h.
+  TETO_DE_RESPOSTAS_POR_CONVERSA: z.coerce.number().int().positive().default(10),
+  TETO_DE_RESPOSTAS_JANELA_MIN: z.coerce.number().int().positive().default(60),
   // Circuit breaker de tools por run.
   TOOL_BREAKER_EXACT_WARN: z.coerce.number().int().positive().default(2),
   TOOL_BREAKER_EXACT_BLOCK: z.coerce.number().int().positive().default(5),
