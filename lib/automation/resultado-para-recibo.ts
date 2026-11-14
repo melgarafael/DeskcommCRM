@@ -72,6 +72,8 @@ const CODIGOS_DAS_ACOES = new Set([
   "no_target",
   "numero_de_teste",
   "origin_capture_failed",
+  /* Doc 301 = B — a IA mexeu no modo assistido; nasce em parada-no-assistido.ts. */
+  "parada_no_assistido",
   "plano_nao_encontrado",
   "remetente_recusado",
   "resposta_vazia",

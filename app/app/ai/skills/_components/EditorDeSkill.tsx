@@ -61,7 +61,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
     const s = skill.data;
     if (!aberto || !s) return;
     setDescricao(s.description);
-    setKeywords(s.matcher.any_keywords.join(", "));
+    setKeywords((s.matcher.any_keywords ?? []).join(", "));
     setEtiquetas((s.matcher.any_tags ?? []).join(", "));
     setCorpo(s.body);
     setProbe(s.matcher.probe_keywords);
@@ -74,10 +74,6 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
 
   function salvarSkill() {
     const anyKeywords = parseKeywords(keywords);
-    if (anyKeywords.length === 0) {
-      toast.error(t("Informe pelo menos uma palavra-chave de ativação."));
-      return;
-    }
     const anyTags = parseKeywords(etiquetas);
     if (descricao.trim() === "") {
       toast.error(t("A descrição é obrigatória."));
@@ -98,7 +94,10 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
           description: descricao.trim(),
           body: corpo,
           matcher: {
-            any_keywords: anyKeywords,
+            // Skill sem palavra-chave é legítima (#4458): matcher vazio = fora do roteamento
+            // automático, usada só quando o roteiro a puxa pelo nome. Lista vazia seria
+            // recusada pela API, então o campo simplesmente não vai.
+            ...(anyKeywords.length > 0 ? { any_keywords: anyKeywords } : {}),
             ...(probe ? { probe_keywords: probe } : {}),
             ...(anyTags.length > 0 ? { any_tags: anyTags } : {}),
           },
@@ -178,7 +177,11 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
                 placeholder={t("consulta, horário, preço")}
               />
               <p className="text-xs text-muted-foreground">
-                {t("A skill é carregada quando o cliente escreve uma destas palavras.")}
+                {parseKeywords(keywords).length === 0
+                  ? t(
+                      "Sem palavras-chave, a skill não entra sozinha na conversa — ela só roda quando o roteiro de atendimento a puxa pelo nome.",
+                    )
+                  : t("A skill é carregada quando o cliente escreve uma destas palavras.")}
               </p>
             </div>
 

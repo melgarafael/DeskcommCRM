@@ -49,7 +49,7 @@ export default async function AgentInboxPage() {
         </p>
       </header>
       {lembrete && <LembreteDeCasoParado inicial={lembrete} />}
-      <AgentInboxList canResolve={canResolve} />
+      <AgentInboxList canResolve={canResolve} podeDisparar={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager} />
     </div>
   );
 }

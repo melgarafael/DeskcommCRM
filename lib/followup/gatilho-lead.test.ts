@@ -234,3 +234,43 @@ describe("aplicaGatilhoDeLead — o enrollment", () => {
     expect(s.enrolled).toBe(0);
   });
 });
+
+/**
+ * Doc 301 = B (#4319): a IA no modo ASSISTIDO não inscreve o contato numa
+ * sequência — sequência fala com o cliente. A mesma linha SEM a marca é o
+ * controle: ela inscreve, então o zero de cima não é fixture morta.
+ */
+describe("aplicaGatilhoDeLead — a IA no modo assistido (doc 301 = B)", () => {
+  const MARCA = { actor_type: "ai_agent", actor_id: "ag-1", actor_operation_mode: "assisted" };
+
+  it("com a marca do assistido (negócio novo): não inscreve e conta o que ficou parado", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeLead(
+      { db: fakeDb({ pointers: [pointerArmado], pedeAgente: false, registro: reg }), gateDb: fakeGate([]), clock: CLOCK },
+      evento({ metadata: MARCA }),
+    );
+    expect(s.enrolled).toBe(0);
+    expect(s.parados_no_assistido).toBe(1);
+    expect(reg.enrollments).toHaveLength(0);
+  });
+
+  it("a marca HERDADA (regra que rodou por causa da IA) também segura", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeLead(
+      { db: fakeDb({ pointers: [pointerArmado], pedeAgente: false, registro: reg }), gateDb: fakeGate([]), clock: CLOCK },
+      evento({ metadata: { actor_type: "webhook_source", actor_id: "rule-1", actor_operation_mode: "assisted" } }),
+    );
+    expect(s.parados_no_assistido).toBe(1);
+    expect(reg.enrollments).toHaveLength(0);
+  });
+
+  it("CONTROLE: a mesma linha sem a marca inscreve", async () => {
+    const reg = registro();
+    const s = await aplicaGatilhoDeLead(
+      { db: fakeDb({ pointers: [pointerArmado], pedeAgente: false, registro: reg }), gateDb: fakeGate([]), clock: CLOCK },
+      evento({ metadata: { actor_type: "ai_agent", actor_id: "ag-1" } }),
+    );
+    expect(s.enrolled).toBe(1);
+    expect(s.parados_no_assistido).toBeUndefined();
+  });
+});

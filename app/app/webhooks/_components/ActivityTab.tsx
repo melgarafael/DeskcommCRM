@@ -236,6 +236,10 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
      que isso. Nasce em lib/automation/engine.ts, no run do bloqueio. */
   intervalo_por_contato:
     "Esta automação não repete para o mesmo contato dentro do intervalo configurado, e este contato passou por ela há menos tempo que isso. Nada foi enviado agora; ela volta a valer quando a janela terminar.",
+  /* Doc 301 = B — a IA mexeu no modo assistido. Nasce em
+     lib/automation/parada-no-assistido.ts; o aviso na Central tem o botão. */
+  parada_no_assistido:
+    "Quem disparou foi a IA no modo assistido, e no assistido nada fala com o cliente sem aprovação: esta ação ficou parada. O aviso na Central de avisos tem o botão para disparar.",
   // #1528 — o motor pula atribuir/mover nos gatilhos do trigger (laço).
   acao_fecharia_laco:
     "Neste gatilho esta ação não roda: atribuir responsável ou mover o lead dispararia a automação de novo, sem fim. Abra a automação e tire a ação.",

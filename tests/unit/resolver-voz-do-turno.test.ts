@@ -23,6 +23,7 @@ vi.mock("@/lib/agent-engine/edge/llm/run-model-call", () => ({
 }));
 
 import { resolverVozDoTurno } from "@/lib/agent-engine/agent/voz-do-turno";
+import { textosDoClienteNoHistorico, type MensagemDoHistorico } from "@/lib/agent-engine/agent/pedido-de-audio";
 import { LlmBudgetExceededError } from "@/lib/agent-engine/edge/llm/run-model-call";
 
 function pool(settings: Record<string, unknown> | null = { voz: { voice_id: "v1" } }) {
@@ -260,6 +261,219 @@ describe("resolverVozDoTurno", () => {
         inboundType: null,
       });
       expect(r).toBeNull();
+    });
+  });
+
+  /**
+   * #4345 — o quarto comportamento: falar quando o CLIENTE PEDIR.
+   *
+   * `espelhar` continua o PADRÃO e continua lendo só o canal (os controles
+   * positivos no fim deste bloco são os mesmos casos de hoje, sem uma linha de
+   * diferença). O modo novo acrescenta UMA leitura: o texto do turno. Quem pediu
+   * por escrito recebe áudio; quem pediu texto — ou avisou que não consegue
+   * ouvir — segue em texto, mesmo tendo mandado áudio.
+   */
+  describe("vozQuando='quando_pede' (#4345)", () => {
+    it("cliente ESCREVEU pedindo áudio: fala", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "text",
+        inboundText: "não consigo ler, me manda áudio",
+      });
+      expect(r).toMatchObject({ voiceId: "v1" });
+    });
+
+    it("cliente avisou que NÃO CONSEGUE LER, sem pedir explicitamente: fala", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "text",
+        inboundText: "não consigo ler as mensagens",
+      });
+      expect(r).toMatchObject({ voiceId: "v1" });
+    });
+
+    it("cliente mandou ÁUDIO: continua falando (o modo soma espelhar + pedido)", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "audio",
+        inboundText: null,
+      });
+      expect(r).toMatchObject({ voiceId: "v1" });
+    });
+
+    it("cliente escreveu sem pedir nada: TEXTO", async () => {
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "text",
+        inboundText: "qual o horário de funcionamento?",
+      });
+      expect(r).toBeNull();
+    });
+
+    it("cliente pediu para continuar no texto: TEXTO, mesmo com 'áudio' na frase", async () => {
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "text",
+        inboundText: "não consigo ler o boleto, pode escrever",
+      });
+      expect(r).toBeNull();
+    });
+
+    it("cliente MANDOU ÁUDIO dizendo que prefere texto: TEXTO — o pedido vence o espelho", async () => {
+      // A credencial VALE aqui de propósito: sem ela o caminho espelhado já
+      // devolveria `null` por falta de chave, e o caso passaria sem medir a
+      // leitura do turno (o teste ficaria verde com o defeito plantado).
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "audio",
+        inboundText: "prefiro texto, por favor",
+      });
+      expect(r).toBeNull();
+    });
+  });
+
+  /**
+   * A CONVERSA (#4345) — o arremate pedido pelo mantenedor em 12/11.
+   *
+   * A decisão não olha a mensagem atual: olha a janela de textos do cliente que
+   * o turno já carrega. Estes dois casos são de CONVERSA, não de frase — é a
+   * diferença entre "quem escreveu que não lê recebe áudio" e "quem escreveu que
+   * não lê continua recebendo áudio na mensagem seguinte".
+   */
+  describe("vozQuando='quando_pede': a conversa, não a mensagem (#4345)", () => {
+    function conversa(mensagens: MensagemDoHistorico[], atual: string): string[] {
+      return textosDoClienteNoHistorico(mensagens, atual);
+    }
+
+    it("pedido de áudio de duas mensagens atrás continua valendo no turno de agora", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const textos = conversa(
+        [
+          { direction: "inbound", body: "oi, boa tarde" },
+          { direction: "inbound", body: "não sei ler, manda áudio" },
+          { direction: "outbound", body: "Claro! Te mando por áudio." },
+          { direction: "inbound", body: "e quanto custa?" },
+        ],
+        "e quanto custa?",
+      );
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "text",
+        inboundTexts: textos,
+      });
+      expect(r).toMatchObject({ voiceId: "v1" });
+    });
+
+    it("'prefiro texto' depois do pedido volta ao texto", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const textos = conversa(
+        [
+          { direction: "inbound", body: "não sei ler, manda áudio" },
+          { direction: "outbound", body: "Te mando por áudio." },
+          { direction: "inbound", body: "pensando bem, prefiro texto" },
+        ],
+        "pensando bem, prefiro texto",
+      );
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "quando_pede",
+        inboundType: "text",
+        inboundTexts: textos,
+      });
+      expect(r).toBeNull();
+    });
+  });
+
+  /**
+   * CONTROLE POSITIVO dos três modos que já existiam: os mesmos casos de hoje,
+   * com o texto do turno preenchido de propósito. Se o modo novo tivesse
+   * vazado para dentro de `espelhar`/`nunca`/`sempre`, é aqui que apareceria.
+   */
+  describe("controle positivo: nunca/espelhar/sempre não mudam", () => {
+    it("'espelhar' com pedido por escrito continua TEXTO (a leitura não vaza)", async () => {
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "espelhar",
+        inboundType: "text",
+        inboundText: "não consigo ler, me manda áudio",
+      });
+      expect(r).toBeNull();
+    });
+
+    it("'espelhar' com áudio do cliente continua falando", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "espelhar",
+        inboundType: "audio",
+        inboundText: "prefiro texto",
+      });
+      expect(r).toMatchObject({ voiceId: "v1" });
+    });
+
+    it("'nunca' continua calado com pedido por escrito E com áudio do cliente", async () => {
+      const porEscrito = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "nunca",
+        inboundType: "text",
+        inboundText: "não consigo ler, me manda áudio",
+      });
+      const comAudio = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "nunca",
+        inboundType: "audio",
+        inboundText: null,
+      });
+      expect(porEscrito).toBeNull();
+      expect(comAudio).toBeNull();
+    });
+
+    it("'sempre' continua falando com texto sem pedido", async () => {
+      resolveOrgLlmConfigMock.mockResolvedValue({ apiKey: "sk" });
+      const r = await resolverVozDoTurno({
+        ...base,
+        pool: pool(),
+        vozEnabled: true,
+        vozQuando: "sempre",
+        inboundType: "text",
+        inboundText: "qual o horário de funcionamento?",
+      });
+      expect(r).toMatchObject({ voiceId: "v1" });
     });
   });
 });

@@ -188,7 +188,15 @@ export function blocoDeModo(
       "- Diga em uma frase quem é você e por que está falando com ela, SEM sugerir que ela procurou vocês.",
       "- Os dados são públicos e comerciais (nome do negócio, ramo, endereço). NÃO diga nem insinue que ela preencheu, pediu, baixou ou se cadastrou em qualquer coisa.",
       "- NÃO invente histórico, interesse, indicação ou contato anterior. Não existe nenhum.",
-      "- NÃO repita os dados em forma de lista de volta para ela, e não demonstre saber mais do que o nome do negócio e o ramo.",
+      "- NÃO repita os dados em forma de lista de volta para ela.",
+      // #4459: o MOTIVO sai dos sinais que a busca coletou. Antes desta linha a
+      // única exceção era a `Auditoria`, e a regra fechava o resto com "não
+      // demonstre saber mais do que o nome e o ramo" — então a nota, o número de
+      // avaliações, as redes e o tipo de telefone chegavam à ficha e o modelo não
+      // podia usá-los. Numa empresa sem site sobrava "não tem site", e a
+      // mensagem saía igual à da empresa seguinte.
+      "- Motivo do contato: escolha UM fato da ficha — `Auditoria` (medição do próprio sistema, na data escrita nela), `Ficha do Google` (nota e número de avaliações), `Redes` publicadas ou `Telefone` — e diga como quem notou (\"vi que…\"), nunca como auditoria nem como lista. Um só, o mais forte para esta empresa: dado que não está na ficha não existe.",
+      "- Se a ficha não trouxer `Ficha do Google`, `Redes` nem `Auditoria`, NÃO invente um achado: abra pela rotina do negócio (o que ele faz, onde fica) e ofereça a conversa sem fingir que pesquisou.",
       // Exceção da auditoria verificada (spec 24): o campo `Auditoria` NÃO é
       // declaração de terceiro — foi o próprio servidor que mediu, na data
       // escrita no próprio campo ("verificado em DD/MM/AAAA"). Citar a
