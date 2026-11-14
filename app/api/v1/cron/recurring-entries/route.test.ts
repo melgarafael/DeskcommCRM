@@ -10,7 +10,9 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { competenciaDoMes } from "./route";
+import { fimDaRecorrencia } from "@/lib/financeiro/recorrencia-do-negocio";
+
+import { competenciaDoMes, dentroDoPrazo } from "./route";
 
 describe("competenciaDoMes", () => {
   it("o dia existe no mês, e é ele", () => {
@@ -50,5 +52,27 @@ describe("competenciaDoMes", () => {
     // O cálculo do último dia usa o dia 0 do mês SEGUINTE, e é exatamente aqui
     // que um off-by-one viraria 2027-01-31.
     expect(competenciaDoMes(2026, 12, 31)).toBe("2026-12-31");
+  });
+});
+
+describe("dentroDoPrazo — o molde para no último mês do contrato (#3602, doc 312)", () => {
+  it("sem ends_on, todo mês nasce (molde digitado à mão)", () => {
+    expect(dentroDoPrazo("2099-12-05", null)).toBe(true);
+  });
+
+  it("contrato de 12 meses ganho em novembro gera 12 competências e para", () => {
+    const fim = fimDaRecorrencia(12, 31, new Date("2026-11-20T12:00:00Z"));
+    expect(fim).toBe("2027-10-31");
+
+    const geradas: string[] = [];
+    for (let i = 0; i < 24; i += 1) {
+      const ano = 2026 + Math.floor((10 + i) / 12);
+      const mes = ((10 + i) % 12) + 1;
+      const competencia = competenciaDoMes(ano, mes, 31);
+      if (dentroDoPrazo(competencia, fim)) geradas.push(competencia);
+    }
+    expect(geradas).toHaveLength(12);
+    expect(geradas[0]).toBe("2026-11-30");
+    expect(geradas.at(-1)).toBe("2027-10-31");
   });
 });
