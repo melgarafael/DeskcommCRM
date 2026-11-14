@@ -108,16 +108,6 @@ export function CompanyDetailClient({ id }: Props) {
     void load();
   }, [load]);
 
-  // Vindo do "Nova empresa" (`?novo=1`): abre o cadastro de pessoa com contato
-  // uma vez e limpa o parâmetro, para recarregar a página não reabrir.
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("novo") !== "1") return;
-    setContatoAberto(true);
-    url.searchParams.delete("novo");
-    window.history.replaceState(null, "", url.pathname + url.search);
-  }, []);
-
   async function enrich() {
     setEnriching(true);
     await fetch(`/api/v1/companies/${id}/enrich`, { method: "POST" });
@@ -306,7 +296,7 @@ export function CompanyDetailClient({ id }: Props) {
             <h2 className="font-medium">{t("Pessoas / decisores")}</h2>
             {/* Piso `agent` para ADICIONAR (migration 9348); remover o vínculo segue `manager`. */}
             {podeEditarVinculo ? (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => setContatoAberto(true)}>
                   {t("Adicionar pessoa com contato")}
                 </Button>

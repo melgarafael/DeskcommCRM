@@ -723,7 +723,8 @@ export const DICIONARIO: Traducoes = {
   "Adicionar a uma empresa": { es: "Agregar a una empresa" },
   "Adicionar pessoa": { es: "Agregar persona" },
   "Adicionar pessoa com contato": { es: "Agregar persona con contacto" },
-  "É decisor": { es: "Es decisor" },
+  "Empresa criada — quem fala por ela?": { es: "Empresa creada — ¿quién habla por ella?" },
+  "Pular por agora": { es: "Omitir por ahora" },
   "Telefone / WhatsApp": { es: "Teléfono / WhatsApp" },
   "Sem telefone nem e-mail, só a pessoa é cadastrada, ligada à empresa.": {
     es: "Sin teléfono ni correo, solo se registra la persona, vinculada a la empresa.",

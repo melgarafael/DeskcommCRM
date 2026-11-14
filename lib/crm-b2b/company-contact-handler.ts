@@ -26,10 +26,10 @@ type SB = SupabaseClient;
 /** Corpo da chamada. O telefone é validado pela régua do país na ROTA (veja `corpoDoContatoDaEmpresa`). */
 export function corpoDoContatoDaEmpresa(telefone: z.ZodTypeAny) {
   return z.object({
-    full_name: z.string().trim().min(1).max(300),
+    full_name: z.string().trim().min(1).max(200),
     job_title: z.string().trim().max(200).optional().nullable(),
     is_decision_maker: z.boolean().optional(),
-    email: z.string().trim().email().optional().nullable().or(z.literal("")),
+    email: z.string().trim().email("E-mail inválido.").optional().nullable().or(z.literal("")),
     phone_number: telefone.optional(),
   });
 }

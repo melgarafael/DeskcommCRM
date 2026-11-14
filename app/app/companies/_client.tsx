@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Buildings, MagnifyingGlass, Plus } from "@/lib/ui/icons";
+import { Buildings, CheckCircle, MagnifyingGlass, Plus } from "@/lib/ui/icons";
+import { FormPessoaComContato } from "@/components/crm-b2b/FormPessoaComContato";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -18,6 +19,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -58,6 +60,9 @@ export function CompaniesListClient() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
+  // 2º passo do cadastro: a empresa já existe e o diálogo pede a primeira pessoa.
+  const [criada, setCriada] = useState<{ id: string; nome: string } | null>(null);
+  const [salvandoPessoa, setSalvandoPessoa] = useState(false);
   const [consulting, setConsulting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Aviso que NÃO é erro: consulta ok, mas algo o usuário precisa ver. */
@@ -151,7 +156,7 @@ export function CompaniesListClient() {
       setError(json.error?.message ?? t("Não foi possível criar."));
       return;
     }
-    setCreateOpen(false);
+    const nome = tradeName || legalName || cnpj;
     setLegalName("");
     setTradeName("");
     setCnpj("");
@@ -165,14 +170,26 @@ export function CompaniesListClient() {
     setEmail("");
     setPhone("");
     setAviso(null);
-    // Cadastro seguido: a empresa recém-criada abre na hora, já com o formulário
-    // "Adicionar pessoa com contato" aberto (`?novo=1`), sem voltar pela lista.
+    // Cadastro seguido: o diálogo NÃO fecha. Vira o 2º passo ("quem fala por ela?")
+    // e só depois leva à página da empresa. Os campos do 1º passo foram limpos
+    // acima: sem CNPJ não há trava de duplicata, e voltar a um formulário cheio
+    // convidaria a criar a mesma empresa duas vezes.
     const novoId = (json?.data as { id?: string } | undefined)?.id;
     if (novoId) {
-      router.push(`/app/companies/${novoId}?novo=1`);
+      setCriada({ id: novoId, nome });
       return;
     }
+    setCreateOpen(false);
     void load();
+  }
+
+  /** Toda saída do 2º passo (Salvar, Pular, Esc, X) termina na página da empresa. */
+  function irParaEmpresa() {
+    const id = criada?.id;
+    setCreateOpen(false);
+    setCriada(null);
+    if (id) router.push(`/app/companies/${id}`);
+    else void load();
   }
 
   return (
@@ -254,6 +271,10 @@ export function CompaniesListClient() {
       <Dialog
         open={createOpen}
         onOpenChange={(aberto) => {
+          if (!aberto && criada) {
+            if (!salvandoPessoa) irParaEmpresa();
+            return;
+          }
           setCreateOpen(aberto);
           if (aberto) {
             setError(null);
@@ -261,7 +282,33 @@ export function CompaniesListClient() {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onInteractOutside={(e) => criada && e.preventDefault()}
+          onEscapeKeyDown={(e) => salvandoPessoa && e.preventDefault()}
+        >
+          {criada ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>{t("Empresa criada — quem fala por ela?")}</DialogTitle>
+                <DialogDescription className="flex items-center gap-2">
+                  <CheckCircle className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                  <span role="status">
+                    {t("Empresa criada")}
+                    {criada.nome ? `: ${criada.nome}` : ""}
+                  </span>
+                </DialogDescription>
+              </DialogHeader>
+              <FormPessoaComContato
+                key={criada.id}
+                empresaId={criada.id}
+                rotuloSecundario={t("Pular por agora")}
+                onSecundario={irParaEmpresa}
+                onSalvandoChange={setSalvandoPessoa}
+                onSalvo={irParaEmpresa}
+              />
+            </>
+          ) : (
+            <>
           <DialogHeader>
             <DialogTitle>{t("Nova empresa")}</DialogTitle>
           </DialogHeader>
@@ -384,6 +431,8 @@ export function CompaniesListClient() {
               {saving ? t("Salvando…") : t("Criar")}
             </Button>
           </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
