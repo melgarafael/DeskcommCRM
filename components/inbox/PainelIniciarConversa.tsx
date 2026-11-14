@@ -65,7 +65,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 import { normalizePhoneBR, phoneForDisplay, samePhone } from "@/lib/channels/phone-variants";
-import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
+import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { assumirConversaAoAbrir } from "@/lib/inbox/assumir-conversa-ao-abrir";
 import { ChatCircle, UserCircle, Users } from "@/lib/ui/icons";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
@@ -173,7 +173,7 @@ function CorpoDoPainel({
             >
               <UserCircle size={16} weight="regular" aria-hidden className="shrink-0" />
               <span className="min-w-0 flex-1 truncate">
-                {t("Contato existente")}: {rotuloDoContato(alvoContato, t)}
+                {t("Contato existente")}: {rotuloParaAEquipe(alvoContato, t)}
               </span>
             </div>
           ) : telefone ? (
@@ -198,7 +198,7 @@ function CorpoDoPainel({
                   onClick={() => setContatoEscolhido(c)}
                 >
                   <Users size={16} weight="regular" aria-hidden className="shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{rotuloDoContato(c, t)}</span>
+                  <span className="min-w-0 flex-1 truncate">{rotuloParaAEquipe(c, t)}</span>
                   {c.phone_number && (
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {phoneForDisplay(c.phone_number)}
