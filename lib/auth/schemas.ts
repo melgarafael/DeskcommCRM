@@ -69,12 +69,6 @@ export const signupComConviteSchema = z
 
 export type SignupComConviteInput = z.infer<typeof signupComConviteSchema>;
 
-export const forgotPasswordSchema = z.object({
-  email: z.string().email("Email inválido"),
-});
-
-export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
-
 /**
  * O TETO DA SENHA É DE 72 BYTES — E É BYTES, NÃO CARACTERES.
  *
@@ -96,19 +90,44 @@ function bytesDaSenha(valor: string): number {
   return new TextEncoder().encode(valor).byteLength;
 }
 
+/**
+ * A régua da senha que alguém DEFINE para o próprio acesso entrar (#3876).
+ *
+ * Mora aqui, e não dentro do schema de redefinição, porque agora tem DOIS
+ * leitores: a redefinição de sempre (`resetPasswordSchema`, abaixo) e o
+ * "admin cria a pessoa com senha" (`lib/auth/criar-membro.ts`). Duas cópias da
+ * mesma régua divergiriam na primeira mudança — e o defeito apareceria como
+ * "a senha que a tela aceitou foi recusada na criação", longe da causa.
+ *
+ * O CADASTRO (`signupSchema`) mantém a régua dele, mais frouxa (só 8
+ * caracteres): ali quem escolhe a senha é a própria pessoa, no primeiro
+ * contato, e endurecer esse caminho é outra decisão de produto. Esta é a régua
+ * de quem está DEFININDO a senha de outra pessoa — e ela é a mesma do fluxo de
+ * redefinição, byte a byte, porque é o mesmo objeto.
+ */
+export const senhaDoAcesso = z
+  .string()
+  .min(8, "Senha deve ter pelo menos 8 caracteres")
+  .regex(/[A-Za-zÀ-ÿ]/, "Senha deve ter pelo menos uma letra")
+  .regex(/[0-9]/, "Senha deve ter pelo menos um número")
+  .regex(/[^A-Za-zÀ-ÿ0-9\s]/, "Senha deve ter pelo menos um símbolo")
+  .superRefine((valor, ctx) => {
+    if (bytesDaSenha(valor) > LIMITE_DA_SENHA_EM_BYTES) {
+      ctx.addIssue({ code: "custom", message: SENHA_LONGA_DEMAIS });
+    }
+  });
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email("Email inválido"),
+});
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
 export const resetPasswordSchema = z
   .object({
-    password: z
-      .string()
-      .min(8, "Senha deve ter pelo menos 8 caracteres")
-      .regex(/[A-Za-zÀ-ÿ]/, "Senha deve ter pelo menos uma letra")
-      .regex(/[0-9]/, "Senha deve ter pelo menos um número")
-      .regex(/[^A-Za-zÀ-ÿ0-9\s]/, "Senha deve ter pelo menos um símbolo")
-      .superRefine((valor, ctx) => {
-        if (bytesDaSenha(valor) > LIMITE_DA_SENHA_EM_BYTES) {
-          ctx.addIssue({ code: "custom", message: SENHA_LONGA_DEMAIS });
-        }
-      }),
+    // A MESMA régua do "admin define a senha" — um objeto só, dois leitores,
+    // já com o teto de 72 bytes que a main trouxe (#4313).
+    password: senhaDoAcesso,
     password_confirm: z.string(),
     // Código TOTP: só exigido quando a conta tem MFA (a sessão de recovery é
     // AAL1 e o GoTrue pede AAL2 para trocar a senha). Opcional no schema; a

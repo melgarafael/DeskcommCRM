@@ -1521,6 +1521,12 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  // A pessoa nasceu MEMBRO com senha definida pelo admin (#3876) — o outro
+  // caminho, ao lado do convite. Distinto de `member.invited` (convite emitido,
+  // acesso ainda pendente) e de `member.accepted` (a própria pessoa aceitou):
+  // aqui não há aceite nenhum, e a pergunta da trilha é "quem entregou esta
+  // senha a esta pessoa, e quando". A senha NUNCA entra no metadata.
+  "member.created",
   // A CONTA Resend da organização (#3287): conectar e desconectar. Códigos
   // próprios (não um `org.branding_updated`) porque a pergunta depois é outra —
   // "quem ligou/desligou a conta de e-mail própria, e quando" muda por qual
