@@ -3,14 +3,18 @@
 /**
  * MENSAGENS AGENDADAS — botão ao lado do Enviar e popup da CONVERSA:
  *  - as agendadas pendentes (padrão), com editar e cancelar;
- *  - "Relatório": as que já tiveram desfecho, com o status real da mensagem.
+ *  - "Relatório": as que já tiveram desfecho, com o status real da mensagem;
+ *  - "Exibir todos": os envios de TODAS as conversas que a pessoa enxerga,
+ *    paginados, com o nome do cliente (segunda parte da #3118).
  *
  * Primeira parte da #3118 (contribuição de @DIOGRO83): envio único, só nas
- * conversas que o atendente já enxerga. Repetição e a visão de todos os
- * clientes ficam para a segunda parte.
+ * conversas que o atendente já enxerga. A régua da segunda parte é a MESMA: a
+ * lista cruza a empresa pela RLS da conversa — quem não enxerga a conversa não
+ * vê o envio dela, e o envio agendado por um colega aparece para quem enxerga a
+ * conversa. Repetição segue fora deste recorte.
  */
 import { useState } from "react";
-import { CalendarClock, History, Plus, X } from "lucide-react";
+import { CalendarClock, History, Plus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -35,7 +39,12 @@ interface Agendamento {
   se_desconectado: "esperar" | "cancelar";
   motivo: string | null;
   mensagem: { status: string } | null;
+  /** Só na visão "Exibir todos": o cliente da conversa, para a linha dizer de quem é. */
+  contato?: { name: string | null; phone_number: string | null } | null;
 }
+
+/** Tamanho da página, espelhando `LIMITE_PADRAO` de `lib/agendamento-mensagem/lista.ts`. */
+const TAMANHO_DA_PAGINA = 20;
 
 /** Texto de cada desfecho e de cada motivo — `t()` com literal, nunca chave montada em runtime. */
 function rotuloDoDesfecho(d: Desfecho, t: (texto: string) => string): string {
@@ -49,6 +58,13 @@ function rotuloDoDesfecho(d: Desfecho, t: (texto: string) => string): string {
     case "na_fila":
       return t("Na fila de envio");
   }
+}
+
+/** Nome do cliente da linha do "Exibir todos": o salvo na agenda, o telefone, ou um rótulo neutro. */
+function rotuloDoContato(contato: Agendamento["contato"], t: (texto: string) => string): string {
+  const nome = contato?.name?.trim();
+  if (nome) return nome;
+  return contato?.phone_number || t("Contato sem nome");
 }
 
 function rotuloDoMotivo(motivo: string | null, t: (texto: string) => string): string | null {
@@ -67,6 +83,26 @@ function rotuloDoMotivo(motivo: string | null, t: (texto: string) => string): st
 }
 
 const chave = (conversationId: string) => ["mensagens-agendadas", conversationId] as const;
+const chaveDaEmpresa = (pagina: number) => ["mensagens-agendadas-todos", pagina] as const;
+
+/**
+ * "Exibir todos": uma página de envios da empresa inteira, mas só das conversas
+ * que a sessão enxerga — a régua é a RLS da conversa, no servidor. `limit` vai
+ * explícito na query: sem ele o servidor cai no padrão dele, não no da tela.
+ */
+function useAgendamentosDaEmpresa(pagina: number, ativo: boolean) {
+  return useQuery({
+    queryKey: chaveDaEmpresa(pagina),
+    queryFn: () =>
+      apiClient.get<{ data: Agendamento[]; meta?: { total?: number | null; has_more?: boolean } }>(
+        `/api/v1/mensagens-agendadas?limit=${TAMANHO_DA_PAGINA}&offset=${pagina * TAMANHO_DA_PAGINA}`,
+      ),
+    enabled: ativo,
+    staleTime: 0,
+    retry: 3,
+    refetchOnWindowFocus: true,
+  });
+}
 
 function useAgendamentos(conversationId: string) {
   return useQuery({
@@ -153,6 +189,10 @@ function MensagensAgendadasDialog({
   const consulta = useAgendamentos(conversationId);
   const [relatorio, setRelatorio] = useState(false);
   const [editando, setEditando] = useState<Agendamento | "novo" | null>(null);
+  const [verTodos, setVerTodos] = useState(false);
+  const [pagina, setPagina] = useState(0);
+  const empresa = useAgendamentosDaEmpresa(pagina, verTodos && !editando);
+  const listaDaEmpresa = empresa.data?.data ?? [];
 
   const todos = consulta.data?.data ?? [];
   const pendentes = todos.filter((a) => a.status === "agendada");
@@ -174,9 +214,11 @@ function MensagensAgendadasDialog({
     ? editando === "novo"
       ? t("Criar agendamento")
       : t("Editar agendamento")
-    : relatorio
-      ? t("Relatório")
-      : t("Mensagens agendadas");
+    : verTodos
+      ? t("Envios de todos os clientes")
+      : relatorio
+        ? t("Relatório")
+        : t("Mensagens agendadas");
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -199,20 +241,94 @@ function MensagensAgendadasDialog({
           />
         ) : (
           <div className="space-y-3">
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant={verTodos ? "secondary" : "outline"}
+                size="sm"
+                aria-pressed={verTodos}
+                onClick={() => {
+                  setRelatorio(false);
+                  setPagina(0);
+                  setVerTodos((v) => !v);
+                }}
+                data-testid="agendadas-exibir-todos"
+              >
+                <Users className="mr-1 size-4" aria-hidden />
+                {verTodos ? t("Só desta conversa") : t("Exibir todos")}
+              </Button>
               <Button
                 type="button"
                 variant={relatorio ? "secondary" : "outline"}
                 size="sm"
                 aria-pressed={relatorio}
-                onClick={() => setRelatorio((r) => !r)}
+                onClick={() => {
+                  setVerTodos(false);
+                  setRelatorio((r) => !r);
+                }}
               >
                 <History className="mr-1 size-4" aria-hidden />
                 {relatorio ? t("Ocultar") : t("Relatório")}
               </Button>
             </div>
 
-            {consulta.isPending ? (
+            {verTodos ? (
+              <>
+                {empresa.isPending ? (
+                  <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>
+                ) : empresa.isError ? (
+                  <p className="text-sm text-muted-foreground">{t("Não consegui carregar os envios.")}</p>
+                ) : listaDaEmpresa.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("Nenhum envio agendado nas conversas que você enxerga.")}
+                  </p>
+                ) : (
+                  <ul className="divide-y rounded-md border">
+                    {listaDaEmpresa.map((a) => {
+                      const d = desfechoDoAgendamento(a);
+                      return (
+                        <li key={a.id} className="flex items-center gap-3 p-3 text-sm">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">{a.title || a.body}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {rotuloDoContato(a.contato, t)} · {quando(a.scheduled_at)}
+                            </p>
+                          </div>
+                          <Badge variant={a.status === "agendada" ? "info" : d.tom}>
+                            {a.status === "agendada" ? t("Agendada") : rotuloDoDesfecho(d.desfecho, t)}
+                          </Badge>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {t("Página")} {pagina + 1}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={pagina === 0}
+                      onClick={() => setPagina((p) => Math.max(0, p - 1))}
+                    >
+                      {t("Anterior")}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!empresa.data?.meta?.has_more}
+                      onClick={() => setPagina((p) => p + 1)}
+                    >
+                      {t("Próxima")}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : consulta.isPending ? (
               <p className="text-sm text-muted-foreground">{t("Carregando…")}</p>
             ) : relatorio ? (
               historico.length === 0 ? (
@@ -275,7 +391,7 @@ function MensagensAgendadasDialog({
               </ul>
             )}
 
-            {!relatorio && (
+            {!relatorio && !verTodos && (
               <div className="flex justify-end">
                 <Button type="button" onClick={() => setEditando("novo")}>
                   <Plus className="mr-1 size-4" aria-hidden /> {t("Adicionar")}
