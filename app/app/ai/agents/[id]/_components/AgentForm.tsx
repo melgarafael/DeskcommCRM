@@ -1581,7 +1581,7 @@ export function AgentForm(props: Props) {
                       {t("Só quando o cliente mandar áudio")}
                     </SelectItem>
                     <SelectItem value="quando_pede">
-                      {t("Quando o cliente mandar áudio ou pedir por escrito")}
+                      {t("Quando o cliente mandar ou pedir áudio")}
                     </SelectItem>
                     <SelectItem value="sempre">{t("Sempre")}</SelectItem>
                     <SelectItem value="nunca">

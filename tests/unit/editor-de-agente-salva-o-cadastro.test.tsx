@@ -627,7 +627,7 @@ describe("editor de agente — quando falar: o cliente pede (#4345)", () => {
   it("a versão gravada com o modo novo mostra a opção no seletor", () => {
     const container = abrirComVoz("quando_pede");
     expect(container.querySelector("#voz_quando")).toHaveTextContent(
-      "Quando o cliente mandar áudio ou pedir por escrito",
+      "Quando o cliente mandar ou pedir áudio",
     );
   });
 
@@ -654,7 +654,7 @@ describe("editor de agente — quando falar: o cliente pede (#4345)", () => {
   it("em espanhol o rótulo novo sai do dicionário", () => {
     const container = abrirComVoz("quando_pede", "es");
     expect(container.querySelector("#voz_quando")).toHaveTextContent(
-      "Cuando el cliente envíe audio o lo pida por escrito",
+      "Cuando el cliente envíe o pida audio",
     );
   });
 });
