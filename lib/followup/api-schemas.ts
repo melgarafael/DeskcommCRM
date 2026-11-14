@@ -53,9 +53,29 @@ export const triggerConfigSchema = z.discriminatedUnion("kind", [
   z.strictObject({kind:z.literal("appointment_no_show"),params:z.strictObject({event_type_ids:z.array(z.string().uuid()).optional()}).optional(),...CANCEL_ON_REPLY}),
   z.strictObject({ kind: z.literal("manual"), ...CANCEL_ON_REPLY }),
   z.strictObject({ kind: z.literal("webhook"), ...CANCEL_ON_REPLY }),
+  /**
+   * #4587 — o filtro do gatilho "negócio criado": em QUAL funil e/ou com QUAL
+   * etiqueta o card precisa nascer.
+   *
+   * Por que ele existe: só há UM fluxo vivo por contato
+   * (`idx_followup_enrollments_one_live`). Sem filtro, todo card novo de
+   * qualquer funil arma todo fluxo `lead_created` da conta — o card aberto no
+   * funil B inscrevia o contato no fluxo do funil A, e essa inscrição, por ser
+   * a única permitida, BLOQUEAVA a do funil certo (23505 → skip). O fluxo que
+   * devia falar com o cliente ficava calado e o errado falava.
+   *
+   * Ausentes = comportamento de sempre: qualquer funil, qualquer etiqueta.
+   * `tag` é comparada já normalizada (`lib/contacts/tag-normalizada`), porque é
+   * essa a forma que o banco guarda.
+   */
   z.strictObject({
     kind: z.literal("lead_created"),
-    params: z.strictObject({}).optional(),
+    params: z
+      .strictObject({
+        pipeline_id: z.string().uuid().optional(),
+        tag: z.string().trim().min(1).max(40).optional(),
+      })
+      .optional(),
     ...CANCEL_ON_REPLY,
   }),
   z.strictObject({
