@@ -51,8 +51,8 @@ async function stripe(metodo: "GET" | "POST" | "DELETE", caminho: string, corpo?
 async function main(): Promise<void> {
   const orgId = randomUUID();
   const adaptador = criarAdaptadorStripe({ lerChave: async () => chave, marca: `smoke-${orgId.slice(0, 8)}` });
-  const plano = { id: randomUUID(), nome: "Smoke mensal", precoCents: 4990, intervalo: "mes" as const };
-  const novo = { id: randomUUID(), nome: "Smoke maior", precoCents: 9990, intervalo: "mes" as const };
+  const plano = { id: randomUUID(), nome: "Smoke mensal", precoCents: 4990, moeda: "BRL" as const, intervalo: "mes" as const };
+  const novo = { id: randomUUID(), nome: "Smoke maior", precoCents: 9990, moeda: "BRL" as const, intervalo: "mes" as const };
   const urlDoWebhook = `https://example.com/api/v1/webhooks/cobranca/stripe-smoke-${orgId}`;
   let cliente: string | null = null;
   let assinatura: string | null = null;

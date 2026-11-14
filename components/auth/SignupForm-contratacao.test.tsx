@@ -5,7 +5,7 @@ vi.mock("@/app/actions/auth/signUp", () => ({ signUp: h.signup }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: h.replace }) }));
 import { SignupForm } from "./SignupForm";
 const P = "11111111-1111-4111-8111-111111111111", T = "22222222-2222-4222-8222-222222222222";
-const planos = [{ id: P, nome: "Pago", preco_cents: 120000, intervalo: "ano" as const, trial_dias: 0 }, { id: T, nome: "Teste", preco_cents: 10000, intervalo: "mes" as const, trial_dias: 7 }];
+const planos = [{ id: P, nome: "Pago", preco_cents: 120000, moeda: "BRL", intervalo: "ano" as const, trial_dias: 0 }, { id: T, nome: "Teste", preco_cents: 10000, moeda: "BRL", intervalo: "mes" as const, trial_dias: 7 }];
 function preencher() {
   fireEvent.change(screen.getByLabelText("Nome da empresa"), { target: { value: "Empresa fictícia" } });
   fireEvent.change(screen.getByLabelText("Email"), { target: { value: "pessoa@example.test" } });

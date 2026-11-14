@@ -20,8 +20,14 @@ export type Modo = (typeof MODOS)[number];
 export const INTERVALOS = ["mes", "ano"] as const;
 export type Intervalo = (typeof INTERVALOS)[number];
 
-/** O Asaas não tem moeda e o boleto da Stripe é só BRL. Alargar = alargar o CHECK. */
-export const MOEDAS = ["BRL"] as const;
+/**
+ * A moeda do plano (migration 9332). A Stripe cobra em qualquer uma; o Asaas
+ * não tem moeda e só serve BRL, e o boleto da Stripe também é só BRL. Alargar =
+ * alargar o CHECK no mesmo commit.
+ */
+export const MOEDAS = ["BRL", "USD", "EUR"] as const;
+/** As moedas que o Asaas cobra: plano fora delas é recusado na rota e no adaptador. */
+export const MOEDAS_DO_ASAAS: readonly Moeda[] = ["BRL"];
 export type Moeda = (typeof MOEDAS)[number];
 
 export const AVISOS_DA_REGUA = ["trial_acabando", "venceu", "suspende_em_breve", "suspensa"] as const;

@@ -16,6 +16,7 @@ import {
   PROVEDORES_DE_COBRANCA,
   type ErroDeLeitura,
   type Intervalo,
+  type Moeda,
   type Modo,
   type ProvedorDeCobranca,
 } from "@/lib/cobranca/vocabulario";
@@ -27,7 +28,8 @@ export interface PlanoParaProvedor {
   readonly id: string;
   readonly nome: string;
   readonly precoCents: number;
-  /** Moeda sempre BRL (CHECK de `cobranca_planos.moeda`). */
+  /** A moeda do plano (CHECK de `cobranca_planos.moeda`, migration 9332). */
+  readonly moeda: Moeda;
   readonly intervalo: Intervalo;
 }
 

@@ -350,7 +350,7 @@ describe("verificarWebhook", () => {
 
 describe("garantirCliente e iniciarAssinatura", () => {
   const ORG = "11111111-1111-4111-8111-111111111111";
-  const PLANO = { id: "22222222-2222-4222-8222-222222222222", nome: "Pro", precoCents: 4990, intervalo: "mes" as const };
+  const PLANO = { id: "22222222-2222-4222-8222-222222222222", nome: "Pro", precoCents: 4990, moeda: "BRL" as const, intervalo: "mes" as const };
   const PRODUTO = `dc_plano_${PLANO.id}`;
   const SESSAO = { corpo: { id: "cs_test_1", url: "https://checkout.stripe.com/c/pay/cs_test_1", expires_at: 1790086400 } };
   const base = {
@@ -430,6 +430,24 @@ describe("garantirCliente e iniciarAssinatura", () => {
     });
     // Sem payment_method_types: cartão e boleto aparecem conforme o painel da conta.
     expect(checkout?.headers.get("idempotency-key")).toBe(`${base.chaveIdempotencia}:checkout`);
+  });
+
+  it("⭐ plano em dólar ou euro (migration 9332): o Checkout cobra na moeda do plano e a página segue o navegador", async () => {
+    for (const [moeda, esperada] of [["USD", "usd"], ["EUR", "eur"]] as const) {
+      const { adaptador, chamadas } = montar({ "POST /products": { corpo: { id: PRODUTO } }, "POST /checkout/sessions": SESSAO });
+      await adaptador.iniciarAssinatura({ ...base, plano: { ...PLANO, moeda } });
+      const corpo = Object.fromEntries(chamadas.find((c) => c.rota === "POST /checkout/sessions")?.corpo ?? []);
+      expect(corpo["line_items[0][price_data][currency]"]).toBe(esperada);
+      expect(corpo.locale).toBe("auto");
+    }
+  });
+
+  it("⭐ o proporcional de um plano em dólar sai em dólar, nunca em real", async () => {
+    const { adaptador, chamadas } = montar({ "POST /products": { corpo: { id: PRODUTO } }, "POST /checkout/sessions": SESSAO });
+    await adaptador.iniciarAjusteProporcional({ ...base, plano: { ...PLANO, moeda: "USD" }, valorCents: 3065 });
+    expect(Object.fromEntries(chamadas.find((c) => c.rota === "POST /checkout/sessions")?.corpo ?? [])).toMatchObject({
+      "line_items[0][price_data][currency]": "usd",
+    });
   });
 
   it("⭐ cobra o proporcional numa sessão avulsa e consulta o status direto na Stripe", async () => {
@@ -676,7 +694,7 @@ describe("lerSituacao", () => {
 });
 
 describe("trocarPlano, cancelarNoFim, prepararWebhook e portal", () => {
-  const NOVO = { id: "33333333-3333-4333-8333-333333333333", nome: "Max", precoCents: 9990, intervalo: "mes" as const };
+  const NOVO = { id: "33333333-3333-4333-8333-333333333333", nome: "Max", precoCents: 9990, moeda: "BRL" as const, intervalo: "mes" as const };
   const PRODUTO_NOVO = `dc_plano_${NOVO.id}`;
   const URL_DO_WEBHOOK = "https://crm.example.com/api/v1/webhooks/cobranca/stripe";
 
@@ -697,6 +715,17 @@ describe("trocarPlano, cancelarNoFim, prepararWebhook e portal", () => {
       proration_behavior: "none",
       "metadata[plano_id]": NOVO.id,
     });
+  });
+
+  it("⭐ trocarPlano para um plano em euro (migration 9332) manda a moeda dele à assinatura", async () => {
+    const { adaptador, chamadas } = montar({
+      "GET /subscriptions/sub_1QfixtureAtiva": { corpo: objetos.assinatura },
+      "POST /products": { corpo: { id: PRODUTO_NOVO } },
+      "POST /subscriptions/sub_1QfixtureAtiva": { corpo: objetos.assinatura },
+    });
+    await adaptador.trocarPlano({ assinaturaRef: "sub_1QfixtureAtiva", plano: { ...NOVO, moeda: "EUR" } });
+    const post = chamadas.find((c) => c.rota === "POST /subscriptions/sub_1QfixtureAtiva");
+    expect(Object.fromEntries(post?.corpo ?? [])).toMatchObject({ "items[0][price_data][currency]": "eur" });
   });
 
   it("trocarPlano em assinatura encerrada: a recusa da Stripe sobe não transitória", async () => {
