@@ -92,6 +92,8 @@ const orgAtiva: ActiveOrg = { orgId: ORG, name: "Clínica", role: "manager" };
 
 const executadas: string[] = [];
 let foraDaJanela = false;
+/** Tipos cujo executor devolve `failed` (o envio não saiu), como o WhatsApp em `lead.won` medido na prova de tela. */
+let falham: string[] = [];
 for (const tipo of ["add_tag", "send_whatsapp_message", "send_email"]) {
   registerAction({
     type: tipo,
@@ -100,7 +102,7 @@ for (const tipo of ["add_tag", "send_whatsapp_message", "send_email"]) {
       : {}),
     async execute() {
       executadas.push(tipo);
-      return { type: tipo, status: "success" };
+      return falham.includes(tipo) ? { type: tipo, status: "failed", error: "internal_error" } : { type: tipo, status: "success" };
     },
   });
 }
@@ -144,6 +146,7 @@ beforeEach(() => {
   vi.mocked(audit).mockClear();
   executadas.length = 0;
   foraDaJanela = false;
+  falham = [];
   mundo();
 });
 
@@ -164,6 +167,29 @@ describe("disparar o que ficou parado no assistido", () => {
     ]);
     expect(statusDoAviso()).toBe("resolved");
     expect(vi.mocked(audit)).toHaveBeenCalledWith(expect.objectContaining({ action: "automation.held_actions_dispatched" }));
+  });
+
+  it("nada saiu (todas as paradas falharam): o run fica na Atividade, o aviso volta a ficar aberto e a resposta é erro", async () => {
+    // Medido na prova de tela: o WhatsApp de `lead.won` falha com `internal_error`.
+    // Responder 201 e deixar o aviso resolvido sumia com a única porta para
+    // disparar de novo, sem nada ter chegado ao cliente.
+    falham = ["send_whatsapp_message", "send_email"];
+
+    const r = await clicar();
+    expect(r.status).toBe(422);
+    expect(((await r.json()) as { error: { code: string } }).error.code).toBe("dispatch_failed");
+    const run = banco.inserts.find((i) => i.tabela === "automation_rule_runs")!.linha as { status: string };
+    expect(run.status).toBe("failed");
+    expect(statusDoAviso()).toBe("open");
+  });
+
+  it("saiu uma parte: o aviso fica resolvido, porque reabrir convidaria a mandar de novo o que já saiu", async () => {
+    falham = ["send_whatsapp_message"];
+
+    const r = await clicar();
+    expect(r.status).toBe(201);
+    expect(executadas).toEqual(["send_whatsapp_message", "send_email"]);
+    expect(statusDoAviso()).toBe("resolved");
   });
 
   it("o segundo clique não dispara de novo: o aviso já fechado é a trava", async () => {

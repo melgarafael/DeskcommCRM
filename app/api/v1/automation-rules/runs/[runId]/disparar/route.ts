@@ -14,6 +14,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * "Marcar resolvido") recebe 409 e nada sai duas vezes. Grava um run NOVO com
  * o resultado, cada ação apontando para o run parado em
  * `detail.dispatched_from_run_id`.
+ *
+ * Se NENHUMA ação parada saiu (todas falharam), o run fica gravado, o aviso
+ * volta a ficar aberto e a resposta é 422 `dispatch_failed`: nada chegou ao
+ * cliente, e o aviso é a única porta para tentar de novo. Se saiu uma parte,
+ * o aviso fica resolvido — reabrir convidaria a mandar de novo o que já saiu.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -213,6 +218,9 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       return fail("internal_error", insErr?.message ?? "run_insert_failed", 500, { requestId });
     }
 
+    const saiuAlgo = results.some((r) => r.status === "success");
+    if (!saiuAlgo) await reabrir();
+
     void audit({
       action: "automation.held_actions_dispatched",
       actorUserId: user.id,
@@ -223,6 +231,14 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       metadata: { held_run_id: runId, rule_id: rule.id, action_types: paradas.map(({ r }) => r.type) },
     });
 
+    if (!saiuAlgo) {
+      return fail(
+        "dispatch_failed",
+        t("Não foi possível disparar. O aviso continua aberto se nada saiu; leia o motivo na atividade das automações."),
+        422,
+        { requestId, details: { run_id: novoRun.id } },
+      );
+    }
     return ok(novoRun, { requestId, status: 201 });
   } catch (err) {
     await reabrir();
