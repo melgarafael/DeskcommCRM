@@ -81367,6 +81367,23 @@ end $fonte_do_lead_ads$;
 
 notify pgrst, 'reload schema';
 
+-- ---- catálogo: capacidade do produto (migration 9341) ----
+alter table public.catalog_products add column if not exists capacidade text;
+
+do $capacidade$
+begin
+  alter table public.catalog_products drop constraint if exists catalog_products_capacidade_tamanho;
+  alter table public.catalog_products
+    add constraint catalog_products_capacidade_tamanho
+    check (capacidade is null or char_length(capacidade) <= 60);
+end
+$capacidade$;
+
+comment on column public.catalog_products.capacidade is
+  'Capacidade do produto (opcional, texto livre: 128GB, 1TB, 500ml). A empresa liga em settings.catalogo.capacidade.';
+
+notify pgrst, 'reload schema';
+
 -- ---- anonimizar alcança as fichas fundidas: as que já ficaram para trás (migration 9243) ----
 -- A segunda metade da 9243. Fica no fim porque a cascata e os gatilhos que ela
 -- dispara precisam existir; não cria função, então pode ficar depois da VARREDURA anon.

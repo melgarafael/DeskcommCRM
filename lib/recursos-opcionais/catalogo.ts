@@ -724,6 +724,18 @@ const DA_EMPRESA: RecursoOpcional[] = [
     ler: peloSettings((s) => capacidadesLigadas(s, []).includes("apresentacao_do_catalogo")),
   },
   {
+    id: "capacidade_do_produto",
+    nome: "Capacidade do produto",
+    oQueFaz:
+      "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/tenant",
+    capacidade: "capacidade_do_produto",
+    ler: peloSettings((s) => capacidadesLigadas(s, []).includes("capacidade_do_produto")),
+  },
+  {
     id: "propostas_da_empresa",
     nome: "Proposta comercial da empresa",
     oQueFaz: "Com o módulo do servidor ligado, a empresa liga as propostas para si.",
