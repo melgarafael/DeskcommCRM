@@ -81452,3 +81452,43 @@ begin
   end loop;
 end
 $fichas_absorvidas$;
+
+-- ---- o módulo opcional POR EMPRESA (migration 9217, #3868) ----
+-- Espelho da 9217. Não cria função, então pode ficar depois da VARREDURA anon —
+-- e é o que o `tests/invariants/baseline-e-cadeia-chegam-ao-mesmo-schema.test.ts`
+-- cobra: instalação nova e atualização precisam nascer com a MESMA tabela, o
+-- mesmo comentário e a mesma ACL. Linha ausente = herda a instalação; a
+-- instalação continua sendo o teto (ver o cabeçalho da migration).
+create table if not exists public.organization_modules (
+  organization_id uuid        not null references public.organizations(id) on delete cascade,
+  modulo          text        not null,
+  estado          text        not null,
+  updated_at      timestamptz not null default now(),
+  updated_by      uuid,
+  constraint organization_modules_pkey primary key (organization_id, modulo),
+  constraint organization_modules_modulo_formato
+    check (modulo ~ '^[a-z][a-z0-9_]{2,40}$'),
+  constraint organization_modules_estado_valido
+    check (estado in ('ligado', 'desligado'))
+);
+
+comment on table public.organization_modules is
+  'Exceção de módulo opcional POR ORGANIZAÇÃO (migration 9217, issue #3868). Linha ausente = herda a instalação (platform_config, 0341). Instalação desligada vence a linha `ligado`: o servidor é teto. Só módulos por FLAG — honorarios/financeiro (módulos de tabela, ADR-0002) não valem aqui. Lida por lib/instalacao/modulos.ts e escrita por app/actions/settings/updateModuloDaEmpresa.ts; service_role apenas, sem policy.';
+
+comment on column public.organization_modules.estado is
+  'ligado = a empresa tem o módulo (desde que a instalação também tenha); desligado = a empresa não tem, mesmo com a instalação ligada. Nunca apaga dado: é só a decisão de leitura.';
+
+comment on column public.organization_modules.updated_by is
+  'Quem trocou, para a trilha de auditoria (a ação também grava em audit()). Nulo em escrita de script.';
+
+alter table public.organization_modules enable row level security;
+
+revoke all on public.organization_modules from public, anon, authenticated;
+grant select, insert, update, delete on public.organization_modules to service_role;
+
+drop trigger if exists trg_organization_modules_touch on public.organization_modules;
+create trigger trg_organization_modules_touch
+  before update on public.organization_modules
+  for each row execute function public.fn_touch_updated_at();
+
+notify pgrst, 'reload schema';

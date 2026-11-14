@@ -587,6 +587,11 @@ export const AUDIT_ACTIONS = [
   // as empresas deste servidor podiam ligar um banco de outro sistema?" só tem
   // resposta aqui.
   "platform.modulo_updated",
+  // Um módulo opcional dado ou NEGADO a UMA empresa (linha em
+  // `organization_modules`, migration 9217, issue #3868). A linha guarda o estado;
+  // a pergunta "desde quando este cliente tem cobrança/banco externo?" — e,
+  // principalmente, "quem tirou o módulo dele?" — só tem resposta aqui.
+  "organization.modulo_updated",
   // A lista de endereços da rede INTERNA que a instalação pode alcançar
   // (`platform_settings.internal_destinations`, migration 0324, decisão 22-d).
   // Auditável pela mesma razão da linha acima e com alcance maior: cada entrada

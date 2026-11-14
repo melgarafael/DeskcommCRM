@@ -34,6 +34,16 @@
  * ponytail: sem memo — é uma leitura por chave primária, no mesmo `Promise.all`
  * das consultas que o layout já faz. Memo de processo (como `comportamento.ts`)
  * só se isto aparecer medido num perfil.
+ *
+ * ─── A camada POR EMPRESA (#3868) ───────────────────────────────────────────
+ *
+ * O interruptor nasceu da instalação e valia para todas as empresas hospedadas.
+ * Quem revende não tinha como dar `propostas` a um cliente e negar a outro. Agora
+ * `organization_modules` (migration 9217) guarda a EXCEÇÃO de uma empresa, e
+ * `modulosLigados(db, organizacaoId)` aplica: linha da empresa vence, ausência
+ * herda a instalação, e instalação desligada vence tudo (o servidor é teto).
+ * Quem não configura nada — e quem chama sem `organizacaoId` — vê exatamente o
+ * que via antes.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type pg from "pg";
@@ -116,6 +126,34 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "campanha_por_email",
   "revisao_por_km",
 ] as const satisfies readonly ModuloOpcional[];
+
+/**
+ * Os módulos por FLAG que a camada POR EMPRESA governa (#3868). O interruptor da
+ * instalação continua existindo e continua sendo o TETO; o que muda é que cada
+ * empresa pode ter a EXCEÇÃO dela (`organization_modules`, migration 9217).
+ *
+ * De fora, e por motivos diferentes:
+ *
+ *  - `cobranca`: decisão SÓ de quem administra o servidor (spec da cobrança §9) e
+ *    o runtime a pergunta por `fn_cobranca_ligada()`, que não conhece organização.
+ *    O que é cobrado de um cliente é PLANO, não módulo — anti-escopo do #3868.
+ *  - `login_codex`: é do painel desta instalação (`/admin/sistema`), não uma
+ *    capacidade que a empresa use.
+ *  - `honorarios` e `financeiro` já ficam fora por mecanismo: são módulos de
+ *    TABELA (ADR-0002), provisionados por instalação (F3 do #3868).
+ */
+export const MODULOS_POR_EMPRESA = [
+  "banco_externo",
+  "fluxos_atendimento",
+  "propostas",
+  "crm_b2b",
+  "setores",
+  "avisos",
+  "conferir_whatsapp",
+  "mcp_por_agente",
+  "cold_call",
+] as const satisfies readonly (typeof MODULOS_OPCIONAIS_POR_FLAG)[number][];
+export type ModuloPorEmpresa = (typeof MODULOS_POR_EMPRESA)[number];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
  * Não inclui os módulos de tabela — esses vêm de `modulos_instalados`. */
@@ -208,13 +246,71 @@ const LIGADO = "ligado";
 const DESLIGADO = "desligado";
 
 /** Os módulos ligados nesta instalação, dos dois mecanismos. Nunca lança: erro de banco =
- * nenhum módulo daquele mecanismo — falha fechada, os dois lados. */
-export async function modulosLigados(db: SupabaseClient): Promise<ModuloOpcional[]> {
-  const [porFlag, porTabela] = await Promise.all([
+ * nenhum módulo daquele mecanismo — falha fechada, os dois lados.
+ *
+ * `organizacaoId`, quando vem, aplica a camada POR EMPRESA (#3868) só sobre os módulos
+ * por FLAG — a instalação continua sendo o TETO:
+ *
+ *   1. a linha da empresa vence (`ligado` liga, `desligado` tira);
+ *   2. sem linha, a empresa herda a instalação — quem nunca configurou sente nada;
+ *   3. instalação desligada vence a linha `ligado` da empresa, sempre;
+ *   4. só o valor `ligado` liga; qualquer outro conta como desligado.
+ *
+ * SEM `organizacaoId` nada muda — nem a resposta, nem o número de consultas: é o que
+ * mantém intactos os 90 arquivos que ainda perguntam só pela instalação (F2 do #3868).
+ */
+export async function modulosLigados(
+  db: SupabaseClient,
+  organizacaoId?: string | null,
+): Promise<ModuloOpcional[]> {
+  const [porFlag, porTabela, daEmpresa] = await Promise.all([
     modulosLigadosPorFlag(db),
     modulosDeTabelaAtivos(db),
+    organizacaoId ? modulosDesligadosNaEmpresa(db, organizacaoId) : Promise.resolve(null),
   ]);
-  return [...porFlag, ...porTabela];
+  // `null` = não perguntaram pela empresa. `ok:false` = a leitura da empresa falhou:
+  // falha fechada nos módulos por FLAG, como a chave da instalação ilegível. Os módulos
+  // de TABELA não dependem desta leitura e seguem a instalação, como hoje.
+  const desligados = daEmpresa === null ? null : daEmpresa.ok ? daEmpresa.desligados : "todos";
+  const flags = desligados === "todos" ? [] : porFlag.filter((m) => !desligados?.has(m));
+  return [...flags, ...porTabela];
+}
+
+/** As linhas da EMPRESA que tiram módulo (só `desligado` sai da lista; `ligado`
+ * confirma o que a instalação já ligou). Nunca lança. */
+async function modulosDesligadosNaEmpresa(
+  db: SupabaseClient,
+  organizacaoId: string,
+): Promise<{ ok: true; desligados: Set<ModuloOpcional> } | { ok: false }> {
+  try {
+    const { data, error } = await db
+      .from("organization_modules")
+      .select("modulo, estado")
+      .eq("organization_id", organizacaoId);
+    if (error) {
+      logger.warn("módulos da empresa: leitura recusada — tratando os módulos por flag como desligados", {
+        organization_id: organizacaoId,
+        codigo: error.code,
+        detalhe: error.message,
+      });
+      return { ok: false };
+    }
+    const linhas = (data ?? []) as Array<{ modulo: string; estado: string }>;
+    const desligados = new Set<ModuloOpcional>();
+    for (const modulo of MODULOS_POR_EMPRESA) {
+      const linha = linhas.find((l) => l.modulo === modulo);
+      // Só `ligado` liga — a mesma régua da `platform_config` (0341). A CHECK da
+      // migration 9217 recusa o resto; valor estranho que entre por SQL manual não liga.
+      if (linha !== undefined && linha.estado !== LIGADO) desligados.add(modulo);
+    }
+    return { ok: true, desligados };
+  } catch (erro) {
+    logger.warn("módulos da empresa: leitura falhou — tratando os módulos por flag como desligados", {
+      organization_id: organizacaoId,
+      detalhe: erro instanceof Error ? erro.message : String(erro),
+    });
+    return { ok: false };
+  }
 }
 
 async function modulosLigadosPorFlag(
@@ -272,8 +368,12 @@ async function modulosDeTabelaAtivos(
   }
 }
 
-export async function moduloLigado(db: SupabaseClient, modulo: ModuloOpcional): Promise<boolean> {
-  return (await modulosLigados(db)).includes(modulo);
+export async function moduloLigado(
+  db: SupabaseClient,
+  modulo: ModuloOpcional,
+  organizacaoId?: string | null,
+): Promise<boolean> {
+  return (await modulosLigados(db, organizacaoId)).includes(modulo);
 }
 
 /**
@@ -289,6 +389,10 @@ const memoDoModulo = new Map<ModuloOpcional, { ligado: boolean; ate: number }>()
 /**
  * `moduloLigado` com memo de processo — para o caminho QUENTE (o turno do
  * agente). Telas e rotas seguem lendo o banco a cada vez.
+ *
+ * Só a INSTALAÇÃO: o memo é por módulo, então uma decisão por empresa não cabe
+ * aqui sem uma chave por organização — é a F2 do #3868, junto com os chamadores
+ * que ainda não passam a organização.
  */
 export async function moduloLigadoComMemo(
   db: SupabaseClient,

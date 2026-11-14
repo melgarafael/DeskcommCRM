@@ -103,6 +103,11 @@ const PROVA_PROPRIA: readonly Excecao[] = [
   { tabela: "config_aviso_de_agendamento", razao: "tests/invariants/aviso-de-agendamento-escrita.test.ts — dois tenants reais por JWT: admin lê só a própria organização, agent e viewer não leem nada, e a escrita direta por authenticated é negada nos três verbos (a única porta é fn_definir_aviso_de_agendamento, que revalida papel, suporte e MFA)" },
   { tabela: "entregas_de_aviso_de_agendamento", razao: "tests/invariants/aviso-de-agendamento-escrita.test.ts — manager lê o histórico da própria organização e zero do vizinho; viewer lê zero; escrita direta por authenticated negada nos três verbos" },
   { tabela: "organization_extensions", razao: "tests/invariants/extensoes-declarativas.test.ts — dois tenants com vínculos reais: leitura positiva local/negativa cruzada por JWT, revogação de membership e escrita direta negada" },
+  {
+    tabela: "organization_modules",
+    razao:
+      "tests/invariants/modulos-por-empresa.test.ts (migration 9217, #3868) — tabela exclusiva do servidor: RLS ligada e NENHUMA policy, anon e authenticated sem privilégio (o JWT de um membro da própria organização recebe permission denied), service_role com os quatro verbos; PK (organization_id, modulo), CHECKs de estado e formato; e a prova de que desligar um módulo não apaga o dado do módulo (setores da empresa intactos ao desligar e ao religar).",
+  },
   { tabela: "extension_operations", razao: "tests/invariants/extensoes-declarativas.test.ts — recibo de instância fechado a anon/authenticated, inclusive configure com organização; RPCs service-only revalidam ator e papel" },
   { tabela: "channel_routing_policies", razao: "tests/invariants/channel-routing.test.ts — dois tenants reais, leitura positiva local e negativa cruzada por JWT; FK composta rejeita canal de outra org" },
   { tabela: "channel_routing_responsibles", razao: "tests/invariants/channel-routing.test.ts — JWT do tenant B não lê responsáveis de A; revogação remove vínculo e claim revalida membro ativo" },
