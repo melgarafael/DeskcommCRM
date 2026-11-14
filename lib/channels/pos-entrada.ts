@@ -54,6 +54,9 @@ import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-cliq
 import { casarOrigemPorHorario } from "@/lib/leads/origem-por-horario";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
+import { ehFraseDeSemInteresse } from "@/lib/opt-out/sem-interesse";
+import { registrarSemInteresse } from "@/lib/lgpd/registrar-sem-interesse";
+import { campanhaDeProspeccaoDaConversa } from "@/lib/lgpd/sem-interesse";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
@@ -164,6 +167,10 @@ export async function aplicarEfeitosPosEntrada(
   }
 
   await aplicarOptOut(admin, entrada);
+  // "Não tenho interesse" na conversa de PROSPECÇÃO vira recusa de marketing (D3).
+  // Depois do PARAR (que, quando casa, já cobre tudo) e ANTES do lead: o passo 2
+  // recusa recriar o card da prospecção que este passo acabou de encerrar.
+  await aplicarSemInteresseDaProspeccao(admin, entrada);
   // Contato pessoal (spec 21, etapa 6): a mensagem já está gravada, com o
   // carimbo de não-lida que o ingest gravou — mas NADA nasce dela: sem negócio,
   // sem campanha, sem follow-up, sem IA (fila e resposta). O STOP continua na
@@ -289,6 +296,11 @@ export async function aplicarEfeitosDaRecuperacao(
     if (!entrada.optOutJaTratado) {
       await passoDaRecuperacao("opt-out", () => aplicarOptOut(admin, entrada), entrada);
     }
+    await passoDaRecuperacao(
+      "sem-interesse",
+      () => aplicarSemInteresseDaProspeccao(admin, entrada),
+      entrada,
+    );
     if (await ehContatoPessoal(admin, entrada)) {
       logger.info("pos-entrada: recuperação pulada — contato pessoal", {
         organization_id: entrada.organizationId,
@@ -496,6 +508,67 @@ async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promi
       detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
     });
     return false;
+  }
+}
+
+/**
+ * 1b · "Não tenho interesse" numa conversa de PROSPECÇÃO (decisão D3).
+ *
+ * Grava a recusa de marketing (`lib/lgpd/registrar-sem-interesse.ts`) e encerra o
+ * negócio da prospecção. Só na conversa que a prospecção abriu
+ * (`conversations.metadata.prospecting_campaign_id`, gravado em
+ * `lib/prospecting/store.ts`): num atendimento comum a mesma frase é cliente
+ * escolhendo entre ofertas, e nada é gravado.
+ *
+ * Não é o PARAR e não mexe em `is_blocked`: quem casa o PARAR já foi tratado no
+ * passo 1, e aqui sai sem fazer nada. A consulta da conversa só roda quando a frase
+ * casa — a mensagem comum não paga leitura a mais.
+ *
+ * NUNCA lança: a mensagem já está gravada.
+ */
+async function aplicarSemInteresseDaProspeccao(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+  if (ehPedidoDeOptOut(entrada.texto) || !ehFraseDeSemInteresse(entrada.texto)) return;
+  try {
+    const { data, error } = await admin
+      .from("conversations")
+      .select("metadata")
+      .eq("organization_id", entrada.organizationId)
+      .eq("id", entrada.conversationId)
+      .maybeSingle();
+    if (error) {
+      logger.warn("pos-entrada: conversa não lida para o 'sem interesse' (nada gravado)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        detail: error.message.slice(0, 160),
+      });
+      return;
+    }
+    const campanhaId = campanhaDeProspeccaoDaConversa(
+      (data as { metadata?: unknown } | null)?.metadata,
+    );
+    if (!campanhaId) return;
+
+    const r = await registrarSemInteresse(admin as unknown as SupabaseClient, {
+      organizationId: entrada.organizationId,
+      contactId: entrada.contactId,
+      origem: "conversa_de_prospeccao",
+      actor: ATOR_DO_OPT_OUT,
+      requestId: entrada.requestId ?? `sem-interesse:${entrada.conversationId}`,
+      conversationId: entrada.conversationId,
+      campanhaId,
+    });
+    logger.info("pos-entrada: 'sem interesse' na conversa de prospecção", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      origem: entrada.origem,
+      ...(r.gravado ? { gravado: true, negocios_fechados: r.negociosFechados } : { gravado: false, motivo: r.motivo }),
+    });
+  } catch (err) {
+    logger.error("pos-entrada: 'sem interesse' NAO gravado — o contato segue elegível a ofertas", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
   }
 }
 
