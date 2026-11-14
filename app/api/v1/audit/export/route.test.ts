@@ -41,8 +41,13 @@ interface Consulta {
   contou: boolean;
 }
 
-function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
+function fakeSupabase(
+  dados: Record<string, Linha[]>,
+  maxRows = MAX_ROWS,
+  aposPrimeiraPagina?: () => void,
+) {
   const consultas: Consulta[] = [];
+  let paginasLidas = 0;
 
   const client = {
     from(tabela: string) {
@@ -50,12 +55,29 @@ function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
       consultas.push(registro);
 
       const filtros: Array<(linha: Linha) => boolean> = [];
+      const ordens: Array<{ coluna: string; asc: boolean }> = [];
       let pediuCount = false;
 
       const executar = (faixa: [number, number] | null) => {
         const base = (dados[tabela] ?? []).filter((l) => filtros.every((f) => f(l)));
+        base.sort((a, b) => {
+          for (const ordem of ordens) {
+            const av = String(a[ordem.coluna]);
+            const bv = String(b[ordem.coluna]);
+            if (av === bv) continue;
+            return (av < bv ? -1 : 1) * (ordem.asc ? 1 : -1);
+          }
+          return 0;
+        });
         const fatia = faixa ? base.slice(faixa[0], faixa[1] + 1) : base;
-        return { data: fatia.slice(0, maxRows), count: pediuCount ? base.length : null, error: null } as const;
+        const resposta = {
+          data: fatia.slice(0, maxRows),
+          count: pediuCount ? base.length : null,
+          error: null,
+        } as const;
+        paginasLidas++;
+        if (paginasLidas === 1) aposPrimeiraPagina?.();
+        return resposta;
       };
 
       const builder: Record<string, unknown> = {};
@@ -85,8 +107,19 @@ function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
         filtros.push((l) => l[coluna] !== null && l[coluna] !== undefined && String(l[coluna]) <= String(valor));
         return builder;
       };
-      builder.order = (coluna: string) => {
+      builder.or = (expressao: string) => {
+        const chave = /^(\w+)\.lt\.(.+),and\(\1\.eq\.\2,(\w+)\.lt\.(.+)\)$/.exec(expressao);
+        if (!chave) throw new Error(`Filtro não implementado no dublê: ${expressao}`);
+        const [, coluna, valor, desempate, id] = chave;
+        filtros.push((linha) =>
+          String(linha[coluna!]) < valor! ||
+          (String(linha[coluna!]) === valor && String(linha[desempate!]) < id!),
+        );
+        return builder;
+      };
+      builder.order = (coluna: string, opcoes: { ascending: boolean }) => {
         registro.ordens.push(coluna);
+        ordens.push({ coluna, asc: opcoes.ascending });
         return builder;
       };
       builder.range = (inicio: number, fim: number) => {
@@ -166,6 +199,37 @@ describe("célula que a planilha leria como fórmula", () => {
 });
 
 describe("o CSV de auditoria lê além de 1.000", () => {
+  it("um evento novo entre páginas não repete uma linha nem exclui a mais antiga", async () => {
+    const linhas = Array.from({ length: 2000 }, (_, k) => auditoria(k + 1));
+    const esperados = linhas.map((linha) => linha.id).reverse();
+    const { client } = fakeSupabase(
+      { api_audit_log: linhas },
+      MAX_ROWS,
+      () => linhas.push(auditoria(2001)),
+    );
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    const ids = dadosDoCsv(await res.text()).map((linha) => linha.split(",")[0]);
+
+    expect(res.status).toBe(200);
+    expect(ids).toHaveLength(2000);
+    expect(new Set(ids).size).toBe(2000);
+    expect(ids).toEqual(esperados);
+  });
+
+  it("o desempate por ID conserva todos os eventos com a mesma data", async () => {
+    const linhas = Array.from({ length: 1500 }, (_, k) =>
+      auditoria(k + 1, { created_at: "2026-11-12T10:00:00.000Z" }),
+    );
+    const { client } = fakeSupabase({ api_audit_log: linhas });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const ids = dadosDoCsv(await (await chamar()).text()).map((linha) => linha.split(",")[0]);
+
+    expect(ids).toEqual(linhas.map((linha) => linha.id).reverse());
+  });
+
   it("⭐ 2.500 registros saem inteiros (antes: 1.000 calados)", async () => {
     const linhas = Array.from({ length: 2500 }, (_, k) => auditoria(k + 1));
     const { consultas, client } = fakeSupabase({ api_audit_log: linhas });
@@ -180,8 +244,8 @@ describe("o CSV de auditoria lê além de 1.000", () => {
     expect(audit[0]!.ordens, "ordem estável: created_at e id").toEqual(["created_at", "id"]);
     expect(audit.flatMap((c) => c.faixas)).toEqual([
       [0, 999],
-      [1000, 1999],
-      [2000, 2999],
+      [0, 999],
+      [0, 999],
     ]);
     expect(audit[0]!.contou).toBe(true);
   });

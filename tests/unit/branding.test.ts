@@ -307,6 +307,12 @@ const MARCA_CONGELADA: Record<string, EntradaDeMarca> = {
     motivo: "o mesmo cookie de sessão, lido no servidor; tem de casar com o do browser",
     marcas: ["sb-deskcomm-auth"],
   },
+  "lib/supabase/identidade-validada.test.ts": {
+    categoria: "INFRA",
+    motivo:
+      "duplo de teste que monta o cookie de sessão para conferir que a chave do cache curto é o hash dos cookies. O nome tem de ser o mesmo de `lib/supabase/server.ts` e `browser.ts`, senão o teste validaria uma chave que produção nunca vê",
+    marcas: ["sb-deskcomm-auth", "sb-deskcomm-auth"],
+  },
   "lib/impersonate/cookie.ts": {
     categoria: "INFRA",
     motivo:
@@ -856,6 +862,12 @@ type CategoriaDeHost =
 type EntradaDeHost = { categoria: CategoriaDeHost; motivo: string };
 
 const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
+  // ── amostra de FORMATO: chega à tela como prévia, não é destino de chamada ──
+  "loja.exemplo": {
+    categoria: "AMOSTRA",
+    motivo:
+      "exemplo de LINK na prévia de variável (`lib/variaveis/previa.ts`): mostra a quem opera o formato do valor que entra no texto. O produto nunca faz requisição para este host — é amostra, no mesmo sentido do `wa.me` da tela de Conversões.",
+  },
   "chatgpt.com": {
     categoria: "CONSOLE",
     motivo:
@@ -1052,6 +1064,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "painel onde o usuário gera a PRÓPRIA chave da DeepSeek (`ondePegarAChave` em lib/ai/pontos/provedores.ts). Endereço do fornecedor, não nosso.",
   },
+  "cdn.deepseek.com": {
+    categoria: "CONSOLE",
+    motivo:
+      "documento do fornecedor: é a política de privacidade da DeepSeek que `fonteDoPais` (lib/ai/pontos/provedores.ts) cita como prova do país de processamento. A tela (`OndeOTextoEProcessado.tsx`) só monta o link com a URL deste catálogo — o produto NUNCA busca o host, quem abre é a pessoa que quer ler a fonte. Endereço do fornecedor, não nosso: trocar pelo domínio do revendedor faria o link não provar nada.",
+  },
   "app.requesty.ai": {
     categoria: "CONSOLE",
     motivo:
@@ -1164,6 +1181,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "marca agregador e conta como link social no raio-X. Nunca chamada, nunca exibida (a tela mostra o rótulo traduzido).",
   },
+  "fb.com": {
+    categoria: "RECONHECIMENTO",
+    motivo:
+      "apelido curto do Facebook publicado em `socials`: o rótulo da rede na 1ª mensagem sai do host (`lib/prospecting/sinais-da-empresa.ts`). Nunca chamado, nunca exibido como endereço — o prompt recebe `Facebook: <url>`.",
+  },
   "google.com": {
     categoria: "RECONHECIMENTO",
     motivo:
@@ -1199,10 +1221,20 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "assinatura de HTML do Wix no raio-X. Nunca chamada, nunca exibida.",
   },
+  "tiktok.com": {
+    categoria: "RECONHECIMENTO",
+    motivo:
+      "rede social reconhecida pelo host em `socials` (planilha importada e links do site): vira o rótulo `TikTok` na 1ª mensagem. Nunca chamada, nunca exibida como endereço.",
+  },
   "wordpress.com": {
     categoria: "RECONHECIMENTO",
     motivo:
       "assinatura de construtor (WordPress.com gratuito): URL final contendo o domínio vira o rótulo. Nunca chamada, nunca exibida.",
+  },
+  "youtube.com": {
+    categoria: "RECONHECIMENTO",
+    motivo:
+      "rede social reconhecida pelo host em `socials` (planilha importada e links do site): vira o rótulo `YouTube` na 1ª mensagem. Nunca chamada, nunca exibida como endereço.",
   },
 };
 
@@ -1372,6 +1404,11 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita (spec 24, auditoria de site): agregador de bio-links,
       // marca agregador sem fetch — nunca chamado, nunca exibido.
       "carrd.co",
+      // Decisão escrita: o host é a CDN onde a DeepSeek publica a política de
+      // privacidade que `fonteDoPais` cita como prova do país de processamento.
+      // O produto não fala com ele — a tela monta o link da fonte e quem abre é
+      // a pessoa. CONSOLE porque é documento do fornecedor, não destino nosso.
+      "cdn.deepseek.com",
       // A pessoa abre o produto ChatGPT para autenticar a conta; o CRM chama
       // apenas `api.openai.com` no fluxo SIWC.
       "chatgpt.com",
@@ -1387,6 +1424,13 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // como link social no raio-X — nunca chamada, nunca exibida (a tela mostra
       // o rótulo traduzido).
       "facebook.com",
+      // Decisão escrita (#4459): `fb.com`, `tiktok.com` e `youtube.com` entram
+      // como RECONHECIMENTO, não como FORNECEDOR — o produto NÃO fala com eles.
+      // `lib/prospecting/sinais-da-empresa.ts` lê o host da URL já coletada em
+      // `socials` (planilha importada, links do site) só para escrever o NOME da
+      // rede na 1ª mensagem; a tela e o prompt recebem o rótulo, nunca o host
+      // como destino de chamada. Mesma classe dos três vizinhos desta lista.
+      "fb.com",
       // Decisão escrita (spec 24, auditoria de site): substring `google.com/maps`
       // comparada no HTML para detectar endereço/mapa — nunca chamada por causa
       // desta regra, nunca exibida.
@@ -1402,6 +1446,11 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // reconhecida pelo host — nunca chamada, nunca exibida (a aba Links mostra
       // o rótulo traduzido).
       "linkedin.com",
+      // Decisão escrita: amostra de FORMATO de valor na prévia de variável
+      // (`lib/variaveis/previa.ts`) — a quem opera vê `loja.exemplo/previa/ana`
+      // como exemplo do link que a variável entrega. O produto nunca faz
+      // requisição para ele; mesma natureza do `wa.me` da tela de Conversões.
+      "loja.exemplo",
       // Link que abre o pino que o CLIENTE mandou (`lib/messaging/localizacao.ts`).
       // Mesma natureza do `wa.me` abaixo: o produto não fala com o host, quem
       // abre é o celular do atendente. Crescimento escrito, como a regra pede.
@@ -1439,6 +1488,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita (spec 24, auditoria de site): assinatura de HTML do
       // Wix no raio-X — nunca chamada, nunca exibida.
       "static.wixstatic.com",
+      // Ver a decisão escrita em `fb.com`: mesma classe, mesmo módulo, o rótulo
+      // da rede na 1ª mensagem.
+      "tiktok.com",
       "tusitio.com",
       // Exemplo de link do WhatsApp gerado pela tela de Conversões (#924). Está
       // aqui, e não em FORNECEDOR, porque o produto NÃO fala com esse host: quem
@@ -1452,6 +1504,9 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // AUTORIDADE, porque não é painel, amostra nem plataforma: é o endereço
       // a que a lei manda o titular ir. País novo com lei revisada traz a sua.
       "www.cnpd.pt",
+      // Ver a decisão escrita em `fb.com`: mesma classe, mesmo módulo, o rótulo
+      // da rede na 1ª mensagem.
+      "youtube.com",
     ]);
   });
 

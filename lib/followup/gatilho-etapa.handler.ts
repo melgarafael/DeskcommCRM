@@ -6,6 +6,7 @@
  */
 import type { EventHandler, HandlerResult } from "@/lib/event-log/dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { avisarSequenciaParada } from "@/lib/automation/parada-no-assistido";
 import { createSupabaseFollowupGateDb } from "@/lib/followup/agent-followup-gate";
 import {
   EVENTO_DE_ETAPA,
@@ -30,6 +31,13 @@ export const followupGatilhoEtapaHandler: EventHandler = {
         },
         row,
       );
+      if (summary.parados_no_assistido && row.entity_id) {
+        await avisarSequenciaParada(admin, {
+          organizationId: row.organization_id,
+          leadId: row.entity_id,
+          quantas: summary.parados_no_assistido,
+        });
+      }
       return {
         consumer_key: FOLLOWUP_GATILHO_ETAPA_HANDLER_KEY,
         // `ok` DESCARTA o `detail` (lib/event-log/drain.ts): só o de `skipped`
@@ -45,7 +53,7 @@ export const followupGatilhoEtapaHandler: EventHandler = {
         detail:
           `armados=${summary.pointers_armados} enrolled=${summary.enrolled} ` +
           `origem_obsoleta=${summary.skipped_stale_origin ?? 0} ja_vivo=${summary.skipped_existing} gate=${summary.pointers_barrados_pelo_gate} ` +
-          `sem_contato=${summary.sem_contato}`,
+          `parado_no_assistido=${summary.parados_no_assistido ?? 0} sem_contato=${summary.sem_contato}`,
       };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

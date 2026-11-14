@@ -166,6 +166,8 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "status_whatsapp",
       "reservas_de_lugar",
       "link_de_pagamento",
+      "campanha_por_email",
+      "revisao_por_km",
     ]);
   });
 });

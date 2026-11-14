@@ -4446,3 +4446,22 @@ O retorno usa os consumidores existentes: `mcp.tool_called` na auditoria e
 impedimentos no resultado da prévia ajudam o operador a revisar as escolhas em
 Capacidades e a configuração do servidor externo. A próxima execução relê essa
 configuração; não há novo subsistema, tela, rota ou autorização de escrita.
+
+## J-midia — Fotos e PDFs recebidos: ordem e Baixar (2026-11-09)
+
+Relato de um escritório pela API oficial da Meta: Foto 1-2-3 e PDF 1-2-3 apareceram 3-2-1, e a
+foto não tinha download em lugar nenhum. Spec: `tests/e2e/inbox-baixar-midia-e-ordem.spec.ts`
+(parte 6), 1366×900; evidência em `evidence/inbox-baixar-midia-e-ordem/`.
+
+| Caso | O que prova | Como |
+|---|---|---|
+| Ordem no mesmo segundo `[P0]` | 3 fotos e 3 PDFs com o mesmo `sent_at` e ids sorteados ao contrário saem na ordem de chegada | E2E (ordem lida no DOM) + invariante `messages-list-paginacao` (rajada e virada de página) |
+| Baixar a foto | miniatura, foto ampliada e menu «Baixar» disparam download com `foto-AAAA-MM-DD-HHhMM-<id>.png` e os mesmos bytes | E2E (evento de download) |
+| Baixar o PDF pelo menu | «Baixar» no menu salva com o nome original | E2E (evento de download) |
+
+Capturas da prova: `evidence/inbox-baixar-midia-e-ordem/01-ordem-das-fotos.png`,
+`evidence/inbox-baixar-midia-e-ordem/02-ordem-dos-pdfs.png`,
+`evidence/inbox-baixar-midia-e-ordem/03-miniatura-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/04-foto-ampliada-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/05-menu-da-foto-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/06-menu-do-pdf-com-baixar.png`.

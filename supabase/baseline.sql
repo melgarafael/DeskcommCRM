@@ -10444,6 +10444,11 @@ alter table public.agent_inbox_items
     -- apontam para a aba do parceiro. Nasce com `ref_kind='channel_session'`,
     -- um aberto por conexão. Entra NESTA lista (#159, bloco único).
     'channel_template_review_direct',
+    -- (migration 9333, issue #3966) O número pediu para esperar a IA qualificar
+    -- antes de distribuir e o prazo venceu sem a IA passar a conversa. A conversa
+    -- entra na distribuição e este aviso conta a quem cuida do agente que ele
+    -- não está passando adiante. Entra NESTA lista (#159, bloco único).
+    'routing_ia_wait_expired',
     'other'
   ));
 
@@ -74869,6 +74874,411 @@ grant  execute on function public.fn_definir_lembrete_do_aviso_de_agendamento(uu
 
 notify pgrst, 'reload schema';
 
+-- ---- A conversa espera a IA qualificar: opção por número, com prazo (migration 9333, #3966) ----
+-- Espelho da 9333 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- VARREDURA anon porque cria e recria função, e ANTES da cascata da 9243: o
+-- invariante `lgpd-alcanca-fichas-fundidas` compara o trecho que vai dela até a
+-- VARREDURA com a migration, e nada pode entrar no meio. Coluna nova nasce nula = opção
+-- DESLIGADA em todo número; nada muda para quem não ligar. A constraint entra em
+-- bloco DO com `if not exists`: reaplicar não a derruba nem a recria. O kind
+-- `routing_ia_wait_expired` NÃO está aqui: entrou no bloco ÚNICO de
+-- `agent_inbox_items_kind_check`, mais acima (#159).
+alter table public.channel_routing_policies add column if not exists ai_wait_minutes integer;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'channel_routing_policies_ai_wait_minutes_check'
+       and conrelid = 'public.channel_routing_policies'::regclass
+  ) then
+    alter table public.channel_routing_policies
+      add constraint channel_routing_policies_ai_wait_minutes_check
+      check (ai_wait_minutes is null or ai_wait_minutes between 15 and 10080);
+  end if;
+end;
+$$;
+
+create or replace function public.fn_set_channel_ai_wait(p_org uuid,p_channel uuid,p_minutes integer)
+returns integer language plpgsql security definer set search_path=public as $$
+begin
+ if auth.uid() is null or not public.fn_role_at_least(p_org,'manager') or not public.fn_support_write_allowed(p_org)
+ then raise exception 'routing_forbidden' using errcode='42501';end if;
+ if not public.fn_session_mfa_proven() then raise exception 'routing_mfa_required' using errcode='42501';end if;
+ if p_minutes is not null and (p_minutes<15 or p_minutes>10080) then
+  raise exception 'routing_invalid_ai_wait' using errcode='22023';end if;
+ update public.channel_routing_policies set ai_wait_minutes=p_minutes,updated_at=now()
+  where organization_id=p_org and channel_session_id=p_channel;
+ if not found then raise exception 'routing_channel_not_found' using errcode='P0002';end if;
+ -- Quem estava esperando com a regra antiga é reavaliado agora, com a nova.
+ perform public.fn_wake_channel_routing(p_org,p_channel);
+ return p_minutes;
+end;
+$$;
+revoke all on function public.fn_set_channel_ai_wait(uuid,uuid,integer) from public,anon;
+grant execute on function public.fn_set_channel_ai_wait(uuid,uuid,integer) to authenticated;
+
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ elsif old.assigned_to_user_id is not null or old.status not in('open','pending','claimed','ai_handling')
+    -- #3966: a PASSAGEM PARA HUMANO traz o pedido de volta, mas só no número
+    -- que LIGOU a espera pela IA. Com a opção desligada este ramo é falso e o
+    -- gatilho decide exatamente como antes.
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at
+        and exists(select 1 from public.channel_routing_policies p
+                    where p.organization_id=new.organization_id
+                      and p.channel_session_id=new.channel_session_id
+                      and p.ai_wait_minutes is not null)) then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
+-- ---- "Liberar" não devolve a conversa ao rodízio (migration 9346, #3937) ----
+-- Espelho da 9346. Fica ACIMA da VARREDURA anon (só recria funções, nenhuma
+-- tabela nova), DEPOIS do bloco da 9333 (redefine a mesma função e tem de
+-- ganhar) e ANTES da cascata da 9243: o invariante `lgpd-alcanca-fichas-fundidas`
+-- compara o trecho que vai dela até a VARREDURA com a migration, e nada pode
+-- entrar no meio. O porquê inteiro está no cabeçalho da migration: o gatilho
+-- `trg_routing_assignment_changed` tratava "perdeu o dono" e "reabriu" como o
+-- mesmo fato, então liberar a conversa a devolvia à distribuição em ~1 min. A
+-- régua nova pede o rodízio só quando a conversa ENTRA no pool vindo de fora
+-- dele (`old.status` terminal) — a reabertura — ou, no número que ligou a
+-- espera pela IA (9333), quando a IA passa a conversa para humano. As portas
+-- que querem pedir seguem pedindo por conta própria: `fn_wake_channel_routing`
+-- (disponibilidade, política do número, revogação de membro) e o cron
+-- `rodizio-devolucao`.
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ -- #3937: só a REABERTURA (old.status terminal) pede o rodízio. Perder o dono
+ -- ("Liberar") não é chegada ao pool, e não pede.
+ elsif old.status not in('open','pending','claimed','ai_handling')
+    -- #3966: a PASSAGEM PARA HUMANO traz o pedido de volta, mas só no número
+    -- que LIGOU a espera pela IA. Com a opção desligada este ramo é falso e o
+    -- gatilho decide exatamente como antes.
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at
+        and exists(select 1 from public.channel_routing_policies p
+                    where p.organization_id=new.organization_id
+                      and p.channel_session_id=new.channel_session_id
+                      and p.ai_wait_minutes is not null)) then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
+-- ---- mensagem nova do cliente acorda o roteamento da conversa sem dono (migration 9347, #3916) ----
+-- Espelho da 9347 (o porquê inteiro está no cabeçalho dela). Fica ACIMA da
+-- VARREDURA anon porque cria função, e DEPOIS de tudo que ele lê (`messages`,
+-- `conversations`, `event_log`, `channel_routing_policies`, `organizations`). O
+-- gatilho só pede quando a distribuição automática vale para a conversa (destino
+-- padrão do número, ou modo efetivo rodízio/menor carga) e pede pela porta
+-- única, `fn_request_channel_routing`, que deduplica o pedido pendente.
+create or replace function public.fn_pedir_roteamento_na_mensagem()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare
+  c record;
+  v_modo text;
+  v_destino uuid;
+begin
+  -- SECURITY DEFINER é o que permite o INSERT em `event_log` acontecer também
+  -- quando quem grava a mensagem é um membro da organização pela API: um
+  -- gatilho com os privilégios do invocador faria o INSERT da mensagem falhar
+  -- na RLS do barramento, e a mensagem se perderia por causa do aviso.
+  select organization_id,id,channel_session_id into c from public.conversations
+   where organization_id=new.organization_id and id=new.conversation_id
+     and assigned_to_user_id is null and is_group=false
+     and status in('open','pending','claimed','ai_handling');
+  if not found then return null; end if;
+
+  -- A DISTRIBUIÇÃO AUTOMÁTICA VALE PARA ESTA CONVERSA? A mesma régua do worker
+  -- (`resolverRoteamentoPorNumero`): o destino padrão do número entrega em
+  -- qualquer modo; sem ele, vale o modo do número e, se o número não tem modo
+  -- próprio, o da ORGANIZAÇÃO — cujo padrão é manual. Fora do rodízio e da
+  -- menor carga o worker fecharia o pedido sem entregar, então ele não nasce.
+  -- Condição nova de "não pedir" (por exemplo, uma opção do número) entra AQUI.
+  select p.distribution_mode,p.default_assignee_user_id into v_modo,v_destino
+    from public.channel_routing_policies p
+   where p.organization_id=c.organization_id and p.channel_session_id=c.channel_session_id;
+  if v_destino is null then
+    if v_modo is null then
+      select o.settings->'routing'->>'mode' into v_modo from public.organizations o where o.id=c.organization_id;
+    end if;
+    if coalesce(v_modo,'manual') not in('round_robin','load') then return null; end if;
+  end if;
+
+  -- A porta única do pedido. É ela que deduplica: com pedido `pending` ou
+  -- `processing` da conversa, o índice único parcial não deixa nascer outro —
+  -- a mensagem só traz `next_attempt_at` do pendente para agora.
+  perform public.fn_request_channel_routing(c.organization_id,c.id);
+  return null;
+end;
+$$;
+revoke all on function public.fn_pedir_roteamento_na_mensagem() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_nova_mensagem_do_cliente on public.messages;
+create trigger trg_routing_nova_mensagem_do_cliente
+  after insert on public.messages
+  for each row
+  when (new.direction='inbound'
+        and new.type <> 'reaction'
+        and coalesce(new.metadata->>'historico_importado','') <> 'true')
+  execute function public.fn_pedir_roteamento_na_mensagem();
+
+-- ---- mensagens agendadas, envio único (migration 9336) ----
+-- #3118, primeira parte (PR #4131, contribuição de @DIOGRO83). O porquê está no
+-- cabeçalho da 9336. Entra ANTES da VARREDURA anon porque cria a função do
+-- gatilho de LGPD. Idempotente: `if not exists`, `create or replace`, `drop ... if exists`.
+create table if not exists public.mensagens_agendadas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete cascade,
+  title text,
+  body text not null check (length(btrim(body)) > 0),
+  scheduled_at timestamptz not null,
+  status text not null default 'agendada'
+    check (status in ('agendada', 'encaminhada', 'falhou', 'cancelada')),
+  se_desconectado text not null default 'esperar'
+    check (se_desconectado in ('esperar', 'cancelar')),
+  motivo text,
+  message_id uuid references public.messages(id) on delete set null,
+  claimed_until timestamptz,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_mensagens_agendadas_org_contato
+  on public.mensagens_agendadas (organization_id, contact_id, scheduled_at desc);
+create index if not exists idx_mensagens_agendadas_devidas
+  on public.mensagens_agendadas (scheduled_at) where status = 'agendada';
+
+alter table public.mensagens_agendadas enable row level security;
+
+drop policy if exists mensagens_agendadas_select on public.mensagens_agendadas;
+create policy mensagens_agendadas_select on public.mensagens_agendadas
+  for select to authenticated using (
+    organization_id in (select public.fn_user_org_ids())
+    and exists (
+      select 1 from public.conversations c
+       where c.id = mensagens_agendadas.conversation_id
+         and c.organization_id = mensagens_agendadas.organization_id
+    )
+  );
+
+revoke all on public.mensagens_agendadas from public, anon, authenticated;
+grant select on public.mensagens_agendadas to authenticated;
+grant select, insert, update, delete on public.mensagens_agendadas to service_role;
+
+create or replace function public.fn_mensagens_agendadas_contato_anonimizado()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+begin
+  update public.mensagens_agendadas
+     set body = '[redigido]',
+         title = null,
+         status = case when status = 'agendada' then 'cancelada' else status end,
+         motivo = case when status = 'agendada' then 'contato_anonimizado' else motivo end,
+         claimed_until = null,
+         updated_at = now()
+   where organization_id = new.organization_id
+     and contact_id = new.id;
+  return new;
+end$$;
+
+revoke all on function public.fn_mensagens_agendadas_contato_anonimizado() from public, anon, authenticated;
+
+drop trigger if exists trg_contacts_anonimizado_mensagens_agendadas on public.contacts;
+create trigger trg_contacts_anonimizado_mensagens_agendadas
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
+  execute function public.fn_mensagens_agendadas_contato_anonimizado();
+
+-- ---- o desfecho do negócio leva a marca do modo assistido (migration 9337, #4319) ----
+-- Espelho idempotente da 9337 (racional no cabeçalho dela). `create or replace` da
+-- função do gatilho: antes da VARREDURA anon, como todo bloco que (re)cria função, e
+-- antes da cascata da 9243, cujo trecho até a VARREDURA é comparado por igualdade
+-- com a migration dela (lgpd-alcanca-fichas-fundidas).
+create or replace function public.fn_emit_event_on_lead_change() returns trigger
+    language plpgsql
+    set search_path to 'public', 'pg_temp'
+    as $$
+declare
+  v_antes text;
+  v_meta jsonb := '{}'::jsonb;
+begin
+  if tg_op = 'INSERT' then
+    return new;
+  end if;
+
+  -- Doc 301 = B (#4319): a IA no modo ASSISTIDO (ou a regra que rodou por causa
+  -- dela) escreve com o cabeçalho `x-actor-operation-mode: assisted`
+  -- (`escritaComMarca`, lib/automation/parada-no-assistido.ts). O evento leva a
+  -- marca e o motor de automação segura o que fala com o cliente. Forjar o
+  -- cabeçalho só deixa a automação mais contida: não abre nada.
+  if coalesce(nullif(current_setting('request.headers', true), '')::jsonb
+       ->> 'x-actor-operation-mode', '') = 'assisted' then
+    v_meta := jsonb_build_object('actor_operation_mode', 'assisted');
+  end if;
+
+  -- O negócio se anuncia: `auth.uid()` segue preenchido aqui (o UPDATE veio da
+  -- sessão de quem moveu o card), e sem este sinal a reserva do `emit_event`
+  -- calaria o próprio gatilho. A chave é de transação e volta ao valor anterior
+  -- antes do `return` — a janela é este corpo, não o resto da transação.
+  v_antes := current_setting('deskcomm.desfecho_pelo_negocio', true);
+  perform set_config('deskcomm.desfecho_pelo_negocio', 'on', true);
+
+  -- `emit_event` direto, com a entidade que o `fn_log_event` derivava
+  -- ('lead', `new.id`): é o único jeito de o metadata chegar à linha.
+  if new.status is distinct from old.status then
+    if new.status = 'won' then
+      perform public.emit_event('lead.won', 'lead', new.id,
+        jsonb_build_object('lead_id', new.id, 'value_cents', new.value_cents), v_meta, new.organization_id);
+    elsif new.status = 'lost' then
+      perform public.emit_event('lead.lost', 'lead', new.id,
+        jsonb_build_object('lead_id', new.id, 'lost_reason', new.lost_reason), v_meta, new.organization_id);
+    elsif new.status = 'open' then
+      perform public.emit_event('lead.reopened', 'lead', new.id,
+        jsonb_build_object('lead_id', new.id), v_meta, new.organization_id);
+    end if;
+  end if;
+
+  if new.owner_user_id is distinct from old.owner_user_id
+     or new.owner_agent_id is distinct from old.owner_agent_id then
+    perform public.emit_event('lead.assigned', 'lead', new.id,
+      jsonb_build_object(
+        'lead_id', new.id,
+        'from_user_id', old.owner_user_id, 'to_user_id', new.owner_user_id,
+        'from_agent_id', old.owner_agent_id, 'to_agent_id', new.owner_agent_id,
+        'owner_kind', new.owner_kind), v_meta, new.organization_id);
+  end if;
+
+  perform set_config('deskcomm.desfecho_pelo_negocio', coalesce(v_antes, ''), true);
+  return new;
+end$$;
+
+-- ---- o rótulo do telefone principal (migration 9354, #4242) ----
+-- Espelho de supabase/migrations/20261112111129_9354_rotulo_do_telefone_principal.sql
+-- (o porquê inteiro está no cabeçalho dela). Fica ACIMA da VARREDURA anon porque
+-- cria função, e DEPOIS do bloco da 9048, cuja `fn_tornar_telefone_principal` esta
+-- REDEFINE (o `create or replace` daqui é o que vale). A coluna vem aqui, e não no
+-- create table de `contacts`, porque o `update.sh` pula aquele create em toda
+-- instalação que já tem a tabela.
+alter table public.contacts
+  add column if not exists phone_label text;
+
+comment on column public.contacts.phone_label is
+  'Rótulo do telefone PRINCIPAL ("casa", "trabalho"), como contact_phones.rotulo nos extras. Preenchido por "Tornar principal" com o rótulo do extra promovido (#4242, item 2); o principal antigo leva o rótulo dele para o extra que vira.';
+
+create or replace function public.fn_tornar_telefone_principal(p_org uuid, p_contato uuid, p_extra uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_ficha record;
+  v_extra record;
+begin
+  select c.id, c.phone_number, c.phone_type, c.phone_whatsapp, c.phone_label,
+         nullif(pg_catalog.regexp_replace(coalesce(c.source_metadata->>'waha_lid', ''), '@.*$', ''), '') as lid
+    into v_ficha
+    from public.contacts c
+   where c.id = p_contato and c.organization_id = p_org
+     and c.is_merged_into is null and c.is_anonymized = false
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'contato_indisponivel';
+  end if;
+
+  select t.id, t.phone_number, t.tipo, t.whatsapp, t.wa_lid, t.rotulo
+    into v_extra
+    from public.contact_phones t
+   where t.id = p_extra and t.organization_id = p_org and t.contact_id = p_contato
+   for update;
+  if not found then
+    raise exception using errcode = 'P0002', message = 'telefone_extra_indisponivel';
+  end if;
+
+  -- O extra sai ANTES: senão o principal novo colidiria com ele mesmo.
+  delete from public.contact_phones where id = v_extra.id and organization_id = p_org;
+
+  update public.contacts set
+    phone_number = v_extra.phone_number,
+    phone_type = v_extra.tipo,
+    phone_whatsapp = v_extra.whatsapp,
+    -- O rótulo anda com o NÚMERO (#4242, item 2): quem foi promovido leva o seu
+    -- para o principal, e o principal antigo leva o dele para o extra abaixo.
+    phone_label = v_extra.rotulo,
+    source_metadata = (source_metadata - 'waha_lid' - 'waha_chat_id')
+      || case when v_extra.wa_lid is not null
+              then pg_catalog.jsonb_build_object('waha_lid', v_extra.wa_lid)
+              else '{}'::jsonb end,
+    updated_at = now()
+  where id = p_contato and organization_id = p_org;
+
+  if v_ficha.phone_number is not null then
+    insert into public.contact_phones
+      (organization_id, contact_id, phone_number, tipo, whatsapp, rotulo, origem, wa_lid)
+    values
+      (p_org, p_contato, public.fn_telefone_canonico(v_ficha.phone_number),
+       coalesce(v_ficha.phone_type, public.fn_tipo_do_telefone(v_ficha.phone_number)),
+       coalesce(v_ficha.phone_whatsapp, 'nao_sei'), v_ficha.phone_label, 'manual', v_ficha.lid);
+  end if;
+end;
+$$;
+
+revoke execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) from public, anon;
+grant execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) to authenticated, service_role;
+
+-- O rótulo é do NÚMERO: quando o principal some (remoção, anonimização), ele
+-- sai junto, como o tipo e o WhatsApp que `fn_contacts_um_numero_uma_ficha` já
+-- zera. Sem isto, "casa da mãe" sobraria numa ficha anonimizada.
+create or replace function public.fn_contacts_rotulo_sai_com_o_numero()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  new.phone_label := null;
+  return new;
+end;
+$$;
+
+revoke all on function public.fn_contacts_rotulo_sai_com_o_numero() from public;
+revoke execute on function public.fn_contacts_rotulo_sai_com_o_numero() from anon, authenticated;
+
+drop trigger if exists trg_contacts_rotulo_sai_com_o_numero on public.contacts;
+create trigger trg_contacts_rotulo_sai_com_o_numero
+  before insert or update of phone_number, phone_label on public.contacts
+  for each row
+  when (new.phone_number is null and new.phone_label is not null)
+  execute function public.fn_contacts_rotulo_sai_com_o_numero();
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.
@@ -79242,7 +79652,7 @@ do $campanha_modelo$
 begin
   alter table public.campaigns drop constraint if exists campaigns_message_mode_check;
   alter table public.campaigns
-    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template'));
+    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template', 'email'));
 
   -- Modelo sem nome ou sem idioma não sai: a plataforma identifica a definição
   -- pelos DOIS (o mesmo nome em `es` e `es_AR` são modelos diferentes).
@@ -80458,6 +80868,72 @@ comment on column public.campaigns.provider_broadcast_id is
   'Id da transmissão no provedor (velocidade = transmissao). O eco de cada mensagem traz este id e volta por ele à campanha e ao destinatário. Migration 0712.';
 
 notify pgrst, 'reload schema';
+
+-- ---- campanha por e-mail: assunto e campanha sem número (migration 9334, #3441) ----
+-- Apêndice idempotente, espelho de
+-- `supabase/migrations/20261111121038_9334_campanha_por_email.sql`. Não cria função
+-- e não devolve `anon`. Fica DEPOIS do bloco da 0710 porque depende da coluna
+-- `message_mode`, que nasce lá. Trabalho de @webtecnica (#4289).
+--
+-- ═══ Por que a coluna do número vira anulável, e só para o e-mail ═══
+--
+-- A FK composta `campaigns_channel_org_fk` (0375) amarra a campanha ao número da
+-- MESMA organização; e-mail não tem número, não tem `channel_sessions`, não tem
+-- janela de 24 horas e não é despachado por worker nenhum nesta fatia. Manter a
+-- coluna obrigatória obrigaria a inventar uma conexão falsa — e uma linha falsa
+-- em `channel_sessions` é pior que uma coluna nula: ela apareceria na tela de
+-- conexões e no rodízio.
+--
+-- O `not null` sai, mas a REGRA não: `campaigns_numero_ou_email_check` exige
+-- número em todo modo que não é `email`. Uma campanha de WhatsApp sem conexão
+-- continua impossível, no banco e não só na rota.
+--
+-- ═══ Por que o assunto mora em coluna própria ═══
+--
+-- O corpo do e-mail é o MESMO `message_body` do WhatsApp (texto puro, sem HTML
+-- nesta fatia); o assunto não é — e enfiá-lo no começo do corpo faria o texto
+-- enviado ter uma linha que ninguém escreveu como corpo. `email_subject` é
+-- nulo em todo modo que não é `email`, e o CHECK exige conteúdo nele quando é.
+
+alter table public.campaigns
+  add column if not exists email_subject text;
+
+do $campanha_email$
+begin
+  alter table public.campaigns alter column channel_session_id drop not null;
+
+  alter table public.campaigns drop constraint if exists campaigns_numero_ou_email_check;
+  alter table public.campaigns
+    add constraint campaigns_numero_ou_email_check check (
+      channel_session_id is not null or message_mode = 'email'
+    );
+
+  -- O valor 'email' de message_mode já está no bloco único da restrição (migration 0710, acima).
+
+  -- Assunto vazio não é rascunho: é um e-mail que o cliente abriria sem saber do
+  -- que se trata. A tela já recusa (`conferirConteudoDeEmail`); o CHECK é a
+  -- mesma régua no banco, para o caminho que um dia escrever por fora.
+  alter table public.campaigns drop constraint if exists campaigns_email_exige_assunto;
+  alter table public.campaigns
+    add constraint campaigns_email_exige_assunto check (
+      message_mode <> 'email' or coalesce(btrim(email_subject), '') <> ''
+    );
+
+  -- Assunto é do e-mail e de mais ninguém: nos outros modos a coluna é nula.
+  alter table public.campaigns drop constraint if exists campaigns_assunto_so_email;
+  alter table public.campaigns
+    add constraint campaigns_assunto_so_email check (
+      message_mode = 'email' or email_subject is null
+    );
+end
+$campanha_email$;
+
+comment on column public.campaigns.email_subject is
+  'Assunto do e-mail, quando message_mode = email (#3441). Nulo nos modos do WhatsApp; texto puro, até 150 caracteres.';
+comment on column public.campaigns.message_mode is
+  'text = corpo livre em message_body (número por QR); template = modelo aprovado (número oficial); email = assunto em email_subject + corpo em message_body, sem número (migration 9334).';
+comment on column public.campaigns.channel_session_id is
+  'O número principal da campanha. Nulo só em message_mode = email (#3441): campanha de e-mail não fala por conexão.';
 
 -- ---- conta Resend da organização (migration 0795) ----
 -- Espelho da 0795 no banco-molde: o test:invariants aplica SO o baseline,

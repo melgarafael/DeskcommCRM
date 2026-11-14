@@ -42,6 +42,8 @@ export interface CampanhaDetalhada extends CampanhaDaLista {
   agent_id?: string | null;
   description: string | null;
   message_body: string | null;
+  /** Migration 9334 (#3441): assunto do e-mail; `null` nas campanhas de WhatsApp. */
+  email_subject?: string | null;
   base_legal: string;
   lia_ref: string | null;
   audience_filter: Record<string, unknown>;
@@ -184,7 +186,9 @@ export function useAcaoDeCampanha(id: string) {
         `/api/v1/campaigns/${id}/${entrada.acao}`,
         entrada.corpo ?? {},
       ),
-    onSuccess: () => {
+    // Também na falha: uma ação pode gravar parte antes de falhar (o
+    // cancelamento sem a fila fechada), e a tela tem de mostrar o estado real.
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["campanha", id] });
       void qc.invalidateQueries({ queryKey: ["campanha-metricas", id] });
       void qc.invalidateQueries({ queryKey: ["campanha-destinatarios", id] });

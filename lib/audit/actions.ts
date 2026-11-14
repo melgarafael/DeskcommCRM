@@ -316,6 +316,11 @@ export const AUDIT_ACTIONS = [
   // A PERSONALIZAÇÃO que MUDOU (spec 24): voz do vendedor e vocabulário por
   // nicho em `organizations.settings.prospeccao`. Sem segredo no metadata.
   "prospecting.settings_updated",
+  // A LISTA que SAIU em arquivo (issue #4360). Responde "quem levou a base de
+  // prospecção embora": quantas empresas foram exportadas e quantas das da
+  // campanha ainda podiam ser abordadas. Sem telefone, sem nome, sem endereço —
+  // o arquivo em si não fica nesta trilha.
+  "prospecting.exported",
   // A SAÍDA ("responda PARAR") oferecida numa mensagem automática da prospecção
   // (modo da 2ª mensagem). Sem texto, sem telefone — só os ponteiros.
   // Emitida por inbound-turn e followup-turn quando o envio é aceito.
@@ -1545,6 +1550,27 @@ export const AUDIT_ACTIONS = [
   // código é o que faz a falta de UPDATE para `authenticated` na 9040 ser
   // aceitável: a única porta da escrita deixa rastro.
   "ouvidoria.status_updated",
+  // Doc 301 = B: alguém disparou pela Central o que a automação segurou porque
+  // a IA mexeu no modo assistido. Metadata leva só ids e os tipos de ação.
+  "automation.held_actions_dispatched",
+  // Mensagem de texto agendada na conversa (#3118, primeira parte — envio único).
+  // `dispatched` é o cron entregando ao envio, não "enviada": a mensagem pode
+  // ficar em `queued` esperando o canal. `cancelled` vem da pessoa (com ator) ou
+  // do cron (sem ator, com o motivo no metadata). Nunca o texto no metadata.
+  "scheduled_message.created",
+  "scheduled_message.updated",
+  "scheduled_message.cancelled",
+  "scheduled_message.dispatched",
+  "scheduled_message.failed",
+  // Desfazer o vínculo pessoa ↔ empresa pela tela (issue #3198). O metadata
+  // leva só os dois ids da junção.
+  "company_people.unlinked",
+  // O roteador de intenções acompanhando a troca de número (#4340). Metadata
+  // leva `de` e `para` (ids de `channel_sessions`) e o nome do roteador; o
+  // trigger da 0085 já guarda old/new da linha — este código é o que responde
+  // "quem moveu" no painel. Mover roteador em silêncio não existe: as duas
+  // camadas são gravadas na mesma operação.
+  "ai.router_channel_moved",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
