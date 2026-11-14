@@ -8,6 +8,235 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.111.0] — 2026-11-14
+
+### Adicionado
+
+- **Mensagem de texto agendada na conversa, com envio único** Na conversa, o botão ao lado do Enviar abre as mensagens agendadas daquela conversa. Dá para agendar um texto para uma data e hora, editar e cancelar enquanto ele não saiu, e escolher o que fazer se o WhatsApp estiver desconectado na hora: esperar a reconexão ou cancelar o envio. O botão Relatório mostra o que já teve desfecho, com o status real da mensagem: a que ainda espera o canal aparece como "Na fila de envio", não como enviada.
+
+  Cada atendente só vê e mexe nos agendamentos das conversas que já enxerga na caixa de entrada. Na hora do envio, o sistema confere de novo se quem agendou ainda faz parte da equipe; se não fizer, o envio é cancelado. Anonimizar o contato apaga o texto agendado e cancela o que ainda não saiu.
+
+  Esta é a primeira parte. Repetição (diária, semanal, mensal) e a lista de envios de todos os clientes vêm numa segunda parte.
+
+  Contribuição de @DIOGRO83 (#3118).
+
+- **Robô do Telegram como canal opcional, desligado por padrão** Quem administra o servidor pode ligar, em Administração › Sistema, o módulo
+  "Robô de mensagens (@BotFather)". Ligado, cada empresa ganha em Conexões uma
+  aba para conectar um robô do Telegram colando o token que o @BotFather mostra.
+  As conversas privadas com o robô chegam ao Inbox e a resposta sai pelo mesmo
+  robô, só em texto. Grupos, mídia e campanhas não passam por este canal. Um
+  robô que já atende em outra conta é recusado antes de qualquer mudança nele.
+  Desligado (o padrão), nada muda para quem já usa o sistema, e nenhuma variável
+  nova é exigida no `.env`. Contribuição de @webtecnica (#3486), sobre a proposta
+  de @SPYDeEp1 (#3440).
+
+- **Em modo assistido, o Operador passa a organizar o card** Com o agente em modo assistido, o Operador deixa de ficar parado: depois de cada rascunho, ele move o card de etapa, aplica tags e preenche campos, sem nunca enviar mensagem ao cliente: no assistido, mesmo que a lista de ferramentas do Operador inclua alguma que envia mensagem, agenda retorno ou escreve num servidor externo, ela fica fora da mão dele, e o mesmo vale para marcar, remarcar e confirmar compromisso na agenda, que manda lembretes ao cliente. Quando ele move o card, as automações da etapa rodam o que não fala com o cliente (etiqueta, tarefa, aviso à equipe); WhatsApp, e-mail, mensagem da IA e sequência ficam parados (também a decisão da IA que tem uma dessas entre as opções), e a Central de avisos mostra o que parou com o botão "Disparar agora" para quem é gestor. A trava vale também para o que vem depois: quando o card chega a uma etapa de ganho ou perda, quando outra automação move o card por causa desse movimento, e quando a etapa ou o negócio novo inscreveria o contato numa sequência de follow-up. A sequência não é inscrita, e a Central avisa para quem quiser inscrever o contato pelo painel dele. Marcar o aviso como resolvido descarta o envio. No modo automático, e quando quem move é uma pessoa, as automações rodam como antes. Agente pausado continua sem rodar nada, e conversa assumida por uma pessoa continua fora do alcance do Operador. O `crm_list_stages` passa a devolver também `description` (o critério de cada etapa) e `agent_stage_hint` (a que passo do funil do agente ela corresponde).
+
+  Contribuição de @felipehenriquess (#3915).
+
+- **Prospecção ganha "Baixar lista" (o CSV das empresas ainda não abordadas) e a voz da organização fica à vista** O cartão da campanha de prospecção passa a ter **Baixar lista (N)**: um CSV com
+  as empresas que ainda não foram abordadas, no mesmo formato do "Baixar modelo" e
+  da planilha que a própria tela importa (colunas empresa, telefone, site,
+  segmento, endereço, email e redes, com `;`, BOM e UTF-8). Quem já recebeu
+  mensagem fica de fora do arquivo, porque o contato e o negócio já existem no CRM
+  e a triagem de uma campanha nova recusaria a empresa — o arquivo leva só o que
+  ainda pode ser abordado. A contagem do botão sai da mesma regra do servidor, e
+  cada download fica registrado na auditoria com o número de empresas que saíram,
+  nunca com o conteúdo.
+
+  O card **Voz e vocabulário** deixa de morar dentro do painel de "Configurar
+  busca": ele aparece na tela de prospecção para quem tem a permissão da área. O
+  texto salvo é o da organização inteira, o mesmo de antes — não há um segundo
+  lugar para a mesma configuração. Contribuição de @webtecnica (#4360).
+
+- **Arquivar campanha de prospecção sem apagar negócios nem conversas** Em Prospecção, cada campanha ganhou o botão Arquivar. A campanha arquivada sai de "Suas campanhas" e fica em "Ver arquivadas", de onde volta com Desarquivar. Nada do que ela criou é apagado: os negócios, as conversas, as empresas encontradas e o custo continuam onde estavam.
+
+  Arquivar uma campanha que está enviando pausa os envios no mesmo instante. Uma campanha arquivada não inicia nem retoma: é preciso desarquivá-la antes, e ela volta pausada, esperando alguém mandar retomar. A preparação automática também deixa de trabalhar nas arquivadas, então elas não geram custo.
+
+  Contribuição de @webtecnica (#4430).
+
+- **Cada funil tem as suas categorias de perda, e a categoria sobrevive ao renomear do motivo** As categorias que agrupam os motivos de perda eram do produto — Cliente,
+  Concorrência, Mérito, Nós e Ausência, fixas no código —, e a tela de
+  Configurações › Funis não deixava nada mudar. Uma clínica não perde por
+  "Concorrência", e uma loja que precisa separar "Risco" de "Operacional" não tinha
+  onde cadastrar. Agora cada funil tem a própria lista, editada na tela do funil:
+  acrescentar, renomear e esconder. Quem nunca mexeu continua vendo as cinco de
+  fábrica, e as categorias que os motivos já usam entram na lista — inclusive a que
+  foi gravada à mão antes desta tela existir, sem precisar de migração de dado.
+  Esconder uma categoria só deixa de oferecê-la aos outros motivos: o motivo que já
+  era dela continua agrupado no relatório de Perdas e continua mostrando a
+  categoria no próprio menu. Renomear uma categoria leva junto os motivos que a
+  usavam.
+
+  O mesmo menu de motivo passou a listar as categorias do funil, e o filtro do
+  quadro e o relatório de Perdas acompanham: motivo sem categoria tem o rótulo
+  explícito "Sem categoria" em vez de sumir de qualquer recorte por categoria.
+
+  Na mesma tela, a chance de fechamento e o aviso de equipe de cada etapa seguem
+  gravados ao salvar e recarregar — o ciclo que a tela faz entre a gravação e a
+  leitura agora tem prova automatizada, para que uma regressão na leitura não volte
+  como campo vazio na tela. Contribuição de @webtecnica (#4437, #2999).
+
+- **A tela de IA diz para que país vai o texto do cliente, com a fonte quando o provedor declara** O país mostrado é a sede de quem recebe o texto; a região de processamento só aparece
+  quando há fonte do próprio provedor, e sem ela a tela marca "(sede do provedor)".
+  Cada provedor de IA declara o país em CÓDIGO do vocabulário fechado da cláusula 9
+  (`US`/`CN`/`UE`/`operador`/`desconhecido`, o mesmo que o documento do operador imprime
+  desde o #4520) mais a procedência em `fonteDoPais`: URL do documento e data da consulta,
+  ou `null` quando a declaração é a do catálogo. A tela traduz o código no nome do país ao
+  lado da escolha e da chave já salva. Onde o provedor não declara a região, a tela diz
+  isso em vez de deixar a linha em branco: silêncio ali leria como garantia de que nada sai
+  do país. Endpoint do próprio operador e endereço configurado no ponto têm frases
+  próprias, porque nenhum dos dois é um país.
+
+  A cláusula de transferência internacional do documento do operador, que lista esses
+  países em vez da frase genérica, vem do #4520 — este entrega o dado, a procedência e a
+  tela que leem o mesmo campo.
+
+- **Campo opcional para a capacidade do produto (128GB, 1TB, 500ml)** O catálogo ganhou um campo Capacidade, opcional e com até 60 caracteres. Ele vem
+  desligado em cada empresa, e quem administra liga em Configurações › Organização,
+  no cartão Catálogo. Ligado, o campo aparece ao criar e editar produtos, a lista
+  mostra a capacidade, a importação lê a coluna «capacidade» e o atendente de IA
+  acha o produto de 256GB mesmo quando o nome não repete a capacidade. Na planilha,
+  uma célula com mais de 60 caracteres recusa a linha com o motivo. Desligar esconde
+  o campo e não apaga o que foi cadastrado. Nenhum produto já cadastrado muda.
+
+  Crédito: @adsinside, pelo código, e @igornewmedia, que o trouxe no #3472.
+
+- **A rota de envio aceita telefone no lugar do id da conversa** `POST /api/v1/messages` passa a aceitar `phone_number` quando `conversation_id` não vem. O contato é achado pelas grafias do número (ou criado) e a conversa 1:1 é aberta pelo mesmo caminho que o botão "iniciar conversa" e a tool MCP `crm_start_conversation_and_send` já usam — não há segunda regra de abertura de conversa. É a porta de que o conector `deskcomm` do DeskVoice precisa para falar com o CRM; o conector passa a usá-la quando for atualizado no DeskVoice. Contribuição de @webtecnica (#4513).
+
+  Os dois identificadores no mesmo corpo são recusados com 422 `ambiguous_target` (não há regra que diga qual vence, e escolher por conta própria é enviar para o destino que ninguém pediu); sem nenhum dos dois, 422 `validation_error`. Quem já manda `conversation_id` não muda de comportamento — mesmo corpo, mesmo `Idempotency-Key`, mesmo recibo.
+
+- **A linha da mensagem some quando o campo está vazio** No texto da automação, do follow-up, do e-mail e da mensagem de campanha agora vale o bloco condicional `{{#campo}}...{{/campo}}`: o trecho entre a abertura e o fechamento só sai quando o campo tem valor, e quando o campo está vazio o trecho sai vazio. Se o bloco era o conteúdo inteiro de uma linha, a linha inteira some junto — o cliente para de receber o rótulo sozinho, como `🔢 Apólice:` sem nada depois.
+
+  O bloco também conversa com o modificador de data que já existe: `{{#data_inicio}}Início: {{data_inicio|data}}{{/data_inicio}}` sai com a data no idioma e no fuso da organização, e some quando a data não está preenchida. As telas de rascunho (Inbox) e de campanha mantêm a linha com a variável visível, para o operador ver o que falta preencher.
+
+  Nada muda para quem não usa o bloco: texto sem `{{#` continua saindo exatamente como hoje, e nenhuma automação já publicada precisa ser reeditada.
+
+  Crédito: @webtecnica.
+
+### Corrigido
+
+- **A agenda do celular não recria mais o contato que o titular pediu para apagar** "Sincronizar agenda do celular" gravava pela mesma função da ingestão de mensagens, mas sem fazer a pergunta de LGPD que a sincronização da agenda do app já fazia: como a anonimização zera o telefone da ficha, a pré-leitura não a encontrava e o contato voltava ao cadastro com o número e o nome salvos no aparelho. Agora a sincronização pergunta antes de gravar, em lote, a mesma pergunta da ingestão, e na dúvida não cria nada. Quem pediu para ser apagado não volta por esse caminho, e o resumo da tela conta esses contatos como ignorados.
+
+  Você não precisa fazer nada.
+
+  Ajuste a partir da issue #3432.
+
+- **Quem é dono do negócio leva o negócio junto ao transferir a conversa** Na visibilidade padrão, o Atendente que transferia a conversa para uma colega via a conversa mudar de dono, mas o negócio aberto do contato ficava com ele. A colega não achava o negócio no filtro "Responsável", a meta contava para quem saiu, e tarefas e avisos iam para a pessoa errada.
+
+  Agora, quando quem transfere é o dono atual do negócio, o negócio vai junto. A exceção vale só para o botão Transferir: Assumir, a fila automática e a passagem de carteira continuam só dando dono a negócio sem responsável, e ninguém toma nem entrega o negócio de outra pessoa. Ser dono do negócio não abre a conversa de uma colega.
+
+  Contribuição de @webtecnica (#4382), a partir do relato de @aerosuiteapp (#4371).
+
+- **Remarcar um compromisso não apaga mais a duração, e a redação do follow-up passa a respeitar a trava de repetição** **Duração ao remarcar.** Marcar um compromisso já aceitava duração; alterar o horário, não — o PATCH não levava o número e a tela desligava o campo. Resultado: remarcar um atendimento de 90 minutos devolvia o compromisso ao tamanho padrão do serviço, e a única saída era apagar e recriar (perdendo o histórico do bloco). Agora a alteração aceita e preserva a duração, e a tela deixa de esconder o campo. Cliente antigo, que não manda a duração, mantém exatamente o comprimento que o bloco já tem — nada muda para ele.
+
+  **Redação do follow-up x trava de repetição.** O passo de mensagem com mais de uma redação escolhia o texto sem olhar o que já foi enviado, e a trava de repetição barrava o envio: o contato ficava sem mensagem e o passo encerrava como pulado. Agora a escolha olha a janela de envios recentes e prefere a redação que menos colide; se nenhuma passar, o passo é adiado (como já acontecia do lado de fora da janela de envio), com teto de três adiamentos antes de encerrar.
+
+  Crédito: @webtecnica.
+
+- **O anexo enviado pelo Inbox chega ao WhatsApp com o nome original do arquivo** Um documento anexado no Inbox chegava ao cliente com um nome interno aleatório (`out-<código>.pdf`) em vez do nome escolhido por quem enviou. Agora o nome original vai ao WhatsApp e também aparece no balão da conversa e no download. Para quem integra: a rota de upload (`POST /api/v1/conversations/{id}/media`) passa a devolver `media_filename`, e o envio (`POST /api/v1/messages`) aceita o campo opcional `media_filename`. Sem ele, o envio continua usando o nome do arquivo guardado, como antes. Contribuição de @webtecnica (#4457).
+
+- **Skill em .zip do ecossistema (SKILL.md sem matcher) importa e pode ser usada pelo roteiro** O envio de skill em `.zip` recusava qualquer `SKILL.md` sem `matcher`, com a
+  mensagem "O matcher do SKILL.md precisa de any_keywords". O formato é legítimo: a
+  maioria das skills publicadas fora do CRM — a `humanizer` de `blader/humanizer` é o
+  caso do relato — declara só `name` e `description`. Agora a skill importa com o
+  matcher vazio e fica declarado o que isso significa: ela **não** entra sozinha na
+  conversa por palavra-chave nem por etiqueta; o corpo dela só é injetado quando o
+  roteiro de atendimento a puxa **pelo nome** (nó `skill`). O editor mostra esse
+  recado no campo de palavras-chave, e a própria tela permite salvar a skill sem
+  inventar palavra nenhuma. Matcher realmente inválido continua recusado, agora com o
+  **campo** no nome do erro (`any_keywords`, `probe_keywords` ou `any_tags`); chave
+  desconhecida dentro do `matcher` (typo) também vira erro em vez de "skill sem
+  matcher". `description: |` (bloco multilinha) passa a virar uma descrição só, em vez
+  do literal `|`. Skill que já tinha matcher continua idêntica. Sem migration: a coluna
+  `skill_versions.matcher` é `jsonb not null default '{}'`. Contribuição de
+  @webtecnica (#4458).
+
+- **Campanhas paradas no próprio ritmo não escondem mais as seguintes da rodada, até 300 por tique** A rodada de campanha lia sempre as 30 mais antigas e só depois decidia se alguma delas podia falar. Trinta campanhas esperando o próprio teto diário não ocupavam número nenhum, mas consumiam a leitura inteira: a 31ª não era avaliada em tique nenhum — nem para despachar, nem para revalidar quem pediu para parar de receber.
+
+  Agora a leitura continua nas páginas seguintes por cursor de antiguidade, e para em três pontos: nos 10 números atendidos por rodada (o mesmo teto de antes), no fim da fila e num orçamento de 10 páginas por tique. Quem chega ao orçamento vê `varredura:orcamento` no detalhe da rodada, em vez de concluir que não havia mais campanha.
+
+  Acima disso, cada tique recomeça pela mais antiga; o caso segue aberto na #4495.
+
+  Nada muda para quem já está em dia: a primeira página preenche os números e a rodada encerra como hoje; nenhuma configuração precisa ser refeita.
+
+  Crédito: @webtecnica.
+
+- **Cancelar campanha avisa quando a fila não fechou, e cancelar de novo termina o serviço** Se o banco falhasse no meio do cancelamento de uma campanha, a tela dizia que tinha dado certo com "0 cancelados", enquanto quem ainda não tinha recebido continuava na fila — e a campanha, já cancelada, não aceitava cancelar de novo. Agora o erro aparece na hora, a campanha cancelada que ainda tem gente na fila mostra o botão "Cancelar campanha" outra vez, e repetir fecha o que sobrou. A data do cancelamento e quem já estava sendo enviado não mudam.
+
+  Crédito: @shu-chen-dot-ca.
+
+- **Documento enviado pela API chega no WhatsApp com o nome do arquivo, não com "file"** Pela API (`POST /api/v1/messages` com `media_url`), um documento chegava ao
+  WhatsApp chamado `file`: o envio não levava nome nenhum, e o nome era escolhido
+  pelo canal. No celular, um PDF chamado `file` parece arquivo suspeito, e quem
+  recebe hesita em abrir.
+
+  Agora o nome que o destinatário vê é, nesta ordem: o campo opcional
+  `media_filename` (o mesmo que o envio pelo Inbox passou a aceitar na #4457);
+  na falta dele, o `metadata.media_filename` — a mesma chave que
+  a ingestão já grava e que o cartão do Inbox já mostra; na falta dos dois, o
+  último segmento da `media_url`, quando ele tem extensão (`.pdf`, `.docx`); e por
+  fim um nome de reserva legível, como `documento.pdf`. O nome é limpo antes de
+  sair: acento e espaço passam, `../` não atravessa, caractere que o sistema de
+  arquivos recusa sai, e nome que não sobra depois da limpeza vira a reserva. O
+  campo `media_filename` aceita de 1 a 255 caracteres — fora disso a requisição
+  volta 400, como qualquer campo inválido; o `metadata.media_filename` não tem
+  esse limite: vazio vira a reserva, e gigante é cortado preservando a extensão.
+  O arquivo no armazenamento continua
+  onde estava, com a mesma chave — muda só o rótulo.
+
+  O campo é **aditivo**: quem já chama a API sem ele não precisa mudar nada, e a
+  requisição antiga continua entrando e saindo como antes. Se a sua integração
+  quiser controlar o nome, é só mandar `media_filename` no corpo.
+
+  O envio manual de documento pelo Inbox (o anexo escolhido na tela) é outro
+  caminho, tratado na #4457, e não foi tocado aqui. Contribuição de @webtecnica
+  (#4524).
+
+- **Em Equipe › Atendentes, o leitor de tela fala em espanhol a lixeira do horário e a caixa do modo de roteamento** Com a interface em espanhol, dois controles da tela Equipe › Atendentes ainda eram lidos em português pelo leitor de tela: o botão de lixeira de cada janela do horário do atendente ("Remover janela") e a caixa do modo de roteamento ("Modo de roteamento"). Agora eles seguem o idioma escolhido, como o resto da tela. Quem não usa leitor de tela não vê diferença.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @renatomprado, a partir da issue #4563.
+
+- **O card criado em outro funil passa a levar os anexos do card de origem** Quando um negócio ganhava um card em outro funil, seja pela automação (a continuação do negócio ganho ou a transferência por tag), seja pelo agente de IA ao levar o negócio para outro funil, seja pelo botão "Levar para outro funil", o card novo nascia sem os arquivos anexados no card de origem. Agora os anexos são copiados para o card novo, e o card de origem continua com os dele. O anexo aparece no card novo quando o funil de destino tem um campo de arquivo com a mesma chave.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#4569).
+
+- **O sino de avisos e o cartão de proposta deixam de pedir a tela antes do clique** O `<Link>` do Next.js prefetcha sozinho todo destino que entra na viewport, e cada prefetch é um render RSC inteiro (`proxy.ts` + `loadAuthUser` + as consultas do layout de `/app`) para devolver a casca de uma rota `force-dynamic`. O sino do header fica em toda tela de `/app`, e o cartão de proposta nova nasce já na tela: os dois pediam `/app/ai/inbox` (ou o destino da proposta) ao montar, sem ninguém ter pedido a tela.
+
+  Agora os dois pedem por INTENÇÃO — ponteiro e foco, os dois sinais que antecedem o clique —, pelo mesmo gancho do menu (`hooks/navigation/prefetchPorIntencao.ts`). Quem só passa o olho pela tela não gera render nenhum; quem vai clicar continua entrando pelo caminho rápido. O contador do sino e o cartão que aparece quando chega proposta nova continuam exatamente como eram: o que saiu foi o pedido antecipado da tela, não o dado que a pessoa vê.
+
+  Crédito: @webtecnica.
+
+- **Espera e prazo de tarefa respeitam o fuso da cadência** Os dias úteis da espera e do prazo de tarefa passam a ser contados no fuso configurado na cadência, mantendo a hora local. Antes, uma etapa iniciada na sexta à noite no Brasil podia vencer no domingo, porque a contagem usava o calendário UTC. O calendário brasileiro de feriados continua o mesmo. Crédito: @samirhvbr.
+
+- **O aviso de proposta pronta não reaparece a cada página aberta** O cartão "A IA preparou uma proposta" aparecia de novo em toda página que se
+  abria enquanto o aviso continuava aberto na Central. Agora ele aparece uma vez,
+  quando a proposta nasce com o CRM aberto, e some ao ser dispensado ou aberto.
+
+- **Ficha com vários telefones: o rótulo acompanha o número e dois cadastros ao mesmo tempo não perdem telefone** "Tornar principal" deixou de descartar o rótulo do telefone extra promovido ("casa", "trabalho"): o rótulo agora acompanha o número nos dois sentidos e aparece ao lado do telefone principal na ficha, e a troca sai direto, sem o aviso de descarte. O rótulo digitado no primeiro telefone de uma ficha vazia também fica guardado. Quando o telefone principal é removido ou o contato é anonimizado, o rótulo sai junto com o número.
+
+  Dois cadastros de telefone ao mesmo tempo numa ficha sem principal (duas abas, duas pessoas) não sobrescrevem mais um ao outro: o primeiro vira o principal e o segundo entra como telefone extra, sem perda. Numa organização fora do Brasil, a recusa de número inválido mostra a frase da API com o formato do país, no idioma de quem opera, em vez de pedir um DDD que o país não tem. No cabeçalho da conversa, a linha "A resposta sai por" guarda o número inteiro na dica do mouse quando a largura corta o texto.
+
+  A atualização acrescenta uma coluna e um gatilho ao banco e não pede nenhuma ação de quem opera a instalação.
+
+  Crédito: @webtecnica.
+
+- **O Inbox diz por que a lista não carregou e aguenta a API REST lenta sem perder as conversas na tela** Quando a chamada que carrega as conversas estoura o tempo ou o servidor fica fora do ar, o Inbox continuava insistindo sozinho (até três tentativas, com espera crescente) e agora, ao desistir, DIZ o que aconteceu: "a consulta excedeu o tempo limite", "o servidor não respondeu agora" ou "sua sessão expirou" — em vez de "Erro inesperado. Tente novamente.". A tela também avisa que as conversas continuam salvas, e oferece "Tentar novamente" sem recarregar a página, preservando filtro e conversa aberta.
+
+  A lista já carregada não desaparece mais quando uma atualização falha: as conversas ficam onde estão.
+
+  Pedido inválido (400, 401, 403, 404, 422) não é repetido — repetir um pedido recusado só multiplica o erro. A repetição passou a cobrir também 502 e 504 na LEITURA; em ESCRITA ela continua restrita às respostas em que o servidor diz que nada foi processado (429 e 503), para não duplicar mensagem.
+
+  Crédito: @webtecnica.
+
+- **Editar um produto não zera mais o estoque nem reativa o produto** Mudar só o preço, ou qualquer outro campo, de um produto gravava junto estoque 0,
+  controle de estoque ligado e produto ativo. Agora a edição grava só o que mudou.
+  Quantidades que já foram zeradas por esse defeito não voltam sozinhas.
+
 ## [1.110.0] — 2026-11-13
 
 ### Adicionado
@@ -16017,7 +16246,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.110.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.111.0...HEAD
+[1.111.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.110.0...v1.111.0
 [1.110.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.109.0...v1.110.0
 [1.109.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.108.0...v1.109.0
 [1.108.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.107.0...v1.108.0
