@@ -616,7 +616,18 @@ async function rodarUmaCampanha(
       knobs: k.knobs,
       // O último balão tem de caber no teto: conferir como se os anteriores já
       // tivessem saído. Com um balão só, é o estado de sempre.
-      state: { ...estadoDoNumero, sentToday: estadoDoNumero.sentToday + baloesPrevistos - 1 },
+      //
+      // A mesma conta vale para `abordagensToday`: a campanha é disparo de
+      // abordagem (o motor lê `abordagem` omitido como "conta"), e com a opção
+      // `tetoSoAbordagem` ligada é ESSA contagem que decide — somar só em
+      // `sentToday` deixaria os balões anteriores de fora e a rodada passaria do
+      // teto de abordagem por (balões - 1).
+      state: {
+        ...estadoDoNumero,
+        sentToday: estadoDoNumero.sentToday + baloesPrevistos - 1,
+        abordagensToday:
+          (estadoDoNumero.abordagensToday ?? estadoDoNumero.sentToday) + baloesPrevistos - 1,
+      },
       crmDailyLimit: linha.daily_message_limit ?? null,
       // Aquecimento e teto anti-ban são do número por QR. O oficial não é banido
       // por volume — quem limita ali é a plataforma (nível de mensagens) —, e o

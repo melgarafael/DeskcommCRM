@@ -166,6 +166,16 @@ export interface GateContext {
      * só distingue resposta de retomada por follow-up.
      */
     resposta?: boolean;
+    /**
+     * Este envio é a 1ª mensagem a uma pessoa nova (abordagem)? Só o canal com
+     * `tetoSoAbordagem` ligado lê o campo (#3851): ligado, o teto conta e barra
+     * a abordagem e deixa passar o follow-up de quem já foi abordado.
+     *
+     * Omitido = `true` (conservador) no motor. O runner SEMPRE declara quando
+     * consultou o `send_ledger`; quando não consultou, omitir é o certo — a
+     * ausência do dado não pode virar "pessoa já abordada" e abrir o teto.
+     */
+    abordagem?: boolean;
   };
   spinning: {
     knobs: SpinningKnobs;
@@ -1179,6 +1189,7 @@ export const pacingGate: Gate = {
       crmDailyLimit: ctx.pacing.crmDailyLimit,
       banRisk,
       resposta: ctx.pacing.resposta,
+      ...(ctx.pacing.abordagem !== undefined ? { abordagem: ctx.pacing.abordagem } : {}),
       rng: ctx.pacing.rng,
     });
     if (!decision.allow) {
@@ -1819,12 +1830,25 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     // Disclosure (F4-05): template por ponteiro da org + detecção de 1º outbound via
     // send_ledger (só conta se há template — sem template o gate é no-op de qualquer forma).
     const disclosure = await loadDisclosureTemplate(client, args.tenantId);
-    // "1º outbound" (send_ledger accepted == 0): sinal compartilhado pelo disclosure (F4-05) e
-    // pelo gate LGPD (F4-09). Só consulta o ledger se ALGUM dos dois precisa (senão no-op).
-    const isFirstOutbound =
-      disclosure !== null || args.lgpd !== undefined
-        ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId)) === 0
-        : false;
+    // "1º outbound" (send_ledger accepted == 0): sinal compartilhado pelo disclosure (F4-05),
+    // pelo gate LGPD (F4-09) e, agora, pelo teto por abordagem (#3851). Só consulta o
+    // ledger se ALGUM dos três precisa (senão no-op).
+    //
+    // O teto entra nesta conta e não numa consulta própria: "1ª mensagem a pessoa nova"
+    // é exatamente a pergunta que o disclosure já faz. A condição ganha o knob porque
+    // canal com a opção desligada (o default) não pode pagar uma query nova por envio.
+    const tetoSoAbordagem = pacingCfg.knobs.tetoSoAbordagem === true;
+    const precisaSaberPrimeiroEnvio =
+      disclosure !== null || args.lgpd !== undefined || tetoSoAbordagem;
+    const isFirstOutbound = precisaSaberPrimeiroEnvio
+      ? (await countPriorAcceptedSends(client, args.tenantId, args.leadId)) === 0
+      : false;
+    // ABORDAGEM: resposta nunca é abordagem (a pessoa veio até nós); disparo é
+    // abordagem quando não houve envio accepted anterior a este contato. Sem
+    // consulta, fica INDEFINIDO — e omitir no motor vale "conta no teto", que é a
+    // direção segura: dado ausente não abre o teto.
+    const abordagem: boolean | undefined =
+      args.resposta === true ? false : precisaSaberPrimeiroEnvio ? isFirstOutbound : undefined;
 
     const lastInboundAt = await readLastInboundAt(
       client,
@@ -1848,6 +1872,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
         crmDailyLimit: args.crmDailyLimit,
         rng: args.rng,
         ...(args.resposta !== undefined ? { resposta: args.resposta } : {}),
+        ...(abordagem !== undefined ? { abordagem } : {}),
       },
       spinning: { knobs: spinningKnobs, window },
       ...(args.enforceSpinning === false ? { spinningEnforced: false as const } : {}),
@@ -1967,6 +1992,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
     if (outcome.kind === 'sent') {
       await recordSend(client, args.tenantId, args.channelSessionId, args.now, {
         resposta: tipoDeEnvio(args.resposta) === 'resposta',
+        ...(abordagem !== undefined ? { abordagem } : {}),
       });
       // Simetria com o gate desarmado: quem não é julgado pela janela não entra
       // nela. Ver `GateContext.spinningEnforced`.

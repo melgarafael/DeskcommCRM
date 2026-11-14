@@ -89,6 +89,21 @@ export interface PacingKnobs {
   prospeccaoDias: number[];
   /** IANA timezone do tenant — a janela é avaliada NELA. */
   timezone: string;
+  /**
+   * O teto diário conta SÓ a abordagem (1ª mensagem a pessoa nova)?
+   *
+   * Desligado (default) = a régua de sempre: o teto mede todo disparo —
+   * abordagem e follow-up de quem já foi abordado. Ligado, o follow-up de quem
+   * já foi abordado não gasta nem espera o teto; a abordagem continua contando
+   * e sendo barrada. Em NENHUM dos dois casos a resposta a quem escreveu passa
+   * pelo teto (9061), e em nenhum deles o throttle ou a janela horária mudam.
+   *
+   * É opção POR CANAL porque o número é quem é banido: uma empresa com dois
+   * números pode querer o teto só na abordagem num deles e a régua cheia no
+   * outro. O default `false` mantém byte a byte o comportamento de quem nunca
+   * abrir a ficha.
+   */
+  tetoSoAbordagem: boolean;
   /** Degraus de warm-up ordenados por minAgeDays crescente (o primeiro cobre idade 0). */
   warmupDailyCaps: WarmupStep[];
 }
@@ -136,6 +151,9 @@ export const PACING_DEFAULTS: PacingKnobs = {
   // 0642, não aqui — default de fallback nunca reescreve escolha de ninguém.
   prospeccaoDias: [0, 1, 2, 3, 4, 5, 6],
   timezone: 'America/Sao_Paulo',
+  // Desligado: o teto do dia mede todo disparo (abordagem + follow-up de quem já
+  // foi abordado), como sempre mediu. Ligar é decisão do dono do canal, um por um.
+  tetoSoAbordagem: false,
   // Número sem linha em channel_knobs é tratado como idade 0 (o degrau mais
   // conservador) até alguém registrar number_activated_at.
   warmupDailyCaps: [

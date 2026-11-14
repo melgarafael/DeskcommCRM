@@ -7933,6 +7933,10 @@ export const DICIONARIO: Traducoes = {
     es: "Los envíos masivos, la prospección y los mensajes que retoman una conversación detenida solo salen dentro de esta ventana. Fuera de ella, el envío queda programado para cuando se abra de nuevo, y el motivo aparece en la conversación.",
   },
   "Enviar aos domingos": { es: "Enviar los domingos" },
+  "Teto do dia só na abordagem": { es: "Tope del día solo en el primer contacto" },
+  "Ligado: o teto diário conta apenas a primeira mensagem a uma pessoa nova. Responder quem escreveu e retomar quem já foi abordado continua respeitando o intervalo e a janela, mas não gasta nem espera o teto.": {
+    es: "Activado: el tope diario cuenta solo el primer mensaje a una persona nueva. Responder a quien escribió y retomar a quien ya fue contactado sigue respetando el intervalo y la ventana, pero no gasta ni espera el tope.",
+  },
   "Ligado por padrão: quem escreve no domingo espera resposta no domingo. Desligue se você faz prospecção ativa e prefere não incomodar no fim de semana.": {
     es: "Activado por defecto: quien escribe un domingo espera respuesta el domingo. Desactívalo si haces prospección activa y prefieres no molestar el fin de semana.",
   },

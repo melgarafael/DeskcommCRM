@@ -80747,6 +80747,22 @@ create index if not exists idx_messages_derivacao_adiada
   on public.messages (organization_id, conversation_id, created_at desc)
   where (metadata ? 'derivacao_adiada') and media_storage_path is not null;
 
+-- ---- teto do dia só na abordagem (migration 9216) ----
+-- Opção POR CANAL (#3851): ligada, o teto diário conta e barra só a 1ª mensagem
+-- a pessoa nova; o follow-up de quem já foi abordado não gasta nem espera o
+-- teto. O porquê inteiro está no cabeçalho da migration.
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+alter table public.channel_knobs
+  add column if not exists teto_so_abordagem boolean;
+comment on column public.channel_knobs.teto_so_abordagem is
+  'true = o teto diário (warm-up e daily_message_limit) conta só a 1ª mensagem a pessoa nova; follow-up de quem já foi abordado não gasta nem espera o teto. NULL/false = régua de sempre (conta todo disparo). Resposta nunca passa pelo teto (9061). Opção POR CANAL (#3851).';
+
+alter table public.pacing_ledger
+  add column if not exists abordagem boolean not null default true;
+comment on column public.pacing_ledger.abordagem is
+  'true = 1ª mensagem a pessoa nova (abordagem). false = follow-up de quem já foi abordado. Só a coluna `teto_so_abordagem` do canal faz o teto do dia ler isto; resposta é marcada por `resposta` e nunca conta (#3851).';
+
 -- ---- nome de atendente só para quem tem vínculo com a organização (migration 9219) ----
 -- assigned_to_user_name só guarda o nome de quem tem ou teve vínculo
 -- (user_organizations, sem filtro de revoked_at) com a organização da conversa.
