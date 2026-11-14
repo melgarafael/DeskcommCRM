@@ -12,8 +12,14 @@
  *
  * Esta função é o elo: no GANHO, com `recurring_value_cents` declarado, cria
  * UM molde ativo ligado ao negócio; na PERDA, desativa o molde DAQUELE
- * negócio. Nada mais — flag por funil e tela própria são decisão de produto e
- * ficaram fora desta onda (declarado no PR).
+ * negócio.
+ *
+ * Doc 312 = A: o ganho só cria quando a empresa ligou
+ * `settings.financeiro.recorrencia_no_ganho` (desligada de fábrica); o molde
+ * para no último mês de `crm_leads.recurring_months` (`ends_on`, migration
+ * 9371); e o re-ganho depois de uma perda reativa o MESMO molde. A perda
+ * desativa mesmo com a opção desligada: desligar não pode deixar cobrança
+ * ativa sem dono.
  *
  * ─── Por que molde, e não lançamento ───────────────────────────────────────
  *
@@ -49,6 +55,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { moduloLigado } from "@/lib/instalacao/modulos";
+import { recorrenciaNoGanhoLigada } from "@/lib/schemas/settings";
 
 /** A direção do molde: a recorrência do negócio é receita. */
 export const DIRECAO_DA_RECORRENCIA_DO_NEGOCIO = "in" as const;
@@ -64,14 +71,21 @@ export interface EntradaDaRecorrenciaDoNegocio {
   criadoEm: string | null;
   /** `crm_leads.owner_user_id`: autor do molde, pode ser nulo (a IA move sem dono). */
   userId: string | null;
+  /** `crm_leads.recurring_months` — duração do contrato; nulo = sem prazo. */
+  meses?: number | null;
 }
 
 export type DesfechoDaRecorrenciaDoNegocio =
   | { estado: "criado"; recorrenciaId: string; valorCents: number; diaDoMes: number }
   | { estado: "ja_existia"; recorrenciaId: string | null }
+  | { estado: "reativado"; recorrenciaId: string }
   | {
       estado: "ignorado";
-      motivo: "sem_valor_valido" | "modulo_financeiro_nao_instalado" | "sem_conta_financeira";
+      motivo:
+        | "sem_valor_valido"
+        | "opcao_desligada"
+        | "modulo_financeiro_nao_instalado"
+        | "sem_conta_financeira";
     }
   | { estado: "falhou"; erro: string };
 
@@ -116,6 +130,26 @@ export function diaDoMesDoNegocio(criadoEm: string | null): number {
 }
 
 /**
+ * A última competência do contrato de `meses` meses que começa no mês de
+ * `agora` (UTC), no dia do molde — mesma régua de `competenciaDoMes` do cron:
+ * o dia que o mês não tem cai no último dia dele. Nulo = sem prazo (inclusive
+ * duração ilegível, que o CHECK de `crm_leads` já recusa na escrita).
+ */
+export function fimDaRecorrencia(
+  meses: number | null | undefined,
+  diaDoMes: number,
+  agora: Date = new Date(),
+): string | null {
+  if (typeof meses !== "number" || !Number.isInteger(meses) || meses < 1) return null;
+  // `Date.UTC` com mês estourado vira o ano seguinte sozinho.
+  const alvo = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth() + meses - 1, 1));
+  const ano = alvo.getUTCFullYear();
+  const mes = alvo.getUTCMonth() + 1;
+  const dia = Math.min(diaDoMes, new Date(Date.UTC(ano, mes, 0)).getUTCDate());
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+/**
  * Cria o molde recorrente do negócio ganho. Idempotente; nunca lança exceção
  * para quem chamou.
  */
@@ -126,6 +160,17 @@ export async function recorrenciaDoNegocio(
   const valor = valorLancavel(entrada.valorCents);
   if (valor === null) return { estado: "ignorado", motivo: "sem_valor_valido" };
 
+  // Doc 312 = A: a opção da empresa, desligada de fábrica. Lida antes de
+  // qualquer escrita; banco que não respondeu conta como desligada.
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", entrada.organizationId)
+    .maybeSingle();
+  if (!recorrenciaNoGanhoLigada((org as { settings?: unknown } | null)?.settings)) {
+    return { estado: "ignorado", motivo: "opcao_desligada" };
+  }
+
   // `recurring_entries` é tabela do módulo financeiro (ADR-0002, #1907): sem o
   // módulo instalado, a tela que mostraria o molde não existe, e gravá-lo
   // criaria receita que ninguém enxerga.
@@ -133,18 +178,36 @@ export async function recorrenciaDoNegocio(
     return { estado: "ignorado", motivo: "modulo_financeiro_nao_instalado" };
   }
 
+  const diaDoMes = diaDoMesDoNegocio(entrada.criadoEm);
+  const fim = fimDaRecorrencia(entrada.meses, diaDoMes);
+
   // A leitura antes da escrita: fechar, reabrir e fechar de novo é fluxo normal
   // do funil, e o segundo fecho não pode criar um segundo molde.
   const { data: existente, error: erroLeitura } = await supabase
     .from("recurring_entries")
-    .select("id")
+    .select("id, is_active")
     .eq("organization_id", entrada.organizationId)
     .eq("crm_lead_id", entrada.leadId)
     .limit(1)
     .maybeSingle();
   if (erroLeitura) return { estado: "falhou", erro: `molde: ${erroLeitura.message}` };
   if (existente) {
-    return { estado: "ja_existia", recorrenciaId: String((existente as { id: string }).id) };
+    const molde = existente as { id: string; is_active?: boolean };
+    if (molde.is_active !== false) return { estado: "ja_existia", recorrenciaId: String(molde.id) };
+    // Re-ganho depois de uma perda (doc 312): o MESMO molde volta a valer, com o
+    // valor e o prazo deste ganho — nunca uma segunda linha.
+    const { error: erroReativa } = await supabase
+      .from("recurring_entries")
+      .update({
+        is_active: true,
+        amount_cents: valor,
+        ends_on: fim,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", molde.id)
+      .eq("organization_id", entrada.organizationId);
+    if (erroReativa) return { estado: "falhou", erro: `molde: ${erroReativa.message}` };
+    return { estado: "reativado", recorrenciaId: String(molde.id) };
   }
 
   const { data: conta, error: erroConta } = await supabase
@@ -173,7 +236,6 @@ export async function recorrenciaDoNegocio(
       ? `Recorrência · ${nomeDoFunil.trim()}`
       : "Recorrência do negócio";
 
-  const diaDoMes = diaDoMesDoNegocio(entrada.criadoEm);
   const { data: criado, error: erroInsert } = await supabase
     .from("recurring_entries")
     .insert({
@@ -185,6 +247,7 @@ export async function recorrenciaDoNegocio(
       amount_cents: valor,
       currency: await moedaDaOrganizacao(supabase, entrada.organizationId),
       day_of_month: diaDoMes,
+      ends_on: fim,
       is_active: true,
       created_by_user_id: entrada.userId,
     })

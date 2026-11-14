@@ -1693,6 +1693,7 @@ export async function moveLeadHandler(
             pipelineId: lead.pipeline_id,
             valorCents: valorRecorrente,
             criadoEm: (lead as { created_at?: string | null }).created_at ?? null,
+            meses: (lead as { recurring_months?: number | null }).recurring_months ?? null,
             userId: ctx.actor.type === "user" ? ctx.actor.id : null,
           });
           if (desfecho.estado === "falhou") {

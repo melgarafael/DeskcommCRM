@@ -75787,6 +75787,18 @@ create unique index if not exists recurring_entries_org_lead_uidx
 comment on column public.recurring_entries.crm_lead_id is
   'O negócio que originou o molde (negócio ganho com recorrência, #3602). Nullable: molde digitado à mão não tem negócio. on delete set null — o molde explica lançamentos pagos e não é apagado em cascata. Migration 9316.';
 
+-- ---- o molde da recorrência do negócio para no último mês do contrato (migration 9371) ----
+-- Espelho de supabase/migrations/20261114120002_9371_fim_da_recorrencia_do_negocio.sql.
+-- `recurring_entries.ends_on`: a última competência que o molde gera; nulo = sem
+-- prazo. O ganho grava a data a partir de `crm_leads.recurring_months`, e o cron
+-- pula a competência posterior a ela. Idempotente: `add column if not exists`.
+
+alter table public.recurring_entries
+  add column if not exists ends_on date;
+
+comment on column public.recurring_entries.ends_on is
+  'A última competência que o molde gera; nulo = sem prazo. Gravada pelo ganho do negócio a partir de crm_leads.recurring_months (#3602). Migration 9371.';
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.

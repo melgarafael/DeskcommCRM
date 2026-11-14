@@ -10,13 +10,16 @@
  *   2. ganho de novo → `ja_existia`, nada é escrito;
  *   3. corrida (23505 no índice único) → `ja_existia`, nunca exceção;
  *   4. sem valor, sem conta, ou sem o módulo financeiro → `ignorado`, sem escrita;
- *   5. perda → `is_active = false` só no molde daquele negócio.
+ *   5. perda → `is_active = false` só no molde daquele negócio;
+ *   6. doc 312 = A: opção desligada → nada gravado; `recurring_months` vira
+ *      `ends_on`; re-ganho depois da perda reativa o MESMO molde.
  */
 import { describe, expect, it } from "vitest";
 
 import {
   desativaRecorrenciaDoNegocio,
   diaDoMesDoNegocio,
+  fimDaRecorrencia,
   recorrenciaDoNegocio,
 } from "./recorrencia-do-negocio";
 
@@ -44,6 +47,8 @@ function resposta(data: unknown, error: { message: string; code?: string } | nul
  */
 function bancoFalso(
   opcoes: {
+    /** `settings.financeiro.recorrencia_no_ganho` da empresa. Padrão do teste: ligada. */
+    opcaoLigada?: boolean;
     moduloLigado?: boolean;
     moldeExistente?: Registro | null;
     contas?: Registro[];
@@ -84,7 +89,10 @@ function bancoFalso(
             opcoes.nomeDoFunil === null ? null : { name: opcoes.nomeDoFunil ?? "Vendas" },
           );
         case "organizations":
-          return resposta({ currency: "BRL" });
+          return resposta({
+            currency: "BRL",
+            settings: { financeiro: { recorrencia_no_ganho: opcoes.opcaoLigada !== false } },
+          });
         default:
           throw new Error(`consulta inesperada no teste: ${tabela}`);
       }
@@ -159,6 +167,63 @@ describe("diaDoMesDoNegocio", () => {
   });
 });
 
+describe("fimDaRecorrencia", () => {
+  const NOV = new Date("2026-11-20T12:00:00Z");
+
+  it("N meses = N competências a partir do mês do ganho, no dia do molde", () => {
+    expect(fimDaRecorrencia(1, 5, NOV)).toBe("2026-11-05");
+    expect(fimDaRecorrencia(12, 5, NOV)).toBe("2027-10-05");
+  });
+
+  it("o dia que o mês não tem cai no último dia dele", () => {
+    expect(fimDaRecorrencia(4, 31, NOV)).toBe("2027-02-28");
+  });
+
+  it("sem prazo (nulo ou ilegível) não tem fim", () => {
+    expect(fimDaRecorrencia(null, 5, NOV)).toBeNull();
+    expect(fimDaRecorrencia(undefined, 5, NOV)).toBeNull();
+    expect(fimDaRecorrencia(0, 5, NOV)).toBeNull();
+  });
+});
+
+describe("recorrenciaDoNegocio — doc 312 = A", () => {
+  it("opção desligada (o padrão de fábrica): ganhar NÃO grava nada", async () => {
+    const falso = bancoFalso({ opcaoLigada: false });
+
+    const desfecho = await recorrenciaDoNegocio(falso.supabase, entrada());
+
+    expect(desfecho).toEqual({ estado: "ignorado", motivo: "opcao_desligada" });
+    expect(falso.escritas).toHaveLength(0);
+    expect(falso.atualizacoes).toHaveLength(0);
+  });
+
+  it("recurring_months vira o fim do molde; sem prazo, ends_on nulo", async () => {
+    const comPrazo = bancoFalso();
+    await recorrenciaDoNegocio(comPrazo.supabase, entrada({ meses: 12 }));
+    expect(comPrazo.escritas[0]?.dados.ends_on).toBe(fimDaRecorrencia(12, 5));
+    expect(comPrazo.escritas[0]?.dados.ends_on).not.toBeNull();
+
+    const semPrazo = bancoFalso();
+    await recorrenciaDoNegocio(semPrazo.supabase, entrada());
+    expect(semPrazo.escritas[0]?.dados.ends_on).toBeNull();
+  });
+
+  it("re-ganho depois da perda reativa o MESMO molde, sem segunda linha", async () => {
+    const falso = bancoFalso({ moldeExistente: { id: MOLDE, is_active: false } });
+
+    const desfecho = await recorrenciaDoNegocio(falso.supabase, entrada({ meses: 6 }));
+
+    expect(desfecho).toEqual({ estado: "reativado", recorrenciaId: MOLDE });
+    expect(falso.escritas).toHaveLength(0);
+    expect(falso.atualizacoes).toHaveLength(1);
+    expect(falso.atualizacoes[0]).toMatchObject({
+      tabela: "recurring_entries",
+      dados: { is_active: true, amount_cents: 50_000, ends_on: fimDaRecorrencia(6, 5) },
+      filtros: { id: MOLDE, organization_id: ORG },
+    });
+  });
+});
+
 describe("recorrenciaDoNegocio", () => {
   it("ganho com recorrência: UM molde ativo, com o valor, o dia e o vínculo do negócio", async () => {
     const falso = bancoFalso();
@@ -192,7 +257,7 @@ describe("recorrenciaDoNegocio", () => {
   });
 
   it("ganho de novo NÃO duplica: o molde existente é devolvido e nada é escrito", async () => {
-    const falso = bancoFalso({ moldeExistente: { id: MOLDE } });
+    const falso = bancoFalso({ moldeExistente: { id: MOLDE, is_active: true } });
 
     const desfecho = await recorrenciaDoNegocio(falso.supabase, entrada());
 

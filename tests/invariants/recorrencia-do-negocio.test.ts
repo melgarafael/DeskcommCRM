@@ -250,3 +250,21 @@ describe("isolamento por empresa — o molde da outra organização não aparece
     ).toBe("1");
   });
 });
+
+describe("recurring_entries.ends_on — o fim do contrato (9371, doc 312 = A)", () => {
+  it("existe, é date e nullable (nulo = sem prazo, como todo molde digitado à mão)", () => {
+    expect(
+      sql(`
+        select data_type || '|' || is_nullable from information_schema.columns
+         where table_schema = 'public' and table_name = 'recurring_entries'
+           and column_name = 'ends_on';
+      `),
+    ).toBe("date|YES");
+  });
+
+  it("molde criado sem informar o fim nasce sem prazo", () => {
+    expect(
+      sql(`select coalesce(ends_on::text, 'nulo') from public.recurring_entries where id = '${MOLDE_B}';`),
+    ).toBe("nulo");
+  });
+});
