@@ -4335,6 +4335,21 @@ funções copiáveis com `credential_id` nulo — regra única em `lib/ai/molde-
 Não provado: que a primeira chamada de IA da empresa nova sai com a chave da instalação (o
 painel mostra modelo e origem, não faz chamada paga).
 
+## J68 — Capacidade do produto, ligada por empresa `[P1]` (2026-11-06)
+
+Recorte do #3472 (commit `44cac90dd`, de @adsinside, publicado por @igornewmedia). O relato de
+prova do fork é contexto: as capturas dele mostram o campo `cor`, que a main não tem, e por isso
+não entram aqui. Quem liga é a empresa, em `/app/settings/tenant`, cartão Catálogo.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J68.1 | Chave desligada, o padrão | sem campo ao criar e editar, sem o valor na lista; POST e PATCH com capacidade dão 422 | **PASS (unit)** — `tests/unit/catalogo-edicao-do-produto.test.tsx`, `app/api/v1/products/route.test.ts`, `app/api/v1/products/[id]/route.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.2 | Ligar no cartão Catálogo | grava `settings.catalogo.capacidade`, audita, e a escrita concorrente vira 409 | **PASS (unit)** — `app/api/v1/settings/catalogo/route.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.3 | Ligada: criar, editar, limpar, ver na lista | o campo vem depois de Categoria e a lista mostra o valor | Tela: **NÃO MEDIDO** |
+| J68.4 | Planilha | desligada, a coluna vai para as colunas não usadas; ligada, lê a coluna, 61 caracteres recusam a linha com o motivo e sem a coluna não apaga | **PASS (unit)** — `tests/unit/capacidade-do-produto.test.ts`. Tela: **NÃO MEDIDO** |
+| J68.5 | Busca do agente | ligada, «iphone 256gb» acha o produto cujo nome não repete a capacidade e elimina o de 512GB; desligada, não pontua nem devolve | **PASS (unit)** — `tests/unit/capacidade-do-produto.test.ts` |
+| J68.6 | Desligar de novo | o valor some da tela e continua no banco | Tela: **NÃO MEDIDO** |
+| J68.7 | Editar só o preço de um produto com estoque | quantidade, controle de estoque e `ativo` não mudam | **PASS (unit)** — `app/api/v1/products/[id]/route.test.ts`. Tela: **NÃO MEDIDO** |
 
 ## E-mail da organização — conta e domínio (#3443 + #3464)
 
@@ -4431,3 +4446,22 @@ O retorno usa os consumidores existentes: `mcp.tool_called` na auditoria e
 impedimentos no resultado da prévia ajudam o operador a revisar as escolhas em
 Capacidades e a configuração do servidor externo. A próxima execução relê essa
 configuração; não há novo subsistema, tela, rota ou autorização de escrita.
+
+## J-midia — Fotos e PDFs recebidos: ordem e Baixar (2026-11-09)
+
+Relato de um escritório pela API oficial da Meta: Foto 1-2-3 e PDF 1-2-3 apareceram 3-2-1, e a
+foto não tinha download em lugar nenhum. Spec: `tests/e2e/inbox-baixar-midia-e-ordem.spec.ts`
+(parte 6), 1366×900; evidência em `evidence/inbox-baixar-midia-e-ordem/`.
+
+| Caso | O que prova | Como |
+|---|---|---|
+| Ordem no mesmo segundo `[P0]` | 3 fotos e 3 PDFs com o mesmo `sent_at` e ids sorteados ao contrário saem na ordem de chegada | E2E (ordem lida no DOM) + invariante `messages-list-paginacao` (rajada e virada de página) |
+| Baixar a foto | miniatura, foto ampliada e menu «Baixar» disparam download com `foto-AAAA-MM-DD-HHhMM-<id>.png` e os mesmos bytes | E2E (evento de download) |
+| Baixar o PDF pelo menu | «Baixar» no menu salva com o nome original | E2E (evento de download) |
+
+Capturas da prova: `evidence/inbox-baixar-midia-e-ordem/01-ordem-das-fotos.png`,
+`evidence/inbox-baixar-midia-e-ordem/02-ordem-dos-pdfs.png`,
+`evidence/inbox-baixar-midia-e-ordem/03-miniatura-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/04-foto-ampliada-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/05-menu-da-foto-com-baixar.png`,
+`evidence/inbox-baixar-midia-e-ordem/06-menu-do-pdf-com-baixar.png`.

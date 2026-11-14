@@ -39,6 +39,11 @@ export const ROTULO_DA_ORIGEM: Record<FonteDaCampanha["kind"], string> = {
   contact_name: "Nome completo do contato",
   lead_custom: "Campo do negócio",
   fixed: "Texto fixo",
+  // #3687 — a origem nova existe no schema do fluxo (e este tipo a herda), mas
+  // NÃO é oferecida aqui: `origensPermitidas` não a lista. O rótulo existe para
+  // o `Record` ser exaustivo; no modelo da Meta a variável é sempre uma das
+  // quatro origens posicionais.
+  variavel: "Variável do sistema",
 };
 
 export const ROTULO_DA_CATEGORIA: Record<string, string> = {
@@ -153,6 +158,9 @@ export function ModeloDaCampanha({
             : "",
       };
     else if (kind === "lead_custom") variables[v.chave] = { kind, key: "" };
+    // `variavel` nunca chega aqui (`origensPermitidas` não a oferece); o ramo
+    // existe para o union fechar sem `any`.
+    else if (kind === "variavel") variables[v.chave] = { kind, chave: "" };
     else variables[v.chave] = { kind };
     onChange({ ...valor, variables });
   }

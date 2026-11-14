@@ -44,7 +44,8 @@ export interface SkillsState {
 }
 
 export interface SkillMatcher {
-  any_keywords: string[];
+  /** Ausente = skill sem ativação por palavra (#4458): só entra pelo roteiro, que puxa pelo nome. */
+  any_keywords?: string[];
   probe_keywords?: string[];
   any_tags?: string[];
 }

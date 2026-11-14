@@ -55,7 +55,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
   "crm_list_pipelines": { tokens: 63, motivo: BASE },
-  "crm_get_pipeline_forecast": { tokens: 263, motivo: BASE },
+  "crm_get_pipeline_forecast": { tokens: 281, motivo: "#4322: a descrição passou a dizer que `truncado: true` marca valores parciais quando o funil passa do teto de leitura; sem isso o agente apresenta um recorte como o total" },
   "crm_search_knowledge": { tokens: 250, motivo: BASE },
   "crm_list_knowledge_sources": { tokens: 86, motivo: BASE },
   "crm_list_improvement_proposals": { tokens: 85, motivo: BASE },
@@ -71,7 +71,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_consultar_receita": { tokens: 403, motivo: BASE },
   "crm_list_privacy_requests": { tokens: 248, motivo: BASE },
   "crm_get_prospecting_site_audit": { tokens: 220, motivo: BASE },
-  "crm_list_stages": { tokens: 255, motivo: BASE },
+  "crm_list_stages": { tokens: 312, motivo: "+57 de description e agent_stage_hint no retorno (#4319, recorte do #3915): o Operador precisa do CRITÉRIO da etapa para decidir para onde mover o card" },
   "crm_list_tags": { tokens: 111, motivo: BASE },
   "crm_list_message_templates": { tokens: 146, motivo: BASE },
   "crm_render_message_template": { tokens: 597, motivo: BASE },
@@ -148,7 +148,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
 // mensagem (#4077).
-const TETO_TOTAL = 30649;
+const TETO_TOTAL = 30724;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

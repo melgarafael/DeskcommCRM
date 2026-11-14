@@ -9,6 +9,7 @@
  * reprovaria o CI** — o oposto do que o invariante 2 da doutrina promete.
  */
 import { describe, expect, it } from "vitest";
+import { getAdapter } from "@/lib/channels";
 import {
   CHANNEL_CAPABILITIES,
   capabilitiesOf,
@@ -17,7 +18,7 @@ import {
   type ProviderDeMensagem,
 } from "@/lib/channels/capabilities";
 
-const PROVIDERS = ["waha", "meta_cloud", "zernio", "zernio_social", "datafy"] as const satisfies readonly ProviderDeMensagem[];
+const PROVIDERS = ["waha", "meta_cloud", "zernio", "zernio_social", "datafy", "telegram"] as const satisfies readonly ProviderDeMensagem[];
 
 /**
  * Esquecer um provider aqui passa a ser erro de COMPILAÇÃO.
@@ -44,6 +45,7 @@ const CAPABILITIES = [
   "transmissao",
   "phonebook",
   "statusUpdates",
+  "reportaConversao",
 ] as const;
 
 describe("matriz capability × provider é exaustiva", () => {
@@ -64,7 +66,12 @@ describe("matriz capability × provider é exaustiva", () => {
   });
 
   it("resolução é fail-closed — provider desconhecido lança", () => {
-    expect(() => capabilitiesOf("telegram" as ChannelProvider)).toThrow(/unknown_channel_provider/);
+    // `desconhecido` e não `telegram`: o bot do Telegram é provider de MENSAGEM
+    // desde a #3440 e TEM entrada na matriz. O caso fail-closed continua
+    // existindo para o valor que só o banco conhece (clone com schema novo e
+    // imagem velha), que é o defeito que o ramo aberto do `capabilitiesOf`
+    // fecha.
+    expect(() => capabilitiesOf("desconhecido" as ChannelProvider)).toThrow(/unknown_channel_provider/);
   });
 
   it("chamada de voz não responde a pergunta de canal de mensagem", () => {
@@ -78,7 +85,7 @@ describe("matriz capability × provider é exaustiva", () => {
     for (const p of PROVIDERS) expect(transportaMensagem(p)).toBe(true);
     // Provider mais novo que este código (clone que atualizou o schema antes da
     // imagem) também não serve para mandar recado.
-    expect(transportaMensagem("telegram")).toBe(false);
+    expect(transportaMensagem("desconhecido")).toBe(false);
     expect(transportaMensagem(null)).toBe(false);
   });
 
@@ -97,5 +104,22 @@ describe("matriz capability × provider é exaustiva", () => {
       const c = CHANNEL_CAPABILITIES[p];
       expect(c.banRisk && c.requiresTemplates, `${p} declara as duas famílias`).toBe(false);
     }
+  });
+
+  it("reportaConversao é verdadeira EXATAMENTE onde o adapter implementa reportConversion", () => {
+    // A tela de Conversões decide pela matriz; quem envia a venda
+    // (`canalQueReportaConversao`) decide pela presença do método. As duas
+    // respostas têm de ser a mesma, nos dois sentidos: matriz `true` sem o
+    // método é chave que promete o que não envia; método sem matriz `true` é
+    // venda saindo por um canal que a tela diz não ter ponte — foi o caso do
+    // adapter social, que herdava a ponte de WhatsApp por espalhamento.
+    for (const p of PROVIDERS) {
+      expect(
+        typeof getAdapter(p).reportConversion === "function",
+        `${p}: matriz e adapter discordam sobre reportConversion`,
+      ).toBe(CHANNEL_CAPABILITIES[p].reportaConversao);
+    }
+    expect(CHANNEL_CAPABILITIES.zernio.reportaConversao).toBe(true);
+    expect(CHANNEL_CAPABILITIES.waha.reportaConversao).toBe(false);
   });
 });

@@ -222,7 +222,7 @@ import {
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
-import { msAteAJanelaAbrir } from './janela-de-atendimento';
+import { msAteAJanelaAbrir, msAteAJanelaAbrirPulandoFeriado } from './janela-de-atendimento';
 import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { agenteJaRespondeuNoAtendimento } from './agente-ja-respondeu';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
@@ -333,7 +333,7 @@ import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fatosDaOrganizacao } from './fatos-da-organizacao';
 import { fusoDaOrganizacao } from './fuso-da-org';
-import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
+import { blocoDoFeriado, ehFeriadoNacionalNoFuso, lerFeriadoDoTurno } from './feriado-nacional';
 import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
@@ -1790,6 +1790,54 @@ export function decidirSeEnfileiraOperador(input: {
   if (!input.temAgentePublicado) return { enfileira: false, porque: 'sem_agente' };
   if (!input.papelLigado) return { enfileira: false, porque: 'papel_desligado' };
   return { enfileira: true, porque: 'ligado' };
+}
+
+/**
+ * MODO ASSISTIDO — o Conversador só gera rascunho e o turno saía sem Operador, então o
+ * card ficava parado no funil. Enfileira `operator_turn` com o MESMO agente que gerou o
+ * rascunho. Isto nunca manda mensagem: no assistido, `maoDoOperador` tira da mão
+ * do Operador toda ferramenta que faz algo sair (`saiSemAprovacao`).
+ * Mesma `sourceEventId` do turno (dedup no retry). Nunca lança.
+ */
+export async function enfileirarOperadorNoAssistido(
+  pool: pg.Pool,
+  log: Logger,
+  job: JobRow,
+  conversationId: string,
+  agente: PublishedAgentConfig,
+): Promise<void> {
+  // Pausado: o operator_turn o barraria de qualquer jeito; não gasta vaga de fila.
+  if (!job.contact_id || agente.pausedAt) return;
+  const disparo = decidirSeEnfileiraOperador({
+    temAgentePublicado: true,
+    papelLigado: agente.operatorEnabled,
+  });
+  if (!disparo.enfileira) {
+    log.info('turno do operador não enfileirado (assistido)', { porque: disparo.porque });
+    return;
+  }
+  try {
+    const { deduped } = await enqueueJob(pool, job.organization_id, {
+      kind: 'operator_turn',
+      leadId: job.contact_id,
+      sourceEventId: job.id,
+      payload: {
+        conversation_id: conversationId,
+        origin_job_id: job.id,
+        agent_id: agente.agentId,
+        trigger: 'assistido',
+      },
+    });
+    log.info('turno do operador enfileirado (assistido)', { deduped });
+  } catch (err) {
+    // Só log, e é deliberado — diferente do catch do enfileiramento do turno
+    // automático, que abre `promise_unfulfilled` na Central: lá o Conversador
+    // FALOU e pode ter prometido algo; aqui ele só escreveu um rascunho, sem
+    // declaração de promessa, então não há compromisso que fique sem dono.
+    log.error('turno do operador NÃO foi enfileirado (assistido; o turno segue)', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
 }
 
 /**
@@ -3627,7 +3675,26 @@ async function executarTurnoDoAgente(
   // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
   // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
   if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
-    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
+    const janela = agentConfig.janelaDeAtendimento;
+    const agora = clock();
+    let esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, agora);
+    // NÃO ATENDER EM FERIADO NACIONAL (#3877, doc de decisão 316, alternativa A).
+    // Opção do agente, DESLIGADA de fábrica: desligada, o feriado é dia comum e
+    // nenhuma consulta extra acontece. Ligada, e com o calendário brasileiro
+    // valendo para a organização (`lerFeriadoDoTurno` devolve `null` para país
+    // fora do Brasil ou leitura que falhou — falha aberta), o feriado conta
+    // como dia fechado: o turno espera a próxima abertura que não é feriado E
+    // o aviso recebe o MESMO fato do dia, para os dois nunca discordarem.
+    let feriadoHoje: boolean | undefined;
+    if (agentConfig.naoAtenderEmFeriadoNacional === true) {
+      const calendario = await lerFeriadoDoTurno(pool, tenantId, agora, janela.timezone, runLog);
+      if (calendario !== null) {
+        feriadoHoje = calendario.hoje;
+        esperaMs = msAteAJanelaAbrirPulandoFeriado(janela, agora, (instante) =>
+          ehFeriadoNacionalNoFuso(instante, janela.timezone),
+        );
+      }
+    }
     if (esperaMs !== null) {
       // O AVISO DE FORA DO HORÁRIO (#1926) — ANTES do adiamento, para sair na
       // hora em que a mensagem chegou. É resposta a quem escreveu primeiro (o
@@ -3645,8 +3712,13 @@ async function executarTurnoDoAgente(
             contactId: leadId,
             channelSessionId: input.channelSessionId,
             texto: agentConfig.avisoForaDoHorario ?? null,
+            // O texto de feriado nacional (#3877): opcional, e o módulo só o
+            // usa quando o dia É feriado na organização — sem a chave, o
+            // aviso é o de sempre, byte a byte.
+            textoDeFeriado: agentConfig.avisoDeFeriadoForaDoHorario ?? null,
             janela: agentConfig.janelaDeAtendimento,
-            agora: clock(),
+            agora,
+            ehFeriadoNacional: feriadoHoje,
           },
         );
         runLog.info(
@@ -3672,6 +3744,7 @@ async function executarTurnoDoAgente(
           agent_id: agentConfig.agentId,
           espera_ms: esperaMs,
           janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
+          feriado_nacional_hoje: feriadoHoje ?? null,
         },
       );
       throw new JobSettledError(
@@ -7584,6 +7657,11 @@ export async function runAgentPreview(
     erro = e;
     throw e;
   } finally {
+    // #4424 — o Testar mostra, turno a turno, as ferramentas que a IA USOU. As
+    // de leitura rodam de verdade na prévia, mas até aqui a lista só existia no
+    // traço gravado no banco; as ações propostas já saíam em `result.proposals`.
+    // Copiar para o resultado é o que leva o dado à tela, sem consulta nova.
+    preview.result.ferramentas = coletor.listar();
     await gravarTracoDoTurno(deps.log, pool, {
       organizationId: preview.organizationId,
       jobId: null,
@@ -7752,6 +7830,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         boundary: currentExecutionBoundary() ?? undefined,
         agent: operationAgent,
       });
+      // Depois do rascunho: falha do Operador nunca atrasa o rascunho.
+      await enfileirarOperadorNoAssistido(pool, deps.log, job, payload.conversation_id, operationAgent);
       return;
     }
     if (operationAgent?.pausedAt) return;

@@ -12,7 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
-import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
+import {
+  problemaNoTextoDaSaidaNoIdioma,
+  rodapeDeSaida,
+  TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+  textoDaSaidaEfetivo,
+} from "@/lib/prospecting/rodape-de-saida";
 import {
   RAZAO_NAO_SELECIONADA,
   OFERTAS_DA_CAMPANHA,
@@ -34,7 +39,9 @@ import {
   type OfertaDaCampanha,
 } from "@/lib/prospecting/estrategia-site";
 import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
+import { arquivadaEm, campanhasVisiveis } from "@/lib/prospecting/arquivamento";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
+import { naoAbordada } from "@/lib/prospecting/exportar";
 import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
 /** Uma linha que a importação recusou — o número é o da planilha (1 = cabeçalho). */
@@ -69,6 +76,13 @@ type Candidate = {
   data: Prospect;
   selected?: boolean;
   status?: string;
+  /**
+   * Quando a abordagem foi TENTADA (#4360). É o que separa "está na fila" de
+   * "já foi abordada" quando o status voltou para `queued` depois de uma falha:
+   * a empresa que já recebeu mensagem não entra no CSV da lista.
+   */
+  attempted_at?: string | null;
+  phone?: string | null;
   lead_id?: string | null;
   progress: string;
   message_status: string | null;
@@ -332,6 +346,9 @@ export function ProspectingClient() {
   const [createdAgents, setCreatedAgents] = useState<{ id: string; name: string }[]>([]);
   // As desmarcadas ficam escondidas por padrão; este botão só decide se aparecem.
   const [mostrarDesmarcadas, setMostrarDesmarcadas] = useState(false);
+  // #4359: a lista principal esconde as arquivadas; este interruptor as traz de
+  // volta — sem ele, "arquivar" viraria "perder de vista".
+  const [verArquivadas, setVerArquivadas] = useState(false);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   // Revisão do formulário de personalização: remonta com os valores gravados
   // a cada save (sem effect e sem sobrescrever o que está digitado no refetch).
@@ -344,6 +361,14 @@ export function ProspectingClient() {
     interval_minutes: number;
   } | null>(null);
   const campaign = data?.campaigns.find((c) => c.id === selected) ?? data?.campaigns[0];
+  // #4359: a lista principal e o filtro das arquivadas são as duas metades do MESMO
+  // conjunto. Uma campanha arquivada sai da principal e aparece no filtro — nunca
+  // some das duas. A seleção acima continua olhando TODAS: quem arquivou com o
+  // cartão aberto vê o próprio cartão, com o aviso de que ele saiu da lista.
+  const campanhasDaLista = campanhasVisiveis(data?.campaigns ?? [], verArquivadas);
+  const quantasArquivadas = (data?.campaigns ?? []).filter(
+    (c) => arquivadaEm(c.config) !== null,
+  ).length;
   // A stored config is frozen by activation; unsaved choices belong to one campaign.
   const configGuardada =
     campaign?.config ?? (campaign && campaignDrafts[campaign.id]) ?? emptyConfig;
@@ -360,6 +385,14 @@ export function ProspectingClient() {
   const textoDasEtiquetas =
     (campaign && tagsDigitadas[campaign.id]) ?? (config.contact_tags ?? []).join(", ");
   const etiquetasComProblema = problemaNasEtiquetas(textoDasEtiquetas);
+  // O texto da saída (#4370) é validado no IDIOMA da instalação: o schema recusa
+  // o texto sem NENHUMA palavra de saída, mas só aqui se sabe qual palavra a
+  // pessoa daqui responde (PARAR em pt-BR, BAJA em espanhol). Recusar antes de
+  // enviar é o que impede a tela de prometer uma saída que o detector não pega.
+  const problemaDoTextoDaSaida = problemaNoTextoDaSaidaNoIdioma(
+    config.texto_da_saida,
+    data?.organization_locale,
+  );
   // "Configurada" é a campanha que TEM agente escolhido. Config parcial salva
   // pelo meio (instrução/qualificação sem agente) NÃO trava a etapa 2: medido na
   // VPS, 3 rascunhos assim ficavam sem como ser iniciados.
@@ -411,6 +444,13 @@ export function ProspectingClient() {
     );
   }
   const candidates = data?.candidates.filter((c) => c.campaign_id === campaign?.id) ?? [];
+  /**
+   * Quantas empresas desta campanha ainda podem ser abordadas (#4360) — e por
+   * isso quantas o "Baixar lista" leva. A régua é a do SERVIDOR
+   * (`naoAbordada`): um `filter` escrito de novo aqui faria o botão prometer um
+   * número que o arquivo não entrega.
+   */
+  const naoAbordadas = candidates.filter(naoAbordada).length;
   // `message` pode ser uma função que lê a resposta (o envelope `{ data }`): só o
   // "Completar fichas" precisa dela. Texto fixo segue igual para os outros botões.
   async function perform(body: unknown, message: string | ((resposta: unknown) => string)) {
@@ -459,6 +499,21 @@ export function ProspectingClient() {
     // A confirmação de exclusão vale para UMA campanha: ao trocar, ela some.
     setConfirmandoExclusao(false);
     setMostrarDesmarcadas(false);
+  }
+  /**
+   * #4359 — ARQUIVAR/ DESARQUIVAR. Sem confirmação e sem apagar nada: é um clique
+   * reversível, então o aviso basta. A frase diz o que aconteceu com o que a pessoa
+   * já construiu — "arquivada" sozinho daria a impressão de exclusão, que é
+   * justamente o que este gesto não é.
+   */
+  async function alternarArquivamento(c: Campaign) {
+    const arquivada = arquivadaEm(c.config) !== null;
+    await perform(
+      { action: arquivada ? "desarquivar" : "arquivar", id: c.id },
+      arquivada
+        ? t("Campanha de volta à lista. Nada do que ela criou mudou.")
+        : t("Campanha arquivada. Negócios, conversas e custo continuam lá."),
+    );
   }
   const update = <K extends keyof CampaignConfig>(field: K, value: CampaignConfig[K]) =>
     setConfig((c) => ({ ...c, [field]: value }));
@@ -809,7 +864,6 @@ export function ProspectingClient() {
       )}
       {!data && !query.error && <p role="status">{t("Carregando campanhas…")}</p>}
       {(settings || data?.configured === false) && (
-        <>
         <Card className="p-5">
           <form
             className="flex flex-col gap-3 sm:flex-row sm:items-end"
@@ -844,6 +898,19 @@ export function ProspectingClient() {
             </Button>
           </form>
         </Card>
+      )}
+      {/*
+        VOZ E VOCABULÁRIO À VISTA (issue #4360). O card é da ORGANIZAÇÃO
+        (`organizations.settings.prospeccao`, o mesmo PATCH
+        `/api/v1/settings/prospeccao` de sempre) e morava dentro do painel que
+        "Configurar busca" abre — então quem nunca clicava ali achava que
+        precisava reescrever a voz a cada prospecção. Saiu do painel; a chave da
+        busca continua lá. Um segundo lugar para a mesma configuração (campo
+        novo, estado local) faria a voz da tela divergir da que o envio usa.
+        Só aparece com `data` carregado: o formulário grava o que está na tela, e
+        abrir com os campos vazios apagaria a voz salva no primeiro "Salvar".
+      */}
+      {data && (
         <Card className="p-5">
           <h2 className="text-lg font-semibold">{t("Voz e vocabulário")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -935,7 +1002,6 @@ export function ProspectingClient() {
             </Button>
           </form>
         </Card>
-        </>
       )}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <aside className="flex flex-col gap-5">
@@ -1230,21 +1296,57 @@ export function ProspectingClient() {
             )}
           </Card>
           <section>
-            <h2 className="mb-3 text-sm font-semibold">{t("Suas campanhas")}</h2>
-            <div className="space-y-2">
-              {data?.campaigns.map((c) => (
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">
+                {verArquivadas ? t("Campanhas arquivadas") : t("Suas campanhas")}
+              </h2>
+              {/* #4359: o arquivamento só é seguro se houver caminho de volta para
+                  VER a campanha. O filtro é esse caminho — e ele só aparece quando
+                  existe algo arquivado (ou quando já se está olhando as arquivadas). */}
+              {(quantasArquivadas > 0 || verArquivadas) && (
                 <button
-                  key={c.id}
                   type="button"
-                  onClick={() => abrirCampanha(c.id)}
-                  className={`w-full rounded-lg border p-3 text-left ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
+                  onClick={() => setVerArquivadas((atual) => !atual)}
+                  className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
                 >
-                  <span className="block text-sm font-medium">{c.name}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {ehImportada(c.search?.origem) && <>{t("Planilha")} · </>}
-                    {t(labels[c.status] ?? c.status)} · {c.result_count} {t("empresas")}
-                  </span>
+                  {verArquivadas
+                    ? t("Voltar para as ativas")
+                    : `${t("Ver arquivadas")} (${quantasArquivadas})`}
                 </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {campanhasDaLista.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {verArquivadas ? t("Nenhuma campanha arquivada.") : t("Nenhuma campanha aqui.")}
+                </p>
+              )}
+              {campanhasDaLista.map((c) => (
+                <div
+                  key={c.id}
+                  className={`flex items-stretch gap-2 rounded-lg border ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => abrirCampanha(c.id)}
+                    className="min-w-0 flex-1 p-3 text-left"
+                  >
+                    <span className="block text-sm font-medium">{c.name}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {ehImportada(c.search?.origem) && <>{t("Planilha")} · </>}
+                      {t(labels[c.status] ?? c.status)} · {c.result_count} {t("empresas")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void alternarArquivamento(c)}
+                    title={t("Some da lista sem apagar negócios nem conversas")}
+                    className="shrink-0 px-3 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    {arquivadaEm(c.config) !== null ? t("Desarquivar") : t("Arquivar")}
+                  </button>
+                </div>
               ))}
             </div>
           </section>
@@ -1286,7 +1388,39 @@ export function ProspectingClient() {
                       })()}
                     </p>
                   </div>
-                  <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
+                    {/*
+                      A LISTA DE VOLTA (#4360). Link direto para o CSV — a rota
+                      responde `attachment`, então o navegador baixa em vez de
+                      navegar. `download` no <a> dá o nome do arquivo também em
+                      quem ignora o `Content-Disposition`.
+                    */}
+                    {naoAbordadas > 0 && (
+                      <Button variant="outline" size="sm" asChild>
+                        <a
+                          data-testid="baixar-lista"
+                          download
+                          href={`/api/v1/prospecting/${campaign.id}/exportar`}
+                        >
+                          {`${t("Baixar lista")} (${naoAbordadas})`}
+                        </a>
+                      </Button>
+                    )}
+                    {/* #4359: o cartão aberto de uma campanha arquivada continua
+                        acessível (a lista principal é que a esconde). */}
+                    {arquivadaEm(campaign.config) !== null && (
+                      <Badge variant="outline">{t("Arquivada")}</Badge>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void alternarArquivamento(campaign)}
+                    >
+                      {arquivadaEm(campaign.config) !== null ? t("Desarquivar") : t("Arquivar")}
+                    </Button>
+                  </div>
                 </div>
                 {campaign.error && (
                   <p role="alert" className="mt-4 rounded-md bg-destructive/10 p-3 text-sm">
@@ -1322,6 +1456,13 @@ export function ProspectingClient() {
                     {t("resultados repetidos ou indisponíveis foram desconsiderados.")}
                   </p>
                 )}
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {naoAbordadas > 0
+                    ? t("Baixar lista leva só as empresas que ainda não foram abordadas.")
+                    : t(
+                        "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.",
+                      )}
+                </p>
                 {configCompleta && (
                   <>
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
@@ -1344,7 +1485,7 @@ export function ProspectingClient() {
                           {t("Pausar abordagens")}
                         </Button>
                       ) : campaign.status === "paused" ? (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
                             variant="outline"
                             disabled={busy}
@@ -1352,17 +1493,26 @@ export function ProspectingClient() {
                           >
                             {t("Editar ritmo")}
                           </Button>
-                          <Button
-                            disabled={busy}
-                            onClick={() =>
-                              perform(
-                                { action: "resume", id: campaign.id },
-                                t("Campanha retomada."),
-                              )
-                            }
-                          >
-                            {t("Retomar fila")}
-                          </Button>
+                          {/* #4359: campanha arquivada NÃO retoma por aqui — retomar
+                              a deixaria invisível e enviando, o pior desfecho. O
+                              servidor recusa a retomada e a tela nem oferece. */}
+                          {arquivadaEm(campaign.config) === null ? (
+                            <Button
+                              disabled={busy}
+                              onClick={() =>
+                                perform(
+                                  { action: "resume", id: campaign.id },
+                                  t("Campanha retomada."),
+                                )
+                              }
+                            >
+                              {t("Retomar fila")}
+                            </Button>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {t("Desarquive a campanha para retomar os envios.")}
+                            </p>
+                          )}
                         </div>
                       ) : null}
                     </div>
@@ -1433,9 +1583,22 @@ export function ProspectingClient() {
                   </>
                 )}
               </Card>
+              {/* #4430: rascunho ARQUIVADO não inicia — iniciar o deixaria invisível e
+                  enviando. O servidor recusa (409), e a tela troca o formulário pelo aviso. */}
               {campaign.status === "draft" &&
                 campaign.search_status === "succeeded" &&
-                candidates.length > 0 && (
+                candidates.length > 0 &&
+                arquivadaEm(campaign.config) !== null && (
+                  <Card className="p-5">
+                    <p className="text-sm text-muted-foreground">
+                      {t("Desarquive a campanha para iniciar os envios.")}
+                    </p>
+                  </Card>
+                )}
+              {campaign.status === "draft" &&
+                campaign.search_status === "succeeded" &&
+                candidates.length > 0 &&
+                arquivadaEm(campaign.config) === null && (
                   <Card className="p-5">
                     <h2 className="text-lg font-semibold">{t("2. Preparar a abordagem")}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
@@ -1800,7 +1963,7 @@ export function ProspectingClient() {
                                 <span className="block text-xs text-muted-foreground">
                                   {/* A frase é a ENVIADA: idioma da organização, não da interface. */}
                                   {t("A abertura já diz como parar:")}{" "}
-                                  {rodapeDeSaida(data?.organization_locale)}
+                                  {textoDaSaidaEfetivo(config.texto_da_saida, data?.organization_locale)}
                                 </span>
                               </span>
                             </label>
@@ -1828,6 +1991,34 @@ export function ProspectingClient() {
                                 )}
                               </p>
                             )}
+                            <div>
+                              <Label htmlFor="prospecting-texto-da-saida">
+                                {t("Texto da opção de parar")}
+                              </Label>
+                              <Input
+                                id="prospecting-texto-da-saida"
+                                value={config.texto_da_saida ?? ""}
+                                maxLength={TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA}
+                                aria-invalid={problemaDoTextoDaSaida !== null}
+                                onChange={(e) => update("texto_da_saida", e.target.value)}
+                                placeholder={rodapeDeSaida(data?.organization_locale)}
+                                className="mt-1"
+                              />
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {t(
+                                  "Opcional. Em branco, sai a frase padrão. Até 160 caracteres, sem link, e precisa conter a palavra que a pessoa responde para sair.",
+                                )}
+                              </p>
+                              {problemaDoTextoDaSaida && (
+                                <p className="mt-1 text-xs text-destructive" role="alert">
+                                  {problemaDoTextoDaSaida === "sem_palavra"
+                                    ? t(
+                                        "Inclua a palavra que a pessoa responde para sair; sem ela o pedido não é reconhecido.",
+                                      )
+                                    : t("Use até 160 caracteres e nenhum link.")}
+                                </p>
+                              )}
+                            </div>
                           </fieldset>
                           <div>
                             <Label htmlFor="prospecting-contact-tags">
@@ -1896,7 +2087,8 @@ export function ProspectingClient() {
                             busy ||
                             !agents.length ||
                             !data?.channels.some((c) => c.status === "WORKING") ||
-                            etiquetasComProblema !== null
+                            etiquetasComProblema !== null ||
+                            problemaDoTextoDaSaida !== null
                           }
                         >
                           {t("Iniciar abordagens com IA")}

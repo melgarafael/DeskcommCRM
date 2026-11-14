@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import type { SiteEnrichment } from "@/lib/prospecting/site-classify";
 import type { PreviaSalva } from "@/lib/prospecting/previa";
+import {
+  problemaNoTextoDaSaida,
+  TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+} from "@/lib/prospecting/rodape-de-saida";
 import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 
 /**
@@ -92,8 +96,38 @@ export const campaignConfigSchema = z
     // O padrão é `first_message`: configuração gravada antes desta chave existir segue
     // igual, sem ninguém editar nada.
     exit_offer: z.enum(["first_message", "second_message"]).default("first_message"),
+    // TEXTO PRÓPRIO DA SAÍDA (#4370) — opcional, escrito pelo DONO da campanha e
+    // nunca pelo modelo: a mesma redação sai em todos os envios e é auditável.
+    // Vazio/ausente = a frase padrão de `rodape-de-saida.ts`, byte por byte.
+    //
+    // Aqui ficam as regras que NÃO dependem do idioma da instalação (o locale
+    // mora em `organizations`, não neste `config`): tamanho, sem link, e com
+    // alguma palavra que a saída oferece — sem ela, a pessoa responde "é só me
+    // avisar" para um detector que não reconhece isso, e continua recebendo. A
+    // exigência da palavra NO IDIOMA é feita onde o locale é conhecido:
+    // `validateConfig` (servidor) e o formulário da campanha.
+    texto_da_saida: z
+      .string()
+      .trim()
+      .max(
+        TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA,
+        `O texto da opção de parar tem até ${TAMANHO_MAXIMO_DO_TEXTO_DA_SAIDA} caracteres.`,
+      )
+      .refine((texto) => problemaNoTextoDaSaida(texto) === null, {
+        message:
+          "O texto da opção de parar precisa conter a palavra que a pessoa responde para sair (PARAR, BAJA ou STOP) e não pode ter link.",
+      })
+      .optional(),
     // Etiquetas do contato na abordagem (spec 27). Ausente = a campanha não etiqueta ninguém.
     contact_tags: contactTagsSchema.optional(),
+    // MARCADOR DE ARQUIVAMENTO (#4359): quando presente, a campanha saiu da lista
+    // principal SEM perder nada — nenhum negócio, conversa, candidato ou custo é
+    // apagado. Mora na `config` (jsonb) porque arquivar é estado de TELA, não um
+    // passo do funil, e não precisa de coluna nova. O schema precisa CONHECÊ-LO:
+    // o envio, a prévia e a retomada fazem `parse` estrito desta mesma
+    // configuração, e uma chave desconhecida faria a campanha arquivada ser
+    // recusada pelo próprio código que a gravou.
+    arquivada_em: z.string().datetime().optional(),
   })
   .strict();
 export const searchSchema = z
@@ -188,6 +222,13 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
   // da campanha o link que falta (o que a pessoa digitou fica). Fechada a token:
   // escreve no CRM, e quem decide é uma pessoa com sessão.
   z.object({ action: z.literal("completar_fichas"), id: z.string().uuid() }).strict(),
+  // ARQUIVAR (#4359): tira a campanha que falhou ou veio zerada da lista principal,
+  // SEM apagar nada do que ela já criou. Idempotente, porque o botão pode ser
+  // clicado duas vezes. Fechada a token (fora de ACOES_ABERTAS_AO_TOKEN): esconder
+  // uma campanha é gesto de quem está lendo a lista — por token esconderia uma
+  // campanha que a pessoa nunca abriu.
+  z.object({ action: z.literal("arquivar"), id: z.string().uuid() }).strict(),
+  z.object({ action: z.literal("desarquivar"), id: z.string().uuid() }).strict(),
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;

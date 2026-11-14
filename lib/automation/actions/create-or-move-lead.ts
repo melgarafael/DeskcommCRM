@@ -10,6 +10,7 @@ import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
  * eventos derivados (anti-loop profundidade 1: regra→ação→handler→evento).
  */
 import { registerAction } from "@/lib/automation/actions";
+import { marcaHerdadaDoEvento } from "@/lib/automation/parada-no-assistido";
 import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
 import { ApiError } from "@/lib/api/types";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -18,10 +19,10 @@ import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { createLeadHandler, moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import {
   escolheEtapaDeDestino,
-  montaPayloadDoClone,
   type EtapaDoFunil,
   type OrigemParaClonar,
 } from "@/lib/leads/clonar-para-funil";
+import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
 // MESMA transferência do roteador de intenção (#2155): duas implementações de
 // "trocar de funil" divergiriam na primeira mudança de uma delas.
 import { COLUNAS_DA_ORIGEM, transfereParaOFunil } from "@/lib/leads/transfere-para-o-funil";
@@ -54,7 +55,11 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
 
   const handlerCtx: HandlerCtx = {
     organization_id: ctx.organizationId,
-    actor: { type: "webhook_source", id: ctx.ruleId },
+    // Doc 301 = B: a regra que rodou por causa da IA no assistido passa a marca
+    // adiante — o card que ela move dispara o gatilho de etapa e, se a etapa
+    // fecha o negócio, `lead.won`/`lead.lost`; sem a marca, o que fala com o
+    // cliente nesses caminhos saía sem aprovação.
+    actor: { type: "webhook_source", id: ctx.ruleId, ...marcaHerdadaDoEvento(ctx.event) },
     requestId: `rule:${ctx.ruleId}`,
   };
   // A LINHA INTEIRA do negócio, como `buildContext` a lê (`select *` de
@@ -116,7 +121,14 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
           return {
             type: "create_or_move_lead",
             status: "success",
-            detail: { transferido: String(transferencia.clone.id ?? ""), origem: lead.id },
+            detail: {
+              transferido: String(transferencia.clone.id ?? ""),
+              origem: lead.id,
+              anexos: transferencia.anexos.copiados,
+              ...(transferencia.anexos.falhas > 0
+                ? { anexos_com_falha: transferencia.anexos.falhas }
+                : {}),
+            },
           };
         }
 
@@ -226,16 +238,25 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
             };
           }
 
-          const criado = await createLeadHandler(ctx.admin, handlerCtx, {
-            ...montaPayloadDoClone(lead, destino.etapa),
-            retomado_de_lead_id: null,
+          // O card novo nasce COM os anexos da origem (#4544). Os documentos da
+          // venda (voucher, apólice, bilhete) ficam no card de Vendas, e o
+          // pós-venda abria o card de Experiência sem eles: a cópia é do passo
+          // único dos caminhos de troca de funil, e o `anexos` do retorno conta
+          // o que veio (o que falhou não interrompe a continuação).
+          const { clone: criado, anexos } = await criarCloneNoFunil(ctx.admin, handlerCtx, lead, destino.etapa, {
+            ajustes: { retomado_de_lead_id: null },
           });
           // O card novo é o negócio que as ações seguintes da regra enxergam.
           publicaNoContexto(ctx, criado, contactId);
           return {
             type: "create_or_move_lead",
             status: "success",
-            detail: { criado: String(criado.id ?? ""), origem: lead.id },
+            detail: {
+              criado: String(criado.id ?? ""),
+              origem: lead.id,
+              anexos: anexos.copiados,
+              ...(anexos.falhas > 0 ? { anexos_com_falha: anexos.falhas } : {}),
+            },
           };
         }
         return { type: "create_or_move_lead", status: "failed", error: "cross_pipeline_move_not_allowed" };
