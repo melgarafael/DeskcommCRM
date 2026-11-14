@@ -293,6 +293,89 @@ describe("criarPegadaDoCandidato põe as etiquetas no contato antes do envio", (
   });
 });
 
+/**
+ * #4586 — o CARD que a campanha cria nasce com as etiquetas do ramo.
+ *
+ * A condição "Etiqueta do contato" do follow-up lê `crm_leads.tags` (a etiqueta do CARD), e a
+ * campanha só gravava as etiquetas do nicho no CONTATO. Resultado: o par oferecido pela própria
+ * tela, montado com o nicho da campanha, nunca casava. A saída é a da issue — a campanha também
+ * etiqueta o card —, sem tocar no motor nem no significado de `crm_leads.tags`.
+ */
+describe("o card da campanha nasce com as etiquetas do ramo (#4586)", () => {
+  const JUNCAO = "fn_contato_adicionar_etiquetas";
+
+  it("campanha com etiqueta de nicho: o card nasce com as MESMAS etiquetas do contato", async () => {
+    const { db } = bancoFalso();
+    const { admin, chamadas } = adminFalso((nome) =>
+      nome === JUNCAO
+        ? { data: { tags: ["estetica", "vip"], adicionadas: ["estetica", "vip"] }, error: null }
+        : { data: null, error: null },
+    );
+    // Repetida e com maiúscula de propósito: a lista que chega ao card é a normalizada.
+    await criarPegadaDoCandidato(
+      db,
+      admin,
+      ORG,
+      campanha,
+      comEtiquetas(["Estetica", "vip", "estetica"]),
+      candidato(),
+      null,
+    );
+    expect(m.negocio).toHaveBeenCalledTimes(1);
+    const criado = m.negocio.mock.calls[0]?.[2] as { tags?: string[] };
+    expect(criado.tags).toEqual(["estetica", "vip"]);
+    // Card e contato recebem a MESMA lista: é o que faz o par da tela casar.
+    expect(chamadas.find((c) => c.nome === JUNCAO)?.args.p_etiquetas).toEqual(["estetica", "vip"]);
+  });
+
+  it("campanha sem etiqueta: o card nasce com lista vazia, como antes desta correção", async () => {
+    const { db } = bancoFalso();
+    const { admin } = adminFalso();
+    await criarPegadaDoCandidato(db, admin, ORG, campanha, semEtiquetas, candidato(), null);
+    expect(m.negocio).toHaveBeenCalledTimes(1);
+    const criado = m.negocio.mock.calls[0]?.[2] as { tags?: string[] };
+    expect(criado.tags).toEqual([]);
+  });
+
+  it("reenvio para o mesmo contato: o card é reaproveitado, então a etiqueta não duplica", async () => {
+    // A segunda passada do reenvio cai no card que já existe por `external_id`.
+    const db = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes("from crm_leads where")) return { rows: [{ id: NEGOCIO }] };
+        if (sql.includes("returning *"))
+          return {
+            rows: [
+              {
+                ...candidato(),
+                status: "queued",
+                contact_id: CONTATO_DA_CAMPANHA,
+                lead_id: NEGOCIO,
+                conversation_id: CONVERSA,
+              },
+            ],
+          };
+        return { rows: [] };
+      }),
+    };
+    const { admin } = adminFalso((nome) =>
+      nome === JUNCAO
+        ? { data: { tags: ["estetica"], adicionadas: [] }, error: null }
+        : { data: null, error: null },
+    );
+    const pegada = await criarPegadaDoCandidato(
+      db as never,
+      admin,
+      ORG,
+      campanha,
+      comEtiquetas(["estetica"]),
+      candidato(),
+      CONTATO_DA_CAMPANHA,
+    );
+    expect(pegada.status).toBe("queued");
+    expect(m.negocio).not.toHaveBeenCalled();
+  });
+});
+
 type Linha = { status: string; config: Record<string, unknown> | null };
 function poolDeMentira(campanhaLinha: Linha | null, atualiza = true) {
   const consultas: { texto: string; params: unknown[] }[] = [];
