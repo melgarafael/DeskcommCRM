@@ -37,6 +37,7 @@ vi.mock("@/hooks/ai/useAgentInbox", () => ({
   useAgentInbox: vi.fn(),
   useUpdateInboxItem: vi.fn(),
   useResolveAllInboxItems: vi.fn(),
+  useDispararAcoesParadas: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
 }));
 /** Todo texto que passar pelo tradutor sai marcado. O que não passar, sai cru. */
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (texto: string) => `ES:${texto}` }));

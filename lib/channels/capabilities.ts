@@ -38,6 +38,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // Status é do WhatsApp com aparelho atrás: só a linha por QR tem o
     // endpoint de publicação. Ver `publishStatus` em `./types`.
     statusUpdates: true,
+    // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
+    // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
   // Hetero-restrição: não me banem, mas a Meta me proíbe e me cobra.
   meta_cloud: {
@@ -61,6 +64,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
     // um botão que sempre falha (ver `publishStatus` em `./types`).
     statusUpdates: false,
+    // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
+    // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
   // Mesma hetero-restrição do canal oficial, por baixo: é um BSP: a WABA é da
   // Meta, os templates são aprovados pela Meta e a janela de 24h é da Meta. O
@@ -104,6 +110,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
     // um botão que sempre falha (ver `publishStatus` em `./types`).
     statusUpdates: false,
+    // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
+    // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
   zernio: {
     freeformOutsideWindow: false,
@@ -128,6 +137,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
     // um botão que sempre falha (ver `publishStatus` em `./types`).
     statusUpdates: false,
+    // O provedor tem a ponte: reporta a venda ao conjunto de dados da Meta pela
+    // conversa (`reportConversion` no adapter, `../zernio/conversoes.ts`).
+    reportaConversao: true,
   },
   // Parceiro homologado pela Meta que espelha a Cloud API (recorte do #1130):
   // a WABA, a janela de 24h e o custo são da Meta. O parceiro muda o TRANSPORTE
@@ -157,6 +169,61 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // WhatsApp, atrás de um aparelho pareado. Declarar `true` aqui ofereceria
     // um botão que sempre falha (ver `publishStatus` em `./types`).
     statusUpdates: false,
+    // Sem ponte de conversão: a venda desta linha sai pela conexão direta com a Meta
+    // (conjunto de dados + token). Declarar `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
+  },
+  /**
+   * Bot do Telegram (Bot API, o robô do @BotFather — issue #3440).
+   *
+   * ─── Por que ele NÃO é uma variação do WhatsApp ────────────────────────────
+   *
+   * Não há número, não há WABA, não há janela de 24h e não há modelo aprovado:
+   * o bot escreve para quem o iniciou, quando quiser, e a Bot API é gratuita.
+   * Por isso `freeformOutsideWindow: true` e `costPerMessage: false` — as duas
+   * são MEDIDAS na doc da plataforma, não deduzidas do fato de "não ter
+   * template".
+   *
+   * ─── As três que parecem "não se aplica" e não são ─────────────────────────
+   *
+   * `minIntervalMs: 1000` — o FAQ do Telegram pede ~1 mensagem por segundo por
+   * conversa; um bot que responde em rajada leva `429 Too Many Requests` com
+   * `retry_after`. O limite é da PLATAFORMA, que é exatamente o que este campo
+   * significa.
+   *
+   * `voiceNote: "opus-only"` — limite DESTA implementação, não da plataforma:
+   * o `sendVoice` da Bot API também aceita MP3 e M4A, mas o adapter da v1
+   * recusa todo envio que não seja texto (mídia é a T2 da issue). O campo não
+   * tem valor "não existe", e "opus-only" é o que não promete conversão que o
+   * adapter não faz. `groups: "none"` é o "fora da v1" da
+   * issue dito em vocabulário de capability — o bot lê `chat.type` e ignora o
+   * que não for `private`.
+   */
+  telegram: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: 1000,
+    voiceNote: "opus-only",
+    groups: "none",
+    costPerMessage: false,
+    // Editar e apagar existem na Bot API (`editMessageText`/`deleteMessage`) e
+    // ficam para a T2 da issue: hoje o adapter não os implementa, e a tela lê
+    // esta capability para decidir se mostra o gesto.
+    alteraMensagemEnviada: false,
+    // `setMessageReaction` existe na Bot API e também fica para a T2: o
+    // adapter da v1 não reage.
+    podeReagir: false,
+    transmissao: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
+    // Status é do WhatsApp: não existe neste canal.
+    statusUpdates: false,
+    // A conversão de venda volta à Meta pela conversa de WhatsApp; o robô do
+    // Telegram não tem ponte, e `true` ofereceria uma chave que não envia nada.
+    reportaConversao: false,
   },
 };
 
@@ -191,6 +258,8 @@ export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_Z
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
+/** Bot do Telegram (Bot API, #3440) — canal de mensagem sem telefone. */
+export const CHANNEL_PROVIDER_TELEGRAM: ChannelProvider = "telegram";
 
 /**
  * O provider em que o NÚMERO é a conexão: pareado por QR, a linha só vira
@@ -222,6 +291,10 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio",
   "zernio_social",
   "datafy",
+  // Bot do Telegram (#3440): manda texto sem template a qualquer hora — o robô
+  // fala com quem o iniciou. `PROVIDERS_DE_TELEFONE` fica de fora de propósito,
+  // e o motivo está lá embaixo.
+  "telegram",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
@@ -237,13 +310,19 @@ export const PROVIDERS_DE_MENSAGEM = [
  * `satisfies` sobre o recorte declara a relação entre as duas listas: um
  * provider que não seja de mensagem não pode entrar aqui, e um provider social
  * que apareça nesta lista reprova em compilação, não em produção.
+ *
+ * O bot do Telegram (#3440) também fica FORA, e a lição é a mesma do #3358/#3364
+ * por outro caminho: ele conversa muito bem, mas não disca, não tem telefone e
+ * não alcança um número. Quem tem o número do cliente na mão e escolhe a sessão
+ * do Telegram escolheu um canal que não chega ao destino — o lembrete por
+ * telefone sairia por um robô que nunca falou com aquela pessoa.
  */
 export const PROVIDERS_DE_TELEFONE = [
   "waha",
   "meta_cloud",
   "zernio",
   "datafy",
-] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social">[];
+] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social" | "telegram">[];
 
 /**
  * `true` quando a linha de `channel_sessions` é um canal de mensagem.
@@ -296,6 +375,17 @@ export function canalConhecidoSemMensagem(provider: string | null | undefined): 
 }
 
 /**
+ * Canais que escrevem livre e mesmo assim NÃO fazem campanha.
+ *
+ * O bot do Telegram (#3440) manda texto a qualquer hora — por isso
+ * `freeformOutsideWindow: true`, que a CONVERSA usa e que está certo —, mas só
+ * para quem o iniciou, e a v1 da proposta exclui campanha. A regra mora aqui, e
+ * não num `false` falso na capability de janela: mentir na janela mudaria o
+ * que o atendimento pode fazer só para esconder a campanha.
+ */
+const PROVIDERS_SEM_CAMPANHA = ["telegram"] as const satisfies readonly ProviderDeMensagem[];
+
+/**
  * O canal de campanha por E-MAIL (#3441, fatia E2a).
  *
  * Não é `ProviderDeMensagem`: e-mail não é um `channel_sessions` — ninguém pareia
@@ -335,6 +425,7 @@ export function modoDeCampanhaDoCanal(
   // e é justamente por isso que a pergunta anterior responderia `false` para ele.
   if (provider === CANAL_DE_CAMPANHA_EMAIL) return "email";
   if (!transportaMensagem(provider)) return null;
+  if ((PROVIDERS_SEM_CAMPANHA as readonly string[]).includes(provider ?? "")) return null;
   try {
     const caps = capabilitiesOf(provider as ProviderDeMensagem);
     if (caps.freeformOutsideWindow) return "text";

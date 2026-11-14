@@ -9,6 +9,7 @@ import { pedidoComTamanho } from "@/tests/helpers/pedido-com-tamanho";
 import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
+import { audit } from "@/lib/audit";
 import { fotoPertenceAoProduto } from "@/lib/catalogo/fotos";
 import { lerPlanilha } from "@/lib/catalogo/planilha";
 import { createClient } from "@/lib/supabase/server";
@@ -58,8 +59,15 @@ function supabaseCom(
   {
     falhaNaLeitura = false,
     fotosPorCodigo = {},
-  }: { falhaNaLeitura?: boolean; fotosPorCodigo?: Record<string, string[]> } = {},
+    codigosRecusados = [],
+  }: { falhaNaLeitura?: boolean; fotosPorCodigo?: Record<string, string[]>; codigosRecusados?: string[] } = {},
 ) {
+  const gravar = (linhas: Array<Record<string, unknown>>) =>
+    Promise.resolve({
+      error: linhas.some((linha) => codigosRecusados.includes(String(linha.codigo)))
+        ? { code: "23514", message: "gravação recusada pelo banco" }
+        : null,
+    });
   return {
     from: (tabela: string) => {
       if (tabela === "organizations") {
@@ -93,7 +101,7 @@ function supabaseCom(
         }),
         upsert: (linhas: Array<Record<string, unknown>>) => {
           upserts.push(linhas);
-          return Promise.resolve({ error: null });
+          return gravar(linhas);
         },
         // O grupo `novo+foto` grava por `insert` (o `id` da pasta da foto não
         // pode ser reescrito por um `DO UPDATE`): o fake registra os dois verbos
@@ -101,7 +109,7 @@ function supabaseCom(
         insert: (linhas: Array<Record<string, unknown>>) => {
           insercoes.push(linhas);
           upserts.push(linhas);
-          return Promise.resolve({ error: null });
+          return gravar(linhas);
         },
         update: (valores: Record<string, unknown>) => {
           const registro = { valores, filtros: [] as Array<[string, unknown]> };
@@ -193,6 +201,67 @@ describe("POST /api/v1/products/import — reimportar não pisa a moeda de quem 
     const existente = todas.find((l) => l.codigo === "AND-01");
     expect(novo).toMatchObject({ moeda: "USD" });
     expect(existente).not.toHaveProperty("moeda");
+  });
+});
+
+describe("POST /api/v1/products/import — o resumo conta só gravações confirmadas", () => {
+  it.each([
+    {
+      caso: "existente recusado não esconde o produto novo que entrou",
+      existentes: ["ANTIGO"],
+      recusados: ["ANTIGO"],
+      linhas: ["ANTIGO,Antigo,10.00", "NOVO,Novo,20.00"],
+      criados: 1,
+      atualizados: 0,
+    },
+    {
+      caso: "lote parcialmente recusado conta só o existente que passou no reteste",
+      existentes: ["ANTIGO", "RECUSADO"],
+      recusados: ["RECUSADO"],
+      linhas: ["ANTIGO,Antigo,10.00", "RECUSADO,Recusado,30.00", "NOVO,Novo,20.00"],
+      criados: 1,
+      atualizados: 1,
+    },
+    {
+      caso: "nenhuma gravação confirmada resulta em zero criados e atualizados",
+      existentes: ["ANTIGO"],
+      recusados: ["ANTIGO"],
+      linhas: ["ANTIGO,Antigo,10.00"],
+      criados: 0,
+      atualizados: 0,
+    },
+    {
+      caso: "produto novo recusado preserva a contagem do existente atualizado",
+      existentes: ["ANTIGO"],
+      recusados: ["NOVO"],
+      linhas: ["ANTIGO,Antigo,10.00", "NOVO,Novo,20.00"],
+      criados: 0,
+      atualizados: 1,
+    },
+    {
+      caso: "sem falhas continua contando novos e existentes",
+      existentes: ["ANTIGO"],
+      recusados: [],
+      linhas: ["ANTIGO,Antigo,10.00", "NOVO,Novo,20.00"],
+      criados: 1,
+      atualizados: 1,
+    },
+  ])("$caso", async ({ existentes, recusados, linhas, criados, atualizados }) => {
+    vi.mocked(createClient).mockResolvedValue(
+      supabaseCom("BRL", existentes, { codigosRecusados: recusados }) as never,
+    );
+    const { POST } = await import("./route");
+
+    const resposta = await POST(await pedido(csv(linhas.join("\n"))));
+    const corpo = await resposta.json();
+
+    expect(resposta.status).toBe(200);
+    expect(corpo.data.erros).toHaveLength(recusados.length);
+    expect(corpo.data).toMatchObject({ total_linhas: linhas.length, criados, atualizados });
+    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({
+      action: "catalog_product.imported",
+      metadata: expect.objectContaining({ criados, atualizados, erros: recusados.length }),
+    }));
   });
 });
 
@@ -439,6 +508,51 @@ describe("POST /api/v1/products/import — foto por URL", () => {
     expect(upserts.flat().map((l) => l.codigo)).toEqual(["PERF"]);
     expect(sonda.uploads).toEqual([]);
   });
+
+  it.each(["conexao", "prazo", "redirecionamento"] as const)(
+    "falha de %s depois dos headers recusa a linha e deixa a seguinte entrar",
+    async (falha) => {
+      vi.mocked(createClient).mockResolvedValue(supabaseCom("BRL", []) as never);
+      const segundaFoto = URL_DA_FOTO + "?foto=2";
+      let pedacos = 0;
+      vi.stubGlobal("fetch", async (url: string) => {
+        if (url === URL_DA_FOTO) return new Response(corpoDe(JPEG), { status: 200 });
+        if (falha === "redirecionamento") {
+          return new Response(null, { status: 302, headers: { location: "http://[" } });
+        }
+        // Os headers chegaram: só a leitura do corpo revela a interrupção.
+        const corpo = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (pedacos++ === 0) controller.enqueue(JPEG);
+            else controller.error(falha === "prazo"
+              ? new DOMException("tempo esgotado", "AbortError")
+              : new TypeError("conexão interrompida"));
+          },
+        });
+        return new Response(corpo, { status: 200 });
+      });
+      const { POST } = await import("./route");
+
+      const resposta = await POST(await pedido(planilhaComFoto(
+        "RUIM,Carro incompleto,100.00," + URL_DA_FOTO + "|" + segundaFoto +
+        "\nBOA,Carro sem foto,200.00,",
+      )));
+      const corpo = await resposta.json();
+
+      expect(resposta.status).toBe(200);
+      expect(corpo.data).toMatchObject({ criados: 1, atualizados: 0, total_linhas: 2 });
+      expect(corpo.data.erros).toEqual([{
+        linha: 2,
+        motivo: expect.stringContaining(segundaFoto),
+      }]);
+      expect(upserts.flat().map((linha) => linha.codigo)).toEqual(["BOA"]);
+      expect(sonda.guardadas).toEqual([URL_DA_FOTO, segundaFoto]);
+      expect(pedacos).toBe(falha === "redirecionamento" ? 0 : 2);
+      // A primeira foto da linha recusada já subiu: a lista parcial sai inteira.
+      expect(sonda.uploads).toHaveLength(1);
+      expect(sonda.removidos.flat()).toEqual(sonda.uploads.map((foto) => foto.caminho));
+    },
+  );
 
   it("link que devolve HTML não vira foto no catálogo", async () => {
     servidorDeFotos({

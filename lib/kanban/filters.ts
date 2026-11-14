@@ -1,5 +1,6 @@
 import type { Lead } from "@/lib/types/leads";
 import { diaDeHojeLocal } from "@/lib/ai/pacing-knobs";
+import { SEM_CATEGORIA } from "@/lib/leads/motivos-de-perda-do-funil";
 import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { cardTemMarcador, cardTemTodasNaMesmaCaixa } from "@/lib/kanban/marcadores-do-card";
 import {
@@ -229,7 +230,20 @@ export function applyFilters(
     if (f.lostCategory) {
       const motivo = l.lost_reason?.trim() ?? "";
       const categoria = motivo ? contexto?.categoriaDo?.(motivo) : undefined;
-      if (categoria !== f.lostCategory) return false;
+      /**
+       * MOTIVO SEM CATEGORIA É ALCANÇÁVEL (#4437). Antes, a categoria vazia não
+       * casava com opção nenhuma do filtro: os motivos administrativos ("É
+       * fornecedor", "Card duplicado") ficavam fora de QUALQUER recorte por
+       * categoria — o buraco que a tela de Funis chamava de "sem categoria" e o
+       * filtro não sabia procurar. O sentinela é o rótulo explícito do relatório,
+       * então filtrar e ler o relatório passam a falar do mesmo balde.
+       */
+      if (f.lostCategory === SEM_CATEGORIA) {
+        // Só quem TEM motivo e ele não tem categoria: negócio perdido sem
+        // motivo registrado não está "sem categoria", está sem dado — e
+        // misturar os dois faria o balde do relatório mentir.
+        if (!motivo || categoria) return false;
+      } else if (categoria !== f.lostCategory) return false;
     }
     // As TRÊS caixas de marcador (negócio, contato e conversa) — ver
     // lib/kanban/marcadores-do-card.ts. Só `l.tags` deixava o marcador escrito

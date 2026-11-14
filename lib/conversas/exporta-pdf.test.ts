@@ -119,6 +119,7 @@ type Linha = Record<string, unknown>;
 function clienteFalso(
   ajustar: (tabelas: Record<string, Linha[]>) => void = () => {},
   erroEm: string | null = null,
+  aposLeitura?: (tabela: string, filtros: ReadonlyArray<[string, unknown]>) => void,
 ): SupabaseClient {
   const tabelas: Record<string, Linha[]> = {
     organizations: [
@@ -195,20 +196,29 @@ function clienteFalso(
 
   const criar = (tabela: string) => {
     const filtros: Array<[string, unknown]> = [];
-    let ordenar: { campo: string; asc: boolean } | null = null;
+    const negados: Array<[string, unknown]> = [];
+    const ordenar: Array<{ campo: string; asc: boolean }> = [];
     let limite: number | null = null;
 
     const selecionar = (): Linha[] => {
-      let saida = (tabelas[tabela] ?? []).filter((l) => filtros.every(([c, v]) => l[c] === v));
-      const ordemAtual = ordenar;
-      if (ordemAtual) {
+      let saida = (tabelas[tabela] ?? []).filter(
+        (l) => filtros.every(([c, v]) => l[c] === v) && negados.every(([c, v]) => l[c] !== v),
+      );
+      if (ordenar.length > 0) {
         saida = [...saida].sort((a, b) => {
-          const x = String(a[ordemAtual.campo] ?? "");
-          const y = String(b[ordemAtual.campo] ?? "");
-          return ordemAtual.asc ? x.localeCompare(y) : y.localeCompare(x);
+          for (const ordem of ordenar) {
+            const x = String(a[ordem.campo] ?? "");
+            const y = String(b[ordem.campo] ?? "");
+            const diferenca = ordem.asc ? x.localeCompare(y) : y.localeCompare(x);
+            if (diferenca !== 0) return diferenca;
+          }
+          return 0;
         });
       }
-      return limite === null ? saida : saida.slice(0, limite);
+      const pagina = limite === null ? saida : saida.slice(0, limite);
+      const copia = pagina.map((linha) => ({ ...linha }));
+      aposLeitura?.(tabela, filtros);
+      return copia;
     };
 
     const cadeia = {
@@ -217,8 +227,17 @@ function clienteFalso(
         filtros.push([coluna, valor]);
         return cadeia;
       },
+      is: (coluna: string, valor: unknown) => {
+        filtros.push([coluna, valor]);
+        return cadeia;
+      },
+      not: (coluna: string, operador: string, valor: unknown) => {
+        if (operador !== "is") throw new Error(`Operador não implementado no dublê: ${operador}`);
+        negados.push([coluna, valor]);
+        return cadeia;
+      },
       order: (campo: string, opts?: { ascending?: boolean }) => {
-        ordenar = { campo, asc: opts?.ascending ?? true };
+        ordenar.push({ campo, asc: opts?.ascending ?? true });
         return cadeia;
       },
       limit: (n: number) => {
@@ -540,5 +559,91 @@ describe("conversas/exporta-pdf", () => {
     expect(texto).not.toContain("mensagem numero 0");
     expect(vi.mocked(audit).mock.calls[0]?.[0]).toMatchObject({ metadata: { mensagens: LIMITE_DE_MENSAGENS } });
   }, 60_000);
+
+  it("a importação tardia conserva o atendimento recente e a mensagem sem data de envio", async () => {
+    permitir();
+    vi.mocked(createClient).mockResolvedValue(clienteFalso((tabelas) => {
+      const comum = {
+        organization_id: ORG_ID,
+        conversation_id: CONV_ID,
+        direction: "inbound",
+        type: "text",
+        sent_via: "external_device",
+        sent_by_user_id: null,
+        media_derived_text: null,
+        edited_at: null,
+        revoked_at: null,
+      };
+      tabelas.messages = [
+        ...Array.from({ length: LIMITE_DE_MENSAGENS }, (_, i) => ({
+          ...comum,
+          id: `importada-${i}`,
+          body: `Mensagem antiga importada ${i}`,
+          sent_at: new Date(Date.parse("2026-01-01T12:00:00.000Z") + i * 60_000).toISOString(),
+          created_at: "2026-11-12T12:00:00.000Z",
+          metadata: { historico_importado: "true" },
+        })),
+        {
+          ...comum,
+          id: "recente",
+          body: "ATENDIMENTO MAIS RECENTE SINTETICO",
+          sent_at: "2026-11-11T12:00:00.000Z",
+          created_at: "2026-11-11T12:00:00.000Z",
+          metadata: {},
+        },
+        {
+          ...comum,
+          id: "sem-envio",
+          body: "AGUARDANDO ENVIO SINTETICO",
+          sent_at: null,
+          created_at: "2026-11-12T13:00:00.000Z",
+          metadata: {},
+        },
+      ];
+    }) as never);
+    const { GET } = await rota();
+
+    const res = await GET(requisicao(), ctx());
+    expect(res.status).toBe(200);
+    const texto = await extractPdfText(Buffer.from(await res.arrayBuffer()));
+
+    expect(texto).toContain("ATENDIMENTO MAIS RECENTE SINTETICO");
+    expect(texto).toContain("AGUARDANDO ENVIO SINTETICO");
+    expect(texto).not.toContain("Mensagem antiga importada 0");
+    expect(texto).toContain("esta conversa ultrapassa o limite");
+    expect(vi.mocked(audit).mock.calls.at(-1)?.[0]).toMatchObject({
+      metadata: { mensagens: LIMITE_DE_MENSAGENS },
+    });
+  }, 60_000);
+
+  it("a confirmação de envio entre as leituras entra uma vez, com o instante confirmado", async () => {
+    permitir();
+    let pendente: Linha;
+    vi.mocked(createClient).mockResolvedValue(clienteFalso(
+      (tabelas) => {
+        pendente = tabelas.messages![1]!;
+        pendente.sent_at = null;
+      },
+      null,
+      (tabela, filtros) => {
+        if (tabela === "messages" && filtros.some(([coluna, valor]) => coluna === "sent_at" && valor === null)) {
+          pendente.sent_at = "2026-09-01T12:06:00.000Z";
+        }
+      },
+    ) as never);
+    const { GET } = await rota();
+
+    const res = await GET(requisicao(), ctx());
+    const texto = await extractPdfText(Buffer.from(await res.arrayBuffer()));
+
+    expect(res.status).toBe(200);
+    expect(texto.match(/Segunda mensagem do cliente/g)).toHaveLength(1);
+    expect(texto.indexOf("Segunda mensagem do cliente")).toBeGreaterThan(
+      texto.indexOf("Terceira mensagem do atendente"),
+    );
+    expect(vi.mocked(audit).mock.calls.at(-1)?.[0]).toMatchObject({
+      metadata: { mensagens: 3 },
+    });
+  });
 
 });

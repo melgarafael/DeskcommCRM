@@ -57,6 +57,9 @@ function fakeDeps(opcoes: {
     },
     telefonesExistentes: async (_org, variantes) =>
       new Set(variantes.filter((v) => variantesNoBanco.has(v))),
+    // Nenhum titular apagado a pedido nestes casos: a pergunta LGPD tem arquivo
+    // próprio (`agenda-do-celular-lgpd.test.ts`), onde ela é o assunto.
+    titularesApagados: async () => ({ apagados: new Set<string>() }),
     upsertContato: async (e) => {
       upserts.push(e);
       if (opcoes.falhaUpsertEm?.includes(e.telefone)) throw new Error("rpc indisponível");

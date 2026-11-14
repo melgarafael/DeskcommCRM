@@ -329,6 +329,16 @@ describe("o handler escolhe UM caminho", () => {
       detail: "sem_conexao",
     });
 
+    // O canal social é do mesmo provedor intermediado, mas a ponte é de
+    // WhatsApp: uma conversa de Instagram/Facebook não reporta a venda.
+    vi.mocked(createAdminClient).mockReturnValue(
+      fakeAdmin({ sessao: { provider: "zernio_social", zernio_account_id: "ACC" } }) as never,
+    );
+    expect(await conversaoDeVendaHandler.handle(evento)).toMatchObject({
+      status: "skipped",
+      detail: "sem_conexao",
+    });
+
     vi.mocked(createAdminClient).mockReturnValue(fakeAdmin({ sessao: null }) as never);
     expect(await conversaoDeVendaHandler.handle(evento)).toMatchObject({
       status: "skipped",
