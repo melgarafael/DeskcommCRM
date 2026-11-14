@@ -30,6 +30,7 @@ import {
   type ModoDeEtiqueta,
   marcadoresEscolhidos,
 } from "@/lib/inbox/marcador-da-conversa";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
@@ -448,9 +449,12 @@ export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Pro
    * mesma tela que mente que esta entrega existe para matar.
    */
   const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
-  const termoDaEtiqueta = buscaDeEtiqueta.trim().toLocaleLowerCase();
+  // Os DOIS lados pela régua de acento do repo (`termoSemAcento`, #4410):
+  // `toLocaleLowerCase` dobra CAIXA e não ACENTO, então `orcamento` não achava
+  // a etiqueta "Orçamento enviado".
+  const termoDaEtiqueta = termoSemAcento(buscaDeEtiqueta.trim());
   const opcoesVisiveis = termoDaEtiqueta
-    ? opcoesDoSeletor.filter((tag) => tag.toLocaleLowerCase().includes(termoDaEtiqueta))
+    ? opcoesDoSeletor.filter((tag) => termoSemAcento(tag).includes(termoDaEtiqueta))
     : opcoesDoSeletor;
   const alternaEtiqueta = (tag: string) => {
     const escolhida = etiquetas.includes(tag);
