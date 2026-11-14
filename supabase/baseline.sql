@@ -75042,6 +75042,144 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
 
+-- ---- mensagens agendadas, envio único (migration 9336) ----
+-- #3118, primeira parte (PR #4131, contribuição de @DIOGRO83). O porquê está no
+-- cabeçalho da 9336. Entra ANTES da VARREDURA anon porque cria a função do
+-- gatilho de LGPD. Idempotente: `if not exists`, `create or replace`, `drop ... if exists`.
+create table if not exists public.mensagens_agendadas (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  channel_session_id uuid not null references public.channel_sessions(id) on delete cascade,
+  title text,
+  body text not null check (length(btrim(body)) > 0),
+  scheduled_at timestamptz not null,
+  status text not null default 'agendada'
+    check (status in ('agendada', 'encaminhada', 'falhou', 'cancelada')),
+  se_desconectado text not null default 'esperar'
+    check (se_desconectado in ('esperar', 'cancelar')),
+  motivo text,
+  message_id uuid references public.messages(id) on delete set null,
+  claimed_until timestamptz,
+  created_by_user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_mensagens_agendadas_org_contato
+  on public.mensagens_agendadas (organization_id, contact_id, scheduled_at desc);
+create index if not exists idx_mensagens_agendadas_devidas
+  on public.mensagens_agendadas (scheduled_at) where status = 'agendada';
+
+alter table public.mensagens_agendadas enable row level security;
+
+drop policy if exists mensagens_agendadas_select on public.mensagens_agendadas;
+create policy mensagens_agendadas_select on public.mensagens_agendadas
+  for select to authenticated using (
+    organization_id in (select public.fn_user_org_ids())
+    and exists (
+      select 1 from public.conversations c
+       where c.id = mensagens_agendadas.conversation_id
+         and c.organization_id = mensagens_agendadas.organization_id
+    )
+  );
+
+revoke all on public.mensagens_agendadas from public, anon, authenticated;
+grant select on public.mensagens_agendadas to authenticated;
+grant select, insert, update, delete on public.mensagens_agendadas to service_role;
+
+create or replace function public.fn_mensagens_agendadas_contato_anonimizado()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path to 'public', 'pg_temp'
+as $$
+begin
+  update public.mensagens_agendadas
+     set body = '[redigido]',
+         title = null,
+         status = case when status = 'agendada' then 'cancelada' else status end,
+         motivo = case when status = 'agendada' then 'contato_anonimizado' else motivo end,
+         claimed_until = null,
+         updated_at = now()
+   where organization_id = new.organization_id
+     and contact_id = new.id;
+  return new;
+end$$;
+
+revoke all on function public.fn_mensagens_agendadas_contato_anonimizado() from public, anon, authenticated;
+
+drop trigger if exists trg_contacts_anonimizado_mensagens_agendadas on public.contacts;
+create trigger trg_contacts_anonimizado_mensagens_agendadas
+  after update of is_anonymized on public.contacts
+  for each row
+  when (new.is_anonymized = true and coalesce(old.is_anonymized, false) = false)
+  execute function public.fn_mensagens_agendadas_contato_anonimizado();
+
+-- ---- o desfecho do negócio leva a marca do modo assistido (migration 9337, #4319) ----
+-- Espelho idempotente da 9337 (racional no cabeçalho dela). `create or replace` da
+-- função do gatilho: antes da VARREDURA anon, como todo bloco que (re)cria função, e
+-- antes da cascata da 9243, cujo trecho até a VARREDURA é comparado por igualdade
+-- com a migration dela (lgpd-alcanca-fichas-fundidas).
+create or replace function public.fn_emit_event_on_lead_change() returns trigger
+    language plpgsql
+    set search_path to 'public', 'pg_temp'
+    as $$
+declare
+  v_antes text;
+  v_meta jsonb := '{}'::jsonb;
+begin
+  if tg_op = 'INSERT' then
+    return new;
+  end if;
+
+  -- Doc 301 = B (#4319): a IA no modo ASSISTIDO (ou a regra que rodou por causa
+  -- dela) escreve com o cabeçalho `x-actor-operation-mode: assisted`
+  -- (`escritaComMarca`, lib/automation/parada-no-assistido.ts). O evento leva a
+  -- marca e o motor de automação segura o que fala com o cliente. Forjar o
+  -- cabeçalho só deixa a automação mais contida: não abre nada.
+  if coalesce(nullif(current_setting('request.headers', true), '')::jsonb
+       ->> 'x-actor-operation-mode', '') = 'assisted' then
+    v_meta := jsonb_build_object('actor_operation_mode', 'assisted');
+  end if;
+
+  -- O negócio se anuncia: `auth.uid()` segue preenchido aqui (o UPDATE veio da
+  -- sessão de quem moveu o card), e sem este sinal a reserva do `emit_event`
+  -- calaria o próprio gatilho. A chave é de transação e volta ao valor anterior
+  -- antes do `return` — a janela é este corpo, não o resto da transação.
+  v_antes := current_setting('deskcomm.desfecho_pelo_negocio', true);
+  perform set_config('deskcomm.desfecho_pelo_negocio', 'on', true);
+
+  -- `emit_event` direto, com a entidade que o `fn_log_event` derivava
+  -- ('lead', `new.id`): é o único jeito de o metadata chegar à linha.
+  if new.status is distinct from old.status then
+    if new.status = 'won' then
+      perform public.emit_event('lead.won', 'lead', new.id,
+        jsonb_build_object('lead_id', new.id, 'value_cents', new.value_cents), v_meta, new.organization_id);
+    elsif new.status = 'lost' then
+      perform public.emit_event('lead.lost', 'lead', new.id,
+        jsonb_build_object('lead_id', new.id, 'lost_reason', new.lost_reason), v_meta, new.organization_id);
+    elsif new.status = 'open' then
+      perform public.emit_event('lead.reopened', 'lead', new.id,
+        jsonb_build_object('lead_id', new.id), v_meta, new.organization_id);
+    end if;
+  end if;
+
+  if new.owner_user_id is distinct from old.owner_user_id
+     or new.owner_agent_id is distinct from old.owner_agent_id then
+    perform public.emit_event('lead.assigned', 'lead', new.id,
+      jsonb_build_object(
+        'lead_id', new.id,
+        'from_user_id', old.owner_user_id, 'to_user_id', new.owner_user_id,
+        'from_agent_id', old.owner_agent_id, 'to_agent_id', new.owner_agent_id,
+        'owner_kind', new.owner_kind), v_meta, new.organization_id);
+  end if;
+
+  perform set_config('deskcomm.desfecho_pelo_negocio', coalesce(v_antes, ''), true);
+  return new;
+end$$;
+
 -- ---- o rótulo do telefone principal (migration 9354, #4242) ----
 -- Espelho de supabase/migrations/20261112111129_9354_rotulo_do_telefone_principal.sql
 -- (o porquê inteiro está no cabeçalho dela). Fica ACIMA da VARREDURA anon porque

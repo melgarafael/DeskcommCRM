@@ -444,7 +444,7 @@ export function ScheduleDialog({
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label="Remover janela"
+                  aria-label={t("Remover janela")}
                   onClick={() => setWindows((ws) => ws.filter((_, j) => j !== i))}
                 >
                   <Trash size={18} />
@@ -531,7 +531,7 @@ export function ScheduleDialog({
   );
 }
 
-function RoutingCard({ canManage }: { canManage: boolean }) {
+export function RoutingCard({ canManage }: { canManage: boolean }) {
   const t = useT();
   const { data, isLoading, isError } = useRoutingConfig();
   const update = useUpdateRouting();
@@ -587,7 +587,7 @@ function RoutingCard({ canManage }: { canManage: boolean }) {
               disabled={!canManage}
               onValueChange={(v) => set({ mode: v as RoutingConfig["mode"] })}
             >
-              <SelectTrigger aria-label="Modo de roteamento">
+              <SelectTrigger aria-label={t("Modo de roteamento")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
