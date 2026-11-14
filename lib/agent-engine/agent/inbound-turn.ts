@@ -12,6 +12,7 @@ import {
   type TurnPreview,
 } from './preview';
 import { etiquetarProdutoAposEnvio } from './etiqueta-apos-envio';
+import { textosDoClienteNoHistorico } from './pedido-de-audio';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -3317,6 +3318,15 @@ async function executarTurnoDoAgente(
           // na voz da organização — o comportamento de antes, byte a byte.
           vozVoiceId: agentConfig.vozVoiceId ?? null,
           voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
+          // #4345: a CONVERSA entra na decisão do `'quando_pede'` — o pedido de
+          // áudio feito duas mensagens atrás continua valendo. A janela é a que
+          // o turno já carregou em `openingContext.context.messages`: nenhuma
+          // consulta nova ao banco, e o `currentInboundText` sempre entra como o
+          // mais recente.
+          inboundTexts: textosDoClienteNoHistorico(openingContext.context.messages, currentInboundText),
+          // Mantido para quem lê um texto só; a decisão de `'quando_pede'` usa
+          // `inboundTexts` (acima).
+          inboundText: currentInboundText,
           inboundType:
             input.inboundMessageId === undefined
               ? null

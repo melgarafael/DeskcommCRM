@@ -84,11 +84,18 @@ function canal(overrides: Partial<ChannelSession> & { id: string }): ChannelSess
 }
 
 /** O mínimo de contato que a busca devolve e o painel lê. */
-function contato(overrides: { id: string; phone_number?: string | null; name?: string | null }) {
+function contato(overrides: {
+  id: string;
+  phone_number?: string | null;
+  name?: string | null;
+  display_name?: string | null;
+  address_book_name?: string | null;
+}) {
   return {
     id: overrides.id,
     name: overrides.name ?? null,
-    display_name: null,
+    display_name: overrides.display_name ?? null,
+    address_book_name: overrides.address_book_name ?? null,
     phone_number: overrides.phone_number ?? null,
     email: null,
     is_anonymized: false,
@@ -325,5 +332,33 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
     montar();
 
     expect(screen.queryByRole("button", { name: "Iniciar conversa" })).toBeNull();
+  });
+
+  it("exibe o nome da agenda do celular (address_book_name) nos resultados da busca de contatos", async () => {
+    podeMock.mockReturnValue(true);
+    lerCanaisE(
+      [canal({ id: "canal-1", display_name: "Principal", phone_number: "+5511999990001" })],
+      [
+        contato({
+          id: "contato-agenda",
+          name: null,
+          display_name: null,
+          address_book_name: "Ana Souza (Agenda)",
+          phone_number: "+5511999990002",
+        }),
+      ],
+    );
+
+    montar();
+    fireEvent.click(screen.getByRole("button", { name: "Iniciar conversa" }));
+
+    const campo = await screen.findByPlaceholderText("Telefone ou nome do contato");
+    fireEvent.change(campo, { target: { value: "Ana Souza" } });
+
+    // O botão na listagem de outros contatos deve exibir o nome da agenda, e não apenas o número repetido
+    const botaoContato = await screen.findByRole("button", { name: /Ana Souza \(Agenda\)/i });
+    expect(botaoContato).toBeInTheDocument();
+    expect(botaoContato).toHaveTextContent("Ana Souza (Agenda)");
+    expect(botaoContato).toHaveTextContent("+5511999990002");
   });
 });

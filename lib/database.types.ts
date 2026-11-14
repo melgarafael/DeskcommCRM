@@ -4696,6 +4696,7 @@ export type Database = {
       catalog_products: {
         Row: {
           ativo: boolean;
+          capacidade: string | null;
           categoria: string | null;
           codigo: string;
           controla_estoque: boolean;
@@ -4717,6 +4718,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           ativo?: boolean;
+          capacidade?: string | null;
           categoria?: string | null;
           codigo: string;
           controla_estoque?: boolean;
@@ -4737,6 +4739,7 @@ export type Database = {
         };
         Update: {
           ativo?: boolean;
+          capacidade?: string | null;
           categoria?: string | null;
           codigo?: string;
           controla_estoque?: boolean;
