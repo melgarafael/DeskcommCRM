@@ -108,6 +108,13 @@ CRONS="
 # transformaria avisar 15 minutos antes em avisar até 20. Barato: só tarefa
 # com prazo na janela, com responsável, e que ainda não virou item da Central.
 */5 * * * *|45|api/v1/cron/task-reminder
+# A TAREFA QUE SE REPETE (#4595). De 10 em 10 minutos, e não de hora em hora: o
+# que ela decide é a hora de PAREDE escolhida pela pessoa ("toda segunda às 9h"),
+# e uma varredura horária criaria a ocorrência entre as 9h e as 10h. Barato:
+# um índice parcial sobre as séries, e quem não tem série não chega ao insert.
+# Idempotente pelo índice único (recurrence_source_id, due_date) — duas rodadas
+# juntas gravam uma ocorrência só.
+*/10 * * * *|45|api/v1/cron/task-recurrence
 */15 * * * *|45|api/v1/cron/agenda-expira-pendentes
 */15 * * * *|60|api/v1/cron/risk-watcher
 # O CASO PARADO. De hora em hora, e não a cada 5 minutos: o prazo é de 24h, e

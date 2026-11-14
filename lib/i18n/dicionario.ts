@@ -14286,6 +14286,17 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível carregar as tarefas.": { es: "No se pudieron cargar las tareas." },
   "Nova tarefa": { es: "Nueva tarea" },
   "Ninguém": { es: "Nadie" },
+  // A tarefa que se repete (#4595): o seletor de dias e a hora da série.
+  "Repetir toda semana": { es: "Repetir cada semana" },
+  "A tarefa volta nos dias escolhidos, no horário acima, no fuso da empresa.": {
+    es: "La tarea vuelve los días elegidos, en el horario de arriba, en la zona horaria de la empresa.",
+  },
+  "Escolha ao menos um dia da semana para a tarefa se repetir.": {
+    es: "Elige al menos un día de la semana para que la tarea se repita.",
+  },
+  "Escolha pelo menos um dia da semana e um horário.": {
+    es: "Elige al menos un día de la semana y un horario.",
+  },
   "Membro sem nome": { es: "Miembro sin nombre" },
   "Fora da equipe": { es: "Fuera del equipo" },
   "O responsável escolhido não faz parte da equipe.": { es: "El responsable elegido no forma parte del equipo." },
