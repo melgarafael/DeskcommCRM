@@ -5,7 +5,8 @@
  * O modo assistido promete "nada sai sem alguém aprovar". O Operador passou a
  * organizar o card também no assistido (#4319), e mover o card dispara as
  * automações da etapa — algumas mandam WhatsApp, e-mail, mensagem da IA ou
- * inscrevem numa sequência. Essas quatro ficam PARADAS; o resto da regra
+ * inscrevem numa sequência. Essas quatro — e o webhook de saída, que pode
+ * falar com o cliente por um servidor externo — ficam PARADAS; o resto da regra
  * (etiqueta, tarefa, aviso à equipe) roda como sempre. A Central ganha um aviso
  * com o que ficou parado, e quem pode disparar decide.
  *
@@ -23,12 +24,17 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 
-/** As ações que falam com o cliente — a lista literal do doc 301. */
+/**
+ * As ações que falam com o cliente — a lista do doc 301, mais `call_webhook`:
+ * o servidor externo que recebe o webhook pode mandar mensagem ao cliente, e
+ * o motor não tem como saber que não manda. Na dúvida, espera aprovação.
+ */
 export const ACOES_QUE_FALAM_COM_O_CLIENTE: readonly string[] = [
   "send_whatsapp_message",
   "send_email",
   "send_ai_message",
   "start_message_flow",
+  "call_webhook",
 ];
 
 /** O código gravado no recibo da ação parada (`ActionResultDetail.error`). */
@@ -76,8 +82,8 @@ export function marcaHerdadaDoEvento(row: Pick<EventRow, "metadata"> | null | un
 }
 
 /**
- * A ação fica parada? As quatro da lista, e a `ai_decide` quando ALGUMA opção
- * dela é uma das quatro: o `execute` da decisão chama o executor da opção
+ * A ação fica parada? As da lista, e a `ai_decide` quando ALGUMA opção
+ * dela é uma delas: o `execute` da decisão chama o executor da opção
  * escolhida direto (`actions/ai-decide.ts`), por fora deste laço.
  */
 export function acaoFicaParada(
@@ -102,6 +108,8 @@ const NOME_DA_ACAO: Record<string, string> = {
   send_email: "e-mail",
   send_ai_message: "mensagem da IA",
   start_message_flow: "sequência",
+  // O mesmo rótulo do editor de automações, já traduzido no dicionário.
+  call_webhook: "Avisar outro sistema (webhook)",
   ai_decide: "decisão da IA",
 };
 
