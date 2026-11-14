@@ -146,6 +146,13 @@ describe("#4381 — o texto dos modos diz o que fica de fora E o que continua vi
 
     for (const modo of ["own_and_unassigned", "own"] as const) {
       fetcher.mockClear();
+      // A transição do `startTransition` anterior pode ainda estar de pé quando
+      // a volta seguinte começa — e aí a tela inteira está `disabled` e o botão
+      // lê "Salvando…". Medido em `verify-parte (6)` do CI e reproduzido aqui
+      // com um `fetch` de 40 ms: `:150` não achava o botão "Salvar". Esperar o
+      // nome voltar é SINCRONIZAR, não afrouxar: o valor salvo de cada modo
+      // continua sendo a asserção que importa.
+      await screen.findByRole("button", { name: "Salvar" });
       fireEvent.click(screen.getByTestId(`opcao-visibilidade-${modo}`));
       fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
       await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));

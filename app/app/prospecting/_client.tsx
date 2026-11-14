@@ -40,6 +40,7 @@ import {
 } from "@/lib/prospecting/estrategia-site";
 import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
+import { naoAbordada } from "@/lib/prospecting/exportar";
 import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
 /** Uma linha que a importação recusou — o número é o da planilha (1 = cabeçalho). */
@@ -74,6 +75,13 @@ type Candidate = {
   data: Prospect;
   selected?: boolean;
   status?: string;
+  /**
+   * Quando a abordagem foi TENTADA (#4360). É o que separa "está na fila" de
+   * "já foi abordada" quando o status voltou para `queued` depois de uma falha:
+   * a empresa que já recebeu mensagem não entra no CSV da lista.
+   */
+  attempted_at?: string | null;
+  phone?: string | null;
   lead_id?: string | null;
   progress: string;
   message_status: string | null;
@@ -424,6 +432,13 @@ export function ProspectingClient() {
     );
   }
   const candidates = data?.candidates.filter((c) => c.campaign_id === campaign?.id) ?? [];
+  /**
+   * Quantas empresas desta campanha ainda podem ser abordadas (#4360) — e por
+   * isso quantas o "Baixar lista" leva. A régua é a do SERVIDOR
+   * (`naoAbordada`): um `filter` escrito de novo aqui faria o botão prometer um
+   * número que o arquivo não entrega.
+   */
+  const naoAbordadas = candidates.filter(naoAbordada).length;
   // `message` pode ser uma função que lê a resposta (o envelope `{ data }`): só o
   // "Completar fichas" precisa dela. Texto fixo segue igual para os outros botões.
   async function perform(body: unknown, message: string | ((resposta: unknown) => string)) {
@@ -822,7 +837,6 @@ export function ProspectingClient() {
       )}
       {!data && !query.error && <p role="status">{t("Carregando campanhas…")}</p>}
       {(settings || data?.configured === false) && (
-        <>
         <Card className="p-5">
           <form
             className="flex flex-col gap-3 sm:flex-row sm:items-end"
@@ -857,6 +871,19 @@ export function ProspectingClient() {
             </Button>
           </form>
         </Card>
+      )}
+      {/*
+        VOZ E VOCABULÁRIO À VISTA (issue #4360). O card é da ORGANIZAÇÃO
+        (`organizations.settings.prospeccao`, o mesmo PATCH
+        `/api/v1/settings/prospeccao` de sempre) e morava dentro do painel que
+        "Configurar busca" abre — então quem nunca clicava ali achava que
+        precisava reescrever a voz a cada prospecção. Saiu do painel; a chave da
+        busca continua lá. Um segundo lugar para a mesma configuração (campo
+        novo, estado local) faria a voz da tela divergir da que o envio usa.
+        Só aparece com `data` carregado: o formulário grava o que está na tela, e
+        abrir com os campos vazios apagaria a voz salva no primeiro "Salvar".
+      */}
+      {data && (
         <Card className="p-5">
           <h2 className="text-lg font-semibold">{t("Voz e vocabulário")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -948,7 +975,6 @@ export function ProspectingClient() {
             </Button>
           </form>
         </Card>
-        </>
       )}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <aside className="flex flex-col gap-5">
@@ -1299,7 +1325,26 @@ export function ProspectingClient() {
                       })()}
                     </p>
                   </div>
-                  <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
+                    {/*
+                      A LISTA DE VOLTA (#4360). Link direto para o CSV — a rota
+                      responde `attachment`, então o navegador baixa em vez de
+                      navegar. `download` no <a> dá o nome do arquivo também em
+                      quem ignora o `Content-Disposition`.
+                    */}
+                    {naoAbordadas > 0 && (
+                      <Button variant="outline" size="sm" asChild>
+                        <a
+                          data-testid="baixar-lista"
+                          download
+                          href={`/api/v1/prospecting/${campaign.id}/exportar`}
+                        >
+                          {`${t("Baixar lista")} (${naoAbordadas})`}
+                        </a>
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {campaign.error && (
                   <p role="alert" className="mt-4 rounded-md bg-destructive/10 p-3 text-sm">
@@ -1335,6 +1380,13 @@ export function ProspectingClient() {
                     {t("resultados repetidos ou indisponíveis foram desconsiderados.")}
                   </p>
                 )}
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {naoAbordadas > 0
+                    ? t("Baixar lista leva só as empresas que ainda não foram abordadas.")
+                    : t(
+                        "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.",
+                      )}
+                </p>
                 {configCompleta && (
                   <>
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">

@@ -96,6 +96,35 @@ describe("PATCH /api/v1/settings/catalogo", () => {
     expect(gravado).toEqual({ catalogo: { outra: 1, apresentacao: false } });
   });
 
+  it("a chave Capacidade grava só ela e audita com a ação própria (#3472)", async () => {
+    const settings = { catalogo: { apresentacao: true } };
+    vi.mocked(createAdminClient).mockReturnValue(banco({ settings }) as never);
+
+    expect((await patch({ capacidade: true })).status).toBe(200);
+    expect(gravado).toEqual({ catalogo: { apresentacao: true, capacidade: true } });
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "catalogo.capacidade_changed", metadata: { capacidade: true } }),
+    );
+  });
+
+  it("as duas chaves no mesmo corpo gravam e auditam cada uma", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({ settings: null }) as never);
+
+    expect((await patch({ apresentacao: false, capacidade: true })).status).toBe(200);
+    expect(gravado).toEqual({ catalogo: { apresentacao: false, capacidade: true } });
+    expect(vi.mocked(audit).mock.calls.map(([e]) => e.action).sort()).toEqual([
+      "catalogo.apresentacao_changed",
+      "catalogo.capacidade_changed",
+    ]);
+  });
+
+  it("corpo sem chave nenhuma é 422, não um salvar vazio", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({ settings: {} }) as never);
+    expect((await patch({})).status).toBe(422);
+    expect(gravado).toBeNull();
+  });
+
   it("escrita concorrente vira 409, sem auditar", async () => {
     vi.mocked(createAdminClient).mockReturnValue(banco({ settings: {}, outroGravou: true }) as never);
     expect((await patch({ apresentacao: true })).status).toBe(409);
@@ -111,6 +140,7 @@ describe("PATCH /api/v1/settings/catalogo", () => {
   it("recusa o que não é booleano", async () => {
     vi.mocked(createAdminClient).mockReturnValue(banco({ settings: {} }) as never);
     expect((await patch({ apresentacao: "true" })).status).toBe(422);
+    expect((await patch({ capacidade: "true" })).status).toBe(422);
     expect(gravado).toBeNull();
   });
 

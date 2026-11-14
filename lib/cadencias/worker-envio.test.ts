@@ -90,6 +90,28 @@ beforeEach(() => {
   mocks.modulo.mockResolvedValue(true); mocks.empresa.mockResolvedValue(true); mocks.enviar.mockResolvedValue({ ok: true, via: "smtp" });
 });
 describe("efeitos do worker de cadências", () => {
+  it("espera de um dia útil iniciada sexta à noite usa a segunda no fuso da cadência", async () => {
+    expect(configuracaoPadrao().fuso).toBe("America/Sao_Paulo");
+    const sextaLocal = new Date("2026-11-14T01:30:00.000Z"); // sexta 13/11, 22h30 em São Paulo
+    const b = bancada({ passos: [{ id: "espera-1", tipo: "espera", diasUteis: 1 }, email] });
+    const r = await processarCadencias(b.admin, sextaLocal, "request-sintetico");
+    expect(r.processadas).toBe(1);
+    expect(r.falhas).toBe(0);
+    expect(b.inscricao.passo_atual_id).toBe("email-1");
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(b.inscricao.proximo_em).toBe("2026-11-17T01:30:00.000Z"); // segunda 16/11, 22h30 local
+  });
+  it("prazo de tarefa de um dia útil não vence no domingo local", async () => {
+    expect(configuracaoPadrao().fuso).toBe("America/Sao_Paulo");
+    const sextaLocal = new Date("2026-11-14T01:30:00.000Z");
+    const b = bancada({ passos: [{ id: "tarefa-1", tipo: "tarefa", titulo: "Ligar para {{primeiro_nome}}", prazoDias: 1 }, email] });
+    const r = await processarCadencias(b.admin, sextaLocal, "request-sintetico");
+    expect(r.processadas).toBe(1);
+    expect(r.falhas).toBe(0);
+    expect(b.tarefas).toHaveLength(1);
+    expect(mocks.enviar).not.toHaveBeenCalled();
+    expect(b.tarefas[0]!.due_date).toBe("2026-11-17T01:30:00.000Z");
+  });
   it("módulo ausente não consulta tabelas nem envia", async () => {
     mocks.modulo.mockResolvedValue(false); const b = bancada();
     await processarCadencias(b.admin, agora, "request-sintetico");

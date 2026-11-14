@@ -61,6 +61,19 @@ export function useUpdateInboxItem() {
 }
 
 /**
+ * Doc 301 = B: dispara o que a automação segurou porque a IA mexeu no modo
+ * assistido. O servidor fecha o aviso no mesmo ato (é a trava contra disparo em
+ * dobro), e o reabre quando nada saiu.
+ */
+export function useDispararAcoesParadas() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => apiClient.post(`/api/v1/automation-rules/runs/${runId}/disparar`, {}),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["agent-inbox"] }),
+  });
+}
+
+/**
  * Resolve TODOS os avisos abertos da organização de uma vez.
  *
  * Não recebe ids: quem decide o conjunto é o servidor, a partir da org do

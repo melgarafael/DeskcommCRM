@@ -8,6 +8,176 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.110.0] — 2026-11-13
+
+### Adicionado
+
+- **A quilometragem informada vira a data prevista da próxima revisão** O funil pode declarar a régua "revisão por quilometragem" (`pipelines.settings.revisao_por_km`): o campo de data da retirada, o campo de km, o campo de data de saída, o intervalo (10 000 km), o prazo (12 meses) e os dias de aviso. Quando o km é gravado no negócio — pelo card, pela API, pelo MCP ou pela resposta do roteiro — o CRM calcula o ritmo (km ÷ dias desde a retirada), projeta o dia em que o próximo marco é alcançado, limita pelo prazo e grava a data no campo de saída. O gatilho `lead.date_field_due` de 30 dias passa a ter a data que faltava, e cada quilometragem nova rearma o aviso sozinha. Contribuição de @webtecnica (#4536), a pedido de @rglucchini-ai (#4376).
+
+  Quatro casos ficam explícitos: km menor que o da revisão anterior não projeta nem regride a data; 12 meses vence antes do marco de km de quem roda pouco; sem data de retirada não há projeção, e o motivo é registrado; e quem roda muito tem a data elevada para hoje + dias de aviso, para o aviso não nascer vencido.
+
+  Entra como módulo opcional da instalação (`revisao_por_km`), desligado por padrão: quem não liga não carrega a régua.
+
+- **A tabela de campanhas do Meta Ads ganhou a caixa "Só ativas"** Na aba Anúncios › Meta Ads, ao lado de "Ordenar por", a caixa "Só ativas" esconde as campanhas pausadas, arquivadas e com outros estados, e deixa só as que estão ativas, na ordem escolhida no seletor. Ela começa desmarcada, então a tabela abre mostrando tudo, como antes. Se no período não houver nenhuma campanha ativa, a tabela diz isso, em vez de parecer uma conta sem campanhas.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @shu-chen-dot-ca (#4412).
+
+- **Em IA › Credenciais, a tela avisa que a assinatura do ChatGPT existe e vem desligada de fábrica** O login por assinatura do ChatGPT é um recurso da instalação e nasce desligado.
+  Desligado, o painel de conexão não aparece — e a tela não dizia nada sobre ele,
+  então quem procurava a assinatura concluía que o produto não tinha o recurso.
+  Agora, com o recurso desligado, a tela de Credenciais mostra um aviso dizendo o
+  que a assinatura faz, que ela vem desligada de fábrica, onde se liga
+  (Administração › Recursos opcionais, em `/admin/sistema`) e que quem não
+  administra a instalação precisa pedir a quem administra. Com o recurso ligado, a
+  tela continua exatamente como era: painel de conexão, sem aviso. Contribuição de
+  @webtecnica (#4438).
+
+- **O Testar do agente vira conversa — os turnos anteriores seguem junto e cada turno mostra as ferramentas que a IA usou** Antes, cada disparo do "Testar agente" ia ao motor sozinho e o painel apagava
+  o resultado anterior: não dava para ver como a IA reage a uma objeção, a uma
+  mudança de assunto ou à volta ao preço. Agora o painel mantém a conversa —
+  cada envio leva os turnos anteriores — e mostra, turno a turno, o que o
+  cliente disse, o que a IA respondeu e quais ferramentas ela chamou (inclusive
+  as de leitura, que antes não apareciam). "Recomeçar conversa" limpa tudo. A
+  conversa vive só na tela (recarregar recomeça), passa pelas mesmas janelas de
+  histórico da versão do agente e é recusada acima de 30 mensagens ou 20.000
+  caracteres. Nada é enviado a cliente real: o teste continua no modo de
+  simulação. Contribuição de @webtecnica (#4447).
+
+- **Uma classe comum a todos os grupos do menu lateral** Além da classe de cada grupo (`nav-grupo-crm`, `nav-grupo-ia`…), todo grupo do menu lateral, o rodapé inclusive, passa a levar também `nav-grupo`. Com ela, uma regra só do CSS personalizado da tela Marca vale para o menu inteiro. O guia de white label ganhou um exemplo que pinta o texto do menu sem pintar o item da tela aberta: o exemplo anterior pintava também esse item, e o texto dele ficava quase invisível sobre o fundo de destaque.
+
+  Você não precisa fazer nada. Quem não usa CSS personalizado não vê diferença.
+
+  Contribuição de @renatomprado (#4528).
+
+- **CSS personalizado com campo próprio do tema escuro e classes estáveis no menu** A tela Marca ganhou um segundo campo de CSS, que vale só no tema escuro: as regras dele são aplicadas com o escopo do tema, então uma cor escolhida para o escuro não aparece mais no claro. O menu lateral passou a ter classe estável por grupo (`nav-grupo-crm`, `nav-grupo-atendimento`…) e por destino (`nav-item-inbox`, `nav-item-kanban`…), que é o que permite colorir a navegação pelo CSS personalizado sem editar o código. Na aba Anúncios › Meta Ads, a ordenação escolhida na tabela de campanhas é lembrada no navegador e sobrevive ao recarregar a página.
+
+  Contribuição de @webtecnica (#4492).
+
+- **O valor do negócio pode ser preenchido e corrigido no painel do Inbox, sem abrir o quadro** No Inbox, o bloco do negócio na lateral não tinha o **Valor do negócio**: o
+  número aparecia só para leitura em "Negócios recentes", e preencher ou corrigir
+  exigia sair da conversa, abrir o card no funil e voltar. Como a equipe fecha a
+  venda dentro da conversa, o valor ficava em branco e a previsão do funil, as
+  metas por vendedor e o Faturamento — que leem o `value_cents` oficial do
+  negócio — ficavam sem ele.
+
+  Agora há um campo **Valor do negócio** logo abaixo de "Etapa do funil", com a
+  moeda da organização (ou a do negócio, quando já gravada), aceitando
+  `1.234,56` e mostrando o valor entendido antes de salvar. A gravação usa o
+  MESMO caminho do quadro (`PATCH /api/v1/leads/[id]`, via `useEditLead`), então
+  o valor que chega é o `value_cents` inteiro em centavos e a alteração entra na
+  linha do tempo do negócio como as demais edições. Quem não pode editar o card
+  (`viewer`) continua vendo o valor, só que sem o campo — a mesma régua de
+  permissão do funil. Campo vazio ou inválido não apaga o valor existente.
+  Contribuição de @webtecnica (#4546).
+
+### Alterado
+
+- **A 1ª mensagem da Prospecção usa tudo o que a busca achou da empresa, não só o site** A busca já descobria cinco coisas por empresa: o veredito do site, a nota do
+  Google, o número de avaliações, as redes publicadas e o telefone. A primeira
+  mensagem recebia só a nota nua, as URLs cruas e o veredito do site — o número de
+  avaliações e o tipo de telefone não chegavam, e a instrução do agente só deixava
+  citar a auditoria do site. Numa empresa sem site, que é o caso mais comum em
+  negócio local, o material citável era "não tem site" e a mensagem saía genérica,
+  parecida com as outras da campanha.
+
+  Agora a ficha leva a nota com o número de avaliações, o nome de cada rede
+  publicada e o telefone como celular ou fixo (com a conferência de WhatsApp,
+  quando o canal já conferiu), e a instrução manda escolher UM desses fatos como
+  motivo do contato — o mais forte para aquela empresa — dizendo como quem notou.
+  Ausência de dado não vira afirmação: quando a ficha não trouxe nada, a conversa
+  abre pela rotina do negócio, sem fingir que pesquisou. Contribuição de
+  @webtecnica (#4459).
+
+### Corrigido
+
+- **A tela da Nuvemshop diz que o catálogo vai para Agente de IA › Conhecimento e mostra o estado dele** A integração com a Nuvemshop dizia que sincronizava "pedidos, produtos e
+  clientes", e quem conectava a loja ia procurar os produtos em CRM › Produtos,
+  onde eles nunca aparecem. O catálogo sempre foi para o acervo do agente, na
+  fonte "Catálogo de produtos". Agora a tela da integração e o `docs/SETUP.md`
+  dizem isso, e a tela ganhou um cartão com o estado da fonte (trechos, último
+  preparo e erro), com o botão "Preparar de novo" para administradores e
+  gerentes. Nenhuma rota, tabela ou migration nova. Contribuição de @webtecnica
+  (#4357).
+
+- **Em Configurações › Atendimento, cada modo de visibilidade diz também o que ele não esconde** O texto dos modos de visibilidade prometia que o atendente em "Só os seus"
+  "vê apenas o que foi direcionado a ele", sem ressalva. Mas o modo recorta só
+  conversas e negócios: a lista de Contatos continua inteira em qualquer modo, e
+  agenda e tarefas seguem outra opção. Quem lia concluía que ver Contatos era
+  falha de permissão. Agora o texto de cada modo diz o que esconde e o que não
+  esconde. Nenhuma permissão mudou. Contribuição de @webtecnica (#4381).
+
+- **O follow-up cancelado pela trava de repetição diz que foi a trava, e quantas mensagens iguais o número já tinha** Quando um passo de mensagem escrito pela IA era vetado pela trava de repetição
+  (anti-ban), a inscrição era cancelada com "O assistente concluiu este passo sem
+  enviar uma mensagem" — o mesmo texto de um passo que simplesmente não tinha o
+  que dizer. Quem abria o acompanhamento não descobria que houve veto, nem qual
+  trava segurou. Agora o motivo diz que foi a trava de repetição e informa a
+  contagem de mensagens iguais que o número já tinha na janela, com a orientação
+  de variar o texto. As demais causas de cancelamento continuam com o texto de
+  antes. Contribuição de @webtecnica (#4428).
+
+- **A busca do seletor de "Inserir variável" acha a variável com ou sem acento** Quem digitava no campo de busca do seletor de variável — na mensagem da campanha,
+  na automação e no follow-up — só achava o item escrevendo acento e grafia
+  idênticos aos da variável. `saudacao` não aparecia ao digitar « saudação », e
+  « Nome do contato, como está no cadastro » não aparecia ao digitar « esta ».
+  Agora a busca usa a mesma regra sem acento do resto do sistema, nos dois
+  sentidos: digitar com acento acha a variável sem acento, e digitar sem acento
+  acha a variável e o rótulo acentuados. Contribuição de @webtecnica (#4481).
+
+- **Os botões de copiar endereço e segredo da fonte de webhook passam a ter nome acessível** Na tela de detalhe da fonte de webhook, os botões de copiar o endereço e o segredo (quando revelado) não tinham nome para leitor de tela. Agora eles anunciam "Copiar endereço" e "Copiar segredo", e os ícones ficam ocultos para tecnologias assistivas.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @zeroaiproject (#4488).
+
+- **Conversões só oferece "Enviar vendas pelo canal da conversa" a quem tem um canal que envia a venda** A chave aparecia para toda organização, inclusive para quem conecta o WhatsApp
+  por QR Code ou pela API oficial direta, onde ela não envia nada. Agora ela só é
+  oferecida quando alguma conexão da organização consegue devolver a venda pela
+  conversa; sem esse canal, a tela diz isso e aponta a conexão direta com a Meta
+  (conjunto de dados e token). Quem já tinha a chave ligada sem canal que envie a
+  vê com um aviso e pode desligá-la. Nenhuma rota, tabela ou migration nova. Contribuição de @officialasishkumar (#4555).
+
+- **O Testar do agente lê os documentos da base no modo de leitura direta** Com a base de conhecimento em leitura direta, o Testar do agente não conseguia abrir documento nenhum: toda pergunta que dependia da base saía como "preciso verificar", enquanto o mesmo agente, no atendimento real, lia o material e respondia. Agora a prévia lê os documentos como a produção, e o que você ajusta pelo Testar vale para o que o cliente vai receber. A prévia continua sem enviar mensagem e sem gravar nada.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @renatomprado, a partir da issue #4572.
+
+- **A exportação de auditoria conserva os eventos quando novos registros chegam** Se novos eventos entrarem enquanto o CSV de auditoria está sendo gerado, a próxima página continua do último evento lido. O arquivo conserva os registros originais sem repeti-los por deslocamento das páginas. Crédito: @samirhvbr.
+
+- **A pasta de backups da instalação fica fora do contexto de build das imagens** O `backup.sh` do kit grava por padrão em `backups/`, ao lado do código. Essa
+  pasta agora está no `.dockerignore`, então quem constrói a imagem na própria
+  VPS (o caminho de emergência) não leva os backups para dentro dela. Quem só
+  puxa as imagens publicadas não percebe diferença. Contribuição de @World2576
+  (#4547).
+
+- **Campanha só confirma a preparação depois de ficar pronta** Se o banco recusar a conclusão do preparo, a campanha informa a falha e tenta voltar ao rascunho para permitir uma nova preparação. Antes, a tela recebia sucesso e o histórico registrava a campanha como preparada, embora ela continuasse presa em preparando. Crédito: @samirhvbr.
+
+- **Foto interrompida durante o download não derruba a importação do catálogo** Uma conexão interrompida, um prazo esgotado durante a transferência ou um redirecionamento inválido agora recusam a linha da foto com o endereço no erro. As outras linhas da planilha continuam entrando, e as fotos já enviadas daquela linha recusada são removidas. O cadastro de produto pela API também devolve a recusa, sem criar um produto com fotos incompletas.
+
+  Crédito: @samirhvbr.
+
+- **O resumo da importação do catálogo conta só os produtos que foram gravados** Quando o banco recusa uma linha da planilha, ela aparece nos erros sem contar como produto atualizado. Os produtos novos que entraram continuam aparecendo no total de criados, mesmo quando uma atualização falha. O resumo da tela e o registro da importação passam a mostrar as mesmas contagens de gravações confirmadas.
+
+  Crédito: @samirhvbr.
+
+- **A lista e a exportação alcançam os contatos sem última atividade** Ao avançar as páginas, os contatos sem última atividade também aparecem na lista e na exportação. A ordenação pelo nome aceita campos vazios e nomes com pontuação no cursor. Crédito: @samirhvbr.
+
+- **A importação mostra quando o vínculo entre pessoa e empresa falha** Se o vínculo falhar, a linha aparece com erro no histórico do lote. Outra linha do mesmo lote para a mesma empresa e pessoa tenta gravar o vínculo usando os registros já criados. Crédito: @samirhvbr.
+
+- **PDFs saem também em imagem construída com webpack** Quem constrói a própria imagem com `next build --webpack` tinha os PDFs (exportar conversa, prévia e envio de proposta) falhando com «Cannot find module … pdfkit/js/standard-fonts/Helvetica.cjs»: as fontes padrão do PDF não acompanhavam esse build. Agora acompanham. A imagem oficial, construída com o Turbopack, já as levava e não muda. Crédito: @berrub00.
+
+- **O PDF inclui o atendimento recente após importar mensagens antigas** O recorte do PDF usa a data de envio das mensagens e a data de criação para as que ainda não têm envio. Assim, importar um histórico antigo preserva os atendimentos recentes no documento. Crédito: @samirhvbr.
+
+- **O resultado da importação indica a linha original da planilha** Na prévia de prospecção e no histórico de importação de empresas e pessoas, os números das linhas correspondem aos do CSV ou XLSX mesmo quando há linhas em branco no arquivo. Crédito: @samirhvbr.
+
+- **Editar uma tarefa espera a leitura da situação anterior** Se o banco não consegue consultar a situação da tarefa, a edição devolve erro antes de gravar. Assim, corrigir o título de uma tarefa já concluída não cria outra conclusão no histórico do negócio, e o registro de auditoria não inventa uma transição sem ter lido a origem. A edição pode ser tentada de novo quando a consulta se recuperar.
+
+  Crédito: @samirhvbr.
+
+- **Venda pelo canal não para mais numa conversa de Instagram ou Facebook** Com "Enviar vendas pelo canal da conversa" ligada, a venda de um contato cuja conversa mais recente era de Instagram ou Facebook tentava sair por essa conversa, pela ponte que só existe para WhatsApp, e a conversa de WhatsApp que conseguiria enviar era pulada. Agora as conversas de rede social são puladas e a venda sai pela de WhatsApp.
+
 ## [1.109.0] — 2026-11-12
 
 ### Adicionado
@@ -15847,7 +16017,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.109.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.110.0...HEAD
+[1.110.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.109.0...v1.110.0
 [1.109.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.108.0...v1.109.0
 [1.108.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.107.0...v1.108.0
 [1.107.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.106.0...v1.107.0

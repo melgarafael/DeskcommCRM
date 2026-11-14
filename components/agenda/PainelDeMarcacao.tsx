@@ -937,7 +937,7 @@ export function PainelDeMarcacao({
               )}
             >
               {duracaoOk
-                ? t("O padrão é a duração do serviço. Mude se este atendimento precisar de mais ou menos tempo.")
+                ? t("O padrão é a duração do serviço — ou, ao remarcar, o comprimento que o bloco já tem. Mude se este atendimento precisar de mais ou menos tempo.")
                 : t("Escolha uma duração entre 5 e 1440 minutos.")}
             </p>
           </div>
