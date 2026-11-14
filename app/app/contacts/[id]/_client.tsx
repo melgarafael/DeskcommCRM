@@ -580,7 +580,7 @@ export function ContactDetailClient({
                 )}
                 podeCriarPessoa={Boolean(
                   (user.is_platform_admin && !user.support) ||
-                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager),
+                    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent),
                 )}
                 nomeSugerido={nomeDoContato(contact) ?? ""}
               />

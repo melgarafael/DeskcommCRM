@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Buildings, MagnifyingGlass, Plus } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,7 @@ interface CompanyRow {
 
 export function CompaniesListClient() {
   const t = useT();
+  const router = useRouter();
   const [rows, setRows] = useState<CompanyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -163,6 +165,13 @@ export function CompaniesListClient() {
     setEmail("");
     setPhone("");
     setAviso(null);
+    // Cadastro seguido: a empresa recém-criada abre na hora, já com o formulário
+    // "Adicionar pessoa com contato" aberto (`?novo=1`), sem voltar pela lista.
+    const novoId = (json?.data as { id?: string } | undefined)?.id;
+    if (novoId) {
+      router.push(`/app/companies/${novoId}?novo=1`);
+      return;
+    }
     void load();
   }
 

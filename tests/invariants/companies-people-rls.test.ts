@@ -117,12 +117,25 @@ describe("isolamento entre organizações", () => {
 });
 
 describe("escrita por papel no banco (RLS por operação)", () => {
-  it("viewer e agent não criam empresa; manager cria", () => {
+  // Migration 9348: o piso do INSERT desceu de `manager` para `agent`, para o
+  // Atendente cadastrar o cliente novo sem passar por um Gerente. EXCLUIR segue `manager`.
+  it("viewer não cria empresa nem pessoa; agent e manager criam", () => {
     const criar = (nome: string) =>
       `insert into public.companies (organization_id, trade_name) values ('${GOV_ORG}', '${nome}')`;
+    const criarPessoa = (nome: string) =>
+      `insert into public.people (organization_id, full_name, normalized_name) values ('${GOV_ORG}', '${nome}', lower('${nome}'))`;
     expect(writeCountAs(GOV_VIEWER, criar("pelo viewer"))).toBe(0);
-    expect(writeCountAs(GOV_AGENT_A, criar("pelo agent"))).toBe(0);
+    expect(writeCountAs(GOV_AGENT_A, criar("pelo agent"))).toBe(1);
     expect(writeCountAs(GOV_MANAGER, criar("pelo manager"))).toBe(1);
+    expect(writeCountAs(GOV_VIEWER, criarPessoa("Pelo Viewer"))).toBe(0);
+    expect(writeCountAs(GOV_AGENT_A, criarPessoa("Pelo Agent"))).toBe(1);
+  });
+
+  it("agent não apaga empresa; manager apaga", () => {
+    const apagar = (nome: string) =>
+      `delete from public.companies where organization_id = '${GOV_ORG}' and trade_name = '${nome}'`;
+    expect(writeCountAs(GOV_AGENT_A, apagar("pelo agent"))).toBe(0);
+    expect(writeCountAs(GOV_MANAGER, apagar("pelo agent"))).toBe(1);
   });
 
   it("viewer não edita a pessoa; agent edita (o PATCH da rota é agent)", () => {
