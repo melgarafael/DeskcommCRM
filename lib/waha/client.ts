@@ -1009,6 +1009,25 @@ export class WahaClient {
     if (!res.ok) throw new Error(`waha_${res.status}`);
   }
 
+  /**
+   * Recusa uma chamada de voz recebida (`POST /api/{session}/calls/reject`).
+   *
+   * `from` e `id` vêm do payload do evento `call.received`, sem tradução. Quem
+   * chama decide o que fazer com a falha: a ligação já está tocando, e o pior
+   * resultado de errar é ela tocar como tocava antes.
+   */
+  async rejectCall(session: string, from: string, callId: string): Promise<void> {
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/calls/reject`,
+      {
+        method: "POST",
+        headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ from, id: callId }),
+      },
+    );
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+  }
+
   /** O id completo identifica a mensagem no WAHA; o id curto do sendText não basta. */
   async editMessage(session: string, chatId: string, messageId: string, text: string): Promise<void> {
     const path = `/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`;

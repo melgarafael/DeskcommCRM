@@ -849,6 +849,23 @@ export const DICIONARIO: Traducoes = {
     },
   "Enviar o telefone do contato criptografado": { es: "Enviar el teléfono del contacto cifrado" },
   "Enviar vendas pelo canal da conversa": { es: "Enviar ventas por el canal de la conversación" },
+  "Bloquear chamadas recebidas": { es: "Bloquear llamadas recibidas" },
+  "Quando alguém liga por voz para o WhatsApp dos seus números, a chamada é recusada sozinha. As mensagens continuam chegando normalmente. Vem desligado: a chamada toca como antes.": {
+    es: "Cuando alguien llama por voz al WhatsApp de tus números, la llamada se rechaza sola. Los mensajes siguen llegando con normalidad. Viene desactivado: la llamada suena como antes.",
+  },
+  "Recusa sozinha a ligação de voz que chega no WhatsApp dos números da empresa.": {
+    es: "Rechaza sola la llamada de voz que llega al WhatsApp de los números de la empresa.",
+  },
+  "Mensagem para quem ligou (opcional)": { es: "Mensaje para quien llamó (opcional)" },
+  "Ex.: Oi! Não atendemos ligações por aqui, mas pode escrever que respondemos já.": {
+    es: "Ej.: ¡Hola! No atendemos llamadas por aquí, pero puedes escribirnos y respondemos enseguida.",
+  },
+  "Quando a chamada é recusada, esta mensagem vai para quem ligou. Vazio = não manda nada. Quem insiste em ligar recebe o aviso no máximo uma vez a cada 10 minutos.": {
+    es: "Cuando la llamada se rechaza, este mensaje va a quien llamó. Vacío = no envía nada. Quien insiste en llamar recibe el aviso como máximo una vez cada 10 minutos.",
+  },
+  "Salvar mensagem": { es: "Guardar mensaje" },
+  "Recurso extra": { es: "Recurso extra" },
+  "Recurso extra · valor a definir": { es: "Recurso extra · valor por definir" },
   "Sem conexão direta com a Meta, a venda de quem veio de anúncio pode ir pelo canal intermediado do WhatsApp, quando ele já liga o seu conjunto de dados da Meta ao número. Saem para o provedor do canal o valor, a moeda, o telefone do cliente e a conversa. Vem desligado: ligue só se a sua política de privacidade cobre esse uso.":
     {
       es: "Sin conexión directa con Meta, la venta de quien vino de un anuncio puede ir por el canal intermediado de WhatsApp, cuando este ya vincula tu conjunto de datos de Meta al número. Al proveedor del canal salen el valor, la moneda, el teléfono del cliente y la conversación. Viene desactivado: actívalo solo si tu política de privacidad cubre ese uso.",

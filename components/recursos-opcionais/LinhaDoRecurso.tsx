@@ -44,7 +44,16 @@ export function LinhaDoRecurso({
       data-recurso={recurso.id}
     >
       <div className="min-w-0 space-y-1">
-        <p className="font-medium">{traduzir(recurso.nome, idioma)}</p>
+        <p className="font-medium">
+          {traduzir(recurso.nome, idioma)}
+          {recurso.extra && (
+            <Badge variant="info" className="ml-2 align-middle">
+              {recurso.extra.valorEmCentavos === null
+                ? traduzir("Recurso extra · valor a definir", idioma)
+                : `${traduzir("Recurso extra", idioma)} · ${(recurso.extra.valorEmCentavos / 100).toLocaleString(idioma, { style: "currency", currency: "BRL" })}`}
+            </Badge>
+          )}
+        </p>
         <p className="text-sm text-muted-foreground">{traduzir(recurso.oQueFaz, idioma)}</p>
         {recurso.comoLigar && (
           <p className="text-sm text-muted-foreground">{traduzir(recurso.comoLigar, idioma)}</p>

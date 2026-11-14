@@ -34,6 +34,7 @@ import { MODULOS_AINDA_NAO_LIGAVEIS, MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FL
 import { moduloDoCatalogo } from "@/lib/modulos/catalogo";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
+import { bloqueioDeChamadasLigado } from "@/lib/organizacao/bloqueio-de-chamadas";
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { capacidadesLigadas, type CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import { conversaFicaComQuemAtendeu } from "@/lib/schemas/routing";
@@ -82,6 +83,12 @@ export interface RecursoOpcional {
   capacidade?: CapacidadeDaOrganizacao;
   /** Só `servidor`: o que fazer, em uma linha. */
   comoLigar?: string;
+  /**
+   * Recurso EXTRA do produto (contratado à parte). `valorEmCentavos: null` =
+   * valor ainda a definir; a tela mostra "Recurso extra · valor a definir".
+   * Só rotula: a cobrança do revendedor (`lib/cobranca`) não conhece extras.
+   */
+  extra?: { valorEmCentavos: number | null };
   ler?: (f: FontesDeEstado) => EstadoDoRecurso;
 }
 
@@ -624,6 +631,18 @@ const DA_EMPRESA: RecursoOpcional[] = [
     padrao: "desligado",
     quemDecide: "admin",
     href: "/app/settings/security",
+    // A ligação feita e recebida dentro do chat. Valor ainda não definido.
+    extra: { valorEmCentavos: null },
+  },
+  {
+    id: "bloqueio_de_chamadas",
+    nome: "Bloquear chamadas recebidas",
+    oQueFaz: "Recusa sozinha a ligação de voz que chega no WhatsApp dos números da empresa.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/security",
+    ler: peloSettings(bloqueioDeChamadasLigado),
   },
   {
     id: "tronco_sip",

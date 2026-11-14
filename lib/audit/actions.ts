@@ -1204,6 +1204,7 @@ export const AUDIT_ACTIONS = [
   // "Enviar vendas pelo canal da conversa" (doc 76, PR #1819): ligar faz o
   // valor da venda e o telefone do cliente saírem para o provedor do canal.
   "conversions.report_via_channel_updated",
+  "calls.block_incoming_updated",
   // "Deduzir a origem do site pelo horário do clique" (doc 259, PR #3906):
   // ligar faz a Origem passar a aceitar palpite, além de prova.
   "conversions.site_origin_by_click_time_updated",

@@ -36,7 +36,9 @@ services:
       # e o CRM fica sem a resposta mais comum do WhatsApp. O roteador tem o ramo
       # próprio (`handleReaction`, lib/waha/ingest.ts): a reação vira linha
       # `type='reaction'` ligada ao alvo, e não carimba a conversa como mensagem.
-      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change"
+      # `call.received`: a ligação de voz, recusada quando a empresa liga
+      # "Bloquear chamadas recebidas" (lib/organizacao/bloqueio-de-chamadas.ts).
+      WHATSAPP_HOOK_EVENTS: "message.any,message.ack,message.edited,message.revoked,message.reaction,session.status,state.change,call.received"
       # HMAC SHA512 do payload, validado server-side via crypto.timingSafeEqual.
       # Nome EXATO da doc do WAHA (events#hmac-authentication): sem o _KEY ele ignora.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_HMAC_SECRET}
