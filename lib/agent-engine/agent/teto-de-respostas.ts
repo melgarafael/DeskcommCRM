@@ -58,6 +58,8 @@
  */
 import type pg from 'pg';
 
+import { instanteDoBanco } from '@/lib/tempo/agora';
+
 import type { Logger } from '../obs/logger';
 import type { Gate, GateContext, GateVerdict } from '../guardrails/before-send';
 
@@ -172,9 +174,17 @@ export async function contarRespostasAutomaticas(
     );
     const linha = rows[0];
     const bruto = linha?.mais_antiga ?? null;
+    // `min(m.sent_at)` chega em DUAS formas, como toda coluna de data lida do
+    // banco: `Date` no driver `pg` (OID 1184) e string ISO no PostgREST/`jsonb`.
+    // A normalização é a da borda canônica (`instanteDoBanco`, que já tem
+    // cobertura no invariante `reguas-de-data-veem-o-date-do-driver`) — um
+    // `instanceof Date` local seria uma SEGUNDA régua de transporte para a mesma
+    // coluna. Hora ilegível vira `null`, e o veto sai sem horário em vez de
+    // carregar um `Date` inválido para `nextAllowedAt`.
+    const maisAntiga = instanteDoBanco(bruto);
     return {
       naJanela: linha?.na_janela ?? 0,
-      maisAntigaEm: bruto === null ? null : bruto instanceof Date ? bruto : new Date(bruto),
+      maisAntigaEm: maisAntiga === null ? null : new Date(maisAntiga),
     };
   } catch {
     return null;

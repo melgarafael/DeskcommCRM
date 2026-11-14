@@ -77,7 +77,12 @@ function respostaDaIa(conversationId: string, sentAt: Date): LinhaDeMensagem {
  * consultas do runner devolvem `rows: []` — que é o "instalação sem nada
  * configurado" e é o caminho que o repo usa nos testes vizinhos da cadeia.
  */
-function bancada(opcoes: { linhas: LinhaDeMensagem[]; falharContagem?: boolean }) {
+function bancada(opcoes: {
+  linhas: LinhaDeMensagem[];
+  falharContagem?: boolean;
+  /** O `min(sent_at)` volta como o PostgREST/jsonb entrega: string ISO. */
+  maisAntigaComoTexto?: boolean;
+}) {
   const consultas: { sql: string; params: unknown[] }[] = [];
   const linhas = opcoes.linhas;
 
@@ -100,7 +105,17 @@ function bancada(opcoes: { linhas: LinhaDeMensagem[]; falharContagem?: boolean }
           dentro.length === 0
             ? null
             : new Date(Math.min(...dentro.map((l) => l.sentAt.getTime())));
-        return { rows: [{ na_janela: dentro.length, mais_antiga: maisAntiga }] };
+        return {
+          rows: [
+            {
+              na_janela: dentro.length,
+              mais_antiga:
+                maisAntiga !== null && opcoes.maisAntigaComoTexto === true
+                  ? maisAntiga.toISOString()
+                  : maisAntiga,
+            },
+          ],
+        };
       }
       return { rows: [] };
     }),
@@ -306,6 +321,25 @@ describe("a janela desliza: vencida, a conversa volta a poder responder", () => 
     expect(r.status).toBe("vetoed");
     if (r.status !== "vetoed") throw new Error("inalcançável");
     // A mais antiga da janela sai dela 60 min depois de ter saído.
+    expect(r.nextAllowedAt?.toISOString()).toBe(
+      new Date(COMECO.getTime() - 50 * 60_000 + 60 * 60_000).toISOString(),
+    );
+  });
+
+  it("a mesma conta quando o `min(sent_at)` chega como string ISO do PostgREST", async () => {
+    // A coluna é a MESMA; só o transporte muda (`Date` no driver `pg`, string no
+    // PostgREST/jsonb). O `nextAllowedAt` tem de ser idêntico — quem lê a data
+    // crua passa pela borda canônica, não por um `instanceof Date` local.
+    const b = bancada({
+      linhas: [
+        respostaDaIa(CONVERSA_A, new Date(COMECO.getTime() - 50 * 60_000)),
+        respostaDaIa(CONVERSA_A, new Date(COMECO.getTime() - 10 * 60_000)),
+      ],
+      maisAntigaComoTexto: true,
+    });
+    const r = await tentaEnviar(b, { now: COMECO, knobs: { porConversa: 2, janelaMinutos: 60 } });
+    expect(r.status).toBe("vetoed");
+    if (r.status !== "vetoed") throw new Error("inalcançável");
     expect(r.nextAllowedAt?.toISOString()).toBe(
       new Date(COMECO.getTime() - 50 * 60_000 + 60 * 60_000).toISOString(),
     );
