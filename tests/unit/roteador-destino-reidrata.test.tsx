@@ -50,6 +50,7 @@ const ROTEADOR = {
   is_active: true,
   config: {},
   fallback_agent_id: null,
+  passagem_ao_cliente: null,
 };
 
 /** O que a API de detalhe devolve: destino preenchido (issue #2569). */

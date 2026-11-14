@@ -78,6 +78,7 @@ function renderizar() {
           is_active: true,
           config: {},
           fallback_agent_id: null,
+          passagem_ao_cliente: null,
         },
         members: [
           {
@@ -302,6 +303,7 @@ describe("destino do funil/etapa do roteador (#2415)", () => {
     is_active: true,
     config: {},
     fallback_agent_id: null,
+    passagem_ao_cliente: null,
   };
   // O SSR legado chegava SEM os campos de destino (o defeito da issue).
   const MEMBRO_SEM_DESTINO = {
@@ -398,6 +400,7 @@ describe("destino do funil/etapa já gravado, na primeira renderização (#2569)
     is_active: true,
     config: {},
     fallback_agent_id: null,
+    passagem_ao_cliente: null,
   };
   const MEMBRO_COM_FUNIL_E_ETAPA = {
     id: "m1",
@@ -557,7 +560,7 @@ describe('regras por remetente', () => {
     const agentId = '11111111-1111-4111-8111-111111111111';
     const fallback = '22222222-2222-4222-8222-222222222222';
     render(<RouterEditorClient routerId="r1" initialState={{
-      router: { id: 'r1', name: 'R', channel_session_id: 's1', is_active: true, fallback_agent_id: fallback,
+      router: { id: 'r1', name: 'R', channel_session_id: 's1', is_active: true, fallback_agent_id: fallback, passagem_ao_cliente: null,
         config: { sender_routes: [{ phone: '+5511999998888', agent_id: agentId }] } }, members: [],
     }} agents={[{ id: agentId, name: 'Secretária' }, { id: fallback, name: 'Paciente' }]} channelSessions={[]} classifierModels={[]} />);
     const phone = screen.getByLabelText('Telefone com DDI');
@@ -587,6 +590,7 @@ describe("#4340 — mover o roteador para o número novo", () => {
             is_active: true,
             config: {},
             fallback_agent_id: null,
+            passagem_ao_cliente: null,
           },
           members: [],
         }}
