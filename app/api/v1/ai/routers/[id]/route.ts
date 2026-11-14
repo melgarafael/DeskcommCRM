@@ -28,7 +28,8 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const ROUTER_DETAIL_COLUMNS = "id, name, channel_session_id, is_active, config, fallback_agent_id";
+const ROUTER_DETAIL_COLUMNS =
+  "id, name, channel_session_id, is_active, config, fallback_agent_id, passagem_ao_cliente";
 const MEMBER_COLUMNS =
   "id, agent_id, intent_name, intent_description, examples, position, flow_pointer_id, pipeline_id, stage_id";
 
@@ -43,6 +44,13 @@ const patchRouterSchema = z.object({
    * vivo e sem roteador, com auditoria "de X para Y".
    */
   channel_session_id: z.string().uuid().optional(),
+  /**
+   * #4363 — a frase que o CLIENTE lê quando o roteador troca de agente
+   * automaticamente. `null`/`""` = desligada (o padrão, e o comportamento de
+   * antes). Mesmo teto do CHECK da 9367: aqui a régua responde 422 com o motivo,
+   * em vez de deixar o banco recusar a linha inteira.
+   */
+  passagem_ao_cliente: z.string().max(1200).nullable().optional(),
   config: z
     .record(z.string(), z.unknown())
     .optional()
@@ -211,6 +219,13 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (patch.name !== undefined) update.name = patch.name;
   if (patch.is_active !== undefined) update.is_active = patch.is_active;
   if (patch.fallback_agent_id !== undefined) update.fallback_agent_id = patch.fallback_agent_id;
+  if (patch.passagem_ao_cliente !== undefined) {
+    // `""` e espaço em branco são DESLIGADO, não uma mensagem vazia: a mesma
+    // régua do leitor (`normalizarPassagemAoCliente`), para que a tela possa
+    // "salvar vazio" sem gravar uma frase que ninguém escreveu.
+    const frase = patch.passagem_ao_cliente?.trim() ?? "";
+    update.passagem_ao_cliente = frase === "" ? null : frase;
+  }
   if (patch.config !== undefined) {
     const currentConfig = (existing.config ?? {}) as Record<string, unknown>;
     update.config = { ...currentConfig, ...patch.config };

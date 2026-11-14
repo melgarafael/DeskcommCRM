@@ -232,7 +232,13 @@ import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
-import { idiomaDaOrganizacaoDoTurno, montarBlocoDePassagemDoRoteador } from './passagem-do-roteador';
+import {
+  SEQ_DA_PASSAGEM_AO_CLIENTE,
+  avisarClienteDaTrocaDeAgente,
+  idiomaDaOrganizacaoDoTurno,
+  montarBlocoDePassagemDoRoteador,
+  textoDaPassagemAoCliente,
+} from './passagem-do-roteador';
 import { ferramentaDePassagemEntreAgentes } from './transferir-agente';
 import {
   hasOpenCaseForContact,
@@ -6520,12 +6526,79 @@ async function executarTurnoDoAgente(
     // no turno da troca (`reclassified`) — nos demais o bloco é '' e nem a
     // leitura do locale acontece.
     const passagemRecebida = 'passagemRecebida' in routed ? (routed.passagemRecebida ?? null) : null;
+    // #4363 — a OUTRA metade da troca automática: a frase que o CLIENTE lê, do
+    // dono do roteador (`ai_routers.passagem_ao_cliente`, 9367). Sai ANTES do
+    // modelo, no mesmo ponto em que o desfecho é conhecido, e uma vez só neste
+    // turno. Desligada (o padrão), NADA é enviado e o bloco abaixo continua
+    // mandando o agente novo se apresentar — o comportamento de antes.
+    const trocaQuePedeAviso = {
+      outcome: routed.outcome,
+      // `in`: o campo só existe no turno da troca; ausente = desligado.
+      textoConfigurado: 'passagemAoClienteDoRouter' in routed ? routed.passagemAoClienteDoRouter : null,
+      agenteAnteriorId: passagemRecebida?.agenteAnteriorId ?? null,
+      agenteNovoId: routed.config?.agentId ?? null,
+    };
+    let clienteAvisadoDaTroca = false;
+    if (textoDaPassagemAoCliente(trocaQuePedeAviso) !== null) {
+      const desfechoDoAviso = await avisarClienteDaTrocaDeAgente(
+        {
+          log: runLog,
+          // A MESMA cadeia de guardrails de tudo que sai daqui. `seq` próprio
+          // (negativo) porque este aviso não é uma fala do modelo — ver
+          // `SEQ_DA_PASSAGEM_AO_CLIENTE`.
+          enviar: async (texto) => {
+            const chain = await runBeforeSend({
+              pool,
+              log: runLog,
+              agentOperation,
+              tenantId,
+              leadId,
+              jobId: liveJob().id,
+              channelSessionId: input.channelSessionId,
+              body: texto,
+              optedOutThisTurn,
+              resposta: eTurnoDeResposta(liveJob()),
+              crmDailyLimit: null,
+              now: clock(),
+              ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+              ...(lgpd !== undefined ? { lgpd } : {}),
+              ...(routed.config?.agentId != null ? { agentId: routed.config.agentId } : {}),
+              ...(deps.knobs.disclosureMode !== undefined
+                ? { disclosureMode: deps.knobs.disclosureMode }
+                : {}),
+              // Texto fixo do dono do roteador, não do modelo: a restrição
+              // comercial (#2877) não o julga, e o spinning não é dele — as
+              // mesmas duas escolhas do aviso de escalação.
+              enforceCommercialRestriction: false,
+              enforceSpinning: false,
+              send: (finalBody: string) =>
+                liveChannel().send({
+                  tenantId,
+                  leadId,
+                  jobId: liveJob().id,
+                  jobClaim: claimOfJob(liveJob()),
+                  agentOperation,
+                  seq: SEQ_DA_PASSAGEM_AO_CLIENTE,
+                  conversationId: input.conversationId,
+                  body: finalBody,
+                }),
+            });
+            return chain.status === 'vetoed' ? 'blocked' : chain.outcome.kind;
+          },
+        },
+        trocaQuePedeAviso,
+      );
+      clienteAvisadoDaTroca = desfechoDoAviso.enviado;
+    }
     const passagemBlock =
       passagemRecebida === null
         ? ''
         : montarBlocoDePassagemDoRoteador(
             passagemRecebida,
             await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
+            // Avisado o cliente, o agente novo NÃO repete o aviso: é o que
+            // impede duas mensagens de passagem na mesma troca.
+            clienteAvisadoDaTroca,
           );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,

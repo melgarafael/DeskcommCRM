@@ -153,6 +153,18 @@ export interface TurnAgentResolution {
    * (`passagem-do-roteador.ts`), no idioma da organização.
    */
   passagemRecebida?: PassagemRecebida;
+  /**
+   * A FRASE que o roteador manda ao CLIENTE na troca automática (#4363,
+   * `ai_routers.passagem_ao_cliente`) — a outra metade do aviso. Presente SÓ no
+   * turno da troca e SÓ quando o dono do roteador ligou a frase; `undefined` em
+   * todo o resto, que é o comportamento de antes (troca silenciosa, o agente
+   * novo se apresenta).
+   *
+   * Vem da MESMA leitura do roteador que já decidiu o desfecho — nenhuma
+   * consulta a mais —, e o turno a envia antes de chamar o modelo
+   * (`avisarClienteDaTrocaDeAgente`).
+   */
+  passagemAoClienteDoRouter?: string;
 }
 
 export interface ResolveTurnAgentDeps {
@@ -603,6 +615,13 @@ export async function resolveTurnAgent(
                 (await _loadAgentById(db, input.tenantId, input.stickyAgentId).catch(() => null))
                   ?.agentName ?? null,
             };
+      // #4363 — a FRASE do cliente, quando o roteador tem uma ligada. Só no
+      // turno da troca: nos demais este campo nem existe, e o turno não envia
+      // nada (a régua de texto é `textoDaPassagemAoCliente`).
+      const passagemAoClienteDoRouter =
+        outcome === 'reclassified' && input.stickyAgentId !== null
+          ? router.passagemAoCliente
+          : undefined;
       return {
         config,
         routerId: router.id,
@@ -610,6 +629,9 @@ export async function resolveTurnAgent(
         confidence,
         outcome,
         ...(passagem !== null ? { passagemRecebida: passagem } : {}),
+        ...(passagemAoClienteDoRouter !== undefined && passagemAoClienteDoRouter !== null
+          ? { passagemAoClienteDoRouter }
+          : {}),
         // Só a intenção casada AGORA começa roteiro. Sticky é o mesmo assunto da
         // conversa em curso: devolvê-lo recomeçaria o roteiro a cada turno — e,
         // depois de concluído, de novo, para sempre.

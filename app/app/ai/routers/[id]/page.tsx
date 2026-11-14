@@ -11,7 +11,8 @@ import { rotuloDoNumero, type NumeroSemRoteador } from "../estado-dos-numeros";
 
 export const dynamic = "force-dynamic";
 
-const ROUTER_DETAIL_COLUMNS = "id, name, channel_session_id, is_active, config, fallback_agent_id";
+const ROUTER_DETAIL_COLUMNS =
+  "id, name, channel_session_id, is_active, config, fallback_agent_id, passagem_ao_cliente";
 // #2415 — SEM pipeline_id/stage_id aqui, o initialState do SSR nascia sem
 // destino: o draft montado a partir dele mostrava "Sem destino" a cada recarga,
 // mesmo com os campos gravados no banco (a API de detalhe já trazia os dois).
