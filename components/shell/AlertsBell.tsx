@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { destinosDaInterface } from "@/lib/navigation/interface";
 
 import { useAgentInbox } from "@/hooks/ai/useAgentInbox";
+import { usePrefetchPorIntencao } from "@/hooks/navigation/prefetchPorIntencao";
 import { useSonsDaCentral } from "@/hooks/notifications/useSonsDaCentral";
 import { useT } from "@/hooks/i18n/useT";
 import { Bell } from "@/lib/ui/icons";
@@ -30,10 +31,24 @@ function VisibleAlertsBell() {
   // O som da organização para a etapa que avisa e o pedido de pessoa.
   useSonsDaCentral(data?.items);
   const count = data?.open_count ?? 0;
+  /**
+   * O sino aparece em TODA tela de `/app`, e o `<Link>` do App Router prefetcharia
+   * `/app/ai/inbox` sozinho na montagem — um render RSC completo (`proxy.ts` +
+   * `loadAuthUser` + as consultas do layout) por tela, para devolver a casca de
+   * uma rota `force-dynamic`. O pedido passa a sair no ponteiro/foco, que chegam
+   * dezenas de milissegundos antes do clique: quem só passa o olho pela tela não
+   * paga nada (#3170, mesmo gancho do menu — `hooks/navigation/prefetchPorIntencao.ts`).
+   *
+   * O CONTADOR continua consultando na montagem de propósito: o número no sino é
+   * o que a pessoa veio ver, e adiá-lo para o ponteiro trocaria um render do
+   * servidor por um sino mudo.
+   */
+  const intencao = usePrefetchPorIntencao();
 
   return (
     <Link
       href="/app/ai/inbox"
+      {...intencao("/app/ai/inbox")}
       aria-label={
         count > 0
           ? `${t("Central de avisos")} — ${count} ${t("em aberto")}`

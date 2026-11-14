@@ -3,7 +3,8 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, DownloadSimple, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { mediaDownloadSrc } from "@/components/inbox/media/media-utils";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import { resolveSharedContact } from "@/lib/messaging/contact-card";
 import { lerAnuncioDaMensagem } from "@/lib/leads/atribuicao-de-anuncio";
 import { marcadorDaApagada, textoDaApagadaApareceNaInbox } from "@/lib/messaging/apagada";
 import { AnuncioCard } from "@/components/inbox/AnuncioCard";
+import { TextoComLinks } from "@/components/inbox/TextoComLinks";
 import {
   extractCitations,
   isAiGeneratedMessage,
@@ -264,7 +266,11 @@ export function MessageBubble({
   // Só não se encaminha o que foi apagado: o conteúdo saiu do ar de propósito.
   const podeEncaminhar = Boolean(onEncaminhar) && !apagada;
   const podeReagir = Boolean(onReagir) && !apagada && !ocultaNoCrm;
-  const temMenu = Boolean(onResponder || podeEncaminhar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
+  // Baixar vale para toda mídia que a tela mostra (foto, vídeo, áudio, documento,
+  // figurinha). Não para a apagada nem para a oculta: o conteúdo saiu de cena de
+  // propósito, e o menu não deve ser o atalho de volta a ele.
+  const podeBaixar = hasMedia && !apagada && !ocultaNoCrm;
+  const temMenu = Boolean(onResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
@@ -379,7 +385,7 @@ export function MessageBubble({
   // dois contatos chamados "João" não trocam de lugar. Sem menção conhecida, o
   // texto sai idêntico (o número que já estava lá é a informação disponível).
   const mencoes = lerMencoesDeGrupo(message.metadata);
-  const corpo = textoComMencoesResolvidas(message.body, mencoes);
+  const corpo = textoComMencoesResolvidas(message.body, mencoes) ?? "";
   // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
   // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
   // pelo anúncio, como o WhatsApp mostra no celular.
@@ -498,6 +504,13 @@ export function MessageBubble({
                   <ArrowBendUpRight size={16} aria-hidden />{t("Encaminhar")}
                 </DropdownMenuItem>
               )}
+              {podeBaixar && (
+                <DropdownMenuItem asChild>
+                  <a href={mediaDownloadSrc(message.id)} download>
+                    <DownloadSimple size={16} aria-hidden />{t("Baixar")}
+                  </a>
+                </DropdownMenuItem>
+              )}
               {podeEditar && onEditar && (
                 <DropdownMenuItem onSelect={() => {
                   abrindoEdicao.current = true;
@@ -562,7 +575,7 @@ export function MessageBubble({
                 ? t("Mensagem ocultada no CRM")
                 : citada.type === "contact"
                 ? resolveSharedContact(citada)?.name || t("Contato")
-                : citada.body?.trim() || t("(sem texto)")}
+                : citada.body?.trim() ? <TextoComLinks texto={citada.body.trim()} /> : t("(sem texto)")}
             </div>
           </div>
         )}
@@ -619,7 +632,7 @@ export function MessageBubble({
             {textoApagadoVisivel && message.body && (
               <div className="border-t border-current/20 pt-1">
                 <p className="text-[10px] opacity-70">{t("Visível só aqui no CRM")}</p>
-                <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+                <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={message.body} /></p>
               </div>
             )}
           </div>
@@ -665,7 +678,7 @@ export function MessageBubble({
             )}
 
             {message.body && !isContact && !localizacao && (
-              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{corpo}</p>
+              <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={corpo} /></p>
             )}
 
             {botoesDoModelo.length > 0 && (

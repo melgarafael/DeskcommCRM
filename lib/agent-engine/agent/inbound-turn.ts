@@ -1,4 +1,4 @@
-import { contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
+import { contemAssuntoComercialNaSaida, contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
@@ -12,6 +12,7 @@ import {
   type TurnPreview,
 } from './preview';
 import { etiquetarProdutoAposEnvio } from './etiqueta-apos-envio';
+import { textosDoClienteNoHistorico } from './pedido-de-audio';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -222,7 +223,7 @@ import {
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
-import { msAteAJanelaAbrir } from './janela-de-atendimento';
+import { msAteAJanelaAbrir, msAteAJanelaAbrirPulandoFeriado } from './janela-de-atendimento';
 import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { agenteJaRespondeuNoAtendimento } from './agente-ja-respondeu';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
@@ -333,7 +334,7 @@ import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fatosDaOrganizacao } from './fatos-da-organizacao';
 import { fusoDaOrganizacao } from './fuso-da-org';
-import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
+import { blocoDoFeriado, ehFeriadoNacionalNoFuso, lerFeriadoDoTurno } from './feriado-nacional';
 import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
@@ -1793,6 +1794,54 @@ export function decidirSeEnfileiraOperador(input: {
 }
 
 /**
+ * MODO ASSISTIDO — o Conversador só gera rascunho e o turno saía sem Operador, então o
+ * card ficava parado no funil. Enfileira `operator_turn` com o MESMO agente que gerou o
+ * rascunho. Isto nunca manda mensagem: no assistido, `maoDoOperador` tira da mão
+ * do Operador toda ferramenta que faz algo sair (`saiSemAprovacao`).
+ * Mesma `sourceEventId` do turno (dedup no retry). Nunca lança.
+ */
+export async function enfileirarOperadorNoAssistido(
+  pool: pg.Pool,
+  log: Logger,
+  job: JobRow,
+  conversationId: string,
+  agente: PublishedAgentConfig,
+): Promise<void> {
+  // Pausado: o operator_turn o barraria de qualquer jeito; não gasta vaga de fila.
+  if (!job.contact_id || agente.pausedAt) return;
+  const disparo = decidirSeEnfileiraOperador({
+    temAgentePublicado: true,
+    papelLigado: agente.operatorEnabled,
+  });
+  if (!disparo.enfileira) {
+    log.info('turno do operador não enfileirado (assistido)', { porque: disparo.porque });
+    return;
+  }
+  try {
+    const { deduped } = await enqueueJob(pool, job.organization_id, {
+      kind: 'operator_turn',
+      leadId: job.contact_id,
+      sourceEventId: job.id,
+      payload: {
+        conversation_id: conversationId,
+        origin_job_id: job.id,
+        agent_id: agente.agentId,
+        trigger: 'assistido',
+      },
+    });
+    log.info('turno do operador enfileirado (assistido)', { deduped });
+  } catch (err) {
+    // Só log, e é deliberado — diferente do catch do enfileiramento do turno
+    // automático, que abre `promise_unfulfilled` na Central: lá o Conversador
+    // FALOU e pode ter prometido algo; aqui ele só escreveu um rascunho, sem
+    // declaração de promessa, então não há compromisso que fique sem dono.
+    log.error('turno do operador NÃO foi enfileirado (assistido; o turno segue)', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+}
+
+/**
  * A mensagem que acaba de chegar é uma fonte factual: se ela tem texto, o
  * agente não pode dizer ao cliente que ela veio vazia. Prompt reduz esse erro,
  * mas não é uma barreira de envio — o modelo ainda pode repetir um resumo
@@ -1853,6 +1902,37 @@ export function inboundsNaoRespondidos(messages: readonly LeadContextMessage[]):
   }
   return pendentes;
 }
+
+/**
+ * O cliente tem alguma coisa esperando resposta? Mesma régua do corte de
+ * `inboundsNaoRespondidos` (a última saída), mas conta QUALQUER entrada — foto,
+ * áudio e figurinha chegam com corpo vazio e continuam sendo o cliente falando.
+ *
+ * Existe à parte porque `inboundsNaoRespondidos` alimenta opt-out, urgência e
+ * passagem, que leem TEXTO; aqui a pergunta é só "tem gente esperando?", e quem a
+ * faz é o veto comercial do follow-up (Spec 34): sem ninguém esperando, o texto
+ * barrado só não sai — não há cliente a avisar nem conversa a passar.
+ */
+export function temMensagemDoClienteSemResposta(messages: readonly LeadContextMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m === undefined) continue;
+    if (m.direction === 'outbound') return false;
+    if (m.direction === 'inbound') return true;
+  }
+  return false;
+}
+
+/** O que o agente lê quando o texto dele foi barrado por valores/negociação e o cliente NÃO espera resposta. */
+const ERRO_COMERCIAL_SEM_PENDENCIA_1 =
+  'Este texto não foi enviado porque toca em valores ou negociação, que são só com a equipe. ' +
+  'Reescreva sem esse assunto, ou termine sem enviar. O cliente não está esperando resposta: ' +
+  'não passe a conversa para a equipe.';
+const ERRO_COMERCIAL_SEM_PENDENCIA_2 =
+  'O texto foi barrado de novo por tocar em valores ou negociação. Termine o turno sem enviar mensagem.';
+const ERRO_HANDOFF_APOS_VETO_COMERCIAL =
+  'O cliente não está esperando resposta e o texto foi barrado por valores ou negociação: ' +
+  'não passe a conversa. Termine sem enviar.';
 
 /**
  * Parâmetros do run que DIFEREM entre inbound (F2-09) e follow-up (F3-03): os ids
@@ -2496,11 +2576,11 @@ async function escalarComercialAntesDoModelo(
     },
   );
   const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: textos,
-    motivo: { codigo: 'low_confidence', texto: 'Valores e negociação: fora do escopo da IA.' } });
+    motivo: { codigo: 'restricao_comercial', texto: 'Valores e negociação: fora do escopo da IA.' } });
   await performHumanHandoff(pool, { tenantId, leadId: turno.leadId, conversationId: turno.conversationId },
-    { reason: 'low_confidence', conversationSummary: briefing.body,
+    { reason: 'restricao_comercial', conversationSummary: briefing.body,
       inboxTitle: 'Valores e negociação — atendimento humano necessário',
-      passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing },
+      passagem: { origem: 'runtime_nativo', motivoCodigo: 'restricao_comercial', briefing },
       avisoAoLead: aviso, log });
   log.info('assunto comercial restrito encaminhado sem chamada ao redator', { lead_avisado: aviso.avisado });
   return true;
@@ -3269,6 +3349,15 @@ async function executarTurnoDoAgente(
           // na voz da organização — o comportamento de antes, byte a byte.
           vozVoiceId: agentConfig.vozVoiceId ?? null,
           voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
+          // #4345: a CONVERSA entra na decisão do `'quando_pede'` — o pedido de
+          // áudio feito duas mensagens atrás continua valendo. A janela é a que
+          // o turno já carregou em `openingContext.context.messages`: nenhuma
+          // consulta nova ao banco, e o `currentInboundText` sempre entra como o
+          // mais recente.
+          inboundTexts: textosDoClienteNoHistorico(openingContext.context.messages, currentInboundText),
+          // Mantido para quem lê um texto só; a decisão de `'quando_pede'` usa
+          // `inboundTexts` (acima).
+          inboundText: currentInboundText,
           inboundType:
             input.inboundMessageId === undefined
               ? null
@@ -3363,17 +3452,32 @@ async function executarTurnoDoAgente(
    * corpos que o modelo escolhe. O aviso vem ANTES da passagem, que arma o
    * silêncio que a cadeia lê.
    */
+  /**
+   * Quantas vezes, neste turno, o texto do agente foi barrado por valores/negociação
+   * SEM cliente esperando resposta (follow-up que falou de preço por conta própria).
+   * Passa de zero → o turno não passa mais a conversa para a equipe (Spec 34).
+   */
+  let vetosComerciaisSemPendencia = 0;
   const passarComercialParaEquipe = async (code: string) => {
+    // Ninguém perguntou nada: o texto barrado foi invenção do agente. Avisar o
+    // cliente de que "uma pessoa vai assumir" é falar com quem não pediu, e
+    // pausar o automático por isso é perder a conversa. O veto fica registrado
+    // na timeline (`send_vetoed`, pela cadeia) e o agente reescreve ou termina.
+    if (!temMensagemDoClienteSemResposta(openingContext.context.messages)) {
+      vetosComerciaisSemPendencia += 1;
+      return { ok: false as const, error: { code,
+        message: vetosComerciaisSemPendencia >= 2 ? ERRO_COMERCIAL_SEM_PENDENCIA_2 : ERRO_COMERCIAL_SEM_PENDENCIA_1 } };
+    }
     const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
       ...avisoDaEscalacao().base,
       motivo: 'outro',
     });
     const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: [],
-      motivo: { codigo: 'low_confidence', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
+      motivo: { codigo: 'restricao_comercial', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
     await performHumanHandoff(pool, { tenantId, leadId, conversationId: input.conversationId },
-      { reason: 'low_confidence', conversationSummary: briefing.body,
+      { reason: 'restricao_comercial', conversationSummary: briefing.body,
         inboxTitle: 'Valores e negociação — atendimento humano necessário',
-        passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing },
+        passagem: { origem: 'runtime_nativo', motivoCodigo: 'restricao_comercial', briefing },
         avisoAoLead: aviso, log: runLog });
     return { ok: false as const, error: { code,
       message: 'Resposta barrada e necessidade de atendimento humano registrada. Não envie valores nem negocie.' } };
@@ -3627,7 +3731,26 @@ async function executarTurnoDoAgente(
   // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
   // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
   if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
-    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
+    const janela = agentConfig.janelaDeAtendimento;
+    const agora = clock();
+    let esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, agora);
+    // NÃO ATENDER EM FERIADO NACIONAL (#3877, doc de decisão 316, alternativa A).
+    // Opção do agente, DESLIGADA de fábrica: desligada, o feriado é dia comum e
+    // nenhuma consulta extra acontece. Ligada, e com o calendário brasileiro
+    // valendo para a organização (`lerFeriadoDoTurno` devolve `null` para país
+    // fora do Brasil ou leitura que falhou — falha aberta), o feriado conta
+    // como dia fechado: o turno espera a próxima abertura que não é feriado E
+    // o aviso recebe o MESMO fato do dia, para os dois nunca discordarem.
+    let feriadoHoje: boolean | undefined;
+    if (agentConfig.naoAtenderEmFeriadoNacional === true) {
+      const calendario = await lerFeriadoDoTurno(pool, tenantId, agora, janela.timezone, runLog);
+      if (calendario !== null) {
+        feriadoHoje = calendario.hoje;
+        esperaMs = msAteAJanelaAbrirPulandoFeriado(janela, agora, (instante) =>
+          ehFeriadoNacionalNoFuso(instante, janela.timezone),
+        );
+      }
+    }
     if (esperaMs !== null) {
       // O AVISO DE FORA DO HORÁRIO (#1926) — ANTES do adiamento, para sair na
       // hora em que a mensagem chegou. É resposta a quem escreveu primeiro (o
@@ -3645,8 +3768,13 @@ async function executarTurnoDoAgente(
             contactId: leadId,
             channelSessionId: input.channelSessionId,
             texto: agentConfig.avisoForaDoHorario ?? null,
+            // O texto de feriado nacional (#3877): opcional, e o módulo só o
+            // usa quando o dia É feriado na organização — sem a chave, o
+            // aviso é o de sempre, byte a byte.
+            textoDeFeriado: agentConfig.avisoDeFeriadoForaDoHorario ?? null,
             janela: agentConfig.janelaDeAtendimento,
-            agora: clock(),
+            agora,
+            ehFeriadoNacional: feriadoHoje,
           },
         );
         runLog.info(
@@ -3672,6 +3800,7 @@ async function executarTurnoDoAgente(
           agent_id: agentConfig.agentId,
           espera_ms: esperaMs,
           janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
+          feriado_nacional_hoje: feriadoHoje ?? null,
         },
       );
       throw new JobSettledError(
@@ -4594,6 +4723,11 @@ async function executarTurnoDoAgente(
         // para que o corpo vazio, as bolhas e a pausa humana meçam o que sai.
         // Ver `formato-whatsapp.ts`.
         const body = formatarParaWhatsApp(corpoDoModelo);
+        // Segundo texto com preço depois de um veto comercial sem cliente esperando:
+        // nem chama a cadeia — o agente já foi avisado e insistir só gasta o turno.
+        if (vetosComerciaisSemPendencia >= 2 && contemAssuntoComercialNaSaida(body)) {
+          return { ok: false, error: { code: 'commercial_requires_human', message: ERRO_COMERCIAL_SEM_PENDENCIA_2 } };
+        }
         // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
         // chamou `send_message` várias vezes com corpo que virou vazio e o
         // WhatsApp do cliente recebeu bolhas em branco. O schema garante
@@ -5567,6 +5701,9 @@ async function executarTurnoDoAgente(
     request_human_handoff: tool({
       ...AGENT_TOOL_DEFS.request_human_handoff,
       execute: async (raw) => {
+        if (vetosComerciaisSemPendencia > 0) {
+          return { ok: false, error: { code: 'handoff_bloqueado_apos_veto_comercial', message: ERRO_HANDOFF_APOS_VETO_COMERCIAL } };
+        }
         passouParaAEquipe = true;
         // A conversa vai para a equipe: o robô não fala mais neste turno. O aviso
         // do piso logo abaixo sai pelo canal SEM passar pelos `send` que param a
@@ -5778,6 +5915,9 @@ async function executarTurnoDoAgente(
     rawTools.open_human_case = tool({
       ...AGENT_TOOL_DEFS.open_human_case,
       execute: async (raw) => {
+        if (vetosComerciaisSemPendencia > 0) {
+          return { ok: false, error: { code: 'handoff_bloqueado_apos_veto_comercial', message: ERRO_HANDOFF_APOS_VETO_COMERCIAL } };
+        }
         const parsed = openHumanCaseInputSchema.safeParse(raw);
         if (!parsed.success) {
           return {
@@ -7584,6 +7724,11 @@ export async function runAgentPreview(
     erro = e;
     throw e;
   } finally {
+    // #4424 — o Testar mostra, turno a turno, as ferramentas que a IA USOU. As
+    // de leitura rodam de verdade na prévia, mas até aqui a lista só existia no
+    // traço gravado no banco; as ações propostas já saíam em `result.proposals`.
+    // Copiar para o resultado é o que leva o dado à tela, sem consulta nova.
+    preview.result.ferramentas = coletor.listar();
     await gravarTracoDoTurno(deps.log, pool, {
       organizationId: preview.organizationId,
       jobId: null,
@@ -7752,6 +7897,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         boundary: currentExecutionBoundary() ?? undefined,
         agent: operationAgent,
       });
+      // Depois do rascunho: falha do Operador nunca atrasa o rascunho.
+      await enfileirarOperadorNoAssistido(pool, deps.log, job, payload.conversation_id, operationAgent);
       return;
     }
     if (operationAgent?.pausedAt) return;

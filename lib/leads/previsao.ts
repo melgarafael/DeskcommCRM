@@ -44,6 +44,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
 import { PERIODICIDADE_PADRAO } from "@/lib/leads/valor-recorrente";
+import { lerPaginado } from "@/lib/supabase/pagina";
 
 export type FonteDeProbabilidade = "etapa" | "ia_quando_houver";
 
@@ -385,6 +386,16 @@ export function fontePrevisao(settings: unknown): FonteDeProbabilidade {
 }
 
 /**
+ * A previsão de um funil como `carregarPrevisao` a entrega.
+ *
+ * `truncado` aparece SÓ quando a leitura não conseguiu provar o fim da carteira
+ * (mais que o teto de páginas de `lib/supabase/pagina.ts`): a soma é então de um
+ * recorte e quem a mostra tem de dizer. Ausente quando o fim foi provado — a
+ * resposta de um funil comum não ganha campo nenhum.
+ */
+export type PrevisaoCarregada = Previsao & { pipeline_id: string; truncado?: true };
+
+/**
  * Carrega e calcula a previsão de UM funil.
  *
  * ⚠️ O CLIENTE É O QUE O CHAMADOR PASSAR. Na rota REST ele é o de SESSÃO, e
@@ -399,7 +410,7 @@ export function fontePrevisao(settings: unknown): FonteDeProbabilidade {
 export async function carregarPrevisao(
   supabase: SupabaseClient,
   entrada: { organizationId: string; pipelineId: string; requestId: string },
-): Promise<Previsao & { pipeline_id: string }> {
+): Promise<PrevisaoCarregada> {
   const { organizationId, pipelineId, requestId } = entrada;
 
   const { data: funil, error: funilErr } = await supabase
@@ -413,7 +424,14 @@ export async function carregarPrevisao(
 
   const fonte = fontePrevisao(funil.settings);
 
-  const [etapasRes, leadsRes, scoresRes] = await Promise.all([
+  // ─── LEITURA PAGINADA (#4322) ──────────────────────────────────────────────
+  // O PostgREST corta TODA resposta em `max_rows` (1000, `supabase/config.toml`)
+  // sem erro: sem `.range()` a previsão somava um pedaço arbitrário da carteira
+  // e a tela a apresentava como inteira. `lerPaginado` lê por páginas, prova o
+  // fim pelo `count` exato e devolve `truncado` quando não consegue — mesmo
+  // padrão do quadro do funil (#4321). A ordem é estável (`id` desempata) para
+  // uma linha não trocar de página entre uma leitura e a seguinte.
+  const [etapasRes, leadsLidos, scoresLidos] = await Promise.all([
     supabase
       .from("crm_stages")
       .select("id, name, is_won, is_lost, win_probability")
@@ -421,41 +439,64 @@ export async function carregarPrevisao(
       .eq("pipeline_id", pipelineId)
       .eq("is_archived", false)
       .order("position", { ascending: true }),
-    supabase
-      .from("crm_leads")
-      .select(
-        "id, stage_id, status, value_cents, currency, expected_close_date, " +
-          "recurring_value_cents, recurring_period, recurring_months",
-      )
-      .eq("organization_id", organizationId)
-      .eq("pipeline_id", pipelineId)
-      .eq("status", "open")
-      .order("position_in_stage", { ascending: true }),
+    lerPaginado<LeadDaPrevisao>((inicio, fim, contar) =>
+      supabase
+        .from("crm_leads")
+        .select<string, LeadDaPrevisao>(
+          "id, stage_id, status, value_cents, currency, expected_close_date, " +
+            "recurring_value_cents, recurring_period, recurring_months",
+          contar ? { count: "exact" } : undefined,
+        )
+        .eq("organization_id", organizationId)
+        .eq("pipeline_id", pipelineId)
+        .eq("status", "open")
+        .order("id", { ascending: true })
+        .range(inicio, fim),
+    ),
+    // Os scores são lidos SÓ para a fonte `ia_quando_houver`, e SÓ os dos
+    // negócios abertos DESTE funil: `crm_lead_scores` não tem `pipeline_id`, então
+    // o filtro passa pelo embed `crm_leads!inner` (FK `lead_id`, 1:1). Sem ele a
+    // leitura trazia a organização inteira — outros funis gastavam as páginas e o
+    // corte caía sobre os scores que a previsão precisa.
     fonte === "ia_quando_houver"
-      ? supabase
-          .from("crm_lead_scores")
-          .select("lead_id, ai_probability")
-          .eq("organization_id", organizationId)
-      : Promise.resolve({ data: null, error: null }),
+      ? lerPaginado<{ lead_id: string; ai_probability: number | null }>((inicio, fim, contar) =>
+          supabase
+            .from("crm_lead_scores")
+            .select<string, { lead_id: string; ai_probability: number | null }>(
+              "lead_id, ai_probability, crm_leads!inner(pipeline_id, status)",
+              contar ? { count: "exact" } : undefined,
+            )
+            .eq("organization_id", organizationId)
+            .eq("crm_leads.pipeline_id", pipelineId)
+            .eq("crm_leads.status", "open")
+            .order("lead_id", { ascending: true })
+            .range(inicio, fim),
+        )
+      : Promise.resolve({ linhas: [], truncado: false, erro: null }),
   ]);
 
   if (etapasRes.error) throw new Error(etapasRes.error.message);
-  if (leadsRes.error) throw new Error(leadsRes.error.message);
-  if (scoresRes.error) throw new Error(scoresRes.error.message);
+  if (leadsLidos.erro) throw new Error(leadsLidos.erro);
+  if (scoresLidos.erro) throw new Error(scoresLidos.erro);
 
   const probabilidadesDaIa = new Map<string, number | null>();
-  for (const linha of (scoresRes.data ?? []) as Array<{
-    lead_id: string;
-    ai_probability: number | null;
-  }>) {
+  for (const linha of scoresLidos.linhas) {
     probabilidadesDaIa.set(linha.lead_id, linha.ai_probability);
   }
 
   const etapas = (etapasRes.data ?? []) as unknown as EtapaDaPrevisao[];
-  const leads = ((leadsRes.data ?? []) as unknown as LeadDaPrevisao[]).map((l) => ({
+  const leads = leadsLidos.linhas.map((l) => ({
     ...l,
     ai_probability: probabilidadesDaIa.get(l.id) ?? null,
   }));
 
-  return { pipeline_id: funil.id, ...previsao(leads, etapas, { fonte }) };
+  // Score cortado também é recorte: o negócio sem score cai em silêncio para a
+  // probabilidade da etapa, então o aviso vale para as duas leituras.
+  const truncado = leadsLidos.truncado || scoresLidos.truncado;
+
+  return {
+    pipeline_id: funil.id,
+    ...previsao(leads, etapas, { fonte }),
+    ...(truncado ? { truncado: true as const } : {}),
+  };
 }

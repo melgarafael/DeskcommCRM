@@ -30,7 +30,7 @@
  * quem desenha passa por `t()`/`traduzir()`.
  */
 import { type Role, visibilidadeRestritaAoAtendente } from "@/lib/auth/types";
-import { MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, MODULOS_SO_DA_INSTALACAO, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { MODULOS_AINDA_NAO_LIGAVEIS, MODULOS_OPCIONAIS, MODULOS_OPCIONAIS_POR_FLAG, MODULOS_SO_DA_INSTALACAO, type ModuloOpcional } from "@/lib/instalacao/modulos";
 import { moduloDoCatalogo } from "@/lib/modulos/catalogo";
 import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
@@ -188,6 +188,18 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Link de pagamento na conversa",
     oQueFaz:
       "O valor a cobrar é registrado numa conversa pela API, em /api/v1/conversations/[id]/pagamentos (uma integração; ainda não há botão na tela), e a resposta traz um endereço para colar no link de pagamento; quando o cliente paga, o provedor avisa e o negócio vai para ganho.",
+  },
+  canal_bot: {
+    nome: "Robô de mensagens (@BotFather)",
+    oQueFaz: "Cada empresa conecta em Conexões um robô criado no @BotFather, e as conversas privadas com ele chegam ao Inbox.",
+  },
+  campanha_por_email: {
+    nome: "Campanha por e-mail (em construção)",
+    oQueFaz: "A base da campanha por e-mail: assunto, corpo e público. Ainda não pode ser ligada, porque falta o envio com descadastro.",
+  },
+  revisao_por_km: {
+    nome: "Revisão por quilometragem",
+    oQueFaz: "O km informado no negócio vira a data prevista da próxima revisão, no campo de data que o funil escolheu.",
   },
 };
 
@@ -716,6 +728,18 @@ const DA_EMPRESA: RecursoOpcional[] = [
     ler: peloSettings((s) => capacidadesLigadas(s, []).includes("apresentacao_do_catalogo")),
   },
   {
+    id: "capacidade_do_produto",
+    nome: "Capacidade do produto",
+    oQueFaz:
+      "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/tenant",
+    capacidade: "capacidade_do_produto",
+    ler: peloSettings((s) => capacidadesLigadas(s, []).includes("capacidade_do_produto")),
+  },
+  {
     id: "propostas_da_empresa",
     nome: "Proposta comercial da empresa",
     oQueFaz: "Com o módulo do servidor ligado, a empresa liga as propostas para si.",
@@ -781,10 +805,16 @@ export const RECURSOS_OPCIONAIS: readonly RecursoOpcional[] = [
 /**
  * Os módulos que a EMPRESA vê em Configurações › Recursos opcionais: todos os da
  * instalação, menos os que são decisão só de quem administra o servidor
- * (`MODULOS_SO_DA_INSTALACAO`).
+ * (`MODULOS_SO_DA_INSTALACAO`) e os que ninguém consegue ligar ainda
+ * (`MODULOS_AINDA_NAO_LIGAVEIS`): "desligado por quem administra o servidor"
+ * faria a empresa pedir um interruptor que o servidor não oferece.
  */
 export const MODULOS_DA_EMPRESA: readonly RecursoOpcional[] = RECURSOS_OPCIONAIS.filter(
-  (r) => r.nivel === "instalacao" && !!r.modulo && !MODULOS_SO_DA_INSTALACAO.includes(r.modulo),
+  (r) =>
+    r.nivel === "instalacao" &&
+    !!r.modulo &&
+    !MODULOS_SO_DA_INSTALACAO.includes(r.modulo) &&
+    !MODULOS_AINDA_NAO_LIGAVEIS.includes(r.modulo),
 );
 
 /**

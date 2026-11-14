@@ -237,7 +237,7 @@ interface FormState {
   reply_min_interval_ms: number | null;
   followup: FollowupValue;
   voz_enabled: boolean;
-  voz_quando: "nunca" | "espelhar" | "sempre";
+  voz_quando: "nunca" | "espelhar" | "sempre" | "quando_pede";
   // Papel OPERADOR (spec 16 §3.2) — o que mexe no sistema depois da conversa.
   operator_enabled: boolean;
   /** "" = herda o modelo do Conversador (vira null no payload). */
@@ -1580,12 +1580,22 @@ export function AgentForm(props: Props) {
                     <SelectItem value="espelhar">
                       {t("Só quando o cliente mandar áudio")}
                     </SelectItem>
+                    <SelectItem value="quando_pede">
+                      {t("Quando o cliente mandar ou pedir áudio")}
+                    </SelectItem>
                     <SelectItem value="sempre">{t("Sempre")}</SelectItem>
                     <SelectItem value="nunca">
                       {t("Nunca (desligado, sem apagar a configuração)")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
+                {form.voz_quando === "quando_pede" ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Responde em áudio quando o cliente manda áudio, pede áudio por escrito ou avisa que não consegue ler. Quem pede para continuar no texto segue recebendo texto.",
+                    )}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </Card>
@@ -1618,11 +1628,18 @@ export function AgentForm(props: Props) {
             ) : null}
           </Card>
 
-          {/* O acervo que este assistente consulta (0181) */}
+          {/* O acervo que este assistente consulta (0181). O MODO de leitura
+              (#4358) é `config` do agente: grava por PATCH imediato, como o
+              limiar de sentimento — por isso o cartão só recebe o id em
+              edição. */}
           <BasesDoAgente
             materiais={materiais}
             value={form.knowledge_source_ids}
             onChange={(ids) => patch({ knowledge_source_ids: ids })}
+            agentId={props.mode === "edit" ? props.agent.id : undefined}
+            modoInicial={
+              props.mode === "edit" ? (props.agent.config ?? {}).knowledge_mode : undefined
+            }
             disabled={disabled}
           />
 

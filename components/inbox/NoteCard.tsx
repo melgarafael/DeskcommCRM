@@ -11,6 +11,7 @@ import { DocumentCard } from "@/components/inbox/media/DocumentCard";
 import { ImageMedia } from "@/components/inbox/media/ImageMedia";
 import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { VideoMedia } from "@/components/inbox/media/VideoMedia";
+import { TextoComLinks } from "@/components/inbox/TextoComLinks";
 import { kindFromMime } from "@/lib/messaging/media/upload-validation";
 import { partesDoCorpo } from "@/lib/notifications/mentions";
 
@@ -117,10 +118,16 @@ export function NoteCard({ note, onDelete }: Props) {
             <span>{t("Nota interna · só o time vê")}</span>
           </div>
           {onDelete && (
+            // Visível por padrão (toque e leitor de tela), escondido SÓ onde
+            // existe hover, revelado pelo hover do grupo e pelo foco do
+            // teclado — o mesmo contrato do botão de opções da mensagem em
+            // `MessageBubble.tsx` (#4562). Antes o `opacity-0` era
+            // incondicional: quem tabulava até aqui pousava num botão
+            // invisível, e no celular ele nunca aparecia.
             <button
               type="button"
               onClick={onDelete}
-              className="opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              className="opacity-100 transition-opacity hover:text-destructive [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 rounded-md"
               aria-label={t("Excluir nota")}
             >
               <Trash size={12} weight="bold" />
@@ -144,7 +151,7 @@ export function NoteCard({ note, onDelete }: Props) {
                   {`@${parte.mencao.nome}`}
                 </span>
               ) : (
-                <span key={i}>{parte.texto}</span>
+                <span key={i}><TextoComLinks texto={parte.texto} /></span>
               ),
             )}
           </p>

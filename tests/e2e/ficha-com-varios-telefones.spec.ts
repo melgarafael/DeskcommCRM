@@ -207,11 +207,15 @@ test.describe("Ficha com vários telefones — editar pela tela", () => {
     const resposta = page.waitForResponse(
       (r) => r.url().includes("/primary") && r.request().method() === "POST",
     );
+    // #4242 — desde a 9354 o rótulo acompanha o número: a troca é direta, sem aviso
+    // de descarte, e o rótulo aparece ao lado do principal.
     await linhaDoExtra.getByRole("button", { name: "Tornar principal", exact: true }).click();
-    // #4242 — o extra tem rótulo: o clique abre o aviso, e a troca só sai no Continuar.
-    await expect(linhaDoExtra.getByRole("alert")).toContainText("Rótulo que será descartado:");
-    await linhaDoExtra.getByRole("button", { name: "Continuar", exact: true }).click();
     expect((await resposta).status()).toBeLessThan(300);
+    await expect(
+      blocoDeTelefones(page)
+        .getByRole("listitem")
+        .filter({ has: page.getByText("Principal", { exact: true }) }),
+    ).toContainText(ROTULO_EXTRA, { timeout: 20_000 });
 
     // No banco: o principal agora é o número do extra; o antigo virou extra.
     expect(digitos((await principalNoBanco(idFicha)) ?? "")).toBe(digitos(NUMERO_EXTRA));
@@ -236,7 +240,7 @@ test.describe("Ficha com vários telefones — editar pela tela", () => {
     await login(page, creds.users.manager!.email, creds.password);
     await abrirFicha(page, idFicha);
 
-    // Depois da troca de principal o extra perdeu o rótulo: é a linha sem "Principal".
+    // Depois das duas trocas o extra voltou a ser o número com rótulo: é a linha sem "Principal".
     const linhaDoExtra = blocoDeTelefones(page)
       .getByRole("listitem")
       .filter({ hasNot: page.getByText("Principal", { exact: true }) });

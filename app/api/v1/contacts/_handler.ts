@@ -113,6 +113,7 @@ function decodeCursor(raw: string): CursorPayload | null {
     if (typeof parsed.id !== "string") return null;
     // Cursores legados (só created_at) ou do formato anterior (last_activity_at).
     const sort = parsed.sort ?? parsed.last_activity_at ?? parsed.created_at ?? null;
+    if (sort !== null && typeof sort !== "string") return null;
     return { sort, id: parsed.id };
   } catch {
     return null;
@@ -356,8 +357,13 @@ export async function listContactsHandler(
       );
     }
     const op = asc ? "gt" : "lt";
-    if (c.sort) {
-      query = query.or(`${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`);
+    if (c.sort !== null) {
+      // O NULL vem depois dos valores nos dois sentidos. O valor pode ser
+      // vazio ou conter pontuação da gramática do PostgREST.
+      const valor = `"${c.sort.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+      query = query.or(
+        `${sortCol}.${op}.${valor},and(${sortCol}.eq.${valor},id.${op}.${c.id}),${sortCol}.is.null`,
+      );
     } else {
       // Página na região de sort NULL (nulls last): pagina só por id.
       query = query.is(sortCol, null);
