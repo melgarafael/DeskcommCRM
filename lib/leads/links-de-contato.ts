@@ -20,6 +20,10 @@
 
 export const TIPOS_DE_LINK = [
   { id: "instagram", rotulo: "Instagram", curto: "IG" },
+  // O endereço que a empresa põe na bio do perfil (uma página de links, um
+  // catálogo, a agenda). Não é "Site": quem prospecta lê os dois de jeitos
+  // diferentes, e a bio costuma ser a porta de agendamento ou de pedido.
+  { id: "bio", rotulo: "Link na bio", curto: "Bio" },
   { id: "site", rotulo: "Site", curto: "Site" },
   { id: "google_meu_negocio", rotulo: "Google Meu Negócio", curto: "Google" },
   { id: "facebook", rotulo: "Facebook", curto: "FB" },

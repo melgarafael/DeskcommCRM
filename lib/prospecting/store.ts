@@ -36,6 +36,7 @@ import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
 import { linksDoCandidato } from "./links-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
+import { segmentoDoContatoNovo } from "@/lib/contacts/diagnostico-do-contato";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
@@ -890,13 +891,18 @@ export async function marcarEtiquetasDaCampanha(
 }
 
 /**
- * Os `link_<tipo>` que o contato NOVO já nasce carregando (Spec 26 §3.2). Fail-open: o
- * mapeador não deveria lançar, mas se algo escapar o contato nasce sem links e a criação
- * segue. Devolve `undefined` quando não há link, para não mandar `custom_fields` vazio.
+ * Os `link_<tipo>` que o contato NOVO já nasce carregando (Spec 26 §3.2), mais o
+ * `segmento` do diagnóstico da ficha, copiado da categoria da busca
+ * (`lib/contacts/diagnostico-do-contato.ts`). Fail-open: o mapeador não deveria lançar,
+ * mas se algo escapar o contato nasce sem esses campos e a criação segue. Devolve
+ * `undefined` quando não há nada, para não mandar `custom_fields` vazio.
  */
 function linksParaContatoNovo(p: Candidate): Record<string, unknown> | undefined {
   try {
-    const campos = aplicarLinks({}, linksDoCandidato(p.data));
+    const campos = {
+      ...aplicarLinks({}, linksDoCandidato(p.data)),
+      ...segmentoDoContatoNovo(p.data.category),
+    };
     return Object.keys(campos).length > 0 ? campos : undefined;
   } catch (error) {
     logger.warn("[prospecting] mapeador de links falhou; o contato nasce sem links", {

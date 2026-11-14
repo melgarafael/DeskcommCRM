@@ -82,6 +82,23 @@ describe("lerLinks / linksParaExibir", () => {
     ]);
   });
 
+  it("⭐ o link da bio é um tipo próprio (link_bio), logo depois do Instagram", () => {
+    expect(chaveDoLink("bio")).toBe("link_bio");
+    expect(
+      linksParaExibir({
+        link_site: "exemplo.com.br",
+        link_bio: "paginadelinks.exemplo.com/loja",
+        link_instagram: "instagram.com/loja",
+      }),
+    ).toEqual([
+      { tipo: "instagram", href: "https://instagram.com/loja" },
+      { tipo: "bio", href: "https://paginadelinks.exemplo.com/loja" },
+      { tipo: "site", href: "https://exemplo.com.br/" },
+    ]);
+    // E o `aplicarLinks` o trata como nosso: vazio apaga, valor grava.
+    expect(aplicarLinks({ link_bio: "antigo.exemplo.com" }, { bio: "" })).toEqual({});
+  });
+
   it("aceita custom_fields ausente", () => {
     expect(lerLinks(null)).toEqual({});
     expect(linksParaExibir(undefined)).toEqual([]);

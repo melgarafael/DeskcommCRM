@@ -326,6 +326,33 @@ describe("criarPegadaDoCandidato", () => {
     });
   });
 
+  // A aba Diagnóstico da ficha: a categoria da busca vira o `segmento` do contato NOVO,
+  // ao lado dos links, pelo esquema central (lib/contacts/diagnostico-do-contato.ts).
+  it("contato novo nasce com o segmento copiado da categoria da busca", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          category: " Dentista ",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: [],
+        },
+      }),
+      null,
+    );
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+      segmento: "Dentista",
+    });
+  });
+
   // Spec 26 §3.2/§7.1: contato REAPROVEITADO não é tocado na abordagem. Não recria o contato
   // e não recebe update de links; ficha que já existe só se completa pelo botão.
   it("contato reaproveitado: não recria o contato e não recebe update de links na abordagem (spec 26 §7.1)", async () => {
