@@ -25,7 +25,7 @@ import { collectExportData } from "@/lib/lgpd/export-collector";
 
 import { credenciaisSupabaseDeTeste, destinoEhLocal } from "../../scripts/lib/env-de-teste";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
-import { expect, test, type APIRequestContext } from "./helpers/test";
+import { esperarARevelacao, expect, test, type APIRequestContext } from "./helpers/test";
 
 const GRAPH_BASE = "http://127.0.0.1:3995";
 const DATASET_ID = `qa-dataset-${randomUUID()}`;
@@ -732,7 +732,16 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     const chave = page.getByRole("switch", { name: "Enviar LeadSubmitted por clique CTWA à Meta" });
     await expect(chave).toBeChecked();
     await page.getByRole("link", { name: "Histórico de envios", exact: true }).click();
+    // A aba troca por navegação de CLIENTE, e é só o `goto`/`reload` que a
+    // fixture espera: até o React esvaziar a caixa do streaming SSR
+    // (`div[hidden][id^="S:"]`) o mesmo bloco existe duas vezes — a cópia do
+    // servidor na caixa escondida e a que o React desenhou — e o modo estrito
+    // do Playwright reprova com "resolved to 2 elements" (#1374, #884). A
+    // contagem, e não `.first()`, é o que prova UMA cópia: se a tela voltar a
+    // montar dois painéis de verdade, ela reprova.
+    await esperarARevelacao(page);
     const historico = page.getByTestId("historico-de-cliques-ctwa");
+    await expect(historico).toHaveCount(1);
     await expect(historico).toBeVisible();
     const linha = historico.locator("li").filter({ hasText: eventId });
     await expect(linha).toHaveCount(1);
@@ -748,6 +757,8 @@ test.describe("LeadSubmitted causal pelo webhook WAHA", () => {
     await page.reload();
     await expect(chave).not.toBeChecked();
     await page.getByRole("link", { name: "Histórico de envios", exact: true }).click();
+    await esperarARevelacao(page);
+    await expect(historico).toHaveCount(1);
     await expect(historico).toBeVisible();
     await expect(historico.locator("li").filter({ hasText: eventId })).toHaveCount(1);
     await page.screenshot({ path: "evidence/ctwa-3128/envio-desligado-conserva-historico.png", fullPage: true });

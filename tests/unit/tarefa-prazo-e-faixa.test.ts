@@ -40,6 +40,8 @@ function tarefa(p: Partial<Tarefa>): Tarefa {
     demanda_id: null,
     assigned_to: null,
     created_by: null,
+    // A série (#4595): nula = tarefa avulsa, que é o caso de todo o histórico.
+    recurrence: null,
     created_at: AGORA.toISOString(),
     updated_at: AGORA.toISOString(),
     ...p,

@@ -18493,12 +18493,25 @@ create table if not exists public.crm_tasks (
   assigned_to uuid references auth.users(id) on delete set null,
   created_by uuid references auth.users(id) on delete set null,
 
+  -- A TAREFA QUE SE REPETE (9369, issue #4595). `recurrence` é a regra da
+  -- SÉRIE — `{"dias":[0..6, domingo=0, no fuso da org],"hora":0..23,"ativa":true}`
+  -- — e `recurrence_source_id` amarra a ocorrência gerada à série que a gerou.
+  -- Duas colunas e não tabela: a série JÁ é uma tarefa (é ela que a pessoa vê e
+  -- desliga), e o JSON é o mesmo sítio de `settings.task_plans`. Nulas de
+  -- propósito: tarefa avulsa (todo o histórico) fica exatamente como hoje.
+  recurrence jsonb,
+  recurrence_source_id uuid references public.crm_tasks(id) on delete cascade,
+
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
 
   constraint crm_tasks_titulo_nao_vazio check (length(btrim(title)) > 0),
   constraint crm_tasks_priority_check check (priority in ('low','medium','high','urgent')),
-  constraint crm_tasks_status_check check (status in ('pending','in_progress','done','cancelled'))
+  constraint crm_tasks_status_check check (status in ('pending','in_progress','done','cancelled')),
+  -- Forma do JSON da recorrência (9369). `jsonb_typeof` e não uma lista de
+  -- chaves: o leitor tolerante descarta dia/hora inválidos um a um, e exigir o
+  -- shape exato recusaria linha escrita à mão que o produto sabe ler.
+  constraint crm_tasks_recurrence_forma check (recurrence is null or jsonb_typeof(recurrence) = 'object')
 );
 
 -- A consulta da tela: "o que vence, na minha organização, em ordem de prazo".
@@ -18513,6 +18526,19 @@ create index if not exists crm_tasks_org_status_idx
 -- linhas não tem lead, e indexar NULL aqui só engorda o índice.
 create index if not exists crm_tasks_lead_idx
   on public.crm_tasks (lead_id) where lead_id is not null;
+
+-- A trava da OCORRÊNCIA REPETIDA (9369): a mesma ocorrência da mesma série não
+-- nasce duas vezes, mesmo com dois geradores no mesmo minuto. É a idempotência
+-- do cron, e o `on conflict` dele mira exatamente este índice.
+create unique index if not exists crm_tasks_recurrence_ocorrencia_unica
+  on public.crm_tasks (recurrence_source_id, due_date)
+  where recurrence_source_id is not null and due_date is not null;
+
+-- A varredura do gerador: só as séries (com regra e sem vínculo). Parcial para
+-- o índice não crescer com o histórico de tarefas comuns.
+create index if not exists crm_tasks_series_idx
+  on public.crm_tasks (organization_id)
+  where recurrence is not null and recurrence_source_id is null;
 
 alter table public.crm_tasks enable row level security;
 
@@ -18537,6 +18563,11 @@ comment on column public.crm_tasks.due_date is
   'Nula = sem prazo. Forçar data faria o operador inventar uma, e um prazo inventado envenena a lista de atrasadas.';
 comment on column public.crm_tasks.lead_id is
   'set null, não cascade: apagar o funil não pode apagar o que a pessoa escreveu para si mesma.';
+comment on column public.crm_tasks.recurrence is
+  'Regra da SÉRIE: {"dias":[0..6 domingo=0, no fuso da org],"hora":0..23,"ativa":true}. Nula = tarefa avulsa; é o caso de hoje para toda linha antiga.';
+comment on column public.crm_tasks.recurrence_source_id is
+  'A série que gerou esta ocorrência. Nula nas tarefas avulsas e na própria série (que é quem carrega a regra).';
+
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- LGPD: a anonimização do contato alcança as tarefas dele
