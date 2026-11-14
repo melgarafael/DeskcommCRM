@@ -21,4 +21,4 @@ descadastro; « não quero receber mais nada » e « não quero receber mensagen
 seguem bloqueando. Nenhum rodapé oferece CANCELAR como palavra de saída, então
 quem quer sair continua saindo com PARAR, PARE, STOP ou BAJA.
 
-Contribuição de @webtecnica (#4579).
+Contribuição de @webtecnica, a partir da issue aberta por @hebervalverde (#4579).

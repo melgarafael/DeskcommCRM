@@ -126,6 +126,15 @@ describe("#4579 — o pedido de saída de verdade segue bloqueando", () => {
       "não quero receber propaganda",
       "não quero mais receber nada de vocês",
       "não quero receber ligação, só whatsapp",
+      // "envios" é o disparo em português (a lista de objetos é compartilhada
+      // com o espanhol, onde é a remessa), e "material promocional" é a
+      // própria propaganda: nenhum dos dois é forma de pagamento.
+      "não quero receber mais envios",
+      "não quero receber os envios de vocês",
+      "não quero mais receber os envios",
+      "não quero receber material promocional",
+      "não quero receber material de propaganda",
+      "não quero receber kit promocional",
     ]) {
       if (texto === "não quero receber ligação, só whatsapp") {
         // Troca de canal: quem diz isso QUER continuar no WhatsApp.

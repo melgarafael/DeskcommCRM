@@ -167,6 +167,14 @@ const OBJETOS_NAO_COMUNICATIVOS =
   "cobro|cobros|producto|productos|pauta|pautas|presupuesto|presupuestos";
 
 /**
+ * "material promocional" é a mensagem, não a compra: o freio devolve ao pedido
+ * de saída o objeto de `OBJETOS_DE_COMPRA_RECEBIDOS` que vem qualificado como
+ * propaganda ("não quero receber material de propaganda", "kit promocional").
+ */
+const FREIO_DE_OBJETO_PROMOCIONAL =
+  "(?!\\s+(?:promocional|promocionais|publicitario|publicitarios|de\\s+(?:propaganda|divulgacao|marketing|publicidade|vendas)))";
+
+/**
  * O que se RECEBE de uma compra e não é a mensagem: o pix, o cartão, o código,
  * o comprovante, o material, o certificado (#4579). Só o padrão "não quero
  * receber X" lê esta lista, somada à de cima. Medido num curso: "não quero
@@ -339,15 +347,18 @@ const FRASES_DE_OPT_OUT: readonly RegExp[] = [
   // + `OBJETOS_DE_COMPRA_RECEBIDOS`), também com "mais" no meio ("não quero
   // receber mais o boleto"). Sem objeto ("não quero receber mais nada") segue
   // bloqueando: o lookahead só isenta a lista fechada.
+  // `(?!envios?)`: a lista é compartilhada com o espanhol, onde "envío" é a
+  // remessa; em português "envios" é o próprio disparo (ver `LISTAS_DE_ENVIO`),
+  // e "não quero receber mais envios" é pedido de saída.
   new RegExp(
     "\\bnao\\s+(?:quero|desejo|gostaria)\\s+(?:de\\s+)?(?:mais\\s+)?receber\\b" +
       "(?!\\s+(?:ligacao|ligacoes|chamada|chamadas|telefonema|telefonemas|telefone)\\b)" +
-      `(?!\\s+(?:mais\\s+)?(?:${DETERMINANTES_DE_OBJETO})?\\s*(?:${OBJETOS_NAO_COMUNICATIVOS}|${OBJETOS_DE_COMPRA_RECEBIDOS})\\b)`,
+      `(?!\\s+(?:mais\\s+)?(?:${DETERMINANTES_DE_OBJETO})?\\s*(?!envios?\\b)(?:${OBJETOS_NAO_COMUNICATIVOS}|${OBJETOS_DE_COMPRA_RECEBIDOS})\\b${FREIO_DE_OBJETO_PROMOCIONAL})`,
     "u",
   ),
   new RegExp(
     "\\bnao\\s+quero\\s+receber\\s+mais\\b" +
-      `(?!\\s+(?:${DETERMINANTES_DE_OBJETO})?\\s*(?:${OBJETOS_NAO_COMUNICATIVOS}|${OBJETOS_DE_COMPRA_RECEBIDOS})\\b)`,
+      `(?!\\s+(?:${DETERMINANTES_DE_OBJETO})?\\s*(?!envios?\\b)(?:${OBJETOS_NAO_COMUNICATIVOS}|${OBJETOS_DE_COMPRA_RECEBIDOS})\\b${FREIO_DE_OBJETO_PROMOCIONAL})`,
     "u",
   ),
   /\bnao\s+quero\s+mais\s+(?:mensagem|mensagens|contato|nada\s+de\s+voces)\b/u,
