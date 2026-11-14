@@ -1064,6 +1064,27 @@ export const NAV_CATALOG = [
     minRole: "manager",
   },
   {
+    // A tela da #3603 (fatia 3). O acompanhamento por etapa existia inteiro no
+    // backend e só se montava no construtor de fluxos: sem esta porta, a única
+    // forma de configurar era UPDATE à mão no Postgres — o anti-exemplo de "toda
+    // configuração tem superfície" (docs/doctrine/restricao-de-canal.md).
+    //
+    // A entrada automática no funil NÃO está aqui: ela vive na main como um
+    // interruptor e a escolha de funil/etapa saiu da action. Uma tela que a
+    // oferecesse gravaria valor que ninguém lê.
+    //
+    // `manager` e não `admin`, pela mesma linha da matriz da spec 13 §4 que cobre
+    // "atendimento/routing": quem monta a régua comercial da empresa é o gerente,
+    // e nada aqui apaga conversa nem mexe em dinheiro.
+    href: "/app/settings/followup-por-etapa",
+    label: "Follow-up por etapa",
+    description: "O que a operação espera de cada etapa do funil depois que a conversa chega.",
+    icon: "FlowArrow",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "manager",
+  },
+  {
     // A porta do freio POR EMPRESA do passo `ai_decide` (issue #2367). O #2228
     // criou o passo e o deixou opcional POR REGRA; sem esta tela, desligar de
     // uma vez todos os `ai_decide` de uma organização só existiria como

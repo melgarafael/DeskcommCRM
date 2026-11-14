@@ -21315,6 +21315,53 @@ export const DICIONARIO: Traducoes = {
   "Erro no último preparo": { es: "Error en la última preparación" },
   "Abrir no Conhecimento": { es: "Abrir en Conocimiento" },
   "Só administradores podem preparar o catálogo de novo.": { es: "Solo los administradores pueden preparar el catálogo de nuevo." },
+
+  // ─── #3603 (fatia 3): Configurações → Follow-up por etapa ────────────────
+  // A tela é só do follow-up: a entrada automática no funil vive na main como
+  // interruptor e não tem superfície aqui.
+  "Follow-up por etapa": { es: "Seguimiento por etapa" },
+  "O que cada etapa espera": { es: "Lo que cada etapa espera" },
+  "Follow-up por etapa salvo.": { es: "Seguimiento por etapa guardado." },
+  "Marcada para follow-up": { es: "Marcada para seguimiento" },
+  "Sem follow-up automático": { es: "Sin seguimiento automático" },
+  "Modelo de mensagem da etapa {etapa}": { es: "Modelo de mensaje de la etapa {etapa}" },
+  "O que a equipe escreve se o cliente não responder": {
+    es: "Lo que el equipo escribe si el cliente no responde",
+  },
+  "Prazo (horas)": { es: "Plazo (horas)" },
+  "Salvar follow-up por etapa": { es: "Guardar seguimiento por etapa" },
+  "Nenhum funil aberto com etapa para acompanhar. Crie um funil primeiro.": {
+    es: "Ningún embudo abierto con etapa para seguir. Crea un embudo primero.",
+  },
+  "Para cada etapa: se ela tem acompanhamento, em quantas horas ele começa e qual modelo de mensagem a equipe usa. Desligar uma etapa não apaga o prazo nem o texto — religar depois não obriga a escrever tudo de novo.":
+    {
+      es: "Para cada etapa: si tiene seguimiento, en cuántas horas empieza y qué modelo de mensaje usa el equipo. Desactivar una etapa no borra el plazo ni el texto — volver a activarla después no obliga a escribirlo todo de nuevo.",
+    },
+  "O envio continua sendo do fluxo de follow-up de cada etapa, no construtor de fluxos: é lá que o texto é revisado por uma pessoa antes de sair. Esta tela guarda a régua da operação — o que cada etapa espera.":
+    {
+      es: "El envío sigue siendo del flujo de seguimiento de cada etapa, en el constructor de flujos: es allí donde una persona revisa el texto antes de que salga. Esta pantalla guarda la regla de la operación — lo que cada etapa espera.",
+    },
+  "O que a operação espera de cada etapa do funil depois que a conversa chega.": {
+    es: "Lo que la operación espera de cada etapa del embudo después de que llega la conversación.",
+  },
+  // As frases de recusa da tela ficam numa tabela de módulo (`ERRO` em
+  // `_followup.tsx`) e chegam aqui por `t(ERRO[erro])` — por isso cada valor
+  // dela precisa de entrada própria, uma linha por frase possível.
+  "Toda etapa ligada precisa de prazo e de modelo de mensagem.": {
+    es: "Toda etapa activada necesita plazo y modelo de mensaje.",
+  },
+  "O prazo máximo de um follow-up é de 720 horas (30 dias).": {
+    es: "El plazo máximo de un seguimiento es de 720 horas (30 días).",
+  },
+  "Só um gerente ou administrador pode mudar esta opção.": {
+    es: "Solo un gerente o administrador puede cambiar esta opción.",
+  },
+  "Uma das etapas mudou enquanto a tela estava aberta. Recarregue.": {
+    es: "Una de las etapas cambió mientras la pantalla estaba abierta. Recarga.",
+  },
+  "Não consegui salvar agora. Tente de novo.": {
+    es: "No pude guardar ahora. Inténtalo de nuevo.",
+  },
 };
 
 /**
