@@ -47,6 +47,11 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
   "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
+  // #4592 — o veto da trava no "Testar agente" aparece no card do turno, com o código.
+  "Vetado pela trava antes de enviar": { es: "Vetado por la regla antes de enviar" },
+  "O agente escreveu esta resposta, mas a verificação de envio a barrou: o texto não chegaria ao cliente. O código abaixo identifica a trava que cortou.": {
+    es: "El agente escribió esta respuesta, pero la verificación de envío la bloqueó: el texto no llegaría al cliente. El código de abajo identifica la regla que la cortó.",
+  },
   // Mensagens agendadas na conversa (issue #3118, primeira parte): textos do popup.
   "Mensagens agendadas": { es: "Mensajes programados" },
   "Criar agendamento": { es: "Crear programación" },

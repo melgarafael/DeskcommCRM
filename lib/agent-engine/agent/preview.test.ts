@@ -192,6 +192,84 @@ it('uses only supplied in-memory sample contact in sandbox', () => {
   expect(context.context.contact.phone).toBe('+5511999999999');
 });
 
+/**
+ * #4592 — no Testar, `open_human_case` é PROPOSTA (nada é gravado), mas a trava
+ * `case_promise_without_case` lia `openedCaseThisTurn: false` FIXO no contexto
+ * montado por `previewGateContext`. Resultado: a mesma frase que passa em
+ * produção era vetada no teste, e quem afina o prompt corrigia um problema que
+ * não existe. Aqui a chamada com payload válido conta para a trava SEM gravar
+ * nada, e o status devolvido ao modelo continua `proposal_only`.
+ *
+ * O contexto do gate é montado ANTES da chamada (como na prévia real, em que
+ * `previewGateContext` roda antes das ferramentas), então o verde deste teste
+ * prova que a marcação é lida VIVA na hora do `send_message` — não no valor
+ * congelado na montagem.
+ */
+describe('prévia: open_human_case chamado conta como caso aberto para a trava (#4592)', () => {
+  /** A família de frase do issue ("aguarde um pouquinho por aqui") que a trava detém. */
+  const fraseDeEspera = 'Vou verificar com a equipe e já te retorno, aguarde um pouquinho por aqui.';
+  const casoValido = {
+    title: 'Voo cancelado',
+    summary: 'Cliente pede reembolso da passagem cancelada.',
+    blocker: 'Estorno fora do playbook e exige decisão de uma pessoa.',
+  };
+  const contextoCases = () => ({ ...gate(), casesEnabled: true });
+
+  it('com a ferramenta chamada e payload válido, a frase de espera passa — e nada é gravado', async () => {
+    const p = preview(),
+      executarDeVerdade = vi.fn(),
+      send = vi.fn();
+    const tools = applyPreviewPolicy(
+      { open_human_case: definition(executarDeVerdade), send_message: definition(send) },
+      p,
+      contextoCases(),
+      () => [],
+    );
+    const proposta = await execute(tools, 'open_human_case', casoValido);
+    // O contrato com o modelo não muda: a operação continua só PROPOSTA.
+    expect(proposta).toMatchObject({ ok: true, status: 'proposal_only' });
+    await execute(tools, 'send_message', { body: fraseDeEspera });
+    expect(p.result.impediments).toEqual([]);
+    expect(p.result.candidates.map((c) => c.body)).toEqual([fraseDeEspera]);
+    expect(p.result.proposals).toEqual([{ tool: 'open_human_case', arguments: casoValido }]);
+    // Nem o execute original da ferramenta nem o do envio rodaram: a prévia não grava caso.
+    expect(executarDeVerdade).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('sem a chamada, a trava veta a mesma frase — como hoje', async () => {
+    const p = preview(),
+      executarDeVerdade = vi.fn();
+    const tools = applyPreviewPolicy(
+      { open_human_case: definition(executarDeVerdade), send_message: definition(vi.fn()) },
+      p,
+      contextoCases(),
+      () => [],
+    );
+    await execute(tools, 'send_message', { body: fraseDeEspera });
+    expect(p.result.impediments.map((i) => i.code)).toEqual(['case_promise_without_case']);
+    expect(p.result.candidates).toEqual([]);
+    expect(executarDeVerdade).not.toHaveBeenCalled();
+  });
+
+  it('payload inválido não marca o caso: a trava continua vetando', async () => {
+    const p = preview(),
+      executarDeVerdade = vi.fn();
+    const tools = applyPreviewPolicy(
+      { open_human_case: definition(executarDeVerdade), send_message: definition(vi.fn()) },
+      p,
+      contextoCases(),
+      () => [],
+    );
+    // `.strict()`: campo fora da whitelist derruba o payload no turno real também.
+    await execute(tools, 'open_human_case', { ...casoValido, status: 'resolved' });
+    await execute(tools, 'send_message', { body: fraseDeEspera });
+    expect(p.result.impediments.map((i) => i.code)).toEqual(['case_promise_without_case']);
+    expect(p.result.candidates).toEqual([]);
+    expect(executarDeVerdade).not.toHaveBeenCalled();
+  });
+});
+
 
 describe('proteção comercial: ferramenta e prévia concordam', () => {
   it.each(['Os óculos custam R$ 299,90.', 'Pode pagar em 10x.', 'Temos desconto de 15%.'])
