@@ -10,4 +10,6 @@ A régua é a mesma da caixa de entrada, e não a de quem agendou: cada pessoa v
 
 O limite da página é do servidor: o teto de 50 por página vale mesmo se a tela pedir mais.
 
+A lista vem do envio mais recente ou futuro para o mais antigo, como a lista da conversa: o histórico já resolvido não empurra os envios pendentes para a última página.
+
 Crédito: @webtecnica.

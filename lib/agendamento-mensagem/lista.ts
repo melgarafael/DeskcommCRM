@@ -76,15 +76,17 @@ export async function listarAgendamentosVisiveis(
   sessao: SupabaseClient,
   opcoes: { organizationId: string; limite: number; deslocamento: number },
 ): Promise<{ linhas: AgendamentoDaLista[]; total: number | null; erro: string | null }> {
-  // `.order("scheduled_at")` ascendente: o próximo a sair é o primeiro da lista
-  // operacional. O `id` desempata — sem ele, duas linhas no mesmo minuto podem
-  // trocar de lugar entre a página 1 e a 2 e uma delas some.
+  // `.order("scheduled_at")` DESCENDENTE, como na lista da conversa: o mais
+  // recente/futuro primeiro. A lista mistura todos os status, e em ordem
+  // ascendente o histórico já resolvido enchia a página 1 e empurrava os envios
+  // pendentes para a última. O `id` desempata — sem ele, duas linhas no mesmo
+  // minuto podem trocar de lugar entre a página 1 e a 2 e uma delas some.
   const { data, error, count } = await sessao
     .from("mensagens_agendadas")
     .select(COLUNAS_DA_LISTA, { count: "exact" })
     .eq("organization_id", opcoes.organizationId)
-    .order("scheduled_at", { ascending: true })
-    .order("id", { ascending: true })
+    .order("scheduled_at", { ascending: false })
+    .order("id", { ascending: false })
     .range(opcoes.deslocamento, opcoes.deslocamento + opcoes.limite - 1);
   if (error) return { linhas: [], total: null, erro: error.message };
   return { linhas: (data ?? []) as unknown as AgendamentoDaLista[], total: count ?? null, erro: null };

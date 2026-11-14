@@ -125,13 +125,17 @@ function sessaoComRls(linhas: LinhaCrua[], visiveis: Set<string>) {
   let org: string | null = null;
   let autor: string | null = null;
   let janela: [number, number] = [0, Number.MAX_SAFE_INTEGER];
+  // A direção pedida em `order(...)` vale no dublê: sem isso, o teste não vê a
+  // regressão para a ordem ascendente.
+  let descendente = false;
 
   /** A policy: organização da sessão + conversa visível. Nada de autor aqui. */
   const escopo = () => linhas.filter((l) => l.organization_id === org && visiveis.has(l.conversation_id));
   const respondidas = () => {
     const base = escopo().filter((l) => autor === null || l.created_by_user_id === autor);
+    const sinal = descendente ? -1 : 1;
     const ordenadas = [...base].sort(
-      (a, b) => a.scheduled_at.localeCompare(b.scheduled_at) || a.id.localeCompare(b.id),
+      (a, b) => sinal * (a.scheduled_at.localeCompare(b.scheduled_at) || a.id.localeCompare(b.id)),
     );
     return { data: ordenadas.slice(janela[0], janela[1] + 1), error: null, count: base.length };
   };
@@ -148,6 +152,7 @@ function sessaoComRls(linhas: LinhaCrua[], visiveis: Set<string>) {
       return consulta;
     },
     order: (coluna: string, opcoes?: { ascending?: boolean }) => {
+      if (coluna === "scheduled_at") descendente = opcoes?.ascending === false;
       pedidos.push(`order ${coluna} ${opcoes?.ascending === false ? "desc" : "asc"}`);
       return consulta;
     },
@@ -202,12 +207,15 @@ describe("listarAgendamentosVisiveis — o 'Exibir todos' cruza a empresa pela c
     const primeira = await listarAgendamentosVisiveis(sessao, { organizationId: "org-1", limite: 1, deslocamento: 0 });
     expect(pedidos).toContain("range 0..0");
     expect(pedidos).toContain("select count=exact");
-    expect(primeira.linhas).toHaveLength(1);
     expect(primeira.total).toBe(2);
+    // O mais recente/futuro primeiro, como na lista da conversa: em ordem
+    // ascendente, o histórico resolvido enchia a página 1 e escondia o pendente.
+    expect(pedidos).toContain("order scheduled_at desc");
+    expect(primeira.linhas.map((l) => l.id)).toEqual(["ag-do-outro"]);
 
     const segunda = await listarAgendamentosVisiveis(sessao, { organizationId: "org-1", limite: 1, deslocamento: 1 });
     expect(pedidos).toContain("range 1..1");
-    expect(segunda.linhas.map((l) => l.id)).toEqual(["ag-do-outro"]);
+    expect(segunda.linhas.map((l) => l.id)).toEqual(["ag-do-gestor"]);
     expect(temMaisPagina(1, segunda.linhas.length, segunda.total, 1)).toBe(false);
   });
 });
