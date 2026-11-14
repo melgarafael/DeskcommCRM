@@ -1,3 +1,4 @@
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
@@ -28,12 +29,11 @@ export default async function ProfilePage() {
   const idioma = user.idioma;
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Perfil", idioma)}</h1>
+      <CabecalhoDaSubTela titulo={traduzir("Perfil", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir("Informações pessoais. Email só pode ser trocado em breve.", idioma)}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       <ProfileForm
         email={user.email}
         initialFullName={meta.full_name}

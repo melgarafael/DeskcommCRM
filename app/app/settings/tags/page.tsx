@@ -26,6 +26,7 @@
  * atendimento.
  */
 import Link from "next/link";
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
@@ -101,14 +102,13 @@ export default async function TagsPage({ searchParams }: { searchParams: Promise
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto md:p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("Tags")}</h1>
+      <CabecalhoDaSubTela titulo={t("Tags")} idioma={idioma}>
         <p className="max-w-2xl text-sm text-muted-foreground">
           {t(
             "As etiquetas que os agentes, o Inbox e o funil usam nesta organização. Renomear ou juntar corrige também as regras de agente que escrevem a etiqueta, na mesma operação.",
           )}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
 
       <form method="get" className="flex max-w-xl items-center gap-2">
         <Input name="busca" aria-label={t("Buscar etiquetas")} placeholder={t("Buscar etiquetas")}

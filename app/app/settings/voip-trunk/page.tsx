@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -31,8 +32,7 @@ export default async function TrunkSettingsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Trunk SIP", idioma)}</h1>
+      <CabecalhoDaSubTela titulo={traduzir("Trunk SIP", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir(
             "Credenciais de registro do seu provedor SIP (Asterisk/AudioSocket). Depois de salvar, aplique o bloco abaixo em",
@@ -41,7 +41,7 @@ export default async function TrunkSettingsPage() {
           <code>asterisk/pjsip.conf</code>{" "}
           {traduzir("na VPS — a aplicação ainda é manual.", idioma)}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       <TrunkSettingsClient initialData={(data as TrunkSettingsRow | null) ?? null} canWrite={canWrite} />
     </div>
   );

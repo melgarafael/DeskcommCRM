@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { normalizarIdioma } from "@/lib/i18n/idiomas";
@@ -71,12 +72,11 @@ export default async function TenantSettingsPage() {
 
   return (
     <div className="flex h-full flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{traduzir("Organização", idioma)}</h1>
+      <CabecalhoDaSubTela titulo={traduzir("Organização", idioma)} idioma={idioma}>
         <p className="text-sm text-muted-foreground">
           {traduzir("Dados da empresa, retenção de mídia, DPO. Admin only.", idioma)}
         </p>
-      </header>
+      </CabecalhoDaSubTela>
       {row && (
         <TenantForm
           initial={{

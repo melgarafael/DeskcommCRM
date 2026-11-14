@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { CabecalhoDaSubTela } from "@/components/settings/CabecalhoDaSubTela";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -38,12 +39,11 @@ export default async function Page() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-semibold">{t("Financeiro")}</h1>
+      <CabecalhoDaSubTela titulo={t("Financeiro")} idioma={user.idioma} tituloClassName="text-xl font-semibold">
         <p className="text-sm text-text-muted">
           {t("Onde o dinheiro fica, como o cliente paga e como cada lançamento é classificado.")}
         </p>
-      </div>
+      </CabecalhoDaSubTela>
       <CatalogoFinanceiro
         podeEditar={podeEditar}
         comissaoDisponivel={await moduloLigado(createAdminClient(), "financeiro")}
