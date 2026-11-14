@@ -2618,6 +2618,9 @@
   "O atendente vê a própria carteira e a fila de quem chegou agora. Não vê o que já é de um colega.": "客服可以看到自己的客户群和刚进来的队列。看不到已属于同事的内容。",
   "Só os seus": "仅自己的",
   "O atendente vê apenas o que foi direcionado a ele — nem a fila. Combine com o rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.": "客服只能看到分配给自己的内容——连队列也看不到。请配合轮询使用：如果没人分配，没人会收到任何东西，界面也会是空的。",
+  "Qualquer atendente abre a conversa e o negócio de qualquer colega. Contatos, empresas e pessoas continuam visíveis para a empresa toda.": "任何客服都可以打开任何同事的会话和商机。联系人、公司和人员对整个公司仍然可见。",
+  "O atendente vê a própria carteira e a fila de quem chegou agora — conversas e negócios sem dono. O que já é de um colega fica fora. Contatos, empresas e pessoas continuam visíveis para a empresa toda, mesmo os de clientes que estão com um colega.": "客服可以看到自己的客户和刚进来的队列——没有归属的会话和商机。已属于同事的内容不在其中。联系人、公司和人员对整个公司仍然可见，包括正在由同事跟进的客户。",
+  "O atendente vê apenas as conversas e os negócios direcionados a ele — nem a fila. Contatos, empresas e pessoas continuam visíveis para a empresa toda: a lista de Contatos não é recortada por este modo. Combine com o rodízio: sem alguém distribuindo, ninguém recebe nada e as telas ficam vazias.": "客服只能看到分配给自己的会话和商机——连队列也看不到。联系人、公司和人员对整个公司仍然可见：联系人列表不会因此模式而缩小。请配合轮询使用：没有人分配时，谁也不会收到，页面会是空的。",
   "Quem recebe cada cliente novo, e o que cada atendente enxerga. As duas decisões andam juntas: distribuir sem restringir deixa todo mundo vendo a carteira do colega; restringir sem distribuir deixa o funil de cada um vazio.": "谁接收每个新客户，以及每位客服能看到什么。这两个决定相辅相成：只分配不限制会让所有人都看到同事的客户群；只限制不分配会让每个人的销售漏斗为空。",
   "Não consegui iniciar a atualização. Tente de novo em instantes.": "无法启动更新。请稍后重试。",
   "Atualizando para a versão": "正在更新到版本",
@@ -6029,5 +6032,12 @@
   "Cada produto pode ter uma apresentação em texto ou áudio, com fotos e preço, que o atendente de IA envia em sequência quando o cliente pede.": "每个产品都可以有文字或音频介绍（可含照片和价格），客户询问时由 AI 客服按顺序发送。",
   "O aviso da Meta chegou sem as respostas do formulário, e a busca das respostas está desligada nesta fonte. Cole o token da página e ligue a busca para os próximos entrarem.": "Meta 的通知没有附带表单答案，且此来源的答案查询已关闭。请粘贴主页令牌并开启查询，以便后续线索进入。",
   "A busca das respostas na Meta não deu certo: o token pode ter vencido, estar sem permissão de leads, ou a Meta não respondeu. Confira o token da página nesta fonte.": "在 Meta 查询答案失败：令牌可能已过期、没有线索权限，或 Meta 没有响应。请检查此来源的主页令牌。",
-  "A Meta avisou um lead da página desta fonte, mas a fonte está pausada. Reative-a para os próximos entrarem.": "Meta 通知了来自此来源主页的线索，但该来源已暂停。请重新启用，以便后续线索进入。"
+  "A Meta avisou um lead da página desta fonte, mas a fonte está pausada. Reative-a para os próximos entrarem.": "Meta 通知了来自此来源主页的线索，但该来源已暂停。请重新启用，以便后续线索进入。",
+  "Ex.: 128GB": "例如：128GB",
+  "Capacidade do produto": "产品容量",
+  "capacidade com mais de 60 caracteres": "容量超过 60 个字符",
+  "A capacidade do produto está desligada nesta empresa.": "本公司已关闭产品容量。",
+  "Usar o campo Capacidade nos produtos": "在产品中使用容量字段",
+  "Mostra o campo em Produtos e na planilha, para 128GB, 1TB ou 500ml, e o atendente de IA passa a procurar por ele. Desligar esconde o campo, mas não apaga o que já foi cadastrado.": "在“产品”和表格中显示该字段（如 128GB、1TB 或 500ml），AI 客服也会按它搜索。关闭后字段会隐藏，但不会删除已保存的内容。",
+  "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.": "目录中多一个字段，用于 128GB、1TB 或 500ml。即使名称中没有容量，AI 客服也能据此找到产品。"
 }

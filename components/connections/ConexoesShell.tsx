@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { RedesSociaisClient } from "./RedesSociaisClient";
+import { CanalBotClient } from "./CanalBotClient";
 import { CanalGraphParceiroClient } from "./CanalGraphParceiroClient";
 import { CanalOficialClient } from "./CanalOficialClient";
 import { CanalParceiroClient } from "./CanalParceiroClient";
@@ -42,6 +43,7 @@ export function ConexoesShell({
   wahaConfigured,
   wacallsConfigured,
   graphParceiro = null,
+  bot = null,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
@@ -52,6 +54,11 @@ export function ConexoesShell({
    * O rótulo vem do servidor porque a tela não pode nomear provider.
    */
   graphParceiro?: { label: string } | null;
+  /**
+   * O robô de mensagens (#3486) é MÓDULO OPCIONAL da instalação (`canal_bot`,
+   * doc 216): desligado = `null`, e a aba nem é montada, nem por `?aba=`.
+   */
+  bot?: { label: string } | null;
 }) {
   const t = useT();
   const router = useRouter();
@@ -70,7 +77,9 @@ export function ConexoesShell({
             ? "voz"
             : abaParam === "graph" && graphParceiro
               ? "graph"
-              : "numeros";
+              : abaParam === "bot" && bot
+                ? "bot"
+                : "numeros";
   const sub = params.get("sub") === "templates" ? "templates" : "conexao";
 
   const irPara = (proximaAba: string, proximaSub?: string): void => {
@@ -107,7 +116,14 @@ export function ConexoesShell({
         <TabsTrigger value="sociais">{t("Redes sociais")}</TabsTrigger>
         <TabsTrigger value="voz">{t("Chamada de voz")}</TabsTrigger>
         {graphParceiro && <TabsTrigger value="graph">{graphParceiro.label}</TabsTrigger>}
+        {bot && <TabsTrigger value="bot">{bot.label}</TabsTrigger>}
       </TabsList>
+
+      {bot && (
+        <TabsContent value="bot" className="mt-0">
+          <CanalBotClient />
+        </TabsContent>
+      )}
 
       <TabsContent value="numeros" className="mt-0">
         <ConnectionsClient wahaConfigured={wahaConfigured} />

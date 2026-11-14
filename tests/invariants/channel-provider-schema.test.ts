@@ -113,9 +113,14 @@ describe("0087 · o canal da sessão chega ao clone", () => {
   });
 
   it("provider fora do vocabulário é RECUSADO", () => {
+    // A sonda usava `'telegram'` enquanto o Telegram não era provider nenhum.
+    // Desde a #3440 ele É (migration 9342), e a sonda passou a medir o
+    // contrário do que o nome do caso diz: um valor que o CHECK agora ACEITA.
+    // O literal virou `'canal_inexistente'` — o caso continua sendo "valor
+    // fora do vocabulário", que é o invariante, e não "o Telegram é recusado".
     const org = novaOrg(`inv-0087-c-${Date.now()}`);
     const msg = erroDe(() =>
-      insertSession(org, { provider: `'telegram'`, waha_session_name: `'s-c'` }),
+      insertSession(org, { provider: `'canal_inexistente'`, waha_session_name: `'s-c'` }),
     );
     expect(msg).toMatch(/channel_sessions_provider_check/);
   });
@@ -177,6 +182,26 @@ describe("0087 · o canal da sessão chega ao clone", () => {
     expect(doTs.length).toBeGreaterThan(0);
 
     expect(doTs).toEqual(doBanco);
+  });
+
+  it("o arquivo do webhook aceita o robô do Telegram (9342): o corpo cru não se perde", () => {
+    // Medido na prova de tela do #3486: sem 'telegram' em
+    // webhook_events_log_provider_check, todo update do robô logava "não
+    // consegui abrir a linha" e o corpo cru — guardado só ali — sumia.
+    const org = novaOrg(`inv-0087-tg-${Date.now()}`);
+    expect(
+      sql(`
+        insert into public.webhook_events_log (organization_id, provider, raw_body, valid_signature, status, received_at)
+        values ('${org}', 'telegram', '{}', true, 'received', now());
+        select count(*) from public.webhook_events_log where organization_id = '${org}' and provider = 'telegram';
+      `).split("\n").pop(),
+    ).toBe("1");
+    // E a guarda continua: provedor que ninguém decidiu segue recusado.
+    const msg = erroDe(() =>
+      sql(`insert into public.webhook_events_log (organization_id, provider, raw_body, valid_signature, status, received_at)
+           values ('${org}', 'canal_inexistente', '{}', true, 'received', now()); select 'ok';`),
+    );
+    expect(msg).toMatch(/webhook_events_log_provider_check/);
   });
 
   it("sessões meta_cloud convivem: a UNIQUE de waha_session_name não barra NULLs", () => {

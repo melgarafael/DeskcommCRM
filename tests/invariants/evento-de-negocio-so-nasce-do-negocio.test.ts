@@ -101,3 +101,34 @@ describe("eventos de desfecho do negócio são do gatilho do negócio", () => {
     expect(saida).toContain("EMITIU:");
   });
 });
+
+/**
+ * Doc 301 = B (#4319, migration 9337): a IA no modo ASSISTIDO escreve com o
+ * cabeçalho `x-actor-operation-mode: assisted`, e o gatilho o lê em
+ * `request.headers` (onde o PostgREST o põe). O desfecho leva a marca, e o motor
+ * de automação segura o que fala com o cliente. Sem o cabeçalho, nada muda.
+ */
+describe("o desfecho leva a marca do modo assistido quando a escrita a traz", () => {
+  function ganhaCom(cabecalhos: string | null): string {
+    return sql(
+      comoSessao(
+        GOV_MANAGER,
+        `${cabecalhos === null ? "" : `select set_config('request.headers', '${cabecalhos}', true) is not null;`}
+         update public.crm_leads set status = 'won', closed_at = now() where id = '${GOV_LEAD}';
+         reset role;
+         select 'MARCA:' || coalesce(metadata ->> 'actor_operation_mode', 'nenhuma') from public.event_log
+          where organization_id = '${GOV_ORG}' and event_type = 'lead.won' and entity_id = '${GOV_LEAD}'
+          order by created_at desc limit 1;`,
+      ),
+    );
+  }
+
+  it("com o cabeçalho do assistido, lead.won sai marcado", () => {
+    expect(ganhaCom('{"x-actor-operation-mode":"assisted"}')).toContain("MARCA:assisted");
+  });
+
+  it("CONTROLE: sem cabeçalho, ou com outro valor, lead.won sai sem marca", () => {
+    expect(ganhaCom(null)).toContain("MARCA:nenhuma");
+    expect(ganhaCom('{"x-actor-operation-mode":"automatic"}')).toContain("MARCA:nenhuma");
+  });
+});

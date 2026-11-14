@@ -2,8 +2,12 @@
 /**
  * TestPanel — dry-run de uma version (S-13.12).
  *
- * Envia sample message via POST `:test` (admin-only). Renderiza trace +
- * "Mensagem que SERIA enviada". Não toca WAHA, não cria messages.outbound.
+ * O teste é uma CONVERSA (#4424): cada envio leva a mensagem nova + os turnos
+ * anteriores no corpo do POST `:test` (admin-only), e o painel mostra turno a
+ * turno o que a IA respondeu e quais ferramentas usou. O rascunho da conversa
+ * vive só no estado desta tela — sem tabela nova; recarregar recomeça.
+ *
+ * Não toca o canal, não cria messages.outbound e não altera cliente algum.
  * Quando `INTERNAL_AGENT_RUN_STUB=true` o backend devolve trace stub com
  * `stub: true`; o componente mostra um aviso amigável.
  */
@@ -72,6 +76,18 @@ interface TestResponse {
      */
     warnings?: Array<{ code: string; message: string }>;
     restrictions?: string[];
+    /**
+     * #4424 — as ferramentas que o turno REALMENTE chamou (as de leitura rodam de
+     * verdade na prévia). Vem do mesmo coletor que grava o traço do turno; antes
+     * o painel só enxergava as ações PROPOSTAS.
+     */
+    ferramentas?: Array<{
+      nome: string;
+      estado: "ok" | "falhou" | "bloqueada";
+      erro?: string | null;
+      codigo?: string;
+      duracao_ms?: number;
+    }>;
     /** Ver lib/ai/agents/avaliar-resposta-de-teste.ts. */
     guardrails?: {
       passou: boolean;
@@ -82,6 +98,62 @@ interface TestResponse {
       naoAvaliados: Array<{ gate: string; porque: string }>;
     };
   };
+}
+
+/** Um turno do teste: o que o admin digitou e o que a IA respondeu, com o que usou. */
+interface TurnoDoTeste {
+  pergunta: string;
+  resultado: TestResponse["data"];
+}
+
+/**
+ * Os limites que o painel e a rota compartilham (#4424). O histórico do teste
+ * vive só no estado desta tela: ele é recortado AQUI para caber no teto e viaja
+ * no corpo do POST. Se a tela mandasse a conversa inteira, a rota recusaria com
+ * 400 — e, pior, cada disparo custaria mais tokens sem necessidade.
+ */
+const LIMITE_DE_MENSAGENS_DO_HISTORICO = 30;
+const LIMITE_DE_CARACTERES_DO_HISTORICO = 20_000;
+const LIMITE_DE_CARACTERES_POR_MENSAGEM = 4000;
+
+/**
+ * A conversa do teste no formato que a rota aceita: cada turno vira a mensagem
+ * do cliente e a resposta da IA (quando houve). O recorte é do FIM para o
+ * começo — o passado mais recente é o que importa —, respeitando 30 mensagens e
+ * 20.000 caracteres no total.
+ *
+ * Exportada para o teste poder exercitar o recorte sem montar a tela inteira.
+ */
+export function historicoDaConversa(
+  turnos: TurnoDoTeste[],
+): Array<{ direction: "inbound" | "outbound"; body: string }> {
+  const todas: Array<{ direction: "inbound" | "outbound"; body: string }> = [];
+  for (const turno of turnos) {
+    todas.push({
+      direction: "inbound",
+      // O teto por mensagem é o mesmo de `sample_message`; uma resposta muito
+      // longa é truncada em vez de fazer o próximo disparo ser recusado.
+      body: turno.pergunta.slice(0, LIMITE_DE_CARACTERES_POR_MENSAGEM),
+    });
+    const resposta = turno.resultado.final_text?.trim();
+    if (resposta) {
+      todas.push({
+        direction: "outbound",
+        body: resposta.slice(0, LIMITE_DE_CARACTERES_POR_MENSAGEM),
+      });
+    }
+  }
+  const recortadas: Array<{ direction: "inbound" | "outbound"; body: string }> = [];
+  let caracteres = 0;
+  for (let i = todas.length - 1; i >= 0; i -= 1) {
+    const mensagem = todas[i];
+    if (!mensagem) continue;
+    if (recortadas.length >= LIMITE_DE_MENSAGENS_DO_HISTORICO) break;
+    if (caracteres + mensagem.body.length > LIMITE_DE_CARACTERES_DO_HISTORICO) break;
+    recortadas.unshift(mensagem);
+    caracteres += mensagem.body.length;
+  }
+  return recortadas;
 }
 
 /**
@@ -153,7 +225,14 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
   // Etiquetas SIMULADAS da conversa (spec 27): texto separado por vírgula; o servidor normaliza.
   const [contactTags, setContactTags] = React.useState("");
   const [pending, setPending] = React.useState(false);
-  const [result, setResult] = React.useState<TestResponse["data"] | null>(null);
+  /**
+   * A CONVERSA do teste (#4424). Cada disparo acrescenta um turno; o anterior
+   * continua na tela e os dois (cliente e IA) voltam no corpo do próximo POST.
+   * Nada disso é persistido: recarregar a página recomeça a conversa, e não há
+   * tabela nova — o estado da tela é o único dono do rascunho.
+   */
+  const [turnos, setTurnos] = React.useState<TurnoDoTeste[]>([]);
+  const result = turnos.length > 0 ? turnos[turnos.length - 1]!.resultado : null;
 
   /**
    * O número desta versão está em modo de teste? O teste da aba NÃO passa pelo
@@ -195,10 +274,15 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
       return;
     }
     if (!target) return;
+    const pergunta = message.trim();
     setPending(true);
-    setResult(null);
     try {
-      const body: Record<string, unknown> = { sample_message: message.trim() };
+      const body: Record<string, unknown> = { sample_message: pergunta };
+      // #4424 — o turno novo viaja com os anteriores. Sem isso, a IA avaliava
+      // cada mensagem sozinha: não dava para ver objeção, mudança de assunto
+      // nem volta ao preço. O recorte respeita o teto que a rota impõe.
+      const history = historicoDaConversa(turnos);
+      if (history.length > 0) body.history = history;
       if (contactName.trim() || contactPhone.trim()) {
         body.sample_contact = {
           ...(contactName.trim() ? { name: contactName.trim() } : {}),
@@ -225,7 +309,8 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
         // confortável: acima disso o problema é o agente, não a espera.
         { timeoutMs: 120_000 },
       );
-      setResult(res.data);
+      setTurnos((anteriores) => [...anteriores, { pergunta, resultado: res.data }]);
+      setMessage("");
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
       toast.success(t("Teste executado."));
     } catch (err) {
@@ -237,6 +322,12 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
     } finally {
       setPending(false);
     }
+  }
+
+  /** Recomeçar: limpa o rascunho da conversa e o painel. O próximo turno chega sozinho ao motor. */
+  function handleRestart() {
+    setTurnos([]);
+    setMessage("");
   }
 
   return (
@@ -316,15 +407,29 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
 
         <AvisoDoModoDeTeste aviso={avisoDoNumero} podeConfigurar={!readOnly} notaDoSandbox />
 
-        <Button onClick={handleRun} disabled={pending || readOnly} className="self-start">
-          {pending ? t("Executando…") : t("Executar teste")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleRun} disabled={pending || readOnly}>
+            {pending ? t("Executando…") : turnos.length > 0 ? t("Enviar mensagem") : t("Executar teste")}
+          </Button>
+          {turnos.length > 0 ? (
+            <Button variant="outline" onClick={handleRestart} disabled={pending || readOnly}>
+              {t("Recomeçar conversa")}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          {t("Resultado")}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {t("Conversa")}
+          </p>
+          {turnos.length > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {turnos.length} {turnos.length === 1 ? t("turno") : t("turnos")}
+            </p>
+          ) : null}
+        </div>
 
         {!result && !pending ? (
           <p className="text-sm text-muted-foreground">{t("Nenhum teste executado ainda.")}</p>
@@ -333,6 +438,10 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
         {pending ? (
           <p className="text-sm text-muted-foreground">{t("Executando dry-run…")}</p>
         ) : null}
+
+        {turnos.map((turno, indice) => (
+          <TurnoDoTesteCard key={indice} turno={turno} indice={indice + 1} />
+        ))}
 
         {result ? (
           <>
@@ -355,12 +464,6 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
               </Cell>
               <Cell label={t("Custo (cents)")}>{result.cost_cents ?? "—"}</Cell>
             </div>
-
-            <RunTrace
-              toolCalls={result.tool_calls}
-              finalText={result.final_text ?? null}
-              emptyMessage={t("Sem tool calls (resposta direta do LLM).")}
-            />
 
             {result.candidates ? (
               <div className="space-y-2 text-xs">
@@ -397,18 +500,6 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
                     {x.message}
                   </p>
                 ))}
-                {!!result.proposals?.length && (
-                  <div>
-                    <p className="font-medium">
-                      {t("Ações propostas: precisam de autorização separada")}
-                    </p>
-                    <ul>
-                      {result.proposals.map((x, i) => (
-                        <li key={i}>{x.tool}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             ) : result.guardrails ? (
               <Verificacoes g={result.guardrails} />
@@ -416,6 +507,101 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
           </>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Um turno da conversa de teste (#4424).
+ *
+ * Mostra o que o admin digitou, o que a IA respondeu e — o ponto do pedido — o
+ * que ela USOU para responder: as ferramentas chamadas (as de leitura rodam de
+ * verdade na prévia) e as ações que ficaram só propostas. Nada aqui é enviado a
+ * cliente algum; o turno inteiro roda em modo dry-run.
+ */
+function TurnoDoTesteCard({ turno, indice }: { turno: TurnoDoTeste; indice: number }) {
+  const t = useT();
+  const { resultado } = turno;
+  const resposta = resultado.final_text?.trim() ?? "";
+  const ferramentas = resultado.ferramentas ?? [];
+  const propostas = resultado.proposals ?? [];
+  return (
+    <div
+      data-testid={`teste-turno-${indice}`}
+      className="space-y-2 rounded-md border border-border/60 bg-background p-3"
+    >
+      <div>
+        <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+          {t("Cliente")} · {t("turno")} {indice}
+        </p>
+        <p className="text-sm whitespace-pre-wrap">{turno.pergunta}</p>
+      </div>
+      <div>
+        <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+          {t("Agente")} · {t("turno")} {indice}
+        </p>
+        <p className="text-sm whitespace-pre-wrap">
+          {resposta || t("A IA não devolveu texto neste turno.")}
+        </p>
+      </div>
+      {ferramentas.length > 0 ? (
+        <div className="space-y-1">
+          <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+            {t("Ferramentas usadas")}
+          </p>
+          <ul className="flex flex-wrap gap-1">
+            {ferramentas.map((f, i) => (
+              <li key={`${f.nome}-${i}`}>
+                <Badge
+                  variant={f.estado === "ok" ? "outline" : "destructive"}
+                  className="font-mono text-xs"
+                >
+                  {f.nome}
+                  {typeof f.duracao_ms === "number" ? ` · ${f.duracao_ms}ms` : ""}
+                  {f.estado === "ok" ? "" : ` · ${t("falhou")}`}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {propostas.length > 0 ? (
+        <div className="space-y-1">
+          <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+            {t("Ações propostas (não executadas)")}
+          </p>
+          <ul className="flex flex-wrap gap-1">
+            {propostas.map((p, i) => (
+              <li key={`${p.tool}-${i}`}>
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {p.tool}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">{t("Detalhes do turno")}</summary>
+        <div className="mt-2 space-y-2">
+          {ferramentas.some((f) => f.erro) ? (
+            <ul className="space-y-1">
+              {ferramentas.map((f, i) =>
+                f.erro ? (
+                  <li key={`erro-${i}`} className="font-mono text-destructive">
+                    {f.nome}: {f.erro}
+                  </li>
+                ) : null,
+              )}
+            </ul>
+          ) : null}
+          <RunTrace
+            toolCalls={resultado.tool_calls}
+            finalText={null}
+            emptyMessage={t("Sem ações propostas neste turno.")}
+          />
+        </div>
+      </details>
     </div>
   );
 }

@@ -151,6 +151,19 @@ export async function POST(
   }
 
   if (!desfecho.ok) {
+    // Falha depois de gravar (o cancelamento sem a fila fechada): o estado
+    // mudou, então a trilha registra o que ficou gravado — e a resposta, o erro.
+    if (acaoAuditada && desfecho.gravado) {
+      void audit({
+        action: acaoAuditada,
+        actorUserId: authz.user.id,
+        organizationId: authz.org.orgId,
+        resourceType: "campaign",
+        resourceId: campanha.id,
+        requestId,
+        metadata: { ...extra, ...desfecho.gravado },
+      });
+    }
     return fail(desfecho.codigo, t(desfecho.mensagem), desfecho.status, { requestId });
   }
 

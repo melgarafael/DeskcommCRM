@@ -447,7 +447,10 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
       return;
     }
 
-    if (agentConfig.pausedAt || agentConfig.operationMode === 'assisted') return;
+    // Modo assistido NÃO barra o Operador; só a pausa barra. O que o assistido
+    // garante é na MÃO: `maoDoOperador` tira dela, no assistido, toda ferramenta
+    // que faz algo sair (`saiSemAprovacao`) — mesmo que esteja em `operator_tool_ids`.
+    if (agentConfig.pausedAt) return;
     if (agentConfig.operationRevision)
       setExecutionAgentOperation({
         organizationId: tenantId,
@@ -512,6 +515,9 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
           // `FORA_DO_OPERADOR` (a proposta nascia na primeira mensagem).
           mao,
           log,
+          // No assistido, remota só entra se MONTOU como leitura: a marca no id
+          // sozinha não basta para dizer que nada sai.
+          { readOnly: false, remotasSoLeitura: mao.operationMode === 'assisted' },
         );
       } catch (err) {
         // Mesma doutrina do turno do Conversador: capacidade que não montou não
