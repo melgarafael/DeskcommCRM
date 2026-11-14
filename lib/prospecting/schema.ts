@@ -18,6 +18,15 @@ import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normal
 const LIMITE_DIARIO = z.number().int().min(1).max(50);
 const INTERVALO_MINUTOS = z.number().int().min(5).max(1440);
 
+/**
+ * O tamanho do texto que a campanha leva para cada conversa — instrução e
+ * critérios. Fonte única: o `start` e a edição de uma campanha pausada
+ * (`edit_briefing`) recusam os mesmos valores. Um mínimo de 10 caracteres é o
+ * que impede o "ok" salvo como instrução de abordagem.
+ */
+export const TAMANHO_MINIMO_DO_BRIEFING = 10;
+export const TAMANHO_MAXIMO_DO_BRIEFING = 2000;
+
 /** O que a campanha vende, em prioridade. Default = comportamento atual. */
 export const OFERTAS_DA_CAMPANHA = ["site", "automacao_crm", "automacao_n8n"] as const;
 export const ofertasDaCampanhaSchema = z
@@ -25,6 +34,29 @@ export const ofertasDaCampanhaSchema = z
   .min(1)
   .max(3)
   .default(["site"]);
+
+/**
+ * O que se edita numa campanha já iniciada e pausada: o texto e as ofertas.
+ * Mora aqui, e não dentro do schema da rota, para o servidor e a tela usarem a
+ * MESMA régua de tamanho que o `start` usa.
+ */
+export const briefingDaCampanhaSchema = z
+  .object({
+    instruction: z
+      .string()
+      .trim()
+      .min(TAMANHO_MINIMO_DO_BRIEFING)
+      .max(TAMANHO_MAXIMO_DO_BRIEFING),
+    qualification: z
+      .string()
+      .trim()
+      .min(TAMANHO_MINIMO_DO_BRIEFING)
+      .max(TAMANHO_MAXIMO_DO_BRIEFING),
+    // Sem `.default()`: numa EDIÇÃO, oferta omitida não pode voltar silenciosamente
+    // para "site" e trocar o que a campanha vende sem ninguém pedir.
+    ofertas: z.array(z.enum(OFERTAS_DA_CAMPANHA)).min(1).max(3),
+  })
+  .strict();
 export type OfertaDaCampanha = (typeof OFERTAS_DA_CAMPANHA)[number];
 
 /**
@@ -77,8 +109,16 @@ export const campaignConfigSchema = z
     pipeline_id: z.string().uuid(),
     stage_id: z.string().uuid(),
     qualified_stage_id: z.string().uuid(),
-    instruction: z.string().trim().min(10).max(2000),
-    qualification: z.string().trim().min(10).max(2000),
+    instruction: z
+      .string()
+      .trim()
+      .min(TAMANHO_MINIMO_DO_BRIEFING)
+      .max(TAMANHO_MAXIMO_DO_BRIEFING),
+    qualification: z
+      .string()
+      .trim()
+      .min(TAMANHO_MINIMO_DO_BRIEFING)
+      .max(TAMANHO_MAXIMO_DO_BRIEFING),
     ofertas: ofertasDaCampanhaSchema,
     daily_limit: LIMITE_DIARIO.default(10),
     interval_minutes: INTERVALO_MINUTOS.default(15),
@@ -196,6 +236,20 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("discard_unselected"), id: z.string().uuid() }).strict(),
+  // Editar a INSTRUÇÃO, os CRITÉRIOS e as OFERTAS de uma campanha já iniciada (#4570).
+  // Mesma régua de `adjust_pace`/`adjust_tags`: só com a campanha pausada — o texto
+  // entra em cada turno novo e trocá-lo no meio de uma abordagem seria trocar a régua
+  // no meio da medida. Só vale para as próximas conversas: o histórico já trocado
+  // não é reescrito. Estrito: conexão, agente, funil e base legal seguem fechados.
+  z
+    .object({
+      action: z.literal("edit_briefing"),
+      id: z.string().uuid(),
+      instruction: briefingDaCampanhaSchema.shape.instruction,
+      qualification: briefingDaCampanhaSchema.shape.qualification,
+      ofertas: briefingDaCampanhaSchema.shape.ofertas,
+    })
+    .strict(),
   // Reanálise manual da auditoria (spec 24): reescreve `data.site` na hora.
   // Fechada a token (fora de ACOES_ABERTAS_AO_TOKEN): exige sessão.
   z
@@ -232,6 +286,8 @@ export const prospectingInputSchema = z.discriminatedUnion("action", [
 ]);
 export type CampaignConfig = z.infer<typeof campaignConfigSchema>;
 export type CampaignPace = Pick<CampaignConfig, "daily_limit" | "interval_minutes">;
+/** O pedaço da configuração que se edita com a campanha iniciada e pausada (#4570). */
+export type CampaignBriefing = Pick<CampaignConfig, "instruction" | "qualification" | "ofertas">;
 export type SearchInput = z.infer<typeof searchSchema>;
 /**
  * O que a campanha importada de planilha guarda em `prospecting_campaigns.search` (jsonb).
