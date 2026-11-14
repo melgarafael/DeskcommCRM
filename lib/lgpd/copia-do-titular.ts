@@ -98,6 +98,8 @@ export const O_QUE_FICA = {
   lead_field_proposals:
     "os campos que a IA leu num documento do negocio dele e propos para o card (o documento e os valores ficam no anexo)",
   orders: "os pedidos dele na loja",
+  cobrancas_avulsas:
+    "as cobranças avulsas dele: a descrição (que a anonimização redige), o valor, a moeda, o vencimento, o estado e o negócio/conversa a que estão presas",
   activities: "o que foi registrado sobre ele e quando",
   checkpoints: "o resumo que a máquina fez da conversa com ele (LGPD art. 20)",
   mcp_pedidos_de_acesso: "os links de autorização gerados para ele acessar sistemas externos, e quando foram usados",

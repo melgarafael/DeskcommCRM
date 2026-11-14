@@ -375,6 +375,21 @@ beforeAll(() => {
                     (select id from public.crm_leads where organization_id = v_org limit 1));
         end if;
 
+        -- migration 9345 (#4058) — a cobrança avulsa do negócio: quanto a
+        -- empresa cobra do cliente DELA, com vencimento e estado. Vazar a linha
+        -- entrega ao vizinho o que a outra empresa está cobrando, de quem e
+        -- quando vence. Nasce pendente porque o CHECK de âncora e o gatilho de
+        -- "paga é do servidor" recusariam o contrário — o molde aqui é linha
+        -- isolada, não transição de estado (essa vive no arquivo próprio da
+        -- cobrança).
+        if not exists (select 1 from public.cobrancas_avulsas where organization_id = v_org) then
+          insert into public.cobrancas_avulsas
+            (organization_id, lead_id, descricao, valor_cents, vencimento)
+          values (v_org,
+                  (select id from public.crm_leads where organization_id = v_org limit 1),
+                  'RLS invariant cobranca', 1000, '2030-01-10');
+        end if;
+
         -- voice_calls (0232): a chamada pendurada na sessão de canal da org.
         -- O wacalls_call_id varia por organizacao porque a tabela tem
         -- unique (organization_id, wacalls_call_id) — mesmo cuidado do endpoint
@@ -901,6 +916,15 @@ export const TABLES = [
   // migration 9043 — o segundo telefone da ficha (Spec 31 B1). Leitura por
   // organização; a escrita exige `agent`, o papel semeado aqui.
   "contact_phones",
+  // migration 9345 (#4058) — a cobrança avulsa do negócio. Guarda o que a
+  // empresa cobra do cliente DELA (valor, vencimento, estado). A leitura é
+  // org-scoped sem gate de papel (quem atende precisa ver o que foi cobrado),
+  // então o `agent` semeado é controle positivo legítimo. A ESCRITA tem um
+  // segundo eixo que este molde NÃO mede — `agent` em pendente, `manager` para
+  // apagar, e "paga" só pelo servidor; os três vivem em
+  // `tests/invariants/cobranca-avulsa-do-negocio.test.ts`, porque são transição
+  // de estado e âncora de outro tenant, não contagem de linha.
+  "cobrancas_avulsas",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A

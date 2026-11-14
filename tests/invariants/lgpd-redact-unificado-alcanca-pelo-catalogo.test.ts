@@ -317,6 +317,21 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "Doc 199 (pergunta 2 = A): ctwa_clid liga a pessoa ao anúncio em que clicou na Meta; fn_apaga_cliques_ctwa_de_contato_anonimizado (0806) APAGA as linhas do contato na virada de is_anonymized. Custo aceito: clique antigo reenviado pela Meta seria contado de novo.",
   },
+  cobrancas_avulsas: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao:
+      "9345 (#4058): a cobrança é registro FINANCEIRO — valor, moeda, vencimento, estado, as datas de " +
+      "desfecho e o VÍNCULO ficam, a mesma régua do passo 6b para `sales`: desligar o contato faria o " +
+      "relatório por cliente deixar de fechar com o faturamento do período, e a ficha apontada já é " +
+      "`Cliente Anonimizado #N` (e o `lead_id`/`conversation_id` que a âncora exige chegam à pessoa de " +
+      "qualquer jeito — zerar `contact_id` não apagaria o caminho, só a coluna). O que sai é `descricao`, " +
+      "o único texto livre da tabela: 'Consulta da Maria Silva, outubro' é onde a pessoa é nomeada de " +
+      "novo depois de `contacts` já estar redigido. Pela virada de `is_anonymized` (a porta que os DOIS " +
+      "caminhos compartilham) e não por um passo na cascata: a última definição de " +
+      "`fn_lgpd_cascade_redact_contact` no baseline mora no bloco da 9243, que " +
+      "`lgpd-alcanca-fichas-fundidas` compara letra a letra com a migration já mergeada.",
+  },
   // ── manter: a linha e o conteúdo ficam, por decisão ───────────────────────
   automation_rule_contact_claims: {
     decidida: "manter",
