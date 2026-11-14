@@ -3959,6 +3959,16 @@ export const DICIONARIO: Traducoes = {
     es: "La tarjeta que armó este disparador — el negocio del contacto que está en la etapa de arriba — pasa a la etapa elegida cuando el cliente responde. Sin tarjeta en esa etapa, nada se mueve, y el historial de la inscripción registra el motivo.",
   },
   "Salvar gatilho": { es: "Guardar disparador" },
+  // #4587 — o filtro do gatilho «Lead criado»: funil e etiqueta do card.
+  "Funil (opcional)": { es: "Embudo (opcional)" },
+  "Qualquer funil": { es: "Cualquier embudo" },
+  "Etiqueta do negócio (opcional)": { es: "Etiqueta del negocio (opcional)" },
+  "ex: vip": { es: "Ej.: vip" },
+  "com a etiqueta": { es: "con la etiqueta" },
+  "escolhido": { es: "elegido" },
+  "Só começa para negócios criados neste funil e/ou com esta etiqueta. Em branco = qualquer funil, qualquer etiqueta.": {
+    es: "Solo empieza para negocios creados en este embudo y/o con esta etiqueta. En blanco = cualquier embudo, cualquier etiqueta.",
+  },
   // Cartão "Mapas" em Provedores (0504) e a API dele.
   "Mapas (Google)": { es: "Mapas (Google)" },
   "Chave gravada": { es: "Clave guardada" },
