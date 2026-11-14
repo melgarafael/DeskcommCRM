@@ -60,7 +60,16 @@ export const PALAVRAS_DE_OPT_OUT: ReadonlySet<string> = new Set([
   "parar",
   "pare",
   "sair",
-  "cancelar",
+  // `cancelar` SOZINHO saiu desta lista (#4579). Medido num curso que atende
+  // pelo WhatsApp: a palavra solta gravava `is_blocked` na INGESTÃO, antes do
+  // modelo — e no canal ela é quase sempre a RESPOSTA a uma pergunta que a
+  // ofereceu ("confirmar, remarcar ou cancelar?"), inclusive um botão com esse
+  // rótulo, que chega como texto. Nenhum rodapé promete CANCELAR como palavra
+  // de saída (`PALAVRAS_DE_SAIDA_DO_RODAPE` é parar/pare/stop/baja): ninguém
+  // que seguiu a instrução deixa de sair. Não foi para as ambíguas de
+  // propósito — o ambíguo manda ao cliente "vou parar de te enviar mensagens"
+  // e cala a IA, o que para quem respondeu a um menu seria promessa falsa.
+  // Quem quer sair tem `parar`, `sair`, `stop` e as frases com objeto abaixo.
   "descadastrar",
   "remover",
   "unsubscribe",
@@ -156,6 +165,28 @@ const OBJETOS_NAO_COMUNICATIVOS =
   "fatura|faturas|boleto|boletos|cobranca|cobrancas|produto|produtos|" +
   "paquete|paquetes|envio|envios|factura|facturas|boleta|boletas|" +
   "cobro|cobros|producto|productos|pauta|pautas|presupuesto|presupuestos";
+
+/**
+ * "material promocional" é a mensagem, não a compra: o freio devolve ao pedido
+ * de saída o objeto de `OBJETOS_DE_COMPRA_RECEBIDOS` que vem qualificado como
+ * propaganda ("não quero receber material de propaganda", "kit promocional").
+ */
+const FREIO_DE_OBJETO_PROMOCIONAL =
+  "(?!\\s+(?:promocional|promocionais|publicitario|publicitarios|de\\s+(?:propaganda|divulgacao|marketing|publicidade|vendas)))";
+
+/**
+ * O que se RECEBE de uma compra e não é a mensagem: o pix, o cartão, o código,
+ * o comprovante, o material, o certificado (#4579). Só o padrão "não quero
+ * receber X" lê esta lista, somada à de cima. Medido num curso: "não quero
+ * receber o boleto" (quer pagar de outro jeito) e "não quero receber o pix"
+ * gravavam `is_blocked` na ingestão — a mesma classe de "não quero receber
+ * ligação, só whatsapp", que o padrão já isentava. Não entra em "parar de
+ * mandar", em que "pare de mandar link" pode ser o pedido.
+ */
+const OBJETOS_DE_COMPRA_RECEBIDOS =
+  "pix|cartao|cartoes|chave|codigo|codigos|comprovante|comprovantes|recibo|recibos|" +
+  "nota|notas|material|materiais|apostila|apostilas|certificado|certificados|livro|livros|" +
+  "kit|kits|reembolso|estorno|parcela|parcelas";
 
 /**
  * Determinantes que podem vir entre o verbo e o objeto não comunicativo —
@@ -311,8 +342,25 @@ const FRASES_DE_OPT_OUT: readonly RegExp[] = [
   ),
   // "não quero (mais) receber" — mas "não quero receber ligação, só whatsapp" é
   // troca de canal, não descadastro: quem diz isso QUER continuar no WhatsApp.
-  /\bnao\s+(?:quero|desejo|gostaria)\s+(?:de\s+)?(?:mais\s+)?receber\b(?!\s+(?:ligacao|ligacoes|chamada|chamadas|telefonema|telefonemas|telefone)\b)/u,
-  /\bnao\s+quero\s+receber\s+mais\b/u,
+  // E "não quero receber o boleto" é forma de pagamento (#4579): o segundo
+  // lookahead exclui o que se recebe de uma compra (`OBJETOS_NAO_COMUNICATIVOS`
+  // + `OBJETOS_DE_COMPRA_RECEBIDOS`), também com "mais" no meio ("não quero
+  // receber mais o boleto"). Sem objeto ("não quero receber mais nada") segue
+  // bloqueando: o lookahead só isenta a lista fechada.
+  // `(?!envios?)`: a lista é compartilhada com o espanhol, onde "envío" é a
+  // remessa; em português "envios" é o próprio disparo (ver `LISTAS_DE_ENVIO`),
+  // e "não quero receber mais envios" é pedido de saída.
+  new RegExp(
+    "\\bnao\\s+(?:quero|desejo|gostaria)\\s+(?:de\\s+)?(?:mais\\s+)?receber\\b" +
+      "(?!\\s+(?:ligacao|ligacoes|chamada|chamadas|telefonema|telefonemas|telefone)\\b)" +
+      `(?!\\s+(?:mais\\s+)?(?:${DETERMINANTES_DE_OBJETO})?\\s*(?!envios?\\b)(?:${OBJETOS_NAO_COMUNICATIVOS}|${OBJETOS_DE_COMPRA_RECEBIDOS})\\b${FREIO_DE_OBJETO_PROMOCIONAL})`,
+    "u",
+  ),
+  new RegExp(
+    "\\bnao\\s+quero\\s+receber\\s+mais\\b" +
+      `(?!\\s+(?:${DETERMINANTES_DE_OBJETO})?\\s*(?!envios?\\b)(?:${OBJETOS_NAO_COMUNICATIVOS}|${OBJETOS_DE_COMPRA_RECEBIDOS})\\b${FREIO_DE_OBJETO_PROMOCIONAL})`,
+    "u",
+  ),
   /\bnao\s+quero\s+mais\s+(?:mensagem|mensagens|contato|nada\s+de\s+voces)\b/u,
   // "não me mande mais" — mas NÃO "não me mande mais boletos": esta regra
   // ancorava só no VERBO, e mandar é verbo de comunicação mesmo quando o
@@ -382,27 +430,17 @@ const FRASES_DE_OPT_OUT: readonly RegExp[] = [
   // As duas leem hoje a MESMA constante (`LISTAS_DE_ENVIO`), que é o que torna
   // impossível uma voltar a divergir da outra.
   new RegExp(`\\bsair\\s+d(?:a|essa|esta)\\s+lista\\b${FREIO_DE_LISTA_QUALIFICADA}`, "u"),
-  // "cancelar a inscrição" — e NÃO "cancelar a assinatura" (#2886). A palavra
-  // `assinatura` saiu daqui para as ambíguas, abaixo, pelo mesmo motivo que a
-  // `subscricao` de Portugal saiu no #2343: ela serve às DUAS coisas, sair das
-  // mensagens e cancelar o plano do produto, e bloqueava quem só perguntava
-  // "posso cancelar a assinatura e voltar depois?" (medido: `is_blocked` gravado
-  // e nenhuma resposta depois).
-  //
-  // `inscricao` FICA, e não por esquecimento: medida na #2886, ela tem o mesmo
-  // formato de defeito ("posso cancelar a inscrição e voltar depois?" grava
-  // `is_blocked`), mas movê-la obriga a reverter uma guarda de INGESTÃO que hoje
-  // a fixa bloqueando (`tests/unit/pos-entrada-efeitos-do-canal.test.ts`), e o
-  // recorte desta fatia é `assinatura`/`suscripcion`. A medição dela está na
-  // evidência da issue como medida-e-não-movida, com o número.
-  /\bcancelar?\s+(?:a\s+)?inscricao\b/u,
-  // ...mas "cancelar a assinatura DAS MENSAGENS" nomeia o objeto de
-  // comunicação, e aí bloqueia na hora — a regra do cabeçalho. A ambígua lá
-  // embaixo só cobre a frase SEM objeto. Vale também para a `subscricao` de
-  // Portugal (#2872), que tinha o mesmo buraco. "do whatsapp" e "de vocês"
-  // ficam DE FORA de propósito: também podem ser o plano, então seguem só
-  // escalando para uma pessoa.
-  /\bcancelar?\s+(?:a\s+)?(?:minha\s+)?(?:assinatura|subscricao)\s+(?:d(?:as|essas|estas)\s+(?:mensagens|notificacoes|promocoes|ofertas|novidades)|d(?:os|esses|estes)\s+(?:avisos|disparos|envios)|d(?:a|essa|esta)\s+newsletter)\b/u,
+  // "cancelar a assinatura/subscrição/inscrição DAS MENSAGENS" nomeia o objeto
+  // de comunicação, e aí bloqueia na hora — a regra do cabeçalho. A frase SEM
+  // objeto fica nas ambíguas, abaixo: `assinatura` desde o #2886, `subscricao`
+  // (Portugal) desde o #2343 e `inscricao` agora (#4579), pelo mesmo motivo — a
+  // palavra serve às DUAS coisas, sair das mensagens e desfazer a matrícula ou
+  // a inscrição num concurso. Medido num curso: "quero cancelar a inscrição" e
+  // "posso cancelar a inscrição e voltar depois?" gravavam `is_blocked` (a
+  // própria #2886 já tinha medido o segundo e deixado para depois). "do
+  // whatsapp" e "de vocês" ficam DE FORA de propósito: também podem ser o plano,
+  // então seguem só escalando para uma pessoa.
+  /\bcancelar?\s+(?:a\s+)?(?:minha\s+)?(?:assinatura|subscricao|inscricao)\s+(?:d(?:as|essas|estas)\s+(?:mensagens|notificacoes|promocoes|ofertas|novidades)|d(?:os|esses|estes)\s+(?:avisos|disparos|envios)|d(?:a|essa|esta)\s+newsletter)\b/u,
   // ── PORTUGUÊS DE PORTUGAL: o pronome vem PRESO ao verbo, DEPOIS dele ──────
   //
   // Em pt-PT o pronome átono é ENCLÍTICO ("remova-me da lista"), enquanto o
@@ -533,6 +571,13 @@ const FRASES_AMBIGUAS_DE_OPT_OUT: readonly RegExp[] = [
   // Aqui escala para um humano, que decide o bloqueio de verdade — o custo
   // aceito (campanhas seguem até alguém decidir) está na #2886.
   /\bcancelar?\s+(?:a\s+)?(?:minha\s+)?assinatura\b/u,
+  // "cancelar a inscrição" — a MESMA decisão, pela mesma razão (#4579). É o
+  // "cancelar inscrição" dos rodapés de e-mail E é a matrícula de um curso ou a
+  // inscrição num concurso. Bloqueava na ingestão (ver `FRASES_DE_OPT_OUT`);
+  // agora escala. O recorte é o que já bloqueava (`cancelar?\s+(?:a\s+)?inscricao`),
+  // sem alargar: "cancelar minha inscrição no curso" não era sinal e continua
+  // não sendo.
+  /\bcancelar?\s+(?:a\s+)?inscricao\b/u,
   // ── espanhol ──────────────────────────────────────────────────────────────
   //
   // Esta lista tinha ZERO entradas em espanhol. Não por decisão: o ambíguo é
