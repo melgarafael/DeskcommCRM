@@ -10905,6 +10905,9 @@ export type Database = {
           media_url: string | null;
           metadata: NonNullable<Json>;
           organization_id: string;
+          quarantine_reason: string | null;
+          quarantined_at: string | null;
+          quarantined_by_user_id: string | null;
           read_at: string | null;
           reply_to_message_id: string | null;
           revoked_at: string | null;
@@ -10945,6 +10948,9 @@ export type Database = {
           media_url?: string | null;
           metadata?: NonNullable<Json>;
           organization_id: string;
+          quarantine_reason?: string | null;
+          quarantined_at?: string | null;
+          quarantined_by_user_id?: string | null;
           read_at?: string | null;
           reply_to_message_id?: string | null;
           revoked_at?: string | null;
@@ -10984,6 +10990,9 @@ export type Database = {
           media_url?: string | null;
           metadata?: NonNullable<Json>;
           organization_id?: string;
+          quarantine_reason?: string | null;
+          quarantined_at?: string | null;
+          quarantined_by_user_id?: string | null;
           read_at?: string | null;
           reply_to_message_id?: string | null;
           revoked_at?: string | null;

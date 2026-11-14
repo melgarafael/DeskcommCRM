@@ -30,6 +30,7 @@ import {
 import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from '@/lib/event-log/aviso-de-evento-morto';
 import { acordarLacoDeEventLog } from '@/lib/event-log/sinal-de-trabalho';
 import { canalDesativado } from '@/lib/channels/desativado';
+import { DETALHE_DA_MENSAGEM_EM_QUARENTENA } from '@/lib/channels/quarentena';
 import { TETO_DA_ESPERA_DA_DERIVACAO_MS } from '@/lib/messaging/media/derivable';
 import {
   haLeitorDaDescricao,
@@ -329,6 +330,39 @@ async function processEvent(
     }
     log.info('drain: grupo liberado pela chave por grupo (#2729) — turno segue o caminho normal', {
       event_id: event.id,
+    });
+  }
+
+  // ── QUARENTENA (#4026): a mensagem foi segurada de propósito ─────────────
+  //
+  // Antes de qualquer custo: mensagem em quarentena não vira turno, não gasta
+  // LLM e não responde. É a defesa em profundidade do gate que a ingestão faz
+  // (`pos-entrada.ts`) e do que o dispatcher de eventos faz para automação —
+  // este é o caminho do TURNO, com consumidor próprio (`ai_agent.dispatch_requested`
+  // não passa pelo registry), e sem ele a marca não calaria a IA no caso real:
+  // evento emitido antes da marca, ou marca chegando enquanto o evento espera
+  // na fila (debounce, janela de resposta, backlog de worker).
+  //
+  // Falha de LEITURA é fail-open: segue o turno, como hoje. Quarentena é um
+  // filtro a mais, nunca uma condição de disponibilidade da conversa.
+  try {
+    const { rows: quarentenaRows } = await pool.query<{ quarantined_at: string | null }>(
+      `select quarantined_at from messages where organization_id = $1 and id = $2`,
+      [event.organization_id, p.inbound_message_id],
+    );
+    if (quarentenaRows[0]?.quarantined_at) {
+      log.info('drain: mensagem em quarentena — turno pulado (sem gasto)', {
+        event_id: event.id,
+        inbound_message_id: p.inbound_message_id,
+        detalhe: DETALHE_DA_MENSAGEM_EM_QUARENTENA,
+      });
+      return 'processado';
+    }
+  } catch (err) {
+    log.warn('drain: leitura de quarentena falhou — turno segue', {
+      event_id: event.id,
+      inbound_message_id: p.inbound_message_id,
+      error: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160),
     });
   }
 

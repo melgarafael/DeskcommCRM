@@ -190,6 +190,11 @@ export const AUDIT_ACTIONS = [
   "message.revoked_in_channel",
   "message.hidden_in_crm",
   "message.restored_in_crm",
+  // A mensagem recebida foi segurada de propósito (#4026): o efeito (IA,
+  // automação, aviso) para, a linha e o corpo NÃO mudam. O par
+  // marcar/liberar entra junto porque um sem o outro conta meia história.
+  "message.quarantined",
+  "message.quarantine_released",
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",

@@ -66,6 +66,10 @@ import type { EventRow } from "@/lib/event-log/dispatcher";
 import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
 import { aplicarRespostaNaCampanha } from "@/lib/campanhas/resposta";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
+import {
+  DETALHE_DA_MENSAGEM_EM_QUARENTENA,
+  lerQuarentenaDaMensagem,
+} from "@/lib/channels/quarentena";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -176,6 +180,36 @@ export async function aplicarEfeitosPosEntrada(
     });
     return;
   }
+  // ── QUARENTENA (#4026) ───────────────────────────────────────────────────
+  //
+  // A mensagem foi segurada de propósito, e o que para aqui é TODO o resto:
+  // origem de página, demanda, campanha, follow-up e o despacho do agente.
+  // A mensagem em si já estava gravada antes desta função e não é tocada —
+  // quarentena segura efeito, nunca descarta entrega.
+  //
+  // O `aplicarOptOut` acima roda de propósito, mesmo em quarentena: pedido de
+  // saída é regra de LGPD e não depende de a mensagem ser spam ou não. Quem
+  // manda "PARAR" num golpe continua pedindo para não receber.
+  //
+  // A leitura falha ABERTA (`lerQuarentenaDaMensagem`): erro de banco devolve
+  // "não está em quarentena", porque calar uma conversa legítima por causa de
+  // um timeout é pior do que responder uma mensagem que alguém ia segurar.
+  const quarentena = entrada.messageId
+    ? await lerQuarentenaDaMensagem(admin as unknown as SupabaseClient, {
+        organizationId: entrada.organizationId,
+        messageId: entrada.messageId,
+      })
+    : { emQuarentena: false, motivo: null };
+  if (quarentena.emQuarentena) {
+    logger.info("[pos-entrada] efeitos pulados: mensagem em quarentena", {
+      organizationId: entrada.organizationId,
+      conversationId: entrada.conversationId,
+      messageId: entrada.messageId,
+      detalhe: DETALHE_DA_MENSAGEM_EM_QUARENTENA,
+    });
+    return;
+  }
+
   // ── MÓDULO OPCIONAL que assume a mensagem · ANTES de virar demanda ───────
   //
   // É o último instante em que dá para não criar o card. Módulo desligado (ou
