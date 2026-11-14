@@ -119,6 +119,13 @@ export interface PickToolsInput {
    */
   leiturasRemotas?: Set<string>;
   /**
+   * Só monta remota que montou como LEITURA (as duas metades: marca `leitura`
+   * em `tool_ids` E `readOnlyHint` do servidor). É a mão do Operador no modo
+   * assistido: a marca no id sozinha é escolha de configuração, e o assistido
+   * promete que nada sai sem aprovação. Ausente = como sempre.
+   */
+  remotasSoLeitura?: boolean;
+  /**
    * O PREDICADO ÚNICO do efeito deste turno (#3333) — ver
    * `lib/ai/runtime/efeito-das-escritas.ts`.
    *
@@ -749,6 +756,7 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         // para ser RECUSADA logo acima por `escrita_sem_escopo_do_turno`,
         // nunca executada — com ou sem identidade.
         if (input.contatoDoTurno && def.category === "read" && !identificado) continue;
+        if (input.remotasSoLeitura && def.category !== "read") continue;
         const montada = wrapMcpTool(def, entradaDaRemota, executarEscrita);
         // A prévia libera só a remota marcada aqui (ver `leitura-remota.ts`).
         result[def.name] = def.category === "read" ? marcarLeituraRemota(montada) : montada;
@@ -780,6 +788,7 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
         input.contatoDoTurno,
       );
       for (const def of defs) {
+        if (input.remotasSoLeitura && def.category !== "read") continue;
         const montada = wrapMcpTool(def, entradaDaRemota, executarEscrita);
         // #4317 — a MESMA marca do servidor externo da organização (#3575):
         // `category === "read"` aqui JÁ é as duas metades juntas, decididas em
@@ -792,7 +801,10 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
     } else if (!input.contatoDoTurno || montado.contato !== input.contatoDoTurno) {
       continue;
     }
-    const acesso = montado.servidor.modo === "oauth_por_contato" ? ferramentaDeSolicitarAcesso(montado) : null;
+    const acesso =
+      montado.servidor.modo === "oauth_por_contato" && !input.remotasSoLeitura
+        ? ferramentaDeSolicitarAcesso(montado)
+        : null;
     if (acesso && !ocupados.has(acesso.name)) {
       result[acesso.name] = wrapMcpTool(acesso, entradaDaRemota, executarEscrita);
     }

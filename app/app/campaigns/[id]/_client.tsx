@@ -98,6 +98,11 @@ export function DetalheDaCampanha({ id }: { id: string }) {
   if (c.status === "running") disponiveis.push("pausar", "cancelar");
   if (c.status === "scheduled") disponiveis.push("pausar", "cancelar");
   if (c.status === "paused") disponiveis.push("retomar", "cancelar");
+  // Cancelada com gente ainda na fila: o fechamento dos destinatários falhou
+  // depois de a campanha ser gravada. Repetir o cancelamento termina o serviço.
+  if (c.status === "cancelled" && (m?.contagem.pendentes ?? 0) + (m?.contagem.naFila ?? 0) > 0) {
+    disponiveis.push("cancelar");
+  }
   disponiveis.push("duplicar");
 
   return (
