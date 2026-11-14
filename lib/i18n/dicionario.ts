@@ -77,6 +77,12 @@ export const DICIONARIO: Traducoes = {
   "Não consegui cancelar o agendamento.": { es: "No pude cancelar la programación." },
   "Não consegui criar o agendamento. Confira os campos.": { es: "No pude crear la programación. Revise los campos." },
   "Não consegui salvar a edição. Confira os campos.": { es: "No pude guardar la edición. Revise los campos." },
+  // "Exibir todos" (segunda parte, #4431): a lista que cruza as conversas visíveis.
+  "Exibir todos": { es: "Ver todos" },
+  "Só desta conversa": { es: "Solo de esta conversación" },
+  "Envios de todos os clientes": { es: "Envíos de todos los clientes" },
+  "Nenhum envio agendado nas conversas que você enxerga.": { es: "Ningún envío programado en las conversaciones que puedes ver." },
+  "Não consegui carregar os envios.": { es: "No pude cargar los envíos." },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },

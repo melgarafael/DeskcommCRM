@@ -1,12 +1,18 @@
 /**
  * GET  /api/v1/mensagens-agendadas?conversation_id=…  — os agendamentos da conversa
  *      (pendentes e os que já tiveram desfecho), com o status da mensagem enviada.
+ * GET  /api/v1/mensagens-agendadas?limit=…&offset=…   — os envios de TODAS as
+ *      conversas que a sessão enxerga ("Exibir todos"), paginados.
  * POST /api/v1/mensagens-agendadas                    — agenda um texto nesta conversa.
  *
  * Primeira parte da #3118: envio único, só nas conversas que o atendente já
  * enxerga. A leitura é pela SESSÃO: a policy de `mensagens_agendadas` exige a
  * conversa visível, então vale a mesma régua da caixa de entrada. A escrita é do
  * servidor, depois de a sessão provar que enxerga a conversa.
+ *
+ * Segunda parte (recorte do "Exibir todos"): sem `conversation_id` a rota lista
+ * a empresa pelas conversas visíveis — a RLS continua sendo a régua, e o filtro
+ * NÃO é por autor: o gestor vê o envio agendado por outro atendente.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -18,6 +24,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { criarAgendamentoSchema, horarioNoFuturo } from "@/lib/agendamento-mensagem/schema";
+import { listarAgendamentosVisiveis, paginaDaConsulta, temMaisPagina } from "@/lib/agendamento-mensagem/lista";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +35,34 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const auth = await requireRole("agent", { requestId, resource: "mensagens_agendadas" });
   if (!auth.ok) return auth.response;
-  const conversationId = req.nextUrl.searchParams.get("conversation_id");
+  const sessao = await createClient();
+  const parametros = req.nextUrl.searchParams;
+  const conversationId = parametros.get("conversation_id");
+
+  // "Exibir todos": sem conversa no pedido, a lista cruza a empresa pelas
+  // conversas que a sessão enxerga (a RLS de `mensagens_agendadas`).
+  if (conversationId === null) {
+    const { limite, deslocamento } = paginaDaConsulta(parametros);
+    const { linhas, total, erro } = await listarAgendamentosVisiveis(sessao, {
+      organizationId: auth.org.orgId,
+      limite,
+      deslocamento,
+    });
+    if (erro) return fail("internal_error", "Erro ao listar agendamentos.", 500, { requestId });
+    return ok(linhas, {
+      requestId,
+      meta: {
+        total,
+        limit: limite,
+        offset: deslocamento,
+        has_more: temMaisPagina(deslocamento, linhas.length, total, limite),
+      },
+    });
+  }
+
   if (!z.uuid().safeParse(conversationId).success) {
     return fail("validation_failed", "conversation_id inválido.", 422, { requestId });
   }
-  const sessao = await createClient();
   const { data, error } = await sessao
     .from("mensagens_agendadas")
     .select(COLUNAS)
