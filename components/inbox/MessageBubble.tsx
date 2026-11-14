@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, DownloadSimple, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { mediaDownloadSrc } from "@/components/inbox/media/media-utils";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -178,6 +178,36 @@ function AckIndicator({ status, deliveredAt, readAt, paradaSemConexao, saiSozinh
     return <Check size={12} weight="bold" className="text-current/70" aria-label={t("Enviada")} />;
   }
   return null;
+}
+
+/**
+ * O trecho da citação: BOTÃO quando o fio sabe rolar até a original, TEXTO
+ * quando não sabe.
+ *
+ * #4575 — a citação virou o caminho para a mensagem original, mas o `MessageBubble`
+ * também é renderizado onde não existe fio rolável (o super-admin lê a conversa
+ * de outra organização em `app/admin`, sem a paginação do `ChatThread`). Com
+ * `disabled` amarrado ao handler, o controle nascia cinza em toda linha dessas
+ * telas — ausência com cara de permissão. Aqui ele deixa de ser controle: onde
+ * não há para onde ir, não há botão.
+ */
+function CitacaoDaBolha({
+  aoTocar,
+  rotulo,
+  className,
+  children,
+}: {
+  aoTocar?: () => void;
+  rotulo: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (!aoTocar) return <div className={className}>{children}</div>;
+  return (
+    <button type="button" onClick={aoTocar} aria-label={rotulo} className={className}>
+      {children}
+    </button>
+  );
 }
 
 export function MessageBubble({
@@ -591,11 +621,9 @@ export function MessageBubble({
           não do autor.
         */}
         {idDaCitada && (
-          <button
-            type="button"
-            onClick={onIrParaCitada ? () => onIrParaCitada(idDaCitada) : undefined}
-            disabled={!onIrParaCitada}
-            aria-label={t("Ir para a mensagem citada")}
+          <CitacaoDaBolha
+            aoTocar={onIrParaCitada ? () => onIrParaCitada(idDaCitada) : undefined}
+            rotulo={t("Ir para a mensagem citada")}
             className={cn(
               "mb-1 block w-full rounded-md border-l-2 px-2 py-1 text-left text-xs",
               isOutbound
@@ -605,7 +633,7 @@ export function MessageBubble({
               // e o gesto é o ponto do pedido, então não se economiza alvo.
               onIrParaCitada
                 ? "cursor-pointer hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-1"
-                : "cursor-default",
+                : "",
             )}
           >
             <span className="block font-medium opacity-80">
@@ -634,7 +662,7 @@ export function MessageBubble({
                 ? resolveSharedContact(citada)?.name || t("Contato")
                 : citada.body?.trim() || t("(sem texto)")}
             </span>
-          </button>
+          </CitacaoDaBolha>
         )}
         {remetente && (
           <p className="mb-0.5 text-[11px] font-medium text-muted-foreground">
