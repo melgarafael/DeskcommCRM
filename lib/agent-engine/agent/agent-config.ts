@@ -697,19 +697,18 @@ export async function loadPublishedAgentConfigById(
  * modelo (ou o contrário) é configuração pela metade, e meia reserva não é
  * reserva — o seam recebe o campo ausente e segue com o comportamento de hoje.
  */
-export function overrideLlmDoAgente(config: PublishedAgentConfig): {
+export function overrideLlmDoAgente(
+  config: PublishedAgentConfig,
+  reservaDeModelo?: { provider: string; model: string },
+): {
   provider: string;
   credentialId: string | null;
   reservaDeModelo?: { provider: string; model: string };
 } {
-  const provedor = config.reserveProvider?.trim() ?? '';
-  const modelo = config.reserveModel?.trim() ?? '';
   return {
     provider: config.provider,
     credentialId: config.credentialId,
-    ...(provedor !== '' && modelo !== ''
-      ? { reservaDeModelo: { provider: provedor, model: modelo } }
-      : {}),
+    ...(reservaDeModelo ? { reservaDeModelo } : {}),
   };
 }
 

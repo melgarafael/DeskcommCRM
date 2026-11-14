@@ -32,6 +32,7 @@ import {
   type MotivoDaQuedaDoModelo,
 } from "@/lib/ai/pontos/reserva-da-assinatura";
 import { overrideLlmDoAgente, type PublishedAgentConfig } from "@/lib/agent-engine/agent/agent-config";
+import { reservaDeModeloDaVersao } from "@/lib/agent-engine/agent/reserva-do-modelo-da-versao";
 
 /** A reserva de um agente configurado — OpenRouter para DeepSeek, de propósito. */
 const RESERVA = { provider: "deepseek", model: "deepseek-chat" };
@@ -209,7 +210,7 @@ describe("a política da ASSINATURA não muda", () => {
   });
 });
 
-describe("overrideLlmDoAgente — o par chega ao seam (ou não chega)", () => {
+describe("a reserva chega ao seam (ou não chega)", () => {
   const base = {
     provider: "openrouter",
     model: "anthropic/claude-sonnet-5",
@@ -217,15 +218,14 @@ describe("overrideLlmDoAgente — o par chega ao seam (ou não chega)", () => {
   } as unknown as PublishedAgentConfig;
 
   it("sem reserva configurada, o override é o de hoje (sem a chave)", () => {
-    const override = overrideLlmDoAgente(base);
+    const override = overrideLlmDoAgente(base, reservaDeModeloDaVersao(base));
     expect(override).toEqual({ provider: "openrouter", credentialId: "cred-1" });
     expect("reservaDeModelo" in override).toBe(false);
   });
 
   it("com provedor e modelo, a reserva entra", () => {
-    expect(
-      overrideLlmDoAgente({ ...base, reserveProvider: "deepseek", reserveModel: "deepseek-chat" }),
-    ).toEqual({
+    const config = { ...base, reserveProvider: "deepseek", reserveModel: "deepseek-chat" };
+    expect(overrideLlmDoAgente(config, reservaDeModeloDaVersao(config))).toEqual({
       provider: "openrouter",
       credentialId: "cred-1",
       reservaDeModelo: { provider: "deepseek", model: "deepseek-chat" },
@@ -233,11 +233,18 @@ describe("overrideLlmDoAgente — o par chega ao seam (ou não chega)", () => {
   });
 
   it("par pela metade é configuração inválida: não entra (e o banco também recusa)", () => {
+    const semModelo = { ...base, reserveProvider: "deepseek", reserveModel: null };
+    expect(reservaDeModeloDaVersao(semModelo)).toBeUndefined();
     expect(
-      overrideLlmDoAgente({ ...base, reserveProvider: "deepseek", reserveModel: null }),
+      overrideLlmDoAgente(semModelo, reservaDeModeloDaVersao(semModelo)),
     ).toEqual({ provider: "openrouter", credentialId: "cred-1" });
-    expect(
-      overrideLlmDoAgente({ ...base, reserveProvider: "  ", reserveModel: "deepseek-chat" }),
-    ).toEqual({ provider: "openrouter", credentialId: "cred-1" });
+
+    const semProvedor = { ...base, reserveProvider: "  ", reserveModel: "deepseek-chat" };
+    expect(reservaDeModeloDaVersao(semProvedor)).toBeUndefined();
+  });
+
+  it("espaço em volta não invalida: o par entra trimado", () => {
+    const config = { ...base, reserveProvider: " deepseek ", reserveModel: " deepseek-chat " };
+    expect(reservaDeModeloDaVersao(config)).toEqual({ provider: "deepseek", model: "deepseek-chat" });
   });
 });
