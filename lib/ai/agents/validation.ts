@@ -266,7 +266,11 @@ const versionShapeSchema = z
     // doutrina de `operator_enabled` logo abaixo: feature que gasta dinheiro
     // não se liga por acidente.
     voz_enabled: z.boolean().default(false),
-    voz_quando: z.enum(["nunca", "espelhar", "sempre"]).default("espelhar"),
+    // `quando_pede` (#4345) é o quarto comportamento: espelhar o áudio do
+    // cliente OU falar quando ele pedir por escrito / avisar que não lê. Os
+    // três valores antigos continuam com o mesmo significado — o default segue
+    // `espelhar`, então nenhuma versão existente muda de comportamento.
+    voz_quando: z.enum(["nunca", "espelhar", "sempre", "quando_pede"]).default("espelhar"),
     operator_enabled: z.boolean().default(false),
     // `.nullable()` e não opcional: null é o valor que SIGNIFICA "herda o modelo
     // do Conversador". Omitir seria indistinguível de "ainda não decidi".

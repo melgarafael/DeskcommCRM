@@ -22,9 +22,14 @@
  */
 import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 
-/** O mínimo que a busca enxerga do agente: o nome que aparece no cartão. */
+/** O mínimo que a busca enxerga do agente: o nome do cartão e a descrição (#4593). */
 export interface AgenteBuscavel {
   name: string;
+  /**
+   * Coluna `description` de `ai_agents` (`text`, nula). Opcional porque a
+   * interface também serve a chamadores que só carregam o nome.
+   */
+  description?: string | null;
 }
 
 /**
@@ -32,9 +37,16 @@ export interface AgenteBuscavel {
  *
  * Termo vazio (ou só espaços) devolve a lista inteira, na mesma referência: o
  * filtro por status e por arquivados continua sendo do componente.
+ *
+ * O termo casa com o NOME **ou** com a DESCRIÇÃO, pela mesma régua
+ * (`termoSemAcento`) dos dois lados — não há segunda régua. Descrição nula vira
+ * string vazia, que nunca casa com termo não vazio: não derruba a função.
  */
 export function filtrarAgentes<T extends AgenteBuscavel>(agentes: T[], busca: string): T[] {
   const termo = termoSemAcento(busca.trim());
   if (!termo) return agentes;
-  return agentes.filter((agente) => termoSemAcento(agente.name).includes(termo));
+  return agentes.filter((agente) => {
+    if (termoSemAcento(agente.name).includes(termo)) return true;
+    return termoSemAcento(agente.description ?? "").includes(termo);
+  });
 }

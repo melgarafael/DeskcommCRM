@@ -1,4 +1,4 @@
-import { comercialExigeHumano, contemAssuntoComercialNaSaida, restricaoComercialBarra } from '@/lib/escalacao/assunto-comercial';
+import { comercialExigeHumano, contemAssuntoComercialNaSaida, restricaoComercialBarra, trechoComercialNaSaida } from '@/lib/escalacao/assunto-comercial';
 import { assertAgentOperationPg, type AgentOperationContext } from '@/lib/ai/agents/operation';
 import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/replies/delivery';
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
@@ -1925,6 +1925,10 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
             gate: veto.gate,
             code: veto.code,
             agentId: args.agentId ?? null,
+            // O texto e o trecho vão SÓ na linha da timeline: o rastro da cadeia
+            // (`persistTrace`) segue sem corpo e sem trecho (Spec 34, C7).
+            textoBarrado: bodyDoModelo,
+            trecho: veto.gate === 'commercial_restriction' ? trechoComercialNaSaida(bodyDoModelo) : null,
           });
           if (!r.routed) {
             args.log.info('veto sem negócio para pendurar: registrado no event_log', {
