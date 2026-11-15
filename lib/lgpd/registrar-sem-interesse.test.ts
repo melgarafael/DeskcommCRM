@@ -139,7 +139,7 @@ const PEDIDO = {
   organizationId: ORG,
   contactId: CONTATO,
   origem: "conversa_de_prospeccao" as const,
-  actor: { type: "system" as const, id: "opt-out" },
+  actor: { type: "webhook_source" as const, id: "canal-inbound" },
   requestId: "req-1",
   conversationId: "conv-prosp",
   campanhaId: "campanha-1",
@@ -171,9 +171,9 @@ describe("registrarSemInteresse", () => {
     expect(r).toMatchObject({ gravado: true, negociosFechados: 1 });
     const marketing = (estado.contato?.consent as Record<string, Record<string, unknown>>).marketing;
     expect(marketing).toMatchObject({ granted: false, motivo: "sem_interesse", origem: "conversa_de_prospeccao" });
-    expect(marketing.anterior).toEqual({ granted: true, granted_at: "2026-01-01T00:00:00.000Z" });
+    expect(marketing?.anterior).toEqual({ granted: true, granted_at: "2026-01-01T00:00:00.000Z" });
     expect(auditSpy).toHaveBeenCalledTimes(1);
-    expect(auditSpy.mock.calls[0]?.[0].metadata).toMatchObject({ consentimento: "recusado", origem: "conversa_de_prospeccao" });
+    expect(auditSpy.mock.calls[0]?.[0]?.metadata).toMatchObject({ consentimento: "recusado", origem: "conversa_de_prospeccao" });
     expect(encerraDemandaSpy).toHaveBeenCalledTimes(1);
   });
 

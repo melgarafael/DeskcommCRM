@@ -45,7 +45,7 @@ beforeEach(() => {
     user: { id: USUARIO, idioma: "pt-BR" },
     org: { orgId: ORG, role: "agent" },
   } as Awaited<ReturnType<typeof requireRole>>);
-  vi.mocked(registrarSemInteresse).mockResolvedValue({ gravado: true, negociosFechados: 1 });
+  vi.mocked(registrarSemInteresse).mockResolvedValue({ gravado: true, negociosFechados: 1, followupsEncerrados: 0 });
   vi.mocked(desfazerSemInteresse).mockResolvedValue({ desfeito: true });
 });
 
@@ -99,7 +99,7 @@ describe("POST — marcar sem interesse", () => {
   });
 
   it("recusa que já existe responde 200 sem gravar outra (idempotente)", async () => {
-    vi.mocked(registrarSemInteresse).mockResolvedValue({ gravado: false, motivo: "ja_recusado" });
+    vi.mocked(registrarSemInteresse).mockResolvedValue({ gravado: false, motivo: "ja_recusado", negociosFechados: 0, followupsEncerrados: 0 });
     const r = await POST(req("POST"), contexto());
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ data: { gravado: false } });
