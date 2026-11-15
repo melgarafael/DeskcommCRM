@@ -8,6 +8,207 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.112.0] — 2026-11-15
+
+### Adicionado
+
+- **Pesquisa de satisfação ao encerrar o atendimento, com o resultado na tela (opção desligada de fábrica)** Encerrar uma conversa podia não deixar rastro do que o cliente achou do
+  atendimento: não havia como perguntar nem onde ver a resposta.
+
+  Configurações › Distribuição de atendimento ganha o cartão "Pesquisa de
+  satisfação ao encerrar". Ele vem desligado, e quem não ligar não vê nada mudar:
+  nenhuma mensagem nova sai ao encerrar. Ligado por quem administra a empresa,
+  quem tem o atendimento encerrado recebe uma pergunta: de 1 a 5, como avalia o
+  atendimento. A resposta vira a nota daquele atendimento, e o mesmo cartão
+  mostra a média, as respostas, as perguntas feitas e as sem resposta dos
+  últimos 30 dias. Quem não respondeu conta como sem resposta, nunca como nota
+  baixa.
+
+  Um número que o cliente mande só vira nota se vier logo depois da pergunta e
+  dentro do prazo de resposta (24 horas de fábrica). Se a equipe ou a IA voltar a
+  falar com o cliente, um "2" que ele mande é conversa normal e segue o
+  atendimento, como qualquer mensagem. A pergunta não sai para contato que pediu
+  para parar, contato pessoal, nem fora do horário de envio do número.
+
+  Crédito: @webtecnica, que escreveu a pesquisa, a nota e o resultado (#4234,
+  issue #4023).
+
+- **O histórico importado do WhatsApp agora revela perfis e oportunidades, com confirmação e limite de gasto** Depois de importar o histórico de um número em Conexões, o administrador pode pedir que a IA leia as conversas antigas e anote no CRM a qualificação, a próxima ação e o score de cada cliente. A análise nunca manda mensagem ao cliente nem move o negócio no funil.
+
+  Antes de rodar, a tela mostra quantos clientes serão analisados, o custo estimado e o gasto de IA do mês, e pede confirmação. Cada rodada analisa no máximo 50 clientes; numa importação maior, o resto fica para a próxima rodada, que também é confirmada. O gasto sai do mesmo orçamento de IA do atendimento.
+
+  Ficam de fora os clientes que recusaram atendimento por IA (marcados como sempre humano, bloqueados, pessoais, ou com recusa registrada de consentimento) e os que já têm qualificação mais nova que a conversa importada: a análise de conversa velha nunca escreve por cima de informação mais recente.
+
+  Crédito: @bestbill, que escreveu a análise (#4152).
+
+- **O card do funil mostra o nome do responsável humano, e avisa quando ele saiu da equipe** O card do funil e o dossiê do negócio passam a trazer o nome de quem responde pelo negócio direto da carga do quadro, sem esperar a lista da equipe carregar — e também para quem não pode ver essa lista. O nome é lido uma vez por quadro, não uma vez por card, e só de quem tem ou teve vínculo com a mesma empresa: nome de pessoa de outra empresa e e-mail nunca aparecem. Quando o responsável saiu da equipe, o card mantém o nome e acrescenta "Fora da equipe". Sem nome cadastrado, o card continua dizendo "Responsável". Ao trocar o responsável pelo card, o nome do anterior não fica para trás enquanto o quadro recarrega. Instalação sem a chave de service role segue como antes. Nenhuma ação é pedida a quem opera a instalação. Contribuição de @webtecnica (#4265).
+
+- **Exportar e importar funis com as etapas, em Configurações › Funis** A tela Configurações › Funis ganhou dois botões, para quem é gestor ou administrador: "Exportar funis" baixa um arquivo com os funis ativos e as etapas de cada um, na ordem do quadro, e "Importar funis" aplica esse arquivo nesta ou em outra organização.
+
+  Cada funil do arquivo chega como um funil novo, e nada do que já existe é alterado. Se já houver um funil com o mesmo nome e etapas diferentes, o importado entra como cópia ("Vendas (importado)"). Aplicar o mesmo arquivo de novo não duplica: o funil que já está lá com as mesmas etapas fica como está, e a tela diz quantos foram pulados.
+
+  O arquivo leva o nome e a descrição do funil e, de cada etapa, o nome, a cor e a marca de ganho ou de perda. Vocabulário, campos personalizados e os ajustes finos das etapas não viajam. O limite é de 200 funis por arquivo e 200 etapas por funil. Exportar e importar ficam registrados na auditoria, só com a contagem.
+
+  Crédito: @webtecnica, que escreveu as rotas e o formato do arquivo (#4283), e @aleflores35, que trouxe o caso de uso (#1995).
+
+- **O agente de voz pode consultar a agenda e marcar ou remarcar horários durante a ligação** Na tela do agente de voz, a aba Voz ganha a opção "Marcar e remarcar horários na ligação". Ligada, o agente procura horários livres, marca e remarca enquanto fala com o cliente, com as mesmas regras de horário e de conflito da agenda do atendimento por texto. Antes de gravar, ele lê o dia e a hora em voz alta e só marca depois que a pessoa responde; se a ligação termina sem resposta, nada é marcado. Quando o cliente tem mais de um compromisso, a remarcação fica com a equipe. Só vale quando o número de quem ligou está no cadastro, e cada marcação feita pela ligação fica registrada com o agente de voz e a ligação de origem. A opção vem desligada, e desligada nada muda. Nada a fazer na VPS.
+
+  Crédito: @webtecnica, que escreveu a agenda na ligação (#4304, a partir da #4221).
+
+- **O gatilho "negócio criado" do follow-up pode valer só para um funil e/ou uma etiqueta** Até aqui, um fluxo de follow-up com o gatilho "negócio criado" começava para qualquer negócio novo, de qualquer funil. Como cada contato só fica em um fluxo por vez, um negócio aberto no funil errado inscrevia o contato no fluxo errado e travava o fluxo certo.
+
+  Agora, em Follow-ups › gatilho "Lead criado", dá para escolher um funil e/ou uma etiqueta do negócio. O fluxo só começa para negócios criados naquele funil e com aquela etiqueta (maiúscula ou minúscula tanto faz). Em branco continua valendo para qualquer funil e qualquer etiqueta: os fluxos já publicados não mudam.
+
+  Contribuição de @webtecnica, a partir da issue #4587.
+
+- **Caminho de volta ao índice em todas as telas de Configurações** Toda subtela de Configurações — Tags, Marca, Notificações, Funis, Agenda, Perfil, Segurança e as demais — abre agora com um link "← Voltar para Configurações" que leva ao índice (`/app/settings`). Antes, quem entrava numa subtela só saía reabrindo Configurações pelo menu.
+
+  O link e o título da tela vêm de um cabeçalho comum (`components/settings/CabecalhoDaSubTela.tsx`), com o rótulo no dicionário (português e espanhol). Nada mais da tela muda: o corpo de cada subtela continua como estava.
+
+  A regra vale para as próximas: `tests/unit/volta-das-subtelas-de-configuracoes.test.ts` percorre os `page.tsx` de `app/app/settings/` e reprova a subtela que não usar o cabeçalho. As três rotas antigas que só redirecionam (canal oficial, templates e WhatsApp) continuam sem cabeçalho, e o teste cobra que sigam sendo redirecionamento.
+
+- **O agente passa a ver o preço padrão do tipo de atendimento** A ferramenta `crm_list_event_types` passa a devolver `preco_padrao_cents`: o preço padrão do tipo de agendamento, em centavos, o mesmo valor que a comanda já sugere. Quando o tipo não tem preço cadastrado, o campo vem `null`, e não `0`.
+
+  Com isso, quando o agente consulta a lista de tipos, ele pode dizer o valor cadastrado no tipo em vez de pedir que a equipe confirme. Quem integra pela ferramenta e lê a lista de tipos passa a receber também esse campo.
+
+  Se o preço do tipo estiver desatualizado, é ele que o agente vai dizer, por isso vale conferir os valores em Configurações › Tipos de agendamento. Nenhuma ação é necessária na atualização.
+
+  Contribuição de @webtecnica (#4603), a partir da issue de @paulolimajr77 (#4560).
+
+- **As mensagens agendadas ganham "Exibir todos", com os envios de todas as conversas que você enxerga** No popup de mensagens agendadas da conversa, o botão "Exibir todos" abre a lista de envios da empresa inteira, paginada de 20 em 20, com o nome do cliente, o horário e o desfecho de cada envio.
+
+  A régua é a mesma da caixa de entrada, e não a de quem agendou: cada pessoa vê os envios das conversas que já enxerga — então o gestor vê o envio que um atendente da equipe agendou, e quem não enxerga a conversa continua sem ver o envio dela. O filtro é aplicado no servidor, não na tela.
+
+  O limite da página é do servidor: o teto de 50 por página vale mesmo se a tela pedir mais.
+
+  A lista vem do envio mais recente ou futuro para o mais antigo, como a lista da conversa: o histórico já resolvido não empurra os envios pendentes para a última página.
+
+  Crédito: @webtecnica.
+
+- **Quem revende o CRM pode criar plano de cobrança em dólar ou euro, além de real** Na aba Planos da cobrança, o plano novo ganha o campo Moeda, com real, dólar e euro. Com a Stripe conectada, o pagamento sai na moeda do plano, e a página de pagamento abre no idioma do navegador de quem paga quando o plano não é em real. O link do cadastro pode pedir a moeda (`/signup?moeda=USD`), ou vir com um plano escolhido (`?plano=`), e aí o seletor mostra só os planos daquela moeda. A moeda fica fixa depois que o plano é criado, e a troca de plano só oferece planos na mesma moeda. Com o Asaas, que só cobra em real, o plano em outra moeda é recusado ao ser criado. Os preços dos planos passam a ser escritos na convenção da moeda deles, em todas as telas. Crédito: @kahuemorais.
+
+- **Campanha e palavra-chave do Google Ads na ficha do contato e do negócio** Quando a primeira mensagem traz a referência de um clique do Google Ads, as
+  fichas passam a mostrar campanha, grupo de anúncios, anúncio, palavra-chave
+  e conta de anúncios conforme os parâmetros recebidos no link. Nas automações,
+  a ação de adicionar etiquetas permite escolher quais desses dados viram
+  etiquetas do contato ou do negócio. Regras existentes continuam funcionando.
+
+- **O agente fala quando o cliente pede áudio, mesmo tendo escrito pedindo** Na tela do agente, "Quando falar" ganha a opção que responde em áudio quando o cliente manda áudio, pede áudio por escrito ou avisa que não consegue ler. Quem pede para continuar no texto segue recebendo texto. "Só quando o cliente mandar áudio" continua sendo o padrão, e quem já está em "Sempre" ou "Nunca" não muda. Nada a fazer na VPS.
+
+  Crédito: @webtecnica, com a ideia de @joao-v-nt no #3652, de onde a issue parte.
+
+### Alterado
+
+- **Cada aviso do celular liga e desliga sozinho, e o dono do negócio só é avisado quando a IA passa a conversa** Em **Configurações › Notificações**, cada tipo de aviso tem agora o seu próprio
+  interruptor de Push, e a escolha vale de verdade no celular: dá para receber só
+  "Lead atribuído a você" e desligar "Nova mensagem". Antes, desligar o Push de
+  mensagem desligava todos os avisos do aparelho, porque o servidor não sabia
+  quais tipos cada aparelho queria. Entraram também dois tipos que antes não se
+  podiam calar: "A IA passou uma conversa para a equipe" e "Negócio entrou numa
+  etapa que avisa". O aparelho só sai dos avisos quando todos estão desligados.
+
+  Enquanto a IA ainda está atendendo, as mensagens do cliente não avisam mais o
+  dono do negócio a cada uma: ele é chamado quando a IA passa a conversa. Conversa
+  atribuída a um atendente segue avisando como antes.
+
+  Quem já tinha desligado os avisos deste aparelho continua sem nenhum depois da
+  atualização: nada volta a tocar sozinho, e cada tipo só liga de novo quando a
+  pessoa o liga na tela. Nada a fazer na VPS.
+
+  Crédito: @mbiero, que mediu o barulho da triagem e escreveu o interruptor por
+  tipo e a regra da IA antes do dono (#4310).
+
+- **A fila de eventos pendentes é lida por um índice próprio** O worker que processa a fila de eventos lê os pendentes em ordem de chegada.
+  Agora essa leitura tem um índice só para ela, e o banco deixa de ordenar a fila
+  inteira em memória a cada passada, o que pesa em instalações com muitos eventos.
+  A atualização cria o índice sozinha e não pede nenhuma ação de quem opera a
+  instalação. Contribuição de @jlom2024 (#4406).
+
+- **A busca da lista de Agentes de IA também acha pela descrição** Na tela de Agentes de IA, a caixa de busca comparava o termo só com o nome do agente: quem procurava por uma palavra que aparece apenas na descrição recebia a lista vazia. Agora o termo casa com o nome ou com a descrição, ignorando acento e maiúsculas, como já acontecia com o nome. Contribuição de @webtecnica (#4607).
+
+- **O agente sabe quem escreveu cada mensagem enviada da conversa** O histórico que o agente lê a cada turno só dizia o sentido das mensagens
+  enviadas pela empresa. A resposta de um agente, a de outro agente e a de uma
+  pessoa da equipe chegavam ao modelo como a mesma voz, e ele podia tomar como sua
+  uma promessa que outro fez. Agora cada mensagem enviada leva o autor, com os
+  mesmos rótulos do balão da conversa: `IA · {nome do agente}`,
+  `Atendente · {primeiro nome}`, `Automação`, `Sistema` ou `Celular`. O nome da
+  equipe vai só como primeiro nome, e o telefone de quem atende não entra. Nada
+  muda na tela nem na configuração.
+
+  Contribuição de @webtecnica (#4613, parte da #4580).
+
+### Corrigido
+
+- **Compromisso numa agenda do Google indisponível para de voltar a cada cinco minutos** Quando a agenda do Google que publica os compromissos saía da lista de agendas da conta Google (apagada ou sem acesso), os compromissos já publicados nela ficavam voltando para a fila a cada cinco minutos, para sempre, e cada volta terminava com o aviso *"O compromisso mudou. A sincronização vai reler a versão atual."* Nada tinha mudado: a agenda é que não estava lá. Quem olhava a agenda via a mesma frase errada se repetindo, e o compromisso nunca sossegava.
+
+  Agora o compromisso é recusado antes de qualquer leitura no Google, com o motivo certo no lugar do aviso falso: **"A agenda de destino não aparece mais na conta Google. A sincronização volta sozinha se ela reaparecer; para adiantar, use "Atualizar lista e sincronização" nas configurações da agenda."** Ele fica parado — sem nova tentativa, sem leitura, sem erro — enquanto a agenda estiver assim, e volta sozinho à fila quando a agenda reaparece na conta: a conferência diária da lista de agendas basta, ou o botão "Atualizar lista e sincronização" para adiantar, e não é preciso rearmar compromisso por compromisso.
+
+  Nenhuma ação é necessária na atualização. A busca é por compromisso, não por data: o que já estava parado na fila some dela na primeira rodada e aparece com o motivo certo.
+
+- **O botão "Excluir nota" do Inbox aparece com o foco do teclado e em tela de toque** O botão de lixeira da nota interna só existia na tela quando o mouse passava por cima: quem navega por Tab chegava nele invisível, e no celular ele nunca aparecia. Agora ele fica visível por padrão, é escondido apenas onde existe hover e volta a aparecer com o hover do cartão ou com o foco do teclado — mesmo padrão do botão de opções da mensagem. Para quem usa mouse, o desenho continua o mesmo.
+
+- **Endereço na mensagem do Inbox vira link clicável, inclusive o www. sem protocolo** No Inbox o endereço mandado na conversa — orçamento, check-in, boleto, localização
+  do hotel — aparecia como texto comum: era preciso selecionar, copiar e colar no
+  navegador, enquanto no WhatsApp o mesmo endereço já é clicável. Agora `https://…`,
+  `www.…` e domínio solto com extensão conhecida viram link nas mensagens recebidas
+  e enviadas, nas legendas das mensagens com mídia, nas notas internas e na citação
+  de resposta. O link abre em outra aba com `rel="noopener noreferrer"`.
+
+  O link é criado por código, a partir de pedaços de texto — nada de montar HTML com
+  o corpo da mensagem. Só `http:` e `https:` viram âncora: `javascript:`, `data:` e
+  `file:` continuam texto, e o resto do corpo (espaços, quebras de linha, `<b>`)
+  sai exatamente como foi escrito. Contribuição de @webtecnica (#4576).
+
+- **"Cancelar" sozinho, "cancelar a inscrição" e "não quero receber o boleto" não bloqueiam mais o contato** No atendimento pelo WhatsApp, três famílias de frases do dia a dia gravavam o
+  bloqueio do contato na entrada da mensagem, antes do modelo responder: quem
+  respondia « cancelar » a um menu — ou tocava no botão com esse rótulo, que chega
+  como texto —, quem falava em « cancelar a inscrição » (a matrícula do curso, a
+  inscrição no concurso) e quem pedia para não receber « o boleto », « o pix » ou
+  « o material » para trocar a forma de pagamento. O contato sumia da conversa em
+  silêncio, os negócios abertos viravam perdidos e nenhum aviso ia à Central.
+
+  Agora « cancelar » sozinho não bloqueia nem escala: é resposta de menu, não
+  pedido de saída. « Cancelar a inscrição » sem objeto escala para uma pessoa
+  decidir — a mesma decisão que « cancelar a assinatura » já tinha —, e continua
+  bloqueando quando nomeia o objeto de comunicação (« cancelar a inscrição das
+  mensagens »). « Não quero receber o boleto/o pix/o material » deixou de ser
+  descadastro; « não quero receber mais nada » e « não quero receber mensagens »
+  seguem bloqueando. Nenhum rodapé oferece CANCELAR como palavra de saída, então
+  quem quer sair continua saindo com PARAR, PARE, STOP ou BAJA.
+
+  Contribuição de @webtecnica, a partir da issue aberta por @hebervalverde (#4579).
+
+- **A cláusula de transferência internacional separa a sede do provedor do país que ele declara** O modelo da cláusula 9 do documento do operador (`docs/saas/contrato-e-lgpd.md`) dizia que o
+  conteúdo das conversas era processado "conforme a declaração de cada provedor, consultada em"
+  uma data, para todos os provedores, quando só a DeepSeek tem país de processamento declarado com
+  fonte. Agora cada linha diz o que é: a DeepSeek aparece com o país declarado e a data da consulta
+  da política dela; Anthropic, OpenAI, Google, OpenRouter e TypeSafe AI aparecem com a sede da
+  empresa que recebe o conteúdo e, sobre a região de processamento, só com o que o catálogo do
+  sistema registra — a OpenAI declara residência de dados por projeto, a API do Gemini não declara a
+  região, no OpenRouter ela varia a cada chamada, e dos demais o sistema não registrou declaração.
+  Quem já copiou a cláusula antiga para o próprio contrato pode refazê-la pelo modelo novo.
+  Contribuição de @webtecnica (#4588).
+
+- **O provedor de IA personalizado pede JSON, e gateways que assumem streaming deixam de quebrar a chamada** Com um gateway OpenAI-compatível que trata a ausência de `stream` como streaming (o 9Router é um), a resposta voltava como `text/event-stream` e a chamada falhava com "Invalid JSON response", mesmo com HTTP 200. O provedor personalizado agora manda `Accept: application/json`, que é o que a chamada sem streaming quer. Quem já usava um gateway que responde JSON por padrão não percebe diferença.
+
+- **O card criado pela campanha de prospecção nasce com as etiquetas do ramo** A campanha de prospecção gravava as etiquetas do ramo só no contato, e o card que ela cria nascia sem etiqueta nenhuma. A condição "Etiqueta do contato" do follow-up lê a etiqueta do card, então um fluxo montado com o ramo da campanha nunca casava e sempre caía no caminho padrão. Agora o card nasce com as mesmas etiquetas que a campanha põe no contato. Vale para os cards criados a partir da atualização; os que já existem não mudam. Nenhuma ação é pedida a quem opera a instalação. Contribuição de @webtecnica (#4606).
+
+- **A queda da assinatura registra o erro que a causou, além do erro da reserva** Quando a assinatura do ChatGPT recusava o turno e a chamada caía na reserva, o
+  registro da chamada guardava só a falha da reserva — e o aviso no log dizia
+  apenas que a chamada tinha caído, sem status nem mensagem. Quem investigava lia
+  "chave de API inválida" e trocava a chave errada. Agora a linha da chamada e o
+  log trazem as duas falhas, cada uma com o seu lado nomeado (assinatura e
+  reserva), com o status HTTP e a mensagem já sem segredo. O turno continua com o
+  mesmo comportamento: uma única tentativa na reserva. Refs #4610.
+
+- **O webhook de saída espera aprovação no modo assistido** No modo assistido, quando a IA move o card e a automação da etapa tem a ação "Avisar outro sistema (webhook)", essa ação agora fica parada e aparece na Central para alguém aprovar, como já acontecia com WhatsApp, e-mail, mensagem da IA e sequência. Vale também quando a decisão da IA pode escolher o webhook. No modo automático, ou quando uma pessoa move o card, o webhook sai como antes. Isso evita que um sistema de fora receba o aviso e fale com o cliente antes da aprovação. Crédito: @CRYSCWK-code.
+
+- **Follow-up barrado pela trava de valores não avisa o cliente nem pausa a conversa** Quando o texto que a IA escreveu num follow-up ou numa automação tocava em valores e a organização deixou isso só com a equipe, o cliente que nunca tinha escrito recebia "uma pessoa vai assumir" e a conversa era pausada. Agora, sem mensagem do cliente esperando resposta, o texto só não sai e a IA continua; na automação ela reescreve uma vez, e com o cliente esperando a conversa passa à equipe como antes. O cartão da passagem passa a dizer que foi a trava de valores, e a linha "Não enviei" mostra o trecho que a acionou. Crédito: @paulolimajr77.
+
+- **O diálogo Nova conversa no Inbox exibe o nome salvo na agenda do contato** Ao buscar um contato no diálogo "Nova conversa" (`PainelIniciarConversa`), contatos sincronizados via WhatsApp que possuíam apenas o nome salvo na agenda do aparelho (`address_book_name`), sem `name` ou `display_name` cadastrado, eram apresentados com o telefone no rótulo principal e novamente no rótulo secundário.
+
+  O componente passa a utilizar `rotuloParaAEquipe`, alinhando-se com a lista de conversas e o cabeçalho do Inbox, apresentando o nome amigável da agenda na busca e na confirmação do contato existente.
+
 ## [1.111.0] — 2026-11-14
 
 ### Adicionado
@@ -16247,7 +16448,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.111.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.112.0...HEAD
+[1.112.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.111.0...v1.112.0
 [1.111.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.110.0...v1.111.0
 [1.110.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.109.0...v1.110.0
 [1.109.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.108.0...v1.109.0
