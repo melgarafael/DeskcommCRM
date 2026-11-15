@@ -945,6 +945,12 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     return pedidos;
   }
 
+  function pedido<T>(pedidos: T[], i: number): T {
+    const p = pedidos[i];
+    if (!p) throw new Error(`o pedido ${i + 1} do resumo não chegou`);
+    return p;
+  }
+
   const TRES_NAO_ABORDADAS = {
     total: 5,
     nao_abordadas: 3,
@@ -963,7 +969,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     const pedidos = resumoNaMao();
     const user = await abrirMenu();
     await waitFor(() => expect(pedidos).toHaveLength(1));
-    pedidos[0].resolver(TRES_NAO_ABORDADAS);
+    pedido(pedidos, 0).resolver(TRES_NAO_ABORDADAS);
     expect(await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" })).toHaveAttribute(
       "href",
     );
@@ -978,7 +984,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
       expect(item).not.toHaveAttribute("href");
     }
 
-    pedidos[1].resolver({ ...TRES_NAO_ABORDADAS, nao_abordadas: 0 });
+    pedido(pedidos, 1).resolver({ ...TRES_NAO_ABORDADAS, nao_abordadas: 0 });
     const soNaoAbordadas = await screen.findByRole("menuitem", { name: "Só as não abordadas (0)" });
     expect(soNaoAbordadas).toHaveAttribute("aria-disabled", "true");
     expect(soNaoAbordadas).not.toHaveAttribute("href");
@@ -989,12 +995,12 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     const pedidos = resumoNaMao();
     const user = await abrirMenu();
     await waitFor(() => expect(pedidos).toHaveLength(1));
-    pedidos[0].resolver(TRES_NAO_ABORDADAS);
+    pedido(pedidos, 0).resolver(TRES_NAO_ABORDADAS);
     await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" });
 
     await fecharEReabrir(user);
     await waitFor(() => expect(pedidos).toHaveLength(2));
-    pedidos[1].falhar(new Error("falhou"));
+    pedido(pedidos, 1).falhar(new Error("falhou"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.",
     );
@@ -1011,11 +1017,11 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     const pedidos = resumoNaMao();
     const user = await abrirMenu();
     await waitFor(() => expect(pedidos).toHaveLength(1));
-    pedidos[0].resolver(TRES_NAO_ABORDADAS);
+    pedido(pedidos, 0).resolver(TRES_NAO_ABORDADAS);
     await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" });
     await fecharEReabrir(user);
     await waitFor(() => expect(pedidos).toHaveLength(2));
-    pedidos[1].falhar(new Error("falhou"));
+    pedido(pedidos, 1).falhar(new Error("falhou"));
     await screen.findByRole("alert");
 
     await fecharEReabrir(user);
@@ -1023,7 +1029,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     expect(await screen.findByText("Contando as empresas…")).toBeVisible();
     expect(screen.queryByRole("alert")).toBeNull();
 
-    pedidos[2].resolver(TRES_NAO_ABORDADAS);
+    pedido(pedidos, 2).resolver(TRES_NAO_ABORDADAS);
     expect(await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" })).toHaveAttribute(
       "href",
       `/api/v1/prospecting/${COMPLETA}/exportar?quem=nao_abordadas`,
