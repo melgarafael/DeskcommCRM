@@ -997,7 +997,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // do operador cadastrado como `openrouter` poderia devolver `usage.cost` 0 e
   // furar o teto mensal e a cota do plano.
   let baseUrlDaChamadaEfetiva: string | undefined;
-  const chamarCom = async (cfgUsada: OrgLlmConfig, fabrica: (typeof factory)) => {
+  const chamarCom = async (
+    cfgUsada: OrgLlmConfig,
+    fabrica: (typeof factory),
+    opcoes: { soOEnderecoDaCredencial?: boolean } = {},
+  ) => {
     // `decisao.baseUrl` só é preenchido quando o painel apontou um endpoint
     // (gateway OpenAI-compatível, ou modelo local). Providers canônicos
     // ignoram o terceiro argumento e vão ao endpoint intrínseco.
@@ -1006,7 +1010,11 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // publicado nele alcança o mesmo gateway que a tela testou ao salvar.
     // A MESMA constante decide o cache na fábrica, o corpo da resposta abaixo e
     // o custo informado: as decisões sobre "é a OpenRouter oficial?" não podem divergir.
-    const baseUrlDaChamada = decisao.baseUrl ?? cfgUsada.baseUrl ?? undefined;
+    // A reserva de modelo fala com o endereço do PRÓPRIO provedor: o endereço
+    // do ponto pertence ao principal, e é dele que a reserva está fugindo.
+    const baseUrlDaChamada = opcoes.soOEnderecoDaCredencial
+      ? (cfgUsada.baseUrl ?? undefined)
+      : (decisao.baseUrl ?? cfgUsada.baseUrl ?? undefined);
     baseUrlDaChamadaEfetiva = baseUrlDaChamada;
     const opcoesBase = {
       // O 4º argumento só é lido pela fábrica `openrouter`, com o knob ligado. A
@@ -1375,6 +1383,14 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       // meio do turno). Errar com o erro ORIGINAL é dizer a verdade ao operador.
       throw falha;
     }
+    // A mesma conferência que o principal passou: modelo fora da lista que a
+    // empresa liberou não é chamado, nem como reserva.
+    if (
+      configDaReserva.enabledModels.length > 0 &&
+      !configDaReserva.enabledModels.includes(decisaoDaReserva.modeloDeReserva)
+    ) {
+      throw falha;
+    }
     // A troca ANTES da nova tentativa: se a reserva também falhar, a linha de
     // `llm_calls` grava o provedor/modelo que de fato falhou por último.
     config = configDaReserva;
@@ -1391,7 +1407,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
       origem_da_escolha: origem,
     });
     startedAt = Date.now();
-    return chamarCom(configDaReserva, fabricaDaReservaDoModelo);
+    return chamarCom(configDaReserva, fabricaDaReservaDoModelo, { soOEnderecoDaCredencial: true });
   };
 
   /**
@@ -1753,6 +1769,35 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
  * "por que o funcionário não responde" teria uma classificação própria, e as
  * duas telas dariam nomes diferentes ao mesmo erro do provedor.
  */
+/**
+ * O status HTTP de uma falha do provedor, inclusive quando ela chega EMBRULHADA.
+ *
+ * O `generateText` tenta de novo sozinho (`maxRetries`, padrão 2) as falhas
+ * retentáveis — justamente 429 e 5xx — e, ao desistir, lança um `RetryError`
+ * SEM `statusCode`: o status mora em `lastError` (e em `errors[]`). Ler só o
+ * topo devolvia `null` para cota e provedor fora, e com isso a reserva de
+ * modelo configurada nunca assumia nesses dois casos (prova de tela do #4617)
+ * e a tela de Execuções mostrava 503 como "erro desconhecido".
+ */
+function statusHttpDoErro(err: unknown, profundidade = 0): number | null {
+  if (!err || typeof err !== 'object' || profundidade > 3) return null;
+  const e = err as {
+    statusCode?: unknown;
+    status?: unknown;
+    lastError?: unknown;
+    errors?: unknown;
+    cause?: unknown;
+  };
+  if (typeof e.statusCode === 'number') return e.statusCode;
+  if (typeof e.status === 'number') return e.status;
+  if (e.lastError) return statusHttpDoErro(e.lastError, profundidade + 1);
+  if (Array.isArray(e.errors) && e.errors.length > 0) {
+    return statusHttpDoErro(e.errors[e.errors.length - 1], profundidade + 1);
+  }
+  if (e.cause) return statusHttpDoErro(e.cause, profundidade + 1);
+  return null;
+}
+
 export function normalizarErro(err: unknown): {
   error_code: string;
   error_message: string;
@@ -1761,10 +1806,7 @@ export function normalizarErro(err: unknown): {
   const bloqueio = identificarConteudoBloqueado(err);
   if (bloqueio) return { error_code: 'conteudo_bloqueado', error_message: bloqueio.message, http_status: bloqueio.statusCode ?? null };
   const bruto = err instanceof Error ? err.message : String(err);
-  const status =
-    (err as { statusCode?: number; status?: number })?.statusCode ??
-    (err as { statusCode?: number; status?: number })?.status ??
-    null;
+  const status = statusHttpDoErro(err);
 
   // O único erro deste seam que NÃO vem do provedor: a recusa é NOSSA, e é
   // deliberada. Casada pela CLASSE e não por regex, porque aqui não há três
