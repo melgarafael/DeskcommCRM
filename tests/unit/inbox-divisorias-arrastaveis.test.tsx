@@ -362,7 +362,7 @@ describe("no layout — duas divisorias arrastáveis (#2579)", () => {
       lista: 272 + 2 * PASSO_TECLADO,
       ficha: 296,
     });
-    expect(grade().style.gridTemplateColumns).toBe("304px minmax(0,1fr) 296px");
+    expect(grade().style.gridTemplateColumns).toBe("304px minmax(0px, 1fr) 296px");
   });
 
   it("arrastar prende no limite e no piso da conversa, e persiste no pointerup", async () => {
@@ -434,7 +434,7 @@ describe("no layout — duas divisorias arrastáveis (#2579)", () => {
     // 600 não cabe (teto 520) e ainda roubaria a conversa: fica o que sobra.
     expect(lista).toHaveAttribute("aria-valuenow", String(1040 - 296 - CONVERSA_MINIMA));
     expect(ficha).toHaveAttribute("aria-valuenow", "296");
-    expect(grade().style.gridTemplateColumns).toBe("324px minmax(0,1fr) 296px");
+    expect(grade().style.gridTemplateColumns).toBe("324px minmax(0px, 1fr) 296px");
   });
 
   it("recolhido o divisor da lista aproveita o espaço da ficha; aberto, o teto é o de hoje (#3046)", async () => {

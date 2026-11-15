@@ -18,6 +18,7 @@ import {
   RAZAO_NAO_SELECIONADA,
   razaoDeAbordarSelecionado,
   type CampaignConfig,
+  type CampaignBriefing,
   type CampaignPace,
   type SearchInput,
   type BuscaDaPlanilha,
@@ -41,6 +42,7 @@ import { defsDoPadraoDaOrg } from "@/lib/leads/padrao-do-campo";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { motivoSemWhatsapp } from "./whatsapp";
 import { idiomaDaOrganizacao } from "./idioma";
+import { isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
 import {
   palavraDeSaida,
   problemaNoTextoDaSaidaNoIdioma,
@@ -696,6 +698,20 @@ async function validarTextoDaSaidaNoIdioma(
 export async function validateConfig(db: pg.PoolClient, org: string, input: CampaignConfig) {
   const config = campaignConfigSchema.parse(input);
   await validarTextoDaSaidaNoIdioma(db, org, config.texto_da_saida);
+  // A MÍDIA DA ABORDAGEM (#4581) é um arquivo que JÁ EXISTE — e tem de ser DESTA
+  // organização. Tipo e tamanho já foram conferidos pelo schema (regra pura, sem
+  // organização); a posse do caminho só pode ser conferida aqui, onde a
+  // organização é conhecida. Sem esta linha, uma configuração gravada à mão
+  // (PostgREST) apontaria para o arquivo de outro cliente, e a abordagem sairia
+  // com a mídia alheia — a mesma classe de furo que `midiaPertenceAoTemplate`
+  // fecha no upload de resposta rápida.
+  const midia = config.midia_da_abordagem;
+  if (midia && !isMediaPathInOrganization(midia.storage_path, org))
+    throw new ProspectingError(
+      "A mídia da abordagem precisa ser um arquivo desta organização. Escolha o arquivo de novo.",
+      422,
+      "campanha",
+    );
   const agent = (
     await db.query(
       "select v.tool_ids,v.pipeline_ids from ai_agents a join ai_agent_versions v on v.id=a.published_version_id and v.organization_id=a.organization_id where a.organization_id=$1 and a.id=$2 and v.status='published' and a.archived_at is null and a.paused_at is null and a.operation_mode='automatic'",
@@ -1457,6 +1473,105 @@ export async function adjustTags(pool: pg.Pool, org: string, id: string, etiquet
     return {
       previous: { contact_tags: c.config.contact_tags ?? null },
       next: { contact_tags: etiquetas },
+    };
+  });
+}
+
+/**
+ * Troca a INSTRUÇÃO, os CRITÉRIOS e as OFERTAS de uma campanha PAUSADA (#4570).
+ *
+ * O TEXTO NOVO VALE SÓ PARA QUEM AINDA NÃO FOI ABORDADO (decisão do dono, 15/11,
+ * doc 358 › 1A). O contexto do turno é montado da `config` a cada turno
+ * (`context.ts`), então trocar a `config` sozinha mudaria a oferta no meio de uma
+ * conversa que já andou. Por isso, na MESMA transação:
+ *
+ * 1. quem já foi abordado (`sending`/`sent`) e ainda não tem o seu, ganha em
+ *    `data.briefing` o texto com que começou — o texto ANTERIOR à edição. O turno
+ *    lê esse congelado antes da `config`. Só esta função troca o briefing, e ela
+ *    congela todo abordado antes de trocar: quem foi abordado entre duas edições
+ *    recebe o texto da primeira na segunda, e o `not ?` mantém o primeiro;
+ * 2. a prévia guardada de quem ainda está na fila (`data.previa`) é descartada.
+ *    Ela foi escrita com o texto velho e entraria no envio como "Rascunho"; sem
+ *    ela, o preparo escreve outra com o texto novo;
+ * 3. a `config` ganha `briefing_editado_em`. A prévia carrega o carimbo da
+ *    `config` com que nasceu, e o envio só usa a que tem o carimbo atual
+ *    (`previaDoAgente`): uma prévia que o preparo estava gerando com o texto velho
+ *    durante a edição (ele não toma este bloqueio) nasce vencida.
+ *
+ * O histórico não é tocado: mensagens, candidatos e negócios ficam como estão.
+ *
+ * Mesma régua de `adjust_pace`/`adjust_tags`, nas duas camadas de propósito: o `if`
+ * dá o 409 com a mensagem certa, e o `where` repete organização, id, `paused` e
+ * `config is not null` — se alguém retomar entre a leitura e a escrita, quem recusa
+ * é o banco. `||` troca só as três chaves; conexão, agente, funil, base legal e
+ * ritmo seguem intactos por construção.
+ *
+ * Devolve o `previous` CRU (sem `parse`, como as irmãs) para a auditoria dizer de
+ * que texto para que texto — uma configuração antiga que já não passa no schema
+ * atual ainda pode ser consertada por aqui.
+ */
+export const EDICAO_DO_BRIEFING_SQL =
+  "update prospecting_campaigns set config = config || jsonb_build_object('instruction', $3::text, 'qualification', $4::text, 'ofertas', $5::jsonb, 'briefing_editado_em', $6::text), updated_at = now() where organization_id = $1 and id = $2 and status = 'paused' and config is not null returning id";
+
+/** Passo 1: o texto anterior fica com quem já foi abordado. `jsonb_strip_nulls`: chave ausente na config antiga não vira `null` no congelado. */
+export const CONGELA_BRIEFING_DOS_ABORDADOS_SQL =
+  "update prospecting_candidates set data = data || jsonb_build_object('briefing', jsonb_strip_nulls($3::jsonb)), updated_at = now() where organization_id = $1 and campaign_id = $2 and status in ('sending','sent') and not (data ? 'briefing')";
+
+/** Passo 2: a prévia escrita com o texto velho não sai para quem ainda está na fila. */
+export const DESCARTA_PREVIAS_DA_FILA_SQL =
+  "update prospecting_candidates set data = data - 'previa', updated_at = now() where organization_id = $1 and campaign_id = $2 and status in ('new','queued') and data ? 'previa'";
+
+export const MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR =
+  "Pause a campanha antes de editar a instrução e os critérios.";
+
+export async function editBriefing(
+  pool: pg.Pool,
+  org: string,
+  id: string,
+  briefing: CampaignBriefing,
+) {
+  return withProspectingLock(pool, org, async (db) => {
+    const c = (
+      await db.query<{ status: string; config: Record<string, unknown> | null }>(
+        "select status, config from prospecting_campaigns where organization_id=$1 and id=$2",
+        [org, id],
+      )
+    ).rows[0];
+    if (!c) throw new ProspectingError("Campanha não encontrada.", 404);
+    if (c.status !== "paused" || !c.config)
+      throw new ProspectingError(MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR, 409);
+    const anterior = {
+      instruction: c.config.instruction ?? null,
+      qualification: c.config.qualification ?? null,
+      ofertas: c.config.ofertas ?? null,
+    };
+    await db.query("begin");
+    try {
+      const changed = await db.query(EDICAO_DO_BRIEFING_SQL, [
+        org,
+        id,
+        briefing.instruction,
+        briefing.qualification,
+        JSON.stringify(briefing.ofertas),
+        new Date().toISOString(),
+      ]);
+      // Alguém retomou entre o select e o update: o `where` recusou, e é isso que vale.
+      if (!changed.rows.length)
+        throw new ProspectingError(MENSAGEM_DE_CAMPANHA_PAUSADA_PARA_EDITAR, 409);
+      await db.query(CONGELA_BRIEFING_DOS_ABORDADOS_SQL, [org, id, JSON.stringify(anterior)]);
+      await db.query(DESCARTA_PREVIAS_DA_FILA_SQL, [org, id]);
+      await db.query("commit");
+    } catch (error) {
+      await db.query("rollback");
+      throw error;
+    }
+    return {
+      previous: anterior,
+      next: {
+        instruction: briefing.instruction,
+        qualification: briefing.qualification,
+        ofertas: briefing.ofertas,
+      },
     };
   });
 }

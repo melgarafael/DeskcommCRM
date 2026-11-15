@@ -78,6 +78,7 @@ import {
 } from "@/lib/channels/numero-do-atendente";
 import { emitirFalhaDeEntrega } from "@/lib/messaging/falha-de-entrega";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
+import { mascararTextoRetido, perfisDoTextoRetido } from "@/lib/messaging/texto-retido";
 import { pedirReenvioDoDesacelerado, reenvioDesaceleradoAtende } from "@/lib/messaging/reenvio-desacelerado";
 import { esperaPedidaPeloCanal } from "@/lib/channels/erro-da-plataforma";
 import { aplicarAssinatura, configAssinatura, linhaDeAssinatura } from "@/lib/messaging/assinatura";
@@ -451,7 +452,34 @@ export async function listMessagesHandler(
   // A RESPOSTA continua cronológica (antigo → novo), igual a antes: o consumidor
   // renderiza de cima para baixo sem mudar nada. O que mudou foi QUAIS mensagens
   // entram na página, não a ordem em que saem.
-  return { messages: page.slice().reverse(), cursor, has_more: hasMore };
+  //
+  // O CORPO DA APAGADA PELO CONTATO NÃO SAI DAQUI (#4500). Até esta mudança ele
+  // viajava inteiro nesta resposta — o balão escondia e o JSON entregava, para
+  // qualquer leitor da rota ou do histórico pelo MCP. Revelar passou a ser porta
+  // própria, com perfil autorizado e auditoria (`texto-retido/route.ts`); o que
+  // esta leitura devolve no lugar do corpo é `body: null` + `texto_retido: true`.
+  // A máscara mora no fim, no único ponto por onde TODOS os consumidores passam
+  // — inclusive os que leem com service role e não têm RLS no caminho.
+  //
+  // O sinal `texto_retido` (o botão) só vai quando a organização LIGOU a porta —
+  // ao menos um perfil autorizado. A consulta às configurações só acontece se a
+  // página tem alguma apagada pelo contato, e é PLANA (sem `maybeSingle`) pelo
+  // mesmo motivo das consultas do topo: o dublê do invariante de paginação.
+  let portaLigada = false;
+  if (page.some((m) => m.direction === "inbound" && m.revoked_at != null)) {
+    const { data: orgs } = await supabase
+      .from("organizations")
+      .select("settings")
+      .eq("id", ctx.organization_id)
+      .limit(1);
+    const settings = ((orgs ?? []) as Array<{ settings?: unknown }>)[0]?.settings ?? null;
+    portaLigada = perfisDoTextoRetido(settings).length > 0;
+  }
+  return {
+    messages: page.map((m) => mascararTextoRetido(m, portaLigada)).reverse(),
+    cursor,
+    has_more: hasMore,
+  };
 }
 
 // ---------------------------------------------------------------------------
