@@ -60967,7 +60967,7 @@ begin
     end);
 end $$;
 
--- A cópia do anexo sabe de QUAL anexo ela veio (migration 4544, #4544).
+-- A cópia do anexo sabe de QUAL anexo ela veio (migration 9385, #4544).
 --
 -- O card criado em outro funil leva os anexos do card de origem, e a cópia ganha
 -- linha PRÓPRIA sob o prefixo do card novo: o schema prende `storage_path` ao
