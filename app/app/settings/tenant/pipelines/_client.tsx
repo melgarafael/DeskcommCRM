@@ -3,7 +3,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import { useTaxasDasEtapas } from "@/hooks/pipelines/useWinRates";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 
@@ -457,10 +457,10 @@ export function PipelinesClient({
   const [funilAberto, setFunilAberto] = useState<string | null>(() =>
     pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
   );
-  const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
   const [busca, setBusca] = useState("");
-  // `null` = sem busca. A régua é de `lib/pipelines/filtrar-funis.ts` (#4593).
-  const visiveis = useMemo(() => funisQueCasam(pipelines, busca), [pipelines, busca]);
+  // `null` = sem busca. A régua é a de `filtrar-funis` (#4593).
+  const visiveis = funisQueCasam(pipelines, busca);
+  const [chegada, setChegada] = useState<ChegadaAoFunil | null>(null);
   /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
    *
