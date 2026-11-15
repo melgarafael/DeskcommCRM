@@ -21,6 +21,8 @@ PORTA_RECEPTOR=4687
 CLI_VERSAO=2.117.0
 
 mkdir -p "$SB/supabase/migrations" "$SB/bin"
+# Os modelos de e-mail do config.toml são caminhos relativos ao diretório de trabalho.
+cp -r supabase/templates "$SB/supabase/"
 sed -E -e 's/^project_id = .*/project_id = "prova-4687"/' \
   -e 's/^((shadow_)?port = )54([0-9]{3})/\155\3/' \
   -e 's#http://127.0.0.1:54321#http://127.0.0.1:55321#' \
