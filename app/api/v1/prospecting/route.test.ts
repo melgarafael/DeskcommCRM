@@ -11,6 +11,8 @@ const deps = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   pool: vi.fn(),
   activate: vi.fn(),
+  arquivar: vi.fn(),
+  desarquivar: vi.fn(),
   generate: vi.fn(),
   warn: vi.fn(),
 }));
@@ -31,6 +33,8 @@ vi.mock("@/lib/mcp/auth", async () => {
 });
 vi.mock("@/lib/prospecting/store", () => ({
   activateCampaign: deps.activate,
+  arquivarCampanha: deps.arquivar,
+  desarquivarCampanha: deps.desarquivar,
   configureCredential: vi.fn(),
   createSearch: vi.fn(),
   validateConfig: vi.fn(),
@@ -44,6 +48,7 @@ import { GET, POST } from "./route";
 import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-de-formulario";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
+import { ProspectingError } from "@/lib/prospecting/provider";
 import { withProspectingLock } from "@/lib/prospecting/store";
 
 const ID = "11111111-1111-4111-8111-111111111111";
@@ -87,11 +92,17 @@ describe("POST /api/v1/prospecting por token", () => {
     // Spec 27: trocar as etiquetas de contato de uma campanha segue a régua do ritmo — fechada ao token.
     ["adjust_tags", { action: "adjust_tags", id: ID, contact_tags: ["estetica"] }],
     ["completar_fichas", { action: "completar_fichas", id: ID }],
+    // #4359: arquivar ESCONDE uma campanha da lista. Por token, esconderia uma
+    // campanha que a pessoa nunca abriu — o gesto é de quem lê a tela.
+    ["arquivar", { action: "arquivar", id: ID }],
+    ["desarquivar", { action: "desarquivar", id: ID }],
   ])("%s responde 403 sem tocar no banco", async (_nome, body) => {
     const res = await POST(tokenPost(body));
     expect(res.status).toBe(403);
     expect(deps.pool).not.toHaveBeenCalled();
     expect(deps.activate).not.toHaveBeenCalled();
+    expect(deps.arquivar).not.toHaveBeenCalled();
+    expect(deps.desarquivar).not.toHaveBeenCalled();
   });
 
   it("pause segue aberto ao token", async () => {
@@ -528,5 +539,74 @@ describe("POST /api/v1/prospecting completar_fichas (sessão de admin)", () => {
     const res = await POST(completar({ organization_id: "outra-org" }));
     expect(res.status).toBe(422);
     expect(chamadas).toHaveLength(0);
+  });
+});
+
+/**
+ * #4359 — ARQUIVAR PELA TELA (sessão), NUNCA PELO TOKEN.
+ *
+ * A ação em si mora na loja (`arquivarCampanha`), onde está a prova de que nada é
+ * apagado e de que a campanha rodando para. Aqui só se prova o CONTRATO da rota:
+ * organização vem da sessão, o id vai como veio, e a trilha diz se houve mudança
+ * de estado — "alguém arquivou" sem o nome da campanha não deixa conferir depois.
+ */
+describe("POST /api/v1/prospecting arquivar/desarquivar por sessão", () => {
+  const ORG = "99999999-9999-4999-8999-999999999999";
+  const CAMPANHA = "22222222-2222-4222-8222-222222222222";
+
+  function pedido(action: "arquivar" | "desarquivar") {
+    return new NextRequest("http://localhost/api/v1/prospecting", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, id: CAMPANHA }),
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      user: { id: "u-1", idioma: "pt" },
+      org: { orgId: ORG },
+    } as never);
+  });
+
+  it("arquivar chama a loja com a organização da SESSÃO e audita", async () => {
+    deps.arquivar.mockResolvedValue({
+      arquivada: true,
+      ja_estava: false,
+      status: "paused",
+      arquivada_em: "2026-11-11T12:00:00.000Z",
+    });
+    const res = await POST(pedido("arquivar"));
+    expect(res.status).toBe(200);
+    expect(deps.arquivar).toHaveBeenCalledWith(deps.pool(), ORG, CAMPANHA);
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "prospecting.changed",
+        organizationId: ORG,
+        resourceId: CAMPANHA,
+        metadata: expect.objectContaining({ operation: "arquivar", ja_estava: false }),
+      }),
+    );
+  });
+
+  it("desarquivar devolve a campanha à lista (arquivada:false)", async () => {
+    deps.desarquivar.mockResolvedValue({
+      arquivada: false,
+      ja_estava: false,
+      status: "paused",
+      arquivada_em: null,
+    });
+    const res = await POST(pedido("desarquivar"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { arquivada: boolean } };
+    expect(body.data.arquivada).toBe(false);
+    expect(deps.desarquivar).toHaveBeenCalledWith(deps.pool(), ORG, CAMPANHA);
+  });
+
+  it("campanha de outra organização: 404 da loja chega como 404, não como 500", async () => {
+    deps.arquivar.mockRejectedValue(new ProspectingError("Campanha não encontrada.", 404));
+    const res = await POST(pedido("arquivar"));
+    expect(res.status).toBe(404);
   });
 });

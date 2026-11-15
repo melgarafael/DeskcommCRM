@@ -95,6 +95,11 @@ const listaSchema = z.object({
    */
   pipeline_id: z.string().uuid().optional(),
   /**
+   * Só as tarefas atribuídas a membros DESTE setor (`attendant_sectors`).
+   * Permite que a equipe fiscal, contábil, dp, ti filtre sua respectiva fila.
+   */
+  sector_id: z.string().uuid().optional(),
+  /**
    * Teto de linhas desta busca (#4028). Existe porque a visão em QUADRO desenha
    * todas as colunas de uma vez e pediria a base inteira: ela manda um número
    * menor que o teto da lista. O máximo é DAQUI, não do navegador — um cliente

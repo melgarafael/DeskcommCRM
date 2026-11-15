@@ -59,6 +59,12 @@ export interface AbordagemDeFormularioInput {
   dados: Record<string, string>;
   /** `false` quando o gatilho não é um formulário (tag, etapa, mensagem). */
   origemDaAbordagem: OrigemDaAbordagem;
+  /**
+   * A primeira versão do texto foi barrada pela trava de valores e negociação:
+   * pede uma segunda, sem esse assunto (Spec 34). O trecho é o que a trava
+   * apontou; `null` quando ela barrou sem um trecho a mostrar.
+   */
+  tentativaBarrada?: { texto: string; trecho: string | null };
 }
 
 export type AbordagemDeFormularioResult =
@@ -254,7 +260,16 @@ export async function gerarAbordagemDeFormulario(
   // O prompt do agente PRIMEIRO (é o prefixo estável, e é quem ele é); o modo
   // depois, porque é o que muda por chamada — e a instrução do OPERADOR vai
   // junto, no system, longe do conteúdo público. Ver blocoDeModo.
-  const system = `${agent.systemPrompt}\n\n${blocoDeModo(input.origemDaAbordagem, nonce, input.instrucao)}`;
+  // A tentativa anterior foi barrada pela trava de valores e negociação (Spec 34):
+  // a segunda leva o aviso no system — é instrução nossa, com autoridade, e não
+  // dado de formulário.
+  const avisoDaTentativaBarrada =
+    input.tentativaBarrada === undefined
+      ? ''
+      : '\n\nA primeira versão não pôde ser enviada porque tocava em valores ou negociação' +
+        `${input.tentativaBarrada.trecho ? ` (trecho: "${input.tentativaBarrada.trecho}")` : ''}. ` +
+        'Escreva de novo sem falar de valores, preço, custo, condições ou gratuidade.';
+  const system = `${agent.systemPrompt}\n\n${blocoDeModo(input.origemDaAbordagem, nonce, input.instrucao)}${avisoDaTentativaBarrada}`;
 
   // A mensagem do usuário carrega SÓ conteúdo — nada aqui tem autoridade.
   // `origem` é o nome da fonte, escrito por quem administra o CRM, mas entra no

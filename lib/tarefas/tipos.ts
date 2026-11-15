@@ -141,6 +141,84 @@ export function estaAtrasada(
   return new Date(tarefa.due_date).getTime() < agora.getTime();
 }
 
+export type UrgenciaDoPrazo = "normal" | "atencao_48h" | "vence_hoje" | "atrasada";
+
+export interface ConfiguracaoDiasTrabalho {
+  /**
+   * Dias da semana em que a empresa trabalha (0=Domingo, 1=Segunda, ..., 6=Sábado).
+   * Padrão: [1, 2, 3, 4, 5] (Segunda a Sexta).
+   */
+  diasUteis?: readonly number[];
+}
+
+export const DIAS_UTEIS_PADRAO: readonly number[] = [1, 2, 3, 4, 5];
+
+/**
+ * Calcula a diferença em horas úteis entre dois instantes,
+ * desconsiderando dias não úteis (ex: sábados e domingos quando não trabalhados).
+ */
+export function calcularHorasUteisEntre(
+  inicio: Date,
+  fim: Date,
+  diasUteis: readonly number[] = DIAS_UTEIS_PADRAO,
+): number {
+  if (fim.getTime() <= inicio.getTime()) {
+    return (fim.getTime() - inicio.getTime()) / (1000 * 60 * 60);
+  }
+
+  // Acima de 14 dias corridos, garantidamente há mais de 48h úteis
+  const diffBrutaHoras = (fim.getTime() - inicio.getTime()) / (1000 * 60 * 60);
+  if (diffBrutaHoras > 14 * 24) {
+    return diffBrutaHoras;
+  }
+
+  const setDias = new Set(diasUteis);
+  const msPorHora = 1000 * 60 * 60;
+  let totalHoras = 0;
+
+  let cursor = new Date(inicio.getTime());
+  while (cursor.getTime() < fim.getTime()) {
+    const proximaHora = new Date(cursor.getTime() + msPorHora);
+    const limiteHora = proximaHora.getTime() > fim.getTime() ? fim : proximaHora;
+    const duracaoHoras = (limiteHora.getTime() - cursor.getTime()) / msPorHora;
+
+    if (setDias.has(cursor.getDay())) {
+      totalHoras += duracaoHoras;
+    }
+
+    cursor = limiteHora;
+  }
+
+  return totalHoras;
+}
+
+/**
+ * Classifica a urgência do prazo de uma tarefa com base nas horas úteis restantes:
+ * - "atrasada": prazo já estourou
+ * - "vence_hoje": vence em até 24h úteis (prioridade máxima do dia)
+ * - "atencao_48h": vence em até 48h úteis (alerta preventivo de 2 dias)
+ * - "normal": mais de 48h úteis ou sem prazo
+ */
+export function calcularUrgenciaDoPrazo(
+  tarefa: Pick<Tarefa, "due_date" | "status">,
+  agora: Date = new Date(),
+  config?: ConfiguracaoDiasTrabalho,
+): UrgenciaDoPrazo {
+  if (!tarefa.due_date || estaEncerrada(tarefa)) return "normal";
+
+  const prazo = new Date(tarefa.due_date);
+  if (prazo.getTime() < agora.getTime()) {
+    return "atrasada";
+  }
+
+  const dias = config?.diasUteis ?? DIAS_UTEIS_PADRAO;
+  const horasRestantes = calcularHorasUteisEntre(agora, prazo, dias);
+
+  if (horasRestantes <= 24) return "vence_hoje";
+  if (horasRestantes <= 48) return "atencao_48h";
+  return "normal";
+}
+
 /** O que o selo do card conta: o que ainda pede ação, e quanto disso já venceu. */
 export interface ResumoDasTarefas {
   abertas: number;
