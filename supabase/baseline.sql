@@ -81692,6 +81692,38 @@ alter table public.user_organizations
 comment on column public.user_organizations.senha_provisoria is
   'true = a senha foi definida por quem administra e precisa ser trocada no primeiro acesso; o gate do servidor recusa /api/v1 até a troca.';
 
+-- ---- a marca da senha provisória só muda pelo servidor (migration 9381) ----
+-- #4637: a policy `user_orgs_update` deixava o admin da organização reescrever
+-- `senha_provisoria`; o gatilho recusa a sessão (authenticated/anon). Depois do
+-- bloco da 9380 porque `update of senha_provisoria` exige a coluna.
+create or replace function public.fn_senha_provisoria_so_pelo_servidor()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  if (tg_op = 'INSERT' and new.senha_provisoria)
+     or (tg_op = 'UPDATE' and new.senha_provisoria is distinct from old.senha_provisoria) then
+    raise exception 'senha_provisoria_so_pelo_servidor'
+      using errcode = '42501',
+            detail = 'A marca da senha provisória é escrita pela criação da pessoa e pela troca de senha, nunca pela sessão.';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_senha_provisoria_so_pelo_servidor() from public, anon, authenticated;
+
+drop trigger if exists trg_senha_provisoria_so_pelo_servidor on public.user_organizations;
+create trigger trg_senha_provisoria_so_pelo_servidor
+  before insert or update of senha_provisoria
+  on public.user_organizations
+  for each row execute function public.fn_senha_provisoria_so_pelo_servidor();
+
 -- ---- índice da mensagem que espera em `queued` (migration 9242) ----
 -- #3907: o portão do piso ocioso e a varredura da espera esquecida leem outbound
 -- `queued` por idade, e nenhum índice de `messages` cobria esse status.

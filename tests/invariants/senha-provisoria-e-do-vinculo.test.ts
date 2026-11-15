@@ -16,18 +16,24 @@
  *
  *   3. **O gate não se desarma por baixo.** O `authenticated` com a identidade
  *      da pessoa NÃO consegue escrever `senha_provisoria = false` no próprio
- *      vínculo: a policy `user_orgs_update` exige admin na organização
- *      (`fn_role_at_least(organization_id, 'admin')`). Sem isso, o redirect era
- *      só teatro — bastaria um PATCH no PostgREST com o token da sessão para
- *      destravar `/api/v1` inteiro. Quem destrava é a action de troca, com
- *      service-role, depois de o GoTrue aceitar a senha nova.
+ *      vínculo: a policy `user_orgs_update` exige admin na organização. Sem
+ *      isso, bastaria um PATCH no PostgREST com o token da sessão para destravar
+ *      `/api/v1` inteiro.
  *
- * O controle positivo (o admin da organização CONSEGUE) está aqui para provar
- * que o zero do caso 3 é recusa de RLS e não uma varredura cega.
+ *   4. **Nem o admin da organização escreve a marca** (migration 9381). A policy
+ *      deixa o admin reescrever o vínculo, e a obrigação vale para a PESSOA:
+ *      sem o gatilho `trg_senha_provisoria_so_pelo_servidor`, o admin de uma
+ *      empresa forçaria a troca de senha de quem também está em outra empresa,
+ *      ou desligaria a marca de quem ele criou. Quem liga a marca é a rota de
+ *      criação e quem desliga é a troca de senha — os dois com service role,
+ *      que é o controle positivo abaixo.
+ *
+ * O controle do admin editando OUTRA coluna prova que o gatilho recusa só a
+ * marca, não o vínculo inteiro.
  */
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { GOV_AGENT_A, GOV_ADMIN, GOV_ORG, seedGov, sql, writeCountAs } from "./gov-helpers";
+import { GOV_AGENT_A, GOV_AGENT_B, GOV_ADMIN, GOV_ORG, seedGov, sql, writeCountAs } from "./gov-helpers";
 
 function coluna(): { tipo: string; nulo: string; padrao: string | null } {
   const out = sql(`
@@ -47,6 +53,21 @@ function valorDoVinculo(userId: string): string {
       from public.user_organizations
      where user_id = '${userId}' and organization_id = '${GOV_ORG}';
   `);
+}
+
+/** O erro do psql de uma escrita da sessão (stderr), ou `null` se ela passou. */
+function recusaDaSessao(userId: string, dml: string): string | null {
+  try {
+    writeCountAs(userId, dml);
+    return null;
+  } catch (err) {
+    return (err as { stderr?: string }).stderr ?? String(err);
+  }
+}
+
+/** Escrita como o cliente de serviço da rota de criação / da troca de senha. */
+function comoServidor(dml: string): void {
+  sql(`set role service_role; ${dml};`);
 }
 
 beforeAll(() => {
@@ -89,13 +110,43 @@ describe("senha provisória no vínculo (#3876)", () => {
     expect(valorDoVinculo(GOV_AGENT_A)).toBe("true");
   });
 
-  it("o admin da organização consegue destravar (controle positivo da RLS)", () => {
-    const linhas = writeCountAs(
+  it("o admin da organização NÃO desliga a marca de um membro: o gatilho recusa", () => {
+    expect(valorDoVinculo(GOV_AGENT_A)).toBe("true");
+    const erro = recusaDaSessao(
       GOV_ADMIN,
       `update public.user_organizations set senha_provisoria = false
         where user_id = '${GOV_AGENT_A}' and organization_id = '${GOV_ORG}'`,
     );
+    expect(erro).toMatch(/senha_provisoria_so_pelo_servidor/);
+    expect(valorDoVinculo(GOV_AGENT_A)).toBe("true");
+  });
+
+  it("o admin da organização NÃO liga a marca de um membro: o gatilho recusa", () => {
+    expect(valorDoVinculo(GOV_AGENT_B)).toBe("false");
+    const erro = recusaDaSessao(
+      GOV_ADMIN,
+      `update public.user_organizations set senha_provisoria = true
+        where user_id = '${GOV_AGENT_B}' and organization_id = '${GOV_ORG}'`,
+    );
+    expect(erro).toMatch(/senha_provisoria_so_pelo_servidor/);
+    expect(valorDoVinculo(GOV_AGENT_B)).toBe("false");
+  });
+
+  it("o admin segue editando o resto do vínculo (o gatilho recusa só a marca)", () => {
+    const linhas = writeCountAs(
+      GOV_ADMIN,
+      `update public.user_organizations set role = role
+        where user_id = '${GOV_AGENT_B}' and organization_id = '${GOV_ORG}'`,
+    );
     expect(linhas).toBe(1);
-    expect(valorDoVinculo(GOV_AGENT_A)).toBe("false");
+  });
+
+  it("o servidor (service role) liga e desliga a marca — a rota de criação e a troca", () => {
+    comoServidor(`update public.user_organizations set senha_provisoria = true
+      where user_id = '${GOV_AGENT_B}' and organization_id = '${GOV_ORG}'`);
+    expect(valorDoVinculo(GOV_AGENT_B)).toBe("true");
+    comoServidor(`update public.user_organizations set senha_provisoria = false
+      where user_id = '${GOV_AGENT_B}' and organization_id = '${GOV_ORG}'`);
+    expect(valorDoVinculo(GOV_AGENT_B)).toBe("false");
   });
 });
