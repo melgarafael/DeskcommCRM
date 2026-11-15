@@ -114,8 +114,8 @@ describe("ehFraseDeSemInteresse", () => {
  * ─── SABOTAGEM ─────────────────────────────────────────────────────────────
  * - `classificarSemInteresse` devolvendo "recusa" sempre que a frase casa (o
  *   comportamento antigo): todo o bloco "adiamento" fica vermelho.
- * - Tirar `!ehPedidoDeOptOut(texto)` de `podeSerAdiamento`: "agora me tira da lista"
- *   vira adiamento e fica vermelho.
+ * - Tirar `!ehPedidoDeOptOut(texto)` de `podeSerAdiamento`: "por enquanto, me tira da
+ *   lista" vira adiamento e fica vermelho.
  * - Tirar `RECUSA_DEFINITIVA`: "nem agora nem nunca" fica vermelho.
  */
 describe("classificarSemInteresse", () => {
@@ -158,6 +158,8 @@ describe("classificarSemInteresse", () => {
   it.each([
     "não tenho interesse, agora me tira da lista",
     "Não tenho interesse agora nem depois, me tira da lista",
+    // o marcador de adiamento casa ("por enquanto"): só a guarda do PARAR a separa
+    "Não tenho interesse por enquanto, me tira da lista",
   ])("pedido de saída nunca é adiamento — é o PARAR: %s", (frase) => {
     expect(ehPedidoDeOptOut(frase)).toBe(true);
     expect(classificarSemInteresse(frase)).not.toBe("adiamento");
