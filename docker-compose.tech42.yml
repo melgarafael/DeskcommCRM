@@ -1,0 +1,42 @@
+# Tech42 — override de TESTE isolado (14/11/2026)
+# - Não sobe o Caddy do Deskcomm (já existe jc-caddy)
+# - App só em 127.0.0.1:10028
+# - mem_limit em todos os serviços ligados
+# - Sem voice-agent / telefonia
+
+services:
+  caddy:
+    profiles: ["caddy-nao-usado-tech42"]
+
+  app:
+    mem_limit: ${APP_MEM_LIMIT:-512m}
+    ports:
+      - "127.0.0.1:10028:3000"
+    restart: unless-stopped
+    pull_policy: missing
+
+  worker:
+    mem_limit: ${WORKER_MEM_LIMIT:-240m}
+    restart: unless-stopped
+    pull_policy: missing
+
+  scheduler:
+    mem_limit: ${SCHEDULER_MEM_LIMIT:-96m}
+    restart: unless-stopped
+    pull_policy: missing
+
+  waha:
+    mem_limit: ${WAHA_MEM_LIMIT:-240m}
+    restart: unless-stopped
+    # WAHA sem número real — só fica pronto para Jorge configurar depois
+    environment:
+      WHATSAPP_RESTART_ALL_SESSIONS: "false"
+
+  redis:
+    image: redis:7.4.2-alpine
+    mem_limit: ${REDIS_MEM_LIMIT:-48m}
+    restart: unless-stopped
+
+  srh:
+    mem_limit: ${SRH_MEM_LIMIT:-64m}
+    restart: unless-stopped
