@@ -85,6 +85,15 @@ const SCOPES: { id: string; label: string }[] = [
   { id: "messages:write", label: "Enviar mensagens" },
   // #1613: sem esta linha o escopo existia na rota e ninguém conseguia concedê-lo.
   { id: "messages:on_behalf", label: "Integração pode enviar em nome de um atendente" },
+  // #4515: registrar presença sempre foi decisão de gente, e o `mcp:write` não
+  // distingue "marcar reunião" de "declarar quem faltou". Sem esta linha o
+  // escopo existiria na rota e ninguém conseguiria concedê-lo — o mesmo defeito
+  // que o #1613 e o #2052 fecharam nos escopos vizinhos.
+  {
+    id: "agenda:attendance",
+    label:
+      "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela",
+  },
   { id: "audit:read", label: "Ler o log de auditoria" },
 ];
 

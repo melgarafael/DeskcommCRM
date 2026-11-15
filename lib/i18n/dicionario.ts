@@ -8570,6 +8570,9 @@ export const DICIONARIO: Traducoes = {
   "Agentes de IA podem AGIR no CRM (MCP)": {
     es: "Los agentes de IA pueden ACTUAR en el CRM (MCP)",
   },
+  "Marcar comparecimento na agenda (Realizado / Não compareceu) depois do horário, sem abrir a tela": {
+    es: "Marcar asistencia en la agenda (Realizado / No vino) después del horario, sin abrir la pantalla",
+  },
   "Tratar o token como gerente (necessário p/ criar e atribuir)": {
     es: "Tratar el token como gerente (necesario para crear y asignar)",
   },

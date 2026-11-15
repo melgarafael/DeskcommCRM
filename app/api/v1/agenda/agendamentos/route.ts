@@ -22,6 +22,10 @@ import { DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN } from "@/lib/agenda/duracao-esc
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import {
+  RECUSA_DO_COMPARECIMENTO,
+  tokenTemEscopoDoComparecimento,
+} from "@/lib/agenda/comparecimento";
 import type { Actor } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { chaveDaRequisicao } from "@/lib/api/idempotency";
@@ -430,7 +434,14 @@ async function despachar<T>(
   schema: z.ZodType<T>,
   handler: (
     supabase: Awaited<ReturnType<typeof createClient>>,
-    ctx: { organization_id: string; actor: Actor; requestId: string; idempotencyKey?: string },
+    ctx: {
+      organization_id: string;
+      actor: Actor;
+      requestId: string;
+      idempotencyKey?: string;
+      /** Escopos do Bearer, só no modo token — o desfecho os lê (#4515). */
+      escoposDoToken?: readonly string[];
+    },
     input: T,
   ) => Promise<Record<string, unknown>>,
   status: 200 | 201,
@@ -473,6 +484,27 @@ async function despachar<T>(
     });
   }
 
+  /**
+   * O DESFECHO PEDE UM ESCOPO PRÓPRIO NO TOKEN (#4515).
+   *
+   * `mcp:write` continua valendo para marcar, remarcar, cancelar e editar — o
+   * contrato que as integrações já usam não muda. O que muda é o que o CRM
+   * sempre tratou como decisão de gente: dizer que a pessoa VEIO ou FALTOU. Um
+   * token sem `agenda:attendance` recebe 403 com o nome do escopo, e o handler
+   * nem roda — recusar depois da escrita não seria recusa.
+   *
+   * A sessão de navegador não tem escopo (`authz.via === "session"`) e passa
+   * direto: a tela é o caminho de sempre.
+   */
+  const pedeDesfecho =
+    typeof parsed.data === "object" &&
+    parsed.data !== null &&
+    ((parsed.data as { status?: unknown }).status === "completed" ||
+      (parsed.data as { status?: unknown }).status === "no_show");
+  if (authz.via === "token" && pedeDesfecho && !tokenTemEscopoDoComparecimento(authz.scopes)) {
+    return fail("forbidden_role", t(RECUSA_DO_COMPARECIMENTO), 403, { requestId });
+  }
+
   try {
     const resultado = await handler(
       supabase,
@@ -482,6 +514,9 @@ async function despachar<T>(
         organization_id: organizationId,
         actor,
         requestId,
+        // Os escopos só existem no ramo de token; é o que o handler lê para
+        // decidir o desfecho (#4515). Sessão fica sem o campo, de propósito.
+        ...(authz.via === "token" ? { escoposDoToken: authz.scopes } : {}),
         ...(idempotencyKey !== null ? { idempotencyKey } : {}),
       },
       parsed.data,
