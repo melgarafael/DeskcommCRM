@@ -14,3 +14,4 @@ de novo, e procedimento repetido não duplica.
 Nada muda na tela nesta versão: ainda não há onde abrir a tabela, e o agente
 ainda não negocia com ela. A conversa de negociação, o histórico de
 contrapropostas e a aprovação acima do limite vêm depois.
+Contribuição de @webtecnica (#4643).

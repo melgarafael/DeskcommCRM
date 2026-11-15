@@ -141,15 +141,15 @@ alter table public.tabelas_de_valores enable row level security;
 alter table public.tabela_de_valores_itens enable row level security;
 alter table public.tabela_de_valores_importacoes enable row level security;
 
-drop policy if exists tabelas_de_valores_select on public.tabelas_de_valores;
-create policy tabelas_de_valores_select
+drop policy if exists tenant_isolation_tabelas_de_valores_select on public.tabelas_de_valores;
+create policy tenant_isolation_tabelas_de_valores_select
   on public.tabelas_de_valores
   for select to authenticated using (
     (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()
   );
 
-drop policy if exists tabela_de_valores_itens_select on public.tabela_de_valores_itens;
-create policy tabela_de_valores_itens_select
+drop policy if exists tenant_isolation_tabela_de_valores_itens_select on public.tabela_de_valores_itens;
+create policy tenant_isolation_tabela_de_valores_itens_select
   on public.tabela_de_valores_itens
   for select to authenticated using (
     (organization_id in (select public.fn_user_org_ids())) or public.fn_is_platform_admin()

@@ -24,11 +24,14 @@ import type { SheetMatrix } from "@/lib/planilha/ler-arquivo";
 import { chaveDoArquivo, montarPrevia } from "@/lib/tabela-de-valores/importacao";
 import { lerPlanilhaDaTabelaDeValores } from "@/lib/tabela-de-valores/planilha";
 import {
+  buscarTabelaDeValores,
   criarTabelaDeValores,
   importarTabelaDeValores,
   lerItemPorCodigo,
   previaDaPlanilha,
 } from "@/lib/tabela-de-valores/store";
+
+import { countAs, GOV_AGENT_A, GOV_ORG, seedGov, sql } from "./gov-helpers";
 
 const pool = new pg.Pool({
   connectionString:
@@ -210,6 +213,10 @@ describe("tabela de valores — importar com prévia", () => {
     expect(clinica?.descricao).toBe("Consulta clínica");
   });
 
+  it("id que não é uuid é tabela inexistente (404 na rota), não erro de cast (500)", async () => {
+    await expect(buscarTabelaDeValores(pool, ORG, "nao-e-uuid")).resolves.toBeNull();
+  });
+
   it("a tabela de uma organização não é lida pela outra", async () => {
     expect(await lerItemPorCodigo(pool, OUTRA_ORG, tabelaId, "1010")).toBeNull();
   });
@@ -221,5 +228,50 @@ describe("tabela de valores — importar com prévia", () => {
     expect(chaveDoArquivo(bytes)).not.toBe(
       chaveDoArquivo(new TextEncoder().encode("codigo;descricao\n1010;Consulta clínica\n")),
     );
+  });
+});
+
+/** stderr da recusa ao membro com JWT authenticated ('' se o comando passou). */
+function recusaAoMembro(comando: string): string {
+  try {
+    countAs(GOV_AGENT_A, comando);
+    return "";
+  } catch (err) {
+    return (err as { stderr?: string }).stderr ?? String(err);
+  }
+}
+
+describe("tabela de valores — a equipe lê, só o servidor grava (RLS por JWT)", () => {
+  beforeAll(() => seedGov());
+
+  it("o livro de importações é do servidor: RLS ligada, nenhuma policy, e o membro da PRÓPRIA organização é recusado", () => {
+    expect(
+      sql("select relrowsecurity from pg_class where oid = 'public.tabela_de_valores_importacoes'::regclass"),
+    ).toBe("t");
+    expect(
+      sql(
+        "select count(*) from pg_policies where schemaname = 'public' and tablename = 'tabela_de_valores_importacoes'",
+      ),
+    ).toBe("0");
+    expect(
+      recusaAoMembro(
+        `select count(*) from public.tabela_de_valores_importacoes where organization_id = '${GOV_ORG}';`,
+      ),
+    ).toMatch(/permission denied/);
+    // Controle: a MESMA sessão lê a tabela de valores. Sem isto, a recusa acima
+    // poderia ser de sessão quebrada, e não da falta de privilégio.
+    expect(
+      countAs(GOV_AGENT_A, `select count(*) from public.tabelas_de_valores where organization_id = '${GOV_ORG}';`),
+    ).toBeGreaterThanOrEqual(0);
+  });
+
+  it("preço não se grava pelo navegador: insert, update e delete de authenticated são recusados", () => {
+    const comandos = [
+      `insert into public.tabelas_de_valores (organization_id, nome) values ('${GOV_ORG}', 'pelo navegador');`,
+      `update public.tabela_de_valores_itens set valor_brl_limite_cents = 1 where organization_id = '${GOV_ORG}';`,
+      `delete from public.tabela_de_valores_itens where organization_id = '${GOV_ORG}';`,
+      `delete from public.tabelas_de_valores where organization_id = '${GOV_ORG}';`,
+    ];
+    for (const comando of comandos) expect(recusaAoMembro(comando), comando).toMatch(/permission denied/);
   });
 });
