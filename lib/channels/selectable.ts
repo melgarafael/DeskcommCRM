@@ -24,7 +24,7 @@ import { lerModoDeAcessoDaIa, lerNumerosDeTeste } from "@/lib/ai/elegibilidade/p
 import type { AcessoDaAiDoCanal } from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
-import { PROVIDERS_DE_MENSAGEM, capabilitiesOf, transportaMensagem } from "./capabilities";
+import { PROVIDERS_DE_MENSAGEM, capabilitiesOf, notaDeVozDoCanal, transportaMensagem } from "./capabilities";
 import type { ProviderDeMensagem } from "./types";
 
 /** Um canal oferecível como destino, já com o rótulo resolvido para a tela. */
@@ -122,14 +122,15 @@ function reportaConversao(provider: string | null): boolean {
   }
 }
 
-/** Mesma régua: provedor desconhecido deste build responde `false` (não promete voz). */
-function enviaNotaDeVoz(provider: string | null): boolean {
+/**
+ * Mesma régua: provedor desconhecido deste build responde `false` (não promete
+ * voz). A rede da sessão entra porque o MESMO provedor social fala no Instagram
+ * e cala no Facebook — a régua é a do turno (`notaDeVozDoCanal`).
+ */
+function enviaNotaDeVoz(provider: string | null, metadata: Record<string, unknown> | null): boolean {
   if (!transportaMensagem(provider)) return false;
-  try {
-    return capabilitiesOf(provider as ProviderDeMensagem).voiceNote !== "none";
-  } catch {
-    return false;
-  }
+  const rede = metadata?.social_platform;
+  return notaDeVozDoCanal(provider, typeof rede === "string" ? rede : null) !== "none";
 }
 
 /**
@@ -176,7 +177,7 @@ export async function listSelectableChannels(
     phone_number: c.phone_number ?? null,
     aceitaMensagemLivre: aceitaMensagemLivre(c.provider),
     reportaConversao: reportaConversao(c.provider),
-    enviaNotaDeVoz: enviaNotaDeVoz(c.provider),
+    enviaNotaDeVoz: enviaNotaDeVoz(c.provider, c.metadata),
     acessoDaAi: {
       // O MESMO leitor do runtime (`gate.ts` → `lerModoDeAcessoDaIa`): a tela
       // não pode chamar de "modo de teste" um canal que o motor trata de outro

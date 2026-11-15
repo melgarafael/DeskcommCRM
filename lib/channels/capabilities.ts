@@ -6,9 +6,9 @@
  * nasce de uma diferença real e medida entre WAHA e Meta Cloud; capability que
  * ninguém consome é código morto, e o teste de matriz reprova.
  */
-import type { ChannelCapabilities, ChannelProvider, ProviderDeMensagem } from "./types";
+import type { ChannelCapabilities, ChannelProvider, NotaDeVoz, ProviderDeMensagem } from "./types";
 
-export type { ChannelProvider, ChannelCapabilities, ProviderDeMensagem };
+export type { ChannelProvider, ChannelCapabilities, NotaDeVoz, ProviderDeMensagem };
 
 /**
  * A matriz descreve o que um canal de MENSAGEM permite — por isso a chave é
@@ -110,8 +110,10 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     //  - o provedor documenta `voiceNote` (bolha de voz) SÓ para WhatsApp, e não
     //    lista formato de áudio nenhum para Instagram/Facebook
     //    (https://docs.zernio.com/messages/send-inbox-message).
-    // Converter para um formato aceito fica para quando houver medição de ponta
-    // a ponta; até lá, prometer voz aqui é prometer uma bolha que falha.
+    //
+    // `none` é o valor da rede NÃO medida, o Facebook: a doc do Messenger não
+    // lista formato de áudio nenhum, e prometer voz lá é prometer uma bolha que
+    // falha. O Instagram, medido, sobrepõe em `NOTA_DE_VOZ_POR_REDE_SOCIAL`.
     voiceNote: "none",
     groups: "none",
     costPerMessage: true,
@@ -286,6 +288,39 @@ export const CHANNEL_PROVIDER_TELEGRAM: ChannelProvider = "telegram";
  * gatilhos `fn_trava_canais_do_plano` e `fn_vaga_ao_reviver_canal`.
  */
 export const PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO: ChannelProvider = CHANNEL_PROVIDER_WAHA;
+
+/**
+ * A nota de voz por REDE, no provedor que serve várias (`zernio_social`): a
+ * capability é do provedor, mas o formato aceito é da rede de cada conta. A rede
+ * mora na sessão (`channel_sessions.metadata.social_platform`, gravada ao ligar
+ * a caixa de entrada) — cada sessão social é UMA conta de UMA rede.
+ *
+ * Só entra aqui rede MEDIDA. Instagram, 15/11/2026, instalação real: um WAV
+ * (PCM 16 bits, mono, 24 kHz, 405.860 bytes — o mesmo cabeçalho de
+ * `embrulharPcmEmWav`) mandado como `attachmentType: "audio"` voltou 200 com o
+ * id de mensagem do Instagram, e tocou no aplicativo. Na mesma conversa, os
+ * quatro mp3 da véspera tinham voltado 400.
+ */
+export const NOTA_DE_VOZ_POR_REDE_SOCIAL: Readonly<Record<string, NotaDeVoz>> = {
+  instagram: "wav-only",
+};
+
+/**
+ * A nota de voz que ESTE canal entrega: a da rede da sessão, quando o provedor
+ * serve várias e a rede foi medida; senão, a do provedor.
+ *
+ * Provedor desconhecido deste build responde `none` (não promete voz) — a mesma
+ * régua de `enviaNotaDeVoz` na lista de canais.
+ */
+export function notaDeVozDoCanal(provider: string | null, redeSocial: string | null): NotaDeVoz {
+  // `Object.hasOwn`, nunca `in` nem índice cru: `constructor` e `toString`
+  // existem em todo objeto, e uma rede ou provedor com esse nome viraria função.
+  if (provider === CHANNEL_PROVIDER_SOCIAL && redeSocial && Object.hasOwn(NOTA_DE_VOZ_POR_REDE_SOCIAL, redeSocial)) {
+    return NOTA_DE_VOZ_POR_REDE_SOCIAL[redeSocial]!;
+  }
+  if (!provider || !Object.hasOwn(CHANNEL_CAPABILITIES, provider)) return "none";
+  return CHANNEL_CAPABILITIES[provider as ProviderDeMensagem].voiceNote;
+}
 
 /**
  * Os providers por onde MENSAGEM entra e sai — a única lista que responde
