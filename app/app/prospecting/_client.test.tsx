@@ -933,6 +933,104 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     }
   });
 
+  /** Cada pedido do resumo fica pendurado até o teste decidir o que ele devolve. */
+  function resumoNaMao() {
+    const pedidos: { resolver: (r: unknown) => void; falhar: (e: Error) => void }[] = [];
+    api.get.mockImplementation(async (url: string) => {
+      if (url !== RESUMO_URL) return { data: fixture() };
+      return new Promise((resolve, reject) => {
+        pedidos.push({ resolver: (r) => resolve({ data: r }), falhar: reject });
+      });
+    });
+    return pedidos;
+  }
+
+  const TRES_NAO_ABORDADAS = {
+    total: 5,
+    nao_abordadas: 3,
+    todas: 5,
+    fora_da_lista: { dados_apagados: 0, pediu_para_parar: 0, ficha_pessoal: 0 },
+    truncada: false,
+  };
+
+  async function fecharEReabrir(user: ReturnType<typeof userEvent.setup>) {
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menuitem")).toBeNull());
+    await user.click(screen.getByTestId("baixar-lista"));
+  }
+
+  it("ao reabrir, a contagem da abertura anterior não vira link enquanto conta de novo", async () => {
+    const pedidos = resumoNaMao();
+    const user = await abrirMenu();
+    await waitFor(() => expect(pedidos).toHaveLength(1));
+    pedidos[0].resolver(TRES_NAO_ABORDADAS);
+    expect(await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" })).toHaveAttribute(
+      "href",
+    );
+
+    // Fechado o menu, o worker aborda as 3. Reaberto, o (3) antigo não pode baixar.
+    await fecharEReabrir(user);
+    await waitFor(() => expect(pedidos).toHaveLength(2));
+    expect(await screen.findByText("Contando as empresas…")).toBeVisible();
+    for (const nome of ["Todas", "Só as não abordadas"]) {
+      const item = screen.getByRole("menuitem", { name: nome });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).not.toHaveAttribute("href");
+    }
+
+    pedidos[1].resolver({ ...TRES_NAO_ABORDADAS, nao_abordadas: 0 });
+    const soNaoAbordadas = await screen.findByRole("menuitem", { name: "Só as não abordadas (0)" });
+    expect(soNaoAbordadas).toHaveAttribute("aria-disabled", "true");
+    expect(soNaoAbordadas).not.toHaveAttribute("href");
+    expect(screen.queryByText("Contando as empresas…")).toBeNull();
+  });
+
+  it("ao reabrir, se a nova contagem falha, o número antigo não fica clicável ao lado do aviso", async () => {
+    const pedidos = resumoNaMao();
+    const user = await abrirMenu();
+    await waitFor(() => expect(pedidos).toHaveLength(1));
+    pedidos[0].resolver(TRES_NAO_ABORDADAS);
+    await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" });
+
+    await fecharEReabrir(user);
+    await waitFor(() => expect(pedidos).toHaveLength(2));
+    pedidos[1].falhar(new Error("falhou"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.",
+    );
+    for (const nome of ["Todas", "Só as não abordadas"]) {
+      const item = screen.getByRole("menuitem", { name: nome });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).not.toHaveAttribute("href");
+    }
+  });
+
+  it("depois de uma falha, reabrir mostra só 'Contando', sem o aviso de erro junto", async () => {
+    // Contou, depois falhou: o react-query guarda a contagem velha E o erro, e
+    // o erro continua de pé durante a contagem seguinte.
+    const pedidos = resumoNaMao();
+    const user = await abrirMenu();
+    await waitFor(() => expect(pedidos).toHaveLength(1));
+    pedidos[0].resolver(TRES_NAO_ABORDADAS);
+    await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" });
+    await fecharEReabrir(user);
+    await waitFor(() => expect(pedidos).toHaveLength(2));
+    pedidos[1].falhar(new Error("falhou"));
+    await screen.findByRole("alert");
+
+    await fecharEReabrir(user);
+    await waitFor(() => expect(pedidos).toHaveLength(3));
+    expect(await screen.findByText("Contando as empresas…")).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    pedidos[2].resolver(TRES_NAO_ABORDADAS);
+    expect(await screen.findByRole("menuitem", { name: "Só as não abordadas (3)" })).toHaveAttribute(
+      "href",
+      `/api/v1/prospecting/${COMPLETA}/exportar?quem=nao_abordadas`,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("a frase sob o cartão promete que quem pediu para parar não entra no arquivo", async () => {
     openPage();
     fireEvent.click(await screen.findByRole("button", { name: /Clínicas de estética/ }));
