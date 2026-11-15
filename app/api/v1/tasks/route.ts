@@ -29,6 +29,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { portaDaAplicacao } from "@/lib/db";
@@ -163,17 +164,23 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
 
   if (filtros.sector_id) {
-    const { data: membrosDoSetor } = await supabase
+    // Setores é módulo opcional (doc 213): desligado, o filtro não existe —
+    // a mesma resposta das rotas de setor, em vez de filtrar por um dado que a
+    // instalação não mostra.
+    const desligado = await seSetoresDesligado(requestId);
+    if (desligado) return desligado;
+    const { data: membrosDoSetor, error: erroDoSetor } = await supabase
       .from("attendant_sector_members")
       .select("user_id")
       .eq("sector_id", filtros.sector_id)
       .eq("organization_id", authz.org.orgId);
-    const ids = (membrosDoSetor ?? []).map((m: { user_id: string }) => m.user_id);
-    if (ids.length > 0) {
-      query = query.in("assigned_to", ids);
-    } else {
-      query = query.in("assigned_to", ["00000000-0000-0000-0000-000000000000"]);
+    if (erroDoSetor) {
+      return fail("internal_error", t("Erro ao listar as tarefas."), 500, { requestId });
     }
+    const ids = (membrosDoSetor ?? []).map((m: { user_id: string }) => m.user_id);
+    // Setor sem ninguém: nenhuma tarefa é dele.
+    if (ids.length === 0) return ok({ tasks: [] as Tarefa[] }, { requestId });
+    query = query.in("assigned_to", ids);
   }
 
   const { data, error } = await query;

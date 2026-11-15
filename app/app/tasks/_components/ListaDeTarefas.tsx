@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { useUser } from "@/hooks/auth/AuthProvider";
+import { useModulosLigados, useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
@@ -242,8 +242,13 @@ export function ListaDeTarefas({
   const membros = useAssignableMembers(podeEditar);
   const nomes = new Map((membros.data ?? []).map((m) => [m.user_id, m.full_name]));
 
-  const { data: atendentesResp } = useAttendants();
-  const { data: setoresResp } = useSectors();
+  // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
+  // pedido nem sai. O roster (`/attendants/availability`) é agent+: o viewer
+  // tomaria 403 (e um authz.denied no audit) a cada visita, como o comentário
+  // de `useAssignableMembers` já explica.
+  const setoresLigados = useModulosLigados().includes("setores");
+  const { data: atendentesResp } = useAttendants(setoresLigados && podeEditar);
+  const { data: setoresResp } = useSectors(setoresLigados);
   const atendentes = atendentesResp?.data ?? [];
   const setores = setoresResp?.data ?? [];
   const setoresMap = useMemo(() => new Map(setores.map((s) => [s.id, s])), [setores]);

@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useUser } from "@/hooks/auth/AuthProvider";
+import { useModulosLigados, useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowsClockwise, CalendarBlank, Kanban, ListChecks, Plus } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
@@ -52,9 +52,13 @@ export function TarefasClient({
   const [responsavel, setResponsavel] = useState<FiltroDeResponsavel>(minhasDeInicio ? "eu" : "todos");
   // Setor de atendimento (Fiscal, Contábil, DP, TI, etc.). "todos" = sem filtro.
   const [setor, setSetor] = useState<string>("todos");
-  const { data: setoresResp } = useSectors();
+  // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
+  // pedido nem sai — sem setores, o seletor não aparece. O roster é agent+,
+  // pela mesma razão de `useAssignableMembers` logo abaixo.
+  const setoresLigados = useModulosLigados().includes("setores");
+  const { data: setoresResp } = useSectors(setoresLigados);
   const setores = setoresResp?.data ?? [];
-  const { data: atendentesResp } = useAttendants();
+  const { data: atendentesResp } = useAttendants(setoresLigados && podeEditar);
   const atendentes = atendentesResp?.data ?? [];
 
   // `/team/assignable` exige agent: o viewer tomaria 403 (e um authz.denied no

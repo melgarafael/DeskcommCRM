@@ -1,66 +1,149 @@
-import { describe, expect, it } from "vitest";
+/**
+ * FILTRO POR SETOR NA TELA DE TAREFAS (#4630).
+ *
+ * A tarefa não tem setor próprio: ela é do setor de quem a tem
+ * (`crm_tasks.assigned_to` → `attendant_sector_members.user_id`). O filtro
+ * precisa estar NA CONSULTA — a rota corta em 500, e filtrar na tela
+ * esconderia as tarefas que ficaram depois do corte.
+ *
+ * Setores é módulo opcional, desligado por padrão (doc 213,
+ * `lib/instalacao/modulos.ts`). Desligado, o filtro não existe: a rota
+ * responde 404 como as rotas de setor, e a tela nem pergunta pelos setores.
+ */
+import { readFileSync } from "node:fs";
 
-describe("Filtro dinâmico e badges por setor em tarefas", () => {
-  it("filtra atendentes pelo setor correspondente", () => {
-    const atendentes = [
-      { user_id: "user-1", name: "Operador A", sector_ids: ["sec-fiscal"] },
-      { user_id: "user-2", name: "Operador B", sector_ids: ["sec-contabil"] },
-      { user_id: "user-3", name: "Operador C", sector_ids: ["sec-fiscal", "sec-contabil"] },
-      { user_id: "user-4", name: "Operador D", sector_ids: [] },
-    ];
+import { NextRequest } from "next/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-    const membros = [
-      { user_id: "user-1", full_name: "Operador A", role: "agent" },
-      { user_id: "user-2", full_name: "Operador B", role: "agent" },
-      { user_id: "user-3", full_name: "Operador C", role: "agent" },
-      { user_id: "user-4", full_name: "Operador D", role: "agent" },
-    ];
+import { fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
+import { createClient } from "@/lib/supabase/server";
 
-    // Quando setor for 'todos'
-    const setorTodos = "todos";
-    const membrosTodos = setorTodos === "todos" ? membros : [];
-    expect(membrosTodos).toHaveLength(4);
+vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
+vi.mock("@/lib/instalacao/modulos", async (original) => ({
+  ...(await original<typeof import("@/lib/instalacao/modulos")>()),
+  moduloLigado: vi.fn(),
+}));
+vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
-    // Quando setor for 'sec-fiscal'
-    const setorFiscal = "sec-fiscal";
-    const idsFiscal = new Set(
-      atendentes.filter((a) => a.sector_ids?.includes(setorFiscal)).map((a) => a.user_id),
-    );
-    const membrosFiscal = membros.filter((m) => idsFiscal.has(m.user_id));
-    expect(membrosFiscal.map((m) => m.user_id)).toEqual(["user-1", "user-3"]);
+const ORG = "22222222-2222-4222-8222-222222222222";
+const ANA = "11111111-1111-4111-8111-111111111111";
+const BETO = "33333333-3333-4333-8333-333333333333";
+const SETOR = "77777777-7777-4777-8777-777777777777";
 
-    // Quando setor for 'sec-contabil'
-    const setorContabil = "sec-contabil";
-    const idsContabil = new Set(
-      atendentes.filter((a) => a.sector_ids?.includes(setorContabil)).map((a) => a.user_id),
-    );
-    const membrosContabil = membros.filter((m) => idsContabil.has(m.user_id));
-    expect(membrosContabil.map((m) => m.user_id)).toEqual(["user-2", "user-3"]);
+function sessao(papel: Role = "agent") {
+  const user: AuthUser = {
+    id: ANA,
+    email: "ana@example.com",
+    full_name: "Ana",
+    avatar_url: null,
+    is_platform_admin: false,
+    idioma: "pt-BR" as const,
+    organizations: [{ organization_id: ORG, organization_name: "Org", role: papel }],
+  };
+  vi.mocked(requireRole).mockImplementation(async (min: Role) =>
+    ROLE_RANK[papel] >= ROLE_RANK[min]
+      ? { ok: true, user, org: { orgId: ORG, name: "Org", role: papel } }
+      : { ok: false, response: fail("forbidden_role", `Requer role >= ${min}.`, 403, {}) },
+  );
+}
+
+/** Dublê do PostgREST: uma cadeia por tabela, que ANOTA os filtros aplicados. */
+function fazerSupabase(membros: { data: unknown; error: unknown }) {
+  const filtros: Record<string, Array<[string, string, unknown]>> = {};
+  function cadeia(tabela: string, resposta: { data: unknown; error: unknown }) {
+    const anotados = (filtros[tabela] ??= []);
+    const elo: Record<string, unknown> = {};
+    for (const metodo of ["order", "limit", "gte", "lte", "select"]) elo[metodo] = () => elo;
+    for (const metodo of ["eq", "in", "is"]) {
+      elo[metodo] = (coluna: string, valor: unknown) => (anotados.push([metodo, coluna, valor]), elo);
+    }
+    elo.then = (res: (v: unknown) => unknown) => Promise.resolve(resposta).then(res);
+    return elo;
+  }
+  vi.mocked(createClient).mockResolvedValue({
+    from: (tabela: string) =>
+      cadeia(tabela, tabela === "attendant_sector_members" ? membros : { data: [], error: null }),
+  } as never);
+  return filtros;
+}
+
+async function listar(qs: string) {
+  const { GET } = await import("@/app/api/v1/tasks/route");
+  return GET(new NextRequest(`http://localhost/api/v1/tasks${qs}`));
+}
+
+describe("GET /api/v1/tasks?sector_id=", () => {
+  beforeEach(() => vi.mocked(moduloLigado).mockResolvedValue(true));
+
+  it("⭐ filtra pelas tarefas de quem é do setor, lendo os membros só desta organização", async () => {
+    sessao();
+    const filtros = fazerSupabase({ data: [{ user_id: ANA }, { user_id: BETO }], error: null });
+    const res = await listar(`?aberto=true&sector_id=${SETOR}`);
+    expect(res.status).toBe(200);
+    expect(filtros.attendant_sector_members).toContainEqual(["eq", "sector_id", SETOR]);
+    expect(filtros.attendant_sector_members).toContainEqual(["eq", "organization_id", ORG]);
+    expect(filtros.crm_tasks).toContainEqual(["in", "assigned_to", [ANA, BETO]]);
   });
 
-  it("resolve corretamente o setor e a cor para o badge no cartão", () => {
-    const setores = [
-      { id: "sec-fiscal", name: "Fiscal", color: "#6366f1" },
-      { id: "sec-contabil", name: "Contábil", color: "#10b981" },
-    ];
-    const atendentes = [
-      { user_id: "user-1", name: "Operador A", sector_ids: ["sec-fiscal"] },
-      { user_id: "user-2", name: "Operador B", sector_ids: ["sec-contabil"] },
-      { user_id: "user-4", name: "Operador D", sector_ids: [] },
-    ];
+  it("setor sem ninguém devolve lista vazia, e não a lista inteira", async () => {
+    sessao();
+    fazerSupabase({ data: [], error: null });
+    const res = await listar(`?sector_id=${SETOR}`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.tasks).toEqual([]);
+  });
 
-    const setoresMap = new Map(setores.map((s) => [s.id, s]));
-    const setorDoUsuario = new Map();
-    for (const a of atendentes) {
-      if (a.sector_ids && a.sector_ids.length > 0) {
-        const primeiroSetor = setoresMap.get(a.sector_ids[0]);
-        if (primeiroSetor) setorDoUsuario.set(a.user_id, primeiroSetor);
-      }
+  it("falha ao ler os membros do setor é 500, não uma lista vazia em silêncio", async () => {
+    sessao();
+    fazerSupabase({ data: null, error: { message: "boom" } });
+    const res = await listar(`?sector_id=${SETOR}`);
+    expect(res.status).toBe(500);
+  });
+
+  it("com o módulo de setores desligado, o filtro não existe: 404", async () => {
+    vi.mocked(moduloLigado).mockResolvedValue(false);
+    sessao();
+    const filtros = fazerSupabase({ data: [{ user_id: ANA }], error: null });
+    const res = await listar(`?sector_id=${SETOR}`);
+    expect(res.status).toBe(404);
+    expect(filtros.attendant_sector_members ?? []).toEqual([]);
+  });
+
+  it("sem o parâmetro, a consulta é a de antes e o módulo nem é consultado", async () => {
+    vi.mocked(moduloLigado).mockClear();
+    sessao();
+    const filtros = fazerSupabase({ data: [], error: null });
+    const res = await listar("?aberto=true");
+    expect(res.status).toBe(200);
+    expect(filtros.attendant_sector_members).toBeUndefined();
+    expect(moduloLigado).not.toHaveBeenCalled();
+  });
+});
+
+describe("a tela de Tarefas respeita o módulo desligado", () => {
+  it("as três peças só pedem setores com o módulo ligado, e o roster (agent+) só a quem edita", () => {
+    for (const arquivo of [
+      "app/app/tasks/_components/TarefasClient.tsx",
+      "app/app/tasks/_components/ListaDeTarefas.tsx",
+      "app/app/tasks/_components/QuadroDeTarefas.tsx",
+    ]) {
+      const fonte = readFileSync(arquivo, "utf8");
+      expect(fonte, arquivo).toMatch(/useModulosLigados\(\)\.includes\("setores"\)/);
+      expect(fonte, arquivo).toMatch(/useSectors\(setoresLigados\)/);
+      expect(fonte, arquivo).toMatch(/useAttendants\(setoresLigados && podeEditar\)/);
+      expect(fonte, arquivo).not.toMatch(/useSectors\(\)|useAttendants\(\)/);
     }
+  });
 
-    expect(setorDoUsuario.get("user-1")).toEqual({ id: "sec-fiscal", name: "Fiscal", color: "#6366f1" });
-    expect(setorDoUsuario.get("user-2")).toEqual({ id: "sec-contabil", name: "Contábil", color: "#10b981" });
-    expect(setorDoUsuario.get("user-4")).toBeUndefined();
-    expect(setorDoUsuario.get("user-inexistente")).toBeUndefined();
+  it("a tela manda o setor escolhido para a rota", () => {
+    const tela = readFileSync("app/app/tasks/_components/TarefasClient.tsx", "utf8");
+    expect(tela).toMatch(/sector_id: setor === "todos" \? undefined : setor/);
+    const hook = readFileSync("hooks/tasks/useTasks.ts", "utf8");
+    expect(hook).toMatch(/params\.set\("sector_id", filtros\.sector_id\)/);
   });
 });
