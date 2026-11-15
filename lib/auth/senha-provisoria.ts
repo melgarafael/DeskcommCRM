@@ -10,15 +10,18 @@ import type { AuthUser } from "@/lib/auth/types";
  * GoTrue, com o token da própria sessão). Um gate apoiado nela seria desarmado
  * pela pessoa obrigada a trocar a senha, sem nem precisar de tela: uma chamada
  * ao GoTrue com o token da sessão apaga a marca. A coluna
- * `user_organizations.senha_provisoria` (migration 9227) só é escrita com
+ * `user_organizations.senha_provisoria` (migration 9380) só é escrita com
  * service-role — o app não tem caminho de escrita para ela.
  *
- * ─── Por que no vínculo, e não "no usuário" ───────────────────────────────
+ * ─── Por que a OBRIGAÇÃO é da pessoa, e não de um vínculo só ──────────────
  *
- * Quem definiu a senha foi o admin de UMA empresa. A mesma pessoa pode ser
- * membro de outra organização por convite (fluxo que continua valendo) e ali
- * não deve nada a ninguém. O vínculo é a granularidade certa: a obrigação vale
- * onde o admin criou a conta.
+ * A marca é gravada no vínculo onde a conta nasceu, mas o gate vale para a
+ * SESSÃO inteira enquanto qualquer vínculo estiver marcado. Quem criou a conta
+ * conhece a senha provisória: se a obrigação fosse por vínculo, a pessoa (ou
+ * quem soubesse a senha) aceitaria um convite de OUTRA empresa ainda com a
+ * senha provisória, e nessa empresa entraria livre — com uma senha que outra
+ * pessoa conhece. A troca (`trocarSenhaProvisoria`) já apaga a marca de todos
+ * os vínculos de uma vez, então a regra é a mesma nos dois lados.
  */
 
 /** O código que o cliente usa para reconhecer a recusa e levar à tela de troca. */
@@ -29,7 +32,7 @@ export const MENSAGEM_SENHA_PROVISORIA =
   "Sua senha foi definida por quem administra a empresa. Troque-a para continuar.";
 
 /**
- * A pessoa deve trocar a senha ANTES de usar esta organização?
+ * A pessoa deve trocar a senha ANTES de usar o produto?
  *
  * Sessão de acompanhamento (`support`) nunca é gated: quem está ali é o suporte
  * da instalação, não o membro obrigado a trocar a senha — e o vínculo lido é o
@@ -37,15 +40,8 @@ export const MENSAGEM_SENHA_PROVISORIA =
  */
 export function senhaProvisoriaPendente(
   user: Pick<AuthUser, "support" | "organizations">,
-  organizationId: string,
 ): boolean {
-  if (user.support) return false;
-  // `organizations` é opcional no tipo e chega ausente em sessão sem vínculo
-  // (e em qualquer mock de usuário). Ler `.some` direto aqui derrubava o layout
-  // inteiro — 10 testes alheios caíram por causa disso no CI do #4120.
-  return (user.organizations ?? []).some(
-    (o) => o.organization_id === organizationId && o.senha_provisoria === true,
-  );
+  return organizacoesComSenhaProvisoria(user).length > 0;
 }
 
 /** Qualquer organização ativa com a marca — o que a tela de troca consulta. */

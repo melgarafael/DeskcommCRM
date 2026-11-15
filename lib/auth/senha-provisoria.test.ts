@@ -32,23 +32,23 @@ function usuario(orgs: Array<{ id: string; senha_provisoria?: boolean }>): Pick<
  */
 describe("senhaProvisoriaPendente", () => {
   it("convidado (sem a marca) não é obrigado a trocar", () => {
-    expect(senhaProvisoriaPendente(usuario([{ id: ORG_A }]), ORG_A)).toBe(false);
-    expect(senhaProvisoriaPendente(usuario([{ id: ORG_A, senha_provisoria: false }]), ORG_A)).toBe(false);
+    expect(senhaProvisoriaPendente(usuario([{ id: ORG_A }]))).toBe(false);
+    expect(senhaProvisoriaPendente(usuario([{ id: ORG_A, senha_provisoria: false }]))).toBe(false);
   });
 
-  it("criado pelo admin é obrigado a trocar na organização onde foi criado", () => {
+  it("criado pelo admin é obrigado a trocar", () => {
     const u = usuario([{ id: ORG_A, senha_provisoria: true }]);
-    expect(senhaProvisoriaPendente(u, ORG_A)).toBe(true);
-    expect(senhaProvisoriaPendente(u, ORG_B)).toBe(false);
+    expect(senhaProvisoriaPendente(u)).toBe(true);
   });
 
-  it("a obrigação é por vínculo: convite em outra empresa não contamina", () => {
+  it("a obrigação é da PESSOA: convite aceito em outra empresa não a dispensa", () => {
+    // Quem criou a conta conhece a senha provisória. Se a obrigação fosse por
+    // vínculo, a organização B (convite) abriria livre com essa senha.
     const u = usuario([
       { id: ORG_A, senha_provisoria: true },
       { id: ORG_B, senha_provisoria: false },
     ]);
-    expect(senhaProvisoriaPendente(u, ORG_A)).toBe(true);
-    expect(senhaProvisoriaPendente(u, ORG_B)).toBe(false);
+    expect(senhaProvisoriaPendente(u)).toBe(true);
     expect(organizacoesComSenhaProvisoria(u)).toEqual([ORG_A]);
   });
 
@@ -59,7 +59,7 @@ describe("senhaProvisoriaPendente", () => {
       // aqui só importa que o campo exista.
       support: { status: "active" } as unknown as AuthUser["support"],
     };
-    expect(senhaProvisoriaPendente(u, ORG_A)).toBe(false);
+    expect(senhaProvisoriaPendente(u)).toBe(false);
     expect(organizacoesComSenhaProvisoria(u)).toEqual([]);
   });
 

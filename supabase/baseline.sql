@@ -81681,7 +81681,7 @@ alter table public.followup_flow_pointers
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
--- ---- senha provisória do usuário criado sem convite (migration 9227) ----
+-- ---- senha provisória do usuário criado sem convite (migration 9380) ----
 -- #3876: quem administra cria a pessoa já com senha; o vínculo nasce marcado e
 -- o servidor exige a troca no primeiro acesso. Fica no apêndice pelo mesmo
 -- motivo do bloco acima (o `create table` do bloco 1865 é pulado em instalação

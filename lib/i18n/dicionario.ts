@@ -11423,21 +11423,21 @@ export const DICIONARIO: Traducoes = {
   "Falhas": { es: "Fallas" },
   "Resultados aparecerão aqui após o envio.": { es: "Los resultados aparecerán aquí después del envío." },
 
-  // ─── #3876: criar a pessoa SEM convite (admin define a senha) ───
+  // ─── #3876: criar a pessoa SEM convite (senha provisória gerada pelo servidor) ───
   "Criar usuário com senha": { es: "Crear usuario con contraseña" },
-  "A conta já nasce pronta: você define a senha e a pessoa entra com ela. No primeiro acesso ela precisa escolher uma senha própria. Nenhum e-mail é enviado.": {
-    es: "La cuenta ya nace lista: tú defines la contraseña y la persona entra con ella. En el primer acceso debe elegir una contraseña propia. No se envía ningún correo.",
+  "A conta já nasce pronta, com uma senha provisória que aparece uma vez ao criar. No primeiro acesso a pessoa precisa escolher uma senha própria. Nenhum e-mail é enviado.": {
+    es: "La cuenta ya nace lista, con una contraseña provisional que aparece una sola vez al crearla. En el primer acceso la persona debe elegir una contraseña propia. No se envía ningún correo.",
   },
   "Diferente do convite, aqui a conta já existe ao fim do formulário — sem depender de e-mail, SMTP ou de a pessoa clicar num link.": {
     es: "A diferencia de la invitación, aquí la cuenta ya existe al terminar el formulario, sin depender de correo, SMTP ni de que la persona haga clic en un enlace.",
   },
   "Senha provisória": { es: "Contraseña provisional" },
-  "Confirmar senha provisória": { es: "Confirmar contraseña provisional" },
-  "Mínimo de 8 caracteres, com letra, número e símbolo.": {
-    es: "Mínimo 8 caracteres, con letra, número y símbolo.",
+  "Esta senha aparece só agora. Ao sair desta tela ela não pode ser vista de novo.": {
+    es: "Esta contraseña aparece solo ahora. Al salir de esta pantalla no se puede volver a ver.",
   },
-  "A pessoa será obrigada a trocar esta senha no primeiro acesso.": {
-    es: "La persona deberá cambiar esta contraseña en el primer acceso.",
+  "Senha copiada.": { es: "Contraseña copiada." },
+  "Não consegui copiar — selecione e copie a senha manualmente.": {
+    es: "No pude copiar: selecciona y copia la contraseña manualmente.",
   },
   "Criar usuário": { es: "Crear usuario" },
   // "Criando…" já existe no bloco de cadastro — a chave é a mesma frase.
@@ -11448,12 +11448,16 @@ export const DICIONARIO: Traducoes = {
   "Nenhum e-mail foi enviado. Entregue o e-mail e a senha provisória para a pessoa; ela escolhe a senha dela no primeiro acesso.": {
     es: "No se envió ningún correo. Entrega el correo y la contraseña provisional a la persona; ella elige su contraseña en el primer acceso.",
   },
-  "Já existe uma conta com este e-mail.": { es: "Ya existe una cuenta con este correo." },
   "Este e-mail já é a sua conta.": { es: "Este correo ya es tu cuenta." },
-  "Já existe uma conta com este e-mail. Para dar acesso a esta pessoa, convide-a.": {
-    es: "Ya existe una cuenta con este correo. Para dar acceso a esta persona, invítala.",
+  "Não foi possível criar a conta. Se a pessoa já usa esta instalação, convide-a por e-mail.": {
+    es: "No se pudo crear la cuenta. Si la persona ya usa esta instalación, invítala por correo.",
   },
-  "Não foi possível criar a conta agora.": { es: "No se pudo crear la cuenta ahora." },
+  "Nesta instalação, pessoas novas entram por convite. Use Convidar membros.": {
+    es: "En esta instalación, las personas nuevas entran por invitación. Usa Invitar miembros.",
+  },
+  "Muitas contas criadas em pouco tempo. Tente de novo mais tarde.": {
+    es: "Demasiadas cuentas creadas en poco tiempo. Inténtalo de nuevo más tarde.",
+  },
   "Não foi possível incluir a pessoa na equipe.": {
     es: "No se pudo incluir a la persona en el equipo.",
   },

@@ -14,7 +14,6 @@ import { useCreateTeamUser } from "@/hooks/team/useCreateTeamUser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PasswordStrength } from "@/components/auth/PasswordStrength";
 import {
   Select,
   SelectContent,
@@ -23,19 +22,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROLES, type Role } from "@/lib/schemas/team";
-import { senhaForteSchema } from "@/lib/auth/schemas";
 import { rotuloDoPapel } from "@/lib/auth/types";
-import { ApiError } from "@/lib/api/types";
+import { copyToClipboard } from "@/lib/clipboard";
 
 /**
  * Criar a pessoa sem convite (#3876).
  *
- * A senha é digitada por quem administra e a pessoa troca no primeiro acesso —
- * o aviso fica na tela, não só no corpo do PR: sem ele, o admin acharia que a
- * senha que ele escolheu é a definitiva e passaria a senha errada adiante.
- *
- * A validação local é a MESMA do servidor (`senhaForteSchema`, o schema da
- * recuperação de senha) — a do servidor continua sendo a que decide.
+ * A senha provisória é GERADA pelo servidor e aparece aqui uma única vez,
+ * logo depois de criar — ela não fica guardada em lugar nenhum. A pessoa troca
+ * no primeiro acesso; o aviso fica na tela para quem administra não tratar a
+ * senha entregue como definitiva.
  */
 export function CriarUsuarioForm() {
   const t = useT();
@@ -43,18 +39,12 @@ export function CriarUsuarioForm() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("agent");
   const [settings, setSettings] = useState(INTERFACE_COMPLETA);
-  const [password, setPassword] = useState("");
-  const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [criado, setCriado] = useState<{ email: string } | null>(null);
+  const [criado, setCriado] = useState<{ email: string; senha: string } | null>(null);
   const criar = useCreateTeamUser();
 
-  const senhaValida = senhaForteSchema.safeParse(password).success;
-  const senhasIguais = password.length > 0 && password === passwordConfirm;
   const podeEnviar =
     fullName.trim().length >= 2 &&
     email.trim().length > 3 &&
-    senhaValida &&
-    senhasIguais &&
     interfaceSettingsSchema.safeParse(settings).success &&
     interfaceTemDestino(settings, role);
 
@@ -65,24 +55,20 @@ export function CriarUsuarioForm() {
         full_name: fullName.trim(),
         email: email.trim().toLowerCase(),
         role,
-        password,
-        password_confirm: passwordConfirm,
         interface_settings: settings,
       });
-      setCriado({ email: res.data.email });
+      setCriado({ email: res.data.email, senha: res.data.senha_provisoria });
       toast.success(t("Usuário criado. Entregue o e-mail e a senha para a pessoa."));
       setFullName("");
       setEmail("");
-      setPassword("");
-      setPasswordConfirm("");
-    } catch (err) {
-      // O toast já saiu (showApiError). 409 de e-mail repetido fica na tela:
-      // a saída é convidar quem já tem conta, e isso não se resolve repetindo
-      // o clique.
-      if (err instanceof ApiError && err.code === "email_already_registered") {
-        toast.error(t("Já existe uma conta com este e-mail."));
-      }
+    } catch {
+      // A mensagem do servidor já saiu no toast (showApiError).
     }
+  };
+
+  const copiarSenha = async (senha: string) => {
+    if (await copyToClipboard(senha)) toast.success(t("Senha copiada."));
+    else toast.error(t("Não consegui copiar — selecione e copie a senha manualmente."));
   };
 
   return (
@@ -123,41 +109,6 @@ export function CriarUsuarioForm() {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">{t("Senha provisória")}</Label>
-          <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            aria-invalid={password.length > 0 && !senhaValida ? true : undefined}
-          />
-          {password.length > 0 && !senhaValida ? (
-            <p className="text-xs text-destructive">
-              {t("Mínimo de 8 caracteres, com letra, número e símbolo.")}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {t("A pessoa será obrigada a trocar esta senha no primeiro acesso.")}
-            </p>
-          )}
-          <PasswordStrength password={password} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password_confirm">{t("Confirmar senha provisória")}</Label>
-          <Input
-            id="password_confirm"
-            type="password"
-            value={passwordConfirm}
-            onChange={(e) => setPasswordConfirm(e.target.value)}
-            autoComplete="new-password"
-            aria-invalid={passwordConfirm.length > 0 && !senhasIguais ? true : undefined}
-          />
-          {passwordConfirm.length > 0 && !senhasIguais ? (
-            <p className="text-xs text-destructive">{t("As senhas não coincidem")}</p>
-          ) : null}
-        </div>
         <InterfaceEditor
           value={settings}
           onChange={setSettings}
@@ -179,6 +130,24 @@ export function CriarUsuarioForm() {
               )}
             </p>
             <div className="mt-2 font-medium">{criado.email}</div>
+            <div className="mt-3 space-y-1">
+              <Label htmlFor="senha_provisoria">{t("Senha provisória")}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="senha_provisoria"
+                  readOnly
+                  value={criado.senha}
+                  className="font-mono"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <Button type="button" variant="outline" onClick={() => void copiarSenha(criado.senha)}>
+                  {t("Copiar")}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t("Esta senha aparece só agora. Ao sair desta tela ela não pode ser vista de novo.")}
+              </p>
+            </div>
           </section>
         ) : (
           <p className="text-sm text-muted-foreground">

@@ -90,6 +90,10 @@ export const AUDIT_ACTIONS = [
   // conta e o e-mail era a prova; aqui a conta nasceu pronta e a trilha
   // precisa responder "quem criou esta pessoa, com qual papel, e quando".
   "member.created",
+  // A criação acima recusada pelo GoTrue (#3876). Gravado SEM organização: o
+  // motivo pode ser "o e-mail já tem conta noutra empresa", e só o dono da
+  // instalação pode ler isso — a resposta ao admin é genérica.
+  "member.create_refused",
   "team.interface_changed",
   /**
    * A EMPRESA trocou as portas que mostra (issue #1341, migration 0367). É o

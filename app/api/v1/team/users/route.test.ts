@@ -2,22 +2,22 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * #3876 (fatia 1) — criar a pessoa SEM convite, com a senha definida por quem
- * administra.
+ * #3876 — criar a pessoa SEM convite, com senha provisória gerada pelo
+ * servidor (doc 310, alternativa A).
  *
  * O que esta suíte prova, e por quê:
  *
- * - a conta nasce com a senha do corpo e `email_confirm: true` (sem e-mail não
- *   há link para confirmar; conta pendente de confirmação recusaria o login);
+ * - só o dono da instalação, ou o admin numa instalação de UMA empresa, cria;
+ * - a senha é gerada aqui (o corpo não carrega senha) e volta UMA vez, com
+ *   `no-store`; a conta nasce com `email_confirm: true`;
  * - o VÍNCULO nasce com `senha_provisoria = true` — o sinal que o gate do
  *   servidor lê (`requireRole` recusa /api/v1 e o layout manda para
  *   /trocar-senha);
  * - NENHUM e-mail sai: é o ponto inteiro da fatia, e o convite continua sendo o
  *   único caminho que depende de SMTP;
- * - a régua de senha é a MESMA da recuperação (`resetPasswordSchema`), então
- *   senha fraca morre em 422 antes de qualquer escrita;
- * - e-mail que já tem conta é 409 — esta porta não troca a senha de conta
- *   alheia;
+ * - e-mail que já tem conta recebe a MESMA resposta de qualquer falha do
+ *   GoTrue — a rota não diz se o e-mail existe noutra empresa;
+ * - há limite de tentativas por organização;
  * - plano cheio e vínculo recusado não deixam conta de auth órfã: a criação é
  *   compensada com `deleteUser`.
  */
@@ -38,6 +38,7 @@ const h = vi.hoisted(() => ({
   traduzirLimite: vi.fn(() => null as null | { code: string; message: string; details: unknown }),
   logErro: vi.fn(),
   logWarn: vi.fn(),
+  rate: vi.fn(async () => ({ allowed: true, count: 1, limit: 10 })),
   /** Cliente de SESSÃO: a rota não pode encostar nele — criar usuário não é entrar. */
   createSessionClient: vi.fn(),
 }));
@@ -56,6 +57,7 @@ vi.mock("@/lib/cobranca/limites", () => ({
   traduzirLimiteDoPlano: h.traduzirLimite,
 }));
 vi.mock("@/lib/auth/cache-curto", () => ({ invalidarUsuario: vi.fn() }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: h.rate }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: h.createSessionClient }));
 vi.mock("@/lib/logger", () => ({
   logger: { error: h.logErro, warn: h.logWarn, info: vi.fn() },
@@ -66,17 +68,20 @@ import { POST } from "./route";
 const ORG = "11111111-1111-4111-8111-111111111111";
 const ADMIN_ID = "22222222-2222-4222-8222-222222222222";
 const NOVO_ID = "33333333-3333-4333-8333-333333333333";
-const SENHA = "Provisoria#2026";
+/** A forma da senha que o servidor gera: três grupos de 4, sem 0/O/1/l/I. */
+const FORMA_DA_SENHA = /^[A-HJ-NP-Za-hj-km-np-z2-9]{4}-[A-HJ-NP-Za-hj-km-np-z2-9]{4}-[A-HJ-NP-Za-hj-km-np-z2-9]{4}$/;
 
-function sessaoAdmin() {
+function sessaoAdmin(extra: Record<string, unknown> = {}) {
   h.role.mockResolvedValue({
     ok: true,
-    user: { id: ADMIN_ID, email: "admin@empresa.test", idioma: "pt-BR", full_name: "Admin" },
+    user: { id: ADMIN_ID, email: "admin@empresa.test", idioma: "pt-BR", full_name: "Admin", ...extra },
     org: { orgId: ORG, name: "Empresa", role: "admin", org_status: "active" },
   });
 }
 
 interface Cenario {
+  /** Quantas empresas a instalação tem (default 1). */
+  empresas?: number;
   membros?: Array<{ user_id: string; provisional_until_handover: boolean }>;
   erroMembros?: { message: string } | null;
   erroCria?: { message: string; status?: number; code?: string } | null;
@@ -106,10 +111,13 @@ function adminFake(o: Cenario = {}) {
     },
     single: async () => vinculo,
   };
+  const contagem = {
+    select: async () => ({ count: o.empresas ?? 1, error: null }),
+  };
   return {
     from: (tabela: string) => {
       tabelas.push(tabela);
-      return cadeia;
+      return tabela === "organizations" ? contagem : cadeia;
     },
     auth: { admin: { createUser, deleteUser } },
     insercao,
@@ -124,8 +132,6 @@ const pedido = (corpo: Record<string, unknown> = {}) =>
       full_name: "Pessoa Nova",
       email: "novo@empresa.test",
       role: "agent",
-      password: SENHA,
-      password_confirm: SENHA,
       ...corpo,
     }),
   });
@@ -139,17 +145,20 @@ beforeEach(() => {
 });
 
 describe("POST /api/v1/team/users — criar sem convite (#3876)", () => {
-  it("cria a conta com a senha do corpo, confirmada, e o vínculo com troca obrigatória", async () => {
+  it("cria a conta com a senha GERADA, confirmada, e devolve a senha uma vez sem cache", async () => {
     const res = await POST(pedido());
     expect(res.status).toBe(201);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
 
     const admin = h.admin as ReturnType<typeof adminFake>;
     expect(admin.auth.admin.createUser).toHaveBeenCalledWith({
       email: "novo@empresa.test",
-      password: SENHA,
+      password: expect.stringMatching(FORMA_DA_SENHA),
       email_confirm: true,
       user_metadata: { full_name: "Pessoa Nova" },
     });
+    const senhaCriada = (admin.auth.admin.createUser.mock.calls[0] as unknown as [{ password: string }])[0]
+      .password;
 
     const corpo = await res.json();
     expect(corpo.data).toMatchObject({
@@ -157,9 +166,19 @@ describe("POST /api/v1/team/users — criar sem convite (#3876)", () => {
       email: "novo@empresa.test",
       role: "agent",
       deve_trocar_senha: true,
+      senha_provisoria: senhaCriada,
     });
-    // O sinal do primeiro acesso não é "resposta bonita": é coluna.
-    expect(corpo.data.senha_provisoria).toBeUndefined();
+  });
+
+  it("duas criações não repetem a senha", async () => {
+    await POST(pedido());
+    await POST(pedido());
+    const admin = h.admin as ReturnType<typeof adminFake>;
+    const senhas = (admin.auth.admin.createUser.mock.calls as unknown as Array<[{ password: string }]>).map(
+      (c) => c[0].password,
+    );
+    expect(senhas).toHaveLength(2);
+    expect(senhas[0]).not.toBe(senhas[1]);
   });
 
   it("não encosta na sessão de ninguém: criar usuário não é entrar", async () => {
@@ -169,8 +188,9 @@ describe("POST /api/v1/team/users — criar sem convite (#3876)", () => {
     // deste navegador nem sessão do admin é trocada.
     expect(h.createSessionClient).not.toHaveBeenCalled();
     const admin = h.admin as ReturnType<typeof adminFake>;
-    // Só o vínculo é tocado: nem `team_invites` (convite), nem tabela de sessão.
-    expect([...new Set(admin.tabelas)]).toEqual(["user_organizations"]);
+    // Só a contagem de empresas e o vínculo: nem `team_invites` (convite), nem
+    // tabela de sessão.
+    expect([...new Set(admin.tabelas)].sort()).toEqual(["organizations", "user_organizations"]);
   });
 
   it("NÃO manda e-mail — a fatia inteira existe para não depender de SMTP", async () => {
@@ -197,11 +217,16 @@ describe("POST /api/v1/team/users — criar sem convite (#3876)", () => {
       senha_provisoria: true,
     });
     // A trilha responde "quem criou quem" — nunca guarda credencial.
-    expect(JSON.stringify(entrada.metadata)).not.toContain(SENHA);
+    const admin = h.admin as ReturnType<typeof adminFake>;
+    const senhaCriada = (admin.auth.admin.createUser.mock.calls[0] as unknown as [{ password: string }])[0]
+      .password;
+    expect(JSON.stringify(entrada.metadata)).not.toContain(senhaCriada);
+    expect(JSON.stringify(h.logWarn.mock.calls)).not.toContain(senhaCriada);
+    expect(JSON.stringify(h.logErro.mock.calls)).not.toContain(senhaCriada);
   });
 
-  it("senha fraca morre em 422 pela régua da recuperação, sem criar conta", async () => {
-    const res = await POST(pedido({ password: "senhafraca", password_confirm: "senhafraca" }));
+  it("senha no corpo é recusada (422), não aproveitada: quem administra não escolhe a senha", async () => {
+    const res = await POST(pedido({ password: "Escolhida#2026", password_confirm: "Escolhida#2026" }));
     expect(res.status).toBe(422);
     const corpo = await res.json();
     expect(corpo.error.code).toBe("validation_error");
@@ -209,9 +234,57 @@ describe("POST /api/v1/team/users — criar sem convite (#3876)", () => {
     expect(admin.auth.admin.createUser).not.toHaveBeenCalled();
   });
 
-  it("senhas que não coincidem morrem em 422", async () => {
-    const res = await POST(pedido({ password_confirm: `${SENHA}x` }));
-    expect(res.status).toBe(422);
+  describe("alcance (doc 310 A)", () => {
+    it("admin de empresa numa instalação com VÁRIAS empresas é recusado — o caminho é o convite", async () => {
+      h.admin = adminFake({ empresas: 2 });
+      const res = await POST(pedido());
+      expect(res.status).toBe(403);
+      const corpo = await res.json();
+      expect(corpo.error.code).toBe("invite_required");
+      const admin = h.admin as ReturnType<typeof adminFake>;
+      expect(admin.auth.admin.createUser).not.toHaveBeenCalled();
+      // A recusa de alcance não gasta tentativa do limite.
+      expect(h.rate).not.toHaveBeenCalled();
+    });
+
+    it("o dono da instalação (platform admin full) cria mesmo com várias empresas", async () => {
+      sessaoAdmin({ is_platform_admin: true, platform_admin_scope: "full" });
+      h.admin = adminFake({ empresas: 5 });
+      const res = await POST(pedido());
+      expect(res.status).toBe(201);
+    });
+
+    it("platform admin só-leitura NÃO conta como dono da instalação", async () => {
+      sessaoAdmin({ is_platform_admin: true, platform_admin_scope: "support_readonly" });
+      h.admin = adminFake({ empresas: 2 });
+      const res = await POST(pedido());
+      expect(res.status).toBe(403);
+    });
+
+    it("contagem de empresas que falha fecha a porta", async () => {
+      const admin = adminFake();
+      const from = admin.from;
+      admin.from = (tabela: string) =>
+        tabela === "organizations"
+          ? ({ select: async () => ({ count: null, error: { code: "XX000" } }) } as never)
+          : from(tabela);
+      h.admin = admin;
+      const res = await POST(pedido());
+      expect(res.status).toBe(403);
+      expect(admin.auth.admin.createUser).not.toHaveBeenCalled();
+    });
+  });
+
+  it("limite de tentativas: 429 com Retry-After, sem criar conta", async () => {
+    h.rate.mockResolvedValueOnce({ allowed: false, count: 11, limit: 10 });
+    const res = await POST(pedido());
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("3600");
+    const corpo = await res.json();
+    expect(corpo.error.code).toBe("rate_limited");
+    expect(h.rate).toHaveBeenCalledWith(`equipe:criar-com-senha:${ORG}`, 10, 3600);
+    const admin = h.admin as ReturnType<typeof adminFake>;
+    expect(admin.auth.admin.createUser).not.toHaveBeenCalled();
   });
 
   it("o vínculo nasce marcado, com papel, interface e autoria do admin", async () => {
@@ -242,12 +315,26 @@ describe("POST /api/v1/team/users — criar sem convite (#3876)", () => {
     expect(admin.auth.admin.createUser).not.toHaveBeenCalled();
   });
 
-  it("e-mail que já tem conta é 409 — esta porta não troca a senha de conta alheia", async () => {
-    h.admin = adminFake({ erroCria: { message: "User already registered", status: 422 } });
-    const res = await POST(pedido());
-    expect(res.status).toBe(409);
-    const corpo = await res.json();
-    expect(corpo.error.code).toBe("email_already_registered");
+  it("e-mail que já tem conta noutra empresa: resposta IGUAL à de uma falha qualquer", async () => {
+    h.admin = adminFake({ erroCria: { message: "A user with this email address has already been registered", status: 422 } });
+    const existe = await POST(pedido());
+    const corpoExiste = await existe.json();
+
+    h.admin = adminFake({ erroCria: { message: "Database error creating new user", status: 500 } });
+    const falha = await POST(pedido());
+    const corpoFalha = await falha.json();
+
+    expect(existe.status).toBe(falha.status);
+    expect(corpoExiste.error).toEqual(corpoFalha.error);
+    expect(corpoExiste.error.code).toBe("user_not_created");
+    expect(JSON.stringify(corpoExiste)).not.toMatch(/existe|registered|already/i);
+
+    // O motivo real fica no log e numa auditoria SEM organização (a policy de
+    // leitura de api_audit_log mostra linha da org ao admin dela).
+    const recusas = h.audit.mock.calls.map((c) => c[0]).filter((e) => e.action === "member.create_refused");
+    expect(recusas).toHaveLength(2);
+    expect(recusas[0]).toMatchObject({ organizationId: null, metadata: { motivo: "email_ja_tem_conta" } });
+    expect(recusas[1]).toMatchObject({ organizationId: null, metadata: { motivo: "gotrue_recusou" } });
   });
 
   it("e-mail do próprio admin é 409 antes de qualquer chamada ao GoTrue", async () => {

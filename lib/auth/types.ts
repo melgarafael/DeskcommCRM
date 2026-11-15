@@ -182,7 +182,7 @@ export interface UserOrgMembership {
   /** `organizations.suspended_kind` — só significa algo com status 'suspended'. */
   suspended_kind?: string | null;
   /**
-   * `user_organizations.senha_provisoria` (migration 9227).
+   * `user_organizations.senha_provisoria` (migration 9380).
    *
    * `true` = a senha deste vínculo foi definida por quem administra e precisa
    * ser trocada no primeiro acesso. Vem junto da lista porque o gate do layout

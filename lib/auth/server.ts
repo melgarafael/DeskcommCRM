@@ -22,6 +22,7 @@ import { cookies, headers } from "next/headers";
 import { agindoPeloPoderDePlataforma } from "@/lib/auth/poder-de-plataforma";
 import { redirect } from "next/navigation";
 import { safeNext } from "@/lib/auth/safe-next";
+import { senhaProvisoriaPendente } from "@/lib/auth/senha-provisoria";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -577,6 +578,10 @@ export const orgAtivaSemPortao = cache(async (authUser: AuthUser): Promise<Activ
  */
 export const resolveActiveOrg = cache(async (authUser: AuthUser): Promise<ActiveOrg | null> => {
   const org = await orgAtivaSemPortao(authUser);
+  // #3876: com a senha provisória de pé, a única tela é a troca — antes de
+  // onboarding, cobrança ou MFA. Aqui, e não só no layout de `/app`, para
+  // valer também nas Server Actions que resolvem a org por este portão.
+  if (org && senhaProvisoriaPendente(authUser)) redirect("/trocar-senha");
   if (org && !ehOperante(org.org_status)) redirect("/account-suspended");
   return org;
 });

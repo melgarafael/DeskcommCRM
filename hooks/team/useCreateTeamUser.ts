@@ -10,6 +10,8 @@ interface CreateTeamUserResult {
     email: string;
     role: string;
     deve_trocar_senha: boolean;
+    /** Gerada pelo servidor; esta resposta é a única vez em que ela aparece. */
+    senha_provisoria: string;
   };
 }
 

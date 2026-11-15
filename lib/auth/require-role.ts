@@ -79,6 +79,14 @@ function orgSuspensa(user: AuthUser, requestId?: string): NextResponse<ApiError>
   });
 }
 
+/** O 403 da senha provisória — o MESMO em `requireRole` e em `orgAtivaDaApi`. */
+function senhaAindaProvisoria(user: AuthUser, orgId: string, requestId?: string): NextResponse<ApiError> {
+  return fail(CODIGO_SENHA_PROVISORIA, traduzir(MENSAGEM_SENHA_PROVISORIA, user.idioma), 403, {
+    requestId,
+    details: { organization_id: orgId },
+  });
+}
+
 export type OrgDaApi =
   | { ok: true; org: ActiveOrg | null }
   | { ok: false; response: NextResponse<ApiError> };
@@ -95,6 +103,11 @@ export type OrgDaApi =
  */
 export async function orgAtivaDaApi(user: AuthUser | null, requestId?: string): Promise<OrgDaApi> {
   const org = user ? await orgAtivaSemPortao(user) : null;
+  // A rota fora do `requireRole` também não serve a quem ainda deve a troca de
+  // senha (#3876) — a mesma recusa, o mesmo código.
+  if (user && org && senhaProvisoriaPendente(user)) {
+    return { ok: false, response: senhaAindaProvisoria(user, org.orgId, requestId) };
+  }
   if (user && org && !ehOperante(org.org_status)) {
     return { ok: false, response: orgSuspensa(user, requestId) };
   }
@@ -193,14 +206,8 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
    * Sessão de acompanhamento fica de fora — `senhaProvisoriaPendente` já
    * ignora `support`.
    */
-  if (senhaProvisoriaPendente(user, org.orgId)) {
-    return {
-      ok: false,
-      response: fail(CODIGO_SENHA_PROVISORIA, t(MENSAGEM_SENHA_PROVISORIA), 403, {
-        requestId,
-        details: { organization_id: org.orgId },
-      }),
-    };
+  if (senhaProvisoriaPendente(user)) {
+    return { ok: false, response: senhaAindaProvisoria(user, org.orgId, requestId) };
   }
 
   // #2335, metade 2 — A ESCRITA NÃO PODE IR PARA UMA ORGANIZAÇÃO DIFERENTE DA

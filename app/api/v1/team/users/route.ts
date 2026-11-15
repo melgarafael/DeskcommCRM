@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 /**
- * POST /api/v1/team/users — cria a pessoa SEM convite, com senha definida por
- * quem administra (#3876, fatia 1).
+ * POST /api/v1/team/users — cria a pessoa SEM convite, com senha provisória
+ * gerada pelo servidor e troca obrigatória no primeiro acesso (#3876; decisão
+ * do dono do produto, doc 310 alternativa A).
  *
  * ─── O buraco que isto fecha ────────────────────────────────────────────────
  *
@@ -14,14 +15,20 @@ import type { NextRequest } from "next/server";
  *
  * ─── O que esta rota faz ────────────────────────────────────────────────────
  *
- * 1. `admin.auth.admin.createUser` com a senha do corpo, `email_confirm: true`
+ * 0. Alcance (`podeCriarPessoaComSenha`): só o dono da instalação, ou o admin
+ *    da empresa numa instalação de UMA empresa. Com várias empresas, o admin
+ *    de empresa continua com o convite — a conta criada aqui é da instalação
+ *    inteira. Limite de tentativas por organização antes de qualquer escrita.
+ * 1. `admin.auth.admin.createUser` com a senha que o SERVIDOR gerou
+ *    (`gerarSenhaProvisoria`), `email_confirm: true`
  *    (a conta nasce confirmada: quem provou quem é foi o administrador, e não
  *    há e-mail para confirmar) e `user_metadata.full_name`.
  * 2. Insere o vínculo em `user_organizations` com `senha_provisoria = true`.
- *    É essa coluna (migration 9227) que obriga a troca no primeiro acesso: o
+ *    É essa coluna (migration 9380) que obriga a troca no primeiro acesso: o
  *    gate vive no servidor — `requireRole` recusa `/api/v1` e o layout de
  *    `/app` redireciona para `/trocar-senha`.
- * 3. Audita `member.created` (nunca com a senha).
+ * 3. Audita `member.created` (nunca com a senha) e devolve a senha UMA vez,
+ *    com `Cache-Control: no-store`. Ela não fica guardada em lugar nenhum.
  *
  * ─── O que esta rota NÃO faz, de propósito ──────────────────────────────────
  *
@@ -32,21 +39,26 @@ import type { NextRequest } from "next/server";
  *   continua a mesma, e não existe caminho para a senha digitada virar login
  *   deste navegador. Refazer o login do admin com a senha do usuário novo
  *   falha, porque a senha pertence a outra conta.
- * - **Não aceita e-mail que já existe.** Se a conta existe (inclusive na mesma
- *   organização), a resposta é 409. Trocar a senha de uma conta alheia por
- *   esta porta seria sequestrar a conta de outra empresa.
+ * - **Não aceita e-mail que já existe — e não conta que ele existe.** Trocar a
+ *   senha de uma conta alheia por esta porta seria sequestrar a conta de outra
+ *   empresa; e responder "já existe" diria a quem administra UMA empresa quais
+ *   e-mails têm conta nas OUTRAS. A recusa é a mesma de qualquer falha do
+ *   GoTrue (`FALHA_AO_CRIAR`), e o motivo real vai só para o log e para uma
+ *   linha de auditoria SEM organização (a RLS de `api_audit_log` só a mostra ao
+ *   dono da instalação). O caminho para quem já tem conta é o convite.
  *
  * ─── A senha em repouso e no log ────────────────────────────────────────────
  *
- * A senha sai do corpo para o GoTrue e morre ali: não é logada, não entra em
- * audit (metadata leva e-mail e papel, nunca a senha), não é devolvida na
- * resposta. O client de serviço aparece só aqui e no `deleteUser` de
- * compensação — nenhum outro ponto desta rota precisa dele.
+ * A senha nasce aqui, vai para o GoTrue e para a resposta desta requisição — e
+ * só: não é logada, não entra em audit (metadata leva e-mail e papel, nunca a
+ * senha). A troca no primeiro acesso é o que a tira de circulação.
  */
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
 import { invalidarUsuario } from "@/lib/auth/cache-curto";
+import { gerarSenhaProvisoria, podeCriarPessoaComSenha } from "@/lib/auth/criar-pessoa-com-senha";
 import { requireRole } from "@/lib/auth/require-role";
 import {
   lerLimiteDoPlano,
@@ -60,6 +72,22 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Limite de tentativas POR ORGANIZAÇÃO: criar gente é raro, e o teto tira o
+ * custo zero de quem usaria a rota para varrer e-mails. Conta a tentativa, não
+ * o sucesso — a recusa genérica também consome.
+ */
+const TETO_POR_ORG = 10;
+const JANELA_SEGUNDOS = 3600;
+
+/**
+ * A ÚNICA frase de recusa da criação. E-mail que já tem conta (em qualquer
+ * empresa) e falha do GoTrue respondem igual, com o mesmo status — é isso que
+ * impede a rota de servir de consulta "este e-mail existe na instalação?".
+ */
+const FALHA_AO_CRIAR =
+  "Não foi possível criar a conta. Se a pessoa já usa esta instalação, convide-a por e-mail.";
 
 /** O GoTrue responde este texto quando o e-mail já tem conta. */
 function jaExisteConta(message: string | undefined): boolean {
@@ -76,6 +104,32 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { user: authUser, org: activeOrg } = authz;
   const t = (texto: string) => traduzir(texto, authUser.idioma);
 
+  if (!isServiceRoleConfigured()) {
+    return fail("internal_error", t("Serviço indisponível no momento."), 503, { requestId });
+  }
+  const admin = createAdminClient();
+
+  if (!(await podeCriarPessoaComSenha(authUser, admin))) {
+    return fail(
+      "invite_required",
+      t("Nesta instalação, pessoas novas entram por convite. Use Convidar membros."),
+      403,
+      { requestId },
+    );
+  }
+
+  const teto = await checkRateLimit(`equipe:criar-com-senha:${activeOrg.orgId}`, TETO_POR_ORG, JANELA_SEGUNDOS);
+  if (!teto.allowed) {
+    return fail("rate_limited", t("Muitas contas criadas em pouco tempo. Tente de novo mais tarde."), 429, {
+      requestId,
+      headers: {
+        "Retry-After": String(JANELA_SEGUNDOS),
+        "X-RateLimit-Limit": String(teto.limit),
+        "X-RateLimit-Remaining": String(Math.max(0, teto.limit - teto.count)),
+      },
+    });
+  }
+
   let input;
   try {
     input = await validateRequest(createTeamUserSchema, req);
@@ -91,18 +145,13 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const email = input.email.trim().toLowerCase();
 
-  // Criar a própria conta de novo é sempre engano — e a senha digitada aqui
-  // seria a do admin, que é justamente o que não pode sair desta rota.
+  // Criar a própria conta de novo é sempre engano. Esta recusa própria não
+  // enumera nada: diz a quem pede só o que ele já sabe (o próprio e-mail).
   if (email === authUser.email.trim().toLowerCase()) {
     return fail("email_already_registered", t("Este e-mail já é a sua conta."), 409, {
       requestId,
     });
   }
-
-  if (!isServiceRoleConfigured()) {
-    return fail("internal_error", t("Serviço indisponível no momento."), 503, { requestId });
-  }
-  const admin = createAdminClient();
 
   /**
    * Plano cheio: RECUSA antes de criar a conta — mesma régua e mesma frase do
@@ -136,9 +185,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  const senha = gerarSenhaProvisoria();
   const { data: criado, error: criaErr } = await admin.auth.admin.createUser({
     email,
-    password: input.password,
+    password: senha,
     // Quem prova que a pessoa é quem diz ser é quem administra a empresa. Sem
     // isto a conta nasceria pendente de um e-mail que, por definição, não vai
     // sair — e o login recusaria "e-mail não confirmado".
@@ -147,23 +197,28 @@ export async function POST(req: NextRequest): Promise<Response> {
   });
 
   if (criaErr || !criado?.user) {
-    if (jaExisteConta(criaErr?.message)) {
-      return fail(
-        "email_already_registered",
-        t("Já existe uma conta com este e-mail. Para dar acesso a esta pessoa, convide-a."),
-        409,
-        { requestId },
-      );
-    }
-    // A mensagem do GoTrue pode citar o corpo da requisição — e o corpo tem a
-    // senha. Só o status/código entram no log.
-    logger.error("team.users: createUser recusou", {
+    const motivo = jaExisteConta(criaErr?.message) ? "email_ja_tem_conta" : "gotrue_recusou";
+    // A mensagem do GoTrue pode citar a requisição — e ela tem a senha. Só o
+    // status/código entram no log.
+    logger.warn("team.users: createUser recusou", {
       organization_id: activeOrg.orgId,
       request_id: requestId,
+      motivo,
       status: criaErr?.status,
       code: criaErr?.code,
     });
-    return fail("internal_error", t("Não foi possível criar a conta agora."), 500, { requestId });
+    // Sem `organizationId` DE PROPÓSITO: a policy de leitura de
+    // `api_audit_log` mostra a linha da organização ao admin dela, e o motivo
+    // "e-mail já tem conta" é justamente o que não pode chegar a ele.
+    await audit({
+      action: "member.create_refused",
+      actorUserId: authUser.id,
+      organizationId: null,
+      resourceType: "membership",
+      requestId,
+      metadata: { organization_id: activeOrg.orgId, email, motivo },
+    });
+    return fail("user_not_created", t(FALHA_AO_CRIAR), 422, { requestId });
   }
 
   const userId = criado.user.id;
@@ -240,7 +295,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       email,
       role: input.role,
       deve_trocar_senha: true,
+      // A ÚNICA vez em que a senha sai do servidor. Não é guardada: perdeu,
+      // o caminho é a recuperação de senha ou apagar e criar de novo.
+      senha_provisoria: senha,
     },
-    { status: 201, requestId },
+    { status: 201, requestId, headers: { "Cache-Control": "no-store" } },
   );
 }

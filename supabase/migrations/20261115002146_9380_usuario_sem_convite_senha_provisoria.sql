@@ -1,6 +1,6 @@
 -- manifest: usuário criado pelo admin com senha própria — `user_organizations.senha_provisoria` marca o vínculo que precisa trocar a senha no primeiro acesso; aditiva, toda linha anterior (convite inclusive) nasce `false`.
 -- ═══════════════════════════════════════════════════════════════════════════
--- 9227 — Criar a pessoa sem convite: senha provisória no vínculo.
+-- 9380 — Criar a pessoa sem convite: senha provisória no vínculo.
 --
 -- Até aqui o Deskcomm só sabia CONVIDAR: quem administra digita o e-mail, o
 -- convite depende de SMTP e caixa postal real, e o convidado é que define a
