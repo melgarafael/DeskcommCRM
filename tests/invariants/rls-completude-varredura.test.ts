@@ -79,7 +79,7 @@ interface Excecao {
  * linhas da OUTRA organização, não uma leitura como superusuário.
  */
 const PROVA_PROPRIA: readonly Excecao[] = [
-  { tabela: "tabela_de_valores_importacoes", razao: "tests/invariants/tabela-de-valores-negociacao.test.ts (migration 9386, #4612) — livro exclusivo do servidor: RLS ligada e NENHUMA policy; membro da própria organização com JWT authenticated recebe permission denied (com controle positivo da mesma sessão lendo tabelas_de_valores); insert/update/delete de authenticated recusados nas três tabelas da tabela de valores." },
+  { tabela: "tabela_de_valores_importacoes", razao: "tests/invariants/tabela-de-valores-negociacao.test.ts (migration 9386, #4612) — livro exclusivo do servidor: RLS ligada e NENHUMA policy; membro da própria organização com JWT authenticated recebe permission denied (com controle positivo da mesma sessão lendo tabelas_de_valores); escrita direta de authenticated recusada nas três tabelas da tabela de valores." },
   { tabela: "catalog_product_presentations", razao: "tests/invariants/catalogo-apresentacoes-isolamento.test.ts — duas organizações por JWT authenticated: manager nos dois sentidos e agent leem apenas a própria apresentação; UPDATE local de manager positivo, agent e manager vizinho sem efeito; CHECK de ownership do áudio com controle positivo e negativo." },
   {
     tabela: "ouvidoria_manifestacoes",
