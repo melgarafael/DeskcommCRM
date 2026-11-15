@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
-import { ehFraseDeSemInteresse } from "@/lib/opt-out/sem-interesse";
+import { classificarSemInteresse, ehFraseDeSemInteresse } from "@/lib/opt-out/sem-interesse";
 
 /**
  * A frase do "não tenho interesse" (decisão D3). Quem decide ONDE ela vale é a
@@ -103,5 +103,75 @@ describe("ehFraseDeSemInteresse", () => {
     // A cerca da outra regra: esta frase grava recusa de ofertas, nunca is_blocked.
     expect(ehPedidoDeOptOut("Não tenho interesse")).toBe(false);
     expect(ehPedidoDeOptOut("Não me interessa")).toBe(false);
+  });
+});
+
+/**
+ * Recusa ou adiamento (decisão do dono, 15/11, doc 360 · 2A): o "não" com data de volta
+ * vira tarefa, não Perdido. Erro nos dois sentidos custa caro — adiamento lido como
+ * recusa perde a venda marcada; recusa lida como adiamento volta a abordar quem disse não.
+ *
+ * ─── SABOTAGEM ─────────────────────────────────────────────────────────────
+ * - `classificarSemInteresse` devolvendo "recusa" sempre que a frase casa (o
+ *   comportamento antigo): todo o bloco "adiamento" fica vermelho.
+ * - Tirar `!ehPedidoDeOptOut(texto)` de `podeSerAdiamento`: "agora me tira da lista"
+ *   vira adiamento e fica vermelho.
+ * - Tirar `RECUSA_DEFINITIVA`: "nem agora nem nunca" fica vermelho.
+ */
+describe("classificarSemInteresse", () => {
+  it.each([
+    "Não tenho interesse agora, me chama mês que vem",
+    "não estou interessado agora, talvez mais pra frente",
+    "Não temos interesse no momento.",
+    "Por enquanto não tenho interesse",
+    "Não tenho interesse agora, valeu",
+    "agora não tenho interesse, quem sabe depois",
+    "não me interessa por enquanto, obrigado",
+    "Agora não, me chama mês que vem",
+    "no momento não, me procura mais pra frente",
+    // clínica
+    "Por enquanto não tenho interesse, talvez depois das férias",
+    "Não tenho interesse no momento, me chama no mês que vem que eu vejo a agenda",
+    // imobiliária
+    "No momento não estamos interessados, me procura no ano que vem",
+    "não tenho interesse agora, só quando eu vender o apartamento, mais pra frente",
+    // espanhol
+    "No tengo interés por ahora",
+  ])("adiamento: %s", (frase) => {
+    expect(classificarSemInteresse(frase)).toBe("adiamento");
+  });
+
+  it.each([
+    "Não tenho interesse",
+    "nao tenho interesse, obrigado",
+    "Não tenho mais interesse",
+    "Não estou interessado, já tenho site",
+    "não tenho interesse, nem agora nem nunca",
+    "Não tenho interesse, não me chama nunca mais",
+    // clínica e imobiliária
+    "não tenho interesse, já tenho dentista",
+    "Não temos interesse, já fechamos com outra imobiliária",
+  ])("recusa: %s", (frase) => {
+    expect(classificarSemInteresse(frase)).toBe("recusa");
+  });
+
+  it.each([
+    "não tenho interesse, agora me tira da lista",
+    "Não tenho interesse agora nem depois, me tira da lista",
+  ])("pedido de saída nunca é adiamento — é o PARAR: %s", (frase) => {
+    expect(ehPedidoDeOptOut(frase)).toBe(true);
+    expect(classificarSemInteresse(frase)).not.toBe("adiamento");
+  });
+
+  it.each([
+    "agora não",
+    "Agora não posso falar",
+    "Oi! Qual o horário de vocês?",
+    "Não tenho interesse nesse horário, tem às 15h?",
+    "não tenho interesse em fazer o clareamento agora, só a limpeza",
+    "Não tenho interesse nesse apartamento, tem outro de dois quartos?",
+    "Não tenho interesse agora, me manda o preço para o mês que vem",
+  ])("nem recusa nem adiamento: %s", (frase) => {
+    expect(classificarSemInteresse(frase)).toBeNull();
   });
 });

@@ -25,12 +25,17 @@
  * - Tirar o passo "sem-interesse" de `aplicarEfeitosDaRecuperacao`: o caso da
  *   recuperação fica vermelho.
  * - Tirar o `.eq("organization_id")` da leitura da conversa: o caso da cerca fica vermelho.
+ * - Fazer `dentroDaJanelaDaProspeccao` devolver sempre `true` (a marca da conversa
+ *   valendo para sempre, decisão 1B): os casos "fora da janela" ficam vermelhos.
+ * - Tratar o adiamento como recusa em `pos-entrada.ts` (tirar o ramo `"adiamento"`):
+ *   o bloco "adiamento" fica vermelho — o negócio vai para Perdido e a tarefa não nasce.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EntradaDaRecuperacao, EntradaDeMensagem } from "@/lib/channels/pos-entrada";
 import { contactMayBeProspected } from "@/lib/prospecting/guard";
 import { recusouMarketing } from "@/lib/campanhas/elegibilidade";
+import { ORIGEM_ADIAMENTO_DA_PROSPECCAO } from "@/lib/tarefas/vocabulario-de-origem";
 
 const audit = vi.fn(async (..._a: unknown[]) => {});
 const encerraDemanda = vi.fn(async (..._a: unknown[]) => ({ lead: {}, jaEstava: false }) as never);
@@ -44,6 +49,26 @@ vi.mock("@/lib/leads/nascimento-do-lead", () => ({
   garantirLeadDaConversa: () => garantirLeadDaConversa(),
 }));
 vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+
+const criarTarefaInterna = vi.fn(async (..._a: unknown[]) => ({ ok: true, tarefa_id: "tarefa-1", assigned_to: "vendedor-1" }));
+vi.mock("@/lib/tarefas/criar-tarefa", () => ({
+  criarTarefaInterna: (...a: unknown[]) => criarTarefaInterna(...a),
+}));
+/** A porta SQL só responde as três leituras da tarefa de retomada. */
+const consultasDaPorta: Array<{ sql: string; parametros: readonly unknown[] }> = [];
+vi.mock("@/lib/db", async (original) => ({
+  ...(await original<typeof import("@/lib/db")>()),
+  portaDaAplicacao: () => ({
+    query: async () => [],
+    queryOne: async (sql: string, parametros: readonly unknown[] = []) => {
+      consultasDaPorta.push({ sql, parametros });
+      if (sql.includes("user_organizations")) return cena.responsavel ? { user_id: cena.responsavel } : null;
+      if (sql.includes("crm_tasks")) return cena.tarefaAberta ? { id: "tarefa-aberta" } : null;
+      if (sql.includes("organizations")) return { locale: "pt-BR" };
+      return null;
+    },
+  }),
+}));
 vi.mock("@/lib/dev/kick-local-pipeline", () => ({
   acelerarFollowupDoInbound: vi.fn(async () => {}),
   drenarEventosDoInbound: vi.fn(async () => {}),
@@ -56,11 +81,19 @@ interface Cena {
   consent: Record<string, unknown>;
   leadsDaProspeccao: Array<{ id: string; pipeline_id: string }>;
   settingsDoFunil: Record<string, unknown>;
+  /** `prospecting_candidates.attempted_at` das abordagens do contato. */
+  abordagens: Array<{ attempted_at: string }>;
+  erroNaAbordagem: boolean;
+  responsavel: string | null;
+  tarefaAberta: boolean;
 }
 
 let cena: Cena;
 let updatesDeContato: Array<Record<string, unknown>>;
 let filtrosDeLeads: Array<[string, unknown]>;
+/** As tabelas que receberam UPDATE (o follow-up encerrado aparece aqui). */
+let tabelasAtualizadas: string[];
+let filtrosDaAbordagem: Array<[string, unknown]>;
 /** Os filtros `.eq` de CADA leitura de `conversations`. */
 let leiturasDaConversa: Array<Array<[string, unknown]>>;
 
@@ -69,6 +102,7 @@ function consulta(tabela: string) {
   let patch: Record<string, unknown> | null = null;
   const resposta = (): { data: unknown; error: null } => {
     if (patch) {
+      tabelasAtualizadas.push(tabela);
       if (tabela === "contacts") {
         updatesDeContato.push(patch);
         if (patch.consent) cena.consent = patch.consent as Record<string, unknown>;
@@ -81,6 +115,12 @@ function consulta(tabela: string) {
     if (tabela === "contacts")
       return { data: { id: "contato-1", consent: cena.consent, is_anonymized: false }, error: null };
     if (tabela === "crm_leads") return { data: cena.leadsDaProspeccao, error: null };
+    if (tabela === "prospecting_candidates")
+      return cena.erroNaAbordagem
+        ? ({ data: null, error: { message: "falhou" } } as never)
+        : { data: cena.abordagens, error: null };
+    if (tabela === "followup_enrollments")
+      return { data: [{ id: "inscricao-1", status: "active", current_node_id: null, conversation_id: "conversa-1" }], error: null };
     if (tabela === "crm_pipelines")
       return { data: [{ id: "funil-prospeccao", settings: cena.settingsDoFunil }], error: null };
     return { data: null, error: null };
@@ -93,6 +133,7 @@ function consulta(tabela: string) {
     q[m] = (...args: unknown[]) => {
       if (tabela === "crm_leads" && m === "eq") filtrosDeLeads.push([args[0] as string, args[1]]);
       if (tabela === "conversations" && m === "eq") filtrosDaConversa.push([args[0] as string, args[1]]);
+      if (tabela === "prospecting_candidates" && m === "eq") filtrosDaAbordagem.push([args[0] as string, args[1]]);
       return encadeia();
     };
   }
@@ -128,6 +169,8 @@ async function rodar(over: Partial<EntradaDeMensagem> = {}) {
   await aplicarEfeitosPosEntrada(admin, { ...ENTRADA, ...over });
 }
 
+const DIA = 24 * 60 * 60 * 1000;
+
 const CONTATO_DA_GUARDA = {
   is_anonymized: false,
   source: "prospecting",
@@ -146,8 +189,16 @@ beforeEach(() => {
     consent: { legitimate_interest: { ref: "LIA-2026-01" } },
     leadsDaProspeccao: [{ id: "lead-prospeccao", pipeline_id: "funil-prospeccao" }],
     settingsDoFunil: { lost_reasons: ["Preço", { label: "Não tem interesse" }] },
+    abordagens: [{ attempted_at: new Date(Date.now() - 2 * DIA).toISOString() }],
+    erroNaAbordagem: false,
+    responsavel: "vendedor-1",
+    tarefaAberta: false,
   };
   updatesDeContato = [];
+  tabelasAtualizadas = [];
+  filtrosDaAbordagem = [];
+  consultasDaPorta.length = 0;
+  criarTarefaInterna.mockClear();
   filtrosDeLeads = [];
   leiturasDaConversa = [];
   audit.mockClear();
@@ -339,6 +390,131 @@ describe("a mensagem recuperada de uma queda (aplicarEfeitosDaRecuperacao)", () 
   it("PARAR já tratado (optOutJaTratado): nada é gravado pelo 'sem interesse'", async () => {
     await recuperar({ texto: "não tenho interesse, quero parar de receber mensagens", optOutJaTratado: true });
     expect(cena.consent.marketing).toBeUndefined();
+    expect(updatesDeContato).toEqual([]);
+  });
+});
+
+// ─── 1A · A JANELA (decisão do dono, 15/11, doc 360) ──────────────────────────
+// A marca da prospecção nunca sai da conversa. A frase só conta com negócio da
+// prospecção aberto ou até 30 dias depois da última abordagem.
+describe("1A · a frase só conta dentro da janela da prospecção", () => {
+  function nadaAconteceu() {
+    expect(cena.consent.marketing, "gravou recusa fora da janela").toBeUndefined();
+    expect(updatesDeContato).toEqual([]);
+    expect(encerraDemanda).not.toHaveBeenCalled();
+    expect(tabelasAtualizadas, "encerrou acompanhamento fora da janela").not.toContain("followup_enrollments");
+    expect(criarTarefaInterna).not.toHaveBeenCalled();
+  }
+
+  it("sem negócio aberto, abordagem há 10 dias: ainda é resposta à prospecção e grava", async () => {
+    cena.leadsDaProspeccao = [];
+    cena.abordagens = [{ attempted_at: new Date(Date.now() - 10 * DIA).toISOString() }];
+    await rodar();
+    expect(cena.consent.marketing).toMatchObject({ granted: false, motivo: "sem_interesse" });
+  });
+
+  it("com negócio da prospecção aberto, abordagem antiga não importa: grava", async () => {
+    cena.abordagens = [{ attempted_at: new Date(Date.now() - 200 * DIA).toISOString() }];
+    await rodar();
+    expect(cena.consent.marketing).toMatchObject({ granted: false, motivo: "sem_interesse" });
+    expect(tabelasAtualizadas).toContain("followup_enrollments");
+  });
+
+  it.each([
+    ["cliente antigo, abordado há 6 meses, sem negócio aberto", "Não tenho interesse, obrigado.", 180],
+    ["31 dias depois da última abordagem", "Não tenho interesse.", 31],
+    ["clínica: paciente antigo", "não tenho interesse, já tenho dentista", 120],
+    ["imobiliária: cliente que já comprou", "Não temos interesse, já fechamos com outra imobiliária", 90],
+    ["adiamento fora da janela também não cria tarefa", "Não tenho interesse agora, me chama mês que vem", 60],
+  ])("%s: conversa normal — nada gravado, nada encerrado", async (_rotulo, texto, dias) => {
+    cena.leadsDaProspeccao = [];
+    cena.abordagens = [{ attempted_at: new Date(Date.now() - dias * DIA).toISOString() }];
+    await rodar({ texto });
+    nadaAconteceu();
+  });
+
+  it("sem negócio aberto e sem abordagem registrada: nada é gravado", async () => {
+    cena.leadsDaProspeccao = [];
+    cena.abordagens = [];
+    await rodar();
+    nadaAconteceu();
+  });
+
+  it("a leitura da abordagem falhou: nada é gravado (erra para o lado de não gravar)", async () => {
+    cena.leadsDaProspeccao = [];
+    cena.erroNaAbordagem = true;
+    await rodar();
+    nadaAconteceu();
+  });
+
+  it("a leitura da abordagem leva a cerca da organização e o contato", async () => {
+    await rodar();
+    expect(filtrosDaAbordagem).toEqual(
+      expect.arrayContaining([
+        ["organization_id", "org-1"],
+        ["contact_id", "contato-1"],
+      ]),
+    );
+  });
+});
+
+// ─── 2A · ADIAMENTO NÃO É RECUSA ────────────────────────────────────────────
+describe("2A · adiamento vira tarefa, não Perdido", () => {
+  it.each([
+    ["Não tenho interesse agora, me chama mês que vem", 30],
+    ["não estou interessado agora, talvez mais pra frente", 30],
+    ["Agora não, me chama mês que vem", 30],
+    ["Por enquanto não tenho interesse, talvez depois das férias", 30],
+    ["No momento não estamos interessados, me procura no ano que vem", 30],
+    ["Não tenho interesse no momento, me chama semana que vem", 7],
+  ])("%s: não grava recusa, não fecha o negócio, cria a tarefa do vendedor", async (texto, prazo) => {
+    await rodar({ texto });
+    expect(cena.consent.marketing, "adiamento gravou recusa").toBeUndefined();
+    expect(contactMayBeProspected({ ...CONTATO_DA_GUARDA, consent: cena.consent })).toBe(true);
+    expect(recusouMarketing(cena.consent)).toBe(false);
+    expect(encerraDemanda, "adiamento mandou o negócio para Perdido").not.toHaveBeenCalled();
+    expect(criarTarefaInterna).toHaveBeenCalledTimes(1);
+    expect(criarTarefaInterna.mock.calls[0]?.[1]).toMatchObject({
+      organizationId: "org-1",
+      contactId: "contato-1",
+      leadId: "lead-prospeccao",
+      atribuirA: { usuario_id: "vendedor-1" },
+      origem: ORIGEM_ADIAMENTO_DA_PROSPECCAO,
+      venceEmDias: prazo,
+    });
+  });
+
+  it("o responsável sai da organização certa, com o dono do negócio como primeiro candidato", async () => {
+    cena.leadsDaProspeccao = [{ id: "lead-prospeccao", pipeline_id: "funil-prospeccao", owner_user_id: "dono-do-lead" } as never];
+    await rodar({ texto: "Não tenho interesse agora, me chama mês que vem" });
+    const responsavel = consultasDaPorta.find((c) => c.sql.includes("user_organizations"));
+    expect(responsavel?.parametros.slice(0, 3)).toEqual(["org-1", "contato-1", "dono-do-lead"]);
+  });
+
+  it("com tarefa aberta para o mesmo vendedor, não cria outra", async () => {
+    cena.tarefaAberta = true;
+    await rodar({ texto: "Não tenho interesse agora, me chama mês que vem" });
+    expect(criarTarefaInterna).not.toHaveBeenCalled();
+    expect(encerraDemanda).not.toHaveBeenCalled();
+  });
+
+  it("'não tenho interesse, agora me tira da lista' é o PARAR, não adiamento", async () => {
+    await rodar({ texto: "não tenho interesse, agora me tira da lista" });
+    expect(updatesDeContato.some((u) => u.is_blocked === true)).toBe(true);
+    expect(criarTarefaInterna).not.toHaveBeenCalled();
+  });
+
+  it("'nem agora nem nunca' é recusa: grava e fecha", async () => {
+    await rodar({ texto: "não tenho interesse, nem agora nem nunca" });
+    expect(cena.consent.marketing).toMatchObject({ granted: false, motivo: "sem_interesse" });
+    expect(encerraDemanda).toHaveBeenCalledTimes(1);
+    expect(criarTarefaInterna).not.toHaveBeenCalled();
+  });
+
+  it("fora da conversa de prospecção, o adiamento também não faz nada", async () => {
+    cena.metadataDaConversa = { origem: "inbox" };
+    await rodar({ texto: "Não tenho interesse agora, me chama mês que vem" });
+    expect(criarTarefaInterna).not.toHaveBeenCalled();
     expect(updatesDeContato).toEqual([]);
   });
 });

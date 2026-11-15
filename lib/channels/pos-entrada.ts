@@ -56,9 +56,15 @@ import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-cliq
 import { casarOrigemPorHorario } from "@/lib/leads/origem-por-horario";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
-import { ehFraseDeSemInteresse } from "@/lib/opt-out/sem-interesse";
+import { classificarSemInteresse } from "@/lib/opt-out/sem-interesse";
 import { registrarSemInteresse } from "@/lib/lgpd/registrar-sem-interesse";
 import { campanhaDeProspeccaoDaConversa } from "@/lib/lgpd/sem-interesse";
+import {
+  criarTarefaDeRetomada,
+  dentroDaJanelaDaProspeccao,
+  lerJanelaDaProspeccao,
+} from "@/lib/prospecting/resposta-da-prospeccao";
+import { portaDaAplicacao } from "@/lib/db";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
@@ -702,6 +708,15 @@ async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promi
  * `lib/prospecting/store.ts`): num atendimento comum a mesma frase é cliente
  * escolhendo entre ofertas, e nada é gravado.
  *
+ * E só DENTRO DA JANELA (doc 360 · 1A, `lib/prospecting/resposta-da-prospeccao.ts`):
+ * negócio da prospecção aberto, ou última abordagem há no máximo 30 dias. A marca da
+ * conversa nunca sai, e sem a janela o cliente antigo que diz "não tenho interesse"
+ * sobre outra coisa ganhava recusa permanente.
+ *
+ * O ADIAMENTO ("não tenho interesse agora, me chama mês que vem", doc 360 · 2A) não é
+ * recusa: nada vai para Perdido, o contato segue nas campanhas, e o vendedor ganha uma
+ * tarefa para retomar.
+ *
  * Não é o PARAR e não mexe em `is_blocked`: quem casa o PARAR já foi tratado no
  * passo 1, e aqui sai sem fazer nada. A consulta da conversa só roda quando a frase
  * casa — a mensagem comum não paga leitura a mais.
@@ -709,11 +724,13 @@ async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promi
  * NUNCA lança: a mensagem já está gravada.
  */
 async function aplicarSemInteresseDaProspeccao(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
-  if (ehPedidoDeOptOut(entrada.texto) || !ehFraseDeSemInteresse(entrada.texto)) return;
+  if (ehPedidoDeOptOut(entrada.texto)) return;
+  const resposta = classificarSemInteresse(entrada.texto);
+  if (!resposta) return;
   try {
     const { data, error } = await admin
       .from("conversations")
-      .select("metadata")
+      .select("metadata, assigned_to_user_id")
       .eq("organization_id", entrada.organizationId)
       .eq("id", entrada.conversationId)
       .maybeSingle();
@@ -725,10 +742,50 @@ async function aplicarSemInteresseDaProspeccao(admin: Admin, entrada: EntradaDeM
       });
       return;
     }
-    const campanhaId = campanhaDeProspeccaoDaConversa(
-      (data as { metadata?: unknown } | null)?.metadata,
-    );
+    const conversa = data as { metadata?: unknown; assigned_to_user_id?: string | null } | null;
+    const campanhaId = campanhaDeProspeccaoDaConversa(conversa?.metadata);
     if (!campanhaId) return;
+
+    const janela = await lerJanelaDaProspeccao(
+      admin as unknown as SupabaseClient,
+      entrada.organizationId,
+      entrada.contactId,
+    );
+    if (!janela) {
+      logger.warn("pos-entrada: janela da prospecção não lida para o 'sem interesse' (nada gravado)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+      });
+      return;
+    }
+    if (!dentroDaJanelaDaProspeccao(janela, Date.now())) {
+      logger.info("pos-entrada: 'sem interesse' fora da janela da prospecção (nada gravado)", {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        resposta,
+      });
+      return;
+    }
+
+    if (resposta === "adiamento") {
+      const tarefa = await criarTarefaDeRetomada(portaDaAplicacao(), {
+        organizationId: entrada.organizationId,
+        contactId: entrada.contactId,
+        texto: entrada.texto ?? "",
+        negocio: janela.negocioAberto,
+        atendenteDaConversa: conversa?.assigned_to_user_id ?? null,
+        requestId: entrada.requestId ?? `adiamento:${entrada.conversationId}`,
+      });
+      const campos = {
+        organization_id: entrada.organizationId,
+        conversation_id: entrada.conversationId,
+        ...(tarefa.criada ? { task_id: tarefa.tarefaId } : { motivo: tarefa.motivo }),
+      };
+      if (!tarefa.criada && tarefa.motivo === "falha")
+        logger.error("pos-entrada: adiamento na prospecção sem tarefa de retomada", { ...campos, detail: tarefa.erro });
+      else logger.info("pos-entrada: adiamento na conversa de prospecção — tarefa de retomada", campos);
+      return;
+    }
 
     const r = await registrarSemInteresse(admin as unknown as SupabaseClient, {
       organizationId: entrada.organizationId,

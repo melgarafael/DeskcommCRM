@@ -43,7 +43,7 @@
  *
  * O vocabulário fica num arquivo próprio para que mexer nele nunca mude o PARAR.
  */
-import { normalizarTexto } from "@/lib/opt-out/deteccao";
+import { ehPedidoDeOptOut, normalizarTexto } from "@/lib/opt-out/deteccao";
 
 /** As formas da recusa, sobre o texto normalizado (minúsculas, sem acento). */
 const FRASES_DE_SEM_INTERESSE: readonly RegExp[] = [
@@ -168,4 +168,56 @@ export function ehFraseDeSemInteresse(texto: string | null | undefined): boolean
     return true;
   }
   return false;
+}
+
+/**
+ * ADIAMENTO NÃO É RECUSA (decisão do dono, 15/11, doc 360 · 2A).
+ *
+ * "Não tenho interesse agora, me chama mês que vem" pede para voltar depois: gravar
+ * recusa permanente e mandar o negócio para Perdido perdia a venda que o cliente
+ * acabou de marcar para o mês seguinte. Com um marcador de tempo, a frase vira
+ * TAREFA para o vendedor retomar (`lib/prospecting/resposta-da-prospeccao.ts`).
+ *
+ * "agora" sozinho é ambíguo ("não tenho interesse, agora me tira da lista"): ele só
+ * conta colado à recusa ("interesse agora") ou como "agora não".
+ */
+const MARCADOR_DE_ADIAMENTO = new RegExp(
+  String.raw`\b(?:` +
+    [
+      String.raw`por\s+(?:enquanto|ora|agora|ahora)`,
+      String.raw`(?:no|neste|nesse|de|en\s+este)\s+momento`,
+      String.raw`(?:mes|semana|ano)\s+que\s+(?:vem|viene)`,
+      String.raw`(?:proximo|proxima)\s+(?:mes|semana|ano)`,
+      String.raw`mais\s+(?:pra|para)\s+frente|mais\s+adiante|mais\s+tarde|mas\s+adelante|mas\s+tarde`,
+      String.raw`(?:talvez|quem\s+sabe|tal\s+vez|quizas?)\s+(?:depois|despues|mais\s+tarde|no\s+futuro|futuramente)`,
+      String.raw`futuramente|no\s+futuro|outra\s+hora|outro\s+momento|otro\s+momento`,
+      String.raw`interess(?:e|a|ad[oa]s?)\s+agora|interes\s+ahora|agora\s+nao|ahora\s+no`,
+    ].join("|") +
+    String.raw`)\b`,
+  "u",
+);
+
+/** O "não" que fecha a porta para o futuro também: "nem agora nem nunca". */
+const RECUSA_DEFINITIVA =
+  /\b(?:nunca|jamais|jamas|nem\s+agora|nem\s+depois|ni\s+ahora|de\s+jeito\s+nenhum|em\s+hipotese\s+alguma)\b/u;
+
+/** O "não" de agora sem a frase do interesse: "agora não, me chama mês que vem". */
+const NAO_DE_AGORA = /\b(?:agora|ahora|por\s+enquanto|no\s+momento|neste\s+momento)\s+(?:nao|no)\b/u;
+
+export type RespostaDeSemInteresse = "recusa" | "adiamento";
+
+/**
+ * Recusa, adiamento, ou nada. Pedido de saída (`ehPedidoDeOptOut`) nunca é adiamento:
+ * "não tenho interesse, agora me tira da lista" é o PARAR, que tem regra própria.
+ */
+export function classificarSemInteresse(texto: string | null | undefined): RespostaDeSemInteresse | null {
+  if (!texto) return null;
+  const normalizado = normalizarTexto(texto).replace(/\s+/gu, " ").trim();
+  const podeSerAdiamento = !RECUSA_DEFINITIVA.test(normalizado) && !ehPedidoDeOptOut(texto);
+  if (ehFraseDeSemInteresse(texto))
+    return podeSerAdiamento && MARCADOR_DE_ADIAMENTO.test(normalizado) ? "adiamento" : "recusa";
+  // Sem a frase, "agora não" sozinho é conversa ("agora não posso falar"): só vira
+  // adiamento quando a mensagem também diz QUANDO voltar.
+  if (!podeSerAdiamento || !NAO_DE_AGORA.test(normalizado)) return null;
+  return MARCADOR_DE_ADIAMENTO.test(normalizado.replace(NAO_DE_AGORA, " ")) ? "adiamento" : null;
 }

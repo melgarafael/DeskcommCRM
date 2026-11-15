@@ -9315,6 +9315,7 @@
   "Janela cancelada. O que ela já pausou continua pausado.": "Window cancelled. Whatever it already paused stays paused.",
   "Não foi possível cancelar a janela.": "Could not cancel the window.",
   "Cliente da sua carteira falou com outro vendedor: {{contact.name}}": "A client from your portfolio spoke with another rep: {{contact.name}}",
+  "Retomar a prospecção: {{contact.name}} pediu para falar depois": "Follow up on prospecting: {{contact.name}} asked to talk later",
   "Este cliente pertence à carteira de outro vendedor. O negócio novo nasce com o dono da carteira.": "This client belongs to another rep's portfolio. A new deal is born with the portfolio owner.",
   "Só gerente e administrador podem mudar a carteira do cliente.": "Only managers and administrators can change a client's portfolio.",
   "O dono precisa ser membro ativo desta empresa, com papel de atendente, gerente ou administrador. Quem só lê, e quem saiu da equipe, não é dono de carteira.": "The owner must be an active member of this company with an agent, manager, or administrator role. Read-only members, and members who left the team, cannot own a portfolio.",

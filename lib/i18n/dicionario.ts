@@ -7506,6 +7506,10 @@ export const DICIONARIO: Traducoes = {
   "Cliente da sua carteira falou com outro vendedor: {{contact.name}}": {
     es: "El cliente de tu cartera habló con otro vendedor: {{contact.name}}",
   },
+  // Tarefa do adiamento na prospecção (`lib/prospecting/resposta-da-prospeccao.ts`).
+  "Retomar a prospecção: {{contact.name}} pediu para falar depois": {
+    es: "Retomar la prospección: {{contact.name}} pidió hablar más adelante",
+  },
   // Motivo do 403 quando o negócio novo cairia no cliente de outro vendedor
   // (rota de criação, modo "Só os seus").
   "Este cliente pertence à carteira de outro vendedor. O negócio novo nasce com o dono da carteira.": {
