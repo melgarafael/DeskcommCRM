@@ -17,12 +17,12 @@ import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
  * ─── SABOTAGEM (prova no CI) ───────────────────────────────────────────────
  * - Tirar o `.not("contact_id", ...)` da lista mas manter o da busca: a busca
  *   por prévia acha a conversa escondida (critério 2 acusa pelo `.not`).
- * - Tirar o `is_personal = false` de `fn_contatos_da_busca` (migration 9386):
+ * - Tirar o `is_personal = false` de `fn_contatos_da_busca` (migration 9391):
  *   busca por nome/telefone volta a achar pessoal.
  * - Manter somando no counts: o badge diverge da lista (critério 3).
  * - Tirar o 404 do `getConversationHandler`: o caso "link direto dá 404" cai.
  * Linha para reverter: `app/api/v1/conversations/_handler.ts`,
- * `supabase/migrations/*_9386_*.sql`,
+ * `supabase/migrations/*_9391_*.sql`,
  * `app/api/v1/conversations/counts/route.ts`, `app/api/v1/messages/_handler.ts`.
  */
 
@@ -46,9 +46,9 @@ const HISTORICO = semComentarios(fonte("app", "api", "v1", "messages", "_handler
  * este teste fica vermelho, como antes.
  */
 const MIGRACOES = path.join(RAIZ, "supabase", "migrations");
-const ARQUIVO_9386 = fs.readdirSync(MIGRACOES).find((nome) => nome.includes("_9386_"));
-const FUNCAO_DA_BUSCA = ARQUIVO_9386
-  ? semComentarios(fs.readFileSync(path.join(MIGRACOES, ARQUIVO_9386), "utf8"))
+const ARQUIVO_9391 = fs.readdirSync(MIGRACOES).find((nome) => nome.includes("_9391_"));
+const FUNCAO_DA_BUSCA = ARQUIVO_9391
+  ? semComentarios(fs.readFileSync(path.join(MIGRACOES, ARQUIVO_9391), "utf8"))
   : "";
 
 describe("lista do inbox esconde pessoal (critério 1)", () => {
@@ -75,7 +75,7 @@ describe("busca zera para pessoal (critério 2: nome, telefone e prévia)", () =
     expect(LISTA, "a busca deixou de delegar o casamento à função").toMatch(
       /fn_contatos_da_busca/,
     );
-    expect(ARQUIVO_9386, "faltou a migration 9386 — o filtro de pessoal sumiu junto").toBeDefined();
+    expect(ARQUIVO_9391, "faltou a migration 9391 — o filtro de pessoal sumiu junto").toBeDefined();
     expect(FUNCAO_DA_BUSCA, "a função da busca não filtra ficha pessoal").toMatch(
       /is_personal\s*=\s*false/,
     );
