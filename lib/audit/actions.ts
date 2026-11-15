@@ -1604,6 +1604,18 @@ export const AUDIT_ACTIONS = [
   // "quem moveu" no painel. Mover roteador em silêncio não existe: as duas
   // camadas são gravadas na mesma operação.
   "ai.router_channel_moved",
+  // OAuth do MCP do CRM (migration 9390) — a conexão de um cliente como o
+  // ChatGPT. `cliente_registrado` é da instalação (sem organização: o registro
+  // dinâmico é aberto); `autorizado`/`negado` são da pessoa na tela de
+  // consentimento; `token_emitido`/`token_renovado`/`revogado` têm como ator o
+  // `api_tokens` da conexão. Metadata leva nome do cliente, host de volta e
+  // escopos — nunca código, token ou segredo.
+  "mcp_oauth.cliente_registrado",
+  "mcp_oauth.autorizado",
+  "mcp_oauth.negado",
+  "mcp_oauth.token_emitido",
+  "mcp_oauth.token_renovado",
+  "mcp_oauth.revogado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
