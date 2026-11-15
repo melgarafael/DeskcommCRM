@@ -237,6 +237,11 @@ const DECISOES: Record<string, Decisao> = {
     razao: "0482 (grupos na inbox, #1647): subject é o NOME do grupo e vira null; contact_id aponta para o placeholder do grupo (contacts.kind = 'whatsapp_group'), e número, conversa e liga/desliga ficam. O que o TITULAR escreveu em grupo é redigido pelo gatilho fn_redigir_conversas_ao_anonimizar, em messages.",
   },
   // ── redigir pela virada de is_anonymized (gatilho) ────────────────────────
+  mensagens_agendadas: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9336 (#3118, primeira parte): fn_mensagens_agendadas_contato_anonimizado troca o texto por '[redigido]', apaga o título e cancela o que ainda não saiu, na virada — o texto agendado é escrito PARA a pessoa e costuma nomeá-la. Horário, status e o vínculo com a mensagem enviada ficam: são a trilha do que a empresa mandou. Efeito provado em tests/invariants/lgpd-mensagem-agendada-do-contato-anonimizado.test.ts.",
+  },
   ai_reply_drafts: {
     decidida: "redigir",
     caminho: "gatilho",

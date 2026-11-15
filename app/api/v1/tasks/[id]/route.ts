@@ -120,12 +120,16 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   // A situação ANTES da edição decide se esta é a vez em que a tarefa fechou.
   // Sem ler antes, marcar "concluída" duas vezes emitiria duas linhas na
   // timeline do negócio — e a segunda seria mentira.
-  const { data: antes } = await supabase
+  const { data: antes, error: erroDaLeitura } = await supabase
     .from("crm_tasks")
     .select("status")
     .eq("id", id)
     .eq("organization_id", authz.org.orgId)
     .maybeSingle();
+
+  if (erroDaLeitura) {
+    return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+  }
 
   const { data, error } = await supabase
     .from("crm_tasks")

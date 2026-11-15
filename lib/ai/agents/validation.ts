@@ -266,7 +266,11 @@ const versionShapeSchema = z
     // doutrina de `operator_enabled` logo abaixo: feature que gasta dinheiro
     // não se liga por acidente.
     voz_enabled: z.boolean().default(false),
-    voz_quando: z.enum(["nunca", "espelhar", "sempre"]).default("espelhar"),
+    // `quando_pede` (#4345) é o quarto comportamento: espelhar o áudio do
+    // cliente OU falar quando ele pedir por escrito / avisar que não lê. Os
+    // três valores antigos continuam com o mesmo significado — o default segue
+    // `espelhar`, então nenhuma versão existente muda de comportamento.
+    voz_quando: z.enum(["nunca", "espelhar", "sempre", "quando_pede"]).default("espelhar"),
     operator_enabled: z.boolean().default(false),
     // `.nullable()` e não opcional: null é o valor que SIGNIFICA "herda o modelo
     // do Conversador". Omitir seria indistinguível de "ainda não decidi".
@@ -384,9 +388,38 @@ export const agentMcpPatchSchema = z
 
 export const publishSchema = z.object({ version_id: UUID }).strict();
 
+/**
+ * Limites do histórico do Testar como conversa (#4424).
+ *
+ * O histórico vive só no estado da tela e viaja no corpo do POST — não há
+ * tabela nova. Os números são os mesmos dos dois lados: o painel recorta a
+ * conversa para caber neles e esta rota RECUSA (400, com frase legível) o
+ * corpo que passar. Sem teto, cada turno reenviaria a conversa inteira e o
+ * custo por disparo cresceria sem limite.
+ *
+ * Depois deste recorte, o motor aplica ainda a janela da versão
+ * (`history_message_window`, default 20, e `history_token_window`, default
+ * 8.000 — ver `lib/agent-engine/agent/sandbox.ts`). Ou seja: 30 mensagens é o
+ * teto do TRANSPORTE; o que chega ao modelo é o menor dos dois.
+ */
+export const LIMITE_DO_HISTORICO_EM_MENSAGENS = 30;
+export const LIMITE_DO_HISTORICO_EM_CARACTERES = 20_000;
+
+/** Uma mensagem anterior do teste — o cliente digitou ou a IA respondeu. */
+export const testeHistoryMessageSchema = z
+  .object({
+    direction: z.enum(["inbound", "outbound"]),
+    body: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+
 export const testRunSchema = z
   .object({
     sample_message: z.string().trim().min(1).max(4000),
+    history: z
+      .array(testeHistoryMessageSchema)
+      .max(LIMITE_DO_HISTORICO_EM_MENSAGENS)
+      .optional(),
     sample_contact: z
       .object({
         name: z.string().trim().min(1).max(120).optional(),

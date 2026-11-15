@@ -20,6 +20,7 @@ const APARTAMENTO: Produto = {
   descricao: null,
   marca: null,
   categoria: "Imóveis",
+  capacidade: null,
   preco_cents: 850_000_00,
   moeda: "BRL",
   custo_cents: null,

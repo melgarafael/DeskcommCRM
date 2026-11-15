@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 import { Tag, Receipt, Users, ArrowRight, CaretDoubleLeft, CaretDoubleRight } from "@/lib/ui/icons";
 import { apiClient } from "@/lib/api/client";
 import { toast } from "sonner";
@@ -30,6 +31,8 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 import { activityLabel, actorLabel, actorShape } from "@/lib/leads/activity-vocabulary";
 import { soChavesAlteradas } from "@/lib/leads/custom-fields-so-diff";
 import { rotuloDaRecorrencia } from "@/lib/leads/valor-recorrente";
+import { lerCampoDeMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda";
+import { MOEDA_PADRAO, formatValorDoNegocio, simboloDaMoeda } from "@/lib/money";
 import { ConversationTagsEditor } from "./ConversationTagsEditor";
 import { ContactTagsEditor } from "./ContactTagsEditor";
 import { TarefasDaDemanda } from "./TarefasDaDemanda";
@@ -429,6 +432,8 @@ function InboxLeadEditor({
   onSelecionar,
   onSalvo,
   podeLevarParaOutroFunil,
+  podeEditarValor,
+  moedaDaOrg,
   onTrocouDeNegocio,
 }: {
   leads: LeadRow[];
@@ -437,6 +442,10 @@ function InboxLeadEditor({
   onSalvo: () => void;
   /** Mesmo portão do Kanban (`pipeline.move_card`) — ver `LevarParaOutroFunil`. */
   podeLevarParaOutroFunil: boolean;
+  /** O MESMO piso de editar o card (`agent`+) — ver `ValorDoNegocio`. */
+  podeEditarValor: boolean;
+  /** Moeda da organização, reserva de `lead.currency` no valor do negócio. */
+  moedaDaOrg: string;
   /** Recarrega o resumo e deixa o negócio NOVO (se algum nasceu) virar o ativo. */
   onTrocouDeNegocio: () => void;
 }) {
@@ -513,6 +522,13 @@ function InboxLeadEditor({
         </div>
       )}
       <EtapaDoNegocio key={`etapa-${ativo.id}`} lead={ativo} onMovido={onSalvo} />
+      <ValorDoNegocio
+        key={`valor-${ativo.id}`}
+        lead={ativo}
+        moeda={ativo.currency ?? moedaDaOrg}
+        podeEditar={podeEditarValor}
+        onSalvo={onSalvo}
+      />
       {/*
         ABRIR O NEGÓCIO NO QUADRO DO FUNIL (issue #3004).
 
@@ -547,6 +563,130 @@ function InboxLeadEditor({
         valores={ativo.custom_fields ?? {}}
         onSalvo={onSalvo}
       />
+    </div>
+  );
+}
+
+/**
+ * O VALOR DO NEGÓCIO — editável, no bloco do card (issue #4546).
+ *
+ * O painel já mostrava o valor em "Negócios recentes", mas SEMPRE para leitura:
+ * preencher ou corrigir exigia sair da conversa, abrir o card no funil e voltar.
+ * Na prática a venda fechava na conversa e o valor ficava em branco — o que
+ * mente na previsão do funil, nas metas por vendedor e no Faturamento, que leem
+ * o `value_cents` OFICIAL do negócio. É este campo que o alimenta.
+ *
+ * Nada de gravação nova: o caminho é o do quadro — `useEditLead`
+ * (`PATCH /api/v1/leads/[id]`), cuja rota já aceita `value_cents` e cujo handler
+ * já registra a edição na timeline do negócio (`lead_edited`, «o valor»). E nada
+ * de máscara nova: a leitura é `lerCampoDeMoeda` e o eco é `formatValorDoNegocio`
+ * (`lib/leads/campo-de-moeda.ts` / `lib/money.ts`), os mesmos do dossiê.
+ *
+ * PERMISSÃO: o piso é o de EDITAR O CARD — `agent`+, a mesma régua que
+ * `resolveAuthDual({ role: "agent" })` cobra no `PATCH` e que o quadro usa. Quem
+ * está abaixo vê o valor e só. O portão chega como prop (e não por
+ * `usePermission`) pelo mesmo motivo do `LevarParaOutroFunil`: os dublês de
+ * `useAuth` dos testes do painel não expõem aquele hook.
+ *
+ * CAMPO VAZIO NÃO APAGA: apagar o valor existente em silêncio é o efeito que
+ * ninguém pediu. Vazio (ou sem número) recusa o salvamento e avisa.
+ */
+function ValorDoNegocio({
+  lead,
+  moeda,
+  podeEditar,
+  onSalvo,
+}: {
+  lead: LeadRow;
+  /** A moeda do NEGÓCIO; a da organização é a reserva (ver `InboxLeadEditor`). */
+  moeda: string;
+  /** `agent`+ — o MESMO piso de editar o card. */
+  podeEditar: boolean;
+  onSalvo: () => void;
+}) {
+  const t = useT();
+  const edit = useEditLead(lead.pipeline_id);
+  const [texto, setTexto] = useState(() =>
+    lead.value_cents == null ? "" : valorDoCampoDeMoeda(lead.value_cents / 100, moeda),
+  );
+  const [erro, setErro] = useState<string | null>(null);
+  // O eco do quadro: dinheiro nunca é interpretado em silêncio.
+  const entendido = texto.trim() === "" ? null : lerCampoDeMoeda(texto, moeda);
+
+  async function salvar() {
+    if (texto.trim() === "") {
+      setErro(t("Informe o valor."));
+      return;
+    }
+    const cents = lerCampoDeMoeda(texto, moeda);
+    if (cents === null) {
+      setErro(t("Valor inválido"));
+      return;
+    }
+    setErro(null);
+    try {
+      await edit.mutateAsync({ leadId: lead.id, patch: { value_cents: cents } });
+      // O que acabou de gravar fica escrito na régua da moeda — «R$ 1.234,56».
+      setTexto(valorDoCampoDeMoeda(cents / 100, moeda));
+      toast.success(t("Valor atualizado."));
+      onSalvo();
+    } catch {
+      // o hook já mostrou o erro
+    }
+  }
+
+  if (!podeEditar) {
+    return (
+      <div className="space-y-0.5" data-testid="inbox-valor-do-negocio">
+        <span className="block text-xs font-medium text-text">{t("Valor do negócio")}</span>
+        <p className="text-xs text-muted-foreground" data-testid="inbox-valor-somente-leitura">
+          {formatMoney(lead.value_cents, lead.currency)}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1" data-testid="inbox-valor-do-negocio">
+      <label className="block text-xs font-medium text-text" htmlFor={`valor-${lead.id}`}>
+        {t("Valor do negócio")} ({simboloDaMoeda(moeda)})
+      </label>
+      <div className="flex items-center gap-1">
+        <Input
+          id={`valor-${lead.id}`}
+          data-testid="inbox-valor-input"
+          className="h-8 text-xs"
+          inputMode="decimal"
+          placeholder="0,00"
+          value={texto}
+          aria-invalid={erro ? true : undefined}
+          onChange={(e) => {
+            setTexto(e.target.value);
+            setErro(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void salvar();
+            }
+          }}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 shrink-0 text-xs"
+          data-testid="inbox-valor-salvar"
+          disabled={edit.isPending}
+          onClick={() => void salvar()}
+        >
+          {t("Salvar")}
+        </Button>
+      </div>
+      {entendido !== null && (
+        <p className="text-[10px] text-muted-foreground">= {formatValorDoNegocio(entendido, moeda)}</p>
+      )}
+      {erro && <p className="text-[10px] text-error-fg">{erro}</p>}
     </div>
   );
 }
@@ -806,6 +946,10 @@ export function CRMSidePanel({
   // pelo mesmo motivo de `podeCriarTarefa` acima — os dublês de `useAuth` dos
   // testes deste painel não expõem `usePermission`, e a semântica é a mesma.
   const podeLevarParaOutroFunil = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
+  // EDITAR O VALOR DO NEGÓCIO é editar o CARD: `agent`+ é o piso que o
+  // `PATCH /api/v1/leads/[id]` cobra (`resolveAuthDual({ role: "agent" })`) e a
+  // régua do quadro. Abaixo disso o campo aparece só para leitura (#4546).
+  const podeEditarValor = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   // O MESMO piso da ficha do contato para o bloco da carteira (#2591): `agent`+
   // é quem LÊ a carteira (o GET da rota cobra `requireRole("agent")`), e o
   // `viewer` receberia 403. Escrever é outra régua — e ela NÃO é decidida aqui:
@@ -1337,6 +1481,8 @@ export function CRMSidePanel({
             onSelecionar={setLeadAtivoId}
             onSalvo={recarregar}
             podeLevarParaOutroFunil={podeLevarParaOutroFunil}
+            podeEditarValor={podeEditarValor}
+            moedaDaOrg={activeOrg?.currency ?? MOEDA_PADRAO}
             onTrocouDeNegocio={aoTrocarDeNegocio}
           /></fieldset>
         ) : (
