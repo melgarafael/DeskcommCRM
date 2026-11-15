@@ -135,7 +135,7 @@ test("o dono cria o plano, os limites valem pela tela, e prazo e desligar a chav
     // PR 3a: /admin/cobranca em abas; a inicial é a Visão geral.
     await page.getByRole("tab", { name: "Planos" }).click();
     await page.getByLabel("Nome do plano").fill(NOME_DO_PLANO);
-    await page.getByLabel("Preço (R$)").fill("49,90");
+    await page.getByLabel("Preço (BRL)").fill("49,90");
     await page.getByLabel("Dias de teste grátis").fill("5");
     await page.getByLabel("Máximo de pessoas").fill("1");
     await page.getByLabel("Máximo de números conectados").fill("1");

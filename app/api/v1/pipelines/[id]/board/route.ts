@@ -32,6 +32,7 @@ import {
 import { camposDeArquivoDoNegocio } from "@/lib/leads/campos-do-funil";
 import { diasDeRecorte, recortaEncerradosAntigos } from "@/lib/kanban/recorte-de-encerrados";
 import { anexarTarefasAosNegocios, type LinhaDaTarefaNoQuadro } from "@/lib/kanban/tarefas-no-quadro";
+import { withOwnerUserNames } from "@/lib/kanban/nome-do-dono";
 import { buscaEmLotes } from "@/lib/supabase/em-lotes";
 import { lerPaginado } from "@/lib/supabase/pagina";
 import { createClient } from "@/lib/supabase/server";
@@ -691,6 +692,14 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsWithOwner.error, 500, { requestId });
   }
 
+  // O NOME do responsável humano (#3945, fatia 2): leituras fixas por quadro,
+  // nunca uma por card — ver `lib/kanban/nome-do-dono.ts`. Falha aqui NÃO
+  // derruba o quadro: o card cai no rótulo anterior.
+  const leadsComNomeDoDono = await withOwnerUserNames(
+    (pipeline as Pipeline).organization_id,
+    leadsWithOwner.leads,
+  );
+
   const { data: pipelinePadrao } = await supabase
     .from("crm_pipelines")
     .select("id")
@@ -701,7 +710,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const leadsComAcao = await withNextActions(
     supabase,
     (pipeline as Pipeline).organization_id,
-    leadsWithOwner.leads,
+    leadsComNomeDoDono,
     (pipelinePadrao as { id: string } | null)?.id ?? null,
   );
   if (leadsComAcao.error) {
