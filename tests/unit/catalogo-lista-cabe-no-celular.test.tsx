@@ -54,6 +54,7 @@ function produto(over: Partial<Produto> = {}): Produto {
     descricao: null,
     marca: null,
     categoria: null,
+    capacidade: null,
     preco_cents: 24990,
     moeda: "BRL",
     custo_cents: null,
