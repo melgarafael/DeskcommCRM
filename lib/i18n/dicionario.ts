@@ -46,7 +46,16 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_CONTRATACAO,
   ...TEXTOS_CADENCIAS_ORIGINAIS,
   ...TEXTOS_CADENCIAS,
+  "Grupo de anúncios": { es: "Grupo de anuncios" },
+  "Palavra-chave": { es: "Palabra clave" },
+  "Conta do Google Ads": { es: "Cuenta de Google Ads" },
+  "Para distinguir contas, acrescente google_customer_id ao sufixo de cada conta e use o ID de cliente de dez dígitos. Exemplo: &google_customer_id=1234567890.": { es: "Para distinguir cuentas, añade google_customer_id al sufijo de cada cuenta y usa el ID de cliente de diez dígitos. Ejemplo: &google_customer_id=1234567890." },
   "Dados do negócio para conferência": { es: "Datos del negocio para revisar" },
+  // #4592 — o veto da trava no "Testar agente" aparece no card do turno, com o código.
+  "Vetado pela trava antes de enviar": { es: "Vetado por la regla antes de enviar" },
+  "O agente escreveu esta resposta, mas a verificação de envio a barrou: o texto não chegaria ao cliente. O código abaixo identifica a trava que cortou.": {
+    es: "El agente escribió esta respuesta, pero la verificación de envío la bloqueó: el texto no llegaría al cliente. El código de abajo identifica la regla que la cortó.",
+  },
   // Mensagens agendadas na conversa (issue #3118, primeira parte): textos do popup.
   "Mensagens agendadas": { es: "Mensajes programados" },
   "Criar agendamento": { es: "Crear programación" },
@@ -1323,14 +1332,27 @@ export const DICIONARIO: Traducoes = {
   "Ex.: clientes da feira X, lista da associação Y": { es: "Ej.: clientes de la feria X, lista de la asociación Y" },
   "Aceita .csv ou .xlsx (primeira aba), até 500 empresas. Colunas obrigatórias: nome da empresa e telefone. Quem já é contato do CRM não é abordado. Nenhuma abordagem começa nesta etapa.": { es: "Acepta .csv o .xlsx (primera hoja), hasta 500 empresas. Columnas obligatorias: nombre de la empresa y teléfono. Quien ya es contacto del CRM no recibe abordaje. Ningún abordaje comienza en esta etapa." },
   "Baixar modelo": { es: "Descargar modelo" },
-  // #4360 — a lista da campanha de volta em CSV (só o que ainda não foi abordado).
+  // #4360 — a lista da campanha de volta em CSV: só as não abordadas ou todas,
+  // com a situação de cada empresa (a situação sai no idioma da organização).
   "Baixar lista": { es: "Descargar lista" },
-  "Baixar lista leva só as empresas que ainda não foram abordadas.": {
-    es: "Descargar lista incluye solo las empresas que aún no fueron contactadas.",
+  "Só as não abordadas": { es: "Solo las no contactadas" },
+  "Contando as empresas…": { es: "Contando las empresas…" },
+  "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.": {
+    es: "No fue posible contar las empresas. Cierra y abre el menú para intentarlo de nuevo.",
   },
-  "Nenhuma empresa ainda pode ser abordada nesta campanha: não há lista para baixar.": {
-    es: "Ninguna empresa de esta campaña puede ser contactada todavía: no hay lista para descargar.",
+  "1 empresa fica fora das duas listas porque pediu para parar, é contato pessoal ou teve os dados apagados.": {
+    es: "1 empresa queda fuera de las dos listas porque pidió dejar de recibir mensajes, es un contacto personal o se borraron sus datos.",
   },
+  "empresas ficam fora das duas listas porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.": {
+    es: "empresas quedan fuera de las dos listas porque pidieron dejar de recibir mensajes, son contactos personales o se borraron sus datos.",
+  },
+  "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados ficam fora das duas listas.": {
+    es: "Descargar lista tiene dos opciones: solo las empresas que aún no fueron contactadas, o todas, con la situación de cada una. Quien pidió dejar de recibir mensajes, los contactos personales y quien tuvo sus datos borrados quedan fuera de las dos listas.",
+  },
+  "não abordada": { es: "no contactada" },
+  "abordada": { es: "contactada" },
+  "envio não confirmado": { es: "envío no confirmado" },
+  "fora da fila": { es: "fuera de la cola" },
   "Linhas recusadas": { es: "Líneas rechazadas" },
   "Planilha": { es: "Planilla" },
   "Escolha o arquivo da planilha.": { es: "Elige el archivo de la planilla." },
@@ -3408,6 +3430,11 @@ export const DICIONARIO: Traducoes = {
   Trace: { es: "Traza" },
   "Selecione uma execução.": { es: "Selecciona una ejecución." },
   "Sem trace disponível.": { es: "Sin traza disponible." },
+  // A linha de TESTE do agente na aba Execuções (#4426): o que se perguntou e o
+  // que a IA respondeu. "Prueba" e não "test" — é o vocabulário desta tela para
+  // o ensaio de uma versão (o mesmo "dry-run" que ela já desenha).
+  "Mensagem do teste": { es: "Mensaje de la prueba" },
+  "Resposta da IA": { es: "Respuesta de la IA" },
   "(sem nome)": { es: "(sin nombre)" },
   erro: { es: "error" },
   Args: { es: "Argumentos" },
@@ -12979,6 +13006,21 @@ export const DICIONARIO: Traducoes = {
   "Pessoais": { es: "Personales" },
   "Contato marcado como pessoal.": { es: "Contacto marcado como personal." },
   "Contato marcado como pessoal": { es: "Contacto marcado como personal" },
+  // ─── lib/prospecting/guard.ts e worker.ts (motivo embaixo da empresa vetada na Prospecção) ───
+  // "Contato marcado como pessoal." é a frase acima, a mesma do 403 do handler de mensagens.
+  "Contato bloqueado.": { es: "Contacto bloqueado." },
+  "Contato anonimizado (LGPD).": { es: "Contacto anonimizado (LGPD)." },
+  "Contato marcado como sempre atendimento humano.": {
+    es: "Contacto marcado como siempre atención humana.",
+  },
+  "Contato passado para atendimento humano.": { es: "Contacto pasado a atención humana." },
+  "Contato interno (marcado por etiqueta).": { es: "Contacto interno (marcado por etiqueta)." },
+  "Contato da equipe (marcado por etiqueta).": { es: "Contacto del equipo (marcado por etiqueta)." },
+  "O contato recusou mensagens de marketing.": { es: "El contacto rechazó los mensajes de marketing." },
+  "Sem base legal (LGPD) registrada para abordar este contato.": {
+    es: "Sin base legal (LGPD) registrada para abordar a este contacto.",
+  },
+  "A IA não pode atender este contato.": { es: "La IA no puede atender a este contacto." },
   "Não foi possível marcar o contato como pessoal.": { es: "No fue posible marcar el contacto como personal." },
   "Não foi possível desmarcar o contato como pessoal.": { es: "No fue posible desmarcar el contacto como personal." },
   "content é obrigatório.": { es: "content es obligatorio." },
@@ -13010,6 +13052,41 @@ export const DICIONARIO: Traducoes = {
   "corpo inválido": { es: "cuerpo inválido" },
   "Corpo inválido.": { es: "Cuerpo inválido." },
   "Corpo inválido para desconectar.": { es: "Cuerpo inválido para desconectar." },
+  // #4023 — pesquisa de satisfação.
+  "Não foi possível calcular a satisfação.": { es: "No fue posible calcular la satisfacción." },
+  "De 1 a 5, como você avalia este atendimento? Responda só com o número.": {
+    es: "Del 1 al 5, ¿cómo calificas esta atención? Responde solo con el número.",
+  },
+  "Pesquisa de satisfação ao encerrar": {
+    es: "Encuesta de satisfacción al cerrar",
+  },
+  "Ligada, quem tem o atendimento encerrado recebe uma pergunta: de 1 a 5, como avalia o atendimento. A resposta vira nota só se vier logo em seguida: se a equipe ou a IA voltar a falar com o cliente, um número que ele mande é conversa normal. Não sai para contato bloqueado ou pessoal, nem fora do horário de envio do número.": {
+    es: "Activada, quien tiene la atención cerrada recibe una pregunta: del 1 al 5, cómo califica la atención. La respuesta se vuelve nota solo si llega enseguida: si el equipo o la IA vuelve a hablar con el cliente, un número que él envíe es conversación normal. No se envía a contactos bloqueados o personales, ni fuera del horario de envío del número.",
+  },
+  "Ligada: a pergunta sai ao encerrar o atendimento.": {
+    es: "Activada: la pregunta se envía al cerrar la atención.",
+  },
+  "Desligada: nenhuma pergunta sai ao encerrar.": {
+    es: "Desactivada: no se envía ninguna pregunta al cerrar.",
+  },
+  "Resultado dos últimos 30 dias": {
+    es: "Resultado de los últimos 30 días",
+  },
+  "Respostas": {
+    es: "Respuestas",
+  },
+  "Perguntas feitas": {
+    es: "Preguntas enviadas",
+  },
+  "Quem não respondeu conta em \"Sem resposta\", nunca como nota baixa. A média usa só as respostas.": {
+    es: "Quien no respondió cuenta en \"Sin respuesta\", nunca como nota baja. El promedio usa solo las respuestas.",
+  },
+  "Há perguntas ainda esperando resposta.": {
+    es: "Hay preguntas que aún esperan respuesta.",
+  },
+  "Prazo para o cliente responder:": {
+    es: "Plazo para que el cliente responda:",
+  },
   "Corpo não é JSON válido.": { es: "El cuerpo no es un JSON válido." },
   "Credential desativada.": { es: "Credencial desactivada." },
   "Credential não encontrada.": { es: "Credencial no encontrada." },
@@ -14334,6 +14411,14 @@ export const DICIONARIO: Traducoes = {
   // ─── Tarefas (extraídas do PR #418) ───
   "Tarefas": { es: "Tareas" },
   "Tarefas desta demanda": { es: "Tareas de esta demanda" },
+  // #4630 — tarefas do contato e o atalho "Criar tarefa" no menu da conversa.
+  "Tarefas do contato": { es: "Tareas del contacto" },
+  "Nenhuma tarefa para este contato. Anote o próximo passo combinado, com prazo e responsável.": {
+    es: "Ninguna tarea para este contacto. Anota el próximo paso acordado, con plazo y responsable.",
+  },
+  "Cria uma tarefa para este atendimento com prazo e responsável": {
+    es: "Crea una tarea para esta atención con plazo y responsable",
+  },
   "Nenhuma tarefa nesta demanda. Anote o próximo passo combinado, com prazo e responsável.": {
     es: "Ninguna tarea en esta demanda. Anota el próximo paso acordado, con plazo y responsable.",
   },
@@ -16835,6 +16920,28 @@ export const DICIONARIO: Traducoes = {
   // (Instagram, Facebook…) não mudam de idioma e ficam de fora.
   Site: { es: "Sitio web" },
   "Google Meu Negócio": { es: "Google Mi Negocio" },
+  "Link na bio": { es: "Enlace en la bio" },
+  // ─── Aba Diagnóstico da ficha (components/contacts/DiagnosticoDoContato.tsx) ───
+  "Diagnóstico da empresa": { es: "Diagnóstico de la empresa" },
+  "Escrito pela IA": { es: "Escrito por la IA" },
+  "Nada preenchido ainda.": { es: "Nada completado todavía." },
+  Segmento: { es: "Segmento" },
+  "Oferta sugerida": { es: "Oferta sugerida" },
+  "Observações da equipe": { es: "Observaciones del equipo" },
+  "Revise antes de usar. O selo da IA sai quando você salva uma mudança no diagnóstico ou na oferta.": {
+    es: "Revisa antes de usar. El sello de la IA desaparece cuando guardas un cambio en el diagnóstico o en la oferta.",
+  },
+  "O CNPJ digitado não é válido. Confira e salve de novo.": {
+    es: "El CNPJ ingresado no es válido. Revísalo y guarda de nuevo.",
+  },
+  "CNPJ inválido.": { es: "CNPJ inválido." },
+  "Diagnóstico salvo.": { es: "Diagnóstico guardado." },
+  "Ex.: clínica odontológica": { es: "Ej.: clínica odontológica" },
+  "O que a empresa faz, o que falta e onde podemos ajudar": {
+    es: "Qué hace la empresa, qué le falta y dónde podemos ayudar",
+  },
+  "O que oferecer e por quê": { es: "Qué ofrecer y por qué" },
+  "Salvar diagnóstico": { es: "Guardar diagnóstico" },
   // ─── Agenda dos colegas (components/agenda/AgendaDosColegas.tsx) ───────────
   // A opção por organização da migration 0343 (issue #978). As frases de recusa
   // são as que `ClientePelaAgenda` já usa ("Sua sessão expirou…", "Nenhuma
@@ -19557,6 +19664,9 @@ export const DICIONARIO: Traducoes = {
   "Carregando etiquetas…": { es: "Cargando etiquetas…" },
   // #2498 — destino opcional da ação add_tag, no editor de automações.
   "Destino da etiqueta": { es: "Destino de la etiqueta" },
+  "Etiquetas automáticas do Google Ads (opcional)": { es: "Etiquetas automáticas de Google Ads (opcional)" },
+  "Escolha os dados de origem que viram etiquetas. Só se aplica a negócios identificados como Google Ads; campos ausentes são ignorados.": { es: "Elige los datos de origen que se convierten en etiquetas. Solo se aplica a negocios identificados como Google Ads; los campos ausentes se omiten." },
+  "Até dez etiquetas no total, com até 60 caracteres cada. O nome inclui o ID quando disponível; nomes longos usam só o ID ou são ignorados.": { es: "Hasta diez etiquetas en total, con un máximo de 60 caracteres cada una. El nombre incluye el ID cuando está disponible; los nombres largos usan solo el ID o se omiten." },
   "Card (comportamento atual)": { es: "Card (comportamiento actual)" },
   "Contato do lead": { es: "Contacto del lead" },
   "Sem contato vinculado, a etiqueta não é aplicada.": {
@@ -21422,6 +21532,10 @@ export const DICIONARIO: Traducoes = {
   "Erro no último preparo": { es: "Error en la última preparación" },
   "Abrir no Conhecimento": { es: "Abrir en Conocimiento" },
   "Só administradores podem preparar o catálogo de novo.": { es: "Solo los administradores pueden preparar el catálogo de nuevo." },
+  "Ir para a mensagem citada": { es: "Ir al mensaje citado" },
+  "Mensagem citada": { es: "Mensaje citado" },
+  "Toque para carregar a original": { es: "Toque para cargar el original" },
+  "A mensagem original não está mais na conversa.": { es: "El mensaje original ya no está en la conversación." },
 };
 
 /**

@@ -58,6 +58,7 @@ import {
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
 import { funilUnicoDasEtapas, idsDeEtapaCitados } from "./etapas-citadas";
 import { desvioAntesDoEnvio } from "./condicao-antes-do-envio";
+import { etiquetasDoLead } from "./etiquetas-do-lead";
 import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -167,6 +168,11 @@ export interface AdminClient {
    */
   loadLeadFacts(orgId: string, contactId: string, pipelineId?: string | null): Promise<{
     lead_stage: string | null;
+    /**
+     * As duas caixas de marcador, unidas — ver `etiquetas-do-lead.ts` (#4586).
+     * A condição «Etiqueta do contato» pergunta à etiqueta do NEGÓCIO e à do
+     * CONTATO, porque a campanha de prospecção só grava a do contato.
+     */
     tags: string[];
     contact_name?: string | null;
     custom_fields?: Record<string, unknown>;
@@ -1431,7 +1437,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        admin.from("contacts").select("name").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+        admin.from("contacts").select("name, tags").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
       ]);
       if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
@@ -1441,7 +1447,11 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           : {};
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // #4586 — as duas caixas. A campanha de prospecção grava a etiqueta do
+        // nicho no CONTATO; o #4606 passou a copiá-la para o card, mas só no
+        // nascimento (card antigo, e etiqueta posta no Inbox/ficha, ficam sem).
+        // Ler só `crm_leads.tags` fazia a condição responder «não tem».
+        tags: etiquetasDoLead(lead?.tags, contact?.tags),
         contact_name: contact?.name ?? null,
         custom_fields: custom,
       };
