@@ -8,6 +8,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as ProjectionModule from "./projection";
+
 const g = vi.hoisted(() => ({
   load: vi.fn(),
   request: vi.fn(),
@@ -18,7 +20,7 @@ const g = vi.hoisted(() => ({
 vi.mock("./store", () => ({ loadAmigoConnection: g.load }));
 vi.mock("./transport", () => ({ requestAmigo: g.request }));
 vi.mock("./projection", async (original) => ({
-  ...(await original<typeof import("./projection")>()),
+  ...(await original<typeof ProjectionModule>()),
   projectAttendance: g.project,
 }));
 vi.mock("@/lib/audit", () => ({ audit: g.audit }));

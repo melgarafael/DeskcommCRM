@@ -36,6 +36,8 @@ import { allTools } from "@/lib/mcp/tools";
  */
 
 const BASE = "linha de base, medida quando a cerca nasceu (2026-10-31)";
+/** Módulo opcional `amigo` (#4227): só entram no catálogo com o módulo instalado. */
+const AMIGO = "módulo amigo, fora do catálogo de quem não instalou";
 
 const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_list_event_types": { tokens: 204, motivo: BASE },
@@ -140,6 +142,29 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "provide_case_update": { tokens: 102, motivo: BASE },
   "send_template": { tokens: 227, motivo: BASE },
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
+  "crm_amigo_attendance_cancel": { tokens: 312, motivo: AMIGO },
+  "crm_amigo_attendance_create": { tokens: 460, motivo: AMIGO },
+  "crm_amigo_attendance_reschedule": { tokens: 595, motivo: AMIGO },
+  "crm_amigo_attendance_status": { tokens: 315, motivo: AMIGO },
+  "crm_amigo_attendances": { tokens: 465, motivo: AMIGO },
+  "crm_amigo_calendar": { tokens: 379, motivo: AMIGO },
+  "crm_amigo_doctor_dates": { tokens: 738, motivo: AMIGO },
+  "crm_amigo_doctors_available": { tokens: 238, motivo: AMIGO },
+  "crm_amigo_doctors": { tokens: 115, motivo: AMIGO },
+  "crm_amigo_events": { tokens: 185, motivo: AMIGO },
+  "crm_amigo_insurance_plans": { tokens: 210, motivo: AMIGO },
+  "crm_amigo_insurance_products": { tokens: 134, motivo: AMIGO },
+  "crm_amigo_insurances": { tokens: 149, motivo: AMIGO },
+  "crm_amigo_link_patient": { tokens: 366, motivo: AMIGO },
+  "crm_amigo_patient_attendances": { tokens: 573, motivo: AMIGO },
+  "crm_amigo_patient_birthdays": { tokens: 140, motivo: AMIGO },
+  "crm_amigo_patient_create": { tokens: 634, motivo: AMIGO },
+  "crm_amigo_patient_doctors": { tokens: 260, motivo: AMIGO },
+  "crm_amigo_patient_get": { tokens: 258, motivo: AMIGO },
+  "crm_amigo_patient_search": { tokens: 284, motivo: AMIGO },
+  "crm_amigo_patient_update": { tokens: 648, motivo: AMIGO },
+  "crm_amigo_places": { tokens: 158, motivo: AMIGO },
+  "crm_amigo_specialties": { tokens: 144, motivo: AMIGO },
 };
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
@@ -148,7 +173,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
 // mensagem (#4077).
-const TETO_TOTAL = 30724;
+// +7760 com as 23 ferramentas `crm_amigo_*` (#4227), que só entram no catálogo com
+// o módulo `amigo` instalado.
+const TETO_TOTAL = 38484;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

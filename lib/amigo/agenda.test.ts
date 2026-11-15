@@ -164,7 +164,7 @@ describe("agenda authority boundary", () => {
     });
   });
   it("legacy creation in active mode refuses missing patient/doctor/place before any local write", async () => {
-    const { db, rpc, calls } = database();
+    const { db, rpc } = database();
     await expect(
       marcarAgendamentoHandler(db, ctx, {
         event_type_id: "type",

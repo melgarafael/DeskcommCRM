@@ -52,17 +52,3 @@ describe("escopo de escritas Amigo", () => {
     expect(await check("patient_update", { contact_id: CONTACT, patientId: 12 }, database(true))).toMatchObject({ permitido: false, motivo: "indisponivel" });
   });
 });
-
-describe("contexto Amigo nas escritas de agenda existentes", () => {
-  it.each(["crm_book_appointment", "crm_find_and_book_appointment"])("%s aceita seleção do paciente deste contato e recusa outro", async tool => {
-    const base = { contact_id: CONTACT, amigo: { patient_id: 12, user_id: 3, place_id: 4 } };
-    expect(await escritaCabeNoTurno(database(), ORG, CONTACT, tool, base)).toEqual({ permitido: true });
-    expect(await escritaCabeNoTurno(database(), ORG, CONTACT, tool, { ...base, amigo: { ...base.amigo, patient_id: 13 } })).toMatchObject({ permitido: false });
-    expect(await escritaCabeNoTurno(database(), ORG, CONTACT, tool, { ...base, amigo: { ...base.amigo, patient_id: 14 } })).toMatchObject({ permitido: false });
-  });
-  it("contexto aninhado não aceita alvos arbitrários nem campos extras", async () => {
-    for (const amigo of [{ patient_id: "12", user_id: 3, place_id: 4 }, { patient_id: 12 }, { patient_id: 12, user_id: 3, place_id: 4, contact_id: OTHER }]) {
-      expect(await escritaCabeNoTurno(database(), ORG, CONTACT, "crm_book_appointment", { contact_id: CONTACT, amigo })).toMatchObject({ permitido: false });
-    }
-  });
-});

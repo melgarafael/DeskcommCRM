@@ -814,9 +814,11 @@ export const NAV_CATALOG = [
     label: "Amigo",
     description: "Ligue a agenda ao sistema de clínicas Amigo: pacientes, convênios e consultas.",
     icon: "CalendarBlank",
-    group: "canais",
+    // No hub do CRM, não no menu lateral: toda porta de módulo mora num hub
+    // (`tests/unit/porta-do-modulo-ligado.test.tsx`), e é ali que a agenda está.
+    group: "crm",
+    section: "O dia a dia da venda",
     minRole: "agent",
-    sidebar: true,
     modulo: "amigo",
   },
   {

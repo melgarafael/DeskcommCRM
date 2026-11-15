@@ -224,7 +224,9 @@ function operationTool(operation: AmigoOperation): McpToolDefinition {
     description: `${descriptions[operation]} ${aviso}`,
     inputSchema,
     category: mutation ? "write" : "read",
-    requiresRole: globalOperations.has(operation) ? "manager" : "agent",
+    // Escrita no Amigo é o mesmo piso das escritas de agenda (`crm_book_appointment`):
+    // `ai_operator`, que só o agente publicado alcança — pessoa marca pela tela.
+    requiresRole: globalOperations.has(operation) ? "manager" : mutation ? "ai_operator" : "agent",
     requiresScope: mutation ? "mcp:write" : "mcp:read",
     redigirParaAuditoria: redact,
     motivoDoVazio: reason,
@@ -322,7 +324,7 @@ const linkPatient: McpToolDefinition = {
     connection_id: z.string().min(1),
   },
   category: "write",
-  requiresRole: "agent",
+  requiresRole: "ai_operator",
   requiresScope: "mcp:write",
   redigirParaAuditoria: redact,
   motivoDoVazio: reason,

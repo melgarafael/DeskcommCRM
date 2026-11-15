@@ -10,20 +10,19 @@ import { ApiError } from "@/lib/api/types";
 const CONTACT = "22222222-2222-4222-8222-222222222222";
 const ctx = { organizationId: "org", role: "ai_operator", actor: { type: "ai_agent", id: "run", role: "ai_operator" }, contatoDoTurno: CONTACT, requestId: "request", supabase: {} } as McpContext;
 const provider = { provider: "amigo", provider_context: { connection_id: "connection", path: "/app/integrations/amigo", required: ["patient_id", "place_id", "user_id", "event_id"] } };
-const amigo = { patient_id: 12, user_id: 3, place_id: 4, insurance_id: 5, insurance_product_id: 6 };
-const input = { event_type_slug: "amigo-consulta", starts_at: "2026-12-01T12:00:00Z", contact_id: CONTACT, amigo };
+const input = { event_type_slug: "amigo-consulta", starts_at: "2026-12-01T12:00:00Z", contact_id: CONTACT };
 beforeEach(() => { vi.clearAllMocks(); deps.type.mockResolvedValue({ id: "local-type" }); deps.book.mockResolvedValue({ id: "local", status: "confirmed", authority: "amigo" }); });
 describe("ferramentas existentes preservam a autoridade Amigo", () => {
-  it("o schema e o mapeamento da marcação preservam paciente, unidade, médico e convênio", async () => {
-    const parsed = z.object(crmBookAppointment.inputSchema).parse(input);
-    expect(parsed).toMatchObject({ amigo });
-    await crmBookAppointment.handler(parsed, ctx);
-    expect(deps.book.mock.calls[0]?.[2]).toMatchObject({ amigo, event_type_id: "local-type", contact_id: CONTACT });
-    expect(z.object(crmFindAndBookAppointment.inputSchema).parse({ ...input, dia: "2026-12-01", horario: "09:00" })).toMatchObject({ amigo });
+  it("as ferramentas de marcar da agenda não carregam a seleção do Amigo: sem o módulo, nem um token a mais", () => {
+    // A seleção do Amigo mora nas ferramentas `crm_amigo_*`, que só existem com o
+    // módulo; o esquema de `crm_book_appointment` vai a TODO agente de toda instalação.
+    expect(Object.keys(crmBookAppointment.inputSchema)).not.toContain("amigo");
+    expect(Object.keys(crmFindAndBookAppointment.inputSchema)).not.toContain("amigo");
+    expect(z.object(crmBookAppointment.inputSchema).parse(input)).not.toHaveProperty("amigo");
   });
   it("o papel enviado ao domínio vem do contexto autenticado, mesmo se não vier no ator", async () => {
     await crmBookAppointment.handler(input, { ...ctx, actor: { type: "user", id: "person" }, role: "manager" });
-    expect(deps.book.mock.calls[0]?.[1].actor).toMatchObject({ type: "user", id: "person", role: "manager" });
+    expect(deps.book.mock.calls[0]?.[1]).toMatchObject({ actor: { type: "user", id: "person" }, amigoRole: "manager" });
   });
   it("a consulta de tipos conserva a conexão e os IDs externos do atendimento", async () => {
     deps.types.mockResolvedValue({ ok: true, ...provider, tipos: [{ slug: "amigo-consulta", nome: "Consulta", descricao: null, duracaoMin: 30, localKind: "in_person", localDetalhes: "Unidade", precisaConfirmacao: false, external_provider: "amigo", external_id: "7", external_connection_id: "connection" }] });
@@ -32,7 +31,7 @@ describe("ferramentas existentes preservam a autoridade Amigo", () => {
   it("a ausência de contexto nas duas consultas retorna o próximo passo do provedor", async () => {
     deps.free.mockResolvedValue({ ok: false, codigo: "amigo_context_required", motivoParaCliente: "Selecione o paciente", ...provider });
     expect(await crmFindFreeSlots.handler({ event_type_slug: "amigo-consulta" }, ctx)).toMatchObject({ ...provider, motivo: "amigo_context_required" });
-    expect(await crmFindAndBookAppointment.handler({ event_type_slug: "amigo-consulta", contact_id: CONTACT, dia: "2026-12-01", horario: "09:00", amigo }, ctx)).toMatchObject({ ...provider, marcado: false, motivo: "amigo_context_required" });
+    expect(await crmFindAndBookAppointment.handler({ event_type_slug: "amigo-consulta", contact_id: CONTACT, dia: "2026-12-01", horario: "09:00" }, ctx)).toMatchObject({ ...provider, marcado: false, motivo: "amigo_context_required" });
     expect(deps.book).not.toHaveBeenCalled();
   });
   it("a lista conserva autoridade e estado remoto, sem traduzir chegada em comparecimento", async () => {

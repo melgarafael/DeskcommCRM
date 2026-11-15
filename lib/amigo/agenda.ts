@@ -131,7 +131,7 @@ async function serviceContext(
   contactId?: string,
   connectionId?: string,
 ): Promise<AmigoContext> {
-  let role = "role" in ctx.actor ? ctx.actor.role : undefined;
+  let role = ctx.amigoRole ?? ("role" in ctx.actor ? ctx.actor.role : undefined);
   if (ctx.actor.type === "user" && !role) {
     const { data, error } = await db
       .from("user_organizations")

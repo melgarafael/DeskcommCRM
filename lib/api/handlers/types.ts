@@ -97,6 +97,8 @@ export interface HandlerCtx {
   /** Módulo `amigo`: a escrita vem do turno do agente (contexto do servidor, nunca do corpo). */
   amigoAgentExecution?: boolean;
   amigoAgentToolIds?: readonly string[];
+  /** O papel autenticado do MCP, para o domínio do Amigo quando o ator não traz papel. */
+  amigoRole?: string;
   prospectingDelivery?: ProspectingDelivery;
   agentOperation?: AgentOperationContext;
   meetingDelivery?: MeetingDeliveryContext;

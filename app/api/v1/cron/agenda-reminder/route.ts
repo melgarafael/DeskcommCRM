@@ -552,9 +552,17 @@ export function degrausPendentes(input: {
     .sort((a, b) => b - a);
 }
 
-/** As autoridades cujo compromisso esta rodada considera: o Amigo só com o módulo ligado. */
-async function autoridadesComLembrete(db: ReturnType<typeof createAdminClient>): Promise<string[]> {
-  return (await moduloLigado(db, "amigo")) ? [AUTORIDADE_LOCAL, "amigo"] : [AUTORIDADE_LOCAL];
+/**
+ * As autoridades cujo compromisso esta rodada considera: o Amigo só com o
+ * módulo ligado. Com ele desligado, o filtro é o mesmo `eq` de antes.
+ */
+function comAutoridadesDoLembrete<Q extends { eq(coluna: string, valor: string): Q; in(coluna: string, valores: string[]): Q }>(
+  consulta: Q,
+  amigoLigado: boolean,
+): Q {
+  return amigoLigado
+    ? consulta.in("authority", [AUTORIDADE_LOCAL, "amigo"])
+    : consulta.eq("authority", AUTORIDADE_LOCAL);
 }
 
 /**
@@ -612,18 +620,20 @@ async function handle(req: NextRequest): Promise<Response> {
   // `!inner` no tipo: só interessa compromisso cujo TIPO pede lembrete. O corte
   // por `starts_at` usa a maior antecedência possível — o corte fino, que depende
   // do `reminder_minutes_before` de cada linha, é `estaNaHora` logo abaixo.
-  const { data, error } = await admin
+  const { data, error } = await comAutoridadesDoLembrete(
+    admin
     .from("calendar_appointments")
     .select(
       "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, location_kind, meeting_state, meeting_url, reminder_sent_offsets_minutes, reminder_sent_at, authority, external_connection_id, " +
         "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
-    .eq("status", "confirmed")
+    .eq("status", "confirmed"),
     // Compromisso de um sistema externo (9392) só recebe lembrete quando o
     // módulo dele está ligado E confere o estado lá antes do envio (abaixo,
     // `verifyAmigoReminder`). Sai no banco, antes do `limit`, para não ocupar a
     // janela da varredura com linha que nenhum módulo vai conferir.
-    .in("authority", await autoridadesComLembrete(admin))
+    await moduloLigado(admin, "amigo"),
+  )
     // Org parada sai no banco, ANTES do `limit`: filtrar só em memória a deixaria
     // ocupar a janela da varredura enquanto a org segue parada.
     .eq("organizations.status", STATUS_OPERANTE)

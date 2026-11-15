@@ -18,7 +18,7 @@
  * dentro, e é o que separa esta chamada de um vazamento entre organizações.
  */
 import { z } from "zod";
-import { amigoBookingContextSchema, AMIGO_CONTEXT_REQUIRED, type AmigoBookingContext } from "@/lib/amigo/agenda";
+import { AMIGO_CONTEXT_REQUIRED } from "@/lib/amigo/agenda";
 
 import {
   horariosLivresDaOrg,
@@ -727,7 +727,6 @@ function compromissoComHorarioLocal(r: Record<string, unknown>): Record<string, 
 }
 
 const marcarShape = {
-  amigo: amigoBookingContextSchema.optional().describe("Só com o módulo Amigo: a seleção explícita de paciente, médico, unidade e convênio. Use os IDs devolvidos pelas ferramentas do Amigo, nunca inferidos pelo telefone."),
   event_type_slug: z.string().min(1).describe("o identificador legível do tipo de atendimento"),
   starts_at: z.string().datetime({ offset: true }).describe("o instante exato do início, vindo de `crm_find_free_slots`"),
   contact_id: z.string().uuid().describe("quem vai ser atendido"),
@@ -805,7 +804,10 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
         ctx.supabase,
         {
           organization_id: ctx.organizationId,
-          actor: input.amigo ? { ...ctx.actor, role: ctx.role } : ctx.actor,
+          actor: ctx.actor,
+          // O domínio do Amigo lê o papel; ele vem do contexto autenticado do MCP,
+          // nunca dos argumentos.
+          amigoRole: ctx.role,
           amigoAgentExecution: Boolean(ctx.contatoDoTurno),
           amigoAgentToolIds: ctx.amigoAgentToolIds,
           requestId: ctx.requestId,
@@ -817,7 +819,6 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           event_type_id: tipo.id,
           starts_at: input.starts_at,
           contact_id: input.contact_id,
-          ...(input.amigo ? { amigo: input.amigo } : {}),
           ...(input.owner_user_id ? { owner_user_id: input.owner_user_id } : {}),
           ...(input.title ? { title: input.title } : {}),
           ...(input.notes ? { notes: input.notes } : {}),
@@ -899,7 +900,6 @@ async function marcarHorario(
     participants?: string[];
     participantName?: string;
     serviceRevision?: number;
-    amigo?: AmigoBookingContext;
   },
 ): Promise<unknown> {
   return crmBookAppointment.handler(
@@ -907,7 +907,6 @@ async function marcarHorario(
       event_type_slug: args.eventTypeSlug,
       starts_at: args.startsAt,
       contact_id: args.contactId,
-      ...(args.amigo ? { amigo: args.amigo } : {}),
       ...(args.ownerUserId !== undefined ? { owner_user_id: args.ownerUserId } : {}),
       ...(args.title !== undefined ? { title: args.title } : {}),
       ...(args.notes !== undefined ? { notes: args.notes } : {}),
@@ -921,7 +920,6 @@ async function marcarHorario(
 }
 
 const consultarEMarcarShape = {
-  amigo: marcarShape.amigo,
   event_type_slug: z.string().min(1).describe("o identificador legível do tipo de atendimento"),
   participant_name: marcarShape.participant_name,
   participants: marcarShape.participants,
@@ -1052,7 +1050,6 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
       // agenda confirmou como livre.
       startsAt: achado.inicio.toISOString(),
       contactId: input.contact_id,
-      ...(input.amigo ? { amigo: input.amigo } : {}),
       ...(input.owner_user_id !== undefined ? { ownerUserId: input.owner_user_id } : {}),
       ...(input.participants !== undefined ? { participants: input.participants } : {}),
       ...(input.participant_name !== undefined ? { participantName: input.participant_name } : {}),
