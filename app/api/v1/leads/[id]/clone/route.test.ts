@@ -3,13 +3,37 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
+// O clone e o `movido_para` são gravados pelo cliente de SERVIÇO (migration
+// 9389): ele fala com o MESMO banco falso, para os testes lerem o que as duas
+// escritas deixaram. `db` é lido na chamada, não na fábrica do mock.
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ rpc: async () => ({ error: null }) }),
+  createAdminClient: () => ({
+    rpc: async () => ({ error: null }),
+    from: (tabela: string) => {
+      const consulta = (db.client as unknown as { from: (t: string) => Record<string, (linha: Row) => unknown> }).from(
+        tabela,
+      );
+      for (const metodo of ["insert", "update"]) {
+        const original = consulta[metodo]!;
+        consulta[metodo] = (linha: Row) => {
+          escritasDoServidor.push(`${tabela}:${metodo}`);
+          if (falhaNoVinculo && tabela === "crm_leads" && metodo === "update") {
+            const recusa = { data: null, error: { message: "falha simulada no vínculo" } };
+            const cadeia = { eq: () => cadeia, select: () => cadeia, maybeSingle: async () => recusa };
+            return cadeia;
+          }
+          return original(linha);
+        };
+      }
+      return consulta;
+    },
+  }),
 }));
 vi.mock("@/lib/atendimento/origem", () => ({
   observeServiceOrigin: vi.fn(async () => "api"),
@@ -189,9 +213,14 @@ function seed() {
 }
 
 let db: ReturnType<typeof fakeDb>;
+/** O que o cliente de serviço escreveu (tabela:método), e se o UPDATE do vínculo falha. */
+let escritasDoServidor: string[] = [];
+let falhaNoVinculo = false;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  escritasDoServidor = [];
+  falhaNoVinculo = false;
   db = fakeDb(seed());
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
@@ -337,6 +366,107 @@ describe("POST /api/v1/leads/[id]/clone", () => {
       stage_id: S2_A,
     });
     expect((origem.source_metadata as Row).canal).toBe("whatsapp");
+  });
+
+  /**
+   * Sessão = o banco falso com um espião nas escritas de `crm_leads`. `recusaInsert`
+   * faz o INSERT responder como a policy `crm_leads_insert` responde quando recusa.
+   */
+  function sessaoEspiada(recusaInsert = false) {
+    const sessao = db.client as unknown as {
+      from: (t: string) => Record<string, (linha: Row) => unknown>;
+    };
+    const inseridos: Row[] = [];
+    const comVinculo: string[] = [];
+    vi.mocked(createClient).mockResolvedValue({
+      from: (tabela: string) => {
+        const consulta = sessao.from(tabela);
+        if (tabela !== "crm_leads") return consulta;
+        for (const metodo of ["insert", "update"]) {
+          const original = consulta[metodo]!;
+          consulta[metodo] = (linha: Row) => {
+            const meta = (linha?.source_metadata ?? {}) as Row;
+            for (const chave of ["clonado_de", "movido_para"]) {
+              if (chave in meta) comVinculo.push(`${metodo}:${chave}`);
+            }
+            if (metodo === "insert") {
+              inseridos.push(linha);
+              if (recusaInsert) {
+                const recusa = {
+                  data: null,
+                  error: { code: "42501", message: 'new row violates row-level security policy for table "crm_leads"' },
+                };
+                const cadeia = { select: () => cadeia, single: async () => recusa, maybeSingle: async () => recusa };
+                return cadeia;
+              }
+            }
+            return original(linha);
+          };
+        }
+        return consulta;
+      },
+    } as never);
+    return { inseridos, comVinculo };
+  }
+
+  it("o INSERT do clone vai pela SESSÃO, sem o vínculo; `clonado_de` e `movido_para` entram pelo serviço (migration 9389)", async () => {
+    const espiao = sessaoEspiada();
+    const { POST } = await import("./route");
+
+    const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    // A policy `crm_leads_insert` continua decidindo a criação: o INSERT é da sessão.
+    expect(espiao.inseridos).toHaveLength(1);
+    expect(espiao.comVinculo).toEqual([]);
+    expect(escritasDoServidor.filter((e) => e === "crm_leads:insert")).toEqual([]);
+    expect(escritasDoServidor.filter((e) => e === "crm_leads:update")).toHaveLength(2);
+
+    const clone = (db.tables.crm_leads ?? []).find((row) => row.id === body.data.lead.id) as Row;
+    expect((clone.source_metadata as Row).clonado_de).toMatchObject({ lead_id: LEAD_ID, pipeline_id: P1 });
+    expect((clone.source_metadata as Row).canal).toBe("whatsapp");
+    expect((body.data.lead.source_metadata as Row).clonado_de).toMatchObject({ lead_id: LEAD_ID });
+    const origem = (db.tables.crm_leads ?? []).find((row) => row.id === LEAD_ID) as Row;
+    expect((origem.source_metadata as Row).movido_para).toMatchObject({ lead_id: clone.id });
+  });
+
+  it("a policy recusa o INSERT do clone (ex.: modo 'só os meus' e dono descartado): 403, nada é escrito pelo serviço e a origem segue aberta", async () => {
+    const espiao = sessaoEspiada(true);
+    const { POST } = await import("./route");
+
+    const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const body = await response.json();
+
+    expect(espiao.inseridos).toHaveLength(1);
+    expect(response.status).toBe(403);
+    expect(body.error.code).toBe("forbidden");
+    expect(escritasDoServidor).toEqual([]);
+    expect(db.tables.crm_leads).toHaveLength(1);
+    const origem = (db.tables.crm_leads ?? []).find((row) => row.id === LEAD_ID) as Row;
+    expect(origem.status).toBe("open");
+    expect(origem.source_metadata).toEqual({ canal: "whatsapp" });
+  });
+
+  it("o UPDATE do vínculo falha: 500 com o id do clone, registro no log, e a origem NÃO é encerrada", async () => {
+    falhaNoVinculo = true;
+    const erro = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    const { POST } = await import("./route");
+
+    const response = await POST(cloneRequest({ pipeline_id: P2 }), params);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    const clone = (db.tables.crm_leads ?? []).find((row) => row.id !== LEAD_ID) as Row;
+    expect(body.error.details).toEqual({ cloned_lead_id: clone.id });
+    expect(erro).toHaveBeenCalledWith(
+      expect.stringContaining("vínculo"),
+      expect.objectContaining({ lead_id: LEAD_ID, cloned_lead_id: clone.id }),
+    );
+    const origem = (db.tables.crm_leads ?? []).find((row) => row.id === LEAD_ID) as Row;
+    expect(origem.status).toBe("open");
+    expect(origem.source_metadata).toEqual({ canal: "whatsapp" });
+    erro.mockRestore();
   });
 
   it("cada lado conta a troca na LINHA DO TEMPO — e a origem não diz 'Perdido — other'", async () => {

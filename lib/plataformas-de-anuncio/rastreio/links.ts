@@ -4,6 +4,7 @@ export type { LinkRastreavel } from "./contrato";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { criarClickRef } from "../captura-de-clique";
 import { lerIdentificadoresGoogle } from "../google/identificadores";
+import { normalizarMetadadosGoogle } from "../google/metadados-da-campanha";
 import { textoSemRef, whatsAppUrl } from "../pagina-de-captura";
 
 export async function listarLinks(admin: SupabaseClient, org: string): Promise<LinkRastreavel[]> {
@@ -33,7 +34,12 @@ export async function destinoDoLink(
         gclid: ids.gclid ?? null,
         gbraid: ids.gbraid ?? null,
         wbraid: ids.wbraid ?? null,
-        query_raw: { ...utm, ...ids },
+        query_raw: {
+          // O nome do link é rótulo do CRM, não nome comprovado da campanha.
+          // Para Google, só parâmetros explícitos atravessam ao contato/card.
+          ...normalizarMetadadosGoogle({ ...link.utm, ...Object.fromEntries(search.entries()) }),
+          ...ids,
+        },
       }
     : { utm, query_raw: utm };
   let ref = null;

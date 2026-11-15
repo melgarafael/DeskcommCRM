@@ -137,7 +137,10 @@ test("painel configura, bloqueia e reserva três pessoas pela conversa; publica�
   const messages = await db.from("messages").select("id", { count: "exact" }).eq("organization_id", f.org).eq("direction", "outbound");
   if (messages.error) throw messages.error; expect(messages.count).toBe(0);
   await page.goto("/app/agenda"); await page.getByText("Turmas e reservas coletivas", { exact: true }).click();
-  await expect(page.getByText("Pessoa fictícia A", { exact: false })).toBeVisible();
+  // A reserva aparece também no calendário quando o dia cai na semana visível,
+  // e o nome da pessoa vem no título do cartão. O que este passo cobra é a lista
+  // de turmas e reservas coletivas, cuja linha traz nome · estado · comunicação.
+  await expect(page.getByText("Pessoa fictícia A · Confirmada", { exact: false })).toBeVisible();
 });
 
 test("Google compartilhado preserva identidade em retry, remarcação e cancelamento; edições incompatíveis viram conflito", async () => {
