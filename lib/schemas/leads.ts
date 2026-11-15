@@ -153,6 +153,23 @@ export const CATEGORIAS_DE_PERDA = ["Cliente", "Concorrência", "Mérito", "Nós
 export type CategoriaDePerda = (typeof CATEGORIAS_DE_PERDA)[number];
 
 /**
+ * O teto de uma categoria (`settings.lost_reason_categories`, #4437) e o de
+ * quantas o funil declara.
+ *
+ * Mora AQUI, ao lado da lista de fábrica, porque DOIS lados aplicam a mesma
+ * régua: o schema do PATCH (`lib/schemas/settings`) e o leitor da tela/relatório
+ * (`lib/leads/motivos-de-perda-do-funil`). O leitor não pode importar o schema
+ * de settings — settings importa daqui —, então o número fica neste arquivo,
+ * que não importa nada de settings e é o berço da lista.
+ *
+ * 40 é o mesmo teto da categoria de um motivo, e não é coincidência: são o
+ * mesmo vocabulário, escrito uma vez no funil e usado no motivo.
+ */
+export const MAX_CARACTERES_DA_CATEGORIA_DE_PERDA = 40;
+/** Acima disso a tela de categorias não é lista, é rolagem — o mesmo espírito do teto de motivos. */
+export const MAX_CATEGORIAS_DE_PERDA = 30;
+
+/**
  * A categoria PADRÃO de cada motivo canônico (issue #1537): o motivo já nasce
  * agrupado sem que ninguém cadastre nada, e o funil pode SOBRESCREVER gravando
  * `{ label, categoria }` em `settings.lost_reasons`.

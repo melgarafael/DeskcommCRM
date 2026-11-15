@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageBubble } from "./MessageBubble";
 import { separarReacoes } from "@/lib/inbox/reacoes-no-fio";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { NoteCard } from "./NoteCard";
 import { PassagemCard } from "./PassagemCard";
 import { useThreadAutoScroll } from "@/hooks/inbox/useThreadAutoScroll";
@@ -129,8 +130,12 @@ export function ChatThread({
    * páginas carregadas, e o rótulo diz isso para ninguém ler "zero" como "não
    * existe na conversa". Apagada e oculta ficam de fora — o texto delas não
    * aparece na bolha, e marcar uma bolha sem o termo visível seria mentir.
+   *
+   * Os DOIS lados passam por `termoSemAcento` (`lib/inbox/termo-de-busca`), a
+   * régua de acento do repo (#4411): `toLocaleLowerCase` dobra CAIXA e não
+   * ACENTO, então `orcamento` não achava "Pode mandar o orçamento?".
    */
-  const termo = searchTerm.trim().toLocaleLowerCase();
+  const termo = termoSemAcento(searchTerm.trim());
   const resultados = useMemo(
     () =>
       new Set(
@@ -140,7 +145,7 @@ export function ChatThread({
               termo &&
               !m.revoked_at &&
               !m.metadata?.crm_hidden_at &&
-              m.body?.toLocaleLowerCase().includes(termo),
+              termoSemAcento(m.body ?? "").includes(termo),
           )
           .map((m) => m.id),
       ),

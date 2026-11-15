@@ -118,27 +118,39 @@ describe("TarefasDaDemanda — a seção do inbox", () => {
     ]);
   });
 
-  it("sem demanda vigente no canal, a seção não desenha nada", () => {
-    const { container } = render(<TarefasDaDemanda demandaId={null} contactId="c-1" podeEditar />);
+  it("sem demanda e sem contato, a seção não desenha nada nem monta a consulta", () => {
+    const { container } = render(<TarefasDaDemanda demandaId={null} contactId={null} podeEditar />);
     expect(container.firstChild).toBeNull();
-    // E nem monta a consulta: o guarda de `demandaId` vem ANTES dos hooks, então
-    // o `useTasks` não é chamado nenhuma vez — não há demanda para filtrar nem
-    // provedor de autenticação a exigir.
+    // O guarda vem ANTES dos hooks: conversa sem contato não pede tarefa nenhuma.
     expect(tarefasHook.chamadas).toHaveLength(0);
   });
 
-  it("⭐ o divisor é da seção: viaja com ela e não sobra traço sem demanda", () => {
+  it("⭐ sem demanda vigente, mas com contato, mostra as tarefas EM ABERTO do contato (#4630)", () => {
+    // A tarefa criada pelo "Nova tarefa" do painel numa conversa sem demanda
+    // precisa aparecer na conversa — é o motivo de a seção existir aqui também.
+    tarefasHook.tarefas = [tarefa({ demanda_id: null, title: "Mandar a proposta" })];
+    render(<TarefasDaDemanda demandaId={null} contactId="c-1" podeEditar />);
+
+    expect(tarefasHook.chamadas.at(-1)).toEqual([{ contact_id: "c-1", aberto: true }, { enabled: true }]);
+    expect(screen.getByRole("heading", { name: /Tarefas do contato/ })).toBeTruthy();
+    expect(screen.getByText("Mandar a proposta")).toBeTruthy();
+  });
+
+  it("⭐ o divisor é da seção: viaja com ela e não sobra traço quando ela não existe", () => {
     // O painel desenha demanda | tarefas | memória e separa os blocos com um
     // traço. O traço DESTA seção mora aqui dentro, então nasce com ela e some
-    // com ela. Se morasse no painel, a conversa sem demanda vigente — a maioria
-    // delas — ficaria com dois traços seguidos, um órfão colado no do bloco
-    // seguinte. Por isso o primeiro filho da seção é o divisor.
+    // com ela: sem demanda e sem contato não há seção, e não pode sobrar o
+    // traço órfão colado no do bloco seguinte.
     const comDemanda = render(<TarefasDaDemanda demandaId={DEMANDA} contactId="c-1" podeEditar />);
     expect(comDemanda.container.firstElementChild?.getAttribute("data-orientation")).toBe("horizontal");
     comDemanda.unmount();
 
-    const semDemanda = render(<TarefasDaDemanda demandaId={null} contactId="c-1" podeEditar />);
-    expect(semDemanda.container.querySelectorAll('[data-orientation="horizontal"]')).toHaveLength(0);
+    const soContato = render(<TarefasDaDemanda demandaId={null} contactId="c-1" podeEditar />);
+    expect(soContato.container.firstElementChild?.getAttribute("data-orientation")).toBe("horizontal");
+    soContato.unmount();
+
+    const semNada = render(<TarefasDaDemanda demandaId={null} contactId={null} podeEditar />);
+    expect(semNada.container.querySelectorAll('[data-orientation="horizontal"]')).toHaveLength(0);
   });
 
   it("a tarefa da demanda aparece na lista, com o prazo que a régua da tela mostra", () => {

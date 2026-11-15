@@ -21,6 +21,10 @@ import {
   TAMANHO_MAXIMO_DO_MODELO,
   TAMANHO_MAXIMO_DO_ROTULO,
 } from "@/lib/leads/atalhos-do-card";
+import {
+  MAX_CARACTERES_DA_CATEGORIA_DE_PERDA,
+  MAX_CATEGORIAS_DE_PERDA,
+} from "@/lib/schemas/leads";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
@@ -444,6 +448,34 @@ export const pipelineConfigPatchSchema = z.object({
       ]),
     )
     .max(50)
+    .optional(),
+  /**
+   * AS CATEGORIAS DE PERDA DESTE FUNIL (#4437).
+   *
+   * A lista de fábrica (`CATEGORIAS_DE_PERDA`) é o piso de quem nunca declarou
+   * nada — mas ela é do PRODUTO, não do negócio: uma clínica não perde por
+   * "Concorrência" e uma loja precisa de "Risco". Aqui o funil declara as suas,
+   * na ordem em que quer vê-las na tela.
+   *
+   * DOUTRINA DA CHAVE (a mesma de `ocultar_encerrados_dias`):
+   *   - AUSENTE = o funil nunca declarou → vale a lista de fábrica, MAIS as
+   *     categorias que os motivos já usam (é assim que o "Risco" gravado à mão
+   *     no "Possível fraude" continua existindo sem migração de dado);
+   *   - PRESENTE, inclusive `[]` = decisão da organização → vale exatamente o
+   *     que está aqui. `[]` é legítimo: esconder todas é uma escolha, e não
+   *     pode ressuscitar a lista de fábrica.
+   *
+   * Esconder uma categoria é TIRÁ-LA DAQUI, e só isso: o `categoria` gravado em
+   * `lost_reasons` não é tocado, então o motivo que já usava continua agrupado
+   * no relatório e continua mostrando a categoria dele no menu. O que muda é
+   * que ela deixa de ser oferecida para os OUTROS motivos.
+   *
+   * Renomear é trocar o texto na lista; a tela reescreve o `categoria` dos
+   * motivos que usavam o nome antigo, senão o vínculo viraria um rótulo órfão.
+   */
+  lost_reason_categories: z
+    .array(z.string().min(1).max(MAX_CARACTERES_DA_CATEGORIA_DE_PERDA))
+    .max(MAX_CATEGORIAS_DE_PERDA)
     .optional(),
   /**
    * O MOTIVO DE GANHO por funil (issue #1536) — espelho de `lost_reasons`.

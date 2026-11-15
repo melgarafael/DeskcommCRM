@@ -166,6 +166,19 @@ describe("fonte de webhook — assinatura (HMAC)", () => {
     await waitFor(() => expect(copiado).toHaveBeenCalledWith(segredoEnviado()));
   });
 
+  it("os botões de copiar têm nomes acessíveis", async () => {
+    patch.mockResolvedValue({ data: { ...FONTE, has_secret: true } });
+    const user = userEvent.setup();
+    renderPainel({ has_secret: false });
+
+    expect(screen.getByRole("button", { name: "Copiar endereço" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Gerar segredo" }));
+    await screen.findByText(segredoEnviado());
+
+    expect(screen.getByRole("button", { name: "Copiar segredo" })).toBeTruthy();
+  });
+
   it("⭐ com assinatura ligada, a tela abre sem valor nenhum", () => {
     renderPainel({ has_secret: true });
 
