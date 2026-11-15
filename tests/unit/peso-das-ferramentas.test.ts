@@ -96,7 +96,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_confirm_appointment": { tokens: 318, motivo: BASE },
   "crm_set_appointment_outcome": { tokens: 263, motivo: BASE },
   "crm_create_lead": { tokens: 933, motivo: BASE },
-  "crm_update_lead": { tokens: 817, motivo: BASE },
+  "crm_update_lead": {
+    tokens: 966,
+    motivo:
+      "#4666: a descrição diz que `tags` SUBSTITUI a lista inteira, e entram `tags_adicionar`/`tags_remover` — sem essas palavras o agente apagava etiqueta acreditando acrescentar",
+  },
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
@@ -147,8 +151,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
-// mensagem (#4077).
-const TETO_TOTAL = 30724;
+// mensagem (#4077); +149 no `crm_update_lead` (#4666), que passou a dizer que
+// `tags` substitui a lista inteira e ganhou `tags_adicionar`/`tags_remover`.
+const TETO_TOTAL = 30873;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
