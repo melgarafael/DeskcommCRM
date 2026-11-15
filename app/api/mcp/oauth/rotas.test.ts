@@ -113,7 +113,10 @@ describe("/api/mcp sem token: o 401 ensina onde pegar um", () => {
     expect(resp.status).toBe(401);
     const desafio = resp.headers.get("www-authenticate") ?? "";
     expect(desafio).toMatch(/^Bearer /);
-    expect(desafio).toContain('resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource"');
+    // A origem é a de NEXT_PUBLIC_APP_URL (nunca do Host da requisição) — a do ambiente do teste.
+    const { enderecosOAuth } = await import("@/lib/mcp/oauth/config");
+    expect(desafio).toContain(`resource_metadata="${enderecosOAuth().metadadosDoRecurso}"`);
+    expect(enderecosOAuth().metadadosDoRecurso).toMatch(/^https?:\/\/[^/]+\/\.well-known\/oauth-protected-resource$/);
     expect(desafio).not.toContain("invalid_token");
   });
 
