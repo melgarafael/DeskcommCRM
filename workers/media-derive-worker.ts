@@ -954,16 +954,25 @@ function buildDeriveDeps(
   // corpo do handler — lá em cima, com `failed` + motivo.
   //
   // Todo degrau que transcreve passa por `comCustoRegistrado`: a chamada paga
-  // vira linha em `llm_calls`, sucesso ou falha. O provedor do serviço da
-  // instalação com endereço próprio não é sabido — chute viraria estatística.
+  // vira linha em `llm_calls`, sucesso ou falha. O provedor é o do ANÚNCIO da
+  // escada (#4697) — uma regra só, a mesma que a tela mostra.
+  // ─── O PROVEDOR DA LINHA É O QUE A ESCADA ANUNCIOU (#4697) ───────────────
+  //
+  // Aqui havia uma SEGUNDA regra de provedor, só para este ramo: com
+  // `TRANSCRIPTION_BASE_URL` preenchido, a linha saía com
+  // `provider = 'desconhecido'` mesmo quando a escada já sabia quem ouviu o
+  // áudio — era o `whisper-large-v3-turbo` da instalação real sempre como
+  // `desconhecido`, e o painel de uso não conseguia agrupar o gasto de áudio.
+  //
+  // O anúncio da escada (`escada-de-transcricao.ts`) já é a fonte única do que
+  // a tela mostra; nos degraus 1 e 2 ele diz `openai` como PROTOCOLO
+  // (`/v1/audio/transcriptions`), não como empresa — está escrito no tipo
+  // `AnuncioDaTranscricao`. Uma regra só, a mesma que o operador vê.
   const comCusto = (servico: TranscriptionProvider): TranscriptionProvider =>
     comCustoRegistrado(servico, {
       admin,
       orgId,
-      provider:
-        decisao.origem === "servico_da_instalacao" && env.TRANSCRIPTION_BASE_URL
-          ? "desconhecido"
-          : decisao.anuncio.provider,
+      provider: decisao.anuncio.provider,
       model: decisao.anuncio.modelId ?? "desconhecido",
       origem: decisao.origem,
     });
@@ -1152,6 +1161,27 @@ function custoComCatalogo(
 }
 
 /**
+ * "Custo nulo por tarifa desconhecida" DITO, uma vez por (provedor, modelo) —
+ * a metade explícita do contrato da #4697, a mesma que
+ * `custoDoModeloForaDoMotor` já aplica ao modelo cobrado por token. Sem este
+ * aviso, uma transcrição cobrada por duração e sem tarifa na tabela gravava
+ * `cost_cents` nulo em silêncio: indistinguível de "grátis" para quem lê o log.
+ *
+ * `Set` de módulo, como `avisados` do catálogo: a nota de voz é o caminho mais
+ * quente do worker e um aviso por áudio inundaria o log sem dizer nada novo.
+ */
+const tarifasDeAudioAvisadas = new Set<string>();
+function avisarTarifaDeAudioDesconhecida(provider: string, model: string): void {
+  const chave = `${provider}|${model}`;
+  if (tarifasDeAudioAvisadas.has(chave)) return;
+  tarifasDeAudioAvisadas.add(chave);
+  logger.warn("[media-derive] transcrição cobrada por duração sem tarifa conhecida — a linha grava custo nulo", {
+    provider,
+    model,
+  });
+}
+
+/**
  * Embrulha o provedor que de fato chama o serviço pago. As recusas (sem chave,
  * destino não aceito, teto de gasto) ficam FORA deste embrulho, então não
  * gravam linha de custo.
@@ -1218,7 +1248,13 @@ function comCustoRegistrado(
         // Custo informado pelo serviço (USD da OpenRouter, duração cobrada pela
         // OpenAI) vence; o modelo de conversa (degrau 4) vai pela régua do seam.
         if (custoInformado !== undefined) return linhaCom(custoInformado);
-        return uso ? custoComCatalogo(ctx.model, ctx.provider, uso, linhaCom) : linhaCom(null);
+        if (uso) return custoComCatalogo(ctx.model, ctx.provider, uso, linhaCom);
+        // Sem uso e sem tarifa informada, o custo é DESCONHECIDO — nulo, nunca
+        // zero (0 diria "grátis" ao painel e ao teto). A #4697 pede que o nulo
+        // não seja CALADO: o motivo sai uma vez por (provedor, modelo), como o
+        // aviso de sem-preço do catálogo.
+        avisarTarifaDeAudioDesconhecida(ctx.provider, ctx.model);
+        return linhaCom(null);
       });
       return texto;
     },
