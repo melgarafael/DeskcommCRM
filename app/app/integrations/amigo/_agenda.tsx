@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useState, useLayoutEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,8 +59,9 @@ export function AttendanceList({
   contactId?: string;
   onChanged?: () => void;
 }) {
+  const t = useT();
   if (!items.length)
-    return <p className="text-sm text-muted-foreground">Nenhuma consulta para estes filtros.</p>;
+    return <p className="text-sm text-muted-foreground">{t("Nenhuma consulta para estes filtros.")}</p>;
   return (
     <div className="space-y-3">
       {items.map((item) => (
@@ -85,6 +87,7 @@ function AttendanceRow({
   contactId?: string;
   onChanged?: () => void;
 }) {
+  const t = useT();
   const mutation = useAmigoMutation();
   const [cancel, setCancel] = useState(false);
   const [reschedule, setReschedule] = useState(false);
@@ -113,27 +116,31 @@ function AttendanceRow({
       <div className="flex flex-wrap justify-between gap-3">
         <div>
           <h3 className="font-medium">
-            {item.patient?.name ?? item.name ?? "Paciente não informado"}
+            {item.patient?.name ?? item.name ?? t("Paciente não informado")}
           </h3>
           <p className="text-sm text-muted-foreground">
-            {item.agenda_event?.name ?? item.event?.name ?? "Atendimento"} ·{" "}
-            {item.user?.name ?? "Médico não informado"} ·{" "}
-            {item.place?.name ?? "Unidade não informada"}
+            {item.agenda_event?.name ?? item.event?.name ?? t("Atendimento")} ·{" "}
+            {item.user?.name ?? t("Médico não informado")} ·{" "}
+            {item.place?.name ?? t("Unidade não informada")}
           </p>
           <p className="mt-1 text-sm">
             {item.start_date
               ? civilTime(item.start_date, timezone)
-              : (item.startDateFormatted ?? "Data não informada")}
+              : (item.startDateFormatted ?? t("Data não informada"))}
             {(item.is_arrival_order ?? item.user?.config_arrival_order) &&
-              ` · ${shifts[item.shift ?? ""] ?? "Turno"} · ordem de chegada, sem promessa de hora exata`}
+              ` · ${shifts[item.shift ?? ""] ?? t("Turno")} · ${t("ordem de chegada, sem promessa de hora exata")}`}
             {(item.is_arrival_order ?? item.user?.config_arrival_order) &&
               arrivalWindow &&
               ` · ${arrivalWindow}`}
           </p>
         </div>
         <div className="text-sm">
-          <p className="font-medium">{statuses[status] ?? "Estado não informado"}</p>
-          <p className="text-xs text-muted-foreground">Amigo · consulta {item.id}</p>
+          <p className="font-medium">
+            {statuses[status] ? t(statuses[status]) : t("Estado não informado")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Amigo · {t("consulta")} {item.id}
+          </p>
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -149,7 +156,7 @@ function AttendanceRow({
             })
           }
         >
-          Confirmar
+          {t("Confirmar")}
         </Button>
         <Button
           size="sm"
@@ -163,7 +170,7 @@ function AttendanceRow({
             })
           }
         >
-          Registrar chegada
+          {t("Registrar chegada")}
         </Button>
         <Button
           size="sm"
@@ -174,7 +181,7 @@ function AttendanceRow({
             setCancel(false);
           }}
         >
-          Remarcar
+          {t("Remarcar")}
         </Button>
         <Button
           size="sm"
@@ -185,21 +192,21 @@ function AttendanceRow({
             setReschedule(false);
           }}
         >
-          Cancelar consulta
+          {t("Cancelar consulta")}
         </Button>
       </div>
       {cancel && (
         <div className="flex flex-wrap items-center gap-3 rounded-md bg-muted/40 p-3 text-sm">
-          <p>Cancelar esta consulta no Amigo?</p>
+          <p>{t("Cancelar esta consulta no Amigo?")}</p>
           <Button
             variant="destructive"
             disabled={frozen}
             onClick={() => void act("attendance_cancel", { id: item.id })}
           >
-            Confirmar cancelamento
+            {t("Confirmar cancelamento")}
           </Button>
           <Button variant="ghost" onClick={() => setCancel(false)}>
-            Manter consulta
+            {t("Manter consulta")}
           </Button>
         </div>
       )}
@@ -226,6 +233,7 @@ function Reschedule({
   disabled: boolean;
   onSave: (date: string) => void;
 }) {
+  const t = useT();
   const [day, setDay] = useState("");
   const [choice, setChoice] = useState("");
   const doctor = item.user_id ?? item.user?.id;
@@ -268,15 +276,15 @@ function Reschedule({
   );
   return (
     <fieldset disabled={disabled} className="space-y-3 rounded-md border p-4">
-      <legend className="text-sm font-medium">Escolha a nova vaga</legend>
+      <legend className="text-sm font-medium">{t("Escolha a nova vaga")}</legend>
       {!doctor || !event ? (
         <p className="text-sm">
-          Faltam o médico ou o tipo de atendimento. Confira esta consulta diretamente no Amigo.
+          {t("Faltam o médico ou o tipo de atendimento. Confira esta consulta diretamente no Amigo.")}
         </p>
       ) : (
         <>
           <Pick
-            label="Novo dia disponível"
+            label={t("Novo dia disponível")}
             value={day}
             options={returnedDays.map((value) => ({
               value,
@@ -289,13 +297,13 @@ function Reschedule({
             }}
           />
           <Pick
-            label="Nova vaga"
+            label={t("Nova vaga")}
             value={choice}
             disabled={!day || result.loading}
             options={slots.map((value) => ({
               value: value.id,
               label: value.is_arrival_order
-                ? `${shifts[value.shift ?? ""] ?? "Turno"} · ordem de chegada, sem hora exata`
+                ? `${shifts[value.shift ?? ""] ?? t("Turno")} · ${t("ordem de chegada, sem hora exata")}`
                 : civilTime(value.formatted_start_date ?? value.start_date, timezone).slice(11),
             }))}
             onChange={(e) => setChoice(e.target.value)}
@@ -307,10 +315,10 @@ function Reschedule({
               if (slot) onSave(civilTime(slot.formatted_start_date ?? slot.start_date, timezone));
             }}
           >
-            Confirmar remarcação
+            {t("Confirmar remarcação")}
           </Button>
           {result.data?.length === 0 && (
-            <p className="text-sm">Sem vagas. Confira outra data no Amigo.</p>
+            <p className="text-sm">{t("Sem vagas. Confira outra data no Amigo.")}</p>
           )}
         </>
       )}
@@ -342,6 +350,7 @@ function AgendaContent({
   contactId?: string;
   onSync?: () => Promise<void>;
 }) {
+  const t = useT();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [start, setStart] = useState(clinicDate(config.timezone));
   const [end, setEnd] = useState(clinicDate(config.timezone, true));
@@ -379,7 +388,7 @@ function AgendaContent({
     setSyncMessage("");
     try {
       await amigoRequest("/sync", "POST", {});
-      setSyncMessage("Sincronização concluída. Confira as consultas atualizadas.");
+      setSyncMessage(t("Sincronização concluída. Confira as consultas atualizadas."));
       await onSync?.();
       await appointments.refresh();
     } catch (error) {
@@ -390,22 +399,26 @@ function AgendaContent({
   };
   if (!config.configured)
     return (
-      <Panel title="Agenda Amigo">
-        <p className="text-sm">Configure a conexão na aba Configuração para consultar a agenda.</p>
+      <Panel title={t("Agenda Amigo")}>
+        <p className="text-sm">
+          {t("Configure a conexão na aba Configuração para consultar a agenda.")}
+        </p>
       </Panel>
     );
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">Agenda do Amigo · {config.timezone}</p>
+        <p className="text-sm text-muted-foreground">
+          {t("Agenda do Amigo")} · {config.timezone}
+        </p>
         <div className="flex flex-wrap gap-2">
           {canManage && (
             <Button variant="outline" disabled={syncing} onClick={() => void sync()}>
-              Sincronizar agora
+              {t("Sincronizar agora")}
             </Button>
           )}
           <Button onClick={() => setBooking(!booking)}>
-            {booking ? "Fechar nova consulta" : "Nova consulta"}
+            {booking ? t("Fechar nova consulta") : t("Nova consulta")}
           </Button>
         </div>
       </div>
@@ -424,8 +437,10 @@ function AgendaContent({
         />
       )}
       <Panel
-        title="Consultas"
-        description="Estados refletidos pelo Amigo. Atualize após uma alteração ou um resultado incerto."
+        title={t("Consultas")}
+        description={t(
+          "Estados refletidos pelo Amigo. Atualize após uma alteração ou um resultado incerto.",
+        )}
       >
         <PatientPicker
           selected={patient}
@@ -435,7 +450,7 @@ function AgendaContent({
         />
         {!canManage && !patient && (
           <p className="text-sm">
-            Selecione um contato destinatário e o paciente para consultar seus atendimentos.
+            {t("Selecione um contato destinatário e o paciente para consultar seus atendimentos.")}
           </p>
         )}
         <form
@@ -445,7 +460,7 @@ function AgendaContent({
             setFilters({ start, end, place, status });
           }}
         >
-          <Field label="De">
+          <Field label={t("De")}>
             <Input
               type="date"
               required
@@ -454,7 +469,7 @@ function AgendaContent({
               max={end}
             />
           </Field>
-          <Field label="Até">
+          <Field label={t("Até")}>
             <Input
               type="date"
               required
@@ -464,33 +479,33 @@ function AgendaContent({
             />
           </Field>
           <Pick
-            label="Unidade da consulta"
+            label={t("Unidade da consulta")}
             value={place}
-            placeholder="Todas as unidades"
+            placeholder={t("Todas as unidades")}
             options={options(places.data)}
             onChange={(e) => setPlace(e.target.value)}
           />
           <Pick
-            label="Médico da consulta"
+            label={t("Médico da consulta")}
             value={doctor}
-            placeholder="Todos os médicos"
+            placeholder={t("Todos os médicos")}
             options={options(doctors.data)}
             onChange={(e) => setDoctor(e.target.value)}
           />
           <Pick
-            label="Estado da consulta"
+            label={t("Estado da consulta")}
             value={status}
             placeholder=""
             options={[
-              { value: "ALL", label: "Todos os estados" },
+              { value: "ALL", label: t("Todos os estados") },
               ...Object.entries(statuses)
                 .filter(([key]) => key !== "scheduled")
-                .map(([key, label]) => ({ value: key.toUpperCase(), label })),
+                .map(([key]) => ({ value: key.toUpperCase(), label: t(statuses[key]!) })),
             ]}
             onChange={(e) => setStatus(e.target.value)}
           />
           <Button variant="outline" disabled={appointments.loading || start > end}>
-            Atualizar agenda
+            {t("Atualizar agenda")}
           </Button>
         </form>
         <Notice

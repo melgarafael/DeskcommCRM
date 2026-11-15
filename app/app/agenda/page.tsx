@@ -1,4 +1,5 @@
 import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
+import { traduzir } from "@/lib/i18n/dicionario";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { agendaAuthority } from "@/lib/amigo/agenda";
@@ -309,9 +310,9 @@ export default async function AgendaPage() {
     <>
     {agendaNoAmigo && (
       <p className="px-6 pt-4 text-sm text-muted-foreground">
-        A agenda desta clínica está no Amigo: as consultas daqui espelham as de lá.{" "}
+        {traduzir("A agenda desta clínica está no Amigo: as consultas daqui espelham as de lá.", user.idioma)}{" "}
         <Link href="/app/integrations/amigo?aba=agenda" className="underline">
-          Marcar uma consulta no Amigo
+          {traduzir("Marcar uma consulta no Amigo", user.idioma)}
         </Link>
       </p>
     )}

@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { execute, errorText } from "./_api";
@@ -23,6 +24,7 @@ export function AmigoMutationBoundary({ children }: { children: ReactNode }) {
   return parent ? children : <Boundary>{children}</Boundary>;
 }
 function Boundary({ children }: { children: ReactNode }) {
+  const t = useT();
   const [request, setRequest] = useState<PendingRequest | null>(null);
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState("");
@@ -39,13 +41,13 @@ function Boundary({ children }: { children: ReactNode }) {
       );
       if (result.uncertain) {
         setMessage(
-          "O resultado continua incerto. Confira diretamente com a clínica; não repita a solicitação.",
+          t("O resultado continua incerto. Confira diretamente com a clínica; não repita a solicitação."),
         );
         setRequest({ ...request, protocol: result.operation_id });
       } else {
         request.onConfirmed(result);
         setRequest(null);
-        setMessage("Resultado confirmado. Atualize a agenda ou o cadastro antes de continuar.");
+        setMessage(t("Resultado confirmado. Atualize a agenda ou o cadastro antes de continuar."));
       }
     } catch (error) {
       setMessage(errorText(error));
@@ -66,14 +68,15 @@ function Boundary({ children }: { children: ReactNode }) {
           role="status"
           className="space-y-2 rounded-md border border-destructive/40 p-4 text-sm"
         >
-          <p className="font-medium">Há uma solicitação com resultado incerto.</p>
+          <p className="font-medium">{t("Há uma solicitação com resultado incerto.")}</p>
           <p>
-            Novas alterações ficam bloqueadas nesta área. Confira a agenda ou o cadastro no Amigo
-            antes de continuar.
+            {t(
+              "Novas alterações ficam bloqueadas nesta área. Confira a agenda ou o cadastro no Amigo antes de continuar.",
+            )}
           </p>
-          <p className="text-xs break-all">Protocolo: {request.protocol ?? request.key}</p>
+          <p className="text-xs break-all">{t("Protocolo:")} {request.protocol ?? request.key}</p>
           <Button variant="outline" disabled={checking} onClick={() => void check()}>
-            Conferir protocolo pendente
+            {t("Conferir protocolo pendente")}
           </Button>
         </aside>
       )}

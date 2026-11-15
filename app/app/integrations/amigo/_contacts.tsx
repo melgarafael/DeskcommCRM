@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useRef, useState } from "react";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ export function ContactPicker({
   onSelect: (value: ContactChoice | null) => void;
   initialContactId?: string;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ContactChoice[] | null>(null);
   const [error, setError] = useState("");
@@ -39,7 +41,7 @@ export function ContactPicker({
       if (version.current === current) setResults(result.data);
     } catch {
       if (version.current === current)
-        setError("Não foi possível buscar os contatos. Atualize a busca.");
+        setError(t("Não foi possível buscar os contatos. Atualize a busca."));
     } finally {
       if (version.current === current) setPending(false);
     }
@@ -49,7 +51,7 @@ export function ContactPicker({
       {selected ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm">
-            Contato destinatário: <strong>{selected.name ?? "Sem nome"}</strong>
+            {t("Contato destinatário:")} <strong>{selected.name ?? t("Sem nome")}</strong>
             {selected.phone_number ? ` · ${selected.phone_number}` : ""}
           </p>
           <Button
@@ -59,7 +61,7 @@ export function ContactPicker({
               setResults(null);
             }}
           >
-            Trocar contato
+            {t("Trocar contato")}
           </Button>
         </div>
       ) : (
@@ -71,34 +73,34 @@ export function ContactPicker({
           }}
         >
           <div className="min-w-0 grow">
-            <Field label="Contato destinatário no CRM">
+            <Field label={t("Contato destinatário no CRM")}>
               <Input
                 value={query}
                 required
-                placeholder="Nome ou telefone do contato"
+                placeholder={t("Nome ou telefone do contato")}
                 onChange={(e) => setQuery(e.target.value)}
               />
             </Field>
           </div>
           <Button variant="outline" disabled={pending || !query.trim()}>
-            Buscar contato
+            {t("Buscar contato")}
           </Button>
         </form>
       )}
       {!selected && results && (
         <Pick
-          label="Escolher contato destinatário"
+          label={t("Escolher contato destinatário")}
           value=""
           options={results.map((value) => ({
             value: value.id,
-            label: `${value.name ?? "Sem nome"}${value.phone_number ? ` · ${value.phone_number}` : ""}`,
+            label: `${value.name ?? t("Sem nome")}${value.phone_number ? ` · ${value.phone_number}` : ""}`,
           }))}
           onChange={(e) => onSelect(results.find((value) => value.id === e.target.value) ?? null)}
         />
       )}
       {results?.length === 0 && !selected && (
         <p className="text-sm">
-          Nenhum contato encontrado. Cadastre o destinatário em Contatos para fazer o vínculo.
+          {t("Nenhum contato encontrado. Cadastre o destinatário em Contatos para fazer o vínculo.")}
         </p>
       )}
       <Notice error={error || initial.error} loading={pending || initial.loading} />

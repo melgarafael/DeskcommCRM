@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useState, useLayoutEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ export function AmigoClient({
   initialTab?: Tab;
   initialContactId?: string;
 }) {
+  const t = useT();
   const [config, setConfig] = useState(initialConfig);
   useLayoutEffect(() => pinAmigoConnection(config.connection_id), [config.connection_id]);
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -34,48 +36,49 @@ export function AmigoClient({
   const [contact, setContact] = useState<ContactChoice | null>(null);
   const selectContact = useCallback((value: ContactChoice | null) => setContact(value), []);
   const tabs: [Tab, string][] = [
-    ["config", "Configuração"],
-    ["agenda", "Agenda"],
-    ["pacientes", "Pacientes"],
-    ["catalogos", "Catálogos"],
+    ["config", t("Configuração")],
+    ["agenda", t("Agenda")],
+    ["pacientes", t("Pacientes")],
+    ["catalogos", t("Catálogos")],
   ];
   return (
     <div className="w-full min-w-0 space-y-6 p-4 sm:p-6">
       <AmigoMutationBoundary key={config.connection_id}>
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Amigo API</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">{t("Amigo")}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Pacientes, recursos da clínica e consultas na mesma operação.
+              {t("Pacientes, recursos da clínica e consultas na mesma operação.")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-md border px-3 py-1 text-sm">
               {config.active
-                ? "Agenda principal: Amigo"
+                ? t("Agenda principal: Amigo")
                 : config.configured
-                  ? "Conexão configurada"
-                  : "Aguardando configuração"}
+                  ? t("Conexão configurada")
+                  : t("Aguardando configuração")}
             </span>
             <Button asChild variant="outline">
-              <Link href="/app/agenda">Abrir agenda</Link>
+              <Link href="/app/agenda">{t("Abrir agenda")}</Link>
             </Button>
           </div>
         </header>
         {config.configured && (
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <span>
-              Última sincronização:{" "}
+              {t("Última sincronização:")}{" "}
               {config.last_sync_at
                 ? new Date(config.last_sync_at).toLocaleString("pt-BR", {
                     timeZone: config.timezone,
                   })
-                : "Ainda não realizada"}
+                : t("Ainda não realizada")}
             </span>
             {config.last_error && (
               <p role="alert">
-                Não foi possível sincronizar. Um administrador pode testar a conexão na aba
-                Configuração.
+                {t(
+                  "Não foi possível sincronizar. Um administrador pode testar a conexão na aba Configuração.",
+                )}
               </p>
             )}
           </div>
@@ -104,8 +107,10 @@ export function AmigoClient({
         {visited.some((value) => value !== "config") && config.configured && (
           <div hidden={tab === "config"}>
             <Panel
-              title="Contexto do atendimento"
-              description="Escolha o contato que receberá a comunicação. A seleção do paciente e o vínculo são explícitos."
+              title={t("Contexto do atendimento")}
+              description={t(
+                "Escolha o contato que receberá a comunicação. A seleção do paciente e o vínculo são explícitos.",
+              )}
             >
               <ContactPicker
                 selected={contact}
@@ -114,7 +119,7 @@ export function AmigoClient({
               />
               {contact && (
                 <Link className="text-sm underline" href={`/app/contacts/${contact.id}`}>
-                  Voltar à ficha do contato
+                  {t("Voltar à ficha do contato")}
                 </Link>
               )}
             </Panel>
@@ -134,10 +139,11 @@ export function AmigoClient({
               {value === "config" ? (
                 <AmigoConfig config={config} canConfigure={canConfigure} onChange={setConfig} />
               ) : !config.configured ? (
-                <Panel title="Conexão necessária">
+                <Panel title={t("Conexão necessária")}>
                   <p className="text-sm">
-                    Um administrador precisa salvar e testar o token na aba Configuração para
-                    acessar estes recursos.
+                    {t(
+                      "Um administrador precisa salvar e testar o token na aba Configuração para acessar estes recursos.",
+                    )}
                   </p>
                   <Button
                     variant="outline"
@@ -148,7 +154,7 @@ export function AmigoClient({
                       setTab("config");
                     }}
                   >
-                    Abrir configuração
+                    {t("Abrir configuração")}
                   </Button>
                 </Panel>
               ) : value === "agenda" ? (
@@ -173,6 +179,7 @@ export function AmigoClient({
   );
 }
 function PendingOperations() {
+  const t = useT();
   const loader = useCallback(async () => {
     const result = await amigoRequest<{
       operations: { id: string; operation: string; state: string; created_at: string }[];
@@ -182,38 +189,41 @@ function PendingOperations() {
   }, []);
   const operations = useLoad(loader);
   const names: Record<string, string> = {
-    attendance_create: "Marcação",
-    attendance_cancel: "Cancelamento",
-    attendance_status: "Atualização de presença",
-    attendance_reschedule: "Remarcação",
-    patient_create: "Cadastro de paciente",
-    patient_update: "Atualização de paciente",
+    attendance_create: t("Marcação"),
+    attendance_cancel: t("Cancelamento"),
+    attendance_status: t("Atualização de presença"),
+    attendance_reschedule: t("Remarcação"),
+    patient_create: t("Cadastro de paciente"),
+    patient_update: t("Atualização de paciente"),
   };
   return (
     <Panel
-      title="Operações pendentes"
-      description="Confira a agenda ou o cadastro diretamente no Amigo antes de tomar outra ação. Uma pendência não confirma o resultado."
+      title={t("Operações pendentes")}
+      description={t(
+        "Confira a agenda ou o cadastro diretamente no Amigo antes de tomar outra ação. Uma pendência não confirma o resultado.",
+      )}
     >
       <Button
         variant="outline"
         disabled={operations.loading}
         onClick={() => void operations.refresh()}
       >
-        Atualizar pendências
+        {t("Atualizar pendências")}
       </Button>
       <Notice error={operations.error} loading={operations.loading} />
       {operations.data?.operations.length === 0 && (
-        <p className="text-sm">Nenhuma operação pendente.</p>
+        <p className="text-sm">{t("Nenhuma operação pendente.")}</p>
       )}
       {operations.data?.operations.map((item) => (
         <div key={item.id} className="rounded-md border p-3 text-sm">
           <p className="font-medium">
-            {names[item.operation] ?? "Operação Amigo"} · resultado a conferir
+            {names[item.operation] ?? t("Operação Amigo")} · {t("resultado a conferir")}
           </p>
-          <p className="text-xs break-all text-muted-foreground">Protocolo: {item.id}</p>
+          <p className="text-xs break-all text-muted-foreground">{t("Protocolo:")} {item.id}</p>
           <p>
-            Confira o resultado com a equipe da clínica. Não repita a solicitação enquanto houver
-            dúvida.
+            {t(
+              "Confira o resultado com a equipe da clínica. Não repita a solicitação enquanto houver dúvida.",
+            )}
           </p>
         </div>
       ))}

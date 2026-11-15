@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ export function AmigoBooking({
   contactId?: string;
   disabled?: boolean;
 }) {
+  const t = useT();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [place, setPlace] = useState(String(config.default_place_id ?? ""));
   const [event, setEvent] = useState("");
@@ -199,8 +201,8 @@ export function AmigoBooking({
   };
   return (
     <Panel
-      title="Nova consulta"
-      description={`Escolha recursos da clínica e uma vaga retornada pelo Amigo. Horários em ${config.timezone}.`}
+      title={t("Nova consulta")}
+      description={`${t("Escolha recursos da clínica e uma vaga retornada pelo Amigo. Horários em")} ${config.timezone}.`}
     >
       <PatientPicker
         selected={patient}
@@ -214,7 +216,7 @@ export function AmigoBooking({
       <fieldset disabled={frozen} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Pick
-            label="Unidade"
+            label={t("Unidade")}
             value={place}
             options={options(places.data)}
             onChange={(e) => {
@@ -228,7 +230,7 @@ export function AmigoBooking({
             }}
           />
           <Pick
-            label="Tipo de atendimento"
+            label={t("Tipo de atendimento")}
             value={event}
             disabled={!place || events.loading}
             options={options(events.data)}
@@ -239,10 +241,10 @@ export function AmigoBooking({
             }}
           />
           <Pick
-            label="Convênio"
+            label={t("Convênio")}
             value={insurance}
             disabled={!place || insurances.loading}
-            placeholder="Sem convênio / particular"
+            placeholder={t("Sem convênio / particular")}
             options={options(insurances.data)}
             onChange={(e) => {
               setInsurance(e.target.value);
@@ -253,10 +255,10 @@ export function AmigoBooking({
             }}
           />
           <Pick
-            label="Produto do convênio"
+            label={t("Produto do convênio")}
             value={product}
             disabled={!insurance || products.loading}
-            placeholder="Sem produto específico"
+            placeholder={t("Sem produto específico")}
             options={options(products.data)}
             onChange={(e) => {
               setProduct(e.target.value);
@@ -265,10 +267,10 @@ export function AmigoBooking({
             }}
           />
           <Pick
-            label="Especialidade"
+            label={t("Especialidade")}
             value={specialty}
             options={(specialties.data ?? []).map((value) => ({ value, label: value }))}
-            placeholder="Todas as especialidades"
+            placeholder={t("Todas as especialidades")}
             onChange={(e) => {
               setSpecialty(e.target.value);
               setDoctor("");
@@ -276,7 +278,7 @@ export function AmigoBooking({
             }}
           />
           <Pick
-            label="Médico"
+            label={t("Médico")}
             value={doctor}
             disabled={!event || doctors.loading}
             options={options(doctors.data)}
@@ -288,10 +290,10 @@ export function AmigoBooking({
         </div>
         <details>
           <summary className="cursor-pointer text-sm">
-            Filtros adicionais de disponibilidade
+            {t("Filtros adicionais de disponibilidade")}
           </summary>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <Field label="Nascimento para consultar vagas">
+            <Field label={t("Nascimento para consultar vagas")}>
               <Input
                 type="date"
                 value={born}
@@ -302,10 +304,13 @@ export function AmigoBooking({
               />
             </Field>
             <Pick
-              label="Sexo para consultar vagas"
+              label={t("Sexo para consultar vagas")}
               value={gender}
-              options={["Masculino", "Feminino"].map((value) => ({ value, label: value }))}
-              placeholder="Não informar"
+              options={[
+                { value: "Masculino", label: t("Masculino") },
+                { value: "Feminino", label: t("Feminino") },
+              ]}
+              placeholder={t("Não informar")}
               onChange={(e) => {
                 setGender(e.target.value);
                 resetAvailability();
@@ -324,7 +329,7 @@ export function AmigoBooking({
             if (searched) void dates.refresh();
           }}
         >
-          Consultar disponibilidade
+          {t("Consultar disponibilidade")}
         </Button>
         <Notice
           error={
@@ -343,7 +348,7 @@ export function AmigoBooking({
         {searched && !dates.loading && (
           <>
             <Pick
-              label="Dia disponível"
+              label={t("Dia disponível")}
               value={day}
               options={dayOptions}
               onChange={(e) => {
@@ -353,13 +358,13 @@ export function AmigoBooking({
             />
             {dates.data?.length === 0 && (
               <p className="text-sm">
-                Sem datas disponíveis para estes filtros. Ajuste as seleções e consulte novamente.
+                {t("Sem datas disponíveis para estes filtros. Ajuste as seleções e consulte novamente.")}
               </p>
             )}
           </>
         )}
         {day && !slots.loading && (
-          <div className="flex flex-wrap gap-2" aria-label="Vagas disponíveis">
+          <div className="flex flex-wrap gap-2" aria-label={t("Vagas disponíveis")}>
             {availableSlots.map((value) => (
               <Button
                 key={value.id}
@@ -369,27 +374,28 @@ export function AmigoBooking({
                 onClick={() => setSlot(value)}
               >
                 {value.is_arrival_order
-                  ? `${shifts[value.shift ?? ""] ?? "Turno"} · ordem de chegada`
+                  ? `${shifts[value.shift ?? ""] ?? t("Turno")} · ${t("ordem de chegada")}`
                   : civilTime(
                       value.formatted_start_date ?? value.start_date,
                       config.timezone,
                     ).slice(11)}
                 {value.end_date
-                  ? ` até ${civilTime(value.end_date, config.timezone).slice(11)}`
+                  ? ` ${t("até")} ${civilTime(value.end_date, config.timezone).slice(11)}`
                   : ""}
               </Button>
             ))}
             {!slots.error && availableSlots.length === 0 && (
               <p className="text-sm">
-                Sem vagas neste dia. Escolha outra data ou consulte novamente.
+                {t("Sem vagas neste dia. Escolha outra data ou consulte novamente.")}
               </p>
             )}
           </div>
         )}
         {calendar.data && (
           <p className="text-xs text-muted-foreground">
-            Calendário consultado para a unidade e o atendimento selecionados. A marcação usa a vaga
-            validada do médico.
+            {t(
+              "Calendário consultado para a unidade e o atendimento selecionados. A marcação usa a vaga validada do médico.",
+            )}
           </p>
         )}
         {slot && (
@@ -404,17 +410,17 @@ export function AmigoBooking({
             </p>
             {slot.is_arrival_order && (
               <p>
-                Atendimento por ordem de chegada, sem promessa de hora exata. Turno:{" "}
-                {shifts[slot.shift ?? ""] ?? "conferir com a clínica"}.
+                {t("Atendimento por ordem de chegada, sem promessa de hora exata. Turno:")}{" "}
+                {shifts[slot.shift ?? ""] ?? t("conferir com a clínica")}.
               </p>
             )}
           </div>
         )}
         <Button disabled={!slot || frozen} onClick={() => void create()}>
-          Agendar no Amigo
+          {t("Agendar no Amigo")}
         </Button>
       </fieldset>
-      <MutationNotice mutation={mutation} success="Consulta confirmada no Amigo." />
+      <MutationNotice mutation={mutation} success={t("Consulta confirmada no Amigo.")} />
     </Panel>
   );
 }

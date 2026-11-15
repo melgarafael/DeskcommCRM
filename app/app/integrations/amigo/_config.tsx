@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import {
   agentOperationOptions,
   agentOperations,
@@ -21,6 +22,7 @@ export function AmigoConfig({
   canConfigure: boolean;
   onChange: (value: AmigoSafeConfig) => void;
 }) {
+  const t = useT();
   const [token, setToken] = useState("");
   const [tested, setTested] = useState(false);
   const [places, setPlaces] = useState<Named[] | null>(null);
@@ -62,7 +64,7 @@ export function AmigoConfig({
         throw new AmigoUiError("invalid_response");
       setTested(true);
       setPlaces(result.places);
-      setMessage("Conexão validada. Confira a unidade antes de salvar.");
+      setMessage(t("Conexão validada. Confira a unidade antes de salvar."));
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -126,7 +128,7 @@ export function AmigoConfig({
       setActive(false);
       setReminders(false);
       setDisconnect(false);
-      setMessage("Conexão removida. O histórico foi preservado.");
+      setMessage(t("Conexão removida. O histórico foi preservado."));
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -135,47 +137,48 @@ export function AmigoConfig({
   };
   return (
     <Panel
-      title="Conexão da clínica"
-      description="Conecte o Amigo para consultar pacientes e operar a agenda da sua clínica."
+      title={t("Conexão da clínica")}
+      description={t("Conecte o Amigo para consultar pacientes e operar a agenda da sua clínica.")}
     >
       {!config.configured && (
         <div className="rounded-md border border-dashed p-5">
-          <h2 className="font-medium">Conecte sua clínica quando estiver pronto</h2>
+          <h2 className="font-medium">{t("Conecte sua clínica quando estiver pronto")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            A integração é opcional. Peça o token de acesso à sua clínica e configure por aqui.
+            {t("A integração é opcional. Peça o token de acesso à sua clínica e configure por aqui.")}
           </p>
         </div>
       )}
       {config.configured && (
         <dl className="grid gap-4 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-muted-foreground">Token salvo</dt>
+            <dt className="text-muted-foreground">{t("Token salvo")}</dt>
             <dd>•••• {config.token_last4}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Validado em</dt>
+            <dt className="text-muted-foreground">{t("Validado em")}</dt>
             <dd>
               {config.validated_at
                 ? new Date(config.validated_at).toLocaleString("pt-BR", {
                     timeZone: config.timezone,
                   })
-                : "Ainda não validado"}
+                : t("Ainda não validado")}
             </dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Modo da agenda</dt>
+            <dt className="text-muted-foreground">{t("Modo da agenda")}</dt>
             <dd>
               {config.active
-                ? "Amigo como agenda principal"
-                : "Integração disponível para consulta"}
+                ? t("Amigo como agenda principal")
+                : t("Integração disponível para consulta")}
             </dd>
           </div>
         </dl>
       )}
       {!canConfigure ? (
         <p className="text-sm text-muted-foreground">
-          Um administrador configura a conexão e o modo da agenda. Você pode consultar as outras
-          abas.
+          {t(
+            "Um administrador configura a conexão e o modo da agenda. Você pode consultar as outras abas.",
+          )}
         </p>
       ) : (
         <>
@@ -187,10 +190,11 @@ export function AmigoConfig({
             }}
           >
             <fieldset className="space-y-3 rounded-lg border p-4">
-              <legend className="px-2 font-semibold">Limite geral da clínica para o Amigo</legend>
+              <legend className="px-2 font-semibold">{t("Limite geral da clínica para o Amigo")}</legend>
               <p className="text-sm text-muted-foreground">
-                Defina as operações disponíveis para os agentes da clínica. Cada agente tem sua
-                própria seleção. As permissões da equipe e os limites de acesso aos pacientes continuam valendo.
+                {t(
+                  "Defina as operações disponíveis para os agentes da clínica. Cada agente tem sua própria seleção. As permissões da equipe e os limites de acesso aos pacientes continuam valendo.",
+                )}
               </p>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {agentOperationOptions.map((option) => (
@@ -209,14 +213,14 @@ export function AmigoConfig({
                     />
                     <span>
                       {option.label}
-                      {option.humanOnly ? " (somente equipe)" : ""}
+                      {option.humanOnly ? ` (${t("somente equipe")})` : ""}
                     </span>
                   </label>
                 ))}
               </div>
             </fieldset>
             <div className="grid gap-4 lg:grid-cols-2">
-              <Field label="Token Amigo">
+              <Field label={t("Token Amigo")}>
                 <Input
                   type="password"
                   autoComplete="new-password"
@@ -224,8 +228,8 @@ export function AmigoConfig({
                   disabled={pending}
                   placeholder={
                     config.configured
-                      ? "Deixe em branco para manter o token salvo"
-                      : "Cole o token de acesso"
+                      ? t("Deixe em branco para manter o token salvo")
+                      : t("Cole o token de acesso")
                   }
                   onChange={(e) => {
                     setToken(e.target.value);
@@ -244,11 +248,11 @@ export function AmigoConfig({
                   onClick={() => void test()}
                   disabled={pending || (!token.trim() && !config.configured)}
                 >
-                  Testar conexão
+                  {t("Testar conexão")}
                 </Button>
               </div>
               <Pick
-                label="Unidade padrão"
+                label={t("Unidade padrão")}
                 value={place}
                 required={active}
                 disabled={pending}
@@ -256,7 +260,7 @@ export function AmigoConfig({
                 options={options(places ?? savedPlaces.data)}
               />
               <Pick
-                label="Fuso da clínica"
+                label={t("Fuso da clínica")}
                 value={timezone}
                 disabled={pending}
                 onChange={(e) => setTimezone(e.target.value)}
@@ -269,25 +273,25 @@ export function AmigoConfig({
                 ].map((f) => ({ value: f.codigo, label: f.rotulo }))}
               />
               <Pick
-                label="Ofertar vagas de hoje"
+                label={t("Ofertar vagas de hoje")}
                 value={sameDay}
                 disabled={pending}
-                placeholder="Usar regra da clínica no Amigo"
+                placeholder={t("Usar regra da clínica no Amigo")}
                 onChange={(e) => setSameDay(e.target.value)}
                 options={[
-                  { value: "true", label: "Permitir" },
-                  { value: "false", label: "Não permitir" },
+                  { value: "true", label: t("Permitir") },
+                  { value: "false", label: t("Não permitir") },
                 ]}
               />
               <Pick
-                label="Oferta de datas futuras"
+                label={t("Oferta de datas futuras")}
                 value={months}
                 disabled={pending}
-                placeholder="Usar regra da clínica no Amigo"
+                placeholder={t("Usar regra da clínica no Amigo")}
                 onChange={(e) => setMonths(e.target.value)}
                 options={[
-                  { value: "3", label: "Até 3 meses" },
-                  { value: "6", label: "Até 6 meses" },
+                  { value: "3", label: t("Até 3 meses") },
+                  { value: "6", label: t("Até 6 meses") },
                 ]}
               />
             </div>
@@ -300,10 +304,11 @@ export function AmigoConfig({
                 onChange={(e) => setActive(e.target.checked)}
               />
               <span>
-                <span className="font-medium">Usar Amigo como agenda principal</span>
+                <span className="font-medium">{t("Usar Amigo como agenda principal")}</span>
                 <span className="mt-1 block text-muted-foreground">
-                  Salve o token primeiro. Depois confira unidade e fuso e ative a agenda.
-                  Compromissos anteriores mantêm sua origem.
+                  {t(
+                    "Salve o token primeiro. Depois confira unidade e fuso e ative a agenda. Compromissos anteriores mantêm sua origem.",
+                  )}
                 </span>
               </span>
             </label>
@@ -316,11 +321,11 @@ export function AmigoConfig({
                 onChange={(e) => setReminders(e.target.checked)}
               />
               <span>
-                Enviar lembretes para consultas Amigo
+                {t("Enviar lembretes para consultas Amigo")}
                 <span className="mt-1 block text-muted-foreground">
-                  Desligado por padrão. Confira os avisos já enviados pelo Amigo para evitar
-                  mensagens duplicadas. É preciso vincular paciente, destinatário e tipo de
-                  atendimento.
+                  {t(
+                    "Desligado por padrão. Confira os avisos já enviados pelo Amigo para evitar mensagens duplicadas. É preciso vincular paciente, destinatário e tipo de atendimento.",
+                  )}
                 </span>
               </span>
             </label>
@@ -338,25 +343,25 @@ export function AmigoConfig({
                 (active && !place)
               }
             >
-              Salvar configuração
+              {t("Salvar configuração")}
             </Button>
           </form>
           {config.configured && (
             <div className="border-t pt-4">
               {!disconnect ? (
                 <Button variant="outline" onClick={() => setDisconnect(true)}>
-                  Desconectar Amigo
+                  {t("Desconectar Amigo")}
                 </Button>
               ) : (
                 <div className="flex flex-wrap items-center gap-3">
                   <p className="text-sm">
-                    Desconectar impede novas operações e preserva o histórico.
+                    {t("Desconectar impede novas operações e preserva o histórico.")}
                   </p>
                   <Button variant="destructive" disabled={pending} onClick={() => void remove()}>
-                    Confirmar desconexão
+                    {t("Confirmar desconexão")}
                   </Button>
                   <Button variant="ghost" disabled={pending} onClick={() => setDisconnect(false)}>
-                    Manter conexão
+                    {t("Manter conexão")}
                   </Button>
                 </div>
               )}

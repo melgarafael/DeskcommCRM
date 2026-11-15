@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ export function PatientPicker({
   disabled?: boolean;
   contactId?: string;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("contact_cellphone");
   const [results, setResults] = useState<Patient[] | null>(null);
@@ -51,7 +53,7 @@ export function PatientPicker({
         }}
       >
         <Pick
-          label="Buscar por"
+          label={t("Buscar por")}
           value={kind}
           placeholder=""
           disabled={disabled || pending}
@@ -61,11 +63,11 @@ export function PatientPicker({
             onSelect(null);
           }}
           options={[
-            { value: "contact_cellphone", label: "Telefone" },
+            { value: "contact_cellphone", label: t("Telefone") },
             { value: "cpf", label: "CPF" },
           ]}
         />
-        <Field label="CPF ou telefone">
+        <Field label={t("CPF ou telefone")}>
           <Input
             value={query}
             inputMode="numeric"
@@ -78,23 +80,23 @@ export function PatientPicker({
             required
           />
         </Field>
-        <Button disabled={disabled || pending || !query.replace(/\D/g, "")}>Buscar paciente</Button>
+        <Button disabled={disabled || pending || !query.replace(/\D/g, "")}>{t("Buscar paciente")}</Button>
       </form>
       <Notice error={error} loading={pending} />
       {selected ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3">
-          <p className="text-sm font-medium">Paciente selecionado: {selected.name}</p>
+          <p className="text-sm font-medium">{t("Paciente selecionado:")} {selected.name}</p>
           <Button type="button" variant="ghost" disabled={disabled} onClick={() => onSelect(null)}>
-            Trocar paciente
+            {t("Trocar paciente")}
           </Button>
         </div>
       ) : (
         results && (
           <>
-            <p className="text-sm text-muted-foreground">Escolha quem receberá o atendimento.</p>
+            <p className="text-sm text-muted-foreground">{t("Escolha quem receberá o atendimento.")}</p>
             {results.length === 0 && (
               <p className="text-sm">
-                Nenhum paciente encontrado. Você pode cadastrá-lo na aba Pacientes.
+                {t("Nenhum paciente encontrado. Você pode cadastrá-lo na aba Pacientes.")}
               </p>
             )}
             <div className="grid gap-3 lg:grid-cols-2">
@@ -106,19 +108,19 @@ export function PatientPicker({
                   <div>
                     <p className="font-medium">{patient.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {patient.cpf || "CPF não informado"} ·{" "}
-                      {patient.contact_cellphone || "Telefone não informado"}
-                      {patient.age != null && ` · ${patient.age} anos`}
+                      {patient.cpf || t("CPF não informado")} ·{" "}
+                      {patient.contact_cellphone || t("Telefone não informado")}
+                      {patient.age != null && ` · ${patient.age} ${t("anos")}`}
                     </p>
                   </div>
                   <Button
                     type="button"
                     variant="outline"
                     disabled={disabled}
-                    aria-label={`Selecionar ${patient.name}`}
+                    aria-label={`${t("Selecionar")} ${patient.name}`}
                     onClick={() => onSelect(patient)}
                   >
-                    Selecionar
+                    {t("Selecionar")}
                   </Button>
                 </div>
               ))}

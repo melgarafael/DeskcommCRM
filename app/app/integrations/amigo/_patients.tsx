@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useRef, useState } from "react";
 import { apiClient } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ export function AmigoPatients({
   contact: ContactChoice | null;
   canManage: boolean;
 }) {
+  const t = useT();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [creating, setCreating] = useState(false);
   const [birthday, setBirthday] = useState("");
@@ -47,8 +49,10 @@ export function AmigoPatients({
   return (
     <div className="space-y-6">
       <Panel
-        title="Pacientes"
-        description="Busque por CPF ou telefone e escolha a pessoa. Responsável e dependente podem compartilhar o mesmo número."
+        title={t("Pacientes")}
+        description={t(
+          "Busque por CPF ou telefone e escolha a pessoa. Responsável e dependente podem compartilhar o mesmo número.",
+        )}
       >
         <PatientPicker
           selected={patient}
@@ -60,14 +64,14 @@ export function AmigoPatients({
           disabled={!canManage && !contact}
         />
         {!canManage && !contact && (
-          <p className="text-sm">Escolha o contato destinatário acima para consultar pacientes.</p>
+          <p className="text-sm">{t("Escolha o contato destinatário acima para consultar pacientes.")}</p>
         )}
         <Button
           variant="outline"
           disabled={!canManage && !contact}
           onClick={() => setCreating(!creating)}
         >
-          {creating ? "Fechar cadastro" : "Cadastrar paciente"}
+          {creating ? t("Fechar cadastro") : t("Cadastrar paciente")}
         </Button>
         {creating && (
           <PatientForm
@@ -92,28 +96,28 @@ export function AmigoPatients({
       )}
       {canManage && (
         <Panel
-          title="Aniversariantes"
-          description={`Consulta administrativa pelas datas da clínica (${config.timezone}). Não envia mensagens.`}
+          title={t("Aniversariantes")}
+          description={`${t("Consulta administrativa pelas datas da clínica")} (${config.timezone}). ${t("Não envia mensagens.")}`}
         >
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={() => setBirthday(clinicDate(config.timezone).slice(5))}
             >
-              Aniversariantes de hoje
+              {t("Aniversariantes de hoje")}
             </Button>
             <Button
               variant="outline"
               onClick={() => setBirthday(clinicDate(config.timezone, true).slice(5))}
             >
-              Aniversariantes de amanhã
+              {t("Aniversariantes de amanhã")}
             </Button>
           </div>
           <Notice error={birthdays.error} loading={birthdays.loading} />
           {birthdays.data && (
             <div className="space-y-2">
               {birthdays.data.length === 0 && (
-                <p className="text-sm">Nenhum aniversariante nesta data.</p>
+                <p className="text-sm">{t("Nenhum aniversariante nesta data.")}</p>
               )}
               {birthdays.data.map((value) => (
                 <div
@@ -121,11 +125,11 @@ export function AmigoPatients({
                   className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
                 >
                   <span>
-                    {value.name ?? "Sem nome"} ·{" "}
-                    {value.contact_cellphone ?? "Telefone não informado"}
+                    {value.name ?? t("Sem nome")} ·{" "}
+                    {value.contact_cellphone ?? t("Telefone não informado")}
                   </span>
                   <Button variant="outline" onClick={() => setPatient(value)}>
-                    Selecionar {value.name}
+                    {t("Selecionar")} {value.name}
                   </Button>
                 </div>
               ))}
@@ -149,6 +153,7 @@ function PatientDetails({
   onUpdated: (value: Patient) => void;
   canManage: boolean;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [showDoctors, setShowDoctors] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -170,26 +175,26 @@ function PatientDetails({
   const value = details.data ?? patient;
   return (
     <>
-      <Panel title="Cadastro do paciente">
+      <Panel title={t("Cadastro do paciente")}>
         <Notice error={details.error} loading={details.loading} />
         <dl className="grid gap-4 text-sm sm:grid-cols-2 xl:grid-cols-4">
           {[
-            ["Nome", value.name],
-            ["CPF", value.cpf],
-            ["Telefone", value.contact_cellphone],
-            ["E-mail", value.email],
-            ["Idade", value.age == null ? null : `${value.age} anos`],
-            ["Convênio", value.health_insurance?.name],
+            [t("Nome"), value.name],
+            [t("CPF"), value.cpf],
+            [t("Telefone"), value.contact_cellphone],
+            [t("E-mail"), value.email],
+            [t("Idade"), value.age == null ? null : `${value.age} ${t("anos")}`],
+            [t("Convênio"), value.health_insurance?.name],
           ].map(([label, text]) => (
             <div key={label}>
               <dt className="text-muted-foreground">{label}</dt>
-              <dd>{text ?? "Não informado"}</dd>
+              <dd>{text ?? t("Não informado")}</dd>
             </div>
           ))}
         </dl>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setEditing(!editing)}>
-            {editing ? "Fechar edição" : "Editar paciente"}
+            {editing ? t("Fechar edição") : t("Editar paciente")}
           </Button>
           <Button
             variant="outline"
@@ -198,7 +203,7 @@ function PatientDetails({
               if (showDoctors) void doctors.refresh();
             }}
           >
-            Médicos do paciente
+            {t("Médicos do paciente")}
           </Button>
           <Button
             variant="outline"
@@ -207,10 +212,10 @@ function PatientDetails({
               if (showHistory) void history.refresh();
             }}
           >
-            Histórico de consultas
+            {t("Histórico de consultas")}
           </Button>
           <Button variant="ghost" onClick={() => void details.refresh()}>
-            Atualizar cadastro
+            {t("Atualizar cadastro")}
           </Button>
         </div>
         {editing && (
@@ -227,14 +232,14 @@ function PatientDetails({
         )}
         {showDoctors && (
           <div className="space-y-3">
-            <h3 className="font-medium">Profissionais que atenderam este paciente</h3>
+            <h3 className="font-medium">{t("Profissionais que atenderam este paciente")}</h3>
             <Notice error={doctors.error} loading={doctors.loading} />
             {doctors.data && <CatalogTable items={doctors.data} />}
           </div>
         )}
         {showHistory && (
           <div className="space-y-3">
-            <h3 className="font-medium">Consultas do paciente</h3>
+            <h3 className="font-medium">{t("Consultas do paciente")}</h3>
             <Notice error={history.error} loading={history.loading} />
             {history.data && (
               <AttendanceList
@@ -265,6 +270,7 @@ function PatientLink({
   contact: ContactChoice | null;
   canManage: boolean;
 }) {
+  const t = useT();
   const [lead, setLead] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [manual, setManual] = useState(false);
@@ -300,7 +306,7 @@ function PatientLink({
         ...(lead && lead !== "none" ? { lead_id: lead } : {}),
         ...(manual ? { manual: true } : {}),
       });
-      setMessage("Vínculo confirmado. Este contato é o destinatário escolhido para o paciente.");
+      setMessage(t("Vínculo confirmado. Este contato é o destinatário escolhido para o paciente."));
       await links.refresh();
     } catch (e) {
       setError(errorText(e));
@@ -311,12 +317,14 @@ function PatientLink({
   };
   return (
     <Panel
-      title="Vínculo com o CRM"
-      description="O paciente recebe o atendimento; o contato é quem recebe a comunicação. Um telefone compartilhado não confirma esse vínculo."
+      title={t("Vínculo com o CRM")}
+      description={t(
+        "O paciente recebe o atendimento; o contato é quem recebe a comunicação. Um telefone compartilhado não confirma esse vínculo.",
+      )}
     >
       {!contact ? (
         <p className="text-sm">
-          Escolha o contato destinatário no início da página para vincular este paciente.
+          {t("Escolha o contato destinatário no início da página para vincular este paciente.")}
         </p>
       ) : (
         <form
@@ -327,29 +335,29 @@ function PatientLink({
           }}
         >
           <p className="text-sm">
-            <strong>{patient.name}</strong> será vinculado a <strong>{contact.name}</strong>.
+            <strong>{patient.name}</strong> {t("será vinculado a")} <strong>{contact.name}</strong>.
           </p>
           {links.data?.links
             .filter((value) => value.patient_id === patient.id)
             .map((value) => (
               <p key={`${value.patient_id}:${value.lead_id ?? ""}`} className="text-sm">
-                Paciente já vinculado a este contato
+                {t("Paciente já vinculado a este contato")}
                 {value.lead_id
-                  ? ` · ${leads.data?.find((lead) => lead.id === value.lead_id)?.title ?? "Negócio associado"}`
-                  : " · Sem negócio associado"}
+                  ? ` · ${leads.data?.find((lead) => lead.id === value.lead_id)?.title ?? t("Negócio associado")}`
+                  : ` · ${t("Sem negócio associado")}`}
                 .
               </p>
             ))}
           <Pick
-            label="Negócio para este paciente"
+            label={t("Negócio para este paciente")}
             value={lead}
             required={!!leads.data?.length}
             disabled={pending || leads.loading || !!leads.error}
             options={[
-              { value: "none", label: "Vincular somente ao contato" },
+              { value: "none", label: t("Vincular somente ao contato") },
               ...(leads.data ?? []).map((value) => ({
                 value: value.id,
-                label: `${value.title ?? "Sem título"}${value.funil_nome ? ` · ${value.funil_nome}` : ""}${value.etapa_nome ? ` · ${value.etapa_nome}` : ""}`,
+                label: `${value.title ?? t("Sem título")}${value.funil_nome ? ` · ${value.funil_nome}` : ""}${value.etapa_nome ? ` · ${value.etapa_nome}` : ""}`,
               })),
             ]}
             onChange={(e) => {
@@ -367,8 +375,8 @@ function PatientLink({
               onChange={(e) => setConfirmed(e.target.checked)}
             />
             <span>
-              Confirmo que {patient.name} é o paciente correto e que {contact.name} é o destinatário
-              responsável por este atendimento.
+              {t("Confirmo que")} {patient.name} {t("é o paciente correto e que")} {contact.name}{" "}
+              {t("é o destinatário responsável por este atendimento.")}
             </span>
           </label>
           {canManage && (
@@ -381,8 +389,9 @@ function PatientLink({
                 onChange={(e) => setManual(e.target.checked)}
               />
               <span>
-                Vincular mesmo que o paciente não apareça pelo telefone deste contato (fica
-                registrado como vínculo manual).
+                {t(
+                  "Vincular mesmo que o paciente não apareça pelo telefone deste contato (fica registrado como vínculo manual).",
+                )}
               </span>
             </label>
           )}
@@ -395,7 +404,7 @@ function PatientLink({
               (!!leads.data?.length && !lead)
             }
           >
-            Vincular paciente ao contato
+            {t("Vincular paciente ao contato")}
           </Button>
         </form>
       )}
@@ -412,21 +421,21 @@ function PatientLink({
   );
 }
 const patientFields = [
-  ["contact_cellphone", "Telefone", "tel"],
-  ["email", "E-mail", "email"],
-  ["cpf", "CPF do paciente", "text"],
-  ["cpf_responsible", "CPF do responsável", "text"],
-  ["insurance_number", "Carteirinha do convênio", "text"],
-  ["mother_name", "Nome da mãe", "text"],
-  ["jobrole", "Profissão", "text"],
-  ["civil_status", "Estado civil", "text"],
-  ["address_cep", "CEP", "text"],
-  ["address_address", "Endereço", "text"],
-  ["address_number", "Número", "text"],
-  ["address_district", "Bairro", "text"],
-  ["address_city", "Cidade", "text"],
-  ["address_state", "Estado", "text"],
-  ["address_country", "País", "text"],
+  ["contact_cellphone", "tel"],
+  ["email", "email"],
+  ["cpf", "text"],
+  ["cpf_responsible", "text"],
+  ["insurance_number", "text"],
+  ["mother_name", "text"],
+  ["jobrole", "text"],
+  ["civil_status", "text"],
+  ["address_cep", "text"],
+  ["address_address", "text"],
+  ["address_number", "text"],
+  ["address_district", "text"],
+  ["address_city", "text"],
+  ["address_state", "text"],
+  ["address_country", "text"],
 ] as const;
 function PatientForm({
   patient,
@@ -437,6 +446,24 @@ function PatientForm({
   contactId?: string;
   onSaved: (value: Patient) => void;
 }) {
+  const t = useT();
+  const rotulos: Record<(typeof patientFields)[number][0], string> = {
+    contact_cellphone: t("Telefone"),
+    email: t("E-mail"),
+    cpf: t("CPF do paciente"),
+    cpf_responsible: t("CPF do responsável"),
+    insurance_number: t("Carteirinha do convênio"),
+    mother_name: t("Nome da mãe"),
+    jobrole: t("Profissão"),
+    civil_status: t("Estado civil"),
+    address_cep: t("CEP"),
+    address_address: t("Endereço"),
+    address_number: t("Número"),
+    address_district: t("Bairro"),
+    address_city: t("Cidade"),
+    address_state: t("Estado"),
+    address_country: t("País"),
+  };
   const [initial] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       ["name", "gender", "insurance_id", ...patientFields.map(([name]) => name)].map((name) => [
@@ -478,13 +505,13 @@ function PatientForm({
       }}
     >
       <p className="text-sm font-medium">
-        {patient ? "Atualizar cadastro no Amigo" : "Novo paciente no Amigo"}
+        {patient ? t("Atualizar cadastro no Amigo") : t("Novo paciente no Amigo")}
       </p>
       <fieldset
         disabled={mutation.pending || mutation.blocked}
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
       >
-        <Field label="Nome do paciente">
+        <Field label={t("Nome do paciente")}>
           <Input
             required
             maxLength={500}
@@ -493,21 +520,24 @@ function PatientForm({
           />
         </Field>
         <Pick
-          label="Sexo do paciente"
+          label={t("Sexo do paciente")}
           value={values.gender}
-          placeholder="Não informar"
-          options={["Masculino", "Feminino"].map((value) => ({ value, label: value }))}
+          placeholder={t("Não informar")}
+          options={[
+            { value: "Masculino", label: t("Masculino") },
+            { value: "Feminino", label: t("Feminino") },
+          ]}
           onChange={(e) => set("gender", e.target.value)}
         />
         <Pick
-          label="Convênio do paciente"
+          label={t("Convênio do paciente")}
           value={values.insurance_id}
-          placeholder="Não informar"
+          placeholder={t("Não informar")}
           options={options(insurances.data)}
           onChange={(e) => set("insurance_id", e.target.value)}
         />
-        {patientFields.map(([key, label, type]) => (
-          <Field key={key} label={label}>
+        {patientFields.map(([key, type]) => (
+          <Field key={key} label={rotulos[key]}>
             <Input
               type={type}
               maxLength={key === "civil_status" ? 25 : key === "email" ? 320 : 500}
@@ -518,12 +548,12 @@ function PatientForm({
         ))}
       </fieldset>
       <p className="text-xs text-muted-foreground">
-        Campos vazios e dados que você não alterou são preservados. Dados protegidos aparecem
-        vazios; preencha apenas se quiser substituí-los. A clínica pode exigir informações
-        adicionais.
+        {t(
+          "Campos vazios e dados que você não alterou são preservados. Dados protegidos aparecem vazios; preencha apenas se quiser substituí-los. A clínica pode exigir informações adicionais.",
+        )}
       </p>
       <Button disabled={!values.name?.trim() || mutation.pending || mutation.blocked}>
-        {patient ? "Salvar paciente" : "Criar paciente no Amigo"}
+        {patient ? t("Salvar paciente") : t("Criar paciente no Amigo")}
       </Button>
       <Notice error={insurances.error} loading={insurances.loading} />
       <MutationNotice mutation={mutation} />

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import type { Named } from "./_types";
 import type { useAmigoMutation } from "./_hooks";
+import { useT } from "@/hooks/i18n/useT";
 export function Panel({
   title,
   description,
@@ -43,14 +44,16 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 export function Pick({
   label,
   options,
-  placeholder = "Selecione…",
+  placeholder,
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & {
   label: string;
   options: { value: string; label: string }[];
   placeholder?: string;
 }) {
+  const t = useT();
   const id = useId();
+  const vazio = placeholder ?? t("Selecione…");
   return (
     <div className="min-w-0 space-y-2">
       <Label htmlFor={id}>{label}</Label>
@@ -59,7 +62,7 @@ export function Pick({
         className="min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 lg:min-h-9"
         {...props}
       >
-        {placeholder && <option value="">{placeholder}</option>}
+        {vazio && <option value="">{vazio}</option>}
         {options.map((x) => (
           <option key={x.value} value={x.value}>
             {x.label}
@@ -72,11 +75,12 @@ export function Pick({
 export const options = (items: Named[] | null | undefined) =>
   (items ?? []).map((x) => ({ value: String(x.id), label: x.name || `Registro ${x.id}` }));
 export function Notice({ error, loading }: { error?: string; loading?: boolean }) {
+  const t = useT();
   return (
     <>
       {loading && (
         <p role="status" className="text-sm text-muted-foreground">
-          Consultando Amigo…
+          {t("Consultando Amigo…")}
         </p>
       )}
       {error && (
@@ -92,24 +96,26 @@ export function Notice({ error, loading }: { error?: string; loading?: boolean }
 }
 export function MutationNotice({
   mutation,
-  success = "Alteração confirmada no Amigo.",
+  success,
 }: {
   mutation: ReturnType<typeof useAmigoMutation>;
   success?: string;
 }) {
+  const t = useT();
   return (
     <div className="space-y-2" aria-live="polite">
       <Notice error={mutation.error} loading={mutation.pending} />
       {mutation.receipt?.operation_id && (
         <p className="text-xs break-all text-muted-foreground">
-          Protocolo: {mutation.receipt.operation_id}
+          {t("Protocolo:")} {mutation.receipt.operation_id}
         </p>
       )}
       {mutation.blocked && mutation.error && (
         <>
           <p className="text-sm">
-            Confira a consulta ou o cadastro no Amigo. A conferência abaixo consulta o mesmo
-            protocolo, sem criar uma nova solicitação.
+            {t(
+              "Confira a consulta ou o cadastro no Amigo. A conferência abaixo consulta o mesmo protocolo, sem criar uma nova solicitação.",
+            )}
           </p>
           <Button
             type="button"
@@ -117,13 +123,13 @@ export function MutationNotice({
             disabled={mutation.pending}
             onClick={() => void mutation.retry()}
           >
-            Conferir resultado
+            {t("Conferir resultado")}
           </Button>
         </>
       )}
       {mutation.receipt && !mutation.error && !mutation.receipt.uncertain && (
         <p role="status" className="text-sm">
-          {success}
+          {success ?? t("Alteração confirmada no Amigo.")}
         </p>
       )}
     </div>
@@ -138,21 +144,22 @@ export function CatalogTable({
     contact_cellphone?: string | null;
   })[];
 }) {
+  const t = useT();
   if (!items.length)
-    return <p className="text-sm text-muted-foreground">Nenhum registro para estes filtros.</p>;
+    return <p className="text-sm text-muted-foreground">{t("Nenhum registro para estes filtros.")}</p>;
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Nome</TableHead>
-          <TableHead>Detalhes</TableHead>
-          <TableHead>Referência</TableHead>
+          <TableHead>{t("Nome")}</TableHead>
+          <TableHead>{t("Detalhes")}</TableHead>
+          <TableHead>{t("Referência")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {items.map((item) => (
           <TableRow key={item.id}>
-            <TableCell className="font-medium">{item.name || "Sem nome informado"}</TableCell>
+            <TableCell className="font-medium">{item.name || t("Sem nome informado")}</TableCell>
             <TableCell>{item.specialty || item.address || item.contact_cellphone || "—"}</TableCell>
             <TableCell className="text-muted-foreground">{item.id}</TableCell>
           </TableRow>

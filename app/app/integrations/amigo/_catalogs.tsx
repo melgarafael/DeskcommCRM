@@ -1,21 +1,23 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { read, errorText } from "./_api";
 import { useLoad } from "./_hooks";
 import { CatalogTable, Notice, Panel, Pick, options } from "./_ui";
 import type { AmigoOperation, Named } from "./_types";
-const catalogs = [
-  ["places", "Unidades"],
-  ["doctors", "Médicos"],
-  ["doctors_available", "Médicos disponíveis"],
-  ["specialties", "Especialidades"],
-  ["events", "Tipos de atendimento"],
-  ["insurances", "Convênios"],
-  ["insurance_plans", "Convênios por grupo"],
-  ["insurance_products", "Produtos de convênio"],
-] as const;
 export function AmigoCatalogs() {
+  const t = useT();
+  const catalogs = [
+    ["places", t("Unidades")],
+    ["doctors", t("Médicos")],
+    ["doctors_available", t("Médicos disponíveis")],
+    ["specialties", t("Especialidades")],
+    ["events", t("Tipos de atendimento")],
+    ["insurances", t("Convênios")],
+    ["insurance_plans", t("Convênios por grupo")],
+    ["insurance_products", t("Produtos de convênio")],
+  ] as const;
   const [kind, setKind] = useState<AmigoOperation>("places");
   const [place, setPlace] = useState("");
   const [doctor, setDoctor] = useState("");
@@ -123,8 +125,10 @@ export function AmigoCatalogs() {
     (kind === "places" && !!doctor !== !!event);
   return (
     <Panel
-      title="Catálogos da clínica"
-      description="Consulte os recursos do Amigo e refine os filtros. Convênio, grupo e produto têm seleções próprias."
+      title={t("Catálogos da clínica")}
+      description={t(
+        "Consulte os recursos do Amigo e refine os filtros. Convênio, grupo e produto têm seleções próprias.",
+      )}
     >
       <form
         className="space-y-4"
@@ -135,7 +139,7 @@ export function AmigoCatalogs() {
       >
         <fieldset disabled={pending} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Pick
-            label="Catálogo"
+            label={t("Catálogo")}
             value={kind}
             placeholder=""
             options={catalogs.map(([value, label]) => ({ value, label }))}
@@ -147,9 +151,9 @@ export function AmigoCatalogs() {
             }}
           />
           <Pick
-            label="Unidade do catálogo"
+            label={t("Unidade do catálogo")}
             value={place}
-            placeholder="Todas as unidades"
+            placeholder={t("Todas as unidades")}
             options={options(places.data)}
             disabled={["places", "doctors", "insurance_products"].includes(kind)}
             onChange={(e) => {
@@ -160,9 +164,9 @@ export function AmigoCatalogs() {
             }}
           />
           <Pick
-            label="Médico do catálogo"
+            label={t("Médico do catálogo")}
             value={doctor}
-            placeholder="Todos os médicos"
+            placeholder={t("Todos os médicos")}
             options={options(doctors.data)}
             disabled={[
               "doctors",
@@ -178,17 +182,17 @@ export function AmigoCatalogs() {
             }}
           />
           <Pick
-            label="Atendimento do catálogo"
+            label={t("Atendimento do catálogo")}
             value={event}
-            placeholder="Todos os atendimentos"
+            placeholder={t("Todos os atendimentos")}
             options={options(events.data)}
             disabled={!["places", "doctors_available", "insurance_plans"].includes(kind)}
             onChange={(e) => setEvent(e.target.value)}
           />
           <Pick
-            label="Convênio do catálogo"
+            label={t("Convênio do catálogo")}
             value={insurance}
-            placeholder="Sem filtro de convênio"
+            placeholder={t("Sem filtro de convênio")}
             options={options(insurances.data)}
             disabled={
               !["events", "specialties", "insurance_products", "doctors_available"].includes(kind)
@@ -197,7 +201,7 @@ export function AmigoCatalogs() {
           />
           {kind === "insurance_plans" && (
             <Pick
-              label="Grupo de convênio"
+              label={t("Grupo de convênio")}
               value={group}
               options={options(insurances.data)}
               required
@@ -211,7 +215,7 @@ export function AmigoCatalogs() {
                 checked={schedulable}
                 onChange={(e) => setSchedulable(e.target.checked)}
               />
-              Somente recursos agendáveis
+              {t("Somente recursos agendáveis")}
             </label>
           )}
           {kind === "doctors" && (
@@ -221,16 +225,16 @@ export function AmigoCatalogs() {
                 checked={toConfirm}
                 onChange={(e) => setToConfirm(e.target.checked)}
               />
-              Médicos para confirmação
+              {t("Médicos para confirmação")}
             </label>
           )}
         </fieldset>
         {kind === "places" && (
           <p className="text-sm text-muted-foreground">
-            Para filtrar unidades, selecione médico e atendimento juntos ou deixe ambos vazios.
+            {t("Para filtrar unidades, selecione médico e atendimento juntos ou deixe ambos vazios.")}
           </p>
         )}
-        <Button disabled={pending || invalid}>Consultar catálogo</Button>
+        <Button disabled={pending || invalid}>{t("Consultar catálogo")}</Button>
       </form>
       <Notice
         error={error || places.error || doctors.error || events.error || insurances.error}
@@ -249,7 +253,7 @@ export function AmigoCatalogs() {
             ))}
           </ul>
         ) : (
-          <p className="text-sm">Nenhuma especialidade para estes filtros.</p>
+          <p className="text-sm">{t("Nenhuma especialidade para estes filtros.")}</p>
         ))}
     </Panel>
   );
