@@ -1,0 +1,151 @@
+/**
+ * O FORMATO da Operação do dia — o mesmo que a tela desenha e o relatório
+ * diário congela em `relatorios_operacao_diarios.conteudo`.
+ *
+ * `versao` existe porque o relatório é guardado: a tela de um relatório antigo
+ * tem de continuar abrindo depois que este formato ganhar um campo. Campo novo
+ * entra OPCIONAL; mudar o sentido de um campo existente é `versao: 2`.
+ *
+ * Arquivo sem import de propósito: é lido pelo componente cliente.
+ */
+
+export interface ContatoDaLinha {
+  contact_id: string | null;
+  /** Nome de gente (`name` → `display_name`); `null` = não registrado. */
+  nome: string | null;
+  /** Telefone (`contacts.phone_number`); `null` em canal sem telefone (Instagram). */
+  telefone: string | null;
+  /** Identidade social (`contacts.social_identity` — o @ no Instagram, por exemplo). */
+  identidade: string | null;
+}
+
+export interface ProximaAcao {
+  titulo: string;
+  /** `crm_tasks.due_date`; `null` = tarefa sem prazo. */
+  vence_em: string | null;
+}
+
+export interface LinhaDeConversa {
+  conversation_id: string;
+  contato: ContatoDaLinha;
+  /** `conversations.channel`: whatsapp | instagram | facebook | telegram. */
+  canal: string;
+  /** Rótulo do número/conta (`channel_sessions.display_name` → telefone → sessão). */
+  numero: string | null;
+  /** Resumo da passagem para a equipe, quando houve; senão a prévia da última mensagem. */
+  resumo: string | null;
+  resumo_origem: "passagem" | "ultima_mensagem" | null;
+  /** `conversations.status`. */
+  status: string;
+  /** `conversations.comando_da_conversa`: humano | automatico | aguardando | encerrada | ninguem. */
+  comando: string | null;
+  /** Motivo da última passagem (`conversations.last_handoff_reason`). */
+  motivo_da_passagem: string | null;
+  proxima_acao: ProximaAcao | null;
+  /** Quem é o dono (`assigned_to_user_name`), "ia" quando a IA tem a conversa, `null` = ninguém. */
+  responsavel: string | null;
+  responsavel_tipo: "pessoa" | "ia" | null;
+  ultima_atividade_em: string | null;
+  /** Desde quando o cliente espera resposta; `null` quando a última palavra é nossa. */
+  esperando_desde: string | null;
+  tags: string[];
+  /** Só nas linhas de produto: o que a busca da IA registrou na conversa naquele dia. */
+  produtos?: { termos: string[]; encontrados: string[] };
+}
+
+export interface LinhaDeNegocio {
+  lead_id: string;
+  titulo: string;
+  contato: ContatoDaLinha;
+  /** Conversa mais recente do contato — o link da linha. `null` = contato sem conversa. */
+  conversation_id: string | null;
+  etapa: string | null;
+  status: string;
+  /** `value_cents` só quando registrado; `null` = não registrado (nunca zero inventado). */
+  valor_cents: number | null;
+  moeda: string | null;
+  motivo_da_perda: string | null;
+  responsavel: string | null;
+  /** Quando fechou (ganho/perdido) ou quando entrou na etapa atual. */
+  quando: string | null;
+}
+
+export interface FalhaDeMensagem {
+  message_id: string;
+  conversation_id: string;
+  contato: ContatoDaLinha;
+  status: "failed" | "sending";
+  codigo: string | null;
+  erro: string | null;
+  quando: string;
+}
+
+export interface FalhaDaIa {
+  run_id: string;
+  conversation_id: string | null;
+  contato: ContatoDaLinha;
+  codigo: string | null;
+  erro: string | null;
+  quando: string;
+}
+
+export interface CanalForaDoAr {
+  channel_session_id: string;
+  numero: string | null;
+  provedor: string;
+  status: string;
+  motivo: string | null;
+  desde: string | null;
+}
+
+export interface AvisoAberto {
+  id: string;
+  kind: string;
+  titulo: string;
+  severidade: string;
+  quando: string;
+}
+
+export interface ContagemPorCanal {
+  whatsapp: number;
+  instagram: number;
+  outros: number;
+  total: number;
+}
+
+export interface OperacaoDoDia {
+  versao: 1;
+  dia: string;
+  fuso: string;
+  /** Início e fim do dia no fuso, em UTC ISO — `[inicio, fim)`. */
+  inicio: string;
+  fim: string;
+  /** Quando a leitura foi feita. A espera é medida contra este instante. */
+  lido_em: string;
+  tags: { produto: string; projeto: string; reclamacao: string; urgente: string };
+  contadores: {
+    /** Conversas cuja PRIMEIRA mensagem recebida (de sempre) caiu neste dia. */
+    novas: ContagemPorCanal;
+    /** Conversas que receberam pelo menos uma mensagem do cliente neste dia. */
+    com_entrada: ContagemPorCanal;
+  };
+  aguardando: LinhaDeConversa[];
+  projetos: LinhaDeConversa[];
+  reclamacoes: LinhaDeConversa[];
+  produtos: LinhaDeConversa[];
+  funil: {
+    ganhos: LinhaDeNegocio[];
+    perdidos: LinhaDeNegocio[];
+    em_proposta: LinhaDeNegocio[];
+    /** Negócios que mudaram de etapa neste dia (`crm_leads.stage_changed_at`). */
+    mudaram_de_etapa: number | null;
+  };
+  falhas: {
+    mensagens: FalhaDeMensagem[];
+    execucoes_da_ia: FalhaDaIa[];
+    canais: CanalForaDoAr[];
+    avisos: AvisoAberto[];
+  };
+  /** Seções que bateram no teto de linhas: a lista mostrada não é a inteira. */
+  truncado: string[];
+}
