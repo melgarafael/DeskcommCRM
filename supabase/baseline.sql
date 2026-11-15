@@ -37812,6 +37812,27 @@ exception when duplicate_object then null; end $$;
 comment on column public.ai_router_members.flow_pointer_id is
   'Roteiro de atendimento (surface=atendimento) que começa quando esta intenção casa. NULL = só roteia o agente. FK composta: só roteiro da mesma organização.';
 
+-- ---- roteador: a frase que avisa o CLIENTE da troca automática (migration 9367, issue #4363) ----
+-- O #4385 já avisa o AGENTE que herdou a conversa; esta coluna é a outra metade
+-- — a frase que o cliente lê quando o classificador troca quem atende sozinho.
+-- NULL = desligado, e o comportamento é o de antes (o agente novo se apresenta).
+-- Coluna e não chave do `config` jsonb: o limite de tamanho precisa ser CHECK.
+alter table public.ai_routers
+  add column if not exists passagem_ao_cliente text;
+
+do $$ begin
+  alter table public.ai_routers
+    add constraint ai_routers_passagem_ao_cliente_tamanho
+    check (
+      passagem_ao_cliente is null
+      or length(btrim(passagem_ao_cliente)) between 1 and 1200
+    );
+exception when duplicate_object then null; end $$;
+
+comment on column public.ai_routers.passagem_ao_cliente is
+  'Frase enviada ao CLIENTE, uma vez, quando o roteador troca de agente automaticamente (desfecho reclassified). NULL = desligado (comportamento de antes: o agente novo se apresenta). Escrita na tela do roteador, no idioma da organização. Não carrega PII e não entra em ai_router_decisions.';
+
+
 create or replace function public.fn_contato_anonimizado_encerra_roteiro()
 returns trigger
 language plpgsql
@@ -41736,7 +41757,7 @@ create policy companies_select on public.companies
 drop policy if exists companies_insert on public.companies;
 create policy companies_insert on public.companies
   for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'manager'));
+                         and public.fn_role_at_least(organization_id, 'agent'));
 drop policy if exists companies_update on public.companies;
 create policy companies_update on public.companies
   for update
@@ -41789,7 +41810,7 @@ create policy people_select on public.people
 drop policy if exists people_insert on public.people;
 create policy people_insert on public.people
   for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'manager'));
+                         and public.fn_role_at_least(organization_id, 'agent'));
 drop policy if exists people_update on public.people;
 create policy people_update on public.people
   for update
@@ -41847,7 +41868,7 @@ create policy company_people_select on public.company_people
 drop policy if exists company_people_insert on public.company_people;
 create policy company_people_insert on public.company_people
   for insert with check (organization_id in (select public.fn_user_org_ids())
-                         and public.fn_role_at_least(organization_id, 'manager'));
+                         and public.fn_role_at_least(organization_id, 'agent'));
 drop policy if exists company_people_update on public.company_people;
 create policy company_people_update on public.company_people
   for update
@@ -69319,6 +69340,47 @@ comment on column public.ai_agent_versions.image_vision_enabled is
   'Lido em lib/agent-engine/agent/agent-config.ts e no predicado '
   'lib/messaging/media/leitura-adiada.ts:haLeitorDaDescricao.';
 
+-- ---- Reserva de modelo configurável: reserve_provider + reserve_model (migration 9368) ----
+-- Espelho idêntico da 9368 (o porquê está no cabeçalho dela). Fica ANTES da
+-- VARREDURA anon porque recria `fn_ai_agent_version_content_immutable`; o corpo
+-- é o da 9108 (a última definição acima) mais as duas colunas de reserva.
+-- NULOS por padrão: quem não configura nada tem exatamente o comportamento de
+-- antes, inclusive o caminho da assinatura.
+alter table public.ai_agent_versions
+  add column if not exists reserve_provider text;
+
+alter table public.ai_agent_versions
+  add column if not exists reserve_model text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'ai_agent_versions_reserva_check'
+  ) then
+    alter table public.ai_agent_versions
+      add constraint ai_agent_versions_reserva_check
+      check (
+        (reserve_provider is null and reserve_model is null)
+        or (
+          reserve_provider is not null and btrim(reserve_provider) <> ''
+          and reserve_model is not null and btrim(reserve_model) <> ''
+        )
+      );
+  end if;
+end $$;
+
+comment on column public.ai_agent_versions.reserve_provider is
+  'Migration 9368. Provedor para onde a chamada cai quando o principal falha por '
+  'cota (429), servidor (5xx) ou tempo esgotado — qualquer provedor já cadastrado. '
+  'NULL (default) = sem reserva, comportamento de antes. Lido em '
+  'lib/agent-engine/agent/agent-config.ts e decidido em '
+  'lib/ai/pontos/reserva-da-assinatura.ts (decidirQuedaDoModeloDeReserva).';
+
+comment on column public.ai_agent_versions.reserve_model is
+  'Migration 9368. Modelo do provedor de reserva. Os dois campos são configurados '
+  'juntos (ai_agent_versions_reserva_check): provedor sem modelo é configuração '
+  'pela metade e não vira degrau nenhum.';
+
 create or replace function fn_ai_agent_version_content_immutable() returns trigger
 -- search_path fixo na PRÓPRIA definição: um create or replace sem a cláusula
 -- apaga o alter function ... set search_path da 0521 (invariante
@@ -69359,6 +69421,8 @@ begin
     or new.reply_min_interval_ms  is distinct from old.reply_min_interval_ms
     or new.voz_enabled            is distinct from old.voz_enabled
     or new.voz_quando             is distinct from old.voz_quando
+    or new.reserve_provider       is distinct from old.reserve_provider
+    or new.reserve_model          is distinct from old.reserve_model
     or new.version_number         is distinct from old.version_number
     or new.agent_id               is distinct from old.agent_id
     or new.organization_id        is distinct from old.organization_id
@@ -77598,6 +77662,24 @@ revoke execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, u
   from public, anon;
 grant  execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
   to authenticated, service_role;
+
+-- ---- Atendente cria empresa e pessoa (migration 9370) ----
+-- O piso do INSERT desce de `manager` para `agent` em companies, people e company_people.
+-- Excluir segue `manager`. Idempotente: drop policy if exists + create policy.
+drop policy if exists companies_insert on public.companies;
+create policy companies_insert on public.companies
+  for insert with check (organization_id in (select public.fn_user_org_ids())
+                         and public.fn_role_at_least(organization_id, 'agent'));
+
+drop policy if exists people_insert on public.people;
+create policy people_insert on public.people
+  for insert with check (organization_id in (select public.fn_user_org_ids())
+                         and public.fn_role_at_least(organization_id, 'agent'));
+
+drop policy if exists company_people_insert on public.company_people;
+create policy company_people_insert on public.company_people
+  for insert with check (organization_id in (select public.fn_user_org_ids())
+                         and public.fn_role_at_least(organization_id, 'agent'));
 
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.

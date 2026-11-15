@@ -44,6 +44,8 @@ export interface RouterDetail {
   is_active: boolean;
   config: Record<string, unknown>;
   fallback_agent_id: string | null;
+  /** #4363 — a frase do cliente na troca automática. `null` = desligada. */
+  passagem_ao_cliente: string | null;
 }
 
 export interface RouterDetailState {
@@ -97,6 +99,11 @@ export interface UpdateRouterInput {
    * mudança sai auditada ("de X para Y").
    */
   channel_session_id?: string;
+  /**
+   * #4363 — a frase que o CLIENTE lê quando o roteador troca de agente
+   * automaticamente. `null` = desligada (o padrão, e o comportamento de antes).
+   */
+  passagem_ao_cliente?: string | null;
   /** Mesclada com a config existente pelo PATCH — mandar um campo não apaga os outros. */
   config?: Record<string, unknown>;
 }
