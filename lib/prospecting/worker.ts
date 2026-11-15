@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import {
+  dayStartInTz,
   decidePacing,
   janelaDeProspeccaoAberta,
   proximaAberturaDaProspeccao,
@@ -46,7 +47,12 @@ import { mensagemDaRecusaDoCanal } from "./motivo-da-pausa";
 import { canalDaCampanha } from "./canal-da-campanha";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
-import { prepararMidiaDaAbordagem, TETO_DE_LEGENDA } from "./midia-da-abordagem";
+import {
+  abordagensComMidiaDesde,
+  prepararMidiaDaAbordagem,
+  TETO_DE_LEGENDA,
+  TETO_DIARIO_DE_MIDIA_POR_NUMERO,
+} from "./midia-da-abordagem";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import {
   withProspectingLock,
@@ -470,7 +476,27 @@ export async function sendNextCandidate(
     // medida, não estimada.
     //
     // SEM mídia nada disto roda: estilo e teto são os de sempre, bolha a bolha.
-    const comMidia = cfg.midia_da_abordagem != null;
+    //
+    // O TETO DIÁRIO DE MÍDIA DO NÚMERO (doc 358 › 2A) vem antes de tudo isso:
+    // passado o teto, a abordagem é a de uma campanha sem mídia — texto puro, no
+    // estilo do agente — e a campanha segue. O "dia" é o do fuso da janela do
+    // número (`knobs.timezone`), a mesma régua do portão 7h–22h.
+    const midiaOmitidaPeloTeto =
+      cfg.midia_da_abordagem != null &&
+      (await abordagensComMidiaDesde(
+        db,
+        c.organization_id,
+        canal,
+        dayStartInTz(now, knobs.timezone),
+      )) >= TETO_DIARIO_DE_MIDIA_POR_NUMERO;
+    if (midiaOmitidaPeloTeto)
+      logger.info("[prospecting] teto diário de mídia do número atingido; a abordagem sai só com texto", {
+        organization_id: c.organization_id,
+        campaign_id: c.id,
+        channel_session_id: canal,
+        teto: TETO_DIARIO_DE_MIDIA_POR_NUMERO,
+      });
+    const comMidia = cfg.midia_da_abordagem != null && !midiaOmitidaPeloTeto;
     const folgaDaSaida =
       comMidia && cfg.exit_offer === "first_message"
         ? comSaida("", locale, cfg.texto_da_saida).length
@@ -522,7 +548,10 @@ export async function sendNextCandidate(
     // Falha de assinatura RECUSA a abordagem (a configuração pediu um arquivo, e
     // entregar texto puro seria outra abordagem) — o `ProspectingError` sem escopo
     // é `campanha`, que é o certo: o arquivo é o mesmo para a fila inteira.
-    const midiaPreparada = await prepararMidiaDaAbordagem(admin, cfg.midia_da_abordagem);
+    const midiaPreparada = await prepararMidiaDaAbordagem(
+      admin,
+      comMidia ? cfg.midia_da_abordagem : null,
+    );
     if (midiaPreparada && !midiaPreparada.ok) throw new ProspectingError(midiaPreparada.motivo);
     const midia = midiaPreparada && midiaPreparada.ok ? midiaPreparada : null;
     let mensagem: Message | undefined;
@@ -726,6 +755,11 @@ export async function sendNextCandidate(
         // endereço assinado: o tipo basta para responder, depois, "quem recebeu
         // aquele arquivo" — a pergunta que a régua de banimento faz.
         ...(midia ? { media_type: midia.tipo } : {}),
+        // A campanha tem mídia, mas este número já passou do teto do dia (doc 358
+        // › 2A): a abordagem saiu só com texto, e é aqui que isso fica dito.
+        ...(midiaOmitidaPeloTeto
+          ? { media_omitted: "teto_diario_por_numero", media_daily_cap: TETO_DIARIO_DE_MIDIA_POR_NUMERO }
+          : {}),
         // Por que as seguintes não saíram, quando a conversa deixou de ser fria.
         ...(parouEm || lancouEm ? { stopped_reason: parouEm ?? lancouEm } : {}),
       },

@@ -18996,6 +18996,10 @@ export const DICIONARIO: Traducoes = {
   "Sem a sua IA de sempre, o Jev não escolhe o agente sozinho: é ela que cobre quando ele falha ou fica em dúvida. Cadastre uma chave de IA em Agentes IA › Credenciais para usar este modo. Até lá, vale a comparação.": { es: "Sin tu IA de siempre, Jev no elige el agente solo: es ella la que cubre cuando él falla o duda. Registra una clave de IA en Agentes IA › Credenciales para usar este modo. Hasta entonces, vale la comparación." },
   "Editar ritmo": { es: "Editar ritmo" },
   "Ritmo atualizado. A campanha continua pausada.": { es: "Ritmo actualizado. La campaña sigue en pausa." },
+  // #4581 / doc 358 › 2A: aviso da mídia igual para muitos números frios.
+  "Atenção: esta campanha manda o mesmo arquivo junto da primeira mensagem. Quando muita gente que não conhece você recebe o mesmo arquivo, aumenta o risco de o WhatsApp bloquear o seu número. Por segurança, cada número manda o arquivo em no máximo {teto} abordagens por dia; depois disso, as abordagens do dia saem só com o texto.": {
+    es: "Atención: esta campaña envía el mismo archivo junto con el primer mensaje. Cuando mucha gente que no te conoce recibe el mismo archivo, aumenta el riesgo de que WhatsApp bloquee tu número. Por seguridad, cada número envía el archivo en como máximo {teto} abordajes por día; después de eso, los abordajes del día salen solo con el texto.",
+  },
   "Só dá para ajustar com a campanha pausada. Ao retomar, o próximo envio já usa o ritmo novo. Limite de 1 a 50 por dia e intervalo de 5 a 1440 minutos.": { es: "Solo se puede ajustar con la campaña en pausa. Al reanudar, el próximo envío ya usa el ritmo nuevo. Límite de 1 a 50 por día e intervalo de 5 a 1440 minutos." },
   "Este texto se soma ao prompt do agente nas conversas desta campanha. Se você mudar o prompt do agente, confira se os dois ainda dizem a mesma coisa.": { es: "Este texto se suma al prompt del agente en las conversaciones de esta campaña. Si cambias el prompt del agente, verifica que los dos sigan diciendo lo mismo." },
   // ─── Cadastrar um campo do formulário a partir da captação ───

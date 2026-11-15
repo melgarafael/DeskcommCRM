@@ -56,6 +56,8 @@ let assinaturaFalha = false;
 let falharPrimeiraBolha = false;
 /** O "Estilo de resposta" do agente que o tick lê (`ai_agent_versions`). */
 let estiloDoAgente = { split_messages: true, split_max_chars: 60 };
+/** Quantas abordagens com mídia o número já mandou hoje (a contagem que o teto lê). */
+let midiasHoje = 0;
 /** Todo SQL que o caminho pediu — é onde se vê o candidato sendo marcado. */
 const sqls: Array<{ sql: string; params?: unknown[] }> = [];
 
@@ -69,6 +71,7 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   paradas: vi.fn(),
   prepare: vi.fn(),
+  dayStart: vi.fn(),
 }));
 
 vi.mock("@/app/api/v1/messages/_handler", async () => {
@@ -120,6 +123,7 @@ vi.mock("@/lib/agent-engine/pacing/store", () => ({
 }));
 vi.mock("@/lib/agent-engine/pacing/engine", () => ({
   janelaDeEnvioAberta: mocks.open,
+  dayStartInTz: mocks.dayStart,
   janelaDeProspeccaoAberta: () => true,
   proximaAberturaDaProspeccao: () => new Date(Date.now() + 3600000),
   decidePacing: () => ({ allow: true, waitMs: 0 }),
@@ -148,6 +152,8 @@ import { withProspectingLock } from "@/lib/prospecting/store";
 import type { Campaign } from "@/lib/prospecting/store";
 import { tickProspecting } from "@/lib/prospecting/worker";
 import {
+  ABORDAGENS_COM_MIDIA_DESDE_SQL,
+  TETO_DIARIO_DE_MIDIA_POR_NUMERO,
   classificarMidiaDaAbordagem,
   problemaNaMidiaDaAbordagem,
   TAMANHO_MAXIMO_DO_VIDEO,
@@ -263,6 +269,7 @@ function banco(config: Campaign) {
         )
       )
         return { rows: [config] };
+      if (sql === ABORDAGENS_COM_MIDIA_DESDE_SQL) return { rows: [{ n: midiasHoje }] };
       if (sql.startsWith("select daily_message_limit"))
         return { rows: [{ daily_message_limit: 50 }] };
       if (sql.includes("count(*) filter"))
@@ -319,6 +326,8 @@ beforeEach(() => {
   assinaturaFalha = false;
   falharPrimeiraBolha = false;
   estiloDoAgente = { split_messages: true, split_max_chars: 60 };
+  midiasHoje = 0;
+  mocks.dayStart.mockReturnValue(new Date("2026-11-15T03:00:00.000Z"));
   mocks.knobs.mockResolvedValue({ knobs: {} });
   mocks.open.mockReturnValue(true);
   mocks.preflight.mockResolvedValue({ permite: true });
@@ -390,6 +399,54 @@ describe("campanha COM mídia: o arquivo vai junto da 1ª abordagem", () => {
     expect(falhou?.params?.[2], "o motivo da recusa não chegou ao candidato").toContain(
       "não está no Storage desta instalação",
     );
+  });
+});
+
+describe("teto diário de mídia por número (doc 358 › 2A)", () => {
+  it("o teto padrão é 30 abordagens com mídia por número por dia", () => {
+    expect(TETO_DIARIO_DE_MIDIA_POR_NUMERO).toBe(30);
+  });
+
+  it("abaixo do teto a mídia vai, e a contagem é do NÚMERO desde o início do dia no fuso dele", async () => {
+    midiasHoje = TETO_DIARIO_DE_MIDIA_POR_NUMERO - 1;
+    mocks.knobs.mockResolvedValue({ knobs: { timezone: "America/Sao_Paulo" } });
+
+    await rodarOTick(true);
+
+    expect(enviosComMidia()).toHaveLength(1);
+    expect(envios[0]!.type).toBe("image");
+    expect(mocks.dayStart).toHaveBeenCalledWith(expect.any(Date), "America/Sao_Paulo");
+    const contagem = sqls.find((q) => q.sql === ABORDAGENS_COM_MIDIA_DESDE_SQL);
+    expect(contagem?.params).toEqual([id, id, new Date("2026-11-15T03:00:00.000Z")]);
+    const metadata = (mocks.audit.mock.calls[0]?.[0] as { metadata: Record<string, unknown> })
+      .metadata;
+    expect(metadata).not.toHaveProperty("media_omitted");
+  });
+
+  it("no teto, a abordagem sai só com texto, a campanha segue e a trilha diz por quê", async () => {
+    midiasHoje = TETO_DIARIO_DE_MIDIA_POR_NUMERO;
+
+    await rodarOTick(true);
+
+    // Nenhum arquivo: nem assinado, nem enviado. O texto sai inteiro.
+    expect(assinaturas).toHaveLength(0);
+    expect(enviosComMidia()).toHaveLength(0);
+    expect(envios.length).toBeGreaterThan(0);
+    for (const envio of envios) expect(envio.type).toBe("text");
+    expect(envios[0]!.body, "a saída não está na 1ª bolha").toContain("responda PARAR");
+    // Não trava: nem o candidato falha, nem a campanha pausa.
+    expect(sqls.some((q) => q.sql.includes("set status='failed'"))).toBe(false);
+    expect(sqls.some((q) => q.sql.includes("status='paused'"))).toBe(false);
+    // O rastro: a trilha da abordagem diz que a mídia foi omitida pelo teto.
+    expect(mocks.audit.mock.calls[0]?.[0]).toMatchObject({
+      action: "prospecting.approach_sent",
+      metadata: { sent: true, media_omitted: "teto_diario_por_numero", media_daily_cap: 30 },
+    });
+  });
+
+  it("campanha sem mídia nem consulta a contagem", async () => {
+    await rodarOTick(false);
+    expect(sqls.some((q) => q.sql === ABORDAGENS_COM_MIDIA_DESDE_SQL)).toBe(false);
   });
 });
 

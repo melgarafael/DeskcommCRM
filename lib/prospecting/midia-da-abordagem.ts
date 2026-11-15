@@ -37,6 +37,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { Queryable } from "@/lib/agent-engine/queue/queue";
+
 import { BUCKET_DAS_MIDIAS, TAMANHO_MAXIMO_DA_MIDIA } from "@/lib/templates/midias";
 import { MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 
@@ -57,6 +59,41 @@ export const TAMANHO_MAXIMO_DO_VIDEO = 16 * 1024 * 1024;
  * abordagem segue nas bolhas seguintes.
  */
 export const TETO_DE_LEGENDA = 1024;
+
+/**
+ * O TETO DIÁRIO DE ABORDAGENS COM MÍDIA, POR NÚMERO (decisão do dono, 15/11,
+ * doc 358 › 2A). O mesmo arquivo indo para muitos números frios pesa mais na
+ * régua de banimento do que texto variado. Acima do teto, a abordagem do dia
+ * sai SÓ COM TEXTO: a campanha não trava, e a trilha registra a omissão.
+ *
+ * ponytail: constante, não knob. É do NÚMERO, então o lugar de um ajuste seria
+ * `channel_knobs` — coluna nova, com migration. Vira knob quando alguém pedir.
+ */
+export const TETO_DIARIO_DE_MIDIA_POR_NUMERO = 30;
+
+/**
+ * Quantas abordagens COM MÍDIA este número já mandou desde `desde` (o início do
+ * dia no fuso da janela do número). Fonte: as próprias mensagens — a 1ª bolha da
+ * abordagem é a linha `messages.id = prospecting_candidates.message_id`, e o
+ * `type` dela diz se levou arquivo. Sem contador novo: o que conta é o que saiu.
+ * `failed` não conta, porque a plataforma recusou e nada chegou a ninguém.
+ */
+export const ABORDAGENS_COM_MIDIA_DESDE_SQL =
+  "select count(*)::int as n from prospecting_candidates p join messages m on m.organization_id = p.organization_id and m.id = p.message_id where p.organization_id = $1 and p.attempted_at >= $3 and m.channel_session_id = $2 and m.created_at >= $3 and m.type in ('image','video','document') and m.status <> 'failed'";
+
+export async function abordagensComMidiaDesde(
+  db: Queryable,
+  organizationId: string,
+  channelSessionId: string,
+  desde: Date,
+): Promise<number> {
+  const { rows } = await db.query<{ n: number }>(ABORDAGENS_COM_MIDIA_DESDE_SQL, [
+    organizationId,
+    channelSessionId,
+    desde,
+  ]);
+  return rows[0]?.n ?? 0;
+}
 
 /** O tipo que o canal entende — o mesmo vocabulário de `messages.type`. */
 export type TipoDeMidiaDaAbordagem = "image" | "video" | "document";
