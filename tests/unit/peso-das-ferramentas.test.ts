@@ -100,6 +100,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_move_lead_stage": { tokens: 380, motivo: BASE },
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
+  "crm_save_lead_diagnosis": { tokens: 325, motivo: "capacidade nova (#4632, decisão D7): o agente qualificador grava o diagnóstico da empresa na ficha; a descrição diz que grava DIRETO com o selo e que não serve para dado pessoal nem para repetir o que o cliente disse" },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
   "crm_publish_whatsapp_status": { tokens: 464, motivo: "ferramenta nova do módulo opcional status_whatsapp (#3463), medida na criação (2026-11-10); só é oferecida com o módulo ligado" },
   "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
@@ -147,8 +148,9 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 // no `send_message` (Spec 25 R4, #3276); +464 com `crm_publish_whatsapp_status`
 // (#3463), que só entra no catálogo com o módulo `status_whatsapp` ligado; +37 na
 // descrição de `crm_get_conversation_history`, que passou a dizer o AUTOR da
-// mensagem (#4077).
-const TETO_TOTAL = 30724;
+// mensagem (#4077); +325 com `crm_save_lead_diagnosis` (#4632), o diagnóstico
+// da empresa gravado na ficha pelo agente da prospecção.
+const TETO_TOTAL = 31049;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

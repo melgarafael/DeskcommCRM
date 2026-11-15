@@ -15566,6 +15566,10 @@ export type Database = {
         Args: { p_contato: string; p_etiquetas: string[]; p_org: string };
         Returns: Json;
       };
+      fn_contato_anotar_campos: {
+        Args: { p_campos: Json; p_contato: string; p_org: string; p_remover: string[] };
+        Returns: Json;
+      };
       fn_contato_pessoal_remove_trechos_do_rag: {
         Args: { p_contact: string; p_org: string };
         Returns: number;

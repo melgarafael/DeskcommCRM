@@ -9,6 +9,7 @@ import {
   diagnosticoVazio,
   escritoPelaIA,
   gravacaoDaAba,
+  gravacaoDoAgente,
   lerDiagnostico,
   podeEditarDiagnostico,
   segmentoDoContatoNovo,
@@ -299,5 +300,98 @@ describe("gravacaoDaAba — a diferença aplicada sobre a ficha RELIDA", () => {
       diag_por: autoriaDoUsuario(USUARIO),
       diag_em: AGORA.toISOString(),
     });
+  });
+});
+
+describe("gravacaoDoAgente — o PEDAÇO que a ferramenta do agente mescla no banco", () => {
+  const atual = {
+    link_instagram: "instagram.com/padaria",
+    convenio: "Unimed",
+    diag_observacoes: "Recado da equipe.",
+    diag_resumo: "Texto antigo.",
+    diag_por: autoriaDoUsuario(USUARIO),
+    diag_em: "2026-11-01T10:00:00.000Z",
+  };
+
+  it("⭐ devolve só as chaves do diagnóstico, nunca o objeto inteiro", () => {
+    const r = gravacaoDoAgente(
+      atual,
+      { segmento: " Padaria ", cnpj: "11.222.333/0001-81", resumo: "Sem cardápio.", oferta: "Cardápio digital." },
+      autoriaDoAgente(AGENTE),
+      [],
+      AGORA,
+    );
+    expect(r).toEqual({
+      ok: true,
+      campos: {
+        segmento: "Padaria",
+        documento_cnpj: CNPJ,
+        diag_resumo: "Sem cardápio.",
+        diag_oferta: "Cardápio digital.",
+        diag_por: autoriaDoAgente(AGENTE),
+        diag_em: AGORA.toISOString(),
+      },
+      remover: [],
+      gravados: ["segmento", "cnpj", "resumo", "oferta"],
+      preservados: [],
+      escritoPelaIA: true,
+    });
+    if (r.ok) {
+      // Aplicado como a função do banco aplica, o resto sobrevive e o selo aparece.
+      const depois = { ...atual, ...r.campos };
+      expect(depois).toMatchObject({ link_instagram: "instagram.com/padaria", convenio: "Unimed" });
+      expect(escritoPelaIA(lerDiagnostico(depois))).toBe(true);
+    }
+  });
+
+  it("valor inválido recusa a chamada inteira, sem gravar pela metade", () => {
+    expect(gravacaoDoAgente(atual, { resumo: "Ok.", cnpj: "123" }, autoriaDoAgente(AGENTE))).toEqual({
+      ok: false,
+      motivo: "valor_invalido",
+      campo: "cnpj",
+    });
+    expect(gravacaoDoAgente(atual, { resumo: "   " }, autoriaDoAgente(AGENTE))).toMatchObject({
+      ok: false,
+      motivo: "valor_invalido",
+      campo: "resumo",
+    });
+    expect(gravacaoDoAgente(atual, { oferta: "x".repeat(2001) }, autoriaDoAgente(AGENTE))).toMatchObject({
+      ok: false,
+      campo: "oferta",
+    });
+  });
+
+  it("observações da equipe não são campo do agente", () => {
+    const r = gravacaoDoAgente(
+      atual,
+      { observacoes: "IA no recado" } as unknown as Parameters<typeof gravacaoDoAgente>[1],
+      autoriaDoAgente(AGENTE),
+    );
+    expect(r).toEqual({ ok: false, motivo: "nada_para_gravar" });
+  });
+
+  it("chave da organização (declarada ou com valor em outro formato) fica preservada", () => {
+    const declarada = gravacaoDoAgente(atual, { segmento: "Padaria", resumo: "Ok." }, autoriaDoAgente(AGENTE), [
+      "segmento",
+    ]);
+    expect(declarada).toMatchObject({ ok: true, gravados: ["resumo"], preservados: ["segmento"] });
+    const outroFormato = gravacaoDoAgente(
+      { ...atual, segmento: ["Varejo"] },
+      { segmento: "Padaria" },
+      autoriaDoAgente(AGENTE),
+    );
+    expect(outroFormato).toEqual({ ok: false, motivo: "campo_da_organizacao", preservados: ["segmento"] });
+  });
+
+  it("só segmento ou CNPJ não mexe na autoria", () => {
+    const r = gravacaoDoAgente(atual, { segmento: "Padaria" }, autoriaDoAgente(AGENTE), [], AGORA);
+    expect(r).toMatchObject({ ok: true, campos: { segmento: "Padaria" }, remover: [], escritoPelaIA: false });
+  });
+
+  it("sem autor reconhecível, a autoria antiga sai junto", () => {
+    const r = gravacaoDoAgente(atual, { resumo: "Novo." }, null, [], AGORA);
+    expect(r).toMatchObject({ ok: true, campos: { diag_resumo: "Novo." }, remover: ["diag_por", "diag_em"] });
+    const torto = gravacaoDoAgente(atual, { resumo: "Novo." }, "agente:nao-e-uuid", [], AGORA);
+    expect(torto).toMatchObject({ ok: true, remover: ["diag_por", "diag_em"], escritoPelaIA: false });
   });
 });
