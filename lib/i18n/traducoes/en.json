@@ -4999,6 +4999,7 @@
   "O cliente respondeu — o fluxo acordou na hora": "The client responded — the flow woke up right away",
   "Encerrado porque o cliente respondeu": "Ended because the client responded",
   "Encerrado porque o cliente pediu para parar": "Ended because the client asked to stop",
+  "Encerrado porque o cliente disse que não tem interesse": "Ended because the client said they are not interested",
   "Encerrado porque uma pessoa assumiu a conversa": "Ended because a person took over the conversation",
   "Pausado porque uma pessoa assumiu a conversa": "Paused because a person took over the conversation",
   "Retomado: o atendimento voltou para o agente": "Resumed: support went back to the agent",
@@ -9814,7 +9815,7 @@
   "Sem interesse": "Not interested",
   "Marcar sem interesse": "Mark as not interested",
   "Marcar este contato como sem interesse?": "Mark this contact as not interested?",
-  "O contato sai da prospecção e das campanhas, e o negócio aberto da prospecção, se houver, vai para Perdido. A conversa continua aberta para a equipe responder. Só um administrador desfaz, na aba LGPD.": "The contact leaves prospecting and campaigns, and the open prospecting deal, if any, moves to Lost. The conversation stays open for the team to reply. Only an administrator can undo it, in the LGPD tab.",
+  "O contato sai da prospecção e das campanhas. O negócio aberto pela prospecção vai para Perdido e o follow-up da conversa da prospecção é encerrado, quando existirem. A conversa continua aberta para a equipe responder. Só um administrador desfaz, na aba LGPD.": "The contact leaves prospecting and campaigns. The deal opened by prospecting moves to Lost and the follow-up of the prospecting conversation is ended, when they exist. The conversation stays open for the team to reply. Only an administrator can undo it, in the LGPD tab.",
   "Recusa de ofertas": "Offers declined",
   "Recusa registrada em": "Refusal recorded on",
   "pela conversa da prospecção": "from the prospecting conversation",
@@ -9822,7 +9823,8 @@
   "Este contato disse que não tem interesse e não entra em prospecção nem em campanhas.": "This contact said they are not interested and is left out of prospecting and campaigns.",
   "Desfazer recusa": "Undo refusal",
   "Desfazer a recusa de ofertas?": "Undo the offers refusal?",
-  "O contato volta a poder entrar em prospecção e campanhas. Se um negócio foi encerrado, ele continua como Perdido. A ação fica registrada na auditoria em seu nome.": "The contact can be included in prospecting and campaigns again. If a deal was closed, it stays Lost. The action is recorded in the audit log under your name.",
+  "O contato volta a poder entrar em prospecção e campanhas. O negócio e o follow-up que foram encerrados não voltam: o negócio continua como Perdido. A ação fica registrada na auditoria em seu nome.": "The contact can be included in prospecting and campaigns again. The deal and the follow-up that were ended do not come back: the deal stays Lost. The action is recorded in the audit log under your name.",
+  "Este contato disse que não tem interesse. Só um administrador desfaz essa recusa, na aba LGPD da ficha do contato.": "This contact said they are not interested. Only an administrator can undo this refusal, in the LGPD tab of the contact record.",
   "Não foi possível registrar que o contato não tem interesse.": "Could not record that the contact is not interested.",
   "Não foi possível desfazer a recusa.": "Could not undo the refusal."
 }

@@ -135,6 +135,14 @@ describe("ficha · sem interesse", () => {
     expect(screen.queryByTestId("recusa-de-ofertas")).toBeNull();
   });
 
+  it("gerente não chega ao desfazer: a aba LGPD é só de administrador", () => {
+    papel.atual = "manager";
+    abrirFicha(RECUSA);
+    expect(screen.getByText("Sem interesse")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "LGPD" })).toBeNull();
+    expect(screen.queryByTestId("desfazer-sem-interesse")).toBeNull();
+  });
+
   it("leitor (viewer) não vê o botão", () => {
     papel.atual = "viewer";
     abrirFicha({});

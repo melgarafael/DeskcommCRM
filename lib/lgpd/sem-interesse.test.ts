@@ -10,6 +10,7 @@ import {
   lerRecusaSemInteresse,
   motivoDePerdaSemInteresse,
   recusaSemInteresseRecente,
+  situacaoDaRecusaDeOfertas,
 } from "@/lib/lgpd/sem-interesse";
 import { deriveLgpdFromContact } from "@/lib/agent-engine/guardrails/lgpd/legal-basis";
 
@@ -115,6 +116,19 @@ describe("lerRecusaSemInteresse — o leitor da forma gravada", () => {
   it("data ilegível vira null, e a origem desconhecida vira 'ficha'", () => {
     const consent = { marketing: { granted: false, declined_at: "ontem", motivo: "sem_interesse", origem: "x" } };
     expect(lerRecusaSemInteresse(consent)).toEqual({ declinedAt: null, origem: "ficha" });
+  });
+});
+
+describe("situacaoDaRecusaDeOfertas — o que o painel da conversa recebe", () => {
+  it("separa a recusa 'sem interesse', a recusa de outra origem e a ausência", () => {
+    const semInteresse = consentComSemInteresse({}, { agora: AGORA, origem: "ficha" });
+    expect(situacaoDaRecusaDeOfertas(semInteresse)).toBe("sem_interesse");
+    // As duas grafias da recusa de outra origem (captação e ficha), a mesma régua das guardas.
+    expect(situacaoDaRecusaDeOfertas({ marketing: { declined_at: AGORA } })).toBe("outra");
+    expect(situacaoDaRecusaDeOfertas({ marketing: { granted: false } })).toBe("outra");
+    expect(situacaoDaRecusaDeOfertas({ marketing: { granted: true } })).toBeNull();
+    expect(situacaoDaRecusaDeOfertas({})).toBeNull();
+    expect(situacaoDaRecusaDeOfertas(null)).toBeNull();
   });
 });
 

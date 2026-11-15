@@ -84,6 +84,20 @@ export function lerRecusaSemInteresse(consent: unknown): RecusaSemInteresse | nu
 }
 
 /**
+ * A recusa de ofertas resumida para quem só precisa decidir o que mostrar (o painel da
+ * conversa, pelo `crm-summary`): `"sem_interesse"` para a recusa que este módulo grava,
+ * `"outra"` para a recusa de marketing vinda de outro caminho (captação, ficha), `null`
+ * sem recusa. Com qualquer recusa o "Marcar sem interesse" não aparece: gravar por cima
+ * apagaria a data e a origem da primeira.
+ */
+export type SituacaoDaRecusaDeOfertas = "sem_interesse" | "outra" | null;
+
+export function situacaoDaRecusaDeOfertas(consent: unknown): SituacaoDaRecusaDeOfertas {
+  if (lerRecusaSemInteresse(consent)) return "sem_interesse";
+  return recusaRegistrada(consent, "marketing") ? "outra" : null;
+}
+
+/**
  * Quanto tempo depois da recusa a conversa da prospecção NÃO ganha card novo.
  *
  * É a janela da despedida: o "ok, obrigado" que vem logo depois do "não tenho
