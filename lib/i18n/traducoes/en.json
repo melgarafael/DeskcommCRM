@@ -9829,5 +9829,11 @@
   "O contato volta a poder entrar em prospecção e campanhas. O que a recusa encerrou não volta: os negócios que ela levou para Perdido continuam lá e o follow-up não recomeça. A ação fica registrada na auditoria em seu nome.": "The contact can be included in prospecting and campaigns again. What the refusal ended does not come back: deals it moved to Lost stay there and the follow-up does not restart. The action is recorded in the audit log under your name.",
   "Este contato disse que não tem interesse. Só um administrador desfaz essa recusa, na aba LGPD da ficha do contato.": "This contact said they are not interested. Only an administrator can undo this refusal, in the LGPD tab of the contact record.",
   "Não foi possível registrar que o contato não tem interesse.": "Could not record that the contact is not interested.",
-  "Não foi possível desfazer a recusa.": "Could not undo the refusal."
+  "Não foi possível desfazer a recusa.": "Could not undo the refusal.",
+  "Editar instrução e critérios": "Edit instructions and criteria",
+  "Salvar instrução e critérios": "Save instructions and criteria",
+  "Confirmar alteração": "Confirm change",
+  "Instrução e critérios atualizados. A campanha continua pausada.": "Instructions and criteria updated. The campaign remains paused.",
+  "Vale só para as empresas que ainda não foram abordadas. Quem já recebeu a primeira mensagem continua a conversa com o texto com que ela começou, e as prévias de quem está na fila são refeitas com o texto novo.": "Applies only to businesses not yet approached. Anyone who already got the first message keeps the conversation going with the text it started with, and the previews of those still in the queue are redone with the new text.",
+  "Confirmar a troca do texto desta campanha? Quem já foi abordado não recebe nada de novo por causa disso.": "Confirm changing this campaign's text? Anyone already approached receives nothing new because of it."
 }
