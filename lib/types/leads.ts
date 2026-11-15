@@ -69,6 +69,16 @@ export interface Lead {
   /** Derivado (não é coluna): quem é o agente dono — ver LeadOwnerAgent. */
   owner_agent?: LeadOwnerAgent | null;
   /**
+   * Derivado (não é coluna): o NOME do responsável humano, resolvido no
+   * servidor por quadro, nunca por card (`lib/kanban/nome-do-dono.ts`).
+   * `null` = olhei e não há nome utilizável; ausente = não resolvido (sem
+   * service role, ou resposta de mutação). Os dois caem no rótulo anterior.
+   * Só o nome: nunca e-mail ou `user_metadata` (LGPD).
+   */
+  owner_user_name?: string | null;
+  /** Derivado: `true` quando o responsável humano não está mais na equipe. */
+  owner_user_removed?: boolean;
+  /**
    * Derivado (não é coluna): a próxima ação que o agente propôs para o CONTATO,
    * já roteada para o negócio ativo dele. Ver lib/leads/next-action.ts — só
    * aparece quando o roteamento é inequívoco.
