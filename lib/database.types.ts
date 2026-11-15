@@ -6777,6 +6777,7 @@ export type Database = {
       };
       crm_lead_attachments: {
         Row: {
+          clonado_do_attachment_id: string | null;
           created_at: string;
           created_by: string | null;
           field_key: string;
@@ -6791,6 +6792,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          clonado_do_attachment_id?: string | null;
           created_at?: string;
           created_by?: string | null;
           field_key: string;
@@ -6804,6 +6806,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          clonado_do_attachment_id?: string | null;
           created_at?: string;
           created_by?: string | null;
           field_key?: string;
@@ -6817,6 +6820,13 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "crm_lead_attachments_clonado_do_attachment_id_fkey";
+            columns: ["clonado_do_attachment_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_lead_attachments";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "crm_lead_attachments_lead_id_fkey";
             columns: ["lead_id"];

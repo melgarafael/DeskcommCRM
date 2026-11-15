@@ -60967,6 +60967,33 @@ begin
     end);
 end $$;
 
+-- A cópia do anexo sabe de QUAL anexo ela veio (migration 4544, #4544).
+--
+-- O card criado em outro funil leva os anexos do card de origem, e a cópia ganha
+-- linha PRÓPRIA sob o prefixo do card novo: o schema prende `storage_path` ao
+-- `lead_id` da linha (restrição acima) e o gatilho abaixo o torna imutável,
+-- então duas linhas de cards diferentes não podem apontar para o mesmo objeto —
+-- o objeto é duplicado pelo Storage (`copy`, server-side).
+--
+-- Esta coluna é o VÍNCULO com a linha de origem e a chave da IDEMPOTÊNCIA: sem
+-- ela, repetir a cópia duplicava o anexo, e o ramo de "a continuação já existe"
+-- da automação não repetia nada — uma falha de Storage na primeira execução
+-- deixava o voucher fora do card de pós-venda para sempre.
+--
+-- `on delete set null`: apagar a origem não pode apagar o voucher do pós-venda.
+alter table public.crm_lead_attachments
+  add column if not exists clonado_do_attachment_id uuid
+    references public.crm_lead_attachments(id) on delete set null;
+
+comment on column public.crm_lead_attachments.clonado_do_attachment_id is
+  'Anexo do card de ORIGEM que esta linha reproduz (#4544): preenchido só na cópia feita na clonagem para outro funil. Nulo em anexo que subiu direto no card.';
+
+-- Um par (card, anexo de origem) aparece uma vez só. Parcial porque `null` é o
+-- estado normal de todo anexo que subiu direto no card.
+create unique index if not exists crm_lead_attachments_clonado_unico
+  on public.crm_lead_attachments(lead_id, clonado_do_attachment_id)
+  where clonado_do_attachment_id is not null;
+
 -- Depois de gravado, o caminho não muda (nenhuma rota o altera).
 create or replace function public.fn_crm_lead_attachments_caminho_imutavel()
 returns trigger

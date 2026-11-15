@@ -23,6 +23,9 @@ import {
   type OrigemParaClonar,
 } from "@/lib/leads/clonar-para-funil";
 import { criarCloneNoFunil } from "@/lib/leads/clone-com-anexos";
+// A cópia dos anexos do card de origem — a MESMA dos outros dois caminhos de
+// troca de funil, e idempotente de propósito (#4544).
+import { copiarAnexosDoClone } from "@/lib/leads/anexos-do-clone";
 // MESMA transferência do roteador de intenção (#2155): duas implementações de
 // "trocar de funil" divergiriam na primeira mudança de uma delas.
 import { COLUNAS_DA_ORIGEM, transfereParaOFunil } from "@/lib/leads/transfere-para-o-funil";
@@ -230,11 +233,35 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
           if (continuacao) {
             // As ações seguintes da regra enxergam a MESMA continuação que
             // enxergaram da primeira vez.
+            //
+            // ── A CÓPIA DOS ANEXOS É REPETIDA AQUI (#4544) ────────────────────
+            //
+            // "A continuação já existe" não quer dizer "os anexos já vieram":
+            // uma falha de Storage na primeira execução deixava o voucher fora
+            // do card para SEMPRE, porque este ramo respondia `ja_existia` e
+            // nunca voltava a tentar. `copiarAnexosDoClone` é idempotente — a
+            // linha nova carrega `clonado_do_attachment_id` e o índice único
+            // parcial recusa o par repetido —, então repetir no card que já
+            // existe conserta o que faltou sem duplicar o que já está lá. O
+            // custo é uma leitura por execução; o benefício é o pós-venda não
+            // ficar sem o documento porque o bucket piscou uma vez.
+            const idDaContinuacao = String((continuacao as { id?: unknown }).id ?? "");
+            const anexos = await copiarAnexosDoClone(ctx.admin, {
+              organizationId: ctx.organizationId,
+              origemLeadId: lead.id,
+              destinoLeadId: idDaContinuacao,
+            });
             publicaNoContexto(ctx, continuacao as Record<string, unknown>, contactId);
             return {
               type: "create_or_move_lead",
               status: "success",
-              detail: { ja_existia: String((continuacao as { id?: unknown }).id ?? ""), origem: lead.id },
+              detail: {
+                ja_existia: idDaContinuacao,
+                origem: lead.id,
+                anexos: anexos.copiados,
+                anexos_que_ja_estavam: anexos.jaEstavam,
+                ...(anexos.falhas > 0 ? { anexos_com_falha: anexos.falhas } : {}),
+              },
             };
           }
 
