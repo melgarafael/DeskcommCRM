@@ -18,12 +18,20 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   reatribuir o responsável pelo próprio card, quando ele não for a pessoa que
   atende hoje. Não há nada a instalar nem a configurar: a correção do banco entra
   junto com a atualização.
+
+  Contribuição de @webtecnica (#4530).
+
 - **IA › Execuções e o Custo da IA voltam a mostrar os dados da organização** Rodar a atualização da instalação aplica a policy de leitura — é ela que devolve
   as execuções e o custo das chamadas que já estão gravadas. Não há nada a
   configurar nem a reinstalar, e nenhum dado é apagado. Se a tela continuar vazia
   depois de atualizar, confira em IA › Execuções se o filtro de período está
   apertado antes de abrir um chamado.
+
+  Contribuição de @webtecnica (#4539).
+
 - **Follow-up por nicho passa a casar também com a etiqueta que está no contato** Nada a fazer nas campanhas nem nos fluxos por nicho: eles passam a escolher o ramo certo sozinhos, inclusive com os cards criados antes da atualização. Vale conferir os fluxos que usam «não tem a etiqueta»: o contato marcado agora conta como etiquetado, e a negação deixa de valer para ele — que é o que a tela sempre descreveu.
+
+  Contribuição de @webtecnica (#4644).
 
 ### Adicionado
 
@@ -143,13 +151,19 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **A execução de teste do agente mostra, no trace, as ações que ele propôs** Ao testar uma versão do agente, a linha de "Execuções" já trazia a mensagem enviada e a resposta da IA, mas o trace continuava com "Sem trace disponível." — as ações que a prévia propôs estavam gravadas e nenhuma tela as lia. Agora o drawer da execução de teste desenha essas ações, lendo do mesmo registro do teste, sem copiar nada para o histórico de produção.
 
+  Contribuição de @webtecnica (#4537).
+
 - **A execução de teste do agente guarda a pergunta e a resposta, e a linha do tempo do contato fica na empresa dele** Ao testar uma versão do agente, a linha em "Execuções" agora mostra a mensagem que você mandou e a resposta da IA, em vez de uma linha sem texto. O texto do teste fica num registro próprio e não se mistura ao histórico de produção. A linha do tempo do contato passa a buscar só atividades da empresa do contato. Isso não muda o que uma instalação correta mostra, mas a busca usa os índices e uma atividade com vínculo errado deixa de aparecer no dossiê de outra empresa.
+
+  Contribuição de @webtecnica (#4487, entrou pelo #4537).
 
 - **Compromisso encerrado para de voltar à fila do Google a cada cinco minutos** A fila que empurra os compromissos para a agenda do Google não olhava o estado nem a data: entrava nela todo compromisso já publicado, terminado ou não. Um compromisso que já tinha acontecido — compareceu, faltou ou foi cancelado — voltava à fila a cada cinco minutos, para sempre, e cada volta custava uma leitura no Google para não escrever nada. Numa instalação pequena isso virava cerca de 570 leituras por dia e 2.000 gravações por dia na tabela de compromissos, sem nenhum efeito visível além do ruído.
 
   Agora a fila é só do que ainda pode mudar do outro lado: compromisso pendente ou confirmado que ainda não terminou, e o cancelado — que é o único estado que pede uma escrita no Google, a remoção do evento. Compareceu e faltou saem da fila, porque registrar o desfecho aqui não muda nada no calendário de ninguém.
 
   Nenhuma ação é necessária na atualização. Um compromisso que já terminou sai da fila na primeira rodada depois da atualização, e nada muda para o que ainda vai acontecer.
+
+  Contribuição de @webtecnica (#4514).
 
 - **A rodada de campanha não deixa mais fila parada sem avaliação** Com mais campanhas ativas do que a rodada consegue ler num tique, a varredura agora continua de onde parou no tique seguinte, em vez de recomeçar sempre pela campanha mais antiga — nenhuma campanha ativa fica fora da avaliação por causa do lote. Quem tem número livre e ritmo aberto continua sendo atendido primeiro, e nada muda na tela. Nada a fazer na VPS.
 
@@ -176,6 +190,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   @webtecnica (#4527).
 
 - **Clicar na mensagem citada leva até a mensagem original** No Inbox, o trecho citado acima de uma resposta agora é clicável: ele rola a conversa até a mensagem original e a destaca por alguns segundos, como no WhatsApp. Quando a original é antiga e ficou em página ainda não carregada, o clique carrega o histórico até ela antes de rolar. Se a mensagem não existe mais, aparece um aviso curto em vez de o clique não fazer nada.
+
+  Contribuição de @webtecnica (#4583).
 
 - **Follow-up por nicho passa a casar também com a etiqueta que está no contato** A condição «Etiqueta do contato» do follow-up perguntava só à etiqueta do NEGÓCIO (o card). A campanha de prospecção grava a etiqueta do «Público ou segmento» no CONTATO — a atualização anterior passou a copiá-la para o card, mas isso vale para os cards criados depois dela, e etiqueta posta no Inbox ou na ficha nunca chega ao card. Agora a condição pergunta às duas caixas: quem marca no card continua casando, e quem é marcado no contato passa a casar também. Campanha que já está rodando não precisa de nada no banco nem de recadastro: a etiqueta já gravada no contato passa a contar na hora.
 
@@ -209,6 +225,8 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Instalação que atualizou antes desta versão ainda não tem o arquivo: a primeira
   volta pela tela é recusada, e a partir da próxima atualização o botão volta a
   funcionar.
+
+  Contribuição de @vinigaspare (#4589).
 
 ## [1.112.0] — 2026-11-15
 
