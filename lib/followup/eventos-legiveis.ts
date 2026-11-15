@@ -530,6 +530,10 @@ export function descreveEvento(
       return { titulo: "Encerrado porque o cliente respondeu", detalhe: null, ...cliente };
     case "reactivity_opted_out":
       return { titulo: "Encerrado porque o cliente pediu para parar", detalhe: null, ...cliente };
+    case "cancelled_sem_interesse":
+      // `lib/followup/encerrar-pela-recusa.ts`: a retomada da prospecção não fala de
+      // novo com quem disse que não tem interesse.
+      return { titulo: "Encerrado porque o cliente disse que não tem interesse", detalhe: null, ...cliente };
     case "reactivity_handoff_cancel":
       return { titulo: "Encerrado porque uma pessoa assumiu a conversa", detalhe: null, ...pessoa };
     case "handoff_paused":
