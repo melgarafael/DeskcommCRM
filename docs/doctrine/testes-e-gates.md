@@ -7,7 +7,7 @@ project: DeskcommCRM
 
 > Extraído **literalmente** do `CLAUDE.md` (seção «Testes») para o arquivo de entrada caber no
 > limite de 40k caracteres do Claude Code. O `CLAUDE.md` guarda a regra dura e aponta para cá;
-> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale o `CLAUDE.md`.
+> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale **este** texto (é o original, copiado literalmente), e o resumo do `CLAUDE.md` é que se corrige.
 
 ```bash
 pnpm typecheck   # tsc --noEmit -p tsconfig.typecheck.json (inclui tests/)

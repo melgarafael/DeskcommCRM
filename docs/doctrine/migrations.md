@@ -7,7 +7,7 @@ project: DeskcommCRM
 
 > Extraído **literalmente** do `CLAUDE.md` (seção «Migrations & Banco — DOUTRINA (projeto open-source)») para o arquivo de entrada caber no
 > limite de 40k caracteres do Claude Code. O `CLAUDE.md` guarda a regra dura e aponta para cá;
-> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale o `CLAUDE.md`.
+> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale **este** texto (é o original, copiado literalmente), e o resumo do `CLAUDE.md` é que se corrige.
 
 **Este projeto é open-source. Toda mudança de schema DEVE sair como migration versionada** — quem clonou uma versão antiga do banco precisa conseguir atualizar aplicando as migrations em ordem. **Nunca** aplique `ALTER`/`CREATE` solto no banco sem o arquivo correspondente. Isto é critério de aceite de TODA sessão, não opcional.
 

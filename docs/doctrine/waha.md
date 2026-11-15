@@ -7,7 +7,7 @@ project: DeskcommCRM
 
 > Extraído **literalmente** do `CLAUDE.md` (seção «WAHA») para o arquivo de entrada caber no
 > limite de 40k caracteres do Claude Code. O `CLAUDE.md` guarda a regra dura e aponta para cá;
-> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale o `CLAUDE.md`.
+> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale **este** texto (é o original, copiado literalmente), e o resumo do `CLAUDE.md` é que se corrige.
 
 - Imagem NOWEB pinada por arquitetura: `latest-2026.7.2` em x86 e `noweb-arm-2026.7.2` em ARM64. A prova local criou duas sessões CORE simultâneas até `SCAN_QR_CODE`; não prova pairing, duas contas `WORKING` nem envio. Não bloquear segunda sessão por tier: conferir resposta estruturada e pós-condição da operação.
 - Engine NOWEB default; WEBJS apenas se precisar stickers animados / botões

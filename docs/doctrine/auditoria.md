@@ -7,7 +7,7 @@ project: DeskcommCRM
 
 > Extraído **literalmente** do `CLAUDE.md` (seção «Audit log») para o arquivo de entrada caber no
 > limite de 40k caracteres do Claude Code. O `CLAUDE.md` guarda a regra dura e aponta para cá;
-> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale o `CLAUDE.md`.
+> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale **este** texto (é o original, copiado literalmente), e o resumo do `CLAUDE.md` é que se corrige.
 
 - Toda mutação POST/PATCH/DELETE bem-sucedida → 1 entrada em `api_audit_log` (fire-and-forget, p99 ≤500ms)
 - **Rodada de cron que não fez nada NÃO é mutação e não audita** — e a que fez, audita. `routing-worker` (1×/min) e o extinto `attendant-heartbeat` (1×/5min, removido no #720) auditavam incondicionalmente: ~51.840 linhas/mês numa instalação que não atende ninguém, e numa VPS real **95% do audit log** era batida de cron vazia (`docs/testing/user-journey-map.md`, achado 17). A guarda certa é *auditar quando houve efeito*, nunca *parar de auditar* — as duas direções são medidas por `tests/unit/cron-audita-so-quando-ha-efeito.test.ts`, que varre o AST de **toda** rota de `app/api/v1/cron/`

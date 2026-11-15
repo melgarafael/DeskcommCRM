@@ -7,7 +7,7 @@ project: DeskcommCRM
 
 > Extraído **literalmente** do `CLAUDE.md` (seção «QA Visual com Recursos Reais — DOUTRINA (produto self-host)») para o arquivo de entrada caber no
 > limite de 40k caracteres do Claude Code. O `CLAUDE.md` guarda a regra dura e aponta para cá;
-> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale o `CLAUDE.md`.
+> aqui mora o texto completo, com os motivos e as medições. Em divergência, vale **este** texto (é o original, copiado literalmente), e o resumo do `CLAUDE.md` é que se corrige.
 
 **O DeskcommCRM é distribuído open-source: a experiência de quem instala numa VPS É o produto.** Toda feature nova (ou fix de comportamento visível) DEVE ser provada como um **usuário leigo a usaria de verdade** — pelo frontend, num ambiente que imita a instalação fresca — antes de "pronto". Não é opcional; é critério de aceite de toda sessão que toca UI ou fluxo de usuário.
 
