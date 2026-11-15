@@ -11,6 +11,11 @@
  *   * a rota que recebe o login novo (`…/credentials/[id]/revalidate`), quando a
  *     conta volta — é ela que FECHA, sem clique de ninguém.
  *
+ * O MESMO item também carrega o episódio "a IA inteira está fora" (#4610): a
+ * assinatura caiu e a reserva também recusou. Quem abre/atualiza é `avisarIaFora`
+ * e quem fecha é `fecharAvisoDaIaForaPelaChamada` — o título é o que distingue os
+ * dois episódios dentro do único item aberto por organização (migration 9027).
+ *
  * ── Best-effort, e por quê ──────────────────────────────────────────────────
  *
  * A abertura acontece LATERAL a um turno que já falhou; o fechamento, lateral a

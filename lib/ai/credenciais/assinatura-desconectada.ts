@@ -187,10 +187,16 @@ export function corpoDoAvisoDaIaFora(d: {
 /**
  * A decisão, para UMA organização, num instante.
  *
- * A ordem importa: o login voltando resolve SEMPRE (inclusive item aberto por um
- * incidente anterior), e só a recusa de LOGIN abre item. Recusa que não é de
- * login (`recusa === null`) não pode anunciar conta desconectada — mandaria o
- * operador reconectar uma conta que está boa.
+ * A ordem importa, e é ela que separa os dois episódios do MESMO item:
+ *
+ *  1. o login voltando resolve o item aberto (inclusive o de um incidente
+ *     anterior) — mas, quando a volta é por CHAMADA (`voltaPorChamada`), só o
+ *     item do episódio "IA fora" fecha;
+ *  2. as DUAS pontas fora (`iaFora`) abrem/atualizam com o texto completo, que
+ *     nomeia assinatura e reserva;
+ *  3. só a recusa de LOGIN abre o texto da conta desconectada. Recusa que não é
+ *     de login (`recusa === null`) não pode anunciar conta desconectada —
+ *     mandaria o operador reconectar uma conta que está boa.
  */
 export function avaliarAvisoDaAssinatura(
   situacao: SituacaoDaAssinatura,
