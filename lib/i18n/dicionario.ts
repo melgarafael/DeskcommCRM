@@ -1331,14 +1331,14 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível contar as empresas. Feche e abra o menu para tentar de novo.": {
     es: "No fue posible contar las empresas. Cierra y abre el menú para intentarlo de nuevo.",
   },
-  "1 empresa fica fora do arquivo porque pediu para parar, é contato pessoal ou teve os dados apagados.": {
-    es: "1 empresa queda fuera del archivo porque pidió dejar de recibir mensajes, es un contacto personal o se borraron sus datos.",
+  "1 empresa fica fora das duas listas porque pediu para parar, é contato pessoal ou teve os dados apagados.": {
+    es: "1 empresa queda fuera de las dos listas porque pidió dejar de recibir mensajes, es un contacto personal o se borraron sus datos.",
   },
-  "empresas ficam fora do arquivo porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.": {
-    es: "empresas quedan fuera del archivo porque pidieron dejar de recibir mensajes, son contactos personales o se borraron sus datos.",
+  "empresas ficam fora das duas listas porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.": {
+    es: "empresas quedan fuera de las dos listas porque pidieron dejar de recibir mensajes, son contactos personales o se borraron sus datos.",
   },
-  "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.": {
-    es: "Descargar lista tiene dos opciones: solo las empresas que aún no fueron contactadas, o todas, con la situación de cada una. Quien pidió dejar de recibir mensajes, los contactos personales y quien tuvo sus datos borrados nunca entran en el archivo.",
+  "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados ficam fora das duas listas.": {
+    es: "Descargar lista tiene dos opciones: solo las empresas que aún no fueron contactadas, o todas, con la situación de cada una. Quien pidió dejar de recibir mensajes, los contactos personales y quien tuvo sus datos borrados quedan fuera de las dos listas.",
   },
   "não abordada": { es: "no contactada" },
   "abordada": { es: "contactada" },

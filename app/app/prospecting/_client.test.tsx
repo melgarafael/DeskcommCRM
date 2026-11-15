@@ -818,7 +818,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
   const RESUMO_URL = `/api/v1/prospecting/${COMPLETA}/exportar?resumo=1`;
   /** A única promessa escrita na tela de que quem pediu para parar não sai no arquivo. */
   const FRASE_DO_CARTAO =
-    "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados nunca entram no arquivo.";
+    "Baixar lista tem duas opções: só as empresas que ainda não foram abordadas, ou todas, com a situação de cada uma. Quem pediu para parar, contatos pessoais e quem teve os dados apagados ficam fora das duas listas.";
 
   function comResumo(estado: unknown, resumo: unknown): (url: string) => Promise<unknown> {
     return async (url: string) => (url === RESUMO_URL ? { data: resumo } : { data: estado });
@@ -862,7 +862,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     expect(soNaoAbordadas).toHaveAttribute("aria-disabled", "true");
     expect(soNaoAbordadas).not.toHaveAttribute("href");
     expect(screen.getByTestId("baixar-lista-fora")).toHaveTextContent(
-      "1 empresa fica fora do arquivo porque pediu para parar, é contato pessoal ou teve os dados apagados.",
+      "1 empresa fica fora das duas listas porque pediu para parar, é contato pessoal ou teve os dados apagados.",
     );
     expect(api.get).toHaveBeenCalledWith(RESUMO_URL);
     // Na concluída a frase continua prometendo o que o arquivo cumpre.
@@ -890,7 +890,7 @@ describe("baixar a lista da campanha (issue #4360)", () => {
     );
     expect(screen.getByRole("menuitem", { name: "Todas (3)" })).toBeVisible();
     expect(screen.getByTestId("baixar-lista-fora")).toHaveTextContent(
-      "2 empresas ficam fora do arquivo porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.",
+      "2 empresas ficam fora das duas listas porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.",
     );
   });
 

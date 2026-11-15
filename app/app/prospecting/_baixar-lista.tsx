@@ -112,10 +112,10 @@ export function BaixarLista({ campaignId }: { campaignId: string }) {
           <p data-testid="baixar-lista-fora" className="px-2 py-1.5 text-xs text-muted-foreground">
             {fora === 1
               ? t(
-                  "1 empresa fica fora do arquivo porque pediu para parar, é contato pessoal ou teve os dados apagados.",
+                  "1 empresa fica fora das duas listas porque pediu para parar, é contato pessoal ou teve os dados apagados.",
                 )
               : `${fora} ${t(
-                  "empresas ficam fora do arquivo porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.",
+                  "empresas ficam fora das duas listas porque pediram para parar, são contatos pessoais ou tiveram os dados apagados.",
                 )}`}
           </p>
         )}
