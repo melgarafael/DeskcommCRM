@@ -41,6 +41,7 @@ import { perguntaDoTeste, respostaDoTeste } from "@/lib/ai/agents/texto-do-teste
 import { avaliarRespostaDeTeste } from "@/lib/ai/agents/avaliar-resposta-de-teste";
 import { ehFalhaDoBanco } from "@/lib/ai/agents/falha-do-banco";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
+import { somarCustoDoRunDePrevia } from "@/lib/ai/agents/custo-do-run-de-previa";
 import { codigo } from "@/lib/agent-engine/agent/recibo-do-traco";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
@@ -109,6 +110,43 @@ async function atualizarRun(
       error: error.message,
     });
   }
+}
+
+/**
+ * O custo do teste, medido onde ele existe (#4664).
+ *
+ * A linha do run nascia e morria com `tokens_in`, `tokens_out` e `cost_cents` no
+ * padrão 0 enquanto as chamadas de modelo do teste — que custaram dinheiro de
+ * verdade — ficavam em `llm_calls`. Fechar a linha com zero era uma afirmação
+ * falsa: "este teste não gastou nada". O custo por chamada está lá, com o elo
+ * `preview_run_id` apontando para ESTE run (`somarCustoDoRunDePrevia`).
+ *
+ * Nunca derruba o teste: o resultado já está pronto e vai para a tela. Se a
+ * leitura falhar, os campos NÃO entram no update (as colunas ficam no padrão,
+ * como antes) e o motivo vai para o log — gravar 0 seria repetir o defeito com
+ * outra roupa, e gravar um número pela janela de tempo misturaria dois testes
+ * simultâneos.
+ */
+async function camposDoCustoDoTeste(
+  pool: ReturnType<typeof getRequestPool>,
+  organizationId: string,
+  runId: string,
+  requestId: string,
+): Promise<Record<string, number>> {
+  const soma = await somarCustoDoRunDePrevia(pool, organizationId, runId);
+  if (!soma) {
+    logger.warn("[ai.test] custo do teste não somado (a linha fecha sem tokens e custo)", {
+      request_id: requestId,
+      run_id: runId,
+      organization_id: organizationId,
+    });
+    return {};
+  }
+  return {
+    tokens_in: soma.tokens_in,
+    tokens_out: soma.tokens_out,
+    cost_cents: soma.cost_cents,
+  };
 }
 
 export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
@@ -275,17 +313,24 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       status: "completed",
       completed_at: new Date().toISOString(),
       latency_ms: Date.now() - startedAt.getTime(),
+      // #4664: o custo REAL do teste, somado das chamadas que apontam para ESTE
+      // run (`llm_calls.preview_run_id`). Antes estas três colunas ficavam no
+      // padrão 0 e a linha dizia que o teste não gastou nada; o dinheiro estava
+      // a uma tabela de distância, sem nada ligando as duas pontas.
+      ...(await camposDoCustoDoTeste(
+        getRequestPool(),
+        organizationId,
+        runRow.id,
+        requestId,
+      )),
       // #4426: a RESPOSTA final, o MESMO texto que o painel mostrou ao vivo.
       // Antes ela só existia no corpo da resposta HTTP: quem abrisse a linha
       // depois via tokens, custo e "Sem trace disponível." — o histórico
       // guardava o preço do teste e não o que ele respondeu.
       output_text: respostaDoTeste(finalText),
-      // `steps_count`, `tokens_in`, `tokens_out` e `cost_cents` seguem em zero
-      // de propósito: o turno de prévia não devolve essas contagens à rota, e
-      // gravar `candidates.length` no lugar de passos seria um número errado com
-      // cara de certo. Quem tem o dado é `llm_calls` (`purpose='agent_preview'`),
-      // e ligar as duas é trabalho à parte — não se conserta um zero honesto com
-      // um palpite.
+      // `steps_count` segue em zero de propósito: o turno de prévia não devolve
+      // a contagem de passos à rota, e gravar `candidates.length` no lugar seria
+      // um número errado com cara de certo.
       tool_calls: JSON.parse(JSON.stringify(result.proposals)),
     });
   } catch (err) {
@@ -315,6 +360,15 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       status: "failed",
       completed_at: new Date().toISOString(),
       latency_ms: Date.now() - startedAt.getTime(),
+      // #4664: o teste que FALHOU também gastou — a recusa do provedor é
+      // cobrada, e é justamente a linha que alguém vai abrir para entender o que
+      // aconteceu. Somar só no caminho feliz deixaria o custo do fracasso em 0.
+      ...(await camposDoCustoDoTeste(
+        getRequestPool(),
+        organizationId,
+        runRow.id,
+        requestId,
+      )),
       // O código guardado diz a NATUREZA da falha para quem for diagnosticar
       // depois; antes era sempre `preview_failed`, o que fazia um timeout de
       // banco parecer problema de configuração de agente também na tabela.
