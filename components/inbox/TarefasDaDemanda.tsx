@@ -12,7 +12,7 @@ import { resumoDasTarefas, type NovaTarefa, type Tarefa } from "@/lib/tarefas/ti
 import { Plus } from "@/lib/ui/icons";
 
 interface Props {
-  /** A demanda vigente do atendimento (#2818). Sem ela, a seção não desenha. */
+  /** A demanda vigente do atendimento (#2818). Sem ela, a seção mostra as tarefas do contato (#4630). */
   demandaId: string | null;
   /** O contato da conversa vai junto: a tarefa nasce presa à demanda E ao contato. */
   contactId: string | null;
@@ -36,12 +36,16 @@ interface Props {
  * prazo, a confirmação de apagar e a regra de reabrir (#2549) não divergirem
  * entre os lugares onde a tarefa aparece.
  *
- * A consulta é por `demanda_id` — o vínculo novo —, NÃO por contato: o contato
- * junta tudo, e a seção existe para mostrar o que ficou combinado NESTE
- * atendimento. A régua de "aberto" é a mesma da tela, via `useTasks`.
+ * A consulta é UMA, e a régua de "aberto" é a mesma da tela, via `useTasks`:
+ * com demanda vigente, por `demanda_id` — o que ficou combinado NESTE
+ * atendimento —; sem demanda, por `contact_id` (#4630), para a tarefa criada
+ * pelo "Nova tarefa" do painel numa conversa sem demanda aparecer na conversa.
+ * A rota filtra a organização pela sessão. Sem demanda e sem contato, o guarda
+ * abaixo devolve `null` antes dos hooks: nenhuma consulta sai.
  */
 export function TarefasDaDemanda({ demandaId, contactId, leadId, podeEditar }: Props) {
-  // A seção desenha quando há demanda vigente OU contato identificado.
+  // A seção desenha quando há demanda vigente OU contato identificado. O guarda
+  // vem ANTES dos hooks: conversa sem contato não monta `useUser` nem `useTasks`.
   if (!demandaId && !contactId) return null;
   return (
     <>

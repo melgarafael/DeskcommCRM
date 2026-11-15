@@ -125,6 +125,19 @@ describe("GET /api/v1/tasks?sector_id=", () => {
   });
 });
 
+describe("GET /api/v1/tasks?contact_id= — a busca do painel da conversa (#4630)", () => {
+  it("é uma consulta só, filtrada pela organização da sessão e pelo contato", async () => {
+    sessao();
+    const filtros = fazerSupabase({ data: [], error: null });
+    const CONTATO = "44444444-4444-4444-8444-444444444444";
+    const res = await listar(`?contact_id=${CONTATO}&aberto=true`);
+    expect(res.status).toBe(200);
+    expect(Object.keys(filtros)).toEqual(["crm_tasks"]);
+    expect(filtros.crm_tasks).toContainEqual(["eq", "organization_id", ORG]);
+    expect(filtros.crm_tasks).toContainEqual(["eq", "contact_id", CONTATO]);
+  });
+});
+
 describe("a tela de Tarefas respeita o módulo desligado", () => {
   it("só a tela de Tarefas pede setores, com o módulo ligado; o roster (agent+) só a quem edita", () => {
     const tela = readFileSync("app/app/tasks/_components/TarefasClient.tsx", "utf8");
