@@ -39,13 +39,11 @@ import type { NextRequest } from "next/server";
  *   continua a mesma, e não existe caminho para a senha digitada virar login
  *   deste navegador. Refazer o login do admin com a senha do usuário novo
  *   falha, porque a senha pertence a outra conta.
- * - **Não aceita e-mail que já existe — e não conta que ele existe.** Trocar a
- *   senha de uma conta alheia por esta porta seria sequestrar a conta de outra
- *   empresa; e responder "já existe" diria a quem administra UMA empresa quais
- *   e-mails têm conta nas OUTRAS. A recusa é a mesma de qualquer falha do
- *   GoTrue (`FALHA_AO_CRIAR`), e o motivo real vai só para o log e para uma
- *   linha de auditoria SEM organização (a RLS de `api_audit_log` só a mostra ao
- *   dono da instalação). O caminho para quem já tem conta é o convite.
+ * - **Não reaproveita conta.** Trocar a senha de uma conta que já existe por
+ *   esta porta seria tomar a conta de outra pessoa. Toda recusa da criação tem
+ *   a MESMA resposta, qualquer que seja o motivo (`FALHA_AO_CRIAR`); o motivo
+ *   real vai para o log e para a auditoria do dono da instalação. Para quem já
+ *   usa a instalação, o caminho é o convite.
  *
  * ─── A senha em repouso e no log ────────────────────────────────────────────
  *
@@ -81,11 +79,7 @@ export const dynamic = "force-dynamic";
 const TETO_POR_ORG = 10;
 const JANELA_SEGUNDOS = 3600;
 
-/**
- * A ÚNICA frase de recusa da criação. E-mail que já tem conta (em qualquer
- * empresa) e falha do GoTrue respondem igual, com o mesmo status — é isso que
- * impede a rota de servir de consulta "este e-mail existe na instalação?".
- */
+/** A ÚNICA resposta de recusa da criação: mesma frase e mesmo status para qualquer motivo. */
 const FALHA_AO_CRIAR =
   "Não foi possível criar a conta. Se a pessoa já usa esta instalação, convide-a por e-mail.";
 
@@ -145,8 +139,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const email = input.email.trim().toLowerCase();
 
-  // Criar a própria conta de novo é sempre engano. Esta recusa própria não
-  // enumera nada: diz a quem pede só o que ele já sabe (o próprio e-mail).
+  // Criar a própria conta de novo é sempre engano — e o e-mail é o de quem pede.
   if (email === authUser.email.trim().toLowerCase()) {
     return fail("email_already_registered", t("Este e-mail já é a sua conta."), 409, {
       requestId,
@@ -207,9 +200,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       status: criaErr?.status,
       code: criaErr?.code,
     });
-    // Sem `organizationId` DE PROPÓSITO: a policy de leitura de
-    // `api_audit_log` mostra a linha da organização ao admin dela, e o motivo
-    // "e-mail já tem conta" é justamente o que não pode chegar a ele.
+    // Sem `organizationId` de propósito: a linha fica na auditoria do dono da
+    // instalação, junto com o motivo real.
     await audit({
       action: "member.create_refused",
       actorUserId: authUser.id,

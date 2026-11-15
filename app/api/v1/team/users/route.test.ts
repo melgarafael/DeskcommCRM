@@ -15,8 +15,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *   /trocar-senha);
  * - NENHUM e-mail sai: é o ponto inteiro da fatia, e o convite continua sendo o
  *   único caminho que depende de SMTP;
- * - e-mail que já tem conta recebe a MESMA resposta de qualquer falha do
- *   GoTrue — a rota não diz se o e-mail existe noutra empresa;
+ * - toda recusa da criação tem a MESMA resposta, qualquer que seja o motivo;
  * - há limite de tentativas por organização;
  * - plano cheio e vínculo recusado não deixam conta de auth órfã: a criação é
  *   compensada com `deleteUser`.
@@ -315,7 +314,7 @@ describe("POST /api/v1/team/users — criar sem convite (#3876)", () => {
     expect(admin.auth.admin.createUser).not.toHaveBeenCalled();
   });
 
-  it("e-mail que já tem conta noutra empresa: resposta IGUAL à de uma falha qualquer", async () => {
+  it("recusa da criação: a resposta é a mesma qualquer que seja o motivo", async () => {
     h.admin = adminFake({ erroCria: { message: "A user with this email address has already been registered", status: 422 } });
     const existe = await POST(pedido());
     const corpoExiste = await existe.json();
@@ -329,8 +328,7 @@ describe("POST /api/v1/team/users — criar sem convite (#3876)", () => {
     expect(corpoExiste.error.code).toBe("user_not_created");
     expect(JSON.stringify(corpoExiste)).not.toMatch(/existe|registered|already/i);
 
-    // O motivo real fica no log e numa auditoria SEM organização (a policy de
-    // leitura de api_audit_log mostra linha da org ao admin dela).
+    // O motivo real fica no log e na auditoria do dono da instalação.
     const recusas = h.audit.mock.calls.map((c) => c[0]).filter((e) => e.action === "member.create_refused");
     expect(recusas).toHaveLength(2);
     expect(recusas[0]).toMatchObject({ organizationId: null, metadata: { motivo: "email_ja_tem_conta" } });
