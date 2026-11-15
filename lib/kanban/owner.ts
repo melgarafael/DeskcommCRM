@@ -6,6 +6,8 @@ export interface OwnerDisplay {
   name: string | null;
   /** Versão publicada do agente HOJE — resolvida na exibição, nunca no lead. */
   agentVersion: number | null;
+  /** Só presente (`true`) quando o responsável humano saiu da equipe. */
+  foraDaEquipe?: true;
 }
 
 /**
@@ -27,7 +29,12 @@ export interface OwnerDisplay {
 export function resolveLeadOwner(
   lead: Pick<
     Lead,
-    "owner_kind" | "owner_user_id" | "owner_agent_id" | "owner_agent" | "owner_user_name"
+    | "owner_kind"
+    | "owner_user_id"
+    | "owner_agent_id"
+    | "owner_agent"
+    | "owner_user_name"
+    | "owner_user_removed"
   >,
   ownerNames: Map<string, string | null> | undefined,
 ): OwnerDisplay {
@@ -51,8 +58,24 @@ export function resolveLeadOwner(
       // no mapa do time, que é o comportamento anterior a esta fatia.
       name: lead.owner_user_name ?? ownerNames?.get(lead.owner_user_id) ?? null,
       agentVersion: null,
+      ...(lead.owner_user_removed ? { foraDaEquipe: true as const } : {}),
     };
   }
 
   return { kind: null, name: null, agentVersion: null };
+}
+
+/**
+ * Funde a resposta de uma mutação no card do cache do quadro. A resposta é a
+ * linha do banco e não traz `owner_user_name`: se o dono mudou, o nome anexado
+ * pelo quadro era o do dono ANTERIOR e venceria o mapa do time até o refetch.
+ * Ele sai, e o card cai no mapa (que conhece o dono novo).
+ */
+export function fundeRespostaNoCard(card: Lead, resposta: Partial<Lead>): Lead {
+  const fundido: Lead = { ...card, ...resposta };
+  if ("owner_user_id" in resposta && resposta.owner_user_id !== card.owner_user_id) {
+    delete fundido.owner_user_name;
+    delete fundido.owner_user_removed;
+  }
+  return fundido;
 }

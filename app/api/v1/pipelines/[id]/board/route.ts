@@ -692,15 +692,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("internal_error", leadsWithOwner.error, 500, { requestId });
   }
 
-  // O NOME do responsável humano (#3945, fatia 2): UMA leitura por quadro, na
-  // cópia que a 0202 já mantém (`conversations.assigned_to_user_name`). Nunca
-  // uma consulta por card e nunca uma chamada ao GoTrue por dono — o porquê,
-  // com arquivo:linha, está no cabeçalho de `lib/kanban/nome-do-dono.ts`.
-  // Falha aqui NÃO derruba o quadro (nome é cortesia, `owner_user_id` é a
-  // verdade); a função devolve os negócios como vieram e o card cai no rótulo
-  // anterior.
+  // O NOME do responsável humano (#3945, fatia 2): leituras fixas por quadro,
+  // nunca uma por card — ver `lib/kanban/nome-do-dono.ts`. Falha aqui NÃO
+  // derruba o quadro: o card cai no rótulo anterior.
   const leadsComNomeDoDono = await withOwnerUserNames(
-    supabase,
     (pipeline as Pipeline).organization_id,
     leadsWithOwner.leads,
   );

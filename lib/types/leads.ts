@@ -70,18 +70,14 @@ export interface Lead {
   owner_agent?: LeadOwnerAgent | null;
   /**
    * Derivado (não é coluna): o NOME do responsável humano, resolvido no
-   * servidor pela cópia `conversations.assigned_to_user_name` — UMA leitura por
-   * quadro, nunca uma por card e nunca uma chamada ao GoTrue por dono
-   * (`lib/kanban/nome-do-dono.ts`).
-   *
-   * `null` = olhei e este dono não tem cópia do nome (nunca foi atribuído a uma
-   * conversa da organização); o card cai no rótulo anterior. Ausente = payload
-   * de antes desta fatia, que também cai no rótulo anterior.
-   *
-   * Só o nome: nunca e-mail, telefone ou `user_metadata` inteiro (LGPD) — a
-   * mesma régua de `/api/v1/team/assignable`.
+   * servidor por quadro, nunca por card (`lib/kanban/nome-do-dono.ts`).
+   * `null` = olhei e não há nome utilizável; ausente = não resolvido (sem
+   * service role, ou resposta de mutação). Os dois caem no rótulo anterior.
+   * Só o nome: nunca e-mail ou `user_metadata` (LGPD).
    */
   owner_user_name?: string | null;
+  /** Derivado: `true` quando o responsável humano não está mais na equipe. */
+  owner_user_removed?: boolean;
   /**
    * Derivado (não é coluna): a próxima ação que o agente propôs para o CONTATO,
    * já roteada para o negócio ativo dele. Ver lib/leads/next-action.ts — só

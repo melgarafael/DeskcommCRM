@@ -91,6 +91,7 @@ export function buildCardInput(
     | "owner_agent_id"
     | "owner_agent"
     | "owner_user_name"
+    | "owner_user_removed"
     | "next_action"
     | "score"
   >,

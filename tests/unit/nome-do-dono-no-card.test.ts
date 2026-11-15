@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildCardInput } from "@/lib/kanban/card-state";
 import { nomeLegivel } from "@/lib/kanban/nome-do-dono";
-import { resolveLeadOwner } from "@/lib/kanban/owner";
+import { fundeRespostaNoCard, resolveLeadOwner } from "@/lib/kanban/owner";
 import type { Lead } from "@/lib/types/leads";
 
 const AGORA = new Date("2026-11-07T12:00:00.000Z");
@@ -86,6 +86,38 @@ describe("nome do responsável no card — payload vence, ausência cai no anter
 
     expect(card.owner).toEqual({ kind: "user", name: null, agentVersion: null });
     expect(resolveLeadOwner(lead({}) as Lead, undefined).name).toBeNull();
+  });
+});
+
+describe("responsável que saiu da equipe e troca de dono no cache", () => {
+  it("⭐ `owner_user_removed` vira `foraDaEquipe` no card, com o nome mantido", () => {
+    const card = buildCardInput(lead({ owner_user_name: "Bia", owner_user_removed: true }), opts);
+
+    expect(card.owner).toEqual({ kind: "user", name: "Bia", agentVersion: null, foraDaEquipe: true });
+  });
+
+  it("dono na equipe não ganha a chave `foraDaEquipe`", () => {
+    const card = buildCardInput(lead({ owner_user_name: "Ana Souza" }), opts);
+
+    expect("foraDaEquipe" in card.owner).toBe(false);
+  });
+
+  it("⭐ a resposta da mutação troca o dono: o nome do dono ANTERIOR sai do card", () => {
+    const noCache = lead({ owner_user_name: "Ana Souza", owner_user_removed: true }) as unknown as Lead;
+    const fundido = fundeRespostaNoCard(noCache, { owner_user_id: "u-2", updated_at: "x" } as Partial<Lead>);
+
+    expect(fundido.owner_user_id).toBe("u-2");
+    expect(fundido.owner_user_name).toBeUndefined();
+    expect(fundido.owner_user_removed).toBeUndefined();
+    // O card cai no mapa do time, que conhece o dono novo.
+    expect(resolveLeadOwner(fundido, new Map([["u-2", "Beto Lima"]])).name).toBe("Beto Lima");
+  });
+
+  it("a resposta sem troca de dono mantém o nome resolvido pelo quadro", () => {
+    const noCache = lead({ owner_user_name: "Ana Souza" }) as unknown as Lead;
+    const fundido = fundeRespostaNoCard(noCache, { owner_user_id: "u-1", stage_id: "e2" } as Partial<Lead>);
+
+    expect(fundido.owner_user_name).toBe("Ana Souza");
   });
 });
 
