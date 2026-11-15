@@ -9,6 +9,24 @@ import {
 } from "./contracts";
 
 const ORIGIN = "https://amigobot-api.amigoapp.com.br";
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/**
+ * A origem do Amigo é FIXA: não há campo nem variável que mande o token para
+ * outro host. A única troca aceita é para ESTE computador
+ * (`AMIGO_API_ORIGIN_LOCAL=http://127.0.0.1:<porta>`), que é como a prova de
+ * tela aponta um receptor de mentira. Qualquer outro valor é ignorado e a
+ * origem segue a do fornecedor — falha fechada, sem trocar o destino do segredo.
+ */
+export function origemDoAmigo(valor: string | undefined = process.env.AMIGO_API_ORIGIN_LOCAL): string {
+  if (!valor || !URL.canParse(valor)) return ORIGIN;
+  const url = new URL(valor);
+  const local =
+    (url.protocol === "http:" || url.protocol === "https:") &&
+    LOOPBACK.has(url.hostname) &&
+    url.pathname === "/";
+  return local ? url.origin : ORIGIN;
+}
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -191,7 +209,7 @@ export async function requestAmigo(
   const path = route.path.replace(/\{([^}]+)\}/g, (_, key: string) =>
     encodeURIComponent(String(values[key])),
   );
-  const url = new URL(path, ORIGIN);
+  const url = new URL(path, origemDoAmigo());
   const payload: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values)) {
     if (value === undefined || route.pathKeys?.includes(key)) continue;

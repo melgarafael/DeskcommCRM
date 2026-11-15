@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestAmigo, AmigoError } from "./transport";
+import { requestAmigo, AmigoError, origemDoAmigo } from "./transport";
 import type { AmigoOperation } from "./contracts";
 
 const token = "token-super-secreto-de-teste";
@@ -486,5 +486,21 @@ describe("transporte Amigo", () => {
         { event_id: 1, place_id: 2 },
       ),
     ).rejects.toMatchObject({ code: "AMIGO_INVALID_RESPONSE" });
+  });
+});
+
+describe("origemDoAmigo — a troca de origem só vale para este computador", () => {
+  it("sem valor, ou com host de fora, a origem é a fixa do fornecedor", () => {
+    const fixa = "https://amigobot-api.amigoapp.com.br";
+    expect(origemDoAmigo(undefined)).toBe(fixa);
+    expect(origemDoAmigo("")).toBe(fixa);
+    expect(origemDoAmigo("https://atacante.example")).toBe(fixa);
+    expect(origemDoAmigo("http://127.0.0.1.atacante.example:4687")).toBe(fixa);
+    expect(origemDoAmigo("http://127.0.0.1:4687/outro-caminho")).toBe(fixa);
+    expect(origemDoAmigo("não é url")).toBe(fixa);
+  });
+  it("loopback com porta vira a origem (o receptor da prova de tela)", () => {
+    expect(origemDoAmigo("http://127.0.0.1:4687")).toBe("http://127.0.0.1:4687");
+    expect(origemDoAmigo("http://localhost:4687/")).toBe("http://localhost:4687");
   });
 });
