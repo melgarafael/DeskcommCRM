@@ -162,6 +162,15 @@ function fakeAdmin(tabelas: Record<string, Linha[]>) {
               return (n: number) => ((limite = n), b);
             case "range":
               return (de: number, ate: number) => ((inicio = de), (limite = ate - de + 1), b);
+            case "upsert":
+              // O cursor entre tiques. `onConflict` é `consumer` (PK da tabela).
+              return (p: Linha, _opcoes?: { onConflict?: string }) => {
+                const linhas = (tabelas[tabela] ??= []);
+                const existente = linhas.find((l) => l.consumer === p.consumer);
+                if (existente) Object.assign(existente, p);
+                else linhas.push({ ...p });
+                return Promise.resolve({ data: [p], error: null });
+              };
             default:
               return () => b;
           }
@@ -299,5 +308,122 @@ describe("varredura da rodada além da primeira janela (#4495)", () => {
     expect(consultas.campaigns).toBe(PAGINAS_POR_RODADA);
     expect(r.detalhe.match(/ritmo:teto_diario/g)).toHaveLength(CAMPANHAS_POR_PAGINA * PAGINAS_POR_RODADA);
     expect(r.detalhe).toContain("varredura:orcamento");
+  });
+});
+
+/**
+ * A SEGUNDA METADE do #4495: o orçamento de páginas é o custo de UM tique, não o
+ * fim da fila.
+ *
+ * A varredura que parava no orçamento recomeçava na campanha mais antiga no
+ * tique seguinte — então, com mais campanhas paradas no ritmo do que 300, a 301ª
+ * não era lida em tique nenhum: o defeito original, dez vezes mais longe. O
+ * cursor `(started_at, id)` atravessa o tique: quem para no orçamento continua
+ * dali, e a volta fecha quando a lista acaba (o cursor volta ao começo).
+ */
+describe("a varredura continua de onde parou, no tique seguinte (#4495)", () => {
+  /** 300 lidas por tique + 5: a 301ª só existe se o cursor atravessar o tique. */
+  const TOTAL = CAMPANHAS_POR_PAGINA * PAGINAS_POR_RODADA + 5;
+  const INDICE_DA_301 = CAMPANHAS_POR_PAGINA * PAGINAS_POR_RODADA;
+
+  /**
+   * 305 campanhas, cada uma no próprio número, teto diário de 1 já gasto e um
+   * pendente: nenhuma ocupa número no primeiro tique. A 301ª tem contato
+   * BLOQUEADO — é o que prova que ela foi lida, e não só contada.
+   */
+  function cenarioLongo() {
+    const campanhas = Array.from({ length: TOTAL }, (_, i) =>
+      campanha(
+        `e${String(i).padStart(3, "0")}`,
+        new Date(Date.parse(HOJE_CEDO) + i * 1000).toISOString(),
+        1,
+        `canal-${i}`,
+      ),
+    );
+    const destinatarios: Linha[] = campanhas.flatMap((c, i) => [
+      {
+        id: `${c.id}-enviado`,
+        campaign_id: c.id,
+        status: "sent",
+        sent_at: HOJE_CEDO,
+        contact_id: `ct-${i}-e`,
+        contacts: contato(`ct-${i}-e`),
+      },
+      {
+        id: `${c.id}-pendente`,
+        campaign_id: c.id,
+        status: "pending",
+        sent_at: null,
+        contact_id: `ct-${i}-p`,
+        contacts: contato(`ct-${i}-p`, i === INDICE_DA_301),
+      },
+    ]);
+    const tabelas: Record<string, Linha[]> = { campaigns: campanhas, campaign_recipients: destinatarios };
+    return { campaigns: campanhas, tabelas };
+  }
+
+  /** Os ids avaliados numa rodada, lidos do `detalhe` (`e000:ritmo:teto_diario`). */
+  const avaliadas = (detalhe: string) => new Set([...detalhe.matchAll(/e(\d{3}):/g)].map((m) => m[1]!));
+
+  it("⭐ a 301ª é avaliada no tique seguinte, e o cursor fica gravado onde a varredura parou", async () => {
+    const { tabelas } = cenarioLongo();
+    const { admin, consultas } = fakeAdmin(tabelas);
+
+    const primeira = await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(primeira.detalhe.match(/ritmo:teto_diario/g)).toHaveLength(TOTAL - 5);
+    expect(primeira.detalhe).toContain("varredura:orcamento");
+    // Custo do tique preservado: dez páginas, nem uma a mais.
+    expect(consultas.campaigns).toBe(PAGINAS_POR_RODADA);
+    // Parou na 300ª, e é isso que o tique seguinte lê.
+    expect(tabelas.watchdog_cursors?.[0]).toMatchObject({
+      consumer: "campanha:rodada",
+      last_event_id: "e299",
+    });
+
+    const segunda = await rodarUmaRodadaDeCampanha(admin, new Date(AGORA.getTime() + 60_000));
+    // A 301ª foi LIDA: o contato bloqueado dela é revalidado e vira `opted_out`.
+    expect(segunda.detalhe).toContain("e300:pulado:opt_out");
+    expect(segunda.pulados).toBe(1);
+    // O lote anterior não é relido.
+    expect(segunda.detalhe).not.toContain("e000:");
+
+    // Fechou a volta (página vazia): o cursor volta ao começo, sem laço.
+    expect(tabelas.watchdog_cursors?.[0]).toMatchObject({
+      last_created_at: "1970-01-01T00:00:00.000Z",
+      last_event_id: "00000000-0000-0000-0000-000000000000",
+    });
+
+    const terceira = await rodarUmaRodadaDeCampanha(admin, new Date(AGORA.getTime() + 120_000));
+    expect(terceira.detalhe).toContain("e000:");
+  });
+
+  it("⭐ duas rodadas seguidas não repetem o mesmo lote, e a terceira volta ao começo", async () => {
+    const { tabelas } = cenarioLongo();
+    const { admin } = fakeAdmin(tabelas);
+
+    const primeira = avaliadas((await rodarUmaRodadaDeCampanha(admin, AGORA)).detalhe);
+    const segunda = avaliadas((await rodarUmaRodadaDeCampanha(admin, new Date(AGORA.getTime() + 60_000))).detalhe);
+
+    expect(primeira.size).toBe(CAMPANHAS_POR_PAGINA * PAGINAS_POR_RODADA);
+    expect(segunda.size).toBeGreaterThan(0);
+    // Nenhuma campanha avaliada nos dois tiques: o lote girou.
+    expect([...segunda].filter((id) => primeira.has(id))).toEqual([]);
+    // E o ciclo fecha em vez de andar para sempre.
+    const terceira = avaliadas((await rodarUmaRodadaDeCampanha(admin, new Date(AGORA.getTime() + 120_000))).detalhe);
+    expect(terceira.has("000")).toBe(true);
+    expect(terceira.size).toBe(CAMPANHAS_POR_PAGINA * PAGINAS_POR_RODADA);
+  });
+
+  it("⭐ sem campanha ativa a rodada termina em `nada_a_fazer`, e o cursor volta ao começo", async () => {
+    const { campaigns, tabelas } = cenarioLongo();
+    const { admin } = fakeAdmin(tabelas);
+
+    // Primeiro tique: para no orçamento, deixa cursor no meio da lista.
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    for (const c of campaigns) c.status = "paused";
+
+    const r = await rodarUmaRodadaDeCampanha(admin, new Date(AGORA.getTime() + 60_000));
+    expect(r.detalhe).toBe("nada_a_fazer");
+    expect(tabelas.watchdog_cursors?.[0]).toMatchObject({ last_event_id: "00000000-0000-0000-0000-000000000000" });
   });
 });
