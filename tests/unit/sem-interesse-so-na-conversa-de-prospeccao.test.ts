@@ -57,7 +57,7 @@ vi.mock("@/lib/tarefas/criar-tarefa", () => ({
 /** A porta SQL só responde as três leituras da tarefa de retomada. */
 const consultasDaPorta: Array<{ sql: string; parametros: readonly unknown[] }> = [];
 vi.mock("@/lib/db", async (original) => ({
-  ...(await original<typeof import("@/lib/db")>()),
+  ...(await original<Record<string, unknown>>()),
   portaDaAplicacao: () => ({
     query: async () => [],
     queryOne: async (sql: string, parametros: readonly unknown[] = []) => {
