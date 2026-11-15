@@ -15,7 +15,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   agrupaPorPrazo,
-  calcularHorasUteisEntre,
   calcularUrgenciaDoPrazo,
   diaLocalDoPrazo,
   estaAtrasada,

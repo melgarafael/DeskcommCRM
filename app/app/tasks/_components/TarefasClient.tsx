@@ -10,14 +10,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useModulosLigados, useUser } from "@/hooks/auth/AuthProvider";
+import { useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowsClockwise, CalendarBlank, Kanban, ListChecks, Plus } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAttendants } from "@/hooks/team/useAttendants";
-import { useSectors } from "@/hooks/team/useSectors";
+import { useSectors, type Sector } from "@/hooks/team/useSectors";
 import { responsavelDoFiltro, type FiltroDeResponsavel } from "@/lib/tarefas/filtro-de-responsavel";
 import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 
@@ -40,10 +40,13 @@ export function TarefasClient({
   podeEditar,
   minhasDeInicio = false,
   funis = [],
+  setoresLigados = false,
 }: {
   podeEditar: boolean;
   minhasDeInicio?: boolean;
   funis?: FunilDoFiltro[];
+  /** Módulo opcional de setores (doc 213), lido no servidor pela página. Ausente = desligado. */
+  setoresLigados?: boolean;
 }) {
   const t = useT();
   const usuario = useUser();
@@ -55,11 +58,21 @@ export function TarefasClient({
   // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
   // pedido nem sai — sem setores, o seletor não aparece. O roster é agent+,
   // pela mesma razão de `useAssignableMembers` logo abaixo.
-  const setoresLigados = useModulosLigados().includes("setores");
   const { data: setoresResp } = useSectors(setoresLigados);
-  const setores = setoresResp?.data ?? [];
+  const setores = useMemo(() => setoresResp?.data ?? [], [setoresResp]);
   const { data: atendentesResp } = useAttendants(setoresLigados && podeEditar);
-  const atendentes = atendentesResp?.data ?? [];
+  const atendentes = useMemo(() => atendentesResp?.data ?? [], [atendentesResp]);
+  // O chip da tarefa mostra o PRIMEIRO setor de quem a tem. Montado aqui, uma
+  // vez, para a lista e o quadro — eles não pedem setores por conta própria.
+  const setorDoResponsavel = useMemo(() => {
+    const porId = new Map(setores.map((s) => [s.id, s]));
+    const mapa = new Map<string, Sector>();
+    for (const a of atendentes) {
+      const setorDele = a.sector_ids?.[0] ? porId.get(a.sector_ids[0]) : undefined;
+      if (setorDele) mapa.set(a.user_id, setorDele);
+    }
+    return mapa;
+  }, [atendentes, setores]);
 
   // `/team/assignable` exige agent: o viewer tomaria 403 (e um authz.denied no
   // audit) a cada visita. Ele fica com Todos, Minhas e Sem responsável.
@@ -344,6 +357,7 @@ export function TarefasClient({
                   sector_id: setor === "todos" ? undefined : setor,
                 }}
                 aoEditar={abrirEdicao}
+                setorDoResponsavel={setorDoResponsavel}
               />
             </div>
           )}
@@ -364,6 +378,7 @@ export function TarefasClient({
               aoAlternarConcluida={alternarConcluida}
               aoEditar={abrirEdicao}
               aoApagar={(tarefa) => apagarTarefa(tarefa.id)}
+              setorDoResponsavel={setorDoResponsavel}
             />
           </div>
         </>

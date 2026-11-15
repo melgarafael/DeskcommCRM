@@ -2,15 +2,14 @@
 
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { useModulosLigados, useUser } from "@/hooks/auth/AuthProvider";
+import { useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
-import { useAttendants } from "@/hooks/team/useAttendants";
-import { useSectors, type Sector } from "@/hooks/team/useSectors";
+import type { Sector } from "@/hooks/team/useSectors";
 import { useTasks, type FiltrosDeTarefa } from "@/hooks/tasks/useTasks";
 import {
   cargaAtingiuOLimite,
@@ -21,7 +20,6 @@ import {
 } from "@/lib/tarefas/quadro";
 import {
   calcularUrgenciaDoPrazo,
-  estaAtrasada,
   estaEncerrada,
   type PrioridadeDaTarefa,
   type SituacaoDaTarefa,
@@ -31,6 +29,8 @@ import { Kanban, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
 import { COR_DA_PRIORIDADE, COR_DA_SITUACAO, ESTILO_DA_URGENCIA } from "./estilo-da-prioridade";
+
+const SEM_SETOR: ReadonlyMap<string, Sector> = new Map();
 
 /**
  * O QUADRO DE TAREFAS (#4028) — as quatro situações como colunas.
@@ -66,8 +66,16 @@ export function QuadroDeTarefas({
   podeEditar,
   filtros,
   aoEditar,
+  setorDoResponsavel = SEM_SETOR,
 }: {
   podeEditar: boolean;
+  /**
+   * O setor de cada responsável, para o chip da tarefa. Quem monta é a tela de
+   * Tarefas, que já busca setores e equipe — e só com o módulo opcional ligado
+   * (doc 213). Ausente = sem chip: a lista do painel do inbox e a do dossiê não
+   * pedem setores a ninguém.
+   */
+  setorDoResponsavel?: ReadonlyMap<string, Sector>;
   /** Os filtros da tela (responsável e funil). A situação NÃO entra: as colunas são as situações. */
   filtros: FiltrosDeTarefa;
   aoEditar: (tarefa: Tarefa) => void;
@@ -82,27 +90,6 @@ export function QuadroDeTarefas({
   const membros = useAssignableMembers(podeEditar);
   const nomes = new Map((membros.data ?? []).map((m) => [m.user_id, m.full_name]));
 
-  // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
-  // pedido nem sai. O roster (`/attendants/availability`) é agent+: o viewer
-  // tomaria 403 (e um authz.denied no audit) a cada visita, como o comentário
-  // de `useAssignableMembers` já explica.
-  const setoresLigados = useModulosLigados().includes("setores");
-  const { data: atendentesResp } = useAttendants(setoresLigados && podeEditar);
-  const { data: setoresResp } = useSectors(setoresLigados);
-  const atendentes = atendentesResp?.data ?? [];
-  const setores = setoresResp?.data ?? [];
-  const setoresMap = useMemo(() => new Map(setores.map((s) => [s.id, s])), [setores]);
-  const setorDoUsuario = useMemo(() => {
-    const map = new Map<string, Sector>();
-    for (const a of atendentes) {
-      const primeiroId = a.sector_ids?.[0];
-      if (primeiroId) {
-        const primeiroSetor = setoresMap.get(primeiroId);
-        if (primeiroSetor) map.set(a.user_id, primeiroSetor);
-      }
-    }
-    return map;
-  }, [atendentes, setoresMap]);
 
   /**
    * O CARTÃO JÁ MUDOU DE COLUNA, mesmo antes de o servidor responder.
@@ -333,20 +320,20 @@ export function QuadroDeTarefas({
                                   {nomeDoResponsavel(tarefa)}
                                 </span>
                               ) : null}
-                              {tarefa.assigned_to && setorDoUsuario.get(tarefa.assigned_to) ? (
+                              {tarefa.assigned_to && setorDoResponsavel.get(tarefa.assigned_to) ? (
                                 <span
                                   className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border"
                                   style={{
-                                    backgroundColor: setorDoUsuario.get(tarefa.assigned_to)!.color
-                                      ? `${setorDoUsuario.get(tarefa.assigned_to)!.color}18`
+                                    backgroundColor: setorDoResponsavel.get(tarefa.assigned_to)!.color
+                                      ? `${setorDoResponsavel.get(tarefa.assigned_to)!.color}18`
                                       : undefined,
-                                    color: setorDoUsuario.get(tarefa.assigned_to)!.color ?? undefined,
-                                    borderColor: setorDoUsuario.get(tarefa.assigned_to)!.color
-                                      ? `${setorDoUsuario.get(tarefa.assigned_to)!.color}35`
+                                    color: setorDoResponsavel.get(tarefa.assigned_to)!.color ?? undefined,
+                                    borderColor: setorDoResponsavel.get(tarefa.assigned_to)!.color
+                                      ? `${setorDoResponsavel.get(tarefa.assigned_to)!.color}35`
                                       : undefined,
                                   }}
                                 >
-                                  {setorDoUsuario.get(tarefa.assigned_to)!.name}
+                                  {setorDoResponsavel.get(tarefa.assigned_to)!.name}
                                 </span>
                               ) : null}
                               {tarefa.lead ? (

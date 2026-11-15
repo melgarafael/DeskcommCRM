@@ -24,8 +24,8 @@ import { createClient } from "@/lib/supabase/server";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
-vi.mock("@/lib/instalacao/modulos", async (original) => ({
-  ...(await original<typeof import("@/lib/instalacao/modulos")>()),
+vi.mock("@/lib/instalacao/modulos", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   moduloLigado: vi.fn(),
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
@@ -126,17 +126,22 @@ describe("GET /api/v1/tasks?sector_id=", () => {
 });
 
 describe("a tela de Tarefas respeita o módulo desligado", () => {
-  it("as três peças só pedem setores com o módulo ligado, e o roster (agent+) só a quem edita", () => {
+  it("só a tela de Tarefas pede setores, com o módulo ligado; o roster (agent+) só a quem edita", () => {
+    const tela = readFileSync("app/app/tasks/_components/TarefasClient.tsx", "utf8");
+    expect(tela).toMatch(/useSectors\(setoresLigados\)/);
+    expect(tela).toMatch(/useAttendants\(setoresLigados && podeEditar\)/);
+    expect(tela).toMatch(/setoresLigados = false/);
+    const pagina = readFileSync("app/app/tasks/page.tsx", "utf8");
+    expect(pagina).toMatch(/setoresLigados=\{await moduloLigado\(createAdminClient\(\), "setores"\)\}/);
+    // A lista e o quadro também moram no painel do inbox e no dossiê: lá não
+    // há setor a pedir. Eles recebem o mapa pronto, ou nenhum.
     for (const arquivo of [
-      "app/app/tasks/_components/TarefasClient.tsx",
       "app/app/tasks/_components/ListaDeTarefas.tsx",
       "app/app/tasks/_components/QuadroDeTarefas.tsx",
     ]) {
       const fonte = readFileSync(arquivo, "utf8");
-      expect(fonte, arquivo).toMatch(/useModulosLigados\(\)\.includes\("setores"\)/);
-      expect(fonte, arquivo).toMatch(/useSectors\(setoresLigados\)/);
-      expect(fonte, arquivo).toMatch(/useAttendants\(setoresLigados && podeEditar\)/);
-      expect(fonte, arquivo).not.toMatch(/useSectors\(\)|useAttendants\(\)/);
+      expect(fonte, arquivo).not.toMatch(/useSectors\(|useAttendants\(/);
+      expect(fonte, arquivo).toMatch(/setorDoResponsavel = SEM_SETOR/);
     }
   });
 

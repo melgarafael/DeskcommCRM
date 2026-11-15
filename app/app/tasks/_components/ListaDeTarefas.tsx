@@ -1,20 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { useModulosLigados, useUser } from "@/hooks/auth/AuthProvider";
+import { useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
-import { useAttendants } from "@/hooks/team/useAttendants";
-import { useSectors, type Sector } from "@/hooks/team/useSectors";
+import type { Sector } from "@/hooks/team/useSectors";
 import { COR_DA_PRIORIDADE, ESTILO_DA_URGENCIA } from "./estilo-da-prioridade";
 import {
   agrupaPorPrazo,
   calcularUrgenciaDoPrazo,
-  estaAtrasada,
   estaEncerrada,
   type FaixaDePrazo,
   type PrioridadeDaTarefa,
@@ -22,6 +20,8 @@ import {
 } from "@/lib/tarefas/tipos";
 import { Check, Kanban, PencilSimple, Trash, UserCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+
+const SEM_SETOR: ReadonlyMap<string, Sector> = new Map();
 
 interface Props {
   tarefas: Tarefa[];
@@ -35,6 +35,13 @@ interface Props {
    * repetir o nome dele em cada linha só tomaria espaço.
    */
   mostrarNegocio?: boolean;
+  /**
+   * O setor de cada responsável, para o chip da tarefa. Quem monta é a tela de
+   * Tarefas, que já busca setores e equipe — e só com o módulo opcional ligado
+   * (doc 213). Ausente = sem chip: a lista do painel do inbox e a do dossiê não
+   * pedem setores a ninguém.
+   */
+  setorDoResponsavel?: ReadonlyMap<string, Sector>;
 }
 
 function Linha({
@@ -63,7 +70,6 @@ function Linha({
   const [confirmando, setConfirmando] = useState(false);
 
   const encerrada = estaEncerrada(tarefa);
-  const atrasada = estaAtrasada(tarefa);
   const urgencia = calcularUrgenciaDoPrazo(tarefa);
   const estiloUrgencia = ESTILO_DA_URGENCIA[urgencia];
 
@@ -233,6 +239,7 @@ export function ListaDeTarefas({
   aoEditar,
   aoApagar,
   mostrarNegocio = true,
+  setorDoResponsavel = SEM_SETOR,
 }: Props) {
   const t = useT();
   const usuario = useUser();
@@ -242,27 +249,6 @@ export function ListaDeTarefas({
   const membros = useAssignableMembers(podeEditar);
   const nomes = new Map((membros.data ?? []).map((m) => [m.user_id, m.full_name]));
 
-  // Setores é módulo opcional (doc 213): desligado, as rotas respondem 404 e o
-  // pedido nem sai. O roster (`/attendants/availability`) é agent+: o viewer
-  // tomaria 403 (e um authz.denied no audit) a cada visita, como o comentário
-  // de `useAssignableMembers` já explica.
-  const setoresLigados = useModulosLigados().includes("setores");
-  const { data: atendentesResp } = useAttendants(setoresLigados && podeEditar);
-  const { data: setoresResp } = useSectors(setoresLigados);
-  const atendentes = atendentesResp?.data ?? [];
-  const setores = setoresResp?.data ?? [];
-  const setoresMap = useMemo(() => new Map(setores.map((s) => [s.id, s])), [setores]);
-  const setorDoUsuario = useMemo(() => {
-    const map = new Map<string, Sector>();
-    for (const a of atendentes) {
-      const primeiroId = a.sector_ids?.[0];
-      if (primeiroId) {
-        const primeiroSetor = setoresMap.get(primeiroId);
-        if (primeiroSetor) map.set(a.user_id, primeiroSetor);
-      }
-    }
-    return map;
-  }, [atendentes, setoresMap]);
 
   function nomeDoResponsavel(tarefa: Tarefa): string | null {
     if (!tarefa.assigned_to) return null;
@@ -313,7 +299,7 @@ export function ListaDeTarefas({
                 aoApagar={aoApagar}
                 mostrarNegocio={mostrarNegocio}
                 nomeDoResponsavel={nomeDoResponsavel(tarefa)}
-                setor={tarefa.assigned_to ? setorDoUsuario.get(tarefa.assigned_to) : null}
+                setor={tarefa.assigned_to ? setorDoResponsavel.get(tarefa.assigned_to) : null}
               />
             ))}
           </div>
