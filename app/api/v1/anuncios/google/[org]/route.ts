@@ -8,6 +8,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { lerIdentificadoresGoogle } from "@/lib/plataformas-de-anuncio/google/identificadores";
+import { normalizarMetadadosGoogle } from "@/lib/plataformas-de-anuncio/google/metadados-da-campanha";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { criarClickRef } from "@/lib/plataformas-de-anuncio/google/captura-de-clique";
@@ -92,11 +93,7 @@ export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response
     return paginaDeSaida(whatsAppUrl(config.whatsappE164, textoSemRef(config.messageTemplate)));
   }
 
-  const queryRaw = Object.fromEntries(
-    ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"].flatMap((key) =>
-      search.get(key) ? [[key, search.get(key)!.slice(0, 256)]] : [],
-    ),
-  );
+  const queryRaw = normalizarMetadadosGoogle(Object.fromEntries(search.entries()));
   const criado = await criarClickRef(admin, organizationId, ids, queryRaw);
   if (!criado) {
     // Falha ao gravar o clique: mesma régua — a pessoa não paga o preço de um
